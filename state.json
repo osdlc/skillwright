@@ -82,9 +82,9 @@
       "line": 152,
       "title": "Step 7 does not name the expected first versions",
       "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026867",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "1494f2121e706a336ea4519dfc83612ec25eac1a"
     },
     {
       "id": "r1-8",
