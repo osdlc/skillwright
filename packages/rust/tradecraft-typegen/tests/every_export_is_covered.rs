@@ -5,14 +5,16 @@
 //! a second copy of the boundary, and this crate exists because a second copy
 //! of the boundary is what drifted in the first place.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-/// The Cargo workspace directory, one level above this crate.
-fn rust_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+/// The crates the generator reads, located through `cargo metadata` on the
+/// workspace one level above this crate.
+fn crates() -> tradecraft_typegen::Crates {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("the crate sits one level below the workspace directory")
-        .to_path_buf()
+        .join("Cargo.toml");
+    tradecraft_typegen::Crates::locate(&manifest).expect("locating the crates")
 }
 
 /// Every `#[wasm_bindgen]` function in the wrapper, by the name JavaScript
@@ -53,10 +55,10 @@ fn declared_exports(wrapper: &Path) -> Vec<String> {
 /// `#[wasm_bindgen]` function fails here until the generator resolves it.
 #[test]
 fn every_wasm_export_is_resolved() {
-    let root = rust_root();
+    let root = crates();
     let model = tradecraft_typegen::read(&root).expect("reading the crates");
 
-    let declared = declared_exports(&root.join("tradecraft-wasm/src/lib.rs"));
+    let declared = declared_exports(&root.tradecraft_wasm.join("src/lib.rs"));
     let resolved: Vec<String> = model.exports.iter().map(|e| e.js_name.clone()).collect();
 
     // Both lists are in wrapper declaration order, so this compares the names
@@ -86,7 +88,7 @@ fn every_wasm_export_is_resolved() {
 /// shape for the gate to compare and none for it to invent.
 #[test]
 fn validate_namespace_has_no_json_boundary() {
-    let model = tradecraft_typegen::read(&rust_root()).expect("reading the crates");
+    let model = tradecraft_typegen::read(&crates()).expect("reading the crates");
     let export = model
         .exports
         .iter()
@@ -100,7 +102,7 @@ fn validate_namespace_has_no_json_boundary() {
 /// `cargo test -p tradecraft-typegen` fails when the committed file is stale.
 #[test]
 fn the_committed_file_matches_the_source() {
-    let root = rust_root();
+    let root = crates();
     let generated = tradecraft_typegen::generate(&root).expect("generating");
     let committed = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join(tradecraft_typegen::OUTPUT),
@@ -130,7 +132,7 @@ fn the_committed_file_matches_the_source() {
 /// or on a formatter's version would fail CI for a difference nobody made.
 #[test]
 fn the_emit_is_deterministic() {
-    let root = rust_root();
+    let root = crates();
     let first = tradecraft_typegen::generate(&root).expect("generating");
     let second = tradecraft_typegen::generate(&root).expect("generating");
     assert_eq!(first, second);
@@ -145,7 +147,7 @@ fn the_emit_is_deterministic() {
 /// model would pass with an emitter that cannot spell any of them.
 #[test]
 fn a_diagnostic_export_emits() {
-    let mut model = tradecraft_typegen::read(&rust_root()).expect("reading the crates");
+    let mut model = tradecraft_typegen::read(&crates()).expect("reading the crates");
     model.exports.push(tradecraft_typegen::parse::Export {
         js_name: "diagnosticProbe".to_string(),
         request: None,

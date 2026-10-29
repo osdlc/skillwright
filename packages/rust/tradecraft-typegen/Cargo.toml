@@ -25,6 +25,8 @@ path = "src/main.rs"
 syn = { workspace = true }
 # `ToTokens`, for the token scans that read an export body.
 quote = { workspace = true }
+# Reads `cargo metadata`, which says where agent-adapt's source is.
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

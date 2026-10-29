@@ -5,6 +5,9 @@ Rust source of `tradecraft-core`, `tradecraft-wasm` and `agent-adapt`: the
 TypeScript declarations for every request and response that crosses the wasm
 boundary.
 
+`agent-adapt` comes from crates.io, so the generator asks `cargo metadata` where
+the locked version's source is. The other two crates are in this workspace.
+
 It is a build tool. It is not published to crates.io (`publish = false`), and
 nothing depends on it. The generated file is committed in this crate. A
 TypeScript package that wraps `tradecraft-wasm` copies or imports it from here.
