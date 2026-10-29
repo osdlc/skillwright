@@ -12,7 +12,7 @@ cargo install skillwright
 
 ## What is here
 
-- `packages/rust/`: the CLI and core crates. Today the CLI source and releases live in osdlc/osdlc; they are moving here.
+- `packages/rust/`: the skillwright CLI and the tradecraft crates.
 - `packages/ts/tradecraft-wasm/`: the WebAssembly build of the core, for TypeScript.
 - `plugin/`: the agent plugin.
 - `harness-reference/`: reference notes on agent harnesses.

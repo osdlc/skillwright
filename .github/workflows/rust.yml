@@ -1,0 +1,382 @@
+# Checks the Cargo workspace under packages/rust/, and the wasm built from it
+# that packages/ts/tradecraft-wasm/ commits, on every pull request and push to
+# main.
+#
+# The workflow always runs, so its final `rust` job always reports. That job
+# is the one to require in the "Protect main" ruleset. A workflow-level
+# `paths` filter would leave a required check pending forever on a pull
+# request that touches no Rust file. Instead the `changes` job decides, and
+# the other jobs skip when nothing under the Rust paths changed. `rust`
+# passes when every job it needs passed or was skipped.
+#
+# The toolchain is the pin in packages/rust/rust-toolchain.toml (with the
+# wasm32 target added in the `wasm` job), except in the `msrv` job (the
+# workspace `rust-version`).
+#
+# Every action is pinned to a commit SHA; the comment names its release.
+name: rust
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+
+defaults:
+  run:
+    shell: bash
+    working-directory: packages/rust
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.diff.outputs.rust }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request lists its files through the API, with the old name of
+      # a renamed file. A push compares the pushed commit with the one before
+      # it, with renames split into a delete and an add. A manual run, a new branch, or
+      # a diff that fails, runs everything.
+      - name: Did a Rust path change?
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          files=""
+          case "$EVENT" in
+            pull_request)
+              files="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --jq '.[] | .filename, (.previous_filename // empty)')"
+              ;;
+            push)
+              if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+                files="$(git diff --name-only --no-renames "$BEFORE" "$AFTER" 2>/dev/null || echo '*')"
+              else
+                files='*'
+              fi
+              ;;
+            *)
+              files='*'
+              ;;
+          esac
+          if [ "$files" = '*' ] || grep -qE '^(packages/rust/|packages/ts/tradecraft-wasm/wasm/|packages/ts/tradecraft-wasm/src/core\.generated\.ts|\.github/workflows/(rust|release-plz)\.yml$|\.github/actions/rust-|scripts/crates-io-)' <<<"$files"; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          components: rustfmt clippy
+
+      - uses: ./.github/actions/rust-build-cache
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
+      # The osdlc library crates come from crates.io. A `[patch]` that points
+      # one at a local checkout must not reach main.
+      - name: No cargo patch
+        run: |
+          set -euo pipefail
+          if grep -nE '^\[patch' Cargo.toml; then
+            echo "::error::packages/rust/Cargo.toml has a [patch] section. Release the crate in osdlc/osdlc and depend on that version instead."
+            exit 1
+          fi
+
+      # Builds each crate from its packaged files only, so a file missing from
+      # a crate's `include` list fails here and not on crates.io. Crates with
+      # `publish = false` are left out: they never ship.
+      - name: Package
+        run: |
+          set -euo pipefail
+          unpublished="$(cargo metadata --no-deps --format-version 1 --locked | jq -r '.packages[] | select(.publish == []) | "--exclude=" + .name')"
+          # shellcheck disable=SC2086 # one flag per word
+          cargo package --workspace --locked $unpublished
+
+  rust-test:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    name: rust test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          components: clippy
+
+      - uses: ./.github/actions/rust-build-cache
+
+      # Per OS, because code behind `cfg(unix)` is only linted on that OS.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+  # Builds and tests on the workspace `rust-version` with a lockfile resolved
+  # fresh on that toolchain. resolver 3 then picks dependency versions that
+  # support it, as a consumer on that toolchain would get.
+  msrv:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read rust-version
+        id: msrv
+        run: |
+          set -euo pipefail
+          v="$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)"
+          test -n "$v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - uses: ./.github/actions/rust-build-cache
+        with:
+          key: msrv
+
+      - name: Resolve a fresh lockfile
+        run: |
+          rm -f Cargo.lock
+          cargo generate-lockfile
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+  # tradecraft-wasm is a wasm-bindgen crate. The other jobs build it for the
+  # host target only. This job runs the whole build.sh pipeline (cargo for
+  # wasm32, wasm-bindgen, wasm-opt) and checks that the result equals the wasm
+  # committed in packages/ts/tradecraft-wasm/wasm/, so the npm package ships
+  # what its source builds. It also checks that the package's
+  # core.generated.ts is the file tradecraft-typegen writes. On a difference
+  # it uploads the rebuilt files.
+  #
+  # A version bump alone changes the wasm bytes: cargo hashes each crate's
+  # version into the crate hash it gives rustc (`-C metadata`), and that hash
+  # reaches symbol hashes and code layout. The same holds for a dependency
+  # version bump.
+  wasm:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: ./.github/actions/rust-build-cache
+
+      # wasm-bindgen and wasm-opt at the versions build.sh requires.
+      - uses: ./.github/actions/rust-wasm-tools
+
+      - name: Build the tradecraft wasm with build.sh
+        run: bash packages/rust/tradecraft-wasm/build.sh
+
+      - name: The committed tradecraft wasm matches the rebuild
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- packages/ts/tradecraft-wasm/wasm/)" ]; then
+            git status --short -- packages/ts/tradecraft-wasm/wasm/
+            echo "::error::packages/ts/tradecraft-wasm/wasm/ differs from a rebuild. Run packages/rust/tradecraft-wasm/build.sh and commit the result, or take the rebuilt files from this run's tradecraft-wasm artifact."
+            exit 1
+          fi
+
+      - name: The package's core.generated.ts is the generator's output
+        run: |
+          set -euo pipefail
+          cargo run --locked -q --manifest-path packages/rust/Cargo.toml -p tradecraft-typegen -- --check
+          if ! cmp -s packages/rust/tradecraft-typegen/generated/core.generated.ts packages/ts/tradecraft-wasm/src/core.generated.ts; then
+            diff -u packages/rust/tradecraft-typegen/generated/core.generated.ts packages/ts/tradecraft-wasm/src/core.generated.ts | head -40 || true
+            echo "::error::packages/ts/tradecraft-wasm/src/core.generated.ts differs from packages/rust/tradecraft-typegen/generated/core.generated.ts. Run cargo run -p tradecraft-typegen in packages/rust and copy the generated file over it."
+            exit 1
+          fi
+
+      - name: Upload the rebuilt tradecraft wasm
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tradecraft-wasm
+          path: packages/ts/tradecraft-wasm/wasm/
+
+  # Runs release-plz as the release workflow does, but without publishing,
+  # tagging or pushing, so a bad release-plz.toml fails here and not after
+  # the merge. `release --dry-run` checks the config against each manifest
+  # and packages each crate whose version is not on crates.io yet.
+  # `update` runs in the throwaway checkout and its edits are discarded with
+  # it.
+  #
+  # The dry run publishes nothing, so a crate that needs the new version of
+  # another crate in the same run would not find it on crates.io. The real
+  # release publishes that crate first. So the dry run gets a cargo
+  # `[patch.crates-io]` that points each unpublished crate, and each
+  # workspace crate it reaches by path, at its local directory; see
+  # scripts/crates-io-unpublished-patch.ts.
+  release-plz:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    # cargo-binstall compiles release-plz when no prebuilt binary is found.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # The release-plz binary the action installs.
+      RELEASE_PLZ_VERSION: 0.3.172
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./.github/actions/rust-toolchain
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Test the patch script
+        run: node --test scripts/crates-io-unpublished-patch.test.ts
+
+      # Into the user cargo config, so no file in the repository changes.
+      # The original, if any, is kept and restored after the dry run.
+      - name: Point unpublished crates at their local directories
+        run: |
+          set -euo pipefail
+          cfg="${CARGO_HOME:-$HOME/.cargo}/config.toml"
+          if [ -e "$cfg" ]; then cp "$cfg" "$RUNNER_TEMP/cargo-config.toml"; fi
+          node scripts/crates-io-unpublished-patch.ts packages/rust/Cargo.toml packages/rust/release-plz.toml >> "$cfg"
+          cat "$cfg"
+
+      # It installs the release-plz binary, which the `release-plz update`
+      # step reuses.
+      - uses: release-plz/action@8921286633dfa0c4020f7f30bd1c14fe19cbb10e # v0.5.142
+        with:
+          command: release
+          manifest_path: packages/rust/Cargo.toml
+          config: packages/rust/release-plz.toml
+          version: ${{ env.RELEASE_PLZ_VERSION }}
+          dry_run: 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Remove the patch
+        run: |
+          set -euo pipefail
+          cfg="${CARGO_HOME:-$HOME/.cargo}/config.toml"
+          if [ -e "$RUNNER_TEMP/cargo-config.toml" ]; then
+            mv "$RUNNER_TEMP/cargo-config.toml" "$cfg"
+          else
+            rm -f "$cfg"
+          fi
+
+      # release-plz stops its history walk at the tag of each crate's current
+      # version. The versions imported from osdlc/osdlc were released there,
+      # so until their tags are pushed here the walk runs into the imported
+      # commits, which have no Cargo workspace, and fails. This adds the
+      # missing tags in the throwaway checkout only. It does nothing once the
+      # tags exist.
+      - name: Tag the imported releases when their tags are missing
+        env:
+          # The import of osdlc/osdlc b582e6ad7a, which released both versions.
+          IMPORTED: 4d758afdd23bb939d03f33799403b37ff4cde53d
+        run: |
+          set -euo pipefail
+          for tag in skillwright/v0.3.8 tradecraft-core/v0.40.1; do
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              git tag "$tag" "$IMPORTED"
+              echo "::notice::$tag is not in this repository yet; tagged $IMPORTED for this run only."
+            fi
+          done
+
+      - name: release-plz update
+        run: release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
+
+  rust:
+    needs: [changes, lint, rust-test, msrv, wasm, release-plz]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Every Rust job passed or was skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              success|skipped) ;;
+              *) echo "::error::a Rust job ended with: $r"; exit 1 ;;
+            esac
+          done

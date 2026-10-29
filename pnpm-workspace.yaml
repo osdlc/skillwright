@@ -2,5 +2,12 @@ packages:
   - 'packages/ts/*'
   - 'harness-reference'
 
+# Shared versions. A package or the root names one as `"catalog:"` so a bump
+# is one edit here.
 catalog:
+  '@types/node': ^26.1.0
+  '@vitest/coverage-v8': ^5.0.5
+  oxlint: ^1.65.0
   prettier: 3.9.6
+  typescript: ~6.0.3
+  vitest: ^5.0.5
