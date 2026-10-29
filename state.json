@@ -27,9 +27,9 @@
       "line": 149,
       "title": "The skillwright-release dry run at skillwright/v0.3.8 fails: the imported tag has no Cargo workspace",
       "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026829",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "1494f2121e706a336ea4519dfc83612ec25eac1a"
     },
     {
       "id": "r1-3",
