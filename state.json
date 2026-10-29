@@ -93,9 +93,9 @@
       "line": 119,
       "title": "Comment rewrap leftover",
       "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026875",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "1494f2121e706a336ea4519dfc83612ec25eac1a"
     },
     {
       "id": "r2-1",
