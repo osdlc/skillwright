@@ -45,8 +45,12 @@ node --test packages/rust/skillwright/release/dist.test.ts # unit tests
 Run the workflow from main, from the Actions tab or:
 
 ```sh
-gh workflow run skillwright-release.yml --repo osdlc/skillwright --ref main -f tag=skillwright/v0.3.8 -f dry_run=true
+gh workflow run skillwright-release.yml --repo osdlc/skillwright --ref main -f tag=skillwright/vX.Y.Z -f dry_run=true
 ```
+
+The tag must be one cut in this repository. The tags imported from
+osdlc/osdlc have no Cargo workspace in their trees, so a run on them fails in
+`notices` and `build`.
 
 A manual run refuses any ref but main, and builds the tag's own source and
 tooling. Published assets are never replaced: once a release has its

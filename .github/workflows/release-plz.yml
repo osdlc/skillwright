@@ -89,6 +89,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # release-plz stops its history walk at the tag of each crate's last
+      # release. The last releases from osdlc/osdlc have no other boundary
+      # here, so without their tags the walk reaches the imported commits,
+      # which have no Cargo workspace, and fails with a cargo error.
+      - name: Check the imported release tags are pushed
+        run: |
+          set -euo pipefail
+          missing=""
+          for tag in skillwright/v0.3.8 tradecraft-core/v0.40.1; do
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              missing="$missing $tag"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing release tags:$missing. Push the tags imported from osdlc/osdlc first; see 'Moving releases from osdlc/osdlc' in packages/rust/skillwright/RELEASING.md."
+            exit 1
+          fi
+
       # The wasm32 target is for the wasm rebuild below.
       - uses: ./.github/actions/rust-toolchain
         with:
@@ -113,10 +131,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      # The rest of this job rebuilds the wasm that packages/ts/tradecraft-wasm/wasm/
-      # commits, on the release branch. A version bump alone changes those
-      # bytes (see the `wasm` job in rust.yml), and release-plz cannot run
-      # build.sh. Without this the
+      # The rest of this job rebuilds the wasm that
+      # packages/ts/tradecraft-wasm/wasm/ commits, on the release branch. A
+      # version bump alone changes those bytes (see the `wasm` job in
+      # rust.yml), and release-plz cannot run build.sh. Without this the
       # `wasm` check fails on the release pull request. The commit is made
       # through the GitHub API, so its author is the App's bot account.
       # release-plz does not count a bot as a contributor, so the next push to

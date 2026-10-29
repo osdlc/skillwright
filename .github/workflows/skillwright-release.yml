@@ -29,7 +29,9 @@
 #
 # A manual run (workflow_dispatch) takes an existing tag and is a dry run
 # unless `dry_run` is unchecked. It must start from main. It builds the tag's
-# own source and tooling; every skillwright tag holds this tooling. A dry
+# own source and tooling. Every skillwright tag cut in this repository holds
+# this tooling; the tags imported from osdlc/osdlc do not build here, since
+# their trees have no Cargo workspace. A dry
 # run builds, packs, runs `npm publish --dry-run` and renders the formula,
 # but uploads, publishes and pushes nothing.
 #

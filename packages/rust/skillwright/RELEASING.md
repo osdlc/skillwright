@@ -120,37 +120,84 @@ than osdlc/skillwright.
 
 skillwright and tradecraft-core were released from osdlc/osdlc up to
 skillwright 0.3.8 and tradecraft-core 0.40.1. The owner moves the release
-here once, in this order:
+here once, in this order.
 
-1. Install the `osdlc-release` App on osdlc/skillwright.
-2. Create the four environments in the table above, with their secrets and
-   branch limits, and the tag ruleset. Do this before any release workflow
-   runs here.
-3. Push the release tags imported from osdlc/osdlc: `skillwright/v0.3.7`,
-   `skillwright/v0.3.8`, `tradecraft-core/v0.39.1`, `tradecraft-core/v0.39.2`,
-   `tradecraft-core/v0.40.0` and `tradecraft-core/v0.40.1`. release-plz stops
-   its history walk at the tag of each crate's current version. Without
-   those tags, `release-pr` walks into the imported commits, which have no
-   Cargo workspace, and fails.
-4. In osdlc/osdlc, stop releasing these crates: remove the `skillwright/v*`
-   branch policy from its environments and block new `skillwright/v*` and
-   `tradecraft-core/v*` tags there.
-5. Move the trusted publishers. On crates.io, for `skillwright` and
+1. **Hold both crates in osdlc/osdlc first.** This is a hard prerequisite
+   for every later step. Merge the osdlc/osdlc pull request that sets
+   `publish = false` in `packages/rust/skillwright/Cargo.toml` and
+   `packages/rust/tradecraft-core/Cargo.toml`, and adds a `[[package]]` entry with
+   `publish = false` and `release = false` for each to its
+   `release-plz.toml`. Blocking tags there is not enough. osdlc's
+   release-plz has `release_always = true`, and it publishes to crates.io
+   before it tags. A release run there could still publish either crate
+   from osdlc code, and the tag push would then fail, leaving a published
+   version with no tag in either repository. Once the trusted publishers
+   move, its `release-pr` would also keep bumping both crates and its
+   publish would fail.
+2. Install the `osdlc-release` App on osdlc/skillwright.
+3. Create the four environments in the table above, with their secrets and
+   branch limits, and the tag ruleset. The ruleset must let admins bypass
+   it, so that the owner can push the tags in the next step. Do all of
+   this before any release workflow runs here.
+4. Push the release tags imported from osdlc/osdlc. The tags of the same
+   names in osdlc/osdlc point at osdlc commits that are not in this
+   history, so do not copy those. Each tag here points at the imported
+   commit with the same tree:
+
+   | Tag | Commit in this repository |
+   |---|---|
+   | `skillwright/v0.3.7` | `c25536c3aff18186821687b3850cbad4e4a96564` |
+   | `skillwright/v0.3.8` | `4d758afdd23bb939d03f33799403b37ff4cde53d` |
+   | `tradecraft-core/v0.39.1` | `d42466145c624568b9b106fbcf2ea9c072109445` |
+   | `tradecraft-core/v0.39.2` | `1604eb3cb1b7ba767242bca6f72e69cd03b506e8` |
+   | `tradecraft-core/v0.40.0` | `742ba7954e0881de5962fb59c5233f7e302020a1` |
+   | `tradecraft-core/v0.40.1` | `4d758afdd23bb939d03f33799403b37ff4cde53d` |
+
+   From a clone with these tags (create any missing one with
+   `git tag -a <tag> <commit> -m "chore: Release package <crate> version <version>"`):
+
+   ```sh
+   git push origin skillwright/v0.3.7 skillwright/v0.3.8 \
+     tradecraft-core/v0.39.1 tradecraft-core/v0.39.2 \
+     tradecraft-core/v0.40.0 tradecraft-core/v0.40.1
+   ```
+
+   Then check that each tag on the remote peels to the commit in the
+   table:
+
+   ```sh
+   git ls-remote --tags origin 'skillwright/*' 'tradecraft-core/*' | grep '\^{}'
+   ```
+
+   release-plz stops its history walk at the tag of each crate's last
+   release. Without these tags, `release-pr` walks into the imported
+   commits, which have no Cargo workspace, and fails. Its first step checks
+   for them.
+5. In osdlc/osdlc, remove the `skillwright/v*` branch policy from its
+   environments and block new `skillwright/v*` and `tradecraft-core/v*` tags
+   there.
+6. Move the trusted publishers. On crates.io, for `skillwright` and
    `tradecraft-core`: add repository `osdlc/skillwright`, workflow
    `release-plz.yml`, environment `crates-io`, then delete the osdlc/osdlc
    entry. On npm, for `@osdlc/skillwright` and the four
    `@osdlc/skillwright-<os>-<cpu>` packages: set repository
    `osdlc/skillwright`, workflow `skillwright-release.yml`, environment `npm`.
-6. Merge the pull request that adds the release workflows. Then run both as
-   dry runs:
+7. Merge the pull request that adds the release workflows. Then dry-run
+   release-plz:
 
    ```sh
    gh workflow run release-plz.yml --repo osdlc/skillwright --ref main -f dry_run=true
-   gh workflow run skillwright-release.yml --repo osdlc/skillwright --ref main -f tag=skillwright/v0.3.8 -f dry_run=true
    ```
 
-7. Release the next version from this repository and check every channel
-   (see [Checking a release](#checking-a-release)).
+   Do not dry-run `skillwright-release.yml` at an imported tag. Those trees
+   have no Cargo workspace, so its `notices` and `build` jobs fail there.
+   Its first run is the tag cut in the next step.
+8. Release the next version from this repository: merge the release pull
+   request that `release-pr` opens. Expect skillwright 0.3.9 and
+   tradecraft-core 0.40.2, both published with trusted publishing: `plan`
+   should print `auth=oidc`. If it prints `token`, stop. That means a crate
+   looks unpublished, and the run would use the shared token. Then check
+   every channel (see [Checking a release](#checking-a-release)).
 
 ## First release of a crate
 
