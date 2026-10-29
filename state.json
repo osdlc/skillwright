@@ -49,9 +49,9 @@
       "line": 129,
       "title": "Step 3 does not say which commit each tag points at or how to push them",
       "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026847",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "1494f2121e706a336ea4519dfc83612ec25eac1a"
     },
     {
       "id": "r1-5",
