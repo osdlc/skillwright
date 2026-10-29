@@ -38,9 +38,9 @@
       "line": 48,
       "title": "Same failing dry-run example at skillwright/v0.3.8",
       "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026835",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "1494f2121e706a336ea4519dfc83612ec25eac1a"
     },
     {
       "id": "r1-4",
