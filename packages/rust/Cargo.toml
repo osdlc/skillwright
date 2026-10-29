@@ -1,0 +1,86 @@
+# Cargo workspace for the skillwright CLI and the tradecraft crates. Each
+# crate lives in packages/rust/<name>/ and is listed in `members` by hand, so a
+# stray directory never becomes a crate.
+#
+# A member opts in to the shared fields with `<key>.workspace = true` and to
+# the lints with `[lints] workspace = true`. Shared dependency versions go in
+# `[workspace.dependencies]`, and a member names them with
+# `<dep> = { workspace = true }`.
+#
+# The osdlc library crates (agent-adapt, markdown-link and the rest) come from
+# crates.io. They are developed in https://github.com/osdlc/osdlc. A change that
+# needs a new version of one is released there first, then bumped here. Do not
+# commit a `[patch.crates-io]` that points at a local checkout.
+[workspace]
+# resolver 3 picks dependency versions that support `rust-version` (the MSRV).
+resolver = "3"
+members = ["skillwright", "tradecraft-core", "tradecraft-typegen", "tradecraft-wasm"]
+
+[workspace.package]
+edition = "2024"
+# The MSRV. Edition 2024 needs 1.85, but slug-collate's let-chain needs 1.88
+# and serde-saphyr (config-layers) needs 1.89, so the floor is 1.89. CI builds
+# every member on it.
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/osdlc/skillwright"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.dependencies]
+# `derive` for the skillwright CLI's argument structs.
+clap = { version = "4.5.40", features = ["derive"] }
+# The RFC 3339 timestamps skillwright writes.
+chrono = { version = "0.4.41", default-features = false, features = ["clock", "std"] }
+# js-sys 0.3.103 is the release that pairs with wasm-bindgen 0.2.126.
+js-sys = "0.3.103"
+# The file watcher behind `skillwright build --watch`.
+notify = "8.2"
+# tradecraft-typegen reads Rust source with these.
+quote = "1.0.40"
+# 1.0.220 is the first serde that pins its own serde_derive.
+serde = { version = "1.0.220", features = ["derive"] }
+serde_json = "1.0.40"
+# 0.9.4 is the first serde_yaml that rejects a duplicate mapping key.
+serde_yaml = "0.9.4"
+sha2 = "0.10"
+# `full` for function bodies, `extra-traits` for `Debug` on `syn::Type`.
+syn = { version = "2.0.100", features = ["full", "extra-traits"] }
+tempfile = "3"
+thiserror = "2.0.17"
+# Must equal the version of the wasm-bindgen CLI that
+# tradecraft-wasm/build.sh runs, so it is pinned exactly.
+wasm-bindgen = "=0.2.126"
+
+# The osdlc library crates, from crates.io.
+agent-adapt = "0.19.2"
+config-layers = "0.8.0"
+etag-write = "0.2.4"
+frontmatter-lossless = "1.1.1"
+markdown-link = "0.5.2"
+markdown-relink = "0.1.7"
+path-guard = "0.3.2"
+tiered-dirs = "0.3.7"
+typed-git = "0.4.0"
+yaml-splice = "0.3.3"
+
+# The member crate others depend on, also named by version so a published
+# manifest points at crates.io. release-plz publishes it before skillwright.
+tradecraft-core = { path = "tradecraft-core", version = "0.40.1" }
+
+# The size profile tradecraft-wasm/build.sh builds with. A named profile
+# applies only to a build that asks for it, so no other crate or test run is
+# affected. A wasm file is downloaded before it runs, so size matters more than
+# speed. On tradecraft-wasm it cuts the built file from 1.8 MB to 1.1 MB.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+# Whole-program LTO, with one codegen unit so it sees the whole program. This
+# removes the code of dependencies the wasm never calls.
+lto = "fat"
+codegen-units = 1
+# wasm32-unknown-unknown has no unwinder, so unwind tables are dead weight.
+panic = "abort"
+strip = "symbols"
