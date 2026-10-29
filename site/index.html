@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>skillwright</title>
+    <meta
+      name="description"
+      content="Write each coding-agent skill once, as a markdown note. skillwright publishes it to Claude Code, Codex, Cursor and Pi, and checks for drift."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      :root {
+        --paper: #f2ede3;
+        --paper-2: #e9e2d4;
+        --ink: #1c1a16;
+        --ink-2: #4a453c;
+        --ink-3: #686054;
+        --rule: #cfc5b3;
+        --accent: #b8431b;
+        --accent-ink: #fff8f0;
+        --term-bg: #1c1a16;
+        --term-fg: #ece5d6;
+        --term-dim: #9c9282;
+        --term-accent: #e8875a;
+        --serif:
+          'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Charter,
+          'Bitstream Charter', Georgia, serif;
+        --mono:
+          ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'Cascadia Mono', 'DejaVu Sans Mono',
+          Consolas, monospace;
+        --wrap: 68rem;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --paper: #15130f;
+          --paper-2: #1e1b16;
+          --ink: #ece5d6;
+          --ink-2: #c3b9a7;
+          --ink-3: #8d8473;
+          --rule: #3a352c;
+          --accent: #e8875a;
+          --accent-ink: #15130f;
+          --term-bg: #0c0b09;
+          --term-fg: #ece5d6;
+          --term-dim: #8d8473;
+          --term-accent: #e8875a;
+          color-scheme: dark;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font: 1.0625rem/1.6 var(--serif);
+        padding-inline: max(1.25rem, env(safe-area-inset-left, 0px));
+        padding-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
+        /* faint ruled-paper texture */
+        background-image: repeating-linear-gradient(
+          to bottom,
+          transparent 0,
+          transparent 31px,
+          color-mix(in srgb, var(--rule) 35%, transparent) 31px,
+          transparent 32px
+        );
+      }
+      a {
+        color: inherit;
+        text-decoration-color: var(--accent);
+        text-underline-offset: 0.2em;
+        text-decoration-thickness: 1px;
+      }
+      a:hover {
+        color: var(--accent);
+      }
+      code,
+      pre,
+      kbd {
+        font-family: var(--mono);
+        font-size: 0.86em;
+      }
+      .wrap {
+        max-width: var(--wrap);
+        margin-inline: auto;
+      }
+
+      /* masthead */
+      .mast {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        flex-wrap: wrap;
+        border-bottom: 2px solid var(--ink);
+        padding-block: 1.25rem 0.6rem;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        color: var(--ink-2);
+      }
+      .mast .mark {
+        font-weight: 700;
+        color: var(--ink);
+        letter-spacing: 0;
+        font-size: 0.95rem;
+      }
+      .mast .mark span {
+        color: var(--accent);
+      }
+      .mast nav {
+        display: flex;
+        gap: 1.25rem;
+        flex-wrap: wrap;
+      }
+      .mast nav a {
+        text-decoration: none;
+      }
+      .mast nav a:hover {
+        text-decoration: underline;
+      }
+
+      /* hero */
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.1fr);
+        gap: 3rem;
+        padding-block: 4rem 4.5rem;
+        align-items: start;
+      }
+      .kicker {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--accent);
+        margin: 0 0 1.1rem;
+      }
+      h1 {
+        font-weight: 400;
+        font-size: clamp(2.6rem, 6.2vw, 4.6rem);
+        line-height: 0.98;
+        letter-spacing: -0.02em;
+        margin: 0 0 1.5rem;
+      }
+      h1 em {
+        font-style: italic;
+        color: var(--accent);
+      }
+      .lede {
+        font-size: 1.2rem;
+        color: var(--ink-2);
+        max-width: 32rem;
+        margin: 0 0 2rem;
+      }
+      .install {
+        display: flex;
+        align-items: stretch;
+        max-width: 30rem;
+        border: 1.5px solid var(--ink);
+        background: var(--paper);
+        box-shadow: 5px 5px 0 var(--ink);
+      }
+      .install .ps {
+        font-family: var(--mono);
+        padding: 0.85rem 0.75rem;
+        color: var(--accent);
+        border-right: 1.5px solid var(--ink);
+      }
+      .install code {
+        padding: 0.85rem 1rem;
+        font-size: 0.9rem;
+        overflow-wrap: anywhere;
+        flex: 1;
+      }
+      .alt {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--ink-3);
+        margin: 1.1rem 0 0;
+      }
+      .alt a {
+        color: var(--ink-2);
+      }
+
+      .term {
+        background: var(--term-bg);
+        color: var(--term-fg);
+        border-radius: 6px;
+        overflow: hidden;
+        box-shadow:
+          0 1px 0 var(--rule),
+          0 24px 48px -24px rgb(0 0 0 / 0.45);
+      }
+      .term .bar {
+        display: flex;
+        gap: 6px;
+        padding: 0.7rem 0.9rem;
+        border-bottom: 1px solid rgb(255 255 255 / 0.08);
+      }
+      .term .bar i {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: rgb(255 255 255 / 0.16);
+      }
+      .term .bar b {
+        margin-left: auto;
+        font: 0.72rem var(--mono);
+        color: var(--term-dim);
+        font-weight: 400;
+      }
+      .term pre {
+        margin: 0;
+        padding: 1.1rem 1.2rem 1.3rem;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        line-height: 1.65;
+        font-size: 0.8rem;
+      }
+      .term .p {
+        color: var(--term-accent);
+        user-select: none;
+      }
+      .term .c {
+        color: var(--term-dim);
+      }
+      .term .o {
+        color: var(--term-fg);
+        opacity: 0.82;
+      }
+      .term .ok {
+        color: #9fc48a;
+      }
+
+      /* sections */
+      section {
+        border-top: 1px solid var(--ink);
+        padding-block: 3.25rem;
+      }
+      .sec-head {
+        display: grid;
+        grid-template-columns: 6rem minmax(0, 1fr);
+        gap: 1rem;
+        margin-bottom: 2rem;
+      }
+      .num {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        color: var(--accent);
+        padding-top: 0.55rem;
+        letter-spacing: 0.06em;
+      }
+      h2 {
+        font-weight: 400;
+        font-size: clamp(1.8rem, 3.6vw, 2.5rem);
+        line-height: 1.1;
+        margin: 0;
+        letter-spacing: -0.01em;
+      }
+      .sec-head p {
+        color: var(--ink-2);
+        margin: 0.6rem 0 0;
+        max-width: 40rem;
+      }
+      .body {
+        margin-left: 7rem;
+      }
+
+      /* how it works */
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border: 1.5px solid var(--ink);
+      }
+      .step {
+        padding: 1.4rem 1.4rem 1.6rem;
+        border-right: 1.5px solid var(--ink);
+        position: relative;
+      }
+      .step:last-child {
+        border-right: 0;
+      }
+      .step .n {
+        font: 700 0.75rem var(--mono);
+        color: var(--accent);
+        letter-spacing: 0.1em;
+      }
+      .step h3 {
+        font-weight: 400;
+        font-size: 1.35rem;
+        margin: 0.35rem 0 0.5rem;
+      }
+      .step p {
+        margin: 0;
+        color: var(--ink-2);
+        font-size: 0.98rem;
+      }
+      .step code {
+        color: var(--ink);
+        background: var(--paper-2);
+        padding: 0.05em 0.3em;
+      }
+      .fan {
+        margin-top: 2rem;
+        overflow-x: auto;
+      }
+      .fan svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .fan .fan-v {
+        display: none;
+        max-width: 24rem;
+        margin-inline: auto;
+      }
+      .fan text {
+        font-family: var(--mono);
+        fill: var(--ink);
+      }
+      .fan .dim {
+        fill: var(--ink-3);
+      }
+      .fan .box {
+        fill: var(--paper);
+        stroke: var(--ink);
+        stroke-width: 1.5;
+      }
+      .fan .src {
+        fill: var(--accent);
+      }
+      .fan .src-t {
+        fill: var(--accent-ink);
+      }
+      .fan .line {
+        stroke: var(--ink);
+        stroke-width: 1.25;
+        fill: none;
+      }
+      .fan .drift {
+        stroke: var(--accent);
+        stroke-width: 1.25;
+        fill: none;
+        stroke-dasharray: 4 4;
+      }
+
+      /* harness table */
+      .tbl {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 32rem;
+        font-size: 0.98rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.8rem 1rem 0.8rem 0;
+        border-bottom: 1px solid var(--rule);
+        vertical-align: top;
+      }
+      th {
+        font: 0.74rem var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--ink-3);
+        font-weight: 400;
+        border-bottom: 1.5px solid var(--ink);
+      }
+      td:first-child {
+        font-size: 1.2rem;
+        white-space: nowrap;
+      }
+      td .y {
+        color: var(--accent);
+        font-family: var(--mono);
+      }
+      td .n {
+        color: var(--ink-3);
+        font-family: var(--mono);
+      }
+      .note {
+        font-size: 0.9rem;
+        color: var(--ink-3);
+        margin: 1rem 0 0;
+      }
+
+      /* install */
+      .channels {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1.25rem;
+      }
+      .ch {
+        border: 1.5px solid var(--ink);
+        background: var(--paper);
+      }
+      .ch header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: 0.7rem 1rem;
+        border-bottom: 1px solid var(--rule);
+      }
+      .ch header strong {
+        font-weight: 400;
+        font-size: 1.15rem;
+      }
+      .ch header span {
+        font: 0.72rem var(--mono);
+        color: var(--ink-3);
+      }
+      .ch pre {
+        margin: 0;
+        padding: 0.9rem 1rem 1rem;
+        overflow-x: auto;
+        line-height: 1.7;
+      }
+      .ch pre .c {
+        color: var(--ink-3);
+      }
+
+      .ch.long pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      /* soon */
+      .soon {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        columns: 2;
+        column-gap: 3rem;
+      }
+      .soon li {
+        break-inside: avoid;
+        padding: 0.9rem 0;
+        border-bottom: 1px solid var(--rule);
+      }
+      .soon li strong {
+        display: block;
+        font-weight: 400;
+        font-size: 1.15rem;
+      }
+      .soon li span {
+        color: var(--ink-2);
+        font-size: 0.95rem;
+      }
+
+      /* footer */
+      footer {
+        border-top: 2px solid var(--ink);
+        padding-block: 2rem 3rem;
+        display: flex;
+        justify-content: space-between;
+        gap: 2rem;
+        flex-wrap: wrap;
+      }
+      footer ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        font-family: var(--mono);
+        font-size: 0.85rem;
+      }
+      footer p {
+        margin: 0;
+        color: var(--ink-3);
+        font-size: 0.9rem;
+        max-width: 30rem;
+      }
+
+      /* load reveal */
+      @media (prefers-reduced-motion: no-preference) {
+        .rise {
+          animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+        }
+        .d1 {
+          animation-delay: 0.05s;
+        }
+        .d2 {
+          animation-delay: 0.15s;
+        }
+        .d3 {
+          animation-delay: 0.25s;
+        }
+        .d4 {
+          animation-delay: 0.4s;
+        }
+        @keyframes rise {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: none;
+          }
+        }
+      }
+
+      @media (max-width: 860px) {
+        .hero {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2.5rem;
+          padding-block: 2.75rem 3rem;
+        }
+        .sec-head {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 0.25rem;
+        }
+        .num {
+          padding-top: 0;
+        }
+        .body {
+          margin-left: 0;
+        }
+        .flow {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .step {
+          border-right: 0;
+          border-bottom: 1.5px solid var(--ink);
+        }
+        .step:last-child {
+          border-bottom: 0;
+        }
+        .channels {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .soon {
+          columns: 1;
+        }
+        .mast nav {
+          gap: 0.9rem;
+        }
+        .fan .fan-h {
+          display: none;
+        }
+        .fan .fan-v {
+          display: block;
+        }
+        .ch pre {
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+        }
+        .install code {
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
+        table {
+          min-width: 0;
+          font-size: 0.9rem;
+        }
+        td:first-child {
+          font-size: 1.05rem;
+        }
+        th,
+        td {
+          padding-right: 0.6rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="mast">
+        <!-- Why the ignore below: htmlWhitespaceSensitivity=ignore would split the dot span from the wordmark and add a visible space -->
+        <!-- prettier-ignore -->
+        <div class="mark">skillwright<span>.</span></div>
+        <nav aria-label="Sections">
+          <a href="#how">How it works</a>
+          <a href="#harnesses">Harnesses</a>
+          <a href="#install">Install</a>
+          <a href="https://github.com/osdlc/skillwright">GitHub</a>
+        </nav>
+      </header>
+
+      <!-- Why the ignore below: htmlWhitespaceSensitivity=ignore would split inline code from the punctuation after it ("new ,") and reflow the pre blocks -->
+      <!-- prettier-ignore -->
+      <main>
+        <div class="hero">
+          <div>
+            <p class="kicker rise d1">Open source &middot; part of osdlc</p>
+            <h1 class="rise d2">Write a skill once.<br /><em>Ship it to every agent.</em></h1>
+            <p class="lede rise d3">skillwright is a command-line tool for coding-agent skills. You keep each skill as a markdown note in a vault. skillwright publishes the notes into the formats of Claude Code, Codex, Cursor and Pi, and tells you when the output has drifted.</p>
+            <div class="install rise d4" role="group" aria-label="Install command">
+              <span class="ps" aria-hidden="true">$</span>
+              <code>brew install osdlc/tap/skillwright</code>
+            </div>
+            <p class="alt rise d4">Also on npm, crates.io and as a curl installer; see <a href="#install">all install options</a>. macOS and Linux.</p>
+          </div>
+
+          <div class="term rise d3" aria-label="Example terminal session">
+            <div class="bar"><i></i><i></i><i></i><b>my-project</b></div>
+<pre><span class="c"># one note in a vault</span>
+<span class="p">$ </span>cat my-vault/skills/code-review.md
+<span class="o">---
+description: Reviews a diff for correctness bugs.
+---
+Read the diff. Report each bug with the line and a fix.</span>
+
+<span class="p">$ </span>skillwright list --vault my-vault
+<span class="o">skills/code-review.md  skill  code-review  -  every destination · Reviews a diff for correctness bugs.
+1 skill</span>
+
+<span class="p">$ </span>skillwright publish skills/code-review.md \
+    --vault my-vault --to my-project \
+    --target claude-code --yes
+<span class="o">publishing skills/code-review.md -> /path/to/my-project (claude-code)
+.skillwright/manifest.json  written
+.claude/skills/code-review/SKILL.md  written · first-write</span>
+<span class="ok">2 written</span></pre>
+          </div>
+        </div>
+
+        <section id="how">
+          <div class="sec-head">
+            <div class="num">01</div>
+            <div>
+              <h2>How it works</h2>
+              <p>One source of truth. Each harness gets the files it expects. A check tells you when they stop matching.</p>
+            </div>
+          </div>
+          <div class="body">
+            <div class="flow">
+              <div class="step">
+                <div class="n">VAULT</div>
+                <h3>Write notes</h3>
+                <p>A vault is a folder of markdown notes. Each skill, plugin or marketplace is a note with frontmatter. <code>new</code>, <code>adopt</code>, <code>move</code> and <code>rename</code> author and reorganise the vault; <code>rename</code> rewrites every link to the renamed note.</p>
+              </div>
+              <div class="step">
+                <div class="n">BUILD</div>
+                <h3>Render per harness</h3>
+                <p><code>publish</code> writes notes to their destinations. <code>build</code> renders the vault into its marketplace roots and swaps them into place. <code>--dry-run</code> shows the plan first.</p>
+              </div>
+              <div class="step">
+                <div class="n">CHECK</div>
+                <h3>Catch drift</h3>
+                <p><code>check</code> reports the marketplace's drift against the vault. It writes nothing and exits 1 on drift, so it fits in CI. <code>status</code> shows each note's state at each destination.</p>
+              </div>
+            </div>
+
+            <div class="fan" aria-hidden="true">
+              <svg class="fan-h" viewBox="0 0 720 230">
+                <rect class="src" x="10" y="85" width="170" height="60" />
+                <text class="src-t" x="95" y="112" text-anchor="middle" font-size="13">skills/</text>
+                <text class="src-t" x="95" y="130" text-anchor="middle" font-size="11">code-review.md</text>
+                <path class="line" d="M180 115 H 270" />
+                <rect class="box" x="270" y="95" width="120" height="40" />
+                <text x="330" y="120" text-anchor="middle" font-size="13">build</text>
+                <path class="line" d="M390 115 C 440 115, 440 30, 500 30" />
+                <path class="line" d="M390 115 C 440 115, 440 87, 500 87" />
+                <path class="line" d="M390 115 C 440 115, 440 143, 500 143" />
+                <path class="line" d="M390 115 C 440 115, 440 200, 500 200" />
+                <rect class="box" x="500" y="12" width="200" height="36" /><text x="516" y="35" font-size="13">Claude Code</text>
+                <rect class="box" x="500" y="69" width="200" height="36" /><text x="516" y="92" font-size="13">Codex</text>
+                <rect class="box" x="500" y="125" width="200" height="36" /><text x="516" y="148" font-size="13">Cursor</text>
+                <rect class="box" x="500" y="182" width="200" height="36" /><text x="516" y="205" font-size="13">Pi</text>
+                <path class="drift" d="M600 218 V 226 H 95 V 145" />
+                <text class="dim" x="300" y="222" font-size="11" text-anchor="middle">check: output vs vault</text>
+              </svg>
+              <svg class="fan-v" viewBox="0 0 340 330">
+                <rect class="src" x="85" y="8" width="170" height="54" />
+                <text class="src-t" x="170" y="31" text-anchor="middle" font-size="13">skills/</text>
+                <text class="src-t" x="170" y="49" text-anchor="middle" font-size="11">code-review.md</text>
+                <path class="line" d="M170 62 V 100" />
+                <rect class="box" x="110" y="100" width="120" height="40" />
+                <text x="170" y="125" text-anchor="middle" font-size="13">build</text>
+                <path class="line" d="M170 140 V 260 M160 200 H 180 M160 260 H 180" />
+                <rect class="box" x="10" y="180" width="150" height="40" /><text x="85" y="205" text-anchor="middle" font-size="13">Claude Code</text>
+                <rect class="box" x="180" y="180" width="150" height="40" /><text x="255" y="205" text-anchor="middle" font-size="13">Codex</text>
+                <rect class="box" x="10" y="240" width="150" height="40" /><text x="85" y="265" text-anchor="middle" font-size="13">Cursor</text>
+                <rect class="box" x="180" y="240" width="150" height="40" /><text x="255" y="265" text-anchor="middle" font-size="13">Pi</text>
+                <path class="drift" d="M170 280 V 300 H 335 V 35 H 255" />
+                <text class="dim" x="170" y="320" font-size="11" text-anchor="middle">check: output vs vault</text>
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        <section id="harnesses">
+          <div class="sec-head">
+            <div class="num">02</div>
+            <div>
+              <h2>Supported harnesses</h2>
+              <p>Four coding-agent tools today. Each gets its own on-disk format.</p>
+            </div>
+          </div>
+          <div class="body">
+            <div class="tbl">
+              <table>
+                <thead>
+                  <tr><th>Harness</th><th>Publish &amp; build</th><th>Hooks</th><th><code>harness install</code></th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>Claude Code</td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td><span class="y">yes</span></td></tr>
+                  <tr><td>Codex</td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td><span class="y">yes</span></td></tr>
+                  <tr><td>Cursor</td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td><span class="y">yes</span></td></tr>
+                  <tr><td>Pi</td><td><span class="y">yes</span></td><td><span class="n">no</span></td><td><span class="n">no</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="note">Hooks are written once as a Claude Code <code>hooks.json</code>. <code>build</code> renders them in each harness's shape and writes a gap report of anything a harness cannot carry. <code>harness install</code> registers the built marketplace through the harness's own <code>plugin</code> command.</p>
+          </div>
+        </section>
+
+        <section id="install">
+          <div class="sec-head">
+            <div class="num">03</div>
+            <div>
+              <h2>Install</h2>
+              <p>macOS and Linux, arm64 and x86_64. Windows is not supported yet.</p>
+            </div>
+          </div>
+          <div class="body">
+            <div class="channels">
+              <div class="ch">
+                <header><strong>Homebrew</strong><span>osdlc/tap</span></header>
+<pre>brew tap osdlc/tap
+brew trust osdlc/tap
+brew install osdlc/tap/skillwright</pre>
+              </div>
+              <div class="ch">
+                <header><strong>npm</strong><span>@osdlc/skillwright</span></header>
+<pre>npm install --global @osdlc/skillwright
+<span class="c"># or run it once</span>
+npx @osdlc/skillwright --help</pre>
+              </div>
+              <div class="ch">
+                <header><strong>cargo</strong><span>crates.io</span></header>
+<pre>cargo install skillwright
+<span class="c"># or fetch the prebuilt binary</span>
+cargo binstall skillwright</pre>
+              </div>
+              <div class="ch long">
+                <header><strong>install.sh</strong><span>GitHub Release</span></header>
+<pre>curl -fsSL https://github.com/osdlc/osdlc/releases/download/skillwright/v0.3.7/install.sh | sh</pre>
+              </div>
+            </div>
+            <p class="note"><code>install.sh</code> checks the binary against the release's <code>SHA256SUMS</code> and installs to <code>~/.local/bin</code>, or to the folder given with <code>--to</code>. The tool was renamed from <code>tradecraft</code> in 0.3.7; the release notes list what to rename.</p>
+          </div>
+        </section>
+
+        <section id="planned">
+          <div class="sec-head">
+            <div class="num">04</div>
+            <div>
+              <h2>Planned</h2>
+              <p>Not built yet.</p>
+            </div>
+          </div>
+          <div class="body">
+            <ul class="soon">
+              <li><strong>Skill plugin</strong><span>A skill plugin that teaches coding agents to use skillwright.</span></li>
+              <li><strong>Marketplace targeting</strong><span>Choose which marketplace a note is published to.</span></li>
+              <li><strong>Marketplace site generator</strong><span>A static website for a marketplace, built from a vault.</span></li>
+              <li><strong>Web UI</strong><span>Served by <code>skillwright ui</code> from the binary.</span></li>
+              <li><strong>Editor plugins</strong><span>VS Code and IntelliJ. Obsidian is under consideration.</span></li>
+              <li><strong>Harness reference</strong><span>How the harnesses differ, versioned over time.</span></li>
+            </ul>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <ul>
+          <li>
+            <a href="https://github.com/osdlc/skillwright">GitHub</a>
+          </li>
+          <li><a href="https://crates.io/crates/skillwright">crates.io</a></li>
+          <li><a href="https://www.npmjs.com/package/@osdlc/skillwright">npm</a></li>
+          <li>
+            <a href="https://github.com/osdlc/osdlc/releases?q=skillwright">Releases</a>
+          </li>
+        </ul>
+        <p>skillwright is part of osdlc. Licensed under MIT or Apache-2.0, at your option.</p>
+      </footer>
+    </div>
+  </body>
+</html>
