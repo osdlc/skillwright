@@ -15,7 +15,7 @@
       "path": "packages/rust/skillwright/RELEASING.md",
       "line": 135,
       "title": "Step 4 does not stop osdlc/osdlc from publishing the crates to crates.io",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026819",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -26,7 +26,7 @@
       "path": "packages/rust/skillwright/RELEASING.md",
       "line": 149,
       "title": "The skillwright-release dry run at skillwright/v0.3.8 fails: the imported tag has no Cargo workspace",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026829",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -37,7 +37,7 @@
       "path": "packages/rust/skillwright/release/README.md",
       "line": 48,
       "title": "Same failing dry-run example at skillwright/v0.3.8",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026835",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -48,7 +48,7 @@
       "path": "packages/rust/skillwright/RELEASING.md",
       "line": 129,
       "title": "Step 3 does not say which commit each tag points at or how to push them",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026847",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -59,7 +59,7 @@
       "path": ".github/workflows/release-plz.yml",
       "line": 97,
       "title": "release-pr has no clear failure when the imported tags are missing",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026855",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -70,7 +70,7 @@
       "path": ".github/workflows/skillwright-release.yml",
       "line": 32,
       "title": "Comment says every skillwright tag holds this tooling; the imported tags do not",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026863",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -81,7 +81,7 @@
       "path": "packages/rust/skillwright/RELEASING.md",
       "line": 152,
       "title": "Step 7 does not name the expected first versions",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026867",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -92,7 +92,7 @@
       "path": ".github/workflows/release-plz.yml",
       "line": 119,
       "title": "Comment rewrap leftover",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026875",
       "status": "open",
       "reason": null,
       "fixedIn": null
