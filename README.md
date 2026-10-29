@@ -19,9 +19,8 @@ cargo install skillwright
 - `site/`: the project site.
 - `talks/`: talk material.
 
-Releases are currently built from osdlc/osdlc until the move to this repository
-completes. See
-[RELEASING.md](https://github.com/osdlc/osdlc/blob/main/packages/rust/skillwright/RELEASING.md).
+Releases are built from this repository. See
+[RELEASING.md](packages/rust/skillwright/RELEASING.md).
 
 ## Licence
 

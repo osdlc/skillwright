@@ -16,8 +16,7 @@ The whole release process, from release PR to install checks, is in
 | `about.toml` | cargo-about's accepted licenses and targets, for `THIRD_PARTY_NOTICES.md` |
 
 The Homebrew formula is rendered by
-[`scripts/homebrew-formula.ts`](../../../../scripts/homebrew-formula.ts), which
-any osdlc CLI can use.
+[`scripts/homebrew-formula.ts`](../../../../scripts/homebrew-formula.ts).
 
 ## What a release ships
 
@@ -46,7 +45,7 @@ node --test packages/rust/skillwright/release/dist.test.ts # unit tests
 Run the workflow from main, from the Actions tab or:
 
 ```sh
-gh workflow run skillwright-release.yml --repo osdlc/osdlc --ref main -f tag=skillwright/v0.3.7 -f dry_run=true
+gh workflow run skillwright-release.yml --repo osdlc/skillwright --ref main -f tag=skillwright/v0.3.8 -f dry_run=true
 ```
 
 A manual run refuses any ref but main, and builds the tag's own source and
@@ -67,5 +66,5 @@ node packages/rust/skillwright/release/dist.ts stage
 
 It hands placeholder packages to `scripts/stage-npm-package.ts`. For each of
 the five packages that script publishes a `0.0.1-stage` placeholder under the
-`stage` tag, then adds a trusted publisher: repository `osdlc/osdlc`, workflow
+`stage` tag, then adds a trusted publisher: repository `osdlc/skillwright`, workflow
 `skillwright-release.yml`, environment `npm`. A step already done is skipped.

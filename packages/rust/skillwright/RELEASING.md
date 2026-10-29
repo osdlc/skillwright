@@ -65,7 +65,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     actor Owner
-    participant GH as GitHub (osdlc/osdlc)
+    participant GH as GitHub (osdlc/skillwright)
     participant RP as release-plz.yml
     participant CR as crates.io
     participant SR as skillwright-release.yml
@@ -93,7 +93,7 @@ environment, and the one-time setup below. Everything else is automatic.
 ## Required environments and secrets
 
 The owner sets these up once, before the first release. They are in
-osdlc/osdlc. Values live only in GitHub settings.
+osdlc/skillwright. Values live only in GitHub settings.
 
 | Environment | Used by | Holds | Limited to |
 |---|---|---|---|
@@ -106,12 +106,51 @@ osdlc/osdlc. Values live only in GitHub settings.
 
 The `osdlc-release` App needs these permissions:
 
-- osdlc/osdlc: contents write and pull-requests write (see the
+- osdlc/skillwright: contents write and pull-requests write (see the
   `permission-` inputs in `release-plz.yml`);
 - osdlc/homebrew-tap: contents write.
 
 A tag ruleset on `*/v*` lets only the
 App and admins create release tags.
+
+The release workflows stop at once when they run in any repository other
+than osdlc/skillwright.
+
+## Moving releases from osdlc/osdlc
+
+skillwright and tradecraft-core were released from osdlc/osdlc up to
+skillwright 0.3.8 and tradecraft-core 0.40.1. The owner moves the release
+here once, in this order:
+
+1. Install the `osdlc-release` App on osdlc/skillwright.
+2. Create the four environments in the table above, with their secrets and
+   branch limits, and the tag ruleset. Do this before any release workflow
+   runs here.
+3. Push the release tags imported from osdlc/osdlc: `skillwright/v0.3.7`,
+   `skillwright/v0.3.8`, `tradecraft-core/v0.39.1`, `tradecraft-core/v0.39.2`,
+   `tradecraft-core/v0.40.0` and `tradecraft-core/v0.40.1`. release-plz stops
+   its history walk at the tag of each crate's current version. Without
+   those tags, `release-pr` walks into the imported commits, which have no
+   Cargo workspace, and fails.
+4. In osdlc/osdlc, stop releasing these crates: remove the `skillwright/v*`
+   branch policy from its environments and block new `skillwright/v*` and
+   `tradecraft-core/v*` tags there.
+5. Move the trusted publishers. On crates.io, for `skillwright` and
+   `tradecraft-core`: add repository `osdlc/skillwright`, workflow
+   `release-plz.yml`, environment `crates-io`, then delete the osdlc/osdlc
+   entry. On npm, for `@osdlc/skillwright` and the four
+   `@osdlc/skillwright-<os>-<cpu>` packages: set repository
+   `osdlc/skillwright`, workflow `skillwright-release.yml`, environment `npm`.
+6. Merge the pull request that adds the release workflows. Then run both as
+   dry runs:
+
+   ```sh
+   gh workflow run release-plz.yml --repo osdlc/skillwright --ref main -f dry_run=true
+   gh workflow run skillwright-release.yml --repo osdlc/skillwright --ref main -f tag=skillwright/v0.3.8 -f dry_run=true
+   ```
+
+7. Release the next version from this repository and check every channel
+   (see [Checking a release](#checking-a-release)).
 
 ## First release of a crate
 
@@ -136,7 +175,7 @@ flowchart LR
    crate is waiting on a trusted-publishing release. To check, compare the
    versions on main with crates.io (`plan` prints the same table).
 3. The release run uses `CARGO_REGISTRY_TOKEN`.
-4. The owner adds a trusted publisher on crates.io: repository `osdlc/osdlc`,
+4. The owner adds a trusted publisher on crates.io: repository `osdlc/skillwright`,
    workflow `release-plz.yml`, environment `crates-io`.
 
 **npm**, before the first tag: an npm owner of `@osdlc` stages a
@@ -157,7 +196,7 @@ brew install osdlc/tap/skillwright && skillwright --version
 npm i -g @osdlc/skillwright && skillwright --version
 cargo binstall -y skillwright && skillwright --version
 cargo install skillwright && skillwright --version
-curl -fsSL https://github.com/osdlc/osdlc/releases/download/skillwright/vX.Y.Z/install.sh | sh
+curl -fsSL https://github.com/osdlc/skillwright/releases/download/skillwright/vX.Y.Z/install.sh | sh
 ```
 
 Each prints `skillwright X.Y.Z`. Homebrew 7 needs a third-party tap to be
@@ -177,7 +216,7 @@ trusted once, so the tap and trust commands come before `brew install`.
 Re-run only the failed jobs:
 
 ```sh
-gh run rerun <run-id> --repo osdlc/osdlc --failed
+gh run rerun <run-id> --repo osdlc/skillwright --failed
 ```
 
 Published assets are never replaced, so a re-run ships the same bytes. A
