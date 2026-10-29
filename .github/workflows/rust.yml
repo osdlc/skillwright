@@ -337,6 +337,25 @@ jobs:
             rm -f "$cfg"
           fi
 
+      # release-plz stops its history walk at the tag of each crate's current
+      # version. The versions imported from osdlc/osdlc were released there,
+      # so until their tags are pushed here the walk runs into the imported
+      # commits, which have no Cargo workspace, and fails. This adds the
+      # missing tags in the throwaway checkout only. It does nothing once the
+      # tags exist.
+      - name: Tag the imported releases when their tags are missing
+        env:
+          # The import of osdlc/osdlc b582e6ad7a, which released both versions.
+          IMPORTED: 4d758afdd23bb939d03f33799403b37ff4cde53d
+        run: |
+          set -euo pipefail
+          for tag in skillwright/v0.3.8 tradecraft-core/v0.40.1; do
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              git tag "$tag" "$IMPORTED"
+              echo "::notice::$tag is not in this repository yet; tagged $IMPORTED for this run only."
+            fi
+          done
+
       - name: release-plz update
         run: release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
 
