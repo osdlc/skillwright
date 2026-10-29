@@ -1,0 +1,50 @@
+# Checks the TypeScript side of the repository. The `ts` job is the aggregate
+# that a ruleset can require; later PRs add their jobs to `needs`.
+#
+# Every action is pinned to a commit SHA; the comment names its release.
+name: ts
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ts-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Reads the pnpm version from `packageManager` in the root package.json.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm run format:check
+
+  ts:
+    if: always()
+    needs: [format]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All TypeScript jobs passed
+        run: test "${{ needs.format.result }}" = success
