@@ -1,12 +1,134 @@
 {
   "schema": 1,
   "pr": 3,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "44752e78359e72a1869a39bdb02288108e56e24e",
+  "base": "14d0a72ee5f72727ab9944a195427bc171160e99",
+  "round": 1,
   "claim": {
     "owner": "KellyMBP.local:unknown-cbb9jw",
     "at": "2026-10-29T23:41:22.026Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": ".github/workflows/rust.yml",
+      "line": 169,
+      "title": "minimal-versions job dropped for published crates",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": ".github/workflows/rust.yml",
+      "line": 346,
+      "title": "fabricated-tag step makes the dry run pass even if the real tags are never pushed",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": ".github/workflows/rust.yml",
+      "line": 147,
+      "title": "Windows clippy and typegen/wasm tests dropped without a note",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": ".github/workflows/rust.yml",
+      "line": 289,
+      "title": "RELEASE_PLZ_VERSION hard-coded; osdlc read it from release-plz.yml",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "tag-to-commit map for the six tags is not written down",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/skillwright/README.md",
+      "line": 154,
+      "title": "relative link ../tiered-dirs is broken",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/README.md",
+      "line": 11,
+      "title": "relative link ../agent-adapt is broken",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 342,
+      "title": "doc points at packages/rust/agent-adapt, not in this repo",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "packages/rust/skillwright/release/templates/launcher/README.md",
+      "line": 23,
+      "title": "says the crate README but links the repo root README",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "semver-version check dropped",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "PR description: imported history starts before #467",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
