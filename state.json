@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 5,
-  "head": "f9dd3ac09728f98ec9a60a09298f8f625e74e7be",
-  "base": "44752e78359e72a1869a39bdb02288108e56e24e",
-  "round": 1,
+  "head": "1494f2121e706a336ea4519dfc83612ec25eac1a",
+  "base": "cb04200fb5888a25517d487ff4d11b8fecf0e05d",
+  "round": 2,
   "claim": {
     "owner": "KellyMBP.local:unknown-r7w3ka",
     "at": "2026-10-29T23:57:48.257Z"
@@ -93,6 +93,17 @@
       "line": 119,
       "title": "Comment rewrap leftover",
       "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026875",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": ".github/workflows/release-plz.yml",
+      "line": 100,
+      "title": "Tag check tests that the tag exists, not that it points at the table commit",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
