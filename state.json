@@ -1,12 +1,57 @@
 {
   "schema": 1,
   "pr": 1,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "2f314e5cb8931e21f49f813eec7becfecc783a46",
+  "base": "74fcd20c3d554930418c6aa78fa7268228ed1e7a",
+  "round": 1,
   "claim": {
     "owner": "KellyMBP.local:rv-k3x9qa",
     "at": "2026-10-29T21:56:30.419Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "README.md",
+      "line": 1,
+      "title": "README does not say what skillwright is or name the licence",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "README.md",
+      "line": 13,
+      "title": "Layout text will be stale after the next PR",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": ".prettierrc",
+      "line": 1,
+      "title": "Markdown is not format-checked (intended, but undocumented here)",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": ".github/workflows/ts.yml",
+      "line": 16,
+      "title": "No concurrency group or job timeout",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
