@@ -89,7 +89,9 @@ export async function unpublishedPatch(
   held: Set<string>,
   lookup: (name: string) => Promise<IndexEntry[] | null> = indexEntries,
 ): Promise<string> {
-  const members = metadata.workspace_members.map((id) => metadata.packages.find((p) => p.id === id)!)
+  const members = metadata.workspace_members.map((id) =>
+    metadata.packages.find((p) => p.id === id)!,
+  )
   const byDir = new Map(members.map((p) => [dirname(p.manifest_path), p]))
   const patched = new Set<CargoPackage>()
   const published = async (pkg: CargoPackage) =>
@@ -118,14 +120,17 @@ export async function unpublishedPatch(
   const lines = members
     .filter((p) => patched.has(p))
     .map((p) => `${p.name} = { path = ${JSON.stringify(dirname(p.manifest_path))} }`)
-  const header = '# Crates whose version is not on crates.io yet, and the local crates they depend on. See scripts/crates-io-unpublished-patch.ts.'
+  const header =
+    '# Crates whose version is not on crates.io yet, and the local crates they depend on. See scripts/crates-io-unpublished-patch.ts.'
   return [header, ...(lines.length > 0 ? ['[patch.crates-io]', ...lines] : [])].join('\n') + '\n'
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [manifest, releasePlz] = process.argv.slice(2)
   if (!manifest || !releasePlz) {
-    console.error('usage: crates-io-unpublished-patch.ts <path/to/Cargo.toml> <path/to/release-plz.toml>')
+    console.error(
+      'usage: crates-io-unpublished-patch.ts <path/to/Cargo.toml> <path/to/release-plz.toml>',
+    )
     process.exit(2)
   }
   const metadata: CargoMetadata = JSON.parse(
@@ -135,5 +140,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
     ),
   )
-  process.stdout.write(await unpublishedPatch(metadata, heldBackPackages(readFileSync(releasePlz, 'utf8'))))
+  process.stdout.write(
+    await unpublishedPatch(metadata, heldBackPackages(readFileSync(releasePlz, 'utf8'))),
+  )
 }

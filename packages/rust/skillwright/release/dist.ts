@@ -121,7 +121,11 @@ function run(
     cwd,
     env: env ? { ...process.env, ...env } : process.env,
     encoding: 'utf8',
-    stdio: [stream ? 'inherit' : 'ignore', stream ? 'inherit' : 'pipe', stream ? 'inherit' : 'pipe'],
+    stdio: [
+      stream ? 'inherit' : 'ignore',
+      stream ? 'inherit' : 'pipe',
+      stream ? 'inherit' : 'pipe',
+    ],
     maxBuffer: 64 * 1024 * 1024,
   })
   if (r.error) throw new Error(`${cmd}: ${r.error.message}`)

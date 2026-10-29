@@ -23,7 +23,11 @@ const pkg = (
 })
 
 /** A path dependency on the workspace crate `name`. */
-const local = (name: string, kind: string | null = null): CargoDependency => ({ name, kind, path: `/ws/${name}` })
+const local = (name: string, kind: string | null = null): CargoDependency => ({
+  name,
+  kind,
+  path: `/ws/${name}`,
+})
 
 const metadata = (...packages: CargoPackage[]): CargoMetadata => ({
   workspace_root: '/ws',
@@ -37,7 +41,8 @@ const index =
   async (name: string): Promise<IndexEntry[] | null> =>
     published[name]?.map((vers) => ({ vers, yanked: false })) ?? null
 
-const HEADER = '# Crates whose version is not on crates.io yet, and the local crates they depend on. See scripts/crates-io-unpublished-patch.ts.'
+const HEADER =
+  '# Crates whose version is not on crates.io yet, and the local crates they depend on. See scripts/crates-io-unpublished-patch.ts.'
 
 test('patches a new version and a crate not on crates.io; skips a published version', async () => {
   const out = await unpublishedPatch(
@@ -59,7 +64,11 @@ test('patches a new version and a crate not on crates.io; skips a published vers
 
 test('skips crates that are not published: Cargo.toml publish = false, or held back in release-plz.toml', async () => {
   const out = await unpublishedPatch(
-    metadata(pkg('private', '0.1.0', []), pkg('held', '0.2.0'), pkg('other-registry', '0.1.0', ['other'])),
+    metadata(
+      pkg('private', '0.1.0', []),
+      pkg('held', '0.2.0'),
+      pkg('other-registry', '0.1.0', ['other']),
+    ),
     new Set(['held']),
     index({}),
   )
@@ -111,11 +120,24 @@ test('patches the published crates a patched crate reaches through normal or bui
 
 test('a held-back crate is still patched when a patched crate reaches it, but a publish = false one is not', async () => {
   const out = await unpublishedPatch(
-    metadata(pkg('held', '0.2.0'), pkg('private', '0.1.0', []), pkg('new', '0.1.0', null, [local('held'), local('private')])),
+    metadata(
+      pkg('held', '0.2.0'),
+      pkg('private', '0.1.0', []),
+      pkg('new', '0.1.0', null, [local('held'), local('private')]),
+    ),
     new Set(['held']),
     index({ held: ['0.2.0'] }),
   )
-  assert.equal(out, [HEADER, '[patch.crates-io]', 'held = { path = "/ws/held" }', 'new = { path = "/ws/new" }', ''].join('\n'))
+  assert.equal(
+    out,
+    [
+      HEADER,
+      '[patch.crates-io]',
+      'held = { path = "/ws/held" }',
+      'new = { path = "/ws/new" }',
+      '',
+    ].join('\n'),
+  )
 })
 
 test('throws when a patched crate reaches a held-back crate whose version is not on crates.io', async () => {
@@ -156,6 +178,12 @@ test('heldBackPackages reads release = false and publish = false from [[package]
 })
 
 test('heldBackPackages throws when [workspace] sets release or publish', () => {
-  assert.throws(() => heldBackPackages('[workspace]\nrelease = false\n'), /sets `release` under \[workspace\]/)
-  assert.throws(() => heldBackPackages('[workspace]\npublish = true\n'), /sets `publish` under \[workspace\]/)
+  assert.throws(
+    () => heldBackPackages('[workspace]\nrelease = false\n'),
+    /sets `release` under \[workspace\]/,
+  )
+  assert.throws(
+    () => heldBackPackages('[workspace]\npublish = true\n'),
+    /sets `publish` under \[workspace\]/,
+  )
 })

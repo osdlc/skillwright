@@ -4,7 +4,12 @@
 import { strict as assert } from 'node:assert'
 import { afterEach, test } from 'node:test'
 
-import { type CargoPackage, indexEntries, indexPath, publishesToCratesIo } from './crates-io-index.ts'
+import {
+  type CargoPackage,
+  indexEntries,
+  indexPath,
+  publishesToCratesIo,
+} from './crates-io-index.ts'
 
 const realFetch = globalThis.fetch
 afterEach(() => {

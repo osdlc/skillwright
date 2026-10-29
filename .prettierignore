@@ -2,3 +2,7 @@ pnpm-lock.yaml
 target/
 dist/
 node_modules/
+# Generated: build.sh writes the wasm glue, tradecraft-typegen the types.
+packages/ts/tradecraft-wasm/wasm/
+packages/rust/tradecraft-typegen/generated/
+packages/ts/tradecraft-wasm/src/core.generated.ts

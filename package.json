@@ -9,10 +9,18 @@
   },
   "scripts": {
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "build": "pnpm -r --if-present run build",
+    "test": "pnpm -r --if-present run test",
+    "lint": "pnpm -r --if-present run lint",
+    "test:scripts": "node --test scripts/*.test.ts packages/rust/skillwright/release/dist.test.ts",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json"
   },
   "devDependencies": {
     "@osdlc/prettier-config": "^0.3.1",
-    "prettier": "catalog:"
+    "@types/node": "catalog:",
+    "prettier": "catalog:",
+    "typescript": "catalog:"
   }
 }

@@ -6,11 +6,11 @@
   "author": "sksizer",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/osdlc/osdlc.git",
+    "url": "git+https://github.com/osdlc/skillwright.git",
     "directory": "packages/ts/tradecraft-wasm"
   },
-  "homepage": "https://github.com/osdlc/osdlc/tree/main/packages/ts/tradecraft-wasm#readme",
-  "bugs": "https://github.com/osdlc/osdlc/issues",
+  "homepage": "https://github.com/osdlc/skillwright/tree/main/packages/ts/tradecraft-wasm#readme",
+  "bugs": "https://github.com/osdlc/skillwright/issues",
   "keywords": [
     "tradecraft",
     "agent",
@@ -65,8 +65,8 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.build.json --noEmit"
   },
   "devDependencies": {
-    "@osdlc/prettier-config": "workspace:^",
-    "@osdlc/tsconfig": "workspace:^",
+    "@osdlc/prettier-config": "^0.3.1",
+    "@osdlc/tsconfig": "^0.4.1",
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "oxlint": "catalog:",
