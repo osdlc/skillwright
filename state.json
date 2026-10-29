@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "pr": 5,
+  "head": null,
+  "base": null,
+  "round": 0,
+  "claim": {
+    "owner": "KellyMBP.local:claude-lgfju5",
+    "at": "2026-10-29T23:38:46.796Z"
+  },
+  "findings": []
+}
