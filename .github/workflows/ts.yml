@@ -13,9 +13,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ts-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   format:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,6 +44,7 @@ jobs:
     if: always()
     needs: [format]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: All TypeScript jobs passed
         run: test "${{ needs.format.result }}" = success

@@ -9,5 +9,7 @@ A good pull request:
 - adds or updates a test,
 - passes the CI checks.
 
+Markdown files are format-checked only if they carry the prettier pragma (set by the shared `@osdlc/prettier-config`).
+
 By contributing you agree that your work is licensed under MIT OR Apache-2.0,
 the same as this project.
