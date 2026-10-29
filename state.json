@@ -1,12 +1,24 @@
 {
   "schema": 1,
   "pr": 6,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "06553ea3571884f5e30b35047401d5ab47325d9e",
+  "base": "cb04200fb5888a25517d487ff4d11b8fecf0e05d",
+  "round": 1,
   "claim": {
     "owner": "KellyMBP.local:unknown-r7w3ka",
     "at": "2026-10-29T23:57:53.884Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": ".github/workflows/rust.yml",
+      "line": 401,
+      "title": "Error message points at RELEASING.md tag steps that do not exist on main until #5 merges",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
