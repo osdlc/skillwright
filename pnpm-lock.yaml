@@ -1,0 +1,38 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+catalogs:
+  default:
+    prettier:
+      specifier: 3.9.6
+      version: 3.9.6
+
+importers:
+
+  .:
+    devDependencies:
+      '@osdlc/prettier-config':
+        specifier: ^0.3.1
+        version: 0.3.1
+      prettier:
+        specifier: 'catalog:'
+        version: 3.9.6
+
+packages:
+
+  '@osdlc/prettier-config@0.3.1':
+    resolution: {integrity: sha512-zo1nSAOg3itmyt1LTJ9pH+qxQ0j9tJlZneqIDBBBIGf14senf302jCeKsU5X446lB2uCYTK/Y/G5gKCgXr5ItQ==}
+
+  prettier@3.9.6:
+    resolution: {integrity: sha512-OpN0zzVdiaiAhxpuuj5efpIS4sY9j7bY6uR5mnj5yPzGkdkjNKSJeUThPb60Jw29QuAZgA4o+/iB49kFiaBX6g==}
+    engines: {node: '>=14'}
+    hasBin: true
+
+snapshots:
+
+  '@osdlc/prettier-config@0.3.1': {}
+
+  prettier@3.9.6: {}

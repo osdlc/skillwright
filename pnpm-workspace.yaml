@@ -1,0 +1,6 @@
+packages:
+  - 'packages/ts/*'
+  - 'harness-reference'
+
+catalog:
+  prettier: 3.9.6
