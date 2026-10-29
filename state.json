@@ -4,6 +4,9 @@
   "head": null,
   "base": null,
   "round": 0,
-  "claim": null,
+  "claim": {
+    "owner": "KellyMBP.local:unknown-r7w3ka",
+    "at": "2026-10-29T23:57:53.884Z"
+  },
   "findings": []
 }
