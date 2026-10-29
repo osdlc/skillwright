@@ -71,9 +71,9 @@
       "line": 32,
       "title": "Comment says every skillwright tag holds this tooling; the imported tags do not",
       "comment": "https://github.com/osdlc/skillwright/pull/5#discussion_r4419026863",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "1494f2121e706a336ea4519dfc83612ec25eac1a"
     },
     {
       "id": "r1-7",
