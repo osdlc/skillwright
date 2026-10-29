@@ -1,7 +1,7 @@
 #!/bin/sh
-# Installs the skillwright binary from a GitHub Release of osdlc/osdlc.
+# Installs the skillwright binary from a GitHub Release of osdlc/skillwright.
 #
-#   curl -fsSL https://github.com/osdlc/osdlc/releases/download/skillwright/v<version>/install.sh | sh
+#   curl -fsSL https://github.com/osdlc/skillwright/releases/download/skillwright/v<version>/install.sh | sh
 #   sh install.sh [--version <X.Y.Z>] [--to <dir>]
 #
 # It picks the asset for this OS and CPU (macOS or Linux, arm64 or x86_64),
@@ -14,7 +14,7 @@
 set -eu
 
 DEFAULT_VERSION=''
-REPO='osdlc/osdlc'
+REPO='osdlc/skillwright'
 BINARY='skillwright'
 TAG_PREFIX='skillwright/v'
 
@@ -26,7 +26,7 @@ die() { say "$*"; exit 1; }
 
 usage() {
   cat <<'USAGE'
-Installs the skillwright binary from a GitHub Release of osdlc/osdlc.
+Installs the skillwright binary from a GitHub Release of osdlc/skillwright.
 
   sh install.sh [--version <X.Y.Z>] [--to <dir>]
 

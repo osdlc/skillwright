@@ -16,14 +16,14 @@ cargo install skillwright
 
 This installs the `skillwright` binary. Prebuilt binaries for macOS and Linux
 (arm64 and x86_64) are on each `skillwright/vX.Y.Z` release of
-[osdlc/osdlc](https://github.com/osdlc/osdlc/releases), and these install
+[osdlc/skillwright](https://github.com/osdlc/skillwright/releases), and these install
 them:
 
 ```sh
 cargo binstall skillwright
 brew install osdlc/tap/skillwright
 npm install --global @osdlc/skillwright   # or: npx @osdlc/skillwright --help
-curl -fsSL https://github.com/osdlc/osdlc/releases/download/skillwright/v<version>/install.sh | sh
+curl -fsSL https://github.com/osdlc/skillwright/releases/download/skillwright/v<version>/install.sh | sh
 ```
 
 `install.sh` checks the binary against the release's `SHA256SUMS` and installs

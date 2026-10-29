@@ -25,9 +25,9 @@ const input: FormulaInput = {
   name: 'skillwright',
   version: '0.3.5',
   desc: 'Publish markdown skill notes to coding-agent tools',
-  homepage: 'https://github.com/osdlc/osdlc/tree/main/packages/rust/skillwright',
+  homepage: 'https://github.com/osdlc/skillwright',
   license: 'MIT OR Apache-2.0',
-  urlBase: 'https://github.com/osdlc/osdlc/releases/download/skillwright/v0.3.5',
+  urlBase: 'https://github.com/osdlc/skillwright/releases/download/skillwright/v0.3.5',
   assets: [
     { os: 'darwin', cpu: 'arm64', file: 'skillwright-0.3.5-aarch64-apple-darwin', sha256: A },
     { os: 'darwin', cpu: 'x64', file: 'skillwright-0.3.5-x86_64-apple-darwin', sha256: B },
@@ -42,7 +42,7 @@ test('the formula has a block per os and cpu, a license and a version test', () 
   assert.match(rb, /^ {2}license any_of: \["MIT", "Apache-2.0"\]$/m)
   assert.match(
     rb,
-    / {2}on_macos do\n {4}on_arm do\n {6}url "https:\/\/github.com\/osdlc\/osdlc\/releases\/download\/skillwright\/v0.3.5\/skillwright-0.3.5-aarch64-apple-darwin"\n {6}sha256 "a{64}"\n {4}end\n\n {4}on_intel do/,
+    / {2}on_macos do\n {4}on_arm do\n {6}url "https:\/\/github.com\/osdlc\/skillwright\/releases\/download\/skillwright\/v0.3.5\/skillwright-0.3.5-aarch64-apple-darwin"\n {6}sha256 "a{64}"\n {4}end\n\n {4}on_intel do/,
   )
   assert.match(
     rb,
@@ -75,7 +75,7 @@ test('the livecheck block reads the GitHub releases with the tag prefix', () => 
 })
 
 test('URLs that carry a version', () => {
-  const base = 'https://github.com/osdlc/osdlc/releases/download/skillwright/v0.3.5'
+  const base = 'https://github.com/osdlc/skillwright/releases/download/skillwright/v0.3.5'
   assert.ok(urlCarriesVersion(`${base}/skillwright-0.3.5-aarch64-apple-darwin`, '0.3.5'))
   assert.ok(urlCarriesVersion('https://x/archive/refs/tags/skillwright/v0.3.5.tar.gz', '0.3.5'))
   assert.ok(!urlCarriesVersion('https://x/dl/tool-aarch64', '0.3.5'))
@@ -84,7 +84,7 @@ test('URLs that carry a version', () => {
 
 test('a formula version comes from its version line or its first url', () => {
   const source = `class Skillwright < Formula
-  url "https://github.com/osdlc/osdlc/archive/refs/tags/skillwright/v0.3.5.tar.gz"
+  url "https://github.com/osdlc/skillwright/archive/refs/tags/skillwright/v0.3.5.tar.gz"
 end
 `
   assert.equal(formulaVersion(source), '0.3.5')

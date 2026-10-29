@@ -19,13 +19,13 @@ export const PRODUCT = {
     'Publishes a vault of markdown skill notes into the formats of coding-agent tools (Claude Code, Codex, Cursor and Pi).',
   /** The Homebrew `desc`: at most 80 characters, no leading article, no period. */
   brewDescription: 'Publish markdown skill notes into the formats of coding-agent tools',
-  homepage: 'https://github.com/osdlc/osdlc/tree/main/packages/rust/skillwright',
+  homepage: 'https://github.com/osdlc/skillwright',
   license: 'MIT OR Apache-2.0',
   /** The binary sits under `bin/` in each platform package. */
   binaryDir: 'bin',
   /** The workflow named by each package's trusted publisher on npmjs.com. */
   workflow: 'skillwright-release.yml',
-  repository: 'osdlc/osdlc',
+  repository: 'osdlc/skillwright',
 } as const
 
 /** A platform as npm sees it: `process.platform` and `process.arch`. */

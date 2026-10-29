@@ -18,9 +18,9 @@ The macOS binaries are not signed or notarized yet. npm does not quarantine what
 so Gatekeeper does not block them.
 
 The same binaries are on the GitHub Release `skillwright/v<version>` of
-[osdlc/osdlc](https://github.com/osdlc/osdlc/releases), and `cargo binstall skillwright`
+[osdlc/skillwright](https://github.com/osdlc/skillwright/releases), and `cargo binstall skillwright`
 installs them. The crate's README is the user guide:
-<https://github.com/osdlc/osdlc/tree/main/packages/rust/skillwright#readme>.
+<https://github.com/osdlc/skillwright#readme>.
 
 Licensed under MIT or Apache-2.0, at your option. Licenses of the open-source crates the binary
 includes are in `THIRD_PARTY_NOTICES.md`.

@@ -5,7 +5,7 @@
 Please report vulnerabilities privately. Do not open a public issue.
 
 Use GitHub private vulnerability reporting on the repository: open the
-[Security tab](https://github.com/osdlc/osdlc/security) and choose
+[Security tab](https://github.com/osdlc/skillwright/security) and choose
 "Report a vulnerability".
 
 Include the version, a short description, and steps to reproduce. A minimal

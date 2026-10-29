@@ -48,7 +48,7 @@ export function indexPath(name: string): string {
  */
 export async function indexEntries(name: string): Promise<IndexEntry[] | null> {
   const res = await fetch(`https://index.crates.io/${indexPath(name)}`, {
-    headers: { 'User-Agent': 'osdlc-release-plz (https://github.com/osdlc/osdlc)' },
+    headers: { 'User-Agent': 'skillwright-release-plz (https://github.com/osdlc/skillwright)' },
     signal: AbortSignal.timeout(30_000),
   })
   if (res.status === 404) return null
@@ -66,4 +66,5 @@ export async function indexEntries(name: string): Promise<IndexEntry[] | null> {
  * True when `pkg` (a `cargo metadata` package) may be published to crates.io.
  * `publish` is null when unset, [] for `publish = false`, or a registry list.
  */
-export const publishesToCratesIo = (pkg: CargoPackage): boolean => pkg.publish === null || pkg.publish.includes('crates-io')
+export const publishesToCratesIo = (pkg: CargoPackage): boolean =>
+  pkg.publish === null || pkg.publish.includes('crates-io')

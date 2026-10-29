@@ -4,11 +4,11 @@
   "author": "sksizer",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/osdlc/osdlc.git",
+    "url": "git+https://github.com/osdlc/skillwright.git",
     "directory": "packages/rust/skillwright"
   },
-  "homepage": "https://github.com/osdlc/osdlc/tree/main/packages/rust/skillwright#readme",
-  "bugs": "https://github.com/osdlc/osdlc/issues",
+  "homepage": "https://github.com/osdlc/skillwright#readme",
+  "bugs": "https://github.com/osdlc/skillwright/issues",
   "keywords": [
     "skillwright",
     "agent",

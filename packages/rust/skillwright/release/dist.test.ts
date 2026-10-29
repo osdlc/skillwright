@@ -51,7 +51,7 @@ describe('package manifests', () => {
   test('every package names the repository, which npm provenance checks', () => {
     for (const m of [launcherManifest('1.0.0'), platformManifest(PLATFORMS[0]!, '1.0.0')]) {
       const repo = m['repository'] as { url: string }
-      assert.equal(repo.url, 'git+https://github.com/osdlc/osdlc.git')
+      assert.equal(repo.url, 'git+https://github.com/osdlc/skillwright.git')
     }
   })
 
@@ -128,7 +128,7 @@ describe('release assets', () => {
     assert.ok(toml.includes('pkg-fmt = "bin"'))
     assert.ok(
       toml.includes(
-        'pkg-url = "https://github.com/osdlc/osdlc/releases/download/skillwright/v{ version }/{ name }-{ version }-{ target }"',
+        'pkg-url = "https://github.com/osdlc/skillwright/releases/download/skillwright/v{ version }/{ name }-{ version }-{ target }"',
       ),
     )
   })

@@ -5,14 +5,14 @@ Thanks for your interest in `@osdlc/tradecraft-wasm`.
 ## Issues
 
 Report bugs and ask for features in the
-[issue tracker](https://github.com/osdlc/osdlc/issues). For a bug, include the
+[issue tracker](https://github.com/osdlc/skillwright/issues). For a bug, include the
 library version, your runtime and its version, your operating system, and the
 request you passed. Report security problems privately. See
 [SECURITY.md](./SECURITY.md).
 
 ## Pull requests
 
-This package lives in [osdlc/osdlc](https://github.com/osdlc/osdlc) under
+This package lives in [osdlc/skillwright](https://github.com/osdlc/skillwright) under
 `packages/ts/tradecraft-wasm`. Open pull requests there. They are reviewed and
 merged there.
 
@@ -61,20 +61,16 @@ The script needs:
 - `wasm-bindgen` 0.2.126 (`cargo install wasm-bindgen-cli --version 0.2.126`);
 - `wasm-opt` from binaryen `version_131`.
 
-The `wasm` job in `.github/workflows/rust-ci.yml` rebuilds `wasm/` on every
+The `wasm` job in `.github/workflows/rust.yml` rebuilds `wasm/` on every
 pull request that touches the Rust crates or `wasm/`, and fails when the
 result differs from what is committed. When it fails, it uploads the rebuilt
 files as the `tradecraft-wasm` artifact.
 A version bump alone changes the bytes, so the release pull request for the
 Rust crates would fail this check. The `release-pr` job in
 `.github/workflows/release-plz.yml` rebuilds `wasm/` on the release branch
-and commits it. That commit changes no behaviour, so it needs no changeset.
+and commits it.
 The compiler can emit different bytes on macOS and on Linux, so commit the
 Linux build from that artifact when you build on another system.
-
-A change that changes the WebAssembly changes what this package does, so it
-needs a changeset for `@osdlc/tradecraft-wasm` (see below), even when no file
-in this directory other than `wasm/` changed.
 
 ## Regenerating the types
 
@@ -98,7 +94,5 @@ crate's. The `wasm` job also compares the two.
 - Prettier formats the code and oxlint checks it. Run `pnpm run format` and
   `pnpm run lint` before you commit.
 - Add a test for each behaviour change or bug fix.
-- For a change users can see, add a changeset: run `pnpm changeset` at the
-  repository root. Start a breaking change's summary with `**Breaking:**`.
-  Do not edit `CHANGELOG.md` or `version` by hand; the release writes them.
-  See [packages/README.md](https://github.com/osdlc/osdlc/blob/main/packages/README.md).
+- This repository does not publish the package yet. Note a change users can
+  see in the pull request description.
