@@ -120,9 +120,10 @@ than osdlc/skillwright.
 
 skillwright and tradecraft-core were released from osdlc/osdlc up to
 skillwright 0.3.8 and tradecraft-core 0.40.1. The owner moves the release
-here once, in this order.
+here once, in this order. Steps 1 and 4 are done.
 
-1. **Hold both crates in osdlc/osdlc first.** This is a hard prerequisite
+1. **Done** ([osdlc/osdlc#555](https://github.com/osdlc/osdlc/pull/555)).
+   **Hold both crates in osdlc/osdlc first.** This is a hard prerequisite
    for every later step. Merge the osdlc/osdlc pull request that sets
    `publish = false` in `packages/rust/skillwright/Cargo.toml` and
    `packages/rust/tradecraft-core/Cargo.toml`, and adds a `[[package]]` entry with
@@ -139,7 +140,8 @@ here once, in this order.
    branch limits, and the tag ruleset. The ruleset must let admins bypass
    it, so that the owner can push the tags in the next step. Do all of
    this before any release workflow runs here.
-4. Push the release tags imported from osdlc/osdlc. The tags of the same
+4. **Done:** the six tags below are pushed and point at their commits.
+   Push the release tags imported from osdlc/osdlc. The tags of the same
    names in osdlc/osdlc point at osdlc commits that are not in this
    history, so do not copy those. Each tag here points at the imported
    commit with the same tree:
