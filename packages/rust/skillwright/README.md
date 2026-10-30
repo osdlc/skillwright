@@ -165,8 +165,6 @@ Relative paths in a config file resolve against that file's directory,
 including relative entries under `paths:` in the machine file. A flag's path
 resolves against the working directory.
 
-`publish` applies a note's `sw-overrides`; `build` and `check` do not.
-
 ```yaml
 vault: notes
 namespace: sw
@@ -228,7 +226,10 @@ This crate was published as `tradecraft` up to 0.3.7. skillwright is in
 alpha and does not read the old names, so a project that used them must be
 renamed by hand: the project file, manifest folder, frontmatter keys,
 environment variables and machine file all take the `skillwright` and `sw`
-spellings.
+spellings. Old `tc-` keys are not errors: they publish as ordinary keys, and a
+note with `tc-kind: plugin` reads as a skill.
+
+`publish` applies a note's `sw-overrides`; `build` and `check` do not.
 
 ## License
 

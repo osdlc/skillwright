@@ -319,7 +319,7 @@ struct ExportArgs {
     /// The skills root to scan. Overrides the configured one.
     #[arg(long, value_name = "path")]
     skills_root: Option<String>,
-    /// Which of the vault's marketplaces to build; refused if the vault holds no such one. A marketplace note's own name wins over `marketplace.name`.
+    /// Which of the vault's marketplaces to build. Refused if the vault holds marketplaces and none has this name; a vault with none builds under it. The marketplace note's own name, or else a configured `marketplace.name`, is what gets published.
     #[arg(long, value_name = "name")]
     marketplace: Option<String>,
     /// The plugin a note with no `sw-plugin` belongs to. Overrides `marketplace.default_plugin`.

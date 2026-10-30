@@ -639,7 +639,7 @@ fn publish_onto(
         note.frontmatter.declared_kind,
         KindHints {
             requested: None,
-            configured: request
+            folder: request
                 .skills_root
                 .as_deref()
                 .and_then(|root| crate::discover::folder_kind(root, &request.skill_path)),

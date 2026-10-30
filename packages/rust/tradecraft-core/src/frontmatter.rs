@@ -265,7 +265,7 @@ pub struct KindHints {
     ///
     /// [`crate::discover`] supplies this from the folder a note sits in; it is
     /// the reason [`KindSource::Directory`] is reachable at all.
-    pub configured: Option<EntityKind>,
+    pub folder: Option<EntityKind>,
 }
 
 /// Resolves a note's kind across the layers that can decide it.
@@ -276,7 +276,7 @@ pub struct KindHints {
 /// |---|---|---|
 /// | 1 | A caller-supplied override ([`KindHints::requested`]) | no — a parameter |
 /// | 2 | `sw-kind` in the note ([`VaultFrontmatter::declared_kind`]) | **yes** |
-/// | 3 | The kind folder the note sits in ([`KindHints::configured`]) | no — a parameter |
+/// | 3 | The kind folder the note sits in ([`KindHints::folder`]) | no — a parameter |
 /// | 4 | The default, [`EntityKind::Skill`] | yes |
 ///
 /// Layers 1 and 3 are parameters rather than logic: the CLI flag belongs to
@@ -317,7 +317,7 @@ pub fn resolve_kind(declared: Option<EntityKind>, hints: KindHints) -> ResolvedK
             source: KindSource::Frontmatter,
         };
     }
-    if let Some(kind) = hints.configured {
+    if let Some(kind) = hints.folder {
         return ResolvedKind {
             kind,
             source: KindSource::Directory,
@@ -1150,7 +1150,7 @@ mod tests {
                 Some(EntityKind::Plugin),
                 KindHints {
                     requested: Some(EntityKind::Skill),
-                    configured: Some(EntityKind::Plugin),
+                    folder: Some(EntityKind::Plugin),
                 }
             ),
             ResolvedKind {
@@ -1166,7 +1166,7 @@ mod tests {
                 Some(EntityKind::Skill),
                 KindHints {
                     requested: None,
-                    configured: Some(EntityKind::Plugin),
+                    folder: Some(EntityKind::Plugin),
                 }
             ),
             ResolvedKind {
@@ -1179,7 +1179,7 @@ mod tests {
                 None,
                 KindHints {
                     requested: None,
-                    configured: Some(EntityKind::Plugin),
+                    folder: Some(EntityKind::Plugin),
                 }
             ),
             ResolvedKind {
@@ -1449,7 +1449,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unmodeled_ap_key_is_consumed_and_kept_rather_than_refused() {
+    fn an_unmodeled_sw_key_is_consumed_and_kept_rather_than_refused() {
         // The namespace is claimed wholesale, so a key we do not model yet is
         // still ours: out of the map that becomes `annotations`, and into
         // `unknown_ours` where a caller can see it.
@@ -1845,6 +1845,19 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("invalid-arguments"), "{message}");
         assert!(message.contains("more than once"), "{message}");
+    }
+
+    #[test]
+    fn the_stem_tc_reads_tc_keys_as_ours() {
+        let tc = Namespace::new("tc").unwrap();
+        let (ours, foreign) = read_as(
+            &tc,
+            json!({"description": "d", "tc-kind": "plugin", "sw-kind": "hook"}),
+        )
+        .unwrap();
+        assert_eq!(ours.declared_kind, Some(EntityKind::Plugin));
+        assert!(!foreign.contains_key("tc-kind"));
+        assert!(foreign.contains_key("sw-kind"));
     }
 
     #[test]

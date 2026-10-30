@@ -22,8 +22,12 @@
 #                        the wasm32-unknown-unknown target added
 #                        (`rustup target add wasm32-unknown-unknown`)
 #
-# Same tools and source in, byte-identical output out: machine paths are
-# remapped (below), so the build machine does not show in the bytes.
+# Same tools and source in, the same output out on CI: machine paths are
+# remapped (below), so the build machine does not show in the bytes. A local
+# macOS build is not verified to match CI. When CI's check fails, take the
+# `tradecraft-wasm` artifact from the CI run instead of a local build.
+# CI builds the merge of the pull request with main, so a change that lands on
+# main can fail the check on an open pull request until it is rebuilt.
 # Override the tool locations with WASM_BINDGEN / WASM_OPT if they are not on
 # PATH (for example, prebuilt tarballs). CARGO_TARGET_DIR is honoured.
 # OUT_DIR overrides the output folder.
@@ -79,7 +83,7 @@ cd "$WORKSPACE"
 unset RUSTUP_TOOLCHAIN
 
 # Map the machine's paths to fixed names, so no home directory ends up in the
-# wasm's panic messages and every machine gets the same bytes. The standard
+# wasm's panic messages and the bytes do not depend on the machine's paths. The standard
 # library's source maps to `/rustc/<commit>`, the path rustc uses when the
 # rust-src component is not installed, so the bytes do not depend on whether
 # it is. The sysroot must be read after the `cd`: from anywhere else rustc

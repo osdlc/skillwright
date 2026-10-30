@@ -320,6 +320,66 @@ mod load_config_tests {
         );
     }
 
+    /// The vault a project file resolves to when the machine file supplies it.
+    fn vault_from_machine(machine_yaml: &str) -> Option<String> {
+        let fx = Fixture::new();
+        fx.write_machine(machine_yaml);
+        fx.write_project("namespace: sw\n");
+        fx.run(
+            || match load_config(Some(fx.project_file().to_str().unwrap()), fx.path()) {
+                ConfigLoad::Loaded { config, .. } => config
+                    .vault
+                    .map(|v| v.replace(fx.path().to_str().unwrap(), "<root>")),
+                other => panic!("expected Loaded, got {}", kind(&other)),
+            },
+        )
+    }
+
+    #[test]
+    fn machine_a_bare_word_vault_resolves_against_the_machine_files_folder() {
+        assert_eq!(
+            vault_from_machine("vault: notes\n").as_deref(),
+            Some("<root>/machine/notes")
+        );
+    }
+
+    #[test]
+    fn machine_a_name_token_in_the_vault_expands_before_resolving() {
+        assert_eq!(
+            vault_from_machine("paths:\n  s: /abs\nvault: '{s}/v'\n").as_deref(),
+            Some("/abs/v")
+        );
+        assert_eq!(
+            vault_from_machine("paths:\n  s: rel\nvault: '{s}/v'\n").as_deref(),
+            Some("<root>/machine/rel/v")
+        );
+    }
+
+    #[test]
+    fn machine_paths_entries_follow_the_shared_resolution_rule() {
+        let h = home().to_string_lossy().into_owned();
+        // `~/x` expands to home.
+        assert_eq!(
+            vault_from_machine("paths:\n  n: ~/x\nvault: '{n}'\n").as_deref(),
+            Some(format!("{h}/x").as_str())
+        );
+        // `~bob/x` is not expanded; it is relative to the machine folder.
+        assert_eq!(
+            vault_from_machine("paths:\n  n: ~bob/x\nvault: '{n}'\n").as_deref(),
+            Some("<root>/machine/~bob/x")
+        );
+        // An absolute path is kept.
+        assert_eq!(
+            vault_from_machine("paths:\n  n: /abs/x\nvault: '{n}'\n").as_deref(),
+            Some("/abs/x")
+        );
+        // `../` climbs from the machine folder.
+        assert_eq!(
+            vault_from_machine("paths:\n  n: ../up\nvault: '{n}'\n").as_deref(),
+            Some("<root>/up")
+        );
+    }
+
     #[test]
     fn assets_a_from_path_expands_a_name_token_and_to_and_plugin_pass_through() {
         let fx = Fixture::new();

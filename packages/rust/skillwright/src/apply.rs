@@ -880,7 +880,7 @@ mod tests {
         write(
             v.path(),
             "plugins/tools/skills/keyed.md",
-            "---\nname: keyed\nap-plugin: tools\n---\n\nmember\n",
+            "---\nname: keyed\nsw-plugin: tools\n---\n\nmember\n",
         );
 
         let op = AuthoringOp::RenamePlugin {

@@ -342,40 +342,56 @@ fn problem_load(problem: FileProblem, path: &Path) -> ConfigLoad {
     }
 }
 
-/// Resolve every string element of the sequence at `key` against `base`,
-/// with `~` expanding to `home`. A no-op if `key` is absent or not a
-/// sequence.
-fn resolve_sequence_paths_at(
-    map: &mut serde_json::Map<String, serde_json::Value>,
-    key: &str,
-    base: &Path,
-    home: &Path,
-) {
-    let Some(serde_json::Value::Array(seq)) = map.get_mut(key) else {
-        return;
+/// Resolve one path-valued setting from the machine file. A `{name}` token is
+/// expanded first, so the result is judged on its final text; an undefined
+/// token is left for `finish` to report. A bare word counts as relative to
+/// `base`, which `paths::resolve_config_path` alone would leave untouched.
+fn resolve_machine_value(raw: &str, names: &PathNames, base: &Path, home: &Path) -> String {
+    let Ok(expanded) = paths::substitute_path_names(raw, names, "") else {
+        return raw.to_string();
     };
-    for item in seq.iter_mut() {
-        if let serde_json::Value::String(s) = item {
-            *s = paths::resolve_config_path(s, base, home);
-        }
+    let looks_like_path =
+        expanded.contains('/') || expanded.starts_with('.') || expanded.starts_with('~');
+    if expanded.contains("://") || looks_like_path {
+        paths::resolve_config_path(&expanded, base, home)
+    } else {
+        paths::resolve_config_path(&format!("./{expanded}"), base, home)
     }
 }
 
-/// Resolve every `destinations[].root` against `base`, with `~` expanding
-/// to `home`. A no-op if `destinations` is absent or not a sequence.
-fn resolve_destination_roots_at(
+/// Resolve the path-valued settings of the machine file's mapping against the
+/// machine file's folder, using [`resolve_machine_value`].
+fn resolve_machine_mapping(
     map: &mut serde_json::Map<String, serde_json::Value>,
+    names: &PathNames,
     base: &Path,
     home: &Path,
 ) {
-    let Some(serde_json::Value::Array(seq)) = map.get_mut("destinations") else {
-        return;
-    };
-    for item in seq.iter_mut() {
-        if let serde_json::Value::Object(m) = item
-            && let Some(serde_json::Value::String(s)) = m.get_mut("root")
+    let resolve = |s: &mut String| *s = resolve_machine_value(s, names, base, home);
+    if let Some(serde_json::Value::String(s)) = map.get_mut("vault") {
+        resolve(s);
+    }
+    for key in ["out", "skills_root"] {
+        if let Some(serde_json::Value::Object(m)) = map.get_mut("marketplace")
+            && let Some(serde_json::Value::String(s)) = m.get_mut(key)
         {
-            *s = paths::resolve_config_path(s, base, home);
+            resolve(s);
+        }
+    }
+    if let Some(serde_json::Value::Array(seq)) = map.get_mut("scan_locations") {
+        for item in seq.iter_mut() {
+            if let serde_json::Value::String(s) = item {
+                resolve(s);
+            }
+        }
+    }
+    if let Some(serde_json::Value::Array(seq)) = map.get_mut("destinations") {
+        for item in seq.iter_mut() {
+            if let serde_json::Value::Object(m) = item
+                && let Some(serde_json::Value::String(s)) = m.get_mut("root")
+            {
+                resolve(s);
+            }
         }
     }
 }
@@ -613,44 +629,38 @@ fn load_config_at(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
+    let project_dir = project_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
     let mut machine_mapping = machine_mapping;
-    // A value taken from the project file resolves later, against the
-    // project's own directory (see `resolve.rs`). A value borrowed from the
-    // machine file must be resolved here, against the machine file's
-    // directory, or the caller would resolve it against the wrong base.
-    file::resolve_paths_at(
-        &mut machine_mapping,
-        &["vault", "marketplace.out", "marketplace.skills_root"],
-        &machine_dir,
-        home,
-    );
-    resolve_sequence_paths_at(&mut machine_mapping, "scan_locations", &machine_dir, home);
-    resolve_destination_roots_at(&mut machine_mapping, &machine_dir, home);
 
     // `paths:` merges by NAME (machine wins per name, in `finish`'s
     // `path_names` call) rather than as a whole top-level key, so it is carried through
     // the overlay untouched and the deserialized result is overwritten with
     // the project's own value afterwards.
-    let project_paths_raw = project_mapping.get("paths");
-    let project_paths: BTreeMap<String, String> = project_paths_raw
+    let project_paths: BTreeMap<String, String> = project_mapping
+        .get("paths")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
     // A relative entry in the machine file's `paths:` resolves against the
-    // machine file's directory, like every other path in that file; the
-    // `{name}` expansion in `finish` would otherwise use the project's.
+    // machine file's directory, like every other path in that file; `finish`
+    // would otherwise use the project's.
+    let no_names = PathNames::new();
     let machine_paths: BTreeMap<String, String> = typed_paths(&machine_mapping)
         .into_iter()
         .map(|(name, raw)| {
-            let resolved = if raw.starts_with('~') || Path::new(&raw).is_absolute() {
-                raw
-            } else {
-                normalize_join(&machine_dir, Path::new(&raw))
-                    .to_string_lossy()
-                    .into_owned()
-            };
+            let resolved = resolve_machine_value(&raw, &no_names, &machine_dir, home);
             (name, resolved)
         })
         .collect();
+
+    // A value taken from the project file resolves later, against the
+    // project's own directory (see `resolve.rs`). A value borrowed from the
+    // machine file must be resolved here, against the machine file's
+    // directory, or the caller would resolve it against the wrong base.
+    let names = paths::path_names(&project_dir, home, &machine_paths, &project_paths);
+    resolve_machine_mapping(&mut machine_mapping, &names, &machine_dir, home);
 
     let merged = file::overlay_top_level(project_mapping, &machine_mapping);
     let mut config: SkillwrightConfig = match config_from_mapping(&merged) {
@@ -664,10 +674,6 @@ fn load_config_at(
     };
     config.paths = project_paths;
 
-    let project_dir = project_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_default();
     finish(config, &project_dir, &project_path, &machine_paths, home)
 }
 
