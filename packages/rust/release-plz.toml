@@ -38,3 +38,23 @@ release = false
 name = "tradecraft-typegen"
 publish = false
 release = false
+
+# The changelog's commit groups. These are release-plz's defaults (Keep a
+# Changelog groups from conventional commit types), plus skips for commits
+# that say nothing to a user of the crate: merges, release-plz's own release
+# and wasm rebuild commits, CI changes and release-process docs. Setting
+# `commit_parsers` replaces the defaults, so they are repeated here.
+[changelog]
+commit_parsers = [
+  { message = "^Merge ", skip = true },
+  { message = "^chore(\\(release\\))?: (release|rebuild the committed wasm)", skip = true },
+  { message = "^(ci|CI)(\\(.*\\))?:", skip = true },
+  { message = "^RELEASING\\.md:", skip = true },
+  { message = "^feat", group = "added" },
+  { message = "^changed", group = "changed" },
+  { message = "^deprecated", group = "deprecated" },
+  { message = "^removed", group = "removed" },
+  { message = "^fix", group = "fixed" },
+  { message = "^security", group = "security" },
+  { message = ".*", group = "other" },
+]
