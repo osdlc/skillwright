@@ -181,8 +181,8 @@ use crate::guard::{
     assert_destination_allowed, assert_destination_allowed_for_vault, resolve_write_path,
 };
 use crate::manifest::{
-    DestinationManifest, MANIFEST_RELATIVE_PATH, ManifestEntry, ManifestState, Unusable,
-    manifest_path, read_manifest, write_manifest,
+    DestinationManifest, MANIFEST_RELATIVE_PATH, ManifestEntry, ManifestState, manifest_path,
+    read_manifest, write_manifest,
 };
 use crate::namespace::Namespace;
 use crate::projection::{
@@ -916,21 +916,6 @@ fn finish(
             ReasonToken::BadManifest,
             why.message(&manifest_path(&request.destination_root)),
         );
-        // The old folder is one fact about the destination, not about any
-        // file: one row, on the file that names it.
-        if let Unusable::OldFolder(folder) = why {
-            return Ok(PublishReport {
-                files: vec![PublishedFile {
-                    path: crate::manifest::old_manifest_relative_path(folder),
-                    status: PublishStatus::Refused,
-                    outcome: PublishOutcome::Blocked,
-                    reason: Some(reason),
-                }],
-                not_published: None,
-                not_carried: Vec::new(),
-                redundant_overrides: Vec::new(),
-            });
-        }
         return Ok(refuse_all(&files, &reason));
     }
 

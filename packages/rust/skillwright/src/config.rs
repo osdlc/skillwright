@@ -7,16 +7,19 @@
 //!
 //! **The machine file** is `<config-home>/skillwright/config.yaml` in the
 //! standalone tier of [`crate::dirs`], never committed, relocated by
-//! `SKILLWRIGHT_MACHINE_CONFIG`. It has the same shape and stands in, key by
-//! key, where the project file is silent.
+//! `SKILLWRIGHT_MACHINE_CONFIG`. It has the same shape and stands in, per
+//! top-level key, where the project file leaves that key out or empty.
+//! Nested values are not merged. `paths:` merges by name instead, and the
+//! machine file's entry wins when both define a name.
 //!
 //! Both may carry a `paths:` map, and every path-valued setting may refer to
-//! an entry as `{name}`. Relative paths in the project file resolve against
-//! the file's own directory; a flag's path resolves against the shell's
-//! `cwd`.
+//! an entry as `{name}`. Relative paths in either file, `paths:` entries
+//! included, resolve against that file's own directory; a flag's path
+//! resolves against the shell's `cwd`.
 //!
-//! A flag overrides the project file, which overrides the machine file, and
-//! nothing here is ever written back — this module only reads.
+//! A flag overrides the project file, which overrides the machine file —
+//! except for `paths:`, where the machine file wins per name. Nothing here is
+//! ever written back — this module only reads.
 //!
 //! This module reads shapes and nothing else. Whether `vault` names a
 //! directory that exists, and whether `namespace` is a stem the core
@@ -39,9 +42,6 @@ pub const TOOL: &str = "skillwright";
 const COMMAND: &str = "skillwright";
 /// The committed project file, looked for from the working directory upward.
 pub const PROJECT_FILE: &str = tradecraft_core::PROJECT_FILE;
-/// The project file's earlier names, newest first. Only their presence is checked, by
-/// [`old_project_file`], to say how to rename one.
-const OLD_PROJECT_FILES: [&str; 2] = ["tradecraft.yaml", "agent-pants.yaml"];
 /// Env var that relocates the machine file, for tests and one-off runs.
 pub const MACHINE_CONFIG_ENV: &str = "SKILLWRIGHT_MACHINE_CONFIG";
 
@@ -526,44 +526,6 @@ fn finish(
     }
 }
 
-/// The old project file a run would otherwise miss: the nearest
-/// `tradecraft.yaml` or `agent-pants.yaml` above `cwd`, but only when the
-/// same upward search finds no `skillwright.yaml`.
-///
-/// The caller asks only for a run that searches at all, that is one with
-/// neither `--config` nor `--vault`.
-pub fn old_project_file(cwd: &Path) -> Option<PathBuf> {
-    if file::find_up(cwd, PROJECT_FILE).is_some() {
-        return None;
-    }
-    // The deepest wins; in one directory, the newer name.
-    OLD_PROJECT_FILES
-        .into_iter()
-        .enumerate()
-        .filter_map(|(age, name)| file::find_up(cwd, name).map(|path| (age, path)))
-        .max_by_key(|(age, path)| (path.components().count(), std::cmp::Reverse(*age)))
-        .map(|(_, path)| path)
-}
-
-/// What to do about an old project file, for the error line.
-pub fn old_project_file_hint(old: &Path) -> String {
-    let stem = tradecraft_core::Namespace::DEFAULT_STEM;
-    if old
-        .file_name()
-        .is_some_and(|name| name == "agent-pants.yaml")
-    {
-        format!(
-            "rename it to `{PROJECT_FILE}`, set `namespace: {stem}` or drop the line, and change \
-             the vault notes' `ap-` keys to `{stem}-`"
-        )
-    } else {
-        format!(
-            "rename it to `{PROJECT_FILE}`, and change the vault notes' `tc-` keys to `{stem}-` \
-             or set `namespace: tc`"
-        )
-    }
-}
-
 /// Read the configuration for this run: the project file `--config` names
 /// or the nearest one above `cwd`, over the machine file.
 ///
@@ -665,15 +627,30 @@ fn load_config_at(
     resolve_sequence_paths_at(&mut machine_mapping, "scan_locations", &machine_dir, home);
     resolve_destination_roots_at(&mut machine_mapping, &machine_dir, home);
 
-    // `paths:` merges by NAME (machine wins per name, via `path_tokens`
-    // below) rather than as a whole top-level key, so it is carried through
+    // `paths:` merges by NAME (machine wins per name, in `finish`'s
+    // `path_names` call) rather than as a whole top-level key, so it is carried through
     // the overlay untouched and the deserialized result is overwritten with
     // the project's own value afterwards.
     let project_paths_raw = project_mapping.get("paths");
     let project_paths: BTreeMap<String, String> = project_paths_raw
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    let machine_paths = typed_paths(&machine_mapping);
+    // A relative entry in the machine file's `paths:` resolves against the
+    // machine file's directory, like every other path in that file; the
+    // `{name}` expansion in `finish` would otherwise use the project's.
+    let machine_paths: BTreeMap<String, String> = typed_paths(&machine_mapping)
+        .into_iter()
+        .map(|(name, raw)| {
+            let resolved = if raw.starts_with('~') || Path::new(&raw).is_absolute() {
+                raw
+            } else {
+                normalize_join(&machine_dir, Path::new(&raw))
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            (name, resolved)
+        })
+        .collect();
 
     let merged = file::overlay_top_level(project_mapping, &machine_mapping);
     let mut config: SkillwrightConfig = match config_from_mapping(&merged) {
@@ -764,6 +741,11 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
             description: "Default plugin author; falls back to `owner`.",
         },
         KeySpec {
+            key: "marketplace.license",
+            scope: Scope::Both,
+            description: "Default plugin license, as an SPDX identifier; a marketplace note's `sw-license` wins over it.",
+        },
+        KeySpec {
             key: "marketplace.default_plugin",
             scope: Scope::Both,
             description: "The plugin a note with no `sw-plugin` belongs to. `build` and `check` need it.",
@@ -787,6 +769,16 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
             key: "marketplace.harnesses",
             scope: Scope::Both,
             description: "Which harnesses the marketplace is built for. Absent means all of them.",
+        },
+        KeySpec {
+            key: "marketplace.require_descriptions",
+            scope: Scope::Both,
+            description: "Refuse `build` and `check` when a note has a `name` and no `description`. Absent or `false` publishes a filler and warns.",
+        },
+        KeySpec {
+            key: "marketplace.shim_target",
+            scope: Scope::Both,
+            description: "Where the per-skill `scripts/sdlc` shim looks for the launcher asset, relative to the plugin's root. Absent means `cli/sdlc`.",
         },
     ];
     Needs::new(

@@ -716,8 +716,7 @@ export interface MarketplaceConfig {
    * `sdlc_shim_script`'s parent-walk). Project-file authors declare it
    * as `marketplace.shim_target`; [`crate::settings::MarketplaceSettings::to_config`]
    * defaults it to [`DEFAULT_SHIM_TARGET`] when the project file is
-   * silent, so a project that never mentions it keeps resolving
-   * `cli/sdlc`.
+   * silent.
    */
   shim_target?: string;
 }

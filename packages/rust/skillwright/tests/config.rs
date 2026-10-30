@@ -305,6 +305,22 @@ mod load_config_tests {
     }
 
     #[test]
+    fn paths_a_relative_machine_entry_resolves_against_the_machine_files_folder() {
+        let fx = Fixture::new();
+        fx.write_machine("paths:\n  shared: stuff\n");
+        fx.write_project("vault: '{shared}/vault'\n");
+        fx.run(
+            || match load_config(Some(fx.project_file().to_str().unwrap()), fx.path()) {
+                ConfigLoad::Loaded { config, .. } => {
+                    let expected = fx.path().join("machine").join("stuff").join("vault");
+                    assert_eq!(config.vault, Some(expected.to_string_lossy().into_owned()));
+                }
+                other => panic!("expected Loaded, got {}", kind(&other)),
+            },
+        );
+    }
+
+    #[test]
     fn assets_a_from_path_expands_a_name_token_and_to_and_plugin_pass_through() {
         let fx = Fixture::new();
         fx.write_machine("paths:\n  dev: /work/me/dev\n");
