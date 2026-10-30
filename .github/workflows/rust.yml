@@ -425,7 +425,8 @@ jobs:
         if: >-
           !(github.event_name == 'pull_request' &&
             startsWith(github.head_ref, 'release-plz-') &&
-            github.event.pull_request.user.type == 'Bot')
+            github.event.pull_request.user.type == 'Bot' &&
+            github.event.pull_request.head.repo.full_name == github.repository)
         run: release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
 
   rust:
