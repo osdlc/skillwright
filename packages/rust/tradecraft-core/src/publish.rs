@@ -902,8 +902,8 @@ fn finish(
 
     // The manifest, read before any byte is written. An unusable one is a
     // destination-level blocker rather than something to replace: rewriting it
-    // silently re-arms the orphan sweep against a false empty baseline, so
-    // files we published become invisible rather than managed.
+    // silently would give any future orphan sweep a false empty baseline, so
+    // files we published would become invisible rather than managed.
     let state = read_manifest(vfs, &request.destination_root);
     if let ManifestState::Unusable(why) = &state {
         let reason = PublishReason::new(
@@ -4779,8 +4779,8 @@ mod tests {
         assert_eq!(manifest_of(&vfs, "/dest").len(), 3);
     }
 
-    // A partial fact, unlike a missing one: replacing it silently would
-    // re-arm the orphan sweep against a false empty baseline.
+    // A partial fact, unlike a missing one: replacing it silently would give
+    // any future orphan sweep a false empty baseline.
     #[test]
     fn a_corrupt_manifest_blocks_the_whole_destination() {
         let vfs = vault_with_peers();

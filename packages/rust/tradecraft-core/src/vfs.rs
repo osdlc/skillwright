@@ -27,13 +27,12 @@
 //! APIs are asynchronous and content-oriented, would have to implement.
 //!
 //! Four more have defaults, so they cost no host anything: [`Vfs::canonicalize`],
-//! [`Vfs::read_link`], [`Vfs::is_symlink`] and [`Vfs::sees_links`], the
-//! questions only a real filesystem can answer about links. [`crate::guard::resolve_write_path`] needs the first —
-//! *where does this path really lead* — and `std::fs::canonicalize` is exactly
-//! the call that must not appear above this seam: it has no meaning on
-//! `wasm32-unknown-unknown`. So it is a method here, [`NativeVfs`] answers it
-//! with the real thing, and a host that cannot resolve links inherits the
-//! lexical answer rather than a compile error. `is_symlink` follows the same
+//! [`Vfs::read_link`], [`Vfs::is_symlink`] and [`Vfs::sees_links`], the questions only a real
+//! filesystem can answer about links. [`crate::guard::resolve_write_path`] needs the first — *where
+//! does this path really lead* — and `std::fs::canonicalize` is exactly the call that must not
+//! appear above this seam: it has no meaning on `wasm32-unknown-unknown`. So it is a method
+//! here, [`NativeVfs`] answers it with the real thing, and a host that cannot resolve links
+//! inherits the lexical answer rather than a compile error. `is_symlink` follows the same
 //! pattern for the question discovery asks; see its own doc.
 //!
 //! # Three implementations

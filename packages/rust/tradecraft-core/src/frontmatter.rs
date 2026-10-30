@@ -262,8 +262,9 @@ pub struct KindHints {
     /// on. `None` when no folder matched — a note at the root of a skills
     /// source has no folder above it naming a kind.
     ///
-    /// [`crate::discover`] supplies this from the folder a note sits in; it is
-    /// the reason [`KindSource::Directory`] is reachable at all.
+    /// [`crate::discover`] and [`crate::publish`] both supply this from the
+    /// folder a note sits in; it is the reason [`KindSource::Directory`] is
+    /// reachable at all.
     pub folder: Option<EntityKind>,
 }
 

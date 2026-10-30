@@ -8,14 +8,15 @@
 //! (in one real plugin tree, most files were test scaffolding that the
 //! model deliberately excludes).
 //!
-//! Three rules, all enforced here and re-checked at publish time — a guard
-//! that only runs at registration can be raced by a later adoption:
+//! Three rules. The first two are enforced here and re-checked at publish
+//! time — a guard that only runs at registration can be raced by a later
+//! adoption. The third is a promise, not yet built:
 //!
 //! 1. A destination may not be, contain, or be contained by a protected
 //!    source tree.
 //! 2. A destination whose computed runtime skill dirs already hold content
 //!    must be explicitly acknowledged as partially managed.
-//! 3. The publish writer never deletes outside its manifest. Today
+//! 3. The publish writer never deletes outside its manifest.
 //!    [`crate::publish`] deletes nothing at all; the orphan sweep that will
 //!    enforce this is not built yet.
 //!

@@ -635,10 +635,9 @@ fn load_config_at(
         .unwrap_or_default();
     let mut machine_mapping = machine_mapping;
 
-    // `paths:` merges by NAME (machine wins per name, in `finish`'s
-    // `path_names` call) rather than as a whole top-level key, so it is
-    // carried through the overlay untouched and the deserialized result is overwritten with
-    // the project's own value afterwards.
+    // `paths:` merges by NAME (machine wins per name, in `finish`'s `path_names` call) rather
+    // than as a whole top-level key, so it is carried through the overlay untouched and the
+    // deserialized result is overwritten with the project's own value afterwards.
     let project_paths: BTreeMap<String, String> = project_mapping
         .get("paths")
         .and_then(|v| serde_json::from_value(v.clone()).ok())

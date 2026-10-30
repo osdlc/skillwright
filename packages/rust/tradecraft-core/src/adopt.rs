@@ -1623,11 +1623,10 @@ fn has_scheme(path: &str) -> bool {
     false
 }
 
-/// Resolves an inline-code span's content to a bundled resource and returns
-/// its wikilink target, or `None` to leave the span as code. Only something
-/// that looks like a lone filename is ever considered, so `` `sbt test` `` and prose code stay code; a match
-/// is by exact skill-relative path or by a basename unique among the
-/// resources, case-insensitively.
+/// Resolves an inline-code span's content to a bundled resource and returns its wikilink target, or
+/// `None` to leave the span as code. Only something that looks like a lone filename is ever
+/// considered, so `` `sbt test` `` and prose code stay code; a match is by exact skill-relative
+/// path or by a basename unique among the resources, case-insensitively.
 fn resolve_resource_mention(content: &str, resources: &[String]) -> Option<String> {
     if resources.is_empty() {
         return None;

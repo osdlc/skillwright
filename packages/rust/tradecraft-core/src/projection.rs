@@ -246,11 +246,14 @@ pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError>
 ///
 /// A runtime with no agent layout is refused by name rather than skipped.
 /// [`agent_adapt::runtimes::agent_renderer_for`] is `None` for Antigravity,
-/// Cursor, Pi, GitHub Copilot and Portable (the portable Agent Skills shape
-/// defines `skills/` and `AGENTS.md` and no per-agent file), so an agent
-/// published to one of those
+/// Cursor, Pi and GitHub Copilot, so an agent published to one of those
 /// refuses `no-renderer` instead of being written to a path the harness does
 /// not define.
+///
+/// `portable` is not a runtime target here. [`crate::publish`] maps it to
+/// `codex-cli` before projecting, so a `portable` agent is written in Codex's
+/// agent layout. A direct call with `"portable"` returns the
+/// unsupported-runtime-target error, not `no-renderer`.
 pub fn project_agent(
     snapshot: &SkillProjection,
     targets: &[String],
@@ -290,9 +293,12 @@ pub fn project_agent(
 /// A runtime with no command layout is refused by name.
 /// [`agent_adapt::runtimes::command_renderer_for`] is `Some` for Claude Code,
 /// Codex CLI, OpenCode and GitHub Copilot; `None` for Antigravity, Amp,
-/// Cursor, Pi and the packaging targets (`NpmPackage`, `Portable`) — so a
-/// command published to one of those refuses
+/// Cursor and Pi, so a command published to one of those refuses
 /// `no-renderer` instead of landing somewhere the harness never looks.
+/// `portable` and `npm-package` are not runtime targets here: a direct call
+/// with either returns the unsupported-runtime-target error, not
+/// `no-renderer`. [`crate::publish`] maps `portable` to `codex-cli` first, so a
+/// `portable` command is written in Codex's command layout.
 ///
 /// `overrides_target` is the canonical destination whose `sw-overrides` block
 /// this render applies, or `None` for a snapshot that carries none.

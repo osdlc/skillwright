@@ -116,11 +116,10 @@ impl CorpusRoot {
 
 /// The well-known user-global agent directory, `~/.claude`.
 ///
-/// **Early, not dead.** No caller in this workspace reaches it yet. The
-/// adopt-side listing is [`harness_dirs`], which offers one skills directory
-/// per runtime rather than this whole root and drops what
-/// [`manager_owned_trees`] classifies as manager-owned. What is left for this function is a
-/// caller that wants `~/.claude` as a SCAN root — a roster over everything
+/// **Early, not dead.** No caller in this workspace reaches it yet. The adopt-side listing is
+/// [`harness_dirs`], which offers one skills directory per runtime rather than this whole root
+/// and drops what [`manager_owned_trees`] classifies as manager-owned. What is left for this
+/// function is a caller that wants `~/.claude` as a SCAN root — a roster over everything
 /// installed, not an import source.
 ///
 /// Returns `None` when the home directory cannot be determined — which is

@@ -14,11 +14,10 @@
 //! # Why the walker is a plain recursive walk
 //!
 //! `collect_skill_files` is a depth-bound, name-filtered walk written
-//! against [`Vfs::read_dir`] so it runs identically on a host with no
-//! filesystem. It keeps dot-directories, since `.claude/` and `.agents/` are
-//! where skills live. Do not reach for `ignore::WalkBuilder`: every one of its features would have to be switched
-//! off to match this behaviour, and it drags ripgrep's ignore-matching
-//! machinery into the wasm bundle for nothing.
+//! against [`Vfs::read_dir`] so it runs identically on a host with no filesystem. It keeps
+//! dot-directories, since `.claude/` and `.agents/` are where skills live. Do not reach for
+//! `ignore::WalkBuilder`: every one of its features would have to be switched off to match this
+//! behaviour, and it drags ripgrep's ignore-matching machinery into the wasm bundle for nothing.
 
 use std::path::{Path, PathBuf};
 
@@ -152,10 +151,10 @@ pub fn scan_root(vfs: &dyn Vfs, root: &CorpusRoot, options: &ScanOptions) -> Sca
 /// Collects `(absolute SKILL.md, directory relative to the root)` for every
 /// skill under `dir`, pushing them in a deterministic order.
 ///
-/// `depth` is the depth of `dir` itself: depth 0 is the root, its children are depth 1, and an entry is
-/// visited only while its own depth is within `max_depth`. Recursion is
-/// therefore bounded by `max_depth` (10 by default), which is what makes
-/// straight recursion safe here rather than an explicit stack.
+/// `depth` is the depth of `dir` itself: depth 0 is the root, its children are depth 1, and an
+/// entry is visited only while its own depth is within `max_depth`. Recursion is therefore bounded
+/// by `max_depth` (10 by default), which is what makes straight recursion safe here rather than an
+/// explicit stack.
 ///
 /// Each directory's entries are sorted before descent, so the traversal — not
 /// just the sorted output — is reproducible whatever order a host's `read_dir`
