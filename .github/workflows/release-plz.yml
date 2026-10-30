@@ -1,0 +1,320 @@
+# Releases skillwright and tradecraft-core, the published crates under
+# packages/rust/, with release-plz.
+# Reference: https://release-plz.dev/docs/github/quickstart
+#
+# On every push to main:
+#
+# - `release-pr` opens or updates the release pull request, which bumps the
+#   version and changelog of each crate with unreleased changes. It then
+#   rebuilds the committed tradecraft wasm on the release branch, since the
+#   new versions change it.
+# - `plan` checks the crates.io index. When every crate's version is already
+#   published it stops there, so most pushes ask for no approval.
+# - `release` runs only when `plan` found something to publish. It waits for
+#   approval of the `crates-io` environment, then publishes each unpublished
+#   crate, tags it `<crate>/vX.Y.Z` and creates a GitHub release.
+#   Settings are in packages/rust/release-plz.toml.
+#
+# crates.io auth. The first release of a crate uses the shared
+# CARGO_REGISTRY_TOKEN, a publish-new-only token stored in the `crates-io`
+# environment. crates.io allows trusted publishing (OIDC) only for a crate
+# that exists, so later releases use it: once the crate has a trusted
+# publisher on crates.io (repository osdlc/skillwright, workflow release-plz.yml,
+# environment crates-io), no token is passed and release-plz fetches an OIDC
+# token itself. One run uses one credential for every crate, so `plan`
+# refuses a run that mixes a first release with a new version of an
+# existing crate. See scripts/crates-io-auth-plan.ts.
+#
+# Tokens. The GitHub App `osdlc-release` opens the release pull request and
+# creates the tags. A pull request opened with GITHUB_TOKEN would not start
+# the required checks. Its secrets, RELEASE_PLZ_APP_ID and
+# RELEASE_PLZ_APP_PRIVATE_KEY, are environment secrets, so only the two jobs
+# that need them can read them: `release-pr` in the `release-plz`
+# environment (main only, no reviewer) and `release` in `crates-io`.
+#
+# Prerequisite, created by the owner: a tag ruleset on `*/v*` that lets only
+# the App (and admins) create those tags.
+#
+# The file, job and environment names match the trusted publishers on
+# crates.io, so keep them. Every job stops at once outside osdlc/skillwright.
+#
+# A manual run (workflow_dispatch) is a dry run unless `dry_run` is
+# unchecked. A dry run still asks for the environment approval, and
+# release-plz does not fetch an OIDC token in a dry run.
+#
+# Every action is pinned to a commit SHA; the comment names its release.
+name: release-plz
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run (publish nothing, create no tag or release)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  # The release-plz binary the action installs. Keep it at the version
+  # checked locally. rust.yml reads this line for its dry run.
+  RELEASE_PLZ_VERSION: 0.3.172
+
+jobs:
+  release-pr:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Main only, no reviewer. Holds the App secrets.
+    environment: release-plz
+    # The wasm rebuild compiles tradecraft-core with fat LTO.
+    timeout-minutes: 30
+    # One release pull request update at a time. A newer push waits.
+    concurrency:
+      group: release-plz-pr-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      # The environments, secrets and trusted publishers this workflow uses
+      # exist only in osdlc/skillwright. A fork or a copy stops here.
+      - name: Refuse to run outside osdlc/skillwright
+        if: github.repository != 'osdlc/skillwright'
+        run: |
+          echo "::error::This release workflow runs only in osdlc/skillwright, not in $GITHUB_REPOSITORY."
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # release-plz stops its history walk at the tag of each crate's last
+      # release. The last releases from osdlc/osdlc have no other boundary
+      # here, so without their tags the walk reaches the imported commits,
+      # which have no Cargo workspace, and fails with a cargo error.
+      - name: Check the imported release tags are pushed
+        run: |
+          set -euo pipefail
+          missing=""
+          misplaced=""
+          for tag in skillwright/v0.3.8 tradecraft-core/v0.40.1; do
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              missing="$missing $tag"
+            # A tag copied from osdlc/osdlc points at a commit outside this
+            # history, and the walk would not stop at it.
+            elif ! git merge-base --is-ancestor "refs/tags/$tag^{commit}" HEAD; then
+              misplaced="$misplaced $tag"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing release tags:$missing. Push the tags imported from osdlc/osdlc first; see 'Moving releases from osdlc/osdlc' in packages/rust/skillwright/RELEASING.md."
+          fi
+          if [ -n "$misplaced" ]; then
+            echo "::error::Release tags not on this branch's history:$misplaced. Each must point at its commit in the table in 'Moving releases from osdlc/osdlc' in packages/rust/skillwright/RELEASING.md."
+          fi
+          if [ -n "$missing$misplaced" ]; then
+            exit 1
+          fi
+
+      # The wasm32 target is for the wasm rebuild below.
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Get a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: release-plz/action@8921286633dfa0c4020f7f30bd1c14fe19cbb10e # v0.5.142
+        id: release-plz
+        with:
+          command: release-pr
+          manifest_path: packages/rust/Cargo.toml
+          config: packages/rust/release-plz.toml
+          version: ${{ env.RELEASE_PLZ_VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      # The rest of this job rebuilds the wasm that
+      # packages/ts/tradecraft-wasm/wasm/ commits, on the release branch. A
+      # version bump alone changes those bytes (see the `wasm` job in
+      # rust.yml), and release-plz cannot run build.sh. Without this the
+      # `wasm` check fails on the release pull request. The commit is made
+      # through the GitHub API, so its author is the App's bot account.
+      # release-plz does not count a bot as a contributor, so the next push to
+      # main still updates the pull request in place, and this job rebuilds
+      # again.
+      - name: Check out the release branch
+        id: branch
+        if: steps.release-plz.outputs.prs_created == 'true'
+        env:
+          PR: ${{ steps.release-plz.outputs.pr }}
+        run: |
+          set -euo pipefail
+          branch="$(jq -r .head_branch <<<"$PR")"
+          if [[ "$branch" != release-plz-* ]]; then
+            echo "::error::release-plz reported the branch '$branch', which is not a release-plz branch"
+            exit 1
+          fi
+          git fetch --no-tags origin "refs/heads/$branch"
+          git checkout --detach FETCH_HEAD
+          # release-plz pushes one commit on top of the main commit it ran
+          # on. Build only that, so the App token never builds or commits on
+          # top of anything else pushed to the branch.
+          if [ "$(git rev-parse HEAD^)" != "$GITHUB_SHA" ]; then
+            echo "::error::$branch is not release-plz's commit on $GITHUB_SHA; not rebuilding"
+            exit 1
+          fi
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - if: steps.branch.outcome == 'success'
+        uses: ./.github/actions/rust-build-cache
+
+      - if: steps.branch.outcome == 'success'
+        uses: ./.github/actions/rust-wasm-tools
+
+      - name: Rebuild the wasm
+        if: steps.branch.outcome == 'success'
+        run: |
+          set -euo pipefail
+          bash packages/rust/tradecraft-wasm/build.sh
+
+      - name: Commit the rebuilt wasm to the release branch
+        if: steps.branch.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+          HEAD_SHA: ${{ steps.branch.outputs.head }}
+        run: |
+          set -euo pipefail
+          git add -A -- packages/ts/tradecraft-wasm/wasm
+          if git diff --cached --quiet; then
+            echo "The committed wasm matches the rebuild."
+            exit 0
+          fi
+          git diff --cached --stat
+          repo="repos/$GITHUB_REPOSITORY"
+          entries='[]'
+          while IFS=$'\t' read -r status path; do
+            # The mode from the index, so the commit keeps it. Unused for a
+            # deletion.
+            mode="$(git ls-files -s -- "$path" | cut -d' ' -f1)"
+            if [ "$status" = D ]; then
+              sha=null
+            else
+              base64 -w0 "$path" > "$RUNNER_TEMP/blob.b64"
+              sha="\"$(gh api "$repo/git/blobs" -f encoding=base64 -F "content=@$RUNNER_TEMP/blob.b64" --jq .sha)\""
+            fi
+            entries="$(jq -c --arg p "$path" --arg m "${mode:-100644}" --argjson s "$sha" '. + [{path: $p, mode: $m, type: "blob", sha: $s}]' <<<"$entries")"
+          done < <(git diff --cached --name-status --no-renames)
+          tree="$(jq -n --arg b "$(git rev-parse "$HEAD_SHA^{tree}")" --argjson t "$entries" '{base_tree: $b, tree: $t}' \
+            | gh api "$repo/git/trees" --input - --jq .sha)"
+          commit="$(gh api "$repo/git/commits" \
+            -f "message=chore: rebuild the committed wasm for the new crate versions" \
+            -f "tree=$tree" -f "parents[]=$HEAD_SHA" --jq .sha)"
+          # Not forced: if the branch moved since the checkout, this fails
+          # rather than drop the newer commit.
+          gh api -X PATCH "$repo/git/refs/heads/$BRANCH" -f "sha=$commit" -F force=false
+          echo "Committed $commit to $BRANCH."
+
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      auth: ${{ steps.plan.outputs.auth }}
+    steps:
+      # The environments, secrets and trusted publishers this workflow uses
+      # exist only in osdlc/skillwright. A fork or a copy stops here.
+      - name: Refuse to run outside osdlc/skillwright
+        if: github.repository != 'osdlc/skillwright'
+        run: |
+          echo "::error::This release workflow runs only in osdlc/skillwright, not in $GITHUB_REPOSITORY."
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/rust-toolchain
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      # Prints auth=none, token or oidc, and a table of every crate in the
+      # job summary. Fails on a mixed run.
+      - name: Pick the crates.io credential
+        id: plan
+        run: node scripts/crates-io-auth-plan.ts packages/rust/Cargo.toml
+
+  release:
+    needs: plan
+    if: needs.plan.outputs.auth == 'token' || needs.plan.outputs.auth == 'oidc'
+    runs-on: ubuntu-latest
+    # Branch main only, required reviewer. Holds CARGO_REGISTRY_TOKEN and the
+    # App secrets.
+    environment: crates-io
+    # Releases run one at a time and are never cancelled: a cancelled run can
+    # stop between the publish and the tag.
+    concurrency:
+      group: release-plz-release
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      # For trusted publishing. Unused on a first release.
+      id-token: write
+    steps:
+      # The environments, secrets and trusted publishers this workflow uses
+      # exist only in osdlc/skillwright. A fork or a copy stops here.
+      - name: Refuse to run outside osdlc/skillwright
+        if: github.repository != 'osdlc/skillwright'
+        run: |
+          echo "::error::This release workflow runs only in osdlc/skillwright, not in $GITHUB_REPOSITORY."
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./.github/actions/rust-toolchain
+
+      - name: Check the shared token is set
+        if: needs.plan.outputs.auth == 'token'
+        env:
+          TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::A first release needs CARGO_REGISTRY_TOKEN in the crates-io environment, and it is empty or missing."
+            exit 1
+          fi
+
+      - name: Get a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: read
+
+      # `token` is the shared token only for a first release. Left empty,
+      # release-plz uses trusted publishing. The action adds --dry-run for any
+      # non-empty `dry_run`, so it is '' unless a manual run asks for one.
+      - uses: release-plz/action@8921286633dfa0c4020f7f30bd1c14fe19cbb10e # v0.5.142
+        with:
+          command: release
+          manifest_path: packages/rust/Cargo.toml
+          config: packages/rust/release-plz.toml
+          version: ${{ env.RELEASE_PLZ_VERSION }}
+          token: ${{ needs.plan.outputs.auth == 'token' && secrets.CARGO_REGISTRY_TOKEN || '' }}
+          dry_run: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && 'true' || '' }}
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

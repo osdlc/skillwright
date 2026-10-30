@@ -309,7 +309,7 @@ jobs:
   # the merge. `release --dry-run` checks the config against each manifest
   # and packages each crate whose version is not on crates.io yet.
   # `update` runs in the throwaway checkout and its edits are discarded with
-  # it.
+  # it. The release-plz version is the one in release-plz.yml.
   #
   # The dry run publishes nothing, so a crate that needs the new version of
   # another crate in the same run would not find it on crates.io. The real
@@ -325,10 +325,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-    env:
-      # The release-plz binary the action installs. release-plz.yml is not in
-      # this repository yet; once it is, this job reads the version from it.
-      RELEASE_PLZ_VERSION: 0.3.172
     defaults:
       run:
         working-directory: .
@@ -339,6 +335,18 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/rust-toolchain
+
+      - name: Read the release-plz version
+        id: version
+        run: |
+          set -euo pipefail
+          v="$(sed -n 's/^  RELEASE_PLZ_VERSION: \(.*\)$/\1/p' .github/workflows/release-plz.yml)"
+          # Exactly one plain X.Y.Z, since the action puts it in a shell command.
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::RELEASE_PLZ_VERSION in release-plz.yml is not one X.Y.Z version: '$v'"
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -357,14 +365,14 @@ jobs:
           node scripts/crates-io-unpublished-patch.ts packages/rust/Cargo.toml packages/rust/release-plz.toml >> "$cfg"
           cat "$cfg"
 
-      # It installs the release-plz binary, which the `release-plz update`
-      # step reuses.
+      # Same action pin and version as release-plz.yml. It installs the
+      # release-plz binary, which the `release-plz update` step reuses.
       - uses: release-plz/action@8921286633dfa0c4020f7f30bd1c14fe19cbb10e # v0.5.142
         with:
           command: release
           manifest_path: packages/rust/Cargo.toml
           config: packages/rust/release-plz.toml
-          version: ${{ env.RELEASE_PLZ_VERSION }}
+          version: ${{ steps.version.outputs.version }}
           dry_run: 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
