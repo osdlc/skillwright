@@ -6,11 +6,9 @@
 //! because the Agent Skills standard allows six frontmatter fields and none of
 //! ours is among them.
 //!
-//! # Why a file at the destination rather than a database
-//!
-//! It travels with the directory: a destination copied to another machine,
-//! restored from a backup, or read by another tool carries its own record of
-//! what is in it. The vault model has no database to put a central table in.
+//! A file at the destination, not a database, so a destination copied to
+//! another machine, restored from backup, or read by another tool carries its
+//! own record.
 //!
 //! # The two hashes
 //!

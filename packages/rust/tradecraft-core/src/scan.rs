@@ -15,8 +15,8 @@
 //!
 //! `collect_skill_files` is a depth-bound, name-filtered walk written
 //! against [`Vfs::read_dir`] so it runs identically on a host with no
-//! filesystem. It keeps dot-directories, since `.claude/` and `.agents/` are where skills live. Do not reach for
-//! `ignore::WalkBuilder`: every one of its features would have to be switched
+//! filesystem. It keeps dot-directories, since `.claude/` and `.agents/` are
+//! where skills live. Do not reach for `ignore::WalkBuilder`: every one of its features would have to be switched
 //! off to match this behaviour, and it drags ripgrep's ignore-matching
 //! machinery into the wasm bundle for nothing.
 
@@ -46,9 +46,8 @@ pub const SKIP_DIRS: &[&str] = &[
 ];
 
 /// Path segments that mark a `SKILL.md` as test scaffolding rather than an
-/// authored skill. This repo's own `project-check` suite carries a dozen
-/// deliberately-malformed skills under `tests/skill-doc-fixtures/`; listing
-/// them as real would make the roster actively misleading.
+/// authored skill. A test suite's deliberately malformed skills would
+/// otherwise list as real ones.
 const FIXTURE_SEGMENTS: &[&str] = &["tests", "test", "fixtures", "__fixtures__", "testdata"];
 
 /// Knobs for a scan. Defaults are tuned for a developer machine, not a server.
@@ -153,8 +152,7 @@ pub fn scan_root(vfs: &dyn Vfs, root: &CorpusRoot, options: &ScanOptions) -> Sca
 /// Collects `(absolute SKILL.md, directory relative to the root)` for every
 /// skill under `dir`, pushing them in a deterministic order.
 ///
-/// `depth` is the depth of `dir` itself and matches `WalkBuilder::max_depth`
-/// exactly: depth 0 is the root, its children are depth 1, and an entry is
+/// `depth` is the depth of `dir` itself: depth 0 is the root, its children are depth 1, and an entry is
 /// visited only while its own depth is within `max_depth`. Recursion is
 /// therefore bounded by `max_depth` (10 by default), which is what makes
 /// straight recursion safe here rather than an explicit stack.
@@ -331,7 +329,7 @@ mod tests {
         );
     }
 
-    /// The three walk rules that survived dropping `ignore`, checked together
+    /// The three walk rules, checked together
     /// against an in-memory tree — which also proves a scan runs with no
     /// filesystem under it at all, the point of the whole seam.
     #[test]

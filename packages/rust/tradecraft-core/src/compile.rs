@@ -36,7 +36,7 @@
 //!
 //! Keying the vault copies by their full vault-relative path is what makes two
 //! linked notes sharing a basename land at two paths instead of refusing —
-//! The disambiguation the compile spec promises. A genuine collision (two
+//! the disambiguation the compile spec promises. A genuine collision (two
 //! sources claiming one output path) is still possible across the placements,
 //! and it is refused `path-collision` naming the skill, because any winner
 //! would silently drop the loser.
@@ -407,9 +407,9 @@ impl Closure {
 ///   `literal_skill_calls`), which is right for one harness only. Every
 ///   such call is listed in one refusal.
 ///
-/// The three tokens beyond the closed set (`cycle`, `unsafe-path`,
-/// `path-collision` are the publish spec's) are this pass's own;
-/// they follow the set's morphology so they can join it unchanged.
+/// Every token above except `cycle`, `unsafe-path` and `path-collision` (the
+/// publish spec's) is this pass's own; they follow the closed set's morphology
+/// so they can join it unchanged.
 pub fn compile_note(
     vfs: &dyn Vfs,
     source: &CompileSource<'_>,
@@ -464,7 +464,7 @@ pub fn compile_note(
         outputs.insert(output_path.clone(), (bytes, executable));
     }
 
-    // Validate the emitted files again: every transformation above either replaced a token or refused, but
+    // Every transformation above either replaced a token or refused, but
     // splicing can move text across fence boundaries and frontmatter is
     // carried untransformed, so the emitted files are scanned once more.
     let shown = &renderer.shown_notation;
@@ -695,12 +695,11 @@ const EXCLUDED_VAULT_DIRECTORIES: &[&str] = &[".git", ".obsidian", ".trash", "no
 ///
 /// `tests`/`fixtures` are a fixed convention rather than a project-file
 /// setting: every skill gets this for free, with nothing to declare and
-/// nothing to forget to declare.
-/// `entities-audit`'s `tests/fixtures/**/*.md` — literal
-/// `[[decision-note]]`-shaped test data, not real Obsidian links — is
-/// the motivating case: swept as an ordinary bundle resource, it reads as a
-/// broken link and fails `unresolved-syntax` on a vault that has nothing
-/// wrong with it. The rest mirror [`EXCLUDED_VAULT_DIRECTORIES`] above: no
+/// nothing to forget to declare. Fixture markdown is often literal
+/// `[[decision-note]]`-shaped test data, not real Obsidian links; swept as an
+/// ordinary bundle resource, it reads as a broken link and fails
+/// `unresolved-syntax` on a vault that has nothing wrong with it. The rest
+/// mirror [`EXCLUDED_VAULT_DIRECTORIES`] above: no
 /// bundle or asset tree should ship a `.git`, `.obsidian`, `.trash` or
 /// vendored `node_modules` either.
 pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
@@ -1415,12 +1414,11 @@ impl<'a> Renderer<'a> {
 
     /// One destination string to one vault file, in order:
     /// vault-relative exact match, then relative to the linking file, then a
-    /// unique basename match across the vault. Zero matches and several
-    /// matches are both refusals — the second because picking one would
-    /// publish bytes the author may not have meant.
+    /// unique basename match across the vault.
+    ///
     /// `Ok(None)` is a link that resolved to nothing — a reportable fact, not
-    /// a refusal. Ambiguity stays a refusal: picking one of several would
-    /// publish bytes the author may not have meant, which is a different
+    /// a refusal. Several matches are refused `link-ambiguous`: picking one
+    /// would publish bytes the author may not have meant, which is a different
     /// failure from a name that is simply not there yet.
     fn resolve(
         &self,
@@ -1600,8 +1598,8 @@ impl VaultIndex {
         })
     }
 
-    /// An exact vault-relative lookup, tolerant of `./` spellings. (`..` never reaches here;
-    /// it is refused before resolution.)
+    /// An exact vault-relative lookup, tolerant of `./` spellings. (`..` never
+    /// reaches here; it is refused before resolution.)
     fn exact(&self, relative: &str) -> Option<PathBuf> {
         let folded: Vec<&str> = relative
             .split('/')
@@ -1690,8 +1688,8 @@ fn split_destination(destination: &str) -> (&str, Option<String>) {
 }
 
 /// The extension of a link target as written, lowercased with its dot —
-/// `None` when the basename has no dot or only a leading one. This decides whether a target is
-/// addressed as a file or as a note.
+/// `None` when the basename has no dot or only a leading one. This decides
+/// whether a target is addressed as a file or as a note.
 ///
 /// `pub(crate)` for [`crate::adopt`], whose reverse rewrite applies the same
 /// convention deciding which wikilink targets keep their extension.
@@ -2788,7 +2786,7 @@ mod tests {
 
     #[test]
     fn the_committed_fixture_compiles_with_its_bundled_embed_inlined() {
-        // The committed fixture vault in tests/fixtures. A real filesystem, because the fixture is real files.
+        // A real filesystem, because the fixture is real files.
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/agent-skills-vault");
         let entry = root.join(
             "marketplaces/house/plugins/tools/skills/workflow-checklist/workflow-checklist.md",

@@ -227,8 +227,8 @@ mod tests {
             parsed.marketplace.harness_set(),
             BTreeSet::from(["claude".to_owned()])
         );
-        // No `shim_target:` in the block above — every project file written
-        // before this field existed keeps resolving the shim to `cli/sdlc`.
+        // No `shim_target:` in the block above, so the shim resolves to
+        // `cli/sdlc`.
         assert_eq!(config.shim_target, DEFAULT_SHIM_TARGET);
     }
 

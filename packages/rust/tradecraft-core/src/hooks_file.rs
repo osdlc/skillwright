@@ -10,7 +10,7 @@
 //! Unlike a hook note, a hook a harness cannot carry — its event, or for
 //! Cursor its shape (see `agent_adapt::render::hook_refusal`) — does not stop
 //! the build: it is left out of that harness's file and listed in the gap
-//! report's `left_out`, which is the explicit record of what was left out.
+//! report's `left_out`.
 //!
 //! A command names the plugin's own files as `${CLAUDE_PLUGIN_ROOT}/…`. Each
 //! pack's copy names its harness's own variable instead ([`localize`]),

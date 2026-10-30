@@ -8,10 +8,7 @@
 //! # On the frontmatter split
 //!
 //! [`split_frontmatter`] wraps `frontmatter_lossless::split_lenient`, the
-//! BOM/CRLF-tolerant fence split. It is used here instead of a frontmatter
-//! parser from another application's private crate, which this crate must not
-//! depend on. `frontmatter-lossless` is a shared package, so it is safe to
-//! depend on.
+//! BOM/CRLF-tolerant fence split.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -263,9 +260,9 @@ pub(crate) fn build_ref(root: &crate::CorpusRoot, relative_dir: &str, source: &s
 /// # One rule, in one place
 ///
 /// The rule itself is `agent_adapt::paths::join_within`, delegated to rather
-/// than restated. The version this function used to carry matched on
-/// [`Component`], which normalises before you can inspect it, so it accepted
-/// four inputs the renderer's rule refuses: `./x` (`CurDir` is dropped by
+/// than restated. Matching on [`Component`] instead does not work: it
+/// normalises before you can inspect it, so it accepts four inputs the
+/// renderer's rule refuses: `./x` (`CurDir` is dropped by
 /// `components()`), `a//b` (the empty segment is normalised away), `""` (zero
 /// components — it yields the root itself rather than something inside it),
 /// and `C:\…` off Windows (`Component::Prefix` never matches there). Two layers
@@ -429,7 +426,7 @@ mod tests {
         for relative in [
             "../etc",
             "/etc/passwd",
-            // The four the `Component`-matching version let through. Each is a
+            // The four a `Component` match lets through. Each is a
             // way of naming something other than a file inside the root, and
             // each is refused by the renderer, so each has to be refused here.
             "./x",

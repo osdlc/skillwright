@@ -1453,9 +1453,9 @@ fn group_by_plugin<'a>(
 ///
 /// The three kinds stay separate lists because they render into disjoint
 /// subtrees (`skills/`, `commands/`, `hooks/`) and only skills feed the
-/// plugin manifest's `Skills: …` wording. What they no longer are is three
-/// parallel maps: which plugins the vault holds is one question, and every
-/// consumer used to answer it again by unioning three key sets.
+/// plugin manifest's `Skills: …` wording. They share one group per plugin so
+/// "which plugins does the vault hold" is answered once, not by each consumer
+/// unioning three key sets.
 #[derive(Default)]
 struct PluginGroup<'a> {
     skills: Vec<&'a DiscoveredComponent>,
@@ -2495,9 +2495,9 @@ struct FileSets {
 /// The swap's own question: is this root, as a tree, exactly the render?
 ///
 /// Every rendered file matched, nothing else present, no empty directory.
-/// The middle term is where a count used to stand: given every rendered path
-/// matched, the destination holds all of them, so "the destination holds no
-/// more files than the render" is exactly `extra` being empty.
+/// Given every rendered path matched, the destination holds all of them, so
+/// "the destination holds no more files than the render" is exactly `extra`
+/// being empty.
 fn root_is_equal(sets: &FileSets, dest: &DestTree<'_>) -> bool {
     sets.differs.is_empty() && sets.extra.is_empty() && dest.state.empty_dirs.is_empty()
 }
@@ -2678,8 +2678,7 @@ fn plugin_version_bump(
         return None;
     }
     // Members changed when a rendered member did not match, or when the
-    // destination holds a member the render does not — which is what a count
-    // comparison used to say, given every other rendered member matched.
+    // destination holds a member the render does not.
     let slice = slice?;
     let members_changed =
         slice.differs.iter().any(|p| *p != manifest_key) || !slice.extra.is_empty();
@@ -5999,14 +5998,10 @@ mod tests {
     }
 
     /// The vault names it, so a configured name is beside the point rather
-    /// than in conflict with it.
-    ///
-    /// The field used to be required and a mismatch used to be refused, which
-    /// read it as the caller's *intent* about which marketplace to build.
-    /// That intent has its own field, validated against what the vault holds —
-    /// and requiring this one too made every host reimplement "find the
-    /// marketplace this vault names" before it could ask a question the core
-    /// was about to answer. A second host walked straight into it.
+    /// than in conflict with it. Which marketplace to build is
+    /// [`ExportRequest::marketplace`]'s job, not this field's. Requiring this
+    /// field and refusing a mismatch made every host find the vault's
+    /// marketplace itself before calling the core.
     #[test]
     fn the_note_names_the_marketplace_whatever_the_build_was_configured_with() {
         let vfs = vault_with_container_notes();
@@ -6146,7 +6141,7 @@ mod tests {
     }
 
     /// A marketplace that exists and holds nothing this verb renders is told
-    /// so, rather than told it is not there. Commands render now (see
+    /// so, rather than told it is not there. Commands render (see
     /// `a_commands_only_plugin_still_gets_a_marketplace_entry`), so an agent
     /// — a kind no root has a pack layout for — is what stays genuinely
     /// uncarried.

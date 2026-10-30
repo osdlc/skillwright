@@ -3,7 +3,7 @@
 //! Rendering is delegated entirely to `agent-adapt` (the crate used for
 //! projection): per-runtime `skills_dir`, frontmatter dialect,
 //! tool-name translation, annotations passthrough, and peer-resource
-//! emission are its contract as of 0.3. This module maps the store
+//! emission are its contract. This module maps the store
 //! snapshot into `agent_adapt::Skill` and hashes what comes back.
 //!
 //! # The `sw-` strip, again
@@ -244,11 +244,13 @@ pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError>
 /// different paths from different halves of the same note, and a caller
 /// holding an `sw-kind: agent` note has already decided which it wants.
 ///
-/// A runtime with no agent layout is refused by name rather than skipped. The
-/// portable Agent Skills shape is the one built-in without one — it defines
-/// `skills/` and `AGENTS.md` and no per-agent file — so an agent published
-/// there refuses `no-renderer` instead of being written to a path the standard
-/// does not define.
+/// A runtime with no agent layout is refused by name rather than skipped.
+/// [`agent_adapt::runtimes::agent_renderer_for`] is `None` for Antigravity,
+/// Cursor, Pi, GitHub Copilot and Portable (the portable Agent Skills shape
+/// defines `skills/` and `AGENTS.md` and no per-agent file), so an agent
+/// published to one of those
+/// refuses `no-renderer` instead of being written to a path the harness does
+/// not define.
 pub fn project_agent(
     snapshot: &SkillProjection,
     targets: &[String],
@@ -287,9 +289,9 @@ pub fn project_agent(
 ///
 /// A runtime with no command layout is refused by name.
 /// [`agent_adapt::runtimes::command_renderer_for`] is `Some` for Claude Code,
-/// Codex CLI, OpenCode and GitHub Copilot; `None` for Amp (no
-/// documented command format) and the packaging targets (`NpmPackage`,
-/// `Portable`) — so a command published to one of those refuses
+/// Codex CLI, OpenCode and GitHub Copilot; `None` for Antigravity, Amp,
+/// Cursor, Pi and the packaging targets (`NpmPackage`, `Portable`) — so a
+/// command published to one of those refuses
 /// `no-renderer` instead of landing somewhere the harness never looks.
 ///
 /// `overrides_target` is the canonical destination whose `sw-overrides` block
@@ -1028,7 +1030,7 @@ mod tests {
     #[test]
     fn every_other_render_failure_is_still_a_projection_error() {
         // A name with no legal slug is refused by the renderer too, and it is
-        // not a path escape — so the new mapping must not swallow it.
+        // not a path escape — so the `unsafe-path` mapping must not swallow it.
         let snap = snapshot("!!!", vec![]);
         let err = project_skill(&snap, &["claude-code".to_owned()], &sw()).unwrap_err();
         assert!(matches!(err, CoreError::Projection(_)), "{err}");
@@ -1083,7 +1085,7 @@ mod tests {
         );
     }
 
-    // --- Commands, across every runtime that now has a renderer -------------
+    // --- Commands, across every runtime with a command renderer ------------
 
     #[test]
     fn a_command_projects_into_every_verified_runtimes_layout() {

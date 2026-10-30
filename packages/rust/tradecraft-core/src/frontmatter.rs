@@ -50,17 +50,16 @@
 //!
 //! # The kind is resolved, not just read
 //!
-//! `sw-kind` is the primary source and the only one this crate implements, but
-//! it is not the only one there will be: [`resolve_kind`] is the seam the
-//! other layers attach to. See its documentation for the precedence and for
-//! what the folder layer costs.
+//! `sw-kind` is one layer of several: [`resolve_kind`] ranks it against a
+//! caller's override and the kind folder a note sits in. See its documentation
+//! for the precedence and for what the folder layer costs.
 //!
 //! # Two shapes, one reader
 //!
 //! The CLI writes flat keys, because the author edits them in vanilla Obsidian
 //! whose Properties panel renders a nested mapping through an inert read-only
-//! widget. the plugin supplies its own UI and may write a nested `sw:`
-//! block. Both are read here from day one — `claim` normalises the nested
+//! widget. The plugin supplies its own UI and may write a nested `sw:`
+//! block. Both are read here — `claim` normalises the nested
 //! shape onto the flat spelling and everything downstream sees one vocabulary
 //! — and a note carrying both is refused · `mixed-frontmatter-shape` rather
 //! than reconciled. There is no field-by-field comparison, only a shape check;
@@ -250,7 +249,7 @@ pub struct ResolvedKind {
 ///
 /// Default is "the caller knows nothing", which is what
 /// [`VaultFrontmatter::kind`] passes and what makes `sw-kind` the whole story
-/// until the other layers exist.
+/// for that caller.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct KindHints {
     /// **Layer 1.** An explicit instruction — "treat this note as a skill" —
@@ -492,9 +491,9 @@ impl VaultFrontmatter {
     /// The kind this note publishes as, with no caller hints in play — the
     /// note's own `sw-kind`, or [`EntityKind::Skill`] when it carries none.
     ///
-    /// The convenience for callers that have no override and no directory
-    /// configuration, which is every caller in this crate. Anything holding
-    /// either one calls [`resolve_kind`] directly.
+    /// The convenience for callers that have no override and no folder hint.
+    /// Anything holding either one — [`crate::discover`], [`crate::publish`] —
+    /// calls [`resolve_kind`] directly.
     pub fn kind(&self) -> EntityKind {
         resolve_kind(self.declared_kind, KindHints::default()).kind
     }
@@ -1002,7 +1001,8 @@ fn is_slug(s: &str) -> bool {
 }
 
 /// Says the quoting rule at the one moment it is actionable: a value we wanted
-/// as a string arrived as a number because YAML types a bare scalar by shape.
+/// as a string arrived as a number or a boolean because YAML types a bare
+/// scalar by shape.
 fn quoting_hint(value: &Value) -> &'static str {
     if value.is_number() || value.is_boolean() {
         " — quote it. A serialiser types a bare scalar by its shape, \
@@ -1134,8 +1134,7 @@ mod tests {
 
     #[test]
     fn the_kind_layers_rank_override_then_frontmatter_then_directory() {
-        // Layer 2 alone — the only layer implemented, and the whole story for
-        // every caller today.
+        // Layer 2 alone — the whole story for a caller with no hints.
         assert_eq!(
             resolve_kind(Some(EntityKind::Plugin), KindHints::default()),
             ResolvedKind {
@@ -1614,7 +1613,7 @@ mod tests {
 
     #[test]
     fn the_predicate_agrees_with_what_the_drain_actually_takes() {
-        // The bug [`take_from`]'s doc warns against: `is_ours` and `take_from`
+        // The bug `claim`'s doc warns against: `is_ours` and the drain
         // disagreeing on a key.
         //
         // So: for every key on the way in, "did the drain take it" must equal
