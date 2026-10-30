@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.9](https://github.com/osdlc/skillwright/compare/skillwright/v0.3.8...skillwright/v0.3.9) - 2026-10-30
+
+### Other
+
+- Follow-ups from the import review
+- Release docs and workflows: address review
+- release skillwright from this repository
+- Wire the TypeScript tooling into the workspace
+- Point repository links at osdlc/skillwright
+
 ## [0.3.8](https://github.com/osdlc/osdlc/compare/skillwright/v0.3.7...skillwright/v0.3.8) - 2026-10-29
 
 ### Other
