@@ -16,9 +16,11 @@
 //! | `exportSkills` | `export::export_skills` | `build`, and `check` through `mode` |
 //! | `adoptSkills` | `adopt::adopt_skills` | `adopt`, and its preview through `mode` |
 //! | `knownTargets` | `publish::KNOWN_TARGETS` | every verb that takes a target name |
+//! | `canonicalTarget` | `publish::canonical_target` | a host narrowing a run by target |
+//! | `publishableKinds` | `publish::kind_has_renderer` | a host choosing which notes to ask a status of |
 //! | `statusOf` | `status::status_of` | `status` |
 //!
-//! Seven exports, six core entry points, seven verbs' worth of behaviour — because
+//! `build` and `check` share an export, as do `adopt` and its preview, because
 //! a mode is a key on the request rather than an export of its own. See
 //! [`publish_skill`]'s "A dry run is one more key" note; `exportSkills` and
 //! `adoptSkills` are the same construction, and there is deliberately no
@@ -52,7 +54,7 @@
 //! `PublishedFile` with `status: "refused"` and a reason. That is the core's
 //! design, not this crate's, and the mapping below must not flatten it.
 //!
-//! The same asymmetry, exactly, on the newer exports: an adoption a rail stops
+//! Adoption has the same asymmetry: an adoption a rail stops
 //! whole — a symlinked source, a source the skills root contains — throws, and
 //! one skill whose vault target already exists comes back inside `AdoptReport`
 //! as an `AdoptedSkill` with `status: "refused"`. An export has no per-unit
@@ -87,10 +89,8 @@ pub use js_vfs::{HostVfs, JsVfs};
 /// What crosses the boundary as `request_json`: the core's `PublishRequest`,
 /// plus the one field this layer adds.
 ///
-/// A field on the request rather than a third parameter, so the exported arity
-/// does not move: hosts call `publishSkill(vfs, requestJson)`.
-/// `#[serde(default)]` makes the field optional, so a request serialized
-/// without it still deserializes and publishes under `sw`.
+/// A field on the request rather than a third parameter: hosts call
+/// `publishSkill(vfs, requestJson)`.
 ///
 /// It is a `String` stem rather than a `Namespace` because the core
 /// deliberately gives `Namespace` no `Deserialize`: every construction goes
@@ -122,9 +122,7 @@ struct WireRequest {
 ///
 /// `PublishRequest` carries a `mode`: `"write"`, or `"dry-run"` to classify
 /// every file and write nothing. The key is optional and absent means
-/// `"write"`, so a host that has never heard of it keeps publishing exactly as
-/// before, and one that wants a preview adds a key to the JSON it already
-/// builds.
+/// `"write"`.
 ///
 /// There is deliberately no `dryRunSkill` beside this: the core runs one
 /// publish path in both modes (see `tradecraft_core::publish`'s module doc),
@@ -213,8 +211,8 @@ pub fn known_targets() -> Result<String, JsValue> {
 ///
 /// # Why this one does not cross as JSON
 ///
-/// Every export above hands back a serialized core structure, because that is
-/// the only way a struct crosses. This answers with one name out of a
+/// Exports that return a core structure serialize it, because that is the
+/// only way a struct crosses. This answers with one name out of a
 /// compile-time vocabulary — there is no structure, and no error either, so
 /// there is nothing for a `Result<String, JsValue>` to carry. Wrapping it
 /// would add a `JSON.parse` to a value that is already a string.
@@ -692,9 +690,7 @@ mod tests {
         assert_eq!(wire.skills_root, None);
         assert_eq!(wire.namespace, None);
 
-        // And the one required field is required. It is the only one left:
-        // grouping a scan by plugin moved out to the build that renders one,
-        // and took the request's `default_plugin` with it.
+        // And the one required field is required.
         let err = serde_json::from_str::<WireDiscoverRequest>(r#"{}"#).unwrap_err();
         assert!(err.to_string().contains("vault_root"), "{err}");
     }

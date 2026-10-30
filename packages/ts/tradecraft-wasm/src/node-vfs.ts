@@ -40,11 +40,12 @@ export interface BaseVfs {
   /**
    * Move a file, or a directory with everything under it.
    *
-   * The additive pair (`rename`, `remove`) joined the contract with the
-   * marketplace's atomic commit, which stages a rendered root beside the live
-   * one and swaps the two by rename. A host that predates them keeps working
-   * until something actually renames — see `packages/rust/tradecraft-wasm/src/js_vfs.rs`
-   * — but `exportSkills` renames, so it implements both.
+   * `rename` and `remove` serve the marketplace's atomic commit, which stages
+   * a rendered root beside the live one and swaps the two by rename. They are
+   * optional on a host, which fails only when something actually renames or
+   * removes — see
+   * `packages/rust/tradecraft-wasm/src/js_vfs.rs` — but `exportSkills` renames,
+   * so this host implements both.
    *
    * Deliberately narrower than `fs.renameSync`: `to` must NOT exist. POSIX
    * silently replaces an occupied destination where Windows refuses, and a seam

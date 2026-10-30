@@ -26,10 +26,10 @@
 //! rather than an instance of a class — a non-structural import would look the
 //! method up on a prototype that does not exist.
 //!
-//! # Two methods are additive, and optional until something calls them
+//! # Two methods are optional until something calls them
 //!
-//! `rename` and `remove` are optional on the host object, so a host that
-//! predates them still adopts cleanly:
+//! `rename` and `remove` are optional on the host object, so a host written
+//! before them still adopts cleanly:
 //!
 //! ```ts
 //! rename?(from: string, to: string): void
@@ -136,7 +136,7 @@ extern "C" {
     #[wasm_bindgen(method, structural, catch, js_name = setExecutable)]
     fn set_executable(this: &HostVfs, path: &str, yes: bool) -> Result<(), JsValue>;
 
-    // The additive pair. Only ever invoked after `JsVfs::require` has seen a
+    // The optional pair. Only ever invoked after `JsVfs::require` has seen a
     // function under the name, so the structural lookup cannot land on
     // `undefined`.
     #[wasm_bindgen(method, structural, catch)]
