@@ -97,13 +97,23 @@ jobs:
         run: |
           set -euo pipefail
           missing=""
+          misplaced=""
           for tag in skillwright/v0.3.8 tradecraft-core/v0.40.1; do
             if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
               missing="$missing $tag"
+            # A tag copied from osdlc/osdlc points at a commit outside this
+            # history, and the walk would not stop at it.
+            elif ! git merge-base --is-ancestor "refs/tags/$tag^{commit}" HEAD; then
+              misplaced="$misplaced $tag"
             fi
           done
           if [ -n "$missing" ]; then
             echo "::error::Missing release tags:$missing. Push the tags imported from osdlc/osdlc first; see 'Moving releases from osdlc/osdlc' in packages/rust/skillwright/RELEASING.md."
+          fi
+          if [ -n "$misplaced" ]; then
+            echo "::error::Release tags not on this branch's history:$misplaced. Each must point at its commit in the table in 'Moving releases from osdlc/osdlc' in packages/rust/skillwright/RELEASING.md."
+          fi
+          if [ -n "$missing$misplaced" ]; then
             exit 1
           fi
 
