@@ -1,12 +1,35 @@
 {
   "schema": 1,
   "pr": 8,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "2d4b409084bcc0a1c2423695888b4806314f15ef",
+  "base": "99b33352aa7004b2bbffcfeee3bd6a3be4c0db73",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:unknown-r8k2zq",
     "at": "2026-10-30T00:47:35.964Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": ".github/workflows/rust.yml",
+      "line": 425,
+      "title": "skip condition does not pin the head repository",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "merge order against the hand-edited release PR changelog",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
