@@ -123,9 +123,8 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
         [one] => *one,
         many => {
-            // No `--marketplace` flag exists on this verb to disambiguate —
-            // see the unit's report for why that is a real, noted gap rather
-            // than an oversight.
+            // This verb has no `--marketplace` flag to disambiguate with (a
+            // known gap), so a name two marketplaces share is a usage error.
             let paths: Vec<&str> = many
                 .iter()
                 .map(|c| c.vault_relative_path.as_str())

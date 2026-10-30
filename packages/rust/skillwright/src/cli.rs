@@ -53,8 +53,9 @@ const PROG: &str = "skillwright";
 const DESCRIPTION: &str = "Publish Obsidian-vault skill notes to every major coding-agent harness. \
                            A thin CLI over the one Rust core.";
 
-/// The verbs this binary declares, in the order the usage line prints
-/// them.
+/// The verbs the usage line for a bare `skillwright` prints, in order. Not
+/// every verb [`Verb`] declares: `bump`, `new`, `rename`, `move`, `delete`
+/// and `convert` are missing.
 const VERBS: [&str; 9] = [
     "publish",
     "build",
@@ -872,7 +873,7 @@ pub fn run(argv: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     run_with(argv, &mut ctx)
 }
 
-/// Run `skillwright with` and return the exit code.
+/// [`run`], with the context supplied.
 pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
     if argv.is_empty() {
         let _ = writeln!(ctx.err, "usage: {PROG} <{}> [options]", VERBS.join("|"));

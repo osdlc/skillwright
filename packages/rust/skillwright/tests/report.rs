@@ -49,8 +49,8 @@ mod render_unit_line_tests {
 
     #[test]
     fn a_not_carried_member_names_its_path_and_its_kind() {
-        // The live bug: the switch was written against three variants, so the
-        // fourth returned `undefined` and the report line read `undefined`.
+        // A renderer that handles only three variants prints `undefined` for
+        // the fourth.
         let line = render_unit_line(&not_carried(), ExportMode::Build);
         assert!(line.contains("marketplaces/house/plugins/tools/agents/triage.md"));
         assert!(line.contains("agent"));
@@ -131,8 +131,8 @@ mod render_export_tally_tests {
     fn every_unit_is_counted_exactly_once() {
         // The tally's own contract: its numbers sum to the units it was
         // given, and no unit is filed under a key its variant does not
-        // carry. Keying on `unit.status` counted a not-carried member under
-        // `undefined` and then filtered it back out.
+        // carry. Keying on `unit.status` files a not-carried member under
+        // `undefined`.
         let units = vec![
             plugin(UnitStatus::Written),
             plugin(UnitStatus::Unchanged),

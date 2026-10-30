@@ -97,7 +97,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     // `name` is not asked for here. A marketplace note names itself and the
     // core reads it; where a vault holds no marketplace at all the core
     // refuses `unnamed-marketplace`, naming what is missing and where to
-    // write it. Passed through when configured, as the fallback it now is.
+    // write it. Passed through when configured, as the fallback.
     //
     // `--marketplace` is the SELECTOR: which of the vault's marketplaces to
     // build. It reaches `ExportRequest::marketplace`, which is validated
