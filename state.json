@@ -1,12 +1,46 @@
 {
   "schema": 1,
   "pr": 7,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "99abc5a05d4b37c1b08eb80c992cc50fd8825da8",
+  "base": "99b33352aa7004b2bbffcfeee3bd6a3be4c0db73",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:rv-k7q2xa",
     "at": "2026-10-30T00:42:20.144Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/skillwright/CHANGELOG.md",
+      "line": 14,
+      "title": "skillwright 0.3.9 changelog lists repo-internal commits",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/CHANGELOG.md",
+      "line": 14,
+      "title": "tradecraft-core 0.40.2 entries are vague",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "rust CI gate is red: release-plz job fails on this PR",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
