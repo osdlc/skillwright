@@ -11,8 +11,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Other
 
-- Follow-ups from the import review
-- Point repository links at osdlc/skillwright
+- tradecraft-core now lives in https://github.com/osdlc/skillwright. Repository and documentation links point there.
 
 ## [0.40.1](https://github.com/osdlc/osdlc/compare/tradecraft-core/v0.40.0...tradecraft-core/v0.40.1) - 2026-10-29
 
