@@ -559,23 +559,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_destination_with_only_the_old_folder_is_unknown_with_the_rename_hint() {
-        let vfs = vault();
-        vfs.create_dir_all(Path::new("/dest/.tradecraft")).unwrap();
-        vfs.write_file(Path::new("/dest/.tradecraft/manifest.json"), b"{}")
-            .unwrap();
-
-        let status = state_of(&vfs);
-        assert_eq!(status.state, PublishState::Unknown);
-        let reason = status.reason.unwrap();
-        assert!(reason.starts_with("bad-manifest: "), "{reason}");
-        assert!(
-            reason.contains("rename .tradecraft/ to .skillwright/"),
-            "{reason}"
-        );
-    }
-
     // A contributor that is simply gone is nameable, and naming it is the
     // difference between a status somebody can act on and one they cannot.
     #[test]

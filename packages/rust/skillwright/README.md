@@ -141,22 +141,29 @@ Each verb's own options:
 ## Configuration
 
 Two files, both optional. A flag overrides the project file, which overrides
-the machine file. `skillwright` never writes either one.
+the machine file, except for `paths:` (below). `skillwright` never writes
+either one.
 
 - **The project file** is `skillwright.yaml`. It is committed, and found by
   walking up from the working directory, or named with `--config`. It holds
   the vault path, the frontmatter namespace, the destinations and the
   `marketplace:` block.
 - **The machine file** is `<config-home>/skillwright/config.yaml`, set by
-  `SKILLWRIGHT_MACHINE_CONFIG` when that is set. It has the same shape and
-  fills in each key the project file leaves out.
+  `SKILLWRIGHT_MACHINE_CONFIG` when that is set. It has the same shape. It
+  supplies a whole top-level key when the project file leaves that key out
+  or empty. Nested values are not merged: a project `marketplace:` block
+  replaces the machine one entirely.
+
+`paths:` is the exception. Names from both files merge, and when both define
+the same name the machine file's value wins.
 
 `<config-home>` comes from [`tiered-dirs`](https://crates.io/crates/tiered-dirs): for example
 `~/Library/Application Support` on macOS and `~/.config` on Linux.
 `SKILLWRIGHT_ROOT` and the other `SKILLWRIGHT_*` variables move it.
 
-Relative paths in a config file resolve against that file's directory. A
-flag's path resolves against the working directory.
+Relative paths in a config file resolve against that file's directory,
+including relative entries under `paths:` in the machine file. A flag's path
+resolves against the working directory.
 
 ```yaml
 vault: notes
@@ -215,23 +222,14 @@ refuses to run it until you allow it in System Settings, Privacy & Security.
 
 Each release is listed in the [changelog](CHANGELOG.md).
 
-This crate was published as `tradecraft` up to 0.3.7. It does not read the old
-names. An old project file, manifest folder or frontmatter key stops the run
-with a one-line error that says what to rename.
+This crate was published as `tradecraft` up to 0.3.7. skillwright is in
+alpha and does not read the old names, so a project that used them must be
+renamed by hand: the project file, manifest folder, frontmatter keys,
+environment variables and machine file all take the `skillwright` and `sw`
+spellings. Old `tc-` keys are not errors: they publish as ordinary keys, and a
+note with `tc-kind: plugin` reads as a skill.
 
-| Old | New |
-|---|---|
-| `tradecraft.yaml` | `skillwright.yaml` |
-| `.tradecraft/` (manifest folder) | `.skillwright/` |
-| `tc-*` frontmatter keys, `tc:` block | `sw-*`, `sw:` |
-| `TRADECRAFT_*` environment variables | `SKILLWRIGHT_*` |
-| `<config-home>/tradecraft/config.yaml` | `<config-home>/skillwright/config.yaml` |
-| `.tradecraft-stage/` (build staging folder) | `.skillwright-stage/` |
-
-A marketplace tree built by `tradecraft` is still recognised as this tool's
-own, and the next build rewrites it. The environment variables and the
-machine file are not checked: move them by hand. A `.tradecraft-stage/` folder
-left by an interrupted `tradecraft build` is not used and is safe to delete.
+`publish` applies a note's `sw-overrides`; `build` and `check` do not.
 
 ## License
 

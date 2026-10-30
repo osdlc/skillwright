@@ -16,7 +16,7 @@ use tradecraft_core::Namespace;
 
 use crate::config::{
     ConfigLoad, NEEDS, PROJECT_FILE, SkillwrightConfig, load_config, machine_config_path,
-    old_project_file, old_project_file_hint, resolve_against_cwd, resolve_configured_path,
+    resolve_against_cwd, resolve_configured_path,
 };
 use crate::exit::{blocked, no_config};
 
@@ -68,21 +68,6 @@ pub fn resolve_run(
     cwd: &Path,
     err: &mut dyn Write,
 ) -> Result<ResolvedRun, i32> {
-    // Only a run that searches for `skillwright.yaml` can miss an old project
-    // file; `--config` and `--vault` name what they mean.
-    if flags.config.is_none()
-        && flags.vault.is_none()
-        && let Some(old) = old_project_file(cwd)
-    {
-        return Err(blocked(
-            err,
-            &format!(
-                "old project file: {} ({})",
-                old.display(),
-                old_project_file_hint(&old)
-            ),
-        ));
-    }
     let loaded = load_config(flags.config.as_deref(), cwd);
     let mut config: Option<SkillwrightConfig> = None;
     let mut config_dir = cwd.to_path_buf();

@@ -64,8 +64,9 @@ pub struct ExportFlags {
     pub out: Option<String>,
     /// The skills root to scan. Overrides `marketplace.skills_root`.
     pub skills_root: Option<String>,
-    /// Which marketplace to build. Refused by name if the vault holds no
-    /// such one.
+    /// Which marketplace to build. Refused if the vault holds marketplaces and
+    /// none has this name; a vault with none builds under it. The note's own
+    /// name, or else a configured `marketplace.name`, is what gets published.
     pub marketplace: Option<String>,
     /// The plugin a note with no `sw-plugin` belongs to. Overrides
     /// `marketplace.default_plugin`.

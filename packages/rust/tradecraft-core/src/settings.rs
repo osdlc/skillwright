@@ -67,8 +67,7 @@ pub struct MarketplaceSettings {
     /// Where the per-skill `scripts/sdlc` shim looks for this marketplace's
     /// launcher asset, relative to the plugin's own root — see
     /// [`MarketplaceConfig::shim_target`]. Absent means
-    /// [`DEFAULT_SHIM_TARGET`] (`"cli/sdlc"`), which is what every project
-    /// file predating this field keeps resolving to.
+    /// [`DEFAULT_SHIM_TARGET`] (`"cli/sdlc"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shim_target: Option<String>,
 }

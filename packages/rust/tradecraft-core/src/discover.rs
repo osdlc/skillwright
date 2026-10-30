@@ -910,7 +910,7 @@ fn read_source(
         ours.declared_kind,
         KindHints {
             requested: None,
-            configured: placement.kind,
+            folder: placement.kind,
         },
     );
 
@@ -1627,7 +1627,7 @@ mod tests {
     /// A hook promoted out of any `hooks/` folder still declares itself —
     /// AC-1's other half, where nothing above the note names it.
     #[test]
-    fn a_note_declaring_ap_kind_hook_anywhere_is_a_hook() {
+    fn a_note_declaring_sw_kind_hook_anywhere_is_a_hook() {
         let vfs = vault();
         write(
             &vfs,
