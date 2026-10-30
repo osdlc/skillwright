@@ -339,7 +339,7 @@ pub fn project_command(
 /// # Errors
 ///
 /// * `refused: no-renderer` — the target has no hooks layout at all.
-/// * [`CoreError::Projection`] -- the target does not carry one of the events; see `agent_adapt::render::render_hooks_json`'s docs (packages/rust/agent-adapt/src/render/hooks_json.rs) for the refusal contract.
+/// * [`CoreError::Projection`] -- the target does not carry one of the events; see the docs of `agent_adapt::render::render_hooks_json` (<https://docs.rs/agent-adapt>) for the refusal contract.
 pub fn project_plugin_hooks(
     hooks: &[agent_adapt::Hook],
     target: &str,
