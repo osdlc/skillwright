@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.9](https://github.com/osdlc/skillwright/compare/skillwright/v0.3.8...skillwright/v0.3.9) - 2026-10-30
+
+### Other
+
+- skillwright now lives in https://github.com/osdlc/skillwright. Repository, homepage and install links point there, and releases are built from it.
+
 ## [0.3.8](https://github.com/osdlc/osdlc/compare/skillwright/v0.3.7...skillwright/v0.3.8) - 2026-10-29
 
 ### Other
