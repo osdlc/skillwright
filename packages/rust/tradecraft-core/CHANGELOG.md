@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.41.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.40.2...tradecraft-core/v0.41.0) - 2026-10-30
+
+### Fixed
+
+- machine-file path resolution, refusal and help wording; drop old project name from changelogs
+
+### Removed
+
+- handling of old names; fix config and doc errors
+
 ## [0.40.2](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.40.1...tradecraft-core/v0.40.2) - 2026-10-30
 
 ### Other

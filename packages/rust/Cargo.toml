@@ -68,7 +68,7 @@ yaml-splice = "0.3.3"
 
 # The member crate others depend on, also named by version so a published
 # manifest points at crates.io. release-plz publishes it before skillwright.
-tradecraft-core = { path = "tradecraft-core", version = "0.40.2" }
+tradecraft-core = { path = "tradecraft-core", version = "0.41.0" }
 
 # The size profile tradecraft-wasm/build.sh builds with. A named profile
 # applies only to a build that asks for it, so no other crate or test run is
