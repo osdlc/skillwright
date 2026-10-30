@@ -2,8 +2,7 @@
 // builds and packs the package at version `0.0.1-stage`, publishes that
 // tarball under the `stage` tag, then adds the GitHub Actions trusted
 // publisher with `npm trust github`. package.json is restored after packing.
-// npm can only add a trusted publisher to a package that already exists (see
-// packages/README.md, "Publishing a new library for the first time").
+// npm can only add a trusted publisher to a package that already exists.
 //
 //   node scripts/stage-npm-package.ts [--dry-run] [--workflow <file>] [--environment <name>] <package> ...
 //
@@ -15,8 +14,8 @@
 // is left as it is, so a re-run is safe. Run it logged in to npm as an owner of
 // the @osdlc scope. `npm trust` needs two-factor authentication on the account.
 // npm asks for a one-time password or a browser login. npm runs through npx at
-// the version packages-publish.yml uses, because `npm trust` needs 11.15 or
-// later. A dry run publishes nothing and changes nothing on npm, but it does
+// the version .github/workflows/skillwright-release.yml installs, because
+// `npm trust` needs 11.15 or later. A dry run publishes nothing and changes nothing on npm, but it does
 // build the package.
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
