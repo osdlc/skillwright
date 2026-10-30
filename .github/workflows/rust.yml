@@ -413,7 +413,20 @@ jobs:
             echo "::warning::$tag is not in this repository yet; tagged $IMPORTED for this run only."
           done
 
+      # Skipped on the release pull request itself, which `update` produced.
+      # There the crate versions are already bumped, so release-plz cannot
+      # bound its history walk with the tag of the current version (it does
+      # not exist yet). It falls back to the commit the last published version
+      # was built from. For the versions published from osdlc/osdlc that commit
+      # is not in this history, so the walk reaches the imported commits,
+      # which have no Cargo workspace, and fails. The `release --dry-run` step
+      # above still checks the release pull request.
       - name: release-plz update
+        if: >-
+          !(github.event_name == 'pull_request' &&
+            startsWith(github.head_ref, 'release-plz-') &&
+            github.event.pull_request.user.type == 'Bot' &&
+            github.event.pull_request.head.repo.full_name == github.repository)
         run: release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
 
   rust:
