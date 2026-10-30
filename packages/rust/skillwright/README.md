@@ -151,7 +151,7 @@ the machine file. `skillwright` never writes either one.
   `SKILLWRIGHT_MACHINE_CONFIG` when that is set. It has the same shape and
   fills in each key the project file leaves out.
 
-`<config-home>` comes from [`tiered-dirs`](../tiered-dirs): for example
+`<config-home>` comes from [`tiered-dirs`](https://crates.io/crates/tiered-dirs): for example
 `~/Library/Application Support` on macOS and `~/.config` on Linux.
 `SKILLWRIGHT_ROOT` and the other `SKILLWRIGHT_*` variables move it.
 

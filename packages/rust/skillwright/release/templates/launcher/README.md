@@ -20,7 +20,7 @@ so Gatekeeper does not block them.
 The same binaries are on the GitHub Release `skillwright/v<version>` of
 [osdlc/skillwright](https://github.com/osdlc/skillwright/releases), and `cargo binstall skillwright`
 installs them. The crate's README is the user guide:
-<https://github.com/osdlc/skillwright#readme>.
+<https://github.com/osdlc/skillwright/tree/main/packages/rust/skillwright#readme>.
 
 Licensed under MIT or Apache-2.0, at your option. Licenses of the open-source crates the binary
 includes are in `THIRD_PARTY_NOTICES.md`.

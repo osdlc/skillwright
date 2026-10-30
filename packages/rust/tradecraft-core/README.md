@@ -8,7 +8,7 @@ Cursor and Pi.
 
 The markdown files are the system of record and git is their history. There
 is no database. Rendering for each tool is done by
-[`agent-adapt`](../agent-adapt).
+[`agent-adapt`](https://crates.io/crates/agent-adapt).
 
 ## Install
 

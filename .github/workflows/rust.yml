@@ -11,7 +11,8 @@
 #
 # The toolchain is the pin in packages/rust/rust-toolchain.toml (with the
 # wasm32 target added in the `wasm` job), except in the `msrv` job (the
-# workspace `rust-version`).
+# workspace `rust-version`) and the `minimal-versions` lockfile step (a dated
+# nightly, for `-Z direct-minimal-versions`).
 #
 # Every action is pinned to a commit SHA; the comment names its release.
 name: rust
@@ -144,6 +145,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Not Windows, on purpose. skillwright and tradecraft-core do not
+        # support it yet (their READMEs say so), and osdlc/osdlc did not test
+        # them there either.
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -196,6 +200,38 @@ jobs:
         run: |
           rm -f Cargo.lock
           cargo generate-lockfile
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+  # Resolves each crate's direct dependencies to the lowest versions its
+  # manifest allows, then tests. Catches a version requirement that is lower
+  # than what the code needs.
+  minimal-versions:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A dated nightly, so a nightly regression cannot turn CI red on its
+      # own. Only the lockfile step uses it. Move the date when needed.
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-15
+
+      - name: Resolve direct dependencies to their minimal versions
+        run: cargo update -Z direct-minimal-versions
+
+      # Back to the pinned toolchain for the build and the tests.
+      - uses: ./.github/actions/rust-toolchain
+
+      - uses: ./.github/actions/rust-build-cache
+        with:
+          key: minimal-versions
 
       - name: Test
         run: cargo test --workspace --locked
@@ -263,6 +299,11 @@ jobs:
           name: tradecraft-wasm
           path: packages/ts/tradecraft-wasm/wasm/
 
+  # Breaking changes are checked on the release pull request, not on each
+  # pull request: release-plz runs cargo-semver-checks there
+  # (`semver_check = true` in release-plz.toml). osdlc/osdlc's per-PR
+  # semver-version job did not move here.
+  #
   # Runs release-plz as the release workflow does, but without publishing,
   # tagging or pushing, so a bad release-plz.toml fails here and not after
   # the merge. `release --dry-run` checks the config against each manifest
@@ -352,6 +393,8 @@ jobs:
       # commits, which have no Cargo workspace, and fails. This adds the
       # missing tags in the throwaway checkout only. It does nothing once the
       # tags exist.
+      # On a pull request only. On a push to main the tags must be real, so a
+      # missing one fails the job instead.
       - name: Tag the imported releases when their tags are missing
         env:
           # The import of osdlc/osdlc b582e6ad7a, which released both versions.
@@ -359,17 +402,22 @@ jobs:
         run: |
           set -euo pipefail
           for tag in skillwright/v0.3.8 tradecraft-core/v0.40.1; do
-            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-              git tag "$tag" "$IMPORTED"
-              echo "::notice::$tag is not in this repository yet; tagged $IMPORTED for this run only."
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              continue
             fi
+            if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+              echo "::error::$tag is missing. Push the tags imported from osdlc/osdlc; see packages/rust/skillwright/RELEASING.md."
+              exit 1
+            fi
+            git tag "$tag" "$IMPORTED"
+            echo "::warning::$tag is not in this repository yet; tagged $IMPORTED for this run only."
           done
 
       - name: release-plz update
         run: release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
 
   rust:
-    needs: [changes, lint, rust-test, msrv, wasm, release-plz]
+    needs: [changes, lint, rust-test, msrv, minimal-versions, wasm, release-plz]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
