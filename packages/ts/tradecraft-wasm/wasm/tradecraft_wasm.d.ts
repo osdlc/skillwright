@@ -47,8 +47,8 @@ export function adoptSkills(vfs: any, request_json: string): string;
  *
  * # Why this one does not cross as JSON
  *
- * Every export above hands back a serialized core structure, because that is
- * the only way a struct crosses. This answers with one name out of a
+ * Exports that return a core structure serialize it, because that is the
+ * only way a struct crosses. This answers with one name out of a
  * compile-time vocabulary — there is no structure, and no error either, so
  * there is nothing for a `Result<String, JsValue>` to carry. Wrapping it
  * would add a `JSON.parse` to a value that is already a string.
@@ -142,9 +142,7 @@ export function knownTargets(): string;
  *
  * `PublishRequest` carries a `mode`: `"write"`, or `"dry-run"` to classify
  * every file and write nothing. The key is optional and absent means
- * `"write"`, so a host that has never heard of it keeps publishing exactly as
- * before, and one that wants a preview adds a key to the JSON it already
- * builds.
+ * `"write"`.
  *
  * There is deliberately no `dryRunSkill` beside this: the core runs one
  * publish path in both modes (see `tradecraft_core::publish`'s module doc),
