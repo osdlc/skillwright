@@ -4,12 +4,13 @@
 // publisher with `npm trust github`. package.json is restored after packing.
 // npm can only add a trusted publisher to a package that already exists.
 //
-//   node scripts/stage-npm-package.ts [--dry-run] [--workflow <file>] [--environment <name>] <package> ...
+//   node scripts/stage-npm-package.ts [--dry-run] [--repository <owner/repo>] [--workflow <file>] [--environment <name>] <package> ...
 //
 // Each <package> is a package directory (packages/ts/<name>). The trusted
-// publisher names --workflow (default packages-publish.yml) and, when given,
-// --environment. packages/rust/skillwright/release/dist.ts `stage` uses both
-// for the skillwright npm packages. A package already on npm is not published again, and one that
+// publisher names --repository (default osdlc/skillwright), --workflow (default
+// packages-publish.yml) and, when given, --environment.
+// packages/rust/skillwright/release/dist.ts `stage` passes all three for the
+// skillwright npm packages. A package already on npm is not published again, and one that
 // already has a trusted publisher is left as it is, so a re-run is safe. Run it logged in to npm as
 // an owner of the @osdlc scope. `npm trust` needs two-factor authentication on the account. npm
 // asks for a one-time password or a browser login. npm runs through npx at the version
@@ -24,23 +25,23 @@ import { parseArgs } from 'node:util'
 const PLACEHOLDER = '0.0.1-stage'
 const NPM = 'npm@11.19.1'
 const OWNER = 'osdlc'
-const REPO = 'osdlc'
 
 function usage(problem: string): never {
   console.error(
-    `${problem}\nusage: node scripts/stage-npm-package.ts [--dry-run] [--workflow <file>] [--environment <name>] <package> ...`,
+    `${problem}\nusage: node scripts/stage-npm-package.ts [--dry-run] [--repository <owner/repo>] [--workflow <file>] [--environment <name>] <package> ...`,
   )
   process.exit(2)
 }
 
 let parsed: {
-  values: { 'dry-run'?: boolean; workflow?: string; environment?: string }
+  values: { 'dry-run'?: boolean; repository?: string; workflow?: string; environment?: string }
   positionals: string[]
 }
 try {
   parsed = parseArgs({
     options: {
       'dry-run': { type: 'boolean' },
+      repository: { type: 'string' },
       workflow: { type: 'string' },
       environment: { type: 'string' },
     },
@@ -50,6 +51,7 @@ try {
   usage((e as Error).message)
 }
 const dryRun = parsed.values['dry-run'] ?? false
+const REPOSITORY = parsed.values.repository ?? 'osdlc/skillwright'
 const WORKFLOW = parsed.values.workflow ?? 'packages-publish.yml'
 const ENVIRONMENT = parsed.values.environment
 const dry = dryRun ? ['--dry-run'] : []
@@ -149,7 +151,7 @@ const trust = [
   '--file',
   WORKFLOW,
   '--repository',
-  `${OWNER}/${REPO}`,
+  REPOSITORY,
   ...(ENVIRONMENT ? ['--environment', ENVIRONMENT] : []),
   '--allow-publish',
 ]
@@ -178,7 +180,7 @@ for (const { dir, name } of targets) {
   if (dryRun && !(existed && loggedIn)) continue
   if (npm([...trust, name, '--yes', ...dry], { stdio: 'inherit' }).status !== 0) {
     console.error(`  npm trust failed. Add it by hand at https://www.npmjs.com/package/${name}/access:
-    GitHub Actions, organization ${OWNER}, repository ${REPO}, workflow ${WORKFLOW}, environment ${ENVIRONMENT ?? '(none)'}.`)
+    GitHub Actions, repository ${REPOSITORY}, workflow ${WORKFLOW}, environment ${ENVIRONMENT ?? '(none)'}.`)
     failed = true
   }
 }
