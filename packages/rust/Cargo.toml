@@ -59,8 +59,8 @@ agent-adapt = "0.19.2"
 config-layers = "0.8.0"
 etag-write = "0.2.4"
 frontmatter-lossless = "1.1.1"
-markdown-link = "0.5.2"
-markdown-relink = "0.1.7"
+markdown-link = "0.5.3"
+markdown-relink = "0.1.8"
 path-guard = "0.3.2"
 tiered-dirs = "0.3.7"
 typed-git = "0.4.0"
@@ -68,7 +68,7 @@ yaml-splice = "0.3.3"
 
 # The member crate others depend on, also named by version so a published
 # manifest points at crates.io. release-plz publishes it before skillwright.
-tradecraft-core = { path = "tradecraft-core", version = "0.40.2" }
+tradecraft-core = { path = "tradecraft-core", version = "0.41.0" }
 
 # The size profile tradecraft-wasm/build.sh builds with. A named profile
 # applies only to a build that asks for it, so no other crate or test run is

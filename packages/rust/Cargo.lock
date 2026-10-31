@@ -541,9 +541,9 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "markdown-link"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2dcfa1bef79ae50385f5e78bf1aea66381261bbf1a0ca7619ee211d5131e8b21"
+checksum = "e5ebee4046936e150a2505d193c4ae38bf51708e787e4dc8eedb3e36ec318679"
 dependencies = [
  "slug-collate",
  "yaml-splice",
@@ -551,9 +551,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-relink"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "652761de9f5e6c4d30dd4533256bc91d3b1c7cd87ddbc12175c2a7dacbf73a12"
+checksum = "368750fd8c95fcc7b14bfabe2b52ca89016bfeddac16a00294dea21ca16aa63c"
 dependencies = [
  "etag-write",
  "frontmatter-lossless",
@@ -907,7 +907,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "skillwright"
-version = "0.3.9"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "clap",
@@ -936,9 +936,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slug-collate"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f76aeebff259347be3d82d3dbbdcc1159325f31fccc8d73f0897aa10a8dc3f9"
+checksum = "6f9d109256bb1d176d0201be4a2a0c4c9c7dfdcf6574b9a0c9566e6a5f55bc77"
 dependencies = [
  "unicode-normalization",
 ]
@@ -1100,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "tradecraft-core"
-version = "0.40.2"
+version = "0.41.0"
 dependencies = [
  "agent-adapt",
  "frontmatter-lossless",
