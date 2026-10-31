@@ -318,6 +318,12 @@ pub struct Closure {
     /// the note that owns it, plus everything transitively embedded into it.
     /// Sorted, and never empty — the owner is always a member.
     pub contributing_notes: Vec<String>,
+    /// The vault-relative path of the note this file was rendered from: the
+    /// entry note for `SKILL.md`, and the resource's own source otherwise. It
+    /// is one of `contributing_notes`, but sorting means not necessarily the
+    /// first, so it is recorded rather than guessed. Pass it to
+    /// [`Closure::hash`] as the owner.
+    pub owner: String,
     /// Link targets in this file that resolved to nothing, as written and
     /// sorted. Recorded rather than refused, because a note appearing at one
     /// of these names later changes the output while leaving the hash over
@@ -480,7 +486,7 @@ pub fn compile_note(
         validate_no_obsidian_syntax(text, output_path, source.skill_name, shown)?;
     }
 
-    // Every emitted file's closure starts with the file that owns it, so a
+    // Every emitted file's closure contains the file that owns it, so a
     // closure is never empty and a resource with no embeds still hashes over
     // something. `SKILL.md` is owned by the entry note; every other output is
     // owned by the vault file it was rendered from.
@@ -499,11 +505,13 @@ pub fn compile_note(
             .get(&output_path)
             .cloned()
             .unwrap_or_default();
-        members.insert(renderer.vault_relative(&source_path)?);
+        let owner = renderer.vault_relative(&source_path)?;
+        members.insert(owner.clone());
         closures.insert(
             output_path.clone(),
             Closure {
                 contributing_notes: members.into_iter().collect(),
+                owner,
                 unresolved: renderer
                     .unresolved
                     .get(&output_path)

@@ -105,7 +105,10 @@
 //! including the ones it does name, so the typo surfaces on the first publish
 //! rather than the first time somebody notices files missing somewhere else.
 //!
-//! The rail runs first; both decisions refuse before a byte moves.
+//! Exclusion is decided before the note is projected, so a refusal that
+//! depends on the destination (a call it does not ship, a pack layout it
+//! lacks) never fires at a destination the note excludes. Among the
+//! refusals the rail runs first; both refuse before a byte moves.
 //!
 //! # This module publishes by kind, and refuses a kind it cannot render
 //!
@@ -184,8 +187,7 @@ use crate::manifest::{
 };
 use crate::namespace::Namespace;
 use crate::projection::{
-    ProjectedFile, file_hash, project_agent, project_command, project_skill,
-    project_skill_reporting,
+    ProjectedFile, file_hash, project_agent, project_command, project_skill_reporting,
 };
 use crate::vault::read_vault_skill;
 use crate::vfs::{PreviewVfs, Vfs};
@@ -337,8 +339,9 @@ pub enum ReasonToken {
 
 impl ReasonToken {
     /// Every refusal token, in the order the publish spec's table
-    /// lists them. [`ReasonToken::Claimed`] is deliberately absent: it names
-    /// an outcome that wrote.
+    /// lists them. [`ReasonToken::Claimed`], [`ReasonToken::RedundantOverride`]
+    /// and [`ReasonToken::Overwritten`] are deliberately absent: they name
+    /// outcomes that wrote.
     pub const REFUSALS: &'static [ReasonToken] = &[
         Self::Conflict,
         Self::Foreign,
@@ -390,15 +393,18 @@ impl ReasonToken {
         Self::REFUSALS
             .iter()
             .copied()
-            .chain([Self::Claimed, Self::RedundantOverride])
+            .chain([Self::Claimed, Self::RedundantOverride, Self::Overwritten])
             .find(|candidate| candidate.as_str() == token)
     }
 
-    /// Whether this token names a refusal. False for the two that name an
-    /// outcome which wrote — [`ReasonToken::Claimed`] and
-    /// [`ReasonToken::RedundantOverride`].
+    /// Whether this token names a refusal. False for the three that name an
+    /// outcome which wrote — [`ReasonToken::Claimed`],
+    /// [`ReasonToken::RedundantOverride`] and [`ReasonToken::Overwritten`].
     pub fn is_refusal(self) -> bool {
-        !matches!(self, Self::Claimed | Self::RedundantOverride)
+        !matches!(
+            self,
+            Self::Claimed | Self::RedundantOverride | Self::Overwritten
+        )
     }
 }
 
@@ -653,6 +659,14 @@ fn publish_onto(
         ));
     }
 
+    // An excluded destination, decided before anything is projected: the note
+    // was never a candidate here, so a refusal that depends on the destination
+    // (a call it does not ship, a pack layout it lacks) must not fire for it.
+    // An unknown name is left to `finish`, which stamps it on every file.
+    if let Ok(false) = publishes_to(&note.frontmatter, &request.skill_path, &request.target, ns) {
+        return Ok(not_published(&note.frontmatter, &request.target, ns));
+    }
+
     let canonical = canonical_target(&request.target).unwrap_or(request.target.as_str());
 
     // The tree everything resolves against: the vault root when the caller
@@ -682,6 +696,7 @@ fn publish_onto(
             vfs,
             request,
             &note.projection.content.name,
+            &note.projection.content.description,
             &note.frontmatter.identity,
             compile_root,
             canonical,
@@ -702,10 +717,9 @@ fn publish_onto(
             &source_note,
             None,
             &pack.not_carried,
-            // A pack's manifest is rendered from frontmatter, not through a
-            // dialect, so there is nothing for an override to be redundant
-            // against.
-            &[],
+            // The members' own redundant keys. A pack's manifest is rendered
+            // from frontmatter, not through a dialect, so it adds none.
+            &pack.redundant,
         );
     }
 
@@ -726,14 +740,26 @@ fn publish_onto(
     }
     // Folded and checked before anything renders: an unknown destination name
     // or a key this harness does not read refuses here, with no file built.
-    // Carried for every kind that reaches a dialect — a plugin took the pack
-    // branch above and never gets here.
-    projection.content.apply_overrides(overrides_for(
-        &note.frontmatter,
-        &request.skill_path,
-        &request.target,
-        ns,
-    )?);
+    // Carried for a skill and a command. An agent's renderer has no place for
+    // an override, so a block for this destination is refused rather than
+    // accepted and dropped. A plugin took the pack branch above.
+    let overrides = overrides_for(&note.frontmatter, &request.skill_path, &request.target, ns)?;
+    if resolved.kind == EntityKind::Agent
+        && let Some(block) = overrides.get(canonical).filter(|b| !b.is_empty())
+    {
+        let keys: Vec<&str> = block.keys().map(String::as_str).collect();
+        return Err(CoreError::refused(
+            "unknown-override-key",
+            format!(
+                "{}: `{}.{canonical}` names {}, but an agent takes no overrides: \
+                 its renderer has no place for them",
+                request.skill_path.display(),
+                ns.key("overrides"),
+                quoted(&keys)
+            ),
+        ));
+    }
+    projection.content.apply_overrides(overrides);
     let skill_name = projection.content.name.clone();
     // A skill published on its own has no plugin, so a call to another
     // skill is the runtime's form without a namespace. The index needs a
@@ -879,17 +905,12 @@ fn finish(
         Err(other) => return Err(other),
     }
 
-    // `sw-targets`, applied here so no caller can forget to.
+    // `sw-targets`, applied here so no caller can forget to. `publish_onto`
+    // already returned for an excluded destination; this arm stays so the
+    // rule holds for every path into `finish`.
     match publishes_to(frontmatter, &request.skill_path, &request.target, ns) {
         Ok(true) => {}
-        Ok(false) => {
-            return Ok(PublishReport {
-                files: Vec::new(),
-                not_published: Some(exclusion_reason(frontmatter, &request.target, ns)),
-                not_carried: Vec::new(),
-                redundant_overrides: Vec::new(),
-            });
-        }
+        Ok(false) => return Ok(not_published(frontmatter, &request.target, ns)),
         // A name we do not know is a blocker: every projected file, one reason.
         Err(CoreError::Refused(message)) => {
             return Ok(refuse_all(
@@ -933,6 +954,16 @@ fn finish(
         not_carried: not_carried.to_vec(),
         redundant_overrides: redundant_overrides.to_vec(),
     })
+}
+
+/// The report for a destination `sw-targets` excludes: no files, and why.
+fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -> PublishReport {
+    PublishReport {
+        files: Vec::new(),
+        not_published: Some(exclusion_reason(frontmatter, target, ns)),
+        not_carried: Vec::new(),
+        redundant_overrides: Vec::new(),
+    }
 }
 
 /// Whether a publish to a destination has any projection for this kind.
@@ -1423,10 +1454,12 @@ pub const PLUGIN_HOOKS_PATH: &str = "hooks/hooks.json";
 /// A member narrowed away by its own `sw-targets` is absent from the pack
 /// here, exactly as it is absent from a build's root — the narrowing is the
 /// member's, and a pack does not override it.
+#[allow(clippy::too_many_arguments)]
 fn project_plugin(
     vfs: &dyn Vfs,
     request: &PublishRequest,
     plugin_name: &str,
+    description: &str,
     identity: &ContainerIdentity,
     vault_root: &Path,
     canonical: &str,
@@ -1528,9 +1561,22 @@ fn project_plugin(
         warnings: RefCell::new(Vec::new()),
     };
 
+    // Each member goes through the standalone path's steps — its arguments,
+    // its checked `sw-overrides` — so one note renders the same bytes inside
+    // its pack as on its own.
+    let mut redundant: Vec<PublishReason> = Vec::new();
     for member in &members {
         let note = read_vault_skill(vfs, &member.entry_path, ns)?;
         let mut projection = note.projection;
+        projection
+            .content
+            .apply_arguments(&note.frontmatter.arguments);
+        projection.content.apply_overrides(overrides_for(
+            &note.frontmatter,
+            &member.entry_path,
+            &request.target,
+            ns,
+        )?);
         let member_closures = compile_projection(
             vfs,
             &CompileSource {
@@ -1542,7 +1588,17 @@ fn project_plugin(
             },
             &mut projection,
         )?;
-        let rendered = project_skill(&projection, &[layout.runtime.to_owned()], ns)?;
+        let (rendered, diagnostics) = project_skill_reporting(
+            &projection,
+            &[layout.runtime.to_owned()],
+            ns,
+            Some(canonical),
+        )?;
+        redundant.extend(
+            diagnostics
+                .iter()
+                .map(|d| PublishReason::new(ReasonToken::RedundantOverride, d.to_string())),
+        );
         let strip = format!("{}/{}/", layout.projection_prefix, member.name);
         for file in rendered {
             let relative = file.relative_path.strip_prefix(&strip).ok_or_else(|| {
@@ -1580,6 +1636,12 @@ fn project_plugin(
         projection
             .content
             .apply_arguments(&note.frontmatter.arguments);
+        projection.content.apply_overrides(overrides_for(
+            &note.frontmatter,
+            &command.entry_path,
+            &request.target,
+            ns,
+        )?);
         let command_closures = compile_projection(
             vfs,
             &CompileSource {
@@ -1595,7 +1657,12 @@ fn project_plugin(
         // adds what the body's links and embeds reach to
         // `projection.resources`, and those peers have nowhere to go either.
         refuse_carried_peers(&projection, "command")?;
-        let rendered = project_command(&projection, &[layout.runtime.to_owned()], ns, None)?;
+        let rendered = project_command(
+            &projection,
+            &[layout.runtime.to_owned()],
+            ns,
+            Some(canonical),
+        )?;
         for file in rendered {
             let filename = Path::new(&file.relative_path).file_name().ok_or_else(|| {
                 CoreError::Projection(format!(
@@ -1625,13 +1692,22 @@ fn project_plugin(
     // files — a path belongs to the innermost component directory containing
     // it — so what reaches here is exactly the container's, and dropping it
     // would lose the part of a pack that is not a skill.
+    //
+    // A manifest of the folder's own at the path the pack's is rendered to
+    // (an imported plugin carries one) is left behind: the rendered one
+    // replaces it, and writing both to one path is never idempotent.
+    let manifest_relative = format!("{}/plugin.json", layout.manifest_dir);
     if let Some(note) = scan
         .components
         .iter()
         .find(|c| c.kind == EntityKind::Plugin && c.name == plugin_name)
     {
         let source_note = note.vault_relative_path.clone();
-        for relative in note.resources.iter().filter(|r| is_container_own(r)) {
+        for relative in note
+            .resources
+            .iter()
+            .filter(|r| is_container_own(r) && **r != manifest_relative)
+        {
             let from = vault_root
                 .join(&source_note)
                 .parent()
@@ -1658,9 +1734,12 @@ fn project_plugin(
         author: identity.author.clone(),
         license: None,
         default_plugin: plugin_name.to_owned(),
-        plugins: [(plugin_name.to_owned(), overrides_from(identity))]
-            .into_iter()
-            .collect(),
+        plugins: [(
+            plugin_name.to_owned(),
+            overrides_from(description, identity),
+        )]
+        .into_iter()
+        .collect(),
         require_descriptions: false,
         // Unread on this path: a per-destination publish never renders the
         // `scripts/sdlc` shim (that's `render_root`'s job, called only from
@@ -1669,7 +1748,7 @@ fn project_plugin(
         shim_target: DEFAULT_SHIM_TARGET.to_owned(),
     };
     files.push(ProjectedFile {
-        relative_path: format!("{base}/{}/plugin.json", layout.manifest_dir),
+        relative_path: format!("{base}/{manifest_relative}"),
         content: render_plugin_manifest(layout.dialect, plugin_name, &members, &config, None)
             .into_bytes(),
         executable: false,
@@ -1680,6 +1759,7 @@ fn project_plugin(
         files,
         closures,
         not_carried,
+        redundant,
     })
 }
 
@@ -1688,6 +1768,8 @@ struct PluginProjection {
     files: Vec<ProjectedFile>,
     closures: BTreeMap<String, HashedClosure>,
     not_carried: Vec<String>,
+    /// Members' `sw-overrides` keys the render already wrote.
+    redundant: Vec<PublishReason>,
 }
 
 /// Is this path the container's own content, rather than something living in
@@ -1708,11 +1790,12 @@ fn is_container_own(relative: &str) -> bool {
 }
 
 /// The plugin note's own frontmatter as the build's override shape, so the two
-/// paths read identity from one place.
-fn overrides_from(identity: &ContainerIdentity) -> PluginOverrides {
+/// paths read identity from one place. The description is the note's own, as
+/// the build fills it.
+fn overrides_from(description: &str, identity: &ContainerIdentity) -> PluginOverrides {
     PluginOverrides {
         version: identity.version.clone(),
-        description: None,
+        description: Some(description.to_owned()),
         author: identity.author.clone(),
         license: identity.license.clone(),
         keywords: identity.keywords.clone(),
@@ -1758,7 +1841,9 @@ fn publish_skill_index(
     )
 }
 
-/// One closure, hashed.
+/// One closure, hashed against the note that owns its file. `source_note` is
+/// only what the manifest row records: for a pack member's reference file it
+/// is the member, which is not that file's owner.
 fn hash_one(
     vfs: &dyn Vfs,
     vault_root: &Path,
@@ -1766,7 +1851,7 @@ fn hash_one(
     source_note: &str,
 ) -> Result<HashedClosure, CoreError> {
     Ok(HashedClosure {
-        hash: closure.hash(vfs, vault_root, source_note)?,
+        hash: closure.hash(vfs, vault_root, &closure.owner)?,
         notes: closure.contributing_notes.clone(),
         unresolved: closure.unresolved.clone(),
         calls: closure.calls.clone(),
@@ -1817,26 +1902,9 @@ fn hash_closures(
 ) -> Result<BTreeMap<String, HashedClosure>, CoreError> {
     let mut hashed = BTreeMap::new();
     for (path, closure) in closures {
-        // The owner of `SKILL.md` is the entry note; every other emitted file
-        // owns itself, and its own first member says which file that is.
-        let owner = if path == "SKILL.md" {
-            source_note
-        } else {
-            closure
-                .contributing_notes
-                .first()
-                .map(String::as_str)
-                .unwrap_or(source_note)
-        };
         hashed.insert(
             path.clone(),
-            HashedClosure {
-                hash: closure.hash(vfs, vault_root, owner)?,
-                notes: closure.contributing_notes.clone(),
-                unresolved: closure.unresolved.clone(),
-                calls: closure.calls.clone(),
-                source_note: source_note.to_owned(),
-            },
+            hash_one(vfs, vault_root, closure, source_note)?,
         );
     }
     Ok(hashed)
@@ -5310,17 +5378,18 @@ mod tests {
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));
         assert!(!ReasonToken::Claimed.is_refusal());
-        // The other outcome-that-wrote token named on ReasonToken::is_refusal's doc (with Claimed).
+        // The other outcome-that-wrote tokens named on ReasonToken::is_refusal's doc (with Claimed).
         assert!(!ReasonToken::RedundantOverride.is_refusal());
+        assert!(!ReasonToken::Overwritten.is_refusal());
     }
 
     #[test]
     fn a_token_round_trips_through_its_spelling_and_the_wire() {
-        for token in ReasonToken::REFUSALS
-            .iter()
-            .copied()
-            .chain(std::iter::once(ReasonToken::Claimed))
-        {
+        for token in ReasonToken::REFUSALS.iter().copied().chain([
+            ReasonToken::Claimed,
+            ReasonToken::RedundantOverride,
+            ReasonToken::Overwritten,
+        ]) {
             assert_eq!(ReasonToken::parse(token.as_str()), Some(token));
             let json = serde_json::to_string(&token).unwrap();
             assert_eq!(json, format!("\"{token}\""));
@@ -6113,5 +6182,347 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    // --- Closure owners ------------------------------------------------------
+
+    /// A skill linking a reference note that embeds a snippet whose path sorts
+    /// before the reference's own, so the reference's closure does not list
+    /// its owner first.
+    fn vault_with_owned_reference() -> MemVfs {
+        let vfs = MemVfs::new();
+        vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
+        vfs.write_file(
+            Path::new("/vault/skills/main.md"),
+            b"---\nname: main\ndescription: Main.\n---\n\nSee [[zz-guide]].\n",
+        )
+        .unwrap();
+        vfs.write_file(
+            Path::new("/vault/skills/zz-guide.md"),
+            b"---\nfoo: 1\n---\n\n![[aa-snip]]\n",
+        )
+        .unwrap();
+        vfs.write_file(
+            Path::new("/vault/skills/aa-snip.md"),
+            b"---\ntag: a\n---\n\nSnippet.\n",
+        )
+        .unwrap();
+        vfs.create_dir_all(Path::new("/dest")).unwrap();
+        vfs
+    }
+
+    fn owned_reference_request() -> PublishRequest {
+        PublishRequest {
+            skill_path: PathBuf::from("/vault/skills/main.md"),
+            ..linked_request()
+        }
+    }
+
+    /// The manifest row of the one emitted file whose path ends in `suffix`.
+    fn row_ending(vfs: &MemVfs, suffix: &str) -> ManifestEntry {
+        let manifest = manifest_of(vfs, "/dest");
+        let rows: Vec<&ManifestEntry> = manifest
+            .entries()
+            .filter(|e| e.path.ends_with(suffix))
+            .collect();
+        assert_eq!(
+            rows.len(),
+            1,
+            "{suffix}: {:?}",
+            manifest.paths().collect::<Vec<_>>()
+        );
+        rows[0].clone()
+    }
+
+    // The reference's own frontmatter travels into its output verbatim, so an
+    // edit to it moves the output and has to move the source hash.
+    #[test]
+    fn a_resources_own_frontmatter_moves_its_source_hash() {
+        let vfs = vault_with_owned_reference();
+        publish_skill(&vfs, &owned_reference_request(), &sw()).unwrap();
+        let before = row_ending(&vfs, "zz-guide.md");
+        assert_eq!(
+            before.contributing_notes,
+            vec![
+                "skills/aa-snip.md".to_owned(),
+                "skills/zz-guide.md".to_owned()
+            ]
+        );
+
+        vfs.write_file(
+            Path::new("/vault/skills/zz-guide.md"),
+            b"---\nfoo: 2\n---\n\n![[aa-snip]]\n",
+        )
+        .unwrap();
+        publish_skill(&vfs, &owned_reference_request(), &sw()).unwrap();
+        let after = row_ending(&vfs, "zz-guide.md");
+
+        assert_ne!(after.emitted_hash, before.emitted_hash);
+        assert_ne!(
+            after.source_hash, before.source_hash,
+            "the owner's frontmatter moved the output but not the source hash"
+        );
+    }
+
+    // An embedded snippet's frontmatter never reaches the output, so editing
+    // it must not mark the file stale.
+    #[test]
+    fn an_embedded_snippets_frontmatter_does_not_move_a_resources_source_hash() {
+        let vfs = vault_with_owned_reference();
+        publish_skill(&vfs, &owned_reference_request(), &sw()).unwrap();
+        let before = row_ending(&vfs, "zz-guide.md");
+
+        vfs.write_file(
+            Path::new("/vault/skills/aa-snip.md"),
+            b"---\ntag: b\n---\n\nSnippet.\n",
+        )
+        .unwrap();
+        publish_skill(&vfs, &owned_reference_request(), &sw()).unwrap();
+        let after = row_ending(&vfs, "zz-guide.md");
+
+        assert_eq!(after.emitted_hash, before.emitted_hash);
+        assert_eq!(
+            after.source_hash, before.source_hash,
+            "a snippet's frontmatter cannot change a byte but moved the source hash"
+        );
+    }
+
+    // The pack path hashes each member file with its own owner too: a
+    // reference file is owned by the note it was rendered from, not by the
+    // member skill that links it.
+    #[test]
+    fn a_pack_members_reference_frontmatter_moves_its_source_hash() {
+        let write_guide = |vfs: &MemVfs, foo: u8| {
+            vfs.write_file(
+                Path::new("/vault/notes/guide.md"),
+                format!("---\nfoo: {foo}\n---\n\nGuide.\n").as_bytes(),
+            )
+            .unwrap();
+        };
+        let vfs = vault_with_commit_body("See [[guide]].\n");
+        vfs.create_dir_all(Path::new("/vault/notes")).unwrap();
+        write_guide(&vfs, 1);
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+        let before = row_ending(&vfs, "/guide.md");
+
+        write_guide(&vfs, 2);
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+        let after = row_ending(&vfs, "/guide.md");
+
+        assert_ne!(after.emitted_hash, before.emitted_hash);
+        assert_ne!(
+            after.source_hash, before.source_hash,
+            "the reference's own frontmatter moved the output but not the source hash"
+        );
+        // The row still names the member that produced it.
+        assert_eq!(
+            after.source_note,
+            "marketplaces/house/plugins/git-tools/skills/commit-helper.md"
+        );
+    }
+
+    // --- `sw-targets` is decided before the projection ----------------------
+
+    // A refusal that depends on the destination cannot fire at a destination
+    // the note excludes: the note was never a candidate there.
+    #[test]
+    fn an_excluded_destination_is_not_published_even_where_its_projection_would_refuse() {
+        let vfs = MemVfs::new();
+        vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
+        vfs.write_file(
+            Path::new("/vault/skills/caller.md"),
+            b"---\nname: caller\ndescription: Calls.\nsw-targets: [claude]\n---\n\nRun /[[callee]].\n",
+        )
+        .unwrap();
+        vfs.write_file(
+            Path::new("/vault/skills/callee.md"),
+            b"---\nname: callee\ndescription: Is called.\nsw-targets: [claude]\n---\n\nDone.\n",
+        )
+        .unwrap();
+        vfs.create_dir_all(Path::new("/dest")).unwrap();
+        let request = |target: &str| PublishRequest {
+            skill_path: PathBuf::from("/vault/skills/caller.md"),
+            target: target.to_owned(),
+            ..linked_request()
+        };
+
+        let claude = publish_skill(&vfs, &request("claude"), &sw()).unwrap();
+        assert!(claude.not_published.is_none());
+
+        let codex = publish_skill(&vfs, &request("codex"), &sw()).unwrap();
+        assert!(codex.files.is_empty(), "{codex:?}");
+        assert!(codex.not_published.is_some(), "{codex:?}");
+    }
+
+    #[test]
+    fn an_excluded_destination_is_not_published_for_a_pack_with_no_layout_there() {
+        let vfs = vault_with_plugin();
+        vfs.write_file(
+            Path::new("/vault/marketplaces/house/plugins/git-tools/git-tools.md"),
+            b"---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\nsw-targets: [claude]\n---\n\nThe pack.\n",
+        )
+        .unwrap();
+        for target in ["cursor", "pi"] {
+            let report = publish_skill(&vfs, &plugin_request(target), &sw()).unwrap();
+            assert!(report.files.is_empty(), "{target}: {report:?}");
+            assert!(report.not_published.is_some(), "{target}: {report:?}");
+        }
+    }
+
+    // --- A pack member renders through the standalone pipeline -------------
+
+    #[test]
+    fn a_pack_skill_member_keeps_its_arguments() {
+        let vfs = vault_with_plugin();
+        vfs.write_file(
+            Path::new(COMMIT_HELPER),
+            concat!(
+                "---\nname: commit-helper\ndescription: Writes commits.\n",
+                "sw-arguments:\n  - name: pr-number\n    required: true\n",
+                "---\n\nCommit well.\n"
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+
+        let published = text_at(
+            &vfs,
+            "/dest/.claude/skills/git-tools/skills/commit-helper/SKILL.md",
+        );
+        assert!(
+            published.contains("argument-hint: \"<pr-number>\""),
+            "{published}"
+        );
+        assert!(published.contains("## Arguments"), "{published}");
+    }
+
+    #[test]
+    fn the_pack_manifest_carries_the_plugin_notes_description() {
+        let vfs = vault_with_plugin();
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+
+        let manifest = text_at(
+            &vfs,
+            "/dest/.claude/skills/git-tools/.claude-plugin/plugin.json",
+        );
+        assert!(
+            manifest.contains("\"description\": \"Git helpers.\""),
+            "{manifest}"
+        );
+    }
+
+    fn commit_helper_with_overrides(block: &str) -> MemVfs {
+        let vfs = vault_with_plugin();
+        vfs.write_file(
+            Path::new(COMMIT_HELPER),
+            format!(
+                "---\nname: commit-helper\ndescription: Writes commits.\n{block}---\n\nCommit well.\n"
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        vfs
+    }
+
+    #[test]
+    fn a_pack_members_override_reaches_the_pack() {
+        let vfs =
+            commit_helper_with_overrides("sw-overrides:\n  claude:\n    permissionMode: plan\n");
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+
+        let published = text_at(
+            &vfs,
+            "/dest/.claude/skills/git-tools/skills/commit-helper/SKILL.md",
+        );
+        assert!(published.contains("permissionMode: plan"), "{published}");
+    }
+
+    #[test]
+    fn a_pack_members_unknown_override_key_is_refused_as_it_is_standalone() {
+        let block = "sw-overrides:\n  claude:\n    notARealKey: x\n";
+        let vfs = commit_helper_with_overrides(block);
+        let standalone = publish_skill(&vfs, &commit_helper_request("claude"), &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(standalone.contains("unknown-override-key"), "{standalone}");
+
+        let pack = publish_skill(&vfs, &plugin_request("claude"), &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(pack.contains("unknown-override-key"), "{pack}");
+        assert!(pack.contains("notARealKey"), "{pack}");
+    }
+
+    #[test]
+    fn a_pack_command_members_unknown_override_key_is_refused() {
+        let vfs = vault_with_plugin_and_command();
+        vfs.write_file(
+            Path::new("/vault/marketplaces/house/plugins/git-tools/commands/ship.md"),
+            b"---\nname: ship\ndescription: Cuts a release.\nsw-overrides:\n  claude:\n    notARealKey: x\n---\n\nCut it.\n",
+        )
+        .unwrap();
+
+        let err = publish_skill(&vfs, &plugin_request("claude"), &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown-override-key"), "{err}");
+    }
+
+    // A plugin folder holding its own manifest — an imported plugin, say —
+    // must not be written twice over the one the pack renders.
+    #[test]
+    fn a_containers_own_manifest_does_not_collide_with_the_rendered_one() {
+        let vfs = vault_with_plugin();
+        vfs.create_dir_all(Path::new(
+            "/vault/marketplaces/house/plugins/git-tools/.claude-plugin",
+        ))
+        .unwrap();
+        vfs.write_file(
+            Path::new("/vault/marketplaces/house/plugins/git-tools/.claude-plugin/plugin.json"),
+            b"{\"name\": \"git-tools\"}\n",
+        )
+        .unwrap();
+
+        let path = ".claude/skills/git-tools/.claude-plugin/plugin.json";
+        let first = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+        assert_eq!(
+            first.files.iter().filter(|f| f.path == path).count(),
+            1,
+            "{first:?}"
+        );
+        let second = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+        assert!(
+            second
+                .files
+                .iter()
+                .all(|f| f.status == PublishStatus::Unchanged),
+            "{second:?}"
+        );
+    }
+
+    // --- An agent takes no overrides ----------------------------------------
+
+    // The agent renderer has nowhere to put an override, so accepting the
+    // block would tell the author it reached the destination when it did not.
+    #[test]
+    fn an_agents_override_block_for_the_target_is_refused_rather_than_dropped() {
+        let vfs = vault_with_agent();
+        vfs.write_file(
+            Path::new("/vault/skills/senior-reviewer.md"),
+            AGENT_NOTE
+                .replace(
+                    "sw-kind: agent\n",
+                    "sw-kind: agent\nsw-overrides:\n  claude:\n    permissionMode: plan\n",
+                )
+                .as_bytes(),
+        )
+        .unwrap();
+
+        let err = publish_skill(&vfs, &agent_request(), &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown-override-key"), "{err}");
+        assert!(!vfs.exists(Path::new("/dest/.claude/agents/senior-reviewer.md")));
     }
 }
