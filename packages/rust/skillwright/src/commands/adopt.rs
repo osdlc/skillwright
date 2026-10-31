@@ -54,16 +54,10 @@ use crate::prompt::{confirm_write, plan_flow};
 use crate::report::{normalize_thrown_reason, render_adopt_tally, render_adopted_line};
 use crate::resolve::{CommonFlags, resolve_run, resolve_skills_root};
 
-/// `--as <name>` renames one source on the way in. The core derives the
-/// adopted name itself — the source frontmatter's `name` slugified, or the
-/// source directory's basename — and [`AdoptRequest`] carries no override,
-/// so honouring the flag would mean naming a skill here instead of leaving
-/// that to the core.
+/// What `--as` exits 2 with.
 const STUB_AS: &str = "`--as <name>` renames one source on the way in. The core derives the adopted name itself — the source frontmatter's `name` slugified, or the source directory's basename — and `AdoptRequest` carries no override, so honouring the flag would mean naming a skill here instead of leaving that to the core.";
 
-/// `--promote` registers the source path as a destination, which is a
-/// configuration write this crate never does — `init` is the verb that
-/// would write configuration, and it is not implemented either.
+/// What `--promote` exits 2 with.
 const STUB_PROMOTE: &str = "`--promote` registers the source path as a destination, which is a configuration write. This crate only ever reads configuration; `init` is the verb that would write it, and it is not implemented either.";
 
 /// The resolved flags of `skillwright adopt`.

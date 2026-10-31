@@ -24,7 +24,7 @@
 //! Of what is left, [`SkillContent`] has a field for a key only when
 //! `agent-adapt` renders that key back out. Everything else lands in
 //! `annotations` and is re-emitted verbatim, which is the acceptance criterion
-//! The vault spec states and the failure that motivated it: deriving a live
+//! the vault spec states and the failure that motivated it: deriving a live
 //! plugin tree through a model that could not represent it lost 89 of 148
 //! files.
 //!
@@ -206,10 +206,9 @@ pub fn read_vault_skill(
 ///
 /// This is the rule [`crate::discover`] already places a component by, spelled
 /// again here because this function has one path and no scan to consult. They
-/// must not diverge: while they did, a component in the canonical layout
-/// published its `SKILL.md` alone and reported it written, because the peers
-/// this side went looking for were in a sibling folder that layout does not
-/// have.
+/// must not diverge: if they do, a component in the canonical layout publishes
+/// its `SKILL.md` alone and reports it written, because the peers this side
+/// looks for are in a sibling folder that layout does not have.
 pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
     let file = skill_path.file_name()?.to_str()?;
     let parent = skill_path.parent()?;
@@ -392,7 +391,7 @@ mod tests {
     use std::path::PathBuf;
 
     /// The default namespace — every test but the configured one reads a vault
-    /// that declared no stem, exactly as this reader did before it took one.
+    /// that declared no stem.
     fn sw() -> Namespace {
         Namespace::default()
     }
@@ -564,9 +563,8 @@ mod tests {
 
     #[test]
     fn our_namespace_is_typed_and_never_lands_in_annotations() {
-        // A bare `targets:` used to ride here as an unknown key. Under the
-        // contract it is `sw-targets`, it is ours, and it is typed —
-        // annotations holds genuinely foreign keys only.
+        // `sw-targets` is ours and typed — annotations holds genuinely
+        // foreign keys only.
         let (vfs, path) = vault(
             "adopted",
             "---\n\
@@ -654,8 +652,8 @@ mod tests {
 
     #[test]
     fn the_nested_shape_reads_the_same_as_the_flat_one() {
-        // the plugin writes this shape; the CLI has to read it from day
-        // one, because both surfaces edit one vault.
+        // The plugin writes this shape, and the CLI must read it, because
+        // both surfaces edit one vault.
         let (vfs, path) = vault(
             "nested",
             "---\ndescription: d\nsw:\n  kind: plugin\n  targets:\n    - claude-code\n  source: /src\n---\nb\n",
@@ -806,8 +804,8 @@ mod tests {
 
     #[test]
     fn the_body_passes_through_verbatim_wikilinks_and_all() {
-        // Transclusion and link rewriting are a later phase; this pins that
-        // nothing here pretends they ran.
+        // Transclusion and link rewriting are `crate::compile`'s pass, run
+        // after this read; this pins that the read does not run them.
         let (vfs, path) = vault(
             "linky",
             "---\ndescription: d\n---\nSee ![[house-style]] and [[glossary]].\n",

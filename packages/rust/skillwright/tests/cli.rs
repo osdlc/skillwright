@@ -505,7 +505,7 @@ fn a_build_renders_the_roots_and_a_check_then_agrees_with_it() {
 ///
 /// The parse into `MarketplaceSettings` and the core's resolution off
 /// `MarketplaceConfig` are each covered on their own side; the one
-/// assignment bridging them was not, so deleting it left every test green.
+/// assignment bridging them is covered only here.
 /// The donor vault declares no license anywhere, so the project file is the
 /// only thing that can put one in the manifest.
 #[test]
@@ -1041,8 +1041,8 @@ fn adopt_imports_the_bundle_rewrites_links_and_stamps_provenance_exit_0() {
     let note = fs::read_to_string(adopted_note(&vault, "adopted")).unwrap();
     assert!(note.contains("name: code-review"));
     assert!(note.contains("sw-plugin: adopted"));
-    // The provenance the donor's adopt did not record. `sw-also-at` is the
-    // sixth and is absent here on purpose: nothing was cross-referenced.
+    // Five of the provenance keys. `sw-also-at` is the sixth and is absent
+    // here on purpose: nothing was cross-referenced.
     assert!(note.contains("sw-source:"));
     assert!(note.contains("sw-format:"));
     assert!(note.contains("sw-source-hash:"));
@@ -1459,8 +1459,8 @@ fn with_no_source_and_no_scan_locations_it_is_a_usage_error_exit_3() {
 fn a_configured_skills_root_is_where_adopt_writes_and_where_build_looks() {
     let (dir, vault) = fixture();
     let source = adopt_source(dir.path());
-    // The agreement `AdoptRequest.skills_root`'s doc requires: "what lands
-    // here must be what that scan finds". Two resolvers with two answers
+    // The agreement `AdoptRequest.skills_root`'s doc requires: the adoption
+    // and the scan must name the same tree. Two resolvers with two answers
     // would put adopted notes somewhere `build` never looks, and nothing
     // would report it — so one run proves both ends.
     let config_path = dir.path().join("rooted.yaml");

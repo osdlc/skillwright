@@ -1,5 +1,5 @@
 // Reads the crates.io sparse index. It needs no token.
-// Used by crates-io-auth-plan.ts and semver-version-check.ts.
+// Used by crates-io-auth-plan.ts and crates-io-unpublished-patch.ts.
 
 /** One published version of a crate. */
 export interface IndexEntry {

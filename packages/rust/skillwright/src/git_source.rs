@@ -351,8 +351,8 @@ mod tests {
 
     use tiered_dirs::BaseDirs;
 
-    /// A repository with one commit on `main`, holding a `skills/` tree —
-    /// Reached by `file://`, so nothing here touches the network.
+    /// A repository with one commit on `main`, holding a `skills/` tree,
+    /// reached by `file://`, so nothing here touches the network.
     fn origin(dir: &Path, at: &str, body: &str) -> String {
         let repo = dir.join(at);
         std::fs::create_dir_all(repo.join("skills").join("review")).unwrap();
@@ -432,11 +432,10 @@ mod tests {
 
     #[test]
     fn two_urls_whose_slugs_collide_get_their_own_checkouts() {
-        // `.../x/a/b` and `.../x/a-b` are one string once every `/` becomes
-        // `-`, which is how the cache key used to be built: the second fetch
-        // reused the first repository's checkout, refreshed it from the
-        // FIRST `origin`, and returned its files stamped with the second
-        // url.
+        // `.../x/a/b` and `.../x/a-b` slug alike. Keyed by the slug alone,
+        // the second fetch would reuse the first repository's checkout,
+        // refresh it from the FIRST `origin`, and return its files stamped
+        // with the second url.
         let dir = tempfile::tempdir().unwrap();
         let first_url = origin(dir.path(), "x/a/b", "from-a-slash-b");
         let second_url = origin(dir.path(), "x/a-b", "from-a-dash-b");

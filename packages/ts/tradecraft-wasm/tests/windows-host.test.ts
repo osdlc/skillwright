@@ -1,6 +1,6 @@
 /**
  * The core over a Windows-shaped host, with `node:fs` replaced by a stand-in
- * that accepts only Windows spellings (`test/fake-windows-fs.ts`). This does
+ * that accepts only Windows spellings (`tests/fake-windows-fs.ts`). This does
  * not run on Windows; it checks the path boundary on any machine.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'

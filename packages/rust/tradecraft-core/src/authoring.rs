@@ -1131,13 +1131,7 @@ pub struct NewNote<'a> {
 }
 
 /// Write a new note: its derived path, its composed bytes, and the member
-/// folders a container kind gets.
-///
-/// The path is derived rather than accepted because the vault's scan requires
-/// the filename to slugify to the note's `name` (`<slug>.md`, or
-/// `<slug>/<slug>.md` for a bundle). Slugging the name and building both the
-/// path and the `name` edit from that one value makes the two agree by
-/// construction.
+/// folders a container kind gets. The path comes from [`derive_create`].
 ///
 /// `Err` is the refusal, in the words a draft shows while the author types: a
 /// name with nothing to slug, a placement naming what no folder can be, or a

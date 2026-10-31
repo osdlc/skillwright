@@ -320,7 +320,7 @@ fn ts_type(model: &Model, ty: &syn::Type) -> Result<String, Error> {
 /// A wire wrapper is named for the struct it flattens — `WireExportRequest`
 /// splices `ExportRequest` and one extra key, and the wire it describes IS an
 /// export request. A wrapper that flattens nothing loses a leading `Wire`.
-/// Both rules are mechanical, so a sixth export needs no entry anywhere.
+/// Both rules are mechanical, so a new export needs no entry anywhere.
 fn ts_name(model: &Model, rust_name: &str) -> Result<String, Error> {
     let Some(TypeDef::Struct(s)) = model.types.get(rust_name) else {
         return Ok(rust_name.to_string());
@@ -476,7 +476,7 @@ fn emit_enum(model: &Model, e: &Enum) -> Result<String, Error> {
     };
 
     // An enum's `rename_all` renames its VARIANTS; only `rename_all_fields`
-    // reaches the fields inside them. Feeding the former to a field turned
+    // reaches the fields inside them. Feeding the former to a field would turn
     // `version_bump_suggestion` into `version-bump-suggestion`, which the
     // core never writes and TypeScript cannot even parse unquoted.
     let field_container = SerdeAttrs {

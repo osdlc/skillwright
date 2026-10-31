@@ -51,7 +51,7 @@ fn declared_exports(wrapper: &Path) -> Vec<String> {
 
 /// The wrapper's exports and the model's exports are the same set.
 ///
-/// This is what makes enrolment automatic rather than remembered: a sixth
+/// This is what makes enrolment automatic rather than remembered: a new
 /// `#[wasm_bindgen]` function fails here until the generator resolves it.
 #[test]
 fn every_wasm_export_is_resolved() {

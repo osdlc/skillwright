@@ -10,7 +10,7 @@
  * `CoreError` into a typed one, exactly mirroring what
  * `@osdlc/yaml-splice`'s `index.ts` does for `yaml-splice-wasm`.
  *
- * The binding exports seven functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
+ * The binding exports nine functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
  *
  * | Export | Reaches | Serves |
  * |---|---|---|
@@ -20,6 +20,8 @@
  * | `exportSkills` | the marketplace renderer | `build`, and `check` through `mode` |
  * | `adoptSkills` | the import direction | `adopt`, and its preview through `mode` |
  * | `knownTargets` | the target vocabulary | every verb that takes a target name |
+ * | `canonicalTarget` | the target-name fold | a host narrowing a run by target |
+ * | `publishableKinds` | the kinds a publish can project | a host choosing which notes to ask a status of |
  * | `statusOf` | one unit's state at one destination | `status` |
  *
  * A mode is a key on a request, never an export of its own — `check` is
@@ -253,11 +255,9 @@ function toCoreError(raw: unknown): CoreError {
 }
 
 /**
- * Publish one skill note to one destination for one target — the whole of
- * the core's exposed publish capability today. Loops over notes and
- * destinations belong to the caller, never to this
- * module: fan-out is argument parsing and reporting, not a second opinion
- * about what publishing means.
+ * Publish one skill note to one destination for one target. Loops over notes and destinations
+ * belong to the caller, never to this module: fan-out is argument parsing and reporting, not a
+ * second opinion about what publishing means.
  *
  * Throws {@link CoreError} rather than returning a `Result`-shaped value —
  * the core itself only throws when the WHOLE request fails before any file
@@ -315,7 +315,7 @@ export function publishableKinds(): EntityKind[] {
 
 /**
  * Every publishable note under the vault's content root, vetted and sorted by
- * name — the vault scan the boundary could not reach before — and every note
+ * name, and every note
  * the scan could not read.
  *
  * A bad note stops itself, not the scan: one half-written draft in a shared

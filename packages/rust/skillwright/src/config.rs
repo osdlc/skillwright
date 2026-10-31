@@ -398,8 +398,7 @@ fn resolve_machine_mapping(
 
 /// Top-level keys whose value is a struct, and whether the field is an
 /// `Option` (so a bare `key:` reads as unset). `serde_json` reads a sequence
-/// into a struct, so `marketplace: []` would load; the YAML reader this crate
-/// used before rejected it, so the mapping check is done here.
+/// into a struct, so without this check `marketplace: []` would load.
 const STRUCT_KEYS: &[(&str, bool)] = &[("declared_folders", true), ("marketplace", false)];
 
 /// The key in [`STRUCT_KEYS`] whose value is not a mapping, if any.
@@ -433,10 +432,11 @@ fn typed_paths(map: &serde_json::Map<String, serde_json::Value>) -> BTreeMap<Str
         .unwrap_or_default()
 }
 
-/// serde_json's struct-deserialize error carries no field path . When the
+/// serde_json's struct-deserialize error carries no field path. When the
 /// whole mapping fails to parse, re-check each top-level key alone against
-/// its own field type and name every mismatch, joined with `; ` — so a caller sees
-/// `` `vault`: invalid type: ... `` rather than a bare type-mismatch message.
+/// its own field type and name every mismatch, joined with `; ` — so a caller
+/// sees `` `vault`: invalid type: ... `` rather than a bare type-mismatch
+/// message.
 /// An unknown-field error already names the field on its own and is
 /// returned unchanged.
 fn annotate_detail(
@@ -635,10 +635,9 @@ fn load_config_at(
         .unwrap_or_default();
     let mut machine_mapping = machine_mapping;
 
-    // `paths:` merges by NAME (machine wins per name, in `finish`'s
-    // `path_names` call) rather than as a whole top-level key, so it is carried through
-    // the overlay untouched and the deserialized result is overwritten with
-    // the project's own value afterwards.
+    // `paths:` merges by NAME (machine wins per name, in `finish`'s `path_names` call) rather
+    // than as a whole top-level key, so it is carried through the overlay untouched and the
+    // deserialized result is overwritten with the project's own value afterwards.
     let project_paths: BTreeMap<String, String> = project_mapping
         .get("paths")
         .and_then(|v| serde_json::from_value(v.clone()).ok())

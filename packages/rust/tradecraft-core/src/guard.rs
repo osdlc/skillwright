@@ -8,15 +8,17 @@
 //! (in one real plugin tree, most files were test scaffolding that the
 //! model deliberately excludes).
 //!
-//! Three rules, all enforced here and re-checked at publish time — a guard
-//! that only runs at registration can be raced by a later adoption:
+//! Three rules. The first two are enforced here and re-checked at publish
+//! time — a guard that only runs at registration can be raced by a later
+//! adoption. The third is a promise, not yet built:
 //!
 //! 1. A destination may not be, contain, or be contained by a protected
 //!    source tree.
 //! 2. A destination whose computed runtime skill dirs already hold content
 //!    must be explicitly acknowledged as partially managed.
-//! 3. The publish writer never deletes outside its manifest (enforced by
-//!    [`crate::publish`]'s orphan sweep).
+//! 3. The publish writer never deletes outside its manifest.
+//!    [`crate::publish`] deletes nothing at all; the orphan sweep that will
+//!    enforce this is not built yet.
 //!
 //! And one more, about a single file rather than a whole destination:
 //! [`resolve_write_path`] refuses a path that would land outside the
@@ -192,7 +194,7 @@ pub fn assert_destination_allowed(
 /// [`assert_destination_allowed`] refuses every ancestor of a protected tree,
 /// because from a destination root alone an ancestor *could* compute a write
 /// path into the tree. With the vault root and the projected paths both in
-/// hand that "could" is answerable, and the write-guard spec say to
+/// hand that "could" is answerable, and the write-guard spec says to
 /// answer it: the vault itself and anything inside it stay refused, and an
 /// ancestor — `~`, a project directory the vault lives under — is refused
 /// only when one of the writes it implies would actually land inside the

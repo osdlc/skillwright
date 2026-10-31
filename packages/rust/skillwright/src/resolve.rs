@@ -177,7 +177,7 @@ pub fn resolve_run(
 /// Where this vault's skills live, for the verbs that scan or write there.
 ///
 /// One precedence, in one place, because `build` and `adopt` must agree:
-/// an adoption writes under the same default `discover_skills` scans.
+/// an adoption writes under the same default `discover_components` scans.
 ///
 /// `None` means say nothing on the request and let the core apply its own
 /// default (the vault root).
