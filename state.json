@@ -1,12 +1,57 @@
 {
   "schema": 1,
   "pr": 16,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "54044ea4e58f495f82694f1167e96eca908c89ae",
+  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:review-k7q2xd",
     "at": "2026-10-31T15:18:55.245Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "scripts/stage-npm-package.ts",
+      "line": 54,
+      "title": "Default repository hides a missing --repository and is not validated",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "scripts/stage-npm-package.ts",
+      "line": 183,
+      "title": "Hand-fix message no longer gives organization and repository separately",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "scripts/stage-npm-package.ts",
+      "line": 11,
+      "title": "Default workflow packages-publish.yml does not exist in this repo; header still says packages/ts",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/skillwright/release/dist.test.ts",
+      "line": 81,
+      "title": "npx stub duplicated, and the dist test cannot fail if the flag is dropped",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
