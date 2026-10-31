@@ -4,6 +4,9 @@
   "head": null,
   "base": null,
   "round": 0,
-  "claim": null,
+  "claim": {
+    "owner": "Mac.local:unknown-r7k2qd",
+    "at": "2026-10-31T02:06:59.821Z"
+  },
   "findings": []
 }
