@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "pr": 17,
+  "head": null,
+  "base": null,
+  "round": 0,
+  "claim": {
+    "owner": "Mac.local:agent-x7k2qa",
+    "at": "2026-10-31T15:58:45.960Z"
+  },
+  "findings": []
+}
