@@ -1,17 +1,9 @@
 // node --test packages/rust/skillwright/release/dist.test.ts
 import { strict as assert } from 'node:assert'
 import { spawnSync } from 'node:child_process'
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, test } from 'node:test'
 
@@ -32,6 +24,7 @@ import {
   sumsLine,
   tagVersion,
 } from './dist.ts'
+import { runWithStubNpx } from '../../../../scripts/stub-npx.ts'
 import { PLATFORMS, platformPackageName, PRODUCT, releaseAssetName } from './product.ts'
 
 describe('package manifests', () => {
@@ -74,33 +67,19 @@ describe('package manifests', () => {
 
   test('stage names this repository, workflow and environment in every trusted publisher', () => {
     // A stub npx reports every package as published and fails `whoami`, so the
-    // dry run prints each `npm trust github` command without running it.
-    const root = mkdtempSync(join(tmpdir(), 'skillwright-stage-test-'))
-    try {
-      const npx = join(root, 'npx')
-      writeFileSync(npx, '#!/bin/sh\ncase "$3" in view) exit 0 ;; *) exit 1 ;; esac\n')
-      chmodSync(npx, 0o755)
-      const r = spawnSync(
-        process.execPath,
-        [join(import.meta.dirname, 'dist.ts'), 'stage', '--dry-run'],
-        {
-          encoding: 'utf8',
-          env: { ...process.env, PATH: `${root}${delimiter}${process.env['PATH'] ?? ''}` },
-        },
+    // dry run prints each `npm trust github` command without running it. The
+    // script requires --repository and --workflow, so a missing flag fails here.
+    const r = runWithStubNpx(() => [join(import.meta.dirname, 'dist.ts'), 'stage', '--dry-run'])
+    assert.equal(r.status, 0, r.stderr)
+    const trusts = r.stdout.split('\n').filter((l) => l.includes('npm trust github'))
+    assert.equal(trusts.length, packageNames().length)
+    for (const line of trusts) {
+      assert.ok(
+        line.includes(
+          `--file ${PRODUCT.workflow} --repository ${PRODUCT.repository} --environment npm `,
+        ),
+        line,
       )
-      assert.equal(r.status, 0, r.stderr)
-      const trusts = r.stdout.split('\n').filter((l) => l.includes('npm trust github'))
-      assert.equal(trusts.length, packageNames().length)
-      for (const line of trusts) {
-        assert.ok(
-          line.includes(
-            `--file ${PRODUCT.workflow} --repository ${PRODUCT.repository} --environment npm `,
-          ),
-          line,
-        )
-      }
-    } finally {
-      rmSync(root, { recursive: true, force: true })
     }
   })
 })

@@ -4,18 +4,21 @@
 // publisher with `npm trust github`. package.json is restored after packing.
 // npm can only add a trusted publisher to a package that already exists.
 //
-//   node scripts/stage-npm-package.ts [--dry-run] [--repository <owner/repo>] [--workflow <file>] [--environment <name>] <package> ...
+//   node scripts/stage-npm-package.ts [--dry-run] --repository <owner/repo> --workflow <file> [--environment <name>] <package> ...
 //
-// Each <package> is a package directory (packages/ts/<name>). The trusted
-// publisher names --repository (default osdlc/skillwright), --workflow (default
-// packages-publish.yml) and, when given, --environment.
-// packages/rust/skillwright/release/dist.ts `stage` passes all three for the
-// skillwright npm packages. A package already on npm is not published again, and one that
-// already has a trusted publisher is left as it is, so a re-run is safe. Run it logged in to npm as
-// an owner of the @osdlc scope. `npm trust` needs two-factor authentication on the account. npm
-// asks for a one-time password or a browser login. npm runs through npx at the version
-// .github/workflows/skillwright-release.yml installs, because `npm trust` needs 11.15 or later. A
-// dry run publishes nothing and changes nothing on npm, but it does build the package.
+// Each <package> is a package directory, such as packages/ts/<name> or
+// packages/rust/skillwright/npm/<name>. The trusted publisher names --repository,
+// --workflow and, when given, --environment. --repository and --workflow are
+// required, so a caller cannot register a publisher for the wrong repository
+// or a workflow that does not exist. packages/rust/skillwright/release/dist.ts
+// `stage` passes all three for the skillwright npm packages. A package already
+// on npm is not published again, and one that already has a trusted publisher
+// is left as it is, so a re-run is safe. Run it logged in to npm as an owner of
+// the @osdlc scope. `npm trust` needs two-factor authentication on the account.
+// npm asks for a one-time password or a browser login. npm runs through npx at
+// the version .github/workflows/skillwright-release.yml installs, because
+// `npm trust` needs 11.15 or later. A dry run publishes nothing and changes
+// nothing on npm, but it does build the package.
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -28,7 +31,7 @@ const OWNER = 'osdlc'
 
 function usage(problem: string): never {
   console.error(
-    `${problem}\nusage: node scripts/stage-npm-package.ts [--dry-run] [--repository <owner/repo>] [--workflow <file>] [--environment <name>] <package> ...`,
+    `${problem}\nusage: node scripts/stage-npm-package.ts [--dry-run] --repository <owner/repo> --workflow <file> [--environment <name>] <package> ...`,
   )
   process.exit(2)
 }
@@ -51,11 +54,15 @@ try {
   usage((e as Error).message)
 }
 const dryRun = parsed.values['dry-run'] ?? false
-const REPOSITORY = parsed.values.repository ?? 'osdlc/skillwright'
-const WORKFLOW = parsed.values.workflow ?? 'packages-publish.yml'
+const REPOSITORY = parsed.values.repository
+const WORKFLOW = parsed.values.workflow
 const ENVIRONMENT = parsed.values.environment
 const dry = dryRun ? ['--dry-run'] : []
+if (!REPOSITORY) usage('no --repository given')
+if (!/^[^/\s]+\/[^/\s]+$/.test(REPOSITORY)) usage('--repository must be <owner>/<repo>')
+if (!WORKFLOW) usage('no --workflow given')
 if (parsed.positionals.length === 0) usage('no package given')
+const [REPO_ORG, REPO_NAME] = REPOSITORY.split('/')
 
 /** Runs pnpm in a package directory. */
 function pnpm(dir: string, args: string[], stdout: 'inherit' | 'pipe' = 'inherit') {
@@ -180,7 +187,7 @@ for (const { dir, name } of targets) {
   if (dryRun && !(existed && loggedIn)) continue
   if (npm([...trust, name, '--yes', ...dry], { stdio: 'inherit' }).status !== 0) {
     console.error(`  npm trust failed. Add it by hand at https://www.npmjs.com/package/${name}/access:
-    GitHub Actions, repository ${REPOSITORY}, workflow ${WORKFLOW}, environment ${ENVIRONMENT ?? '(none)'}.`)
+    GitHub Actions, organization ${REPO_ORG}, repository ${REPO_NAME}, workflow ${WORKFLOW}, environment ${ENVIRONMENT ?? '(none)'}.`)
     failed = true
   }
 }
