@@ -1,0 +1,14 @@
+{
+  "name": "skillwright",
+  "version": "0.1.0",
+  "description": "Skills for the skillwright CLI: install it, author skills, plugins and marketplaces as markdown notes in a vault, publish and build them for Claude Code, Codex, Cursor and Pi, check for drift, and move a vault over from tradecraft.",
+  "author": {
+    "name": "osdlc"
+  },
+  "license": "MIT OR Apache-2.0",
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  }
+}

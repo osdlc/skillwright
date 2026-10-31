@@ -1,0 +1,81 @@
+# Checks that the committed skillwright plugin under plugin/ is what its vault
+# builds to. It builds the vault with the skillwright CLI from this commit
+# (`cargo run -p skillwright`), then fails if the build changed, added or
+# removed any file under plugin/.
+#
+# The CLI comes from this repository's source, not a released binary. That
+# keeps the check independent of a release, and a CLI change that alters the
+# plugin's output fails here, in the pull request that makes it.
+#
+# The `paths` filter means the workflow does not run for unrelated changes.
+# Do not require its job in a ruleset: a required check that never runs stays
+# pending.
+#
+# Every action is pinned to a commit SHA; the comment names its release.
+name: plugin
+
+on:
+  pull_request:
+    paths:
+      - plugin/**
+      - packages/rust/skillwright/**
+      - packages/rust/tradecraft-core/**
+      - packages/rust/Cargo.toml
+      - packages/rust/Cargo.lock
+      - packages/rust/rust-toolchain.toml
+      - .github/actions/rust-*/**
+      - .github/workflows/plugin.yml
+  push:
+    branches: [main]
+    paths:
+      - plugin/**
+      - packages/rust/skillwright/**
+      - packages/rust/tradecraft-core/**
+      - packages/rust/Cargo.toml
+      - packages/rust/Cargo.lock
+      - packages/rust/rust-toolchain.toml
+      - .github/actions/rust-*/**
+      - .github/workflows/plugin.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/rust-toolchain
+
+      - uses: ./.github/actions/rust-build-cache
+
+      - name: Build the plugin
+        working-directory: packages/rust
+        run: cargo run --locked -p skillwright -- build --yes --config ../../plugin/skillwright.yaml
+
+      - name: The build matches what is committed
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- plugin)" ]; then
+            git status --short -- plugin
+            git diff --stat -- plugin
+            echo "::error::plugin/ differs from its build. Run the build command in plugin/README.md and commit the result."
+            exit 1
+          fi
+
+      - name: Check
+        working-directory: packages/rust
+        run: cargo run --locked -p skillwright -- check --config ../../plugin/skillwright.yaml

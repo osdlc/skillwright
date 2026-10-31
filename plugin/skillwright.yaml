@@ -1,0 +1,17 @@
+# The project file for the skillwright plugin. Paths are relative to this file.
+# From the repository root:
+#
+#   skillwright build --yes --config plugin/skillwright.yaml
+#   skillwright check --config plugin/skillwright.yaml
+#
+# The built trees (.claude-plugin/, .agents/, .cursor-plugin/, .pi/) beside this
+# file are committed. The `plugin` workflow rebuilds them and fails on any
+# difference. See README.md.
+vault: vault
+namespace: sw
+marketplace:
+  name: osdlc
+  owner: osdlc
+  license: MIT OR Apache-2.0
+  default_plugin: skillwright
+  out: .

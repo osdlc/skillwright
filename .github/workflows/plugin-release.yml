@@ -1,0 +1,165 @@
+# Publishes the skillwright plugin to the osdlc marketplace, osdlc/marketplace.
+#
+# Push a tag `plugin/vX.Y.Z` on main. The workflow:
+#
+# 1. builds plugin/ with the skillwright CLI from the tagged source and stops
+#    if the build differs from what is committed;
+# 2. stops unless X.Y.Z equals `sw-version` in the plugin's vault note;
+# 3. opens a pull request on osdlc/marketplace that replaces only the
+#    skillwright pack in each harness root and the skillwright entry in each
+#    marketplace manifest (scripts/plugin-marketplace.ts). Every other plugin
+#    in that repository is left alone.
+#
+# Merging that pull request is the publish; users get it on their next
+# `claude plugin marketplace update osdlc`. Nothing is published by this
+# workflow directly.
+#
+# Auth is the GitHub App `osdlc-release`, installed on osdlc/marketplace with
+# contents and pull-requests write. Its private key is the environment secret
+# RELEASE_PLZ_APP_PRIVATE_KEY in the `plugin-release` environment.
+#
+# A manual run (workflow_dispatch) takes an existing tag and is a dry run
+# unless `dry_run` is unchecked. A dry run builds and syncs into a scratch
+# checkout of osdlc/marketplace and prints the diff, but pushes nothing. It must
+# start from main.
+#
+# Every action is pinned to a commit SHA; the comment names its release.
+name: plugin-release
+
+on:
+  push:
+    tags: ['plugin/v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag, for example plugin/v0.1.0
+        required: true
+        type: string
+      dry_run:
+        description: Dry run (open no pull request)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  marketplace-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Holds the App private key.
+    environment: plugin-release
+    steps:
+      # The environment, secret and App installation this workflow uses exist
+      # only for osdlc/skillwright. A fork or a copy stops here.
+      - name: Refuse to run outside osdlc/skillwright
+        if: github.repository != 'osdlc/skillwright'
+        run: |
+          echo "::error::This release workflow runs only in osdlc/skillwright, not in $GITHUB_REPOSITORY."
+          exit 1
+
+      - name: Refuse a manual run from a ref other than main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run plugin-release from main, not $GITHUB_REF."
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - uses: ./.github/actions/rust-toolchain
+
+      - uses: ./.github/actions/rust-build-cache
+
+      - name: Build the plugin
+        working-directory: packages/rust
+        run: cargo run --locked -p skillwright -- build --yes --config ../../plugin/skillwright.yaml
+
+      - name: The build matches what is committed
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- plugin)" ]; then
+            git status --short -- plugin
+            echo "::error::plugin/ at $TAG differs from its build."
+            exit 1
+          fi
+
+      - name: Check the tag against the plugin version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(node scripts/plugin-marketplace.ts version)"
+          if [ "$TAG" != "plugin/v$version" ]; then
+            echo "::error::$TAG does not match sw-version $version in the plugin note."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Get a GitHub App token for osdlc/marketplace
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: Iv23liYTGAl78fzN8YWm
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+          owner: osdlc
+          repositories: marketplace
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: osdlc/marketplace
+          token: ${{ steps.app-token.outputs.token }}
+          path: marketplace
+
+      - name: Copy the plugin into the marketplace
+        run: node scripts/plugin-marketplace.ts sync marketplace
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          VERSION: ${{ steps.version.outputs.version }}
+        working-directory: marketplace
+        run: |
+          set -euo pipefail
+          git add -A
+          if git diff --cached --quiet; then
+            echo "osdlc/marketplace already has skillwright $VERSION"
+            exit 0
+          fi
+          git diff --cached --stat
+          if [ "$DRY_RUN" = true ]; then
+            echo "dry run: no pull request opened"
+            exit 0
+          fi
+          branch="skillwright-plugin-v$VERSION"
+          user_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -m "skillwright plugin $VERSION"
+          git push --force origin "$branch"
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "a pull request for $branch is already open; the push updated it"
+            exit 0
+          fi
+          gh pr create --base main --head "$branch" \
+            --title "skillwright plugin $VERSION" \
+            --body "Updates the skillwright plugin to $VERSION from https://github.com/osdlc/skillwright/tree/$TAG/plugin. Only the skillwright pack and manifest entry change."
