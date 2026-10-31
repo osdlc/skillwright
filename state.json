@@ -4,10 +4,7 @@
   "head": "87c8260f9feaae15268c2415dcf70a1b21134e57",
   "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
   "round": 1,
-  "claim": {
-    "owner": "Mac.local:agent-x7k2qa",
-    "at": "2026-10-31T15:58:45.960Z"
-  },
+  "claim": null,
   "findings": [
     {
       "id": "r1-1",
