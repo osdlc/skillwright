@@ -296,9 +296,10 @@ pub struct MarketplaceConfig {
     /// Per-plugin manifest overrides, keyed by plugin name.
     #[serde(default)]
     pub plugins: BTreeMap<String, PluginOverrides>,
-    /// Refuse the build when a note has a `name` and no `description`,
-    /// instead of publishing [`crate::discover::MISSING_DESCRIPTION`] and
-    /// reporting it in [`ExportReport::warnings`].
+    /// Refuse the build when a note has a `name` and no `description` and
+    /// this config supplies none for it, instead of publishing
+    /// [`crate::discover::MISSING_DESCRIPTION`] and reporting it in
+    /// [`ExportReport::warnings`].
     #[serde(default)]
     pub require_descriptions: bool,
     /// Where the per-skill `scripts/sdlc` shim looks for this plugin's own
@@ -931,10 +932,18 @@ pub fn export_skills(
         .filter(|c| c.kind != EntityKind::Marketplace || market.as_deref() == Some(c.name.as_str()))
         .map(|c| c.vault_relative_path.as_str())
         .collect();
+    // A configured description is what ships for a silent note (see
+    // `take_description`), so that note is not missing one.
+    let configured: BTreeSet<&str> = belonging
+        .iter()
+        .filter(|c| configures_description(&request.config, c))
+        .map(|c| c.vault_relative_path.as_str())
+        .collect();
     let mut warnings: Vec<DiscoveryWarning> = scan
         .warnings
         .into_iter()
         .filter(|w| ours.contains(w.path.as_str()))
+        .filter(|w| w.reason != MISSING_DESCRIPTION_REASON || !configured.contains(w.path.as_str()))
         .collect();
     let undescribed: Vec<&str> = warnings
         .iter()
@@ -1052,6 +1061,24 @@ pub fn export_skills(
                     spec.name,
                 ),
             ));
+        }
+        // The render cannot see a tree it replaces, and the swap deletes it, so
+        // a source inside one is refused here rather than failing as missing.
+        if asset.source.is_absolute() {
+            for tree in trees.iter().copied().chain([STAGE_DIR]) {
+                let replaced = out_root.join(tree);
+                if within(vfs, &replaced, &asset.source)? {
+                    return Err(CoreError::refused(
+                        "unsafe-root",
+                        format!(
+                            "the asset source `{}` is inside {}, which a build replaces \
+                             whole. Move the source out of it. Nothing was written",
+                            asset.source.display(),
+                            replaced.display()
+                        ),
+                    ));
+                }
+            }
         }
         let plugin = asset
             .plugin
@@ -1342,6 +1369,20 @@ fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) {
     }
 }
 
+/// Whether the request's config describes `note`, so a silent note ships that
+/// value rather than the filler. Only marketplace and plugin notes have a
+/// configured description.
+fn configures_description(config: &MarketplaceConfig, note: &DiscoveredComponent) -> bool {
+    match note.kind {
+        EntityKind::Marketplace => config.description.is_some(),
+        EntityKind::Plugin => config
+            .plugins
+            .get(&note.name)
+            .is_some_and(|o| o.description.is_some()),
+        _ => false,
+    }
+}
+
 /// Which marketplace this build renders, given what the vault holds.
 ///
 /// One `out_root` holds one marketplace, so this is a choice the request
@@ -1612,11 +1653,17 @@ fn render_root(
         Some(plugin) => rendered_skill_call(runtime, spec.naming, plugin, &skill.name),
         None => checked_skill_call(runtime, None, &skill.name),
     };
+    // What this root takes from each plugin, computed once for the index, the
+    // collision check and the render below.
+    let admitted: BTreeMap<&str, Admitted<'_>> = inputs
+        .groups
+        .iter()
+        .map(|(plugin, group)| (*plugin, group.admitted(spec)))
+        .collect();
     // Every skill in the marketplace, under the plugin it ships in, so a call
     // to one this root narrows away is refused rather than rendered.
     let skills = SkillIndex::new(inputs.groups.iter().flat_map(|(plugin, group)| {
-        let admitted: BTreeSet<&Path> = group
-            .admitted(spec)
+        let shipped: BTreeSet<&Path> = admitted[plugin]
             .skills
             .iter()
             .map(|skill| skill.entry_path.as_path())
@@ -1625,32 +1672,10 @@ fn render_root(
             entry_path: skill.entry_path.clone(),
             plugin: Some((*plugin).to_owned()),
             name: skill.name.clone(),
-            shipped: admitted.contains(skill.entry_path.as_path()),
+            shipped: shipped.contains(skill.entry_path.as_path()),
         })
     }));
-    // `<plugin>-<skill>` is not injective (`a` + `b-c` and `a-b` + `c` are
-    // both `a-b-c`), and a root with no plugin namespace would load two skills
-    // of one name. `group_by_plugin` refuses a collision inside one plugin;
-    // this refuses one across plugins.
-    if spec.naming == SkillNaming::PluginPrefixed {
-        let mut published: BTreeMap<String, &DiscoveredComponent> = BTreeMap::new();
-        for (plugin, group) in inputs.groups {
-            for skill in group.admitted(spec).skills {
-                let name = published_skill_name(spec.naming, plugin, &skill.name)?;
-                if let Some(first) = published.insert(name.clone(), skill) {
-                    return Err(CoreError::refused(
-                        "path-collision",
-                        format!(
-                            "`{}` and `{}` both publish as skill `{name}` on the {} root, \
-                             which prefixes each skill with its plugin — two skills cannot \
-                             publish under one name",
-                            first.vault_relative_path, skill.vault_relative_path, spec.name
-                        ),
-                    ));
-                }
-            }
-        }
-    }
+    refuse_prefixed_collisions(spec, &admitted)?;
     let calls = CallContext {
         skills: SkillSource::ready(&skills),
         render: &render,
@@ -1659,7 +1684,7 @@ fn render_root(
         warnings: RefCell::new(Vec::new()),
     };
     for (plugin, group) in inputs.groups {
-        let admitted = group.admitted(spec);
+        let admitted = &admitted[plugin];
         if admitted.is_empty() {
             continue;
         }
@@ -1737,6 +1762,40 @@ fn render_root(
         write_rendered(vfs, &base.join(path), manifest.as_bytes(), false)?;
     }
     Ok(calls.warnings.into_inner())
+}
+
+/// Refuses two skills that publish under one name on a root that prefixes
+/// each skill with its plugin.
+///
+/// `<plugin>-<skill>` is not injective (`a` + `b-c` and `a-b` + `c` are both
+/// `a-b-c`), and a root with no plugin namespace would load two skills of one
+/// name. `group_by_plugin` refuses a collision inside one plugin; this
+/// refuses one across plugins.
+fn refuse_prefixed_collisions(
+    spec: &RootSpec,
+    admitted: &BTreeMap<&str, Admitted<'_>>,
+) -> Result<(), CoreError> {
+    if spec.naming != SkillNaming::PluginPrefixed {
+        return Ok(());
+    }
+    let mut published: BTreeMap<String, &DiscoveredComponent> = BTreeMap::new();
+    for (plugin, group) in admitted {
+        for skill in &group.skills {
+            let name = published_skill_name(spec.naming, plugin, &skill.name)?;
+            if let Some(first) = published.insert(name.clone(), skill) {
+                return Err(CoreError::refused(
+                    "path-collision",
+                    format!(
+                        "`{}` and `{}` both publish as skill `{name}` on the {} root, which \
+                         prefixes each skill with its plugin — two skills cannot publish under \
+                         one name",
+                        first.vault_relative_path, skill.vault_relative_path, spec.name
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// One skill as a pack renders it: the plugin it ships in, and how its
@@ -1994,8 +2053,9 @@ fn is_directory(vfs: &dyn Vfs, path: &Path) -> bool {
 /// The per-skill `scripts/sdlc` shim: a parent-walk from its own directory
 /// looking for `shim_target` — the plugin-level launcher asset, from
 /// [`MarketplaceConfig::shim_target`] — falling back to `sdlc` on `PATH`. The
-/// walk skips the shim's own path, so a target such as `sdlc` or
-/// `scripts/sdlc`, which the shim itself matches, cannot make it exec itself.
+/// walk skips the shim's own file, compared by identity (`-ef`) rather than by
+/// spelling, so a target the shim itself matches (`sdlc`, `scripts/sdlc`,
+/// `./scripts//sdlc`) cannot make it exec itself.
 /// POSIX `sh`, not `bash`: this ships only inside a skill whose rendered body
 /// [`rewrite_cli_invocation`] actually rewrote (see [`render_skill`]), and the
 /// plugin's own `cli/sdlc` launcher is the one script here that already
@@ -2007,7 +2067,7 @@ fn sdlc_shim_script(shim_target: &str) -> String {
 # sdlc — per-skill shim. GENERATED by skillwright; do not edit.\n\
 #\n\
 # Walks up from this script's own directory looking for {shim_target} — the\n\
-# plugin-level launcher asset — and runs it, skipping this script's own path\n\
+# plugin-level launcher asset — and runs it, skipping this script's own file\n\
 # so a target it also matches cannot exec itself. Falls back to `sdlc` on PATH\n\
 # when no such ancestor is found (a skill copied out of the plugin, or a\n\
 # harness that doesn't lay out {shim_target} where this build put it).\n\
@@ -2020,9 +2080,8 @@ fn sdlc_shim_script(shim_target: &str) -> String {
 set -eu\n\
 \n\
 dir=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n\
-me=\"$dir/$(basename -- \"$0\")\"\n\
 while [ \"$dir\" != \"/\" ]; do\n\
-  if [ \"$dir/{shim_target}\" != \"$me\" ] && [ -x \"$dir/{shim_target}\" ]; then\n\
+  if ! [ \"$dir/{shim_target}\" -ef \"$0\" ] && [ -x \"$dir/{shim_target}\" ]; then\n\
     exec \"$dir/{shim_target}\" \"$@\"\n\
   fi\n\
   dir=$(dirname -- \"$dir\")\n\
@@ -3939,7 +3998,17 @@ mod tests {
             dest: "docs".to_owned(),
             plugin: None,
         };
-        for (first, second) in [(file.clone(), directory.clone()), (directory, file)] {
+        // Each case carries the path under `docs` the second build lands and
+        // its bytes.
+        for (first, second, landed, bytes) in [
+            (
+                file.clone(),
+                directory.clone(),
+                "x.md",
+                &b"a directory\n"[..],
+            ),
+            (directory, file, "", &b"a file\n"[..]),
+        ] {
             let vfs = example_vault();
             write(&vfs, "/src/docs", "a file\n");
             write(&vfs, "/src2/docs/x.md", "a directory\n");
@@ -3947,7 +4016,7 @@ mod tests {
             request.assets = vec![first];
             assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
 
-            request.assets = vec![second.clone()];
+            request.assets = vec![second];
             request.mode = ExportMode::Check;
             let report = export_skills(&vfs, &request, &sw()).unwrap();
             assert!(report.changed, "{report:?}");
@@ -3955,24 +4024,33 @@ mod tests {
             assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
 
             let docs = Path::new("/market/.claude-plugin/packs/tools/docs");
-            if second.source == Path::new("/src/docs") {
-                assert_eq!(vfs.read_file(docs).unwrap(), b"a file\n");
+            let path = if landed.is_empty() {
+                docs.to_path_buf()
             } else {
-                assert_eq!(vfs.read_file(&docs.join("x.md")).unwrap(), b"a directory\n");
-            }
+                docs.join(landed)
+            };
+            assert_eq!(vfs.read_file(&path).unwrap(), bytes);
         }
     }
 
     /// A shim target the shim's own path also matches from some ancestor
-    /// (`sdlc` from its own directory, `scripts/sdlc` from the skill's) must
-    /// skip itself and reach the launcher, not exec itself forever.
+    /// (`sdlc` from its own directory, `scripts/sdlc` from the skill's), in
+    /// any spelling, must skip itself and reach the launcher, not exec itself
+    /// forever.
     #[cfg(unix)]
     #[test]
     fn the_shim_skips_its_own_path_and_reaches_the_launcher() {
         use std::os::unix::fs::PermissionsExt;
         use std::time::{Duration, Instant};
 
-        for target in ["sdlc", "scripts/sdlc", DEFAULT_SHIM_TARGET] {
+        for target in [
+            "sdlc",
+            "scripts/sdlc",
+            "scripts/./sdlc",
+            "./scripts/sdlc",
+            "scripts//sdlc",
+            DEFAULT_SHIM_TARGET,
+        ] {
             let tmp = tempfile::tempdir().unwrap();
             let pack = tmp.path().join("pack");
             let launcher = pack.join(target);
@@ -4743,6 +4821,44 @@ mod tests {
         request.config.plugins.clear();
         let report = export_skills(&vfs, &request, &sw()).unwrap();
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    }
+
+    /// A configured description is what ships for a silent plugin or
+    /// marketplace note, so that note neither warns nor trips
+    /// `require_descriptions`. A silent skill still does.
+    #[test]
+    fn a_configured_description_neither_warns_nor_refuses() {
+        let vfs = nameonly_vault();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/house.md",
+            "---\nname: house\n---\n",
+        );
+        let mut request = request(ExportMode::Check);
+        request.config.description = Some("Configured market description".to_owned());
+        request.config.plugins.insert(
+            "tools".to_owned(),
+            PluginOverrides {
+                description: Some("Configured description.".to_owned()),
+                ..PluginOverrides::default()
+            },
+        );
+        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let warned: Vec<&str> = report
+            .warnings
+            .iter()
+            .filter(|w| w.reason == MISSING_DESCRIPTION_REASON)
+            .map(|w| w.path.as_str())
+            .collect();
+        assert_eq!(warned, ["marketplaces/house/plugins/tools/skills/quiet.md"]);
+
+        request.config.require_descriptions = true;
+        let message = export_skills(&vfs, &request, &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("skills/quiet.md"), "{message}");
+        assert!(!message.contains("tools/tools.md"), "{message}");
+        assert!(!message.contains("house/house.md"), "{message}");
     }
 
     #[test]
@@ -5727,27 +5843,63 @@ mod tests {
         assert!(report.changed);
     }
 
-    /// The swap moves each tree aside and removes it, so a vault inside one
-    /// would go with it — even a tree an earlier build left its marker in.
+    /// The swap moves each tree and the stage aside and removes them, so a
+    /// vault inside one would go with it — even a tree an earlier build left
+    /// its marker in. A host that cannot see links refuses it by the ancestor
+    /// rule instead.
     #[test]
     fn a_vault_inside_a_swapped_tree_is_refused() {
+        for (vault, sees_links) in [
+            ("/repo/.claude-plugin/vault", true),
+            (&format!("/repo/{STAGE_DIR}/vault"), true),
+            ("/repo/.claude-plugin/vault", false),
+        ] {
+            let mem = MemVfs::new();
+            let mut request = repo_vault(&mem);
+            assert!(export_skills(&mem, &request, &sw()).unwrap().changed);
+
+            write(
+                &mem,
+                &format!("{vault}/marketplaces/house/plugins/tools/skills/review-guide.md"),
+                &note("review-guide", None, &[]),
+            );
+            write(&mem, &format!("{vault}/precious.md"), "# Keep me\n");
+            request.vault_root = PathBuf::from(vault);
+            let vfs: Box<dyn Vfs> = if sees_links {
+                Box::new(mem)
+            } else {
+                Box::new(crate::vfs::LinkBlindVfs(mem))
+            };
+            let message = export_skills(vfs.as_ref(), &request, &sw())
+                .unwrap_err()
+                .to_string();
+            assert!(message.contains("unsafe-root"), "{vault}: {message}");
+            assert!(message.contains(vault), "{vault}: {message}");
+            assert!(vfs.exists(&Path::new(vault).join("precious.md")), "{vault}");
+        }
+    }
+
+    /// The render cannot see a tree it replaces, and the swap deletes it, so
+    /// an asset sourced from inside one is refused up front, by name.
+    #[test]
+    fn an_asset_source_inside_a_swapped_tree_is_refused() {
         let vfs = MemVfs::new();
         let mut request = repo_vault(&vfs);
         assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
 
-        let vault = "/repo/.claude-plugin/vault";
-        write(
-            &vfs,
-            &format!("{vault}/marketplaces/house/plugins/tools/skills/review-guide.md"),
-            &note("review-guide", None, &[]),
-        );
-        write(&vfs, &format!("{vault}/precious.md"), "# Keep me\n");
-        request.vault_root = PathBuf::from(vault);
+        let source = "/repo/.claude-plugin/launcher";
+        write(&vfs, source, "#!/bin/sh\n");
+        request.assets = vec![AssetSpec {
+            source: PathBuf::from(source),
+            dest: "cli/sdlc".to_owned(),
+            plugin: None,
+        }];
         let message = export_skills(&vfs, &request, &sw())
             .unwrap_err()
             .to_string();
         assert!(message.contains("unsafe-root"), "{message}");
-        assert!(vfs.exists(&Path::new(vault).join("precious.md")));
+        assert!(message.contains(source), "{message}");
+        assert!(vfs.exists(Path::new(source)));
     }
 
     /// Every row's `packs` must begin with its own `tree()`, or that

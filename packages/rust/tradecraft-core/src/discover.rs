@@ -422,7 +422,7 @@ pub fn discover_components(
                         reason: MISSING_DESCRIPTION_REASON.to_owned(),
                         detail: format!(
                             "`{}` has a `name` and no `description`; published with \
-                             \"{MISSING_DESCRIPTION}\"",
+                             \"{MISSING_DESCRIPTION}\" unless the build configures one",
                             component.name
                         ),
                     });

@@ -699,9 +699,10 @@ export interface MarketplaceConfig {
   plugins?: Record<string, PluginOverrides>;
 
   /**
-   * Refuse the build when a note has a `name` and no `description`,
-   * instead of publishing [`crate::discover::MISSING_DESCRIPTION`] and
-   * reporting it in [`ExportReport::warnings`].
+   * Refuse the build when a note has a `name` and no `description` and
+   * this config supplies none for it, instead of publishing
+   * [`crate::discover::MISSING_DESCRIPTION`] and reporting it in
+   * [`ExportReport::warnings`].
    */
   require_descriptions?: boolean;
 
