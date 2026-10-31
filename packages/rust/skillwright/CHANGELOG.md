@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.3.9...skillwright/v0.4.0) - 2026-10-30
+
+### Fixed
+
+- machine-file path resolution, refusal and help wording; drop old project name from changelogs
+
+### Removed
+
+- handling of old names; fix config and doc errors
+
 ## [0.3.9](https://github.com/osdlc/skillwright/compare/skillwright/v0.3.8...skillwright/v0.3.9) - 2026-10-30
 
 ### Other
