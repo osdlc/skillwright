@@ -1,18 +1,17 @@
 //! The crate's error type.
 //!
-//! Deliberately small and host-neutral: each host maps it into its own
-//! `AppError` at the `api/v1` adapter seam, so this crate never learns that
-//! Tauri or Axum exist. The `Display` strings surface in the UI, so the test
-//! at the bottom pins them verbatim — the same discipline
-//! other error types in this family use.
+//! Deliberately small and host-neutral: each host (the `skillwright` CLI,
+//! the `tradecraft-wasm` binding) maps it into its own output, so this crate
+//! never learns which host it runs in. The `Display` strings reach users, so
+//! the test at the bottom pins them verbatim.
 
 use std::path::{Path, PathBuf};
 
 /// Something went wrong locating or reading a skill corpus.
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
-    /// A registered root does not exist, or is not a directory. Recoverable —
-    /// the UI shows the root as unavailable rather than failing the whole scan.
+    /// A content root (or an adopt source) does not exist. Returned before
+    /// anything is read.
     #[error("corpus root not found: {0}")]
     RootNotFound(PathBuf),
 
@@ -26,7 +25,7 @@ pub enum CoreError {
     SkillNotFound(String),
 
     /// Filesystem failure reading a corpus. Carries the path, because a bare
-    /// `io::Error` ("permission denied") is unactionable in a UI.
+    /// `io::Error` ("permission denied") is unactionable.
     #[error("reading {path}: {source}")]
     Io {
         /// The path that could not be read.
@@ -106,7 +105,7 @@ mod tests {
 
     #[test]
     fn display_strings_are_stable() {
-        // These reach the UI verbatim. Changing one is a user-visible change.
+        // These reach users verbatim. Changing one is a user-visible change.
         assert_eq!(
             CoreError::RootNotFound(PathBuf::from("/nope")).to_string(),
             "corpus root not found: /nope"

@@ -11,7 +11,7 @@
 //!
 //! A whole request the core fails on — a target with no renderer for this
 //! unit's kind, an unreadable note — is a state this run could not
-//! determine, and `unknown` is the word the status spec give that. Letting it
+//! determine, and `unknown` is the word the status spec gives that. Letting it
 //! end the run would mean one unrenderable note hides the state of every
 //! other destination.
 //!
@@ -290,7 +290,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
 
     // Stderr, never stdout: this fact isn't modeled in `AttributedState` or
     // `StatusDocument` at all, and adding it would change `status --json`'s
-    // shape — out of scope for this phase.
+    // shape.
     if !flags.json {
         for (skill, suggestion) in &suggestions {
             let plugin = Path::new(skill)

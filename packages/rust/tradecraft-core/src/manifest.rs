@@ -6,11 +6,9 @@
 //! because the Agent Skills standard allows six frontmatter fields and none of
 //! ours is among them.
 //!
-//! # Why a file at the destination rather than a database
-//!
-//! It travels with the directory: a destination copied to another machine,
-//! restored from a backup, or read by another tool carries its own record of
-//! what is in it. The vault model has no database to put a central table in.
+//! A file at the destination, not a database, so a destination copied to
+//! another machine, restored from backup, or read by another tool carries its
+//! own record.
 //!
 //! # The two hashes
 //!
@@ -49,10 +47,6 @@ use serde::{Deserialize, Serialize};
 use crate::error::CoreError;
 use crate::vfs::Vfs;
 
-/// The manifest folder's earlier names, newest first. Only named to refuse
-/// them with a rename hint.
-const OLD_FOLDERS: [&str; 2] = [".tradecraft", ".agent-pants"];
-
 /// Where the manifest sits under a destination root.
 ///
 /// Namespaced under a dot-directory of our own rather than dropped at the
@@ -60,9 +54,6 @@ const OLD_FOLDERS: [&str; 2] = [".tradecraft", ".agent-pants"];
 /// and a bare `manifest.json` beside their source tree is a collision waiting
 /// to happen.
 pub const MANIFEST_RELATIVE_PATH: &str = ".skillwright/manifest.json";
-
-/// The folder [`MANIFEST_RELATIVE_PATH`] sits in.
-const MANIFEST_FOLDER: &str = ".skillwright";
 
 /// The schema this build writes, and the highest it can read.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -200,10 +191,6 @@ pub enum Unusable {
         /// The schema version found in the file.
         found: u32,
     },
-    /// The destination has a manifest under an old folder, which this
-    /// carries (for example `.tradecraft`), and none under `.skillwright/`.
-    /// The old one is not read; the owner renames the folder.
-    OldFolder(&'static str),
 }
 
 impl Unusable {
@@ -221,29 +208,8 @@ impl Unusable {
                  drop what this build cannot read",
                 path.display()
             ),
-            Self::OldFolder(folder) => format!(
-                "{} is under the old {folder}/ folder: rename {folder}/ to {}/",
-                old_manifest_path_beside(path, folder).display(),
-                MANIFEST_FOLDER,
-            ),
         }
     }
-}
-
-/// The old manifest's path, from the new manifest's path
-/// (`<root>/.skillwright/manifest.json`): the same file name one folder over.
-fn old_manifest_path_beside(manifest: &Path, folder: &str) -> PathBuf {
-    let root = manifest
-        .parent()
-        .and_then(Path::parent)
-        .unwrap_or_else(|| Path::new(""));
-    root.join(folder).join("manifest.json")
-}
-
-/// The old manifest's path under a destination root, for the old-folder
-/// error's one report row.
-pub(crate) fn old_manifest_relative_path(folder: &str) -> String {
-    format!("{folder}/manifest.json")
 }
 
 /// What reading a destination's manifest found.
@@ -303,12 +269,6 @@ pub fn manifest_path(destination_root: &Path) -> PathBuf {
 pub fn read_manifest(vfs: &dyn Vfs, destination_root: &Path) -> ManifestState {
     let path = manifest_path(destination_root);
     if !vfs.exists(&path) {
-        if let Some(folder) = OLD_FOLDERS
-            .into_iter()
-            .find(|folder| vfs.exists(&destination_root.join(folder).join("manifest.json")))
-        {
-            return ManifestState::Unusable(Unusable::OldFolder(folder));
-        }
         return ManifestState::Missing;
     }
     let bytes = match vfs.read_file(&path) {
@@ -431,41 +391,6 @@ mod tests {
         let vfs = MemVfs::new();
         assert_eq!(read_manifest(&vfs, root()), ManifestState::Missing);
         assert!(read_manifest(&vfs, root()).is_usable());
-    }
-
-    // An old folder is refused with a rename hint, not read.
-    #[test]
-    fn a_manifest_under_an_old_folder_is_unusable_with_a_rename_hint() {
-        for folder in [".tradecraft", ".agent-pants"] {
-            let vfs = MemVfs::new();
-            let old = Path::new("/dest").join(folder);
-            vfs.create_dir_all(&old).unwrap();
-            vfs.write_file(&old.join("manifest.json"), b"{}").unwrap();
-            let state = read_manifest(&vfs, root());
-            assert_eq!(state, ManifestState::Unusable(Unusable::OldFolder(folder)));
-            let ManifestState::Unusable(why) = state else {
-                unreachable!()
-            };
-            assert_eq!(
-                why.message(&manifest_path(root())),
-                format!(
-                    "/dest/{folder}/manifest.json is under the old {folder}/ folder: \
-                     rename {folder}/ to .skillwright/"
-                )
-            );
-        }
-    }
-
-    // The new folder wins: the old one is not looked at, and nothing errors.
-    #[test]
-    fn both_manifest_folders_present_reads_the_new_one() {
-        let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/dest/.agent-pants")).unwrap();
-        vfs.write_file(Path::new("/dest/.agent-pants/manifest.json"), b"{ junk")
-            .unwrap();
-        write_manifest(&vfs, root(), &DestinationManifest::new()).unwrap();
-        let state = read_manifest(&vfs, root());
-        assert!(matches!(state, ManifestState::Ok { .. }), "{state:?}");
     }
 
     // Corrupt is a partial fact — possibly a truncated file we wrote —

@@ -4,10 +4,8 @@
 //! The vault spec describes publishing as five steps. **This
 //! module is steps 4 and 5**: copy the peer resources, and emit `SKILL.md` in
 //! the target's dialect and directory layout. Steps 1–3 — `![[embed]]`
-//! expansion, `[[link]]` collection, reference-file emission — are a later
-//! phase, and [`crate::vault`] passes the body through verbatim until then.
-//! Nothing here fakes their output: a published `SKILL.md` today contains the
-//! author's wikilinks exactly as typed.
+//! expansion, `[[link]]` collection, reference-file emission — are
+//! [`crate::compile`]'s, run between the read and the render.
 //!
 //! # Idempotence is a comparison, not a manifest
 //!
@@ -181,8 +179,8 @@ use crate::guard::{
     assert_destination_allowed, assert_destination_allowed_for_vault, resolve_write_path,
 };
 use crate::manifest::{
-    DestinationManifest, MANIFEST_RELATIVE_PATH, ManifestEntry, ManifestState, Unusable,
-    manifest_path, read_manifest, write_manifest,
+    DestinationManifest, MANIFEST_RELATIVE_PATH, ManifestEntry, ManifestState, manifest_path,
+    read_manifest, write_manifest,
 };
 use crate::namespace::Namespace;
 use crate::projection::{
@@ -244,13 +242,11 @@ pub struct PublishRequest {
 
 /// Whether a publish writes, or only reports what it would write.
 ///
-/// A field on the request rather than a second entry point, so there is one
-/// publish path and no `dry_run_skill` copy of [`publish_skill`]'s order to
-/// keep in step. It is also how previewing crosses the wasm boundary: that
-/// boundary serializes a [`PublishRequest`], so `#[serde(default)]` lets a
-/// host opt in with one extra key while every existing caller keeps meaning
-/// `write`. A third argument would not ride the wire: the boundary would need
-/// a wrapper type for it, a second wire shape for the same request.
+/// A field on the request, so there is one publish path. It is also how
+/// previewing crosses the wasm boundary: that boundary serializes a
+/// [`PublishRequest`], so `#[serde(default)]` lets a host opt in with one
+/// extra key, and a request without it means `write`. A separate argument
+/// would need a second wire shape for the same request.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PublishMode {
@@ -543,7 +539,7 @@ pub struct PublishReport {
     /// Prose, not one of the publish spec's reason tokens. Those
     /// name outcomes, and exclusion is the absence of one — nothing here was a
     /// candidate, so nothing here has a status. Omitted from the wire when
-    /// unset, so the ordinary report is the shape it always was.
+    /// unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_published: Option<String>,
     /// Vault-relative paths of members this projection could not carry.
@@ -556,7 +552,7 @@ pub struct PublishReport {
     /// their own, which is what a reader does about it.
     ///
     /// Empty on every report but a pack's, and omitted from the wire when
-    /// empty, so the ordinary report is the shape it always was.
+    /// empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub not_carried: Vec<String>,
     /// `sw-overrides` keys this destination's render already wrote, each as
@@ -639,7 +635,7 @@ fn publish_onto(
         note.frontmatter.declared_kind,
         KindHints {
             requested: None,
-            configured: request
+            folder: request
                 .skills_root
                 .as_deref()
                 .and_then(|root| crate::discover::folder_kind(root, &request.skill_path)),
@@ -714,12 +710,10 @@ fn publish_onto(
     }
 
     // The compile pass, between the read and the render, exactly where the
-    // marketplace build runs it. Without it a published `SKILL.md` carries the
-    // author's `![[embeds]]` and `[[links]]` verbatim: the embedded prose is
-    // absent from the destination, no reference file is written beside the
-    // skill, and no harness resolves either sigil. The build compiled and this
-    // path did not, so one note produced two different sets of bytes and only
-    // one of them was readable.
+    // marketplace build runs it, so one note produces the same bytes on both
+    // paths. Without it a published `SKILL.md` carries the author's
+    // `![[embeds]]` and `[[links]]` verbatim, and no harness resolves either
+    // sigil.
     let mut projection = note.projection;
     // Only the two kinds an invocation actually takes arguments at. Carrying
     // it for an agent or a plugin would set a field nothing downstream reads
@@ -908,29 +902,14 @@ fn finish(
 
     // The manifest, read before any byte is written. An unusable one is a
     // destination-level blocker rather than something to replace: rewriting it
-    // silently re-arms the orphan sweep against a false empty baseline, so
-    // files we published become invisible rather than managed.
+    // silently would give any future orphan sweep a false empty baseline, so
+    // files we published would become invisible rather than managed.
     let state = read_manifest(vfs, &request.destination_root);
     if let ManifestState::Unusable(why) = &state {
         let reason = PublishReason::new(
             ReasonToken::BadManifest,
             why.message(&manifest_path(&request.destination_root)),
         );
-        // The old folder is one fact about the destination, not about any
-        // file: one row, on the file that names it.
-        if let Unusable::OldFolder(folder) = why {
-            return Ok(PublishReport {
-                files: vec![PublishedFile {
-                    path: crate::manifest::old_manifest_relative_path(folder),
-                    status: PublishStatus::Refused,
-                    outcome: PublishOutcome::Blocked,
-                    reason: Some(reason),
-                }],
-                not_published: None,
-                not_carried: Vec::new(),
-                redundant_overrides: Vec::new(),
-            });
-        }
         return Ok(refuse_all(&files, &reason));
     }
 
@@ -2163,9 +2142,8 @@ pub fn override_states(
 /// Every key one destination reads in an override block, from that runtime's
 /// own capability declaration.
 ///
-/// Empty for a destination this build maps to no runtime — `cursor` today —
-/// which is what makes every key under such a target a refusal rather than an
-/// unchecked write.
+/// Empty for a name this build maps to no runtime, which is what makes every
+/// key under such a target a refusal rather than an unchecked write.
 pub fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<String> {
     let Some(runtime) = runtime_id_for_canonical(canonical) else {
         return std::collections::BTreeSet::new();
@@ -2178,7 +2156,8 @@ pub fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<Str
 
 /// The runtime whose declaration answers for one canonical destination.
 ///
-/// `portable` renders through the standards-only adapter. Every canonical
+/// `portable` answers with the standards-only adapter's declaration, though
+/// [`runtime_target_for`] renders it through `codex-cli`. Every canonical
 /// destination has one, so the `None` arm is for a name outside
 /// [`canonical_target`] entirely.
 fn runtime_id_for_canonical(canonical: &str) -> Option<agent_adapt::RuntimeId> {
@@ -3602,8 +3581,6 @@ mod tests {
         }
     }
 
-    // `agent` was in the vocabulary, discovered, listed, and refused at every
-    // publish. The renderer existed the whole time; nothing routed to it.
     #[test]
     fn an_agent_note_publishes_into_the_agents_layout() {
         let vfs = vault_with_agent();
@@ -3981,8 +3958,8 @@ mod tests {
         assert!(!vfs.exists(Path::new("/dest/.codex")));
     }
 
-    // The fixture command note, published to every destination that now has
-    // a command renderer, landing at that destination's own path in that
+    // The fixture command note, published to every destination that has a
+    // command renderer, landing at that destination's own path in that
     // destination's own frontmatter shape.
     #[test]
     fn the_fixture_command_publishes_to_every_verified_destination() {
@@ -4154,7 +4131,7 @@ mod tests {
     // --- Plugins --------------------------------------------------------------
 
     /// A vault holding one marketplace, one plugin, and two member skills —
-    /// the canonical layout the build renders and this now publishes.
+    /// the canonical layout the build renders and this publishes.
     fn vault_with_plugin() -> MemVfs {
         let vfs = MemVfs::new();
         let base = "/vault/marketplaces/house/plugins/git-tools";
@@ -4802,8 +4779,8 @@ mod tests {
         assert_eq!(manifest_of(&vfs, "/dest").len(), 3);
     }
 
-    // A partial fact, unlike a missing one: replacing it silently would
-    // re-arm the orphan sweep against a false empty baseline.
+    // A partial fact, unlike a missing one: replacing it silently would give
+    // any future orphan sweep a false empty baseline.
     #[test]
     fn a_corrupt_manifest_blocks_the_whole_destination() {
         let vfs = vault_with_peers();
@@ -4911,7 +4888,7 @@ mod tests {
 
     /// A vault where the note embeds one snippet and links one reference, both
     /// outside the folder it owns — the shape the whole product is built
-    /// around, and the one a publish used to emit verbatim.
+    /// around.
     fn vault_with_links() -> MemVfs {
         let vfs = MemVfs::new();
         vfs.create_dir_all(Path::new("/vault/skills/snippets"))
@@ -5038,8 +5015,8 @@ mod tests {
         assert!(!published.contains("[["), "{published}");
     }
 
-    // The common case must not have moved: a note with no links publishes
-    // exactly what it did before this pass was added.
+    // The common case: a note with no links publishes unchanged by the
+    // compile.
     #[test]
     fn a_note_with_no_links_is_unaffected_by_the_compile() {
         let vfs = vault_with_peers();
@@ -5072,9 +5049,7 @@ mod tests {
 
     #[test]
     fn a_plugin_note_is_never_published_as_a_skill() {
-        // The original bug: the kind was read and then ignored, so a note that
-        // says it is a plugin came back as somebody's `SKILL.md`. A plugin
-        // publishes now, but never through the skill layout — and this
+        // A plugin never publishes through the skill layout — and this
         // fixture's plugin has no members, so it refuses `empty-plugin` rather
         // than writing anything at all.
         for target in ["claude", "codex", "portable"] {
@@ -5628,11 +5603,9 @@ mod tests {
         }
     }
 
-    // This test used to assert the opposite, and said so: "There is no
-    // `foreign` refusal in this build … what a real run does to somebody
-    // else's file at one of our paths is overwrite it." The manifest is what
-    // makes the refusal possible, and the bytes at a destination are usually
-    // the only copy — destinations are not repositories.
+    // The manifest is what makes this refusal possible, and the bytes at a
+    // destination are usually the only copy — destinations are not
+    // repositories.
     #[test]
     fn a_file_we_never_wrote_is_refused_rather_than_overwritten() {
         // A destination we have never published to, holding a file at one of

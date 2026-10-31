@@ -26,14 +26,13 @@
 //! would be a second way to ask that every host, including the ones whose file
 //! APIs are asynchronous and content-oriented, would have to implement.
 //!
-//! Three more have defaults, so they cost no host anything: [`Vfs::canonicalize`],
-//! [`Vfs::read_link`] and [`Vfs::is_symlink`], the questions only a real
-//! filesystem can answer about links. [`crate::guard::resolve_write_path`] needs the first —
-//! *where does this path really lead* — and `std::fs::canonicalize` is exactly
-//! the call that must not appear above this seam: it has no meaning on
-//! `wasm32-unknown-unknown`. So it is a method here, [`NativeVfs`] answers it
-//! with the real thing, and a host that cannot resolve links inherits the
-//! lexical answer rather than a compile error. `is_symlink` follows the same
+//! Four more have defaults, so they cost no host anything: [`Vfs::canonicalize`],
+//! [`Vfs::read_link`], [`Vfs::is_symlink`] and [`Vfs::sees_links`], the questions only a real
+//! filesystem can answer about links. [`crate::guard::resolve_write_path`] needs the first — *where
+//! does this path really lead* — and `std::fs::canonicalize` is exactly the call that must not
+//! appear above this seam: it has no meaning on `wasm32-unknown-unknown`. So it is a method
+//! here, [`NativeVfs`] answers it with the real thing, and a host that cannot resolve links
+//! inherits the lexical answer rather than a compile error. `is_symlink` follows the same
 //! pattern for the question discovery asks; see its own doc.
 //!
 //! # Three implementations
@@ -313,7 +312,7 @@ impl Vfs for NativeVfs {
 
 /// An in-memory tree.
 ///
-/// Public rather than `#[cfg(test)]` on purpose: the wasm crate's tests and
+/// Public rather than `#[cfg(test)]` on purpose: integration tests, examples and
 /// any host that wants to rehearse a publish need a filesystem that exists
 /// where no filesystem does. It is also the cheapest way to write a walk test
 /// that does not depend on what a real directory happens to return first.

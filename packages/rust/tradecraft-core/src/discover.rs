@@ -294,7 +294,7 @@ pub struct SkippedNote {
     /// (`unknown-target`, `unknown-kind`); everything else — frontmatter that
     /// will not parse, a name the Agent Skills spec does not admit, an unreadable file —
     /// is `unreadable-note`, the vocabulary's entry for "this note does not
-    /// parse", which had none before.
+    /// parse".
     pub reason: String,
     /// The sentence naming what is wrong, as the error stated it.
     pub detail: String,
@@ -315,8 +315,8 @@ impl SkippedNote {
         let detail = err.to_string();
         // `CoreError::refused` puts the token first, `<token>: <prose>`. Every
         // other error is a content problem with no token of its own.
-        // A rail that predates the vocabulary carries prose alone, so the
-        // prefix only counts as a token when it is shaped like one.
+        // Some rails carry prose alone, so the prefix only counts as a token
+        // when it is shaped like one.
         let reason = match err {
             CoreError::Refused(message) => message
                 .split_once(": ")
@@ -446,9 +446,7 @@ pub fn discover_components(
     // two-note diagnosis, and it has to name both notes — which is why these
     // run after collection rather than inside the walk.
     //
-    // Uniqueness is per (marketplace, plugin, kind, name), not per name.
-    // Global uniqueness was right when a skill was the only kind and every
-    // skill landed in one flat marketplace directory. It is wrong now: a
+    // Uniqueness is per (marketplace, plugin, kind, name), not per name: a
     // plugin's `review` command and its `review` skill are two directories,
     // and two plugins may each hold a `review`. What still cannot happen is
     // two components publishing onto one directory, which is exactly this key.
@@ -856,10 +854,8 @@ fn walk(vfs: &dyn Vfs, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), CoreErr
             continue;
         }
         // The trash folder holds notes `delete` moved out of the tree — not
-        // content, and their old shapes no longer resolve to a valid
-        // placement now that they sit under a dot-directory, so walking in
-        // would surface them as unreadable strays instead of leaving them
-        // alone.
+        // content. Under a dot-directory their shapes resolve to no valid
+        // placement, so walking in would surface them as unreadable strays.
         if entry.is_dir && entry.name == crate::authoring::TRASH_DIR {
             continue;
         }
@@ -903,14 +899,11 @@ fn read_source(
     // ranking. Feeding it hints rather than deciding here is what keeps one
     // precedence in the codebase: a second surface working it out again is a
     // second surface getting it subtly different.
-    //
-    // This is the first production caller to supply a non-default hint, so it
-    // is the first time `KindSource::Directory` can be returned at all.
     let resolved = resolve_kind(
         ours.declared_kind,
         KindHints {
             requested: None,
-            configured: placement.kind,
+            folder: placement.kind,
         },
     );
 
@@ -1627,7 +1620,7 @@ mod tests {
     /// A hook promoted out of any `hooks/` folder still declares itself —
     /// AC-1's other half, where nothing above the note names it.
     #[test]
-    fn a_note_declaring_ap_kind_hook_anywhere_is_a_hook() {
+    fn a_note_declaring_sw_kind_hook_anywhere_is_a_hook() {
         let vfs = vault();
         write(
             &vfs,
@@ -2214,7 +2207,7 @@ mod tests {
         assert!(err.contains("plugin name"), "{err}");
         assert!(err.contains("Bad Name"), "{err}");
 
-        // ...and from the folder, which is now the other place it comes from.
+        // ...and from the folder, the other place it comes from.
         // A directory name that cannot be a marketplace directory fails on the
         // first component under it, not at the far end of a publish.
         // No plugin note here: its own `name` would fail the component rule
@@ -2283,8 +2276,7 @@ mod tests {
         assert_eq!(deep.marketplace.as_deref(), Some("house"));
         assert_eq!(deep.plugin.as_deref(), Some("core"));
 
-        // A command, which the note itself never declared. This is the case
-        // the detail screen used to render as `skill (default)`.
+        // A command, which the note itself never declared.
         let command = folder_placement(root, Path::new("/vault/plugins/core/commands/ship.md"));
         assert_eq!(command.kind, Some(EntityKind::Command));
         assert_eq!(command.marketplace, None, "no marketplace level above it");

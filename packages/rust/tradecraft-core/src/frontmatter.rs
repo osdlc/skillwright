@@ -50,17 +50,16 @@
 //!
 //! # The kind is resolved, not just read
 //!
-//! `sw-kind` is the primary source and the only one this crate implements, but
-//! it is not the only one there will be: [`resolve_kind`] is the seam the
-//! other layers attach to. See its documentation for the precedence and for
-//! what a configured directory mapping would cost.
+//! `sw-kind` is one layer of several: [`resolve_kind`] ranks it against a
+//! caller's override and the kind folder a note sits in. See its documentation
+//! for the precedence and for what the folder layer costs.
 //!
 //! # Two shapes, one reader
 //!
 //! The CLI writes flat keys, because the author edits them in vanilla Obsidian
 //! whose Properties panel renders a nested mapping through an inert read-only
-//! widget. the plugin supplies its own UI and may write a nested `sw:`
-//! block. Both are read here from day one — `claim` normalises the nested
+//! widget. The plugin supplies its own UI and may write a nested `sw:`
+//! block. Both are read here — `claim` normalises the nested
 //! shape onto the flat spelling and everything downstream sees one vocabulary
 //! — and a note carrying both is refused · `mixed-frontmatter-shape` rather
 //! than reconciled. There is no field-by-field comparison, only a shape check;
@@ -216,7 +215,8 @@ pub enum KindSource {
     Override,
     /// Layer 2 — the note's own `sw-kind`.
     Frontmatter,
-    /// Layer 3 — a configured directory mapping.
+    /// Layer 3 — the kind folder the note sits in (`skills/`, `plugins/` and
+    /// so on; see [`crate::discover`]).
     Directory,
     /// No layer applied. Absent means `skill`.
     Default,
@@ -249,7 +249,7 @@ pub struct ResolvedKind {
 ///
 /// Default is "the caller knows nothing", which is what
 /// [`VaultFrontmatter::kind`] passes and what makes `sw-kind` the whole story
-/// until the other layers exist.
+/// for that caller.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct KindHints {
     /// **Layer 1.** An explicit instruction — "treat this note as a skill" —
@@ -257,14 +257,15 @@ pub struct KindHints {
     /// `sw-kind` into the note. Wins outright: nothing is more explicit than
     /// being told.
     pub requested: Option<EntityKind>,
-    /// **Layer 3.** What a configured directory mapping said, already
-    /// resolved by the caller against the note's path. `None` when no rule
-    /// matched — a note at the root of a skills source has no folder above it
-    /// naming a kind.
+    /// **Layer 3.** What the note's kind folder said, already resolved by the
+    /// caller against the note's path. The folder list is fixed and always
+    /// on. `None` when no folder matched — a note at the root of a skills
+    /// source has no folder above it naming a kind.
     ///
-    /// [`crate::discover`] supplies this from the folder a note sits in; it is
-    /// the reason [`KindSource::Directory`] is reachable at all.
-    pub configured: Option<EntityKind>,
+    /// [`crate::discover`] and [`crate::publish`] both supply this from the
+    /// folder a note sits in; it is the reason [`KindSource::Directory`] is
+    /// reachable at all.
+    pub folder: Option<EntityKind>,
 }
 
 /// Resolves a note's kind across the layers that can decide it.
@@ -275,27 +276,25 @@ pub struct KindHints {
 /// |---|---|---|
 /// | 1 | A caller-supplied override ([`KindHints::requested`]) | no — a parameter |
 /// | 2 | `sw-kind` in the note ([`VaultFrontmatter::declared_kind`]) | **yes** |
-/// | 3 | A configured directory mapping ([`KindHints::configured`]) | no — a parameter |
+/// | 3 | The kind folder the note sits in ([`KindHints::folder`]) | no — a parameter |
 /// | 4 | The default, [`EntityKind::Skill`] | yes |
 ///
 /// Layers 1 and 3 are parameters rather than logic: the CLI flag belongs to
-/// the surface that offers it, and the directory mapping needs the whole file
+/// the surface that offers it, and the folder layer needs the whole file
 /// set to read a folder — [`crate::discover`] holds that and passes the
 /// answer. What lives here is the *order*, in one place.
 ///
-/// # A configured directory mapping makes folders load-bearing
+/// # The folder layer makes folders load-bearing
 ///
 /// The vault's model is that a declared folder is scaffolding and never a type
 /// — a note is whatever another note does with it, and `skills/` is where
 /// skills are kept rather than what makes something a skill. Layer 3 breaks
-/// that property: under such a configuration, moving a note between folders
-/// changes what it publishes as.
+/// that property: moving a note between kind folders changes what it
+/// publishes as.
 ///
-/// That is acceptable on two conditions, both structural in the table above.
-/// It is **opt-in** — absent configuration, no rule matches and nothing
-/// changes — and frontmatter **outranks** it, so a note that says what it is
-/// is never overruled by where it sits. A vault that stamps `sw-kind` is
-/// unaffected by any mapping at all.
+/// That is acceptable because frontmatter **outranks** it, so a note that
+/// says what it is is never overruled by where it sits. A vault that stamps
+/// `sw-kind` is unaffected by the folders at all.
 ///
 /// # Why this is infallible
 ///
@@ -318,7 +317,7 @@ pub fn resolve_kind(declared: Option<EntityKind>, hints: KindHints) -> ResolvedK
             source: KindSource::Frontmatter,
         };
     }
-    if let Some(kind) = hints.configured {
+    if let Some(kind) = hints.folder {
         return ResolvedKind {
             kind,
             source: KindSource::Directory,
@@ -481,8 +480,8 @@ pub struct VaultFrontmatter {
     pub overrides: Map<String, Value>,
     /// Keys inside our namespace this build does not model, under their flat
     /// spelling — consumed so they cannot reach a destination, kept so nothing
-    /// is lost silently. A caller may warn on a non-empty map; nothing here
-    /// does.
+    /// is lost silently. Nothing warns on a non-empty map today: no caller
+    /// reads it outside tests.
     ///
     /// Named for the namespace rather than for `sw`, because which prefix
     /// these keys carry is the vault's to configure.
@@ -493,9 +492,9 @@ impl VaultFrontmatter {
     /// The kind this note publishes as, with no caller hints in play — the
     /// note's own `sw-kind`, or [`EntityKind::Skill`] when it carries none.
     ///
-    /// The convenience for callers that have no override and no directory
-    /// configuration, which is every caller in this crate. Anything holding
-    /// either one calls [`resolve_kind`] directly.
+    /// The convenience for callers that have no override and no folder hint.
+    /// Anything holding either one — [`crate::discover`], [`crate::publish`] —
+    /// calls [`resolve_kind`] directly.
     pub fn kind(&self) -> EntityKind {
         resolve_kind(self.declared_kind, KindHints::default()).kind
     }
@@ -516,9 +515,6 @@ impl VaultFrontmatter {
     ///
     /// # Errors
     ///
-    /// * `refused: old-key` — under the default namespace, the note carries a
-    ///   key of the `tradecraft` CLI's namespace. The message names the key
-    ///   and its replacement.
     /// * `refused: mixed-frontmatter-shape` — the note carries the nested
     ///   block *and* at least one flat key of the same namespace.
     /// * `refused: unknown-kind` — the kind key names a value this build does
@@ -530,7 +526,6 @@ impl VaultFrontmatter {
         path: &Path,
         ns: &Namespace,
     ) -> Result<Self, CoreError> {
-        refuse_old_keys(fields, path, ns)?;
         let mut ours = claim(fields, path, ns)?;
 
         // Every key below is `ns.key(field)` and never a literal, so the drain
@@ -585,38 +580,6 @@ impl VaultFrontmatter {
             // already out of `fields`, which is the half that matters.
             unknown_ours: ours,
         })
-    }
-}
-
-/// The `tradecraft` CLI's default stem, before the rename to `sw`.
-const OLD_STEM: &str = "tc";
-
-/// Refuses a key in the old default namespace, naming its new spelling.
-///
-/// Only under the default namespace: a vault that configures `namespace: tc`
-/// owns those keys. Read as foreign instead, the old keys would publish.
-fn refuse_old_keys(
-    fields: &Map<String, Value>,
-    path: &Path,
-    ns: &Namespace,
-) -> Result<(), CoreError> {
-    if ns.stem() != Namespace::DEFAULT_STEM {
-        return Ok(());
-    }
-    let old = fields.keys().find_map(|key| {
-        let rest = key.strip_prefix(OLD_STEM)?;
-        (rest.is_empty() || rest.starts_with('-')).then_some((key, rest))
-    });
-    match old {
-        Some((key, rest)) => Err(refuse(
-            "old-key",
-            path,
-            format!(
-                "`{key}` is the old spelling: rename it to `{}{rest}`, or set `namespace: {OLD_STEM}`",
-                ns.stem()
-            ),
-        )),
-        None => Ok(()),
     }
 }
 
@@ -1039,7 +1002,8 @@ fn is_slug(s: &str) -> bool {
 }
 
 /// Says the quoting rule at the one moment it is actionable: a value we wanted
-/// as a string arrived as a number because YAML types a bare scalar by shape.
+/// as a string arrived as a number or a boolean because YAML types a bare
+/// scalar by shape.
 fn quoting_hint(value: &Value) -> &'static str {
     if value.is_number() || value.is_boolean() {
         " — quote it. A serialiser types a bare scalar by its shape, \
@@ -1109,36 +1073,6 @@ mod tests {
     }
 
     #[test]
-    fn an_old_tc_key_is_refused_with_its_new_spelling() {
-        let old = format!("{OLD_STEM}-kind");
-        let err = read(json!({ old.clone(): "plugin" })).unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("old-key"), "{message}");
-        assert!(
-            message.contains(&format!(
-                "`{old}` is the old spelling: rename it to `sw-kind`, or set `namespace: {OLD_STEM}`"
-            )),
-            "{message}"
-        );
-        assert!(!message.contains('\n'), "{message}");
-
-        let err = read(json!({ OLD_STEM: {"kind": "plugin"} })).unwrap_err();
-        assert!(
-            err.to_string().contains(&format!(
-                "`{OLD_STEM}` is the old spelling: rename it to `sw`, or set `namespace: {OLD_STEM}`"
-            )),
-            "{err}"
-        );
-
-        // A vault that configured the old stem owns those keys.
-        let ns = Namespace::new(OLD_STEM).unwrap();
-        let (ours, _) = read_as(&ns, json!({ old: "plugin" })).unwrap();
-        assert_eq!(ours.kind(), EntityKind::Plugin);
-        // A key that only starts with the letters is not the old namespace.
-        assert!(read(json!({"tcp": "x"})).is_ok());
-    }
-
-    #[test]
     fn overrides_are_read_as_a_map_of_blocks_and_never_reach_annotations() {
         let (ours, rest) = read(json!({
             "description": "d",
@@ -1201,8 +1135,7 @@ mod tests {
 
     #[test]
     fn the_kind_layers_rank_override_then_frontmatter_then_directory() {
-        // Layer 2 alone — the only layer implemented, and the whole story for
-        // every caller today.
+        // Layer 2 alone — the whole story for a caller with no hints.
         assert_eq!(
             resolve_kind(Some(EntityKind::Plugin), KindHints::default()),
             ResolvedKind {
@@ -1217,7 +1150,7 @@ mod tests {
                 Some(EntityKind::Plugin),
                 KindHints {
                     requested: Some(EntityKind::Skill),
-                    configured: Some(EntityKind::Plugin),
+                    folder: Some(EntityKind::Plugin),
                 }
             ),
             ResolvedKind {
@@ -1233,7 +1166,7 @@ mod tests {
                 Some(EntityKind::Skill),
                 KindHints {
                     requested: None,
-                    configured: Some(EntityKind::Plugin),
+                    folder: Some(EntityKind::Plugin),
                 }
             ),
             ResolvedKind {
@@ -1246,7 +1179,7 @@ mod tests {
                 None,
                 KindHints {
                     requested: None,
-                    configured: Some(EntityKind::Plugin),
+                    folder: Some(EntityKind::Plugin),
                 }
             ),
             ResolvedKind {
@@ -1516,7 +1449,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unmodeled_ap_key_is_consumed_and_kept_rather_than_refused() {
+    fn an_unmodeled_sw_key_is_consumed_and_kept_rather_than_refused() {
         // The namespace is claimed wholesale, so a key we do not model yet is
         // still ours: out of the map that becomes `annotations`, and into
         // `unknown_ours` where a caller can see it.
@@ -1681,7 +1614,7 @@ mod tests {
 
     #[test]
     fn the_predicate_agrees_with_what_the_drain_actually_takes() {
-        // The bug [`take_from`]'s doc warns against: `is_ours` and `take_from`
+        // The bug `claim`'s doc warns against: `is_ours` and the drain
         // disagreeing on a key.
         //
         // So: for every key on the way in, "did the drain take it" must equal
@@ -1912,6 +1845,19 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("invalid-arguments"), "{message}");
         assert!(message.contains("more than once"), "{message}");
+    }
+
+    #[test]
+    fn the_stem_tc_reads_tc_keys_as_ours() {
+        let tc = Namespace::new("tc").unwrap();
+        let (ours, foreign) = read_as(
+            &tc,
+            json!({"description": "d", "tc-kind": "plugin", "sw-kind": "hook"}),
+        )
+        .unwrap();
+        assert_eq!(ours.declared_kind, Some(EntityKind::Plugin));
+        assert!(!foreign.contains_key("tc-kind"));
+        assert!(foreign.contains_key("sw-kind"));
     }
 
     #[test]

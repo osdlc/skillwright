@@ -15,10 +15,8 @@
 //! this runs the publish in [`PublishMode::DryRun`] and reads its report.
 //! Nothing is written — the dry run goes through the capturing overlay — and
 //! the check cannot drift from the act, because there is only one act.
-//!
-//! A second implementation comparing hashes without rendering would be faster,
-//! and would risk a status view that says `current` while a publish then
-//! writes.
+//! Do not replace it with a faster hash-only comparison: that could report
+//! `current` while a publish then writes.
 
 use std::path::PathBuf;
 
@@ -50,7 +48,7 @@ pub struct StatusRequest {
 
 /// What a unit's publish state is at one destination.
 ///
-/// The closed set the status spec specify, and the same five words on every
+/// The closed set the status spec specifies, and the same five words on every
 /// surface. Two things that also need a cell in a grid are deliberately not
 /// members: a destination whose target has no renderer, and a destination this
 /// note's `sw-targets` excludes. Neither is a *manifest* state — one is
@@ -126,8 +124,8 @@ pub struct UnitStatus {
 ///
 /// # Where "the version at the last publish" comes from
 ///
-/// The manifest records no version of its own — adding one would be a schema
-/// bump for a fact the destination already carries. A plugin's pack manifest
+/// The manifest records no version of its own (that would be a schema
+/// bump). A plugin's pack manifest
 /// (`plugin.json`) is written with whatever `sw-version` was current at
 /// publish time, so the installed file's own `"version"` field IS that
 /// record, read back rather than tracked twice.
@@ -556,23 +554,6 @@ mod tests {
                 .is_some_and(|r| r.starts_with("bad-manifest: ")),
             "{:?}",
             status.reason
-        );
-    }
-
-    #[test]
-    fn a_destination_with_only_the_old_folder_is_unknown_with_the_rename_hint() {
-        let vfs = vault();
-        vfs.create_dir_all(Path::new("/dest/.tradecraft")).unwrap();
-        vfs.write_file(Path::new("/dest/.tradecraft/manifest.json"), b"{}")
-            .unwrap();
-
-        let status = state_of(&vfs);
-        assert_eq!(status.state, PublishState::Unknown);
-        let reason = status.reason.unwrap();
-        assert!(reason.starts_with("bad-manifest: "), "{reason}");
-        assert!(
-            reason.contains("rename .tradecraft/ to .skillwright/"),
-            "{reason}"
         );
     }
 

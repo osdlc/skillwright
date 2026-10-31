@@ -199,8 +199,8 @@ pub fn run_watch_for(
 
 /// Every path the watcher arms, each with its recursion: the vault itself,
 /// then each `assets:` and `hooks:` source resolved the way the build
-/// resolves it, with the recursion rule in the module doc. A path named twice is armed once,
-/// the deeper recursion winning.
+/// resolves it, with the recursion rule in the module doc. A path named
+/// twice is armed once, the deeper recursion winning.
 fn watch_targets(run: &crate::resolve::ResolvedRun) -> Vec<(PathBuf, RecursiveMode)> {
     let mut targets: BTreeMap<PathBuf, RecursiveMode> = BTreeMap::new();
     targets.insert(run.vault.clone(), RecursiveMode::Recursive);

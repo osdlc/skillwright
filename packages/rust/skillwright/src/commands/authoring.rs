@@ -1,5 +1,5 @@
 //! `skillwright new|rename|move|delete|convert` — the five ways to author the
-//! vault. Each verb resolves flags into an `tradecraft_core::authoring`
+//! vault. Each verb resolves flags into a `tradecraft_core::authoring`
 //! `plan_*` call, then runs the plan through [`crate::apply`]: preview for
 //! `--dry-run`, a confirm gate, then a real write.
 //!
@@ -912,9 +912,9 @@ fn resolve_entry<'a>(
 }
 
 /// The path a create would land at, best-effort — for a refusal row only.
-/// The real path is `derive_create`'s to compute, and that function is
-/// private; this mirrors its public half ([`new_note_dir`]) plus its
-/// bundling rule rather than reaching for what the crate does not export.
+/// The real path is `tradecraft_core::authoring::derive_create`'s to compute;
+/// this repeats its path rule ([`new_note_dir`] plus the bundling rule), so a
+/// change to that rule must be made in both.
 fn expected_create_path(placement: Option<&Placement>, name: &str, bundled: bool) -> String {
     let slug = slugify(name);
     let Ok(dir) = new_note_dir(placement) else {

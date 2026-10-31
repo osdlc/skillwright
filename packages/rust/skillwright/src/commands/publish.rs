@@ -184,10 +184,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // --- destinations ----------------------------------------------------
     let destinations: Vec<Destination> = if !flags.to.is_empty() {
         let Some(target) = &flags.target else {
-            return usage_error(
-                ctx.err,
-                "--to requires --target when the destination isn't already registered in the configuration",
-            );
+            return usage_error(ctx.err, "--to requires --target");
         };
         flags
             .to

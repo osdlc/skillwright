@@ -20,10 +20,8 @@
  * What crosses the boundary as `request_json`: the core's `PublishRequest`,
  * plus the one field this layer adds.
  *
- * A field on the request rather than a third parameter, so the exported arity
- * does not move: hosts call `publishSkill(vfs, requestJson)`.
- * `#[serde(default)]` makes the field optional, so a request serialized
- * without it still deserializes and publishes under `sw`.
+ * A field on the request rather than a third parameter: hosts call
+ * `publishSkill(vfs, requestJson)`.
  *
  * It is a `String` stem rather than a `Namespace` because the core
  * deliberately gives `Namespace` no `Deserialize`: every construction goes
@@ -100,13 +98,11 @@ export interface PublishRequest {
 /**
  * Whether a publish writes, or only reports what it would write.
  *
- * A field on the request rather than a second entry point, so there is one
- * publish path and no `dry_run_skill` copy of [`publish_skill`]'s order to
- * keep in step. It is also how previewing crosses the wasm boundary: that
- * boundary serializes a [`PublishRequest`], so `#[serde(default)]` lets a
- * host opt in with one extra key while every existing caller keeps meaning
- * `write`. A third argument would not ride the wire: the boundary would need
- * a wrapper type for it, a second wire shape for the same request.
+ * A field on the request, so there is one publish path. It is also how
+ * previewing crosses the wasm boundary: that boundary serializes a
+ * [`PublishRequest`], so `#[serde(default)]` lets a host opt in with one
+ * extra key, and a request without it means `write`. A separate argument
+ * would need a second wire shape for the same request.
  */
 export type PublishMode = "write" | "dry-run";
 
@@ -125,7 +121,7 @@ export interface PublishReport {
    * Prose, not one of the publish spec's reason tokens. Those
    * name outcomes, and exclusion is the absence of one — nothing here was a
    * candidate, so nothing here has a status. Omitted from the wire when
-   * unset, so the ordinary report is the shape it always was.
+   * unset.
    */
   not_published?: string;
 
@@ -140,7 +136,7 @@ export interface PublishReport {
    * their own, which is what a reader does about it.
    *
    * Empty on every report but a pack's, and omitted from the wire when
-   * empty, so the ordinary report is the shape it always was.
+   * empty.
    */
   not_carried?: string[];
 
@@ -520,7 +516,7 @@ export interface SkippedNote {
    * (`unknown-target`, `unknown-kind`); everything else — frontmatter that
    * will not parse, a name the Agent Skills spec does not admit, an unreadable file —
    * is `unreadable-note`, the vocabulary's entry for "this note does not
-   * parse", which had none before.
+   * parse".
    */
   reason: string;
 
@@ -716,8 +712,7 @@ export interface MarketplaceConfig {
    * `sdlc_shim_script`'s parent-walk). Project-file authors declare it
    * as `marketplace.shim_target`; [`crate::settings::MarketplaceSettings::to_config`]
    * defaults it to [`DEFAULT_SHIM_TARGET`] when the project file is
-   * silent, so a project that never mentions it keeps resolving
-   * `cli/sdlc`.
+   * silent.
    */
   shim_target?: string;
 }
@@ -926,8 +921,8 @@ export type UnitStatus = "ok" | "drift" | "written" | "unchanged";
  *
  * # Where "the version at the last publish" comes from
  *
- * The manifest records no version of its own — adding one would be a schema
- * bump for a fact the destination already carries. A plugin's pack manifest
+ * The manifest records no version of its own (that would be a schema
+ * bump). A plugin's pack manifest
  * (`plugin.json`) is written with whatever `sw-version` was current at
  * publish time, so the installed file's own `"version"` field IS that
  * record, read back rather than tracked twice.

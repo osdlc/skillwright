@@ -1,6 +1,6 @@
 //! The frontmatter namespace — which prefix skillwright claims in a note.
 //!
-//! The namespace spec claims `sw-` wholesale, and name
+//! The namespace spec claims `sw-` wholesale, and names
 //! the price: two letters will sit next to a key the user or another plugin
 //! already owns sooner than a longer prefix would. The default stays `sw`; a
 //! vault that already has an `sw-` key, or an author who wants a different one,
@@ -92,7 +92,7 @@ pub struct Namespace {
 
 impl Namespace {
     /// The stem every document, mockup, and adopted note uses:
-    /// The namespace spec's `sw`.
+    /// the namespace spec's `sw`.
     pub const DEFAULT_STEM: &'static str = "sw";
 
     /// The Agent Skills spec's six allowed top-level keys, sorted.
@@ -204,7 +204,7 @@ impl Namespace {
     /// [`crate::projection`] applies it at emit, and [`crate::frontmatter`]
     /// drains exactly the keys it accepts.
     ///
-    /// Not case-folded. `TC-KIND` is a key we did not claim, and treating it as
+    /// Not case-folded. `SW-KIND` is a key we did not claim, and treating it as
     /// ours would delete a key the author typed on the strength of a guess.
     pub fn is_ours(&self, key: &str) -> bool {
         key == self.block_key() || key.starts_with(&self.prefix)

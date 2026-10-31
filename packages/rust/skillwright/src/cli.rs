@@ -46,15 +46,16 @@ use crate::commands::publish::{PublishFlags, run_publish};
 use crate::commands::status::{StatusFlags, run_status};
 use crate::commands::watch::run_watch;
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_BLOCKED, EXIT_OK, EXIT_USAGE, not_implemented, usage_error};
+use crate::exit::{EXIT_BLOCKED, EXIT_OK, EXIT_USAGE, not_implemented};
 use crate::resolve::CommonFlags;
 
 const PROG: &str = "skillwright";
 const DESCRIPTION: &str = "Publish Obsidian-vault skill notes to every major coding-agent harness. \
                            A thin CLI over the one Rust core.";
 
-/// The verbs this binary declares, in the order the usage line prints
-/// them.
+/// The verbs the usage line for a bare `skillwright` prints, in order. Not
+/// every verb [`Verb`] declares: `bump`, `new`, `rename`, `move`, `delete`
+/// and `convert` are missing.
 const VERBS: [&str; 9] = [
     "publish",
     "build",
@@ -99,46 +100,6 @@ fn stub_help(verb: &str) -> String {
         "not implemented: {verb} — running this writes the sentence below to stderr and exits {EXIT_BLOCKED}.\n{}\n",
         waits_on(verb)
     )
-}
-
-/// The old spellings, by verb, and what replaced each.
-///
-/// A hard rename with no aliases and no deprecation window: the old flag is
-/// an unknown flag (exit 3), and this table is what makes stderr name the new
-/// one instead of leaving the user to guess. `--skills` is retired on both
-/// `build`/`check` (to `--skills-root`) and `adopt` (to `--into`) with two
-/// different replacements, which is why the table is keyed by verb rather
-/// than shared flat.
-const RETIRED: [(&str, &[(&str, &str)]); 3] = [
-    ("build", &[("--skills", "--skills-root")]),
-    ("check", &[("--skills", "--skills-root")]),
-    (
-        "adopt",
-        &[
-            ("--skills", "--into"),
-            ("--skill", "--only"),
-            ("--target", "--set-targets"),
-        ],
-    ),
-];
-
-/// The message for a retired flag on this argv, or `None` when there is
-/// none.
-///
-/// The verb is the first token that is not a flag, because a retired
-/// spelling is only retired on the verb that had it.
-fn retired_spelling(argv: &[String]) -> Option<String> {
-    let verb = argv.iter().find(|token| !token.starts_with('-'))?;
-    let (_, table) = RETIRED.iter().find(|(name, _)| name == verb)?;
-    for token in argv {
-        let spelled = token.split('=').next().unwrap_or(token);
-        if let Some((_, replacement)) = table.iter().find(|(old, _)| *old == spelled) {
-            return Some(format!(
-                "{spelled} is no longer a flag on `{verb}`; it is now {replacement}"
-            ));
-        }
-    }
-    None
 }
 
 /// The five globals that mean something to a verb writing nothing.
@@ -359,7 +320,7 @@ struct ExportArgs {
     /// The skills root to scan. Overrides the configured one.
     #[arg(long, value_name = "path")]
     skills_root: Option<String>,
-    /// The marketplace's name. Overrides `marketplace.name`.
+    /// Which of the vault's marketplaces to build. Refused if the vault holds marketplaces and none has this name; a vault with none builds under it. The marketplace note's own name, or else a configured `marketplace.name`, is what gets published.
     #[arg(long, value_name = "name")]
     marketplace: Option<String>,
     /// The plugin a note with no `sw-plugin` belongs to. Overrides `marketplace.default_plugin`.
@@ -912,15 +873,11 @@ pub fn run(argv: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     run_with(argv, &mut ctx)
 }
 
-/// Run `skillwright with` and return the exit code.
+/// [`run`], with the context supplied.
 pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
     if argv.is_empty() {
         let _ = writeln!(ctx.err, "usage: {PROG} <{}> [options]", VERBS.join("|"));
         return EXIT_USAGE;
-    }
-
-    if let Some(message) = retired_spelling(argv) {
-        return usage_error(ctx.err, &message);
     }
 
     let from = std::iter::once(PROG.to_string()).chain(argv.iter().cloned());

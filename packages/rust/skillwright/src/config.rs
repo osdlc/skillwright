@@ -7,16 +7,19 @@
 //!
 //! **The machine file** is `<config-home>/skillwright/config.yaml` in the
 //! standalone tier of [`crate::dirs`], never committed, relocated by
-//! `SKILLWRIGHT_MACHINE_CONFIG`. It has the same shape and stands in, key by
-//! key, where the project file is silent.
+//! `SKILLWRIGHT_MACHINE_CONFIG`. It has the same shape and stands in, per
+//! top-level key, where the project file leaves that key out or empty.
+//! Nested values are not merged. `paths:` merges by name instead, and the
+//! machine file's entry wins when both define a name.
 //!
 //! Both may carry a `paths:` map, and every path-valued setting may refer to
-//! an entry as `{name}`. Relative paths in the project file resolve against
-//! the file's own directory; a flag's path resolves against the shell's
-//! `cwd`.
+//! an entry as `{name}`. Relative paths in either file, `paths:` entries
+//! included, resolve against that file's own directory; a flag's path
+//! resolves against the shell's `cwd`.
 //!
-//! A flag overrides the project file, which overrides the machine file, and
-//! nothing here is ever written back — this module only reads.
+//! A flag overrides the project file, which overrides the machine file —
+//! except for `paths:`, where the machine file wins per name. Nothing here is
+//! ever written back — this module only reads.
 //!
 //! This module reads shapes and nothing else. Whether `vault` names a
 //! directory that exists, and whether `namespace` is a stem the core
@@ -39,9 +42,6 @@ pub const TOOL: &str = "skillwright";
 const COMMAND: &str = "skillwright";
 /// The committed project file, looked for from the working directory upward.
 pub const PROJECT_FILE: &str = tradecraft_core::PROJECT_FILE;
-/// The project file's earlier names, newest first. Only their presence is checked, by
-/// [`old_project_file`], to say how to rename one.
-const OLD_PROJECT_FILES: [&str; 2] = ["tradecraft.yaml", "agent-pants.yaml"];
 /// Env var that relocates the machine file, for tests and one-off runs.
 pub const MACHINE_CONFIG_ENV: &str = "SKILLWRIGHT_MACHINE_CONFIG";
 
@@ -342,48 +342,63 @@ fn problem_load(problem: FileProblem, path: &Path) -> ConfigLoad {
     }
 }
 
-/// Resolve every string element of the sequence at `key` against `base`,
-/// with `~` expanding to `home`. A no-op if `key` is absent or not a
-/// sequence.
-fn resolve_sequence_paths_at(
-    map: &mut serde_json::Map<String, serde_json::Value>,
-    key: &str,
-    base: &Path,
-    home: &Path,
-) {
-    let Some(serde_json::Value::Array(seq)) = map.get_mut(key) else {
-        return;
+/// Resolve one path-valued setting from the machine file. A `{name}` token is
+/// expanded first, so the result is judged on its final text; an undefined
+/// token is left for `finish` to report. A bare word counts as relative to
+/// `base`, which `paths::resolve_config_path` alone would leave untouched.
+fn resolve_machine_value(raw: &str, names: &PathNames, base: &Path, home: &Path) -> String {
+    let Ok(expanded) = paths::substitute_path_names(raw, names, "") else {
+        return raw.to_string();
     };
-    for item in seq.iter_mut() {
-        if let serde_json::Value::String(s) = item {
-            *s = paths::resolve_config_path(s, base, home);
-        }
+    let looks_like_path =
+        expanded.contains('/') || expanded.starts_with('.') || expanded.starts_with('~');
+    if expanded.contains("://") || looks_like_path {
+        paths::resolve_config_path(&expanded, base, home)
+    } else {
+        paths::resolve_config_path(&format!("./{expanded}"), base, home)
     }
 }
 
-/// Resolve every `destinations[].root` against `base`, with `~` expanding
-/// to `home`. A no-op if `destinations` is absent or not a sequence.
-fn resolve_destination_roots_at(
+/// Resolve the path-valued settings of the machine file's mapping against the
+/// machine file's folder, using [`resolve_machine_value`].
+fn resolve_machine_mapping(
     map: &mut serde_json::Map<String, serde_json::Value>,
+    names: &PathNames,
     base: &Path,
     home: &Path,
 ) {
-    let Some(serde_json::Value::Array(seq)) = map.get_mut("destinations") else {
-        return;
-    };
-    for item in seq.iter_mut() {
-        if let serde_json::Value::Object(m) = item
-            && let Some(serde_json::Value::String(s)) = m.get_mut("root")
+    let resolve = |s: &mut String| *s = resolve_machine_value(s, names, base, home);
+    if let Some(serde_json::Value::String(s)) = map.get_mut("vault") {
+        resolve(s);
+    }
+    for key in ["out", "skills_root"] {
+        if let Some(serde_json::Value::Object(m)) = map.get_mut("marketplace")
+            && let Some(serde_json::Value::String(s)) = m.get_mut(key)
         {
-            *s = paths::resolve_config_path(s, base, home);
+            resolve(s);
+        }
+    }
+    if let Some(serde_json::Value::Array(seq)) = map.get_mut("scan_locations") {
+        for item in seq.iter_mut() {
+            if let serde_json::Value::String(s) = item {
+                resolve(s);
+            }
+        }
+    }
+    if let Some(serde_json::Value::Array(seq)) = map.get_mut("destinations") {
+        for item in seq.iter_mut() {
+            if let serde_json::Value::Object(m) = item
+                && let Some(serde_json::Value::String(s)) = m.get_mut("root")
+            {
+                resolve(s);
+            }
         }
     }
 }
 
 /// Top-level keys whose value is a struct, and whether the field is an
 /// `Option` (so a bare `key:` reads as unset). `serde_json` reads a sequence
-/// into a struct, so `marketplace: []` would load; the YAML reader this crate
-/// used before rejected it, so the mapping check is done here.
+/// into a struct, so without this check `marketplace: []` would load.
 const STRUCT_KEYS: &[(&str, bool)] = &[("declared_folders", true), ("marketplace", false)];
 
 /// The key in [`STRUCT_KEYS`] whose value is not a mapping, if any.
@@ -417,10 +432,11 @@ fn typed_paths(map: &serde_json::Map<String, serde_json::Value>) -> BTreeMap<Str
         .unwrap_or_default()
 }
 
-/// serde_json's struct-deserialize error carries no field path . When the
+/// serde_json's struct-deserialize error carries no field path. When the
 /// whole mapping fails to parse, re-check each top-level key alone against
-/// its own field type and name every mismatch, joined with `; ` — so a caller sees
-/// `` `vault`: invalid type: ... `` rather than a bare type-mismatch message.
+/// its own field type and name every mismatch, joined with `; ` — so a caller
+/// sees `` `vault`: invalid type: ... `` rather than a bare type-mismatch
+/// message.
 /// An unknown-field error already names the field on its own and is
 /// returned unchanged.
 fn annotate_detail(
@@ -526,44 +542,6 @@ fn finish(
     }
 }
 
-/// The old project file a run would otherwise miss: the nearest
-/// `tradecraft.yaml` or `agent-pants.yaml` above `cwd`, but only when the
-/// same upward search finds no `skillwright.yaml`.
-///
-/// The caller asks only for a run that searches at all, that is one with
-/// neither `--config` nor `--vault`.
-pub fn old_project_file(cwd: &Path) -> Option<PathBuf> {
-    if file::find_up(cwd, PROJECT_FILE).is_some() {
-        return None;
-    }
-    // The deepest wins; in one directory, the newer name.
-    OLD_PROJECT_FILES
-        .into_iter()
-        .enumerate()
-        .filter_map(|(age, name)| file::find_up(cwd, name).map(|path| (age, path)))
-        .max_by_key(|(age, path)| (path.components().count(), std::cmp::Reverse(*age)))
-        .map(|(_, path)| path)
-}
-
-/// What to do about an old project file, for the error line.
-pub fn old_project_file_hint(old: &Path) -> String {
-    let stem = tradecraft_core::Namespace::DEFAULT_STEM;
-    if old
-        .file_name()
-        .is_some_and(|name| name == "agent-pants.yaml")
-    {
-        format!(
-            "rename it to `{PROJECT_FILE}`, set `namespace: {stem}` or drop the line, and change \
-             the vault notes' `ap-` keys to `{stem}-`"
-        )
-    } else {
-        format!(
-            "rename it to `{PROJECT_FILE}`, and change the vault notes' `tc-` keys to `{stem}-` \
-             or set `namespace: tc`"
-        )
-    }
-}
-
 /// Read the configuration for this run: the project file `--config` names
 /// or the nearest one above `cwd`, over the machine file.
 ///
@@ -651,29 +629,37 @@ fn load_config_at(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
+    let project_dir = project_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
     let mut machine_mapping = machine_mapping;
+
+    // `paths:` merges by NAME (machine wins per name, in `finish`'s `path_names` call) rather
+    // than as a whole top-level key, so it is carried through the overlay untouched and the
+    // deserialized result is overwritten with the project's own value afterwards.
+    let project_paths: BTreeMap<String, String> = project_mapping
+        .get("paths")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    // A relative entry in the machine file's `paths:` resolves against the
+    // machine file's directory, like every other path in that file; `finish`
+    // would otherwise use the project's.
+    let no_names = PathNames::new();
+    let machine_paths: BTreeMap<String, String> = typed_paths(&machine_mapping)
+        .into_iter()
+        .map(|(name, raw)| {
+            let resolved = resolve_machine_value(&raw, &no_names, &machine_dir, home);
+            (name, resolved)
+        })
+        .collect();
+
     // A value taken from the project file resolves later, against the
     // project's own directory (see `resolve.rs`). A value borrowed from the
     // machine file must be resolved here, against the machine file's
     // directory, or the caller would resolve it against the wrong base.
-    file::resolve_paths_at(
-        &mut machine_mapping,
-        &["vault", "marketplace.out", "marketplace.skills_root"],
-        &machine_dir,
-        home,
-    );
-    resolve_sequence_paths_at(&mut machine_mapping, "scan_locations", &machine_dir, home);
-    resolve_destination_roots_at(&mut machine_mapping, &machine_dir, home);
-
-    // `paths:` merges by NAME (machine wins per name, via `path_tokens`
-    // below) rather than as a whole top-level key, so it is carried through
-    // the overlay untouched and the deserialized result is overwritten with
-    // the project's own value afterwards.
-    let project_paths_raw = project_mapping.get("paths");
-    let project_paths: BTreeMap<String, String> = project_paths_raw
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
-    let machine_paths = typed_paths(&machine_mapping);
+    let names = paths::path_names(&project_dir, home, &machine_paths, &project_paths);
+    resolve_machine_mapping(&mut machine_mapping, &names, &machine_dir, home);
 
     let merged = file::overlay_top_level(project_mapping, &machine_mapping);
     let mut config: SkillwrightConfig = match config_from_mapping(&merged) {
@@ -687,10 +673,6 @@ fn load_config_at(
     };
     config.paths = project_paths;
 
-    let project_dir = project_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_default();
     finish(config, &project_dir, &project_path, &machine_paths, home)
 }
 
@@ -764,6 +746,11 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
             description: "Default plugin author; falls back to `owner`.",
         },
         KeySpec {
+            key: "marketplace.license",
+            scope: Scope::Both,
+            description: "Default plugin license, as an SPDX identifier; a marketplace note's `sw-license` wins over it.",
+        },
+        KeySpec {
             key: "marketplace.default_plugin",
             scope: Scope::Both,
             description: "The plugin a note with no `sw-plugin` belongs to. `build` and `check` need it.",
@@ -787,6 +774,16 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
             key: "marketplace.harnesses",
             scope: Scope::Both,
             description: "Which harnesses the marketplace is built for. Absent means all of them.",
+        },
+        KeySpec {
+            key: "marketplace.require_descriptions",
+            scope: Scope::Both,
+            description: "Refuse `build` and `check` when a note has a `name` and no `description`. Absent or `false` publishes a filler and warns.",
+        },
+        KeySpec {
+            key: "marketplace.shim_target",
+            scope: Scope::Both,
+            description: "Where the per-skill `scripts/sdlc` shim looks for the launcher asset, relative to the plugin's root. Absent means `cli/sdlc`.",
         },
     ];
     Needs::new(

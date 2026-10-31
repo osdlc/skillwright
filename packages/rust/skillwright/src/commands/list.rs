@@ -1,10 +1,10 @@
 //! `skillwright list` — the roster, and nothing else.
 //!
-//! The one read-only verb. It walks the vault's content root through the
-//! core's [`discover_components`] and prints what it found: one row per
-//! publishable note, with the note's own answer to "where does this
-//! publish". It writes nothing, prompts about nothing, and never touches a
-//! destination.
+//! A read-only verb, like `status` and `check`. It walks the vault's content
+//! root through the core's [`discover_components`] and prints what it found:
+//! one row per publishable note, with the note's own answer to "where does
+//! this publish". It writes nothing, prompts about nothing, and never touches
+//! a destination.
 //!
 //! What it deliberately does not report is each row's state at each
 //! destination — never published, current, stale, conflicted. That needs the

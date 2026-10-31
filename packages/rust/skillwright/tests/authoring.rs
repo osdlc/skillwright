@@ -486,9 +486,9 @@ fn new_plugin_writes_the_note_and_its_kind_scaffolds() {
 }
 
 /// `.trash` holds what `delete` moved out of the tree. Neither `list` nor
-/// `check` must walk into it: before the fix, a forced delete made `list`
-/// report the trashed note `skipped · unreadable-note` and made `check` fail
-/// outright instead of scanning the vault it was asked to check.
+/// `check` must walk into it. A walk that did would make `list` report the
+/// trashed note `skipped · unreadable-note` and make `check` fail outright
+/// instead of scanning the vault it was asked to check.
 #[test]
 fn list_and_check_stay_clean_after_a_forced_delete() {
     let (dir, vault) = fixture();
