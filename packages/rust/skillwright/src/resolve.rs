@@ -105,6 +105,12 @@ pub fn resolve_run(
                 &format!("configuration malformed: {} ({detail})", path.display()),
             ));
         }
+        ConfigLoad::MachineDirs { detail } => {
+            return Err(blocked(
+                err,
+                &format!("cannot locate the machine configuration file: {detail}"),
+            ));
+        }
     }
 
     // The flag overrides the file for this run and is never written back —

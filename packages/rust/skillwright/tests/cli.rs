@@ -382,6 +382,53 @@ fn list_over_a_vault_that_is_not_there_is_exit_2() {
     assert!(run.stderr.contains("vault not found"), "{}", run.stderr);
 }
 
+/// The built binary, run as a child process with the base-directory
+/// variables under the test's control. The in-process [`run`] cannot reach
+/// this path: its machine-file override skips the directory lookup.
+fn run_binary(argv: &[&str], cwd: &Path, env: &[(&str, &str)]) -> std::process::Output {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_skillwright"));
+    cmd.args(argv).current_dir(cwd);
+    cmd.env_remove(skillwright::config::MACHINE_CONFIG_ENV);
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+    cmd.output().unwrap()
+}
+
+#[test]
+fn an_explicit_machine_file_needs_no_base_directories() {
+    let (dir, vault) = fixture();
+    let machine = dir.path().join("machine.yaml");
+    let out = run_binary(
+        &["list", "--vault", &vault_str(&vault)],
+        dir.path(),
+        &[
+            (skillwright::dirs::ENV_VARS.config, "rel"),
+            (
+                skillwright::config::MACHINE_CONFIG_ENV,
+                machine.to_str().unwrap(),
+            ),
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
+fn base_directories_that_cannot_resolve_are_a_run_level_blocker_not_a_panic() {
+    let (dir, vault) = fixture();
+    let out = run_binary(
+        &["list", "--vault", &vault_str(&vault)],
+        dir.path(),
+        &[(skillwright::dirs::ENV_VARS.config, "rel")],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(stderr.contains("must be an absolute path"), "{stderr}");
+}
+
 #[test]
 fn a_project_file_above_the_working_directory_supplies_the_vault() {
     let (dir, _vault) = fixture();
