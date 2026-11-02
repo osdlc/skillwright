@@ -698,7 +698,7 @@ export function placeholderManifest(name: string): Manifest {
  * exists. Writes a placeholder package for each name to a scratch directory
  * and hands them to scripts/stage-npm-package.ts, which publishes each
  * missing one under the `stage` tag and adds a trusted publisher naming this
- * workflow and the `npm` environment.
+ * repository, its release workflow and the `npm` environment.
  */
 function stage(dryRun: boolean): void {
   const root = mkdtempSync(join(tmpdir(), 'skillwright-stage-'))
@@ -715,6 +715,8 @@ function stage(dryRun: boolean): void {
     })
     const args = [
       join(REPO, 'scripts/stage-npm-package.ts'),
+      '--repository',
+      PRODUCT.repository,
       '--workflow',
       PRODUCT.workflow,
       '--environment',
