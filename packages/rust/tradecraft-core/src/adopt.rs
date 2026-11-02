@@ -42,11 +42,10 @@
 //! addressed by their path relative to the linking file, `.md` dropped — a
 //! spelling Obsidian resolves, and one the compile pass resolves beside the
 //! linking note at the next publish, so two skills that each bundle a
-//! `references/guide.md` keep linking their own. A link to `SKILL.md` from
-//! the entry or a file beside it names the entry note, which adoption renames
-//! to `<name>.md`. What passes through
-//! untouched, and the inline-code span that does not, are
-//! [`rewrite_to_wikilinks`]'s contract.
+//! `references/guide.md` keep linking their own. A link to `SKILL.md` from the
+//! entry or a file beside it names the entry note, which adoption renames to
+//! `<name>.md`. What passes through untouched, and the inline-code span that
+//! does not, are [`rewrite_to_wikilinks`]'s contract.
 //!
 //! # Frontmatter: rebuilt at the namespace, with provenance
 //!
@@ -84,11 +83,10 @@
 //! absent or unparseable proves nothing, and is `refused: diverged`. A note
 //! recording a *different* `sw-source` — a repository label compared without
 //! its trailing `@<commit>`, so a new commit of one repository is the same
-//! source — is
-//! `refused: foreign-provenance`: both
-//! its hashes were taken against that other source, so the quadrant cannot
-//! speak about this one, and reading it through the quadrant anyway would
-//! replace somebody else's adoption without a word.
+//! source — is `refused: foreign-provenance`: both its hashes were taken
+//! against that other source, so the quadrant cannot speak about this one, and
+//! reading it through the quadrant anyway would replace somebody else's
+//! adoption without a word.
 //!
 //! The escape from any of them — a refusal, or an edited note the source has
 //! nothing to give — is [`AdoptRequest::overwrite`], per note and named. There
@@ -702,16 +700,13 @@ fn classify_existing(
     };
 
     let raw = read_utf8(vfs, entry_path)?;
-    // `.DS_Store` is never content: the write side's walk_skill_files skips
-    // it, so a Finder drop in the note's folder must not read as an edit.
-    let peers: Vec<(String, Vec<u8>, bool)> = note
-        .projection
-        .resources
-        .iter()
-        .filter(|(relative, _, _)| !relative.split('/').any(|part| part == ".DS_Store"))
-        .cloned()
-        .collect();
-    let current = adopted_note_hash(&format!("{}.md", plan.name), &raw, &peers, ns, entry_path)?;
+    let current = adopted_note_hash(
+        &format!("{}.md", plan.name),
+        &raw,
+        &note.projection.resources,
+        ns,
+        entry_path,
+    )?;
 
     Ok(
         match (
@@ -794,6 +789,10 @@ fn acknowledged(
 /// The entry's execute bit is not read on either side. It is a note, the
 /// renderer never sets it, and reading it here would make `chmod +x` on a
 /// vault note report as a content edit.
+///
+/// A `.DS_Store` peer is skipped. It is never content: the write side's
+/// walk_skill_files never collects it, so a Finder drop in the note's folder
+/// must not read as an edit.
 fn adopted_note_hash(
     entry_rel: &str,
     note_text: &str,
@@ -822,6 +821,7 @@ fn adopted_note_hash(
 
     let mut files: Vec<ProjectedFile> = peers
         .iter()
+        .filter(|(relative, _, _)| !relative.split('/').any(|part| part == ".DS_Store"))
         .map(|(relative, bytes, executable)| ProjectedFile {
             relative_path: relative.clone(),
             content: bytes.clone(),
@@ -985,8 +985,9 @@ fn plan_one(
             let split = frontmatter_lossless::split(&text);
             // A resource beside the entry means the entry by `SKILL.md`; one
             // in a subfolder means a file of that folder.
-            let entry = (!relative.contains('/')).then_some(name.as_str());
-            let rewritten = rewrite_links(split.body, &resource_paths, entry);
+            let dir = relative.rsplit_once('/').map_or("", |(dir, _)| dir);
+            let entry = dir.is_empty().then_some(name.as_str());
+            let rewritten = rewrite_links(split.body, &resource_paths, dir, entry);
             frontmatter_lossless::compose(split.yaml, &rewritten, split.shape).into_bytes()
         } else {
             bytes
@@ -1013,7 +1014,7 @@ fn plan_one(
     // The entry note, last: rebuilt frontmatter over the rewritten body. A
     // fresh composition, so it takes the default framing rather than the
     // source's.
-    let entry_body = rewrite_links(body, &resource_paths, Some(&name));
+    let entry_body = rewrite_links(body, &resource_paths, "", Some(&name));
     let render = |adopted_hash: Option<&str>| {
         render_entry_note(&EntryNote {
             name: &name,
@@ -1445,14 +1446,21 @@ fn is_generated_marker(line: &str) -> bool {
 /// shared with [`crate::compile`] so the two directions cannot disagree about
 /// where content ends and markup begins.
 pub fn rewrite_to_wikilinks(markdown: &str, resources: &[String]) -> String {
-    rewrite_links(markdown, resources, None)
+    rewrite_links(markdown, resources, "", None)
 }
 
-/// [`rewrite_to_wikilinks`] for a file beside the entry note: a link to
-/// `SKILL.md` names `entry_name`, the adopted entry note, because adoption
-/// renames the entry to `<name>.md`. With `None`, `SKILL.md` is a file like
-/// any other.
-fn rewrite_links(markdown: &str, resources: &[String], entry_name: Option<&str>) -> String {
+/// [`rewrite_to_wikilinks`] for a file in `dir`, its skill-relative folder
+/// (`""` at the skill root). A code mention links by its path relative to
+/// `dir`, which is how compile resolves it, and stays code when the resource
+/// lies outside `dir`. A link to `SKILL.md` names `entry_name`, the adopted
+/// entry note, because adoption renames the entry to `<name>.md`. With
+/// `None`, `SKILL.md` is a file like any other.
+fn rewrite_links(
+    markdown: &str,
+    resources: &[String],
+    dir: &str,
+    entry_name: Option<&str>,
+) -> String {
     let bytes = markdown.as_bytes();
     let mut out = String::with_capacity(markdown.len());
     let mut offset = 0usize;
@@ -1499,7 +1507,7 @@ fn rewrite_links(markdown: &str, resources: &[String], entry_name: Option<&str>)
                 }
                 Some(close) => {
                     let inner = &markdown[offset + run..close];
-                    match resolve_resource_mention(inner, resources) {
+                    match resolve_resource_mention(inner, resources, dir) {
                         Some(target) => out.push_str(&format!("[[{target}]]")),
                         None => out.push_str(&markdown[offset..close + run]),
                     }
@@ -1757,12 +1765,17 @@ fn has_scheme(path: &str) -> bool {
     false
 }
 
-/// Resolves an inline-code span's content to a bundled resource and returns its wikilink target
-/// (the resource's skill-relative path, `.md` dropped), or `None` to leave the span as code. Only
-/// something that looks like a lone filename is ever considered, so `` `sbt test` `` and prose
-/// code stay code; a match is by exact skill-relative path or by a basename unique among the
-/// resources, case-insensitively.
-fn resolve_resource_mention(content: &str, resources: &[String]) -> Option<String> {
+/// Resolves an inline-code span's content to a bundled resource and returns its wikilink target,
+/// or `None` to leave the span as code. Only something that looks like a lone filename is ever
+/// considered, so `` `sbt test` `` and prose code stay code. A match is, case-insensitively, by
+/// exact skill-relative path, then by path relative to `dir` (the linking file's skill-relative
+/// folder), then by a basename unique among the resources.
+///
+/// The target is the resource's path relative to `dir`, `.md` dropped: compile resolves a link
+/// beside the linking file, and a bare basename would resolve vault-wide and be refused
+/// `link-ambiguous` once another skill bundles a file of the same name. A resource outside `dir`
+/// has no such path without `..`, which compile refuses, so it stays code.
+fn resolve_resource_mention(content: &str, resources: &[String], dir: &str) -> Option<String> {
     if resources.is_empty() {
         return None;
     }
@@ -1777,10 +1790,16 @@ fn resolve_resource_mention(content: &str, resources: &[String]) -> Option<Strin
     }
     let lower = candidate.to_lowercase();
 
-    let mut resource_path = resources
-        .iter()
-        .find(|resource| resource.to_lowercase() == lower)
-        .map(String::as_str);
+    let exact = |wanted: &str| {
+        resources
+            .iter()
+            .find(|resource| resource.to_lowercase() == wanted)
+            .map(String::as_str)
+    };
+    let mut resource_path = exact(&lower);
+    if resource_path.is_none() && !dir.is_empty() {
+        resource_path = exact(&format!("{}/{lower}", dir.to_lowercase()));
+    }
     if resource_path.is_none() && !candidate.contains('/') {
         let matches: Vec<&str> = resources
             .iter()
@@ -1792,10 +1811,12 @@ fn resolve_resource_mention(content: &str, resources: &[String]) -> Option<Strin
         }
     }
 
-    // The skill-relative path, not the basename: a basename resolves
-    // vault-wide in `crate::compile` and is ambiguous once another skill
-    // bundles a file of the same name.
     let resource_path = resource_path?;
+    let resource_path = if dir.is_empty() {
+        resource_path
+    } else {
+        resource_path.strip_prefix(dir)?.strip_prefix('/')?
+    };
     let extension = extension_of_target(resource_path).unwrap_or_default();
     Some(if extension == ".md" {
         resource_path[..resource_path.len() - extension.len()].to_owned()
@@ -3082,8 +3103,9 @@ mod tests {
         assert!(guide.starts_with("---\ntag: kept\n---\n"), "{guide}");
         // …its links are rewritten like the entry's…
         assert!(guide.contains("[[notes]]"), "{guide}");
-        // …and an inline-code mention of a sibling resource becomes a link.
-        assert!(guide.contains("[[scripts/run.sh]]"), "{guide}");
+        // …and an inline-code mention outside its folder stays code, since
+        // compile resolves a link beside the linking file.
+        assert!(guide.contains("`scripts/run.sh`"), "{guide}");
     }
 
     #[test]
@@ -3316,6 +3338,7 @@ mod tests {
             rewrite_links(
                 "See [me.md](SKILL.md#Usage) and [top](./SKILL.md).",
                 &[],
+                "",
                 Some("me")
             ),
             "See [[me#Usage|me.md]] and [[me|top]]."
@@ -3401,6 +3424,75 @@ mod tests {
         assert_eq!(
             resource_bytes(&compiled, "references/guide.md"),
             b"# alpha guide\n"
+        );
+    }
+
+    /// A code mention inside a nested resource links relative to that
+    /// resource, as compile resolves it: `guide.md` named from
+    /// `references/other.md` is `[[guide]]`, not `[[references/guide]]`,
+    /// which compile would look for at `references/references/guide.md` and
+    /// then refuse `link-ambiguous` vault-wide.
+    #[test]
+    fn a_code_mention_in_a_nested_resource_republishes_beside_it() {
+        let vfs = MemVfs::new();
+        for name in ["alpha", "beta"] {
+            write(
+                &vfs,
+                &format!("/src/skills/{name}/SKILL.md"),
+                &format!(
+                    "---\nname: {name}\ndescription: d\n---\nRead [other](references/other.md).\n"
+                ),
+            );
+            write(
+                &vfs,
+                &format!("/src/skills/{name}/references/guide.md"),
+                &format!("# {name} guide\n"),
+            );
+            write(
+                &vfs,
+                &format!("/src/skills/{name}/references/other.md"),
+                "See `guide.md`.\n",
+            );
+        }
+        adopt_skills(&vfs, &request(), &sw()).unwrap();
+
+        let entry = Path::new("/vault/plugins/demos/skills/alpha/alpha.md");
+        let bundle = Path::new("/vault/plugins/demos/skills/alpha");
+        let note = read_vault_skill(&vfs, entry, &sw()).unwrap();
+        let compiled = compile_note(
+            &vfs,
+            &CompileSource {
+                vault_root: Path::new("/vault"),
+                entry_path: entry,
+                bundle_root: Some(bundle),
+                skill_name: "alpha",
+                calls: None,
+            },
+            &note.projection.content.body,
+        )
+        .unwrap();
+        assert_eq!(
+            resource_bytes(&compiled, "references/other.md"),
+            b"See [guide.md](guide.md).\n"
+        );
+    }
+
+    /// A code mention of a resource outside the linking file's folder stays
+    /// code: no relative wikilink reaches it without `..`, which compile
+    /// refuses.
+    #[test]
+    fn a_code_mention_outside_the_linking_folder_stays_code() {
+        let resources = vec![
+            "references/other.md".to_owned(),
+            "scripts/tool.sh".to_owned(),
+        ];
+        assert_eq!(
+            rewrite_links("Run `tool.sh`.", &resources, "references", None),
+            "Run `tool.sh`."
+        );
+        assert_eq!(
+            rewrite_links("Run `tool.sh`.", &resources, "", None),
+            "Run [[scripts/tool.sh]]."
         );
     }
 

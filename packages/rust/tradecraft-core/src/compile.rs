@@ -1027,12 +1027,7 @@ impl<'a> Renderer<'a> {
                 .entry(output_path.to_owned())
                 .or_default()
                 .insert(target.to_owned());
-            // A size alias is image geometry, not words, as in display_label.
-            return Ok(token
-                .alias
-                .filter(|alias| !is_size_spec(alias))
-                .unwrap_or(target)
-                .to_owned());
+            return Ok(text_alias(token.alias).unwrap_or(target).to_owned());
         };
         let extension = extension_of_path(&resolved).unwrap_or_default();
 
@@ -1736,19 +1731,22 @@ pub(crate) fn basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-/// What a rewritten link displays: the alias when the author wrote one —
-/// unless it is an image size spec like `100` or `640x480`, which Obsidian
-/// reads as geometry, not text — otherwise the resolved file's name.
+/// What a rewritten link displays: the alias when it is text (see
+/// [`text_alias`]), otherwise the resolved file's name.
 fn display_label(alias: Option<&str>, resolved: &Path) -> String {
-    if let Some(alias) = alias
-        && !is_size_spec(alias)
-    {
+    if let Some(alias) = text_alias(alias) {
         return alias.to_owned();
     }
     resolved
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+/// The alias as words to display, or `None` when there is none or it is an
+/// image size spec like `100` or `640x480`, which Obsidian reads as geometry.
+fn text_alias(alias: Option<&str>) -> Option<&str> {
+    alias.filter(|alias| !is_size_spec(alias))
 }
 
 /// `^\d+(?:x\d+)?$` — the image-geometry alias test.
@@ -2096,13 +2094,9 @@ fn escape_token(markdown: &str, offset: usize, limit: usize) -> Option<WikiToken
 fn wiki_token(markdown: &str, offset: usize, opener: usize, limit: usize) -> Option<WikiToken<'_>> {
     let content_start = offset + opener;
     let rest = markdown.get(content_start..)?;
-    let line_end = rest
-        .find('\n')
-        .map_or(markdown.len(), |at| content_start + at);
-    let close = rest
-        .find("]]")
-        .map(|at| content_start + at)
-        .filter(|close| close + 2 <= limit.min(line_end))?;
+    let line_len = rest.find('\n').unwrap_or(rest.len());
+    let bound = limit.checked_sub(content_start)?.min(line_len);
+    let close = content_start + rest.get(..bound)?.find("]]")?;
     // Both boundaries sit beside ASCII brackets, so the str slice is valid
     // UTF-8 territory.
     let inner = &markdown[content_start..close];
