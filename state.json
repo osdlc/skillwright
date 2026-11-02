@@ -1,12 +1,90 @@
 {
   "schema": 1,
   "pr": 24,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "34a9ed698575a32cba11888d7eb5d7c832d89c86",
+  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-02T10:27:08.444Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/watch.rs",
+      "line": 161,
+      "title": "minimal-versions CI fails the watch rebuild test",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/watch.rs",
+      "line": 169,
+      "title": "debounce loop wiring of is_change is untested",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/status.rs",
+      "line": 130,
+      "title": "bump name lookup: dead Option fallback, no single-note test",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/adopt.rs",
+      "line": 294,
+      "title": "CLI re-implements the core DryRun overlay",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/adopt.rs",
+      "line": 316,
+      "title": "comment restates the code",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/watch.rs",
+      "line": 307,
+      "title": "test doc repeats is_change doc",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "configured skills root: publish and status still wrong, a guard is safe",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
