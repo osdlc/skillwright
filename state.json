@@ -1,12 +1,90 @@
 {
   "schema": 1,
   "pr": 23,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "10493d070b90c4e56e5865e367e082faaa4ddb81",
+  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-02T10:05:58.466Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/apply.rs",
+      "line": 738,
+      "title": "preview-only frontmatter check; --yes still moves then fails",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/apply.rs",
+      "line": 652,
+      "title": "conflicts with PR 20 in rename_plugin member mapping",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/apply.rs",
+      "line": 483,
+      "title": "record_rewritten_on_disk reports drifted notes as rewritten",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/apply.rs",
+      "line": 681,
+      "title": "no test for RenamePlugin preview or non-bundle execute failure",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 273,
+      "title": "~\\ expansion contradicts docs and config_layers",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 292,
+      "title": "resolve_configured_path now identical to resolve_against_cwd",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 201,
+      "title": "new ConfigLoad variant breaks exhaustive matches",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
