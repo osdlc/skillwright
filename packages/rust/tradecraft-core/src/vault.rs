@@ -204,19 +204,18 @@ pub fn read_vault_skill(
 /// holding it. `skills/release/release.md` owns `skills/release/`, and so
 /// does `skills/release/SKILL.md`; `skills/loose.md` owns nothing, which is
 /// the common case, and neither does `skills/skills.md` or `skills/SKILL.md`
-/// — the folder holding them is a kind folder, not theirs. `SKILL.md` names
-/// its folder only under `skills/`.
+/// — the folder holding them is a kind folder, not theirs. Inside a kind
+/// folder, `SKILL.md` names its folder only under `skills/`.
 ///
 /// A note with no kind folder above its folder (`drafts/release/release.md`,
 /// or a project's `my-skill/SKILL.md` published with no vault root) has no
-/// placement to follow, and its named folder still travels with it.
+/// placement to follow, and its named folder still travels with it, so there
+/// `SKILL.md` names its folder anywhere.
 ///
-/// Inside a kind folder this is the rule [`crate::discover`] places a component by, spelled
-/// again here because this function has one path and no scan to consult. They
-/// must not diverge: if they do, a component in the canonical layout publishes
-/// its `SKILL.md` alone and reports it written, because the peers this side
-/// looks for are in a sibling folder that layout does not have; or a lone note
-/// carries every sibling in its kind folder as its own resources.
+/// Inside a kind folder this asks [`crate::discover::is_entry`], the rule
+/// discovery places a component by, so the two cannot diverge. If they did, a
+/// component in the canonical layout would publish its `SKILL.md` alone, or a
+/// lone note would carry every sibling in its kind folder as its resources.
 pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
     let file = skill_path.file_name()?.to_str()?;
     let parent = skill_path.parent()?;

@@ -256,17 +256,25 @@ pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError>
 /// unsupported-runtime-target error, not `no-renderer`. Every target is
 /// checked before the note is.
 ///
-/// Nothing the note sets is dropped. Claude Code's own `tools:` and a numeric
-/// `temperature` become the agent's fields; every other key the agent has no
-/// field for (a foreign key, `context`, `argument-hint`, …) is written into
-/// the rendered frontmatter as the author spelled it. For Claude Code the tool
-/// list is written as `tools: A, B`, the key its agent format reads.
+/// Claude Code's own `tools:` and a numeric `temperature` become the agent's
+/// fields. Every other key the agent has no field for (a foreign key,
+/// `context`, `argument-hint`, …) is written into the rendered frontmatter as
+/// the author spelled it, unless the target's
+/// [`agent_adapt::FrontmatterDialect::omit_fields`] leaves it out, as the
+/// skill path does. For Claude Code the tool list is written as `tools: A, B`,
+/// the key its agent format reads.
+///
+/// A key the namespace claims is dropped like every key of ours. A stem may
+/// not claim a key in [`Namespace::PUBLISHED_KEYS`], but it may still equal a
+/// foreign key such as `color` or `permissionMode`, and then that key is
+/// dropped too.
 ///
 /// # Errors
 ///
 /// [`CoreError::Refused`] · `no-renderer` for a target with no agent layout,
-/// `unsafe-path` for a name that cannot become a file stem, and
-/// `conflicting-keys` for a note that sets both `allowed-tools` and `tools`.
+/// `unsafe-path` for a name that cannot become a file stem,
+/// `conflicting-keys` for a note that sets both `allowed-tools` and `tools`,
+/// and `malformed-tools` for a `tools` that names no tool.
 pub fn project_agent(
     snapshot: &SkillProjection,
     targets: &[String],
@@ -321,9 +329,10 @@ pub fn project_agent(
 /// `overrides_target` is the canonical destination whose `sw-overrides` block
 /// this render applies, or `None` for a snapshot that carries none.
 ///
-/// Nothing the note sets is dropped: a key the command has no field for
-/// (`disable-model-invocation`, `user-invocable`, `context`, a foreign key)
-/// is written into its frontmatter as the author spelled it, and the
+/// A key the command has no field for (`disable-model-invocation`,
+/// `user-invocable`, `context`, a foreign key) is written into its
+/// frontmatter as the author spelled it, unless the target's
+/// [`agent_adapt::FrontmatterDialect::omit_fields`] leaves it out. The
 /// `sw-overrides` block merges over those.
 pub fn project_command(
     snapshot: &SkillProjection,
@@ -334,7 +343,7 @@ pub fn project_command(
     let mut out = Vec::new();
     for target in targets {
         let id = parse_runtime_target(target)?;
-        let command = to_adapt_command(snapshot, ns, overrides_target)?;
+        let command = to_adapt_command(snapshot, ns, id, overrides_target)?;
         let runtime = agent_adapt::runtimes::command_renderer_for(id).ok_or_else(|| {
             CoreError::refused(
                 "no-renderer",
@@ -606,7 +615,11 @@ fn hook_type_name(value: &serde_json::Value) -> &'static str {
 /// `agent_adapt::Command` has no field for `disable-model-invocation`,
 /// `user-invocable`, `context`, the spec's optional keys or a foreign key, so
 /// [`unplaced_keys`] carries them through the command's override map,
-/// verbatim. The author's own `sw-overrides.<target>` block merges over them.
+/// verbatim. That map skips the renderer's own checks, so a key `id`'s
+/// dialect omits is left out here: the override roster is built from the
+/// same omit list, so this is the check an `sw-overrides` key gets for every
+/// key the reader models. The author's own `sw-overrides.<target>` block,
+/// already checked by [`crate::publish`], merges over them.
 ///
 /// # Errors
 ///
@@ -616,6 +629,7 @@ fn hook_type_name(value: &serde_json::Value) -> &'static str {
 fn to_adapt_command(
     snapshot: &SkillProjection,
     ns: &Namespace,
+    id: RuntimeId,
     overrides_target: Option<&str>,
 ) -> Result<agent_adapt::Command, CoreError> {
     let content = &snapshot.content;
@@ -633,7 +647,10 @@ fn to_adapt_command(
     command.tools = content.allowed_tools.clone();
     command.model = content.model_override.clone();
     command.body = content.body.clone();
-    command.overrides = unplaced_keys(content, ns);
+    command.overrides = unplaced_keys(content, ns)
+        .into_iter()
+        .filter(|(key, _)| !omitted_by(id, key))
+        .collect();
     if let Some(own) = overrides_target.and_then(|dest| content.overrides.get(dest)) {
         command
             .overrides
@@ -664,7 +681,11 @@ fn to_adapt_command(
 /// [`CoreError::Refused`] · `unsafe-path` when the name cannot become a safe
 /// file stem — refused before any path is joined, naming the value.
 /// [`CoreError::Refused`] · `conflicting-keys` when the note sets both
-/// `allowed-tools` and a `tools` list.
+/// `allowed-tools` and `tools`, in any shape. `malformed-tools` when `tools`
+/// names no tool (`tools: ""`, `tools: []`): an empty list is the renderer's
+/// "no restriction", so publishing it would let the agent use every tool.
+/// A `tools` of another shape (a map, a number) with no `allowed-tools` is
+/// carried as written, since OpenCode's agent `tools` is a map.
 fn to_adapt_agent(
     snapshot: &SkillProjection,
     ns: &Namespace,
@@ -686,7 +707,7 @@ fn to_adapt_agent(
     }
 
     let mut tools = content.allowed_tools.clone();
-    if let Some(listed) = carried.get("tools").and_then(tool_list) {
+    if let Some(value) = carried.get("tools") {
         if !tools.is_empty() {
             return Err(CoreError::refused(
                 "conflicting-keys",
@@ -696,8 +717,20 @@ fn to_adapt_agent(
                 ),
             ));
         }
-        tools = listed;
-        carried.remove("tools");
+        if let Some(listed) = tool_list(value) {
+            if listed.is_empty() {
+                return Err(CoreError::refused(
+                    "malformed-tools",
+                    format!(
+                        "agent `{}` sets `tools` but names no tool, which would publish an \
+                         agent that can use every tool. Name the tools, or remove the key",
+                        content.name
+                    ),
+                ));
+            }
+            tools = listed;
+            carried.remove("tools");
+        }
     }
     // Never a default: inventing one would publish a sampling temperature
     // nobody chose.
@@ -772,6 +805,19 @@ fn unplaced_keys(
     keys
 }
 
+/// Whether `id`'s dialect leaves `key` out of every frontmatter it renders.
+/// The omit list holds canonical snake_case names, so `user-invocable` is
+/// looked up as `user_invocable`. A foreign key is in no omit list.
+fn omitted_by(id: RuntimeId, key: &str) -> bool {
+    let canonical = key.replace('-', "_");
+    agent_adapt::runtimes::for_id(id).is_some_and(|runtime| {
+        runtime
+            .frontmatter_dialect()
+            .omit_fields
+            .contains(&canonical.as_str())
+    })
+}
+
 /// A `tools:` value as tool names: a list of strings, or one comma-separated
 /// string as Claude Code's agent format writes it. `None` for any other shape.
 fn tool_list(value: &serde_json::Value) -> Option<Vec<String>> {
@@ -799,9 +845,14 @@ fn tool_list(value: &serde_json::Value) -> Option<Vec<String>> {
 /// Claude Code agent reads `tools`, a comma-separated string. Under the wrong
 /// key the restriction does nothing, and the agent can use every tool.
 ///
-/// A carried key the renderer already wrote is left as rendered: the modeled
-/// field wins, the rule `agent-adapt`'s own `raw_entry` follows. A note read
-/// from a vault never has one, because the read lifted those keys out.
+/// Stopgap: the tool key and the carried keys belong in `agent-adapt`'s agent
+/// renderer (a `tools_key` as commands have, and an overrides map). Once it
+/// writes `tools` itself the `allowed-tools` lookup finds nothing and this
+/// splice is a no-op; remove it then.
+///
+/// A carried key the target's dialect omits is left out. A carried key the
+/// renderer already wrote, or that an edit here already sets, is left as is:
+/// the modeled field wins, the rule `agent-adapt`'s own `raw_entry` follows.
 fn carry_agent_keys(
     rendered: Vec<u8>,
     id: RuntimeId,
@@ -831,7 +882,10 @@ fn carry_agent_keys(
         });
     }
     for (key, value) in carried {
-        if !mapping.contains_key(key) {
+        let set_here = edits
+            .iter()
+            .any(|edit| matches!(edit, yaml_splice::FieldEdit::Set { key: k, .. } if k == key));
+        if !mapping.contains_key(key) && !set_here && !omitted_by(id, key) {
             edits.push(yaml_splice::FieldEdit::Set {
                 key: key.clone(),
                 value: to_splice_value(value),
@@ -1407,9 +1461,118 @@ mod tests {
         assert!(err.to_string().contains("reviewer"), "{err}");
     }
 
+    /// `tools` beside `allowed-tools` is refused in every shape. A shape the
+    /// tool-list reader cannot parse used to be carried and then overwrite
+    /// the `tools: A, B` written from `allowed-tools`.
+    #[test]
+    fn an_agent_with_allowed_tools_and_an_odd_shaped_tools_is_refused() {
+        for odd in [serde_json::json!({"write": false}), serde_json::json!(3)] {
+            let mut snap = snapshot("reviewer", vec![]);
+            snap.content.annotations.insert("tools".into(), odd.clone());
+            let err = project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap_err();
+            assert!(err.to_string().contains("conflicting-keys"), "{odd}: {err}");
+        }
+    }
+
+    /// An empty tool list is the renderer's "no restriction". A note that says
+    /// `tools: ""` meant the opposite, so it is refused rather than published
+    /// as an agent with every tool.
+    #[test]
+    fn an_agent_whose_tools_names_no_tool_is_refused() {
+        for empty in [
+            serde_json::json!(""),
+            serde_json::json!(" , "),
+            serde_json::json!([]),
+        ] {
+            let mut snap = snapshot("reviewer", vec![]);
+            snap.content.allowed_tools = Vec::new();
+            snap.content
+                .annotations
+                .insert("tools".into(), empty.clone());
+            let err = project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap_err();
+            assert!(matches!(err, CoreError::Refused(_)), "{empty}: {err}");
+            assert!(
+                err.to_string().contains("malformed-tools"),
+                "{empty}: {err}"
+            );
+        }
+    }
+
+    /// With no `allowed-tools`, a `tools` that is not a list is carried as
+    /// written: OpenCode's agent `tools` is a map.
+    #[test]
+    fn a_non_list_tools_with_no_allowed_tools_is_carried_as_written() {
+        let mut snap = snapshot("reviewer", vec![]);
+        snap.content.allowed_tools = Vec::new();
+        let map = serde_json::json!({"write": false});
+        snap.content.annotations.insert("tools".into(), map.clone());
+        let files = project_agent(&snap, &["opencode".to_owned()], &sw()).unwrap();
+        let text = String::from_utf8(files[0].content.clone()).unwrap();
+        let fm = frontmatter(&text);
+        assert_eq!(fm.get("tools"), Some(&map), "{text}");
+        assert!(!fm.contains_key("allowed-tools"), "{text}");
+    }
+
+    /// Only Claude Code's file moves the list to `tools`. Every other runtime
+    /// keeps the key `agent-adapt` writes.
+    #[test]
+    fn a_tools_list_on_another_runtime_stays_under_allowed_tools() {
+        let mut snap = snapshot("reviewer", vec![]);
+        snap.content.allowed_tools = Vec::new();
+        snap.content
+            .annotations
+            .insert("tools".into(), serde_json::json!("Read, Grep"));
+        let files = project_agent(&snap, &["opencode".to_owned()], &sw()).unwrap();
+        let text = String::from_utf8(files[0].content.clone()).unwrap();
+        let fm = frontmatter(&text);
+        assert!(!fm.contains_key("tools"), "{text}");
+        assert!(fm.contains_key("allowed-tools"), "{text}");
+    }
+
+    /// An unsupported target is the caller's error, whatever the note says:
+    /// it is reported before the note is checked.
+    #[test]
+    fn an_agents_targets_are_checked_before_the_note() {
+        let mut snap = snapshot("reviewer", vec![]);
+        snap.content
+            .annotations
+            .insert("tools".into(), serde_json::json!("Grep"));
+        let err = project_agent(
+            &snap,
+            &["claude-code".to_owned(), "nowhere".to_owned()],
+            &sw(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, CoreError::Projection(_)), "{err}");
+        assert!(err.to_string().contains("nowhere"), "{err}");
+    }
+
+    /// A command's carried keys follow the target's omit list too: Codex's
+    /// command file gets the foreign key but not the Claude Code extension
+    /// keys.
+    #[test]
+    fn a_command_leaves_out_the_keys_its_target_omits() {
+        let mut snap = snapshot("ship", vec![]);
+        snap.content.disable_model_invocation = true;
+        snap.content.user_invocable = false;
+        snap.content.context_mode = Some("fork".into());
+        snap.content.annotations = serde_json::json!({"foo": "bar"})
+            .as_object()
+            .unwrap()
+            .clone();
+        let text =
+            claude_file(&project_command(&snap, &["codex-cli".to_owned()], &sw(), None).unwrap());
+        let fm = frontmatter(&text);
+        assert_eq!(fm.get("foo"), Some(&serde_json::json!("bar")), "{text}");
+        for key in ["disable-model-invocation", "user-invocable", "context"] {
+            assert!(!fm.contains_key(key), "{key}: {text}");
+        }
+    }
+
     /// An agent has no field for these, so they are written into its
     /// frontmatter as the author spelled them rather than dropped — Claude
-    /// Code reads `color` and `permissionMode` itself.
+    /// Code reads `color` and `permissionMode` itself. A runtime whose dialect
+    /// omits the Claude Code extension keys gets the foreign keys only.
     #[test]
     fn an_agent_carries_every_key_it_has_no_field_for() {
         let mut snap = snapshot("reviewer", vec![]);
@@ -1426,19 +1589,29 @@ mod tests {
         snap.content.disable_model_invocation = true;
         snap.content.argument_hint = Some("<pr>".into());
 
+        let foreign = [
+            ("color", serde_json::json!("blue")),
+            ("permissionMode", serde_json::json!("plan")),
+            ("tags", serde_json::json!(["review"])),
+        ];
+        let claude_only = [
+            ("context", serde_json::json!("fork")),
+            ("disable-model-invocation", serde_json::json!(true)),
+            ("argument-hint", serde_json::json!("<pr>")),
+        ];
         for target in ["claude-code", "opencode"] {
             let files = project_agent(&snap, &[target.to_owned()], &sw()).unwrap();
             let text = String::from_utf8(files[0].content.clone()).unwrap();
             let fm = frontmatter(&text);
-            for (key, value) in [
-                ("color", serde_json::json!("blue")),
-                ("permissionMode", serde_json::json!("plan")),
-                ("tags", serde_json::json!(["review"])),
-                ("context", serde_json::json!("fork")),
-                ("disable-model-invocation", serde_json::json!(true)),
-                ("argument-hint", serde_json::json!("<pr>")),
-            ] {
-                assert_eq!(fm.get(key), Some(&value), "{target} {key}: {text}");
+            for (key, value) in &foreign {
+                assert_eq!(fm.get(*key), Some(value), "{target} {key}: {text}");
+            }
+            for (key, value) in &claude_only {
+                if target == "claude-code" {
+                    assert_eq!(fm.get(*key), Some(value), "{target} {key}: {text}");
+                } else {
+                    assert!(!fm.contains_key(*key), "{target} {key}: {text}");
+                }
             }
             assert!(!fm.contains_key("sw-kind"), "{target}: {text}");
             assert!(

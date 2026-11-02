@@ -7,17 +7,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Changed
-
-- `StemProblem` has a new variant, `ClaimsPublishedKey`, and is now `#[non_exhaustive]`. A namespace stem may not claim a key outside the spec that a renderer publishes (`user-invocable`, `disable-model-invocation`, `argument-hint`, `arguments`, `model`, `context`, `tools`, `temperature`), listed as `Namespace::PUBLISHED_KEYS`.
-- `project_agent` and `project_command` no longer drop frontmatter they have no field for. Foreign keys, `context`, `user-invocable`, `disable-model-invocation` and the spec's optional keys are written into the rendered file as the author spelled them. An agent takes Claude Code's own `tools:` and a numeric `temperature` as its fields, and its Claude Code file lists tools under `tools`, the key Claude Code reads, rather than `allowed-tools`. An agent that sets both `allowed-tools` and `tools` is refused (`conflicting-keys`).
-
-### Fixed
-
-- `bundle_root` no longer gives a note directly inside a kind folder (`skills/skills.md`, `skills/SKILL.md`) the whole kind folder as its bundle, and gives `SKILL.md` a bundle only under `skills/`.
-- `next_version` returns `None` instead of wrapping (or panicking in a debug build) when the component being bumped is already `u64::MAX`.
-- The harness-directory scan reads `known_marketplaces.json` in the shape Claude Code writes (`source.source`, `installLocation`), so a git or GitHub marketplace clone is treated as manager-owned and a directory marketplace, the user's own checkout, is not.
-
 ## [0.41.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.40.2...tradecraft-core/v0.41.0) - 2026-10-30
 
 ### Fixed
