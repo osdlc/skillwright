@@ -59,10 +59,9 @@ import type {
   PublishReport,
   PublishRequest,
   PublishOutcome,
-  PublishState,
   PublishStatus,
+  PublishUnitStatus as WirePublishUnitStatus,
   ReasonToken as CoreReasonToken,
-  VersionBumpSuggestion,
 } from './core.generated.ts'
 
 /**
@@ -73,8 +72,8 @@ import type {
  * Re-exported, never re-declared — except for `Target`,
  * `ReasonToken`/`PublishReason`/`PublishedFile` together, and
  * `StatusRequest`/`PublishUnitStatus` together, each hand-widened below for a
- * reason of its own. Everything
- * else here is exactly what `tradecraft-typegen` read off the Rust source.
+ * reason of its own. Everything else here is exactly what `tradecraft-typegen`
+ * read off the Rust source.
  * Regenerate with `cargo run -p tradecraft-typegen`; `cargo test -p tradecraft-typegen`
  * fails when the committed file is behind the Rust source, and a test in this
  * package fails when src/core.generated.ts differs from the crate's copy.
@@ -349,36 +348,11 @@ export interface StatusRequest {
 }
 
 /**
- * Mirrors `tradecraft_core::status::PublishUnitStatus` — one unit's state at
- * one destination, and enough of the working to act on it.
- *
- * Hand-written rather than re-exported so `files` uses this package's widened
- * {@link PublishedFile}. `tests/status-of.test.ts` fails when its keys differ
- * from the generated type's.
+ * `tradecraft_core::status::PublishUnitStatus` — one unit's state at one
+ * destination, and enough of the working to act on it. Derived from the
+ * generated type so `files` uses this package's widened {@link PublishedFile}.
  */
-export interface PublishUnitStatus {
-  state: PublishState
-  /** What makes the state what it is, when there is something to name. */
-  reason: string | null
-  /** When we last wrote anything here, from the destination's manifest. */
-  published_at: string | null
-  /** Every projected file, classified — the drift, per file. */
-  files: PublishedFile[]
-  /** The notes that fed this unit's output, as the manifest recorded them. */
-  contributing_notes: string[]
-  /** Recorded contributors no longer in the vault. */
-  missing_notes: string[]
-  /**
-   * Set when the note's targets key excludes this destination — the `n/a`
-   * cell, which the status documentation is explicit is not one of the five states.
-   */
-  not_published: string | null
-  /**
-   * Set for a plugin whose members changed since it was last published here
-   * while its `sw-version` did not move: the one-click bump to offer.
-   */
-  version_bump_suggestion: VersionBumpSuggestion | null
-}
+export type PublishUnitStatus = Omit<WirePublishUnitStatus, 'files'> & { files: PublishedFile[] }
 
 /**
  * One unit's publish state at one destination, for one target.

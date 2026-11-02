@@ -1,20 +1,27 @@
 /**
- * `PublishUnitStatus` is hand-written in src/core.ts (its `files` use this
- * package's widened `PublishedFile`). These checks keep its keys equal to the
- * generated report's, which is generated from the Rust source, and to what
- * `statusOf` actually hands back.
+ * `statusOf` hands back exactly the keys of the generated `PublishUnitStatus`,
+ * which is generated from the Rust source.
  */
 import { afterEach, beforeEach, expect, test } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import ts from 'typescript'
 
 import type { PublishUnitStatus as WirePublishUnitStatus } from '../src/core.generated.ts'
-import { statusOf, type PublishUnitStatus } from '../src/core.ts'
+import { statusOf } from '../src/core.ts'
 import { createNodeVfs } from '../src/node-vfs.ts'
 
-const SRC = path.join(import.meta.dirname, '../src')
+/** `tsc` refuses this when a key is missing or extra. */
+const WIRE_KEYS = {
+  state: true,
+  reason: true,
+  published_at: true,
+  files: true,
+  contributing_notes: true,
+  missing_notes: true,
+  not_published: true,
+  version_bump_suggestion: true,
+} satisfies Record<keyof WirePublishUnitStatus, true>
 
 let tmp: string
 
@@ -26,27 +33,7 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
-/** The property names of the interface `name` declared in `file`, sorted. */
-function interfaceKeys(file: string, name: string): string[] {
-  const source = ts.createSourceFile(file, readFileSync(file, 'utf-8'), ts.ScriptTarget.Latest)
-  const decl = source.statements.find(
-    (s): s is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(s) && s.name.text === name,
-  )
-  if (decl === undefined) throw new Error(`${file} declares no interface ${name}`)
-  return decl.members.map((m) => (m.name as ts.Identifier).text).sort()
-}
-
-/** `tsc` refuses this when the generated report has a key the hand type lacks. */
-const WIRE_KEYS_ARE_KNOWN: Array<keyof PublishUnitStatus> = [] as Array<keyof WirePublishUnitStatus>
-
-test('PublishUnitStatus declares every key of the generated report', () => {
-  expect(interfaceKeys(path.join(SRC, 'core.ts'), 'PublishUnitStatus')).toEqual(
-    interfaceKeys(path.join(SRC, 'core.generated.ts'), 'PublishUnitStatus'),
-  )
-  expect(WIRE_KEYS_ARE_KNOWN).toEqual([])
-})
-
-test('statusOf hands back exactly the keys PublishUnitStatus declares', () => {
+test('statusOf hands back exactly the keys of the generated report', () => {
   const vault = path.join(tmp, 'vault')
   const skill = path.join(vault, 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(skill, { recursive: true })
@@ -64,7 +51,5 @@ test('statusOf hands back exactly the keys PublishUnitStatus declares', () => {
     skills_root: vault,
   })
 
-  expect(Object.keys(status).sort()).toEqual(
-    interfaceKeys(path.join(SRC, 'core.ts'), 'PublishUnitStatus'),
-  )
+  expect(Object.keys(status).sort()).toEqual(Object.keys(WIRE_KEYS).sort())
 })

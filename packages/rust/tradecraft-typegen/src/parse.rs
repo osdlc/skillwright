@@ -254,21 +254,20 @@ fn collect_items(
 /// Refused where the walk reaches it rather than here: the core holds plenty
 /// of names that repeat across private modules and never cross the boundary.
 fn insert_unique(types: &mut BTreeMap<String, TypeDef>, def: TypeDef, path: &Path) {
-    if types.contains_key(def.name()) {
-        let clash = format!(
-            "two public types are named `{}` (one of them in {}). Which one the \
-             TypeScript describes would depend on which file was read first.",
-            def.name(),
-            path.display()
-        );
-        match types.get_mut(def.name()) {
-            Some(TypeDef::Struct(s)) => s.unsupported = Some(clash),
-            Some(TypeDef::Enum(e)) => e.unsupported = Some(clash),
-            None => {}
-        }
+    let Some(first) = types.get_mut(def.name()) else {
+        types.insert(def.name().to_string(), def);
         return;
+    };
+    let clash = format!(
+        "two public types are named `{}` (one of them in {}). Which one the \
+         TypeScript describes would depend on which file was read first.",
+        def.name(),
+        path.display()
+    );
+    match first {
+        TypeDef::Struct(s) => s.unsupported = Some(clash),
+        TypeDef::Enum(e) => e.unsupported = Some(clash),
     }
-    types.insert(def.name().to_string(), def);
 }
 
 fn is_pub(vis: &syn::Visibility) -> bool {

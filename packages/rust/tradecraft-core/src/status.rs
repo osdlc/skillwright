@@ -85,14 +85,6 @@ impl PublishState {
     }
 }
 
-/// The former name of [`PublishUnitStatus`], kept so existing callers
-/// compile.
-///
-/// `tradecraft-typegen` reads only structs and enums, so this alias does not
-/// clash with [`crate::export::UnitStatus`] there. If it ever reads aliases,
-/// it refuses the clash rather than picking one.
-pub type UnitStatus = PublishUnitStatus;
-
 /// The answer, and enough of the working to act on it.
 ///
 /// Named apart from [`crate::export::UnitStatus`], the marketplace's
