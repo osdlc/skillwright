@@ -652,7 +652,7 @@ fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
 }
 
 /// The kind a folder name declares, or `None` for any other folder.
-fn kind_dir(name: &str) -> Option<EntityKind> {
+pub(crate) fn kind_dir(name: &str) -> Option<EntityKind> {
     KIND_DIRS
         .iter()
         .find(|(dir, _)| *dir == name)
@@ -764,7 +764,7 @@ fn classify(root: &Path, parts: &[String]) -> Option<Placement> {
 pub const SKILL_ENTRY: &str = "SKILL.md";
 
 /// Is `file` the entry note of the folder `name`, for a component of `kind`?
-fn is_entry(file: &str, name: &str, kind: EntityKind) -> bool {
+pub(crate) fn is_entry(file: &str, name: &str, kind: EntityKind) -> bool {
     md_stem(file) == Some(name) || (kind == EntityKind::Skill && is_skill_entry(file))
 }
 

@@ -48,6 +48,10 @@
 //! * **Not a stem that claims one of the Agent Skills spec's six keys.** Our
 //!   keys are dropped at publish, so a stem that claims a spec key deletes a
 //!   field the standard requires, from every published skill, silently.
+//! * **Not a stem that claims a key the reader models and a renderer
+//!   publishes** ([`Namespace::PUBLISHED_KEYS`]: `user-invocable`, `model`,
+//!   …). Same failure: the key drains as ours, the modeled field falls back
+//!   to its default, and `user-invocable: false` publishes as invocable.
 //!
 //! # Two boundary rules
 //!
@@ -108,6 +112,22 @@ impl Namespace {
         "name",
     ];
 
+    /// The top-level keys outside the spec that a renderer reads by name,
+    /// sorted: the ones [`crate::vault`] lifts into modeled fields, and the
+    /// agent's `tools` and `temperature`, which [`crate::projection`] reads
+    /// from the carried keys. A stem may not claim one either: the namespace
+    /// drain runs first, so a claimed key never reaches its field.
+    pub const PUBLISHED_KEYS: &'static [&'static str] = &[
+        "argument-hint",
+        "arguments",
+        "context",
+        "disable-model-invocation",
+        "model",
+        "temperature",
+        "tools",
+        "user-invocable",
+    ];
+
     /// Words a YAML reader may type as something other than a string. A stem
     /// from this list would make the nested block a non-string key, which
     /// [`crate::vault`] refuses — taking the whole note with it.
@@ -154,11 +174,14 @@ impl Namespace {
         }
         // Claiming, not resembling: the stem *is* a spec key (so its block
         // would be one), or a spec key is one of its flat keys.
-        if let Some(key) = Self::SPEC_KEYS
-            .iter()
-            .find(|key| **key == stem || key.strip_prefix(stem).is_some_and(|r| r.starts_with('-')))
-        {
+        let claims = |key: &&&str| {
+            **key == stem || key.strip_prefix(stem).is_some_and(|r| r.starts_with('-'))
+        };
+        if let Some(key) = Self::SPEC_KEYS.iter().find(claims) {
             return reject(StemProblem::ClaimsSpecKey { key });
+        }
+        if let Some(key) = Self::PUBLISHED_KEYS.iter().find(claims) {
+            return reject(StemProblem::ClaimsPublishedKey { key });
         }
 
         Ok(Self {
@@ -255,6 +278,7 @@ impl std::error::Error for InvalidStem {}
 /// Why a stem was refused. One variant per rule, so a caller can act on the
 /// reason rather than match on prose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum StemProblem {
     /// No stem at all.
     Empty,
@@ -271,6 +295,13 @@ pub enum StemProblem {
     /// therefore delete it at publish.
     ClaimsSpecKey {
         /// The Agent Skills spec key it would claim.
+        key: &'static str,
+    },
+    /// The namespace would own a key outside the spec that the reader models
+    /// and a renderer publishes ([`Namespace::PUBLISHED_KEYS`]) — and so drop
+    /// it at publish.
+    ClaimsPublishedKey {
+        /// The published key it would claim.
         key: &'static str,
     },
 }
@@ -303,6 +334,12 @@ impl fmt::Display for StemProblem {
                 "it would claim `{key}`, one of the Agent Skills spec's six keys ({}) — and our \
                  keys are dropped at publish, so every published skill would lose it",
                 Namespace::SPEC_KEYS.join(", ")
+            ),
+            Self::ClaimsPublishedKey { key } => write!(
+                f,
+                "it would claim `{key}`, a key skillwright reads and publishes ({}) — and our \
+                 keys are dropped at publish, so the author's value would be lost",
+                Namespace::PUBLISHED_KEYS.join(", ")
             ),
         }
     }
@@ -449,6 +486,32 @@ mod tests {
             }
         );
         assert!(err.to_string().contains("allowed-tools"), "{err}");
+    }
+
+    /// The read lifts these keys into modeled fields and a renderer emits
+    /// them, so a stem that claims one deletes a field the author wrote for
+    /// publication — `user` would drain `user-invocable: false` and publish
+    /// the skill as invocable.
+    #[test]
+    fn a_stem_that_claims_a_published_key_is_refused_naming_it() {
+        for (stem, key) in [
+            ("user", "user-invocable"),
+            ("disable", "disable-model-invocation"),
+            ("argument", "argument-hint"),
+            ("arguments", "arguments"),
+            ("model", "model"),
+            ("context", "context"),
+            ("tools", "tools"),
+            ("temperature", "temperature"),
+        ] {
+            let err = rejected(stem);
+            assert_eq!(
+                err.reason,
+                StemProblem::ClaimsPublishedKey { key },
+                "{stem}"
+            );
+            assert!(err.to_string().contains(key), "{err}");
+        }
     }
 
     #[test]
