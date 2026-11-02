@@ -1,12 +1,68 @@
 {
   "schema": 1,
   "pr": 19,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "0ab39f7f76d8e12697f74cba67e0966d732bcfab",
+  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
+  "round": 1,
   "claim": {
     "owner": "KellyMBP.local:claude-r7k2qd",
     "at": "2026-11-02T08:06:13.593Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/adopt.rs",
+      "line": 1795,
+      "title": "Code mention in a nested resource now emits a skill-relative path that compile cannot resolve beside the file",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/adopt.rs",
+      "line": 707,
+      "title": "DS_Store filter clones every resource's bytes an extra time",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/compile.rs",
+      "line": 1030,
+      "title": "size-alias check duplicated from display_label",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/compile.rs",
+      "line": 2099,
+      "title": "wiki_token still scans the rest of the document for the closer",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/adopt.rs",
+      "line": 48,
+      "title": "module doc edits left ragged hard wraps",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
