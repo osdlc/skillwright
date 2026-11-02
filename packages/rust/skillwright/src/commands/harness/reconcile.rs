@@ -80,10 +80,10 @@ pub fn reconcile_install(
 
 /// Install what is missing, then bring each installed plugin whose listed
 /// version differs from `versions` (plugin name to the built version) to
-/// that version. A marketplace from git is refreshed first, since the
-/// harness installs from its own snapshot. A harness with no per-plugin
-/// commands refreshes its already registered marketplace instead, since it
-/// lists no plugin versions to compare.
+/// that version. A held marketplace from git is refreshed before any install
+/// or update, since the harness installs from its own snapshot. A harness
+/// with no per-plugin commands refreshes its already registered marketplace
+/// instead, since it lists no plugin versions to compare.
 pub fn reconcile_update(
     adapter: &HarnessAdapter,
     want: &Want,
@@ -98,7 +98,7 @@ pub fn reconcile_update(
         // Not held from the wanted source: install adds it and installs every plugin.
         (None, _) => Vec::new(),
         (Some(market), Some(plugins)) => {
-            let mut updates: Vec<Argv> = want
+            let updates: Vec<Argv> = want
                 .plugins
                 .iter()
                 .filter_map(|plugin| {
@@ -108,8 +108,10 @@ pub fn reconcile_update(
                 })
                 .flatten()
                 .collect();
-            if want.from_git && !updates.is_empty() {
-                updates.insert(0, (adapter.update_market)(&market.name, scope));
+            // Ahead of the installs too: a newly wanted plugin is read from
+            // the same snapshot.
+            if want.from_git && !(commands.is_empty() && updates.is_empty()) {
+                commands.insert(0, (adapter.update_market)(&market.name, scope));
             }
             updates
         }

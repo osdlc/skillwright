@@ -26,7 +26,8 @@
 //! created, written, and renamed over the target, which a naive watcher
 //! would see as three or four separate events. `DEBOUNCE` collapses a
 //! burst into one rebuild. The loop needs no per-path classification,
-//! only "something changed, rebuild".
+//! only "something changed, rebuild". A read is not a change: see
+//! `is_change`.
 //!
 //! # No confirmation prompt
 //!
@@ -157,7 +158,7 @@ pub fn run_watch_for(
             // channel means the watcher itself was torn down.
             return EXIT_OK;
         };
-        let mut saw_event = first.is_ok();
+        let mut saw_event = first.as_ref().is_ok_and(is_change);
         let deadline = Instant::now() + DEBOUNCE;
         loop {
             let now = Instant::now();
@@ -165,7 +166,7 @@ pub fn run_watch_for(
                 break;
             }
             match rx.recv_timeout(deadline - now) {
-                Ok(next) => saw_event |= next.is_ok(),
+                Ok(next) => saw_event |= next.as_ref().is_ok_and(is_change),
                 Err(_) => break,
             }
         }
@@ -194,6 +195,18 @@ pub fn run_watch_for(
         if max_rebuilds.is_some_and(|max| rebuilds >= max) {
             return EXIT_OK;
         }
+    }
+}
+
+/// Whether an event can mean a file's content changed. A read is not one:
+/// Linux's watcher reports every open and read-only close, and each rebuild
+/// reads the whole vault, so counting them would rebuild forever.
+fn is_change(event: &notify::Event) -> bool {
+    use notify::event::{AccessKind, AccessMode, EventKind};
+    match event.kind {
+        EventKind::Access(AccessKind::Close(AccessMode::Write)) => true,
+        EventKind::Access(_) => false,
+        _ => true,
     }
 }
 
@@ -289,6 +302,25 @@ mod tests {
             yes: false,
             quiet: true,
         }
+    }
+
+    /// Linux's watcher also reports reads, and every rebuild reads the whole
+    /// vault. Counting those would start the next rebuild, forever.
+    #[test]
+    fn a_read_is_not_a_change_but_a_write_is() {
+        use notify::event::{AccessKind, AccessMode, CreateKind, EventKind, ModifyKind};
+        let event = |kind| notify::Event::new(kind);
+        assert!(!is_change(&event(EventKind::Access(AccessKind::Open(
+            AccessMode::Any
+        )))));
+        assert!(!is_change(&event(EventKind::Access(AccessKind::Close(
+            AccessMode::Read
+        )))));
+        assert!(is_change(&event(EventKind::Access(AccessKind::Close(
+            AccessMode::Write
+        )))));
+        assert!(is_change(&event(EventKind::Modify(ModifyKind::Any))));
+        assert!(is_change(&event(EventKind::Create(CreateKind::File))));
     }
 
     #[test]
