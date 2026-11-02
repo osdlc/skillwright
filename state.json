@@ -1,12 +1,90 @@
 {
   "schema": 1,
   "pr": 20,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "be20b6318d530e4821b5533ded7d02a5c5040f3b",
+  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-02T08:55:28.711Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/apply.rs",
+      "line": 556,
+      "title": "rename_plugin: member outside dir_from is only path-guarded, not checked to exist",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/authoring.rs",
+      "line": 428,
+      "title": "bundle_dir fallback still treats unshaped paths inside a kind folder as bundles",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/authoring.rs",
+      "line": 1171,
+      "title": "ns_field_edits branches and the whole-block rewrite have no direct tests",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/authoring.rs",
+      "line": 1456,
+      "title": "plan_rename_plugin new failure paths are untested",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/authoring.rs",
+      "line": 1160,
+      "title": "ns_field_edits doc names a parameter that does not exist",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/authoring.rs",
+      "line": 1441,
+      "title": "plan_rename_plugin doc was left with a broken line wrap",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 169,
+      "title": "bump reports a nested version as the flat sw-version key",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
