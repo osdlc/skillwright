@@ -33,7 +33,6 @@
 //! pointed at that note, and the core's own reason for refusing it is the
 //! answer they came for.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -50,7 +49,7 @@ use crate::report::{
     AttributedState, Attribution, RowState, has_drift, normalize_thrown_reason, render_state_line,
     render_state_tally,
 };
-use crate::resolve::{CommonFlags, resolve_run, resolve_skills_root};
+use crate::resolve::{CommonFlags, refuse_separate_skills_root, resolve_run};
 
 /// The resolved flags of `skillwright status`.
 pub struct StatusFlags {
@@ -106,7 +105,9 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
         })
         .collect();
 
-    let skills_root = resolve_skills_root(None, &run, &ctx.cwd);
+    if let Err(code) = refuse_separate_skills_root("status", &run, &ctx.cwd, ctx.err) {
+        return code;
+    }
 
     // --- the units ----------------------------------------------------------
     // A named note is taken as given; without one the vault scan supplies the
@@ -118,25 +119,18 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Notes whose kind no destination installs, by vault-relative path and
     // kind. Rows, but not questions for the core.
     let mut unpublishable: Vec<(String, String)> = Vec::new();
-    // Each unit's name, which is what `bump` matches. The frontmatter `name`
-    // may differ from the filename.
-    let mut names: HashMap<PathBuf, String> = HashMap::new();
     match &flags.note {
         Some(note) => {
             let note_path = normalize_join(&run.vault, Path::new(note));
             if !note_path.exists() {
                 return blocked(ctx.err, &format!("note not found: {}", note_path.display()));
             }
-            if let Ok(note) = read_vault_skill(&NativeVfs, &note_path, &namespace) {
-                names.insert(note_path.clone(), note.projection.content.name);
-            }
             note_paths.push(note_path);
         }
         None => {
-            match discover_components(&NativeVfs, &run.vault, skills_root.as_deref(), &namespace) {
+            match discover_components(&NativeVfs, &run.vault, None, &namespace) {
                 Ok(scan) => {
                     for component in &scan.components {
-                        names.insert(component.entry_path.clone(), component.name.clone());
                         if kind_has_renderer(component.kind) {
                             note_paths.push(component.entry_path.clone());
                         } else {
@@ -172,9 +166,8 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // one entry per (skill, destination) row that carries the suggestion —
     // printed after the report as a stderr advisory, never folded into
     // `AttributedState` itself, which `--json` serializes and must not grow a
-    // field for this. The middle field is the plugin's name, `None` when the
-    // note could not be read for one.
-    let mut suggestions: Vec<(String, Option<String>, VersionBumpSuggestion)> = Vec::new();
+    // field for this.
+    let mut suggestions: Vec<(String, PathBuf, VersionBumpSuggestion)> = Vec::new();
     'outer: for note_path in &note_paths {
         for (root, target) in &destinations {
             if ctx.is_interrupted() {
@@ -201,7 +194,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                     if let Some(suggestion) = &status.version_bump_suggestion {
                         suggestions.push((
                             attribution.skill.clone(),
-                            names.get(note_path).cloned(),
+                            note_path.clone(),
                             suggestion.clone(),
                         ));
                     }
@@ -307,16 +300,17 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // `StatusDocument` at all, and adding it would change `status --json`'s
     // shape.
     if !flags.json {
-        for (skill, plugin, suggestion) in &suggestions {
-            // A name `bump` would not find is worse than none.
-            let command = match plugin {
-                Some(plugin) => format!("`skillwright bump {plugin}`"),
-                None => "`skillwright bump <plugin>`".to_string(),
+        for (skill, note_path, suggestion) in &suggestions {
+            // `bump` matches the frontmatter `name`, which may differ from the
+            // filename. `status_of` already read this note, so this read does
+            // not fail.
+            let Ok(note) = read_vault_skill(&NativeVfs, note_path, &namespace) else {
+                continue;
             };
             let _ = writeln!(
                 ctx.err,
-                "advisory: {skill} sw-version {} unmoved since members changed — {command} is available",
-                suggestion.current_version
+                "advisory: {skill} sw-version {} unmoved since members changed — `skillwright bump {}` is available",
+                suggestion.current_version, note.projection.content.name
             );
         }
     }

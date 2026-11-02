@@ -209,6 +209,47 @@ pub fn resolve_skills_root(flag: Option<&str>, run: &ResolvedRun, cwd: &Path) ->
     None
 }
 
+/// Refuse a run of `verb` when the configuration puts the skills root
+/// somewhere other than the vault. `publish` and `status` hand the core the
+/// vault root as the one root for kind folders, placement and the rail, so
+/// a separate skills root would read every note as unreadable or publish a
+/// plugin as a plain skill. One blocker is clearer than either.
+pub fn refuse_separate_skills_root(
+    verb: &str,
+    run: &ResolvedRun,
+    cwd: &Path,
+    err: &mut dyn Write,
+) -> Result<(), i32> {
+    let Some(root) = resolve_skills_root(None, run, cwd) else {
+        return Ok(());
+    };
+    let same = root == run.vault
+        || matches!(
+            (root.canonicalize(), run.vault.canonicalize()),
+            (Ok(a), Ok(b)) if a == b
+        );
+    if same {
+        return Ok(());
+    }
+    let key = if run
+        .config
+        .as_ref()
+        .is_some_and(|c| c.marketplace.skills_root.is_some())
+    {
+        "marketplace.skills_root"
+    } else {
+        "declared_folders.skills"
+    };
+    Err(blocked(
+        err,
+        &format!(
+            "{verb} does not support a skills root apart from the vault yet: {key} is {}, the vault is {}. publish and status read notes from the vault root; build supports the setting.",
+            root.display(),
+            run.vault.display()
+        ),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

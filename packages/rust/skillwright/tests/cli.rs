@@ -2077,11 +2077,72 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
         "{}",
         status.stderr
     );
+    let one = run(
+        &[
+            "status",
+            "marketplaces/acme/plugins/core/core.md",
+            "--config",
+            &config,
+        ],
+        dir.path(),
+    );
+    assert_eq!(one.code, 0, "{}", one.stderr);
+    assert!(
+        one.stderr
+            .contains("`skillwright bump core-tools` is available"),
+        "{}",
+        one.stderr
+    );
     let bump = run(
         &["bump", "core-tools", "--dry-run", "--config", &config],
         dir.path(),
     );
     assert_eq!(bump.code, 0, "{}", bump.stderr);
+}
+
+/// Publish and status hand the core the vault as the content root, so a
+/// configured skills root elsewhere is refused once, by name, rather than
+/// half-honoured.
+#[test]
+fn publish_and_status_refuse_a_skills_root_apart_from_the_vault() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    let plugin = vault.join("library").join("plugins").join("tools");
+    fs::create_dir_all(&plugin).unwrap();
+    fs::write(
+        plugin.join("tools.md"),
+        "---\nname: tools\ndescription: The tools.\n---\n\nThe plugin.\n",
+    )
+    .unwrap();
+    let dest = dir.path().join("dest");
+    fs::create_dir_all(&dest).unwrap();
+    let config = dir.path().join("config.yaml");
+    fs::write(
+        &config,
+        format!(
+            "vault: {}\ndestinations:\n  - root: {}\n    target: claude\nmarketplace:\n  skills_root: vault/library\n",
+            vault.display(),
+            dest.display()
+        ),
+    )
+    .unwrap();
+    let config = config.display().to_string();
+
+    for argv in [
+        vec!["publish", "--config", &config, "--yes"],
+        vec!["publish", "--config", &config, "--dry-run"],
+        vec!["status", "--config", &config],
+    ] {
+        let out = run(&argv, dir.path());
+        assert_eq!(out.code, 2, "{argv:?}: {}", out.stderr);
+        assert!(
+            out.stderr.contains("marketplace.skills_root") && out.stderr.contains("not support"),
+            "{argv:?}: {}",
+            out.stderr
+        );
+        assert_eq!(out.stdout, "", "{argv:?}");
+    }
+    assert_eq!(fs::read_dir(&dest).unwrap().count(), 0, "publish wrote");
 }
 
 #[test]

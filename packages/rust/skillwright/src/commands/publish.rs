@@ -34,7 +34,7 @@ use crate::report::{
     AttributedExclusion, Attribution, has_refusal, normalize_thrown_reason, render_exclusion,
     render_file_line, render_reason, render_tally, render_unmatched_overwrite, render_warning_line,
 };
-use crate::resolve::{CommonFlags, resolve_run};
+use crate::resolve::{CommonFlags, refuse_separate_skills_root, resolve_run};
 
 /// The resolved flags of `skillwright publish`.
 pub struct PublishFlags {
@@ -162,6 +162,9 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_separate_skills_root("publish", &run, &ctx.cwd, ctx.err) {
+        return code;
+    }
 
     // --- the target ------------------------------------------------------
     // Checked here, against the core's own list, so a name the tool does

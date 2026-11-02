@@ -150,28 +150,12 @@ pub fn run_watch_for(
 
     let mut rebuilds = 0usize;
     loop {
-        // Block until the first event of a new batch, then drain whatever
-        // else arrives within the debounce window so one save is one
-        // rebuild rather than one per underlying OS event.
-        let Ok(first) = rx.recv() else {
+        match next_batch(&rx, DEBOUNCE) {
             // The sender lives inside the watcher's OS callback; a closed
             // channel means the watcher itself was torn down.
-            return EXIT_OK;
-        };
-        let mut saw_event = first.as_ref().is_ok_and(is_change);
-        let deadline = Instant::now() + DEBOUNCE;
-        loop {
-            let now = Instant::now();
-            if now >= deadline {
-                break;
-            }
-            match rx.recv_timeout(deadline - now) {
-                Ok(next) => saw_event |= next.as_ref().is_ok_and(is_change),
-                Err(_) => break,
-            }
-        }
-        if !saw_event {
-            continue;
+            None => return EXIT_OK,
+            Some(false) => continue,
+            Some(true) => {}
         }
 
         let started = Instant::now();
@@ -196,6 +180,26 @@ pub fn run_watch_for(
             return EXIT_OK;
         }
     }
+}
+
+/// Wait for the next batch of events and say whether any of it was a change.
+/// Blocks for the batch's first event, then takes whatever else arrives
+/// within `debounce`, so one save is one rebuild rather than one per OS
+/// event. `None` when the channel has closed.
+fn next_batch(
+    rx: &mpsc::Receiver<notify::Result<notify::Event>>,
+    debounce: Duration,
+) -> Option<bool> {
+    let first = rx.recv().ok()?;
+    let mut changed = first.as_ref().is_ok_and(is_change);
+    let deadline = Instant::now() + debounce;
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok(next) => changed |= next.as_ref().is_ok_and(is_change),
+            Err(_) => break,
+        }
+    }
+    Some(changed)
 }
 
 /// Whether an event can mean a file's content changed. A read is not one:
@@ -246,8 +250,6 @@ mod tests {
     use crate::resolve::CommonFlags;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
     /// The same vault the CLI/host parity test builds from
@@ -304,8 +306,6 @@ mod tests {
         }
     }
 
-    /// Linux's watcher also reports reads, and every rebuild reads the whole
-    /// vault. Counting those would start the next rebuild, forever.
     #[test]
     fn a_read_is_not_a_change_but_a_write_is() {
         use notify::event::{AccessKind, AccessMode, CreateKind, EventKind, ModifyKind};
@@ -321,6 +321,28 @@ mod tests {
         )))));
         assert!(is_change(&event(EventKind::Modify(ModifyKind::Any))));
         assert!(is_change(&event(EventKind::Create(CreateKind::File))));
+    }
+
+    #[test]
+    fn a_batch_of_reads_does_not_rebuild_but_a_batch_with_a_write_does() {
+        use notify::event::{AccessKind, AccessMode, EventKind, ModifyKind};
+        let event = |kind| Ok(notify::Event::new(kind));
+        let open = EventKind::Access(AccessKind::Open(AccessMode::Any));
+        let read = EventKind::Access(AccessKind::Close(AccessMode::Read));
+        let debounce = Duration::from_millis(50);
+        let (tx, rx) = mpsc::channel();
+
+        tx.send(event(open)).unwrap();
+        tx.send(event(read)).unwrap();
+        assert_eq!(next_batch(&rx, debounce), Some(false));
+
+        tx.send(event(open)).unwrap();
+        tx.send(event(EventKind::Modify(ModifyKind::Any))).unwrap();
+        tx.send(event(read)).unwrap();
+        assert_eq!(next_batch(&rx, debounce), Some(true));
+
+        drop(tx);
+        assert_eq!(next_batch(&rx, debounce), None);
     }
 
     #[test]
@@ -385,11 +407,18 @@ mod tests {
     fn a_saved_change_triggers_exactly_one_rebuild() {
         let vault_dir = fixture_vault();
         let out_dir = tempfile::tempdir().unwrap();
+        // Beside the vault, not in it: the temp file is not a vault event.
+        let scratch = tempfile::tempdir().unwrap();
         let flags = flags_for(vault_dir.path(), out_dir.path());
-
-        let mut out: Vec<u8> = Vec::new();
-        let mut err: Vec<u8> = Vec::new();
-        let mut ctx = CommandContext::new(vault_dir.path(), &mut out, &mut err);
+        let cwd = vault_dir.path().to_path_buf();
+        let watch = thread::spawn(move || {
+            let mut out: Vec<u8> = Vec::new();
+            let mut err: Vec<u8> = Vec::new();
+            let mut ctx = CommandContext::new(&cwd, &mut out, &mut err);
+            let code = run_watch_for(&flags, &mut ctx, Some(1));
+            drop(ctx);
+            (code, String::from_utf8_lossy(&err).into_owned())
+        });
 
         let skill_path = vault_dir
             .path()
@@ -397,27 +426,23 @@ mod tests {
         let edited = fs::read_to_string(&skill_path)
             .unwrap()
             .replace("Reviews a diff.", "Reviews a diff, now edited.");
-        // Save repeatedly until the watch returns, not once after a fixed
-        // sleep: the initial build runs before the watcher arms, and on a
-        // loaded host it can outlast any fixed delay — a single early save
-        // would then land before anything is watching, and the loop would
-        // wait forever for an event that already happened.
-        let stop = Arc::new(AtomicBool::new(false));
-        let saver = {
-            let stop = Arc::clone(&stop);
-            thread::spawn(move || {
-                while !stop.load(Ordering::Relaxed) {
-                    thread::sleep(Duration::from_millis(200));
-                    let _ = fs::write(&skill_path, &edited);
-                }
-            })
-        };
-
-        let code = run_watch_for(&flags, &mut ctx, Some(1));
-        stop.store(true, Ordering::Relaxed);
-        saver.join().unwrap();
-        drop(ctx);
-        assert_eq!(code, EXIT_OK, "{}", String::from_utf8_lossy(&err));
+        let staged = scratch.path().join("review.md");
+        // The watcher arms only after the initial build, so one early save
+        // can go unseen: save again until the watch returns. Each save is a
+        // rename, so a rebuild never reads a half-written note (a truncated
+        // note renders no skill and the build removes its output).
+        let ceiling = Instant::now() + Duration::from_secs(30);
+        while !watch.is_finished() {
+            assert!(
+                Instant::now() < ceiling,
+                "no rebuild followed the saved edit within 30s"
+            );
+            fs::write(&staged, &edited).unwrap();
+            fs::rename(&staged, &skill_path).unwrap();
+            thread::sleep(Duration::from_millis(200));
+        }
+        let (code, err) = watch.join().unwrap();
+        assert_eq!(code, EXIT_OK, "{err}");
 
         let rendered = fs::read_to_string(
             out_dir

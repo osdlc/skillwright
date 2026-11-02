@@ -97,26 +97,27 @@ pub fn reconcile_update(
     let updates: Vec<Argv> = match (held, &adapter.plugins) {
         // Not held from the wanted source: install adds it and installs every plugin.
         (None, _) => Vec::new(),
-        (Some(market), Some(plugins)) => {
-            let updates: Vec<Argv> = want
-                .plugins
-                .iter()
-                .filter_map(|plugin| {
-                    let id = format!("{plugin}@{}", market.name);
-                    let have = current.installed.get(&id)?.as_ref()?;
-                    (versions.get(plugin)? != have).then(|| (plugins.update)(&id, scope))
-                })
-                .flatten()
-                .collect();
-            // Ahead of the installs too: a newly wanted plugin is read from
-            // the same snapshot.
-            if want.from_git && !(commands.is_empty() && updates.is_empty()) {
-                commands.insert(0, (adapter.update_market)(&market.name, scope));
-            }
-            updates
-        }
+        (Some(market), Some(plugins)) => want
+            .plugins
+            .iter()
+            .filter_map(|plugin| {
+                let id = format!("{plugin}@{}", market.name);
+                let have = current.installed.get(&id)?.as_ref()?;
+                (versions.get(plugin)? != have).then(|| (plugins.update)(&id, scope))
+            })
+            .flatten()
+            .collect(),
         (Some(market), None) => vec![(adapter.update_market)(&market.name, scope)],
     };
+    // Ahead of the installs too: a newly wanted plugin is read from the same
+    // snapshot.
+    if let Some(market) = held
+        && want.from_git
+        && adapter.plugins.is_some()
+        && (!commands.is_empty() || !updates.is_empty())
+    {
+        commands.insert(0, (adapter.update_market)(&market.name, scope));
+    }
     if !updates.is_empty() {
         commands.extend(updates);
         outcome = Outcome::Updated;
