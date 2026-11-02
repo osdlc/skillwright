@@ -773,9 +773,18 @@ pub fn is_skill_entry(file: &str) -> bool {
     file.eq_ignore_ascii_case(SKILL_ENTRY)
 }
 
+/// Whether the content-relative, `/`-separated `rel` is the entry note of a
+/// component that owns its directory, by the same shape rule the scan reads
+/// (`classify`). A note directly inside a kind folder travels alone, whatever
+/// it is named. `None` for a path the rule gives no shape at all.
+pub(crate) fn is_bundle_entry(rel: &str) -> Option<bool> {
+    let parts: Vec<String> = rel.split('/').map(str::to_owned).collect();
+    classify(Path::new(""), &parts).map(|placement| placement.dir.is_some())
+}
+
 /// The stem of a `.md` filename, case-insensitively. `README.MD` is a note
 /// like any other.
-fn md_stem(name: &str) -> Option<&str> {
+pub(crate) fn md_stem(name: &str) -> Option<&str> {
     name.strip_suffix(".md").or_else(|| {
         name.rfind('.')
             .filter(|i| name[i + 1..].eq_ignore_ascii_case("md"))

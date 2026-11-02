@@ -98,9 +98,10 @@ pub use adopt::{
 };
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
 pub use authoring::{
-    AuthoringOp, FieldEdit, NewNote, Placement, apply_field_edits, compose_note, plan_convert_kind,
-    plan_create_note, plan_delete_component, plan_delete_container, plan_move_component,
-    plan_rename_component, plan_rename_marketplace, plan_rename_plugin, read_field,
+    AuthoringOp, FieldEdit, NewNote, Placement, apply_field_edits, compose_note, ns_field_edits,
+    plan_convert_kind, plan_create_note, plan_delete_component, plan_delete_container,
+    plan_move_component, plan_rename_component, plan_rename_marketplace, plan_rename_plugin,
+    read_field, read_ns_field,
 };
 pub use compile::{
     CallContext, CompileSource, CompiledNote, IndexedSkill, RelatedSplit, SkillIndex, SkillSource,

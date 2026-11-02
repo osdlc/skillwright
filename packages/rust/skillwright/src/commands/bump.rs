@@ -1,6 +1,6 @@
 //! `skillwright bump` — raise one plugin's `sw-version` by a semver level,
-//! rewriting only that frontmatter key. Contract: the CLI spec's `bump`
-//! section.
+//! rewriting only that frontmatter key (or, for a note that uses the nested
+//! `sw:` block, only that block). Contract: the CLI spec's `bump` section.
 //!
 //! A version that does not parse as plain `MAJOR.MINOR.PATCH` is refused
 //! rather than guessed at ([`tradecraft_core::next_version`]); an absent
@@ -9,8 +9,8 @@
 
 use serde::Serialize;
 use tradecraft_core::{
-    BumpLevel, EntityKind, FieldEdit, NativeVfs, Vfs, apply_field_edits, discover_components,
-    next_version, read_field,
+    BumpLevel, EntityKind, NativeVfs, Vfs, apply_field_edits, discover_components, next_version,
+    ns_field_edits, read_ns_field,
 };
 
 use crate::ctx::CommandContext;
@@ -164,7 +164,9 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
     };
 
     let version_key = namespace.key("version");
-    let current = match read_field(&source, &version_key) {
+    // Either shape the note writes it in: flat `sw-version`, or `version`
+    // inside a nested `sw:` block.
+    let current = match read_ns_field(&source, &namespace, "version") {
         Ok(Some(value)) => value,
         // No `sw-version` at all is not a refusal — the core's stated
         // default is what a bump starts from.
@@ -212,13 +214,15 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
     }
 
-    let edited = match apply_field_edits(
+    // Written back in the shape the note already uses: a flat key beside a
+    // nested block is a mixed shape discovery refuses.
+    let edited = match ns_field_edits(
         &source,
-        &[FieldEdit::set(
-            version_key.clone(),
-            yaml_splice::Value::Str(new.clone()),
-        )],
-    ) {
+        &namespace,
+        &[("version", Some(yaml_splice::Value::Str(new.clone())))],
+    )
+    .and_then(|edits| apply_field_edits(&source, &edits))
+    {
         Ok(edited) => edited,
         Err(err) => {
             let message = err.to_string();

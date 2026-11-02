@@ -542,14 +542,21 @@ fn rename_plugin(
     let to = rel(to)?;
     let dir_from = rel(dir_from)?;
     let dir_to = rel(dir_to)?;
-    // Every member's rebased path is resolved and validated up front: a
-    // member outside `dir_from` must refuse before the folder moves, not
-    // after — nothing here writes yet.
+    // Every member's path after the move is resolved and validated up front,
+    // so a bad one refuses before the folder moves — nothing here writes yet.
+    // A member inside `dir_from` rides along with the folder; one outside it
+    // joins the pack through `sw-plugin` alone and is edited where it sits.
     let rebased_members = members
         .iter()
         .map(|(member, edits)| {
             let member = rel(member)?;
-            let rebased = rebase(&member, &dir_from, &dir_to)?;
+            let rebased = match rebase(&member, &dir_from, &dir_to) {
+                Some(rebased) => rebased?,
+                None => {
+                    resolve(vault_dir, &member)?;
+                    member
+                }
+            };
             Ok::<_, ApplyError>((rebased, edits.clone()))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -588,16 +595,12 @@ fn rename_plugin_after_move(
     Ok(())
 }
 
-/// A member's path in the new tree. Members are keyed on the old tree, which
+/// A member's path in the new tree, or `None` for a member outside
+/// `dir_from`, which does not move. Members are keyed on the old tree, which
 /// no longer exists once the folder has moved.
-fn rebase(path: &str, dir_from: &str, dir_to: &str) -> Result<String, ApplyError> {
-    let Some(tail) = path.strip_prefix(&format!("{dir_from}/")) else {
-        return Err(ApplyError::Path {
-            path: path.to_owned(),
-            reason: format!("is not inside {dir_from}"),
-        });
-    };
-    rel(&format!("{dir_to}/{tail}"))
+fn rebase(path: &str, dir_from: &str, dir_to: &str) -> Option<Result<String, ApplyError>> {
+    let tail = path.strip_prefix(&format!("{dir_from}/"))?;
+    Some(rel(&format!("{dir_to}/{tail}")))
 }
 
 // ── Shared ──────────────────────────────────────────────────────────────────
@@ -902,7 +905,38 @@ mod tests {
     }
 
     #[test]
-    fn rename_plugin_refuses_a_member_outside_dir_from_without_moving_anything() {
+    fn rename_plugin_edits_a_member_outside_dir_from_where_it_sits() {
+        let v = vault();
+        write(
+            v.path(),
+            "plugins/tools/tools.md",
+            "---\nname: tools\n---\n\nplugin\n",
+        );
+        write(
+            v.path(),
+            "skills/stray.md",
+            "---\nname: stray\nsw-plugin: tools\n---\n\nmember\n",
+        );
+
+        let op = AuthoringOp::RenamePlugin {
+            from: "plugins/tools/tools.md".to_owned(),
+            to: "plugins/gear/gear.md".to_owned(),
+            dir_from: "plugins/tools".to_owned(),
+            dir_to: "plugins/gear".to_owned(),
+            frontmatter: vec![],
+            members: vec![(
+                "skills/stray.md".to_owned(),
+                vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
+            )],
+        };
+        apply(v.path(), &op).unwrap();
+
+        assert!(v.path().join("plugins/gear/gear.md").exists());
+        assert!(read(v.path(), "skills/stray.md").contains("sw-plugin: gear"));
+    }
+
+    #[test]
+    fn rename_plugin_refuses_a_bad_member_path_without_moving_anything() {
         let v = vault();
         write(
             v.path(),
@@ -917,7 +951,7 @@ mod tests {
             dir_to: "plugins/gear".to_owned(),
             frontmatter: vec![],
             members: vec![(
-                "plugins/other/skills/stray.md".to_owned(),
+                "../outside.md".to_owned(),
                 vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
             )],
         };
