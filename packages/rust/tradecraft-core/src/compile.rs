@@ -1027,7 +1027,12 @@ impl<'a> Renderer<'a> {
                 .entry(output_path.to_owned())
                 .or_default()
                 .insert(target.to_owned());
-            return Ok(token.alias.unwrap_or(target).to_owned());
+            // A size alias is image geometry, not words, as in display_label.
+            return Ok(token
+                .alias
+                .filter(|alias| !is_size_spec(alias))
+                .unwrap_or(target)
+                .to_owned());
         };
         let extension = extension_of_path(&resolved).unwrap_or_default();
 
@@ -1444,38 +1449,57 @@ impl<'a> Renderer<'a> {
         // A target with an extension is addressed as a file; one without gets
         // `.md` appended and is addressed as a note. Obsidian's rule.
         let has_extension = extension_of_target(target).is_some();
+        let as_note = format!("{target}.md");
         let candidate = if has_extension {
             target.to_owned()
         } else {
-            format!("{target}.md")
+            as_note.clone()
         };
-        if let Some(hit) = self.index.exact(&candidate) {
-            return Ok(Some((hit, fragment)));
-        }
         let from_dir = from_file.parent().unwrap_or(Path::new(""));
-        if let Ok(relative_dir) = from_dir.strip_prefix(&self.vault_root) {
+        // The vault-relative path, then the path relative to the linking file.
+        let exact_or_relative = |candidate: &str| -> Option<PathBuf> {
+            if let Some(hit) = self.index.exact(candidate) {
+                return Some(hit);
+            }
+            let relative_dir = from_dir.strip_prefix(&self.vault_root).ok()?;
             let joined = if relative_dir.as_os_str().is_empty() {
-                candidate.clone()
+                candidate.to_owned()
             } else {
                 format!("{}/{candidate}", forward_slashed(relative_dir))
             };
-            if let Some(hit) = self.index.exact(&joined) {
-                return Ok(Some((hit, fragment)));
-            }
-        }
-
-        let matches = if has_extension {
-            self.index.by_filename(basename(&candidate))
-        } else {
-            // A bare name only ever addresses a note: `[[photo]]` must not
-            // resolve to `photo.jpg`, because an attachment is addressed with
-            // its extension.
+            self.index.exact(&joined)
+        };
+        // A bare name only ever addresses a note: `[[photo]]` must not
+        // resolve to `photo.jpg`, because an attachment is addressed with its
+        // extension.
+        let notes_by_stem = || -> Vec<PathBuf> {
             self.index
                 .by_stem(basename(target))
                 .into_iter()
                 .filter(|path| extension_of_path(path).as_deref() == Some(".md"))
                 .collect()
         };
+        if let Some(hit) = exact_or_relative(&candidate) {
+            return Ok(Some((hit, fragment)));
+        }
+
+        let mut matches = if has_extension {
+            self.index.by_filename(basename(&candidate))
+        } else {
+            notes_by_stem()
+        };
+        // A dot inside a note's name reads as an extension (`[[v1.2 notes]]`).
+        // When nothing answers it as a file, it is retried as a note, as
+        // Obsidian does.
+        if matches.is_empty()
+            && has_extension
+            && extension_of_target(target).as_deref() != Some(".md")
+        {
+            if let Some(hit) = exact_or_relative(&as_note) {
+                return Ok(Some((hit, fragment)));
+            }
+            matches = notes_by_stem();
+        }
         match matches.as_slice() {
             [only] => Ok(Some((only.clone(), fragment))),
             // Not a refusal. The compile spec and the publish spec
@@ -2066,14 +2090,19 @@ fn escape_token(markdown: &str, offset: usize, limit: usize) -> Option<WikiToken
 }
 
 /// The token opening at `offset` with an `opener`-byte prefix, closed by the
-/// first `]]` ending at or before `limit`. Its kind is the caller's to set.
+/// first `]]` ending at or before `limit` and on the same line — an Obsidian
+/// wikilink never crosses a line, so a stray `[[` stays text. Its kind is the
+/// caller's to set.
 fn wiki_token(markdown: &str, offset: usize, opener: usize, limit: usize) -> Option<WikiToken<'_>> {
     let content_start = offset + opener;
-    let close = markdown
-        .get(content_start..)?
+    let rest = markdown.get(content_start..)?;
+    let line_end = rest
+        .find('\n')
+        .map_or(markdown.len(), |at| content_start + at);
+    let close = rest
         .find("]]")
         .map(|at| content_start + at)
-        .filter(|close| close + 2 <= limit)?;
+        .filter(|close| close + 2 <= limit.min(line_end))?;
     // Both boundaries sit beside ASCII brackets, so the str slice is valid
     // UTF-8 territory.
     let inner = &markdown[content_start..close];
@@ -3914,5 +3943,59 @@ mod tests {
         write(&vfs, "/vault/Snippet.md", b"Then run `\\/tools:called`.\n");
         let compiled = compile_with_calls(&vfs, &literal_index(), "# Demo\n\n![[Snippet]]\n");
         assert_eq!(compiled.body, "# Demo\n\nThen run `/tools:called`.\n");
+    }
+
+    // --- bug-fix regressions -------------------------------------------------
+
+    /// Obsidian wikilinks never cross lines: a stray `[[` stays text, and the
+    /// real link after it still converts.
+    #[test]
+    fn an_unclosed_wikilink_does_not_swallow_the_lines_after_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/note.md", b"# Note\n");
+        let compiled = compile_note(
+            &vfs,
+            &source(None),
+            "Start [[foo\n\n| a | b |\n|---|---|\n| x | [[note]] |\n",
+        )
+        .unwrap();
+        assert!(
+            compiled.body.starts_with("Start [[foo\n\n| a | b |\n"),
+            "{}",
+            compiled.body
+        );
+        assert!(!compiled.body.contains("[[note"), "{}", compiled.body);
+        assert!(compiled.body.contains("[note.md]("), "{}", compiled.body);
+    }
+
+    /// A dot in a note's name is not an extension: `[[v1.2 notes]]` finds
+    /// `v1.2 notes.md`, as Obsidian does.
+    #[test]
+    fn a_note_name_with_a_dot_resolves_to_the_note() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/v1.2 notes.md", b"# Notes\n");
+        let compiled = compile_note(&vfs, &source(None), "See [[v1.2 notes]].\n").unwrap();
+        assert!(
+            compiled.body.starts_with("See [v1.2 notes.md]("),
+            "{}",
+            compiled.body
+        );
+        assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
+        // A real extension that names nothing is still unresolved.
+        let compiled = compile_note(&vfs, &source(None), "See [[gone.pdf]].\n").unwrap();
+        assert_eq!(compiled.body, "See gone.pdf.\n");
+    }
+
+    /// A size alias is image geometry, not words for the page.
+    #[test]
+    fn an_unresolved_embed_with_a_size_alias_shows_the_target() {
+        let vfs = demo_vault();
+        let compiled = compile_note(
+            &vfs,
+            &source(None),
+            "A ![[missing.png|100]] and ![[gone.png|640x480]] here.\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "A missing.png and gone.png here.\n");
     }
 }
