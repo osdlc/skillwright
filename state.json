@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "pr": 22,
+  "head": null,
+  "base": null,
+  "round": 0,
+  "claim": {
+    "owner": "unknown",
+    "at": "2026-11-02T09:44:26.651Z"
+  },
+  "findings": []
+}
