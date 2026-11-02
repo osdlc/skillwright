@@ -205,12 +205,19 @@ pub(crate) fn forward_slashed(path: &Path) -> String {
 /// `relative_dir` is resolved against `root` and checked for containment
 /// *lexically before touching the filesystem*, so a `../` traversal is
 /// rejected rather than followed.
+///
+/// An empty `relative_dir` names the root itself: the scan lists a `SKILL.md`
+/// sitting directly in a root that way, and its row must open.
 pub fn read_detail(
     vfs: &dyn Vfs,
     root: &crate::CorpusRoot,
     relative_dir: &str,
 ) -> Result<SkillDetail, CoreError> {
-    let dir = resolve_within(&root.path, relative_dir)?;
+    let dir = if relative_dir.is_empty() {
+        root.path.clone()
+    } else {
+        resolve_within(&root.path, relative_dir)?
+    };
     let skill_md = dir.join("SKILL.md");
 
     let source = read_utf8(vfs, &skill_md)?;
@@ -233,7 +240,14 @@ pub(crate) fn build_ref(root: &crate::CorpusRoot, relative_dir: &str, source: &s
     let (frontmatter, _) = split_frontmatter(source);
     let (fields, problem) = parse_listing_fields(frontmatter);
 
-    let fallback_name = Path::new(relative_dir)
+    // An empty `relative_dir` is a skill at the root itself, named by the
+    // root's own directory.
+    let skill_dir = if relative_dir.is_empty() {
+        root.path.as_path()
+    } else {
+        Path::new(relative_dir)
+    };
+    let fallback_name = skill_dir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unnamed")
@@ -242,7 +256,11 @@ pub(crate) fn build_ref(root: &crate::CorpusRoot, relative_dir: &str, source: &s
     SkillRef {
         id: format!("{}:{}", root.id, relative_dir),
         root_id: root.id.clone(),
-        name: fields.name.unwrap_or(fallback_name),
+        // A blank `name` is as unaddressable as a missing one.
+        name: fields
+            .name
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or(fallback_name),
         description: fields.description,
         relative_dir: relative_dir.to_owned(),
         runtime: runtime_for(Path::new(relative_dir)),
@@ -498,6 +516,18 @@ mod tests {
         assert_eq!(detail.reference.name, "fallback-named");
         assert_eq!(detail.reference.problem.as_deref(), Some("no frontmatter"));
         assert_eq!(detail.reference.runtime, None);
+    }
+
+    #[test]
+    fn a_blank_frontmatter_name_falls_back_to_the_directory() {
+        let root = CorpusRoot::new("r", "R", "/c", RootKind::Project);
+        for source in [
+            "---\nname: \"\"\ndescription: d\n---\nbody\n",
+            "---\nname: \"   \"\ndescription: d\n---\nbody\n",
+        ] {
+            let reference = build_ref(&root, ".claude/skills/e", source);
+            assert_eq!(reference.name, "e", "{source:?}");
+        }
     }
 
     #[test]

@@ -44,9 +44,9 @@ pub const SKIP_DIRS: &[&str] = &[
     "worktrees",
 ];
 
-/// Path segments that mark a `SKILL.md` as test scaffolding rather than an
-/// authored skill. A test suite's deliberately malformed skills would
-/// otherwise list as real ones.
+/// Directory names that, above a skill's own directory, mark its `SKILL.md` as
+/// test scaffolding rather than an authored skill. A test suite's deliberately
+/// malformed skills would otherwise list as real ones.
 const FIXTURE_SEGMENTS: &[&str] = &["tests", "test", "fixtures", "__fixtures__", "testdata"];
 
 /// Knobs for a scan. Defaults are tuned for a developer machine, not a server.
@@ -180,6 +180,13 @@ fn collect_skill_files(
     for entry in entries {
         if entry.is_dir {
             if SKIP_DIRS.contains(&entry.name.as_str()) {
+                // A skill whose own directory carries a pruned name (`build`,
+                // `vendor`) is still a skill. Take its `SKILL.md`, but do not
+                // descend: below it the pruning applies as before.
+                let skill_md = dir.join(&entry.name).join("SKILL.md");
+                if depth + 1 < max_depth && vfs.exists(&skill_md) {
+                    out.push((skill_md, relative.join(&entry.name)));
+                }
                 continue;
             }
             collect_skill_files(
@@ -196,9 +203,13 @@ fn collect_skill_files(
     }
 }
 
-/// True when any path segment marks this as test scaffolding.
+/// True when a directory above the skill marks it as test scaffolding. The
+/// skill's own directory name does not count: a real skill may be named `test`.
 fn looks_like_fixture(relative_dir: &Path) -> bool {
-    relative_dir.components().any(|c| {
+    let Some(ancestors) = relative_dir.parent() else {
+        return false;
+    };
+    ancestors.components().any(|c| {
         c.as_os_str()
             .to_str()
             .is_some_and(|s| FIXTURE_SEGMENTS.contains(&s))
@@ -363,6 +374,59 @@ mod tests {
             .map(|s| s.relative_dir.as_str())
             .collect();
         assert_eq!(dirs, vec![".claude/skills/dotted", "top"]);
+    }
+
+    // A root registered at a skill directory lists that skill, and the row
+    // opens: the roster and the detail view agree on it.
+    #[test]
+    fn a_skill_at_the_root_itself_lists_and_opens() {
+        let vfs = MemVfs::new();
+        vfs.create_dir_all(Path::new("/one")).unwrap();
+        vfs.write_file(Path::new("/one/SKILL.md"), b"no frontmatter\n")
+            .unwrap();
+        let root = CorpusRoot::new("o", "O", "/one", RootKind::Project);
+
+        let report = scan_root(&vfs, &root, &ScanOptions::default());
+        assert_eq!(report.skills.len(), 1);
+        let row = &report.skills[0];
+        assert_eq!(row.relative_dir, "");
+        assert_eq!(row.name, "one");
+
+        let detail = crate::skill::read_detail(&vfs, &root, &row.relative_dir).unwrap();
+        assert_eq!(&detail.reference, row);
+    }
+
+    // A skill's own directory name is not evidence about it: only the
+    // directories above it mark fixtures or pruned trees.
+    #[test]
+    fn a_skill_named_like_a_pruned_or_fixture_dir_is_listed() {
+        let vfs = MemVfs::new();
+        for name in ["build", "test", "ok"] {
+            let dir = PathBuf::from("/c/.claude/skills").join(name);
+            vfs.create_dir_all(&dir).unwrap();
+            vfs.write_file(
+                &dir.join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: d\n---\nbody\n").as_bytes(),
+            )
+            .unwrap();
+        }
+        let root = CorpusRoot::new("c", "C", "/c", RootKind::Project);
+
+        let report = scan_root(&vfs, &root, &ScanOptions::default());
+        let dirs: Vec<_> = report
+            .skills
+            .iter()
+            .map(|s| s.relative_dir.as_str())
+            .collect();
+        assert_eq!(
+            dirs,
+            vec![
+                ".claude/skills/build",
+                ".claude/skills/ok",
+                ".claude/skills/test"
+            ]
+        );
+        assert_eq!(report.excluded_fixtures, 0);
     }
 
     #[test]

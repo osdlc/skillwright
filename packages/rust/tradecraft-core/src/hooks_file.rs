@@ -160,7 +160,7 @@ fn parse_entry(
         Some(value) => value
             .as_i64()
             .filter(|seconds| *seconds >= 0)
-            .map(|seconds| seconds * 1000)
+            .and_then(|seconds| seconds.checked_mul(1000))
             .ok_or_else(|| format!("`{at}.timeout` must be a whole number of seconds"))?,
     };
     let mut hook = Hook::command(at, at, event, "");
@@ -401,6 +401,18 @@ mod tests {
         .to_string();
         assert!(err.contains("malformed-hooks-file"), "{err}");
         assert!(err.contains("hooks.Stop[0].hooks[0].command"), "{err}");
+    }
+
+    #[test]
+    fn a_timeout_too_large_for_milliseconds_is_refused() {
+        let err = parse_hooks_file(
+            r#"{"hooks": {"Stop": [{"hooks": [{"command": "x", "timeout": 9223372036854776}]}]}}"#,
+            "hooks.json",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("malformed-hooks-file"), "{err}");
+        assert!(err.contains("timeout"), "{err}");
     }
 
     #[test]
