@@ -28,8 +28,10 @@ use crate::skill::{SkillRef, build_ref, forward_slashed};
 use crate::vfs::Vfs;
 
 /// Directory names never descended into. These are build output, dependency
-/// trees, and VCS internals — none can contain an authored skill, and all are
-/// large enough that walking them dominates a scan.
+/// trees and VCS internals, and walking them would dominate a scan. One
+/// exception: a pruned name directly under a `skills` directory is a skill's
+/// own directory (`.claude/skills/build`), so its `SKILL.md` is still listed.
+/// `.git` and `node_modules` get no such exception.
 pub const SKIP_DIRS: &[&str] = &[
     ".git",
     "node_modules",
@@ -44,9 +46,17 @@ pub const SKIP_DIRS: &[&str] = &[
     "worktrees",
 ];
 
-/// Directory names that, above a skill's own directory, mark its `SKILL.md` as
-/// test scaffolding rather than an authored skill. A test suite's deliberately
-/// malformed skills would otherwise list as real ones.
+/// Pruned names that are never a skill's own directory, even under `skills/`.
+const NEVER_A_SKILL: &[&str] = &[".git", "node_modules"];
+
+/// The directory name that holds skills. A directory directly under one is a
+/// skill's own directory, whatever it is called.
+const SKILLS_CONTAINER: &str = "skills";
+
+/// Directory names that mark a `SKILL.md` as test scaffolding rather than an
+/// authored skill. A test suite's deliberately malformed skills would
+/// otherwise list as real ones. See [`looks_like_fixture`] for where a
+/// segment counts.
 const FIXTURE_SEGMENTS: &[&str] = &["tests", "test", "fixtures", "__fixtures__", "testdata"];
 
 /// Knobs for a scan. Defaults are tuned for a developer machine, not a server.
@@ -128,7 +138,7 @@ pub fn scan_root(vfs: &dyn Vfs, root: &CorpusRoot, options: &ScanOptions) -> Sca
     for (skill_md, relative) in found {
         let relative_dir = forward_slashed(&relative);
 
-        if !options.include_fixtures && looks_like_fixture(&relative) {
+        if !options.include_fixtures && looks_like_fixture(&root.path, &relative) {
             report.excluded_fixtures += 1;
             continue;
         }
@@ -180,11 +190,15 @@ fn collect_skill_files(
     for entry in entries {
         if entry.is_dir {
             if SKIP_DIRS.contains(&entry.name.as_str()) {
-                // A skill whose own directory carries a pruned name (`build`,
-                // `vendor`) is still a skill. Take its `SKILL.md`, but do not
+                // A pruned name directly under `skills/` (`skills/build`) is a
+                // skill's own directory. Take its `SKILL.md`, but do not
                 // descend: below it the pruning applies as before.
                 let skill_md = dir.join(&entry.name).join("SKILL.md");
-                if depth + 1 < max_depth && vfs.exists(&skill_md) {
+                if is_skills_container(dir)
+                    && !NEVER_A_SKILL.contains(&entry.name.as_str())
+                    && depth + 1 < max_depth
+                    && vfs.exists(&skill_md)
+                {
                     out.push((skill_md, relative.join(&entry.name)));
                 }
                 continue;
@@ -203,17 +217,33 @@ fn collect_skill_files(
     }
 }
 
-/// True when a directory above the skill marks it as test scaffolding. The
-/// skill's own directory name does not count: a real skill may be named `test`.
-fn looks_like_fixture(relative_dir: &Path) -> bool {
+/// True when `dir` is a `skills` directory.
+fn is_skills_container(dir: &Path) -> bool {
+    dir.file_name().and_then(|n| n.to_str()) == Some(SKILLS_CONTAINER)
+}
+
+/// True when the skill at `relative_dir` (under `root`) is test scaffolding.
+///
+/// Any fixture-named directory above the skill's own directory marks it. The
+/// skill's own directory marks it too (`tests/SKILL.md`), unless it sits
+/// directly under `skills/`: there it is a skill that happens to be named
+/// `test`. A skill at the root itself is never a fixture.
+fn looks_like_fixture(root: &Path, relative_dir: &Path) -> bool {
+    let is_fixture_name = |name: Option<&std::ffi::OsStr>| {
+        name.and_then(|n| n.to_str())
+            .is_some_and(|s| FIXTURE_SEGMENTS.contains(&s))
+    };
     let Some(ancestors) = relative_dir.parent() else {
         return false;
     };
-    ancestors.components().any(|c| {
-        c.as_os_str()
-            .to_str()
-            .is_some_and(|s| FIXTURE_SEGMENTS.contains(&s))
-    })
+    if ancestors
+        .components()
+        .any(|c| is_fixture_name(Some(c.as_os_str())))
+    {
+        return true;
+    }
+    let skill_dir = root.join(relative_dir);
+    is_fixture_name(skill_dir.file_name()) && !skill_dir.parent().is_some_and(is_skills_container)
 }
 
 #[cfg(test)]
@@ -396,8 +426,8 @@ mod tests {
         assert_eq!(&detail.reference, row);
     }
 
-    // A skill's own directory name is not evidence about it: only the
-    // directories above it mark fixtures or pruned trees.
+    // Directly under `skills/`, a skill's own directory name is not evidence
+    // about it: it lists even when named like a pruned or fixture directory.
     #[test]
     fn a_skill_named_like_a_pruned_or_fixture_dir_is_listed() {
         let vfs = MemVfs::new();
@@ -427,6 +457,74 @@ mod tests {
             ]
         );
         assert_eq!(report.excluded_fixtures, 0);
+    }
+
+    /// Writes a minimal `SKILL.md` into each of `dirs` under `/c`.
+    fn mem_corpus(dirs: &[&str]) -> (MemVfs, CorpusRoot) {
+        let vfs = MemVfs::new();
+        for rel in dirs {
+            let dir = Path::new("/c").join(rel);
+            vfs.create_dir_all(&dir).unwrap();
+            vfs.write_file(
+                &dir.join("SKILL.md"),
+                b"---\nname: n\ndescription: d\n---\n",
+            )
+            .unwrap();
+        }
+        (vfs, CorpusRoot::new("c", "C", "/c", RootKind::Project))
+    }
+
+    fn listed(report: &ScanReport) -> Vec<&str> {
+        report
+            .skills
+            .iter()
+            .map(|s| s.relative_dir.as_str())
+            .collect()
+    }
+
+    // The pruned-name exception holds only directly under `skills/`, never for
+    // VCS or dependency trees, and never descends.
+    #[test]
+    fn a_pruned_dir_lists_only_as_a_skill_under_skills() {
+        let (vfs, root) = mem_corpus(&[
+            "dist",
+            "pkg/build",
+            ".claude/skills/build",
+            ".claude/skills/build/inner",
+            ".claude/skills/node_modules",
+            ".claude/skills/.git",
+        ]);
+        let report = scan_root(&vfs, &root, &ScanOptions::default());
+        assert_eq!(listed(&report), vec![".claude/skills/build"]);
+    }
+
+    // A pruned skill is bounded by `max_depth` exactly as an ordinary one is.
+    #[test]
+    fn a_pruned_skill_obeys_the_depth_bound() {
+        let (vfs, root) = mem_corpus(&[".claude/skills/build", ".claude/skills/ok"]);
+        let at = |max_depth| {
+            let options = ScanOptions {
+                max_depth,
+                ..Default::default()
+            };
+            scan_root(&vfs, &root, &options)
+        };
+        assert!(listed(&at(3)).is_empty());
+        assert_eq!(
+            listed(&at(4)),
+            vec![".claude/skills/build", ".claude/skills/ok"]
+        );
+    }
+
+    // A `SKILL.md` directly in a fixture-named directory is withheld, unless
+    // that directory sits directly under `skills/`.
+    #[test]
+    fn a_skill_md_directly_in_a_fixture_dir_is_withheld() {
+        let (vfs, root) =
+            mem_corpus(&["tests", "pkg/fixtures", "testdata", ".claude/skills/tests"]);
+        let report = scan_root(&vfs, &root, &ScanOptions::default());
+        assert_eq!(listed(&report), vec![".claude/skills/tests"]);
+        assert_eq!(report.excluded_fixtures, 3);
     }
 
     #[test]

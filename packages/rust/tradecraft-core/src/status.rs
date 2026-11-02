@@ -23,12 +23,13 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::error::CoreError;
-use crate::frontmatter::{EntityKind, KindHints, resolve_kind};
+use crate::frontmatter::EntityKind;
 use crate::guard::resolve_write_path;
 use crate::manifest::{ManifestState, read_manifest};
 use crate::namespace::Namespace;
 use crate::publish::{
-    PublishMode, PublishOutcome, PublishRequest, PublishStatus, PublishedFile, publish_skill,
+    PublishMode, PublishOutcome, PublishRequest, PublishStatus, PublishedFile, publish_kind,
+    publish_skill,
 };
 use crate::vault::read_vault_skill;
 use crate::vfs::Vfs;
@@ -297,20 +298,6 @@ fn plugin_version_bump_suggestion(
     ours: &[&PublishedFile],
     ns: &Namespace,
 ) -> Result<Option<VersionBumpSuggestion>, CoreError> {
-    let note = read_vault_skill(vfs, &request.skill_path, ns)?;
-    let resolved = resolve_kind(
-        note.frontmatter.declared_kind,
-        KindHints {
-            requested: None,
-            folder: request
-                .skills_root
-                .as_deref()
-                .and_then(|root| crate::discover::folder_kind(root, &request.skill_path)),
-        },
-    );
-    if resolved.kind != EntityKind::Plugin {
-        return Ok(None);
-    }
     let Some(manifest_file) = ours.iter().find(|f| f.path.ends_with("/plugin.json")) else {
         return Ok(None);
     };
@@ -321,6 +308,17 @@ fn plugin_version_bump_suggestion(
         return Ok(None);
     }
 
+    // Read only once the cheap checks pass: the note decides both the kind
+    // and the version.
+    let note = read_vault_skill(vfs, &request.skill_path, ns)?;
+    let kind = publish_kind(
+        note.frontmatter.declared_kind,
+        request.skills_root.as_deref(),
+        &request.skill_path,
+    );
+    if kind.kind != EntityKind::Plugin {
+        return Ok(None);
+    }
     let Some(current_version) = note.frontmatter.identity.version else {
         return Ok(None);
     };

@@ -178,7 +178,8 @@ use crate::export::{
     DEFAULT_SHIM_TARGET, MarketplaceConfig, PluginDialect, PluginOverrides, render_plugin_manifest,
 };
 use crate::frontmatter::{
-    ContainerIdentity, EntityKind, KindHints, KindSource, VaultFrontmatter, resolve_kind,
+    ContainerIdentity, EntityKind, KindHints, KindSource, ResolvedKind, VaultFrontmatter,
+    resolve_kind,
 };
 use crate::guard::{
     assert_destination_allowed, assert_destination_allowed_for_vault, resolve_write_path,
@@ -653,15 +654,10 @@ fn publish_onto(
     // says nothing about its kind is not thereby a skill — it is whatever the
     // folder holding it named. Routed through `resolve_kind` rather than
     // compared here so precedence stays in the one place that owns it.
-    let resolved = resolve_kind(
+    let resolved = publish_kind(
         note.frontmatter.declared_kind,
-        KindHints {
-            requested: None,
-            folder: request
-                .skills_root
-                .as_deref()
-                .and_then(|root| crate::discover::folder_kind(root, &request.skill_path)),
-        },
+        request.skills_root.as_deref(),
+        &request.skill_path,
     );
     // Everything a renderer cannot take is refused here, before the renderer
     // builds the wrong file.
@@ -952,6 +948,23 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
         replaced_manifest: None,
         redundant_overrides: Vec::new(),
     }
+}
+
+/// The kind a publish of the note at `skill_path` resolves to: its declared
+/// `sw-kind` ranked against the folder holding it. Shared with
+/// [`crate::status::status_of`] so status and publish agree on what a unit is.
+pub(crate) fn publish_kind(
+    declared: Option<EntityKind>,
+    skills_root: Option<&Path>,
+    skill_path: &Path,
+) -> ResolvedKind {
+    resolve_kind(
+        declared,
+        KindHints {
+            requested: None,
+            folder: skills_root.and_then(|root| crate::discover::folder_kind(root, skill_path)),
+        },
+    )
 }
 
 /// Whether a publish to a destination has any projection for this kind.

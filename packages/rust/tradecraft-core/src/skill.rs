@@ -240,14 +240,11 @@ pub(crate) fn build_ref(root: &crate::CorpusRoot, relative_dir: &str, source: &s
     let (frontmatter, _) = split_frontmatter(source);
     let (fields, problem) = parse_listing_fields(frontmatter);
 
-    // An empty `relative_dir` is a skill at the root itself, named by the
-    // root's own directory.
-    let skill_dir = if relative_dir.is_empty() {
-        root.path.as_path()
-    } else {
-        Path::new(relative_dir)
-    };
-    let fallback_name = skill_dir
+    // Joined, so a skill at the root itself (`relative_dir` empty) is named by
+    // the root's own directory.
+    let fallback_name = root
+        .path
+        .join(relative_dir)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unnamed")
