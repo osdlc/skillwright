@@ -1,12 +1,68 @@
 {
   "schema": 1,
   "pr": 25,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "980b712ad9b9a03a008f7f0f79a8727662ed9c2f",
+  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-02T11:02:10.586Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/status.rs",
+      "line": 94,
+      "title": "UnitStatus alias contradicts the alpha no-compat rule",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/CHANGELOG.md",
+      "line": 12,
+      "title": "Hand-written changelog entry claims compatibility and may duplicate release-plz",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/ts/tradecraft-wasm/src/core.ts",
+      "line": 354,
+      "title": "Derive PublishUnitStatus from the generated type instead of mirroring it",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/ts/tradecraft-wasm/tests/status-of.test.ts",
+      "line": 40,
+      "title": "Vacuous runtime assertion on a type-level check",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "Release notes omit the InvalidNamespaceError behaviour change and the breaking marker",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
