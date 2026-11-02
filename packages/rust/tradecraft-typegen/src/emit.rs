@@ -182,7 +182,10 @@ impl Walk<'_> {
 fn unsupported(def: &TypeDef) -> Option<String> {
     match def {
         TypeDef::Struct(s) => s.unsupported.clone(),
-        TypeDef::Enum(e) => e.variants.iter().find_map(|v| v.unsupported.clone()),
+        TypeDef::Enum(e) => e
+            .unsupported
+            .clone()
+            .or_else(|| e.variants.iter().find_map(|v| v.unsupported.clone())),
     }
 }
 

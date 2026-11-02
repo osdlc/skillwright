@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `status::UnitStatus` is now `status::PublishUnitStatus`, so it no longer shares a name with `export::UnitStatus`. `status::UnitStatus` stays as a type alias, so existing code compiles. `Debug` output and the rustdoc page use the new name.
+
 ## [0.41.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.40.2...tradecraft-core/v0.41.0) - 2026-10-30
 
 ### Fixed

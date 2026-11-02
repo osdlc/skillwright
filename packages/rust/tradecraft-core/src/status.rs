@@ -85,9 +85,21 @@ impl PublishState {
     }
 }
 
+/// The former name of [`PublishUnitStatus`], kept so existing callers
+/// compile.
+///
+/// `tradecraft-typegen` reads only structs and enums, so this alias does not
+/// clash with [`crate::export::UnitStatus`] there. If it ever reads aliases,
+/// it refuses the clash rather than picking one.
+pub type UnitStatus = PublishUnitStatus;
+
 /// The answer, and enough of the working to act on it.
+///
+/// Named apart from [`crate::export::UnitStatus`], the marketplace's
+/// four-word status: two public types with one name cannot both cross the
+/// wasm boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UnitStatus {
+pub struct PublishUnitStatus {
     /// Whether the destination is current.
     pub state: PublishState,
     /// A sentence naming what makes the state what it is, when there is one to
@@ -115,7 +127,7 @@ pub struct UnitStatus {
 
 /// A plugin whose members changed since it was last published here, with its
 /// own `sw-version` unmoved since — the callout
-/// [`UnitStatus::version_bump_suggestion`] carries so a publish screen can
+/// [`PublishUnitStatus::version_bump_suggestion`] carries so a publish screen can
 /// offer a one-click bump.
 ///
 /// Not a sixth [`PublishState`]: the state stays `stale`, exactly as it would
@@ -146,7 +158,7 @@ pub fn status_of(
     vfs: &dyn Vfs,
     request: &StatusRequest,
     ns: &Namespace,
-) -> Result<UnitStatus, CoreError> {
+) -> Result<PublishUnitStatus, CoreError> {
     let report = publish_skill(
         vfs,
         &PublishRequest {
@@ -167,7 +179,7 @@ pub fn status_of(
     )?;
 
     if let Some(reason) = report.not_published {
-        return Ok(UnitStatus {
+        return Ok(PublishUnitStatus {
             state: PublishState::NeverPublished,
             reason: Some(reason.clone()),
             published_at: None,
@@ -263,7 +275,7 @@ pub fn status_of(
         None
     };
 
-    Ok(UnitStatus {
+    Ok(PublishUnitStatus {
         state,
         reason,
         published_at,
@@ -446,7 +458,7 @@ mod tests {
         .unwrap();
     }
 
-    fn state_of(vfs: &MemVfs) -> UnitStatus {
+    fn state_of(vfs: &MemVfs) -> PublishUnitStatus {
         status_of(vfs, &ask(), &Namespace::default()).unwrap()
     }
 
@@ -684,7 +696,7 @@ mod tests {
         .unwrap();
     }
 
-    fn plugin_state_of(vfs: &MemVfs) -> UnitStatus {
+    fn plugin_state_of(vfs: &MemVfs) -> PublishUnitStatus {
         status_of(vfs, &plugin_ask(), &Namespace::default()).unwrap()
     }
 

@@ -66,6 +66,7 @@ mod js_vfs;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use serde::{Deserialize, Serialize};
 use tradecraft_core::CoreError;
 use tradecraft_core::EntityKind;
 use tradecraft_core::Namespace;
@@ -77,10 +78,8 @@ use tradecraft_core::publish::{
     KNOWN_TARGETS, PublishRequest, canonical_target as core_canonical_target, kind_has_renderer,
     publish_skill as core_publish_skill,
 };
-// By module path, not the crate root: `tradecraft_core::UnitStatus` is
-// re-exported there and is the marketplace's four-word status, a different
-// type from `status::UnitStatus`.
-use serde::{Deserialize, Serialize};
+// `status_of` returns `status::PublishUnitStatus`. `tradecraft_core::UnitStatus`
+// at the crate root is a different type: the marketplace's four-word status.
 use tradecraft_core::status::{StatusRequest, status_of as core_status_of};
 use wasm_bindgen::prelude::*;
 
@@ -436,7 +435,7 @@ struct WireStatusRequest {
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a serialized
 /// `StatusRequest` optionally carrying a `namespace` stem (see
-/// `WireStatusRequest`). Returns a serialized `status::UnitStatus`.
+/// `WireStatusRequest`). Returns a serialized `status::PublishUnitStatus`.
 ///
 /// # A status is a publish that writes nothing
 ///

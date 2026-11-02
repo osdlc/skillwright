@@ -69,7 +69,8 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 
 A call that the core refuses as a whole throws `CoreError`. Its `coreName` is
 the core's error variant, such as `Refused` or `PathEscapesRoot`. A refusal of
-one file comes back inside the report with `status: 'refused'`.
+one file comes back inside the report with `status: 'refused'`. A request
+whose `namespace` the core rejects throws `InvalidNamespaceError` instead.
 
 The request and report types are exported too. They are generated from the
 Rust source, so they cannot drift from it.

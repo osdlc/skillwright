@@ -175,3 +175,30 @@ fn a_diagnostic_export_emits() {
         );
     }
 }
+
+/// `statusOf` hands back `tradecraft_core::status`'s per-unit report, an
+/// object with a `state`, not the export report's four-word status token.
+///
+/// The two once shared the name `UnitStatus`, and the export's enum, read
+/// first, silently won the name.
+#[test]
+fn status_of_responds_with_the_status_report() {
+    let model = tradecraft_typegen::read(&crates()).expect("reading the crates");
+    let export = model
+        .exports
+        .iter()
+        .find(|e| e.js_name == "statusOf")
+        .expect("the wrapper exports statusOf");
+    let (name, list) = export.response.clone().expect("statusOf has a response");
+    assert!(!list);
+    let Some(tradecraft_typegen::parse::TypeDef::Struct(s)) = model.types.get(&name) else {
+        panic!("statusOf's response `{name}` is not a struct");
+    };
+    let fields: Vec<&str> = s.fields.iter().map(|f| f.name.as_str()).collect();
+    for field in ["state", "reason", "files", "version_bump_suggestion"] {
+        assert!(
+            fields.contains(&field),
+            "statusOf's response `{name}` has no `{field}`: {fields:?}"
+        );
+    }
+}

@@ -112,6 +112,9 @@ pub struct Enum {
     pub attrs: SerdeAttrs,
     /// Its variants, in source order.
     pub variants: Vec<Variant>,
+    /// Set when another public type shares this name — see
+    /// [`Struct::unsupported`].
+    pub unsupported: Option<String>,
 }
 
 /// A named type the wire can reach.
@@ -258,8 +261,10 @@ fn insert_unique(types: &mut BTreeMap<String, TypeDef>, def: TypeDef, path: &Pat
             def.name(),
             path.display()
         );
-        if let Some(TypeDef::Struct(s)) = types.get_mut(def.name()) {
-            s.unsupported = Some(clash);
+        match types.get_mut(def.name()) {
+            Some(TypeDef::Struct(s)) => s.unsupported = Some(clash),
+            Some(TypeDef::Enum(e)) => e.unsupported = Some(clash),
+            None => {}
         }
         return;
     }
@@ -320,6 +325,7 @@ fn read_enum(item: &syn::ItemEnum) -> Enum {
         docs: docs_of(&item.attrs),
         attrs: serde_attrs(&item.attrs),
         variants,
+        unsupported: None,
     }
 }
 
@@ -661,5 +667,63 @@ fn peel_refs(ty: &syn::Type) -> &syn::Type {
     match ty {
         syn::Type::Reference(r) => peel_refs(&r.elem),
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The items of one Rust source file, as `collect_items` sees them.
+    fn collect(sources: &[(&str, &str)]) -> BTreeMap<String, TypeDef> {
+        let mut types = BTreeMap::new();
+        let mut fn_returns = BTreeMap::new();
+        let mut const_types = BTreeMap::new();
+        for (path, source) in sources {
+            let file = syn::parse_file(source).expect("parsing the fixture");
+            collect_items(
+                &file.items,
+                &mut types,
+                &mut fn_returns,
+                &mut const_types,
+                Path::new(path),
+            );
+        }
+        types
+    }
+
+    /// A model with one export whose response is `name`.
+    fn emit_response(types: BTreeMap<String, TypeDef>, name: &str) -> Result<String, Error> {
+        crate::emit::emit(&Model {
+            types,
+            exports: vec![Export {
+                js_name: "probe".to_string(),
+                request: None,
+                response: Some((name.to_string(), false)),
+            }],
+        })
+    }
+
+    /// A clash is refused whichever kind of type was read first. An enum read
+    /// first used to win silently, so the TypeScript depended on file order.
+    #[test]
+    fn a_name_clash_is_refused_when_the_enum_is_read_first() {
+        let types = collect(&[
+            ("a.rs", "pub enum Dup { One, Two }"),
+            ("b.rs", "pub struct Dup { pub field: String }"),
+        ]);
+        let err = emit_response(types, "Dup").expect_err("the clash must be refused");
+        assert!(err.contains("two public types are named `Dup`"), "{err}");
+    }
+
+    /// The same clash with the struct read first, which was already refused.
+    #[test]
+    fn a_name_clash_is_refused_when_the_struct_is_read_first() {
+        let types = collect(&[
+            ("a.rs", "pub struct Dup { pub field: String }"),
+            ("b.rs", "pub enum Dup { One, Two }"),
+        ]);
+        let err = emit_response(types, "Dup").expect_err("the clash must be refused");
+        assert!(err.contains("two public types are named `Dup`"), "{err}");
     }
 }
