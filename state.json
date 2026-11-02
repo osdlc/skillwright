@@ -1,12 +1,101 @@
 {
   "schema": 1,
   "pr": 21,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "210f7423b8b1854e84058e6c2a9639d03ba24af4",
+  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-02T09:32:40.354Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 833,
+      "title": "Carried keys skip the runtime's omit_fields",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 636,
+      "title": "Command overrides seeded past CommandFields and the override roster",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 834,
+      "title": "Odd-shaped tools overwrites the Claude Code restriction",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 689,
+      "title": "Empty tools string fails open and the new branches have no test",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 821,
+      "title": "Claude Code tools key patched after render instead of in agent-adapt",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/vault.rs",
+      "line": 207,
+      "title": "bundle_root doc contradicts itself on SKILL.md",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/CHANGELOG.md",
+      "line": 10,
+      "title": "Hand-written Unreleased entry in a release-plz changelog",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/CHANGELOG.md",
+      "line": 17,
+      "title": "Changelog states SKILL.md rule inexactly",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
