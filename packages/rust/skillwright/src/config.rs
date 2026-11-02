@@ -158,6 +158,7 @@ fn is_blank(config: &SkillwrightConfig) -> bool {
 }
 
 /// The result of reading the configuration for one run.
+#[non_exhaustive]
 pub enum ConfigLoad {
     /// A configuration was read.
     Loaded {
@@ -261,16 +262,15 @@ fn try_machine_config_path() -> Result<PathBuf, tiered_dirs::Error> {
 }
 
 /// Resolve a flag's path as the shell would: absolute as given, `~` or a
-/// `~/` prefix against the home directory, anything else relative to `cwd`.
-/// `~name` is not expanded: it is a relative path, as it is in
+/// `~/` prefix against the home directory, anything else relative to
+/// `base`. `~name` and `~\` are not expanded: they are relative paths, as in
 /// `config_layers::paths::resolve_config_path`. The rule `--vault`, `--to`,
-/// `--out` and `--config` share; a value from a config file uses
-/// [`resolve_configured_path`].
-pub fn resolve_against_cwd(path: &str, cwd: &Path) -> PathBuf {
+/// `--out` and `--config` share, with `base` the working directory.
+pub fn resolve_against_cwd(path: &str, base: &Path) -> PathBuf {
     if path == "~" {
         return home_dir();
     }
-    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
+    if let Some(rest) = path.strip_prefix("~/") {
         return if rest.is_empty() {
             home_dir()
         } else {
@@ -281,16 +281,15 @@ pub fn resolve_against_cwd(path: &str, cwd: &Path) -> PathBuf {
     if p.is_absolute() {
         p.to_path_buf()
     } else {
-        normalize_join(cwd, p)
+        normalize_join(base, p)
     }
 }
 
-/// Resolve a config-file path as the file's own rules require: `~` and a
-/// `~/` prefix expand, absolute is used as given, relative (`~name`
-/// included) resolves against `base_dir` — the file's directory, never the
-/// process's working directory.
-pub fn resolve_configured_path(path: &str, base_dir: &Path) -> PathBuf {
-    resolve_against_cwd(path, base_dir)
+/// [`resolve_against_cwd`] for a value read from a config file: the same
+/// rule, with `base` the file's directory, never the process's working
+/// directory. The second name marks that intent at the call site.
+pub fn resolve_configured_path(path: &str, base: &Path) -> PathBuf {
+    resolve_against_cwd(path, base)
 }
 
 /// The user's home directory, read directly from `$HOME`. Falls back to `/`

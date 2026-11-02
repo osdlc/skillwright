@@ -376,20 +376,13 @@ fn relocate(
     for dir in &dirs {
         check_dir_creatable(vault_dir, dir)?;
     }
+    check_frontmatter(vault_dir, &from, frontmatter)?;
 
     let mut outcome = Outcome::new(mode);
     move_note(vault_dir, &from, &to, bundle, mode, &mut outcome)?;
     // From here the move has landed — a later failure is reported with what
     // already wrote, not as a bare refusal.
-    if let Err(err) = relocate_after_move(
-        vault_dir,
-        &from,
-        &to,
-        frontmatter,
-        &dirs,
-        mode,
-        &mut outcome,
-    ) {
+    if let Err(err) = relocate_after_move(vault_dir, &to, frontmatter, &dirs, mode, &mut outcome) {
         return Err(ApplyError::after_write(mode, outcome, err));
     }
     Ok(outcome)
@@ -397,14 +390,13 @@ fn relocate(
 
 fn relocate_after_move(
     vault_dir: &Path,
-    from: &str,
     to: &str,
     frontmatter: &[FieldEdit],
     dirs: &[String],
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    edit_frontmatter(vault_dir, to, from, frontmatter, mode, outcome)?;
+    edit_frontmatter(vault_dir, to, frontmatter, mode, outcome)?;
     scaffold_dirs(vault_dir, dirs, mode, outcome)
 }
 
@@ -444,6 +436,7 @@ fn move_note(
     // `not_previewed`. The plan just computed IS what this run previewed, so
     // its own `expect` set is the honest one to pass, and `subject_etag` is
     // `None` because a CLI has no etag from an earlier session to assert.
+    let spliced = spliced_etags(vault_dir, &plan);
     let executed = if bundle {
         markdown_relink::execute_bundle(vault_dir, &facts, from, to, None, &plan.expect)
     } else {
@@ -453,7 +446,7 @@ fn move_note(
         Ok(result) => result,
         Err(err) => {
             let before = outcome.entries.len();
-            record_rewritten_on_disk(vault_dir, &plan, outcome);
+            record_rewritten_on_disk(vault_dir, &spliced, outcome);
             let err = ApplyError::Transform(err);
             return Err(if outcome.entries.len() == before {
                 err
@@ -478,22 +471,48 @@ fn move_note(
     Ok(())
 }
 
-/// After `execute` failed, record every planned note whose bytes no longer
-/// match the plan's etag: `execute` rewrote it before the step that failed.
-fn record_rewritten_on_disk(vault_dir: &Path, plan: &RenamePlan, outcome: &mut Outcome) {
-    for file in edited_files(plan) {
-        let Ok(abs) = resolve(vault_dir, &file.path) else {
+/// A planned note `execute` would rewrite, and the etag its bytes will have
+/// once it does.
+struct SplicedNote {
+    path: String,
+    etag: String,
+    edits: u64,
+}
+
+/// Read each planned note that still matches the plan and work out the etag
+/// `execute`'s splice will give it. A note that already drifted is left
+/// out: `execute` will skip it.
+fn spliced_etags(vault_dir: &Path, plan: &RenamePlan) -> Vec<SplicedNote> {
+    edited_files(plan)
+        .filter_map(|file| {
+            let bytes = std::fs::read(resolve(vault_dir, &file.path).ok()?).ok()?;
+            if etag_write::etag(&bytes) != file.etag {
+                return None;
+            }
+            Some(SplicedNote {
+                path: file.path.clone(),
+                etag: etag_write::etag(&markdown_relink::splice(&bytes, &file.edits)),
+                edits: file.edits.len() as u64,
+            })
+        })
+        .collect()
+}
+
+/// After `execute` failed, record every note whose bytes now match the
+/// spliced etag: `execute` rewrote it before the step that failed. A note
+/// someone else changed meanwhile matches neither etag and is not claimed.
+fn record_rewritten_on_disk(vault_dir: &Path, spliced: &[SplicedNote], outcome: &mut Outcome) {
+    for note in spliced {
+        let Ok(abs) = resolve(vault_dir, &note.path) else {
             continue;
         };
         let Ok(bytes) = std::fs::read(&abs) else {
             continue;
         };
-        if etag_write::etag(&bytes) != file.etag {
+        if etag_write::etag(&bytes) == note.etag {
             outcome.push(
-                file.path.clone(),
-                Applied::LinksRewritten {
-                    edits: file.edits.len() as u64,
-                },
+                note.path.clone(),
+                Applied::LinksRewritten { edits: note.edits },
             );
         }
     }
@@ -659,15 +678,17 @@ fn rename_plugin(
             }
             let rebased = match rebase(&member, &dir_from, &dir_to) {
                 Some(rebased) => rebased?,
-                None => member.clone(),
+                None => member,
             };
-            Ok::<_, ApplyError>(RebasedMember {
-                rebased,
-                current: member,
-                edits: edits.clone(),
-            })
+            Ok::<_, ApplyError>((rebased, edits.clone()))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    // Every splice is tried on the notes where they sit, so YAML the splice
+    // refuses stops the run before the folder moves.
+    check_frontmatter(vault_dir, &from, frontmatter)?;
+    for (member, edits) in members {
+        check_frontmatter(vault_dir, member, edits)?;
+    }
 
     let mut outcome = Outcome::new(mode);
     // A plugin's entry note is a bundle entry (`<dir>/<dir>.md`), so the
@@ -678,7 +699,6 @@ fn rename_plugin(
     // already wrote, not as a bare refusal.
     if let Err(err) = rename_plugin_after_move(
         vault_dir,
-        &from,
         &to,
         frontmatter,
         &rebased_members,
@@ -690,32 +710,17 @@ fn rename_plugin(
     Ok(outcome)
 }
 
-/// A plugin member's path in the new tree, its path now, and its edits.
-struct RebasedMember {
-    rebased: String,
-    current: String,
-    edits: Vec<FieldEdit>,
-}
-
 fn rename_plugin_after_move(
     vault_dir: &Path,
-    from: &str,
     to: &str,
     frontmatter: &[FieldEdit],
-    rebased_members: &[RebasedMember],
+    rebased_members: &[(String, Vec<FieldEdit>)],
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    edit_frontmatter(vault_dir, to, from, frontmatter, mode, outcome)?;
-    for member in rebased_members {
-        edit_frontmatter(
-            vault_dir,
-            &member.rebased,
-            &member.current,
-            &member.edits,
-            mode,
-            outcome,
-        )?;
+    edit_frontmatter(vault_dir, to, frontmatter, mode, outcome)?;
+    for (rebased, edits) in rebased_members {
+        edit_frontmatter(vault_dir, rebased, edits, mode, outcome)?;
     }
     Ok(())
 }
@@ -730,13 +735,37 @@ fn rebase(path: &str, dir_from: &str, dir_to: &str) -> Option<Result<String, App
 
 // ── Shared ──────────────────────────────────────────────────────────────────
 
-/// Splice `edits` into the note at `path`. A preview runs before the move,
-/// so it reads the note at `current`, where it still is, and runs the same
-/// splice to raise the same refusal without writing.
+/// Read the note at `path` and splice `edits` into it, without writing.
+/// Run on a note before it moves, in both modes, so YAML the splice refuses
+/// stops the run before anything is written.
+fn check_frontmatter(vault_dir: &Path, path: &str, edits: &[FieldEdit]) -> Result<(), ApplyError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    spliced_frontmatter(vault_dir, path, edits).map(|_| ())
+}
+
+/// The note at `path` with `edits` spliced in, and where it lives.
+fn spliced_frontmatter(
+    vault_dir: &Path,
+    path: &str,
+    edits: &[FieldEdit],
+) -> Result<(PathBuf, String), ApplyError> {
+    let abs = resolve(vault_dir, path)?;
+    let source = std::fs::read_to_string(&abs).map_err(|source| ApplyError::Io {
+        what: format!("reading {path}"),
+        source,
+    })?;
+    let edited = apply_field_edits(&source, edits).map_err(|e| ApplyError::Frontmatter {
+        path: path.to_owned(),
+        reason: e.to_string(),
+    })?;
+    Ok((abs, edited))
+}
+
 fn edit_frontmatter(
     vault_dir: &Path,
     path: &str,
-    current: &str,
     edits: &[FieldEdit],
     mode: Mode,
     outcome: &mut Outcome,
@@ -744,17 +773,8 @@ fn edit_frontmatter(
     if edits.is_empty() {
         return Ok(());
     }
-    let read_from = if mode.writes() { path } else { current };
-    let abs = resolve(vault_dir, read_from)?;
-    let source = std::fs::read_to_string(&abs).map_err(|source| ApplyError::Io {
-        what: format!("reading {read_from}"),
-        source,
-    })?;
-    let edited = apply_field_edits(&source, edits).map_err(|e| ApplyError::Frontmatter {
-        path: path.to_owned(),
-        reason: e.to_string(),
-    })?;
     if mode.writes() {
+        let (abs, edited) = spliced_frontmatter(vault_dir, path, edits)?;
         write_note(&abs, &edited)?;
     }
     for edit in edits {
@@ -1134,22 +1154,29 @@ mod tests {
 
     /// If a member's frontmatter edit fails once the bundle has already
     /// moved, the failure carries the [`Outcome`] that already landed rather
-    /// than discarding it behind a bare refusal. The member is present and
-    /// inside `dir_from`, but its frontmatter cannot be edited.
+    /// than discarding it behind a bare refusal. The YAML splice is checked
+    /// before the move, so the failure here is a write: the member sits in a
+    /// read-only directory.
+    #[cfg(unix)]
     #[test]
     fn rename_plugin_reports_the_move_when_a_members_edit_fails_after_it() {
         let v = tools_plugin();
         write(
             v.path(),
-            "plugins/tools/skills/broken.md",
-            "---\nname: [unclosed\n---\n\nmember\n",
+            "plugins/tools/skills/member.md",
+            "---\nname: member\nsw-plugin: tools\n---\n\nmember\n",
         );
+        let locked = v.path().join("plugins/tools/skills");
+        if !lock(&locked) {
+            return;
+        }
 
         let err = apply(
             v.path(),
-            &rename_tools_to_gear("plugins/tools/skills/broken.md"),
+            &rename_tools_to_gear("plugins/tools/skills/member.md"),
         )
         .unwrap_err();
+        unlock(&v.path().join("plugins/gear/skills"));
 
         let ApplyError::Partial { outcome, .. } = err else {
             panic!("expected a partial outcome, got {err:?}");
@@ -1160,49 +1187,81 @@ mod tests {
             outcomes(&outcome),
             vec![
                 ("plugins/gear/gear.md", "renamed"),
-                ("plugins/gear/skills/broken.md", "moved"),
+                ("plugins/gear/skills/member.md", "moved"),
             ]
         );
     }
 
-    /// Same shape for a plain rename/move/convert: a step after the move
-    /// lands (here, a frontmatter splice the note's YAML refuses) still
-    /// reports what already happened.
+    /// A preview of a plugin rename lists the move and every edit, and
+    /// writes nothing.
     #[test]
-    fn convert_kind_reports_the_move_when_a_later_frontmatter_edit_fails_after_it() {
+    fn rename_plugin_preview_lists_the_edits_and_writes_nothing() {
         let v = vault();
         write(
             v.path(),
-            "notes/Alpha.md",
-            "---\nname: Alpha\nname: Again\n---\n\nsubject\n",
+            "plugins/tools/tools.md",
+            "---\nname: tools\n---\n\nplugin\n",
         );
+        write(
+            v.path(),
+            "plugins/tools/skills/keyed.md",
+            "---\nname: keyed\nsw-plugin: tools\n---\n\nmember\n",
+        );
+        let before = tree(v.path());
 
-        let op = AuthoringOp::ConvertKind {
-            from: "notes/Alpha.md".to_owned(),
-            to: "notes/Gamma.md".to_owned(),
-            bundle: false,
-            frontmatter: vec![FieldEdit::set("name", Value::Str("Gamma".to_owned()))],
-            scaffold: vec![],
-        };
-        let err = apply(v.path(), &op).unwrap_err();
+        let mut op = rename_tools_to_gear("plugins/tools/skills/keyed.md");
+        if let AuthoringOp::RenamePlugin { frontmatter, .. } = &mut op {
+            frontmatter.push(FieldEdit::set("name", Value::Str("gear".to_owned())));
+        }
+        let outcome = preview(v.path(), &op).unwrap();
 
-        let ApplyError::Partial { outcome, source } = err else {
-            panic!("expected a partial outcome, got {err:?}");
-        };
+        assert_eq!(tree(v.path()), before);
+        let rows = outcomes(&outcome);
         assert!(
-            matches!(*source, ApplyError::Frontmatter { .. }),
-            "{source:?}"
+            rows.contains(&("plugins/gear/gear.md", "renamed")),
+            "{rows:?}"
         );
-        assert!(v.path().join("notes/Gamma.md").exists());
-        assert!(!v.path().join("notes/Alpha.md").exists());
-        assert_eq!(outcomes(&outcome), vec![("notes/Gamma.md", "renamed")]);
+        assert!(
+            rows.contains(&("plugins/gear/gear.md", "field-set")),
+            "{rows:?}"
+        );
+        assert!(
+            rows.contains(&("plugins/gear/skills/keyed.md", "field-set")),
+            "{rows:?}"
+        );
     }
 
-    /// A frontmatter splice the note's YAML refuses is refused by the
-    /// preview too, so a dry run does not promise what the real run cannot
-    /// do.
+    /// A member whose YAML the splice refuses is refused before the folder
+    /// moves, by the preview and the real run alike.
     #[test]
-    fn a_preview_refuses_a_frontmatter_edit_the_real_run_would_refuse() {
+    fn rename_plugin_refuses_a_member_frontmatter_edit_before_moving() {
+        let v = vault();
+        write(
+            v.path(),
+            "plugins/tools/tools.md",
+            "---\nname: tools\n---\n\nplugin\n",
+        );
+        write(
+            v.path(),
+            "plugins/tools/skills/broken.md",
+            "---\nsw-plugin: tools\nsw-plugin: again\n---\n\nmember\n",
+        );
+        let before = tree(v.path());
+
+        let op = rename_tools_to_gear("plugins/tools/skills/broken.md");
+        let err = preview(v.path(), &op).unwrap_err();
+        assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
+        let err = apply(v.path(), &op).unwrap_err();
+        assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
+
+        assert_eq!(tree(v.path()), before);
+    }
+
+    /// A frontmatter splice the note's YAML refuses is refused before the
+    /// note moves, by the preview and the real run alike, so a dry run does
+    /// not promise what the real run cannot do.
+    #[test]
+    fn a_frontmatter_edit_the_yaml_refuses_is_refused_before_moving() {
         let v = vault();
         write(
             v.path(),
@@ -1218,9 +1277,42 @@ mod tests {
             frontmatter: vec![FieldEdit::set("name", Value::Str("Gamma".to_owned()))],
         };
         let err = preview(v.path(), &op).unwrap_err();
-
         assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
+        let err = apply(v.path(), &op).unwrap_err();
+        assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
+
         assert_eq!(tree(v.path()), before);
+    }
+
+    /// A step after the move lands (here, a scaffold under a read-only
+    /// directory) reports what already happened rather than a bare error.
+    #[cfg(unix)]
+    #[test]
+    fn convert_kind_reports_the_move_when_a_later_scaffold_fails_after_it() {
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "---\nname: Alpha\n---\n");
+        std::fs::create_dir_all(v.path().join("locked")).unwrap();
+        if !lock(&v.path().join("locked")) {
+            return;
+        }
+
+        let op = AuthoringOp::ConvertKind {
+            from: "notes/Alpha.md".to_owned(),
+            to: "notes/Gamma.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+            scaffold: vec!["locked/sub".to_owned()],
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+        unlock(&v.path().join("locked"));
+
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(matches!(*source, ApplyError::Io { .. }), "{source:?}");
+        assert!(v.path().join("notes/Gamma.md").exists());
+        assert!(!v.path().join("notes/Alpha.md").exists());
+        assert_eq!(outcomes(&outcome), vec![("notes/Gamma.md", "renamed")]);
     }
 
     /// A scaffold directory that collides with a file is refused before the
@@ -1391,6 +1483,57 @@ mod tests {
         assert!(matches!(*source, ApplyError::Transform(_)), "{source:?}");
         assert_eq!(read(v.path(), "notes/n.md"), "see [[sub]]\n");
         assert_eq!(outcomes(&outcome), vec![("notes/n.md", "relinked")]);
+    }
+
+    /// The same for a plain note: `execute` rewrites the linking note, then
+    /// the note itself cannot leave its read-only folder.
+    #[cfg(unix)]
+    #[test]
+    fn a_plain_move_that_fails_after_rewriting_links_reports_the_rewrites() {
+        let v = vault();
+        write(v.path(), "locked/alpha.md", "---\nname: alpha\n---\n");
+        write(v.path(), "notes/n.md", "see [[alpha]]\n");
+        std::fs::create_dir_all(v.path().join("moved")).unwrap();
+        if !lock(&v.path().join("locked")) {
+            return;
+        }
+
+        let op = AuthoringOp::Move {
+            from: "locked/alpha.md".to_owned(),
+            to: "moved/gamma.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+        unlock(&v.path().join("locked"));
+
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(matches!(*source, ApplyError::Transform(_)), "{source:?}");
+        assert!(v.path().join("locked/alpha.md").exists());
+        assert_eq!(read(v.path(), "notes/n.md"), "see [[gamma]]\n");
+        assert_eq!(outcomes(&outcome), vec![("notes/n.md", "relinked")]);
+    }
+
+    /// After a failed `execute`, a note that carries the planned rewrite is
+    /// reported, and one someone else changed is not.
+    #[test]
+    fn only_notes_carrying_the_planned_rewrite_are_reported_as_rewritten() {
+        let v = vault();
+        write(v.path(), "alpha.md", "---\nname: alpha\n---\n");
+        write(v.path(), "rewritten.md", "see [[alpha]]\n");
+        write(v.path(), "drifted.md", "also [[alpha]]\n");
+        let facts = VaultFacts::scan(v.path());
+        let plan = markdown_relink::plan(v.path(), &facts, "alpha.md", "gamma.md").unwrap();
+        let spliced = spliced_etags(v.path(), &plan);
+
+        write(v.path(), "rewritten.md", "see [[gamma]]\n");
+        write(v.path(), "drifted.md", "also [[alpha]], edited elsewhere\n");
+        let mut outcome = Outcome::new(Mode::Apply);
+        record_rewritten_on_disk(v.path(), &spliced, &mut outcome);
+
+        assert_eq!(outcomes(&outcome), vec![("rewritten.md", "relinked")]);
     }
 
     /// `markdown_link::normalize_target` lowercases and percent-decodes but does
