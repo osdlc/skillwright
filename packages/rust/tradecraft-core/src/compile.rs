@@ -319,10 +319,9 @@ pub struct Closure {
     /// Sorted, and never empty — the owner is always a member.
     pub contributing_notes: Vec<String>,
     /// The vault-relative path of the note this file was rendered from: the
-    /// entry note for `SKILL.md`, and the resource's own source otherwise. It
-    /// is one of `contributing_notes`, but sorting means not necessarily the
-    /// first, so it is recorded rather than guessed. Pass it to
-    /// [`Closure::hash`] as the owner.
+    /// entry note for `SKILL.md`, and the resource's own source otherwise.
+    /// One of `contributing_notes`, not necessarily the first, since they are
+    /// sorted. [`Closure::hash`] reads the whole file for this note.
     pub owner: String,
     /// Link targets in this file that resolved to nothing, as written and
     /// sorted. Recorded rather than refused, because a note appearing at one
@@ -350,12 +349,12 @@ impl Closure {
     /// changes this hash even before it changes the member list. So are the
     /// calls, so renaming or moving a called skill changes the caller's hash.
     /// Both add nothing when empty.
-    pub fn hash(&self, vfs: &dyn Vfs, vault_root: &Path, owner: &str) -> Result<String, CoreError> {
+    pub fn hash(&self, vfs: &dyn Vfs, vault_root: &Path) -> Result<String, CoreError> {
         let mut hasher = Sha256::new();
         for note in &self.contributing_notes {
             let bytes = vfs.read_file(&vault_root.join(note))?;
             let text = String::from_utf8_lossy(&bytes);
-            let consumed = if note == owner {
+            let consumed = if *note == self.owner {
                 text.as_ref()
             } else {
                 split_frontmatter(&text).1
@@ -3581,13 +3580,12 @@ mod tests {
         assert_eq!(before.body, "Run `/tools:called`.\n");
         assert_eq!(before.closures["SKILL.md"].calls, vec!["tools:called"]);
         assert_eq!(after.closures["SKILL.md"].calls, vec!["tools:renamed"]);
-        let owner = "plugins/demo/demo.md";
         assert_ne!(
             before.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"), owner)
+                .hash(&vfs, Path::new("/vault"))
                 .unwrap(),
             after.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"), owner)
+                .hash(&vfs, Path::new("/vault"))
                 .unwrap(),
         );
     }

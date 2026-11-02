@@ -105,10 +105,12 @@
 //! including the ones it does name, so the typo surfaces on the first publish
 //! rather than the first time somebody notices files missing somewhere else.
 //!
-//! Exclusion is decided before the note is projected, so a refusal that
-//! depends on the destination (a call it does not ship, a pack layout it
-//! lacks) never fires at a destination the note excludes. Among the
-//! refusals the rail runs first; both refuse before a byte moves.
+//! Exclusion is decided right after the kind check, before the note is
+//! projected, so a refusal that depends on the destination (a call it does
+//! not ship, a pack layout it lacks) never fires at a destination the note
+//! excludes. An unknown name waits until after the projection and the rail,
+//! so it can be stamped on every projected file. Every refusal lands before
+//! a byte is written.
 //!
 //! # This module publishes by kind, and refuses a kind it cannot render
 //!
@@ -169,7 +171,7 @@ use std::collections::BTreeMap;
 use crate::compile::{
     CallContext, Closure, CompileSource, IndexedSkill, SkillIndex, SkillSource, compile_projection,
 };
-use crate::content::SkillProjection;
+use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{DiscoveredComponent, KIND_DIRS, discover_components};
 use crate::error::CoreError;
 use crate::export::{
@@ -187,9 +189,10 @@ use crate::manifest::{
 };
 use crate::namespace::Namespace;
 use crate::projection::{
-    ProjectedFile, file_hash, project_agent, project_command, project_skill_reporting,
+    ProjectedFile, RedundantOverride, file_hash, project_agent, project_command,
+    project_skill_reporting,
 };
-use crate::vault::read_vault_skill;
+use crate::vault::{VaultNote, read_vault_skill};
 use crate::vfs::{PreviewVfs, Vfs};
 
 /// One publish: this note, to this destination, for this target.
@@ -599,8 +602,14 @@ pub struct PublishReport {
 /// * `refused: no-renderer` when the note's resolved kind is none of
 ///   [`EntityKind::Skill`], [`EntityKind::Command`], [`EntityKind::Agent`]
 ///   and [`EntityKind::Plugin`]. Nothing is read past, projected, or written.
-/// * `refused: unknown-target` never reaches here — it is a blocker, so it
-///   comes back *inside* the report, stamped on every projected file.
+/// * `refused: unknown-override-key` when a `sw-overrides` block for this
+///   destination names a key its harness does not read — for the note, and
+///   for every skill and command member of a pack. An agent reads no keys,
+///   so any non-empty block for this destination refuses.
+/// * `refused: unknown-target` when a `sw-overrides` block is keyed by a
+///   name this build does not know. The same name in `sw-targets` never
+///   reaches here — it is a blocker, so it comes back *inside* the report,
+///   stamped on every projected file.
 /// * A destination the note's `sw-targets` excludes is `Ok` with an empty
 ///   report and [`PublishReport::not_published`] set. See the module doc.
 pub fn publish_skill(
@@ -659,13 +668,21 @@ fn publish_onto(
         ));
     }
 
-    // An excluded destination, decided before anything is projected: the note
-    // was never a candidate here, so a refusal that depends on the destination
-    // (a call it does not ship, a pack layout it lacks) must not fire for it.
-    // An unknown name is left to `finish`, which stamps it on every file.
-    if let Ok(false) = publishes_to(&note.frontmatter, &request.skill_path, &request.target, ns) {
-        return Ok(not_published(&note.frontmatter, &request.target, ns));
-    }
+    // `sw-targets`, decided here so no caller can forget to, and before
+    // anything is projected: an excluded note was never a candidate here, so
+    // a refusal that depends on the destination (a call it does not ship, a
+    // pack layout it lacks) must not fire for it. An unknown name is handed
+    // to `finish`, which stamps it on every projected file.
+    let unknown_target =
+        match publishes_to(&note.frontmatter, &request.skill_path, &request.target, ns) {
+            Ok(true) => None,
+            Ok(false) => return Ok(not_published(&note.frontmatter, &request.target, ns)),
+            Err(CoreError::Refused(message)) => Some(PublishReason::from_refusal(
+                &message,
+                ReasonToken::UnknownTarget,
+            )),
+            Err(other) => return Err(other),
+        };
 
     let canonical = canonical_target(&request.target).unwrap_or(request.target.as_str());
 
@@ -695,8 +712,7 @@ fn publish_onto(
         let pack = project_plugin(
             vfs,
             request,
-            &note.projection.content.name,
-            &note.projection.content.description,
+            &note.projection.content,
             &note.frontmatter.identity,
             compile_root,
             canonical,
@@ -709,8 +725,7 @@ fn publish_onto(
         return finish(
             vfs,
             request,
-            ns,
-            &note.frontmatter,
+            unknown_target.as_ref(),
             pack.files,
             pack.closures,
             canonical,
@@ -728,38 +743,13 @@ fn publish_onto(
     // paths. Without it a published `SKILL.md` carries the author's
     // `![[embeds]]` and `[[links]]` verbatim, and no harness resolves either
     // sigil.
-    let mut projection = note.projection;
-    // Only the two kinds an invocation actually takes arguments at. Carrying
-    // it for an agent or a plugin would set a field nothing downstream reads
-    // — `to_adapt_agent` has no `arguments` field, and a plugin takes the
-    // pack branch above and never reaches this line.
-    if matches!(resolved.kind, EntityKind::Skill | EntityKind::Command) {
-        projection
-            .content
-            .apply_arguments(&note.frontmatter.arguments);
-    }
-    // Folded and checked before anything renders: an unknown destination name
-    // or a key this harness does not read refuses here, with no file built.
-    // Carried for a skill and a command. An agent's renderer has no place for
-    // an override, so a block for this destination is refused rather than
-    // accepted and dropped. A plugin took the pack branch above.
-    let overrides = overrides_for(&note.frontmatter, &request.skill_path, &request.target, ns)?;
-    if resolved.kind == EntityKind::Agent
-        && let Some(block) = overrides.get(canonical).filter(|b| !b.is_empty())
-    {
-        let keys: Vec<&str> = block.keys().map(String::as_str).collect();
-        return Err(CoreError::refused(
-            "unknown-override-key",
-            format!(
-                "{}: `{}.{canonical}` names {}, but an agent takes no overrides: \
-                 its renderer has no place for them",
-                request.skill_path.display(),
-                ns.key("overrides"),
-                quoted(&keys)
-            ),
-        ));
-    }
-    projection.content.apply_overrides(overrides);
+    let mut projection = prepare_projection(
+        note,
+        resolved.kind,
+        &request.skill_path,
+        &request.target,
+        ns,
+    )?;
     let skill_name = projection.content.name.clone();
     // A skill published on its own has no plugin, so a call to another
     // skill is the runtime's form without a namespace. The index needs a
@@ -799,7 +789,7 @@ fn publish_onto(
     // construction, because `project_skill` has no parameter that could carry
     // it to a destination. The `ns` it does take is the same one the read used
     // a few lines up, which is the whole point of taking one here.
-    let mut redundant: Vec<PublishReason> = Vec::new();
+    let mut redundant = Vec::new();
     let files = match resolved.kind {
         // Both single-file kinds refuse a note that carries peers, for the
         // same reason: one emitted file leaves those files nowhere to go, and
@@ -816,11 +806,7 @@ fn publish_onto(
         _ => {
             let (files, diagnostics) =
                 project_skill_reporting(&projection, &[runtime_target], ns, Some(canonical))?;
-            redundant.extend(
-                diagnostics
-                    .iter()
-                    .map(|d| PublishReason::new(ReasonToken::RedundantOverride, d.to_string())),
-            );
+            redundant = redundant_reasons(&diagnostics);
             files
         }
     };
@@ -836,8 +822,7 @@ fn publish_onto(
     finish(
         vfs,
         request,
-        ns,
-        &note.frontmatter,
+        unknown_target.as_ref(),
         files,
         hashed,
         canonical,
@@ -848,8 +833,12 @@ fn publish_onto(
     )
 }
 
-/// The half every kind shares: the rail, the `sw-targets` narrowing, the
+/// The half every kind shares: the rail, the `sw-targets` blocker, the
 /// manifest, and the write.
+///
+/// `unknown_target` is the blocker `publish_onto` found in `sw-targets`, if
+/// any. It is stamped on every file after the rail runs. An excluded
+/// destination never reaches here.
 ///
 /// One function rather than a step repeated per kind, because these are the
 /// rules that must not differ between them. A pack that skipped the vault rail
@@ -859,8 +848,7 @@ fn publish_onto(
 fn finish(
     vfs: &dyn Vfs,
     request: &PublishRequest,
-    ns: &Namespace,
-    frontmatter: &VaultFrontmatter,
+    unknown_target: Option<&PublishReason>,
     files: Vec<ProjectedFile>,
     hashed: BTreeMap<String, HashedClosure>,
     canonical: &str,
@@ -905,20 +893,10 @@ fn finish(
         Err(other) => return Err(other),
     }
 
-    // `sw-targets`, applied here so no caller can forget to. `publish_onto`
-    // already returned for an excluded destination; this arm stays so the
-    // rule holds for every path into `finish`.
-    match publishes_to(frontmatter, &request.skill_path, &request.target, ns) {
-        Ok(true) => {}
-        Ok(false) => return Ok(not_published(frontmatter, &request.target, ns)),
-        // A name we do not know is a blocker: every projected file, one reason.
-        Err(CoreError::Refused(message)) => {
-            return Ok(refuse_all(
-                &files,
-                &PublishReason::from_refusal(&message, ReasonToken::UnknownTarget),
-            ));
-        }
-        Err(other) => return Err(other),
+    // A `sw-targets` name we do not know is a blocker: every projected file,
+    // one reason.
+    if let Some(reason) = unknown_target {
+        return Ok(refuse_all(&files, reason));
     }
 
     // The manifest, read before any byte is written. An unusable one is a
@@ -1454,17 +1432,19 @@ pub const PLUGIN_HOOKS_PATH: &str = "hooks/hooks.json";
 /// A member narrowed away by its own `sw-targets` is absent from the pack
 /// here, exactly as it is absent from a build's root — the narrowing is the
 /// member's, and a pack does not override it.
-#[allow(clippy::too_many_arguments)]
+///
+/// `content` is the plugin note's own: its name names the pack, and its
+/// description goes into the manifest.
 fn project_plugin(
     vfs: &dyn Vfs,
     request: &PublishRequest,
-    plugin_name: &str,
-    description: &str,
+    content: &SkillContent,
     identity: &ContainerIdentity,
     vault_root: &Path,
     canonical: &str,
     ns: &Namespace,
 ) -> Result<PluginProjection, CoreError> {
+    let plugin_name = content.name.as_str();
     let layout = plugin_layout_for(canonical).ok_or_else(|| {
         CoreError::refused(
             "no-renderer",
@@ -1561,22 +1541,13 @@ fn project_plugin(
         warnings: RefCell::new(Vec::new()),
     };
 
-    // Each member goes through the standalone path's steps — its arguments,
-    // its checked `sw-overrides` — so one note renders the same bytes inside
-    // its pack as on its own.
+    // Each member is prepared as the standalone path prepares it, so one
+    // note renders the same bytes inside its pack as on its own.
     let mut redundant: Vec<PublishReason> = Vec::new();
     for member in &members {
         let note = read_vault_skill(vfs, &member.entry_path, ns)?;
-        let mut projection = note.projection;
-        projection
-            .content
-            .apply_arguments(&note.frontmatter.arguments);
-        projection.content.apply_overrides(overrides_for(
-            &note.frontmatter,
-            &member.entry_path,
-            &request.target,
-            ns,
-        )?);
+        let mut projection =
+            prepare_projection(note, member.kind, &member.entry_path, &request.target, ns)?;
         let member_closures = compile_projection(
             vfs,
             &CompileSource {
@@ -1594,11 +1565,7 @@ fn project_plugin(
             ns,
             Some(canonical),
         )?;
-        redundant.extend(
-            diagnostics
-                .iter()
-                .map(|d| PublishReason::new(ReasonToken::RedundantOverride, d.to_string())),
-        );
+        redundant.extend(redundant_reasons(&diagnostics));
         let strip = format!("{}/{}/", layout.projection_prefix, member.name);
         for file in rendered {
             let relative = file.relative_path.strip_prefix(&strip).ok_or_else(|| {
@@ -1632,16 +1599,8 @@ fn project_plugin(
     // One command's file, at `{base}/commands/<slug>.<ext>`.
     for command in &commands {
         let note = read_vault_skill(vfs, &command.entry_path, ns)?;
-        let mut projection = note.projection;
-        projection
-            .content
-            .apply_arguments(&note.frontmatter.arguments);
-        projection.content.apply_overrides(overrides_for(
-            &note.frontmatter,
-            &command.entry_path,
-            &request.target,
-            ns,
-        )?);
+        let mut projection =
+            prepare_projection(note, command.kind, &command.entry_path, &request.target, ns)?;
         let command_closures = compile_projection(
             vfs,
             &CompileSource {
@@ -1695,27 +1654,32 @@ fn project_plugin(
     //
     // A manifest of the folder's own at the path the pack's is rendered to
     // (an imported plugin carries one) is left behind: the rendered one
-    // replaces it, and writing both to one path is never idempotent.
+    // replaces it, and writing both to one path is never idempotent. When
+    // its bytes differ from the rendered manifest it is named in
+    // `not_carried`, since it may hold fields the frontmatter does not.
     let manifest_relative = format!("{}/plugin.json", layout.manifest_dir);
+    let mut not_carried = not_carried;
+    let mut own_manifest: Option<(String, Vec<u8>)> = None;
     if let Some(note) = scan
         .components
         .iter()
         .find(|c| c.kind == EntityKind::Plugin && c.name == plugin_name)
     {
         let source_note = note.vault_relative_path.clone();
-        for relative in note
-            .resources
-            .iter()
-            .filter(|r| is_container_own(r) && **r != manifest_relative)
-        {
+        for relative in note.resources.iter().filter(|r| is_container_own(r)) {
             let from = vault_root
                 .join(&source_note)
                 .parent()
                 .map(|dir| dir.join(relative));
             let Some(from) = from else { continue };
+            let content = vfs.read_file(&from)?;
+            if *relative == manifest_relative {
+                own_manifest = Some((vault_relative(vault_root, &from), content));
+                continue;
+            }
             files.push(ProjectedFile {
                 relative_path: format!("{base}/{relative}"),
-                content: vfs.read_file(&from)?,
+                content,
                 executable: vfs.is_executable(&from),
             });
         }
@@ -1736,7 +1700,7 @@ fn project_plugin(
         default_plugin: plugin_name.to_owned(),
         plugins: [(
             plugin_name.to_owned(),
-            overrides_from(description, identity),
+            overrides_from(&content.description, identity),
         )]
         .into_iter()
         .collect(),
@@ -1747,10 +1711,16 @@ fn project_plugin(
         // manifest renderer's shape.
         shim_target: DEFAULT_SHIM_TARGET.to_owned(),
     };
+    let manifest =
+        render_plugin_manifest(layout.dialect, plugin_name, &members, &config, None).into_bytes();
+    if let Some((path, bytes)) = own_manifest
+        && bytes != manifest
+    {
+        not_carried.push(path);
+    }
     files.push(ProjectedFile {
         relative_path: format!("{base}/{manifest_relative}"),
-        content: render_plugin_manifest(layout.dialect, plugin_name, &members, &config, None)
-            .into_bytes(),
+        content: manifest,
         executable: false,
     });
 
@@ -1770,6 +1740,60 @@ struct PluginProjection {
     not_carried: Vec<String>,
     /// Members' `sw-overrides` keys the render already wrote.
     redundant: Vec<PublishReason>,
+}
+
+/// A note's projection with its frontmatter folded in, ready to compile: its
+/// `sw-arguments` and its checked `sw-overrides`. One function for a note
+/// published on its own and for a pack member, so one note renders the same
+/// bytes on both paths.
+///
+/// Arguments are carried for a skill and a command, the two kinds an
+/// invocation takes them at. Overrides are folded and checked before anything
+/// renders, so an unknown destination name or a key this harness does not read
+/// refuses with no file built. An agent's renderer has no place for an
+/// override, so a non-empty block for this destination refuses rather than
+/// being accepted and dropped.
+fn prepare_projection(
+    note: VaultNote,
+    kind: EntityKind,
+    note_path: &Path,
+    target: &str,
+    ns: &Namespace,
+) -> Result<SkillProjection, CoreError> {
+    let VaultNote {
+        mut projection,
+        frontmatter,
+    } = note;
+    if matches!(kind, EntityKind::Skill | EntityKind::Command) {
+        projection.content.apply_arguments(&frontmatter.arguments);
+    }
+    let overrides = overrides_for(&frontmatter, note_path, target, ns)?;
+    let canonical = canonical_target(target).unwrap_or(target);
+    if kind == EntityKind::Agent
+        && let Some(block) = overrides.get(canonical).filter(|b| !b.is_empty())
+    {
+        let keys: Vec<&str> = block.keys().map(String::as_str).collect();
+        return Err(CoreError::refused(
+            "unknown-override-key",
+            format!(
+                "{}: `{}.{canonical}` names {}, but an agent takes no overrides: \
+                 its renderer has no place for them",
+                note_path.display(),
+                ns.key("overrides"),
+                quoted(&keys)
+            ),
+        ));
+    }
+    projection.content.apply_overrides(overrides);
+    Ok(projection)
+}
+
+/// The render's redundant `sw-overrides` keys as report lines.
+fn redundant_reasons(diagnostics: &[RedundantOverride]) -> Vec<PublishReason> {
+    diagnostics
+        .iter()
+        .map(|d| PublishReason::new(ReasonToken::RedundantOverride, d.to_string()))
+        .collect()
 }
 
 /// Is this path the container's own content, rather than something living in
@@ -1851,7 +1875,7 @@ fn hash_one(
     source_note: &str,
 ) -> Result<HashedClosure, CoreError> {
     Ok(HashedClosure {
-        hash: closure.hash(vfs, vault_root, &closure.owner)?,
+        hash: closure.hash(vfs, vault_root)?,
         notes: closure.contributing_notes.clone(),
         unresolved: closure.unresolved.clone(),
         calls: closure.calls.clone(),
@@ -2108,8 +2132,9 @@ pub enum OverrideKeyState {
     /// The harness reads it, and the value is exactly what the projection
     /// writes anyway. A diagnostic; the note publishes unchanged.
     Redundant,
-    /// The harness does not read this key at all. `overrides_for` refuses it
-    /// at publish time, naming the target and the key.
+    /// The harness does not read this key at all, or the note is an agent,
+    /// whose renderer takes no overrides. Publish refuses it, naming the
+    /// target and the key.
     Refused,
 }
 
@@ -2156,16 +2181,23 @@ pub struct OverrideBlockState {
 ///
 /// `projection` is the note's own projectable half, needed because
 /// *redundant* is a fact about rendered bytes rather than about the key.
+/// `kind` is the note's resolved kind: an agent takes no overrides, so every
+/// key of an agent's block is `refused` and its `accepted_keys` is zero, as
+/// publish answers.
 pub fn override_states(
     note: &VaultFrontmatter,
+    kind: EntityKind,
     projection: &SkillProjection,
     ns: &Namespace,
 ) -> Vec<OverrideBlockState> {
-    let _ = ns;
     let mut out = Vec::new();
     for (declared, block) in &note.overrides {
         let canonical = canonical_target(declared).unwrap_or(declared.as_str());
-        let accepted = accepted_override_keys(canonical);
+        let accepted = if kind == EntityKind::Agent {
+            std::collections::BTreeSet::new()
+        } else {
+            accepted_override_keys(canonical)
+        };
         let block = block.as_object().cloned().unwrap_or_default();
 
         // One render, per block. A destination with no renderer of its own
@@ -6491,6 +6523,12 @@ mod tests {
             1,
             "{first:?}"
         );
+        // The rendered manifest wins: the folder's own carries no description.
+        let published = text_at(&vfs, &format!("/dest/{path}"));
+        assert!(
+            published.contains("\"description\": \"Git helpers.\""),
+            "{published}"
+        );
         let second = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
         assert!(
             second
@@ -6501,23 +6539,140 @@ mod tests {
         );
     }
 
+    // The folder's own manifest can hold fields the frontmatter does not
+    // (hooks, MCP servers). It is not published, so the report names it,
+    // unless it already matches what the pack renders.
+    #[test]
+    fn a_containers_own_manifest_that_differs_is_named_as_not_carried() {
+        let vfs = vault_with_plugin();
+        let own = "/vault/marketplaces/house/plugins/git-tools/.claude-plugin/plugin.json";
+        vfs.create_dir_all(Path::new(own).parent().unwrap())
+            .unwrap();
+        vfs.write_file(Path::new(own), b"{\"name\": \"git-tools\"}\n")
+            .unwrap();
+
+        let report = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+        assert_eq!(
+            report.not_carried,
+            vec!["marketplaces/house/plugins/git-tools/.claude-plugin/plugin.json".to_owned()],
+            "{report:?}"
+        );
+
+        // Once the folder's copy is the rendered one, nothing is lost.
+        let rendered = text_at(
+            &vfs,
+            "/dest/.claude/skills/git-tools/.claude-plugin/plugin.json",
+        );
+        vfs.write_file(Path::new(own), rendered.as_bytes()).unwrap();
+        let report = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+        assert!(report.not_carried.is_empty(), "{report:?}");
+    }
+
+    #[test]
+    fn a_pack_members_redundant_override_is_reported() {
+        let vfs = commit_helper_with_overrides(
+            "allowed-tools:\n  - Read\n  - Grep\nsw-overrides:\n  claude:\n    allowed-tools: Read Grep\n",
+        );
+        let report = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+
+        assert_eq!(report.redundant_overrides.len(), 1, "{report:?}");
+        let reason = &report.redundant_overrides[0];
+        assert_eq!(reason.token, ReasonToken::RedundantOverride);
+        let detail = reason.detail.as_deref().unwrap();
+        assert!(detail.contains("allowed-tools"), "{detail}");
+        assert!(
+            report
+                .files
+                .iter()
+                .all(|f| f.status != PublishStatus::Refused),
+            "{report:?}"
+        );
+    }
+
+    #[test]
+    fn a_pack_command_members_override_reaches_the_pack() {
+        let vfs = vault_with_plugin_and_command();
+        vfs.write_file(
+            Path::new("/vault/marketplaces/house/plugins/git-tools/commands/ship.md"),
+            b"---\nname: ship\ndescription: Cuts a release.\nsw-overrides:\n  claude:\n    model: haiku\n---\n\nCut it.\n",
+        )
+        .unwrap();
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+
+        let published = text_at(&vfs, "/dest/.claude/skills/git-tools/commands/ship.md");
+        assert!(published.contains("model: haiku"), "{published}");
+    }
+
     // --- An agent takes no overrides ----------------------------------------
+
+    /// [`vault_with_agent`] with `block` added to the agent's frontmatter.
+    fn agent_with(block: &str) -> MemVfs {
+        let vfs = vault_with_agent();
+        vfs.write_file(
+            Path::new("/vault/skills/senior-reviewer.md"),
+            AGENT_NOTE
+                .replace("sw-kind: agent\n", &format!("sw-kind: agent\n{block}"))
+                .as_bytes(),
+        )
+        .unwrap();
+        vfs
+    }
+
+    // A block for another destination is that destination's business, and an
+    // empty block names nothing to drop.
+    #[test]
+    fn an_agent_with_no_override_for_the_target_still_publishes() {
+        for block in [
+            "sw-overrides:\n  codex:\n    model: o3\n",
+            "sw-overrides:\n  claude: {}\n",
+        ] {
+            let vfs = agent_with(block);
+            let report = publish_skill(&vfs, &agent_request(), &sw()).unwrap();
+            assert!(
+                report
+                    .files
+                    .iter()
+                    .all(|f| f.status != PublishStatus::Refused),
+                "{block}: {report:?}"
+            );
+            assert!(
+                vfs.exists(Path::new("/dest/.claude/agents/senior-reviewer.md")),
+                "{block}"
+            );
+        }
+    }
+
+    // The read side answers as publish does: an agent's keys are refused.
+    #[test]
+    fn override_states_refuses_every_key_of_an_agent() {
+        let vfs = agent_with("sw-overrides:\n  claude:\n    permissionMode: plan\n");
+        let note =
+            read_vault_skill(&vfs, Path::new("/vault/skills/senior-reviewer.md"), &sw()).unwrap();
+
+        let agent = override_states(
+            &note.frontmatter,
+            EntityKind::Agent,
+            &note.projection,
+            &sw(),
+        );
+        assert_eq!(agent.len(), 1);
+        assert_eq!(agent[0].accepted_keys, 0);
+        assert_eq!(agent[0].keys[0].state, OverrideKeyState::Refused);
+
+        let skill = override_states(
+            &note.frontmatter,
+            EntityKind::Skill,
+            &note.projection,
+            &sw(),
+        );
+        assert_eq!(skill[0].keys[0].state, OverrideKeyState::Set);
+    }
 
     // The agent renderer has nowhere to put an override, so accepting the
     // block would tell the author it reached the destination when it did not.
     #[test]
     fn an_agents_override_block_for_the_target_is_refused_rather_than_dropped() {
-        let vfs = vault_with_agent();
-        vfs.write_file(
-            Path::new("/vault/skills/senior-reviewer.md"),
-            AGENT_NOTE
-                .replace(
-                    "sw-kind: agent\n",
-                    "sw-kind: agent\nsw-overrides:\n  claude:\n    permissionMode: plan\n",
-                )
-                .as_bytes(),
-        )
-        .unwrap();
+        let vfs = agent_with("sw-overrides:\n  claude:\n    permissionMode: plan\n");
 
         let err = publish_skill(&vfs, &agent_request(), &sw())
             .unwrap_err()
