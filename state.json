@@ -1,12 +1,123 @@
 {
   "schema": 1,
   "pr": 18,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "53b23ba84cc895751232d504bb9e3a94d9293b61",
+  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
+  "round": 1,
   "claim": {
     "owner": "KellyMBP.local:unknown-r7k2qd",
     "at": "2026-11-02T08:05:57.452Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 747,
+      "title": "override_states still reports agent override keys as set",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 6429,
+      "title": "no test for pack redundant overrides or command member override output",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 6485,
+      "title": "manifest collision test does not prove the rendered manifest wins",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 6509,
+      "title": "agent override refusal: only the refusing case is tested",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 110,
+      "title": "module doc says the rail runs first, which is wrong",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 913,
+      "title": "unreachable exclusion arm in finish",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/compile.rs",
+      "line": 324,
+      "title": "Closure::hash still takes an owner argument the closure now carries",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 1597,
+      "title": "redundant-override mapping and member prep duplicated",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 1457,
+      "title": "new too_many_arguments allow for one extra parameter",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 1709,
+      "title": "imported container plugin.json dropped silently",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
