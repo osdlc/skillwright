@@ -542,20 +542,27 @@ fn rename_plugin(
     let to = rel(to)?;
     let dir_from = rel(dir_from)?;
     let dir_to = rel(dir_to)?;
-    // Every member's path after the move is resolved and validated up front,
-    // so a bad one refuses before the folder moves — nothing here writes yet.
-    // A member inside `dir_from` rides along with the folder; one outside it
-    // joins the pack through `sw-plugin` alone and is edited where it sits.
+    // Every member is checked up front, so a bad one refuses before the
+    // folder moves — nothing here writes yet. A member inside `dir_from`
+    // rides along with the folder; one outside it joins the pack through
+    // `sw-plugin` alone and is edited where it sits.
     let rebased_members = members
         .iter()
         .map(|(member, edits)| {
             let member = rel(member)?;
+            if member == from || member == dir_to || member.starts_with(&format!("{dir_to}/")) {
+                return Err(ApplyError::Refused(format!(
+                    "member {member} is the plugin note or lies under {dir_to}"
+                )));
+            }
+            if !resolve(vault_dir, &member)?.is_file() {
+                return Err(ApplyError::Refused(format!(
+                    "member {member} is not a file in the vault"
+                )));
+            }
             let rebased = match rebase(&member, &dir_from, &dir_to) {
                 Some(rebased) => rebased?,
-                None => {
-                    resolve(vault_dir, &member)?;
-                    member
-                }
+                None => member,
             };
             Ok::<_, ApplyError>((rebased, edits.clone()))
         })
@@ -962,6 +969,42 @@ mod tests {
         assert!(!v.path().join("plugins/gear").exists());
     }
 
+    #[test]
+    fn rename_plugin_refuses_a_missing_or_misplaced_member_without_moving_anything() {
+        for member in [
+            "skills/missing.md",
+            "plugins/tools/skills/missing.md",
+            "skills",
+            "plugins/tools/tools.md",
+            "plugins/gear/gear.md",
+        ] {
+            let v = vault();
+            write(
+                v.path(),
+                "plugins/tools/tools.md",
+                "---\nname: tools\n---\n\nplugin\n",
+            );
+            write(v.path(), "skills/other.md", "---\nname: other\n---\n");
+
+            let op = AuthoringOp::RenamePlugin {
+                from: "plugins/tools/tools.md".to_owned(),
+                to: "plugins/gear/gear.md".to_owned(),
+                dir_from: "plugins/tools".to_owned(),
+                dir_to: "plugins/gear".to_owned(),
+                frontmatter: vec![],
+                members: vec![(
+                    member.to_owned(),
+                    vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
+                )],
+            };
+            let err = apply(v.path(), &op).unwrap_err();
+
+            assert!(matches!(err, ApplyError::Refused(_)), "{member}: {err:?}");
+            assert!(v.path().join("plugins/tools/tools.md").exists(), "{member}");
+            assert!(!v.path().join("plugins/gear").exists(), "{member}");
+        }
+    }
+
     /// If a member's frontmatter edit fails once the bundle has already
     /// moved, the failure carries the [`Outcome`] that already landed rather
     /// than discarding it behind a bare refusal.
@@ -973,6 +1016,11 @@ mod tests {
             "plugins/tools/tools.md",
             "---\nname: tools\n---\n\nplugin\n",
         );
+        write(
+            v.path(),
+            "plugins/tools/skills/broken.md",
+            "---\nname: [unclosed\n---\n\nmember\n",
+        );
 
         let op = AuthoringOp::RenamePlugin {
             from: "plugins/tools/tools.md".to_owned(),
@@ -980,10 +1028,10 @@ mod tests {
             dir_from: "plugins/tools".to_owned(),
             dir_to: "plugins/gear".to_owned(),
             frontmatter: vec![],
-            // Valid, and inside `dir_from` — but no such file exists to edit
-            // once the bundle has moved.
+            // Present, and inside `dir_from` — but its frontmatter cannot be
+            // edited, which only shows once the bundle has moved.
             members: vec![(
-                "plugins/tools/skills/missing.md".to_owned(),
+                "plugins/tools/skills/broken.md".to_owned(),
                 vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
             )],
         };
@@ -996,7 +1044,10 @@ mod tests {
         assert!(v.path().join("plugins/gear/gear.md").exists());
         assert_eq!(
             outcomes(&outcome),
-            vec![("plugins/gear/gear.md", "renamed")]
+            vec![
+                ("plugins/gear/gear.md", "renamed"),
+                ("plugins/gear/skills/broken.md", "moved"),
+            ]
         );
     }
 

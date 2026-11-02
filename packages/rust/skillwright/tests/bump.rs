@@ -256,7 +256,7 @@ fn a_version_in_a_nested_block_is_bumped_in_place() {
     assert_eq!(result.code, 0, "{}", result.stderr);
     assert_eq!(
         result.stdout,
-        format!("{REL}  written · sw-version 2.3.0 -> 2.3.1\n")
+        format!("{REL}  written · sw.version 2.3.0 -> 2.3.1\n")
     );
     let after = fs::read_to_string(&path).unwrap();
     assert!(after.contains("sw:\n  version: 2.3.1\n"), "{after}");

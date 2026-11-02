@@ -417,18 +417,24 @@ pub fn derive_create(
     Ok((path, with_name(fields, &slug)))
 }
 
-/// The directory a component bundle's entry note names, when `entry` is
-/// shaped `<dir>/<dir>.md` or `<dir>/SKILL.md`, extension case-insensitive.
-/// Inside the component tree the scan's own shape rule decides, so a note
-/// directly inside a kind folder (`skills/skills.md`, `skills/SKILL.md`) is a
-/// lone note, not a bundle owning the kind folder. The shape and nothing
-/// else: the plans here decide what moves, never how a host moves it.
+/// The directory a component bundle's entry note owns, or `None` for a note
+/// that travels alone. Under a kind folder the scan's own shape rule decides:
+/// a note directly inside one (`skills/skills.md`, `skills/SKILL.md`) is a
+/// lone note, and so is a path the rule gives no shape (`plugins/p/SKILL.md`).
+/// Outside every kind folder, a note shaped `<dir>/<dir>.md` or
+/// `<dir>/SKILL.md` (extension case-insensitive) owns `<dir>`. The shape and
+/// nothing else: the plans here decide what moves, never how a host moves it.
 pub fn bundle_dir(entry: &str) -> Option<&str> {
     let (dir, file) = entry.rsplit_once('/')?;
-    let bundled = crate::discover::is_bundle_entry(entry).unwrap_or_else(|| {
-        let dir_name = dir.rsplit('/').next().unwrap_or(dir);
-        crate::discover::is_skill_entry(file) || crate::discover::md_stem(file) == Some(dir_name)
-    });
+    let bundled = match crate::discover::is_bundle_entry(entry) {
+        Some(bundled) => bundled,
+        None if crate::discover::under_a_kind_folder(Path::new(""), Path::new(dir)) => false,
+        None => {
+            let dir_name = dir.rsplit('/').next().unwrap_or(dir);
+            crate::discover::is_skill_entry(file)
+                || crate::discover::md_stem(file) == Some(dir_name)
+        }
+    };
     bundled.then_some(dir)
 }
 
@@ -1042,23 +1048,24 @@ fn create_scaffold(path: &str, kind: Option<EntityKind>) -> Vec<String> {
         .collect()
 }
 
-/// Every member note whose explicit `sw-plugin` key names `plugin_slug`
-/// outright — the set a plugin rename must rewrite. Read from the OLD tree,
-/// before anything moves: the notes under the plugin's own folder, plus every
-/// one of `components` (the same scan that found the plugin) of the same
-/// marketplace the scan puts in the plugin, since `sw-plugin` joins a note to
-/// the pack wherever it sits.
-#[allow(clippy::too_many_arguments)]
+/// Every member note whose explicit `sw-plugin` key names `plugin` outright,
+/// with the edits that rekey it to `new_slug` — the set a plugin rename must
+/// rewrite. Read from the OLD tree, before anything moves: the notes under
+/// the plugin's folder `dir`, plus every one of `components` (the same scan
+/// that found the plugin) of the same marketplace the scan puts in the
+/// plugin, since `sw-plugin` joins a note to the pack wherever it sits. Each
+/// candidate is read once; one that cannot be read or parsed names no plugin
+/// and is left alone.
 fn stale_plugin_key_members(
     vfs: &dyn Vfs,
     vault_dir: &Path,
     components: &[DiscoveredComponent],
+    plugin: &DiscoveredComponent,
     dir: &str,
-    entry: &str,
-    marketplace: Option<&str>,
-    plugin_slug: &str,
+    new_slug: &str,
     ns: &Namespace,
-) -> Vec<String> {
+) -> Result<Vec<(String, Vec<FieldEdit>)>, String> {
+    let entry = plugin.vault_relative_path.as_str();
     let mut candidates: BTreeSet<String> = container_members(vfs, vault_dir, dir, entry)
         .into_iter()
         .collect();
@@ -1066,19 +1073,45 @@ fn stale_plugin_key_members(
         components
             .iter()
             .filter(|c| {
-                c.marketplace.as_deref() == marketplace
-                    && c.plugin.as_deref() == Some(plugin_slug)
+                c.marketplace == plugin.marketplace
+                    && c.plugin.as_deref() == Some(plugin.name.as_str())
                     && c.vault_relative_path != entry
             })
             .map(|c| c.vault_relative_path.clone()),
     );
-    candidates
-        .into_iter()
-        .filter(|member| {
-            read_vault_skill(vfs, &vault_dir.join(member), ns)
-                .is_ok_and(|note| note.frontmatter.plugin.as_deref() == Some(plugin_slug))
-        })
-        .collect()
+    let mut members = Vec::new();
+    for member in candidates {
+        let path = vault_dir.join(&member);
+        let Some(source) = vfs
+            .read_file(&path)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+        else {
+            continue;
+        };
+        if plugin_key(&source, &path, ns).as_deref() != Some(plugin.name.as_str()) {
+            continue;
+        }
+        let edits = ns_field_edits(
+            &source,
+            ns,
+            &[("plugin", Some(yaml_splice::Value::Str(new_slug.to_owned())))],
+        )
+        .map_err(|e| e.to_string())?;
+        members.push((member, edits));
+    }
+    Ok(members)
+}
+
+/// The plugin a note's own `sw-plugin` key names (flat or nested), read the
+/// way discovery reads it, or `None` when the note names none or cannot be
+/// read.
+fn plugin_key(source: &str, path: &Path, ns: &Namespace) -> Option<String> {
+    let (frontmatter, _) = crate::skill::split_frontmatter(source);
+    let mut fields = crate::vault::frontmatter_map(frontmatter, path).ok()?;
+    crate::frontmatter::VaultFrontmatter::take_from(&mut fields, path, ns)
+        .ok()?
+        .plugin
 }
 
 /// [`FieldEdit`] in the editor's own vocabulary. Total: `None` is a removal,
@@ -1157,8 +1190,8 @@ pub fn read_ns_field(
         .map(|value| value.to_string()))
 }
 
-/// The edits that set (or, for `None`, remove) each of our own `fields` in
-/// `source`, in the shape the note already uses.
+/// The edits to apply to `source` that set (or, for `None`, remove) each of
+/// `changes`, in the shape the note already uses.
 ///
 /// A note with a nested `sw:` block gets one edit rewriting that block; any
 /// other note gets flat `sw-<field>` keys. Writing a flat key beside an
@@ -1166,27 +1199,23 @@ pub fn read_ns_field(
 ///
 /// [`FieldEdit`] addresses top-level keys only, so the block is written back
 /// whole: its keys keep their order and a new one is appended, but a comment
-/// inside the block is lost and a flow-style block (`sw: {…}`) comes back in
-/// block style. Every byte outside the block is kept.
+/// inside the block is lost (a trailing one on its last entry moves to the
+/// `sw:` line), quoting on its values is dropped, and a flow-style block
+/// (`sw: {…}`) comes back in block style. Every byte outside the block is
+/// kept.
 pub fn ns_field_edits(
     source: &str,
     ns: &Namespace,
     changes: &[(&str, Option<yaml_splice::Value>)],
 ) -> Result<Vec<FieldEdit>, CoreError> {
-    let block = frontmatter_mapping(source)?.and_then(|m| m.get(ns.block_key()).cloned());
-    let mut block = match block {
-        Some(yaml_splice::Value::Map(block)) => block,
-        // `sw:` with nothing under it is an empty block, not a broken one.
-        Some(yaml_splice::Value::Null) => yaml_splice::Mapping::new(),
-        _ => {
-            return Ok(changes
-                .iter()
-                .map(|(field, value)| FieldEdit {
-                    key: ns.key(field),
-                    value: value.clone(),
-                })
-                .collect());
-        }
+    let Some(mut block) = nested_block(source, ns)? else {
+        return Ok(changes
+            .iter()
+            .map(|(field, value)| FieldEdit {
+                key: ns.key(field),
+                value: value.clone(),
+            })
+            .collect());
     };
     let before = block.clone();
     for (field, value) in changes {
@@ -1209,6 +1238,29 @@ pub fn ns_field_edits(
             yaml_splice::Value::Map(block),
         )]
     })
+}
+
+/// How `field` is spelled in `source`, for a message: `sw.<field>` for a
+/// note with a nested `sw:` block, `sw-<field>` otherwise — the shape
+/// [`ns_field_edits`] writes in.
+pub fn ns_field_label(source: &str, ns: &Namespace, field: &str) -> Result<String, CoreError> {
+    Ok(match nested_block(source, ns)? {
+        Some(_) => format!("{}.{field}", ns.block_key()),
+        None => ns.key(field),
+    })
+}
+
+/// The note's nested `sw:` block, or `None` when it has none or the key
+/// holds something other than a mapping.
+fn nested_block(source: &str, ns: &Namespace) -> Result<Option<yaml_splice::Mapping>, CoreError> {
+    Ok(
+        match frontmatter_mapping(source)?.and_then(|m| m.get(ns.block_key()).cloned()) {
+            Some(yaml_splice::Value::Map(block)) => Some(block),
+            // `sw:` with nothing under it is an empty block, not a broken one.
+            Some(yaml_splice::Value::Null) => Some(yaml_splice::Mapping::new()),
+            _ => None,
+        },
+    )
 }
 
 /// [`ns_field_edits`] for the note at vault-relative `rel`, in a plan's own
@@ -1438,8 +1490,9 @@ fn deletion(entry: &str) -> AuthoringOp {
 
 /// Rename a plugin: move its folder, set its own `name`, then rewrite every
 /// member, inside the folder or not, whose explicit `sw-plugin` key named the
-/// old slug. A member that
-/// takes its plugin from the folder needs no edit — the folder moved with it.
+/// old slug. A member that takes its plugin from the folder needs no edit —
+/// the folder moved with it. A failed scan is an error, since the member set
+/// comes from it.
 pub fn plan_rename_plugin(
     vfs: &dyn Vfs,
     vault: &Path,
@@ -1456,11 +1509,7 @@ pub fn plan_rename_plugin(
     let components = discover_components(vfs, vault, None, ns)
         .map_err(|e| e.to_string())?
         .components;
-    let Some(component) = components
-        .iter()
-        .find(|c| c.vault_relative_path == entry)
-        .cloned()
-    else {
+    let Some(component) = components.iter().find(|c| c.vault_relative_path == entry) else {
         return Err(format!(
             "`{entry}` is not a component the vault's scan lists"
         ));
@@ -1468,7 +1517,6 @@ pub fn plan_rename_plugin(
     if component.kind != EntityKind::Plugin {
         return Err(format!("`{entry}` is not a plugin's own entry note"));
     }
-    let old_slug = component.name;
     let to = rename_destination(entry, &slug);
     if let Some(refusal) = rename_collision(vfs, vault, ns, entry, &to, &slug) {
         return Err(refusal);
@@ -1480,28 +1528,8 @@ pub fn plan_rename_plugin(
         ));
     };
     let (dir_from, dir_to) = (dir_from.to_owned(), dir_to.to_owned());
-    let members = stale_plugin_key_members(
-        vfs,
-        vault,
-        &components,
-        &dir_from,
-        entry,
-        component.marketplace.as_deref(),
-        &old_slug,
-        ns,
-    )
-    .into_iter()
-    .map(|member| {
-        let edits = note_ns_edits(
-            vfs,
-            vault,
-            &member,
-            ns,
-            &[("plugin", Some(yaml_splice::Value::Str(slug.clone())))],
-        )?;
-        Ok((member, edits))
-    })
-    .collect::<Result<_, String>>()?;
+    let members =
+        stale_plugin_key_members(vfs, vault, &components, component, &dir_from, &slug, ns)?;
     Ok(AuthoringOp::RenamePlugin {
         from: entry.to_owned(),
         to,
@@ -1603,6 +1631,140 @@ mod tests {
     use yaml_splice::Value;
 
     const VAULT: &str = "/vault";
+
+    fn ns_rewrite(source: &str, changes: &[(&str, Option<Value>)]) -> (Vec<FieldEdit>, String) {
+        let edits = ns_field_edits(source, &sw(), changes).unwrap();
+        let out = apply_field_edits(source, &edits).unwrap();
+        (edits, out)
+    }
+
+    fn str_value(s: &str) -> Option<Value> {
+        Some(Value::Str(s.to_owned()))
+    }
+
+    #[test]
+    fn ns_field_edits_is_empty_when_the_block_already_holds_the_value() {
+        let source = "---\nname: a\nsw:\n  version: 1.0.0\n---\nbody\n";
+        let (edits, out) = ns_rewrite(source, &[("version", str_value("1.0.0"))]);
+        assert!(edits.is_empty());
+        assert_eq!(out, source);
+    }
+
+    #[test]
+    fn ns_field_edits_removes_a_block_its_changes_empty() {
+        let source = "---\nname: a\nsw:\n  version: 1.0.0\ntail: x\n---\nbody\n";
+        let (edits, out) = ns_rewrite(source, &[("version", None)]);
+        assert_eq!(edits, vec![FieldEdit::remove("sw")]);
+        assert_eq!(out, "---\nname: a\ntail: x\n---\nbody\n");
+    }
+
+    #[test]
+    fn ns_field_edits_fills_a_null_block() {
+        let source = "---\nname: a\nsw:\ntail: x\n---\nbody\n";
+        let (_, out) = ns_rewrite(source, &[("plugin", str_value("p"))]);
+        assert_eq!(out, "---\nname: a\nsw:\n  plugin: p\ntail: x\n---\nbody\n");
+    }
+
+    #[test]
+    fn ns_field_edits_falls_back_to_flat_keys_beside_a_block_that_is_not_a_map() {
+        let source = "---\nname: a\nsw: oops\n---\nbody\n";
+        let (edits, _) = ns_rewrite(source, &[("plugin", str_value("p"))]);
+        assert_eq!(
+            edits,
+            vec![FieldEdit::set("sw-plugin", Value::Str("p".to_owned()))]
+        );
+    }
+
+    /// The costs the doc names, pinned so a splicer upgrade that changes
+    /// them shows up here: a flow block comes back in block style and its
+    /// quoting is dropped, while bytes outside the block are kept.
+    #[test]
+    fn ns_field_edits_rewrites_a_flow_block_in_block_style() {
+        let source =
+            "---\nname: a # keep\nsw: {version: 1.0.0, plugin: \"p\"}\ntail: x\n---\nbody\n";
+        let (_, out) = ns_rewrite(source, &[("version", str_value("1.0.1"))]);
+        assert_eq!(
+            out,
+            "---\nname: a # keep\nsw:\n  version: 1.0.1\n  plugin: p\ntail: x\n---\nbody\n"
+        );
+    }
+
+    #[test]
+    fn ns_field_edits_drops_a_comment_inside_the_block() {
+        let source = "---\nname: a\nsw:\n  # note\n  plugin: \"p\"\n  version: 1.0.0 # last\ntail: x\n---\nbody\n";
+        let (_, out) = ns_rewrite(source, &[("version", str_value("1.0.1"))]);
+        assert_eq!(
+            out,
+            "---\nname: a\nsw: # last\n  plugin: p\n  version: 1.0.1\ntail: x\n---\nbody\n"
+        );
+    }
+
+    #[test]
+    fn a_plugin_rename_fails_with_the_scan_error_when_the_scan_cannot_run() {
+        let vfs = one_plugin();
+        write(&vfs, "marketplaces/house/skills/a.md", &note("dup", ""));
+        write(&vfs, "marketplaces/house/skills/b.md", &note("dup", ""));
+        let scan_error = discover_components(&vfs, vault(), None, &sw())
+            .unwrap_err()
+            .to_string();
+
+        let refusal = plan_rename_plugin(
+            &vfs,
+            vault(),
+            &sw(),
+            "marketplaces/house/plugins/tools/tools.md",
+            "gear",
+        )
+        .unwrap_err();
+        assert_eq!(refusal, scan_error);
+    }
+
+    /// A note in the plugin folder that cannot be read names no plugin, so
+    /// the rename leaves it alone rather than failing the whole plan.
+    #[test]
+    fn a_plugin_rename_skips_a_member_it_cannot_read() {
+        let vfs = one_plugin();
+        vfs.write_file(
+            &vault().join("marketplaces/house/plugins/tools/skills/bad.md"),
+            b"---\nsw-plugin: tools\n---\n\xff\xfe\n",
+        )
+        .unwrap();
+        write(
+            &vfs,
+            "marketplaces/house/plugins/tools/skills/keyed.md",
+            &note("keyed", "sw-plugin: tools\n"),
+        );
+
+        let AuthoringOp::RenamePlugin { members, .. } = plan_rename_plugin(
+            &vfs,
+            vault(),
+            &sw(),
+            "marketplaces/house/plugins/tools/tools.md",
+            "gear",
+        )
+        .unwrap() else {
+            panic!("expected a plugin rename");
+        };
+        let paths: Vec<&str> = members.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec!["marketplaces/house/plugins/tools/skills/keyed.md"]
+        );
+    }
+
+    #[test]
+    fn ns_field_label_spells_the_key_the_way_the_note_does() {
+        let nested = "---\nname: a\nsw:\n  version: 1.0.0\n---\n";
+        let flat = "---\nname: a\nsw-version: 1.0.0\n---\n";
+        assert_eq!(
+            ns_field_label(nested, &sw(), "version").unwrap(),
+            "sw.version"
+        );
+        assert_eq!(
+            ns_field_label(flat, &sw(), "version").unwrap(),
+            "sw-version"
+        );
+    }
 
     fn sw() -> Namespace {
         Namespace::default()
@@ -2893,6 +3055,18 @@ mod tests {
         assert_eq!(
             rename_destination("notes/foo/foo.md", "bar"),
             "notes/bar/bar.md"
+        );
+    }
+
+    /// Under a kind folder, a path the shape rule gives no shape is a lone
+    /// note, not a bundle owning the folder it sits in.
+    #[test]
+    fn an_unshaped_note_inside_a_kind_folder_is_not_a_bundle() {
+        assert_eq!(bundle_dir("plugins/p/SKILL.md"), None);
+        assert_eq!(bundle_dir("skills/x/y/y.md"), None);
+        assert_eq!(
+            rename_destination("plugins/p/SKILL.md", "q"),
+            "plugins/p/q.md"
         );
     }
 

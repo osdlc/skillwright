@@ -644,7 +644,7 @@ pub fn folder_kind(content_root: &Path, entry: &Path) -> Option<EntityKind> {
 /// The scan's standing to complain: inside one, a declared note at an
 /// unrecognised path is a mistake worth naming; outside one the vault is
 /// simply the author's.
-fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
+pub(crate) fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
     path.strip_prefix(root).is_ok_and(|rest| {
         rest.iter()
             .any(|part| kind_dir(&part.to_string_lossy()).is_some())

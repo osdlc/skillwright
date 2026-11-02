@@ -10,7 +10,7 @@
 use serde::Serialize;
 use tradecraft_core::{
     BumpLevel, EntityKind, NativeVfs, Vfs, apply_field_edits, discover_components, next_version,
-    ns_field_edits, read_ns_field,
+    ns_field_edits, ns_field_label, read_ns_field,
 };
 
 use crate::ctx::CommandContext;
@@ -163,9 +163,18 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
     };
 
-    let version_key = namespace.key("version");
     // Either shape the note writes it in: flat `sw-version`, or `version`
-    // inside a nested `sw:` block.
+    // inside a nested `sw:` block. Messages name the key as the note spells it.
+    let version_key = match ns_field_label(&source, &namespace, "version") {
+        Ok(label) => label,
+        Err(err) => {
+            let message = err.to_string();
+            return blocked(
+                ctx.err,
+                &format!("bump failed: {}", normalize_thrown_reason(&message)),
+            );
+        }
+    };
     let current = match read_ns_field(&source, &namespace, "version") {
         Ok(Some(value)) => value,
         // No `sw-version` at all is not a refusal — the core's stated
