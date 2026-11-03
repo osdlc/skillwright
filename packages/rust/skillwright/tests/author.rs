@@ -9,9 +9,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use common::with_machine_env;
-use skillwright::cli::run_with;
 use skillwright::commands::author::{AuthorFlags, AuthorHost, Launch, Os, Probe, run_author_with};
-use skillwright::config::Editor;
+use skillwright::config::{Editor, MachineAuthor};
 use skillwright::ctx::CommandContext;
 use skillwright::resolve::CommonFlags;
 
@@ -113,7 +112,6 @@ impl World {
         Probe {
             os: Os::Mac,
             interactive,
-            obsidian_installed: true,
             obsidian_config: Some(self.obsidian_json.clone()),
             code: true,
             terminal_editor: Some(("EDITOR".to_string(), "vim".to_string())),
@@ -164,7 +162,7 @@ fn argv(host: &FakeHost) -> Vec<Vec<String>> {
 }
 
 fn encoded(path: &Path) -> String {
-    skillwright::commands::author::obsidian_open_uri(path)
+    skillwright::commands::author::obsidian::open_uri(path)
 }
 
 #[test]
@@ -267,16 +265,23 @@ fn malformed_obsidian_json_reads_as_not_registered() {
 }
 
 #[test]
-fn a_missing_obsidian_json_reads_as_not_registered() {
+fn without_obsidian_json_obsidian_is_not_available() {
     let world = World::new("vault");
-    let host = FakeHost::new(world.probe(false));
+    let mut probe = world.probe(false);
+    probe.obsidian_config = None;
+    let host = FakeHost::new(probe);
     let r = run(
         &world,
         &flags(&world, None, Some(Editor::Obsidian), false),
         &host,
     );
-    assert_eq!(r.code, 0, "{}", r.stderr);
-    assert!(r.stderr.contains("cannot read"), "{}", r.stderr);
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(
+        r.stderr.contains("obsidian.json was not found"),
+        "{}",
+        r.stderr
+    );
+    assert!(argv(&host).is_empty());
 }
 
 #[test]
@@ -315,7 +320,7 @@ fn cancelling_at_the_vault_question_opens_nothing() {
 fn the_saved_choice_is_honoured() {
     let world = World::new("vault");
     world.save_editor("editor");
-    let host = FakeHost::new(world.probe(false));
+    let host = FakeHost::new(world.probe(true));
     let r = run(
         &world,
         &flags(&world, Some("skills/a note.md"), None, false),
@@ -324,7 +329,7 @@ fn the_saved_choice_is_honoured() {
     assert_eq!(r.code, 0, "{}", r.stderr);
     let launched = host.launched.borrow();
     assert!(launched[0].terminal);
-    assert_eq!(launched[0].argv[0], "vim");
+    assert_eq!(launched[0].argv[..3], ["sh", "-c", "vim \"$@\""]);
 }
 
 #[test]
@@ -351,21 +356,222 @@ fn with_overrides_the_saved_choice() {
 }
 
 #[test]
-fn off_a_terminal_with_nothing_saved_the_first_available_wins() {
+fn off_a_terminal_the_fallback_skips_the_terminal_editor() {
     let world = World::new("vault");
     let mut probe = world.probe(false);
-    probe.obsidian_installed = false;
+    probe.obsidian_config = None;
     probe.code = false;
     let host = FakeHost::new(probe);
     let r = run(&world, &flags(&world, None, None, false), &host);
     assert_eq!(r.code, 0, "{}", r.stderr);
-    assert_eq!(argv(&host)[0][0], "vim");
+    assert_eq!(argv(&host)[0][0], "open");
     assert!(
-        r.stderr.contains("no editor chosen; using $EDITOR (vim)"),
+        r.stderr
+            .contains("no editor chosen; using the system default (open)"),
         "{}",
         r.stderr
     );
     assert!(!world.machine.exists(), "nothing is saved off a terminal");
+}
+
+#[test]
+fn off_a_terminal_an_unregistered_folder_skips_the_terminal_editor() {
+    let world = World::new("vault");
+    let mut probe = world.probe(false);
+    probe.code = false;
+    let host = FakeHost::new(probe);
+    let r = run(
+        &world,
+        &flags(&world, None, Some(Editor::Obsidian), false),
+        &host,
+    );
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert_eq!(
+        argv(&host),
+        vec![vec!["open".to_string(), world.vault.display().to_string()]]
+    );
+}
+
+#[test]
+fn with_editor_off_a_terminal_is_blocked() {
+    let world = World::new("vault");
+    let host = FakeHost::new(world.probe(false));
+    let r = run(
+        &world,
+        &flags(&world, None, Some(Editor::Editor), true),
+        &host,
+    );
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(
+        r.stderr.contains("a terminal editor needs a terminal"),
+        "{}",
+        r.stderr
+    );
+    assert!(argv(&host).is_empty());
+}
+
+#[test]
+fn a_saved_terminal_editor_off_a_terminal_falls_back() {
+    let world = World::new("vault");
+    world.save_editor("editor");
+    let mut probe = world.probe(false);
+    probe.obsidian_config = None;
+    let host = FakeHost::new(probe);
+    let r = run(&world, &flags(&world, None, None, false), &host);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert_eq!(argv(&host)[0][0], "code");
+    assert!(r.stderr.contains("needs a terminal"), "{}", r.stderr);
+}
+
+#[test]
+fn end_of_input_at_the_first_question_cancels_and_saves_nothing() {
+    let world = World::new("vault");
+    let host = FakeHost::new(world.probe(true)).answering(&[None]);
+    let r = run(&world, &flags(&world, None, None, false), &host);
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(r.stderr.contains("nothing opened"), "{}", r.stderr);
+    assert!(argv(&host).is_empty());
+    assert!(!world.machine.exists());
+}
+
+#[test]
+fn end_of_input_at_the_vault_question_cancels() {
+    let world = World::new("vault");
+    let host = FakeHost::new(world.probe(true)).answering(&[None]);
+    let r = run(
+        &world,
+        &flags(&world, None, Some(Editor::Obsidian), false),
+        &host,
+    );
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(argv(&host).is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_vault_registered_through_a_symlink_opens_by_the_stored_path() {
+    let world = World::new("vault");
+    let link = world.root.join("link");
+    std::os::unix::fs::symlink(&world.vault, &link).unwrap();
+    world.register(&link);
+    let host = FakeHost::new(world.probe(false));
+    let r = run(
+        &world,
+        &flags(
+            &world,
+            Some("skills/a note.md"),
+            Some(Editor::Obsidian),
+            false,
+        ),
+        &host,
+    );
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert_eq!(
+        argv(&host),
+        vec![vec![
+            "open".to_string(),
+            encoded(&link.join("skills/a note.md"))
+        ]]
+    );
+}
+
+#[test]
+fn a_relative_path_outside_the_vault_from_cwd_falls_back_to_the_vault() {
+    let world = World::new("vault");
+    // `<cwd>/skills` exists but is outside the vault; `<vault>/skills` wins.
+    fs::create_dir_all(world.root.join("skills")).unwrap();
+    let host = FakeHost::new(world.probe(false));
+    let r = run(
+        &world,
+        &flags(&world, Some("skills"), Some(Editor::System), false),
+        &host,
+    );
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert_eq!(
+        argv(&host),
+        vec![vec![
+            "open".to_string(),
+            world.vault.join("skills").display().to_string()
+        ]]
+    );
+}
+
+#[test]
+fn a_bad_author_block_warns_and_breaks_nothing() {
+    let world = World::new("vault");
+    fs::create_dir_all(world.machine.parent().unwrap()).unwrap();
+    // No project file: the vault comes from the machine file.
+    fs::write(
+        &world.machine,
+        format!(
+            "vault: {}\nauthor:\n  editor: vscode\n  colour: red\n",
+            world.vault.display()
+        ),
+    )
+    .unwrap();
+    let host = FakeHost::new(world.probe(true)).answering(&[Some(1)]);
+    let mut f = flags(&world, None, None, false);
+    f.common.vault = None;
+    let r = run(&world, &f, &host);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.stderr.contains("`author.editor`"), "{}", r.stderr);
+    assert!(r.stderr.contains("`author.colour`"), "{}", r.stderr);
+    assert_eq!(argv(&host)[0][0], "code");
+    // The save replaces the whole block.
+    let saved = fs::read_to_string(&world.machine).unwrap();
+    assert!(saved.contains("editor: code"), "{saved}");
+    assert!(
+        !saved.contains("vscode") && !saved.contains("colour"),
+        "{saved}"
+    );
+
+    // With a project file too, and a scalar `author:`.
+    fs::write(&world.machine, "author: code\n").unwrap();
+    fs::write(world.root.join("skillwright.yaml"), "vault: vault\n").unwrap();
+    let host = FakeHost::new(world.probe(false));
+    let r = run(&world, &f, &host);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.stderr.contains("is not a mapping"), "{}", r.stderr);
+}
+
+#[test]
+fn a_concurrent_edit_is_not_overwritten() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.yaml");
+    fs::write(&path, "namespace: sw\n").unwrap();
+    let author = MachineAuthor::read(&path);
+    fs::write(&path, "namespace: other\n").unwrap();
+    let err = author.save(Editor::Code).unwrap_err();
+    assert!(err.contains("changed since skillwright read it"), "{err}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "namespace: other\n");
+
+    // A file created after a read that found none is not overwritten either.
+    let fresh = dir.path().join("new.yaml");
+    let author = MachineAuthor::read(&fresh);
+    fs::write(&fresh, "namespace: mine\n").unwrap();
+    assert!(author.save(Editor::Code).is_err());
+    assert_eq!(fs::read_to_string(&fresh).unwrap(), "namespace: mine\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_machine_file_is_written_through() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("dotfiles/config.yaml");
+    fs::create_dir_all(real.parent().unwrap()).unwrap();
+    fs::write(&real, "# mine\nnamespace: sw\n").unwrap();
+    let link = dir.path().join("config.yaml");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    MachineAuthor::read(&link).save(Editor::Code).unwrap();
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    let text = fs::read_to_string(&real).unwrap();
+    assert!(text.starts_with("# mine\nnamespace: sw\n"), "{text}");
+    assert!(text.contains("editor: code"), "{text}");
 }
 
 #[test]
@@ -479,30 +685,4 @@ fn a_project_file_may_not_set_author() {
         "{}",
         r.stderr
     );
-}
-
-#[test]
-fn the_cli_parses_author() {
-    let world = World::new("vault");
-    let argv: Vec<String> = [
-        "author",
-        "--with",
-        "system",
-        "--dry-run",
-        "--vault",
-        &world.vault.display().to_string(),
-    ]
-    .iter()
-    .map(|s| (*s).to_string())
-    .collect();
-    let mut out: Vec<u8> = Vec::new();
-    let mut err: Vec<u8> = Vec::new();
-    let code = with_machine_env(Some(&world.machine), || {
-        let mut ctx = CommandContext::new(&world.root, &mut out, &mut err);
-        run_with(&argv, &mut ctx)
-    });
-    let stderr = String::from_utf8(err).unwrap();
-    assert_eq!(code, 0, "{stderr}");
-    let stdout = String::from_utf8(out).unwrap();
-    assert!(stdout.contains("editor  system"), "{stdout}");
 }

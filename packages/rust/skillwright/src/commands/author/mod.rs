@@ -1,12 +1,13 @@
 //! `skillwright author [path]` — open the vault, or a folder or note inside
-//! it, in an editor. Experimental.
+//! it, in an editor. Experimental, and macOS and Linux only.
 //!
 //! The editor comes from `--with`, else the machine file's `author.editor`,
 //! else a one-time question (saved to the machine file). Off a terminal there
-//! is no question: the first available editor wins and stderr says which.
+//! is no question: the first available editor that needs no terminal wins,
+//! and stderr says which.
 //!
-//! Obsidian only opens folders it already knows as vaults. This verb reads
-//! Obsidian's `obsidian.json` to find out, and never writes it: an unknown
+//! Obsidian only opens folders it already knows as vaults. [`obsidian`]
+//! reads its `obsidian.json` to find out, and never writes it: an unknown
 //! folder gets a recommendation and, on a terminal, an offer to open
 //! Obsidian's own vault picker.
 //!
@@ -14,20 +15,19 @@
 //! launching, asking — goes through [`AuthorHost`], so tests never start an
 //! app.
 
+pub mod obsidian;
+
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::commands::harness::cli_runner::{ProcessRunner, Runner};
-use crate::config::{
-    Editor, machine_author_editor, machine_config_path, resolve_against_cwd,
-    save_machine_author_editor,
-};
+use crate::config::{Editor, MachineAuthor, machine_config_path, resolve_against_cwd};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_BLOCKED, EXIT_OK, blocked, usage_error};
 use crate::prompt::{is_interactive, plan_flow};
 use crate::resolve::{CommonFlags, resolve_run};
+use obsidian::{Registration, canonical};
 
 /// The order editors are offered and fallen back to.
 const ORDER: [Editor; 4] = [
@@ -53,17 +53,14 @@ pub struct AuthorFlags {
     pub quiet: bool,
 }
 
-/// The operating system, as far as finding editors goes.
+/// The operating system, as far as opening files goes. Windows is refused
+/// before anything is probed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Os {
     /// macOS.
     Mac,
     /// Linux and the other freedesktop systems.
     Linux,
-    /// Windows.
-    Windows,
-    /// Anything else: no known opener.
-    Other,
 }
 
 impl Os {
@@ -71,63 +68,41 @@ impl Os {
     pub fn current() -> Self {
         if cfg!(target_os = "macos") {
             Self::Mac
-        } else if cfg!(windows) {
-            Self::Windows
-        } else if cfg!(unix) {
-            Self::Linux
         } else {
-            Self::Other
+            Self::Linux
         }
     }
 
     /// The command that opens a file, folder or URI in its default app.
-    pub fn opener(self) -> Option<Vec<String>> {
-        let argv: &[&str] = match self {
-            Self::Mac => &["open"],
-            Self::Linux => &["xdg-open"],
-            // `start`'s first quoted argument is a window title.
-            Self::Windows => &["cmd", "/C", "start", ""],
-            Self::Other => return None,
-        };
-        Some(argv.iter().map(|s| (*s).to_string()).collect())
+    pub fn opener(self) -> &'static str {
+        match self {
+            Self::Mac => "open",
+            Self::Linux => "xdg-open",
+        }
     }
 }
 
-/// The facts [`probe`] reads: the OS, the environment variables, and the
-/// system-wide app folders. Separate so a test can fake all three.
+/// The facts [`probe`] reads: the OS and the environment variables.
+/// Separate so a test can fake both.
 pub struct EnvFacts {
     /// The OS.
     pub os: Os,
     /// The environment variables that matter: `HOME`, `PATH`, `VISUAL`,
-    /// `EDITOR`, `XDG_CONFIG_HOME`, `APPDATA`, `LOCALAPPDATA`.
+    /// `EDITOR`, `XDG_CONFIG_HOME`.
     pub vars: BTreeMap<String, String>,
-    /// System-wide app folders: `/Applications` on macOS,
-    /// `/var/lib/flatpak/app` on Linux.
-    pub app_dirs: Vec<PathBuf>,
 }
 
 impl EnvFacts {
     /// The facts of this process.
     pub fn from_process() -> Self {
-        let os = Os::current();
-        let vars = [
-            "HOME",
-            "PATH",
-            "VISUAL",
-            "EDITOR",
-            "XDG_CONFIG_HOME",
-            "APPDATA",
-            "LOCALAPPDATA",
-        ]
-        .into_iter()
-        .filter_map(|name| std::env::var(name).ok().map(|v| (name.to_string(), v)))
-        .collect();
-        let app_dirs = match os {
-            Os::Mac => vec![PathBuf::from("/Applications")],
-            Os::Linux => vec![PathBuf::from("/var/lib/flatpak/app")],
-            _ => Vec::new(),
-        };
-        Self { os, vars, app_dirs }
+        let vars = ["HOME", "PATH", "VISUAL", "EDITOR", "XDG_CONFIG_HOME"]
+            .into_iter()
+            .filter_map(|name| std::env::var(name).ok().map(|v| (name.to_string(), v)))
+            .collect();
+        Self {
+            os: Os::current(),
+            vars,
+        }
     }
 
     fn var(&self, name: &str) -> Option<&str> {
@@ -149,9 +124,8 @@ pub struct Probe {
     pub os: Os,
     /// True when stdin and stdout are a terminal.
     pub interactive: bool,
-    /// Obsidian is installed.
-    pub obsidian_installed: bool,
-    /// Where Obsidian keeps its vault list, `obsidian.json`.
+    /// Obsidian's `obsidian.json`, when it exists. Obsidian counts as
+    /// available exactly when it does.
     pub obsidian_config: Option<PathBuf>,
     /// `code` is on `PATH`.
     pub code: bool,
@@ -160,13 +134,14 @@ pub struct Probe {
 }
 
 impl Probe {
-    /// True when `editor` can be launched here.
+    /// True when `editor` can be launched here. A terminal editor needs a
+    /// terminal.
     pub fn has(&self, editor: Editor) -> bool {
         match editor {
-            Editor::Obsidian => self.obsidian_installed && self.os.opener().is_some(),
+            Editor::Obsidian => self.obsidian_config.is_some(),
             Editor::Code => self.code,
-            Editor::Editor => self.terminal_editor.is_some(),
-            Editor::System => self.os.opener().is_some(),
+            Editor::Editor => self.terminal_editor.is_some() && self.interactive,
+            Editor::System => true,
         }
     }
 
@@ -177,107 +152,48 @@ impl Probe {
 
     /// How `editor` reads in a question or a note.
     pub fn describe(&self, editor: Editor) -> String {
+        match (editor, &self.terminal_editor) {
+            (Editor::Obsidian, _) => "Obsidian".to_string(),
+            (Editor::Code, _) => "VS Code".to_string(),
+            (Editor::Editor, Some((var, value))) => format!("${var} ({value})"),
+            (Editor::Editor, None) => "$VISUAL / $EDITOR".to_string(),
+            (Editor::System, _) => format!("the system default ({})", self.os.opener()),
+        }
+    }
+
+    fn unavailable_reason(&self, editor: Editor) -> &'static str {
         match editor {
-            Editor::Obsidian => "Obsidian".to_string(),
-            Editor::Code => "VS Code".to_string(),
-            Editor::Editor => match &self.terminal_editor {
-                Some((var, value)) => format!("${var} ({value})"),
-                None => "$VISUAL / $EDITOR".to_string(),
-            },
-            Editor::System => match self.os {
-                Os::Mac => "the system default (open)".to_string(),
-                Os::Linux => "the system default (xdg-open)".to_string(),
-                Os::Windows => "the system default (start)".to_string(),
-                Os::Other => "the system default".to_string(),
-            },
+            Editor::Obsidian => "Obsidian's obsidian.json was not found; open Obsidian once first",
+            Editor::System => "no system opener",
+            Editor::Code => "`code` is not on PATH",
+            Editor::Editor if self.terminal_editor.is_none() => {
+                "neither $VISUAL nor $EDITOR is set"
+            }
+            Editor::Editor => "a terminal editor needs a terminal, and this run has none",
         }
     }
 }
 
-/// Read [`Probe`] from `facts`. Pure: it looks at the filesystem and
-/// nothing else.
+/// Read [`Probe`] from `facts`. It looks at the filesystem and nothing else.
 pub fn probe(facts: &EnvFacts, interactive: bool) -> Probe {
-    let home = facts.home();
-    let on_path = |name: &str| find_on_path(name, facts.var("PATH"), facts.os).is_some();
-    let obsidian_installed = match facts.os {
-        Os::Mac => facts
-            .app_dirs
-            .iter()
-            .cloned()
-            .chain(home.iter().map(|h| h.join("Applications")))
-            .any(|dir| dir.join("Obsidian.app").exists()),
-        Os::Linux => {
-            on_path("obsidian")
-                || facts
-                    .app_dirs
-                    .iter()
-                    .cloned()
-                    .chain(home.iter().map(|h| h.join(".local/share/flatpak/app")))
-                    .any(|dir| dir.join(FLATPAK_ID).exists())
-        }
-        Os::Windows => facts
-            .var("LOCALAPPDATA")
-            .is_some_and(|l| Path::new(l).join("Programs").join("Obsidian").exists()),
-        Os::Other => false,
-    };
     let terminal_editor = ["VISUAL", "EDITOR"]
         .into_iter()
         .find_map(|var| facts.var(var).map(|v| (var.to_string(), v.to_string())));
     Probe {
         os: facts.os,
         interactive,
-        obsidian_installed,
-        obsidian_config: obsidian_config_path(facts),
-        code: on_path("code"),
+        obsidian_config: obsidian::config_path(facts).filter(|p| p.is_file()),
+        code: find_on_path("code", facts.var("PATH")).is_some(),
         terminal_editor,
     }
 }
 
-const FLATPAK_ID: &str = "md.obsidian.Obsidian";
-
-/// Where Obsidian keeps `obsidian.json` on this OS.
-pub fn obsidian_config_path(facts: &EnvFacts) -> Option<PathBuf> {
-    let home = facts.home();
-    match facts.os {
-        Os::Mac => home.map(|h| h.join("Library/Application Support/obsidian/obsidian.json")),
-        Os::Linux => {
-            let config = facts
-                .var("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .or_else(|| home.as_ref().map(|h| h.join(".config")))?;
-            let native = config.join("obsidian/obsidian.json");
-            let flatpak = home.map(|h| {
-                h.join(".var/app")
-                    .join(FLATPAK_ID)
-                    .join("config/obsidian/obsidian.json")
-            });
-            match flatpak {
-                Some(f) if !native.exists() && f.exists() => Some(f),
-                _ => Some(native),
-            }
-        }
-        Os::Windows => facts
-            .var("APPDATA")
-            .map(|a| Path::new(a).join("obsidian").join("obsidian.json")),
-        Os::Other => None,
-    }
-}
-
 /// The first executable called `name` in `path_var`'s directories.
-pub fn find_on_path(name: &str, path_var: Option<&str>, os: Os) -> Option<PathBuf> {
-    let separator = if os == Os::Windows { ';' } else { ':' };
-    let names: Vec<String> = if os == Os::Windows {
-        ["", ".exe", ".cmd", ".bat"]
-            .iter()
-            .map(|ext| format!("{name}{ext}"))
-            .collect()
-    } else {
-        vec![name.to_string()]
-    };
+pub fn find_on_path(name: &str, path_var: Option<&str>) -> Option<PathBuf> {
     path_var?
-        .split(separator)
+        .split(':')
         .filter(|dir| !dir.is_empty())
-        .flat_map(|dir| names.iter().map(move |n| Path::new(dir).join(n)))
+        .map(|dir| Path::new(dir).join(name))
         .find(|candidate| is_executable(candidate))
 }
 
@@ -292,116 +208,6 @@ fn is_executable(path: &Path) -> bool {
 fn is_executable(path: &Path) -> bool {
     path.is_file()
 }
-
-/// Whether Obsidian knows a folder as a vault.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Registration {
-    /// This Obsidian vault is the folder or one of its ancestors.
-    Registered {
-        /// The vault's folder, as `obsidian.json` names it.
-        vault: PathBuf,
-    },
-    /// `obsidian.json` was read and no vault holds the folder.
-    NotRegistered,
-    /// `obsidian.json` could not be read; treated as not registered.
-    Unknown {
-        /// Why.
-        reason: String,
-    },
-}
-
-/// The vault folders `obsidian.json` lists. Its shape is
-/// `{"vaults": {"<id>": {"path": "...", ...}}}`.
-///
-/// # Errors
-///
-/// When the text is not JSON or not that shape.
-pub fn parse_obsidian_vaults(json: &str) -> Result<Vec<PathBuf>, String> {
-    let value: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
-    let vaults = value
-        .get("vaults")
-        .and_then(serde_json::Value::as_object)
-        .ok_or("no `vaults` object")?;
-    vaults
-        .values()
-        .map(|entry| {
-            entry
-                .get("path")
-                .and_then(serde_json::Value::as_str)
-                .map(PathBuf::from)
-                .ok_or_else(|| "a vault entry has no `path` string".to_string())
-        })
-        .collect()
-}
-
-/// The innermost vault that is `target` or an ancestor of it, comparing
-/// canonical paths. A vault path that does not exist is compared as written.
-pub fn owning_vault(vaults: &[PathBuf], target: &Path) -> Option<PathBuf> {
-    let target = canonical(target);
-    vaults
-        .iter()
-        .filter(|vault| target.starts_with(canonical(vault)))
-        .max_by_key(|vault| canonical(vault).components().count())
-        .cloned()
-}
-
-/// Read `config` (Obsidian's `obsidian.json`) and say whether `target` is
-/// inside a registered vault. Never fails: a problem is
-/// [`Registration::Unknown`].
-pub fn registration(config: Option<&Path>, target: &Path) -> Registration {
-    let Some(config) = config else {
-        return Registration::Unknown {
-            reason: "no known location for obsidian.json on this system".to_string(),
-        };
-    };
-    let text = match std::fs::read_to_string(config) {
-        Ok(text) => text,
-        Err(err) => {
-            return Registration::Unknown {
-                reason: format!("cannot read {}: {err}", config.display()),
-            };
-        }
-    };
-    match parse_obsidian_vaults(&text) {
-        Ok(vaults) => match owning_vault(&vaults, target) {
-            Some(vault) => Registration::Registered { vault },
-            None => Registration::NotRegistered,
-        },
-        Err(err) => Registration::Unknown {
-            reason: format!("unexpected content in {}: {err}", config.display()),
-        },
-    }
-}
-
-fn canonical(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
-/// `text` percent-encoded the way JavaScript's `encodeURIComponent` does it,
-/// minus its `!*'()`: everything but `A-Z a-z 0-9 - _ . ~` is encoded.
-pub fn percent_encode(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            out.push(byte as char);
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
-}
-
-/// `obsidian://open?path=<target>`, the link that opens a folder or note in
-/// the vault holding it.
-pub fn obsidian_open_uri(target: &Path) -> String {
-    format!(
-        "obsidian://open?path={}",
-        percent_encode(&target.to_string_lossy())
-    )
-}
-
-/// Obsidian's vault picker, where a person adds a folder as a vault.
-pub const OBSIDIAN_PICKER_URI: &str = "obsidian://choose-vault";
 
 /// One process to start.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -423,7 +229,7 @@ pub trait AuthorHost {
     /// When it cannot start or exits non-zero.
     fn launch(&self, launch: &Launch) -> Result<(), String>;
     /// Ask `question` with numbered `options`, writing to `err`. `None`
-    /// means the person gave no usable answer.
+    /// means the person gave no usable answer, end of input included.
     fn choose(
         &self,
         question: &str,
@@ -438,20 +244,7 @@ pub struct SystemHost;
 
 impl AuthorHost for SystemHost {
     fn probe(&self) -> Probe {
-        let facts = EnvFacts::from_process();
-        let mut probe = probe(&facts, is_interactive());
-        // An Obsidian.app outside /Applications and ~/Applications.
-        if facts.os == Os::Mac && !probe.obsidian_installed {
-            let found = ProcessRunner.run(
-                &[
-                    "mdfind".to_string(),
-                    "kMDItemCFBundleIdentifier == 'md.obsidian'".to_string(),
-                ],
-                Path::new("/"),
-            );
-            probe.obsidian_installed = found.ok() && !found.stdout.trim().is_empty();
-        }
-        probe
+        probe(&EnvFacts::from_process(), is_interactive())
     }
 
     // Long-lived and interactive: a terminal editor inherits stdio, which
@@ -483,21 +276,42 @@ impl AuthorHost for SystemHost {
         default: usize,
         err: &mut dyn Write,
     ) -> Option<usize> {
-        let _ = writeln!(err, "{question}");
-        for (index, option) in options.iter().enumerate() {
-            let _ = writeln!(err, "  {}) {option}", index + 1);
-        }
-        let _ = write!(err, "Choose [{}]: ", default + 1);
-        let _ = err.flush();
-        let mut answer = String::new();
-        std::io::stdin().lock().read_line(&mut answer).ok()?;
-        let answer = answer.trim();
-        if answer.is_empty() {
-            return Some(default);
-        }
-        let number: usize = answer.parse().ok()?;
-        (1..=options.len()).contains(&number).then(|| number - 1)
+        ask(
+            question,
+            options,
+            default,
+            &mut std::io::stdin().lock(),
+            err,
+        )
     }
+}
+
+/// [`AuthorHost::choose`] over any input. An empty line takes `default`; end
+/// of input, a read error or an answer out of range is `None`.
+pub fn ask(
+    question: &str,
+    options: &[String],
+    default: usize,
+    input: &mut dyn BufRead,
+    err: &mut dyn Write,
+) -> Option<usize> {
+    let _ = writeln!(err, "{question}");
+    for (index, option) in options.iter().enumerate() {
+        let _ = writeln!(err, "  {}) {option}", index + 1);
+    }
+    let _ = write!(err, "Choose [{}]: ", default + 1);
+    let _ = err.flush();
+    let mut answer = String::new();
+    match input.read_line(&mut answer) {
+        Ok(0) | Err(_) => return None,
+        Ok(_) => {}
+    }
+    let answer = answer.trim();
+    if answer.is_empty() {
+        return Some(default);
+    }
+    let number: usize = answer.parse().ok()?;
+    (1..=options.len()).contains(&number).then(|| number - 1)
 }
 
 /// Run `skillwright author` on the real machine.
@@ -511,6 +325,12 @@ pub fn run_author_with(
     ctx: &mut CommandContext<'_>,
     host: &dyn AuthorHost,
 ) -> i32 {
+    if cfg!(windows) {
+        return usage_error(
+            ctx.err,
+            "`skillwright author` is experimental and not supported on Windows.",
+        );
+    }
     let run = match resolve_run(&flags.common, &ctx.cwd, ctx.err) {
         Ok(run) => run,
         Err(code) => return code,
@@ -530,11 +350,12 @@ pub fn run_author_with(
         Err(code) => return code,
     };
 
-    let mut argv_override: Option<Vec<String>> = None;
+    let mut launch = None;
     if editor == Editor::Obsidian {
-        match registration(probe.obsidian_config.as_deref(), &target) {
-            Registration::Registered { vault: owner } => {
-                // Said only when Obsidian's vault is not this vault itself.
+        // `has(Obsidian)` holds, so the config exists.
+        let config = probe.obsidian_config.as_deref().unwrap_or(Path::new(""));
+        match obsidian::registration(config, &target) {
+            Registration::Registered { vault: owner, path } => {
                 if canonical(&owner) != vault {
                     notes.push(format!(
                         "{} opens inside the Obsidian vault {}",
@@ -542,6 +363,7 @@ pub fn run_author_with(
                         owner.display()
                     ));
                 }
+                launch = Some(plan_launch(Editor::Obsidian, &probe, &vault, &path));
             }
             other => {
                 flush_notes(&mut notes, flags.quiet, ctx.err);
@@ -551,25 +373,25 @@ pub fn run_author_with(
                 for line in recommendation(&vault, ctx) {
                     let _ = writeln!(ctx.err, "{line}");
                 }
+                let options = [
+                    "Open the vault picker now".to_string(),
+                    "Use another editor this time".to_string(),
+                    "Cancel".to_string(),
+                ];
                 let choice = if ask {
-                    host.choose(
-                        "What now?",
-                        &[
-                            "Open the vault picker now".to_string(),
-                            "Use another editor this time".to_string(),
-                            "Cancel".to_string(),
-                        ],
-                        0,
-                        ctx.err,
-                    )
+                    host.choose("What now?", &options, 0, ctx.err)
                 } else {
                     Some(1)
                 };
                 match choice {
                     Some(0) => {
-                        let mut argv = probe.os.opener().unwrap_or_default();
-                        argv.push(OBSIDIAN_PICKER_URI.to_string());
-                        argv_override = Some(argv);
+                        launch = Some(Launch {
+                            argv: vec![
+                                probe.os.opener().to_string(),
+                                obsidian::PICKER_URI.to_string(),
+                            ],
+                            terminal: false,
+                        });
                     }
                     Some(1) => {
                         let Some(next) = probe
@@ -588,13 +410,7 @@ pub fn run_author_with(
         }
     }
 
-    let launch = match argv_override {
-        Some(argv) => Launch {
-            argv,
-            terminal: false,
-        },
-        None => plan_launch(editor, &probe, &vault, &target),
-    };
+    let launch = launch.unwrap_or_else(|| plan_launch(editor, &probe, &vault, &target));
     flush_notes(&mut notes, flags.quiet, ctx.err);
     report(flags, editor, &target, &launch, ctx);
     if flags.dry_run {
@@ -609,29 +425,32 @@ pub fn run_author_with(
     }
 }
 
-/// `path`, absolute or relative to `cwd`, else relative to the vault; it must
-/// exist and sit inside the vault. Returned canonical.
+/// `path`, absolute or relative, as a canonical path inside the vault. A
+/// relative path is tried against `cwd` first, and that wins only when it
+/// lands inside the vault; otherwise it is tried against the vault.
 fn resolve_target(path: Option<&str>, cwd: &Path, vault: &Path) -> Result<PathBuf, String> {
     let Some(path) = path else {
         return Ok(vault.to_path_buf());
     };
-    let from_cwd = resolve_against_cwd(path, cwd);
-    let found = if from_cwd.exists() {
-        from_cwd
-    } else if Path::new(path).is_relative() && vault.join(path).exists() {
-        vault.join(path)
-    } else {
-        return Err(format!("not found: {path}"));
-    };
-    let found = canonical(&found);
-    if found.starts_with(vault) {
-        Ok(found)
-    } else {
-        Err(format!(
+    let mut candidates = vec![resolve_against_cwd(path, cwd)];
+    if Path::new(path).is_relative() {
+        candidates.push(vault.join(path));
+    }
+    let found: Vec<PathBuf> = candidates
+        .iter()
+        .filter(|c| c.exists())
+        .map(|c| canonical(c))
+        .collect();
+    if let Some(inside) = found.iter().find(|c| c.starts_with(vault)) {
+        return Ok(inside.clone());
+    }
+    match found.first() {
+        Some(outside) => Err(format!(
             "{} is not inside the vault {}",
-            found.display(),
+            outside.display(),
             vault.display()
-        ))
+        )),
+        None => Err(format!("not found: {path}")),
     }
 }
 
@@ -654,19 +473,20 @@ fn pick_editor(
             &format!(
                 "--with {}: {}",
                 editor.as_str(),
-                unavailable_reason(editor, probe)
+                probe.unavailable_reason(editor)
             ),
         ));
     }
-    match machine_author_editor() {
-        Ok(Some(editor)) if probe.has(editor) => return Ok(editor),
-        Ok(Some(editor)) => notes.push(format!(
+    let saved = MachineAuthor::read(&machine_config_path());
+    notes.extend(saved.warnings.iter().map(|w| format!("warning: {w}")));
+    match saved.editor {
+        Some(editor) if probe.has(editor) => return Ok(editor),
+        Some(editor) => notes.push(format!(
             "the saved editor `{}` is not available here: {}",
             editor.as_str(),
-            unavailable_reason(editor, probe)
+            probe.unavailable_reason(editor)
         )),
-        Ok(None) => {}
-        Err(message) => notes.push(format!("ignoring the saved editor: {message}")),
+        None => {}
     }
     let available = probe.available();
     let Some(&first) = available.first() else {
@@ -712,66 +532,53 @@ fn pick_editor(
         return Err(EXIT_BLOCKED);
     };
     let editor = available[index];
-    match save_machine_author_editor(editor) {
+    match saved.save(editor) {
         Ok(path) => notes.push(format!(
             "saved author.editor: {} in {}",
             editor.as_str(),
             path.display()
         )),
-        Err(message) => notes.push(format!(
-            "could not save the choice to {}: {message}",
-            machine_config_path().display()
-        )),
+        Err(message) => notes.push(format!("could not save the choice: {message}")),
     }
     Ok(editor)
 }
 
-fn unavailable_reason(editor: Editor, probe: &Probe) -> &'static str {
-    match editor {
-        Editor::Obsidian if probe.os.opener().is_none() => "no system opener on this platform",
-        Editor::Obsidian => "Obsidian is not installed",
-        Editor::Code => "`code` is not on PATH",
-        Editor::Editor => "neither $VISUAL nor $EDITOR is set",
-        Editor::System => "no system opener on this platform",
-    }
-}
-
-/// The process that opens `target` in `editor`.
+/// The process that opens `target` in `editor`. For Obsidian, `target` is
+/// the path as Obsidian stores the vault.
 pub fn plan_launch(editor: Editor, probe: &Probe, vault: &Path, target: &Path) -> Launch {
     let path = |p: &Path| p.to_string_lossy().into_owned();
-    let mut terminal = false;
+    let opener = probe.os.opener().to_string();
     let argv = match editor {
-        Editor::Obsidian => {
-            let mut argv = probe.os.opener().unwrap_or_default();
-            argv.push(obsidian_open_uri(target));
-            argv
-        }
-        Editor::Code => {
-            let mut argv = vec!["code".to_string(), path(vault)];
-            if target.is_file() {
-                argv.push("--goto".to_string());
-                argv.push(path(target));
-            }
-            argv
-        }
+        Editor::Obsidian => vec![opener, obsidian::open_uri(target)],
+        Editor::Code if target.is_file() => vec![
+            "code".to_string(),
+            path(vault),
+            "--goto".to_string(),
+            path(target),
+        ],
+        Editor::Code => vec!["code".to_string(), path(vault)],
+        // As git runs it: the shell reads the value, so quotes and
+        // arguments in it work.
         Editor::Editor => {
-            terminal = true;
-            let command = probe
+            let value = probe
                 .terminal_editor
                 .as_ref()
-                .map(|(_, value)| value.as_str())
+                .map(|(_, value)| value.clone())
                 .unwrap_or_default();
-            let mut argv: Vec<String> = command.split_whitespace().map(str::to_string).collect();
-            argv.push(path(target));
-            argv
+            vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                format!("{value} \"$@\""),
+                value,
+                path(target),
+            ]
         }
-        Editor::System => {
-            let mut argv = probe.os.opener().unwrap_or_default();
-            argv.push(path(target));
-            argv
-        }
+        Editor::System => vec![opener, path(target)],
     };
-    Launch { argv, terminal }
+    Launch {
+        argv,
+        terminal: editor == Editor::Editor,
+    }
 }
 
 /// What to tell a person whose folder Obsidian does not know.
@@ -861,6 +668,7 @@ fn report(
 
 #[cfg(test)]
 mod tests {
+    use super::obsidian::{open_uri, owning_vault, parse_vaults, percent_encode};
     use super::*;
 
     #[test]
@@ -875,17 +683,17 @@ mod tests {
     #[test]
     fn parse_reads_every_vault_path() {
         let json = r#"{"vaults":{"0123456789abcdef":{"path":"/a","ts":1,"open":true},"fedcba9876543210":{"path":"/b/c","ts":2}}}"#;
-        let mut vaults = parse_obsidian_vaults(json).unwrap();
+        let mut vaults = parse_vaults(json).unwrap();
         vaults.sort();
         assert_eq!(vaults, vec![PathBuf::from("/a"), PathBuf::from("/b/c")]);
     }
 
     #[test]
     fn parse_refuses_the_wrong_shape() {
-        assert!(parse_obsidian_vaults("not json").is_err());
-        assert!(parse_obsidian_vaults(r#"{"vaults":[]}"#).is_err());
-        assert!(parse_obsidian_vaults(r#"{"vaults":{"x":{"ts":1}}}"#).is_err());
-        assert!(parse_obsidian_vaults("{}").is_err());
+        assert!(parse_vaults("not json").is_err());
+        assert!(parse_vaults(r#"{"vaults":[]}"#).is_err());
+        assert!(parse_vaults(r#"{"vaults":{"x":{"ts":1}}}"#).is_err());
+        assert!(parse_vaults("{}").is_err());
     }
 
     #[test]
@@ -893,13 +701,31 @@ mod tests {
         let vaults = vec![PathBuf::from("/notes"), PathBuf::from("/notes/inner")];
         assert_eq!(
             owning_vault(&vaults, Path::new("/notes/inner/a.md")),
-            Some(PathBuf::from("/notes/inner"))
+            Some((
+                PathBuf::from("/notes/inner"),
+                PathBuf::from("/notes/inner/a.md")
+            ))
         );
         assert_eq!(
             owning_vault(&vaults, Path::new("/notes")),
-            Some(PathBuf::from("/notes"))
+            Some((PathBuf::from("/notes"), PathBuf::from("/notes")))
         );
         assert_eq!(owning_vault(&vaults, Path::new("/notes-other")), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owning_vault_keeps_the_stored_path_of_a_symlinked_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir_all(real.join("skills")).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let target = real.join("skills").canonicalize().unwrap();
+        let (vault, path) = owning_vault(std::slice::from_ref(&link), &target).unwrap();
+        assert_eq!(vault, link);
+        assert_eq!(path, link.join("skills"));
+        assert!(open_uri(&path).ends_with("link%2Fskills"));
     }
 
     #[test]
@@ -910,24 +736,18 @@ mod tests {
         let path_var = dir.path().to_string_lossy().into_owned();
         #[cfg(unix)]
         {
-            assert_eq!(find_on_path("code", Some(&path_var), Os::Linux), None);
+            assert_eq!(find_on_path("code", Some(&path_var)), None);
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        assert_eq!(
-            find_on_path("code", Some(&path_var), Os::Linux),
-            Some(bin.clone())
-        );
-        assert_eq!(find_on_path("code", None, Os::Linux), None);
+        assert_eq!(find_on_path("code", Some(&path_var)), Some(bin.clone()));
+        assert_eq!(find_on_path("code", None), None);
     }
 
     #[test]
-    fn probe_reads_a_fake_home() {
+    fn probe_finds_obsidian_by_its_config_file() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
-        let apps = dir.path().join("apps");
-        std::fs::create_dir_all(home.join(".config/obsidian")).unwrap();
-        std::fs::create_dir_all(apps.join("Obsidian.app")).unwrap();
         let facts = |os| EnvFacts {
             os,
             vars: [
@@ -937,42 +757,67 @@ mod tests {
             ]
             .into_iter()
             .collect(),
-            app_dirs: vec![apps.clone()],
         };
-
         let mac = probe(&facts(Os::Mac), false);
-        assert!(mac.obsidian_installed);
-        assert_eq!(
-            mac.obsidian_config,
-            Some(home.join("Library/Application Support/obsidian/obsidian.json"))
-        );
+        assert_eq!(mac.obsidian_config, None);
         assert!(!mac.code);
         assert_eq!(
             mac.terminal_editor,
             Some(("EDITOR".to_string(), "vim".to_string()))
         );
+        // Off a terminal the terminal editor is not offered.
+        assert_eq!(mac.available(), vec![Editor::System]);
         assert_eq!(
-            mac.available(),
-            vec![Editor::Obsidian, Editor::Editor, Editor::System]
+            probe(&facts(Os::Mac), true).available(),
+            vec![Editor::Editor, Editor::System]
         );
 
-        let linux = probe(&facts(Os::Linux), false);
-        assert!(!linux.obsidian_installed);
+        let mac_json = home.join("Library/Application Support/obsidian/obsidian.json");
+        std::fs::create_dir_all(mac_json.parent().unwrap()).unwrap();
+        std::fs::write(&mac_json, "{}").unwrap();
         assert_eq!(
-            linux.obsidian_config,
-            Some(home.join(".config/obsidian/obsidian.json"))
+            probe(&facts(Os::Mac), false).obsidian_config,
+            Some(mac_json)
         );
+
+        assert_eq!(probe(&facts(Os::Linux), false).obsidian_config, None);
+        let flatpak = home.join(".var/app/md.obsidian.Obsidian/config/obsidian/obsidian.json");
+        std::fs::create_dir_all(flatpak.parent().unwrap()).unwrap();
+        std::fs::write(&flatpak, "{}").unwrap();
+        assert_eq!(
+            probe(&facts(Os::Linux), false).obsidian_config,
+            Some(flatpak)
+        );
+        let native = home.join(".config/obsidian/obsidian.json");
+        std::fs::create_dir_all(native.parent().unwrap()).unwrap();
+        std::fs::write(&native, "{}").unwrap();
+        assert_eq!(
+            probe(&facts(Os::Linux), false).obsidian_config,
+            Some(native)
+        );
+    }
+
+    #[test]
+    fn ask_cancels_at_end_of_input_and_defaults_on_an_empty_line() {
+        let options = ["a".to_string(), "b".to_string()];
+        let mut err = Vec::new();
+        assert_eq!(ask("q", &options, 0, &mut &b""[..], &mut err), None);
+        assert_eq!(ask("q", &options, 1, &mut &b"\n"[..], &mut err), Some(1));
+        assert_eq!(ask("q", &options, 0, &mut &b"2\n"[..], &mut err), Some(1));
+        assert_eq!(ask("q", &options, 0, &mut &b"3\n"[..], &mut err), None);
     }
 
     #[test]
     fn plan_launch_builds_each_command() {
         let probe = Probe {
             os: Os::Mac,
-            interactive: false,
-            obsidian_installed: true,
+            interactive: true,
             obsidian_config: None,
             code: true,
-            terminal_editor: Some(("VISUAL".to_string(), "nvim -p".to_string())),
+            terminal_editor: Some((
+                "VISUAL".to_string(),
+                r#""/Applications/Sublime Text.app/bin/subl" -w"#.to_string(),
+            )),
         };
         let dir = tempfile::tempdir().unwrap();
         let note = dir.path().join("a b.md");
@@ -992,12 +837,52 @@ mod tests {
         assert!(launch.terminal);
         assert_eq!(
             launch.argv,
-            vec!["nvim".to_string(), "-p".to_string(), s(&note)]
+            vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                r#""/Applications/Sublime Text.app/bin/subl" -w "$@""#.to_string(),
+                r#""/Applications/Sublime Text.app/bin/subl" -w"#.to_string(),
+                s(&note)
+            ]
         );
 
         let launch = plan_launch(Editor::Obsidian, &probe, vault, &note);
         assert_eq!(launch.argv[0], "open");
         assert!(launch.argv[1].starts_with("obsidian://open?path=%2F"));
         assert!(launch.argv[1].ends_with("a%20b.md"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_editor_command_runs_a_quoted_program_path() {
+        // A program whose path has a space, named in quotes with an argument.
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("my editor");
+        let out = dir.path().join("out");
+        std::fs::write(
+            &bin,
+            format!("#!/bin/sh\nprintf '%s|' \"$@\" > '{}'\n", out.display()),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let probe = Probe {
+            os: Os::Linux,
+            interactive: true,
+            obsidian_config: None,
+            code: false,
+            terminal_editor: Some(("EDITOR".to_string(), format!("'{}' -w", bin.display()))),
+        };
+        let note = dir.path().join("a b.md");
+        let launch = plan_launch(Editor::Editor, &probe, dir.path(), &note);
+        let status = Command::new(&launch.argv[0])
+            .args(&launch.argv[1..])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap(),
+            format!("-w|{}|", note.display())
+        );
     }
 }

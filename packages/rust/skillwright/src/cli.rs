@@ -588,6 +588,19 @@ struct AuthorArgs {
     globals: ReadOnlyGlobals,
 }
 
+impl AuthorArgs {
+    fn flags(&self) -> AuthorFlags {
+        AuthorFlags {
+            path: self.path.clone(),
+            with: self.with,
+            dry_run: self.dry_run,
+            common: self.globals.common(),
+            json: self.globals.json,
+            quiet: self.globals.quiet,
+        }
+    }
+}
+
 /// `harness`'s children: `install`, `update` and `uninstall`. Nested
 /// subcommands rather than flags, so `harness install <harness>` parses as
 /// three literal tokens.
@@ -950,17 +963,7 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
         Verb::Delete(args) => run_delete(&args.flags(), ctx),
         Verb::Convert(args) => run_convert(&args.flags(), ctx),
         Verb::Harness(args) => dispatch_harness(args, ctx),
-        Verb::Author(args) => run_author(
-            &AuthorFlags {
-                path: args.path.clone(),
-                with: args.with,
-                dry_run: args.dry_run,
-                common: args.globals.common(),
-                json: args.globals.json,
-                quiet: args.globals.quiet,
-            },
-            ctx,
-        ),
+        Verb::Author(args) => run_author(&args.flags(), ctx),
     }
 }
 
@@ -1001,5 +1004,34 @@ fn report_parse_error(error: &clap::Error, ctx: &mut CommandContext<'_>) -> i32 
             let _ = writeln!(ctx.err, "{rendered}");
             EXIT_USAGE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_cli_parses_author() {
+        let cli = Cli::try_parse_from([
+            PROG,
+            "author",
+            "skills/a note.md",
+            "--with",
+            "system",
+            "--dry-run",
+            "--vault",
+            "v",
+            "--json",
+        ])
+        .unwrap();
+        let Verb::Author(args) = cli.verb else {
+            panic!("not author: {:?}", cli.verb);
+        };
+        let flags = args.flags();
+        assert_eq!(flags.path.as_deref(), Some("skills/a note.md"));
+        assert_eq!(flags.with, Some(Editor::System));
+        assert!(flags.dry_run && flags.json && !flags.quiet);
+        assert_eq!(flags.common.vault.as_deref(), Some("v"));
     }
 }

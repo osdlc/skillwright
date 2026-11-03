@@ -132,15 +132,25 @@ Each verb's own options:
 ### author
 
 `skillwright author` opens the vault in an editor. Give a path to open a
-folder or note inside the vault instead.
+folder or note inside the vault instead. A relative path is tried against
+the working directory first, and against the vault when that misses the
+vault.
+
+`author` is experimental. It runs on macOS and Linux only; on Windows it
+exits with a usage error.
 
 It picks the editor from `--with`, then from `author.editor` in the machine
 file. With neither, it asks once on a terminal and saves the answer there.
-Off a terminal it does not ask: it uses the first available editor, in the
-order Obsidian, VS Code (`code`), `$VISUAL` or `$EDITOR`, and the system
-opener, and says which on stderr.
+Pressing Ctrl-D at the question cancels and saves nothing. Off a terminal
+it does not ask: it uses the first available editor, in the order Obsidian,
+VS Code (`code`) and the system opener (`open` or `xdg-open`), and says
+which on stderr. `$VISUAL` or `$EDITOR` is used only on a terminal, and is
+run through `sh -c` as git runs it, so quotes and arguments in it work.
 
-Obsidian opens only folders it knows as vaults. `author` reads Obsidian's
+Obsidian counts as available when its `obsidian.json` exists:
+`~/Library/Application Support/obsidian/` on macOS, and
+`~/.config/obsidian/` (or the flatpak's `~/.var/app/md.obsidian.Obsidian/config/obsidian/`)
+on Linux. Obsidian opens only folders it knows as vaults. `author` reads
 `obsidian.json` to check, and never changes it. For a folder Obsidian does
 not know, it explains how to add it with "Open folder as vault". On a
 terminal it offers to open Obsidian's vault picker; off a terminal it uses
@@ -181,7 +191,11 @@ the project file. It writes the machine file only to save the editor
 the same name the machine file's value wins.
 
 `author:` is read from the machine file only. A project file that sets it is
-an error.
+an error. In the machine file a bad value under `author:` is a warning and
+reads as unset; it never stops another verb. Saving the editor replaces the
+whole `author:` block, keeps the rest of the file and its comments, writes
+through a symlink to its target, and does not overwrite the file if it
+changed since `author` read it.
 
 ```yaml
 author:

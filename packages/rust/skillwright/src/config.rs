@@ -22,8 +22,8 @@
 //!
 //! `author:` is the one per-user key: it is read from the machine file only,
 //! and a project file that sets it is malformed. It is also the one value
-//! written back: [`save_machine_author_editor`] records the editor `author`
-//! opens. Nothing else here writes.
+//! written back: [`MachineAuthor::save`] records the editor `author` opens.
+//! Nothing else here writes.
 //!
 //! This module reads shapes and nothing else. Whether `vault` names a
 //! directory that exists, and whether `namespace` is a stem the core
@@ -117,14 +117,10 @@ pub struct SkillwrightConfig {
     /// Canonical hooks files; see `tradecraft_core::HookFileSpec`.
     #[serde(default)]
     pub hooks: Vec<HookFileEntry>,
-    /// What `author` opens the vault with. Machine file only.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub author: Option<AuthorSettings>,
 }
 
 /// The editors `author` can open the vault in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, clap::ValueEnum)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Editor {
     /// Obsidian, through an `obsidian://` link.
     Obsidian,
@@ -132,7 +128,7 @@ pub enum Editor {
     Code,
     /// The terminal editor `$VISUAL` or `$EDITOR` names.
     Editor,
-    /// The system's default opener: `open`, `xdg-open` or `start`.
+    /// The system's default opener: `open` or `xdg-open`.
     System,
 }
 
@@ -146,15 +142,6 @@ impl Editor {
             Self::System => "system",
         }
     }
-}
-
-/// The machine file's `author:` block.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct AuthorSettings {
-    /// The editor `author` opens when `--with` is not given.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub editor: Option<Editor>,
 }
 
 /// One `hooks:` entry, as written in the project file.
@@ -441,11 +428,7 @@ fn resolve_machine_mapping(
 /// Top-level keys whose value is a struct, and whether the field is an
 /// `Option` (so a bare `key:` reads as unset). `serde_json` reads a sequence
 /// into a struct, so without this check `marketplace: []` would load.
-const STRUCT_KEYS: &[(&str, bool)] = &[
-    ("declared_folders", true),
-    ("marketplace", false),
-    ("author", true),
-];
+const STRUCT_KEYS: &[(&str, bool)] = &[("declared_folders", true), ("marketplace", false)];
 
 /// The key in [`STRUCT_KEYS`] whose value is not a mapping, if any.
 fn non_mapping_struct_key(
@@ -511,7 +494,6 @@ fn annotate_detail(
     check!("marketplace", MarketplaceSettings);
     check!("assets", Vec<AssetEntry>);
     check!("hooks", Vec<HookFileEntry>);
-    check!("author", AuthorSettings);
     if issues.is_empty() {
         base_detail
     } else {
@@ -615,7 +597,7 @@ fn load_config_at(
     // `exists()` is true for a directory too, so a path naming a directory
     // reaches the unreadable branch below rather than reading as absent.
     let machine_exists = machine_path.exists();
-    let machine_mapping = if machine_exists {
+    let mut machine_mapping = if machine_exists {
         match file::read_mapping(&machine_path) {
             Ok(m) => m,
             Err(problem) => return problem_load(problem, &machine_path),
@@ -623,6 +605,9 @@ fn load_config_at(
     } else {
         serde_json::Map::new()
     };
+    // `author:` is read leniently by [`MachineAuthor`]; a bad value there
+    // must not break the load.
+    machine_mapping.remove("author");
     // Checked once, against the same schema the layered read uses below: a
     // typo in the machine file must not read as "no configuration, run
     // init".
@@ -732,73 +717,124 @@ fn load_config_at(
     finish(config, &project_dir, &project_path, &machine_paths, home)
 }
 
-/// The machine file's `author.editor`, or `None` when the file or the key is
-/// absent.
-///
-/// # Errors
-///
-/// When the machine file exists and cannot be read, or its `author:` block
-/// is not the expected shape.
-pub fn machine_author_editor() -> Result<Option<Editor>, String> {
-    let path = machine_config_path();
-    if !path.exists() {
-        return Ok(None);
-    }
-    let mapping = file::read_mapping(&path).map_err(|problem| problem.to_string())?;
-    let Some(author) = mapping.get("author") else {
-        return Ok(None);
-    };
-    if author.is_null() {
-        return Ok(None);
-    }
-    serde_json::from_value::<AuthorSettings>(author.clone())
-        .map(|settings| settings.editor)
-        .map_err(|err| format!("`author` in {}: {err}", path.display()))
+/// The machine file's `author:` block, read leniently, and what saving a
+/// new editor into the file needs.
+#[derive(Debug)]
+pub struct MachineAuthor {
+    /// The saved editor, when the file names a valid one.
+    pub editor: Option<Editor>,
+    /// What in the file was ignored, and why. Each one is a warning.
+    pub warnings: Vec<String>,
+    /// The file to write: the machine file, or its target when it is a
+    /// symlink.
+    path: PathBuf,
+    /// The file's bytes as read; empty when it does not exist.
+    source: Vec<u8>,
+    /// The etag of `source`, or `None` when the file does not exist.
+    etag: Option<String>,
+    /// Why the file cannot be saved into, when it could not be read.
+    unreadable: Option<String>,
 }
 
-/// Write `author.editor` into the machine file, creating the file when it is
-/// missing, and return its path.
-///
-/// Only the `author:` value's bytes change: every other key, and every
-/// comment, stays as written. Any other key already under `author:` is kept.
-///
-/// # Errors
-///
-/// When the machine file cannot be read, parsed, or written.
-pub fn save_machine_author_editor(editor: Editor) -> Result<PathBuf, String> {
-    use yaml_splice::{FieldEdit, Mapping, Value};
-
-    let path = machine_config_path();
-    let source = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(err) => return Err(format!("reading {}: {err}", path.display())),
-    };
-    let text = String::from_utf8_lossy(&source);
-    let mut author = if text.trim().is_empty() {
-        Mapping::new()
-    } else {
-        yaml_splice::parse::parse_mapping(&text)
-            .map_err(|err| format!("reading {}: {err}", path.display()))?
-            .get("author")
-            .and_then(Value::as_mapping)
-            .cloned()
-            .unwrap_or_default()
-    };
-    author.insert("editor", Value::Str(editor.as_str().to_string()));
-    let edit = FieldEdit::Set {
-        key: "author".to_string(),
-        value: Value::Map(author),
-    };
-    let outcome = yaml_splice::edit_yaml(&source, &[edit])
-        .map_err(|err| format!("editing {}: {err}", path.display()))?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|err| format!("creating {}: {err}", parent.display()))?;
+impl MachineAuthor {
+    /// Read the `author:` block of the machine file at `path`. Never fails: a
+    /// file that cannot be read, or a bad value, is a warning and reads as
+    /// no saved editor.
+    pub fn read(path: &Path) -> Self {
+        let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let mut author = Self {
+            editor: None,
+            warnings: Vec::new(),
+            path,
+            source: Vec::new(),
+            etag: None,
+            unreadable: None,
+        };
+        match std::fs::read(&author.path) {
+            Ok(bytes) => {
+                author.etag = Some(etag_write::etag(&bytes));
+                author.source = bytes;
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return author,
+            Err(err) => {
+                let reason = format!("cannot read {}: {err}", author.path.display());
+                author.warnings.push(reason.clone());
+                author.unreadable = Some(reason);
+                return author;
+            }
+        }
+        let shown = author.path.display().to_string();
+        let block =
+            match yaml_splice::parse::parse_mapping(&String::from_utf8_lossy(&author.source)) {
+                Ok(mapping) => mapping.get("author").cloned(),
+                Err(err) => {
+                    author.warnings.push(format!("cannot parse {shown}: {err}"));
+                    return author;
+                }
+            };
+        match block {
+            None | Some(yaml_splice::Value::Null) => {}
+            Some(yaml_splice::Value::Map(block)) => {
+                for (key, value) in block.iter() {
+                    let editor = value
+                        .as_str()
+                        .and_then(|v| <Editor as clap::ValueEnum>::from_str(v, false).ok());
+                    match (key, editor) {
+                        ("editor", Some(editor)) => author.editor = Some(editor),
+                        ("editor", None) => author.warnings.push(format!(
+                            "`author.editor` in {shown} is not obsidian, code, editor or system; ignoring it"
+                        )),
+                        (other, _) => author.warnings.push(format!(
+                            "unknown key `author.{other}` in {shown}; ignoring it"
+                        )),
+                    }
+                }
+            }
+            Some(_) => author
+                .warnings
+                .push(format!("`author` in {shown} is not a mapping; ignoring it")),
+        }
+        author
     }
-    etag_write::write_atomic(&path, &outcome.bytes)
-        .map_err(|err| format!("writing {}: {err}", path.display()))?;
-    Ok(path)
+
+    /// Replace the file's `author:` block with `author: {editor: ...}` and
+    /// return the path written. Every other key, and every comment, stays as
+    /// written. A symlinked file is written through to its target.
+    ///
+    /// # Errors
+    ///
+    /// When the file changed since [`MachineAuthor::read`] (nothing is
+    /// written), or it cannot be parsed or written.
+    pub fn save(&self, editor: Editor) -> Result<PathBuf, String> {
+        use yaml_splice::{FieldEdit, Mapping, Value};
+
+        if let Some(reason) = &self.unreadable {
+            return Err(reason.clone());
+        }
+        let shown = self.path.display();
+        let mut block = Mapping::new();
+        block.insert("editor", Value::Str(editor.as_str().to_string()));
+        let edit = FieldEdit::Set {
+            key: "author".to_string(),
+            value: Value::Map(block),
+        };
+        let outcome = yaml_splice::edit_yaml(&self.source, &[edit])
+            .map_err(|err| format!("editing {shown}: {err}"))?;
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| format!("creating {}: {err}", parent.display()))?;
+        }
+        match etag_write::write_cas(&self.path, &outcome.bytes, self.etag.as_deref()) {
+            Ok(_) => Ok(self.path.clone()),
+            Err(
+                etag_write::WriteError::Conflict { .. }
+                | etag_write::WriteError::ExistsWithoutEtag { .. },
+            ) => Err(format!(
+                "{shown} changed since skillwright read it; not saved"
+            )),
+            Err(err) => Err(format!("writing {shown}: {err}")),
+        }
+    }
 }
 
 /// The needs check every verb asks before it starts. Each key's description is
