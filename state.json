@@ -1,12 +1,145 @@
 {
   "schema": 1,
   "pr": 26,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "4666363d25dc7a2a784a3b5fd0276857077abba0",
+  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-03T20:02:21.735Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/author.rs",
+      "line": 89,
+      "title": "cmd /C start passes a note path unquoted to cmd.exe: & | ^ in a filename run as commands on Windows",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/author.rs",
+      "line": 750,
+      "title": "Command::new(\"code\") cannot start code.cmd on Windows, though find_on_path reports it available",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/author.rs",
+      "line": 536,
+      "title": "Obsidian is sent the canonical target, not the path under the vault as obsidian.json names it (symlinks, Windows \\\\?\\ prefix)",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/author.rs",
+      "line": 678,
+      "title": "Off a terminal the fallback can pick $EDITOR and launch a terminal editor with no terminal",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/author.rs",
+      "line": 495,
+      "title": "EOF at the editor question picks the default and saves it instead of cancelling",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 154,
+      "title": "A bad author: block in the machine file breaks every verb's config load, and save keeps the unknown keys that cause it",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 799,
+      "title": "Read-modify-write of the machine file uses write_atomic, not write_cas: a concurrent edit is lost",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 800,
+      "title": "write_atomic renames over a symlinked machine file, replacing the link with a regular file",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "packages/rust/skillwright/tests/author.rs",
+      "line": 502,
+      "title": "the_cli_parses_author runs SystemHost: reads the real HOME and PATH and may spawn mdfind",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/author.rs",
+      "line": 619,
+      "title": "A cwd-relative match outside the vault wins over an existing vault-relative path",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/author.rs",
+      "line": 764,
+      "title": "$EDITOR split on whitespace breaks quoted program paths",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-12",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/author.rs",
+      "line": 199,
+      "title": "Per-OS install probing (app dirs, flatpak, mdfind, LOCALAPPDATA) can be replaced by checking obsidian.json exists; split Obsidian code into its own module",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
