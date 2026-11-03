@@ -85,6 +85,7 @@ publishing skills/code-review.md -> /path/to/my-project (claude-code)
 | `move` | Move a component to another plugin or marketplace |
 | `delete` | Move a component's note to the vault's trash |
 | `convert` | Change a note's kind and move it into that kind's folder |
+| `author [path]` | Experimental. Open the vault, or a folder or note in it, in an editor |
 | `harness install <claude\|codex\|cursor>` | Register the built marketplace with a harness and install its plugins, through the harness's own `plugin` command |
 | `harness update <claude\|codex\|cursor>` | Install what is missing, then update each plugin whose version changed |
 | `harness uninstall <claude\|codex\|cursor>` | Remove the marketplace's plugins from a harness, and with `--marketplace` its registration too |
@@ -123,9 +124,30 @@ Each verb's own options:
 | `adopt` | `[source...]`, `--from <location>` (repeatable), `--from-git <ref>` (repeatable), `--plugin <name>`, `--into <path>`, `--set-targets <target>` (repeatable), `--only <name>` (repeatable), `--overwrite <path>` (repeatable) |
 | `harness install` / `harness update` | `--plugin <name>` (repeatable), `--scope <user\|project\|local>`, `--path <path>`, `--git-url <url>`, `--git-ref <ref>` |
 | `harness uninstall` | the same, plus `--marketplace` |
+| `author` | `[path]`, `--with <obsidian\|code\|editor\|system>`, `--dry-run` |
 
 `adopt` also accepts `--as <name>` and `--promote`. Both exit with
 `not implemented`.
+
+### author
+
+`skillwright author` opens the vault in an editor. Give a path to open a
+folder or note inside the vault instead.
+
+It picks the editor from `--with`, then from `author.editor` in the machine
+file. With neither, it asks once on a terminal and saves the answer there.
+Off a terminal it does not ask: it uses the first available editor, in the
+order Obsidian, VS Code (`code`), `$VISUAL` or `$EDITOR`, and the system
+opener, and says which on stderr.
+
+Obsidian opens only folders it knows as vaults. `author` reads Obsidian's
+`obsidian.json` to check, and never changes it. For a folder Obsidian does
+not know, it explains how to add it with "Open folder as vault". On a
+terminal it offers to open Obsidian's vault picker; off a terminal it uses
+the next available editor.
+
+`--dry-run` prints the command and launches nothing. On a first run it
+also asks nothing and saves nothing.
 
 ## Exit codes
 
@@ -142,7 +164,8 @@ Each verb's own options:
 
 Two files, both optional. A flag overrides the project file, which overrides
 the machine file, except for `paths:` (below). `skillwright` never writes
-either one.
+the project file. It writes the machine file only to save the editor
+`author` uses.
 
 - **The project file** is `skillwright.yaml`. It is committed, and found by
   walking up from the working directory, or named with `--config`. It holds
@@ -156,6 +179,14 @@ either one.
 
 `paths:` is the exception. Names from both files merge, and when both define
 the same name the machine file's value wins.
+
+`author:` is read from the machine file only. A project file that sets it is
+an error.
+
+```yaml
+author:
+  editor: obsidian # or code, editor, system
+```
 
 `<config-home>` comes from [`tiered-dirs`](https://crates.io/crates/tiered-dirs): for example
 `~/Library/Application Support` on macOS and `~/.config` on Linux.

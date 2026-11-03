@@ -18,8 +18,12 @@
 //! resolves against the shell's `cwd`.
 //!
 //! A flag overrides the project file, which overrides the machine file —
-//! except for `paths:`, where the machine file wins per name. Nothing here is
-//! ever written back — this module only reads.
+//! except for `paths:`, where the machine file wins per name.
+//!
+//! `author:` is the one per-user key: it is read from the machine file only,
+//! and a project file that sets it is malformed. It is also the one value
+//! written back: [`save_machine_author_editor`] records the editor `author`
+//! opens. Nothing else here writes.
 //!
 //! This module reads shapes and nothing else. Whether `vault` names a
 //! directory that exists, and whether `namespace` is a stem the core
@@ -113,6 +117,44 @@ pub struct SkillwrightConfig {
     /// Canonical hooks files; see `tradecraft_core::HookFileSpec`.
     #[serde(default)]
     pub hooks: Vec<HookFileEntry>,
+    /// What `author` opens the vault with. Machine file only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<AuthorSettings>,
+}
+
+/// The editors `author` can open the vault in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum Editor {
+    /// Obsidian, through an `obsidian://` link.
+    Obsidian,
+    /// VS Code, through its `code` command.
+    Code,
+    /// The terminal editor `$VISUAL` or `$EDITOR` names.
+    Editor,
+    /// The system's default opener: `open`, `xdg-open` or `start`.
+    System,
+}
+
+impl Editor {
+    /// The spelling `--with` and the machine file use.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Obsidian => "obsidian",
+            Self::Code => "code",
+            Self::Editor => "editor",
+            Self::System => "system",
+        }
+    }
+}
+
+/// The machine file's `author:` block.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorSettings {
+    /// The editor `author` opens when `--with` is not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<Editor>,
 }
 
 /// One `hooks:` entry, as written in the project file.
@@ -399,7 +441,11 @@ fn resolve_machine_mapping(
 /// Top-level keys whose value is a struct, and whether the field is an
 /// `Option` (so a bare `key:` reads as unset). `serde_json` reads a sequence
 /// into a struct, so without this check `marketplace: []` would load.
-const STRUCT_KEYS: &[(&str, bool)] = &[("declared_folders", true), ("marketplace", false)];
+const STRUCT_KEYS: &[(&str, bool)] = &[
+    ("declared_folders", true),
+    ("marketplace", false),
+    ("author", true),
+];
 
 /// The key in [`STRUCT_KEYS`] whose value is not a mapping, if any.
 fn non_mapping_struct_key(
@@ -465,6 +511,7 @@ fn annotate_detail(
     check!("marketplace", MarketplaceSettings);
     check!("assets", Vec<AssetEntry>);
     check!("hooks", Vec<HookFileEntry>);
+    check!("author", AuthorSettings);
     if issues.is_empty() {
         base_detail
     } else {
@@ -624,6 +671,15 @@ fn load_config_at(
         Ok(m) => m,
         Err(problem) => return problem_load(problem, &project_path),
     };
+    if project_mapping.contains_key("author") {
+        return ConfigLoad::Malformed {
+            path: project_path,
+            detail: format!(
+                "`author` is a per-user setting; set it in the machine file {}",
+                machine_path.display()
+            ),
+        };
+    }
 
     let machine_dir = machine_path
         .parent()
@@ -674,6 +730,75 @@ fn load_config_at(
     config.paths = project_paths;
 
     finish(config, &project_dir, &project_path, &machine_paths, home)
+}
+
+/// The machine file's `author.editor`, or `None` when the file or the key is
+/// absent.
+///
+/// # Errors
+///
+/// When the machine file exists and cannot be read, or its `author:` block
+/// is not the expected shape.
+pub fn machine_author_editor() -> Result<Option<Editor>, String> {
+    let path = machine_config_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let mapping = file::read_mapping(&path).map_err(|problem| problem.to_string())?;
+    let Some(author) = mapping.get("author") else {
+        return Ok(None);
+    };
+    if author.is_null() {
+        return Ok(None);
+    }
+    serde_json::from_value::<AuthorSettings>(author.clone())
+        .map(|settings| settings.editor)
+        .map_err(|err| format!("`author` in {}: {err}", path.display()))
+}
+
+/// Write `author.editor` into the machine file, creating the file when it is
+/// missing, and return its path.
+///
+/// Only the `author:` value's bytes change: every other key, and every
+/// comment, stays as written. Any other key already under `author:` is kept.
+///
+/// # Errors
+///
+/// When the machine file cannot be read, parsed, or written.
+pub fn save_machine_author_editor(editor: Editor) -> Result<PathBuf, String> {
+    use yaml_splice::{FieldEdit, Mapping, Value};
+
+    let path = machine_config_path();
+    let source = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(err) => return Err(format!("reading {}: {err}", path.display())),
+    };
+    let text = String::from_utf8_lossy(&source);
+    let mut author = if text.trim().is_empty() {
+        Mapping::new()
+    } else {
+        yaml_splice::parse::parse_mapping(&text)
+            .map_err(|err| format!("reading {}: {err}", path.display()))?
+            .get("author")
+            .and_then(Value::as_mapping)
+            .cloned()
+            .unwrap_or_default()
+    };
+    author.insert("editor", Value::Str(editor.as_str().to_string()));
+    let edit = FieldEdit::Set {
+        key: "author".to_string(),
+        value: Value::Map(author),
+    };
+    let outcome = yaml_splice::edit_yaml(&source, &[edit])
+        .map_err(|err| format!("editing {}: {err}", path.display()))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|err| format!("creating {}: {err}", parent.display()))?;
+    }
+    etag_write::write_atomic(&path, &outcome.bytes)
+        .map_err(|err| format!("writing {}: {err}", path.display()))?;
+    Ok(path)
 }
 
 /// The needs check every verb asks before it starts. Each key's description is
@@ -784,6 +909,16 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
             key: "marketplace.shim_target",
             scope: Scope::Both,
             description: "Where the per-skill `scripts/sdlc` shim looks for the launcher asset, relative to the plugin's root. Absent means `cli/sdlc`.",
+        },
+        KeySpec {
+            key: "author",
+            scope: Scope::Machine,
+            description: "What `author` opens the vault with.",
+        },
+        KeySpec {
+            key: "author.editor",
+            scope: Scope::Machine,
+            description: "The editor `author` opens: `obsidian`, `code`, `editor` or `system`. `--with` overrides it.",
         },
     ];
     Needs::new(
