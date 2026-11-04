@@ -1,12 +1,90 @@
 {
   "schema": 1,
   "pr": 27,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "c2b8fb5f5d0ac21069dac24e06540c3f93428ccd",
+  "base": "88336caf7d75c6c906ac95a130df34333fa715b8",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-r7q2vk",
     "at": "2026-11-04T04:45:43.351Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/tradecraft-wasm/build.sh",
+      "line": 72,
+      "title": "wasm-opt exact-version refusal now blocks every local test run",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": ".github/workflows/rust.yml",
+      "line": 258,
+      "title": "wasm job duplicates the packages job's fat-LTO build",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": ".github/workflows/rust.yml",
+      "line": 265,
+      "title": "artifact uploaded on every run with default retention",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": ".github/workflows/release-plz.yml",
+      "line": 70,
+      "title": "release-pr keeps a 30-minute timeout whose reason was removed",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/tradecraft-wasm/build.sh",
+      "line": 124,
+      "title": "leak-check comment gives a reason that does not hold for local builds",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "release-plz.toml comment still says release-plz makes wasm rebuild commits",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "README Install section advertises npm install for a package no longer published here",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
