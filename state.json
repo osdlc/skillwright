@@ -49,9 +49,9 @@
       "line": 294,
       "title": "CLI re-implements the core DryRun overlay",
       "comment": "https://github.com/osdlc/skillwright/pull/24#discussion_r4441340830",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "151b853f01638452cf94065cea8d30317dd02ae5"
     },
     {
       "id": "r1-5",
