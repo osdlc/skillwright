@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 19,
-  "head": "0ab39f7f76d8e12697f74cba67e0966d732bcfab",
-  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
-  "round": 1,
+  "head": "dd5291e145606e4118aad32001613de761de4e6f",
+  "base": "ec628d8f3d4c298bd0028a3f6726c08cb6d3f454",
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-04T05:28:49.042Z"
@@ -63,6 +63,50 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "be3598e"
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/adopt.rs",
+      "line": 1798,
+      "title": "Skill-relative exact match outside dir shadows the folder-relative match, so the mention stays code",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/adopt.rs",
+      "line": 1454,
+      "title": "rewrite_links doc restates resolve_resource_mention's contract and overstates how compile resolves",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/adopt.rs",
+      "line": 47,
+      "title": "Module doc sends code-mention readers to rewrite_to_wikilinks, whose contract covers only the skill root",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "PR body is stale after the rebase (be3598e, red wasm check, wasm revert note)",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
