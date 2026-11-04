@@ -4,6 +4,8 @@ Status: current.
 
 The folder of markdown notes that is the source of everything skillwright publishes. The markdown is the system of record and git is its history.
 
+osdlc's shared crates call it a [corpus](https://github.com/osdlc/osdlc/blob/main/docs/terms/corpus.md); the two words mean the same thing.
+
 ## In code
 
 `--vault`, `vault:` in `skillwright.yaml`; read by `tradecraft-core/src/vault.rs`.
