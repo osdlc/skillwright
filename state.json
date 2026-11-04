@@ -15,10 +15,10 @@
       "path": "packages/rust/skillwright/src/apply.rs",
       "line": 738,
       "title": "preview-only frontmatter check; --yes still moves then fails",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/23#discussion_r4441119824",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "cdb5bde"
     },
     {
       "id": "r1-2",
@@ -26,7 +26,7 @@
       "path": "packages/rust/skillwright/src/apply.rs",
       "line": 652,
       "title": "conflicts with PR 20 in rename_plugin member mapping",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/23#discussion_r4441119833",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -37,10 +37,10 @@
       "path": "packages/rust/skillwright/src/apply.rs",
       "line": 483,
       "title": "record_rewritten_on_disk reports drifted notes as rewritten",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/23#discussion_r4441119845",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "cdb5bde"
     },
     {
       "id": "r1-4",
@@ -48,7 +48,7 @@
       "path": "packages/rust/skillwright/src/apply.rs",
       "line": 681,
       "title": "no test for RenamePlugin preview or non-bundle execute failure",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/23#discussion_r4441119854",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -59,10 +59,10 @@
       "path": "packages/rust/skillwright/src/config.rs",
       "line": 273,
       "title": "~\\ expansion contradicts docs and config_layers",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/23#discussion_r4441119862",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "cdb5bde"
     },
     {
       "id": "r1-6",
@@ -70,7 +70,7 @@
       "path": "packages/rust/skillwright/src/config.rs",
       "line": 292,
       "title": "resolve_configured_path now identical to resolve_against_cwd",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/23#discussion_r4441119867",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -81,10 +81,10 @@
       "path": "packages/rust/skillwright/src/config.rs",
       "line": 201,
       "title": "new ConfigLoad variant breaks exhaustive matches",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/23#discussion_r4441119879",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "cdb5bde"
     }
   ]
 }
