@@ -51,6 +51,7 @@ yaml-splice = { workspace = true }
 # the link-rewriting rename, the vault-relative path guards and the durable
 # note write.
 markdown-relink = { workspace = true }
+markdown-vault = { workspace = true }
 # Also guards the untrusted subpath of a --from-git clone.
 path-guard = { workspace = true }
 etag-write = { workspace = true }

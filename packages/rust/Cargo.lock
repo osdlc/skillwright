@@ -1056,6 +1056,7 @@ dependencies = [
  "config-layers",
  "etag-write",
  "markdown-relink",
+ "markdown-vault",
  "notify",
  "path-guard",
  "serde",
