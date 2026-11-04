@@ -738,5 +738,7 @@ fn kind(load: &ConfigLoad) -> &'static str {
         ConfigLoad::MissingExplicit { .. } => "MissingExplicit",
         ConfigLoad::Unreadable { .. } => "Unreadable",
         ConfigLoad::Malformed { .. } => "Malformed",
+        ConfigLoad::MachineDirs { .. } => "MachineDirs",
+        _ => "unknown",
     }
 }
