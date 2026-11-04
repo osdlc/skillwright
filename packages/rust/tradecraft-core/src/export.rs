@@ -1475,25 +1475,16 @@ mod tests {
 
     /// Every file under `root`: relative path, bytes, execute bit — sorted.
     fn files_under(vfs: &dyn Vfs, root: &Path) -> Vec<(String, Vec<u8>, bool)> {
-        fn walk(vfs: &dyn Vfs, root: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>, bool)>) {
-            let Ok(entries) = vfs.read_dir(dir) else {
-                return;
-            };
-            for entry in entries {
-                let path = dir.join(&entry.name);
-                if entry.is_dir {
-                    walk(vfs, root, &path, out);
-                } else {
-                    out.push((
-                        forward_slashed(path.strip_prefix(root).unwrap()),
-                        vfs.read_file(&path).unwrap(),
-                        vfs.is_executable(&path),
-                    ));
-                }
-            }
-        }
-        let mut out = Vec::new();
-        walk(vfs, root, root, &mut out);
+        let mut out: Vec<_> = crate::walk::readable_files(vfs, root)
+            .into_iter()
+            .map(|entry| {
+                (
+                    entry.rel,
+                    vfs.read_file(&entry.abs).unwrap(),
+                    vfs.is_executable(&entry.abs),
+                )
+            })
+            .collect();
         out.sort();
         out
     }

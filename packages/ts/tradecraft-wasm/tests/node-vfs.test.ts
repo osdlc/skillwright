@@ -59,7 +59,11 @@ describe('stat', () => {
     const file = vfs.stat(path.join(tmp, 'a.md'))
     expect(file).toMatchObject({ size: 5, isDir: false, isSymlink: false })
     expect(file.mtimeMs).toBeGreaterThan(0)
-    expect(vfs.stat(path.join(tmp, 'dir'))).toMatchObject({ size: 0, isDir: true, isSymlink: false })
+    expect(vfs.stat(path.join(tmp, 'dir'))).toMatchObject({
+      size: 0,
+      isDir: true,
+      isSymlink: false,
+    })
     expect(vfs.stat(path.join(tmp, 'link.md'))).toMatchObject({ isDir: false, isSymlink: true })
     expect(() => vfs.stat(path.join(tmp, 'missing'))).toThrow()
   })
@@ -123,6 +127,15 @@ describe('a host without stat', () => {
       discoverComponents(vfs, { vault_root: vault }).components.map((c) => c.name)
     expect(names(withoutStat)).toEqual(names(createNodeVfs()))
     expect(names(withoutStat)).toContain('review')
+  })
+
+  test('the vault walk asks stat, and a malformed answer fails it', () => {
+    const { vault } = repoWithVault('bad-stat')
+    const malformed: Vfs = {
+      ...createNodeVfs(),
+      stat: () => ({ size: -1, mtimeMs: null, isDir: false, isSymlink: false }),
+    }
+    expect(() => discoverComponents(malformed, { vault_root: vault })).toThrow(/stat must return/)
   })
 })
 

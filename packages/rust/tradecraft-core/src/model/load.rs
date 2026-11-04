@@ -23,7 +23,7 @@ use super::{
 };
 use crate::compile::{
     CallContext, CompileSource, EXCLUDED_BUNDLE_DIRECTORIES, IndexedSkill, Recorded, SkillIndex,
-    SkillSource, compile_projection, walk_files,
+    SkillSource, compile_projection,
 };
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
@@ -1251,7 +1251,7 @@ fn read_asset(vfs: &dyn Vfs, asset: &AssetSpec) -> Result<Vec<Asset>, CoreError>
         return Ok(vec![copy(&asset.source, asset.dest.clone())?]);
     }
     let mut files = Vec::new();
-    for source in walk_files(vfs, &asset.source, EXCLUDED_BUNDLE_DIRECTORIES)? {
+    for source in crate::walk::files(vfs, &asset.source, EXCLUDED_BUNDLE_DIRECTORIES)? {
         if is_test_file(&source) {
             continue;
         }

@@ -40,6 +40,8 @@ markdown-link = { workspace = true }
 # The file-access trait (`crate::vfs`), shared with the osdlc vault crates.
 # `native` for `NativeVfs`, which the CLI and the tests use.
 vfs-seam = { workspace = true, features = ["native"] }
+# The vault walk and the vault's excluded files (`crate::walk`).
+markdown-vault-fs = { workspace = true }
 # Symlink-aware containment checks, over the `Vfs` seam.
 path-guard = { workspace = true }
 

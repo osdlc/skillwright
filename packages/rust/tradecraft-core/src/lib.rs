@@ -94,6 +94,7 @@ pub mod status;
 mod text;
 pub mod vault;
 pub mod vfs;
+mod walk;
 
 pub use adopt::{
     AdoptMode, AdoptReport, AdoptRequest, AdoptStatus, AdoptedSkill, DEFAULT_ADOPTED_PLUGIN,

@@ -874,7 +874,8 @@ impl<'a> Renderer<'a> {
         let Some(bundle_root) = self.bundle_root.clone() else {
             return Ok(());
         };
-        for source_path in walk_files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)? {
+        for source_path in crate::walk::files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)?
+        {
             if source_path == self.entry_path {
                 continue;
             }
@@ -1651,7 +1652,7 @@ impl VaultIndex {
         let mut relative_files = BTreeMap::new();
         let mut by_filename: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
         let mut by_stem: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
-        for path in walk_files(vfs, root, EXCLUDED_VAULT_DIRECTORIES)? {
+        for path in crate::walk::files(vfs, root, EXCLUDED_VAULT_DIRECTORIES)? {
             let relative = path
                 .strip_prefix(root)
                 .map(forward_slashed)
@@ -1699,50 +1700,6 @@ impl VaultIndex {
             .cloned()
             .unwrap_or_default()
     }
-}
-
-/// Every file under `root`, depth-first, entries sorted by name at each level
-/// so the walk — and everything keyed off it, down to which of two ambiguous
-/// matches a refusal names first — is deterministic across hosts.
-///
-/// `excluded_directories` is pruned at every level. `.DS_Store` is skipped
-/// always: Finder drops it everywhere and it is never content. Symlinked
-/// directories are already not descended into ([`Vfs::read_dir`] reports them
-/// as non-directories); a symlinked *file* is indistinguishable from a file
-/// at this seam, so refusing it is discovery's job, on a real filesystem,
-/// not this walk's.
-pub(crate) fn walk_files(
-    vfs: &dyn Vfs,
-    root: &Path,
-    excluded_directories: &[&str],
-) -> Result<Vec<PathBuf>, CoreError> {
-    fn recurse(
-        vfs: &dyn Vfs,
-        dir: &Path,
-        excluded: &[&str],
-        out: &mut Vec<PathBuf>,
-    ) -> Result<(), CoreError> {
-        let mut entries = vfs.read_dir(dir)?;
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        for entry in entries {
-            if entry.name == ".DS_Store" {
-                continue;
-            }
-            let path = dir.join(&entry.name);
-            if entry.is_dir {
-                if excluded.contains(&entry.name.as_str()) {
-                    continue;
-                }
-                recurse(vfs, &path, excluded, out)?;
-            } else {
-                out.push(path);
-            }
-        }
-        Ok(())
-    }
-    let mut out = Vec::new();
-    recurse(vfs, root, excluded_directories, &mut out)?;
-    Ok(out)
 }
 
 // --- Destinations, extensions, labels ---------------------------------------

@@ -49,7 +49,8 @@
 //!
 //! `Vfs::metadata`, which the vault walk asks of every file it lists.
 //! Symlinks are not followed: a link reports `isSymlink: true` and its own
-//! size. `mtimeMs` is milliseconds since the Unix epoch, or `null` when the
+//! size. With the link methods, `isSymlink` is asked too, and a path either
+//! answer calls a link is one. `mtimeMs` is milliseconds since the Unix epoch, or `null` when the
 //! host has none. A missing path throws with `code` `ENOENT`.
 //!
 //! A host without it still works: the bridge answers from `readFile` (a
@@ -276,7 +277,13 @@ impl Vfs for JsVfs {
                 .host
                 .stat(&as_str(path))
                 .map_err(|e| thrown(path, &e))?;
-            return to_metadata(path, &value);
+            let meta = to_metadata(path, &value)?;
+            // `isSymlink` is this bridge's word on links, and it fails
+            // closed, so a walk refuses what it would refuse.
+            return Ok(Metadata {
+                is_symlink: meta.is_symlink || self.is_symlink(path),
+                ..meta
+            });
         }
         // No `stat`: a file is what `readFile` reads, a directory what
         // `readDir` lists. See the module doc.

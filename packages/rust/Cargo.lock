@@ -1246,6 +1246,7 @@ dependencies = [
  "agent-adapt",
  "frontmatter-lossless",
  "markdown-link",
+ "markdown-vault-fs",
  "path-guard",
  "serde",
  "serde_json",

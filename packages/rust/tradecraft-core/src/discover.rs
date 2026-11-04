@@ -389,8 +389,7 @@ pub fn discover_components(
         return Err(CoreError::RootNotFound(root));
     }
 
-    let mut files = Vec::new();
-    walk(vfs, &root, &mut files)?;
+    let files = walk(vfs, &root)?;
 
     // Structure first, over the whole file set: a note's shape depends on what
     // sits beside it, so no single path can be classified on its own.
@@ -838,45 +837,29 @@ fn owned_resources(
     out
 }
 
-/// Collects every file under `dir`, in sorted order, refusing symlinks.
+/// Every file under `root`, in walk order, refusing symlinks.
 ///
 /// Unlike [`crate::scan`]'s walker this one propagates read failures and has
 /// no depth bound: a skills source is a curated tree feeding a publish, an
 /// unreadable corner of it must not silently under-publish, and there is no
-/// cycle to bound — [`Vfs::read_dir`] reports a symlinked directory as a
-/// non-directory, and this walk refuses it before that could matter.
-fn walk(vfs: &dyn Vfs, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), CoreError> {
-    let mut entries = vfs.read_dir(dir)?;
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
-    for entry in entries {
-        // Finder droppings, not content. The one name skipped by spelling.
-        if entry.name == ".DS_Store" {
-            continue;
-        }
-        // The trash folder holds notes `delete` moved out of the tree — not
-        // content. Under a dot-directory their shapes resolve to no valid
-        // placement, so walking in would surface them as unreadable strays.
-        if entry.is_dir && entry.name == crate::authoring::TRASH_DIR {
-            continue;
-        }
-        let path = dir.join(&entry.name);
-        if vfs.is_symlink(&path) {
-            return Err(CoreError::refused(
+/// cycle to bound — a symlinked directory is refused before it could matter.
+///
+/// The trash folder holds notes `delete` moved out of the tree — not
+/// content. Under a dot-directory their shapes resolve to no valid placement,
+/// so walking in would surface them as unreadable strays.
+fn walk(vfs: &dyn Vfs, root: &Path) -> Result<Vec<PathBuf>, CoreError> {
+    let entries =
+        crate::walk::files_refusing_symlinks(vfs, root, &[crate::authoring::TRASH_DIR], |path| {
+            CoreError::refused(
                 "unsafe-path",
                 format!(
                     "{}: a symlink in a skills source — it reads as inside the tree and \
                      resolves outside it; replace it with the real file or directory",
                     path.display()
                 ),
-            ));
-        }
-        if entry.is_dir {
-            walk(vfs, &path, out)?;
-        } else {
-            out.push(path);
-        }
-    }
-    Ok(())
+            )
+        })?;
+    Ok(entries.into_iter().map(|entry| entry.abs).collect())
 }
 
 /// Reads one note at a recognised shape and decides: a component (`Some`),

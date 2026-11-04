@@ -1938,25 +1938,16 @@ mod tests {
     /// Every file under `root`, with bytes and execute bit — the thing an
     /// "and mutates nothing" assertion has to compare.
     fn snapshot(vfs: &dyn Vfs, root: &Path) -> Vec<(String, Vec<u8>, bool)> {
-        fn walk(vfs: &dyn Vfs, dir: &Path, out: &mut Vec<(String, Vec<u8>, bool)>) {
-            let Ok(entries) = vfs.read_dir(dir) else {
-                return;
-            };
-            for entry in entries {
-                let path = dir.join(&entry.name);
-                if entry.is_dir {
-                    walk(vfs, &path, out);
-                } else {
-                    out.push((
-                        path.display().to_string(),
-                        vfs.read_file(&path).unwrap(),
-                        vfs.is_executable(&path),
-                    ));
-                }
-            }
-        }
-        let mut out = Vec::new();
-        walk(vfs, root, &mut out);
+        let mut out: Vec<_> = crate::walk::readable_files(vfs, root)
+            .into_iter()
+            .map(|entry| {
+                (
+                    entry.abs.display().to_string(),
+                    vfs.read_file(&entry.abs).unwrap(),
+                    vfs.is_executable(&entry.abs),
+                )
+            })
+            .collect();
         out.sort();
         out
     }
