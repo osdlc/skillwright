@@ -871,17 +871,15 @@ pub fn export_skills(
     if vfs.sees_links() {
         assert_destination_allowed_for_vault(vfs, &out_root, &vault_root, trees.iter().copied())?;
         // The third: a swap removes each tree, and the stage, whole.
-        for tree in trees.iter().copied().chain([STAGE_DIR]) {
-            if within(vfs, &out_root.join(tree), &vault_root)? {
-                return Err(CoreError::refused(
-                    "unsafe-root",
-                    format!(
-                        "the vault {} is inside {}, which a build replaces whole",
-                        vault_root.display(),
-                        out_root.join(tree).display()
-                    ),
-                ));
-            }
+        if let Some(replaced) = replaced_tree_holding(vfs, &out_root, &trees, &vault_root)? {
+            return Err(CoreError::refused(
+                "unsafe-root",
+                format!(
+                    "the vault {} is inside {}, which a build replaces whole",
+                    vault_root.display(),
+                    replaced.display()
+                ),
+            ));
         }
     } else {
         assert_destination_allowed(vfs, &out_root, std::slice::from_ref(&vault_root))?;
@@ -1064,21 +1062,18 @@ pub fn export_skills(
         }
         // The render cannot see a tree it replaces, and the swap deletes it, so
         // a source inside one is refused here rather than failing as missing.
-        if asset.source.is_absolute() {
-            for tree in trees.iter().copied().chain([STAGE_DIR]) {
-                let replaced = out_root.join(tree);
-                if within(vfs, &replaced, &asset.source)? {
-                    return Err(CoreError::refused(
-                        "unsafe-root",
-                        format!(
-                            "the asset source `{}` is inside {}, which a build replaces \
-                             whole. Move the source out of it. Nothing was written",
-                            asset.source.display(),
-                            replaced.display()
-                        ),
-                    ));
-                }
-            }
+        if asset.source.is_absolute()
+            && let Some(replaced) = replaced_tree_holding(vfs, &out_root, &trees, &asset.source)?
+        {
+            return Err(CoreError::refused(
+                "unsafe-root",
+                format!(
+                    "the asset source `{}` is inside {}, which a build replaces \
+                     whole. Move the source out of it. Nothing was written",
+                    asset.source.display(),
+                    replaced.display()
+                ),
+            ));
         }
         let plugin = asset
             .plugin
@@ -1357,6 +1352,23 @@ fn take<T>(slot: &mut Option<T>, from: Option<T>) {
     if let Some(value) = from {
         *slot = Some(value);
     }
+}
+
+/// The tree under `out_root` (one of `trees`, or the stage) that holds
+/// `path`, if any. A swap replaces each of them whole.
+fn replaced_tree_holding(
+    vfs: &dyn Vfs,
+    out_root: &Path,
+    trees: &[&str],
+    path: &Path,
+) -> Result<Option<PathBuf>, CoreError> {
+    for tree in trees.iter().copied().chain([STAGE_DIR]) {
+        let replaced = out_root.join(tree);
+        if within(vfs, &replaced, path)? {
+            return Ok(Some(replaced));
+        }
+    }
+    Ok(None)
 }
 
 /// [`take`] for a note's `description`. A note with none carries discovery's
@@ -1692,13 +1704,10 @@ fn render_root(
         // The shim's only job is finding this plugin's own launcher asset at
         // `inputs.config.shim_target`, so it can exist at all only where that
         // asset does — by `asset_covers`'s rule, so a `./`-spelled dest or a
-        // directory asset holding the launcher counts. A plugin that never
-        // declares one (every plugin in the repo-root vault, today) gets
-        // `None` here regardless of root — this stays invisible to a build
-        // that has no use for it, which is what keeps existing plugins that
-        // never declare a shim target unchanged. Whether a given root actually
-        // emits the shim for a given skill is a second,
-        // per-skill decision inside `render_skill`: `spec.cli_invocation`
+        // directory asset holding the launcher counts. A plugin with no such
+        // asset gets `None` here on every root, so its output is unchanged.
+        // Whether a given root actually emits the shim for a given skill is a
+        // second, per-skill decision inside `render_skill`: `spec.cli_invocation`
         // gates it by harness, and the skill's own compiled body gates it by
         // whether that skill calls the CLI at all.
         let shim_target = inputs
@@ -3998,16 +4007,15 @@ mod tests {
             dest: "docs".to_owned(),
             plugin: None,
         };
-        // Each case carries the path under `docs` the second build lands and
-        // its bytes.
+        // Each case carries the path the second build lands and its bytes.
         for (first, second, landed, bytes) in [
             (
                 file.clone(),
                 directory.clone(),
-                "x.md",
+                "docs/x.md",
                 &b"a directory\n"[..],
             ),
-            (directory, file, "", &b"a file\n"[..]),
+            (directory, file, "docs", &b"a file\n"[..]),
         ] {
             let vfs = example_vault();
             write(&vfs, "/src/docs", "a file\n");
@@ -4023,12 +4031,7 @@ mod tests {
             request.mode = ExportMode::Build;
             assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
 
-            let docs = Path::new("/market/.claude-plugin/packs/tools/docs");
-            let path = if landed.is_empty() {
-                docs.to_path_buf()
-            } else {
-                docs.join(landed)
-            };
+            let path = Path::new("/market/.claude-plugin/packs/tools").join(landed);
             assert_eq!(vfs.read_file(&path).unwrap(), bytes);
         }
     }
