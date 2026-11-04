@@ -341,10 +341,13 @@ pub enum ReasonToken {
 }
 
 impl ReasonToken {
+    /// Tokens that name an outcome which wrote, so they are absent from
+    /// [`Self::REFUSALS`].
+    pub const WROTE: &'static [ReasonToken] =
+        &[Self::Claimed, Self::RedundantOverride, Self::Overwritten];
+
     /// Every refusal token, in the order the publish spec's table
-    /// lists them. [`ReasonToken::Claimed`], [`ReasonToken::RedundantOverride`]
-    /// and [`ReasonToken::Overwritten`] are deliberately absent: they name
-    /// outcomes that wrote.
+    /// lists them. The tokens in [`Self::WROTE`] are deliberately absent.
     pub const REFUSALS: &'static [ReasonToken] = &[
         Self::Conflict,
         Self::Foreign,
@@ -395,19 +398,14 @@ impl ReasonToken {
     pub fn parse(token: &str) -> Option<Self> {
         Self::REFUSALS
             .iter()
+            .chain(Self::WROTE)
             .copied()
-            .chain([Self::Claimed, Self::RedundantOverride, Self::Overwritten])
             .find(|candidate| candidate.as_str() == token)
     }
 
-    /// Whether this token names a refusal. False for the three that name an
-    /// outcome which wrote — [`ReasonToken::Claimed`],
-    /// [`ReasonToken::RedundantOverride`] and [`ReasonToken::Overwritten`].
+    /// Whether this token names a refusal: whether it is in [`Self::REFUSALS`].
     pub fn is_refusal(self) -> bool {
-        !matches!(
-            self,
-            Self::Claimed | Self::RedundantOverride | Self::Overwritten
-        )
+        Self::REFUSALS.contains(&self)
     }
 }
 
@@ -564,6 +562,15 @@ pub struct PublishReport {
     /// empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub not_carried: Vec<String>,
+    /// Vault-relative path of the plugin folder's own manifest, when the
+    /// pack's rendered manifest replaced it and the two differ.
+    ///
+    /// The rendered manifest comes from the plugin note's frontmatter, so
+    /// fields only the folder's copy holds (hooks, MCP servers) do not
+    /// travel. Not a member and not publishable on its own. `None` on every
+    /// report but a pack's, and omitted from the wire when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaced_manifest: Option<String>,
     /// `sw-overrides` keys this destination's render already wrote, each as
     /// its own reason line.
     ///
@@ -730,6 +737,7 @@ fn publish_onto(
             &source_note,
             None,
             &pack.not_carried,
+            pack.replaced_manifest.as_deref(),
             // The members' own redundant keys. A pack's manifest is rendered
             // from frontmatter, not through a dialect, so it adds none.
             &pack.redundant,
@@ -827,6 +835,7 @@ fn publish_onto(
         &source_note,
         entry_output.as_deref(),
         &[],
+        None,
         &redundant,
     )
 }
@@ -853,6 +862,7 @@ fn finish(
     source_note: &str,
     entry_output: Option<&str>,
     not_carried: &[String],
+    replaced_manifest: Option<&str>,
     redundant_overrides: &[PublishReason],
 ) -> Result<PublishReport, CoreError> {
     // The rail, before any byte is written.
@@ -928,6 +938,7 @@ fn finish(
         files: reported,
         not_published: None,
         not_carried: not_carried.to_vec(),
+        replaced_manifest: replaced_manifest.map(str::to_owned),
         redundant_overrides: redundant_overrides.to_vec(),
     })
 }
@@ -938,6 +949,7 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
         files: Vec::new(),
         not_published: Some(exclusion_reason(frontmatter, target, ns)),
         not_carried: Vec::new(),
+        replaced_manifest: None,
         redundant_overrides: Vec::new(),
     }
 }
@@ -1493,7 +1505,7 @@ fn project_plugin(
         })
         .map(|c| c.vault_relative_path.as_str())
         .collect();
-    let mut not_carried: Vec<String> = uncarried.iter().map(|p| (*p).to_owned()).collect();
+    let not_carried: Vec<String> = uncarried.iter().map(|p| (*p).to_owned()).collect();
 
     let members: Vec<&DiscoveredComponent> = admitted
         .iter()
@@ -1652,7 +1664,7 @@ fn project_plugin(
     // (an imported plugin carries one) is left behind: the rendered one
     // replaces it, and writing both to one path is never idempotent. When
     // its bytes differ from the rendered manifest it is named in
-    // `not_carried`, since it may hold fields the frontmatter does not.
+    // `replaced_manifest`, since it may hold fields the frontmatter does not.
     let manifest_relative = format!("{}/plugin.json", layout.manifest_dir);
     let mut own_manifest: Option<(String, Vec<u8>)> = None;
     if let Some(note) = scan
@@ -1708,11 +1720,9 @@ fn project_plugin(
     };
     let manifest =
         render_plugin_manifest(layout.dialect, plugin_name, &members, &config, None).into_bytes();
-    if let Some((path, bytes)) = own_manifest
-        && bytes != manifest
-    {
-        not_carried.push(path);
-    }
+    let replaced_manifest = own_manifest
+        .filter(|(_, bytes)| *bytes != manifest)
+        .map(|(path, _)| path);
     files.push(ProjectedFile {
         relative_path: format!("{base}/{manifest_relative}"),
         content: manifest,
@@ -1724,6 +1734,7 @@ fn project_plugin(
         files,
         closures,
         not_carried,
+        replaced_manifest,
         redundant,
     })
 }
@@ -1733,6 +1744,8 @@ struct PluginProjection {
     files: Vec<ProjectedFile>,
     closures: BTreeMap<String, HashedClosure>,
     not_carried: Vec<String>,
+    /// The folder's own manifest, when the rendered one replaced it.
+    replaced_manifest: Option<String>,
     /// Members' `sw-overrides` keys the render already wrote.
     redundant: Vec<PublishReason>,
 }
@@ -1959,6 +1972,7 @@ fn refuse_all(files: &[ProjectedFile], reason: &PublishReason) -> PublishReport 
         files: reported,
         not_published: None,
         not_carried: Vec::new(),
+        replaced_manifest: None,
         redundant_overrides: Vec::new(),
     }
 }
@@ -2160,8 +2174,8 @@ pub struct OverrideKeyVerdict {
 pub struct OverrideBlockState {
     /// The destination, canonically named.
     pub target: String,
-    /// How many keys this harness reads in an override block at all — what a
-    /// surface says about the dialect without reproducing the whole roster.
+    /// How many keys this destination accepts for this note's kind: the
+    /// harness's roster, or zero for an agent, whose renderer takes none.
     pub accepted_keys: usize,
     /// The block's own keys, sorted.
     pub keys: Vec<OverrideKeyVerdict>,
@@ -5404,19 +5418,24 @@ mod tests {
             ]
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));
-        assert!(!ReasonToken::Claimed.is_refusal());
-        // The other outcome-that-wrote tokens named on ReasonToken::is_refusal's doc (with Claimed).
-        assert!(!ReasonToken::RedundantOverride.is_refusal());
-        assert!(!ReasonToken::Overwritten.is_refusal());
+        assert!(ReasonToken::WROTE.iter().all(|t| !t.is_refusal()));
+        assert_eq!(
+            ReasonToken::WROTE,
+            &[
+                ReasonToken::Claimed,
+                ReasonToken::RedundantOverride,
+                ReasonToken::Overwritten,
+            ]
+        );
     }
 
     #[test]
     fn a_token_round_trips_through_its_spelling_and_the_wire() {
-        for token in ReasonToken::REFUSALS.iter().copied().chain([
-            ReasonToken::Claimed,
-            ReasonToken::RedundantOverride,
-            ReasonToken::Overwritten,
-        ]) {
+        for token in ReasonToken::REFUSALS
+            .iter()
+            .chain(ReasonToken::WROTE)
+            .copied()
+        {
             assert_eq!(ReasonToken::parse(token.as_str()), Some(token));
             let json = serde_json::to_string(&token).unwrap();
             assert_eq!(json, format!("\"{token}\""));
@@ -5551,6 +5570,7 @@ mod tests {
             }],
             not_published: None,
             not_carried: Vec::new(),
+            replaced_manifest: None,
             redundant_overrides: Vec::new(),
         };
         let json = serde_json::to_string(&report).unwrap();
@@ -5568,6 +5588,7 @@ mod tests {
             files: vec![],
             not_published: Some("`sw-targets` does not name `codex`".into()),
             not_carried: Vec::new(),
+            replaced_manifest: None,
             redundant_overrides: Vec::new(),
         };
         let json = serde_json::to_string(&excluded).unwrap();
@@ -6545,7 +6566,7 @@ mod tests {
     // (hooks, MCP servers). It is not published, so the report names it,
     // unless it already matches what the pack renders.
     #[test]
-    fn a_containers_own_manifest_that_differs_is_named_as_not_carried() {
+    fn a_containers_own_manifest_that_differs_is_named_as_replaced() {
         let vfs = vault_with_plugin();
         let own = "/vault/marketplaces/house/plugins/git-tools/.claude-plugin/plugin.json";
         vfs.create_dir_all(Path::new(own).parent().unwrap())
@@ -6555,10 +6576,11 @@ mod tests {
 
         let report = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
         assert_eq!(
-            report.not_carried,
-            vec!["marketplaces/house/plugins/git-tools/.claude-plugin/plugin.json".to_owned()],
+            report.replaced_manifest.as_deref(),
+            Some("marketplaces/house/plugins/git-tools/.claude-plugin/plugin.json"),
             "{report:?}"
         );
+        assert!(report.not_carried.is_empty(), "{report:?}");
 
         // Once the folder's copy is the rendered one, nothing is lost.
         let rendered = text_at(
@@ -6567,7 +6589,7 @@ mod tests {
         );
         vfs.write_file(Path::new(own), rendered.as_bytes()).unwrap();
         let report = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
-        assert!(report.not_carried.is_empty(), "{report:?}");
+        assert!(report.replaced_manifest.is_none(), "{report:?}");
     }
 
     #[test]

@@ -2640,6 +2640,72 @@ fn a_run_that_projected_nothing_blames_the_flag_for_nothing() {
     );
 }
 
+// --- publish: a pack whose folder carries its own manifest -----------------------
+
+// The folder's own `plugin.json` is replaced by the rendered one. It is not a
+// member, so the CLI must not tell the user to publish it on its own.
+#[test]
+fn a_packs_replaced_manifest_is_named_as_replaced_not_as_not_carried() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    let base = vault.join("marketplaces/house/plugins/git-tools");
+    fs::create_dir_all(base.join("skills")).unwrap();
+    fs::create_dir_all(base.join(".claude-plugin")).unwrap();
+    fs::write(
+        base.join("git-tools.md"),
+        "---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\n---\nThe pack.\n",
+    )
+    .unwrap();
+    fs::write(
+        base.join("skills/commit-helper.md"),
+        "---\nname: commit-helper\ndescription: Writes commits.\n---\nCommit well.\n",
+    )
+    .unwrap();
+    fs::write(
+        base.join(".claude-plugin/plugin.json"),
+        "{\"name\": \"git-tools\"}\n",
+    )
+    .unwrap();
+    let dest = dest_of(dir.path());
+    fs::create_dir_all(&dest).unwrap();
+    let argv = |json: bool| {
+        let mut argv = vec![
+            "publish".to_string(),
+            "marketplaces/house/plugins/git-tools/git-tools.md".to_string(),
+            "--vault".to_string(),
+            vault_str(&vault),
+            "--to".to_string(),
+            dest.display().to_string(),
+            "--target".to_string(),
+            "claude".to_string(),
+            "--yes".to_string(),
+        ];
+        if json {
+            argv.push("--json".to_string());
+        }
+        argv
+    };
+    let own = "marketplaces/house/plugins/git-tools/.claude-plugin/plugin.json";
+
+    let text = run_argv(argv(false), &[], dir.path());
+    assert_eq!(text.code, 0, "{}", text.stderr);
+    assert!(
+        text.stderr.contains(&format!(
+            "marketplaces/house/plugins/git-tools/git-tools.md at {} (claude): the folder's own `{own}` was not published; the pack's manifest is rendered from the plugin note's frontmatter",
+            dest.display()
+        )),
+        "{}",
+        text.stderr
+    );
+    assert!(!text.stderr.contains("not carried"), "{}", text.stderr);
+
+    let json = run_argv(argv(true), &[], dir.path());
+    assert_eq!(json.code, 0, "{}", json.stderr);
+    let doc: serde_json::Value = serde_json::from_str(&json.stdout).unwrap();
+    assert!(doc.get("not_carried").is_none(), "{doc}");
+    assert_eq!(doc["replaced_manifests"][0]["manifest"], own, "{doc}");
+}
+
 // --- a note with a `name` and no `description` ----------------------------------
 
 /// A vault holding one name-only skill, and a project file naming it — with
