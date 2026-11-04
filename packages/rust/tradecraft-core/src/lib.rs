@@ -116,10 +116,10 @@ pub use discover::{
 };
 pub use error::*;
 pub use export::{
-    AssetSpec, DEFAULT_SHIM_TARGET, ExportMode, ExportReport, ExportRequest, ExportUnit,
-    HookFileSpec, MarketplaceConfig, PluginOverrides, SkillNaming, StaleKind, UnitStatus,
-    export_skills, marketplace_manifest_path, plugin_manifest_path, published_skill_name,
-    rendered_skill_call, root_trees,
+    AssetSpec, ExportMode, ExportReport, ExportRequest, ExportUnit, HookFileSpec,
+    MarketplaceConfig, PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_skills,
+    marketplace_manifest_path, plugin_manifest_path, published_skill_name, rendered_skill_call,
+    root_trees,
 };
 pub use frontmatter::{
     EntityKind, KindHints, KindSource, Provenance, ResolvedKind, VaultFrontmatter, resolve_kind,

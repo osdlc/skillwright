@@ -498,11 +498,11 @@ mod tests {
     #[test]
     fn localize_names_the_harness_variable() {
         let hook = localize(
-            command("${CLAUDE_PLUGIN_ROOT}/cli/sdlc x"),
+            command("${CLAUDE_PLUGIN_ROOT}/bin/tool x"),
             "codex",
             Some("PLUGIN_ROOT"),
         );
-        assert_eq!(hook.command.as_deref(), Some("${PLUGIN_ROOT}/cli/sdlc x"));
+        assert_eq!(hook.command.as_deref(), Some("${PLUGIN_ROOT}/bin/tool x"));
     }
 
     #[test]

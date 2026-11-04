@@ -376,8 +376,8 @@ mod tests {
         let vault = root.path().join("plugin");
         fs::create_dir_all(&vault).unwrap();
         fs::create_dir_all(root.path().join("conventions")).unwrap();
-        fs::create_dir_all(root.path().join("cli")).unwrap();
-        fs::write(root.path().join("cli/sdlc"), "launcher\n").unwrap();
+        fs::create_dir_all(root.path().join("bin")).unwrap();
+        fs::write(root.path().join("bin/tool"), "launcher\n").unwrap();
         let asset = |from: &str| AssetEntry {
             from: from.to_owned(),
             to: from.to_owned(),
@@ -385,7 +385,7 @@ mod tests {
         };
         let run = ResolvedRun {
             config: Some(SkillwrightConfig {
-                assets: vec![asset("conventions"), asset("cli/sdlc")],
+                assets: vec![asset("conventions"), asset("bin/tool")],
                 ..SkillwrightConfig::default()
             }),
             config_dir: root.path().to_path_buf(),
@@ -399,7 +399,7 @@ mod tests {
         assert!(targets.contains(&(root.path().join("conventions"), RecursiveMode::Recursive)));
         // A file asset is watched through its parent, so an editor's
         // rename-over save is still seen.
-        assert!(targets.contains(&(root.path().join("cli"), RecursiveMode::NonRecursive)));
+        assert!(targets.contains(&(root.path().join("bin"), RecursiveMode::NonRecursive)));
         assert_eq!(targets.len(), 3);
     }
 
