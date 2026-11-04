@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 20,
-  "head": "be20b6318d530e4821b5533ded7d02a5c5040f3b",
-  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
-  "round": 1,
+  "head": "d2c7d29442ce5a236f5bbde0de29cbd491bb39fa",
+  "base": "ec628d8f3d4c298bd0028a3f6726c08cb6d3f454",
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-04T05:33:57.959Z"
@@ -85,6 +85,61 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "b6de190"
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/authoring.rs",
+      "line": 1092,
+      "title": "stale_plugin_key_members fails the plan on a splicer parse error without naming the member, contrary to its doc",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/authoring.rs",
+      "line": 1084,
+      "title": "no test for a member without name/description being rekeyed by plugin rename",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "apply.rs:571 comment says every member rides along on the bundle move; out-of-folder members do not",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 180,
+      "title": "comment names only the flat sw-version key",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-5",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 168,
+      "title": "fifth copy of the bump-failed error block; frontmatter parsed three times",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
