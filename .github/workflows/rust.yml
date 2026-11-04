@@ -1,5 +1,5 @@
-# Checks the Cargo workspace under packages/rust/, and the wasm built from it
-# that packages/ts/tradecraft-wasm/ commits, on every pull request and push to
+# Checks the Cargo workspace under packages/rust/, and builds the wasm for
+# packages/ts/tradecraft-wasm/ from it, on every pull request and push to
 # main.
 #
 # The workflow always runs, so its final `rust` job always reports. That job
@@ -86,7 +86,7 @@ jobs:
               files='*'
               ;;
           esac
-          if [ "$files" = '*' ] || grep -qE '^(packages/rust/|packages/ts/tradecraft-wasm/wasm/|packages/ts/tradecraft-wasm/src/core\.generated\.ts|\.github/workflows/(rust|release-plz)\.yml$|\.github/actions/rust-|scripts/crates-io-)' <<<"$files"; then
+          if [ "$files" = '*' ] || grep -qE '^(packages/rust/|packages/ts/tradecraft-wasm/src/core\.generated\.ts|\.github/workflows/(rust|release-plz)\.yml$|\.github/actions/rust-|scripts/crates-io-)' <<<"$files"; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
           else
             echo "rust=false" >> "$GITHUB_OUTPUT"
@@ -238,16 +238,10 @@ jobs:
 
   # tradecraft-wasm is a wasm-bindgen crate. The other jobs build it for the
   # host target only. This job runs the whole build.sh pipeline (cargo for
-  # wasm32, wasm-bindgen, wasm-opt) and checks that the result equals the wasm
-  # committed in packages/ts/tradecraft-wasm/wasm/, so the npm package ships
-  # what its source builds. It also checks that the package's
-  # core.generated.ts is the file tradecraft-typegen writes. On a difference
-  # it uploads the rebuilt files.
-  #
-  # A version bump alone changes the wasm bytes: cargo hashes each crate's
-  # version into the crate hash it gives rustc (`-C metadata`), and that hash
-  # reaches symbol hashes and code layout. The same holds for a dependency
-  # version bump.
+  # wasm32, wasm-bindgen, wasm-opt) and uploads the result as the
+  # `tradecraft-wasm` artifact. The wasm is not committed; the `packages` job
+  # in ts.yml builds its own copy to test against. This job also checks that
+  # the package's core.generated.ts is the file tradecraft-typegen writes.
   wasm:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
@@ -261,26 +255,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/rust-toolchain
+      - uses: ./.github/actions/rust-wasm-build
+
+      - name: Upload the tradecraft wasm
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          targets: wasm32-unknown-unknown
-
-      - uses: ./.github/actions/rust-build-cache
-
-      # wasm-bindgen and wasm-opt at the versions build.sh requires.
-      - uses: ./.github/actions/rust-wasm-tools
-
-      - name: Build the tradecraft wasm with build.sh
-        run: bash packages/rust/tradecraft-wasm/build.sh
-
-      - name: The committed tradecraft wasm matches the rebuild
-        run: |
-          set -euo pipefail
-          if [ -n "$(git status --porcelain -- packages/ts/tradecraft-wasm/wasm/)" ]; then
-            git status --short -- packages/ts/tradecraft-wasm/wasm/
-            echo "::error::packages/ts/tradecraft-wasm/wasm/ differs from a rebuild. Run packages/rust/tradecraft-wasm/build.sh and commit the result, or take the rebuilt files from this run's tradecraft-wasm artifact."
-            exit 1
-          fi
+          name: tradecraft-wasm
+          path: packages/ts/tradecraft-wasm/wasm/
+          if-no-files-found: error
 
       - name: The package's core.generated.ts is the generator's output
         run: |
@@ -291,13 +273,6 @@ jobs:
             echo "::error::packages/ts/tradecraft-wasm/src/core.generated.ts differs from packages/rust/tradecraft-typegen/generated/core.generated.ts. Run cargo run -p tradecraft-typegen in packages/rust and copy the generated file over it."
             exit 1
           fi
-
-      - name: Upload the rebuilt tradecraft wasm
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: tradecraft-wasm
-          path: packages/ts/tradecraft-wasm/wasm/
 
   # Breaking changes are checked on the release pull request, not on each
   # pull request: release-plz runs cargo-semver-checks there

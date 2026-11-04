@@ -2,7 +2,7 @@
   // Emit config for the published dist/; the dev tsconfig.json stays noEmit.
   // The source only. Unlike the pure wrapper packages, this one uses Node
   // (node:fs, process), so it keeps the Node types. The build script copies
-  // the committed wasm/ into dist/wasm/, where the emitted import finds it.
+  // wasm/ (built by `pnpm run build:wasm`) into dist/wasm/, where the emitted import finds it.
   "extends": ["./tsconfig.json", "@osdlc/tsconfig/build"],
   "compilerOptions": {
     "rootDir": "src",

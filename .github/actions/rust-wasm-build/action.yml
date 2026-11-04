@@ -1,0 +1,24 @@
+# Builds the tradecraft wasm into packages/ts/tradecraft-wasm/wasm/ with
+# packages/rust/tradecraft-wasm/build.sh: the pinned toolchain with the
+# wasm32 target, the cargo cache, and the wasm tools at the versions build.sh
+# requires. Run it after actions/checkout.
+#
+# The `wasm` job in rust.yml and the `packages` job in ts.yml both build with
+# it, so both get the same bytes.
+name: rust-wasm-build
+description: Build packages/ts/tradecraft-wasm/wasm/ from the Rust crates with build.sh.
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/rust-toolchain
+      with:
+        targets: wasm32-unknown-unknown
+
+    - uses: ./.github/actions/rust-build-cache
+
+    - uses: ./.github/actions/rust-wasm-tools
+
+    - name: Build the tradecraft wasm with build.sh
+      shell: bash
+      run: bash packages/rust/tradecraft-wasm/build.sh

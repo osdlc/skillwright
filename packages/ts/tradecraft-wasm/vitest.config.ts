@@ -8,7 +8,8 @@ export default defineConfig({
   resolve: {
     // The examples import the package by name, and the source imports the
     // glue as `#wasm` (package.json maps that to dist/). Run both on the
-    // source and the committed wasm/, so the tests need no build.
+    // source and wasm/, so the tests need `pnpm run build:wasm` but not the
+    // TypeScript build.
     alias: [
       { find: /^@osdlc\/tradecraft-wasm$/, replacement: src('./src/index.ts') },
       { find: /^#wasm$/, replacement: src('./wasm/tradecraft_wasm.js') },

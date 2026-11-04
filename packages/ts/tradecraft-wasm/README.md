@@ -88,6 +88,14 @@ load in a browser or through a bundler such as Vite. It has no native code.
 The path conversion for Windows is tested against a stand-in filesystem on
 every platform.
 
+## Building from source
+
+A checkout of the repository does not contain the built WebAssembly:
+`pnpm run build:wasm` builds it from the Rust crates into `wasm/`. It needs
+the Rust toolchain, `wasm-bindgen` and `wasm-opt`.
+[CONTRIBUTING.md](./CONTRIBUTING.md#building-the-webassembly) lists the
+versions.
+
 ## Licence
 
 `MIT OR Apache-2.0`, at your option. See [LICENSE-MIT](./LICENSE-MIT) and [LICENSE-APACHE](./LICENSE-APACHE).
