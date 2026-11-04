@@ -49,8 +49,7 @@ pub const SKIP_DIRS: &[&str] = &[
 /// Pruned names that are never a skill's own directory, even under `skills/`.
 const NEVER_A_SKILL: &[&str] = &[".git", "node_modules"];
 
-/// The directory name that holds skills. A directory directly under one is a
-/// skill's own directory, whatever it is called.
+/// The directory name that holds skills.
 const SKILLS_CONTAINER: &str = "skills";
 
 /// Directory names that mark a `SKILL.md` as test scaffolding rather than an
@@ -217,7 +216,6 @@ fn collect_skill_files(
     }
 }
 
-/// True when `dir` is a `skills` directory.
 fn is_skills_container(dir: &Path) -> bool {
     dir.file_name().and_then(|n| n.to_str()) == Some(SKILLS_CONTAINER)
 }
@@ -407,9 +405,14 @@ mod tests {
 
     /// Writes a minimal `SKILL.md` into each of `dirs` under `/c`.
     fn mem_corpus(dirs: &[&str]) -> (MemVfs, CorpusRoot) {
+        mem_corpus_at("/c", dirs)
+    }
+
+    /// Writes a minimal `SKILL.md` into each of `dirs` under `root_path`.
+    fn mem_corpus_at(root_path: &str, dirs: &[&str]) -> (MemVfs, CorpusRoot) {
         let vfs = MemVfs::new();
         for rel in dirs {
-            let dir = Path::new("/c").join(rel);
+            let dir = Path::new(root_path).join(rel);
             vfs.create_dir_all(&dir).unwrap();
             vfs.write_file(
                 &dir.join("SKILL.md"),
@@ -417,7 +420,7 @@ mod tests {
             )
             .unwrap();
         }
-        (vfs, CorpusRoot::new("c", "C", "/c", RootKind::Project))
+        (vfs, CorpusRoot::new("c", "C", root_path, RootKind::Project))
     }
 
     fn listed(report: &ScanReport) -> Vec<&str> {
@@ -466,6 +469,17 @@ mod tests {
                 ".claude/skills/test"
             ]
         );
+        assert_eq!(report.excluded_fixtures, 0);
+    }
+
+    // A root that is itself a `skills` directory (`~/.claude/skills`) is judged
+    // by its own name: its children list even when named like a pruned or
+    // fixture directory.
+    #[test]
+    fn a_root_named_skills_lists_children_named_like_pruned_or_fixture_dirs() {
+        let (vfs, root) = mem_corpus_at("/h/skills", &["build", "test", "tests"]);
+        let report = scan_root(&vfs, &root, &ScanOptions::default());
+        assert_eq!(listed(&report), vec!["build", "test", "tests"]);
         assert_eq!(report.excluded_fixtures, 0);
     }
 
