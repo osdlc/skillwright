@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 17,
-  "head": "87c8260f9feaae15268c2415dcf70a1b21134e57",
-  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
-  "round": 1,
+  "head": "613accadbd3a664a6c27a5e796a8905d84624c04",
+  "base": "ec628d8f3d4c298bd0028a3f6726c08cb6d3f454",
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-04T05:25:34.000Z"
@@ -71,6 +71,83 @@
       "line": null,
       "title": "require_descriptions refusal, warning text and key help still treat a configured description as the filler",
       "comment": "https://github.com/osdlc/skillwright/pull/17#pullrequestreview-5723682234",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/discover.rs",
+      "line": 425,
+      "title": "Missing-description warning says 'unless the build configures one' for skill and command notes, which no config can describe",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 1387,
+      "title": "configures_description re-encodes take_description's precedence rule in a second place",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 1359,
+      "title": "replaced_tree_holding splits the take / take_description pair",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 1708,
+      "title": "Shim comment 'so its output is unchanged' is change-history framing",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-5",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 781,
+      "title": "require_descriptions help: 'A description the configuration supplies counts' is vague",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-6",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "settings.rs:63-64 require_descriptions doc still states the old rule",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-7",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "PR body cites commit 38561ad, which the rebase replaced with 9bae085",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
