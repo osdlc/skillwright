@@ -82,9 +82,9 @@
       "line": null,
       "title": "configured skills root: publish and status still wrong, a guard is safe",
       "comment": "https://github.com/osdlc/skillwright/pull/24#pullrequestreview-5735242873",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "151b853f01638452cf94065cea8d30317dd02ae5"
     },
     {
       "id": "r2-1",
