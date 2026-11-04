@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "agent-adapt"
 version = "0.19.3"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "serde",
  "serde_json",
@@ -238,7 +238,7 @@ dependencies = [
 [[package]]
 name = "config-layers"
 version = "0.8.1"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "serde",
  "serde-saphyr",
@@ -357,7 +357,7 @@ dependencies = [
 [[package]]
 name = "etag-write"
 version = "0.2.4"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "sha2",
  "thiserror",
@@ -390,7 +390,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 [[package]]
 name = "frontmatter-lossless"
 version = "1.1.2"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 
 [[package]]
 name = "futures-core"
@@ -604,7 +604,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 [[package]]
 name = "markdown-contract"
 version = "0.4.0"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "comrak",
  "globset",
@@ -617,9 +617,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "markdown-corpus"
+version = "0.1.0"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
+dependencies = [
+ "frontmatter-lossless",
+ "markdown-link",
+ "markdown-vault-fs",
+ "slug-collate",
+ "vfs-seam",
+ "yaml-splice",
+]
+
+[[package]]
 name = "markdown-link"
 version = "0.7.0"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "slug-collate",
  "yaml-splice",
@@ -628,12 +641,12 @@ dependencies = [
 [[package]]
 name = "markdown-relink"
 version = "0.2.0"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "etag-write",
  "frontmatter-lossless",
+ "markdown-corpus",
  "markdown-link",
- "markdown-vault",
  "markdown-vault-fs",
  "slug-collate",
  "thiserror",
@@ -642,23 +655,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "markdown-vault"
-version = "0.1.0"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
-dependencies = [
- "frontmatter-lossless",
- "markdown-contract",
- "markdown-link",
- "markdown-vault-fs",
- "slug-collate",
- "vfs-seam",
- "yaml-splice",
-]
-
-[[package]]
 name = "markdown-vault-fs"
 version = "0.4.0"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "path-guard",
  "regex",
@@ -768,7 +767,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 [[package]]
 name = "path-guard"
 version = "0.3.3"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "thiserror",
 ]
@@ -1055,8 +1054,8 @@ dependencies = [
  "clap",
  "config-layers",
  "etag-write",
+ "markdown-corpus",
  "markdown-relink",
- "markdown-vault",
  "notify",
  "path-guard",
  "serde",
@@ -1080,7 +1079,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 [[package]]
 name = "slug-collate"
 version = "0.2.0"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "unicode-normalization",
 ]
@@ -1155,7 +1154,7 @@ dependencies = [
 [[package]]
 name = "tiered-dirs"
 version = "0.3.7"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "dirs",
  "thiserror",
@@ -1289,7 +1288,7 @@ checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 [[package]]
 name = "typed-git"
 version = "0.4.0"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "log",
  "thiserror",
@@ -1344,7 +1343,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vfs-seam"
 version = "0.1.0"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "thiserror",
 ]
@@ -1352,7 +1351,7 @@ dependencies = [
 [[package]]
 name = "vfs-walk"
 version = "0.1.0"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "thiserror",
  "vfs-seam",
@@ -1517,7 +1516,7 @@ dependencies = [
 [[package]]
 name = "yaml-splice"
 version = "0.3.3"
-source = "git+https://github.com/osdlc/osdlc?rev=b1b12be9a31a59f6566ad5ac9c2590a590065f00#b1b12be9a31a59f6566ad5ac9c2590a590065f00"
+source = "git+https://github.com/osdlc/osdlc?rev=aca4d0c095017f9f78f4157b71eaefbf6213521a#aca4d0c095017f9f78f4157b71eaefbf6213521a"
 dependencies = [
  "saphyr-parser",
  "serde_json",

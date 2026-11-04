@@ -9,7 +9,7 @@ one implementation per vault concept.
 
 - **skillwright keeps no vault code of its own.** Load reads the vault
   through osdlc's crates: `vfs-seam` for file access, `vfs-walk` and
-  `markdown-vault-fs` for the walk, `markdown-vault` for notes and links,
+  `markdown-vault-fs` for the walk, `markdown-corpus` for notes and links,
   `markdown-link` for parsing and resolution, `markdown-contract` for
   heading and block selection.
 - **What stays in skillwright is its own:** skill calls (`/[[call]]`) as a
@@ -37,7 +37,7 @@ wasm. osdlc's crates now read through a trait, so that reason is gone.
 
 - osdlc releases first; skillwright then bumps to it.
 - skillwright resolves a vault's links the same way determined does.
-- `build --watch` can use `markdown-vault`'s incremental refresh instead of
+- `build --watch` can use `markdown-corpus`'s incremental refresh instead of
   a full rebuild.
 
 ## Reopen if

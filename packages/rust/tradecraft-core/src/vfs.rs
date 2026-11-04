@@ -7,7 +7,7 @@
 //! of `std::fs`.
 //!
 //! The seam itself lives in the `vfs-seam` crate, shared with the osdlc vault
-//! crates (`markdown-vault-fs`, `markdown-vault`, `markdown-relink`), so a
+//! crates (`markdown-vault-fs`, `markdown-corpus`, `markdown-relink`), so a
 //! vault walk and a publish read through one trait. This module re-exports
 //! it under the paths this crate has always used. What it means to a publish
 //! that [`PreviewVfs`] captures writes is [`crate::publish`]'s doc.
