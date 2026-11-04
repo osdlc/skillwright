@@ -924,7 +924,7 @@ export type UnitStatus = "ok" | "drift" | "written" | "unchanged";
 /**
  * A plugin whose members changed since it was last published here, with its
  * own `sw-version` unmoved since — the callout
- * [`UnitStatus::version_bump_suggestion`] carries so a publish screen can
+ * [`PublishUnitStatus::version_bump_suggestion`] carries so a publish screen can
  * offer a one-click bump.
  *
  * Not a sixth [`PublishState`]: the state stays `stale`, exactly as it would
@@ -1159,6 +1159,68 @@ export interface StatusRequest {
 }
 
 /**
+ * The answer, and enough of the working to act on it.
+ *
+ * Named apart from [`crate::export::UnitStatus`], the marketplace's
+ * four-word status: two public types with one name cannot both cross the
+ * wasm boundary.
+ */
+export interface PublishUnitStatus {
+  /** Whether the destination is current. */
+  state: PublishState;
+
+  /**
+   * A sentence naming what makes the state what it is, when there is one to
+   * name. `stale` alone is not actionable.
+   */
+  reason: string | null;
+
+  /** When we last wrote anything here, from the manifest. */
+  published_at: string | null;
+
+  /**
+   * Every projected file, classified. This is the drift: what would be
+   * written, what is already right, and what is refused and why.
+   */
+  files: PublishedFile[];
+
+  /**
+   * The notes that fed this unit's output, as the manifest recorded them.
+   * A reverse lookup over these answers *what did editing this make stale*.
+   */
+  contributing_notes: string[];
+
+  /** Recorded contributors that are no longer in the vault. */
+  missing_notes: string[];
+
+  /**
+   * Set when `sw-targets` excludes this destination — the `n/a` cell, which
+   * is not a state.
+   */
+  not_published: string | null;
+
+  /**
+   * A plugin whose members drifted since it was last published here, with
+   * its own `sw-version` unmoved since. `None` for every non-plugin unit,
+   * and for a plugin that does not meet the rule — see
+   * [`VersionBumpSuggestion`].
+   */
+  version_bump_suggestion: VersionBumpSuggestion | null;
+}
+
+/**
+ * What a unit's publish state is at one destination.
+ *
+ * The closed set the status spec specifies, and the same five words on every
+ * surface. Two things that also need a cell in a grid are deliberately not
+ * members: a destination whose target has no renderer, and a destination this
+ * note's `sw-targets` excludes. Neither is a *manifest* state — one is
+ * incapability and the other is deliberate exclusion — and folding them in
+ * here would make them look like conditions a publish could fix.
+ */
+export type PublishState = "never-published" | "current" | "stale" | "conflict" | "unknown";
+
+/**
  * The request each export deserializes, by the name JavaScript calls it.
  */
 export interface WasmRequests {
@@ -1178,7 +1240,7 @@ export interface WasmResponses {
   discoverComponents: DiscoveryReport;
   exportSkills: ExportReport;
   adoptSkills: AdoptReport;
-  statusOf: UnitStatus;
+  statusOf: PublishUnitStatus;
 }
 
 /**

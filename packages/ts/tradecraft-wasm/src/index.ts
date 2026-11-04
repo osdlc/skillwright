@@ -50,6 +50,7 @@ export type {
   StatusRequest,
   Target,
   UnitStatus,
+  VersionBumpSuggestion,
 } from './core.ts'
 
 export { toCorePath, toHostPath } from './host-path.ts'
