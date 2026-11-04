@@ -2,7 +2,7 @@
 
 Status: planned.
 
-osdlc's vault model, which [load](load.md) reads the vault through: notes, links, backlinks and each note's document tree. Defined in osdlc's [markdown-vault](https://github.com/osdlc/osdlc/blob/main/docs/terms/markdown-vault.md) ([D-TZFV](../decisions/D-TZFV-shared-vault-model.md)).
+osdlc's vault model, which [load](load.md) reads the vault through: notes, links and backlinks. Headings and blocks come from `markdown-contract`, which skillwright calls itself. Defined in osdlc's [markdown-vault](https://github.com/osdlc/osdlc/blob/main/docs/terms/markdown-vault.md) ([D-TZFV](../decisions/D-TZFV-shared-vault-model.md)).
 
 ## In code
 
