@@ -223,8 +223,6 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
     }
 
-    // Written back in the shape the note already uses: a flat key beside a
-    // nested block is a mixed shape discovery refuses.
     let edited = match ns_field_edits(
         &source,
         &namespace,

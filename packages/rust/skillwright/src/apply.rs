@@ -543,9 +543,7 @@ fn rename_plugin(
     let dir_from = rel(dir_from)?;
     let dir_to = rel(dir_to)?;
     // Every member is checked up front, so a bad one refuses before the
-    // folder moves — nothing here writes yet. A member inside `dir_from`
-    // rides along with the folder; one outside it joins the pack through
-    // `sw-plugin` alone and is edited where it sits.
+    // folder moves — nothing here writes yet.
     let rebased_members = members
         .iter()
         .map(|(member, edits)| {
@@ -911,32 +909,42 @@ mod tests {
         assert!(read(v.path(), "plugins/gear/skills/keyed.md").contains("sw-plugin: gear"));
     }
 
-    #[test]
-    fn rename_plugin_edits_a_member_outside_dir_from_where_it_sits() {
+    /// A vault holding only the `tools` plugin note.
+    fn tools_plugin() -> tempfile::TempDir {
         let v = vault();
         write(
             v.path(),
             "plugins/tools/tools.md",
             "---\nname: tools\n---\n\nplugin\n",
         );
-        write(
-            v.path(),
-            "skills/stray.md",
-            "---\nname: stray\nsw-plugin: tools\n---\n\nmember\n",
-        );
+        v
+    }
 
-        let op = AuthoringOp::RenamePlugin {
+    /// Rename `tools` to `gear`, rekeying the one `member`.
+    fn rename_tools_to_gear(member: &str) -> AuthoringOp {
+        AuthoringOp::RenamePlugin {
             from: "plugins/tools/tools.md".to_owned(),
             to: "plugins/gear/gear.md".to_owned(),
             dir_from: "plugins/tools".to_owned(),
             dir_to: "plugins/gear".to_owned(),
             frontmatter: vec![],
             members: vec![(
-                "skills/stray.md".to_owned(),
+                member.to_owned(),
                 vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
             )],
-        };
-        apply(v.path(), &op).unwrap();
+        }
+    }
+
+    #[test]
+    fn rename_plugin_edits_a_member_outside_dir_from_where_it_sits() {
+        let v = tools_plugin();
+        write(
+            v.path(),
+            "skills/stray.md",
+            "---\nname: stray\nsw-plugin: tools\n---\n\nmember\n",
+        );
+
+        apply(v.path(), &rename_tools_to_gear("skills/stray.md")).unwrap();
 
         assert!(v.path().join("plugins/gear/gear.md").exists());
         assert!(read(v.path(), "skills/stray.md").contains("sw-plugin: gear"));
@@ -944,25 +952,9 @@ mod tests {
 
     #[test]
     fn rename_plugin_refuses_a_bad_member_path_without_moving_anything() {
-        let v = vault();
-        write(
-            v.path(),
-            "plugins/tools/tools.md",
-            "---\nname: tools\n---\n\nplugin\n",
-        );
+        let v = tools_plugin();
 
-        let op = AuthoringOp::RenamePlugin {
-            from: "plugins/tools/tools.md".to_owned(),
-            to: "plugins/gear/gear.md".to_owned(),
-            dir_from: "plugins/tools".to_owned(),
-            dir_to: "plugins/gear".to_owned(),
-            frontmatter: vec![],
-            members: vec![(
-                "../outside.md".to_owned(),
-                vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
-            )],
-        };
-        let err = apply(v.path(), &op).unwrap_err();
+        let err = apply(v.path(), &rename_tools_to_gear("../outside.md")).unwrap_err();
 
         assert!(matches!(err, ApplyError::Path { .. }), "{err:?}");
         assert!(v.path().join("plugins/tools/tools.md").exists());
@@ -978,26 +970,10 @@ mod tests {
             "plugins/tools/tools.md",
             "plugins/gear/gear.md",
         ] {
-            let v = vault();
-            write(
-                v.path(),
-                "plugins/tools/tools.md",
-                "---\nname: tools\n---\n\nplugin\n",
-            );
+            let v = tools_plugin();
             write(v.path(), "skills/other.md", "---\nname: other\n---\n");
 
-            let op = AuthoringOp::RenamePlugin {
-                from: "plugins/tools/tools.md".to_owned(),
-                to: "plugins/gear/gear.md".to_owned(),
-                dir_from: "plugins/tools".to_owned(),
-                dir_to: "plugins/gear".to_owned(),
-                frontmatter: vec![],
-                members: vec![(
-                    member.to_owned(),
-                    vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
-                )],
-            };
-            let err = apply(v.path(), &op).unwrap_err();
+            let err = apply(v.path(), &rename_tools_to_gear(member)).unwrap_err();
 
             assert!(matches!(err, ApplyError::Refused(_)), "{member}: {err:?}");
             assert!(v.path().join("plugins/tools/tools.md").exists(), "{member}");
@@ -1007,35 +983,22 @@ mod tests {
 
     /// If a member's frontmatter edit fails once the bundle has already
     /// moved, the failure carries the [`Outcome`] that already landed rather
-    /// than discarding it behind a bare refusal.
+    /// than discarding it behind a bare refusal. The member is present and
+    /// inside `dir_from`, but its frontmatter cannot be edited.
     #[test]
     fn rename_plugin_reports_the_move_when_a_members_edit_fails_after_it() {
-        let v = vault();
-        write(
-            v.path(),
-            "plugins/tools/tools.md",
-            "---\nname: tools\n---\n\nplugin\n",
-        );
+        let v = tools_plugin();
         write(
             v.path(),
             "plugins/tools/skills/broken.md",
             "---\nname: [unclosed\n---\n\nmember\n",
         );
 
-        let op = AuthoringOp::RenamePlugin {
-            from: "plugins/tools/tools.md".to_owned(),
-            to: "plugins/gear/gear.md".to_owned(),
-            dir_from: "plugins/tools".to_owned(),
-            dir_to: "plugins/gear".to_owned(),
-            frontmatter: vec![],
-            // Present, and inside `dir_from` — but its frontmatter cannot be
-            // edited, which only shows once the bundle has moved.
-            members: vec![(
-                "plugins/tools/skills/broken.md".to_owned(),
-                vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
-            )],
-        };
-        let err = apply(v.path(), &op).unwrap_err();
+        let err = apply(
+            v.path(),
+            &rename_tools_to_gear("plugins/tools/skills/broken.md"),
+        )
+        .unwrap_err();
 
         let ApplyError::Partial { outcome, .. } = err else {
             panic!("expected a partial outcome, got {err:?}");

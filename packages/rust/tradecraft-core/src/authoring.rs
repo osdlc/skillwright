@@ -749,8 +749,6 @@ fn scan_scratch(vfs: &MemVfs, abs: &Path, rel_path: &str, ns: &Namespace) -> Scr
             ScratchVerdict::Listed(Box::new(found.components.remove(0)))
         }
         Ok(found) => match read_vault_skill(vfs, abs, ns) {
-            // A note the scan refused is refused whatever its kind; only one
-            // it neither listed nor refused is a skip.
             Ok(note) if note.frontmatter.kind() != EntityKind::Skill => match found.skipped.first()
             {
                 Some(skipped) => ScratchVerdict::Refused(skipped.detail.clone()),
@@ -1050,12 +1048,10 @@ fn create_scaffold(path: &str, kind: Option<EntityKind>) -> Vec<String> {
 
 /// Every member note whose explicit `sw-plugin` key names `plugin` outright,
 /// with the edits that rekey it to `new_slug` — the set a plugin rename must
-/// rewrite. Read from the OLD tree, before anything moves: the notes under
-/// the plugin's folder `dir`, plus every one of `components` (the same scan
-/// that found the plugin) of the same marketplace the scan puts in the
-/// plugin, since `sw-plugin` joins a note to the pack wherever it sits. Each
-/// candidate is read once; one that cannot be read or parsed names no plugin
-/// and is left alone.
+/// rewrite. Read from the OLD tree, before anything moves. Candidates are the
+/// notes under the plugin's folder `dir` plus every entry of `components` the
+/// scan puts in the plugin, since `sw-plugin` joins a note to the pack
+/// wherever it sits. A candidate that cannot be read or parsed is left alone.
 fn stale_plugin_key_members(
     vfs: &dyn Vfs,
     vault_dir: &Path,
@@ -1082,11 +1078,7 @@ fn stale_plugin_key_members(
     let mut members = Vec::new();
     for member in candidates {
         let path = vault_dir.join(&member);
-        let Some(source) = vfs
-            .read_file(&path)
-            .ok()
-            .and_then(|bytes| String::from_utf8(bytes).ok())
-        else {
+        let Ok(source) = crate::skill::read_utf8(vfs, &path) else {
             continue;
         };
         if plugin_key(&source, &path, ns).as_deref() != Some(plugin.name.as_str()) {
@@ -1431,11 +1423,8 @@ pub fn plan_delete_component(
     ns: &Namespace,
     entry: &str,
 ) -> Result<AuthoringOp, String> {
-    let kind = match find_component(vfs, vault, entry, ns) {
-        Some(component) => Some(component.kind),
-        None => folder_kind(vault, &vault.join(entry)),
-    };
-    let may_hold_members = kind.is_none_or(EntityKind::holds_components);
+    let may_hold_members =
+        resolved_kind(vfs, vault, ns, entry).is_none_or(EntityKind::holds_components);
     if may_hold_members && let Some(dir) = bundle_dir(entry) {
         let members = container_members(vfs, vault, dir, entry);
         if !members.is_empty() {
@@ -1466,11 +1455,7 @@ pub fn plan_delete_container(
     entry: &str,
     expected_kind: EntityKind,
 ) -> Result<AuthoringOp, String> {
-    let kind = match find_component(vfs, vault, entry, ns) {
-        Some(component) => Some(component.kind),
-        None => folder_kind(vault, &vault.join(entry)),
-    };
-    if kind != Some(expected_kind) {
+    if resolved_kind(vfs, vault, ns, entry) != Some(expected_kind) {
         return Err(format!(
             "`{}` is not a {}'s own entry note",
             entry,
@@ -1485,6 +1470,15 @@ fn deletion(entry: &str) -> AuthoringOp {
     AuthoringOp::Delete {
         paths: vec![bundle_dir(entry).unwrap_or(entry).to_owned()],
         trash_dir: TRASH_DIR.to_owned(),
+    }
+}
+
+/// The kind the scan lists `entry` as, or, when the scan cannot resolve it,
+/// the kind the folders it sits in name.
+fn resolved_kind(vfs: &dyn Vfs, vault: &Path, ns: &Namespace, entry: &str) -> Option<EntityKind> {
+    match find_component(vfs, vault, entry, ns) {
+        Some(component) => Some(component.kind),
+        None => folder_kind(vault, &vault.join(entry)),
     }
 }
 
@@ -1504,8 +1498,6 @@ pub fn plan_rename_plugin(
     if let Some(refusal) = slug_refusal(&slug, "plugin name") {
         return Err(refusal);
     }
-    // One scan answers both what the plugin is and who joins it from outside
-    // its folder, so the member set cannot come from a scan that failed.
     let components = discover_components(vfs, vault, None, ns)
         .map_err(|e| e.to_string())?
         .components;
@@ -1701,9 +1693,7 @@ mod tests {
 
     #[test]
     fn a_plugin_rename_fails_with_the_scan_error_when_the_scan_cannot_run() {
-        let vfs = one_plugin();
-        write(&vfs, "marketplaces/house/skills/a.md", &note("dup", ""));
-        write(&vfs, "marketplaces/house/skills/b.md", &note("dup", ""));
+        let vfs = one_plugin_unscannable();
         let scan_error = discover_components(&vfs, vault(), None, &sw())
             .unwrap_err()
             .to_string();
@@ -1875,6 +1865,16 @@ mod tests {
             "marketplaces/house/plugins/tools/skills/review.md",
             &note("review", ""),
         );
+        vfs
+    }
+
+    /// [`one_plugin`] plus two unrelated notes on one publish key, so the
+    /// whole scan refuses.
+    fn one_plugin_unscannable() -> MemVfs {
+        let vfs = one_plugin();
+        write(&vfs, "marketplaces/house/skills/a.md", &note("dup", ""));
+        write(&vfs, "marketplaces/house/skills/b.md", &note("dup", ""));
+        assert!(discover_components(&vfs, vault(), None, &sw()).is_err());
         vfs
     }
 
@@ -2928,11 +2928,7 @@ mod tests {
 
     #[test]
     fn a_container_delete_is_refused_when_the_scan_cannot_run() {
-        let vfs = one_plugin();
-        // Two unrelated notes on one publish key: the whole scan refuses.
-        write(&vfs, "marketplaces/house/skills/a.md", &note("dup", ""));
-        write(&vfs, "marketplaces/house/skills/b.md", &note("dup", ""));
-        assert!(discover_components(&vfs, vault(), None, &sw()).is_err());
+        let vfs = one_plugin_unscannable();
 
         let refusal = plan_delete_component(
             &vfs,
@@ -3047,6 +3043,7 @@ mod tests {
             "{refusal}"
         );
     }
+
     #[test]
     fn a_bundled_note_outside_the_component_tree_is_still_a_bundle() {
         assert_eq!(bundle_dir("notes/foo/foo.md"), Some("notes/foo"));
@@ -3072,10 +3069,7 @@ mod tests {
 
     #[test]
     fn a_skill_bundle_with_markdown_resources_deletes_when_the_scan_cannot_run() {
-        let vfs = one_plugin();
-        write(&vfs, "marketplaces/house/skills/a.md", &note("dup", ""));
-        write(&vfs, "marketplaces/house/skills/b.md", &note("dup", ""));
-        assert!(discover_components(&vfs, vault(), None, &sw()).is_err());
+        let vfs = one_plugin_unscannable();
 
         let entry = "marketplaces/house/skills/deploy/deploy.md";
         write(&vfs, entry, &note("deploy", ""));
