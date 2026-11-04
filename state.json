@@ -38,9 +38,9 @@
       "line": 1171,
       "title": "ns_field_edits branches and the whole-block rewrite have no direct tests",
       "comment": "https://github.com/osdlc/skillwright/pull/20#discussion_r4440493530",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "d2c7d29442ce5a236f5bbde0de29cbd491bb39fa"
     },
     {
       "id": "r1-4",
