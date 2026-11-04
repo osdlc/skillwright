@@ -6,11 +6,18 @@ and [D-EPSA](D-EPSA-resolve-at-load.md).
 ## Decision
 
 - **One file-access trait for everything.** Core's `Vfs` moves out into its
-  own osdlc crate (name open). `tradecraft-core`, `markdown-vault-fs`,
+  own osdlc crate, `vfs-seam`: the trait and its backends (native, memory,
+  preview), nothing else. `tradecraft-core`, `vfs-walk`, `markdown-vault-fs`,
   `markdown-relink` and `markdown-vault` read and write only through it.
-  Each keeps a native implementation for existing callers.
-- **`markdown-vault-fs` is the one vault walk.** It walks through the trait,
-  not `walkdir` and `std::fs`. Its "`fs`, not `vfs`" rule is reversed.
+- **One general walk: new crate `vfs-walk`.** A sorted walk over the trait,
+  with prune and skip lists, an entry filter, a symlink policy, an error
+  policy and modification times. It knows nothing about Markdown or
+  Obsidian; the caller passes its rules in. It is separate from `vfs-seam`
+  so walk changes never force a breaking release of the trait every crate
+  depends on.
+- **`markdown-vault-fs` is the vault layer on that walk:** notes versus
+  attachments, the visibility presets, the `_system/` rules, and Obsidian's
+  excluded files. It keeps its walk functions as thin wrappers.
 - **New crate `markdown-vault`, extracted from determined.** It is
   `determined-notes`' `LinkGraph` and `NoteFacts`, moved to osdlc and put on
   the trait: every file, every note, outgoing links, backlinks, inline tags,
@@ -24,7 +31,8 @@ and [D-EPSA](D-EPSA-resolve-at-load.md).
   adds only what is its own, such as skillwright's skill calls.
 - **Excluded files are honoured by every tool.** Reading the list from
   `.obsidian/app.json` (`userIgnoreFilters`) moves from `determined-vault`
-  into the shared walk, and every walk applies it. skillwright does not read
+  into `markdown-vault-fs`, which passes it to `vfs-walk` as a filter. Every
+  vault walk applies it. skillwright does not read
   it today, so a note excluded in Obsidian is still published.
 - **One bad note never stops a walk.** `determined-vault`'s `read_note`,
   which reads a malformed frontmatter block as body-only, moves into
@@ -60,10 +68,15 @@ because the shared crates call `std::fs` and core must run as wasm.
 - Write `markdown-vault` new.
 - Keep core's own code.
 - Use the shared crates in the CLI only, and keep core's copies for wasm.
+- The `vfs` crate instead of `vfs-seam`: no symlinks, no execute bit, and it
+  requires `Send + Sync`, which the JS host cannot meet.
+- The general walk inside `vfs-seam` or inside `markdown-vault-fs`: the
+  first makes the trait crate change with the walk, the second makes a
+  plain file walk depend on vault rules.
 
 ## Consequences
 
-- osdlc work lands first: the trait crate, `markdown-vault-fs`,
+- osdlc work lands first: `vfs-seam`, `vfs-walk`, `markdown-vault-fs`,
   `markdown-link` options, `markdown-vault`, then `markdown-relink`.
   determined and skillwright then move onto them.
 - Every tool resolves a vault's links the same way.

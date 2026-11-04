@@ -33,4 +33,5 @@ The words used for skillwright's parts. One file per term. A term marked *planne
 | [File tree](file-tree.md) | current | What a translator returns: paths mapped to bytes, the execute bit, and the notes each file came from |
 | [Emit](emit.md) | current | The last stage: write a [file-tree](file-tree.md) out |
 | [Vfs](vfs.md) | current, moving | The file-access trait every read and write goes through |
+| [vfs-walk](vfs-walk.md) | planned | The osdlc crate that walks a folder tree through the [Vfs](vfs.md) trait, with no Markdown or Obsidian rules |
 | [markdown-vault](markdown-vault.md) | planned | The osdlc crate that models a vault |

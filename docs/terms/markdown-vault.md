@@ -10,4 +10,4 @@ Not built yet. To be extracted from `LinkGraph` and `NoteFacts` in determined's 
 
 ## Not to be confused with
 
-`markdown-vault-fs`, which only walks files. It becomes one part of this.
+`markdown-vault-fs`, the vault walk this reads through: notes versus attachments and the vault's excluded files, on top of [vfs-walk](vfs-walk.md).

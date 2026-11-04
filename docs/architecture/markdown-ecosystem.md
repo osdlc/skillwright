@@ -1,7 +1,8 @@
 # The osdlc markdown crates
 
 How the osdlc markdown crates fit together, before and after
-[osdlc#618](https://github.com/osdlc/osdlc/pull/618). Arrows point from a
+[osdlc#618](https://github.com/osdlc/osdlc/pull/618), including the planned
+split of the general walk into `vfs-walk`. Arrows point from a
 crate to what it depends on. Versions are the ones in each `Cargo.toml`.
 [D-TZFV](../decisions/D-TZFV-shared-vault-model.md) gives the reasons, and
 [crate-dependencies.md](crate-dependencies.md) shows how skillwright and
@@ -62,7 +63,9 @@ As an image: [markdown-ecosystem-before.svg](img/markdown-ecosystem-before.svg).
 
 New crates have a thick green border. File access goes through one trait,
 `vfs-seam`, so the same code runs on disk, in memory, as a preview and in
-the browser. `markdown-vault` is the one vault model, built from
+the browser. `vfs-walk` walks any tree through it and knows nothing about
+Markdown or Obsidian. `markdown-vault-fs` is the vault layer on top: it
+reads Obsidian's excluded files and passes them to the walk as a filter. `markdown-vault` is the one vault model, built from
 determined's `LinkGraph`. Everything that needs a vault graph uses it.
 
 ```mermaid
@@ -76,7 +79,7 @@ flowchart TB
   subgraph VAULT[vault]
     MR["<b>markdown-relink</b> 0.2<br/>rename / move plans,<br/>facts from the vault model"]:::md
     MV["<b>markdown-vault</b> 0.1<br/>the vault model: link graph,<br/>backlinks, frontmatter index,<br/>tolerant note read, refresh"]:::new
-    MVF["<b>markdown-vault-fs</b> 0.4<br/>the one vault walk,<br/>excluded files, _system rules"]:::md
+    MVF["<b>markdown-vault-fs</b> 0.4<br/>vault layer: notes vs attachments,<br/>Obsidian excluded files, _system rules"]:::md
   end
 
   subgraph DOC[one note]
@@ -85,6 +88,7 @@ flowchart TB
   end
 
   subgraph IO[file access]
+    VW["<b>vfs-walk</b> 0.1<br/>general walk: prune, skip, filter,<br/>symlink and error policy, mtimes"]:::new
     VFS["<b>vfs-seam</b> 0.1<br/>Vfs trait: native, memory,<br/>preview; Clock"]:::new
   end
 
@@ -113,8 +117,10 @@ flowchart TB
   MV --> FL
   MV --> YS
   MV --> SC
+  MVF --> VW
   MVF --> VFS
   MVF --> PG
+  VW --> VFS
   MC --> ML
   MC --> CM
   ML --> YS
@@ -129,7 +135,8 @@ As an image: [markdown-ecosystem-after.svg](img/markdown-ecosystem-after.svg).
 |---|---|---|
 | `vfs-seam` | — (lived in skillwright core) | New. The one file-access trait. |
 | `markdown-vault` | — (determined's `LinkGraph` and `FrontmatterIndex`) | New. The one vault model. |
-| `markdown-vault-fs` | 0.3, walks with `std::fs` | 0.4, walks through `vfs-seam`; reads Obsidian's excluded files |
+| `vfs-walk` | — (inside `markdown-vault-fs`) | New. The general walk, with no Markdown or Obsidian rules. |
+| `markdown-vault-fs` | 0.3, walks with `std::fs` | 0.4, the vault layer on `vfs-walk`; reads Obsidian's excluded files and passes them in |
 | `markdown-link` | 0.5 | 0.7, scan options, strict resolve, link encoding from skillwright |
 | `markdown-contract` | 0.3, not published | 0.4, published; heading and block selection from skillwright |
 | `markdown-relink` | 0.1, its own scan | 0.2, facts from `markdown-vault`; plans read through `vfs-seam` |

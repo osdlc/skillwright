@@ -108,7 +108,8 @@ flowchart TB
   subgraph OS[osdlc crates]
     VFS["<b>vfs-seam</b><br/>one file-access trait:<br/>native, memory, preview, JS"]:::new
     MV["<b>markdown-vault</b><br/>the vault model: files, notes,<br/>link graph, backlinks, refresh<br/>(from determined LinkGraph)"]:::new
-    MVF["<b>markdown-vault-fs</b><br/>the one vault walk,<br/>excluded files, over vfs"]:::osdlc
+    VW["<b>vfs-walk</b><br/>general walk over vfs-seam,<br/>rules passed in"]:::new
+    MVF["<b>markdown-vault-fs</b><br/>vault layer: notes,<br/>excluded files, over vfs-walk"]:::osdlc
     ML["<b>markdown-link</b><br/>parse + resolve links<br/>(+ skillwright's options)"]:::osdlc
     MC["<b>markdown-contract</b><br/>document tree: headings,<br/>blocks (native off)"]:::osdlc
     MR["<b>markdown-relink</b><br/>rename plans, over<br/>markdown-vault"]:::osdlc
@@ -136,7 +137,10 @@ flowchart TB
   MV --> MC
   MV --> FL
   MV --> VFS
+  MVF --> VW
   MVF --> VFS
+  VW --> VFS
+  CORE -- assets, scripts --> VW
   MVF --> PG
   MR --> MV
   MR --> VFS
