@@ -581,7 +581,7 @@ export interface ExportRequest {
    * which every harness this build renders reads from.
    *
    * Each harness owns exactly one top-level entry under it — its own tree
-   * (`RootSpec::tree`) — and nothing else here is read, compared or
+   * (`HarnessProfile::tree`) — and nothing else here is read, compared or
    * replaced. So this may be a directory holding other things, including
    * a repository's own root, which is what lets a repository be its own
    * marketplace.

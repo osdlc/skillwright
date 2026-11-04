@@ -178,6 +178,7 @@ use crate::frontmatter::{
 use crate::guard::{
     assert_destination_allowed, assert_destination_allowed_for_vault, resolve_write_path,
 };
+use crate::harness::{profile_for, profile_named};
 use crate::manifest::{
     DestinationManifest, MANIFEST_RELATIVE_PATH, ManifestEntry, ManifestState, manifest_path,
     read_manifest, write_manifest,
@@ -1367,30 +1368,29 @@ struct PluginLayout {
 /// can render into — a pack published there is refused rather than written to
 /// a path invented for the occasion.
 fn plugin_layout_for(canonical: &str) -> Option<PluginLayout> {
-    Some(match canonical {
-        "claude" => PluginLayout {
-            plugins_root: ".claude/skills",
-            manifest_dir: ".claude-plugin",
-            dialect: PluginDialect::Claude,
-            runtime: "claude-code",
-            projection_prefix: ".claude/skills",
-        },
-        "codex" => PluginLayout {
-            plugins_root: ".agents/skills",
-            manifest_dir: ".codex-plugin",
-            dialect: PluginDialect::Codex,
-            runtime: "codex-cli",
-            projection_prefix: ".agents/skills",
-        },
-        _ => return None,
+    if !matches!(canonical, "claude" | "codex") {
+        return None;
+    }
+    let profile = profile_named(canonical)?;
+    let format = profile.plugin.as_ref()?;
+    Some(PluginLayout {
+        plugins_root: format.skills_dir,
+        manifest_dir: format
+            .plugin_manifest
+            .rsplit_once('/')
+            .map_or("", |(dir, _)| dir),
+        dialect: format.dialect,
+        runtime: profile.runtime,
+        projection_prefix: format.skills_dir,
     })
 }
 
 /// Whether a canonical target's plugin format has a place for a command.
-/// The one function both `PluginLayout` and `export::RootSpec` read, so the
-/// per-target fact exists once.
+/// Read from the harness profile, so the per-target fact exists once.
 pub fn plugin_format_carries_commands(canonical: &str) -> bool {
-    canonical == "claude"
+    profile_named(canonical)
+        .and_then(|p| p.plugin.as_ref())
+        .is_some_and(|f| f.carries_commands)
 }
 
 /// Whether a canonical target's plugin format has a place for a hook.
@@ -1402,9 +1402,12 @@ pub fn plugin_format_carries_commands(canonical: &str) -> bool {
 /// <https://developers.openai.com/codex/plugins/build>); Cursor reads the file
 /// its manifest's `hooks` entry names
 /// (<https://cursor.com/docs/reference/plugins>), all read 2026-10-05. Pi takes
-/// lifecycle events as TypeScript extensions and has no hooks file.
+/// lifecycle events as TypeScript extensions and has no hooks file. The
+/// answer is the harness profile's.
 pub fn plugin_format_carries_hooks(canonical: &str) -> bool {
-    matches!(canonical, "claude" | "codex" | "cursor")
+    profile_named(canonical)
+        .and_then(|p| p.plugin.as_ref())
+        .is_some_and(|f| f.carries_hooks)
 }
 
 /// Where a plugin's hooks land inside its own root, for the formats that
@@ -2145,34 +2148,20 @@ pub fn override_states(
 /// Empty for a name this build maps to no runtime, which is what makes every
 /// key under such a target a refusal rather than an unchecked write.
 pub fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<String> {
-    let Some(runtime) = runtime_id_for_canonical(canonical) else {
-        return std::collections::BTreeSet::new();
-    };
-    agent_adapt::runtimes::declaration_for(runtime)
-        .overrides
-        .into_keys()
-        .collect()
+    profile_named(canonical)
+        .map(|p| p.accepted_override_keys())
+        .unwrap_or_default()
 }
 
-/// The runtime whose declaration answers for one canonical destination.
+/// The runtime whose declaration answers for one canonical destination,
+/// from the harness profile.
 ///
 /// `portable` answers with the standards-only adapter's declaration, though
 /// [`runtime_target_for`] renders it through `codex-cli`. Every canonical
 /// destination has one, so the `None` arm is for a name outside
 /// [`canonical_target`] entirely.
-fn runtime_id_for_canonical(canonical: &str) -> Option<agent_adapt::RuntimeId> {
-    Some(match canonical {
-        "claude" => agent_adapt::RuntimeId::ClaudeCode,
-        "codex" => agent_adapt::RuntimeId::CodexCli,
-        "cursor" => agent_adapt::RuntimeId::Cursor,
-        "pi" => agent_adapt::RuntimeId::Pi,
-        "antigravity" => agent_adapt::RuntimeId::Antigravity,
-        "opencode" => agent_adapt::RuntimeId::OpenCode,
-        "amp" => agent_adapt::RuntimeId::Amp,
-        "copilot" => agent_adapt::RuntimeId::GithubCopilot,
-        "portable" => agent_adapt::RuntimeId::Portable,
-        _ => return None,
-    })
+pub(crate) fn runtime_id_for_canonical(canonical: &str) -> Option<agent_adapt::RuntimeId> {
+    profile_named(canonical).map(|p| p.declaration)
 }
 
 /// Every name `sw-targets` and [`PublishRequest::target`] accept, sorted — the
@@ -2204,18 +2193,7 @@ pub const KNOWN_TARGETS: &[&str] = &[
 /// Public so the marketplace ([`crate::export`]) and other hosts fold a
 /// spelling the same way a publish does.
 pub fn canonical_target(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "claude" | "claude-code" => "claude",
-        "codex" | "codex-cli" => "codex",
-        "portable" => "portable",
-        "cursor" => "cursor",
-        "pi" => "pi",
-        "antigravity" => "antigravity",
-        "opencode" => "opencode",
-        "amp" => "amp",
-        "copilot" | "github-copilot" => "copilot",
-        _ => return None,
-    })
+    profile_for(name).map(|p| p.name)
 }
 
 /// [`KNOWN_TARGETS`] folded through [`canonical_target`], deduplicated and
@@ -2294,14 +2272,11 @@ fn protected_trees(skill_path: &Path) -> Vec<PathBuf> {
 ///   straight through and is validated by `project_skill`/`project_command`,
 ///   so a caller already holding one does not have to learn a second
 ///   vocabulary.
-fn runtime_target_for(target: &str) -> String {
-    let runtime = match target {
-        "claude" => "claude-code",
-        "codex" | "portable" => "codex-cli",
-        "copilot" => "github-copilot",
-        other => other,
-    };
-    runtime.to_owned()
+pub(crate) fn runtime_target_for(target: &str) -> String {
+    profile_for(target)
+        .map(|p| p.runtime)
+        .unwrap_or(target)
+        .to_owned()
 }
 
 #[cfg(test)]

@@ -19,6 +19,7 @@
 //! | [`projection`] | One skill to one target's files, via `agent-adapt` |
 //! | [`publish`] | A vault note written onto a destination, idempotently |
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
+//! | [`harness`] | Each harness as a profile row (data) and a translator (code) |
 //! | [`settings`] | `skillwright.yaml`'s `marketplace:` block, as a build config |
 //! | [`adopt`] | Published SKILL.md bundles imported as vault notes |
 //! | [`authoring`] | Where a note goes, what it collides with, what it says |
@@ -78,6 +79,7 @@ pub mod error;
 pub mod export;
 pub mod frontmatter;
 pub mod guard;
+pub mod harness;
 pub mod hooks_file;
 pub mod manifest;
 pub mod namespace;
