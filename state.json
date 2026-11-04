@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 24,
-  "head": "34a9ed698575a32cba11888d7eb5d7c832d89c86",
-  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
-  "round": 1,
+  "head": "151b853f01638452cf94065cea8d30317dd02ae5",
+  "base": "ec628d8f3d4c298bd0028a3f6726c08cb6d3f454",
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-04T05:49:24.618Z"
@@ -82,6 +82,50 @@
       "line": null,
       "title": "configured skills root: publish and status still wrong, a guard is safe",
       "comment": "https://github.com/osdlc/skillwright/pull/24#pullrequestreview-5735242873",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/resolve.rs",
+      "line": 223,
+      "title": "skills-root guard refuses publish setups that worked at base (declared_folders.skills: skills)",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/resolve.rs",
+      "line": 226,
+      "title": "no test that a configured root equal to the vault passes the guard",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/resolve.rs",
+      "line": 215,
+      "title": "guard doc describes the rejected alternative, not what happens without the guard",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/commands/status.rs",
+      "line": 305,
+      "title": "vestigial 'status_of already read this note' fragment",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
