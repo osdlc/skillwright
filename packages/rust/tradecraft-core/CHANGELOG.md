@@ -7,6 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `harness`: one `HarnessProfile` row per harness, and a `HarnessTranslator` per harness that writes the marketplace model as a `FileTree`.
+- `model`: the marketplace model and its two-pass `load` — every note read, then every link and call resolved — which `build` and `check` now render from.
+
+### Changed
+
+- `build` and `check` apply a note's `sw-overrides` block for each harness to that harness's tree, as `publish` does. A block naming an unknown target, or a key its harness does not read, now refuses the build (`unknown-target`, `unknown-override-key`).
+
 ## [0.41.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.40.2...tradecraft-core/v0.41.0) - 2026-10-30
 
 ### Fixed

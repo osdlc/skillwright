@@ -82,6 +82,7 @@ pub mod guard;
 pub mod harness;
 pub mod hooks_file;
 pub mod manifest;
+pub mod model;
 pub mod namespace;
 pub mod projection;
 pub mod publish;

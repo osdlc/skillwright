@@ -266,6 +266,70 @@ pub struct CallContext<'a> {
     pub implicit: bool,
     /// `implicit-skill-call` warnings, deduplicated.
     pub warnings: RefCell<Vec<DiscoveryWarning>>,
+    /// A compile done once for every harness: each call and each link is
+    /// written as a mark and its site recorded here, for a translator to
+    /// spell later. `render` is not called and nothing is refused for not
+    /// being shipped — which harness ships what is the translator's question.
+    /// See [`crate::model`].
+    pub record: Option<&'a RefCell<Recorded>>,
+}
+
+/// The calls and links a recording compile met, in the order it met them.
+/// The `n`th mark of each kind in the output names the `n`th entry here.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Recorded {
+    /// Every call, resolved to the skill it names.
+    pub calls: Vec<CallSite>,
+    /// Every surviving link, resolved to where its file lands.
+    pub links: Vec<LinkSite>,
+}
+
+/// One call, resolved: the skill it names, and what a refusal about it
+/// quotes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallSite {
+    /// The skill the call names.
+    pub skill: IndexedSkill,
+    /// The call's target as the author wrote it, fragment and all.
+    pub destination: String,
+    /// The note the call is in, as a refusal names it.
+    pub caller: String,
+}
+
+/// One link, resolved: the markdown it renders as, and the file it reaches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkSite {
+    /// The link's text, escaped for markdown.
+    pub label: String,
+    /// The relative path from the emitting file to the linked file's output,
+    /// encoded, with its fragment.
+    pub href: String,
+    /// Rendered as an image (`![…](…)`) rather than a link.
+    pub image: bool,
+    /// The linked file, vault-relative.
+    pub target: String,
+}
+
+impl LinkSite {
+    /// The markdown this link renders as — the bytes an unrecorded compile
+    /// writes in its place.
+    pub fn markdown(&self) -> String {
+        if self.image {
+            format!("![{}]({})", self.label, self.href)
+        } else {
+            format!("[{}]({})", self.label, self.href)
+        }
+    }
+}
+
+/// Opens and closes a recording compile's mark. Private-use code points, so
+/// no vault text and no rendered syntax holds one.
+pub(crate) const MARK_OPEN: char = '\u{E000}';
+pub(crate) const MARK_CLOSE: char = '\u{E001}';
+
+/// The mark for the `index`th call (`kind` `c`) or link (`l`).
+fn mark(kind: char, index: usize) -> String {
+    format!("{MARK_OPEN}{kind}{index}{MARK_CLOSE}")
 }
 
 impl std::fmt::Debug for CallContext<'_> {
@@ -687,7 +751,7 @@ const EXCLUDED_VAULT_DIRECTORIES: &[&str] = &[".git", ".obsidian", ".trash", "no
 
 /// Directories a skill's own bundle sweep never ships, at any depth under the
 /// bundle root — dev-only fixtures and vendored/tooling trees, never the
-/// skill's published content. Also used by [`crate::export::render_asset`]
+/// skill's published content. Also used by `crate::model::load`'s asset reader
 /// for a directory `assets:` entry, so a shared tree copied wholesale (a
 /// docs directory, a reference bundle) gets the same pruning a skill bundle
 /// gets — a vendored `node_modules` under such a tree is exactly as
@@ -1079,12 +1143,23 @@ impl<'a> Renderer<'a> {
         } else {
             self.ensure_binary_resource(&resolved)?
         };
-        let link = relative_markdown_link(output_path, &resource_output, fragment.as_deref());
-        let label = escape_label(&display_label(token.alias, &resolved));
-        if embed && IMAGE_EXTENSIONS.contains(&extension.as_str()) {
-            Ok(format!("![{label}]({link})"))
-        } else {
-            Ok(format!("[{label}]({link})"))
+        let site = LinkSite {
+            label: escape_label(&display_label(token.alias, &resolved)),
+            href: relative_markdown_link(output_path, &resource_output, fragment.as_deref()),
+            image: embed && IMAGE_EXTENSIONS.contains(&extension.as_str()),
+            target: String::new(),
+        };
+        match self.call_context.and_then(|context| context.record) {
+            Some(record) => {
+                let site = LinkSite {
+                    target: self.vault_relative(&resolved)?,
+                    ..site
+                };
+                let mut record = record.borrow_mut();
+                record.links.push(site);
+                Ok(mark('l', record.links.len() - 1))
+            }
+            None => Ok(site.markdown()),
         }
     }
 
@@ -1184,7 +1259,7 @@ impl<'a> Renderer<'a> {
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
         self.record_call(skill, output_path);
-        (context.render)(skill)
+        render_or_mark(context, skill, token.destination, caller)
     }
 
     /// A plain `[[x]]` in a skill or command body that names another skill
@@ -1221,7 +1296,7 @@ impl<'a> Renderer<'a> {
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
         context.warn(
-            caller,
+            caller.clone(),
             "implicit-skill-call",
             format!(
                 "`[[{}]]` names skill `{}`, so it renders as a call; write `/[[{}]]` to say so",
@@ -1231,7 +1306,8 @@ impl<'a> Renderer<'a> {
             ),
         );
         self.record_call(skill, output_path);
-        Ok(Some(format_call(&(context.render)(skill)?, false)))
+        let call = render_or_mark(context, skill, token.destination, caller)?;
+        Ok(Some(format_call(&call, false)))
     }
 
     /// A call to a skill the destination does not carry would name a command
@@ -1243,7 +1319,7 @@ impl<'a> Renderer<'a> {
         caller: &str,
         destination: &str,
     ) -> Result<(), CoreError> {
-        if skill.shipped || self.tolerant_calls {
+        if skill.shipped || self.tolerant_calls || context.record.is_some() {
             return Ok(());
         }
         Err(CoreError::refused(
@@ -2094,6 +2170,26 @@ fn wiki_token(markdown: &str, offset: usize, opener: usize, limit: usize) -> Opt
 }
 
 /// A call as written into output: bare in code, in backticks in prose.
+/// A call's invocation: `render`'s, or in a recording compile the mark
+/// standing in for it.
+fn render_or_mark(
+    context: &CallContext<'_>,
+    skill: &IndexedSkill,
+    destination: &str,
+    caller: String,
+) -> Result<String, CoreError> {
+    let Some(record) = context.record else {
+        return (context.render)(skill);
+    };
+    let mut record = record.borrow_mut();
+    record.calls.push(CallSite {
+        skill: skill.clone(),
+        destination: destination.to_owned(),
+        caller,
+    });
+    Ok(mark('c', record.calls.len() - 1))
+}
+
 fn format_call(call: &str, in_code: bool) -> String {
     if in_code {
         call.to_owned()
@@ -3434,6 +3530,7 @@ mod tests {
             target: "test",
             implicit: true,
             warnings: RefCell::new(Vec::new()),
+            record: None,
         };
         let source = CompileSource {
             calls: Some(&calls),
@@ -3886,6 +3983,7 @@ mod tests {
             target: "the vault",
             implicit: false,
             warnings: RefCell::new(Vec::new()),
+            record: None,
         };
         let source = CompileSource {
             calls: Some(&calls),

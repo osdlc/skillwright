@@ -169,9 +169,7 @@ use crate::compile::{
 use crate::content::SkillProjection;
 use crate::discover::{DiscoveredComponent, KIND_DIRS, discover_components};
 use crate::error::CoreError;
-use crate::export::{
-    DEFAULT_SHIM_TARGET, MarketplaceConfig, PluginDialect, PluginOverrides, render_plugin_manifest,
-};
+use crate::export::{DEFAULT_SHIM_TARGET, MarketplaceConfig, PluginDialect, PluginOverrides};
 use crate::frontmatter::{
     ContainerIdentity, EntityKind, KindHints, KindSource, VaultFrontmatter, resolve_kind,
 };
@@ -756,6 +754,7 @@ fn publish_onto(
         target: canonical,
         implicit: matches!(resolved.kind, EntityKind::Skill | EntityKind::Command),
         warnings: RefCell::new(Vec::new()),
+        record: None,
     };
     let closures = compile_projection(
         vfs,
@@ -1529,6 +1528,7 @@ fn project_plugin(
         target: canonical,
         implicit: true,
         warnings: RefCell::new(Vec::new()),
+        record: None,
     };
 
     for member in &members {
@@ -1673,8 +1673,14 @@ fn project_plugin(
     };
     files.push(ProjectedFile {
         relative_path: format!("{base}/{}/plugin.json", layout.manifest_dir),
-        content: render_plugin_manifest(layout.dialect, plugin_name, &members, &config, None)
-            .into_bytes(),
+        content: crate::harness::manifest::render_plugin_manifest(
+            layout.dialect,
+            plugin_name,
+            &members.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
+            &config,
+            None,
+        )
+        .into_bytes(),
         executable: false,
     });
 
