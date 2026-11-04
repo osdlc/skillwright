@@ -668,11 +668,9 @@ fn publish_onto(
         ));
     }
 
-    // `sw-targets`, decided here so no caller can forget to, and before
-    // anything is projected: an excluded note was never a candidate here, so
-    // a refusal that depends on the destination (a call it does not ship, a
-    // pack layout it lacks) must not fire for it. An unknown name is handed
-    // to `finish`, which stamps it on every projected file.
+    // `sw-targets`, decided before anything is projected (see the module
+    // doc). An unknown name is handed to `finish`, which stamps it on every
+    // projected file.
     let unknown_target =
         match publishes_to(&note.frontmatter, &request.skill_path, &request.target, ns) {
             Ok(true) => None,
@@ -1495,7 +1493,7 @@ fn project_plugin(
         })
         .map(|c| c.vault_relative_path.as_str())
         .collect();
-    let not_carried: Vec<String> = uncarried.iter().map(|p| (*p).to_owned()).collect();
+    let mut not_carried: Vec<String> = uncarried.iter().map(|p| (*p).to_owned()).collect();
 
     let members: Vec<&DiscoveredComponent> = admitted
         .iter()
@@ -1541,9 +1539,7 @@ fn project_plugin(
         warnings: RefCell::new(Vec::new()),
     };
 
-    // Each member is prepared as the standalone path prepares it, so one
-    // note renders the same bytes inside its pack as on its own.
-    let mut redundant: Vec<PublishReason> = Vec::new();
+    let mut redundant = Vec::new();
     for member in &members {
         let note = read_vault_skill(vfs, &member.entry_path, ns)?;
         let mut projection =
@@ -1658,7 +1654,6 @@ fn project_plugin(
     // its bytes differ from the rendered manifest it is named in
     // `not_carried`, since it may hold fields the frontmatter does not.
     let manifest_relative = format!("{}/plugin.json", layout.manifest_dir);
-    let mut not_carried = not_carried;
     let mut own_manifest: Option<(String, Vec<u8>)> = None;
     if let Some(note) = scan
         .components
@@ -6486,14 +6481,21 @@ mod tests {
         assert!(pack.contains("notARealKey"), "{pack}");
     }
 
-    #[test]
-    fn a_pack_command_members_unknown_override_key_is_refused() {
+    /// [`vault_with_plugin_and_command`] with `block` added to `ship`'s frontmatter.
+    fn ship_with_overrides(block: &str) -> MemVfs {
         let vfs = vault_with_plugin_and_command();
         vfs.write_file(
             Path::new("/vault/marketplaces/house/plugins/git-tools/commands/ship.md"),
-            b"---\nname: ship\ndescription: Cuts a release.\nsw-overrides:\n  claude:\n    notARealKey: x\n---\n\nCut it.\n",
+            format!("---\nname: ship\ndescription: Cuts a release.\n{block}---\n\nCut it.\n")
+                .as_bytes(),
         )
         .unwrap();
+        vfs
+    }
+
+    #[test]
+    fn a_pack_command_members_unknown_override_key_is_refused() {
+        let vfs = ship_with_overrides("sw-overrides:\n  claude:\n    notARealKey: x\n");
 
         let err = publish_skill(&vfs, &plugin_request("claude"), &sw())
             .unwrap_err()
@@ -6591,12 +6593,7 @@ mod tests {
 
     #[test]
     fn a_pack_command_members_override_reaches_the_pack() {
-        let vfs = vault_with_plugin_and_command();
-        vfs.write_file(
-            Path::new("/vault/marketplaces/house/plugins/git-tools/commands/ship.md"),
-            b"---\nname: ship\ndescription: Cuts a release.\nsw-overrides:\n  claude:\n    model: haiku\n---\n\nCut it.\n",
-        )
-        .unwrap();
+        let vfs = ship_with_overrides("sw-overrides:\n  claude:\n    model: haiku\n");
         publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
 
         let published = text_at(&vfs, "/dest/.claude/skills/git-tools/commands/ship.md");
