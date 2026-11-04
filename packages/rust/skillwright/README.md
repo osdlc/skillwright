@@ -139,6 +139,16 @@ vault.
 `author` is experimental. It runs on macOS and Linux only; on Windows it
 exits with a usage error.
 
+```sh
+skillwright author                              # the vault, in the saved editor
+skillwright author skills/review.md             # one note
+skillwright author --with code                  # VS Code, this run only
+skillwright author --with obsidian --dry-run    # show what would happen
+```
+
+To change the saved editor, edit or delete `author.editor` in the machine
+file; with it gone, the next run on a terminal asks again.
+
 It picks the editor from `--with`, then from `author.editor` in the machine
 file. With neither, it asks once on a terminal and saves the answer there.
 Pressing Ctrl-D at the question cancels and saves nothing. Off a terminal
@@ -169,7 +179,16 @@ It first copies the file to `obsidian.json.bak` beside it, then adds one
 entry under `vaults` and leaves every other key and vault as it was. If the
 file changed after `author` read it, nothing is written. The format of
 `obsidian.json` is internal to Obsidian, not a public API, so a future
-Obsidian release could change it.
+Obsidian release could change it. To undo the change, quit Obsidian and
+copy `obsidian.json.bak` back over `obsidian.json`.
+
+Obsidian names a vault after its folder. A vault folder called `vault`
+shows as "vault" in the picker and the window title, whichever project it
+belongs to, so name the folder after the project to tell vaults apart.
+
+Obsidian keeps per-vault settings in `.obsidian/` inside the vault folder.
+`author` says whether that folder is gitignored. Add `.obsidian/` to
+`.gitignore` unless the project means to share those settings.
 
 `--dry-run` prints the command and launches nothing. It asks nothing,
 saves nothing and writes nothing to `obsidian.json`; on a terminal it shows
