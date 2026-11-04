@@ -157,11 +157,17 @@ fn parse_entry(
     };
     let timeout_ms = match entry.get("timeout") {
         None => 0,
-        Some(value) => value
-            .as_i64()
-            .filter(|seconds| *seconds >= 0)
-            .map(|seconds| seconds * 1000)
-            .ok_or_else(|| format!("`{at}.timeout` must be a whole number of seconds"))?,
+        Some(value) => {
+            let seconds = value
+                .as_i64()
+                .filter(|seconds| *seconds >= 0)
+                .ok_or_else(|| format!("`{at}.timeout` must be a whole number of seconds"))?;
+            seconds.checked_mul(1000).ok_or_else(|| {
+                format!(
+                    "`{at}.timeout` is too large: {seconds} seconds does not fit in milliseconds"
+                )
+            })?
+        }
     };
     let mut hook = Hook::command(at, at, event, "");
     hook.matcher = matcher;
@@ -401,6 +407,19 @@ mod tests {
         .to_string();
         assert!(err.contains("malformed-hooks-file"), "{err}");
         assert!(err.contains("hooks.Stop[0].hooks[0].command"), "{err}");
+    }
+
+    #[test]
+    fn a_timeout_too_large_for_milliseconds_is_refused() {
+        let err = parse_hooks_file(
+            r#"{"hooks": {"Stop": [{"hooks": [{"command": "x", "timeout": 9223372036854776}]}]}}"#,
+            "hooks.json",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("malformed-hooks-file"), "{err}");
+        assert!(err.contains("timeout` is too large"), "{err}");
+        assert!(!err.contains("whole number"), "{err}");
     }
 
     #[test]

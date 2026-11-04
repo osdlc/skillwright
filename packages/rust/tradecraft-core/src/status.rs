@@ -23,11 +23,13 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::error::CoreError;
+use crate::frontmatter::EntityKind;
 use crate::guard::resolve_write_path;
 use crate::manifest::{ManifestState, read_manifest};
 use crate::namespace::Namespace;
 use crate::publish::{
-    PublishMode, PublishOutcome, PublishRequest, PublishStatus, PublishedFile, publish_skill,
+    PublishMode, PublishOutcome, PublishRequest, PublishStatus, PublishedFile, publish_kind,
+    publish_skill,
 };
 use crate::vault::read_vault_skill;
 use crate::vfs::Vfs;
@@ -280,7 +282,10 @@ pub fn status_of(
 /// current identity.
 ///
 /// `None` whenever the rule does not hold:
-/// * this unit is not a plugin — no projected file ends `/plugin.json`;
+/// * this unit is not a plugin — its note does not resolve to
+///   [`EntityKind::Plugin`] the way [`publish_skill`] resolves it. A plain
+///   skill can ship a supporting file named `plugin.json`, so a path suffix
+///   alone does not say what the unit is;
 /// * nothing about its MEMBERS changed. The pack manifest can drift on its
 ///   own (a description, an author, a keyword) without any member having
 ///   moved, and that is not this rule — only a member file among `ours`
@@ -303,7 +308,17 @@ fn plugin_version_bump_suggestion(
         return Ok(None);
     }
 
+    // Read only once the cheap checks pass: the note decides both the kind
+    // and the version.
     let note = read_vault_skill(vfs, &request.skill_path, ns)?;
+    let kind = publish_kind(
+        note.frontmatter.declared_kind,
+        request.skills_root.as_deref(),
+        &request.skill_path,
+    );
+    if kind.kind != EntityKind::Plugin {
+        return Ok(None);
+    }
     let Some(current_version) = note.frontmatter.identity.version else {
         return Ok(None);
     };
@@ -760,6 +775,64 @@ mod tests {
         .unwrap();
 
         let status = state_of(&vfs);
+        assert_eq!(status.state, PublishState::Stale);
+        assert_eq!(status.version_bump_suggestion, None);
+    }
+
+    // A skill that ships a supporting file named `plugin.json` is still not a
+    // plugin, whatever versions the note and that file carry.
+    #[test]
+    fn a_skill_shipping_a_plugin_json_asset_suggests_no_bump() {
+        let vfs = MemVfs::new();
+        let note = "/vault/skills/code-review/code-review.md";
+        vfs.create_dir_all(Path::new("/vault/skills/code-review/assets"))
+            .unwrap();
+        vfs.write_file(
+            Path::new(note),
+            b"---\nname: code-review\ndescription: d\nsw-version: 1.0.0\n---\n\nBody.\n",
+        )
+        .unwrap();
+        vfs.write_file(
+            Path::new("/vault/skills/code-review/assets/plugin.json"),
+            b"{\"version\":\"1.0.0\"}\n",
+        )
+        .unwrap();
+        vfs.create_dir_all(Path::new("/dest")).unwrap();
+        let request = PublishRequest {
+            skill_path: PathBuf::from(note),
+            destination_root: PathBuf::from("/dest"),
+            target: "claude".to_owned(),
+            mode: PublishMode::Write,
+            skills_root: Some(PathBuf::from("/vault")),
+            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
+            overwrite: Vec::new(),
+        };
+        let first = publish_skill(&vfs, &request, &Namespace::default()).unwrap();
+        assert!(
+            first
+                .files
+                .iter()
+                .any(|f| f.path.ends_with("/assets/plugin.json")),
+            "{:?}",
+            first.files
+        );
+        vfs.write_file(
+            Path::new(note),
+            b"---\nname: code-review\ndescription: d\nsw-version: 1.0.0\n---\n\nNew body.\n",
+        )
+        .unwrap();
+
+        let status = status_of(
+            &vfs,
+            &StatusRequest {
+                skill_path: request.skill_path.clone(),
+                destination_root: request.destination_root.clone(),
+                target: request.target.clone(),
+                skills_root: request.skills_root.clone(),
+            },
+            &Namespace::default(),
+        )
+        .unwrap();
         assert_eq!(status.state, PublishState::Stale);
         assert_eq!(status.version_bump_suggestion, None);
     }
