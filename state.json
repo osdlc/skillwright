@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 18,
-  "head": "53b23ba84cc895751232d504bb9e3a94d9293b61",
-  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
-  "round": 1,
+  "head": "cfd68e7bd747693a47b4956b0306a34eb446d148",
+  "base": "ec628d8f3d4c298bd0028a3f6726c08cb6d3f454",
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-04T05:25:49.038Z"
@@ -118,6 +118,39 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "4d06b03"
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 1714,
+      "title": "folder plugin.json reported through not_carried, which every consumer reads as a member",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 403,
+      "title": "is_refusal and parse each keep their own copy of the non-refusal list",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "OverrideBlockState::accepted_keys doc is wrong for an agent",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
