@@ -27,9 +27,9 @@
       "line": 209,
       "title": "skill directly inside a fixture directory is no longer excluded, untested",
       "comment": "https://github.com/osdlc/skillwright/pull/22#discussion_r4440884295",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "97897e8cccb6a79979af6b0260772b4a24a3a01f"
     },
     {
       "id": "r1-3",
