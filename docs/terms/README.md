@@ -21,7 +21,6 @@ The words used for skillwright's parts. One file per term. A term marked *planne
 | [Namespace](namespace.md) | current | The frontmatter prefix skillwright owns, `sw-` by default |
 | [Drift](drift.md) | current | A difference between what `build` would write and what is on disk |
 | [Rail](rail.md) | current | A guard that refuses a write before any byte is written, most importantly any write into the vault |
-| [Vfs](vfs.md) | current | The filesystem interface every I/O call in core goes through, so core also runs as wasm |
 | [Adopt](adopt.md) | current, changing | Importing published skills from disk or git into the vault as notes; the reverse of publishing |
 | [Marketplace model](marketplace-model.md) | planned | The in-memory object graph a vault loads into: marketplace → plugins → skills, commands, hooks, assets |
 | [Load](load.md) | planned | The first stage: read the vault into the [marketplace-model](marketplace-model.md) |
@@ -33,3 +32,5 @@ The words used for skillwright's parts. One file per term. A term marked *planne
 | [Harness translator](harness-translator.md) | planned | The code half of a harness: one implementation of a shared trait |
 | [File tree](file-tree.md) | planned | What a translator returns: paths mapped to bytes, the execute bit, and the notes each file came from |
 | [Emit](emit.md) | planned | The last stage: write a [file-tree](file-tree.md) out |
+| [Vfs](vfs.md) | current, moving | The file-access trait every read and write goes through |
+| [markdown-vault](markdown-vault.md) | planned | The osdlc crate that models a vault |

@@ -1,9 +1,9 @@
 # Vfs
 
-Status: current.
+Status: current, moving.
 
-The filesystem interface every I/O call in core goes through, so core also runs as wasm. `PreviewVfs` captures writes, which is how dry runs and `check` work.
+The file-access trait every read and write goes through, so the same code runs natively and as wasm. `PreviewVfs` captures writes, which is how dry runs and `check` work. Planned: moves out of core into its own osdlc crate, used by every vault crate ([D-TZFV](../decisions/D-TZFV-shared-vault-model.md)).
 
 ## In code
 
-`vfs.rs`.
+`tradecraft-core/src/vfs.rs`: `Vfs`, `NativeVfs`, `MemVfs`, `PreviewVfs`. `JsVfs` in `tradecraft-wasm`.
