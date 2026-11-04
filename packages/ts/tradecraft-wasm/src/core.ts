@@ -10,7 +10,7 @@
  * `CoreError` into a typed one, exactly mirroring what
  * `@osdlc/yaml-splice`'s `index.ts` does for `yaml-splice-wasm`.
  *
- * The binding exports nine functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
+ * The binding exports ten functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
  *
  * | Export | Reaches | Serves |
  * |---|---|---|
@@ -18,6 +18,7 @@
  * | `validateNamespace` | the frontmatter-stem rule | every verb, once, at config load |
  * | `discoverComponents` | the vault scan | `build`, `check`, `list`, and whatever needs a roster |
  * | `exportSkills` | the marketplace renderer | `build`, and `check` through `mode` |
+ * | `loadMarketplace` | the marketplace model, loaded and resolved | `list --model`, and a host that wants structure rather than files |
  * | `adoptSkills` | the import direction | `adopt`, and its preview through `mode` |
  * | `knownTargets` | the target vocabulary | every verb that takes a target name |
  * | `canonicalTarget` | the target-name fold | a host narrowing a run by target |
@@ -38,6 +39,7 @@ import {
   canonicalTarget as canonicalTargetWasm,
   discoverComponents as discoverComponentsWasm,
   exportSkills as exportSkillsWasm,
+  loadMarketplace as loadMarketplaceWasm,
   knownTargets as knownTargetsWasm,
   publishableKinds as publishableKindsWasm,
   publishSkill as publishSkillWasm,
@@ -55,6 +57,8 @@ import type {
   EntityKind,
   ExportReport,
   ExportRequest,
+  LoadRequest,
+  Marketplace,
   PublishReport,
   PublishRequest,
   PublishOutcome,
@@ -95,7 +99,12 @@ export type {
   ExportRequest,
   ExportUnit,
   KindSource,
+  LoadRequest,
+  Marketplace,
   MarketplaceConfig,
+  Plugin,
+  Component,
+  Segment,
   PluginOverrides,
   PublishMode,
   PublishOutcome,
@@ -414,6 +423,21 @@ export function statusOf(vfs: Vfs, request: StatusRequest): PublishUnitStatus {
  */
 export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
   return callCore<ExportReport>(() => exportSkillsWasm(vfs, JSON.stringify(request)))
+}
+
+/**
+ * Load the vault into the marketplace model and write nothing: every plugin
+ * and its members, each body as segments with its links and calls resolved.
+ *
+ * The same model `exportSkills` translates into files, so a host that wants
+ * a vault's structure reads it here rather than parsing a built tree.
+ *
+ * Throws {@link CoreError} for everything the load refuses — an unreadable
+ * member note, a call that names no skill, an override key a requested
+ * harness does not read, an empty marketplace.
+ */
+export function loadMarketplace(vfs: Vfs, request: LoadRequest): Marketplace {
+  return callCore<Marketplace>(() => loadMarketplaceWasm(vfs, JSON.stringify(request)))
 }
 
 // --- adoption ----------------------------------------------------------------

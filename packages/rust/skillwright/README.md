@@ -118,7 +118,7 @@ Each verb's own options:
 |---|---|
 | `publish` | `[note...]`, `--to <root>` (repeatable), `--target <target>`, `--all`, `--overwrite <path>` (repeatable) |
 | `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--default-plugin <name>`, `--watch` (`build` only) |
-| `list` | `--skills-root <path>` |
+| `list` | `--skills-root <path>`, `--model` (print the loaded marketplace model as JSON) |
 | `status` | `[note]`, `--check` |
 | `adopt` | `[source...]`, `--from <location>` (repeatable), `--from-git <ref>` (repeatable), `--plugin <name>`, `--into <path>`, `--set-targets <target>` (repeatable), `--only <name>` (repeatable), `--overwrite <path>` (repeatable) |
 | `harness install` / `harness update` | `--plugin <name>` (repeatable), `--scope <user\|project\|local>`, `--path <path>`, `--git-url <url>`, `--git-ref <ref>` |

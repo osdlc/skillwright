@@ -198,8 +198,14 @@ pub enum ResourceContent {
 }
 
 /// A body as a sequence of segments.
+///
+/// A named field rather than a newtype so it crosses the wasm boundary as an
+/// object, which is the only struct shape the TypeScript generator emits.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-pub struct Body(pub Vec<Segment>);
+pub struct Body {
+    /// The segments, in order.
+    pub segments: Vec<Segment>,
+}
 
 /// One piece of a resolved body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -399,7 +405,7 @@ pub(crate) fn segments(text: &str, record: &Recorded, shim_target: Option<&str>)
         }
     }
     push_text(&mut out, rest, shim_target);
-    Body(out)
+    Body { segments: out }
 }
 
 fn call_of(site: &crate::compile::CallSite) -> Call {
@@ -505,10 +511,12 @@ mod tests {
     fn marks_split_into_calls_and_links_and_text_merges() {
         let text = format!("run `{MARK_OPEN}c0{MARK_CLOSE}` then see {MARK_OPEN}l0{MARK_CLOSE}.");
         let body = segments(&text, &record(), None);
-        assert_eq!(body.0.len(), 5);
-        assert!(matches!(&body.0[1], Segment::Call { call } if call.skill.call_id() == "p:a"));
+        assert_eq!(body.segments.len(), 5);
         assert!(
-            matches!(&body.0[3], Segment::Link { target } if target.markdown() == "[x](references/x.md)")
+            matches!(&body.segments[1], Segment::Call { call } if call.skill.call_id() == "p:a")
+        );
+        assert!(
+            matches!(&body.segments[3], Segment::Link { target } if target.markdown() == "[x](references/x.md)")
         );
     }
 
@@ -516,7 +524,7 @@ mod tests {
     fn a_mark_naming_nothing_stays_text() {
         let text = format!("a{MARK_OPEN}c9{MARK_CLOSE}b");
         let body = segments(&text, &record(), None);
-        assert_eq!(body.0, vec![Segment::Text { text: text.clone() }]);
+        assert_eq!(body.segments, vec![Segment::Text { text: text.clone() }]);
     }
 
     #[test]
@@ -527,7 +535,7 @@ mod tests {
             Some("cli/sdlc"),
         );
         assert_eq!(
-            body.0,
+            body.segments,
             vec![
                 Segment::Text { text: "x ".into() },
                 Segment::CliInvocation {

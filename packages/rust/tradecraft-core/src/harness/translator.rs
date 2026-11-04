@@ -595,7 +595,7 @@ fn write_body(
 ) -> Result<(String, bool), CoreError> {
     let mut out = String::new();
     let mut used_shim = false;
-    for segment in &body.0 {
+    for segment in &body.segments {
         match segment {
             Segment::Text { text } => out.push_str(text),
             Segment::Link { target } => out.push_str(&target.markdown()),

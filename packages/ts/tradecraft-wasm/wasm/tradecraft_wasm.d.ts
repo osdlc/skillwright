@@ -129,6 +129,24 @@ export function exportSkills(vfs: any, request_json: string): string;
 export function knownTargets(): string;
 
 /**
+ * Load the vault into the marketplace model — every plugin and its members,
+ * with each body's links and calls resolved — and write nothing.
+ *
+ * `vfs` is the host's filesystem object; `request_json` is a serialized
+ * `LoadRequest` optionally carrying a `namespace` stem. Returns a serialized
+ * `Marketplace`: the same model `exportSkills` translates into files, so a
+ * host that wants to show a vault's structure reads it here rather than
+ * re-deriving it from a built tree.
+ *
+ * # Errors
+ *
+ * Everything the load refuses, thrown as on `exportSkills`: an unreadable
+ * member note, a call or link that does not resolve, an override key a
+ * requested harness does not read, an empty marketplace.
+ */
+export function loadMarketplace(vfs: any, request_json: string): string;
+
+/**
  * Publish one skill to one destination.
  *
  * `vfs` is the host's filesystem object (see `js_vfs`); `request_json` is a

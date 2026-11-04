@@ -6,7 +6,7 @@ The in-memory object graph a vault loads into: marketplace → plugins → skill
 
 ## In code
 
-`Marketplace`, `Plugin` and `Component` in `model/mod.rs`. `skillwright list --json` does not print it yet.
+`Marketplace`, `Plugin` and `Component` in `model/mod.rs`. `skillwright list --model` prints it, and the wasm export `loadMarketplace` returns it.
 
 ## Not to be confused with
 

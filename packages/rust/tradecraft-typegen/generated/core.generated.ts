@@ -952,6 +952,407 @@ export interface VersionBumpSuggestion {
 export type StaleKind = "plugin" | "file" | "empty-dir";
 
 /**
+ * What crosses as `request_json` for [`load_marketplace`]: the core's
+ * [`LoadRequest`], flattened, plus the namespace stem this layer adds.
+ */
+export interface LoadRequest {
+  /** Absolute path to the vault. */
+  vault_root: string;
+
+  /** The content root to scan; `None` means the vault root. */
+  skills_root?: string;
+
+  /** Which marketplace to load. `None` names the vault's only one. */
+  marketplace?: string;
+
+  /**
+   * Which harnesses the model is for, by canonical name. Empty means every
+   * harness with a plugin format. A body no harness here admits is read
+   * but not resolved.
+   */
+  harnesses?: string[];
+
+  /**
+   * The marketplace's identity and per-plugin overrides, under what the
+   * vault's own notes say.
+   */
+  config: MarketplaceConfig;
+
+  /** Files copied verbatim into a plugin's pack. */
+  assets?: AssetSpec[];
+
+  /** Canonical hooks files. */
+  hooks?: HookFileSpec[];
+
+  /**
+   * The vault's frontmatter namespace, as a stem. Absent means
+   * [`Namespace::default`].
+   */
+  namespace?: string;
+}
+
+/** A vault, loaded as the one marketplace a build renders. */
+export interface Marketplace {
+  /** The name the marketplace publishes under. */
+  name: string;
+
+  /**
+   * The vault's marketplace folder this was loaded from, `None` for a
+   * vault that holds none.
+   */
+  folder: string | null;
+
+  /** Every plugin, by name. */
+  plugins: Record<string, Plugin>;
+
+  /**
+   * Components no pack has a place for, such as agents — named, never
+   * dropped. In path order.
+   */
+  uncarried: Component[];
+
+  /** What the scan and the resolve pass filled in or noticed, in path order. */
+  warnings: DiscoveryWarning[];
+
+  /** How many skills the marketplace holds. */
+  checked: number;
+}
+
+/** One plugin and everything it carries. */
+export interface Plugin {
+  /** The plugin's name. */
+  name: string;
+
+  /** Its skills, in discovery's name order. */
+  skills: Component[];
+
+  /** Its commands. */
+  commands: Component[];
+
+  /** Its hook notes. */
+  hooks: Component[];
+
+  /** Files copied verbatim into the built pack. */
+  assets: Asset[];
+
+  /**
+   * Where this plugin's launcher asset lands, when it ships one: the
+   * `${CLAUDE_PLUGIN_ROOT}/<shim_target>` its skills call.
+   */
+  shim_target: string | null;
+}
+
+/**
+ * A skill, a command, a hook, an agent or a container note, read and — when
+ * a requested harness admits it — resolved.
+ */
+export interface Component {
+  /** What it is. */
+  kind: EntityKind;
+
+  /** Its source name, never prefixed. */
+  name: string;
+
+  /** The note, vault-relative. */
+  path: string;
+
+  /** Its `sw-targets`, as written. `None` publishes everywhere. */
+  targets: string[] | null;
+
+  /** Its harness-only fields, by harness. */
+  extensions: Extensions;
+
+  /**
+   * Its content: name, description, the modeled fields and the
+   * annotations every harness receives, with `sw-arguments` applied for a
+   * skill or a command. The body is the note's own; the resolved one is
+   * [`Self::resolved`]. `None` until the note is read in full, which a load
+   * does only for what some requested harness admits.
+   */
+  content: SkillContent | null;
+
+  /**
+   * The body and its files, resolved. `None` when no harness this load is
+   * for admits the component, or for a kind whose body is taken verbatim.
+   */
+  resolved: Resolved | null;
+}
+
+/**
+ * A node's harness-only fields: `sw-overrides`, folded onto canonical
+ * harness names (D-ISOU).
+ */
+export interface Extensions {
+  /** Each harness's block, as written. */
+  blocks: Record<string, Record<string, unknown>>;
+}
+
+/**
+ * The content plane shared by drafts and version snapshots. Fields are the
+ * skill's modeled set plus `annotations` (frontmatter keys
+ * outside the modeled set, preserved verbatim so adoption is not lossy).
+ */
+export interface SkillContent {
+  /** The skill's name. */
+  name: string;
+
+  /** What the skill does and when to use it. */
+  description: string;
+
+  /** Hint shown for the arguments the skill takes. */
+  argument_hint: string | null;
+
+  /**
+   * Claude Code's own `arguments:` frontmatter key — see
+   * [`agent_adapt::Skill::argument_names`]. Hand-written (read from the
+   * note's literal `arguments:` key, never `sw-arguments`), or derived by
+   * [`SkillContent::apply_arguments`] the same way [`Self::argument_hint`]
+   * is.
+   */
+  argument_names: string[] | null;
+
+  /**
+   * What this skill or command's invocation takes.
+   *
+   * The one field here sourced from our `sw-` namespace rather than from
+   * the standard's own frontmatter — see
+   * [`crate::frontmatter::VaultFrontmatter::arguments`] for why that is
+   * not the contradiction it looks like. `Vec::new()` by construction
+   * whenever this `SkillContent` comes from
+   * [`crate::vault::read_vault_skill`]; only [`SkillContent::apply_arguments`]
+   * fills it in, called by `publish` and `export` after the read, before
+   * the projection.
+   */
+  arguments: Argument[];
+
+  /** The markdown body, without frontmatter. */
+  body: string;
+
+  /** Tools the skill may use without asking. */
+  allowed_tools: string[];
+
+  /**
+   * The Agent Skills spec's `license:` — a licence name, or a reference to a bundled
+   * licence file. Not `sw-license`, which is a container note's package
+   * identity and never travels.
+   */
+  license: string | null;
+
+  /**
+   * The Agent Skills spec's `compatibility:` — what environment this needs, capped at
+   * 500 characters by [`crate::discover`].
+   */
+  compatibility: string | null;
+
+  /**
+   * The Agent Skills spec's `metadata:` — a string-to-string map. Only the entries the
+   * note wrote under that key; the unmodeled top-level keys in
+   * [`Self::annotations`] join them in one block at render time.
+   */
+  metadata: Record<string, string>;
+
+  /** Model the skill asks to run on, when it names one. */
+  model_override: string | null;
+
+  /** Context mode the skill asks for, when it names one. */
+  context_mode: string | null;
+
+  /** Whether a user can invoke the skill directly. */
+  user_invocable: boolean;
+
+  /** Whether the model is barred from invoking the skill on its own. */
+  disable_model_invocation: boolean;
+
+  /** Free-form tags. */
+  tags: string[];
+
+  /** Unmodeled frontmatter, preserved as-is. A JSON object. */
+  annotations: Record<string, unknown>;
+
+  /**
+   * `sw-overrides`, keyed by **canonical** destination name — what one
+   * harness receives that the shared model cannot say.
+   *
+   * The second field here sourced from our `sw-` namespace, and it is
+   * here for the same reason [`Self::arguments`] is: a renderer needs it.
+   * `BTreeMap::new()` by construction from
+   * [`crate::vault::read_vault_skill`]; only
+   * [`SkillContent::apply_overrides`] fills it in, and only after
+   * [`crate::publish::overrides_for`] has folded the target names and
+   * checked every key against the harness that will receive it.
+   *
+   * The raw `sw-overrides` key still reaches no destination — the strip
+   * is unaffected, because this is not `annotations`.
+   */
+  overrides: Record<string, Record<string, unknown>>;
+}
+
+/**
+ * One argument a [`crate::Skill`] or [`crate::Command`] declares.
+ *
+ * Rendered two ways: [`crate::render::derive_argument_hint`] folds the list
+ * into a single hint string for a dialect that has one field for it
+ * (Claude Code's `argument-hint`), and
+ * [`crate::render::render_arguments_section`] writes the whole list into the
+ * body as prose, in the syntax the target runtime's invocation mechanism
+ * uses — or as a plain description when it has none.
+ */
+export interface Argument {
+  /** A slug: unique among the arguments on the same skill or command. */
+  name: string;
+
+  /**
+   * What the argument is for, shown beside its name wherever the list is
+   * rendered.
+   */
+  description: string | null;
+
+  /** Whether the caller must supply this argument. Defaults to `false`. */
+  required: boolean;
+
+  /**
+   * The closed set of values this argument accepts, when it is an enum.
+   * `None` means any value; `Some` is never empty — an argument with no
+   * allowed values is not an enum, and authoring that is refused before
+   * this struct exists.
+   */
+  values: string[] | null;
+
+  /**
+   * The value assumed when the caller supplies none. When `values` is
+   * `Some`, this is one of them — also enforced before this struct exists,
+   * not here.
+   */
+  default: string | null;
+}
+
+/** A body and the files it reaches, every link and call pointed at its node. */
+export interface Resolved {
+  /** The entry's body. */
+  body: Body;
+
+  /** Every file that travels with it, by output path. */
+  resources: Resource[];
+}
+
+/**
+ * A body as a sequence of segments.
+ *
+ * A named field rather than a newtype so it crosses the wasm boundary as an
+ * object, which is the only struct shape the TypeScript generator emits.
+ */
+export interface Body {
+  /** The segments, in order. */
+  segments: Segment[];
+}
+
+/** One piece of a resolved body. */
+export type Segment =
+  /** Text, written as is. */
+  | {
+      type: "text";
+      /** The text. */
+      text: string;
+    }
+  /** A link to a file that travels with the component. */
+  | {
+      type: "link";
+      /** Where it points. */
+      target: ResolvedRef;
+    }
+  /**
+   * A call to a skill. The surrounding text already holds the backticks
+   * a call outside code is written in.
+   */
+  | {
+      type: "call";
+      /** The call. */
+      call: Call;
+    }
+  /**
+   * The plugin's own CLI, which the vault writes as
+   * `${CLAUDE_PLUGIN_ROOT}/<shim_target>`.
+   */
+  | {
+      type: "cli-invocation";
+      /** The launcher's path inside the plugin. */
+      shim_target: string;
+    };
+
+/** A resolved link: the file it reaches and the markdown it renders as. */
+export interface ResolvedRef {
+  /** The linked file, vault-relative. */
+  path: string;
+
+  /** The link text, escaped. */
+  label: string;
+
+  /** The relative path from the emitting file, encoded, with its fragment. */
+  href: string;
+
+  /** Written as an image. */
+  image: boolean;
+}
+
+/** A resolved call. */
+export interface Call {
+  /** The skill it names. */
+  skill: SkillId;
+
+  /** That skill's `sw-targets`, which decide whether a harness ships it. */
+  targets: string[] | null;
+
+  /** The call as written, for a refusal. */
+  destination: string;
+
+  /** The note the call is in, for a refusal. */
+  caller: string;
+}
+
+/** A skill as a call names it. */
+export interface SkillId {
+  /** The plugin it ships in, `None` for a skill published on its own. */
+  plugin: string | null;
+
+  /** Its source name. */
+  name: string;
+}
+
+/** One file a component carries. */
+export interface Resource {
+  /** Where it lands, relative to the component's directory. */
+  path: string;
+
+  /** Its content. */
+  content: ResourceContent;
+
+  /** Whether it is executable. */
+  executable: boolean;
+}
+
+/** A resource's content: a compiled markdown file, or bytes as found. */
+export type ResourceContent =
+  /** A markdown file, whose links and calls a translator writes. */
+  | {
+      type: "body";
+      /** The file, frontmatter and all. */
+      body: Body;
+    }
+  /** Anything else, copied byte for byte. */
+  | {
+      type: "bytes";
+    };
+
+/** A file copied verbatim into a pack. */
+export interface Asset {
+  /** Where it lands, relative to the pack's own directory. */
+  dest: string;
+
+  /** Whether it is executable. */
+  executable: boolean;
+}
+
+/**
  * What crosses as `request_json` for [`adopt_skills`]: the core's
  * [`AdoptRequest`], flattened, plus the namespace stem this layer adds.
  */
@@ -1151,6 +1552,7 @@ export interface WasmRequests {
   publishSkill: PublishRequest;
   discoverComponents: DiscoverRequest;
   exportSkills: ExportRequest;
+  loadMarketplace: LoadRequest;
   adoptSkills: AdoptRequest;
   statusOf: StatusRequest;
 }
@@ -1163,6 +1565,7 @@ export interface WasmResponses {
   knownTargets: string[];
   discoverComponents: DiscoveryReport;
   exportSkills: ExportReport;
+  loadMarketplace: Marketplace;
   adoptSkills: AdoptReport;
   statusOf: UnitStatus;
 }

@@ -260,6 +260,53 @@ function knownTargets() {
 exports.knownTargets = knownTargets;
 
 /**
+ * Load the vault into the marketplace model — every plugin and its members,
+ * with each body's links and calls resolved — and write nothing.
+ *
+ * `vfs` is the host's filesystem object; `request_json` is a serialized
+ * `LoadRequest` optionally carrying a `namespace` stem. Returns a serialized
+ * `Marketplace`: the same model `exportSkills` translates into files, so a
+ * host that wants to show a vault's structure reads it here rather than
+ * re-deriving it from a built tree.
+ *
+ * # Errors
+ *
+ * Everything the load refuses, thrown as on `exportSkills`: an unreadable
+ * member note, a call or link that does not resolve, an override key a
+ * requested harness does not read, an empty marketplace.
+ * @param {any} vfs
+ * @param {string} request_json
+ * @returns {string}
+ */
+function loadMarketplace(vfs, request_json) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(request_json, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.loadMarketplace(retptr, addHeapObject(vfs), ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr2 = r0;
+        var len2 = r1;
+        if (r3) {
+            ptr2 = 0; len2 = 0;
+            throw takeObject(r2);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred3_0, deferred3_1, 1);
+    }
+}
+exports.loadMarketplace = loadMarketplace;
+
+/**
  * Publish one skill to one destination.
  *
  * `vfs` is the host's filesystem object (see `js_vfs`); `request_json` is a

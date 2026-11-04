@@ -757,7 +757,7 @@ fn fill_targets(resolved: &mut Resolved, targets: &BTreeMap<PathBuf, Option<Vec<
 }
 
 fn fill_body_targets(body: &mut Body, targets: &BTreeMap<PathBuf, Option<Vec<String>>>) {
-    for segment in &mut body.0 {
+    for segment in &mut body.segments {
         if let Segment::Call { call } = segment {
             call.targets = targets
                 .get(&normalize(&call.skill.entry_path))

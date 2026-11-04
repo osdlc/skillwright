@@ -344,6 +344,50 @@ fn list_json_carries_the_same_rows_the_table_does() {
     assert!(rows[0].get("folder_kind").is_some());
 }
 
+// `--model` prints the marketplace model `build` translates, from the same
+// project settings, and leaves `--json`'s rows as they were.
+#[test]
+fn list_model_prints_the_loaded_marketplace() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.yaml"),
+        format!(
+            "vault: {}\nmarketplace:\n  default_plugin: tools\n  out: market\n",
+            donor_vault()
+        ),
+    )
+    .unwrap();
+
+    let run = run(&["list", "--model", "--quiet"], dir.path());
+    assert_eq!(run.code, 0, "{}", run.stderr);
+
+    let model: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+    let tools = &model["plugins"]["tools"];
+    assert_eq!(tools["name"], "tools");
+    let skill = &tools["skills"][0];
+    assert_eq!(skill["kind"], "skill");
+    assert!(
+        skill["resolved"]["body"]["segments"].is_array(),
+        "{}",
+        run.stdout
+    );
+    // Nothing was built.
+    assert!(!dir.path().join("market").exists());
+}
+
+// Without a default plugin there is no marketplace to load, and the message
+// says where to set one.
+#[test]
+fn list_model_without_a_default_plugin_is_a_usage_error() {
+    let (dir, vault) = fixture();
+    let run = run(
+        &["list", "--model", "--vault", &vault_str(&vault)],
+        dir.path(),
+    );
+    assert_eq!(run.code, 3, "{}", run.stderr);
+    assert!(run.stderr.contains("default_plugin"), "{}", run.stderr);
+}
+
 #[test]
 fn list_with_no_configuration_and_no_vault_is_exit_4_naming_both_files() {
     let dir = tempfile::tempdir().unwrap();
