@@ -15,10 +15,10 @@
       "path": "packages/rust/tradecraft-core/src/adopt.rs",
       "line": 1795,
       "title": "Code mention in a nested resource now emits a skill-relative path that compile cannot resolve beside the file",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/19#discussion_r4440106984",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "be3598e"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "packages/rust/tradecraft-core/src/adopt.rs",
       "line": 707,
       "title": "DS_Store filter clones every resource's bytes an extra time",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/19#discussion_r4440106993",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "be3598e"
     },
     {
       "id": "r1-3",
@@ -37,10 +37,10 @@
       "path": "packages/rust/tradecraft-core/src/compile.rs",
       "line": 1030,
       "title": "size-alias check duplicated from display_label",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/19#discussion_r4440106996",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "be3598e"
     },
     {
       "id": "r1-4",
@@ -48,10 +48,10 @@
       "path": "packages/rust/tradecraft-core/src/compile.rs",
       "line": 2099,
       "title": "wiki_token still scans the rest of the document for the closer",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/19#discussion_r4440106999",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "be3598e"
     },
     {
       "id": "r1-5",
@@ -59,10 +59,10 @@
       "path": "packages/rust/tradecraft-core/src/adopt.rs",
       "line": 48,
       "title": "module doc edits left ragged hard wraps",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/19#discussion_r4440107005",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "be3598e"
     }
   ]
 }
