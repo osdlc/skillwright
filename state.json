@@ -60,9 +60,9 @@
       "line": null,
       "title": "Release notes omit the InvalidNamespaceError behaviour change and the breaking marker",
       "comment": "https://github.com/osdlc/skillwright/pull/25#pullrequestreview-5735579898",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c629948879cdb6d46fac8c83cf0afdec6591ddec"
     },
     {
       "id": "r2-1",
