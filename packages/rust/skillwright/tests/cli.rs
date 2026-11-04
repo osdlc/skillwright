@@ -2671,12 +2671,20 @@ fn a_missing_description_warns_on_stderr_even_under_quiet() {
     let dir = name_only_project(false);
     let build = run(&["build", "--yes", "--quiet"], dir.path());
     assert_eq!(build.code, 0, "{}", build.stderr);
-    assert!(build.stderr.contains(QUIET_WARNING), "{}", build.stderr);
+    assert!(
+        build.stderr.lines().any(|line| line == QUIET_WARNING),
+        "{}",
+        build.stderr
+    );
     assert!(!build.stdout.contains("warning"), "{}", build.stdout);
 
     let list = run(&["list", "--quiet"], dir.path());
     assert_eq!(list.code, 0, "{}", list.stderr);
-    assert!(list.stderr.contains(QUIET_WARNING), "{}", list.stderr);
+    assert!(
+        list.stderr.lines().any(|line| line == QUIET_WARNING),
+        "{}",
+        list.stderr
+    );
 }
 
 #[test]

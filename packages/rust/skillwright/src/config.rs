@@ -778,7 +778,7 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
         KeySpec {
             key: "marketplace.require_descriptions",
             scope: Scope::Both,
-            description: "Refuse `build` and `check` when a note has a `name` and no `description`. Absent or `false` publishes a filler and warns. A description the configuration supplies counts.",
+            description: "Refuse `build` and `check` when a note has a `name` and no `description`. Absent or `false` publishes a filler and warns. A plugin or marketplace note whose description the configuration supplies is neither warned about nor refused.",
         },
         KeySpec {
             key: "marketplace.shim_target",

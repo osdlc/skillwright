@@ -835,6 +835,23 @@ pub fn plugin_manifest_path(root: &str) -> Option<&'static str> {
         .map(|spec| spec.plugin_manifest)
 }
 
+/// The tree under `out_root` (one of `trees`, or the stage) that holds
+/// `path`, if any. A swap replaces each of them whole.
+fn replaced_tree_holding(
+    vfs: &dyn Vfs,
+    out_root: &Path,
+    trees: &[&str],
+    path: &Path,
+) -> Result<Option<PathBuf>, CoreError> {
+    for tree in trees.iter().copied().chain([STAGE_DIR]) {
+        let replaced = out_root.join(tree);
+        if within(vfs, &replaced, path)? {
+            return Ok(Some(replaced));
+        }
+    }
+    Ok(None)
+}
+
 /// Renders the vault into one marketplace directory, or checks it against what is already there.
 ///
 /// A note's `sw-overrides` are not applied here: the build renders each skill
@@ -930,36 +947,11 @@ pub fn export_skills(
         .filter(|c| c.kind != EntityKind::Marketplace || market.as_deref() == Some(c.name.as_str()))
         .map(|c| c.vault_relative_path.as_str())
         .collect();
-    // A configured description is what ships for a silent note (see
-    // `take_description`), so that note is not missing one.
-    let configured: BTreeSet<&str> = belonging
-        .iter()
-        .filter(|c| configures_description(&request.config, c))
-        .map(|c| c.vault_relative_path.as_str())
-        .collect();
     let mut warnings: Vec<DiscoveryWarning> = scan
         .warnings
         .into_iter()
         .filter(|w| ours.contains(w.path.as_str()))
-        .filter(|w| w.reason != MISSING_DESCRIPTION_REASON || !configured.contains(w.path.as_str()))
         .collect();
-    let undescribed: Vec<&str> = warnings
-        .iter()
-        .filter(|w| w.reason == MISSING_DESCRIPTION_REASON)
-        .map(|w| w.path.as_str())
-        .collect();
-    if request.config.require_descriptions && !undescribed.is_empty() {
-        let notes = undescribed;
-        return Err(CoreError::refused(
-            MISSING_DESCRIPTION_REASON,
-            format!(
-                "`require_descriptions` is set and {} note(s) have a `name` and no \
-                 `description`: {}. Nothing was written",
-                notes.len(),
-                notes.join(", ")
-            ),
-        ));
-    }
     // Named, never dropped: a pack has a place for skills, commands and hooks
     // (the last two on the roots that have one) and for nothing else, and a
     // build that quietly omitted an agent would be the failure this crate is
@@ -1016,7 +1008,29 @@ pub fn export_skills(
             },
         ));
     }
-    let (name, config) = resolve_config(&discovered, market.as_deref(), &request.config)?;
+    let (name, config, configured) =
+        resolve_config(&discovered, market.as_deref(), &request.config)?;
+    // A silent note the config describes ships that value, so it is not
+    // missing one.
+    warnings.retain(|w| {
+        w.reason != MISSING_DESCRIPTION_REASON || !configured.contains(w.path.as_str())
+    });
+    let undescribed: Vec<&str> = warnings
+        .iter()
+        .filter(|w| w.reason == MISSING_DESCRIPTION_REASON)
+        .map(|w| w.path.as_str())
+        .collect();
+    if request.config.require_descriptions && !undescribed.is_empty() {
+        return Err(CoreError::refused(
+            MISSING_DESCRIPTION_REASON,
+            format!(
+                "`require_descriptions` is set and {} note(s) have a `name` and no \
+                 `description`: {}. Nothing was written",
+                undescribed.len(),
+                undescribed.join(", ")
+            ),
+        ));
+    }
     let groups = group_by_plugin(&members, &commands, &hooks, &config.default_plugin)?;
     warnings.extend(missing_versions(
         &discovered,
@@ -1264,12 +1278,16 @@ fn missing_versions(
 ///
 /// `refused: unnamed-marketplace` — neither a marketplace note nor the request
 /// supplies a name.
+///
+/// The set returned holds the vault-relative paths of the silent notes whose
+/// description the request supplied.
 fn resolve_config(
     discovered: &[DiscoveredComponent],
     market: Option<&str>,
     requested: &MarketplaceConfig,
-) -> Result<(String, MarketplaceConfig), CoreError> {
+) -> Result<(String, MarketplaceConfig, BTreeSet<String>), CoreError> {
     let mut config = requested.clone();
+    let mut configured = BTreeSet::new();
 
     // A marketplace's own note is the one component that belongs to no
     // marketplace while naming one — see `DiscoveredComponent::marketplace`.
@@ -1283,7 +1301,9 @@ fn resolve_config(
         // The note's `description` is the Agent Skills spec field every component carries,
         // not an `sw-` key — the same rule the plugin loop below follows. A
         // marketplace describes itself where a skill describes itself.
-        take_description(&mut config.description, note);
+        if take_description(&mut config.description, note) {
+            configured.insert(note.vault_relative_path.clone());
+        }
         take(&mut config.display_name, note.identity.display_name.clone());
         take(&mut config.owner, note.identity.owner.clone());
         take(&mut config.author, note.identity.author.clone());
@@ -1327,7 +1347,9 @@ fn resolve_config(
         // The note's `description` is the Agent Skills spec field every component carries,
         // not an `sw-` key: a plugin note describes its pack in the same place
         // a skill note describes itself.
-        take_description(&mut overrides.description, note);
+        if take_description(&mut overrides.description, note) {
+            configured.insert(note.vault_relative_path.clone());
+        }
         take(&mut overrides.version, note.identity.version.clone());
         take(&mut overrides.author, note.identity.author.clone());
         take(&mut overrides.license, note.identity.license.clone());
@@ -1342,7 +1364,7 @@ fn resolve_config(
     // Settled, so nothing below has to hold an `Option` it has already proved
     // is `Some`. The name and the rest travel together from here.
     let name = config.name.clone().unwrap_or_default();
-    Ok((name, config))
+    Ok((name, config, configured))
 }
 
 /// Writes `from` into `slot` when the note supplied it, leaving a request-only
@@ -1354,45 +1376,17 @@ fn take<T>(slot: &mut Option<T>, from: Option<T>) {
     }
 }
 
-/// The tree under `out_root` (one of `trees`, or the stage) that holds
-/// `path`, if any. A swap replaces each of them whole.
-fn replaced_tree_holding(
-    vfs: &dyn Vfs,
-    out_root: &Path,
-    trees: &[&str],
-    path: &Path,
-) -> Result<Option<PathBuf>, CoreError> {
-    for tree in trees.iter().copied().chain([STAGE_DIR]) {
-        let replaced = out_root.join(tree);
-        if within(vfs, &replaced, path)? {
-            return Ok(Some(replaced));
-        }
-    }
-    Ok(None)
-}
-
 /// [`take`] for a note's `description`. A note with none carries discovery's
 /// [`crate::discover::MISSING_DESCRIPTION`] filler, which is the vault being
 /// silent: it yields to the request's value and stands in only where the
-/// request is silent too.
-fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) {
+/// request is silent too. Returns whether the request's value stood in for
+/// the filler.
+fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) -> bool {
     if !note.description_filled || slot.is_none() {
         *slot = Some(note.description.clone());
+        return false;
     }
-}
-
-/// Whether the request's config describes `note`, so a silent note ships that
-/// value rather than the filler. Only marketplace and plugin notes have a
-/// configured description.
-fn configures_description(config: &MarketplaceConfig, note: &DiscoveredComponent) -> bool {
-    match note.kind {
-        EntityKind::Marketplace => config.description.is_some(),
-        EntityKind::Plugin => config
-            .plugins
-            .get(&note.name)
-            .is_some_and(|o| o.description.is_some()),
-        _ => false,
-    }
+    true
 }
 
 /// Which marketplace this build renders, given what the vault holds.
@@ -1705,7 +1699,7 @@ fn render_root(
         // `inputs.config.shim_target`, so it can exist at all only where that
         // asset does — by `asset_covers`'s rule, so a `./`-spelled dest or a
         // directory asset holding the launcher counts. A plugin with no such
-        // asset gets `None` here on every root, so its output is unchanged.
+        // asset gets `None` here on every root and ships no shim.
         // Whether a given root actually emits the shim for a given skill is a
         // second, per-skill decision inside `render_skill`: `spec.cli_invocation`
         // gates it by harness, and the skill's own compiled body gates it by

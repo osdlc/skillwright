@@ -417,12 +417,19 @@ pub fn discover_components(
         match read_source(vfs, vault_root, entry_path, placement, &placed, &files, ns) {
             Ok(Some(component)) => {
                 if component.description_filled {
+                    // Only these two kinds can take a configured description.
+                    let unless =
+                        if matches!(component.kind, EntityKind::Plugin | EntityKind::Marketplace) {
+                            " unless the build configures one"
+                        } else {
+                            ""
+                        };
                     warnings.push(DiscoveryWarning {
                         path: component.vault_relative_path.clone(),
                         reason: MISSING_DESCRIPTION_REASON.to_owned(),
                         detail: format!(
                             "`{}` has a `name` and no `description`; published with \
-                             \"{MISSING_DESCRIPTION}\" unless the build configures one",
+                             \"{MISSING_DESCRIPTION}\"{unless}",
                             component.name
                         ),
                     });
