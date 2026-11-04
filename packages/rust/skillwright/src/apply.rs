@@ -568,7 +568,8 @@ fn rename_plugin(
 
     let mut outcome = Outcome::new(mode);
     // A plugin's entry note is a bundle entry (`<dir>/<dir>.md`), so the
-    // folder and every member ride along on the bundle move.
+    // folder and every member inside it ride along on the bundle move; a
+    // member outside it is edited in place.
     move_note(vault_dir, &from, &to, true, mode, &mut outcome)?;
     // From here the move has landed — a later failure is reported with what
     // already wrote, not as a bare refusal.

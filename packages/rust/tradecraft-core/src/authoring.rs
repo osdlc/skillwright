@@ -1051,7 +1051,9 @@ fn create_scaffold(path: &str, kind: Option<EntityKind>) -> Vec<String> {
 /// rewrite. Read from the OLD tree, before anything moves. Candidates are the
 /// notes under the plugin's folder `dir` plus every entry of `components` the
 /// scan puts in the plugin, since `sw-plugin` joins a note to the pack
-/// wherever it sits. A candidate that cannot be read or parsed is left alone.
+/// wherever it sits. A candidate that cannot be read, or that discovery
+/// cannot parse, is left alone; one the YAML splicer cannot parse fails the
+/// plan, naming the member.
 fn stale_plugin_key_members(
     vfs: &dyn Vfs,
     vault_dir: &Path,
@@ -1089,7 +1091,7 @@ fn stale_plugin_key_members(
             ns,
             &[("plugin", Some(yaml_splice::Value::Str(new_slug.to_owned())))],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("`{member}`: {e}"))?;
         members.push((member, edits));
     }
     Ok(members)
@@ -1739,6 +1741,33 @@ mod tests {
         assert_eq!(
             paths,
             vec!["marketplaces/house/plugins/tools/skills/keyed.md"]
+        );
+    }
+
+    #[test]
+    fn a_plugin_rename_rekeys_a_member_without_name_or_description() {
+        let vfs = one_plugin();
+        write(
+            &vfs,
+            "marketplaces/house/plugins/tools/skills/bare.md",
+            "---\nsw-plugin: tools\n---\n",
+        );
+
+        let AuthoringOp::RenamePlugin { members, .. } = plan_rename_plugin(
+            &vfs,
+            vault(),
+            &sw(),
+            "marketplaces/house/plugins/tools/tools.md",
+            "gear",
+        )
+        .unwrap() else {
+            panic!("expected a plugin rename");
+        };
+        assert!(
+            members
+                .iter()
+                .any(|(p, _)| p == "marketplaces/house/plugins/tools/skills/bare.md"),
+            "bare member missing from {members:?}"
         );
     }
 
