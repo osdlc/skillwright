@@ -15,10 +15,10 @@
       "path": "packages/rust/tradecraft-core/src/scan.rs",
       "line": 187,
       "title": "pruned-dir exception is unconditional and its boundaries are untested",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/22#discussion_r4440884290",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7ad9f0e"
     },
     {
       "id": "r1-2",
@@ -26,7 +26,7 @@
       "path": "packages/rust/tradecraft-core/src/scan.rs",
       "line": 209,
       "title": "skill directly inside a fixture directory is no longer excluded, untested",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/22#discussion_r4440884295",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -37,10 +37,10 @@
       "path": "packages/rust/tradecraft-core/src/status.rs",
       "line": 301,
       "title": "kind resolution copied from publish_onto",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/22#discussion_r4440884306",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7ad9f0e"
     },
     {
       "id": "r1-4",
@@ -48,10 +48,10 @@
       "path": "packages/rust/tradecraft-core/src/hooks_file.rs",
       "line": 164,
       "title": "overflow reported as not a whole number of seconds",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/22#discussion_r4440884312",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7ad9f0e"
     },
     {
       "id": "r1-5",
@@ -59,18 +59,18 @@
       "path": "packages/rust/tradecraft-core/src/skill.rs",
       "line": 245,
       "title": "build_ref root branch can be one join",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/22#discussion_r4440884324",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7ad9f0e"
     },
     {
       "id": "r1-6",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "scan.rs",
+      "line": 30,
       "title": "SKIP_DIRS doc comment now false (scan.rs:30-32)",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/22#pullrequestreview-5734644399",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -81,7 +81,7 @@
       "path": null,
       "line": null,
       "title": "PR body fix count and Not fixed section inaccurate",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/22#pullrequestreview-5734644399",
       "status": "open",
       "reason": null,
       "fixedIn": null
