@@ -1,0 +1,143 @@
+# Crate dependencies
+
+Who depends on whom across skillwright, osdlc and determined, and what each
+crate does. Only osdlc-family crates are shown; `serde`, `thiserror` and the
+like are left out. The target follows
+[D-TZFV](../decisions/D-TZFV-shared-vault-model.md): one implementation per
+concept.
+
+## Today
+
+Dashed boxes are code that skillwright core keeps itself instead of using
+the shared crate the dashed arrow points to.
+
+```mermaid
+flowchart TB
+  classDef sw fill:#fff3e8,stroke:#d9822b
+  classDef det fill:#f3eefc,stroke:#7c5cc4
+  classDef osdlc fill:#eef4ff,stroke:#5b7fc7
+  classDef dup fill:#ffffff,stroke:#c0392b,stroke-dasharray:4 3,color:#c0392b
+
+  subgraph SW[skillwright repo]
+    CLI["<b>skillwright</b><br/>CLI: flags, config, reports,<br/>harness install"]:::sw
+    CORE["<b>tradecraft-core</b><br/>discover, compile, build,<br/>publish, adopt, Vfs"]:::sw
+    WASM["<b>tradecraft-wasm</b><br/>core for JS / Obsidian"]:::sw
+    DUP1["5 vault walks"]:::dup
+    DUP2["wikilink scanner<br/>+ VaultIndex resolver"]:::dup
+    DUP3["heading / block<br/>extraction"]:::dup
+  end
+
+  subgraph OS[osdlc crates]
+    AA["<b>agent-adapt</b><br/>per-harness frontmatter,<br/>tool names, skill paths"]:::osdlc
+    ML["<b>markdown-link</b><br/>parse links, LinkIndex<br/>resolution, code spans"]:::osdlc
+    MR["<b>markdown-relink</b><br/>rename/move a note,<br/>rewrite inbound links"]:::osdlc
+    MVF["<b>markdown-vault-fs</b><br/>vault walk, excluded files,<br/>_system rules (std::fs)"]:::osdlc
+    MC["<b>markdown-contract</b><br/>document tree (comrak),<br/>contract checks"]:::osdlc
+    FL["<b>frontmatter-lossless</b><br/>split frontmatter / body"]:::osdlc
+    YS["<b>yaml-splice</b><br/>edit YAML, keep bytes"]:::osdlc
+    PG["<b>path-guard</b><br/>path containment"]:::osdlc
+    EW["<b>etag-write</b><br/>compare-and-swap writes"]:::osdlc
+    SC["<b>slug-collate</b><br/>slugs, name matching"]:::osdlc
+  end
+
+  subgraph DET[determined]
+    DV["<b>determined-vault</b><br/>re-exports walk, links,<br/>frontmatter; YAML layer"]:::det
+    DN["<b>determined-notes</b><br/>LinkGraph: backlinks,<br/>tags, incremental refresh"]:::det
+    DI["<b>determined-index</b><br/>search index,<br/>VaultGraph view"]:::det
+  end
+
+  CLI --> CORE
+  CLI --> MR
+  CLI --> YS
+  CLI --> PG
+  CLI --> EW
+  WASM --> CORE
+  CORE --> AA
+  CORE --> ML
+  CORE --> FL
+  CORE --> YS
+  CORE --> PG
+  ML --> YS
+  ML --> SC
+  MR --> ML
+  MR --> MVF
+  MR --> FL
+  MR --> EW
+  MVF --> PG
+  DV --> MVF
+  DV --> ML
+  DV --> FL
+  DV --> YS
+  DN --> DV
+  DN --> MR
+  DI --> DV
+
+  DUP1 -.duplicates.-> MVF
+  DUP2 -.duplicates.-> ML
+  DUP3 -.duplicates.-> MC
+```
+
+Three more copies of a vault link model exist besides core's: `LinkGraph`
+in `determined-notes`, `VaultFacts` in `markdown-relink`, and the walk behind
+`VaultGraph` in `determined-index`.
+
+## Target
+
+New crates are bold-bordered. Every vault concept has one home; tools add
+only what is their own.
+
+```mermaid
+flowchart TB
+  classDef sw fill:#fff3e8,stroke:#d9822b
+  classDef det fill:#f3eefc,stroke:#7c5cc4
+  classDef osdlc fill:#eef4ff,stroke:#5b7fc7
+  classDef new fill:#eaf7ee,stroke:#3f9b5b,stroke-width:3px
+
+  subgraph SW[skillwright repo]
+    CLI["<b>skillwright</b><br/>CLI: flags, config, reports"]:::sw
+    CORE["<b>tradecraft-core</b><br/>marketplace model, skill calls,<br/>harness profiles + translators, emit"]:::sw
+    WASM["<b>tradecraft-wasm</b><br/>core + model for JS / Obsidian"]:::sw
+  end
+
+  subgraph OS[osdlc crates]
+    VFS["<b>vfs</b> (name open)<br/>one file-access trait:<br/>native, memory, preview, JS"]:::new
+    MV["<b>markdown-vault</b><br/>the vault model: files, notes,<br/>link graph, backlinks, refresh<br/>(from determined LinkGraph)"]:::new
+    MVF["<b>markdown-vault-fs</b><br/>the one vault walk,<br/>excluded files, over vfs"]:::osdlc
+    ML["<b>markdown-link</b><br/>parse + resolve links<br/>(+ skillwright's options)"]:::osdlc
+    MC["<b>markdown-contract</b><br/>document tree: headings,<br/>blocks (native off)"]:::osdlc
+    MR["<b>markdown-relink</b><br/>rename plans, over<br/>markdown-vault"]:::osdlc
+    AA["<b>agent-adapt</b><br/>per-harness frontmatter,<br/>tool names"]:::osdlc
+    FL["<b>frontmatter-lossless</b>"]:::osdlc
+    YS["<b>yaml-splice</b>"]:::osdlc
+    PG["<b>path-guard</b>"]:::osdlc
+  end
+
+  subgraph DET[determined]
+    DV["<b>determined-vault</b><br/>YAML layer, sidecars"]:::det
+    DN["<b>determined-notes</b><br/>notes, agenda, backlinks UI"]:::det
+    DI["<b>determined-index</b><br/>search, graph view"]:::det
+  end
+
+  CLI --> CORE
+  CLI --> MR
+  WASM --> CORE
+  CORE --> MV
+  CORE --> AA
+  CORE --> VFS
+  MV --> MVF
+  MV --> ML
+  MV --> MC
+  MV --> FL
+  MV --> VFS
+  MVF --> VFS
+  MVF --> PG
+  MR --> MV
+  MR --> VFS
+  ML --> YS
+  DV --> MV
+  DV --> YS
+  DN --> MV
+  DN --> DV
+  DI --> MV
+  DI --> DV
+```
