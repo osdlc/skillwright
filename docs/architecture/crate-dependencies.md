@@ -102,7 +102,7 @@ flowchart TB
   end
 
   subgraph OS[osdlc crates]
-    VFS["<b>vfs</b> (name open)<br/>one file-access trait:<br/>native, memory, preview, JS"]:::new
+    VFS["<b>vfs-seam</b><br/>one file-access trait:<br/>native, memory, preview, JS"]:::new
     MV["<b>markdown-vault</b><br/>the vault model: files, notes,<br/>link graph, backlinks, refresh<br/>(from determined LinkGraph)"]:::new
     MVF["<b>markdown-vault-fs</b><br/>the one vault walk,<br/>excluded files, over vfs"]:::osdlc
     ML["<b>markdown-link</b><br/>parse + resolve links<br/>(+ skillwright's options)"]:::osdlc
