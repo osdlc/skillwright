@@ -22,6 +22,16 @@ and [D-EPSA](D-EPSA-two-phase-load.md).
   lives in exactly one osdlc crate. determined, `markdown-relink` and
   skillwright depend on that crate and keep no copy of their own. A tool
   adds only what is its own, such as skillwright's skill calls.
+- **Excluded files are honoured by every tool.** Reading the list from
+  `.obsidian/app.json` (`userIgnoreFilters`) moves from `determined-vault`
+  into the shared walk, and every walk applies it. skillwright does not read
+  it today, so a note excluded in Obsidian is still published.
+- **One bad note never stops a walk.** `determined-vault`'s `read_note`,
+  which reads a malformed frontmatter block as body-only, moves into
+  `markdown-vault`.
+- **`determined-vault` stays as determined's own wrapper:** vault location
+  from `vault.config.yaml`, canonical YAML output for generated documents,
+  and sidecar files.
 - **Every vault model becomes a user of it:**
   - determined's `LinkGraph` and the walk behind `VaultGraph`.
   - `markdown-relink`: `VaultFacts::scan` and rename planning.
