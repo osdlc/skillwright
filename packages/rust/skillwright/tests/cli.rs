@@ -545,6 +545,79 @@ fn a_build_renders_the_roots_and_a_check_then_agrees_with_it() {
     assert!(checked.stderr.contains("7 ok"), "{}", checked.stderr);
 }
 
+/// A vault whose `.obsidian/app.json` excludes one skill's folder
+/// (`userIgnoreFilters`), read read-only.
+fn excluded_vault() -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/excluded-vault")
+        .canonicalize()
+        .unwrap()
+        .display()
+        .to_string()
+}
+
+#[test]
+fn a_note_the_vault_excludes_is_not_built() {
+    let dir = tempfile::tempdir().unwrap();
+    let market = dir.path().join("market");
+    let market_arg = market.display().to_string();
+    let vault = excluded_vault();
+    let argv = [
+        "build",
+        "--vault",
+        &vault,
+        "--out",
+        &market_arg,
+        "--default-plugin",
+        "tools",
+        "--yes",
+    ];
+    let built = run(&argv, dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(
+        built.stdout.contains("claude/tools  written · 1 skill"),
+        "{}",
+        built.stdout
+    );
+    assert!(find_file(&market, "kept").is_some(), "kept is built");
+    assert!(
+        find_file(&market, "hidden").is_none(),
+        "hidden is not built"
+    );
+}
+
+#[test]
+fn a_note_the_vault_excludes_is_not_published() {
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("dest");
+    let dest_arg = dest.display().to_string();
+    let vault = excluded_vault();
+    let argv = [
+        "publish", "--all", "--vault", &vault, "--to", &dest_arg, "--target", "claude", "--yes",
+    ];
+    let published = run(&argv, dir.path());
+    assert_eq!(published.code, 0, "{}", published.stderr);
+    assert!(dest.join(".claude/skills/kept/SKILL.md").is_file());
+    assert!(!dest.join(".claude/skills/hidden").exists());
+    assert!(!published.stderr.contains("hidden"), "{}", published.stderr);
+}
+
+/// The first path under `root` with a component named `name`, depth first.
+fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
+    for entry in fs::read_dir(root).ok()?.flatten() {
+        let path = entry.path();
+        if path.file_name().is_some_and(|n| n == name) {
+            return Some(path);
+        }
+        if path.is_dir()
+            && let Some(hit) = find_file(&path, name)
+        {
+            return Some(hit);
+        }
+    }
+    None
+}
+
 /// The project file's marketplace-wide license reaches a pack manifest.
 ///
 /// The parse into `MarketplaceSettings` and the core's resolution off

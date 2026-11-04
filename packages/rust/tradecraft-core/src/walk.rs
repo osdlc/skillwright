@@ -69,3 +69,11 @@ pub(crate) fn files_refusing_symlinks(
 pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path) -> Vec<Entry> {
     shared::walk(vfs, root, &options(&[], false, false)).unwrap_or_default()
 }
+
+/// The vault's excluded files (Obsidian's `userIgnoreFilters`, read from
+/// `.obsidian/app.json` under `vault_root`), as a test on a vault-relative
+/// path. A missing or unreadable file excludes nothing.
+pub(crate) fn excluded_files(vfs: &dyn Vfs, vault_root: &Path) -> impl Fn(&str) -> bool {
+    let rules = markdown_vault_fs::hide::load(vfs, vault_root).rules;
+    move |relative: &str| !rules.is_empty() && rules.hides_path(relative, false)
+}
