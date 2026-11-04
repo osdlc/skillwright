@@ -455,20 +455,21 @@ fn move_note(
             });
         }
     };
-    if let Some(conflict) = result.conflict.clone() {
-        if !result.ok {
-            return Err(ApplyError::Refused(conflict));
-        }
-        // `ok` with a conflict: the bundle directory moved and its links were
-        // rewritten, and only the entry file's own rename failed.
-        record_executed(&plan, &result, from, to, outcome);
-        return Err(ApplyError::partial(
-            outcome.clone(),
-            ApplyError::Refused(conflict),
-        ));
+    if !result.ok
+        && let Some(conflict) = result.conflict
+    {
+        return Err(ApplyError::Refused(conflict));
     }
     record_executed(&plan, &result, from, to, outcome);
-    Ok(())
+    match result.conflict {
+        // `ok` with a conflict: the bundle directory moved and its links were
+        // rewritten, and only the entry file's own rename failed.
+        Some(conflict) => Err(ApplyError::partial(
+            outcome.clone(),
+            ApplyError::Refused(conflict),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// A planned note `execute` would rewrite, and the etag its bytes will have

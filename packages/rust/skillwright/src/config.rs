@@ -267,15 +267,11 @@ fn try_machine_config_path() -> Result<PathBuf, tiered_dirs::Error> {
 /// `config_layers::paths::resolve_config_path`. The rule `--vault`, `--to`,
 /// `--out` and `--config` share, with `base` the working directory.
 pub fn resolve_against_cwd(path: &str, base: &Path) -> PathBuf {
-    if path == "~" {
+    if path == "~" || path == "~/" {
         return home_dir();
     }
     if let Some(rest) = path.strip_prefix("~/") {
-        return if rest.is_empty() {
-            home_dir()
-        } else {
-            home_dir().join(rest)
-        };
+        return home_dir().join(rest);
     }
     let p = Path::new(path);
     if p.is_absolute() {
