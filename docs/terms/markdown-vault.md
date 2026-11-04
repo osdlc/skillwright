@@ -6,7 +6,7 @@ The osdlc crate that models a vault: every file, every note, each note's outgoin
 
 ## In code
 
-Not built yet. Today the pieces are in `markdown-vault-fs` (walk), `markdown-link` (links), `markdown-contract` (document tree) and `markdown-relink` (`VaultFacts`), and core keeps its own copies.
+Not built yet. To be extracted from `LinkGraph` and `NoteFacts` in determined's `determined-notes/src/links.rs`. Other copies today: `VaultFacts` in `markdown-relink`, and core's own walks and resolver.
 
 ## Not to be confused with
 
