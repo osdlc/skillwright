@@ -17,17 +17,11 @@ and [D-EPSA](D-EPSA-two-phase-load.md).
   link resolution through `markdown_link::LinkIndex`, and incremental
   refresh. It adds each note's document tree from `markdown-contract`
   (`comrak`, `native` off) for heading and block selection.
-- **One dependency graph, shared.** `markdown-vault` holds a single graph:
-  files are nodes, and every link, embed and frontmatter reference is a
-  typed edge, resolved or not. A tool may add its own edge kinds on top,
-  such as skillwright's skill calls. Each tool's question is a query on that
-  graph, not a model of its own:
-  - backlinks and inbound references (determined notes);
-  - the graph view with unresolved and attachment nodes (determined
-    `VaultGraph`);
-  - the notes a rename must rewrite (`markdown-relink`);
-  - the notes that feed a published file, for staleness hashes, and the
-    skills a call reaches (skillwright).
+- **One implementation per concept.** A vault concept (walk, excluded
+  files, link parsing, link resolution, the link graph, frontmatter split)
+  lives in exactly one osdlc crate. determined, `markdown-relink` and
+  skillwright depend on that crate and keep no copy of their own. A tool
+  adds only what is its own, such as skillwright's skill calls.
 - **Every vault model becomes a user of it:**
   - determined's `LinkGraph` and the walk behind `VaultGraph`.
   - `markdown-relink`: `VaultFacts::scan` and rename planning.
