@@ -15,10 +15,10 @@
       "path": "packages/rust/skillwright/src/commands/watch.rs",
       "line": 161,
       "title": "minimal-versions CI fails the watch rebuild test",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/24#discussion_r4441340800",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "e892e9b"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "packages/rust/skillwright/src/commands/watch.rs",
       "line": 169,
       "title": "debounce loop wiring of is_change is untested",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/24#discussion_r4441340817",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "e892e9b"
     },
     {
       "id": "r1-3",
@@ -37,10 +37,10 @@
       "path": "packages/rust/skillwright/src/commands/status.rs",
       "line": 130,
       "title": "bump name lookup: dead Option fallback, no single-note test",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/24#discussion_r4441340823",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "e892e9b"
     },
     {
       "id": "r1-4",
@@ -48,7 +48,7 @@
       "path": "packages/rust/skillwright/src/commands/adopt.rs",
       "line": 294,
       "title": "CLI re-implements the core DryRun overlay",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/24#discussion_r4441340830",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -59,7 +59,7 @@
       "path": "packages/rust/skillwright/src/commands/adopt.rs",
       "line": 316,
       "title": "comment restates the code",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/24#discussion_r4441340838",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -70,7 +70,7 @@
       "path": "packages/rust/skillwright/src/commands/watch.rs",
       "line": 307,
       "title": "test doc repeats is_change doc",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/24#discussion_r4441340842",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -81,7 +81,7 @@
       "path": null,
       "line": null,
       "title": "configured skills root: publish and status still wrong, a guard is safe",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/24#pullrequestreview-5735242873",
       "status": "open",
       "reason": null,
       "fixedIn": null
