@@ -202,7 +202,14 @@ enum Flattened<'a> {
 fn flattened<'a>(model: &'a Model, field: &Field) -> Result<Flattened<'a>, Error> {
     let (name, _) = path_parts(&field.ty)
         .ok_or_else(|| format!("the flattened field `{}` is not a named type", field.name))?;
-    match model.types.get(&name) {
+    let def = model.types.get(&name);
+    if let Some(reason) = def.and_then(unsupported) {
+        return Err(format!(
+            "the flattened field `{}` names `{name}`, and {reason}",
+            field.name
+        ));
+    }
+    match def {
         Some(TypeDef::Struct(s)) => Ok(Flattened::Struct(s)),
         Some(TypeDef::Enum(e))
             if e.attrs.tag.is_some() && e.variants.iter().any(|v| v.fields.is_some()) =>

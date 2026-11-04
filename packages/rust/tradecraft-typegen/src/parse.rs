@@ -714,4 +714,20 @@ mod tests {
             assert!(err.contains("two public types are named `Dup`"), "{err}");
         }
     }
+
+    /// A clash is refused when the type is only reached through
+    /// `#[serde(flatten)]`, which splices fields in without visiting the type.
+    #[test]
+    fn a_name_clash_is_refused_through_a_flattened_field() {
+        let types = collect(&[
+            ("a.rs", "pub struct Dup { pub a: String }"),
+            ("b.rs", "pub struct Dup { pub b: String }"),
+            (
+                "c.rs",
+                "pub struct Wire { #[serde(flatten)] pub inner: Dup }",
+            ),
+        ]);
+        let err = emit_response(types, "Wire").expect_err("the clash must be refused");
+        assert!(err.contains("two public types are named `Dup`"), "{err}");
+    }
 }

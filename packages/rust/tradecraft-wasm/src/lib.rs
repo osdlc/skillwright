@@ -78,8 +78,6 @@ use tradecraft_core::publish::{
     KNOWN_TARGETS, PublishRequest, canonical_target as core_canonical_target, kind_has_renderer,
     publish_skill as core_publish_skill,
 };
-// `status_of` returns `status::PublishUnitStatus`. `tradecraft_core::UnitStatus`
-// at the crate root is a different type: the marketplace's four-word status.
 use tradecraft_core::status::{StatusRequest, status_of as core_status_of};
 use wasm_bindgen::prelude::*;
 

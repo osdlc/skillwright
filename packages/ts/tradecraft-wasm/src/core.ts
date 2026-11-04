@@ -61,6 +61,7 @@ import type {
   PublishOutcome,
   PublishStatus,
   PublishUnitStatus as WirePublishUnitStatus,
+  StatusRequest as WireStatusRequest,
   ReasonToken as CoreReasonToken,
 } from './core.generated.ts'
 
@@ -70,10 +71,10 @@ import type {
  * one door to the core.
  *
  * Re-exported, never re-declared — except for `Target`,
- * `ReasonToken`/`PublishReason`/`PublishedFile` together, and
- * `StatusRequest`/`PublishUnitStatus` together, each hand-widened below for a
- * reason of its own. Everything else here is exactly what `tradecraft-typegen`
- * read off the Rust source.
+ * `ReasonToken`/`PublishReason`/`PublishedFile` together, and the derived
+ * `StatusRequest` and `PublishUnitStatus`, each widened below for a reason of
+ * its own. Everything else here is exactly what `tradecraft-typegen` read off
+ * the Rust source.
  * Regenerate with `cargo run -p tradecraft-typegen`; `cargo test -p tradecraft-typegen`
  * fails when the committed file is behind the Rust source, and a test in this
  * package fails when src/core.generated.ts differs from the crate's copy.
@@ -334,18 +335,11 @@ export function discoverComponents(vfs: Vfs, request: DiscoverRequest): Discover
 
 // --- tracking ----------------------------------------------------------------
 
-/** Mirrors `WireStatusRequest` in `packages/rust/tradecraft-wasm/src/lib.rs`. */
-export interface StatusRequest {
-  /** Absolute path to the vault note. */
-  skill_path: string
-  /** Absolute path to the destination root. */
-  destination_root: string
-  target: Target
-  /** The content root the note lives under. Omitted means no structural layer. */
-  skills_root?: string
-  /** This vault's frontmatter namespace stem. Omitted means `sw`. */
-  namespace?: string
-}
+/**
+ * `WireStatusRequest` in `packages/rust/tradecraft-wasm/src/lib.rs`. Derived
+ * from the generated type so `target` uses this package's widened {@link Target}.
+ */
+export type StatusRequest = Omit<WireStatusRequest, 'target'> & { target: Target }
 
 /**
  * `tradecraft_core::status::PublishUnitStatus` — one unit's state at one
