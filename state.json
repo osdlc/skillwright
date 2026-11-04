@@ -82,9 +82,9 @@
       "line": 10,
       "title": "Hand-written Unreleased entry in a release-plz changelog",
       "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771917",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c58e0ab510831e14cc279377df6b6c7cb39181c1"
     },
     {
       "id": "r1-8",
