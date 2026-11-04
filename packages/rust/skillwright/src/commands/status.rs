@@ -49,7 +49,7 @@ use crate::report::{
     AttributedState, Attribution, RowState, has_drift, normalize_thrown_reason, render_state_line,
     render_state_tally,
 };
-use crate::resolve::{CommonFlags, refuse_separate_skills_root, resolve_run};
+use crate::resolve::{CommonFlags, RunNotes, refuse_separate_skills_root, resolve_run};
 
 /// The resolved flags of `skillwright status`.
 pub struct StatusFlags {
@@ -105,10 +105,6 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
         })
         .collect();
 
-    if let Err(code) = refuse_separate_skills_root("status", &run, &ctx.cwd, ctx.err) {
-        return code;
-    }
-
     // --- the units ----------------------------------------------------------
     // A named note is taken as given; without one the vault scan supplies the
     // roster, which is the same scan `build` renders from — so `status` with
@@ -125,6 +121,15 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             if !note_path.exists() {
                 return blocked(ctx.err, &format!("note not found: {}", note_path.display()));
             }
+            if let Err(code) = refuse_separate_skills_root(
+                "status",
+                &run,
+                &ctx.cwd,
+                RunNotes::Named(std::slice::from_ref(&note_path)),
+                ctx.err,
+            ) {
+                return code;
+            }
             note_paths.push(note_path);
         }
         None => {
@@ -139,6 +144,15 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                                 component.kind.as_str().to_string(),
                             ));
                         }
+                    }
+                    if let Err(code) = refuse_separate_skills_root(
+                        "status",
+                        &run,
+                        &ctx.cwd,
+                        RunNotes::Skipped(&scan.skipped),
+                        ctx.err,
+                    ) {
+                        return code;
                     }
                     unreadable = scan.skipped;
                 }
@@ -302,7 +316,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     if !flags.json {
         for (skill, note_path, suggestion) in &suggestions {
             // `bump` matches the frontmatter `name`, which may differ from the
-            // filename. `status_of` already read this note.
+            // filename.
             let Ok(note) = read_vault_skill(&NativeVfs, note_path, &namespace) else {
                 continue;
             };

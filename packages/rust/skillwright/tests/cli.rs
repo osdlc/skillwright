@@ -2132,6 +2132,12 @@ fn publish_and_status_refuse_a_skills_root_apart_from_the_vault() {
         vec!["publish", "--config", &config, "--yes"],
         vec!["publish", "--config", &config, "--dry-run"],
         vec!["status", "--config", &config],
+        vec![
+            "status",
+            "--config",
+            &config,
+            "library/plugins/tools/tools.md",
+        ],
     ] {
         let out = run(&argv, dir.path());
         assert_eq!(out.code, 2, "{argv:?}: {}", out.stderr);
@@ -2143,6 +2149,80 @@ fn publish_and_status_refuse_a_skills_root_apart_from_the_vault() {
         assert_eq!(out.stdout, "", "{argv:?}");
     }
     assert_eq!(fs::read_dir(&dest).unwrap().count(), 0, "publish wrote");
+}
+
+/// A vault holding one skill under `skills/`, a destination, and a config file
+/// carrying `extra` — the setup the skills-root guard must let through.
+fn skills_root_fixture(extra: &str) -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    fs::create_dir_all(vault.join("skills")).unwrap();
+    fs::write(
+        vault.join("skills").join("review.md"),
+        "---\nname: review\ndescription: Reviews code.\n---\n\nReview the diff.\n",
+    )
+    .unwrap();
+    let dest = dir.path().join("dest");
+    fs::create_dir_all(&dest).unwrap();
+    let config = dir.path().join("config.yaml");
+    fs::write(
+        &config,
+        format!(
+            "vault: {}\ndestinations:\n  - root: {}\n    target: claude\n{extra}",
+            vault.display(),
+            dest.display()
+        ),
+    )
+    .unwrap();
+    let config = config.display().to_string();
+    (dir, config)
+}
+
+fn assert_publish_and_status_pass(dir: &Path, config: &str) {
+    for argv in [
+        vec!["publish", "--config", config, "--dry-run"],
+        vec!["status", "--config", config],
+        vec!["status", "--config", config, "skills/review.md"],
+    ] {
+        let out = run(&argv, dir);
+        assert_eq!(out.code, 0, "{argv:?}: {}", out.stderr);
+        assert!(
+            !out.stderr.contains("not support"),
+            "{argv:?}: {}",
+            out.stderr
+        );
+    }
+}
+
+/// A skills root inside the vault whose notes the vault scan reads publishes
+/// as it did before the guard.
+#[test]
+fn publish_and_status_accept_a_declared_skills_folder_the_vault_scan_reads() {
+    let (dir, config) = skills_root_fixture("declared_folders:\n  skills: skills\n");
+    let out = run(&["publish", "--config", &config, "--dry-run"], dir.path());
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(
+        out.stdout.contains("review/SKILL.md") || out.stderr.contains("review/SKILL.md"),
+        "stdout: {}\nstderr: {}",
+        out.stdout,
+        out.stderr
+    );
+    assert_publish_and_status_pass(dir.path(), &config);
+}
+
+/// `marketplace.skills_root` naming the vault itself passes the guard, both
+/// spelled directly and reached through a symlink.
+#[test]
+fn publish_and_status_accept_a_skills_root_that_is_the_vault() {
+    let (dir, config) = skills_root_fixture("marketplace:\n  skills_root: vault\n");
+    assert_publish_and_status_pass(dir.path(), &config);
+
+    #[cfg(unix)]
+    {
+        let (dir, config) = skills_root_fixture("marketplace:\n  skills_root: link\n");
+        std::os::unix::fs::symlink(dir.path().join("vault"), dir.path().join("link")).unwrap();
+        assert_publish_and_status_pass(dir.path(), &config);
+    }
 }
 
 #[test]
