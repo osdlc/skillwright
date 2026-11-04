@@ -1,7 +1,7 @@
 # D-TZFV: Read the vault through shared osdlc crates
 
 Accepted 2026-11-04. Part of [D-COMG](D-COMG-marketplace-model-and-translators.md)
-and [D-EPSA](D-EPSA-two-phase-load.md).
+and [D-EPSA](D-EPSA-resolve-at-load.md).
 
 ## Decision
 

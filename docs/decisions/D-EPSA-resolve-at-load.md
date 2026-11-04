@@ -5,19 +5,22 @@ Accepted 2026-11-04. [Review](../parley/discuss-architecture.json). Part of
 
 ## Decision
 
-Loading has two passes:
+Loading reads the vault once, through the shared vault reader
+([D-TZFV](D-TZFV-shared-vault-model.md)), and resolves every `[[link]]` and
+`/[[call]]` to the node it names before any translator runs. A broken one is
+a validation error.
 
-1. **Read** every note into a model node.
-2. **Resolve** every `[[link]]` and `/[[call]]` to the node it names. A broken
-   one is a validation error.
+How many passes that takes is a detail. Today it is two: read every note,
+then resolve the bodies from the notes already in memory. A call needs the
+target's kind and name, and an embed needs the target's body.
 
 Translators only decide how to write a resolved reference for their harness,
 for example `/skillwright:setup` on Claude and `skillwright-setup` on Pi.
 
 ## Why
 
-Today `compile.rs` writes calls in one harness's syntax, so `build` reads
-and compiles every note once per harness.
+Before this, `compile.rs` wrote calls in one harness's syntax, so `build` read
+and compiled every note once per harness.
 
 ## Options rejected
 

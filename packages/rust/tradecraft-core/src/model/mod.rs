@@ -12,7 +12,8 @@
 //!
 //! # Two passes, then validation
 //!
-//! [`load()`] reads in two passes (D-EPSA):
+//! [`load()`] reads each note once and resolves before translating (D-EPSA),
+//! today in two passes:
 //!
 //! 1. **Read** every note into a node — [`load::read_notes`]. This is the
 //!    only pass that walks the vault, and the seam a shared vault reader
