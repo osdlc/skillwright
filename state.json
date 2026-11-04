@@ -49,9 +49,9 @@
       "line": 6509,
       "title": "agent override refusal: only the refusing case is tested",
       "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110973",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "cfd68e7bd747693a47b4956b0306a34eb446d148"
     },
     {
       "id": "r1-5",
