@@ -7,9 +7,11 @@
 //! and stderr says which.
 //!
 //! Obsidian only opens folders it already knows as vaults. [`obsidian`]
-//! reads its `obsidian.json` to find out, and never writes it: an unknown
-//! folder gets a recommendation and, on a terminal, an offer to open
-//! Obsidian's own vault picker.
+//! reads its `obsidian.json` to find out. An unknown folder gets a
+//! recommendation and, on a terminal, a question. While Obsidian is closed
+//! the first answer adds the folder to `obsidian.json` (after a backup) and
+//! opens it; the others open Obsidian's own vault picker, use another
+//! editor, or cancel. Nothing writes `obsidian.json` without that answer.
 //!
 //! Everything that touches the machine — what is installed, the terminal,
 //! launching, asking — goes through [`AuthorHost`], so tests never start an
@@ -22,6 +24,7 @@ use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::commands::harness::cli_runner::{ProcessRunner, Runner};
 use crate::config::{Editor, MachineAuthor, machine_config_path, resolve_against_cwd};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_BLOCKED, EXIT_OK, blocked, usage_error};
@@ -228,6 +231,8 @@ pub trait AuthorHost {
     ///
     /// When it cannot start or exits non-zero.
     fn launch(&self, launch: &Launch) -> Result<(), String>;
+    /// True when Obsidian is running, or when that cannot be told.
+    fn obsidian_running(&self, os: Os) -> bool;
     /// Ask `question` with numbered `options`, writing to `err`. `None`
     /// means the person gave no usable answer, end of input included.
     fn choose(
@@ -267,6 +272,13 @@ impl AuthorHost for SystemHost {
         } else {
             Err(format!("{program} exited with {status}"))
         }
+    }
+
+    // Not running only when every check ran and found nothing.
+    fn obsidian_running(&self, os: Os) -> bool {
+        !obsidian::running_checks(os)
+            .iter()
+            .all(|argv| ProcessRunner.run(argv, Path::new("/")).code == Some(1))
     }
 
     fn choose(
@@ -351,6 +363,9 @@ pub fn run_author_with(
     };
 
     let mut launch = None;
+    // The vault picker opens Obsidian, not the vault: no `path` line, and
+    // steps instead.
+    let mut picker = false;
     if editor == Editor::Obsidian {
         // `has(Obsidian)` holds, so the config exists.
         let config = probe.obsidian_config.as_deref().unwrap_or(Path::new(""));
@@ -370,21 +385,80 @@ pub fn run_author_with(
                 if let Registration::Unknown { reason } = &other {
                     let _ = writeln!(ctx.err, "{reason}; treating the folder as not registered.");
                 }
-                for line in recommendation(&vault, ctx) {
+                // Adding is offered only on a terminal, for a cleanly read
+                // file, while Obsidian is closed.
+                let readable = (other == Registration::NotRegistered && probe.interactive)
+                    .then(|| obsidian::VaultList::read(config).ok())
+                    .flatten();
+                let running = readable.is_some() && host.obsidian_running(probe.os);
+                let list = readable.filter(|_| !running);
+                for line in recommendation(&vault, running, ctx) {
                     let _ = writeln!(ctx.err, "{line}");
                 }
-                let options = [
-                    "Open the vault picker now".to_string(),
-                    "Use another editor this time".to_string(),
-                    "Cancel".to_string(),
-                ];
+                let mut actions = Vec::new();
+                if list.is_some() {
+                    actions.push(Unknown::Add);
+                }
+                actions.extend([Unknown::Picker, Unknown::Other, Unknown::Cancel]);
                 let choice = if ask {
+                    let options: Vec<String> = actions
+                        .iter()
+                        .enumerate()
+                        .map(|(index, action)| {
+                            let label = action.label().to_string();
+                            if index == 0 && *action == Unknown::Add {
+                                format!("{label} (recommended)")
+                            } else {
+                                label
+                            }
+                        })
+                        .collect();
                     host.choose("What now?", &options, 0, ctx.err)
+                        .map(|index| actions[index])
+                } else if flags.dry_run && probe.interactive {
+                    notes.push(format!(
+                        "dry run: a real run asks what to do; showing the first answer, \"{}\".",
+                        actions[0].label()
+                    ));
+                    Some(actions[0])
                 } else {
-                    Some(1)
+                    Some(Unknown::Other)
                 };
                 match choice {
-                    Some(0) => {
+                    Some(Unknown::Add) => {
+                        let Some(list) = &list else {
+                            return blocked(ctx.err, "cannot add the vault.");
+                        };
+                        if flags.dry_run {
+                            notes.push(format!(
+                                "dry run: would copy {} to {}, then add vaults.<16 random hex> = {{\"path\":{},\"ts\":<now in ms>}} to it",
+                                list.path().display(),
+                                list.backup_path().display(),
+                                serde_json::Value::from(vault.to_string_lossy()),
+                            ));
+                        } else {
+                            if host.obsidian_running(probe.os) {
+                                return blocked(
+                                    ctx.err,
+                                    "Obsidian is running now; obsidian.json not changed. Quit Obsidian and run again, or choose the vault picker.",
+                                );
+                            }
+                            let now = chrono::Utc::now().timestamp_millis();
+                            match list.add(&vault, now, &mut obsidian::random_bytes) {
+                                Ok(added) => notes.push(format!(
+                                    "added {} to {} as vault {}; the previous file is in {}",
+                                    vault.display(),
+                                    added.config.display(),
+                                    added.id,
+                                    added.backup.display()
+                                )),
+                                Err(message) => return blocked(ctx.err, &message),
+                            }
+                        }
+                        launch = Some(plan_launch(Editor::Obsidian, &probe, &vault, &target));
+                    }
+                    Some(Unknown::Picker) => {
+                        picker = true;
                         launch = Some(Launch {
                             argv: vec![
                                 probe.os.opener().to_string(),
@@ -393,7 +467,7 @@ pub fn run_author_with(
                             terminal: false,
                         });
                     }
-                    Some(1) => {
+                    Some(Unknown::Other) => {
                         let Some(next) = probe
                             .available()
                             .into_iter()
@@ -412,7 +486,18 @@ pub fn run_author_with(
 
     let launch = launch.unwrap_or_else(|| plan_launch(editor, &probe, &vault, &target));
     flush_notes(&mut notes, flags.quiet, ctx.err);
-    report(flags, editor, &target, &launch, ctx);
+    report(
+        flags,
+        editor,
+        (!picker).then_some(target.as_path()),
+        &launch,
+        ctx,
+    );
+    if picker {
+        for line in picker_steps(probe.os, &vault) {
+            let _ = writeln!(ctx.err, "{line}");
+        }
+    }
     if flags.dry_run {
         if !flags.quiet {
             let _ = writeln!(ctx.err, "dry run: nothing launched");
@@ -423,6 +508,44 @@ pub fn run_author_with(
         Ok(()) => EXIT_OK,
         Err(message) => blocked(ctx.err, &format!("could not open the editor: {message}")),
     }
+}
+
+/// The answers to "What now?" for a folder Obsidian does not know.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unknown {
+    /// Add it to `obsidian.json` and open it. Offered only while Obsidian is
+    /// closed.
+    Add,
+    /// Open Obsidian's vault picker.
+    Picker,
+    /// Use the next available editor.
+    Other,
+    /// Open nothing.
+    Cancel,
+}
+
+impl Unknown {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Add => "Add it to Obsidian's vault list and open it (Obsidian is closed)",
+            Self::Picker => "Open the vault picker now",
+            Self::Other => "Use another editor this time",
+            Self::Cancel => "Cancel",
+        }
+    }
+}
+
+/// How to add `vault` once the vault picker is open.
+fn picker_steps(os: Os, vault: &Path) -> Vec<String> {
+    let first = "In the vault picker, click \"Open\" next to \"Open folder as vault\".".to_string();
+    let second = match os {
+        Os::Mac => format!(
+            "In the folder dialog, press Cmd+Shift+G, enter {}, and click Open.",
+            vault.display()
+        ),
+        Os::Linux => format!("In the folder dialog, choose {}.", vault.display()),
+    };
+    vec![first, second]
 }
 
 /// `path`, absolute or relative, as a canonical path inside the vault. A
@@ -582,7 +705,8 @@ pub fn plan_launch(editor: Editor, probe: &Probe, vault: &Path, target: &Path) -
 }
 
 /// What to tell a person whose folder Obsidian does not know.
-fn recommendation(vault: &Path, ctx: &CommandContext<'_>) -> Vec<String> {
+/// `running` says Obsidian was found running, so adding is not offered.
+fn recommendation(vault: &Path, running: bool, ctx: &CommandContext<'_>) -> Vec<String> {
     let dot = vault.join(".obsidian");
     let ignored = ctx.runner.run(
         &[
@@ -601,11 +725,17 @@ fn recommendation(vault: &Path, ctx: &CommandContext<'_>) -> Vec<String> {
         ),
         _ => format!("{} would sit outside any git repository.", dot.display()),
     };
-    vec![
-        format!(
-            "Obsidian does not know {} as a vault. skillwright does not register vaults.",
-            vault.display()
-        ),
+    let mut lines = vec![format!(
+        "Obsidian does not know {} as a vault.",
+        vault.display()
+    )];
+    if running {
+        lines.push(
+            "Obsidian is running. skillwright adds a vault to Obsidian's list only while Obsidian is closed."
+                .to_string(),
+        );
+    }
+    lines.extend([
         format!(
             "To add it: in Obsidian choose \"Open folder as vault\" and pick {}.",
             vault.display()
@@ -615,7 +745,8 @@ fn recommendation(vault: &Path, ctx: &CommandContext<'_>) -> Vec<String> {
             dot.display()
         ),
         git_line,
-    ]
+    ]);
+    lines
 }
 
 fn flush_notes(notes: &mut Vec<String>, quiet: bool, err: &mut dyn Write) {
@@ -639,17 +770,18 @@ fn shell_word(arg: &str) -> String {
     }
 }
 
+/// `target` is `None` when the launch does not open it (the vault picker).
 fn report(
     flags: &AuthorFlags,
     editor: Editor,
-    target: &Path,
+    target: Option<&Path>,
     launch: &Launch,
     ctx: &mut CommandContext<'_>,
 ) {
     if flags.json {
         let doc = serde_json::json!({
             "editor": editor.as_str(),
-            "path": target.to_string_lossy(),
+            "path": target.map(Path::to_string_lossy),
             "command": launch.argv,
             "launched": !flags.dry_run,
         });
@@ -657,18 +789,21 @@ fn report(
         return;
     }
     let command: Vec<String> = launch.argv.iter().map(|a| shell_word(a)).collect();
-    for line in plan_flow(&[
-        ("editor", vec![editor.as_str().to_string()]),
-        ("path", vec![target.display().to_string()]),
-        ("run", vec![command.join(" ")]),
-    ]) {
+    let mut rows = vec![("editor", vec![editor.as_str().to_string()])];
+    if let Some(target) = target {
+        rows.push(("path", vec![target.display().to_string()]));
+    }
+    rows.push(("run", vec![command.join(" ")]));
+    for line in plan_flow(&rows) {
         let _ = writeln!(ctx.out, "{line}");
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::obsidian::{open_uri, owning_vault, parse_vaults, percent_encode};
+    use super::obsidian::{
+        VaultList, open_uri, owning_vault, parse_vaults, percent_encode, running_checks,
+    };
     use super::*;
 
     #[test]
@@ -726,6 +861,48 @@ mod tests {
         assert_eq!(vault, link);
         assert_eq!(path, link.join("skills"));
         assert!(open_uri(&path).ends_with("link%2Fskills"));
+    }
+
+    #[test]
+    fn a_new_vault_id_is_16_hex_and_unused() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("obsidian.json");
+        std::fs::write(&config, r#"{"vaults":{"0123456789abcdef":{"path":"/a"}}}"#).unwrap();
+        let list = VaultList::read(&config).unwrap();
+        // The first draw is taken; the second is not.
+        let mut draws = vec![[0xfe; 8], [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]];
+        let mut random = || Ok(draws.pop().unwrap());
+        assert_eq!(list.new_id(&mut random).unwrap(), "fefefefefefefefe");
+        let mut taken = || Ok([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]);
+        assert!(list.new_id(&mut taken).is_err());
+        let id = list.new_id(&mut obsidian::random_bytes).unwrap();
+        assert_eq!(id.len(), 16);
+        assert!(
+            id.bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        );
+        assert_eq!(
+            list.backup_path(),
+            config
+                .canonicalize()
+                .unwrap()
+                .with_file_name("obsidian.json.bak")
+        );
+    }
+
+    #[test]
+    fn running_checks_match_each_os() {
+        assert_eq!(
+            running_checks(Os::Mac),
+            vec![vec!["pgrep", "-x", "Obsidian"]]
+        );
+        assert_eq!(
+            running_checks(Os::Linux),
+            vec![
+                vec!["pgrep", "-x", "obsidian"],
+                vec!["pgrep", "-f", "md.obsidian.Obsidian"]
+            ]
+        );
     }
 
     #[test]

@@ -151,13 +151,30 @@ Obsidian counts as available when its `obsidian.json` exists:
 `~/Library/Application Support/obsidian/` on macOS, and
 `~/.config/obsidian/` (or the flatpak's `~/.var/app/md.obsidian.Obsidian/config/obsidian/`)
 on Linux. Obsidian opens only folders it knows as vaults. `author` reads
-`obsidian.json` to check, and never changes it. For a folder Obsidian does
-not know, it explains how to add it with "Open folder as vault". On a
-terminal it offers to open Obsidian's vault picker; off a terminal it uses
-the next available editor.
+`obsidian.json` to check. For a folder Obsidian does not know, it explains
+how to add it with "Open folder as vault", then asks what to do:
 
-`--dry-run` prints the command and launches nothing. On a first run it
-also asks nothing and saves nothing.
+1. Add it to Obsidian's vault list and open it. Offered only while
+   Obsidian is closed (checked with `pgrep`) and only when `obsidian.json`
+   reads cleanly.
+2. Open the vault picker, with steps for adding the folder there.
+3. Use another editor this time.
+4. Cancel.
+
+Off a terminal it does not ask, and uses the next available editor.
+
+`author` changes `obsidian.json` only when you choose the first answer,
+and only while Obsidian is closed: it checks again right before writing.
+It first copies the file to `obsidian.json.bak` beside it, then adds one
+entry under `vaults` and leaves every other key and vault as it was. If the
+file changed after `author` read it, nothing is written. The format of
+`obsidian.json` is internal to Obsidian, not a public API, so a future
+Obsidian release could change it.
+
+`--dry-run` prints the command and launches nothing. It asks nothing,
+saves nothing and writes nothing to `obsidian.json`; on a terminal it shows
+what the first answer would do, including the planned `obsidian.json`
+write.
 
 ## Exit codes
 

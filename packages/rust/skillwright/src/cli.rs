@@ -569,8 +569,10 @@ struct DeleteArgs {
 }
 
 /// `author`'s surface. It writes no vault file, so it takes
-/// [`ReadOnlyGlobals`] and its own `--dry-run`; the editor question saves
-/// one key to the machine file, and the answer is the confirmation.
+/// [`ReadOnlyGlobals`] and its own `--dry-run`. The editor question saves
+/// one key to the machine file, and the vault question can add one vault
+/// to Obsidian's `obsidian.json`; in each case the answer is the
+/// confirmation.
 #[derive(Args, Debug)]
 struct AuthorArgs {
     /// A folder or note inside the vault: absolute, relative to the working directory, or else relative to the vault. Defaults to the vault root.
@@ -581,7 +583,7 @@ struct AuthorArgs {
     with: Option<Editor>,
     #[arg(
         long,
-        help = "Print what would be opened and how; launch nothing and save nothing."
+        help = "Print what would be opened and how; launch nothing, save nothing and write nothing."
     )]
     dry_run: bool,
     #[command(flatten)]

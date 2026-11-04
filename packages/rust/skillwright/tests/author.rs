@@ -3,7 +3,7 @@
 
 mod common;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -14,11 +14,18 @@ use skillwright::config::{Editor, MachineAuthor};
 use skillwright::ctx::CommandContext;
 use skillwright::resolve::CommonFlags;
 
+type Hook = Box<dyn FnOnce()>;
+
 struct FakeHost {
     probe: Probe,
     answers: RefCell<Vec<Option<usize>>>,
     questions: RefCell<Vec<String>>,
     launched: RefCell<Vec<Launch>>,
+    /// Answers to the running check, in order; once used up, "running".
+    running: RefCell<Vec<bool>>,
+    checks: Cell<usize>,
+    /// Runs while the person is "thinking" at a question.
+    while_asking: RefCell<Option<Hook>>,
 }
 
 impl FakeHost {
@@ -28,11 +35,24 @@ impl FakeHost {
             answers: RefCell::new(Vec::new()),
             questions: RefCell::new(Vec::new()),
             launched: RefCell::new(Vec::new()),
+            running: RefCell::new(Vec::new()),
+            checks: Cell::new(0),
+            while_asking: RefCell::new(None),
         }
     }
 
     fn answering(self, answers: &[Option<usize>]) -> Self {
         *self.answers.borrow_mut() = answers.iter().rev().copied().collect();
+        self
+    }
+
+    fn running(self, running: &[bool]) -> Self {
+        *self.running.borrow_mut() = running.iter().rev().copied().collect();
+        self
+    }
+
+    fn while_asking(self, hook: impl FnOnce() + 'static) -> Self {
+        *self.while_asking.borrow_mut() = Some(Box::new(hook));
         self
     }
 }
@@ -47,6 +67,12 @@ impl AuthorHost for FakeHost {
         Ok(())
     }
 
+    fn obsidian_running(&self, os: Os) -> bool {
+        assert_eq!(os, self.probe.os);
+        self.checks.set(self.checks.get() + 1);
+        self.running.borrow_mut().pop().unwrap_or(true)
+    }
+
     fn choose(
         &self,
         question: &str,
@@ -54,6 +80,9 @@ impl AuthorHost for FakeHost {
         _default: usize,
         _err: &mut dyn Write,
     ) -> Option<usize> {
+        if let Some(hook) = self.while_asking.borrow_mut().take() {
+            hook();
+        }
         self.questions
             .borrow_mut()
             .push(format!("{question} {}", options.join(" | ")));
@@ -97,6 +126,24 @@ impl World {
             "vaults": {"0123456789abcdef": {"path": vault, "ts": 1, "open": true}}
         });
         fs::write(&self.obsidian_json, json.to_string()).unwrap();
+    }
+
+    /// An `obsidian.json` that lists another folder and has keys of its own.
+    fn register_elsewhere(&self) -> serde_json::Value {
+        let json = serde_json::json!({
+            "vaults": {
+                "0123456789abcdef": {"path": self.root.join("elsewhere"), "ts": 1, "open": true}
+            },
+            "frame": "hidden",
+            "updateDisabled": true,
+            "nested": {"a": [1, 2, {"b": null}]}
+        });
+        fs::write(&self.obsidian_json, json.to_string()).unwrap();
+        json
+    }
+
+    fn backup(&self) -> PathBuf {
+        self.obsidian_json.with_file_name("obsidian.json.bak")
     }
 
     fn save_editor(&self, editor: &str) {
@@ -685,4 +732,250 @@ fn a_project_file_may_not_set_author() {
         "{}",
         r.stderr
     );
+}
+
+const ADD: &str = "Add it to Obsidian's vault list and open it (Obsidian is closed) (recommended)";
+
+#[test]
+fn adding_is_offered_only_while_obsidian_is_closed() {
+    let world = World::new("vault");
+    world.register_elsewhere();
+    let host = FakeHost::new(world.probe(true))
+        .running(&[true])
+        .answering(&[Some(2)]);
+    let r = run(
+        &world,
+        &flags(&world, None, Some(Editor::Obsidian), false),
+        &host,
+    );
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert_eq!(host.checks.get(), 1);
+    let question = &host.questions.borrow()[0];
+    assert!(!question.contains("Add it"), "{question}");
+    assert!(question.starts_with("What now? Open the vault picker now"));
+    assert!(r.stderr.contains("Obsidian is running"), "{}", r.stderr);
+
+    let host = FakeHost::new(world.probe(true))
+        .running(&[false])
+        .answering(&[Some(3)]);
+    let r = run(
+        &world,
+        &flags(&world, None, Some(Editor::Obsidian), false),
+        &host,
+    );
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert_eq!(
+        host.questions.borrow()[0],
+        format!(
+            "What now? {ADD} | Open the vault picker now | Use another editor this time | Cancel"
+        )
+    );
+    assert!(!world.backup().exists());
+}
+
+#[test]
+fn malformed_obsidian_json_is_never_offered_for_adding() {
+    let world = World::new("vault");
+    fs::write(&world.obsidian_json, "{not json").unwrap();
+    let host = FakeHost::new(world.probe(true))
+        .running(&[false, false])
+        .answering(&[Some(0)]);
+    let r = run(
+        &world,
+        &flags(&world, None, Some(Editor::Obsidian), false),
+        &host,
+    );
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert_eq!(host.checks.get(), 0);
+    assert!(!host.questions.borrow()[0].contains("Add it"));
+    assert_eq!(argv(&host)[0][1], "obsidian://choose-vault");
+    assert_eq!(
+        fs::read_to_string(&world.obsidian_json).unwrap(),
+        "{not json"
+    );
+    assert!(!world.backup().exists());
+}
+
+#[test]
+fn adding_keeps_everything_else_backs_up_and_opens_the_vault() {
+    let world = World::new("vault");
+    let before = world.register_elsewhere();
+    let original = fs::read(&world.obsidian_json).unwrap();
+    let host = FakeHost::new(world.probe(true))
+        .running(&[false, false])
+        .answering(&[Some(0)]);
+    let r = run(
+        &world,
+        &flags(
+            &world,
+            Some("skills/a note.md"),
+            Some(Editor::Obsidian),
+            false,
+        ),
+        &host,
+    );
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    // Checked when offering, and again right before writing.
+    assert_eq!(host.checks.get(), 2);
+    assert_eq!(fs::read(world.backup()).unwrap(), original);
+
+    let mut after: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&world.obsidian_json).unwrap()).unwrap();
+    let vaults = after["vaults"].as_object_mut().unwrap();
+    assert_eq!(vaults.len(), 2);
+    let id = vaults
+        .keys()
+        .find(|k| *k != "0123456789abcdef")
+        .unwrap()
+        .clone();
+    assert_eq!(id.len(), 16);
+    assert!(
+        id.chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        "{id}"
+    );
+    let added = vaults.remove(&id).unwrap();
+    assert_eq!(added["path"], world.vault.display().to_string());
+    assert!(added["ts"].as_i64().unwrap() > 1_600_000_000_000);
+    assert_eq!(added.as_object().unwrap().len(), 2);
+    assert_eq!(after, before, "every other key and vault is untouched");
+
+    let note = world.vault.join("skills/a note.md");
+    assert_eq!(argv(&host), vec![vec!["open".to_string(), encoded(&note)]]);
+    assert!(
+        r.stderr.contains(&format!(
+            "added {} to {} as vault {id}; the previous file is in {}",
+            world.vault.display(),
+            world.obsidian_json.display(),
+            world.backup().display()
+        )),
+        "{}",
+        r.stderr
+    );
+}
+
+#[test]
+fn obsidian_started_before_the_write_means_nothing_is_written() {
+    let world = World::new("vault");
+    world.register_elsewhere();
+    let original = fs::read(&world.obsidian_json).unwrap();
+    let host = FakeHost::new(world.probe(true))
+        .running(&[false, true])
+        .answering(&[Some(0)]);
+    let r = run(
+        &world,
+        &flags(&world, None, Some(Editor::Obsidian), false),
+        &host,
+    );
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(r.stderr.contains("Obsidian is running now"), "{}", r.stderr);
+    assert_eq!(fs::read(&world.obsidian_json).unwrap(), original);
+    assert!(!world.backup().exists());
+    assert!(argv(&host).is_empty());
+}
+
+#[test]
+fn a_file_changed_while_asking_is_not_overwritten() {
+    let world = World::new("vault");
+    world.register_elsewhere();
+    let json = world.obsidian_json.clone();
+    let host = FakeHost::new(world.probe(true))
+        .running(&[false, false])
+        .answering(&[Some(0)])
+        .while_asking(move || fs::write(&json, r#"{"vaults":{}}"#).unwrap());
+    let r = run(
+        &world,
+        &flags(&world, None, Some(Editor::Obsidian), false),
+        &host,
+    );
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(
+        r.stderr.contains("changed since skillwright read it"),
+        "{}",
+        r.stderr
+    );
+    assert_eq!(
+        fs::read_to_string(&world.obsidian_json).unwrap(),
+        r#"{"vaults":{}}"#
+    );
+    assert!(!world.backup().exists());
+    assert!(argv(&host).is_empty());
+}
+
+#[test]
+fn a_dry_run_prints_the_planned_write_and_writes_nothing() {
+    let world = World::new("vault");
+    world.register_elsewhere();
+    let original = fs::read(&world.obsidian_json).unwrap();
+    let host = FakeHost::new(world.probe(true)).running(&[false]);
+    let r = run(
+        &world,
+        &flags(&world, None, Some(Editor::Obsidian), true),
+        &host,
+    );
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(host.questions.borrow().is_empty());
+    assert!(argv(&host).is_empty());
+    assert!(
+        r.stderr.contains(&format!(
+            "dry run: would copy {} to {}, then add vaults.<16 random hex>",
+            world.obsidian_json.display(),
+            world.backup().display()
+        )),
+        "{}",
+        r.stderr
+    );
+    assert!(r.stdout.contains(&encoded(&world.vault)), "{}", r.stdout);
+    assert_eq!(fs::read(&world.obsidian_json).unwrap(), original);
+    assert!(!world.backup().exists());
+}
+
+#[test]
+fn off_a_terminal_nothing_is_added() {
+    let world = World::new("vault");
+    world.register_elsewhere();
+    let original = fs::read(&world.obsidian_json).unwrap();
+    for dry_run in [false, true] {
+        let host = FakeHost::new(world.probe(false)).running(&[false, false]);
+        let r = run(
+            &world,
+            &flags(&world, None, Some(Editor::Obsidian), dry_run),
+            &host,
+        );
+        assert_eq!(r.code, 0, "{}", r.stderr);
+        assert_eq!(host.checks.get(), 0);
+        assert!(host.questions.borrow().is_empty());
+        assert_eq!(fs::read(&world.obsidian_json).unwrap(), original);
+        assert!(!world.backup().exists());
+        assert!(r.stdout.contains("editor  code"), "{}", r.stdout);
+    }
+}
+
+#[test]
+fn the_picker_route_prints_steps_and_no_path_line() {
+    let world = World::new("vault");
+    for (os, mac_hint) in [(Os::Mac, true), (Os::Linux, false)] {
+        let mut probe = world.probe(true);
+        probe.os = os;
+        let host = FakeHost::new(probe).answering(&[Some(0)]);
+        let r = run(
+            &world,
+            &flags(&world, None, Some(Editor::Obsidian), false),
+            &host,
+        );
+        assert_eq!(r.code, 0, "{}", r.stderr);
+        assert!(!r.stdout.contains("path"), "{}", r.stdout);
+        assert!(
+            r.stderr
+                .contains("In the vault picker, click \"Open\" next to \"Open folder as vault\"."),
+            "{}",
+            r.stderr
+        );
+        assert_eq!(r.stderr.contains("Cmd+Shift+G"), mac_hint, "{}", r.stderr);
+        assert!(
+            r.stderr.contains(&format!("{}.", world.vault.display())),
+            "{}",
+            r.stderr
+        );
+    }
 }
