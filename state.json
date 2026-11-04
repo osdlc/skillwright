@@ -15,10 +15,10 @@
       "path": "packages/rust/tradecraft-core/src/projection.rs",
       "line": 833,
       "title": "Carried keys skip the runtime's omit_fields",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771852",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "76b9b76"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "packages/rust/tradecraft-core/src/projection.rs",
       "line": 636,
       "title": "Command overrides seeded past CommandFields and the override roster",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771869",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "76b9b76"
     },
     {
       "id": "r1-3",
@@ -37,10 +37,10 @@
       "path": "packages/rust/tradecraft-core/src/projection.rs",
       "line": 834,
       "title": "Odd-shaped tools overwrites the Claude Code restriction",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771876",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "76b9b76"
     },
     {
       "id": "r1-4",
@@ -48,10 +48,10 @@
       "path": "packages/rust/tradecraft-core/src/projection.rs",
       "line": 689,
       "title": "Empty tools string fails open and the new branches have no test",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771888",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "76b9b76"
     },
     {
       "id": "r1-5",
@@ -59,7 +59,7 @@
       "path": "packages/rust/tradecraft-core/src/projection.rs",
       "line": 821,
       "title": "Claude Code tools key patched after render instead of in agent-adapt",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771900",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -70,10 +70,10 @@
       "path": "packages/rust/tradecraft-core/src/vault.rs",
       "line": 207,
       "title": "bundle_root doc contradicts itself on SKILL.md",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771908",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "76b9b76"
     },
     {
       "id": "r1-7",
@@ -81,7 +81,7 @@
       "path": "packages/rust/tradecraft-core/CHANGELOG.md",
       "line": 10,
       "title": "Hand-written Unreleased entry in a release-plz changelog",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771917",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -92,7 +92,7 @@
       "path": "packages/rust/tradecraft-core/CHANGELOG.md",
       "line": 17,
       "title": "Changelog states SKILL.md rule inexactly",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771935",
       "status": "open",
       "reason": null,
       "fixedIn": null
