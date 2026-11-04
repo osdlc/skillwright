@@ -463,11 +463,20 @@ fn move_note(
     record_executed(&plan, &result, from, to, outcome);
     match result.conflict {
         // `ok` with a conflict: the bundle directory moved and its links were
-        // rewritten, and only the entry file's own rename failed.
-        Some(conflict) => Err(ApplyError::partial(
-            outcome.clone(),
-            ApplyError::Refused(conflict),
-        )),
+        // rewritten, and only the entry file's own rename failed. The entry
+        // kept its old leaf name inside the new directory; no row names that
+        // path, so the refusal does.
+        Some(conflict) => {
+            let leaf = from.rsplit('/').next().unwrap_or(from);
+            let landed = match to.rsplit_once('/') {
+                Some((dir, _)) => format!("{dir}/{leaf}"),
+                None => leaf.to_owned(),
+            };
+            Err(ApplyError::partial(
+                outcome.clone(),
+                ApplyError::Refused(format!("{conflict}; the entry note is now at {landed}")),
+            ))
+        }
         None => Ok(()),
     }
 }
@@ -590,7 +599,9 @@ fn edited_files(plan: &RenamePlan) -> impl Iterator<Item = &FileEdits> {
 // ── Delete ──────────────────────────────────────────────────────────────────
 
 /// Every destination is checked before anything moves: a delete of three paths
-/// where the second is already trashed moves none of them.
+/// where the second is already trashed moves none of them. A later move can
+/// still fail, for example on a path nested under an earlier one; the error is
+/// then [`ApplyError::Partial`] with what already moved.
 fn delete(
     vault_dir: &Path,
     paths: &[String],
@@ -677,6 +688,9 @@ fn rename_plugin(
                     "member {member} is not a file in the vault"
                 )));
             }
+            // Try the splice where the member sits, so YAML it refuses stops
+            // the run before the folder moves.
+            check_frontmatter(vault_dir, &member, edits)?;
             let rebased = match rebase(&member, &dir_from, &dir_to) {
                 Some(rebased) => rebased?,
                 None => member,
@@ -684,12 +698,7 @@ fn rename_plugin(
             Ok::<_, ApplyError>((rebased, edits.clone()))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    // Every splice is tried on the notes where they sit, so YAML the splice
-    // refuses stops the run before the folder moves.
     check_frontmatter(vault_dir, &from, frontmatter)?;
-    for (member, edits) in members {
-        check_frontmatter(vault_dir, member, edits)?;
-    }
 
     let mut outcome = Outcome::new(mode);
     // A plugin's entry note is a bundle entry (`<dir>/<dir>.md`), so the
@@ -1454,7 +1463,13 @@ mod tests {
         let ApplyError::Partial { outcome, source } = err else {
             panic!("expected a partial outcome, got {err:?}");
         };
-        assert!(matches!(*source, ApplyError::Refused(_)), "{source:?}");
+        let ApplyError::Refused(message) = *source else {
+            panic!("expected a refusal, got {source:?}");
+        };
+        assert!(
+            message.ends_with("the entry note is now at code-review/review.md"),
+            "{message}"
+        );
         assert!(!v.path().join("review").exists());
         assert!(v.path().join("code-review/review.md").exists());
         let rows = outcomes(&outcome);

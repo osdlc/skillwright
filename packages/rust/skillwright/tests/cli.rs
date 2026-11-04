@@ -429,6 +429,29 @@ fn base_directories_that_cannot_resolve_are_a_run_level_blocker_not_a_panic() {
     assert!(stderr.contains("must be an absolute path"), "{stderr}");
 }
 
+/// A blank `SKILLWRIGHT_MACHINE_CONFIG` counts as unset, the rule
+/// config-layers' `MachineConfigFile::path` applies. `try_machine_config_path`
+/// copies that rule; this pins the copy, so a drift between the two shows up.
+#[test]
+fn a_blank_machine_config_env_falls_back_to_the_base_directories() {
+    let (dir, vault) = fixture();
+    let out = run_binary(
+        &["list", "--vault", &vault_str(&vault)],
+        dir.path(),
+        &[
+            (skillwright::dirs::ENV_VARS.config, "rel"),
+            (skillwright::config::MACHINE_CONFIG_ENV, "  "),
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(
+        stderr.contains("cannot locate the machine configuration file"),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn a_project_file_above_the_working_directory_supplies_the_vault() {
     let (dir, _vault) = fixture();
