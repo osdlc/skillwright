@@ -93,9 +93,9 @@
       "line": 17,
       "title": "Changelog states SKILL.md rule inexactly",
       "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771935",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c58e0ab510831e14cc279377df6b6c7cb39181c1"
     },
     {
       "id": "r2-1",
