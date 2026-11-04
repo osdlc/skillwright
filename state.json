@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 21,
-  "head": "210f7423b8b1854e84058e6c2a9639d03ba24af4",
-  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
-  "round": 1,
+  "head": "c58e0ab510831e14cc279377df6b6c7cb39181c1",
+  "base": "ec628d8f3d4c298bd0028a3f6726c08cb6d3f454",
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-04T05:37:42.392Z"
@@ -93,6 +93,50 @@
       "line": 17,
       "title": "Changelog states SKILL.md rule inexactly",
       "comment": "https://github.com/osdlc/skillwright/pull/21#discussion_r4440771935",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 717,
+      "title": "Non-list tools published to Claude Code as written",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 829,
+      "title": "tools list of blank names passes the malformed-tools check",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 617,
+      "title": "to_adapt_command doc overstates the roster check for carried keys",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 882,
+      "title": "set_here guard cannot fire",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
