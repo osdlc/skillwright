@@ -15,10 +15,10 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 2025,
       "title": "Shim self-skip compares strings, so a non-canonical shim_target still execs itself",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/17#discussion_r4432345191",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "38561ad"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 1097,
       "title": "Tombstone hides an asset source under a swapped tree and fails late with an unclear error",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/17#discussion_r4432345196",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "38561ad"
     },
     {
       "id": "r1-3",
@@ -37,10 +37,10 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 874,
       "title": "STAGE_DIR iteration of the new vault rail has no test",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/17#discussion_r4432345199",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "38561ad"
     },
     {
       "id": "r1-4",
@@ -48,10 +48,10 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 1636,
       "title": "Collision check inlined in render_root, admitted() computed twice",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/17#discussion_r4432345202",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "38561ad"
     },
     {
       "id": "r1-5",
@@ -59,10 +59,10 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 3958,
       "title": "Test branches on source path to learn which asset was second",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/17#discussion_r4432345203",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "38561ad"
     },
     {
       "id": "r1-6",
@@ -70,7 +70,7 @@
       "path": null,
       "line": null,
       "title": "require_descriptions refusal, warning text and key help still treat a configured description as the filler",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/17#pullrequestreview-5723682234",
       "status": "open",
       "reason": null,
       "fixedIn": null
