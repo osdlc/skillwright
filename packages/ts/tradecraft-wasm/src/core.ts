@@ -436,7 +436,7 @@ function callCore<T>(call: () => string): T {
 
 /**
  * A thrown `InvalidStem` as an {@link InvalidNamespaceError}, anything else as
- * a {@link CoreError}.
+ * a {@link CoreError}: a boundary failure must not read as a bad stem.
  */
 function toThrown(raw: unknown): Error {
   if (raw instanceof Error && raw.name === 'InvalidStem') {
@@ -461,9 +461,6 @@ export function validateNamespace(stem: string): void {
   try {
     validateNamespaceWasm(stem)
   } catch (raw) {
-    // `InvalidStem` is the only refusal this export has. Anything else is a
-    // boundary failure and must not be dressed up as the user's stem being
-    // wrong.
     throw toThrown(raw)
   }
 }

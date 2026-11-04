@@ -673,7 +673,7 @@ fn peel_refs(ty: &syn::Type) -> &syn::Type {
 mod tests {
     use super::*;
 
-    /// The items of one Rust source file, as `collect_items` sees them.
+    /// The types `collect_items` gathers from `sources`, read in order.
     fn collect(sources: &[(&str, &str)]) -> BTreeMap<String, TypeDef> {
         let mut types = BTreeMap::new();
         let mut fn_returns = BTreeMap::new();
@@ -703,26 +703,15 @@ mod tests {
         })
     }
 
-    /// A clash is refused whichever kind of type was read first. An enum read
-    /// first used to win silently, so the TypeScript depended on file order.
+    /// A clash is refused whichever kind of type is read first.
     #[test]
-    fn a_name_clash_is_refused_when_the_enum_is_read_first() {
-        let types = collect(&[
-            ("a.rs", "pub enum Dup { One, Two }"),
-            ("b.rs", "pub struct Dup { pub field: String }"),
-        ]);
-        let err = emit_response(types, "Dup").expect_err("the clash must be refused");
-        assert!(err.contains("two public types are named `Dup`"), "{err}");
-    }
-
-    /// The same clash with the struct read first, which was already refused.
-    #[test]
-    fn a_name_clash_is_refused_when_the_struct_is_read_first() {
-        let types = collect(&[
-            ("a.rs", "pub struct Dup { pub field: String }"),
-            ("b.rs", "pub enum Dup { One, Two }"),
-        ]);
-        let err = emit_response(types, "Dup").expect_err("the clash must be refused");
-        assert!(err.contains("two public types are named `Dup`"), "{err}");
+    fn a_name_clash_is_refused_in_either_read_order() {
+        let enum_dup = "pub enum Dup { One, Two }";
+        let struct_dup = "pub struct Dup { pub field: String }";
+        for (first, second) in [(enum_dup, struct_dup), (struct_dup, enum_dup)] {
+            let types = collect(&[("a.rs", first), ("b.rs", second)]);
+            let err = emit_response(types, "Dup").expect_err("the clash must be refused");
+            assert!(err.contains("two public types are named `Dup`"), "{err}");
+        }
     }
 }

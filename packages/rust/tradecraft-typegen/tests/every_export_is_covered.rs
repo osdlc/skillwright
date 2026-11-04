@@ -178,9 +178,6 @@ fn a_diagnostic_export_emits() {
 
 /// `statusOf` hands back `tradecraft_core::status`'s per-unit report, an
 /// object with a `state`, not the export report's four-word status token.
-///
-/// The two once shared the name `UnitStatus`, and the export's enum, read
-/// first, silently won the name.
 #[test]
 fn status_of_responds_with_the_status_report() {
     let model = tradecraft_typegen::read(&crates()).expect("reading the crates");
