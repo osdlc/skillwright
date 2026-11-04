@@ -44,6 +44,7 @@ flowchart TB
     DV["<b>determined-vault</b><br/>re-exports walk, links,<br/>frontmatter; YAML layer"]:::det
     DN["<b>determined-notes</b><br/>LinkGraph: backlinks,<br/>tags, incremental refresh"]:::det
     DI["<b>determined-index</b><br/>search index,<br/>VaultGraph view"]:::det
+    DP["<b>determined-polish</b><br/>duplicate clean-up:<br/>redirects links to the kept copy"]:::det
   end
 
   CLI --> CORE
@@ -69,7 +70,8 @@ flowchart TB
   DV --> FL
   DV --> YS
   DN --> DV
-  DN --> MR
+  DN -- moves, renames --> MR
+  DP -- redirects --> MR
   DI --> DV
 
   DUP1 -.duplicates.-> MVF
@@ -116,10 +118,11 @@ flowchart TB
     DV["<b>determined-vault</b><br/>YAML layer, sidecars"]:::det
     DN["<b>determined-notes</b><br/>notes, agenda, backlinks UI"]:::det
     DI["<b>determined-index</b><br/>search, graph view"]:::det
+    DP["<b>determined-polish</b><br/>duplicate clean-up"]:::det
   end
 
   CLI --> CORE
-  CLI --> MR
+  CLI -- rename, move --> MR
   WASM --> CORE
   CORE --> MV
   CORE --> AA
@@ -138,6 +141,8 @@ flowchart TB
   DV --> YS
   DN --> MV
   DN --> DV
+  DN -- moves, renames --> MR
+  DP -- redirects --> MR
   DI --> MV
   DI --> DV
 ```
