@@ -302,8 +302,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     if !flags.json {
         for (skill, note_path, suggestion) in &suggestions {
             // `bump` matches the frontmatter `name`, which may differ from the
-            // filename. `status_of` already read this note, so this read does
-            // not fail.
+            // filename. `status_of` already read this note.
             let Ok(note) = read_vault_skill(&NativeVfs, note_path, &namespace) else {
                 continue;
             };

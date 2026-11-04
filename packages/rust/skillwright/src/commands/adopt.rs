@@ -287,11 +287,8 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let namespace = run.core_namespace();
     let mut adopted: Vec<AttributedSkill> = Vec::new();
     let mut failed: Vec<FailedSource> = fetch_failed;
-    // A dry run writes every source into this one overlay, so nothing lands
-    // on disk and each source sees what the ones before it would have
-    // written. The core's own `DryRun` would give each source a fresh one;
-    // that it is otherwise the same is pinned by the core test
-    // `a_dry_run_is_a_write_over_a_preview`.
+    // One overlay for every source; see the module doc. The core test
+    // `a_dry_run_is_a_write_over_a_preview` pins that this matches `DryRun`.
     let preview = PreviewVfs::over(&NativeVfs);
     let vfs: &dyn Vfs = if flags.dry_run { &preview } else { &NativeVfs };
 
