@@ -274,7 +274,8 @@ pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError>
 /// [`CoreError::Refused`] · `no-renderer` for a target with no agent layout,
 /// `unsafe-path` for a name that cannot become a file stem,
 /// `conflicting-keys` for a note that sets both `allowed-tools` and `tools`,
-/// and `malformed-tools` for a `tools` that names no tool.
+/// and `malformed-tools` for a `tools` that names no tool, or one that is not
+/// a list of names on a Claude Code target.
 pub fn project_agent(
     snapshot: &SkillProjection,
     targets: &[String],
@@ -293,6 +294,18 @@ pub fn project_agent(
                 format!("{target} has no agent layout, so an agent cannot be published there"),
             )
         })?;
+        // A `tools` still carried is one `tool_list` could not read. Claude
+        // Code would ignore it and give the agent every tool.
+        if id == RuntimeId::ClaudeCode && carried.contains_key("tools") {
+            return Err(CoreError::refused(
+                "malformed-tools",
+                format!(
+                    "agent `{}`: Claude Code reads `tools` as a list of names, \
+                     so this `tools` would publish an agent that can use every tool",
+                    snapshot.content.name
+                ),
+            ));
+        }
         let files = runtime
             .render_agent(&agent)
             .map_err(|e| refusal(target, e))?;
@@ -613,8 +626,8 @@ fn hook_type_name(value: &serde_json::Value) -> &'static str {
 /// `agent_adapt::Command` has no field for the keys [`unplaced_keys`]
 /// collects, so they ride verbatim in the command's override map. That map
 /// skips the renderer's omit list, so a key `id`'s dialect omits is dropped
-/// here. The override roster is built from the same omit list, so a carried
-/// key gets the check an `sw-overrides` key gets. The author's own
+/// here, the same answer the override roster gives for it. A foreign key has
+/// no roster entry and passes, as on the skill path. The author's own
 /// `sw-overrides.<target>` block, already checked by [`crate::publish`],
 /// merges over them.
 ///
@@ -673,7 +686,7 @@ fn to_adapt_command(
 /// second value returned is those keys, for [`carry_agent_keys`] to write
 /// into the rendered file. A `tools` of another shape (a map, a number) with
 /// no `allowed-tools` is carried as written, since OpenCode's agent `tools`
-/// is a map.
+/// is a map; [`project_agent`] refuses it for Claude Code.
 ///
 /// # Errors
 ///
@@ -828,8 +841,15 @@ fn tool_list(value: &serde_json::Value) -> Option<Vec<String>> {
         ),
         serde_json::Value::Array(items) => items
             .iter()
-            .map(|item| item.as_str().map(str::to_owned))
-            .collect(),
+            .map(|item| item.as_str().map(str::trim))
+            .collect::<Option<Vec<_>>>()
+            .map(|names| {
+                names
+                    .into_iter()
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            }),
         _ => None,
     }
 }
@@ -848,8 +868,7 @@ fn tool_list(value: &serde_json::Value) -> Option<Vec<String>> {
 /// splice is a no-op; remove it then.
 ///
 /// A carried key the target's dialect omits is left out. A carried key the
-/// renderer already wrote, or that an edit here already sets, is left as is:
-/// the modeled field wins, the rule `agent-adapt`'s own `raw_entry` follows.
+/// renderer already wrote is left as is: the modeled field wins, the rule `agent-adapt`'s own `raw_entry` follows.
 fn carry_agent_keys(
     rendered: Vec<u8>,
     id: RuntimeId,
@@ -879,10 +898,7 @@ fn carry_agent_keys(
         });
     }
     for (key, value) in carried {
-        let set_here = edits
-            .iter()
-            .any(|edit| matches!(edit, yaml_splice::FieldEdit::Set { key: k, .. } if k == key));
-        if !mapping.contains_key(key) && !set_here && !omitted_by(id, key) {
+        if !mapping.contains_key(key) && !omitted_by(id, key) {
             edits.push(yaml_splice::FieldEdit::Set {
                 key: key.clone(),
                 value: to_splice_value(value),
@@ -1483,6 +1499,8 @@ mod tests {
             serde_json::json!(""),
             serde_json::json!(" , "),
             serde_json::json!([]),
+            serde_json::json!([""]),
+            serde_json::json!([" "]),
         ] {
             let mut snap = snapshot("reviewer", vec![]);
             snap.content.allowed_tools = Vec::new();
@@ -1510,6 +1528,28 @@ mod tests {
         let fm = frontmatter(&text);
         assert_eq!(fm.get("tools"), Some(&map), "{text}");
         assert!(!fm.contains_key("allowed-tools"), "{text}");
+    }
+
+    /// Claude Code reads `tools` only as a list of names. A map, a number or
+    /// a bare `tools:` would be ignored there, leaving the agent every tool.
+    #[test]
+    fn a_non_list_tools_is_refused_for_claude_code() {
+        for odd in [
+            serde_json::json!({"write": false}),
+            serde_json::json!(3),
+            serde_json::Value::Null,
+        ] {
+            let mut snap = snapshot("reviewer", vec![]);
+            snap.content.allowed_tools = Vec::new();
+            snap.content.annotations.insert("tools".into(), odd.clone());
+            let err = project_agent(
+                &snap,
+                &["opencode".to_owned(), "claude-code".to_owned()],
+                &sw(),
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("malformed-tools"), "{odd}: {err}");
+        }
     }
 
     /// Only Claude Code's file moves the list to `tools`. Every other runtime
