@@ -318,6 +318,11 @@ pub struct Closure {
     /// the note that owns it, plus everything transitively embedded into it.
     /// Sorted, and never empty — the owner is always a member.
     pub contributing_notes: Vec<String>,
+    /// The vault-relative path of the note this file was rendered from: the
+    /// entry note for `SKILL.md`, and the resource's own source otherwise.
+    /// One of `contributing_notes`, not necessarily the first, since they are
+    /// sorted. [`Closure::hash`] reads the whole file for this note.
+    pub owner: String,
     /// Link targets in this file that resolved to nothing, as written and
     /// sorted. Recorded rather than refused, because a note appearing at one
     /// of these names later changes the output while leaving the hash over
@@ -344,12 +349,12 @@ impl Closure {
     /// changes this hash even before it changes the member list. So are the
     /// calls, so renaming or moving a called skill changes the caller's hash.
     /// Both add nothing when empty.
-    pub fn hash(&self, vfs: &dyn Vfs, vault_root: &Path, owner: &str) -> Result<String, CoreError> {
+    pub fn hash(&self, vfs: &dyn Vfs, vault_root: &Path) -> Result<String, CoreError> {
         let mut hasher = Sha256::new();
         for note in &self.contributing_notes {
             let bytes = vfs.read_file(&vault_root.join(note))?;
             let text = String::from_utf8_lossy(&bytes);
-            let consumed = if note == owner {
+            let consumed = if *note == self.owner {
                 text.as_ref()
             } else {
                 split_frontmatter(&text).1
@@ -480,7 +485,7 @@ pub fn compile_note(
         validate_no_obsidian_syntax(text, output_path, source.skill_name, shown)?;
     }
 
-    // Every emitted file's closure starts with the file that owns it, so a
+    // Every emitted file's closure contains the file that owns it, so a
     // closure is never empty and a resource with no embeds still hashes over
     // something. `SKILL.md` is owned by the entry note; every other output is
     // owned by the vault file it was rendered from.
@@ -499,11 +504,13 @@ pub fn compile_note(
             .get(&output_path)
             .cloned()
             .unwrap_or_default();
-        members.insert(renderer.vault_relative(&source_path)?);
+        let owner = renderer.vault_relative(&source_path)?;
+        members.insert(owner.clone());
         closures.insert(
             output_path.clone(),
             Closure {
                 contributing_notes: members.into_iter().collect(),
+                owner,
                 unresolved: renderer
                     .unresolved
                     .get(&output_path)
@@ -3573,13 +3580,12 @@ mod tests {
         assert_eq!(before.body, "Run `/tools:called`.\n");
         assert_eq!(before.closures["SKILL.md"].calls, vec!["tools:called"]);
         assert_eq!(after.closures["SKILL.md"].calls, vec!["tools:renamed"]);
-        let owner = "plugins/demo/demo.md";
         assert_ne!(
             before.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"), owner)
+                .hash(&vfs, Path::new("/vault"))
                 .unwrap(),
             after.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"), owner)
+                .hash(&vfs, Path::new("/vault"))
                 .unwrap(),
         );
     }

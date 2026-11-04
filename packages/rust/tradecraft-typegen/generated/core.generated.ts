@@ -141,6 +141,17 @@ export interface PublishReport {
   not_carried?: string[];
 
   /**
+   * Vault-relative path of the plugin folder's own manifest, when the
+   * pack's rendered manifest replaced it and the two differ.
+   *
+   * The rendered manifest comes from the plugin note's frontmatter, so
+   * fields only the folder's copy holds (hooks, MCP servers) do not
+   * travel. Not a member and not publishable on its own. `None` on every
+   * report but a pack's, and omitted from the wire when unset.
+   */
+  replaced_manifest?: string;
+
+  /**
    * `sw-overrides` keys this destination's render already wrote, each as
    * its own reason line.
    *
