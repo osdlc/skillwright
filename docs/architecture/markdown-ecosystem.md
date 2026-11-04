@@ -16,6 +16,7 @@ published. Each tool builds its own vault graph: determined has `LinkGraph`
 and skillwright has `VaultIndex`.
 
 ```mermaid
+%%{init: {"flowchart": {"htmlLabels": false, "wrappingWidth": 400}}}%%
 flowchart TB
   classDef md fill:#eef4ff,stroke:#5b7fc7
   classDef base fill:#f5f5f5,stroke:#888
@@ -55,6 +56,8 @@ flowchart TB
   MC --> CM
 ```
 
+As an image: [markdown-ecosystem-before.svg](img/markdown-ecosystem-before.svg).
+
 ## After (osdlc#618)
 
 New crates have a thick green border. File access goes through one trait,
@@ -63,6 +66,7 @@ the browser. `markdown-vault` is the one vault model, built from
 determined's `LinkGraph`. Everything that needs a vault graph uses it.
 
 ```mermaid
+%%{init: {"flowchart": {"htmlLabels": false, "wrappingWidth": 400}}}%%
 flowchart TB
   classDef md fill:#eef4ff,stroke:#5b7fc7
   classDef base fill:#f5f5f5,stroke:#888
@@ -117,6 +121,8 @@ flowchart TB
   ML --> SC
 ```
 
+As an image: [markdown-ecosystem-after.svg](img/markdown-ecosystem-after.svg).
+
 ## What changed
 
 | Crate | Before | After |
@@ -130,3 +136,17 @@ flowchart TB
 
 `markdown-tags` is still in the dev repo, so `markdown-vault` takes a
 `TagLexer` instead of depending on it.
+
+## Regenerating the images
+
+The SVGs in `img/` are rendered from the Mermaid blocks above. After changing
+a diagram, run from `docs/architecture`:
+
+```sh
+mmdc -i markdown-ecosystem.md -o img/me.svg   # writes me-1.svg, me-2.svg
+mmdc -i crate-dependencies.md -o img/cd.svg   # writes cd-1.svg, cd-2.svg
+```
+
+Then rename them over the files above. The diagrams use plain SVG text
+(`htmlLabels: false`), so a viewer with a different font doesn't clip the
+labels.

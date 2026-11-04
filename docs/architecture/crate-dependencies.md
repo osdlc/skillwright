@@ -12,6 +12,7 @@ Dashed boxes are code that skillwright core keeps itself instead of using
 the shared crate the dashed arrow points to.
 
 ```mermaid
+%%{init: {"flowchart": {"htmlLabels": false, "wrappingWidth": 400}}}%%
 flowchart TB
   classDef sw fill:#fff3e8,stroke:#d9822b
   classDef det fill:#f3eefc,stroke:#7c5cc4
@@ -79,6 +80,8 @@ flowchart TB
   DUP3 -.duplicates.-> MC
 ```
 
+As an image: [crate-dependencies-today.svg](img/crate-dependencies-today.svg).
+
 Three more copies of a vault link model exist besides core's: `LinkGraph`
 in `determined-notes`, `VaultFacts` in `markdown-relink`, and the walk behind
 `VaultGraph` in `determined-index`.
@@ -89,6 +92,7 @@ New crates are bold-bordered. Every vault concept has one home; tools add
 only what is their own.
 
 ```mermaid
+%%{init: {"flowchart": {"htmlLabels": false, "wrappingWidth": 400}}}%%
 flowchart TB
   classDef sw fill:#fff3e8,stroke:#d9822b
   classDef det fill:#f3eefc,stroke:#7c5cc4
@@ -146,3 +150,5 @@ flowchart TB
   DI --> MV
   DI --> DV
 ```
+
+As an image: [crate-dependencies-target.svg](img/crate-dependencies-target.svg).
