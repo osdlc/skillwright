@@ -227,12 +227,9 @@ pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
     if let Some(kind) = above.and_then(crate::discover::kind_dir) {
         return crate::discover::is_entry(file, name, kind).then_some(parent);
     }
-    // The note sits directly in a kind folder: it travels alone.
     if crate::discover::kind_dir(name).is_some() {
         return None;
     }
-    // No kind folder above: no placement to follow, so the folder named for
-    // the note is still its own — `publish` takes any note path.
     let owns = crate::discover::is_skill_entry(file) || skill_path.file_stem()?.to_str()? == name;
     owns.then_some(parent)
 }

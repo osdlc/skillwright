@@ -280,8 +280,6 @@ pub fn project_agent(
     targets: &[String],
     ns: &Namespace,
 ) -> Result<Vec<ProjectedFile>, CoreError> {
-    // Every target is checked before the note is: an unsupported target is
-    // the caller's error, whatever the note says.
     let ids = targets
         .iter()
         .map(|target| parse_runtime_target(target))
@@ -612,14 +610,13 @@ fn hook_type_name(value: &serde_json::Value) -> &'static str {
 /// skill is chosen by the model rather than typed by a person. A command is
 /// typed, so the hint is what the harness shows while it is being typed.
 ///
-/// `agent_adapt::Command` has no field for `disable-model-invocation`,
-/// `user-invocable`, `context`, the spec's optional keys or a foreign key, so
-/// [`unplaced_keys`] carries them through the command's override map,
-/// verbatim. That map skips the renderer's own checks, so a key `id`'s
-/// dialect omits is left out here: the override roster is built from the
-/// same omit list, so this is the check an `sw-overrides` key gets for every
-/// key the reader models. The author's own `sw-overrides.<target>` block,
-/// already checked by [`crate::publish`], merges over them.
+/// `agent_adapt::Command` has no field for the keys [`unplaced_keys`]
+/// collects, so they ride verbatim in the command's override map. That map
+/// skips the renderer's omit list, so a key `id`'s dialect omits is dropped
+/// here. The override roster is built from the same omit list, so a carried
+/// key gets the check an `sw-overrides` key gets. The author's own
+/// `sw-overrides.<target>` block, already checked by [`crate::publish`],
+/// merges over them.
 ///
 /// # Errors
 ///
@@ -674,7 +671,9 @@ fn to_adapt_command(
 /// list, or a comma-separated string), and a numeric `temperature`.
 /// `agent_adapt::Agent` has no place for anything else the note sets, so the
 /// second value returned is those keys, for [`carry_agent_keys`] to write
-/// into the rendered file.
+/// into the rendered file. A `tools` of another shape (a map, a number) with
+/// no `allowed-tools` is carried as written, since OpenCode's agent `tools`
+/// is a map.
 ///
 /// # Errors
 ///
@@ -684,8 +683,6 @@ fn to_adapt_command(
 /// `allowed-tools` and `tools`, in any shape. `malformed-tools` when `tools`
 /// names no tool (`tools: ""`, `tools: []`): an empty list is the renderer's
 /// "no restriction", so publishing it would let the agent use every tool.
-/// A `tools` of another shape (a map, a number) with no `allowed-tools` is
-/// carried as written, since OpenCode's agent `tools` is a map.
 fn to_adapt_agent(
     snapshot: &SkillProjection,
     ns: &Namespace,
@@ -1395,7 +1392,13 @@ mod tests {
         assert!(matches!(agent_err, CoreError::Refused(_)), "{agent_err}");
     }
 
-    fn claude_file(files: &[ProjectedFile]) -> String {
+    /// A JSON object literal as a frontmatter key map.
+    fn keys(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+        value.as_object().unwrap().clone()
+    }
+
+    /// The text of the one file a render produced.
+    fn only_file(files: &[ProjectedFile]) -> String {
         assert_eq!(files.len(), 1);
         String::from_utf8(files[0].content.clone()).unwrap()
     }
@@ -1412,7 +1415,7 @@ mod tests {
     #[test]
     fn a_claude_code_agent_lists_its_tools_under_the_key_claude_code_reads() {
         let snap = snapshot("reviewer", vec![]);
-        let text = claude_file(&project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap());
+        let text = only_file(&project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(fm.get("tools"), Some(&serde_json::json!("Read")), "{text}");
         assert!(!fm.contains_key("allowed-tools"), "{text}");
@@ -1424,16 +1427,13 @@ mod tests {
     fn an_agent_carries_its_tools_and_temperature_keys() {
         let mut snap = snapshot("reviewer", vec![]);
         snap.content.allowed_tools = Vec::new();
-        snap.content.annotations = serde_json::json!({
+        snap.content.annotations = keys(serde_json::json!({
             "tools": "Read, Grep",
             "temperature": 0.2,
             "sw-kind": "agent",
-        })
-        .as_object()
-        .unwrap()
-        .clone();
+        }));
 
-        let text = claude_file(&project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap());
+        let text = only_file(&project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(
             fm.get("tools"),
@@ -1461,8 +1461,8 @@ mod tests {
         assert!(err.to_string().contains("reviewer"), "{err}");
     }
 
-    /// `tools` beside `allowed-tools` is refused in every shape. A shape the
-    /// tool-list reader cannot parse used to be carried and then overwrite
+    /// `tools` beside `allowed-tools` is refused in every shape. Otherwise a
+    /// shape the tool-list reader cannot parse would be carried and overwrite
     /// the `tools: A, B` written from `allowed-tools`.
     #[test]
     fn an_agent_with_allowed_tools_and_an_odd_shaped_tools_is_refused() {
@@ -1506,8 +1506,7 @@ mod tests {
         snap.content.allowed_tools = Vec::new();
         let map = serde_json::json!({"write": false});
         snap.content.annotations.insert("tools".into(), map.clone());
-        let files = project_agent(&snap, &["opencode".to_owned()], &sw()).unwrap();
-        let text = String::from_utf8(files[0].content.clone()).unwrap();
+        let text = only_file(&project_agent(&snap, &["opencode".to_owned()], &sw()).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(fm.get("tools"), Some(&map), "{text}");
         assert!(!fm.contains_key("allowed-tools"), "{text}");
@@ -1522,8 +1521,7 @@ mod tests {
         snap.content
             .annotations
             .insert("tools".into(), serde_json::json!("Read, Grep"));
-        let files = project_agent(&snap, &["opencode".to_owned()], &sw()).unwrap();
-        let text = String::from_utf8(files[0].content.clone()).unwrap();
+        let text = only_file(&project_agent(&snap, &["opencode".to_owned()], &sw()).unwrap());
         let fm = frontmatter(&text);
         assert!(!fm.contains_key("tools"), "{text}");
         assert!(fm.contains_key("allowed-tools"), "{text}");
@@ -1556,12 +1554,9 @@ mod tests {
         snap.content.disable_model_invocation = true;
         snap.content.user_invocable = false;
         snap.content.context_mode = Some("fork".into());
-        snap.content.annotations = serde_json::json!({"foo": "bar"})
-            .as_object()
-            .unwrap()
-            .clone();
+        snap.content.annotations = keys(serde_json::json!({"foo": "bar"}));
         let text =
-            claude_file(&project_command(&snap, &["codex-cli".to_owned()], &sw(), None).unwrap());
+            only_file(&project_command(&snap, &["codex-cli".to_owned()], &sw(), None).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(fm.get("foo"), Some(&serde_json::json!("bar")), "{text}");
         for key in ["disable-model-invocation", "user-invocable", "context"] {
@@ -1576,15 +1571,12 @@ mod tests {
     #[test]
     fn an_agent_carries_every_key_it_has_no_field_for() {
         let mut snap = snapshot("reviewer", vec![]);
-        snap.content.annotations = serde_json::json!({
+        snap.content.annotations = keys(serde_json::json!({
             "color": "blue",
             "permissionMode": "plan",
             "tags": ["review"],
             "sw-kind": "agent",
-        })
-        .as_object()
-        .unwrap()
-        .clone();
+        }));
         snap.content.context_mode = Some("fork".into());
         snap.content.disable_model_invocation = true;
         snap.content.argument_hint = Some("<pr>".into());
@@ -1600,8 +1592,7 @@ mod tests {
             ("argument-hint", serde_json::json!("<pr>")),
         ];
         for target in ["claude-code", "opencode"] {
-            let files = project_agent(&snap, &[target.to_owned()], &sw()).unwrap();
-            let text = String::from_utf8(files[0].content.clone()).unwrap();
+            let text = only_file(&project_agent(&snap, &[target.to_owned()], &sw()).unwrap());
             let fm = frontmatter(&text);
             for (key, value) in &foreign {
                 assert_eq!(fm.get(*key), Some(value), "{target} {key}: {text}");
@@ -1629,13 +1620,10 @@ mod tests {
         snap.content.disable_model_invocation = true;
         snap.content.user_invocable = false;
         snap.content.context_mode = Some("fork".into());
-        snap.content.annotations = serde_json::json!({"foo": "bar", "sw-kind": "command"})
-            .as_object()
-            .unwrap()
-            .clone();
+        snap.content.annotations = keys(serde_json::json!({"foo": "bar", "sw-kind": "command"}));
 
         let text =
-            claude_file(&project_command(&snap, &["claude-code".to_owned()], &sw(), None).unwrap());
+            only_file(&project_command(&snap, &["claude-code".to_owned()], &sw(), None).unwrap());
         let fm = frontmatter(&text);
         for (key, value) in [
             ("disable-model-invocation", serde_json::json!(true)),
@@ -1651,12 +1639,9 @@ mod tests {
         // word over a carried key.
         snap.content.overrides.insert(
             "claude-code".into(),
-            serde_json::json!({"foo": "baz"})
-                .as_object()
-                .unwrap()
-                .clone(),
+            keys(serde_json::json!({"foo": "baz"})),
         );
-        let text = claude_file(
+        let text = only_file(
             &project_command(
                 &snap,
                 &["claude-code".to_owned()],
