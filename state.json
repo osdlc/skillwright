@@ -4,7 +4,10 @@
   "head": "0ab39f7f76d8e12697f74cba67e0966d732bcfab",
   "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
   "round": 1,
-  "claim": null,
+  "claim": {
+    "owner": "unknown",
+    "at": "2026-11-04T05:28:49.042Z"
+  },
   "findings": [
     {
       "id": "r1-1",
