@@ -2764,6 +2764,56 @@ mod tests {
         assert_eq!(report.skills[0].status, AdoptStatus::Unchanged);
     }
 
+    /// Callers that adopt several sources in one dry run (the CLI) pass
+    /// [`AdoptMode::Write`] over one shared [`PreviewVfs`] instead of
+    /// [`AdoptMode::DryRun`], which builds a fresh overlay per call. That is
+    /// only sound while `DryRun` is exactly `Write` over an overlay.
+    #[test]
+    fn a_dry_run_is_a_write_over_a_preview() {
+        let as_json = |report: &AdoptReport| serde_json::to_value(report).unwrap();
+        let second = |vfs: &MemVfs| {
+            write(
+                vfs,
+                "/other/skills/demo/SKILL.md",
+                "---\nname: demo\ndescription: Another demo skill.\n---\n\n# Demo\n",
+            );
+        };
+        let sources = [
+            request(),
+            AdoptRequest {
+                source: PathBuf::from("/other"),
+                ..request()
+            },
+        ];
+
+        let vfs = demo_source();
+        second(&vfs);
+        let mut dry = request();
+        dry.mode = AdoptMode::DryRun;
+        let preview = PreviewVfs::over(&vfs);
+        assert_eq!(
+            as_json(&adopt_skills(&vfs, &dry, &sw()).unwrap()),
+            as_json(&adopt_skills(&preview, &request(), &sw()).unwrap()),
+        );
+
+        // Several sources through one overlay report what writing them in
+        // turn reports, the second source's collision included.
+        let preview = PreviewVfs::over(&vfs);
+        let previewed: Vec<_> = sources
+            .iter()
+            .map(|r| as_json(&adopt_skills(&preview, r, &sw()).unwrap()))
+            .collect();
+        assert!(!vfs.exists(Path::new("/vault")), "not one byte landed");
+        let real = demo_source();
+        second(&real);
+        let written: Vec<_> = sources
+            .iter()
+            .map(|r| as_json(&adopt_skills(&real, r, &sw()).unwrap()))
+            .collect();
+        assert_eq!(previewed, written);
+        assert_eq!(written[1]["skills"][0]["status"], "refused", "{written:#?}");
+    }
+
     #[test]
     fn the_three_source_shapes_collect_the_same_skill() {
         // A skill dir, a plugin dir with `skills/`, and a dir of skill dirs.

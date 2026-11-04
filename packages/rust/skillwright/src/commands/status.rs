@@ -38,7 +38,9 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tradecraft_core::publish::kind_has_renderer;
 use tradecraft_core::status::{PublishState, StatusRequest, VersionBumpSuggestion, status_of};
-use tradecraft_core::{NativeVfs, PublishStatus, SkippedNote, discover_components};
+use tradecraft_core::{
+    NativeVfs, PublishStatus, SkippedNote, discover_components, read_vault_skill,
+};
 
 use crate::config::{normalize_join, relative_path, resolve_configured_path};
 use crate::ctx::CommandContext;
@@ -47,7 +49,7 @@ use crate::report::{
     AttributedState, Attribution, RowState, has_drift, normalize_thrown_reason, render_state_line,
     render_state_tally,
 };
-use crate::resolve::{CommonFlags, resolve_run, resolve_skills_root};
+use crate::resolve::{CommonFlags, RunNotes, refuse_separate_skills_root, resolve_run};
 
 /// The resolved flags of `skillwright status`.
 pub struct StatusFlags {
@@ -103,8 +105,6 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
         })
         .collect();
 
-    let skills_root = resolve_skills_root(None, &run, &ctx.cwd);
-
     // --- the units ----------------------------------------------------------
     // A named note is taken as given; without one the vault scan supplies the
     // roster, which is the same scan `build` renders from — so `status` with
@@ -121,10 +121,19 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             if !note_path.exists() {
                 return blocked(ctx.err, &format!("note not found: {}", note_path.display()));
             }
+            if let Err(code) = refuse_separate_skills_root(
+                "status",
+                &run,
+                &ctx.cwd,
+                RunNotes::Named(std::slice::from_ref(&note_path)),
+                ctx.err,
+            ) {
+                return code;
+            }
             note_paths.push(note_path);
         }
         None => {
-            match discover_components(&NativeVfs, &run.vault, skills_root.as_deref(), &namespace) {
+            match discover_components(&NativeVfs, &run.vault, None, &namespace) {
                 Ok(scan) => {
                     for component in &scan.components {
                         if kind_has_renderer(component.kind) {
@@ -135,6 +144,15 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                                 component.kind.as_str().to_string(),
                             ));
                         }
+                    }
+                    if let Err(code) = refuse_separate_skills_root(
+                        "status",
+                        &run,
+                        &ctx.cwd,
+                        RunNotes::Skipped(&scan.skipped),
+                        ctx.err,
+                    ) {
+                        return code;
                     }
                     unreadable = scan.skipped;
                 }
@@ -163,7 +181,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // printed after the report as a stderr advisory, never folded into
     // `AttributedState` itself, which `--json` serializes and must not grow a
     // field for this.
-    let mut suggestions: Vec<(String, VersionBumpSuggestion)> = Vec::new();
+    let mut suggestions: Vec<(String, PathBuf, VersionBumpSuggestion)> = Vec::new();
     'outer: for note_path in &note_paths {
         for (root, target) in &destinations {
             if ctx.is_interrupted() {
@@ -188,7 +206,11 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             match status_of(&NativeVfs, &request, &namespace) {
                 Ok(status) => {
                     if let Some(suggestion) = &status.version_bump_suggestion {
-                        suggestions.push((attribution.skill.clone(), suggestion.clone()));
+                        suggestions.push((
+                            attribution.skill.clone(),
+                            note_path.clone(),
+                            suggestion.clone(),
+                        ));
                     }
                     rows.push(AttributedState {
                         attribution,
@@ -292,15 +314,16 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // `StatusDocument` at all, and adding it would change `status --json`'s
     // shape.
     if !flags.json {
-        for (skill, suggestion) in &suggestions {
-            let plugin = Path::new(skill)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(skill.as_str());
+        for (skill, note_path, suggestion) in &suggestions {
+            // `bump` matches the frontmatter `name`, which may differ from the
+            // filename.
+            let Ok(note) = read_vault_skill(&NativeVfs, note_path, &namespace) else {
+                continue;
+            };
             let _ = writeln!(
                 ctx.err,
-                "advisory: {skill} sw-version {} unmoved since members changed — `skillwright bump {plugin}` is available",
-                suggestion.current_version
+                "advisory: {skill} sw-version {} unmoved since members changed — `skillwright bump {}` is available",
+                suggestion.current_version, note.projection.content.name
             );
         }
     }

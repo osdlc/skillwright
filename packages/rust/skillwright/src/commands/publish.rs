@@ -34,7 +34,7 @@ use crate::report::{
     AttributedExclusion, Attribution, has_refusal, normalize_thrown_reason, render_exclusion,
     render_file_line, render_reason, render_tally, render_unmatched_overwrite, render_warning_line,
 };
-use crate::resolve::{CommonFlags, resolve_run};
+use crate::resolve::{CommonFlags, RunNotes, refuse_separate_skills_root, resolve_run};
 
 /// The resolved flags of `skillwright publish`.
 pub struct PublishFlags {
@@ -263,6 +263,15 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             // a roster worth publishing half of.
             Err(err) => return blocked(ctx.err, &err.to_string()),
         };
+        if let Err(code) = refuse_separate_skills_root(
+            "publish",
+            &run,
+            &ctx.cwd,
+            RunNotes::Skipped(&scan.skipped),
+            ctx.err,
+        ) {
+            return code;
+        }
         // The kinds the publish spec calls publishable units. A marketplace
         // note names a distribution and publishes to no destination; an
         // agent or a command publishes on its own and is not swept up by a
@@ -292,6 +301,15 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 return blocked(ctx.err, &format!("note not found: {}", note_path.display()));
             }
             note_paths.push(note_path);
+        }
+        if let Err(code) = refuse_separate_skills_root(
+            "publish",
+            &run,
+            &ctx.cwd,
+            RunNotes::Named(&note_paths),
+            ctx.err,
+        ) {
+            return code;
         }
     }
 
