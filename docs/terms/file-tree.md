@@ -1,9 +1,9 @@
 # File tree
 
-Status: planned.
+Status: current.
 
 What a translator returns: paths mapped to bytes, the execute bit, and the notes each file came from. Pure data, read by [emit](emit.md).
 
 ## In code
 
-Not built yet. Closest today: the captured writes of a `PreviewVfs`.
+`FileTree` and `TreeFile` in `harness/translator.rs`.

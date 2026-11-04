@@ -1,12 +1,12 @@
 # Harness profile
 
-Status: planned.
+Status: current.
 
 One row of data per [harness](harness.md): paths, manifest locations, naming rule, which kinds a plugin carries, accepted override keys, alias spellings, install CLI. Tied to `harness-reference/` by tests ([D-FDLQ](../decisions/D-FDLQ-harness-profile-and-translator.md)).
 
 ## In code
 
-Not built yet. Today spread over `RootSpec`, `PluginLayout` and target functions.
+`HarnessProfile`, `PluginFormat` and `PROFILES` in `harness/profile.rs`; looked up with `profile_for` (any spelling) and `profile_named` (canonical name).
 
 ## Not to be confused with
 

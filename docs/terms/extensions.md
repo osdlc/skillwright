@@ -1,12 +1,12 @@
 # Extensions
 
-Status: planned.
+Status: current.
 
 Fields of a model node that only one harness reads, held as one validated map per harness. Sourced from `sw-overrides` ([D-ISOU](../decisions/D-ISOU-harness-extensions.md)).
 
 ## In code
 
-Today `sw-overrides`, `overrides_for` in `publish.rs`.
+`Extensions` in `model/mod.rs`, read from `sw-overrides` and validated per harness by `overrides_for` (`publish.rs`) during [load](load.md). Applied by `projection_of` in `harness/translator.rs`.
 
 ## Not to be confused with
 

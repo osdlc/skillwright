@@ -10,6 +10,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - `build` and `check` apply a note's `sw-overrides` block for each harness to that harness's tree, as `publish` does. A block naming an unknown target, or a key its harness does not read, now refuses the build.
+- `publish` of a plugin note to `cursor` or `pi` writes that harness's pack instead of refusing.
 
 ## [0.4.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.3.9...skillwright/v0.4.0) - 2026-10-30
 
