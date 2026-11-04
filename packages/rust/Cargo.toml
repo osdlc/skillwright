@@ -73,6 +73,7 @@ path-guard = "0.3.2"
 tiered-dirs = "0.3.7"
 typed-git = "0.4.0"
 vfs-seam = { version = "0.1.0", default-features = false }
+vfs-walk = "0.1.0"
 yaml-splice = "0.3.3"
 
 # The member crate others depend on, also named by version so a published
@@ -94,25 +95,26 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 
-# TEMPORARY, until osdlc releases osdlc/osdlc#618. vfs-seam and
+# TEMPORARY, until osdlc releases osdlc/osdlc#618. vfs-seam, vfs-walk and
 # markdown-vault are new there, and markdown-link 0.7, markdown-relink 0.2,
 # markdown-vault-fs 0.4 and markdown-contract 0.4 are not on crates.io yet.
 # Every osdlc crate in the graph is pinned to the same commit, so each one is
 # built once, from one source. After the release, delete this section; the
 # versions in `[workspace.dependencies]` already name the released ones.
 [patch.crates-io]
-agent-adapt = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-config-layers = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-etag-write = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-frontmatter-lossless = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-markdown-contract = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-markdown-link = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-markdown-relink = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-markdown-vault = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-markdown-vault-fs = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-path-guard = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-slug-collate = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-tiered-dirs = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-typed-git = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-vfs-seam = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
-yaml-splice = { git = "https://github.com/osdlc/osdlc", rev = "f70ba98de720da978707e1588244bb86af55d5fa" }
+agent-adapt = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+config-layers = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+etag-write = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+frontmatter-lossless = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+markdown-contract = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+markdown-link = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+markdown-relink = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+markdown-vault = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+markdown-vault-fs = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+path-guard = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+slug-collate = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+tiered-dirs = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+typed-git = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+vfs-seam = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+vfs-walk = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }
+yaml-splice = { git = "https://github.com/osdlc/osdlc", rev = "b1b12be9a31a59f6566ad5ac9c2590a590065f00" }

@@ -513,7 +513,7 @@ pub fn move_destination(
 /// Walked directly rather than through [`discover_components`]: this only
 /// needs to know "is anything else in here", not each member's resolved key.
 pub fn container_members(vfs: &dyn Vfs, vault_dir: &Path, dir: &str, entry: &str) -> Vec<String> {
-    let mut members: Vec<String> = crate::walk::readable_files(vfs, &vault_dir.join(dir))
+    let mut members: Vec<String> = crate::walk::readable_vault_files(vfs, &vault_dir.join(dir))
         .into_iter()
         .filter(|item| item.abs.extension().is_some_and(|ext| ext == "md"))
         .filter_map(|item| {

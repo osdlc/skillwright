@@ -853,8 +853,11 @@ fn owned_resources(
 /// [`crate::walk::excluded_files`]) is left out, so it is neither placed nor
 /// published.
 fn walk(vfs: &dyn Vfs, vault_root: &Path, root: &Path) -> Result<Vec<PathBuf>, CoreError> {
-    let entries =
-        crate::walk::files_refusing_symlinks(vfs, root, &[crate::authoring::TRASH_DIR], |path| {
+    let entries = crate::walk::vault_files_refusing_symlinks(
+        vfs,
+        root,
+        &[crate::authoring::TRASH_DIR],
+        |path| {
             CoreError::refused(
                 "unsafe-path",
                 format!(
@@ -863,7 +866,8 @@ fn walk(vfs: &dyn Vfs, vault_root: &Path, root: &Path) -> Result<Vec<PathBuf>, C
                     path.display()
                 ),
             )
-        })?;
+        },
+    )?;
     let excluded = crate::walk::excluded_files(vfs, vault_root);
     Ok(entries
         .into_iter()

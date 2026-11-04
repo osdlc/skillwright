@@ -847,7 +847,7 @@ impl<'a> Renderer<'a> {
             return Err(CoreError::PathEscapesRoot(root.clone()));
         }
         let mut paths = Vec::new();
-        for path in crate::walk::files(vfs, &vault_root, EXCLUDED_VAULT_DIRECTORIES)? {
+        for path in crate::walk::vault_files(vfs, &vault_root, EXCLUDED_VAULT_DIRECTORIES)? {
             let relative = path
                 .strip_prefix(&vault_root)
                 .map(forward_slashed)
