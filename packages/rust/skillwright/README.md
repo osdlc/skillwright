@@ -204,6 +204,25 @@ lists how the hooks are delivered, each event's support, each hook left out
 and why, and the plugin-root variable with its source. `check` reports a stale
 or hand-edited report as drift.
 
+### Launcher
+
+`marketplace.launcher_path` names a launcher script the plugin ships as an
+asset, relative to the plugin's root:
+
+```yaml
+assets:
+  - from: scripts/tool
+    to: bin/tool
+marketplace:
+  launcher_path: bin/tool
+```
+
+Skills call it as `${CLAUDE_PLUGIN_ROOT}/bin/tool`. Claude Code expands that
+variable, so its pack keeps the call. For Codex, Cursor and Pi, `build`
+rewrites it to the launcher's path relative to the skill's folder, such as
+`../../bin/tool`. Without `launcher_path`, nothing is rewritten. There is no
+`PATH` fallback: a skill that needs a tool on `PATH` says so in its own text.
+
 ## Platforms
 
 The crate is tested on Linux and macOS. Windows is not supported yet. The

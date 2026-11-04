@@ -2129,7 +2129,7 @@ struct LiteralCall<'a> {
 /// it names a known skill is the caller's question.
 ///
 /// `/plugin:skill`, `$plugin:skill` and `/skill:plugin-skill` count unless
-/// the sigil continues a word or path, so `${CLAUDE_PLUGIN_ROOT}/cli/sdlc`
+/// the sigil continues a word or path, so `${CLAUDE_PLUGIN_ROOT}/bin/tool`
 /// and `a/b:c` are not calls. A bare `/skill` is riskier, so its `/` must
 /// start a line or follow whitespace or one of `` ( " ' ` * > `` (but not the
 /// `(` of a markdown link destination, `[site](/docs)`), and the name must not
@@ -3818,13 +3818,13 @@ mod tests {
         let err = try_compile_with(
             &vfs,
             SkillSource::lazy(&build),
-            "Run `/sdlc:called`, `/sdlc:unknown` and /called.\n",
+            "Run `/other:called`, `/other:unknown` and /called.\n",
         )
         .unwrap_err()
         .to_string();
         // The plugin is not checked, and a bare call has no plugin to match.
         assert!(err.contains("1 literal skill call in demo"), "{err}");
-        assert!(err.contains("`/sdlc:called`"), "{err}");
+        assert!(err.contains("`/other:called`"), "{err}");
     }
 
     #[test]

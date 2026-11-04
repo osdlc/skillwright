@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::export::{DEFAULT_SHIM_TARGET, MarketplaceConfig, PluginOverrides};
+use crate::export::{MarketplaceConfig, PluginOverrides};
 
 /// The project file's name.
 pub const PROJECT_FILE: &str = "skillwright.yaml";
@@ -66,12 +66,11 @@ pub struct MarketplaceSettings {
     /// [`MarketplaceConfig::require_descriptions`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub require_descriptions: Option<bool>,
-    /// Where the per-skill `scripts/sdlc` shim looks for this marketplace's
-    /// launcher asset, relative to the plugin's own root — see
-    /// [`MarketplaceConfig::shim_target`]. Absent means
-    /// [`DEFAULT_SHIM_TARGET`] (`"cli/sdlc"`).
+    /// The plugin's launcher, relative to the plugin's own root. See
+    /// [`MarketplaceConfig::launcher_path`]. Absent turns the launcher
+    /// rewrite off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shim_target: Option<String>,
+    pub launcher_path: Option<String>,
 }
 
 /// A setting that has no place in a manifest, named by its key.
@@ -107,7 +106,7 @@ impl MarketplaceSettings {
             && self.skills_root.is_none()
             && self.harnesses.is_none()
             && self.require_descriptions.is_none()
-            && self.shim_target.is_none()
+            && self.launcher_path.is_none()
     }
 
     /// The build config these settings describe. `default_plugin` is the
@@ -149,10 +148,7 @@ impl MarketplaceSettings {
             default_plugin,
             plugins,
             require_descriptions: self.require_descriptions.unwrap_or(false),
-            shim_target: self
-                .shim_target
-                .clone()
-                .unwrap_or_else(|| DEFAULT_SHIM_TARGET.to_owned()),
+            launcher_path: self.launcher_path.clone(),
         })
     }
 
@@ -229,25 +225,24 @@ mod tests {
             parsed.marketplace.harness_set(),
             BTreeSet::from(["claude".to_owned()])
         );
-        // No `shim_target:` in the block above, so the shim resolves to
-        // `cli/sdlc`.
-        assert_eq!(config.shim_target, DEFAULT_SHIM_TARGET);
+        // No `launcher_path:` in the block above, so the rewrite is off.
+        assert_eq!(config.launcher_path, None);
     }
 
     #[test]
-    fn a_project_file_can_declare_a_non_default_shim_target() {
+    fn a_project_file_can_declare_a_launcher_path() {
         let parsed = parse_project_marketplace(
             "vault: ./vault\n\
              marketplace:\n  \
                default_plugin: tools\n  \
-               shim_target: bin/launcher\n",
+               launcher_path: bin/tool\n",
         )
         .unwrap();
         let config = parsed
             .marketplace
             .to_config(parsed.marketplace.default_plugin.clone().unwrap())
             .unwrap();
-        assert_eq!(config.shim_target, "bin/launcher");
+        assert_eq!(config.launcher_path.as_deref(), Some("bin/tool"));
     }
 
     #[test]

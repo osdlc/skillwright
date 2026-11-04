@@ -8,8 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    DEFAULT_SHIM_TARGET, ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig, MemVfs,
-    Namespace, Vfs, export_skills,
+    ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig, MemVfs, Namespace, Vfs,
+    export_skills,
 };
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/hooks-file");
@@ -60,7 +60,7 @@ fn request(mode: ExportMode) -> ExportRequest {
             default_plugin: "core".to_owned(),
             plugins: BTreeMap::new(),
             require_descriptions: false,
-            shim_target: DEFAULT_SHIM_TARGET.to_owned(),
+            launcher_path: None,
         },
         assets: Vec::new(),
         hooks: vec![HookFileSpec {
@@ -136,7 +136,7 @@ fn each_pack_names_its_own_plugin_root_and_fills_the_placeholders() {
         };
         assert_eq!(
             stop.as_str().unwrap(),
-            format!("${{{var}}}/cli/sdlc session stop --harness {harness} --event Stop"),
+            format!("${{{var}}}/bin/tool session stop --harness {harness} --event Stop"),
             "{harness}"
         );
     }

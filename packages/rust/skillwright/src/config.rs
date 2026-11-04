@@ -781,9 +781,9 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
             description: "Refuse `build` and `check` when a note has a `name` and no `description`. Absent or `false` publishes a filler and warns. A plugin or marketplace note whose description the configuration supplies is neither warned about nor refused.",
         },
         KeySpec {
-            key: "marketplace.shim_target",
+            key: "marketplace.launcher_path",
             scope: Scope::Both,
-            description: "Where the per-skill `scripts/sdlc` shim looks for the launcher asset, relative to the plugin's root. Absent means `cli/sdlc`.",
+            description: "The plugin's launcher, relative to the plugin's root. Skills call it as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`; for Codex, Cursor and Pi the build rewrites that call to the launcher's path relative to the skill's folder. There is no PATH fallback. Absent turns the rewrite off.",
         },
     ];
     Needs::new(

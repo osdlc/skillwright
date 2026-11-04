@@ -211,7 +211,7 @@ pub struct HookFileSpec {
 ///
 /// Bundle resources ([`crate::compile::CompileSource::bundle_root`]) already
 /// cover a skill's own peers; this is for what a *plugin* carries once, no
-/// matter which skill happens to shell out to it. A `cli/sdlc` launcher is the
+/// matter which skill happens to shell out to it. A launcher script is the
 /// motivating file case, and shared reference docs the skills read
 /// (`conventions/`) the motivating directory case.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -302,23 +302,14 @@ pub struct MarketplaceConfig {
     /// [`ExportReport::warnings`].
     #[serde(default)]
     pub require_descriptions: bool,
-    /// Where the per-skill `scripts/sdlc` shim looks for this plugin's own
-    /// launcher asset, relative to the plugin's root — and the path an asset
-    /// must land a file at for `render_root` to emit that shim at all (see
-    /// `sdlc_shim_script`'s parent-walk). Project-file authors declare it
-    /// as `marketplace.shim_target`; [`crate::settings::MarketplaceSettings::to_config`]
-    /// defaults it to [`DEFAULT_SHIM_TARGET`] when the project file is
-    /// silent.
-    #[serde(default = "default_shim_target")]
-    pub shim_target: String,
-}
-
-/// [`MarketplaceConfig::shim_target`]'s value when a project file declares
-/// none.
-pub const DEFAULT_SHIM_TARGET: &str = "cli/sdlc";
-
-fn default_shim_target() -> String {
-    DEFAULT_SHIM_TARGET.to_owned()
+    /// The plugin's launcher, relative to the plugin's root (`bin/tool`).
+    /// Skill bodies call it as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`. On a
+    /// root whose harness does not expand that variable, the build rewrites
+    /// each call to the launcher's path relative to the skill's own folder,
+    /// when the plugin ships an asset at this path. Absent turns the rewrite
+    /// off. Project files declare it as `marketplace.launcher_path`.
+    #[serde(default)]
+    pub launcher_path: Option<String>,
 }
 
 /// Manifest fields one plugin overrides. Every absence has a documented
@@ -586,13 +577,13 @@ pub(crate) fn checked_skill_call(
 /// harness is adding a row, not a new arm.
 ///
 /// Every skill in the vault writes the call site the same way, as
-/// `${CLAUDE_PLUGIN_ROOT}/<shim_target>` — the vault's own text is written
+/// `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` — the vault's own text is written
 /// for Claude, since that is the harness every skill author develops against.
 /// This decides what each *other* root does with that same text at render
 /// time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CliInvocation {
-    /// Leave the vault's `${CLAUDE_PLUGIN_ROOT}/<shim_target>` text exactly
+    /// Leave the vault's `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` text exactly
     /// as written. Claude Code substitutes the token itself, inline, when it
     /// loads skill markdown — see the plugin manifest reference's
     /// "Environment variables" section
@@ -601,10 +592,10 @@ enum CliInvocation {
     /// agent content" bodies specifically, a Claude Code plugin mechanism
     /// with no counterpart in another harness.
     PluginRootToken,
-    /// Rewrite every `${CLAUDE_PLUGIN_ROOT}/<shim_target>` call site in a
-    /// skill's rendered body to [`SHIM_RELATIVE_PATH`], the skill-relative
-    /// `scripts/sdlc` shim this same render conditionally emits (see
-    /// [`render_skill`]). Neither Codex CLI nor Cursor substitutes
+    /// Rewrite every `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` call site in a
+    /// skill's rendered body to the launcher's path relative to the skill's
+    /// own folder (`../../bin/tool`), the way a skill names its own files
+    /// (see [`render_skill`]). Neither Codex CLI nor Cursor substitutes
     /// `${CLAUDE_PLUGIN_ROOT}` — Codex's own skills documentation
     /// (<https://developers.openai.com/codex/skills>) never mentions the
     /// token, and Cursor's skills documentation
@@ -612,8 +603,10 @@ enum CliInvocation {
     /// authors to "reference scripts in your SKILL.md using relative paths
     /// from the skill root" instead — so a literal, un-rewritten
     /// `${CLAUDE_PLUGIN_ROOT}/...` call site is dead text for either
-    /// harness, expanding to `/<shim_target>` with an empty prefix.
-    SkillRelativeShim,
+    /// harness, expanding to `/<launcher_path>` with an empty prefix. Pi does
+    /// not substitute it either, and tells the model a skill's base
+    /// directory so its relative paths resolve.
+    SkillRelativePath,
 }
 
 const ROOTS: [RootSpec; 4] = [
@@ -643,7 +636,7 @@ const ROOTS: [RootSpec; 4] = [
         marketplace_manifest: Some(".agents/plugins/marketplace.json"),
         packs: ".agents/packs",
         dialect: PluginDialect::Codex,
-        cli_invocation: CliInvocation::SkillRelativeShim,
+        cli_invocation: CliInvocation::SkillRelativePath,
         plugin_root_var: Some(PluginRootVar {
             name: "PLUGIN_ROOT",
             url: "https://learn.chatgpt.com/docs/hooks",
@@ -664,7 +657,7 @@ const ROOTS: [RootSpec; 4] = [
         marketplace_manifest: Some(".cursor-plugin/marketplace.json"),
         packs: ".cursor-plugin/packs",
         dialect: PluginDialect::Cursor,
-        cli_invocation: CliInvocation::SkillRelativeShim,
+        cli_invocation: CliInvocation::SkillRelativePath,
         plugin_root_var: Some(PluginRootVar {
             name: "CURSOR_PLUGIN_ROOT",
             url: "https://cursor.com/docs/reference/plugins",
@@ -685,7 +678,7 @@ const ROOTS: [RootSpec; 4] = [
         marketplace_manifest: None,
         packs: ".pi/packs",
         dialect: PluginDialect::Pi,
-        cli_invocation: CliInvocation::SkillRelativeShim,
+        cli_invocation: CliInvocation::SkillRelativePath,
         plugin_root_var: None,
         naming: SkillNaming::PluginPrefixed,
         hooks_manifest_entry: None,
@@ -744,14 +737,6 @@ const GENERATED_MARKER: &str = "<!-- Generated by skillwright from ";
 fn contains(bytes: &[u8], marker: &str) -> bool {
     bytes.windows(marker.len()).any(|w| w == marker.as_bytes())
 }
-
-/// Where the per-skill `scripts/sdlc` shim lands, relative to a skill's own
-/// built directory — and, for a root whose [`CliInvocation`] is
-/// [`CliInvocation::SkillRelativeShim`], the text
-/// [`rewrite_cli_invocation`] rewrites a `${CLAUDE_PLUGIN_ROOT}/<shim_target>`
-/// call site to. One constant for both, so the file this render writes and
-/// the path a rewritten skill body names can never drift apart.
-const SHIM_RELATIVE_PATH: &str = "scripts/sdlc";
 
 /// Renders the vault into every selected marketplace root and, per
 /// [`ExportRequest::mode`], either swaps the drifted roots into place or
@@ -1695,24 +1680,15 @@ fn render_root(
             continue;
         }
         let plugin_base = base.join(spec.packs).join(*plugin);
-        // The shim's only job is finding this plugin's own launcher asset at
-        // `inputs.config.shim_target`, so it can exist at all only where that
-        // asset does — by `asset_covers`'s rule, so a `./`-spelled dest or a
-        // directory asset holding the launcher counts. A plugin with no such
-        // asset gets `None` here on every root and ships no shim.
-        // Whether a given root actually emits the shim for a given skill is a
-        // second, per-skill decision inside `render_skill`: `spec.cli_invocation`
-        // gates it by harness, and the skill's own compiled body gates it by
-        // whether that skill calls the CLI at all.
-        let shim_target = inputs
-            .assets
-            .get(plugin)
-            .is_some_and(|assets| {
-                assets
-                    .iter()
-                    .any(|a| asset_covers(vfs, a, &inputs.config.shim_target))
-            })
-            .then_some(inputs.config.shim_target.as_str());
+        // Launcher calls are rewritten only for a plugin that ships the
+        // launcher, by `asset_covers`'s rule: a `./`-spelled dest or a
+        // directory asset holding it counts.
+        let launcher = inputs.config.launcher_path.as_deref().filter(|path| {
+            inputs
+                .assets
+                .get(plugin)
+                .is_some_and(|assets| assets.iter().any(|a| asset_covers(vfs, a, path)))
+        });
         let siblings: BTreeSet<&str> = group.skills.iter().map(|s| s.name.as_str()).collect();
         for skill in &admitted.skills {
             render_skill(
@@ -1727,7 +1703,7 @@ fn render_root(
                     calls: &calls,
                 },
                 inputs.ns,
-                shim_target,
+                launcher,
             )?;
         }
         for command in &admitted.commands {
@@ -1815,14 +1791,8 @@ struct SkillMember<'a> {
 /// One skill into one root: read, compile, stamp provenance, project through
 /// the root's runtime, and land the files under `skills/<name>/`.
 ///
-/// `shim_target` is the caller's answer to "does this plugin ship a launcher
-/// asset, and where" — `Some(dest)` is the fact [`CliInvocation::SkillRelativeShim`]
-/// needs to rewrite a `${CLAUDE_PLUGIN_ROOT}/<shim_target>` call site at all.
-/// Threading it down rather than re-deriving it per skill keeps that question
-/// asked exactly once per plugin per root. Whether *this* skill ends up with
-/// the `scripts/sdlc` file is decided below, per skill: only a root configured
-/// for the rewrite, and only a skill whose compiled body actually contained a
-/// call site to rewrite.
+/// `launcher` is the plugin's launcher path when the plugin ships it, the
+/// call site [`CliInvocation::SkillRelativePath`] rewrites.
 fn render_skill(
     vfs: &dyn Vfs,
     vault_root: &Path,
@@ -1830,7 +1800,7 @@ fn render_skill(
     spec: &RootSpec,
     member: SkillMember<'_>,
     ns: &Namespace,
-    shim_target: Option<&str>,
+    launcher: Option<&str>,
 ) -> Result<(), CoreError> {
     let skill = member.skill;
     let published = published_skill_name(spec.naming, member.plugin, &skill.name)?;
@@ -1854,20 +1824,15 @@ fn render_skill(
         },
         &mut projection,
     )?;
-    // The vault writes every CLI call site as `${CLAUDE_PLUGIN_ROOT}/<shim_target>`
-    // — right for Claude, which substitutes that token itself, but dead text
-    // for a root whose harness has no such substitution (see
-    // `CliInvocation`). `used_shim` is whether this skill's own body actually
-    // contained the call site: it is what decides, below, whether this skill
-    // gets the `scripts/sdlc` shim file at all — a Codex/Cursor skill that
-    // never calls the CLI has nothing for the shim to serve.
-    let mut used_shim = false;
-    if spec.cli_invocation == CliInvocation::SkillRelativeShim
-        && let Some(target) = shim_target
+    // The vault writes every launcher call as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`:
+    // right for Claude, which substitutes that token, but dead text for a
+    // root whose harness does not (see `CliInvocation`).
+    if spec.cli_invocation == CliInvocation::SkillRelativePath
+        && let Some(launcher) = launcher
     {
-        let (rewritten, rewrote) = rewrite_cli_invocation(&projection.content.body, target);
-        projection.content.body = rewritten;
-        used_shim = rewrote;
+        let relative = relative_path(&format!("skills/{published}"), launcher);
+        projection.content.body =
+            rewrite_launcher_calls(&projection.content.body, launcher, &relative);
     }
     if spec.naming == SkillNaming::PluginPrefixed {
         projection.content.body =
@@ -1893,43 +1858,37 @@ fn render_skill(
         let destination = plugin_base.join("skills").join(&published).join(relative);
         write_rendered(vfs, &destination, &file.content, file.executable)?;
     }
-    // Emitted only where the rewrite above actually happened: a root not
-    // configured for `SkillRelativeShim` (Claude) never needs the shim at
-    // all, and a skill whose body never called the CLI has nothing pointing
-    // at it either way. `used_shim` implies `shim_target` was `Some` — the
-    // rewrite above only sets it inside that branch.
-    if used_shim {
-        let target = shim_target.expect("used_shim is only set when shim_target is Some");
-        write_rendered(
-            vfs,
-            &plugin_base
-                .join("skills")
-                .join(&published)
-                .join(SHIM_RELATIVE_PATH),
-            sdlc_shim_script(target).as_bytes(),
-            true,
-        )?;
-    }
     Ok(())
 }
 
-/// Rewrites every literal `${CLAUDE_PLUGIN_ROOT}/<shim_target>` call site in
-/// a compiled skill body to [`SHIM_RELATIVE_PATH`], for a root whose harness
-/// has no `${CLAUDE_PLUGIN_ROOT}` substitution of its own (see
-/// [`CliInvocation::SkillRelativeShim`]). Returns the rewritten body and
-/// whether any rewrite happened — the signal [`render_skill`] uses to decide
-/// whether this skill needs the shim file at all.
+/// Rewrites every `${CLAUDE_PLUGIN_ROOT}/<launcher>` call site in a compiled
+/// skill body to `relative`, the launcher's path from the skill's folder.
 ///
-/// A match only counts when the character right after `shim_target` cannot
-/// continue the same path or filename — so `${CLAUDE_PLUGIN_ROOT}/cli/sdlc.js`
-/// (the bundled entry the launcher itself execs, a real citation in some
-/// skill prose) is left untouched rather than truncated into
-/// `scripts/sdlc.js`, which names no file this render ever writes.
-fn rewrite_cli_invocation(body: &str, shim_target: &str) -> (String, bool) {
-    let needle = format!("${{CLAUDE_PLUGIN_ROOT}}/{shim_target}");
-    crate::text::replace_bounded(body, &needle, SHIM_RELATIVE_PATH, |c| {
+/// A match only counts when the character right after `launcher` cannot
+/// continue the same path or filename, so `${CLAUDE_PLUGIN_ROOT}/bin/tool.js`
+/// is left untouched rather than turned into `../../bin/tool.js`.
+fn rewrite_launcher_calls(body: &str, launcher: &str, relative: &str) -> String {
+    let needle = format!("${{CLAUDE_PLUGIN_ROOT}}/{launcher}");
+    crate::text::replace_bounded(body, &needle, relative, |c| {
         c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '/')
     })
+    .0
+}
+
+/// `to` as a path relative to the directory `from`. Both are relative to one
+/// root and forward-slashed; empty and `.` segments are ignored.
+fn relative_path(from: &str, to: &str) -> String {
+    let segments = |path: &str| -> Vec<String> {
+        path.split('/')
+            .filter(|s| !s.is_empty() && *s != ".")
+            .map(str::to_owned)
+            .collect()
+    };
+    let (from, to) = (segments(from), segments(to));
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut out = vec!["..".to_owned(); from.len() - common];
+    out.extend_from_slice(&to[common..]);
+    out.join("/")
 }
 
 /// Rewrites `${CLAUDE_PLUGIN_ROOT}/skills/<name>` to
@@ -2051,48 +2010,6 @@ fn is_directory(vfs: &dyn Vfs, path: &Path) -> bool {
     let name = name.to_string_lossy();
     vfs.read_dir(parent)
         .is_ok_and(|entries| entries.iter().any(|e| e.is_dir && e.name == name))
-}
-
-/// The per-skill `scripts/sdlc` shim: a parent-walk from its own directory
-/// looking for `shim_target` — the plugin-level launcher asset, from
-/// [`MarketplaceConfig::shim_target`] — falling back to `sdlc` on `PATH`. The
-/// walk skips the shim's own file, compared by identity (`-ef`) rather than by
-/// spelling, so a target the shim itself matches (`sdlc`, `scripts/sdlc`,
-/// `./scripts//sdlc`) cannot make it exec itself.
-/// POSIX `sh`, not `bash`: this ships only inside a skill whose rendered body
-/// [`rewrite_cli_invocation`] actually rewrote (see [`render_skill`]), and the
-/// plugin's own `cli/sdlc` launcher is the one script here that already
-/// commits to bash (it needs `BASH_SOURCE` to resolve a symlink chain); this
-/// one does not need that, so it stays to the smaller shell.
-fn sdlc_shim_script(shim_target: &str) -> String {
-    format!(
-        "#!/bin/sh\n\
-# sdlc — per-skill shim. GENERATED by skillwright; do not edit.\n\
-#\n\
-# Walks up from this script's own directory looking for {shim_target} — the\n\
-# plugin-level launcher asset — and runs it, skipping this script's own file\n\
-# so a target it also matches cannot exec itself. Falls back to `sdlc` on PATH\n\
-# when no such ancestor is found (a skill copied out of the plugin, or a\n\
-# harness that doesn't lay out {shim_target} where this build put it).\n\
-#\n\
-# This skill's own body calls this shim directly: its harness has no\n\
-# `${{CLAUDE_PLUGIN_ROOT}}` substitution of its own, so every\n\
-# `${{CLAUDE_PLUGIN_ROOT}}/{shim_target}` call site the vault wrote was\n\
-# rewritten to this skill-relative path at render time. Claude Code does\n\
-# substitute that token, so a Claude skill never gets this file at all.\n\
-set -eu\n\
-\n\
-dir=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n\
-while [ \"$dir\" != \"/\" ]; do\n\
-  if ! [ \"$dir/{shim_target}\" -ef \"$0\" ] && [ -x \"$dir/{shim_target}\" ]; then\n\
-    exec \"$dir/{shim_target}\" \"$@\"\n\
-  fi\n\
-  dir=$(dirname -- \"$dir\")\n\
-done\n\
-\n\
-exec sdlc \"$@\"\n\
-"
-    )
 }
 
 /// One command into one root: read, compile, stamp provenance, project
@@ -3449,17 +3366,12 @@ mod tests {
         vfs
     }
 
-    /// Overwrites `example_vault()`'s `review-guide` note so its body
-    /// actually calls the CLI the vault-standard way, at the given
-    /// `shim_target` — the fixture the shim tests below need now that the
-    /// shim ships only for a skill whose text was actually rewritten (see
-    /// [`CliInvocation::SkillRelativeShim`]), not merely for one whose
-    /// plugin happens to carry the launcher asset. `shim_target` must match
-    /// whatever the test's own `MarketplaceConfig::shim_target` is — a real
-    /// vault's skill prose and its project file's `shim_target:` name the
-    /// same launcher path, by convention, not by anything this render
-    /// enforces.
-    fn write_review_guide_calling(vfs: &dyn Vfs, shim_target: &str) {
+    /// The launcher path the launcher tests configure and call.
+    const LAUNCHER: &str = "bin/tool";
+
+    /// Overwrites `example_vault()`'s `review-guide` note so its body calls
+    /// the launcher at `launcher` the vault-standard way.
+    fn write_review_guide_calling(vfs: &dyn Vfs, launcher: &str) {
         write(
             vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide.md",
@@ -3468,16 +3380,29 @@ mod tests {
                 None,
                 &[],
                 &format!(
-                    "# review-guide\n\nRun `${{CLAUDE_PLUGIN_ROOT}}/{shim_target} entities validate`.\n"
+                    "# review-guide\n\nRun `${{CLAUDE_PLUGIN_ROOT}}/{launcher} entities validate`.\n"
                 ),
             ),
         );
     }
 
-    /// [`write_review_guide_calling`] at the default `cli/sdlc` target —
-    /// the form skills normally write.
-    fn write_review_guide_calling_cli(vfs: &dyn Vfs) {
-        write_review_guide_calling(vfs, DEFAULT_SHIM_TARGET);
+    /// A build of `example_vault()` whose `review-guide` calls [`LAUNCHER`],
+    /// with `launcher_path` set to it and `assets` shipped.
+    fn launcher_build(vfs: &MemVfs, assets: Vec<AssetSpec>) {
+        write_review_guide_calling(vfs, LAUNCHER);
+        write(vfs, "/host/bin/tool", "#!/bin/sh\nexec tool \"$@\"\n");
+        let mut request = request(ExportMode::Build);
+        request.config.launcher_path = Some(LAUNCHER.to_owned());
+        request.assets = assets;
+        export_skills(vfs, &request, &sw()).unwrap();
+    }
+
+    fn launcher_asset() -> AssetSpec {
+        AssetSpec {
+            source: PathBuf::from("/host/bin/tool"),
+            dest: LAUNCHER.to_owned(),
+            plugin: None,
+        }
     }
 
     fn config() -> MarketplaceConfig {
@@ -3491,7 +3416,7 @@ mod tests {
             default_plugin: "tools".to_owned(),
             plugins: BTreeMap::new(),
             require_descriptions: false,
-            shim_target: DEFAULT_SHIM_TARGET.to_owned(),
+            launcher_path: None,
         }
     }
 
@@ -3732,232 +3657,117 @@ mod tests {
     }
 
     #[test]
-    fn a_plugin_asset_lands_verbatim_and_only_its_own_skills_get_the_shim() {
+    fn a_plugin_asset_lands_verbatim_in_its_own_plugin() {
         let vfs = example_vault();
-        write_review_guide_calling_cli(&vfs);
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\nexec launcher \"$@\"\n");
-        vfs.set_executable(Path::new("/host/cli/sdlc"), true)
+        write(&vfs, "/host/bin/tool", "#!/bin/sh\nexec tool \"$@\"\n");
+        vfs.set_executable(Path::new("/host/bin/tool"), true)
             .unwrap();
-
         let mut request = request(ExportMode::Build);
-        // No `plugin:` — falls back to the request's `default_plugin`
-        // (`"tools"`, see `config()`).
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
-            plugin: None,
-        }];
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
-        assert!(report.changed);
+        // No `plugin:`, so it lands in `default_plugin` (`tools`).
+        request.assets = vec![launcher_asset()];
+        assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
 
-        let asset_at = Path::new("/market/.claude-plugin/packs/tools/cli/sdlc");
+        let asset_at = Path::new("/market/.claude-plugin/packs/tools/bin/tool");
         assert_eq!(
             vfs.read_file(asset_at).unwrap(),
-            b"#!/bin/sh\nexec launcher \"$@\"\n"
+            b"#!/bin/sh\nexec tool \"$@\"\n"
         );
         assert!(vfs.is_executable(asset_at));
-
-        // `tools` owns the asset, and Codex/Cursor have no `${CLAUDE_PLUGIN_ROOT}`
-        // substitution of their own, so review-guide's CLI call site was
-        // rewritten and both get the shim...
-        for shim_at in [
-            "/market/.agents/packs/tools/skills/review-guide/scripts/sdlc",
-            "/market/.cursor-plugin/packs/tools/skills/review-guide/scripts/sdlc",
-        ] {
-            let shim_at = Path::new(shim_at);
-            assert!(vfs.exists(shim_at), "{shim_at:?}");
-            assert!(vfs.is_executable(shim_at));
-        }
-
-        // ...but Claude substitutes `${CLAUDE_PLUGIN_ROOT}` itself, so its
-        // copy of the very same skill needs no shim at all, even though it
-        // owns the very same asset.
-        assert!(!vfs.exists(Path::new(
-            "/market/.claude-plugin/packs/tools/skills/review-guide/scripts/sdlc"
-        )));
-
-        // ...and `git-tools`, which declares no asset, gets none at all on
-        // any harness: the shim's whole job is finding an asset this plugin
-        // never ships.
-        assert!(!vfs.exists(Path::new(
-            "/market/.agents/packs/git-tools/skills/commit-helper/scripts/sdlc"
-        )));
-        assert!(!vfs.exists(Path::new(".claude-plugin/packs/git-tools/cli/sdlc")));
+        assert!(!vfs.exists(Path::new("/market/.claude-plugin/packs/git-tools/bin/tool")));
     }
 
+    /// Codex, Cursor and Pi do not expand `${CLAUDE_PLUGIN_ROOT}`, so their
+    /// launcher call becomes a path from the skill's folder; Claude keeps the
+    /// token. Nothing else lands in the skill's folder.
     #[test]
-    fn a_configured_shim_target_replaces_the_cli_sdlc_default() {
+    fn each_harness_without_the_token_gets_a_skill_relative_launcher_path() {
         let vfs = example_vault();
-        write_review_guide_calling(&vfs, "bin/launcher");
-        write(
-            &vfs,
-            "/host/bin/launcher",
-            "#!/bin/sh\nexec launcher \"$@\"\n",
-        );
-        vfs.set_executable(Path::new("/host/bin/launcher"), true)
-            .unwrap();
+        launcher_build(&vfs, vec![launcher_asset()]);
 
-        let mut request = request(ExportMode::Build);
-        request.config = MarketplaceConfig {
-            shim_target: "bin/launcher".to_owned(),
-            ..config()
-        };
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/bin/launcher"),
-            dest: "bin/launcher".to_owned(),
-            plugin: None,
-        }];
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
-        assert!(report.changed);
-
-        let asset_at = Path::new("/market/.claude-plugin/packs/tools/bin/launcher");
-        assert!(vfs.exists(asset_at));
-
-        // The shim still ships, on a root that needs one at all (Codex here)
-        // — an asset lands at the *configured* target — but its parent-walk
-        // now looks for that target, not `cli/sdlc`.
-        let shim_at = Path::new("/market/.agents/packs/tools/skills/review-guide/scripts/sdlc");
-        let shim = String::from_utf8(vfs.read_file(shim_at).unwrap()).unwrap();
-        assert!(shim.contains("$dir/bin/launcher"), "{shim}");
-        assert!(!shim.contains("cli/sdlc"), "{shim}");
-    }
-
-    #[test]
-    fn an_asset_at_the_old_default_path_gets_no_shim_once_the_target_moves() {
-        let vfs = example_vault();
-        write_review_guide_calling_cli(&vfs);
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\nexec launcher \"$@\"\n");
-        vfs.set_executable(Path::new("/host/cli/sdlc"), true)
-            .unwrap();
-
-        let mut request = request(ExportMode::Build);
-        request.config = MarketplaceConfig {
-            shim_target: "bin/launcher".to_owned(),
-            ..config()
-        };
-        // The asset still lands at the old default path, but the configured
-        // shim target has moved elsewhere. The check that decides whether to
-        // emit a shim compares against the *configured* value, not a
-        // hardcoded `cli/sdlc` literal, so no shim ships looking for it —
-        // checked on Codex, the harness that would otherwise need one.
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: "cli/sdlc".to_owned(),
-            plugin: None,
-        }];
-        export_skills(&vfs, &request, &sw()).unwrap();
-
-        assert!(!vfs.exists(Path::new(
-            "/market/.agents/packs/tools/skills/review-guide/scripts/sdlc"
-        )));
-    }
-
-    #[test]
-    fn a_skill_whose_body_never_calls_the_cli_gets_no_shim_even_where_the_plugin_ships_one() {
-        let vfs = example_vault();
-        // review-guide keeps `example_vault()`'s plain fixture body here (no
-        // `write_review_guide_calling_cli`) — it never mentions the CLI at
-        // all, unlike the other shim tests.
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\nexec launcher \"$@\"\n");
-        vfs.set_executable(Path::new("/host/cli/sdlc"), true)
-            .unwrap();
-
-        let mut request = request(ExportMode::Build);
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
-            plugin: None,
-        }];
-        export_skills(&vfs, &request, &sw()).unwrap();
-
-        // Codex has no `${CLAUDE_PLUGIN_ROOT}` substitution and would
-        // otherwise need the shim, but review-guide's body never called the
-        // CLI in the first place — nothing was rewritten, so nothing needs
-        // the shim to serve it. Distinct from the sibling test above, which
-        // covers "the plugin ships no asset at all"; this covers "the plugin
-        // ships one, but this skill never calls it."
-        assert!(!vfs.exists(Path::new(
-            "/market/.agents/packs/tools/skills/review-guide/scripts/sdlc"
-        )));
-    }
-
-    #[test]
-    fn codex_and_cursor_rewrite_the_cli_call_site_while_claude_keeps_the_token() {
-        let vfs = example_vault();
-        write_review_guide_calling_cli(&vfs);
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\nexec launcher \"$@\"\n");
-        vfs.set_executable(Path::new("/host/cli/sdlc"), true)
-            .unwrap();
-
-        let mut request = request(ExportMode::Build);
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
-            plugin: None,
-        }];
-        export_skills(&vfs, &request, &sw()).unwrap();
-
-        // Claude Code substitutes `${CLAUDE_PLUGIN_ROOT}` itself at load
-        // time, so its rendered body keeps the vault's own text unchanged.
         let claude = text_at(
             &vfs,
             "/market/.claude-plugin/packs/tools/skills/review-guide/SKILL.md",
         );
         assert!(
-            claude.contains("${CLAUDE_PLUGIN_ROOT}/cli/sdlc entities validate"),
+            claude.contains("`${CLAUDE_PLUGIN_ROOT}/bin/tool entities validate`"),
             "{claude}"
         );
-        assert!(!claude.contains("scripts/sdlc"), "{claude}");
 
-        // Neither Codex nor Cursor substitutes that token, so both get the
-        // call site rewritten to the skill-relative shim instead.
-        for tree in [".agents", ".cursor-plugin"] {
-            let body = text_at(
-                &vfs,
-                &format!("/market/{tree}/packs/tools/skills/review-guide/SKILL.md"),
-            );
+        for skill in [
+            "/market/.agents/packs/tools/skills/review-guide",
+            "/market/.cursor-plugin/packs/tools/skills/review-guide",
+            "/market/.pi/packs/tools/skills/tools-review-guide",
+        ] {
+            let body = text_at(&vfs, &format!("{skill}/SKILL.md"));
             assert!(
-                body.contains("scripts/sdlc entities validate"),
-                "{tree}: {body}"
+                body.contains("`../../bin/tool entities validate`"),
+                "{skill}: {body}"
             );
-            assert!(!body.contains("CLAUDE_PLUGIN_ROOT"), "{tree}: {body}");
+            assert!(!body.contains("CLAUDE_PLUGIN_ROOT"), "{skill}: {body}");
+            assert!(!vfs.exists(&Path::new(skill).join("scripts")), "{skill}");
         }
     }
 
-    /// The launcher lands at `cli/sdlc` from a `./`-spelled dest and from a
-    /// directory asset holding it, so both must get the shim and the
-    /// rewritten call site, the same as a plain `cli/sdlc` dest.
+    /// With no `launcher_path`, nothing is rewritten on any root.
     #[test]
-    fn a_launcher_from_a_dot_dest_or_a_directory_asset_still_gets_the_shim() {
+    fn no_launcher_path_leaves_every_call_as_written() {
+        let vfs = example_vault();
+        write_review_guide_calling(&vfs, LAUNCHER);
+        write(&vfs, "/host/bin/tool", "#!/bin/sh\n");
+        let mut request = request(ExportMode::Build);
+        request.assets = vec![launcher_asset()];
+        export_skills(&vfs, &request, &sw()).unwrap();
+
+        let body = text_at(
+            &vfs,
+            "/market/.agents/packs/tools/skills/review-guide/SKILL.md",
+        );
+        assert!(body.contains("${CLAUDE_PLUGIN_ROOT}/bin/tool"), "{body}");
+    }
+
+    /// A plugin that ships nothing at `launcher_path` keeps its calls: a
+    /// relative path would name a file that is not there.
+    #[test]
+    fn a_plugin_without_the_launcher_asset_keeps_its_calls() {
+        let vfs = example_vault();
+        launcher_build(
+            &vfs,
+            vec![AssetSpec {
+                dest: "bin/other".to_owned(),
+                ..launcher_asset()
+            }],
+        );
+        let body = text_at(
+            &vfs,
+            "/market/.agents/packs/tools/skills/review-guide/SKILL.md",
+        );
+        assert!(body.contains("${CLAUDE_PLUGIN_ROOT}/bin/tool"), "{body}");
+    }
+
+    /// The launcher lands at `bin/tool` from a `./`-spelled dest and from a
+    /// directory asset holding it, so both get the rewritten call.
+    #[test]
+    fn a_launcher_from_a_dot_dest_or_a_directory_asset_is_rewritten() {
         let file = AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: "./cli/sdlc".to_owned(),
-            plugin: None,
+            dest: "./bin/tool".to_owned(),
+            ..launcher_asset()
         };
         let directory = AssetSpec {
-            source: PathBuf::from("/host/cli"),
-            dest: "cli".to_owned(),
+            source: PathBuf::from("/host/bin"),
+            dest: "bin".to_owned(),
             plugin: None,
         };
         for asset in [file, directory] {
             let vfs = example_vault();
-            write_review_guide_calling_cli(&vfs);
-            write(&vfs, "/host/cli/sdlc", "#!/bin/sh\nexec launcher \"$@\"\n");
-            vfs.set_executable(Path::new("/host/cli/sdlc"), true)
-                .unwrap();
-            let mut request = request(ExportMode::Build);
             let dest = asset.dest.clone();
-            request.assets = vec![asset];
-            export_skills(&vfs, &request, &sw()).unwrap();
+            launcher_build(&vfs, vec![asset]);
 
-            assert!(vfs.exists(Path::new("/market/.agents/packs/tools/cli/sdlc")));
-            let skill = "/market/.agents/packs/tools/skills/review-guide";
-            assert!(
-                vfs.exists(&Path::new(skill).join(SHIM_RELATIVE_PATH)),
-                "{dest}"
+            assert!(vfs.exists(Path::new("/market/.agents/packs/tools/bin/tool")));
+            let body = text_at(
+                &vfs,
+                "/market/.agents/packs/tools/skills/review-guide/SKILL.md",
             );
-            let body = text_at(&vfs, &format!("{skill}/SKILL.md"));
-            assert!(!body.contains("CLAUDE_PLUGIN_ROOT"), "{dest}: {body}");
+            assert!(body.contains("`../../bin/tool entities"), "{dest}: {body}");
         }
     }
 
@@ -4027,60 +3837,6 @@ mod tests {
 
             let path = Path::new("/market/.claude-plugin/packs/tools").join(landed);
             assert_eq!(vfs.read_file(&path).unwrap(), bytes);
-        }
-    }
-
-    /// A shim target the shim's own path also matches from some ancestor
-    /// (`sdlc` from its own directory, `scripts/sdlc` from the skill's), in
-    /// any spelling, must skip itself and reach the launcher, not exec itself
-    /// forever.
-    #[cfg(unix)]
-    #[test]
-    fn the_shim_skips_its_own_path_and_reaches_the_launcher() {
-        use std::os::unix::fs::PermissionsExt;
-        use std::time::{Duration, Instant};
-
-        for target in [
-            "sdlc",
-            "scripts/sdlc",
-            "scripts/./sdlc",
-            "./scripts/sdlc",
-            "scripts//sdlc",
-            DEFAULT_SHIM_TARGET,
-        ] {
-            let tmp = tempfile::tempdir().unwrap();
-            let pack = tmp.path().join("pack");
-            let launcher = pack.join(target);
-            let shim = pack.join("skills/said").join(SHIM_RELATIVE_PATH);
-            for (path, text) in [
-                (&launcher, "#!/bin/sh\necho \"launcher $*\"\n".to_owned()),
-                (&shim, sdlc_shim_script(target)),
-            ] {
-                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-                std::fs::write(path, text).unwrap();
-                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            }
-
-            let mut child = std::process::Command::new("sh")
-                .arg(&shim)
-                .arg("hello")
-                .stdout(std::process::Stdio::piped())
-                .spawn()
-                .unwrap();
-            let deadline = Instant::now() + Duration::from_secs(10);
-            while child.try_wait().unwrap().is_none() {
-                if Instant::now() > deadline {
-                    child.kill().unwrap();
-                    panic!("shim for `{target}` never exited: it is exec'ing itself");
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            let output = child.wait_with_output().unwrap();
-            assert_eq!(
-                String::from_utf8(output.stdout).unwrap(),
-                "launcher hello\n",
-                "{target}"
-            );
         }
     }
 
@@ -4261,7 +4017,7 @@ mod tests {
         // A plugin or skill this vault does not hold is left alone: it may be
         // another vault's. So is a bare name from another plugin, and a path.
         let vfs = calls_vault(
-            "# a\n\nRun `/tools:nope`, `/sdlc:task-work`, /c, or see src/b and /b/x.\n",
+            "# a\n\nRun `/tools:nope`, `/elsewhere:task-work`, /c, or see src/b and /b/x.\n",
         );
         build(&vfs);
     }
@@ -4307,15 +4063,15 @@ mod tests {
     #[test]
     fn the_pi_root_writes_a_package_per_plugin_with_prefixed_names() {
         let vfs = calls_vault(
-            "# a\n\nRun /[[b]], then `${CLAUDE_PLUGIN_ROOT}/cli/sdlc go`.\n\n\
+            "# a\n\nRun /[[b]], then `${CLAUDE_PLUGIN_ROOT}/bin/tool go`.\n\n\
              Read `${CLAUDE_PLUGIN_ROOT}/skills/b/ref.md` and `${CLAUDE_PLUGIN_ROOT}/skills/c/x`.\n",
         );
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\n");
+        write(&vfs, "/host/bin/tool", "#!/bin/sh\n");
         let mut request = request(ExportMode::Build);
+        request.config.launcher_path = Some(LAUNCHER.to_owned());
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
             plugin: Some("tools".to_owned()),
+            ..launcher_asset()
         }];
         let report = export_skills(&vfs, &request, &sw()).unwrap();
 
@@ -4324,10 +4080,9 @@ mod tests {
             vec![
                 "packs/other/package.json",
                 "packs/other/skills/other-c/SKILL.md",
-                "packs/tools/cli/sdlc",
+                "packs/tools/bin/tool",
                 "packs/tools/package.json",
                 "packs/tools/skills/tools-a/SKILL.md",
-                "packs/tools/skills/tools-a/scripts/sdlc",
                 "packs/tools/skills/tools-b/SKILL.md",
             ]
         );
@@ -4341,7 +4096,7 @@ mod tests {
         assert!(b.contains("name: tools-b\n"), "{b}");
         let a = text_at(&vfs, "/market/.pi/packs/tools/skills/tools-a/SKILL.md");
         assert!(
-            a.contains("Run `/skill:tools-b`, then `scripts/sdlc go`."),
+            a.contains("Run `/skill:tools-b`, then `../../bin/tool go`."),
             "{a}"
         );
         // A sibling's path follows its rename; another plugin's skill does not.
@@ -4357,9 +4112,6 @@ mod tests {
             claude.contains("${CLAUDE_PLUGIN_ROOT}/skills/b/ref.md"),
             "{claude}"
         );
-        assert!(vfs.is_executable(Path::new(
-            "/market/.pi/packs/tools/skills/tools-a/scripts/sdlc"
-        )));
         // No marketplace index, so no manifest unit either.
         assert!(!report.units.iter().any(|u| matches!(
             u,
@@ -4392,59 +4144,48 @@ mod tests {
         assert_eq!(
             rewrite_sibling_paths(
                 "${CLAUDE_PLUGIN_ROOT}/skills/pr-check/a.sh ${CLAUDE_PLUGIN_ROOT}/skills/pr \
-                 ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/sdlc/skills/pr/pr.md \
+                 ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/tools/skills/pr/pr.md \
                  .claude/skills/pr/ ${CLAUDE_PLUGIN_ROOT}/skills/",
-                "sdlc",
+                "tools",
                 &siblings,
             ),
-            "${CLAUDE_PLUGIN_ROOT}/skills/sdlc-pr-check/a.sh ${CLAUDE_PLUGIN_ROOT}/skills/sdlc-pr \
-             ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/sdlc/skills/pr/pr.md \
+            "${CLAUDE_PLUGIN_ROOT}/skills/tools-pr-check/a.sh ${CLAUDE_PLUGIN_ROOT}/skills/tools-pr \
+             ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/tools/skills/pr/pr.md \
              .claude/skills/pr/ ${CLAUDE_PLUGIN_ROOT}/skills/"
         );
     }
 
     #[test]
-    fn rewrite_cli_invocation_matches_only_the_exact_call_site() {
-        // The plain case: one call site, rewritten, reported.
-        let (out, rewrote) = rewrite_cli_invocation(
-            "Run `${CLAUDE_PLUGIN_ROOT}/cli/sdlc task list`.",
-            "cli/sdlc",
-        );
-        assert_eq!(out, "Run `scripts/sdlc task list`.");
-        assert!(rewrote);
-
-        // Every occurrence in the body, not just the first.
-        let (out, rewrote) = rewrite_cli_invocation(
-            "${CLAUDE_PLUGIN_ROOT}/cli/sdlc a; then ${CLAUDE_PLUGIN_ROOT}/cli/sdlc b",
-            "cli/sdlc",
-        );
-        assert_eq!(out, "scripts/sdlc a; then scripts/sdlc b");
-        assert!(rewrote);
-
-        // A longer path sharing the same prefix is a different call site
-        // entirely (the bundled entry the launcher itself execs) — must not
-        // be truncated into a path this render never writes.
-        let (out, rewrote) =
-            rewrite_cli_invocation("See `${CLAUDE_PLUGIN_ROOT}/cli/sdlc.js`.", "cli/sdlc");
-        assert_eq!(out, "See `${CLAUDE_PLUGIN_ROOT}/cli/sdlc.js`.");
-        assert!(!rewrote);
-
-        // A reference to something else under the same plugin root is
-        // untouched.
-        let (out, rewrote) = rewrite_cli_invocation(
-            "See `${CLAUDE_PLUGIN_ROOT}/conventions/branch-naming.md`.",
-            "cli/sdlc",
+    fn rewrite_launcher_calls_matches_only_the_exact_call_site() {
+        let rewrite = |body| rewrite_launcher_calls(body, "bin/tool", "../../bin/tool");
+        assert_eq!(
+            rewrite("Run `${CLAUDE_PLUGIN_ROOT}/bin/tool task list`."),
+            "Run `../../bin/tool task list`."
         );
         assert_eq!(
-            out,
-            "See `${CLAUDE_PLUGIN_ROOT}/conventions/branch-naming.md`."
+            rewrite("${CLAUDE_PLUGIN_ROOT}/bin/tool a; then ${CLAUDE_PLUGIN_ROOT}/bin/tool b"),
+            "../../bin/tool a; then ../../bin/tool b"
         );
-        assert!(!rewrote);
+        // A longer path sharing the prefix is a different file.
+        for untouched in [
+            "See `${CLAUDE_PLUGIN_ROOT}/bin/tool.js`.",
+            "See `${CLAUDE_PLUGIN_ROOT}/conventions/branch-naming.md`.",
+            "Nothing to see here.",
+        ] {
+            assert_eq!(rewrite(untouched), untouched);
+        }
+    }
 
-        // No call site at all.
-        let (out, rewrote) = rewrite_cli_invocation("Nothing to see here.", "cli/sdlc");
-        assert_eq!(out, "Nothing to see here.");
-        assert!(!rewrote);
+    #[test]
+    fn relative_path_walks_up_from_any_depth() {
+        assert_eq!(relative_path("skills/a", "bin/tool"), "../../bin/tool");
+        assert_eq!(
+            relative_path("skills/group/a", "./bin//tool"),
+            "../../../bin/tool"
+        );
+        assert_eq!(relative_path("skills/a", "skills/a/run.sh"), "run.sh");
+        assert_eq!(relative_path("skills/a", "skills/b/run.sh"), "../b/run.sh");
+        assert_eq!(relative_path("", "bin/tool"), "bin/tool");
     }
 
     #[test]
@@ -4493,11 +4234,11 @@ mod tests {
     #[test]
     fn an_asset_dest_escaping_the_plugin_root_via_dotdot_is_refused() {
         let vfs = example_vault();
-        write(&vfs, "/host/cli/sdlc", "launcher\n");
+        write(&vfs, "/host/bin/tool", "launcher\n");
 
         let mut request = request(ExportMode::Build);
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
+            source: PathBuf::from("/host/bin/tool"),
             dest: "../../escaped".to_owned(),
             plugin: None,
         }];
@@ -4511,11 +4252,11 @@ mod tests {
     #[test]
     fn an_absolute_asset_dest_is_refused() {
         let vfs = example_vault();
-        write(&vfs, "/host/cli/sdlc", "launcher\n");
+        write(&vfs, "/host/bin/tool", "launcher\n");
 
         let mut request = request(ExportMode::Build);
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
+            source: PathBuf::from("/host/bin/tool"),
             dest: "/etc/escaped".to_owned(),
             plugin: None,
         }];
@@ -4554,12 +4295,12 @@ mod tests {
     #[test]
     fn an_asset_naming_a_plugin_the_vault_holds_nothing_for_is_refused() {
         let vfs = example_vault();
-        write(&vfs, "/host/cli/sdlc", "launcher\n");
+        write(&vfs, "/host/bin/tool", "launcher\n");
 
         let mut request = request(ExportMode::Build);
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
+            source: PathBuf::from("/host/bin/tool"),
+            dest: LAUNCHER.to_owned(),
             plugin: Some("nonexistent".to_owned()),
         }];
         let err = export_skills(&vfs, &request, &sw())
@@ -4572,11 +4313,11 @@ mod tests {
     #[test]
     fn check_reports_drift_when_an_asset_changes_on_disk() {
         let vfs = example_vault();
-        write(&vfs, "/host/cli/sdlc", "v1\n");
+        write(&vfs, "/host/bin/tool", "v1\n");
         let mut request = request(ExportMode::Build);
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
+            source: PathBuf::from("/host/bin/tool"),
+            dest: LAUNCHER.to_owned(),
             plugin: None,
         }];
         export_skills(&vfs, &request, &sw()).unwrap();
@@ -4588,7 +4329,7 @@ mod tests {
 
         // The source moves, out from under the build; `check` catches it the
         // same way it catches a rendered skill drifting.
-        vfs.write_file(Path::new("/host/cli/sdlc"), b"v2\n")
+        vfs.write_file(Path::new("/host/bin/tool"), b"v2\n")
             .unwrap();
         assert!(export_skills(&vfs, &check_request, &sw()).unwrap().changed);
     }
@@ -5888,7 +5629,7 @@ mod tests {
         write(&vfs, source, "#!/bin/sh\n");
         request.assets = vec![AssetSpec {
             source: PathBuf::from(source),
-            dest: "cli/sdlc".to_owned(),
+            dest: "bin/tool".to_owned(),
             plugin: None,
         }];
         let message = export_skills(&vfs, &request, &sw())

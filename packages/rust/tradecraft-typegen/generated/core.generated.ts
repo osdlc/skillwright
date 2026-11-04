@@ -707,15 +707,14 @@ export interface MarketplaceConfig {
   require_descriptions?: boolean;
 
   /**
-   * Where the per-skill `scripts/sdlc` shim looks for this plugin's own
-   * launcher asset, relative to the plugin's root — and the path an asset
-   * must land a file at for `render_root` to emit that shim at all (see
-   * `sdlc_shim_script`'s parent-walk). Project-file authors declare it
-   * as `marketplace.shim_target`; [`crate::settings::MarketplaceSettings::to_config`]
-   * defaults it to [`DEFAULT_SHIM_TARGET`] when the project file is
-   * silent.
+   * The plugin's launcher, relative to the plugin's root (`bin/tool`).
+   * Skill bodies call it as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`. On a
+   * root whose harness does not expand that variable, the build rewrites
+   * each call to the launcher's path relative to the skill's own folder,
+   * when the plugin ships an asset at this path. Absent turns the rewrite
+   * off. Project files declare it as `marketplace.launcher_path`.
    */
-  shim_target?: string;
+  launcher_path?: string;
 }
 
 /**
@@ -751,7 +750,7 @@ export interface PluginOverrides {
  *
  * Bundle resources ([`crate::compile::CompileSource::bundle_root`]) already
  * cover a skill's own peers; this is for what a *plugin* carries once, no
- * matter which skill happens to shell out to it. A `cli/sdlc` launcher is the
+ * matter which skill happens to shell out to it. A launcher script is the
  * motivating file case, and shared reference docs the skills read
  * (`conventions/`) the motivating directory case.
  */

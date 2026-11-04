@@ -169,9 +169,7 @@ use crate::compile::{
 use crate::content::SkillProjection;
 use crate::discover::{DiscoveredComponent, KIND_DIRS, discover_components};
 use crate::error::CoreError;
-use crate::export::{
-    DEFAULT_SHIM_TARGET, MarketplaceConfig, PluginDialect, PluginOverrides, render_plugin_manifest,
-};
+use crate::export::{MarketplaceConfig, PluginDialect, PluginOverrides, render_plugin_manifest};
 use crate::frontmatter::{
     ContainerIdentity, EntityKind, KindHints, KindSource, VaultFrontmatter, resolve_kind,
 };
@@ -1662,11 +1660,8 @@ fn project_plugin(
             .into_iter()
             .collect(),
         require_descriptions: false,
-        // Unread on this path: a per-destination publish never renders the
-        // `scripts/sdlc` shim (that's `render_root`'s job, called only from
-        // `export_skills`), so this config exists solely to satisfy the
-        // manifest renderer's shape.
-        shim_target: DEFAULT_SHIM_TARGET.to_owned(),
+        // Unread here: only `export_skills` rewrites launcher calls.
+        launcher_path: None,
     };
     files.push(ProjectedFile {
         relative_path: format!("{base}/{}/plugin.json", layout.manifest_dir),
