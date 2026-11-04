@@ -1034,7 +1034,7 @@ impl<'a> Renderer<'a> {
                 .entry(output_path.to_owned())
                 .or_default()
                 .insert(target.to_owned());
-            return Ok(token.alias.unwrap_or(target).to_owned());
+            return Ok(text_alias(token.alias).unwrap_or(target).to_owned());
         };
         let extension = extension_of_path(&resolved).unwrap_or_default();
 
@@ -1450,39 +1450,52 @@ impl<'a> Renderer<'a> {
 
         // A target with an extension is addressed as a file; one without gets
         // `.md` appended and is addressed as a note. Obsidian's rule.
-        let has_extension = extension_of_target(target).is_some();
-        let candidate = if has_extension {
-            target.to_owned()
-        } else {
-            format!("{target}.md")
-        };
-        if let Some(hit) = self.index.exact(&candidate) {
-            return Ok(Some((hit, fragment)));
-        }
+        let extension = extension_of_target(target);
+        let has_extension = extension.is_some();
+        let as_note = format!("{target}.md");
+        let candidate = if has_extension { target } else { &as_note };
         let from_dir = from_file.parent().unwrap_or(Path::new(""));
-        if let Ok(relative_dir) = from_dir.strip_prefix(&self.vault_root) {
+        // The vault-relative path, then the path relative to the linking file.
+        let exact_or_relative = |candidate: &str| -> Option<PathBuf> {
+            if let Some(hit) = self.index.exact(candidate) {
+                return Some(hit);
+            }
+            let relative_dir = from_dir.strip_prefix(&self.vault_root).ok()?;
             let joined = if relative_dir.as_os_str().is_empty() {
-                candidate.clone()
+                candidate.to_owned()
             } else {
                 format!("{}/{candidate}", forward_slashed(relative_dir))
             };
-            if let Some(hit) = self.index.exact(&joined) {
-                return Ok(Some((hit, fragment)));
-            }
-        }
-
-        let matches = if has_extension {
-            self.index.by_filename(basename(&candidate))
-        } else {
-            // A bare name only ever addresses a note: `[[photo]]` must not
-            // resolve to `photo.jpg`, because an attachment is addressed with
-            // its extension.
+            self.index.exact(&joined)
+        };
+        // A bare name only ever addresses a note: `[[photo]]` must not
+        // resolve to `photo.jpg`, because an attachment is addressed with its
+        // extension.
+        let notes_by_stem = || -> Vec<PathBuf> {
             self.index
                 .by_stem(basename(target))
                 .into_iter()
                 .filter(|path| extension_of_path(path).as_deref() == Some(".md"))
                 .collect()
         };
+        if let Some(hit) = exact_or_relative(candidate) {
+            return Ok(Some((hit, fragment)));
+        }
+
+        let mut matches = if has_extension {
+            self.index.by_filename(basename(candidate))
+        } else {
+            notes_by_stem()
+        };
+        // A dot inside a note's name reads as an extension (`[[v1.2 notes]]`).
+        // When nothing answers it as a file, it is retried as a note, as
+        // Obsidian does.
+        if matches.is_empty() && extension.as_deref().is_some_and(|ext| ext != ".md") {
+            if let Some(hit) = exact_or_relative(&as_note) {
+                return Ok(Some((hit, fragment)));
+            }
+            matches = notes_by_stem();
+        }
         match matches.as_slice() {
             [only] => Ok(Some((only.clone(), fragment))),
             // Not a refusal. The compile spec and the publish spec
@@ -1719,19 +1732,22 @@ pub(crate) fn basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-/// What a rewritten link displays: the alias when the author wrote one —
-/// unless it is an image size spec like `100` or `640x480`, which Obsidian
-/// reads as geometry, not text — otherwise the resolved file's name.
+/// What a rewritten link displays: the alias when it is text (see
+/// [`text_alias`]), otherwise the resolved file's name.
 fn display_label(alias: Option<&str>, resolved: &Path) -> String {
-    if let Some(alias) = alias
-        && !is_size_spec(alias)
-    {
+    if let Some(alias) = text_alias(alias) {
         return alias.to_owned();
     }
     resolved
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+/// The alias as words to display, or `None` when there is none or it is an
+/// image size spec like `100` or `640x480`, which Obsidian reads as geometry.
+fn text_alias(alias: Option<&str>) -> Option<&str> {
+    alias.filter(|alias| !is_size_spec(alias))
 }
 
 /// `^\d+(?:x\d+)?$` — the image-geometry alias test.
@@ -2073,14 +2089,15 @@ fn escape_token(markdown: &str, offset: usize, limit: usize) -> Option<WikiToken
 }
 
 /// The token opening at `offset` with an `opener`-byte prefix, closed by the
-/// first `]]` ending at or before `limit`. Its kind is the caller's to set.
+/// first `]]` ending at or before `limit` and on the same line — an Obsidian
+/// wikilink never crosses a line, so a stray `[[` stays text. Its kind is the
+/// caller's to set.
 fn wiki_token(markdown: &str, offset: usize, opener: usize, limit: usize) -> Option<WikiToken<'_>> {
     let content_start = offset + opener;
-    let close = markdown
-        .get(content_start..)?
-        .find("]]")
-        .map(|at| content_start + at)
-        .filter(|close| close + 2 <= limit)?;
+    let rest = markdown.get(content_start..)?;
+    let line_len = rest.find('\n').unwrap_or(rest.len());
+    let bound = limit.checked_sub(content_start)?.min(line_len);
+    let close = content_start + rest.get(..bound)?.find("]]")?;
     // Both boundaries sit beside ASCII brackets, so the str slice is valid
     // UTF-8 territory.
     let inner = &markdown[content_start..close];
@@ -3920,5 +3937,59 @@ mod tests {
         write(&vfs, "/vault/Snippet.md", b"Then run `\\/tools:called`.\n");
         let compiled = compile_with_calls(&vfs, &literal_index(), "# Demo\n\n![[Snippet]]\n");
         assert_eq!(compiled.body, "# Demo\n\nThen run `/tools:called`.\n");
+    }
+
+    // --- Wikilink parsing and resolution -------------------------------------
+
+    /// Obsidian wikilinks never cross lines: a stray `[[` stays text, and the
+    /// real link after it still converts.
+    #[test]
+    fn an_unclosed_wikilink_does_not_swallow_the_lines_after_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/note.md", b"# Note\n");
+        let compiled = compile_note(
+            &vfs,
+            &source(None),
+            "Start [[foo\n\n| a | b |\n|---|---|\n| x | [[note]] |\n",
+        )
+        .unwrap();
+        assert!(
+            compiled.body.starts_with("Start [[foo\n\n| a | b |\n"),
+            "{}",
+            compiled.body
+        );
+        assert!(!compiled.body.contains("[[note"), "{}", compiled.body);
+        assert!(compiled.body.contains("[note.md]("), "{}", compiled.body);
+    }
+
+    /// A dot in a note's name is not an extension: `[[v1.2 notes]]` finds
+    /// `v1.2 notes.md`, as Obsidian does.
+    #[test]
+    fn a_note_name_with_a_dot_resolves_to_the_note() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/v1.2 notes.md", b"# Notes\n");
+        let compiled = compile_note(&vfs, &source(None), "See [[v1.2 notes]].\n").unwrap();
+        assert!(
+            compiled.body.starts_with("See [v1.2 notes.md]("),
+            "{}",
+            compiled.body
+        );
+        assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
+        // A real extension that names nothing is still unresolved.
+        let compiled = compile_note(&vfs, &source(None), "See [[gone.pdf]].\n").unwrap();
+        assert_eq!(compiled.body, "See gone.pdf.\n");
+    }
+
+    /// A size alias is image geometry, not words for the page.
+    #[test]
+    fn an_unresolved_embed_with_a_size_alias_shows_the_target() {
+        let vfs = demo_vault();
+        let compiled = compile_note(
+            &vfs,
+            &source(None),
+            "A ![[missing.png|100]] and ![[gone.png|640x480]] here.\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "A missing.png and gone.png here.\n");
     }
 }

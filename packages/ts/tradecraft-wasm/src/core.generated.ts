@@ -1009,7 +1009,9 @@ export interface AdoptRequest {
    * spelling — `<url>@<sha>` — and hands it over here. The re-adopt
    * comparison reads this too, so a note stamped with a URL is compared
    * against that URL rather than against the checkout it happens to sit
-   * in this run.
+   * in this run. The comparison drops a repository label's trailing
+   * `@<commit>`, so a later commit of the same repository reads as the
+   * source moved on.
    *
    * `None` stamps the source path, which is what a local adoption wants.
    */

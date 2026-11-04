@@ -1049,7 +1049,7 @@ fn adopt_imports_the_bundle_rewrites_links_and_stamps_provenance_exit_0() {
     assert!(note.contains("sw-adopted-hash:"));
     assert!(note.contains("sw-adopted-at:"));
     // A relative markdown link became a wikilink.
-    assert!(note.contains("[[checklist|the review checklist]]"));
+    assert!(note.contains("[[references/checklist|the review checklist]]"));
     assert!(!note.contains("](references/checklist.md)"));
     assert!(
         vault
