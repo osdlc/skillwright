@@ -542,21 +542,34 @@ fn rename_plugin(
     let to = rel(to)?;
     let dir_from = rel(dir_from)?;
     let dir_to = rel(dir_to)?;
-    // Every member's rebased path is resolved and validated up front: a
-    // member outside `dir_from` must refuse before the folder moves, not
-    // after — nothing here writes yet.
+    // Every member is checked up front, so a bad one refuses before the
+    // folder moves — nothing here writes yet.
     let rebased_members = members
         .iter()
         .map(|(member, edits)| {
             let member = rel(member)?;
-            let rebased = rebase(&member, &dir_from, &dir_to)?;
+            if member == from || member == dir_to || member.starts_with(&format!("{dir_to}/")) {
+                return Err(ApplyError::Refused(format!(
+                    "member {member} is the plugin note or lies under {dir_to}"
+                )));
+            }
+            if !resolve(vault_dir, &member)?.is_file() {
+                return Err(ApplyError::Refused(format!(
+                    "member {member} is not a file in the vault"
+                )));
+            }
+            let rebased = match rebase(&member, &dir_from, &dir_to) {
+                Some(rebased) => rebased?,
+                None => member,
+            };
             Ok::<_, ApplyError>((rebased, edits.clone()))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut outcome = Outcome::new(mode);
     // A plugin's entry note is a bundle entry (`<dir>/<dir>.md`), so the
-    // folder and every member ride along on the bundle move.
+    // folder and every member inside it ride along on the bundle move; a
+    // member outside it is edited in place.
     move_note(vault_dir, &from, &to, true, mode, &mut outcome)?;
     // From here the move has landed — a later failure is reported with what
     // already wrote, not as a bare refusal.
@@ -588,16 +601,12 @@ fn rename_plugin_after_move(
     Ok(())
 }
 
-/// A member's path in the new tree. Members are keyed on the old tree, which
+/// A member's path in the new tree, or `None` for a member outside
+/// `dir_from`, which does not move. Members are keyed on the old tree, which
 /// no longer exists once the folder has moved.
-fn rebase(path: &str, dir_from: &str, dir_to: &str) -> Result<String, ApplyError> {
-    let Some(tail) = path.strip_prefix(&format!("{dir_from}/")) else {
-        return Err(ApplyError::Path {
-            path: path.to_owned(),
-            reason: format!("is not inside {dir_from}"),
-        });
-    };
-    rel(&format!("{dir_to}/{tail}"))
+fn rebase(path: &str, dir_from: &str, dir_to: &str) -> Option<Result<String, ApplyError>> {
+    let tail = path.strip_prefix(&format!("{dir_from}/"))?;
+    Some(rel(&format!("{dir_to}/{tail}")))
 }
 
 // ── Shared ──────────────────────────────────────────────────────────────────
@@ -901,59 +910,96 @@ mod tests {
         assert!(read(v.path(), "plugins/gear/skills/keyed.md").contains("sw-plugin: gear"));
     }
 
-    #[test]
-    fn rename_plugin_refuses_a_member_outside_dir_from_without_moving_anything() {
+    /// A vault holding only the `tools` plugin note.
+    fn tools_plugin() -> tempfile::TempDir {
         let v = vault();
         write(
             v.path(),
             "plugins/tools/tools.md",
             "---\nname: tools\n---\n\nplugin\n",
         );
+        v
+    }
 
-        let op = AuthoringOp::RenamePlugin {
+    /// Rename `tools` to `gear`, rekeying the one `member`.
+    fn rename_tools_to_gear(member: &str) -> AuthoringOp {
+        AuthoringOp::RenamePlugin {
             from: "plugins/tools/tools.md".to_owned(),
             to: "plugins/gear/gear.md".to_owned(),
             dir_from: "plugins/tools".to_owned(),
             dir_to: "plugins/gear".to_owned(),
             frontmatter: vec![],
             members: vec![(
-                "plugins/other/skills/stray.md".to_owned(),
+                member.to_owned(),
                 vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
             )],
-        };
-        let err = apply(v.path(), &op).unwrap_err();
+        }
+    }
+
+    #[test]
+    fn rename_plugin_edits_a_member_outside_dir_from_where_it_sits() {
+        let v = tools_plugin();
+        write(
+            v.path(),
+            "skills/stray.md",
+            "---\nname: stray\nsw-plugin: tools\n---\n\nmember\n",
+        );
+
+        apply(v.path(), &rename_tools_to_gear("skills/stray.md")).unwrap();
+
+        assert!(v.path().join("plugins/gear/gear.md").exists());
+        assert!(read(v.path(), "skills/stray.md").contains("sw-plugin: gear"));
+    }
+
+    #[test]
+    fn rename_plugin_refuses_a_bad_member_path_without_moving_anything() {
+        let v = tools_plugin();
+
+        let err = apply(v.path(), &rename_tools_to_gear("../outside.md")).unwrap_err();
 
         assert!(matches!(err, ApplyError::Path { .. }), "{err:?}");
         assert!(v.path().join("plugins/tools/tools.md").exists());
         assert!(!v.path().join("plugins/gear").exists());
     }
 
+    #[test]
+    fn rename_plugin_refuses_a_missing_or_misplaced_member_without_moving_anything() {
+        for member in [
+            "skills/missing.md",
+            "plugins/tools/skills/missing.md",
+            "skills",
+            "plugins/tools/tools.md",
+            "plugins/gear/gear.md",
+        ] {
+            let v = tools_plugin();
+            write(v.path(), "skills/other.md", "---\nname: other\n---\n");
+
+            let err = apply(v.path(), &rename_tools_to_gear(member)).unwrap_err();
+
+            assert!(matches!(err, ApplyError::Refused(_)), "{member}: {err:?}");
+            assert!(v.path().join("plugins/tools/tools.md").exists(), "{member}");
+            assert!(!v.path().join("plugins/gear").exists(), "{member}");
+        }
+    }
+
     /// If a member's frontmatter edit fails once the bundle has already
     /// moved, the failure carries the [`Outcome`] that already landed rather
-    /// than discarding it behind a bare refusal.
+    /// than discarding it behind a bare refusal. The member is present and
+    /// inside `dir_from`, but its frontmatter cannot be edited.
     #[test]
     fn rename_plugin_reports_the_move_when_a_members_edit_fails_after_it() {
-        let v = vault();
+        let v = tools_plugin();
         write(
             v.path(),
-            "plugins/tools/tools.md",
-            "---\nname: tools\n---\n\nplugin\n",
+            "plugins/tools/skills/broken.md",
+            "---\nname: [unclosed\n---\n\nmember\n",
         );
 
-        let op = AuthoringOp::RenamePlugin {
-            from: "plugins/tools/tools.md".to_owned(),
-            to: "plugins/gear/gear.md".to_owned(),
-            dir_from: "plugins/tools".to_owned(),
-            dir_to: "plugins/gear".to_owned(),
-            frontmatter: vec![],
-            // Valid, and inside `dir_from` — but no such file exists to edit
-            // once the bundle has moved.
-            members: vec![(
-                "plugins/tools/skills/missing.md".to_owned(),
-                vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
-            )],
-        };
-        let err = apply(v.path(), &op).unwrap_err();
+        let err = apply(
+            v.path(),
+            &rename_tools_to_gear("plugins/tools/skills/broken.md"),
+        )
+        .unwrap_err();
 
         let ApplyError::Partial { outcome, .. } = err else {
             panic!("expected a partial outcome, got {err:?}");
@@ -962,7 +1008,10 @@ mod tests {
         assert!(v.path().join("plugins/gear/gear.md").exists());
         assert_eq!(
             outcomes(&outcome),
-            vec![("plugins/gear/gear.md", "renamed")]
+            vec![
+                ("plugins/gear/gear.md", "renamed"),
+                ("plugins/gear/skills/broken.md", "moved"),
+            ]
         );
     }
 

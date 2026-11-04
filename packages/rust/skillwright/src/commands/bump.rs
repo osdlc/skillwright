@@ -1,6 +1,6 @@
 //! `skillwright bump` — raise one plugin's `sw-version` by a semver level,
-//! rewriting only that frontmatter key. Contract: the CLI spec's `bump`
-//! section.
+//! rewriting only that frontmatter key (or, for a note that uses the nested
+//! `sw:` block, only that block). Contract: the CLI spec's `bump` section.
 //!
 //! A version that does not parse as plain `MAJOR.MINOR.PATCH` is refused
 //! rather than guessed at ([`tradecraft_core::next_version`]); an absent
@@ -9,8 +9,8 @@
 
 use serde::Serialize;
 use tradecraft_core::{
-    BumpLevel, EntityKind, FieldEdit, NativeVfs, Vfs, apply_field_edits, discover_components,
-    next_version, read_field,
+    BumpLevel, EntityKind, NativeVfs, Vfs, apply_field_edits, discover_components, next_version,
+    ns_field_edits, ns_field_label, read_ns_field,
 };
 
 use crate::ctx::CommandContext;
@@ -85,6 +85,13 @@ fn write_row(
     }
 }
 
+fn bump_failed(err: &mut dyn std::io::Write, e: impl std::fmt::Display) -> i32 {
+    blocked(
+        err,
+        &format!("bump failed: {}", normalize_thrown_reason(&e.to_string())),
+    )
+}
+
 /// Run `skillwright bump` and return the exit code.
 pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let run = match resolve_run(&flags.common, &ctx.cwd, ctx.err) {
@@ -142,13 +149,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
 
     let bytes = match NativeVfs.read_file(&component.entry_path) {
         Ok(bytes) => bytes,
-        Err(err) => {
-            let message = err.to_string();
-            return blocked(
-                ctx.err,
-                &format!("bump failed: {}", normalize_thrown_reason(&message)),
-            );
-        }
+        Err(err) => return bump_failed(ctx.err, err),
     };
     let source = match String::from_utf8(bytes) {
         Ok(source) => source,
@@ -163,19 +164,18 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
     };
 
-    let version_key = namespace.key("version");
-    let current = match read_field(&source, &version_key) {
+    // Either shape the note writes it in: flat `sw-version`, or `version`
+    // inside a nested `sw:` block. Messages name the key as the note spells it.
+    let version_key = match ns_field_label(&source, &namespace, "version") {
+        Ok(label) => label,
+        Err(err) => return bump_failed(ctx.err, err),
+    };
+    let current = match read_ns_field(&source, &namespace, "version") {
         Ok(Some(value)) => value,
-        // No `sw-version` at all is not a refusal — the core's stated
-        // default is what a bump starts from.
+        // No version key in either shape is not a refusal — the core's
+        // stated default is what a bump starts from.
         Ok(None) => "0.1.0".to_string(),
-        Err(err) => {
-            let message = err.to_string();
-            return blocked(
-                ctx.err,
-                &format!("bump failed: {}", normalize_thrown_reason(&message)),
-            );
-        }
+        Err(err) => return bump_failed(ctx.err, err),
     };
 
     let rel = component.vault_relative_path.as_str();
@@ -212,28 +212,18 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
     }
 
-    let edited = match apply_field_edits(
+    let edited = match ns_field_edits(
         &source,
-        &[FieldEdit::set(
-            version_key.clone(),
-            yaml_splice::Value::Str(new.clone()),
-        )],
-    ) {
+        &namespace,
+        &[("version", Some(yaml_splice::Value::Str(new.clone())))],
+    )
+    .and_then(|edits| apply_field_edits(&source, &edits))
+    {
         Ok(edited) => edited,
-        Err(err) => {
-            let message = err.to_string();
-            return blocked(
-                ctx.err,
-                &format!("bump failed: {}", normalize_thrown_reason(&message)),
-            );
-        }
+        Err(err) => return bump_failed(ctx.err, err),
     };
     if let Err(err) = NativeVfs.write_file(&component.entry_path, edited.as_bytes()) {
-        let message = err.to_string();
-        return blocked(
-            ctx.err,
-            &format!("bump failed: {}", normalize_thrown_reason(&message)),
-        );
+        return bump_failed(ctx.err, err);
     }
 
     let line = format!("{rel}  written · {version_key} {current} -> {new}");

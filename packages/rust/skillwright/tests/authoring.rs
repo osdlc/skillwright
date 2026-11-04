@@ -559,3 +559,41 @@ fn list_and_check_stay_clean_after_a_forced_delete() {
     assert_eq!(checked.code, 0, "{}", checked.stdout);
     assert!(!checked.stdout.contains("skipped"), "{}", checked.stdout);
 }
+
+/// A note outside a plugin's folder that joins it through `sw-plugin` is a
+/// member too: a rename rewrites it at its own path, and does not refuse
+/// because the note sits outside the folder that moves.
+#[test]
+fn rename_plugin_rekeys_a_member_outside_its_folder_in_place() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    let note = |name: &str, extra: &str| {
+        format!("---\nname: {name}\ndescription: Use this to test {name}.\n{extra}---\n\nbody\n")
+    };
+    write(&vault, "marketplaces/m/plugins/p/p.md", &note("p", ""));
+    write(
+        &vault,
+        "marketplaces/m/plugins/p/skills/inside.md",
+        &note("inside", ""),
+    );
+    write(
+        &vault,
+        "marketplaces/m/skills/out.md",
+        &note("out", "sw-plugin: p\n"),
+    );
+
+    let result = run(
+        &["rename", "p", "q", "--yes", "--vault", &vault_str(&vault)],
+        dir.path(),
+    );
+
+    assert_eq!(result.code, 0, "{}\n{}", result.stdout, result.stderr);
+    assert!(vault.join("marketplaces/m/plugins/q/q.md").is_file());
+    assert!(
+        vault
+            .join("marketplaces/m/plugins/q/skills/inside.md")
+            .is_file()
+    );
+    let out = fs::read_to_string(vault.join("marketplaces/m/skills/out.md")).unwrap();
+    assert!(out.contains("sw-plugin: q"), "{out}");
+}
