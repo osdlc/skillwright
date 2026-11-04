@@ -66,6 +66,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use markdown_link::code::{CodeRules, FenceLine, Fences, Spans};
+use markdown_link::{LinkIndex, ResolveError};
 use sha2::{Digest, Sha256};
 
 use crate::content::SkillProjection;
@@ -777,15 +778,19 @@ pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
 
 // --- The renderer -----------------------------------------------------------
 
-/// One skill's compile state: the vault index, and the resources claimed so
-/// far.
+/// One skill's compile state: the vault's link index, and the resources
+/// claimed so far.
 struct Renderer<'a> {
     vfs: &'a dyn Vfs,
     vault_root: PathBuf,
     entry_path: PathBuf,
     bundle_root: Option<PathBuf>,
     skill_name: &'a str,
-    index: VaultIndex,
+    /// Every file in the vault, by vault-relative path, for link
+    /// resolution. Built once per compile — the vault is the resolution
+    /// universe, and walking it lazily would make "not found" depend on what
+    /// happened to have been walked.
+    index: LinkIndex,
     /// Per emitted file, the notes it consumed and the links it could not
     /// resolve. Accumulated as the walk runs; the walk is the only place that
     /// knows either.
@@ -841,7 +846,15 @@ impl<'a> Renderer<'a> {
         {
             return Err(CoreError::PathEscapesRoot(root.clone()));
         }
-        let index = VaultIndex::build(vfs, &vault_root)?;
+        let mut paths = Vec::new();
+        for path in crate::walk::files(vfs, &vault_root, EXCLUDED_VAULT_DIRECTORIES)? {
+            let relative = path
+                .strip_prefix(&vault_root)
+                .map(forward_slashed)
+                .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
+            paths.push(relative);
+        }
+        let index = LinkIndex::build(&paths);
         let mut destinations = BTreeMap::new();
         destinations.insert("SKILL.md".to_owned(), entry_path.clone());
         Ok(Renderer {
@@ -1145,8 +1158,8 @@ impl<'a> Renderer<'a> {
             self.ensure_binary_resource(&resolved)?
         };
         let site = LinkSite {
-            label: escape_label(&display_label(token.alias, &resolved)),
-            href: relative_markdown_link(output_path, &resource_output, fragment.as_deref()),
+            label: markdown_link::escape_label(&display_label(token.alias, &resolved)),
+            href: markdown_link::relative_link(output_path, &resource_output, fragment.as_deref()),
             image: embed && IMAGE_EXTENSIONS.contains(&extension.as_str()),
             target: String::new(),
         };
@@ -1518,64 +1531,28 @@ impl<'a> Renderer<'a> {
             ));
         }
 
-        // A target with an extension is addressed as a file; one without gets
-        // `.md` appended and is addressed as a note. Obsidian's rule.
-        let has_extension = extension_of_target(target).is_some();
-        let candidate = if has_extension {
-            target.to_owned()
-        } else {
-            format!("{target}.md")
-        };
-        if let Some(hit) = self.index.exact(&candidate) {
-            return Ok(Some((hit, fragment)));
-        }
-        let from_dir = from_file.parent().unwrap_or(Path::new(""));
-        if let Ok(relative_dir) = from_dir.strip_prefix(&self.vault_root) {
-            let joined = if relative_dir.as_os_str().is_empty() {
-                candidate.clone()
-            } else {
-                format!("{}/{candidate}", forward_slashed(relative_dir))
-            };
-            if let Some(hit) = self.index.exact(&joined) {
-                return Ok(Some((hit, fragment)));
-            }
-        }
-
-        let matches = if has_extension {
-            self.index.by_filename(basename(&candidate))
-        } else {
-            // A bare name only ever addresses a note: `[[photo]]` must not
-            // resolve to `photo.jpg`, because an attachment is addressed with
-            // its extension.
-            self.index
-                .by_stem(basename(target))
-                .into_iter()
-                .filter(|path| extension_of_path(path).as_deref() == Some(".md"))
-                .collect()
-        };
-        match matches.as_slice() {
-            [only] => Ok(Some((only.clone(), fragment))),
+        // `markdown-link`'s resolver, refusing to guess: an exact path, the
+        // path from the linking note's folder, or the only file the name
+        // matches. A bare name addresses a note (`[[photo]]` is not
+        // `photo.jpg`); a name with an extension addresses that file.
+        let from = self.vault_relative(from_file).unwrap_or_default();
+        match self.index.resolve_strict(target, &from) {
+            Ok(hit) => Ok(Some((self.vault_root.join(hit), fragment))),
             // Not a refusal. The compile spec and the publish spec
             // both rule that an unresolved link is reported and the rest of
             // the skill publishes; the name is recorded in the manifest's
             // `unresolved` list so a note appearing there later counts as a
             // change. Refusing here would also make the manifest's own field
             // unreachable — nothing could ever be written into it.
-            [] => Ok(None),
-            several => {
-                let labels: Vec<String> = several
-                    .iter()
-                    .map(|path| self.relative_or_verbatim(path))
-                    .collect();
-                Err(CoreError::refused(
-                    "link-ambiguous",
-                    format!(
-                        "ambiguous Obsidian link from {}: {destination} ({})",
-                        self.relative_or_verbatim(from_file),
-                        labels.join(", ")
-                    ),
-                ))
-            }
+            Err(ResolveError::NotFound) => Ok(None),
+            Err(ResolveError::Ambiguous(candidates)) => Err(CoreError::refused(
+                "link-ambiguous",
+                format!(
+                    "ambiguous Obsidian link from {}: {destination} ({})",
+                    self.relative_or_verbatim(from_file),
+                    candidates.join(", ")
+                ),
+            )),
         }
     }
 
@@ -1628,80 +1605,6 @@ fn validate_no_obsidian_syntax(
     Ok(())
 }
 
-// --- The vault index --------------------------------------------------------
-
-/// Every file in the vault, addressable three ways: by exact vault-relative
-/// path, by filename, and by stem. Built once per compile — the vault is the
-/// resolution universe, and walking it lazily would make "not found" depend
-/// on what happened to have been walked.
-///
-/// All keys are lowercased: Obsidian matches links case-insensitively, and a
-/// vault edited on macOS (case-preserving, case-insensitive) would otherwise
-/// resolve differently than the same vault on Linux.
-struct VaultIndex {
-    /// Lowercased vault-relative path → absolute path.
-    relative_files: BTreeMap<String, PathBuf>,
-    /// Lowercased filename → absolute paths, in walk (sorted) order.
-    by_filename: BTreeMap<String, Vec<PathBuf>>,
-    /// Lowercased stem → absolute paths, in walk (sorted) order.
-    by_stem: BTreeMap<String, Vec<PathBuf>>,
-}
-
-impl VaultIndex {
-    fn build(vfs: &dyn Vfs, root: &Path) -> Result<VaultIndex, CoreError> {
-        let mut relative_files = BTreeMap::new();
-        let mut by_filename: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
-        let mut by_stem: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
-        for path in crate::walk::files(vfs, root, EXCLUDED_VAULT_DIRECTORIES)? {
-            let relative = path
-                .strip_prefix(root)
-                .map(forward_slashed)
-                .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
-            relative_files.insert(relative.to_lowercase(), path.clone());
-            let filename = basename(&relative).to_lowercase();
-            let stem = match filename.rfind('.') {
-                // A leading dot is a hidden file's name, not an extension
-                // separator.
-                Some(0) | None => filename.clone(),
-                Some(at) => filename[..at].to_owned(),
-            };
-            by_filename.entry(filename).or_default().push(path.clone());
-            by_stem.entry(stem).or_default().push(path);
-        }
-        Ok(VaultIndex {
-            relative_files,
-            by_filename,
-            by_stem,
-        })
-    }
-
-    /// An exact vault-relative lookup, tolerant of `./` spellings. (`..` never
-    /// reaches here; it is refused before resolution.)
-    fn exact(&self, relative: &str) -> Option<PathBuf> {
-        let folded: Vec<&str> = relative
-            .split('/')
-            .filter(|segment| !segment.is_empty() && *segment != ".")
-            .collect();
-        self.relative_files
-            .get(&folded.join("/").to_lowercase())
-            .cloned()
-    }
-
-    fn by_filename(&self, filename: &str) -> Vec<PathBuf> {
-        self.by_filename
-            .get(&filename.to_lowercase())
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn by_stem(&self, stem: &str) -> Vec<PathBuf> {
-        self.by_stem
-            .get(&stem.to_lowercase())
-            .cloned()
-            .unwrap_or_default()
-    }
-}
-
 // --- Destinations, extensions, labels ---------------------------------------
 
 /// `target#fragment` split on the *first* `#`: a heading path like
@@ -1750,7 +1653,7 @@ pub(crate) fn basename(path: &str) -> &str {
 /// reads as geometry, not text — otherwise the resolved file's name.
 fn display_label(alias: Option<&str>, resolved: &Path) -> String {
     if let Some(alias) = alias
-        && !is_size_spec(alias)
+        && !markdown_link::is_size_spec(alias)
     {
         return alias.to_owned();
     }
@@ -1758,129 +1661,6 @@ fn display_label(alias: Option<&str>, resolved: &Path) -> String {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
-}
-
-/// `^\d+(?:x\d+)?$` — the image-geometry alias test.
-fn is_size_spec(alias: &str) -> bool {
-    let all_digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
-    match alias.split_once('x') {
-        Some((width, height)) => all_digits(width) && all_digits(height),
-        None => all_digits(alias),
-    }
-}
-
-/// Markdown label text: `\`, `[`, `]` escaped so an alias cannot terminate —
-/// or nest — the link syntax it sits inside.
-fn escape_label(label: &str) -> String {
-    let mut out = String::with_capacity(label.len());
-    for c in label.chars() {
-        if matches!(c, '\\' | '[' | ']') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
-}
-
-/// The spelling of one output file linking another: relative to the linking
-/// file's directory, each segment percent-encoded, the fragment appended
-/// URI-encoded with `#` itself escaped (a raw `#` would start a second
-/// fragment).
-fn relative_markdown_link(from_output: &str, to_output: &str, fragment: Option<&str>) -> String {
-    let from_dir = match from_output.rfind('/') {
-        Some(at) => &from_output[..at],
-        None => "",
-    };
-    let mut relative = posix_relative(from_dir, to_output);
-    if relative.is_empty() {
-        // A file linking itself: the relative walk yields "", and a markdown
-        // link needs a target, so its own name serves.
-        relative = basename(to_output).to_owned();
-    }
-    let encoded: Vec<String> = relative
-        .split('/')
-        .map(|segment| {
-            if segment == ".." || segment == "." {
-                segment.to_owned()
-            } else {
-                encode_uri_component(segment)
-            }
-        })
-        .collect();
-    match fragment {
-        Some(fragment) => format!("{}#{}", encoded.join("/"), encode_uri_fragment(fragment)),
-        None => encoded.join("/"),
-    }
-}
-
-/// `path.posix.relative`, for the forward-slashed output paths this pass
-/// mints: walk up out of `from_dir`'s unshared segments, then down `to`'s.
-fn posix_relative(from_dir: &str, to: &str) -> String {
-    let from_segments: Vec<&str> = from_dir.split('/').filter(|s| !s.is_empty()).collect();
-    let to_segments: Vec<&str> = to.split('/').filter(|s| !s.is_empty()).collect();
-    let shared = from_segments
-        .iter()
-        .zip(&to_segments)
-        .take_while(|(a, b)| a == b)
-        .count();
-    let mut out: Vec<&str> = vec![".."; from_segments.len() - shared];
-    out.extend(&to_segments[shared..]);
-    out.join("/")
-}
-
-/// JavaScript's `encodeURIComponent`: everything but the unreserved set is
-/// percent-encoded, byte-wise over UTF-8.
-fn encode_uri_component(segment: &str) -> String {
-    percent_encode(segment, |b| {
-        b.is_ascii_alphanumeric()
-            || matches!(
-                b,
-                b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')'
-            )
-    })
-}
-
-/// JavaScript's `encodeURI` with `#` additionally escaped for
-/// fragments. URI structure characters (`/`, `?`, `&`, …) survive so
-/// a fragment like `page=2` reads back as written.
-fn encode_uri_fragment(fragment: &str) -> String {
-    percent_encode(fragment, |b| {
-        b.is_ascii_alphanumeric()
-            || matches!(
-                b,
-                b'-' | b'_'
-                    | b'.'
-                    | b'!'
-                    | b'~'
-                    | b'*'
-                    | b'\''
-                    | b'('
-                    | b')'
-                    | b';'
-                    | b','
-                    | b'/'
-                    | b'?'
-                    | b':'
-                    | b'@'
-                    | b'&'
-                    | b'='
-                    | b'+'
-                    | b'$'
-            )
-    })
-}
-
-fn percent_encode(text: &str, keep: impl Fn(u8) -> bool) -> String {
-    use std::fmt::Write;
-    let mut out = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        if keep(byte) {
-            out.push(byte as char);
-        } else {
-            let _ = write!(out, "%{byte:02X}");
-        }
-    }
-    out
 }
 
 // --- The scanner ------------------------------------------------------------
@@ -2281,7 +2061,8 @@ fn advance_past(line_end: usize, len: usize) -> usize {
 // --- Fragment selection -----------------------------------------------------
 
 /// The slice of `body` a fragment addresses: `#^id` a block, anything else a
-/// heading path, no fragment the whole body. `source_label` names the file
+/// heading path, no fragment the whole body — Obsidian's rules, as
+/// `markdown-contract`'s `select` reads them. `source_label` names the file
 /// being selected *from* in a refusal, because the author's fix is there —
 /// not in the file that asked.
 fn select_fragment(
@@ -2289,239 +2070,16 @@ fn select_fragment(
     fragment: Option<&str>,
     source_label: &str,
 ) -> Result<String, CoreError> {
-    match fragment {
-        None => Ok(body.trim().to_owned()),
-        Some(fragment) => match fragment.strip_prefix('^') {
-            Some(block_id) => extract_block(body, block_id, source_label),
-            None => extract_heading(body, fragment, source_label),
-        },
-    }
-}
-
-/// The section a heading selector addresses: the heading line through the
-/// line before the next heading of equal or shallower level, so nested
-/// subsections travel with their parent.
-///
-/// A selector may be a path (`Parent#Child`): the last segment names the
-/// heading, the leading ones constrain its ancestry, which is how two
-/// same-named headings under different parents are told apart.
-///
-/// A heading's own text may contain `#` (`Learn C#`), so the whole trimmed
-/// selector is tried as one heading first. Only when no heading has exactly
-/// that text is the selector split into a path.
-fn extract_heading(body: &str, selector: &str, source_label: &str) -> Result<String, CoreError> {
-    let whole = [selector.trim()];
-    let path: Vec<&str> = selector
-        .split('#')
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect();
-    let lines: Vec<&str> = body
-        .split('\n')
-        .map(|line| line.strip_suffix('\r').unwrap_or(line))
-        .collect();
-    let headings = live_headings(&lines);
-    select_heading_path(&lines, &headings, &whole)
-        .or_else(|| select_heading_path(&lines, &headings, &path))
-        .ok_or_else(|| {
-            CoreError::refused(
-                "fragment-unresolved",
-                format!("heading not found in {source_label}: {selector}"),
-            )
-        })
-}
-
-fn select_heading_path(
-    lines: &[&str],
-    headings: &[Option<(usize, &str)>],
-    wanted: &[&str],
-) -> Option<String> {
-    // The open heading at each level — a running table of contents, so the
-    // ancestry constraint can be checked at the moment a candidate appears.
-    let mut ancestry: [Option<&str>; 6] = [None; 6];
-
-    for (index, heading) in headings.iter().enumerate() {
-        let Some((level, text)) = *heading else {
-            continue;
+    markdown_contract::select::fragment(body, fragment).ok_or_else(|| {
+        let missing = match fragment.and_then(|f| f.strip_prefix('^')) {
+            Some(block_id) => format!("block not found in {source_label}: ^{block_id}"),
+            None => format!(
+                "heading not found in {source_label}: {}",
+                fragment.unwrap_or_default()
+            ),
         };
-        ancestry[level - 1] = Some(text);
-        for deeper in ancestry.iter_mut().skip(level) {
-            *deeper = None;
-        }
-        if wanted.last() != Some(&text) {
-            continue;
-        }
-        if wanted.len() > 1 {
-            let ancestors: Vec<&str> = ancestry[..level]
-                .iter()
-                .flatten()
-                .filter(|t| !t.is_empty())
-                .copied()
-                .collect();
-            let tail_start = ancestors.len().saturating_sub(wanted.len());
-            if ancestors[tail_start..].join("#") != wanted.join("#") {
-                continue;
-            }
-        }
-
-        let mut end = index + 1;
-        while end < lines.len() {
-            if let Some((next_level, _)) = headings[end]
-                && next_level <= level
-            {
-                break;
-            }
-            end += 1;
-        }
-        return Some(lines[index..end].join("\n").trim().to_owned());
-    }
-
-    None
-}
-
-/// The block a `^id` marker addresses. Three shapes:
-///
-/// * A marker alone on its line labels the paragraph or list *above* it
-///   (skipping blank lines).
-/// * A marker at the end of a list item labels that one item.
-/// * A marker at the end of a paragraph line labels the whole paragraph,
-///   walked back to a blank line or heading.
-///
-/// The marker itself never survives into the selection — it is an address,
-/// not content.
-fn extract_block(body: &str, block_id: &str, source_label: &str) -> Result<String, CoreError> {
-    let lines: Vec<&str> = body
-        .split('\n')
-        .map(|line| line.strip_suffix('\r').unwrap_or(line))
-        .collect();
-
-    for (index, &line) in lines.iter().enumerate() {
-        let Some(caret_at) = block_marker_position(line, block_id) else {
-            continue;
-        };
-
-        if line.trim() == format!("^{block_id}") {
-            let mut end = index as isize - 1;
-            while end >= 0 && lines[end as usize].trim().is_empty() {
-                end -= 1;
-            }
-            if end < 0 {
-                // A marker with nothing above it labels nothing; fall through
-                // to the not-found refusal rather than inventing an empty
-                // block.
-                break;
-            }
-            let end = end as usize;
-            let mut start = end;
-            while start > 0
-                && !lines[start - 1].trim().is_empty()
-                && parse_heading(lines[start - 1]).is_none()
-            {
-                start -= 1;
-            }
-            return Ok(lines[start..=end].join("\n").trim().to_owned());
-        }
-
-        let cleaned = line[..caret_at].trim_end();
-        if is_list_item(line) {
-            return Ok(cleaned.trim().to_owned());
-        }
-        let mut start = index;
-        while start > 0
-            && !lines[start - 1].trim().is_empty()
-            && parse_heading(lines[start - 1]).is_none()
-        {
-            start -= 1;
-        }
-        let mut block: Vec<&str> = lines[start..index].to_vec();
-        block.push(cleaned);
-        return Ok(block.join("\n").trim().to_owned());
-    }
-
-    Err(CoreError::refused(
-        "fragment-unresolved",
-        format!("block not found in {source_label}: ^{block_id}"),
-    ))
-}
-
-/// [`parse_heading`] for each line, `None` in fenced code: a `#` line there is
-/// code, and ending a section on it would cut the fence open.
-fn live_headings<'a>(lines: &[&'a str]) -> Vec<Option<(usize, &'a str)>> {
-    let mut fences = Fences::new(CodeRules::SkillExport);
-    lines
-        .iter()
-        .map(|line| match fences.line(line.as_bytes()) {
-            FenceLine::Outside => parse_heading(line),
-            FenceLine::Marker | FenceLine::Inside => None,
-        })
-        .collect()
-}
-
-/// `^ {0,3}(#{1,6})\s+(.+?)\s*$` — an ATX heading's level and text, with any
-/// closing `#` sequence stripped (see [`without_closing_hashes`]). The regex's
-/// `\s+` then `.+?` means a bare `##` or `## ` is *not* a heading, while `##  `
-/// (whitespace standing in for text) is one with empty text — which still
-/// resets deeper ancestry but can never be selected.
-fn parse_heading(line: &str) -> Option<(usize, &str)> {
-    let mut indent = 0;
-    let bytes = line.as_bytes();
-    while indent < 3 && bytes.get(indent) == Some(&b' ') {
-        indent += 1;
-    }
-    let rest = &line[indent..];
-    let hashes = rest.bytes().take_while(|b| *b == b'#').count();
-    if hashes == 0 || hashes > 6 {
-        return None;
-    }
-    let after = &rest[hashes..];
-    let mut chars = after.chars();
-    // `\s+` — at least one whitespace after the hashes…
-    if !chars.next()?.is_whitespace() {
-        return None;
-    }
-    // …and `.+?` — at least one character after that.
-    chars.next()?;
-    Some((hashes, without_closing_hashes(after.trim())))
-}
-
-/// Drops a closing `#` run, which CommonMark counts only when a space or tab
-/// precedes it (or it is the whole text): `Learn C#` keeps its `#`.
-fn without_closing_hashes(text: &str) -> &str {
-    let before_hashes = text.trim_end_matches('#');
-    if before_hashes.is_empty() || before_hashes.ends_with([' ', '\t']) {
-        before_hashes.trim_end()
-    } else {
-        text
-    }
-}
-
-/// `(?:^|\s)\^id\s*$` — the byte offset of the `^` when `line` ends with the
-/// marker, `None` otherwise.
-fn block_marker_position(line: &str, block_id: &str) -> Option<usize> {
-    let trimmed = line.trim_end();
-    let before_id = trimmed.strip_suffix(block_id)?;
-    let before_caret = before_id.strip_suffix('^')?;
-    if before_caret.is_empty() || before_caret.ends_with(|c: char| c.is_whitespace()) {
-        Some(before_caret.len())
-    } else {
-        None
-    }
-}
-
-/// `^\s*(?:[-+*]|\d+[.)])\s+` — is this line a list item?
-fn is_list_item(line: &str) -> bool {
-    let rest = line.trim_start();
-    if let Some(after_bullet) = rest.strip_prefix(['-', '+', '*']) {
-        return after_bullet.starts_with(|c: char| c.is_whitespace());
-    }
-    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
-    if digits == 0 {
-        return false;
-    }
-    match rest[digits..].strip_prefix(['.', ')']) {
-        Some(after_marker) => after_marker.starts_with(|c: char| c.is_whitespace()),
-        None => false,
-    }
+        CoreError::refused("fragment-unresolved", missing)
+    })
 }
 
 #[cfg(test)]
@@ -3375,11 +2933,11 @@ mod tests {
     #[test]
     fn heading_and_block_extraction_follow_obsidian() {
         let body = "# Parent\n\n## Selected\n\nText.\n\n### Child\n\nChild text.\n\n## Later\n\n- Item one\n- Item two\n\n^list-block\n";
-        let section = extract_heading(body, "Parent#Selected", "fixture.md").unwrap();
+        let section = select_fragment(body, Some("Parent#Selected"), "fixture.md").unwrap();
         assert!(section.contains("### Child"));
         assert!(!section.contains("## Later"));
         assert_eq!(
-            extract_block(body, "list-block", "fixture.md").unwrap(),
+            select_fragment(body, Some("^list-block"), "fixture.md").unwrap(),
             "- Item one\n- Item two"
         );
     }
@@ -3387,17 +2945,19 @@ mod tests {
     #[test]
     fn a_heading_inside_a_fence_neither_ends_nor_starts_a_section() {
         let body = "## PR body\n\nTemplate:\n\n```md\n## Summary\n<why>\n\n~~~\n# Not closed by this\n~~~\n```\n\nAfter the fence.\n\n## Next\n\nOther.\n";
-        let section = extract_heading(body, "PR body", "pr-body.md").unwrap();
+        let section = select_fragment(body, Some("PR body"), "pr-body.md").unwrap();
         assert!(section.contains("## Summary"), "{section}");
         assert!(section.ends_with("After the fence."), "{section}");
         assert_eq!(section.matches("```").count(), 2, "{section}");
         // A heading only in code is not an address.
-        assert!(extract_heading(body, "Summary", "pr-body.md").is_err());
+        assert!(select_fragment(body, Some("Summary"), "pr-body.md").is_err());
     }
 
     #[test]
     fn a_closing_hash_run_is_stripped_only_after_whitespace() {
-        let text_of = |line: &str| parse_heading(line).map(|(_, text)| text.to_owned());
+        let text_of = |line: &str| {
+            markdown_contract::select::atx_heading(line).map(|(_, text)| text.to_owned())
+        };
         for (line, expected) in [
             ("## foo ##", "foo"),
             ("###   bar    ###", "bar"),
@@ -3419,14 +2979,14 @@ mod tests {
     #[test]
     fn a_heading_ending_in_a_hash_is_not_selected_by_its_hashless_prefix() {
         let body = "## Learn C#\n\nbody\n\n## Next\n";
-        assert!(extract_heading(body, "Learn C", "b.md").is_err());
+        assert!(select_fragment(body, Some("Learn C"), "b.md").is_err());
     }
 
     #[test]
     fn a_selector_naming_a_heading_that_ends_in_a_hash_resolves() {
         let body = "## Learn C#\n\nbody\n\n## Next\n";
         assert_eq!(
-            extract_heading(body, "Learn C#", "b.md").unwrap(),
+            select_fragment(body, Some("Learn C#"), "b.md").unwrap(),
             "## Learn C#\n\nbody"
         );
     }
@@ -3435,7 +2995,7 @@ mod tests {
     fn a_whole_selector_match_wins_over_the_path_reading() {
         let body = "# A\n\npath\n\n## B\n\npath child\n\n# A#B\n\nwhole\n";
         assert_eq!(
-            extract_heading(body, "A#B", "b.md").unwrap(),
+            select_fragment(body, Some("A#B"), "b.md").unwrap(),
             "# A#B\n\nwhole"
         );
     }
@@ -3443,7 +3003,10 @@ mod tests {
     #[test]
     fn a_block_marker_on_a_list_item_selects_that_item_alone() {
         let body = "- one ^here\n- two\n";
-        assert_eq!(extract_block(body, "here", "b.md").unwrap(), "- one");
+        assert_eq!(
+            select_fragment(body, Some("^here"), "b.md").unwrap(),
+            "- one"
+        );
     }
 
     #[test]
@@ -3451,7 +3014,7 @@ mod tests {
         // Two `Details` headings; the path picks the one under Second.
         let body =
             "# First\n\n## Details\n\nfirst details\n\n# Second\n\n## Details\n\nsecond details\n";
-        let section = extract_heading(body, "Second#Details", "b.md").unwrap();
+        let section = select_fragment(body, Some("Second#Details"), "b.md").unwrap();
         assert!(section.contains("second details"), "{section}");
         assert!(!section.contains("first details"), "{section}");
     }

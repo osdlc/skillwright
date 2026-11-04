@@ -42,6 +42,8 @@ markdown-link = { workspace = true }
 vfs-seam = { workspace = true, features = ["native"] }
 # The vault walk and the vault's excluded files (`crate::walk`).
 markdown-vault-fs = { workspace = true }
+# Heading and block selection for a link fragment (`select`).
+markdown-contract = { workspace = true }
 # Symlink-aware containment checks, over the `Vfs` seam.
 path-guard = { workspace = true }
 
