@@ -71,9 +71,9 @@
       "line": 30,
       "title": "SKIP_DIRS doc comment now false (scan.rs:30-32)",
       "comment": "https://github.com/osdlc/skillwright/pull/22#pullrequestreview-5734644399",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "97897e8cccb6a79979af6b0260772b4a24a3a01f"
     },
     {
       "id": "r1-7",
