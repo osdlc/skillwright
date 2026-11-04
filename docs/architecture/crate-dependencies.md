@@ -22,7 +22,7 @@ flowchart TB
   subgraph SW[skillwright repo]
     CLI["<b>skillwright</b><br/>CLI: flags, config, reports,<br/>harness install"]:::sw
     CORE["<b>tradecraft-core</b><br/>discover, compile, build,<br/>publish, adopt, Vfs"]:::sw
-    WASM["<b>tradecraft-wasm</b><br/>core for JS / Obsidian"]:::sw
+    WASM["<b>tradecraft-wasm</b><br/>core for JS consumers,<br/>e.g. Obsidian"]:::sw
     DUP1["5 vault walks"]:::dup
     DUP2["wikilink scanner<br/>+ VaultIndex resolver"]:::dup
     DUP3["heading / block<br/>extraction"]:::dup
@@ -102,7 +102,7 @@ flowchart TB
   subgraph SW[skillwright repo]
     CLI["<b>skillwright</b><br/>CLI: flags, config, reports"]:::sw
     CORE["<b>tradecraft-core</b><br/>marketplace model, skill calls,<br/>harness profiles + translators, emit"]:::sw
-    WASM["<b>tradecraft-wasm</b><br/>core + model for JS / Obsidian"]:::sw
+    WASM["<b>tradecraft-wasm</b><br/>core + model for JS consumers,<br/>e.g. Obsidian"]:::sw
   end
 
   subgraph OS[osdlc crates]
