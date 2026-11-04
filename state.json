@@ -82,9 +82,9 @@
       "line": null,
       "title": "PR body fix count and Not fixed section inaccurate",
       "comment": "https://github.com/osdlc/skillwright/pull/22#pullrequestreview-5734644399",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "97897e8cccb6a79979af6b0260772b4a24a3a01f"
     },
     {
       "id": "r2-1",
