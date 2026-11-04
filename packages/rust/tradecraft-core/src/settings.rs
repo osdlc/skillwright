@@ -61,7 +61,9 @@ pub struct MarketplaceSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harnesses: Option<Vec<String>>,
     /// Refuse `build` and `check` when a note has a `name` and no
-    /// `description`. Absent or `false` publishes a filler and warns.
+    /// `description` and the config supplies none for it. Absent or `false`
+    /// publishes a filler and warns. See
+    /// [`MarketplaceConfig::require_descriptions`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub require_descriptions: Option<bool>,
     /// Where the per-skill `scripts/sdlc` shim looks for this marketplace's

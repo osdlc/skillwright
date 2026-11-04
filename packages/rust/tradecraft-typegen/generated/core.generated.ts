@@ -710,16 +710,17 @@ export interface MarketplaceConfig {
   plugins?: Record<string, PluginOverrides>;
 
   /**
-   * Refuse the build when a note has a `name` and no `description`,
-   * instead of publishing [`crate::discover::MISSING_DESCRIPTION`] and
-   * reporting it in [`ExportReport::warnings`].
+   * Refuse the build when a note has a `name` and no `description` and
+   * this config supplies none for it, instead of publishing
+   * [`crate::discover::MISSING_DESCRIPTION`] and reporting it in
+   * [`ExportReport::warnings`].
    */
   require_descriptions?: boolean;
 
   /**
    * Where the per-skill `scripts/sdlc` shim looks for this plugin's own
-   * launcher asset, relative to the plugin's root — and the `dest` an
-   * asset must carry for `render_root` to emit that shim at all (see
+   * launcher asset, relative to the plugin's root — and the path an asset
+   * must land a file at for `render_root` to emit that shim at all (see
    * `sdlc_shim_script`'s parent-walk). Project-file authors declare it
    * as `marketplace.shim_target`; [`crate::settings::MarketplaceSettings::to_config`]
    * defaults it to [`DEFAULT_SHIM_TARGET`] when the project file is
