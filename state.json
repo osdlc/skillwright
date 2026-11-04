@@ -27,9 +27,9 @@
       "line": 6429,
       "title": "no test for pack redundant overrides or command member override output",
       "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110963",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "cfd68e7bd747693a47b4956b0306a34eb446d148"
     },
     {
       "id": "r1-3",
