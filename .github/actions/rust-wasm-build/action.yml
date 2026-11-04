@@ -3,8 +3,7 @@
 # wasm32 target, the cargo cache, and the wasm tools at the versions build.sh
 # requires. Run it after actions/checkout.
 #
-# The `wasm` job in rust.yml and the `packages` job in ts.yml both build with
-# it, so both get the same bytes.
+# The `packages` job in ts.yml builds with it.
 name: rust-wasm-build
 description: Build packages/ts/tradecraft-wasm/wasm/ from the Rust crates with build.sh.
 

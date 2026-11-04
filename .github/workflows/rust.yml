@@ -1,6 +1,6 @@
-# Checks the Cargo workspace under packages/rust/, and builds the wasm for
-# packages/ts/tradecraft-wasm/ from it, on every pull request and push to
-# main.
+# Checks the Cargo workspace under packages/rust/ on every pull request and
+# push to main. The wasm for packages/ts/tradecraft-wasm/ is built by the
+# `packages` job in ts.yml, not here.
 #
 # The workflow always runs, so its final `rust` job always reports. That job
 # is the one to require in the "Protect main" ruleset. A workflow-level
@@ -9,10 +9,9 @@
 # the other jobs skip when nothing under the Rust paths changed. `rust`
 # passes when every job it needs passed or was skipped.
 #
-# The toolchain is the pin in packages/rust/rust-toolchain.toml (with the
-# wasm32 target added in the `wasm` job), except in the `msrv` job (the
-# workspace `rust-version`) and the `minimal-versions` lockfile step (a dated
-# nightly, for `-Z direct-minimal-versions`).
+# The toolchain is the pin in packages/rust/rust-toolchain.toml, except in
+# the `msrv` job (the workspace `rust-version`) and the `minimal-versions`
+# lockfile step (a dated nightly, for `-Z direct-minimal-versions`).
 #
 # Every action is pinned to a commit SHA; the comment names its release.
 name: rust
@@ -236,13 +235,9 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
-  # tradecraft-wasm is a wasm-bindgen crate. The other jobs build it for the
-  # host target only. This job runs the whole build.sh pipeline (cargo for
-  # wasm32, wasm-bindgen, wasm-opt) and uploads the result as the
-  # `tradecraft-wasm` artifact. The wasm is not committed; the `packages` job
-  # in ts.yml builds its own copy to test against. This job also checks that
-  # the package's core.generated.ts is the file tradecraft-typegen writes.
-  wasm:
+  # Checks that packages/ts/tradecraft-wasm/src/core.generated.ts is the file
+  # tradecraft-typegen writes from the Rust source.
+  typegen:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -255,14 +250,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/rust-wasm-build
+      - uses: ./.github/actions/rust-toolchain
 
-      - name: Upload the tradecraft wasm
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: tradecraft-wasm
-          path: packages/ts/tradecraft-wasm/wasm/
-          if-no-files-found: error
+      - uses: ./.github/actions/rust-build-cache
 
       - name: The package's core.generated.ts is the generator's output
         run: |
@@ -405,7 +395,7 @@ jobs:
         run: release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
 
   rust:
-    needs: [changes, lint, rust-test, msrv, minimal-versions, wasm, release-plz]
+    needs: [changes, lint, rust-test, msrv, minimal-versions, typegen, release-plz]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -65,11 +65,12 @@ script needs:
 
 In CI, the `packages` job in `.github/workflows/ts.yml` builds `wasm/` on
 every pull request before it builds and tests the package, so the tests run
-against the pull request's own Rust. The `wasm` job in
-`.github/workflows/rust.yml` builds it on every pull request that touches the
-Rust crates and uploads it as the `tradecraft-wasm` artifact. The compiler
-can emit different bytes on macOS and on Linux; that artifact is the Linux
-build.
+against the pull request's own Rust. It uploads the build as the
+`tradecraft-wasm` artifact, kept for 7 days. The compiler can emit different
+bytes on macOS and on Linux; that artifact is the Linux build.
+
+`build.sh` refuses a `wasm-bindgen` other than the pinned one. A different
+`wasm-opt` is a warning on a local build and an error on CI.
 
 ## Regenerating the types
 
@@ -85,7 +86,7 @@ cp tradecraft-typegen/generated/core.generated.ts ../ts/tradecraft-wasm/src/core
 
 `cargo test -p tradecraft-typegen` fails when the crate's file is behind the
 Rust source. A test in this package fails when its copy differs from the
-crate's. The `wasm` job also compares the two.
+crate's. The `typegen` job in `.github/workflows/rust.yml` also compares the two.
 
 ## Code style
 

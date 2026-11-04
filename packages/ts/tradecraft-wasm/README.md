@@ -22,6 +22,9 @@ npm install @osdlc/tradecraft-wasm
 
 `pnpm add @osdlc/tradecraft-wasm` and `yarn add @osdlc/tradecraft-wasm` work too.
 
+The releases on npm were published from osdlc/osdlc and are behind this
+source; to use this source, see [Building from source](#building-from-source).
+
 ESM only. Node.js 22 or later, or Bun.
 
 ## Quick start

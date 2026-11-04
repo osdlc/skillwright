@@ -67,6 +67,8 @@ jobs:
     runs-on: ubuntu-latest
     # Main only, no reviewer. Holds the App secrets.
     environment: release-plz
+    # release-plz runs cargo-semver-checks on each changed crate, which
+    # builds the rustdoc of the new and the published version.
     timeout-minutes: 30
     # One release pull request update at a time. A newer push waits.
     concurrency:
