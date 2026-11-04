@@ -13,8 +13,10 @@
 
 use std::path::{Path, PathBuf};
 
+use markdown_corpus::{Corpus, LoadOptions};
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
+use tradecraft_core::vfs::NativeVfs;
 
 /// Write or rehearse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -378,11 +380,14 @@ fn move_note(
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    let facts = VaultFacts::scan(vault_dir);
+    // The vault as the shared model reads it, so the planner resolves links
+    // over the same walk and link index as every other osdlc tool.
+    let corpus = Corpus::load(&NativeVfs, vault_dir, LoadOptions::default());
+    let facts = VaultFacts::from_corpus(&corpus);
     let plan = if bundle {
-        markdown_relink::plan_bundle(vault_dir, &facts, from, to)?
+        markdown_relink::plan_bundle(&NativeVfs, vault_dir, &facts, from, to)?
     } else {
-        markdown_relink::plan(vault_dir, &facts, from, to)?
+        markdown_relink::plan(&NativeVfs, vault_dir, &facts, from, to)?
     };
     if let Some(conflict) = plan.conflict {
         return Err(ApplyError::Refused(conflict));

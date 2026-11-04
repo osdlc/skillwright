@@ -370,13 +370,23 @@ mod tests {
         // loaded host it can outlast any fixed delay — a single early save
         // would then land before anything is watching, and the loop would
         // wait forever for an event that already happened.
+        //
+        // Each save replaces the note in one rename, as editors do. A plain
+        // `fs::write` empties the file before writing it, and a rebuild that
+        // reads the note in that instant fails, leaves the old output in
+        // place, and still counts as the one rebuild this test waits for.
         let stop = Arc::new(AtomicBool::new(false));
         let saver = {
             let stop = Arc::clone(&stop);
             thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
                     thread::sleep(Duration::from_millis(200));
-                    let _ = fs::write(&skill_path, &edited);
+                    let Ok(mut staged) = tempfile::NamedTempFile::new() else {
+                        continue;
+                    };
+                    if std::io::Write::write_all(&mut staged, edited.as_bytes()).is_ok() {
+                        let _ = staged.persist(&skill_path);
+                    }
                 }
             })
         };
@@ -385,7 +395,12 @@ mod tests {
         stop.store(true, Ordering::Relaxed);
         saver.join().unwrap();
         drop(ctx);
-        assert_eq!(code, EXIT_OK, "{}", String::from_utf8_lossy(&err));
+        let log = String::from_utf8_lossy(&err).into_owned();
+        assert_eq!(code, EXIT_OK, "{log}");
+        assert!(
+            !log.contains("rebuild failed"),
+            "the rebuild after the save failed: {log}"
+        );
 
         let rendered = fs::read_to_string(
             out_dir
@@ -395,7 +410,7 @@ mod tests {
         .expect("the rebuilt output should carry the edited skill");
         assert!(
             rendered.contains("Reviews a diff, now edited."),
-            "the rebuild did not pick up the saved change: {rendered}"
+            "the rebuild did not pick up the saved change: {rendered}\nwatch log: {log}"
         );
     }
 }

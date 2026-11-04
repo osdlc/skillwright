@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `list --model` prints the loaded marketplace model as JSON. `list --json` is unchanged.
+
+### Changed
+
+- `build` and `check` apply a note's `sw-overrides` block for each harness to that harness's tree, as `publish` does. A block naming an unknown target, or a key its harness does not read, now refuses the build.
+- `publish` of a plugin note to `cursor` or `pi` writes that harness's pack instead of refusing.
+- A note the vault excludes in Obsidian ("Excluded files", `userIgnoreFilters` in `.obsidian/app.json`) is no longer built or published by `build`, `check` or `publish --all`.
+
 ## [0.4.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.3.9...skillwright/v0.4.0) - 2026-10-30
 
 ### Fixed

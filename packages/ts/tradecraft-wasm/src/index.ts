@@ -12,6 +12,7 @@ export {
   exportSkills,
   InvalidNamespaceError,
   knownTargets,
+  loadMarketplace,
   publishableKinds,
   publishSkill,
   statusOf,
@@ -29,6 +30,11 @@ export type {
   DiscoveryReport,
   EntityKind,
   KindSource,
+  Component,
+  LoadRequest,
+  Marketplace,
+  Plugin,
+  Segment,
   ExportMode,
   ExportReport,
   ExportRequest,
@@ -54,4 +60,4 @@ export type {
 
 export { toCorePath, toHostPath } from './host-path.ts'
 export { createNodeVfs } from './node-vfs.ts'
-export type { BaseVfs, LinkMethods, NodeFs, NodeVfsOptions, Vfs } from './node-vfs.ts'
+export type { BaseVfs, LinkMethods, NodeFs, NodeVfsOptions, Vfs, VfsStat } from './node-vfs.ts'

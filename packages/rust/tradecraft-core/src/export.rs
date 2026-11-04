@@ -12,7 +12,7 @@
 //!
 //! `build` writes into one marketplace directory ([`ExportRequest::out_root`])
 //! and gives each harness its own top-level tree inside it
-//! (`RootSpec::tree`) — `.claude-plugin/`, `.agents/`, `.cursor-plugin/` and
+//! (`HarnessProfile::tree`) — `.claude-plugin/`, `.agents/`, `.cursor-plugin/` and
 //! `.pi/` today. Each tree carries that harness's marketplace manifest, at the
 //! fixed path that harness reads (Pi has none: its packs install by path),
 //! its pack manifests in its own dialect, and only the skills
@@ -45,20 +45,19 @@
 //! ignored — publishing less than was asked for, quietly, is the failure this
 //! crate is built around.
 //!
-//! Each tree's skills render through [`crate::projection::project_skill`],
-//! and its commands (where carried) through
-//! [`crate::projection::project_command`], both for that harness's runtime —
-//! the same renderers, dialect for dialect, that `publish` writes into a
-//! harness directory. One difference: `publish` applies a note's
-//! `sw-overrides` and a build does not.
+//! # One model, one tree per harness
 //!
-//! # One render, two `Vfs`s
+//! The vault is loaded once into the marketplace model ([`crate::model`]) —
+//! every note read, every body resolved — and each harness's translator
+//! ([`crate::harness::HarnessTranslator`]) writes that model as its tree.
+//! These are the same translators `publish` writes a pack and a note through,
+//! so a note renders the same bytes on both paths, `sw-overrides` included.
 //!
-//! `check` is not a second reading of `build`'s rules. Both modes render the
-//! whole marketplace once, into a [`crate::vfs::PreviewVfs`] over the caller's
-//! filesystem — the same overlay [`crate::publish::PublishMode::DryRun`]
-//! classifies a publish through — and diff the captured bytes against the
-//! destination. `check` returns that diff, having written nothing under any
+//! # One render, two verbs
+//!
+//! `check` is not a second reading of `build`'s rules. Both modes translate
+//! the whole marketplace once, into a [`crate::harness::FileTree`] per
+//! harness, and diff those bytes against the destination. `check` returns that diff, having written nothing under any
 //! outcome. `build` acts on it: an up-to-date destination is reported
 //! unchanged and nothing is written or renamed; a drifted root is staged from
 //! the very bytes the diff compared and swapped in. The two verdicts cannot
@@ -102,37 +101,25 @@
 //! the vault, because a link the host cannot see is what the narrowed check
 //! would miss. `publish` takes the same two rails on the same condition.
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use agent_adapt::RuntimeId;
 use serde::{Deserialize, Serialize};
 
-use crate::compile::{
-    CallContext, CompileSource, EXCLUDED_BUNDLE_DIRECTORIES, IndexedSkill, SkillIndex, SkillSource,
-    compile_projection, walk_files,
-};
-use crate::discover::{
-    DiscoveredComponent, DiscoveryWarning, MISSING_DESCRIPTION_REASON, discover_components,
-    name_refusal,
-};
+use crate::discover::{DiscoveryWarning, name_refusal};
 use crate::error::CoreError;
-use crate::frontmatter::EntityKind;
 use crate::guard::{assert_destination_allowed, assert_destination_allowed_for_vault};
-use crate::hooks_file::PluginRootVar;
+use crate::harness::manifest::overrides_for;
+use crate::harness::translator::GENERATED_MARKER;
+pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
+use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
+use crate::model::load::{LoadRequest, kind_carried, selected_harnesses, targets_admit};
+use crate::model::{Component, Marketplace, load};
 use crate::namespace::Namespace;
-use crate::projection::{
-    parse_runtime_target, project_command, project_plugin_hooks, project_skill, to_adapt_hook,
-};
 use crate::skill::forward_slashed;
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
-use crate::vault::read_vault_skill;
-use crate::vfs::{PreviewVfs, PreviewWrite, Vfs, normalize};
-
-/// The day the plugin-root hook variables in `ROOTS` were last checked
-/// against each harness's docs.
-const HOOKS_OBSERVED: &str = "2026-10-05";
+use crate::vfs::{PreviewWrite, Vfs, normalize};
 
 /// One marketplace export: this vault, onto this output root, in this mode.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,7 +128,7 @@ pub struct ExportRequest {
     /// markers all resolve against it.
     pub vault_root: PathBuf,
     /// The content root to scan; `None` means the vault root, exactly as
-    /// [`discover_components`] reads it.
+    /// [`crate::discover::discover_components`] reads it.
     #[serde(default)]
     pub skills_root: Option<PathBuf>,
     /// Which marketplace this build renders. `None` names the vault's only
@@ -153,7 +140,7 @@ pub struct ExportRequest {
     /// which every harness this build renders reads from.
     ///
     /// Each harness owns exactly one top-level entry under it — its own tree
-    /// (`RootSpec::tree`) — and nothing else here is read, compared or
+    /// (`HarnessProfile::tree`) — and nothing else here is read, compared or
     /// replaced. So this may be a directory holding other things, including
     /// a repository's own root, which is what lets a repository be its own
     /// marketplace.
@@ -303,7 +290,7 @@ pub struct MarketplaceConfig {
     pub require_descriptions: bool,
     /// Where the per-skill `scripts/sdlc` shim looks for this plugin's own
     /// launcher asset, relative to the plugin's root — and the `dest` an
-    /// asset must carry for `render_root` to emit that shim at all (see
+    /// asset must carry for a build to emit that shim at all (see
     /// `sdlc_shim_script`'s parent-walk). Project-file authors declare it
     /// as `marketplace.shim_target`; [`crate::settings::MarketplaceSettings::to_config`]
     /// defaults it to [`DEFAULT_SHIM_TARGET`] when the project file is
@@ -464,69 +451,6 @@ pub enum UnitStatus {
     Unchanged,
 }
 
-/// The supported harnesses, in report order. Everything harness-specific —
-/// which runtime renders the skills, where the projection puts them, which
-/// manifest dialect the plugin carries, where the marketplace manifest lives,
-/// where the packs land, how a rendered skill's body invokes the plugin's own
-/// CLI, how a published skill is named — hangs off this table, so adding a
-/// harness is adding a row.
-struct RootSpec {
-    /// The harness's name, and the target the skills narrow against.
-    name: &'static str,
-    /// The runtime [`project_skill`] (and [`project_command`], where
-    /// [`crate::publish::plugin_format_carries_commands`] is `true`) renders
-    /// through for this root.
-    runtime: &'static str,
-    /// The prefix that runtime's projection puts on a skill's files, stripped
-    /// on the way into `plugins/<plugin>/skills/<name>/`.
-    projection_prefix: &'static str,
-    /// The pack manifest, relative to a pack's own directory, in this root's
-    /// dialect.
-    plugin_manifest: &'static str,
-    /// The marketplace manifest, relative to the marketplace directory. Its
-    /// path is the harness's, fixed: it is where that harness looks, and the
-    /// reason every root can share one directory without colliding. `None`
-    /// for a harness with no marketplace (Pi), whose packs install by path.
-    marketplace_manifest: Option<&'static str>,
-    /// Where this harness's packs land, relative to the marketplace
-    /// directory. Inside the harness's own tree, so two harnesses publishing
-    /// the same pack never render to one path — which they could not share
-    /// anyway, since each translates a skill's tool names its own way.
-    ///
-    /// Must begin with the same component as `marketplace_manifest`, where
-    /// there is one: that component is the whole of what this root owns on
-    /// disk ([`RootSpec::tree`]).
-    packs: &'static str,
-    /// Which shape this root's manifests take. A field rather than a match
-    /// on [`RootSpec::name`], so the claim above — that adding a root is
-    /// adding a row — stays true of the manifests too.
-    dialect: PluginDialect,
-    /// How a rendered skill's body should refer to the plugin's own CLI. See
-    /// [`CliInvocation`].
-    cli_invocation: CliInvocation,
-    /// The variable this root's hook commands name the plugin root by; see
-    /// [`PluginRootVar`]. `None` when its pack carries no hooks file (Pi).
-    plugin_root_var: Option<PluginRootVar>,
-    /// How a published skill is named, and so how a call to it is spelled.
-    naming: SkillNaming,
-    /// The pack manifest's `hooks` value naming the hooks file, for a harness
-    /// that reads hooks only from there; see
-    /// [`crate::publish::plugin_format_carries_hooks`].
-    hooks_manifest_entry: Option<&'static str>,
-}
-
-/// How an export root names a published skill.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SkillNaming {
-    /// `<skill>`; the harness puts the plugin in front (`/plugin:skill`).
-    HostNamespaced,
-    /// `<skill>`, with no plugin anywhere.
-    Bare,
-    /// `<plugin>-<skill>`, for a harness with no plugin namespace that would
-    /// otherwise collide across plugins.
-    PluginPrefixed,
-}
-
 /// The name a skill publishes under: its directory, its frontmatter `name`,
 /// and the name a call to it renders. One function, so the three agree.
 ///
@@ -579,152 +503,6 @@ pub(crate) fn checked_skill_call(
         .map_err(|err| CoreError::refused("skill-call-invalid", err.to_string()))
 }
 
-/// How a rendered skill body refers to the plugin's own CLI — a field on
-/// [`RootSpec`] rather than a match on [`RootSpec::name`], for the same
-/// reason every other harness-specific behavior here is a field: adding a
-/// harness is adding a row, not a new arm.
-///
-/// Every skill in the vault writes the call site the same way, as
-/// `${CLAUDE_PLUGIN_ROOT}/<shim_target>` — the vault's own text is written
-/// for Claude, since that is the harness every skill author develops against.
-/// This decides what each *other* root does with that same text at render
-/// time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CliInvocation {
-    /// Leave the vault's `${CLAUDE_PLUGIN_ROOT}/<shim_target>` text exactly
-    /// as written. Claude Code substitutes the token itself, inline, when it
-    /// loads skill markdown — see the plugin manifest reference's
-    /// "Environment variables" section
-    /// (<https://code.claude.com/docs/en/plugins-reference>, retrieved
-    /// 2026-09-26): `${CLAUDE_PLUGIN_ROOT}` resolves in "Skill, command, and
-    /// agent content" bodies specifically, a Claude Code plugin mechanism
-    /// with no counterpart in another harness.
-    PluginRootToken,
-    /// Rewrite every `${CLAUDE_PLUGIN_ROOT}/<shim_target>` call site in a
-    /// skill's rendered body to [`SHIM_RELATIVE_PATH`], the skill-relative
-    /// `scripts/sdlc` shim this same render conditionally emits (see
-    /// [`render_skill`]). Neither Codex CLI nor Cursor substitutes
-    /// `${CLAUDE_PLUGIN_ROOT}` — Codex's own skills documentation
-    /// (<https://developers.openai.com/codex/skills>) never mentions the
-    /// token, and Cursor's skills documentation
-    /// (<https://cursor.com/docs/skills>, retrieved 2026-09-26) instructs
-    /// authors to "reference scripts in your SKILL.md using relative paths
-    /// from the skill root" instead — so a literal, un-rewritten
-    /// `${CLAUDE_PLUGIN_ROOT}/...` call site is dead text for either
-    /// harness, expanding to `/<shim_target>` with an empty prefix.
-    SkillRelativeShim,
-}
-
-const ROOTS: [RootSpec; 4] = [
-    RootSpec {
-        name: "claude",
-        runtime: "claude-code",
-        projection_prefix: ".claude/skills",
-        plugin_manifest: ".claude-plugin/plugin.json",
-        marketplace_manifest: Some(".claude-plugin/marketplace.json"),
-        packs: ".claude-plugin/packs",
-        dialect: PluginDialect::Claude,
-        cli_invocation: CliInvocation::PluginRootToken,
-        plugin_root_var: Some(PluginRootVar {
-            name: "CLAUDE_PLUGIN_ROOT",
-            url: "https://code.claude.com/docs/en/plugins-reference",
-            observed_on: "2026-09-26",
-            note: None,
-        }),
-        naming: SkillNaming::HostNamespaced,
-        hooks_manifest_entry: None,
-    },
-    RootSpec {
-        name: "codex",
-        runtime: "codex-cli",
-        projection_prefix: ".agents/skills",
-        plugin_manifest: ".codex-plugin/plugin.json",
-        marketplace_manifest: Some(".agents/plugins/marketplace.json"),
-        packs: ".agents/packs",
-        dialect: PluginDialect::Codex,
-        cli_invocation: CliInvocation::SkillRelativeShim,
-        plugin_root_var: Some(PluginRootVar {
-            name: "PLUGIN_ROOT",
-            url: "https://learn.chatgpt.com/docs/hooks",
-            observed_on: HOOKS_OBSERVED,
-            note: Some(
-                "a plugin hook also gets `CLAUDE_PLUGIN_ROOT` for compatibility, and runs in the \
-                 session's working directory",
-            ),
-        }),
-        naming: SkillNaming::HostNamespaced,
-        hooks_manifest_entry: None,
-    },
-    RootSpec {
-        name: "cursor",
-        runtime: "cursor",
-        projection_prefix: ".cursor/skills",
-        plugin_manifest: ".cursor-plugin/plugin.json",
-        marketplace_manifest: Some(".cursor-plugin/marketplace.json"),
-        packs: ".cursor-plugin/packs",
-        dialect: PluginDialect::Cursor,
-        cli_invocation: CliInvocation::SkillRelativeShim,
-        plugin_root_var: Some(PluginRootVar {
-            name: "CURSOR_PLUGIN_ROOT",
-            url: "https://cursor.com/docs/reference/plugins",
-            observed_on: HOOKS_OBSERVED,
-            note: Some(
-                "documented as expanded, beside `CLAUDE_PLUGIN_ROOT`, in a plugin's MCP server \
-                 fields; not documented for hook commands",
-            ),
-        }),
-        naming: SkillNaming::Bare,
-        hooks_manifest_entry: Some("./hooks/hooks.json"),
-    },
-    RootSpec {
-        name: "pi",
-        runtime: "pi",
-        projection_prefix: ".pi/skills",
-        plugin_manifest: "package.json",
-        marketplace_manifest: None,
-        packs: ".pi/packs",
-        dialect: PluginDialect::Pi,
-        cli_invocation: CliInvocation::SkillRelativeShim,
-        plugin_root_var: None,
-        naming: SkillNaming::PluginPrefixed,
-        hooks_manifest_entry: None,
-    },
-];
-
-impl RootSpec {
-    /// The one top-level entry this root owns in the marketplace directory.
-    ///
-    /// Everything it renders — its marketplace manifest, its packs — lives
-    /// under this single name, and nothing else in the directory is read,
-    /// compared or replaced. That is what lets every harness share one
-    /// directory, and what lets that directory be a repository root.
-    fn tree(&self) -> &'static str {
-        first_component(self.marketplace_manifest.unwrap_or(self.packs))
-    }
-
-    /// `plugins/<name>/<tail>` for this root's pack directory: the plugin and
-    /// the rest, `tail` empty for the pack's own directory, `None` for a path
-    /// naming no pack of this root's.
-    fn split_pack<'p>(&self, relative: &'p str) -> Option<(&'p str, &'p str)> {
-        let rest = relative
-            .strip_prefix(self.packs)?
-            .strip_prefix('/')
-            .unwrap_or("");
-        if rest.is_empty() {
-            return None;
-        }
-        Some(match rest.split_once('/') {
-            Some((name, tail)) => (name, tail),
-            None => (rest, ""),
-        })
-    }
-}
-
-/// The first path component of a relative path, or the whole of it.
-fn first_component(relative: &str) -> &str {
-    relative.split('/').next().unwrap_or(relative)
-}
-
 /// Where a build stages and backs up, under the root's own base — created
 /// only when a swap is actually needed, removed when the build ends.
 ///
@@ -736,21 +514,10 @@ fn first_component(relative: &str) -> &str {
 /// this is never one of them.
 const STAGE_DIR: &str = ".skillwright-stage";
 
-/// The provenance marker every emitted `SKILL.md` opens its body with.
-const GENERATED_MARKER: &str = "<!-- Generated by skillwright from ";
-
 /// Does `bytes` hold `marker` anywhere?
 fn contains(bytes: &[u8], marker: &str) -> bool {
     bytes.windows(marker.len()).any(|w| w == marker.as_bytes())
 }
-
-/// Where the per-skill `scripts/sdlc` shim lands, relative to a skill's own
-/// built directory — and, for a root whose [`CliInvocation`] is
-/// [`CliInvocation::SkillRelativeShim`], the text
-/// [`rewrite_cli_invocation`] rewrites a `${CLAUDE_PLUGIN_ROOT}/<shim_target>`
-/// call site to. One constant for both, so the file this render writes and
-/// the path a rewritten skill body names can never drift apart.
-const SHIM_RELATIVE_PATH: &str = "scripts/sdlc";
 
 /// Renders the vault into every selected marketplace root and, per
 /// [`ExportRequest::mode`], either swaps the drifted roots into place or
@@ -774,34 +541,8 @@ const SHIM_RELATIVE_PATH: &str = "scripts/sdlc";
 ///   skill of that name meeting in one plugin directory.
 /// * [`CoreError::SwapFailed`] — the commit failed part-way; the message says
 ///   what was rolled back.
-fn selected_roots(request: &ExportRequest) -> Result<Vec<&'static RootSpec>, CoreError> {
-    if request.harnesses.is_empty() {
-        return Ok(ROOTS.iter().collect());
-    }
-    let unknown: Vec<&str> = request
-        .harnesses
-        .iter()
-        .map(String::as_str)
-        .filter(|name| !ROOTS.iter().any(|spec| spec.name == *name))
-        .collect();
-    if !unknown.is_empty() {
-        return Err(CoreError::refused(
-            "unknown-harness",
-            format!(
-                "no harness named {} — this build renders {}. Nothing was written",
-                unknown.join(", "),
-                ROOTS
-                    .iter()
-                    .map(|spec| spec.name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        ));
-    }
-    Ok(ROOTS
-        .iter()
-        .filter(|spec| request.harnesses.contains(spec.name))
-        .collect())
+fn selected_roots(request: &ExportRequest) -> Result<Vec<&'static HarnessProfile>, CoreError> {
+    selected_harnesses(&request.harnesses)
 }
 
 /// Which harnesses this request renders, and the one top-level entry each
@@ -817,29 +558,25 @@ pub fn root_trees(request: &ExportRequest) -> Result<Vec<(&'static str, &'static
 }
 
 /// Where `root`'s `marketplace.json` sits under a built marketplace, read
-/// from `ROOTS`. `None` for an unknown root or one that writes no manifest.
+/// from the harness profile. `None` for an unknown root or one that writes no manifest.
 pub fn marketplace_manifest_path(root: &str) -> Option<&'static str> {
-    ROOTS
-        .iter()
+    with_plugin_format()
         .find(|spec| spec.name == root)
-        .and_then(|spec| spec.marketplace_manifest)
+        .and_then(|spec| spec.format().marketplace_manifest)
 }
 
 /// `root`'s plugin manifest path, relative to a pack's directory. `None` for
 /// an unknown root.
 pub fn plugin_manifest_path(root: &str) -> Option<&'static str> {
-    ROOTS
-        .iter()
+    with_plugin_format()
         .find(|spec| spec.name == root)
-        .map(|spec| spec.plugin_manifest)
+        .map(|spec| spec.format().plugin_manifest)
 }
 
 /// Renders the vault into one marketplace directory, or checks it against what is already there.
 ///
-/// A note's `sw-overrides` are not applied here: the build renders each skill
-/// through [`project_skill`] and each command through `project_command`, and
-/// neither takes a per-target override block.
-/// `publish` does apply them.
+/// A note's `sw-overrides` block for a harness is applied in that harness's
+/// tree, as a publish to it applies it.
 pub fn export_skills(
     vfs: &dyn Vfs,
     request: &ExportRequest,
@@ -873,227 +610,60 @@ pub fn export_skills(
         assert_destination_allowed(vfs, &out_root, std::slice::from_ref(&vault_root))?;
     }
 
-    // Skills and commands render; the scan returns every kind so a
-    // workbench can list them, and a marketplace's pack layout has no place
-    // for the rest — see `NotCarried` below, which names them.
-    let scan = discover_components(vfs, &vault_root, request.skills_root.as_deref(), ns)?;
-    // A build swaps whole roots and sweeps whatever the vault no longer
-    // produces, so a note the scan could not read would be read by the sweep
-    // as a note that was deleted — and a published skill would go with it.
-    // This is the one caller for which isolating a per-note failure is more
-    // dangerous than stopping, so it stops, naming every note it could not
-    // read. `check` shares the refusal because it shares the path: its whole
-    // claim is that its verdict cannot disagree with `build`'s, and a verdict
-    // over a vault it only partly read is not one.
-    if !scan.skipped.is_empty() {
-        let notes: Vec<String> = scan
-            .skipped
-            .iter()
-            .map(|note| format!("{} ({})", note.path, note.detail))
-            .collect();
-        return Err(CoreError::refused(
-            "unreadable-note",
-            format!(
-                "the vault holds {} note(s) this scan could not read, and a marketplace built \
-                 without them would sweep away what they publish: {}. Nothing was written",
-                notes.len(),
-                notes.join("; ")
-            ),
-        ));
-    }
-    let discovered = scan.components;
-    // Which marketplaces the vault holds is read from every kind, not from the
-    // skills alone: one holding only commands still exists, and naming it must
-    // say it holds nothing publishable rather than that it is not there.
-    let market = resolve_marketplace(&discovered, request.marketplace.as_deref())?;
-    let belonging: Vec<&DiscoveredComponent> = discovered
-        .iter()
-        .filter(|component| belongs_to(component, market.as_deref()))
-        .collect();
-    // Only this marketplace's notes: another marketplace's gap neither
-    // refuses this build nor appears in its report. A marketplace note names
-    // no marketplace of its own, so `belongs_to` admits every one of them.
-    let ours: BTreeSet<&str> = belonging
-        .iter()
-        .filter(|c| c.kind != EntityKind::Marketplace || market.as_deref() == Some(c.name.as_str()))
-        .map(|c| c.vault_relative_path.as_str())
-        .collect();
-    let mut warnings: Vec<DiscoveryWarning> = scan
-        .warnings
-        .into_iter()
-        .filter(|w| ours.contains(w.path.as_str()))
-        .collect();
-    let undescribed: Vec<&str> = warnings
-        .iter()
-        .filter(|w| w.reason == MISSING_DESCRIPTION_REASON)
-        .map(|w| w.path.as_str())
-        .collect();
-    if request.config.require_descriptions && !undescribed.is_empty() {
-        let notes = undescribed;
-        return Err(CoreError::refused(
-            MISSING_DESCRIPTION_REASON,
-            format!(
-                "`require_descriptions` is set and {} note(s) have a `name` and no \
-                 `description`: {}. Nothing was written",
-                notes.len(),
-                notes.join(", ")
-            ),
-        ));
-    }
-    // Named, never dropped: a pack has a place for skills, commands and hooks
-    // (the last two on the roots that have one) and for nothing else, and a
-    // build that quietly omitted an agent would be the failure this crate is
-    // built around. A command or hook one root cannot carry is named per
-    // root, in the loop below.
-    let not_carried: Vec<ExportUnit> = belonging
-        .iter()
-        .filter(|c| {
-            !matches!(
-                c.kind,
-                EntityKind::Skill
-                    | EntityKind::Command
-                    | EntityKind::Hook
-                    | EntityKind::Plugin
-                    | EntityKind::Marketplace
-            )
-        })
-        .map(|c| ExportUnit::NotCarried {
-            root: None,
-            path: c.vault_relative_path.clone(),
-            kind: c.kind.as_str().to_owned(),
-        })
-        .collect();
-    let members: Vec<&DiscoveredComponent> = belonging
-        .iter()
-        .copied()
-        .filter(|component| component.kind == EntityKind::Skill)
-        .collect();
-    let commands: Vec<&DiscoveredComponent> = belonging
-        .iter()
-        .copied()
-        .filter(|component| component.kind == EntityKind::Command)
-        .collect();
-    let hooks: Vec<&DiscoveredComponent> = belonging
-        .into_iter()
-        .filter(|component| component.kind == EntityKind::Hook)
-        .collect();
-    if members.is_empty() && commands.is_empty() && hooks.is_empty() {
-        return Err(CoreError::refused(
-            "empty-marketplace",
-            match &market {
-                Some(name) => format!(
-                    "marketplace `{name}` under {} holds no publishable skills, commands or \
-                     hooks: a marketplace of nothing is a configuration fault, not an empty \
-                     success. Nothing was written",
-                    vault_root.display()
-                ),
-                None => format!(
-                    "no publishable skills, commands or hooks under {}: a marketplace of \
-                     nothing is a configuration fault, not an empty success. Nothing was \
-                     written",
-                    vault_root.display()
-                ),
-            },
-        ));
-    }
-    let (name, config) = resolve_config(&discovered, market.as_deref(), &request.config)?;
-    let groups = group_by_plugin(&members, &commands, &hooks, &config.default_plugin)?;
-    warnings.extend(missing_versions(
-        &discovered,
-        market.as_deref(),
-        &groups,
-        &config,
-    ));
+    // Load once, for every harness this build renders: the vault read, the
+    // marketplace chosen and validated, every body resolved. Everything a
+    // build refuses before it renders, it refuses here.
+    let market = load(vfs, &request.load_request(), ns)?;
 
-    // Grouped by target plugin, so `render_root` asks one question per
-    // plugin instead of scanning the whole list per root. A plugin an asset
-    // names but the vault never produces is refused up front, the same way
-    // an unknown `--marketplace` is: writing nothing rather than silently
-    // dropping bytes an author declared.
-    let mut assets_by_plugin: BTreeMap<&str, Vec<&AssetSpec>> = BTreeMap::new();
-    for asset in &request.assets {
-        if !asset_dest_is_relative(&asset.dest) {
-            return Err(CoreError::refused(
-                "unsafe-asset-dest",
-                format!(
-                    "`{}`'s `dest` (`{}`) is not a plain relative path — `AssetSpec::dest` must \
-                     stay under the plugin root it is joined onto, so an absolute path or a `..` \
-                     component is refused rather than silently writing outside \
-                     `<packs>/<plugin>/`. Nothing was written",
-                    asset.source.display(),
-                    asset.dest,
-                ),
-            ));
-        }
-        if let Some(spec) = roots
-            .iter()
-            .find(|spec| asset_covers(vfs, asset, spec.plugin_manifest))
-        {
-            return Err(CoreError::refused(
-                "asset-over-manifest",
-                format!(
-                    "`{}` lands at `{}`, the {} root's pack manifest, which the build writes \
-                     itself. Move the asset's `dest`. Nothing was written",
-                    asset.source.display(),
-                    spec.plugin_manifest,
-                    spec.name,
-                ),
-            ));
-        }
-        let plugin = asset
-            .plugin
-            .as_deref()
-            .unwrap_or(config.default_plugin.as_str());
-        if !groups.contains_key(plugin) {
-            return Err(CoreError::refused(
-                "unknown-asset-plugin",
-                format!(
-                    "`{}` names plugin `{plugin}`, which this build holds no skill, command or \
-                     hook for — this vault publishes {}. Nothing was written",
-                    asset.source.display(),
-                    plugin_list(&groups),
-                ),
-            ));
-        }
-        assets_by_plugin.entry(plugin).or_default().push(asset);
-    }
-
-    let hook_files = load_hook_files(vfs, &request.hooks, &groups, &config)?;
-
-    // One render per harness, each into its own capturing overlay, at the
-    // final destination paths. Both modes read this and nothing else; `build`
-    // even writes from it. An overlay per root rather than one for all of
-    // them: the capture then needs no question asked of it about which root a
-    // path belongs to, because each holds one root's and only one root's.
-    let inputs = RenderInputs {
-        vault_root: &vault_root,
-        groups: &groups,
-        name: &name,
-        config: &config,
-        assets: &assets_by_plugin,
-        hook_files: &hook_files,
-        ns,
-    };
+    // One tree per harness, translated from the one model, at the final
+    // destination paths. Both modes read this and nothing else; `build`
+    // even writes from it.
     let mut rendered: Vec<BTreeMap<String, PreviewWrite>> = Vec::with_capacity(roots.len());
+    let mut translators: Vec<&dyn HarnessTranslator> = Vec::with_capacity(roots.len());
     for spec in &roots {
-        let preview = PreviewVfs::over(vfs);
-        // Call warnings are about the source, so every root raises the same.
-        for warning in render_root(&preview, &inputs, &out_root, spec)? {
-            if !warnings.contains(&warning) {
-                warnings.push(warning);
-            }
-        }
-        rendered.push(root_relative(&out_root, preview.into_writes())?);
+        let translator =
+            translator_for(spec.name).expect("every harness with a plugin format translates");
+        let tree = translator.translate(&market, ns)?;
+        rendered.push(
+            tree.files
+                .into_iter()
+                .map(|(path, file)| {
+                    (
+                        path,
+                        PreviewWrite {
+                            bytes: file.bytes,
+                            executable: file.executable,
+                        },
+                    )
+                })
+                .collect(),
+        );
+        translators.push(translator);
     }
-    warnings.sort_by(|a, b| a.path.cmp(&b.path));
 
     // The components no root could take, listed once rather than per root:
     // the reason is the layout's, not any one root's. A component only some
     // roots cannot take is named under each of those roots.
-    let mut units = not_carried;
+    let mut units: Vec<ExportUnit> = market
+        .uncarried
+        .iter()
+        .map(|c| ExportUnit::NotCarried {
+            root: None,
+            path: c.path.clone(),
+            kind: c.kind.as_str().to_owned(),
+        })
+        .collect();
     let mut to_swap: Vec<usize> = Vec::new();
     for (index, spec) in roots.iter().enumerate() {
-        let diff = diff_root(vfs, &out_root, spec, &groups, &rendered[index], &config)?;
+        let admitted = admitted_plugins(translators[index], &market);
+        let diff = diff_root(
+            vfs,
+            &out_root,
+            spec,
+            &admitted,
+            &rendered[index],
+            &market.config,
+        )?;
         // The one thing a build landing in a directory it does not own must
         // not do quietly. The swap replaces this root's whole tree; a tree of
         // that name holding work this build did not produce is far likelier
@@ -1117,16 +687,18 @@ pub fn export_skills(
             ));
         }
         units.extend(diff.units);
-        let mut uncarried: Vec<&DiscoveredComponent> = commands
-            .iter()
-            .chain(&hooks)
-            .copied()
-            .filter(|c| !kind_carried(c, spec) && targets_admit(c, spec))
+        let mut uncarried: Vec<&Component> = market
+            .plugins
+            .values()
+            .flat_map(|plugin| plugin.commands.iter().chain(&plugin.hooks))
+            .filter(|c| {
+                !kind_carried(&c.discovered, spec) && targets_admit(&c.discovered, spec.name)
+            })
             .collect();
-        uncarried.sort_by(|a, b| a.vault_relative_path.cmp(&b.vault_relative_path));
+        uncarried.sort_by(|a, b| a.path.cmp(&b.path));
         units.extend(uncarried.into_iter().map(|c| ExportUnit::NotCarried {
             root: Some(spec.name.to_owned()),
-            path: c.vault_relative_path.clone(),
+            path: c.path.clone(),
             kind: c.kind.as_str().to_owned(),
         }));
         if !diff.equal {
@@ -1138,15 +710,15 @@ pub fn export_skills(
     if request.mode == ExportMode::Check {
         return Ok(ExportReport {
             mode: ExportMode::Check,
-            checked: members.len(),
+            checked: market.checked,
             changed,
             units,
-            warnings,
+            warnings: market.warnings,
         });
     }
 
     if changed {
-        let swapping: Vec<(&RootSpec, &BTreeMap<String, PreviewWrite>)> = to_swap
+        let swapping: Vec<(&HarnessProfile, &BTreeMap<String, PreviewWrite>)> = to_swap
             .iter()
             .map(|index| (roots[*index], &rendered[*index]))
             .collect();
@@ -1169,1117 +741,27 @@ pub fn export_skills(
     }
     Ok(ExportReport {
         mode: ExportMode::Build,
-        checked: members.len(),
+        checked: market.checked,
         changed,
         units,
-        warnings,
+        warnings: market.warnings,
     })
 }
 
-/// A plugin this build publishes from its own note, with no version from the
-/// note or the config. It ships as `0.1.0`, and a harness compares versions
-/// to decide whether an installed pack is out of date — so a pack that never
-/// states one never looks updated.
-fn missing_versions(
-    discovered: &[DiscoveredComponent],
-    market: Option<&str>,
-    groups: &BTreeMap<&str, PluginGroup<'_>>,
-    config: &MarketplaceConfig,
-) -> Vec<DiscoveryWarning> {
-    discovered
-        .iter()
-        .filter(|c| c.kind == EntityKind::Plugin && belongs_to(c, market))
-        .filter(|c| groups.contains_key(c.name.as_str()))
-        .filter(|c| {
-            overrides_for(config, &c.name)
-                .and_then(|o| o.version.as_ref())
-                .is_none()
-        })
-        .map(|c| DiscoveryWarning {
-            path: c.vault_relative_path.clone(),
-            reason: "missing-version".to_owned(),
-            detail: format!(
-                "plugin `{}` states no version; published as `0.1.0`. Set `sw-version` on \
-                 its note so a harness can tell an update from what it has",
-                c.name
-            ),
-        })
-        .collect()
-}
-
-/// The manifest fields this build renders under, read from the vault first and
-/// the request second.
-///
-/// # Why the note outranks the request
-///
-/// A marketplace note *is* the marketplace: its name, its owner, who authors
-/// the packs under it — a fact about the vault, versioned with it and visible
-/// in Obsidian. [`MarketplaceConfig`] stays required for what no note can
-/// answer. A vault holding no marketplace directory at all is legal
-/// ([`resolve_marketplace`] returns `None` for it); the request is the whole
-/// identity there.
-///
-/// # Errors
-///
-/// `refused: unnamed-marketplace` — neither a marketplace note nor the request
-/// supplies a name.
-fn resolve_config(
-    discovered: &[DiscoveredComponent],
-    market: Option<&str>,
-    requested: &MarketplaceConfig,
-) -> Result<(String, MarketplaceConfig), CoreError> {
-    let mut config = requested.clone();
-
-    // A marketplace's own note is the one component that belongs to no
-    // marketplace while naming one — see `DiscoveredComponent::marketplace`.
-    let note = market.and_then(|name| {
-        discovered
-            .iter()
-            .find(|c| c.kind == EntityKind::Marketplace && c.name == name)
-    });
-    if let Some(note) = note {
-        config.name = Some(note.name.clone());
-        // The note's `description` is the Agent Skills spec field every component carries,
-        // not an `sw-` key — the same rule the plugin loop below follows. A
-        // marketplace describes itself where a skill describes itself.
-        take(&mut config.description, Some(note.description.clone()));
-        take(&mut config.display_name, note.identity.display_name.clone());
-        take(&mut config.owner, note.identity.owner.clone());
-        take(&mut config.author, note.identity.author.clone());
-        take(&mut config.license, note.identity.license.clone());
-    }
-    // Failing a note, the marketplace's own name is what it is called: the
-    // folder named the level, and a distribution named `house` on disk should
-    // not need a second place to say so.
-    if config.name.is_none() {
-        config.name = market.map(str::to_owned);
-    }
-    // The one thing nothing supplied. Everything else in this type has a
-    // documented default; a name does not, because there is nothing sensible to
-    // call a distribution its author never named.
-    if config.name.is_none() {
-        return Err(CoreError::refused(
-            "unnamed-marketplace",
-            match market {
-                Some(name) => format!(
-                    "marketplace `{name}` has no note naming it and the build supplied no name \
-                     either — add a `{name}/{name}.md` carrying `name:`, or configure one"
-                ),
-                None => "this vault holds no marketplace to name one, and the build supplied no \
-                         name — configure one, or give the vault a `marketplaces/<name>/` holding \
-                         its own note"
-                    .to_owned(),
-            },
-        ));
-    }
-
-    // Each plugin note fills its own override block. A block the request
-    // already spelled is left alone only field by field: a vault naming its
-    // pack's license and a request naming its version must produce a manifest
-    // carrying both, not whichever side spoke last.
-    for note in discovered
-        .iter()
-        .filter(|c| c.kind == EntityKind::Plugin)
-        .filter(|c| belongs_to(c, market))
-    {
-        let overrides = config.plugins.entry(note.name.clone()).or_default();
-        // The note's `description` is the Agent Skills spec field every component carries,
-        // not an `sw-` key: a plugin note describes its pack in the same place
-        // a skill note describes itself.
-        take(&mut overrides.description, Some(note.description.clone()));
-        take(&mut overrides.version, note.identity.version.clone());
-        take(&mut overrides.author, note.identity.author.clone());
-        take(&mut overrides.license, note.identity.license.clone());
-        take(&mut overrides.keywords, note.identity.keywords.clone());
-        take(&mut overrides.category, note.identity.category.clone());
-        take(
-            &mut overrides.display_name,
-            note.identity.display_name.clone(),
-        );
-    }
-
-    // Settled, so nothing below has to hold an `Option` it has already proved
-    // is `Some`. The name and the rest travel together from here.
-    let name = config.name.clone().unwrap_or_default();
-    Ok((name, config))
-}
-
-/// Writes `from` into `slot` when the note supplied it, leaving a request-only
-/// value in place. The vault outranks the request where both spoke; where the
-/// vault is silent the request is all there is.
-fn take<T>(slot: &mut Option<T>, from: Option<T>) {
-    if let Some(value) = from {
-        *slot = Some(value);
-    }
-}
-
-/// Which marketplace this build renders, given what the vault holds.
-///
-/// One `out_root` holds one marketplace, so this is a choice the request
-/// either makes or the vault makes for it. Discovery keys uniqueness on the
-/// marketplace, so two of them may hold the same plugin holding the same
-/// skill name; flattening them onto one tree would land both on one path and
-/// keep whichever was written last.
-///
-/// `None` comes back only for a vault with no marketplaces at all — every
-/// skill promoted to the vault level. That vault still builds, into an
-/// unnamed marketplace whose identity comes from the config alone.
-fn resolve_marketplace(
-    discovered: &[DiscoveredComponent],
-    requested: Option<&str>,
-) -> Result<Option<String>, CoreError> {
-    let present: BTreeSet<&str> = discovered
-        .iter()
-        .filter_map(|component| component.marketplace.as_deref())
-        .collect();
-    match requested {
-        Some(name) => {
-            if present.contains(name) {
-                return Ok(Some(name.to_owned()));
-            }
-            // A vault holding no marketplace directory has no set to select
-            // from, so naming one is not a wrong selection — it is what the
-            // output gets called. Every skill in such a vault is promoted above
-            // any marketplace and belongs to whichever one is built.
-            if present.is_empty() {
-                return Ok(Some(name.to_owned()));
-            }
-            Err(CoreError::refused(
-                "unknown-marketplace",
-                format!(
-                    "no marketplace `{name}` in this vault: it holds {}",
-                    named(&present)
-                ),
-            ))
-        }
-        None => match present.len() {
-            0 => Ok(None),
-            1 => Ok(present.iter().next().map(|name| (*name).to_owned())),
-            _ => Err(CoreError::refused(
-                "ambiguous-marketplace",
-                format!(
-                    "this vault holds {} and one output root holds one of them — name the one to \
-                     build",
-                    named(&present)
-                ),
-            )),
-        },
-    }
-}
-
-/// Does this component render into the marketplace being built?
-///
-/// Its own do. So does everything promoted above every marketplace: a
-/// component at the vault level belongs to none of them and is shared by all
-/// of them — the promotion rule read from the far end — so it renders into
-/// each marketplace that is built, rather than into none.
-fn belongs_to(component: &DiscoveredComponent, market: Option<&str>) -> bool {
-    match (component.marketplace.as_deref(), market) {
-        (None, _) => true,
-        (Some(own), Some(market)) => own == market,
-        (Some(_), None) => false,
-    }
-}
-
-/// `` `a`, `b` and `c` `` — for a refusal that has to name what it found.
-fn named(names: &BTreeSet<&str>) -> String {
-    let quoted: Vec<String> = names.iter().map(|name| format!("`{name}`")).collect();
-    match quoted.split_last() {
-        None => String::new(),
-        Some((last, [])) => last.clone(),
-        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
-    }
-}
-
-/// Plugin groups, members in discovery's name order.
-///
-/// Called once for skills and once for commands — a skill and a command of
-/// the same name never collide here, because they render into disjoint
-/// subtrees (`skills/<name>/` vs `commands/<name>.<ext>`) and this function
-/// only checks collisions within the one slice it was given.
-///
-/// A bare member belongs to no plugin in the vault, but every member needs
-/// *some* plugin directory in a marketplace tree — so the configured default
-/// is applied here rather than in the scan. Where a member lives is a fact
-/// about the vault; where it publishes is a fact about this build.
-///
-/// # Errors
-///
-/// `refused: path-collision` — two members of the same kind landing on one
-/// directory. This vault is legal and discovery passed it: a promoted skill
-/// and a marketplace's own skill of that name are two files in two places,
-/// and only this build, which renders both into one tree, can see them meet.
-fn group_by_plugin<'a>(
-    skills: &[&'a DiscoveredComponent],
-    commands: &[&'a DiscoveredComponent],
-    hooks: &[&'a DiscoveredComponent],
-    default_plugin: &'a str,
-) -> Result<BTreeMap<&'a str, PluginGroup<'a>>, CoreError> {
-    // Which list a member of each kind joins. The collision check is per
-    // kind, not across kinds: the three render into disjoint subtrees, so a
-    // skill and a command of one name are two directories, not one.
-    type Pick<'a> = for<'g> fn(&'g mut PluginGroup<'a>) -> &'g mut Vec<&'a DiscoveredComponent>;
-    let kinds: [(&[&'a DiscoveredComponent], Pick<'a>); 3] = [
-        (skills, |group| &mut group.skills),
-        (commands, |group| &mut group.commands),
-        (hooks, |group| &mut group.hooks),
-    ];
-
-    let mut groups: BTreeMap<&str, PluginGroup> = BTreeMap::new();
-    for (members, pick) in kinds {
-        for member in members {
-            let plugin = member.plugin.as_deref().unwrap_or(default_plugin);
-            let siblings = pick(groups.entry(plugin).or_default());
-            if let Some(first) = siblings.iter().find(|m| m.name == member.name) {
-                return Err(CoreError::refused(
-                    "path-collision",
-                    format!(
-                        "`{}` and `{}` both render as {} `{}` of plugin `{plugin}` — two \
-                         components cannot publish onto one directory",
-                        first.vault_relative_path,
-                        member.vault_relative_path,
-                        member.kind.as_str(),
-                        member.name
-                    ),
-                ));
-            }
-            siblings.push(member);
+impl ExportRequest {
+    /// What this build loads: its vault, its marketplace, its harnesses and
+    /// its configuration.
+    pub fn load_request(&self) -> LoadRequest {
+        LoadRequest {
+            vault_root: self.vault_root.clone(),
+            skills_root: self.skills_root.clone(),
+            marketplace: self.marketplace.clone(),
+            harnesses: self.harnesses.clone(),
+            config: self.config.clone(),
+            assets: self.assets.clone(),
+            hooks: self.hooks.clone(),
         }
     }
-    Ok(groups)
-}
-
-/// One plugin's members in a marketplace tree, by kind.
-///
-/// The three kinds stay separate lists because they render into disjoint
-/// subtrees (`skills/`, `commands/`, `hooks/`) and only skills feed the
-/// plugin manifest's `Skills: …` wording. They share one group per plugin so
-/// "which plugins does the vault hold" is answered once, not by each consumer
-/// unioning three key sets.
-#[derive(Default)]
-struct PluginGroup<'a> {
-    skills: Vec<&'a DiscoveredComponent>,
-    commands: Vec<&'a DiscoveredComponent>,
-    hooks: Vec<&'a DiscoveredComponent>,
-}
-
-impl<'a> PluginGroup<'a> {
-    /// What one root takes from this plugin. The admission rule is
-    /// [`admits`]'s; this is the one place it is applied per root, so the
-    /// render, the diff and the marketplace manifest cannot disagree about
-    /// which members a root carries.
-    fn admitted(&self, spec: &RootSpec) -> Admitted<'a> {
-        let narrow = |members: &[&'a DiscoveredComponent]| -> Vec<&'a DiscoveredComponent> {
-            members
-                .iter()
-                .copied()
-                .filter(|member| admits(member, spec))
-                .collect()
-        };
-        Admitted {
-            skills: narrow(&self.skills),
-            commands: narrow(&self.commands),
-            hooks: narrow(&self.hooks),
-        }
-    }
-}
-
-/// One plugin as one root carries it.
-struct Admitted<'a> {
-    skills: Vec<&'a DiscoveredComponent>,
-    commands: Vec<&'a DiscoveredComponent>,
-    hooks: Vec<&'a DiscoveredComponent>,
-}
-
-impl Admitted<'_> {
-    /// A plugin whose every member is narrowed away is absent from this root
-    /// entirely: no directory, no manifest, no listing. Its converse is what
-    /// makes a commands-only or hooks-only plugin real here — carrying no
-    /// skill is not carrying nothing.
-    fn is_empty(&self) -> bool {
-        self.skills.is_empty() && self.commands.is_empty() && self.hooks.is_empty()
-    }
-}
-
-/// Does this member publish into this root? Two gates. A member either
-/// gate narrows out is absent from the root's tree; [`export_skills`] names
-/// one the first gate drops as [`ExportUnit::NotCarried`] for that root,
-/// and says nothing of one the second drops, the same as
-/// [`crate::publish::publishes_to`]:
-///
-/// 1. **Kind.** A command is admitted only where
-///    [`crate::publish::plugin_format_carries_commands`] is `true` for this
-///    root's name, and a hook only where
-///    [`crate::publish::plugin_format_carries_hooks`] is — a root with no
-///    place for one narrows it out regardless of what `sw-targets` says, the
-///    same as a root with no place for an agent refuses one at publish time.
-/// 2. **`sw-targets`.** Matched on the destination a name resolves to —
-///    `claude-code` admits the `claude` root — exactly as
-///    [`crate::publish::publishes_to`] matches, over names discovery already
-///    validated.
-fn admits(component: &DiscoveredComponent, spec: &RootSpec) -> bool {
-    kind_carried(component, spec) && targets_admit(component, spec)
-}
-
-/// Gate 1 of [`admits`]: whether this root's pack format has a place for the
-/// member's kind.
-fn kind_carried(component: &DiscoveredComponent, spec: &RootSpec) -> bool {
-    match component.kind {
-        EntityKind::Command => crate::publish::plugin_format_carries_commands(spec.name),
-        EntityKind::Hook => crate::publish::plugin_format_carries_hooks(spec.name),
-        _ => true,
-    }
-}
-
-/// Gate 2 of [`admits`]: whether the member's `sw-targets` names this root.
-fn targets_admit(component: &DiscoveredComponent, spec: &RootSpec) -> bool {
-    match &component.targets {
-        None => true,
-        Some(names) => names
-            .iter()
-            .any(|name| crate::publish::canonical_target(name) == Some(spec.name)),
-    }
-}
-
-// --- Rendering ---------------------------------------------------------------
-
-/// Renders each root, whole, through `vfs` — which is always the preview
-/// overlay: nothing below this line knows whether the run is a build or a
-/// check, and that is the no-drift argument.
-///
-/// Everything a render reads, gathered once so a root's render takes the
-/// root it is rendering and little else.
-struct RenderInputs<'a> {
-    vault_root: &'a Path,
-    /// Plugin name to members of every kind — see [`PluginGroup`], whose
-    /// [`PluginGroup::admitted`] applies the per-root narrowing the render
-    /// and the diff both read.
-    groups: &'a BTreeMap<&'a str, PluginGroup<'a>>,
-    name: &'a str,
-    config: &'a MarketplaceConfig,
-    /// Plugin name to the assets landing in its root, verbatim. See
-    /// [`AssetSpec`].
-    assets: &'a BTreeMap<&'a str, Vec<&'a AssetSpec>>,
-    /// Plugin name to its canonical hooks file, parsed, with its gap report.
-    hook_files: &'a BTreeMap<String, HookFile>,
-    ns: &'a Namespace,
-}
-
-/// One root, whole, under `base`.
-///
-/// One root rather than both, and `base` rather than a name joined onto an
-/// output root: the caller owns where a root lands, and this owns what lands
-/// there. Every path written is under `base`, which is what lets the caller
-/// read the capture back as root-relative without asking which root a path
-/// belongs to. Returns the call warnings the root's compiles raised.
-fn render_root(
-    vfs: &dyn Vfs,
-    inputs: &RenderInputs<'_>,
-    base: &Path,
-    spec: &RootSpec,
-) -> Result<Vec<DiscoveryWarning>, CoreError> {
-    let runtime = parse_runtime_target(spec.runtime)?;
-    let render = |skill: &IndexedSkill| match &skill.plugin {
-        Some(plugin) => rendered_skill_call(runtime, spec.naming, plugin, &skill.name),
-        None => checked_skill_call(runtime, None, &skill.name),
-    };
-    // Every skill in the marketplace, under the plugin it ships in, so a call
-    // to one this root narrows away is refused rather than rendered.
-    let skills = SkillIndex::new(inputs.groups.iter().flat_map(|(plugin, group)| {
-        let admitted: BTreeSet<&Path> = group
-            .admitted(spec)
-            .skills
-            .iter()
-            .map(|skill| skill.entry_path.as_path())
-            .collect();
-        group.skills.iter().map(move |skill| IndexedSkill {
-            entry_path: skill.entry_path.clone(),
-            plugin: Some((*plugin).to_owned()),
-            name: skill.name.clone(),
-            shipped: admitted.contains(skill.entry_path.as_path()),
-        })
-    }));
-    let calls = CallContext {
-        skills: SkillSource::ready(&skills),
-        render: &render,
-        target: spec.name,
-        implicit: true,
-        warnings: RefCell::new(Vec::new()),
-    };
-    for (plugin, group) in inputs.groups {
-        let admitted = group.admitted(spec);
-        if admitted.is_empty() {
-            continue;
-        }
-        let plugin_base = base.join(spec.packs).join(*plugin);
-        // The shim's only job is finding this plugin's own launcher asset at
-        // `inputs.config.shim_target`, so it can exist at all only where that
-        // asset does. A plugin that never declares one (every plugin in the
-        // repo-root vault, today) gets `None` here regardless of root — this
-        // stays invisible to a build that has no use for it, which is what
-        // keeps existing plugins that never declare a shim target unchanged. Whether a given
-        // root actually emits the shim for a given skill is a second,
-        // per-skill decision inside `render_skill`: `spec.cli_invocation`
-        // gates it by harness, and the skill's own compiled body gates it by
-        // whether that skill calls the CLI at all.
-        let shim_target = inputs
-            .assets
-            .get(plugin)
-            .is_some_and(|assets| assets.iter().any(|a| a.dest == inputs.config.shim_target))
-            .then_some(inputs.config.shim_target.as_str());
-        let siblings: BTreeSet<&str> = group.skills.iter().map(|s| s.name.as_str()).collect();
-        for skill in &admitted.skills {
-            render_skill(
-                vfs,
-                inputs.vault_root,
-                &plugin_base,
-                spec,
-                SkillMember {
-                    plugin,
-                    skill,
-                    siblings: &siblings,
-                    calls: &calls,
-                },
-                inputs.ns,
-                shim_target,
-            )?;
-        }
-        for command in &admitted.commands {
-            render_command_for_root(
-                vfs,
-                inputs.vault_root,
-                &plugin_base,
-                spec,
-                command,
-                &calls,
-                inputs.ns,
-            )?;
-        }
-        let wrote_hooks = render_hooks_for_root(
-            vfs,
-            &plugin_base,
-            spec,
-            &admitted.hooks,
-            inputs.hook_files.get(*plugin),
-            inputs.ns,
-        )?;
-        for asset in inputs.assets.get(plugin).into_iter().flatten() {
-            render_asset(vfs, &plugin_base, asset)?;
-        }
-        let manifest = plugin_manifest(spec, plugin, &admitted.skills, inputs.config, wrote_hooks);
-        write_rendered(
-            vfs,
-            &plugin_base.join(spec.plugin_manifest),
-            manifest.as_bytes(),
-            false,
-        )?;
-    }
-    if let Some(path) = spec.marketplace_manifest {
-        let manifest = marketplace_manifest(spec, inputs.groups, inputs.name, inputs.config);
-        write_rendered(vfs, &base.join(path), manifest.as_bytes(), false)?;
-    }
-    Ok(calls.warnings.into_inner())
-}
-
-/// One skill as a pack renders it: the plugin it ships in, and how its
-/// calls render on this root.
-struct SkillMember<'a> {
-    plugin: &'a str,
-    skill: &'a DiscoveredComponent,
-    /// Every skill name in `plugin`, narrowed or not: the names a
-    /// `${CLAUDE_PLUGIN_ROOT}/skills/<name>` path may address.
-    siblings: &'a BTreeSet<&'a str>,
-    calls: &'a CallContext<'a>,
-}
-
-/// One skill into one root: read, compile, stamp provenance, project through
-/// the root's runtime, and land the files under `skills/<name>/`.
-///
-/// `shim_target` is the caller's answer to "does this plugin ship a launcher
-/// asset, and where" — `Some(dest)` is the fact [`CliInvocation::SkillRelativeShim`]
-/// needs to rewrite a `${CLAUDE_PLUGIN_ROOT}/<shim_target>` call site at all.
-/// Threading it down rather than re-deriving it per skill keeps that question
-/// asked exactly once per plugin per root. Whether *this* skill ends up with
-/// the `scripts/sdlc` file is decided below, per skill: only a root configured
-/// for the rewrite, and only a skill whose compiled body actually contained a
-/// call site to rewrite.
-fn render_skill(
-    vfs: &dyn Vfs,
-    vault_root: &Path,
-    plugin_base: &Path,
-    spec: &RootSpec,
-    member: SkillMember<'_>,
-    ns: &Namespace,
-    shim_target: Option<&str>,
-) -> Result<(), CoreError> {
-    let skill = member.skill;
-    let published = published_skill_name(spec.naming, member.plugin, &skill.name)?;
-    let note = read_vault_skill(vfs, &skill.entry_path, ns)?;
-    let mut projection = note.projection;
-    projection.content.name = published.clone();
-    // Every root this function renders through is a skill layout — see the
-    // module doc — so no kind gate is needed the way `publish::publish_onto`
-    // has one for a command.
-    projection
-        .content
-        .apply_arguments(&note.frontmatter.arguments);
-    compile_projection(
-        vfs,
-        &CompileSource {
-            vault_root,
-            entry_path: &skill.entry_path,
-            bundle_root: skill.bundle_root.as_deref(),
-            skill_name: &skill.name,
-            calls: Some(member.calls),
-        },
-        &mut projection,
-    )?;
-    // The vault writes every CLI call site as `${CLAUDE_PLUGIN_ROOT}/<shim_target>`
-    // — right for Claude, which substitutes that token itself, but dead text
-    // for a root whose harness has no such substitution (see
-    // `CliInvocation`). `used_shim` is whether this skill's own body actually
-    // contained the call site: it is what decides, below, whether this skill
-    // gets the `scripts/sdlc` shim file at all — a Codex/Cursor skill that
-    // never calls the CLI has nothing for the shim to serve.
-    let mut used_shim = false;
-    if spec.cli_invocation == CliInvocation::SkillRelativeShim
-        && let Some(target) = shim_target
-    {
-        let (rewritten, rewrote) = rewrite_cli_invocation(&projection.content.body, target);
-        projection.content.body = rewritten;
-        used_shim = rewrote;
-    }
-    if spec.naming == SkillNaming::PluginPrefixed {
-        projection.content.body =
-            rewrite_sibling_paths(&projection.content.body, member.plugin, member.siblings);
-    }
-    // The provenance marker, after compilation (and the CLI-invocation
-    // rewrite above) so the validator has already ruled on the body it
-    // annotates. A comment, so every harness ignores it.
-    projection.content.body = format!(
-        "{GENERATED_MARKER}{}; do not edit. -->\n\n{}",
-        skill.vault_relative_path, projection.content.body
-    );
-
-    let files = project_skill(&projection, &[spec.runtime.to_owned()], ns)?;
-    let strip = format!("{}/{published}/", spec.projection_prefix);
-    for file in files {
-        let relative = file.relative_path.strip_prefix(&strip).ok_or_else(|| {
-            CoreError::Projection(format!(
-                "{}: `{}` did not land under `{strip}` — the {} projection moved its layout",
-                skill.name, file.relative_path, spec.runtime
-            ))
-        })?;
-        let destination = plugin_base.join("skills").join(&published).join(relative);
-        write_rendered(vfs, &destination, &file.content, file.executable)?;
-    }
-    // Emitted only where the rewrite above actually happened: a root not
-    // configured for `SkillRelativeShim` (Claude) never needs the shim at
-    // all, and a skill whose body never called the CLI has nothing pointing
-    // at it either way. `used_shim` implies `shim_target` was `Some` — the
-    // rewrite above only sets it inside that branch.
-    if used_shim {
-        let target = shim_target.expect("used_shim is only set when shim_target is Some");
-        write_rendered(
-            vfs,
-            &plugin_base
-                .join("skills")
-                .join(&published)
-                .join(SHIM_RELATIVE_PATH),
-            sdlc_shim_script(target).as_bytes(),
-            true,
-        )?;
-    }
-    Ok(())
-}
-
-/// Rewrites every literal `${CLAUDE_PLUGIN_ROOT}/<shim_target>` call site in
-/// a compiled skill body to [`SHIM_RELATIVE_PATH`], for a root whose harness
-/// has no `${CLAUDE_PLUGIN_ROOT}` substitution of its own (see
-/// [`CliInvocation::SkillRelativeShim`]). Returns the rewritten body and
-/// whether any rewrite happened — the signal [`render_skill`] uses to decide
-/// whether this skill needs the shim file at all.
-///
-/// A match only counts when the character right after `shim_target` cannot
-/// continue the same path or filename — so `${CLAUDE_PLUGIN_ROOT}/cli/sdlc.js`
-/// (the bundled entry the launcher itself execs, a real citation in some
-/// skill prose) is left untouched rather than truncated into
-/// `scripts/sdlc.js`, which names no file this render ever writes.
-fn rewrite_cli_invocation(body: &str, shim_target: &str) -> (String, bool) {
-    let needle = format!("${{CLAUDE_PLUGIN_ROOT}}/{shim_target}");
-    crate::text::replace_bounded(body, &needle, SHIM_RELATIVE_PATH, |c| {
-        c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '/')
-    })
-}
-
-/// Rewrites `${CLAUDE_PLUGIN_ROOT}/skills/<name>` to
-/// `${CLAUDE_PLUGIN_ROOT}/skills/<plugin>-<name>` for each `<name>` in
-/// `siblings`, so a body that addresses a skill's files through the plugin
-/// root still finds them under [`SkillNaming::PluginPrefixed`]. Any other
-/// name, and any `skills/` path not after the token, is left alone.
-fn rewrite_sibling_paths(body: &str, plugin: &str, siblings: &BTreeSet<&str>) -> String {
-    const NEEDLE: &str = "${CLAUDE_PLUGIN_ROOT}/skills/";
-    let mut out = String::with_capacity(body.len());
-    let mut rest = body;
-    while let Some(offset) = rest.find(NEEDLE) {
-        let (head, tail) = rest.split_at(offset + NEEDLE.len());
-        out.push_str(head);
-        let end = tail
-            .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_')))
-            .unwrap_or(tail.len());
-        if siblings.contains(&tail[..end]) {
-            out.push_str(plugin);
-            out.push('-');
-        }
-        rest = tail;
-    }
-    out.push_str(rest);
-    out
-}
-
-/// Would `asset` write the file at `manifest` (relative to the pack root)?
-/// A file asset does when its `dest` is that path; a directory asset does
-/// when its tree holds the file at the matching place.
-fn asset_covers(vfs: &dyn Vfs, asset: &AssetSpec, manifest: &str) -> bool {
-    let dest: PathBuf = Path::new(&asset.dest)
-        .components()
-        .filter(|c| !matches!(c, std::path::Component::CurDir))
-        .collect();
-    let Ok(rest) = Path::new(manifest).strip_prefix(&dest) else {
-        return false;
-    };
-    if rest.as_os_str().is_empty() {
-        return true;
-    }
-    is_directory(vfs, &asset.source) && vfs.exists(&asset.source.join(rest))
-}
-
-/// Is `dest` a plain relative path with no `..` component and no root/prefix
-/// (an absolute Unix path, or a Windows drive/UNC prefix)? `AssetSpec::dest`
-/// is documented as "relative, forward-slashed," but nothing enforced that
-/// promise before [`render_asset`] joins it onto `plugin_base` — `PathBuf::join`
-/// silently honors both an absolute replacement and a lexical `..` escape.
-/// Called from the build's up-front per-asset validation loop (alongside the
-/// `unknown-asset-plugin` check), so an unsafe `dest` refuses the whole build
-/// before anything is written, rather than failing partway through a render.
-fn asset_dest_is_relative(dest: &str) -> bool {
-    use std::path::Component;
-    Path::new(dest)
-        .components()
-        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
-}
-
-/// One asset into one plugin's root: read the source verbatim, from wherever
-/// it lives on the host filesystem, and land it at its declared destination.
-/// A directory source lands file by file, each at its own path under `dest`,
-/// with [`EXCLUDED_BUNDLE_DIRECTORIES`] pruned at every depth — the same
-/// dev-only-fixture rule a skill's bundle sweep follows — and every file
-/// named `*.test.*` skipped, so a shared tree of reference docs does not carry
-/// its own test suite into the build, whether that suite sits in a `tests/`
-/// directory or beside the code it tests.
-///
-/// Unlike a skill or a bundle resource, an asset is never compiled: it is not
-/// a vault note, and its whole point is to ship exactly the bytes on disk —
-/// a binary launcher or a wasm artifact has no Obsidian syntax to resolve.
-/// `asset.dest` is validated relative/traversal-free by
-/// [`asset_dest_is_relative`] before any asset ever reaches this function
-/// (the build's up-front per-asset loop), so the `plugin_base.join` below is
-/// safe by construction, not by convention.
-fn render_asset(vfs: &dyn Vfs, plugin_base: &Path, asset: &AssetSpec) -> Result<(), CoreError> {
-    let dest = plugin_base.join(&asset.dest);
-    if !is_directory(vfs, &asset.source) {
-        return copy_verbatim(vfs, &asset.source, &dest);
-    }
-    for source in walk_files(vfs, &asset.source, EXCLUDED_BUNDLE_DIRECTORIES)? {
-        if is_test_file(&source) {
-            continue;
-        }
-        let relative = source.strip_prefix(&asset.source).map_err(|_| {
-            CoreError::Projection(format!(
-                "asset walk under `{}` yielded `{}`, outside it",
-                asset.source.display(),
-                source.display()
-            ))
-        })?;
-        copy_verbatim(vfs, &source, &dest.join(relative))?;
-    }
-    Ok(())
-}
-
-/// Is this a co-located test file (`<name>.test.<ext>`)? The file-level half
-/// of a directory asset's dev-only exclude; see [`render_asset`].
-fn is_test_file(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|name| name.to_string_lossy().contains(".test."))
-}
-
-/// One file's bytes and execute bit, from `source` to `dest`.
-fn copy_verbatim(vfs: &dyn Vfs, source: &Path, dest: &Path) -> Result<(), CoreError> {
-    let bytes = vfs.read_file(source)?;
-    let executable = vfs.is_executable(source);
-    write_rendered(vfs, dest, &bytes, executable)
-}
-
-/// Is `path` a directory? Asked of its parent's listing, the one directory
-/// signal every [`Vfs`] reports the same way — a symlinked directory reads as
-/// a non-directory there, so it is copied as a file (and fails loudly on
-/// read) rather than walked out of the tree it appears to sit in.
-fn is_directory(vfs: &dyn Vfs, path: &Path) -> bool {
-    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
-        return false;
-    };
-    let name = name.to_string_lossy();
-    vfs.read_dir(parent)
-        .is_ok_and(|entries| entries.iter().any(|e| e.is_dir && e.name == name))
-}
-
-/// The per-skill `scripts/sdlc` shim: a parent-walk from its own directory
-/// looking for `shim_target` — the plugin-level launcher asset, from
-/// [`MarketplaceConfig::shim_target`] — falling back to `sdlc` on `PATH`.
-/// POSIX `sh`, not `bash`: this ships only inside a skill whose rendered body
-/// [`rewrite_cli_invocation`] actually rewrote (see [`render_skill`]), and the
-/// plugin's own `cli/sdlc` launcher is the one script here that already
-/// commits to bash (it needs `BASH_SOURCE` to resolve a symlink chain); this
-/// one does not need that, so it stays to the smaller shell.
-fn sdlc_shim_script(shim_target: &str) -> String {
-    format!(
-        "#!/bin/sh\n\
-# sdlc — per-skill shim. GENERATED by skillwright; do not edit.\n\
-#\n\
-# Walks up from this script's own directory looking for {shim_target} — the\n\
-# plugin-level launcher asset — and runs it. Falls back to `sdlc` on PATH\n\
-# when no such ancestor is found (a skill copied out of the plugin, or a\n\
-# harness that doesn't lay out {shim_target} where this build put it).\n\
-#\n\
-# This skill's own body calls this shim directly: its harness has no\n\
-# `${{CLAUDE_PLUGIN_ROOT}}` substitution of its own, so every\n\
-# `${{CLAUDE_PLUGIN_ROOT}}/{shim_target}` call site the vault wrote was\n\
-# rewritten to this skill-relative path at render time. Claude Code does\n\
-# substitute that token, so a Claude skill never gets this file at all.\n\
-set -eu\n\
-\n\
-dir=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n\
-while [ \"$dir\" != \"/\" ]; do\n\
-  if [ -x \"$dir/{shim_target}\" ]; then\n\
-    exec \"$dir/{shim_target}\" \"$@\"\n\
-  fi\n\
-  dir=$(dirname -- \"$dir\")\n\
-done\n\
-\n\
-exec sdlc \"$@\"\n\
-"
-    )
-}
-
-/// One command into one root: read, compile, stamp provenance, project
-/// through the root's runtime, and land the one file under `commands/`.
-///
-/// The peer of [`render_skill`], called only for a root whose
-/// [`crate::publish::plugin_format_carries_commands`] is `true` —
-/// [`render_roots`] never calls this for a root that has no place for one.
-///
-/// # Errors
-///
-/// `refused: no-renderer` if the command note carries peer resources — the
-/// same hazard [`crate::publish::publish_skill`] refuses a standalone command
-/// publish for: a command's projection is one file, with nowhere for a peer
-/// to travel.
-fn render_command_for_root(
-    vfs: &dyn Vfs,
-    vault_root: &Path,
-    plugin_base: &Path,
-    spec: &RootSpec,
-    command: &DiscoveredComponent,
-    calls: &CallContext<'_>,
-    ns: &Namespace,
-) -> Result<(), CoreError> {
-    let note = read_vault_skill(vfs, &command.entry_path, ns)?;
-    let mut projection = note.projection;
-    projection
-        .content
-        .apply_arguments(&note.frontmatter.arguments);
-    compile_projection(
-        vfs,
-        &CompileSource {
-            vault_root,
-            entry_path: &command.entry_path,
-            bundle_root: command.bundle_root.as_deref(),
-            skill_name: &command.name,
-            calls: Some(calls),
-        },
-        &mut projection,
-    )?;
-    // After the compile, not before: compiling resolves the body's `[[links]]`
-    // and `![[embeds]]` and adds what they reach to `projection.resources`. A
-    // check that ran first would see only the bundle-seeded peers and pass a
-    // command whose body embeds a file from elsewhere in the vault — which
-    // `project_command` then has nowhere to put.
-    crate::publish::refuse_carried_peers(&projection, "command")?;
-    projection.content.body = format!(
-        "{GENERATED_MARKER}{}; do not edit. -->\n\n{}",
-        command.vault_relative_path, projection.content.body
-    );
-
-    // A command projects to exactly one file, `<commands_dir>/<slug>.ext` —
-    // no per-skill subdirectory to strip a prefix down to, so the file's own
-    // name is all that travels onto `commands/`.
-    let files = project_command(&projection, &[spec.runtime.to_owned()], ns, None)?;
-    for file in files {
-        let filename = Path::new(&file.relative_path).file_name().ok_or_else(|| {
-            CoreError::Projection(format!(
-                "{}: `{}` names no file — the {} projection moved its layout",
-                command.name, file.relative_path, spec.runtime
-            ))
-        })?;
-        let destination = plugin_base.join("commands").join(filename);
-        write_rendered(vfs, &destination, &file.content, file.executable)?;
-    }
-    Ok(())
-}
-
-/// A plugin's hooks into one root: every hook note read and projected, plus
-/// the hooks from the plugin's canonical file this root carries, each
-/// localized for this root ([`crate::hooks_file::localize`]; notes are not),
-/// written as
-/// the single `hooks/hooks.json` the plugin format defines. Returns whether
-/// that file was written.
-///
-/// Not the peer of [`render_skill`] and [`render_command_for_root`] in shape,
-/// because a hook is not a file: a harness reads one hooks document per
-/// plugin, so the members render together or the second one overwrites the
-/// first. No hooks to write means no hooks file; the gap report is still
-/// written (see [`crate::hooks_file`]).
-///
-/// # No provenance marker, and no transclusion
-///
-/// The marker every emitted `SKILL.md` opens with is an HTML comment, and a
-/// hook's body is a shell script or a prompt inside a JSON string. Prepending
-/// a comment to it would change what runs. For the same reason the body is
-/// taken verbatim rather than through [`compile_projection`]: a `![[embed]]`
-/// expanded into a script is a rewrite of the thing being executed.
-///
-/// # Errors
-///
-/// `refused: no-renderer` if a hook note carries peer resources — the same
-/// hazard a command publish refuses, and for the same reason: the hooks
-/// document is one file, with nowhere for a peer to travel. Everything
-/// [`to_adapt_hook`] and [`project_plugin_hooks`] refuse, unchanged — among
-/// them a hook *note* this root cannot carry, which stops the build rather
-/// than writing a partial hooks file. The one exception is a note with no
-/// `sw-targets` that another hooks-carrying root does carry: it is left off
-/// this root, the way `sw-targets` would narrow it. A canonical file's
-/// uncarried hooks are not a refusal; see [`crate::hooks_file`].
-fn render_hooks_for_root(
-    vfs: &dyn Vfs,
-    plugin_base: &Path,
-    spec: &RootSpec,
-    hooks: &[&DiscoveredComponent],
-    file: Option<&HookFile>,
-    ns: &Namespace,
-) -> Result<bool, CoreError> {
-    let runtime = parse_runtime_target(spec.runtime)?;
-    let mut rendered = Vec::with_capacity(hooks.len());
-    for hook in hooks {
-        let note = read_vault_skill(vfs, &hook.entry_path, ns)?;
-        crate::publish::refuse_carried_peers(&note.projection, "hook")?;
-        let adapted = to_adapt_hook(&note.projection, Some(spec.name))?;
-        if hook.targets.is_none()
-            && agent_adapt::render::hook_refusal(&adapted, runtime).is_some()
-            && carried_elsewhere(&note.projection, spec)?
-        {
-            continue;
-        }
-        rendered.push(adapted);
-    }
-    if let Some(file) = file {
-        write_rendered(
-            vfs,
-            &plugin_base.join(crate::hooks_file::GAP_REPORT_PATH),
-            file.gap_report.as_bytes(),
-            false,
-        )?;
-        if crate::publish::plugin_format_carries_hooks(spec.name) {
-            let var = spec.plugin_root_var.map(|var| var.name);
-            rendered.extend(
-                crate::hooks_file::carried_hooks(&file.hooks, runtime)
-                    .into_iter()
-                    .map(|hook| crate::hooks_file::localize(hook, spec.name, var)),
-            );
-        }
-    }
-    let Some(bytes) = project_plugin_hooks(&rendered, spec.runtime)? else {
-        return Ok(false);
-    };
-    write_rendered(
-        vfs,
-        &plugin_base.join(crate::publish::PLUGIN_HOOKS_PATH),
-        &bytes,
-        false,
-    )?;
-    Ok(true)
-}
-
-/// The plugins a build holds, for a refusal that names a missing one.
-fn plugin_list(groups: &BTreeMap<&str, PluginGroup<'_>>) -> String {
-    if groups.is_empty() {
-        return "no plugins".to_owned();
-    }
-    groups
-        .keys()
-        .map(|k| format!("`{k}`"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// Does some hooks-carrying root other than `spec` carry this hook note?
-/// Every root counts, selected or not, so the answer does not depend on what a
-/// build selects.
-fn carried_elsewhere(
-    projection: &crate::content::SkillProjection,
-    spec: &RootSpec,
-) -> Result<bool, CoreError> {
-    for other in ROOTS {
-        if other.name == spec.name || !crate::publish::plugin_format_carries_hooks(other.name) {
-            continue;
-        }
-        let hook = to_adapt_hook(projection, Some(other.name))?;
-        let runtime = parse_runtime_target(other.runtime)?;
-        if agent_adapt::render::hook_refusal(&hook, runtime).is_none() {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-/// One plugin's canonical hooks file, parsed, and the gap report every one of
-/// its packs carries.
-struct HookFile {
-    hooks: Vec<agent_adapt::Hook>,
-    gap_report: String,
-}
-
-/// Every [`HookFileSpec`], read and parsed, keyed by plugin.
-///
-/// The gap report covers every harness this build supports, not only the
-/// selected ones, so it is the same bytes whatever a build selects. A
-/// harness's `file` is set only when its pack carries some of the file's
-/// hooks: the format carries hooks, the root admits the plugin, and at least
-/// one hook is carried.
-///
-/// # Errors
-///
-/// * `refused: unknown-hooks-plugin` — the plugin holds no skill, command or
-///   hook, so there is no pack to carry the file.
-/// * `refused: duplicate-hooks-file` — two files for one plugin.
-/// * What [`crate::hooks_file::parse_hooks_file`] refuses, and a read failure.
-fn load_hook_files(
-    vfs: &dyn Vfs,
-    specs: &[HookFileSpec],
-    groups: &BTreeMap<&str, PluginGroup<'_>>,
-    config: &MarketplaceConfig,
-) -> Result<BTreeMap<String, HookFile>, CoreError> {
-    let mut out = BTreeMap::new();
-    for spec in specs {
-        let plugin = spec
-            .plugin
-            .as_deref()
-            .unwrap_or(config.default_plugin.as_str());
-        let Some(group) = groups.get(plugin) else {
-            return Err(CoreError::refused(
-                "unknown-hooks-plugin",
-                format!(
-                    "hooks file `{}` names plugin `{plugin}`, which this build holds no skill, \
-                     command or hook for — this vault publishes {}. Nothing was written",
-                    spec.from,
-                    plugin_list(groups),
-                ),
-            ));
-        };
-        if out.contains_key(plugin) {
-            return Err(CoreError::refused(
-                "duplicate-hooks-file",
-                format!(
-                    "plugin `{plugin}` has more than one hooks file; `{}` is the second. Merge \
-                     them into one. Nothing was written",
-                    spec.from
-                ),
-            ));
-        }
-        let bytes = vfs.read_file(&spec.source)?;
-        let text = String::from_utf8(bytes).map_err(|_| {
-            CoreError::refused("malformed-hooks-file", format!("{}: not UTF-8", spec.from))
-        })?;
-        let hooks = crate::hooks_file::parse_hooks_file(&text, &spec.from)?;
-        let harnesses = ROOTS
-            .iter()
-            .map(|root| {
-                let runtime = parse_runtime_target(root.runtime)?;
-                let carries = crate::publish::plugin_format_carries_hooks(root.name)
-                    && !group.admitted(root).is_empty()
-                    && !crate::hooks_file::carried_hooks(&hooks, runtime).is_empty();
-                Ok(crate::hooks_file::GapHarness {
-                    name: root.name,
-                    runtime,
-                    plugin_root_var: root.plugin_root_var,
-                    file: carries.then_some(crate::publish::PLUGIN_HOOKS_PATH),
-                })
-            })
-            .collect::<Result<Vec<_>, CoreError>>()?;
-        let gap_report = crate::hooks_file::render_gap_report(&spec.from, &hooks, &harnesses);
-        out.insert(plugin.to_owned(), HookFile { hooks, gap_report });
-    }
-    Ok(out)
-}
-
-/// One rendered file: parents created, bytes written, the execute bit set
-/// *both* ways — a stale bit at the destination must not survive into the
-/// captured render, and the overlay inherits the bit underneath on a rewrite.
-fn write_rendered(
-    vfs: &dyn Vfs,
-    path: &Path,
-    bytes: &[u8],
-    executable: bool,
-) -> Result<(), CoreError> {
-    if let Some(parent) = path.parent() {
-        vfs.create_dir_all(parent)?;
-    }
-    vfs.write_file(path, bytes)?;
-    if vfs.is_executable(path) != executable {
-        vfs.set_executable(path, executable)?;
-    }
-    Ok(())
-}
-
-/// One root's captured render, keyed by where each file lands inside it.
-///
-/// [`render_root`] writes nothing outside `base`, so every path strips. A
-/// path that does not is a bug in the renderer, and it is refused here rather
-/// than carried through under its full spelling: that spelling is absolute,
-/// and `Path::join` with an absolute argument discards the base it is joined
-/// to, so [`commit`] would stage it *outside* the stage and outside the
-/// marketplace directory. A renderer bug must not become a write to an
-/// arbitrary path.
-fn root_relative(
-    base: &Path,
-    writes: BTreeMap<PathBuf, PreviewWrite>,
-) -> Result<BTreeMap<String, PreviewWrite>, CoreError> {
-    writes
-        .into_iter()
-        .map(|(path, write)| {
-            let relative = path.strip_prefix(base).map_err(|_| {
-                CoreError::refused(
-                    "render-escaped-root",
-                    format!(
-                        "the render produced `{}`, which is not inside `{}` — \
-                         that is a bug in this crate, and nothing was written",
-                        path.display(),
-                        base.display()
-                    ),
-                )
-            })?;
-            Ok((forward_slashed(relative), write))
-        })
-        .collect()
 }
 
 // --- Comparison --------------------------------------------------------------
@@ -2316,7 +798,11 @@ struct DestState {
 /// leaves alone. It matters most where a root shares its directory with
 /// things that are not marketplace — at a repository root, walking the whole
 /// base would read `.git` as drift and rewrite it on every build.
-fn scan_destination(vfs: &dyn Vfs, base: &Path, spec: &RootSpec) -> Result<DestState, CoreError> {
+fn scan_destination(
+    vfs: &dyn Vfs,
+    base: &Path,
+    spec: &HarnessProfile,
+) -> Result<DestState, CoreError> {
     let mut state = DestState::default();
     let tree = base.join(spec.tree());
     if vfs.exists(&tree) {
@@ -2331,7 +817,7 @@ fn scan_destination(vfs: &dyn Vfs, base: &Path, spec: &RootSpec) -> Result<DestS
             walk_destination(vfs, base, &tree, &mut state)?;
         }
     }
-    let packs = base.join(spec.packs);
+    let packs = base.join(spec.format().packs);
     if vfs.exists(&packs) {
         let mut entries = vfs.read_dir(&packs)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
@@ -2387,7 +873,7 @@ struct DestTree<'v> {
 }
 
 impl<'v> DestTree<'v> {
-    fn scan(vfs: &'v dyn Vfs, base: PathBuf, spec: &RootSpec) -> Result<Self, CoreError> {
+    fn scan(vfs: &'v dyn Vfs, base: PathBuf, spec: &HarnessProfile) -> Result<Self, CoreError> {
         let state = scan_destination(vfs, &base, spec)?;
         Ok(Self { vfs, base, state })
     }
@@ -2514,19 +1000,25 @@ struct PluginSlice<'a> {
 
 /// Which plugins this root carries, and how many skills each contributes.
 ///
-/// Admission folds all three kinds, exactly as [`render_root`] folds them —
+/// Admission folds all three kinds through the translator's own `admits` —
 /// the same call, so the diff cannot admit a plugin the render left out. The
 /// count stays skills-only because that is what [`ExportUnit::Plugin`]'s
 /// `skills` reports.
-fn admitted_plugins<'a>(
-    spec: &RootSpec,
-    groups: &BTreeMap<&'a str, PluginGroup<'_>>,
-) -> BTreeMap<&'a str, usize> {
-    groups
+fn admitted_plugins<'m>(
+    translator: &dyn HarnessTranslator,
+    market: &'m Marketplace,
+) -> BTreeMap<&'m str, usize> {
+    market
+        .plugins
         .iter()
-        .filter_map(|(plugin, group)| {
-            let admitted = group.admitted(spec);
-            (!admitted.is_empty()).then_some((*plugin, admitted.skills.len()))
+        .filter_map(|(name, plugin)| {
+            let carried = plugin.components().any(|c| translator.admits(c));
+            let skills = plugin
+                .skills
+                .iter()
+                .filter(|c| translator.admits(c))
+                .count();
+            carried.then_some((name.as_str(), skills))
         })
         .collect()
 }
@@ -2540,7 +1032,7 @@ fn admitted_plugins<'a>(
 /// is a prefix query rather than a set membership.
 fn describe_root(
     dest: &DestTree<'_>,
-    spec: &RootSpec,
+    spec: &HarnessProfile,
     admitted: &BTreeMap<&str, usize>,
     rendered: &BTreeMap<String, PreviewWrite>,
     sets: &FileSets,
@@ -2619,7 +1111,7 @@ fn describe_root(
         });
     }
 
-    if let Some(manifest) = spec.marketplace_manifest {
+    if let Some(manifest) = spec.format().marketplace_manifest {
         units.push(ExportUnit::Manifest {
             root: spec.name.to_owned(),
             status: if sets.same.contains(manifest) {
@@ -2633,7 +1125,7 @@ fn describe_root(
     for name in &stale_plugins {
         units.push(ExportUnit::Stale {
             root: spec.name.to_owned(),
-            path: format!("{}/{name}", spec.packs),
+            path: format!("{}/{name}", spec.format().packs),
             kind: StaleKind::Plugin,
         });
     }
@@ -2666,14 +1158,18 @@ fn describe_root(
 /// `status_of`.
 fn plugin_version_bump(
     dest: &DestTree<'_>,
-    spec: &RootSpec,
+    spec: &HarnessProfile,
     plugin: &str,
     rendered: &BTreeMap<String, PreviewWrite>,
     slice: Option<&PluginSlice<'_>>,
     config: &MarketplaceConfig,
 ) -> Option<VersionBumpSuggestion> {
     let current_version = overrides_for(config, plugin).and_then(|o| o.version.clone())?;
-    let manifest_key = format!("{}/{plugin}/{}", spec.packs, spec.plugin_manifest);
+    let manifest_key = format!(
+        "{}/{plugin}/{}",
+        spec.format().packs,
+        spec.format().plugin_manifest
+    );
     if !rendered.contains_key(&manifest_key) {
         return None;
     }
@@ -2697,18 +1193,17 @@ fn plugin_version_bump(
 fn diff_root(
     vfs: &dyn Vfs,
     out_root: &Path,
-    spec: &RootSpec,
-    groups: &BTreeMap<&str, PluginGroup<'_>>,
+    spec: &HarnessProfile,
+    admitted: &BTreeMap<&str, usize>,
     rendered: &BTreeMap<String, PreviewWrite>,
     config: &MarketplaceConfig,
 ) -> Result<RootDiff, CoreError> {
     let dest = DestTree::scan(vfs, out_root.to_path_buf(), spec)?;
     let sets = dest.compare(rendered);
-    let admitted = admitted_plugins(spec, groups);
     let occupied = vfs.exists(&out_root.join(spec.tree()));
     Ok(RootDiff {
         equal: root_is_equal(&sets, &dest),
-        units: describe_root(&dest, spec, &admitted, rendered, &sets, config),
+        units: describe_root(&dest, spec, admitted, rendered, &sets, config),
         foreign: occupied && !dest.built_here(rendered),
     })
 }
@@ -2716,7 +1211,7 @@ fn diff_root(
 fn commit(
     vfs: &dyn Vfs,
     out_root: &Path,
-    swapping: &[(&RootSpec, &BTreeMap<String, PreviewWrite>)],
+    swapping: &[(&HarnessProfile, &BTreeMap<String, PreviewWrite>)],
 ) -> Result<(), CoreError> {
     let stage = out_root.join(STAGE_DIR);
     // A stage left by a crashed run is dead weight; a fresh build owns the
@@ -2813,7 +1308,7 @@ fn swap_one(
         if vfs.exists(saved) && !vfs.exists(dest) {
             let _ = vfs.rename(saved, dest);
         }
-        return Err(error);
+        return Err(error.into());
     }
     Ok(())
 }
@@ -2832,432 +1327,9 @@ fn roll_back(vfs: &dyn Vfs, swapped: &[(PathBuf, PathBuf)]) -> Result<(), PathBu
     Ok(())
 }
 
-// --- Manifests ---------------------------------------------------------------
-
-/// Two-space indentation, stable key order, one trailing newline — the byte
-/// form both manifests share, and the reason `check` can compare bytes.
-pub(crate) fn stable_json<T: Serialize>(value: &T) -> String {
-    let mut buffer = Vec::new();
-    let formatter = serde_json::ser::PrettyFormatter::with_indent(b"  ");
-    let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
-    value
-        .serialize(&mut serializer)
-        .expect("manifest types serialize infallibly");
-    let mut out = String::from_utf8(buffer).expect("serde_json emits UTF-8");
-    out.push('\n');
-    out
-}
-
-fn overrides_for<'a>(config: &'a MarketplaceConfig, plugin: &str) -> Option<&'a PluginOverrides> {
-    config.plugins.get(plugin)
-}
-
-fn plugin_version(config: &MarketplaceConfig, plugin: &str) -> String {
-    overrides_for(config, plugin)
-        .and_then(|o| o.version.clone())
-        .unwrap_or_else(|| "0.1.0".to_owned())
-}
-
-/// The description names the root's *own* members. A narrowed skill is
-/// absent from the root, so its manifest does not name it.
-fn plugin_description(
-    config: &MarketplaceConfig,
-    plugin: &str,
-    members: &[&DiscoveredComponent],
-) -> String {
-    overrides_for(config, plugin)
-        .and_then(|o| o.description.clone())
-        .unwrap_or_else(|| {
-            let names: Vec<&str> = members.iter().map(|skill| skill.name.as_str()).collect();
-            format!("Skills: {}.", names.join(", "))
-        })
-}
-
-fn plugin_category(config: &MarketplaceConfig, plugin: &str) -> String {
-    overrides_for(config, plugin)
-        .and_then(|o| o.category.clone())
-        .unwrap_or_else(|| "Productivity".to_owned())
-}
-
-fn plugin_license(config: &MarketplaceConfig, plugin: &str) -> String {
-    overrides_for(config, plugin)
-        .and_then(|o| o.license.clone())
-        .or_else(|| config.license.clone())
-        .unwrap_or_else(|| "UNLICENSED".to_owned())
-}
-
-fn plugin_author(config: &MarketplaceConfig, plugin: &str) -> Option<serde_json::Value> {
-    overrides_for(config, plugin)
-        .and_then(|o| o.author.clone())
-        .or_else(|| config.author.clone())
-        .or_else(|| config.owner.clone())
-        .map(normalize_author)
-}
-
-/// Claude's plugin schema requires `author` as `{ name, email? }`, but a
-/// marketplace note may still write `sw-author: <name>` as a bare string.
-/// A string is promoted to `{ "name": <string> }`; anything else (already an
-/// object, or a type the schema does not expect) passes through unchanged.
-/// The one call site both dialects render through, so both get it.
-fn normalize_author(author: serde_json::Value) -> serde_json::Value {
-    match author {
-        serde_json::Value::String(name) => serde_json::json!({ "name": name }),
-        other => other,
-    }
-}
-
-/// Which dialect a pack manifest is rendered in.
-///
-/// Claude, Codex and Cursor differ in one field — Codex carries an
-/// `interface` block and the other two do not. Pi's is a different file
-/// altogether. This is the whole of what a caller outside this module has to
-/// choose between for a *pack* manifest. The marketplace manifests differ
-/// more, and each dialect names its own builder. Field order in the rendered
-/// manifest is fixed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PluginDialect {
-    /// The Claude pack manifest.
-    Claude,
-    /// The Codex pack manifest, with an `interface` block.
-    Codex,
-    /// Cursor's pack manifest is Claude's shape — `name`, `version`,
-    /// `description`, `author`, `license`, `keywords`, `skills`, every one of
-    /// them a documented Cursor Plugin field
-    /// (<https://cursor.com/docs/reference/plugins> retrieved 2026-09-20). It
-    /// is a separate variant because it lands in `.cursor-plugin/` and
-    /// because its marketplace index is its own shape, not because the pack
-    /// manifest differs.
-    Cursor,
-    /// Pi's pack manifest is a `package.json` at the pack root whose
-    /// `pi.skills` points at the pack's `skills/` directory. Pi has no
-    /// marketplace index.
-    Pi,
-}
-
-/// One plugin's pack manifest.
-///
-/// Public because a per-destination plugin publish ([`crate::publish`]) emits
-/// the same file into a different tree. Rendering it twice would be two
-/// answers to "what is a pack manifest", and the first divergence between them
-/// would be invisible until a runtime rejected one of the two.
-///
-/// `hooks` is the manifest's `hooks` entry, written as given; `None` writes
-/// none.
-pub fn render_plugin_manifest(
-    dialect: PluginDialect,
-    plugin: &str,
-    members: &[&DiscoveredComponent],
-    config: &MarketplaceConfig,
-    hooks: Option<&str>,
-) -> String {
-    if dialect == PluginDialect::Pi {
-        return pi_package_manifest(plugin, members, config);
-    }
-    #[derive(Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Interface {
-        display_name: String,
-        category: String,
-    }
-    #[derive(Serialize)]
-    struct Manifest<'a> {
-        name: String,
-        version: String,
-        description: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        author: Option<serde_json::Value>,
-        license: String,
-        keywords: Vec<String>,
-        skills: &'static str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        hooks: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        interface: Option<Interface>,
-    }
-    let interface = (dialect == PluginDialect::Codex).then(|| Interface {
-        display_name: overrides_for(config, plugin)
-            .and_then(|o| o.display_name.clone())
-            .unwrap_or_else(|| plugin.to_owned()),
-        category: plugin_category(config, plugin),
-    });
-    stable_json(&Manifest {
-        name: plugin.to_owned(),
-        version: plugin_version(config, plugin),
-        description: plugin_description(config, plugin, members),
-        author: plugin_author(config, plugin),
-        license: plugin_license(config, plugin),
-        keywords: overrides_for(config, plugin)
-            .and_then(|o| o.keywords.clone())
-            .unwrap_or_default(),
-        skills: "./skills/",
-        hooks,
-        interface,
-    })
-}
-
-/// Pi's pack manifest: a `package.json` naming the pack's `skills/`
-/// directory. Pi itself needs only `pi.skills`; `name`, `version`,
-/// `description`, `author` and `license` are the same fields the other
-/// dialects carry, in their npm places.
-fn pi_package_manifest(
-    plugin: &str,
-    members: &[&DiscoveredComponent],
-    config: &MarketplaceConfig,
-) -> String {
-    #[derive(Serialize)]
-    struct Pi {
-        skills: [&'static str; 1],
-    }
-    #[derive(Serialize)]
-    struct Manifest {
-        name: String,
-        version: String,
-        description: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        author: Option<serde_json::Value>,
-        license: String,
-        pi: Pi,
-    }
-    stable_json(&Manifest {
-        name: plugin.to_owned(),
-        version: plugin_version(config, plugin),
-        description: plugin_description(config, plugin, members),
-        author: plugin_author(config, plugin),
-        license: plugin_license(config, plugin),
-        pi: Pi {
-            skills: ["./skills"],
-        },
-    })
-}
-
-/// The build's own call, choosing the dialect from the root it is rendering.
-fn plugin_manifest(
-    spec: &RootSpec,
-    plugin: &str,
-    members: &[&DiscoveredComponent],
-    config: &MarketplaceConfig,
-    wrote_hooks: bool,
-) -> String {
-    let hooks = spec.hooks_manifest_entry.filter(|_| wrote_hooks);
-    render_plugin_manifest(spec.dialect, plugin, members, config, hooks)
-}
-
-/// One root's marketplace manifest, listing only the plugins that root
-/// carries, in name order. Called only for a root that names one.
-fn marketplace_manifest(
-    spec: &RootSpec,
-    groups: &BTreeMap<&str, PluginGroup<'_>>,
-    name: &str,
-    config: &MarketplaceConfig,
-) -> String {
-    // A plugin is listed here on any count — a commands-only or hooks-only
-    // plugin (no skills at all) still needs an index entry, or nothing could
-    // ever install it. `plugin_description`'s `Skills: …` wording still reads
-    // the skills list alone; such a plugin gets an empty one rather than a
-    // name this function has no way to describe instead.
-    let listed: Vec<(&str, Vec<&DiscoveredComponent>)> = groups
-        .iter()
-        .filter_map(|(plugin, group)| {
-            let admitted = group.admitted(spec);
-            (!admitted.is_empty()).then_some((*plugin, admitted.skills))
-        })
-        .collect();
-
-    match spec.dialect {
-        PluginDialect::Codex => codex_marketplace_manifest(&listed, spec.packs, name, config),
-        PluginDialect::Claude => claude_marketplace_manifest(&listed, spec.packs, name, config),
-        PluginDialect::Cursor => cursor_marketplace_manifest(&listed, spec.packs, name, config),
-        PluginDialect::Pi => unreachable!("the pi root names no marketplace manifest"),
-    }
-}
-
-/// Codex's index: a `interface.displayName` beside the name, and an entry
-/// carrying an installation policy rather than a description and a version.
-fn codex_marketplace_manifest(
-    listed: &[(&str, Vec<&DiscoveredComponent>)],
-    packs: &str,
-    name: &str,
-    config: &MarketplaceConfig,
-) -> String {
-    {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Interface {
-            display_name: String,
-        }
-        #[derive(Serialize)]
-        struct Source {
-            source: &'static str,
-            path: String,
-        }
-        #[derive(Serialize)]
-        struct Policy {
-            installation: &'static str,
-            authentication: &'static str,
-        }
-        #[derive(Serialize)]
-        struct Entry {
-            name: String,
-            source: Source,
-            policy: Policy,
-            category: String,
-        }
-        #[derive(Serialize)]
-        struct Manifest {
-            name: String,
-            interface: Interface,
-            plugins: Vec<Entry>,
-        }
-        stable_json(&Manifest {
-            name: name.to_owned(),
-            interface: Interface {
-                display_name: config
-                    .display_name
-                    .clone()
-                    .unwrap_or_else(|| name.to_owned()),
-            },
-            plugins: listed
-                .iter()
-                .map(|(plugin, _)| Entry {
-                    name: (*plugin).to_owned(),
-                    source: Source {
-                        source: "local",
-                        path: format!("./{packs}/{plugin}"),
-                    },
-                    policy: Policy {
-                        installation: "AVAILABLE",
-                        authentication: "ON_INSTALL",
-                    },
-                    category: plugin_category(config, plugin),
-                })
-                .collect(),
-        })
-    }
-}
-
-/// Claude's index: a **required** owner object, an optional top-level
-/// description, and an entry carrying the description and version the pack
-/// manifest also holds.
-///
-/// `owner` is marked required and typed as an object — `name` required,
-/// `email` and `url` optional — and a bare string is rejected outright
-/// (`owner: Invalid input` from `claude plugin validate`). So a string is
-/// normalised here rather than passed through, and an absent owner falls back
-/// to the marketplace's own name, for the reason
-/// [`cursor_marketplace_manifest`] gives: a manifest the harness loads beats a
-/// field-perfect one it rejects, and there is no other name to reach for.
-///
-/// `description` is accepted both at the top level and under `metadata` for
-/// backward compatibility, and the documentation recommends the top level
-/// (<https://code.claude.com/docs/en/plugin-marketplaces> retrieved
-/// 2026-09-20).
-fn claude_marketplace_manifest(
-    listed: &[(&str, Vec<&DiscoveredComponent>)],
-    packs: &str,
-    name: &str,
-    config: &MarketplaceConfig,
-) -> String {
-    {
-        #[derive(Serialize)]
-        struct Entry {
-            name: String,
-            source: String,
-            description: String,
-            version: String,
-        }
-        #[derive(Serialize)]
-        struct Manifest {
-            name: String,
-            owner: serde_json::Value,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            description: Option<String>,
-            plugins: Vec<Entry>,
-        }
-        stable_json(&Manifest {
-            name: name.to_owned(),
-            owner: config
-                .owner
-                .clone()
-                .map(normalize_author)
-                .unwrap_or_else(|| serde_json::json!({ "name": name })),
-            description: config.description.clone(),
-            plugins: listed
-                .iter()
-                .map(|(plugin, members)| Entry {
-                    name: (*plugin).to_owned(),
-                    source: format!("./{packs}/{plugin}"),
-                    description: plugin_description(config, plugin, members),
-                    version: plugin_version(config, plugin),
-                })
-                .collect(),
-        })
-    }
-}
-
-/// Cursor's index: Claude's entry shape under a **required** owner, a source
-/// that is a plain relative path rather than a `./`-prefixed one, and a
-/// description under `metadata` rather than at the top level.
-///
-/// All three are Cursor's documentation, not a preference
-/// (<https://cursor.com/docs/reference/plugins> retrieved 2026-09-20): `owner`
-/// is marked required, the worked example's `"source": "plugin-one"` carries
-/// no prefix, and the field table gives `metadata` as the object holding
-/// `description`, `version` and `pluginRoot` — Cursor documents no top-level
-/// `description`, where Claude accepts one. When the configuration names no
-/// owner, the marketplace's own name stands in — a manifest Cursor loads beats
-/// a field-perfect one it rejects, and there is no other name to reach for.
-fn cursor_marketplace_manifest(
-    listed: &[(&str, Vec<&DiscoveredComponent>)],
-    packs: &str,
-    name: &str,
-    config: &MarketplaceConfig,
-) -> String {
-    #[derive(Serialize)]
-    struct Entry {
-        name: String,
-        source: String,
-        description: String,
-        version: String,
-    }
-    #[derive(Serialize)]
-    struct Metadata {
-        description: String,
-    }
-    #[derive(Serialize)]
-    struct Manifest {
-        name: String,
-        owner: serde_json::Value,
-        /// Absent entirely when nothing describes the marketplace: an empty
-        /// `metadata` object would be a field Cursor reads as present.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        metadata: Option<Metadata>,
-        plugins: Vec<Entry>,
-    }
-    stable_json(&Manifest {
-        name: name.to_owned(),
-        owner: config
-            .owner
-            .clone()
-            .map(normalize_author)
-            .unwrap_or_else(|| serde_json::json!({ "name": name })),
-        metadata: config
-            .description
-            .clone()
-            .map(|description| Metadata { description }),
-        plugins: listed
-            .iter()
-            .map(|(plugin, members)| Entry {
-                name: (*plugin).to_owned(),
-                source: format!("{packs}/{plugin}"),
-                description: plugin_description(config, plugin, members),
-                version: plugin_version(config, plugin),
-            })
-            .collect(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::harness::translator::{rewrite_cli_invocation, rewrite_sibling_paths};
     use std::cell::Cell;
 
     use serde_json::json;
@@ -3403,25 +1475,16 @@ mod tests {
 
     /// Every file under `root`: relative path, bytes, execute bit — sorted.
     fn files_under(vfs: &dyn Vfs, root: &Path) -> Vec<(String, Vec<u8>, bool)> {
-        fn walk(vfs: &dyn Vfs, root: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>, bool)>) {
-            let Ok(entries) = vfs.read_dir(dir) else {
-                return;
-            };
-            for entry in entries {
-                let path = dir.join(&entry.name);
-                if entry.is_dir {
-                    walk(vfs, root, &path, out);
-                } else {
-                    out.push((
-                        forward_slashed(path.strip_prefix(root).unwrap()),
-                        vfs.read_file(&path).unwrap(),
-                        vfs.is_executable(&path),
-                    ));
-                }
-            }
-        }
-        let mut out = Vec::new();
-        walk(vfs, root, root, &mut out);
+        let mut out: Vec<_> = crate::walk::readable_files(vfs, root)
+            .into_iter()
+            .map(|entry| {
+                (
+                    entry.rel,
+                    vfs.read_file(&entry.abs).unwrap(),
+                    vfs.is_executable(&entry.abs),
+                )
+            })
+            .collect();
         out.sort();
         out
     }
@@ -4103,6 +2166,40 @@ mod tests {
     }
 
     #[test]
+    fn a_build_applies_each_harness_its_own_override_block() {
+        // Intended change: a build renders a note the way a publish does, so a
+        // harness's `sw-overrides` block reaches that harness's tree and no
+        // other.
+        let vfs = example_vault();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/tools/skills/review-guide.md",
+            "---\nname: review-guide\ndescription: Use review-guide.\nsw-overrides:\n  \
+             claude:\n    permissionMode: plan\n---\n\n# review-guide\n",
+        );
+        build(&vfs);
+        let read = |path: &str| String::from_utf8(vfs.read_file(Path::new(path)).unwrap()).unwrap();
+        let claude = read("/market/.claude-plugin/packs/tools/skills/review-guide/SKILL.md");
+        assert!(claude.contains("permissionMode: plan"), "{claude}");
+        let codex = read("/market/.agents/packs/tools/skills/review-guide/SKILL.md");
+        assert!(!codex.contains("permissionMode"), "{codex}");
+    }
+
+    #[test]
+    fn a_build_refuses_an_override_key_the_harness_does_not_read() {
+        let vfs = example_vault();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/tools/skills/review-guide.md",
+            "---\nname: review-guide\ndescription: Use review-guide.\nsw-overrides:\n  \
+             codex:\n    argument-hint: x\n---\n\n# review-guide\n",
+        );
+        let err = export_refusal(&vfs);
+        assert!(err.contains("unknown-override-key"), "{err}");
+        assert!(paths_under(&vfs, Path::new("/market")).is_empty());
+    }
+
+    #[test]
     fn rewrite_sibling_paths_renames_only_whole_sibling_segments() {
         let siblings: BTreeSet<&str> = ["pr", "pr-check"].into_iter().collect();
         assert_eq!(
@@ -4553,7 +2650,7 @@ mod tests {
         );
     }
 
-    // `read_vault_skill` never fills `SkillContent::arguments` — `render_skill`
+    // `read_vault_skill` never fills `SkillContent::arguments` — the translator
     // has to call `apply_arguments` itself, the same seam `publish` uses, or a
     // marketplace-published skill would carry no hint and no section at all.
     #[test]
@@ -5124,35 +3221,41 @@ mod tests {
     }
 
     impl Vfs for FailingRename<'_> {
-        fn read_file(&self, path: &Path) -> Result<Vec<u8>, CoreError> {
+        fn read_file(&self, path: &Path) -> Result<Vec<u8>, crate::vfs::VfsError> {
             self.inner.read_file(path)
         }
-        fn read_dir(&self, path: &Path) -> Result<Vec<crate::vfs::DirEntry>, CoreError> {
+        fn read_dir(&self, path: &Path) -> Result<Vec<crate::vfs::DirEntry>, crate::vfs::VfsError> {
             self.inner.read_dir(path)
         }
-        fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
+        fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), crate::vfs::VfsError> {
             self.inner.write_file(path, bytes)
         }
-        fn create_dir_all(&self, path: &Path) -> Result<(), CoreError> {
+        fn create_dir_all(&self, path: &Path) -> Result<(), crate::vfs::VfsError> {
             self.inner.create_dir_all(path)
         }
         fn exists(&self, path: &Path) -> bool {
             self.inner.exists(path)
         }
+        fn metadata(&self, path: &Path) -> Result<crate::vfs::Metadata, crate::vfs::VfsError> {
+            self.inner.metadata(path)
+        }
         fn is_executable(&self, path: &Path) -> bool {
             self.inner.is_executable(path)
         }
-        fn set_executable(&self, path: &Path, yes: bool) -> Result<(), CoreError> {
+        fn set_executable(&self, path: &Path, yes: bool) -> Result<(), crate::vfs::VfsError> {
             self.inner.set_executable(path, yes)
         }
-        fn rename(&self, from: &Path, to: &Path) -> Result<(), CoreError> {
+        fn rename(&self, from: &Path, to: &Path) -> Result<(), crate::vfs::VfsError> {
             if normalize(to) == self.to && self.remaining.get() > 0 {
                 self.remaining.set(self.remaining.get() - 1);
-                return Err(CoreError::io(to, std::io::Error::other("injected failure")));
+                return Err(crate::vfs::VfsError::io(
+                    to,
+                    std::io::Error::other("injected failure"),
+                ));
             }
             self.inner.rename(from, to)
         }
-        fn remove(&self, path: &Path) -> Result<(), CoreError> {
+        fn remove(&self, path: &Path) -> Result<(), crate::vfs::VfsError> {
             self.inner.remove(path)
         }
     }
@@ -5477,12 +3580,13 @@ mod tests {
     /// what makes that true of the table rather than of a comment.
     #[test]
     fn every_root_keeps_its_packs_inside_the_tree_it_owns() {
-        for spec in &ROOTS {
+        for spec in with_plugin_format() {
+            let packs = spec.format().packs;
             assert!(
-                spec.packs == spec.tree() || spec.packs.starts_with(&format!("{}/", spec.tree())),
+                packs == spec.tree() || packs.starts_with(&format!("{}/", spec.tree())),
                 "{}: packs `{}` is outside its tree `{}`",
                 spec.name,
-                spec.packs,
+                packs,
                 spec.tree()
             );
         }
@@ -6353,7 +4457,7 @@ mod tests {
         assert!(!vfs.exists(Path::new("/market/.pi/packs/core/hooks/hooks.json")));
     }
 
-    /// Exercises the one-document-per-plugin contract documented on `render_hooks_for_root` above.
+    /// Exercises the one-document-per-plugin contract documented on `HarnessTranslator::hooks`.
     #[test]
     fn every_hook_of_a_plugin_lands_in_one_document() {
         let vfs = MemVfs::new();

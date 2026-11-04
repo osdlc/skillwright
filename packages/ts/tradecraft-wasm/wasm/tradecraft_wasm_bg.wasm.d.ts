@@ -6,6 +6,7 @@ export const canonicalTarget: (a: number, b: number, c: number) => void;
 export const discoverComponents: (a: number, b: number, c: number, d: number) => void;
 export const exportSkills: (a: number, b: number, c: number, d: number) => void;
 export const knownTargets: (a: number) => void;
+export const loadMarketplace: (a: number, b: number, c: number, d: number) => void;
 export const publishSkill: (a: number, b: number, c: number, d: number) => void;
 export const publishableKinds: (a: number) => void;
 export const statusOf: (a: number, b: number, c: number, d: number) => void;

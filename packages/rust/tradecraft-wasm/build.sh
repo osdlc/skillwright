@@ -111,9 +111,12 @@ mkdir -p "$OUT_DIR"
 # `--enable-bulk-memory` tells the validator that the `memory.copy` rustc
 # emits for this crate is legal. binaryen 131 defaults to a feature set that
 # predates it and would refuse the module. It changes no bytes on its own.
+# `--enable-nontrapping-float-to-int` is the same for the saturating
+# `i64.trunc_sat_f64_*` rustc emits for an `f64 as i64` cast (a host's
+# `stat` answers numbers as JS doubles).
 echo "[3/3] wasm-opt -Oz --strip-producers"
 BG_WASM="$OUT_DIR/tradecraft_wasm_bg.wasm"
-"$WASM_OPT" -Oz --strip-producers --enable-bulk-memory "$BG_WASM" -o "$BG_WASM.tmp"
+"$WASM_OPT" -Oz --strip-producers --enable-bulk-memory --enable-nontrapping-float-to-int "$BG_WASM" -o "$BG_WASM.tmp"
 mv "$BG_WASM.tmp" "$BG_WASM"
 
 # wasm-bindgen's nodejs target emits CommonJS glue (require/__dirname/exports).

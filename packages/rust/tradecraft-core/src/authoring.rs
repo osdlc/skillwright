@@ -513,35 +513,17 @@ pub fn move_destination(
 /// Walked directly rather than through [`discover_components`]: this only
 /// needs to know "is anything else in here", not each member's resolved key.
 pub fn container_members(vfs: &dyn Vfs, vault_dir: &Path, dir: &str, entry: &str) -> Vec<String> {
-    let mut members = Vec::new();
-    walk_markdown(vfs, &vault_dir.join(dir), vault_dir, entry, &mut members);
+    let mut members: Vec<String> = crate::walk::readable_vault_files(vfs, &vault_dir.join(dir))
+        .into_iter()
+        .filter(|item| item.abs.extension().is_some_and(|ext| ext == "md"))
+        .filter_map(|item| {
+            let rel = item.abs.strip_prefix(vault_dir).ok()?;
+            Some(rel.to_string_lossy().replace('\\', "/"))
+        })
+        .filter(|rel| rel != entry)
+        .collect();
     members.sort();
     members
-}
-
-fn walk_markdown(
-    vfs: &dyn Vfs,
-    current: &Path,
-    vault_dir: &Path,
-    entry: &str,
-    out: &mut Vec<String>,
-) {
-    let Ok(entries) = vfs.read_dir(current) else {
-        return;
-    };
-    for item in entries {
-        let path = current.join(&item.name);
-        if item.is_dir {
-            walk_markdown(vfs, &path, vault_dir, entry, out);
-        } else if path.extension().is_some_and(|ext| ext == "md")
-            && let Ok(rel) = path.strip_prefix(vault_dir)
-        {
-            let rel = rel.to_string_lossy().replace('\\', "/");
-            if rel != entry {
-                out.push(rel);
-            }
-        }
-    }
 }
 
 /// The marketplace directory a component publishes onto — the four values

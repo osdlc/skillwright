@@ -35,6 +35,15 @@ export interface BaseVfs {
   writeFile(path: string, bytes: Uint8Array): void
   createDirAll(path: string): void
   exists(path: string): boolean
+  /**
+   * The size and modification time of `path`, and what it is. Symlinks are
+   * not followed. Throws with `code` `ENOENT` when nothing is there.
+   *
+   * The vault walk asks it of every file it lists. Optional: a host without
+   * it is answered from `readFile` and `readDir`, which reads each file once
+   * more — see `packages/rust/tradecraft-wasm/src/js_vfs.rs`.
+   */
+  stat?(path: string): VfsStat
   isExecutable(path: string): boolean
   setExecutable(path: string, yes: boolean): void
   /**
@@ -80,6 +89,17 @@ export interface LinkMethods {
   isSymlink(path: string): boolean
 }
 
+/** What `stat` answers. */
+export interface VfsStat {
+  /** Size in bytes; ignored for a directory. */
+  size: number
+  /** Last modification, in milliseconds since the Unix epoch, or `null` when the host has none. */
+  mtimeMs: number | null
+  isDir: boolean
+  /** The path itself is a link. `size` and `mtimeMs` then describe the link. */
+  isSymlink: boolean
+}
+
 /** All three link methods, or none of them. */
 export type Vfs = BaseVfs & (LinkMethods | { [K in keyof LinkMethods]?: never })
 
@@ -109,7 +129,9 @@ export interface NodeVfsOptions {
 }
 
 /** Build a `Vfs` backed by the local filesystem via `node:fs`. */
-export function createNodeVfs(options: NodeVfsOptions = {}): BaseVfs & LinkMethods {
+export function createNodeVfs(
+  options: NodeVfsOptions = {},
+): BaseVfs & Required<Pick<BaseVfs, 'stat'>> & LinkMethods {
   const fs = options.fs ?? nodeFs
   const platform = options.platform ?? process.platform
   /**
@@ -152,6 +174,20 @@ export function createNodeVfs(options: NodeVfsOptions = {}): BaseVfs & LinkMetho
     exists(path: string): boolean {
       const converted = hostOrNull(path)
       return converted === null || fs.existsSync(converted)
+    },
+
+    stat(path: string): VfsStat {
+      // A name above a drive or share is a directory, as `readDir` lists it.
+      const converted = hostOrNull(path)
+      if (converted === null) return { size: 0, mtimeMs: null, isDir: true, isSymlink: false }
+      // `lstatSync`, so a link is described as itself, not followed.
+      const stats = fs.lstatSync(converted)
+      return {
+        size: stats.isDirectory() ? 0 : stats.size,
+        mtimeMs: stats.mtimeMs,
+        isDir: stats.isDirectory(),
+        isSymlink: stats.isSymbolicLink(),
+      }
     },
 
     isExecutable(path: string): boolean {

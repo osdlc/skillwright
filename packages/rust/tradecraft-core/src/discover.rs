@@ -389,8 +389,7 @@ pub fn discover_components(
         return Err(CoreError::RootNotFound(root));
     }
 
-    let mut files = Vec::new();
-    walk(vfs, &root, &mut files)?;
+    let files = walk(vfs, vault_root, &root)?;
 
     // Structure first, over the whole file set: a note's shape depends on what
     // sits beside it, so no single path can be classified on its own.
@@ -838,45 +837,48 @@ fn owned_resources(
     out
 }
 
-/// Collects every file under `dir`, in sorted order, refusing symlinks.
+/// Every file under `root`, in walk order, refusing symlinks, without the
+/// vault's excluded files.
 ///
 /// Unlike [`crate::scan`]'s walker this one propagates read failures and has
 /// no depth bound: a skills source is a curated tree feeding a publish, an
 /// unreadable corner of it must not silently under-publish, and there is no
-/// cycle to bound — [`Vfs::read_dir`] reports a symlinked directory as a
-/// non-directory, and this walk refuses it before that could matter.
-fn walk(vfs: &dyn Vfs, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), CoreError> {
-    let mut entries = vfs.read_dir(dir)?;
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
-    for entry in entries {
-        // Finder droppings, not content. The one name skipped by spelling.
-        if entry.name == ".DS_Store" {
-            continue;
-        }
-        // The trash folder holds notes `delete` moved out of the tree — not
-        // content. Under a dot-directory their shapes resolve to no valid
-        // placement, so walking in would surface them as unreadable strays.
-        if entry.is_dir && entry.name == crate::authoring::TRASH_DIR {
-            continue;
-        }
-        let path = dir.join(&entry.name);
-        if vfs.is_symlink(&path) {
-            return Err(CoreError::refused(
+/// cycle to bound — a symlinked directory is refused before it could matter.
+///
+/// The trash folder holds notes `delete` moved out of the tree — not
+/// content. Under a dot-directory their shapes resolve to no valid placement,
+/// so walking in would surface them as unreadable strays.
+///
+/// A file the vault excludes (Obsidian's "Excluded files", see
+/// [`crate::walk::excluded_files`]) is left out, so it is neither placed nor
+/// published.
+fn walk(vfs: &dyn Vfs, vault_root: &Path, root: &Path) -> Result<Vec<PathBuf>, CoreError> {
+    let entries = crate::walk::vault_files_refusing_symlinks(
+        vfs,
+        root,
+        &[crate::authoring::TRASH_DIR],
+        |path| {
+            CoreError::refused(
                 "unsafe-path",
                 format!(
                     "{}: a symlink in a skills source — it reads as inside the tree and \
                      resolves outside it; replace it with the real file or directory",
                     path.display()
                 ),
-            ));
-        }
-        if entry.is_dir {
-            walk(vfs, &path, out)?;
-        } else {
-            out.push(path);
-        }
-    }
-    Ok(())
+            )
+        },
+    )?;
+    let excluded = crate::walk::excluded_files(vfs, vault_root);
+    Ok(entries
+        .into_iter()
+        .map(|entry| entry.abs)
+        // A path outside the vault (a content root elsewhere) has no
+        // vault-relative spelling for the list to match, so it stays.
+        .filter(|path| {
+            path.strip_prefix(vault_root)
+                .map_or(true, |relative| !excluded(&forward_slashed(relative)))
+        })
+        .collect())
 }
 
 /// Reads one note at a recognised shape and decides: a component (`Some`),
@@ -1400,6 +1402,41 @@ mod tests {
         // Absent `sw-targets` stays absent — every destination, decided by
         // the caller that knows what "every" means, not expanded here.
         assert_eq!(found[1].targets, None);
+    }
+
+    #[test]
+    fn a_note_the_vault_excludes_is_not_discovered() {
+        // Obsidian's "Excluded files": a folder prefix and a regex. Neither
+        // note is placed, so neither is published; the list hides nothing
+        // else.
+        let vfs = vault();
+        write(
+            &vfs,
+            ".obsidian/app.json",
+            r#"{"userIgnoreFilters": ["marketplaces/house/skills/drafts/", "/wip\\.md$/"]}"#,
+        );
+        write(
+            &vfs,
+            "marketplaces/house/skills/kept.md",
+            &source("kept", &[], None),
+        );
+        write(
+            &vfs,
+            "marketplaces/house/skills/drafts/draft.md",
+            &source("draft", &[], None),
+        );
+        write(
+            &vfs,
+            "marketplaces/house/skills/wip.md",
+            &source("wip", &[], None),
+        );
+
+        let names: Vec<String> = discover(&vfs)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, vec!["kept"]);
     }
 
     /// The five shapes, in one vault, read as one roster.

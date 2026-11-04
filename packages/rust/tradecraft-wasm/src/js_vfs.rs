@@ -41,6 +41,23 @@
 //! naming the missing method rather than the JS engine's `undefined is not a
 //! function`.
 //!
+//! # `stat` is optional, and cheaper than its fallback
+//!
+//! ```ts
+//! stat?(path: string): { size: number; mtimeMs: number | null; isDir: boolean; isSymlink: boolean }
+//! ```
+//!
+//! `Vfs::metadata`, which the vault walk asks of every file it lists.
+//! Symlinks are not followed: a link reports `isSymlink: true` and its own
+//! size. With the link methods, `isSymlink` is asked too, and a path either
+//! answer calls a link is one. `mtimeMs` is milliseconds since the Unix epoch, or `null` when the
+//! host has none. A missing path throws with `code` `ENOENT`.
+//!
+//! A host without it still works: the bridge answers from `readFile` (a
+//! file, its length, no time) or `readDir` (a directory), and from
+//! `isSymlink` when the host has the link methods. That reads each file once
+//! more, so a host that can stat should.
+//!
 //! # The link questions are optional: all three, or none
 //!
 //! A host that holds a real filesystem can answer where a path leads:
@@ -76,15 +93,15 @@
 //! answers `false`, `sees_links` is `false`, and the core keeps its strict
 //! rails. A host with part of the set gets the strict answer, never a mix.
 //!
-//! # A thrown exception is a `CoreError`, never a panic
+//! # A thrown exception is an error, never a panic
 //!
 //! Every call is declared `catch`, so a JS `throw` arrives as
 //! `Err(JsValue)` instead of unwinding through the wasm frame. A panic here
 //! is much worse than an error: `wasm32-unknown-unknown` aborts on panic, and
 //! an aborted module is poisoned — every later call into it traps, so one
 //! unreadable file would take down the plugin's engine for the rest of the
-//! session. Instead the thrown value's message is lifted out and wrapped in
-//! `CoreError::Io` with the path that provoked it — the shape `NativeVfs`
+//! session. Instead the thrown value's message is lifted out and wrapped in a
+//! `VfsError` with the path that provoked it — the shape `NativeVfs`
 //! produces for the same failure, so nothing above the seam can tell which
 //! host it is talking to.
 //!
@@ -98,6 +115,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::vfs::normalize;
+use tradecraft_core::vfs::{Metadata, VfsError};
 use tradecraft_core::{CoreError, DirEntry, Vfs};
 use wasm_bindgen::prelude::*;
 
@@ -129,6 +147,11 @@ extern "C" {
 
     #[wasm_bindgen(method, structural, catch)]
     fn exists(this: &HostVfs, path: &str) -> Result<JsValue, JsValue>;
+
+    // Optional. Only ever invoked after `JsVfs::adopt` saw a function under
+    // the name.
+    #[wasm_bindgen(method, structural, catch)]
+    fn stat(this: &HostVfs, path: &str) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(method, structural, catch, js_name = isExecutable)]
     fn is_executable(this: &HostVfs, path: &str) -> Result<JsValue, JsValue>;
@@ -168,6 +191,8 @@ pub struct JsVfs {
     host: HostVfs,
     /// The host supplied every one of [`LINK_METHODS`].
     links: bool,
+    /// The host supplied `stat`.
+    stat: bool,
 }
 
 impl JsVfs {
@@ -190,7 +215,8 @@ impl JsVfs {
         let links = LINK_METHODS
             .iter()
             .all(|method| has_function(&host, method));
-        Ok(Self { host, links })
+        let stat = has_function(&host, "stat");
+        Ok(Self { host, links, stat })
     }
 
     /// Refuses a call to an additive host method the host did not supply.
@@ -199,11 +225,11 @@ impl JsVfs {
     /// not being a function — names neither the contract nor the fix, so the
     /// presence check is explicit and the error says what to add. Checked per
     /// call rather than at [`JsVfs::adopt`] on purpose: see the module doc.
-    fn require(&self, method: &str, path: &Path) -> Result<(), CoreError> {
+    fn require(&self, method: &str, path: &Path) -> Result<(), VfsError> {
         if has_function(&self.host, method) {
             return Ok(());
         }
-        Err(CoreError::io(
+        Err(VfsError::io(
             path,
             io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -217,7 +243,7 @@ impl JsVfs {
 }
 
 impl Vfs for JsVfs {
-    fn read_file(&self, path: &Path) -> Result<Vec<u8>, CoreError> {
+    fn read_file(&self, path: &Path) -> Result<Vec<u8>, VfsError> {
         let value = self
             .host
             .read_file(&as_str(path))
@@ -225,7 +251,7 @@ impl Vfs for JsVfs {
         to_bytes(path, &value)
     }
 
-    fn read_dir(&self, path: &Path) -> Result<Vec<DirEntry>, CoreError> {
+    fn read_dir(&self, path: &Path) -> Result<Vec<DirEntry>, VfsError> {
         let value = self
             .host
             .read_dir(&as_str(path))
@@ -233,16 +259,48 @@ impl Vfs for JsVfs {
         to_entries(path, &value)
     }
 
-    fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
+    fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), VfsError> {
         self.host
             .write_file(&as_str(path), bytes)
             .map_err(|e| thrown(path, &e))
     }
 
-    fn create_dir_all(&self, path: &Path) -> Result<(), CoreError> {
+    fn create_dir_all(&self, path: &Path) -> Result<(), VfsError> {
         self.host
             .create_dir_all(&as_str(path))
             .map_err(|e| thrown(path, &e))
+    }
+
+    fn metadata(&self, path: &Path) -> Result<Metadata, VfsError> {
+        if self.stat {
+            let value = self
+                .host
+                .stat(&as_str(path))
+                .map_err(|e| thrown(path, &e))?;
+            let meta = to_metadata(path, &value)?;
+            // `isSymlink` is this bridge's word on links, and it fails
+            // closed, so a walk refuses what it would refuse.
+            return Ok(Metadata {
+                is_symlink: meta.is_symlink || self.is_symlink(path),
+                ..meta
+            });
+        }
+        // No `stat`: a file is what `readFile` reads, a directory what
+        // `readDir` lists. See the module doc.
+        let is_symlink = self.is_symlink(path);
+        match self.read_file(path) {
+            Ok(bytes) => Ok(Metadata {
+                is_symlink,
+                ..Metadata::file(bytes.len() as u64, None)
+            }),
+            Err(error) => match self.read_dir(path) {
+                Ok(_) => Ok(Metadata {
+                    is_symlink,
+                    ..Metadata::dir(None)
+                }),
+                Err(_) => Err(error),
+            },
+        }
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -261,20 +319,20 @@ impl Vfs for JsVfs {
             .unwrap_or(false)
     }
 
-    fn set_executable(&self, path: &Path, yes: bool) -> Result<(), CoreError> {
+    fn set_executable(&self, path: &Path, yes: bool) -> Result<(), VfsError> {
         self.host
             .set_executable(&as_str(path), yes)
             .map_err(|e| thrown(path, &e))
     }
 
-    fn rename(&self, from: &Path, to: &Path) -> Result<(), CoreError> {
+    fn rename(&self, from: &Path, to: &Path) -> Result<(), VfsError> {
         self.require("rename", from)?;
         self.host
             .rename(&as_str(from), &as_str(to))
             .map_err(|e| thrown(from, &e))
     }
 
-    fn remove(&self, path: &Path) -> Result<(), CoreError> {
+    fn remove(&self, path: &Path) -> Result<(), VfsError> {
         self.require("remove", path)?;
         self.host
             .remove(&as_str(path))
@@ -285,7 +343,7 @@ impl Vfs for JsVfs {
         self.links
     }
 
-    fn canonicalize(&self, path: &Path) -> Result<PathBuf, CoreError> {
+    fn canonicalize(&self, path: &Path) -> Result<PathBuf, VfsError> {
         if !self.links {
             return Ok(normalize(path));
         }
@@ -302,9 +360,9 @@ impl Vfs for JsVfs {
         Ok(resolved)
     }
 
-    fn read_link(&self, path: &Path) -> Result<PathBuf, CoreError> {
+    fn read_link(&self, path: &Path) -> Result<PathBuf, VfsError> {
         if !self.links {
-            return Err(CoreError::io(
+            return Err(VfsError::io(
                 path,
                 io::Error::new(io::ErrorKind::Unsupported, "this host has no symlinks"),
             ));
@@ -351,7 +409,7 @@ fn as_str(path: &Path) -> Cow<'_, str> {
 /// `ArrayBuffer` is accepted alongside `Uint8Array` because some hosts hand
 /// one back, and mis-reading one as the other shows up as an empty file at the
 /// destination.
-fn to_bytes(path: &Path, value: &JsValue) -> Result<Vec<u8>, CoreError> {
+fn to_bytes(path: &Path, value: &JsValue) -> Result<Vec<u8>, VfsError> {
     if let Some(bytes) = value.dyn_ref::<js_sys::Uint8Array>() {
         return Ok(bytes.to_vec());
     }
@@ -367,7 +425,7 @@ fn to_bytes(path: &Path, value: &JsValue) -> Result<Vec<u8>, CoreError> {
 /// obligation and cannot be checked from here — the trait's contract is that a
 /// symlinked directory reports `is_dir: false`, and that is what stops the
 /// walker descending into it.
-fn to_entries(path: &Path, value: &JsValue) -> Result<Vec<DirEntry>, CoreError> {
+fn to_entries(path: &Path, value: &JsValue) -> Result<Vec<DirEntry>, VfsError> {
     if !js_sys::Array::is_array(value) {
         return Err(protocol(
             path,
@@ -389,27 +447,51 @@ fn to_entries(path: &Path, value: &JsValue) -> Result<Vec<DirEntry>, CoreError> 
 }
 
 /// A host answer that must be a path string.
-fn to_path(path: &Path, value: &JsValue, what: &str) -> Result<PathBuf, CoreError> {
+fn to_path(path: &Path, value: &JsValue, what: &str) -> Result<PathBuf, VfsError> {
     value
         .as_string()
         .map(PathBuf::from)
         .ok_or_else(|| protocol(path, what))
 }
 
+/// `stat`'s return value as metadata. `mtimeMs` may be `null` or absent; a
+/// fractional one (Node's) is truncated to whole milliseconds.
+fn to_metadata(path: &Path, value: &JsValue) -> Result<Metadata, VfsError> {
+    let what = "stat must return { size, mtimeMs, isDir, isSymlink }";
+    let size = field(value, "size")
+        .and_then(|v| v.as_f64())
+        .filter(|n| *n >= 0.0)
+        .ok_or_else(|| protocol(path, what))?;
+    let modified_ms = field(value, "mtimeMs").and_then(|v| v.as_f64());
+    let flag = |key: &str| {
+        field(value, key)
+            .and_then(|v| v.as_bool())
+            .ok_or_else(|| protocol(path, what))
+    };
+    let is_dir = flag("isDir")?;
+    let is_symlink = flag("isSymlink")?;
+    Ok(Metadata {
+        len: if is_dir { 0 } else { size as u64 },
+        modified_ms: modified_ms.map(|ms| ms as i64),
+        is_dir,
+        is_symlink,
+    })
+}
+
 fn field(value: &JsValue, key: &str) -> Option<JsValue> {
     js_sys::Reflect::get(value, &JsValue::from_str(key)).ok()
 }
 
-// --- thrown JS value -> CoreError ------------------------------------------
+// --- thrown JS value -> VfsError -------------------------------------------
 
 /// A host exception, as the error the core expects from a filesystem.
 ///
-/// [`CoreError::Io`] rather than a new variant: to everything above the seam
-/// this IS an I/O failure, and its `Display` — `reading {path}: {message}` —
-/// already carries both halves a user needs. The message is the host's,
+/// A [`VfsError`], the shape `NativeVfs` produces for the same failure. Above
+/// the seam it becomes [`CoreError::Io`], whose `Display` — `reading {path}:
+/// {message}` — carries both halves a user needs. The message is the host's,
 /// verbatim, and the kind comes from its `code` ([`kind_of`]).
-fn thrown(path: &Path, error: &JsValue) -> CoreError {
-    CoreError::io(path, io::Error::new(kind_of(error), message_of(error)))
+fn thrown(path: &Path, error: &JsValue) -> VfsError {
+    VfsError::io(path, io::Error::new(kind_of(error), message_of(error)))
 }
 
 /// The error kind a Node-style `code` names, for the codes the link contract
@@ -426,8 +508,8 @@ fn kind_of(error: &JsValue) -> io::ErrorKind {
 /// The host answered, but not with what it promised. Distinguished from
 /// [`thrown`] by kind, because a wrong return type is a bridge bug and a throw
 /// is a filesystem condition.
-fn protocol(path: &Path, what: &str) -> CoreError {
-    CoreError::io(path, io::Error::new(io::ErrorKind::InvalidData, what))
+fn protocol(path: &Path, what: &str) -> VfsError {
+    VfsError::io(path, io::Error::new(io::ErrorKind::InvalidData, what))
 }
 
 /// The message out of whatever JavaScript threw.

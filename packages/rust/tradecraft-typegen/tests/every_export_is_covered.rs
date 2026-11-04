@@ -175,3 +175,25 @@ fn a_diagnostic_export_emits() {
         );
     }
 }
+
+/// The marketplace model is declared in `tradecraft-core/src/model/`, a module
+/// directory, and holds fields marked `#[serde(skip)]` that never reach the
+/// wire. Both must hold for `loadMarketplace` to emit at all: the directory is
+/// read, and a skipped field — `Marketplace::config`, here — is left out of the
+/// interface rather than described.
+#[test]
+fn the_marketplace_model_emits_without_its_skipped_fields() {
+    let ts = tradecraft_typegen::generate(&crates()).expect("generating");
+
+    let start = ts
+        .find("export interface Marketplace {")
+        .expect("`Marketplace` is emitted");
+    let end = start + ts[start..].find("\n}").expect("the interface closes");
+    let interface = &ts[start..end];
+    assert!(
+        interface.contains("plugins: Record<string, Plugin>;"),
+        "{interface}"
+    );
+    assert!(!interface.contains("config"), "{interface}");
+    assert!(!interface.contains("vault_root"), "{interface}");
+}

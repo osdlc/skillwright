@@ -354,6 +354,11 @@ struct ListArgs {
     /// The content root to scan. Overrides the configured one.
     #[arg(long, value_name = "path")]
     skills_root: Option<String>,
+    /// Print the loaded marketplace model as JSON — every plugin, its
+    /// members, and each body's resolved links and calls — instead of the
+    /// roster. Reads the marketplace settings `build` reads.
+    #[arg(long)]
+    model: bool,
     #[command(flatten)]
     globals: ReadOnlyGlobals,
 }
@@ -896,6 +901,7 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
                 skills_root: args.skills_root.clone(),
                 common: args.globals.common(),
                 json: args.globals.json,
+                model: args.model,
                 quiet: args.globals.quiet,
             },
             ctx,

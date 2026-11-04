@@ -7,6 +7,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `harness`: one `HarnessProfile` row per harness, and a `HarnessTranslator` per harness that writes the marketplace model as a `FileTree`.
+- `model`: the marketplace model and its two-pass `load` — every note read, then every link and call resolved — which `build` and `check` now render from.
+
+### Changed
+
+- `build` and `check` apply a note's `sw-overrides` block for each harness to that harness's tree, as `publish` does. A block naming an unknown target, or a key its harness does not read, now refuses the build (`unknown-target`, `unknown-override-key`).
+- `publish` of a plugin note to `cursor` or `pi` writes that harness's pack — its manifest and its members' skills, in the shape `build` writes — instead of refusing `no-renderer`. Every publish renders through the same model and translator as `build`.
+- Discovery leaves out the files the vault excludes in Obsidian ("Excluded files", `userIgnoreFilters` in `.obsidian/app.json`), so `build`, `check` and a whole-vault `publish` no longer publish them. Links may still point at them.
+- Links resolve through `markdown-link`'s `LinkIndex::resolve_strict`, so they resolve as other osdlc tools resolve them. An exact path, a path from the linking note's folder and a unique name resolve as before, and an ambiguous name is still refused (`link-ambiguous`), its candidates now listed shortest path first. What changes is at the edges: a partial path (`[[sub/x]]`) names the one file whose path ends with it, where it used to fall back to the bare name and be refused when that name was shared; a `./` or `../` target is relative to the linking note; a percent-encoded target is decoded.
+- Asset, script, bundle and adoption-source walks go through the new `vfs-walk` crate, with no vault rules; the vault walks go through `markdown-vault-fs`. The files each walk finds are unchanged.
+- `vfs` re-exports the `vfs-seam` crate, the file-access trait the osdlc vault crates share. The paths are unchanged. A `Vfs` method now returns `VfsError`, which `?` turns into `CoreError::Io` with the same message, and `Vfs` has a required `metadata` method (size, modification time, directory, symlink).
+
 ## [0.41.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.40.2...tradecraft-core/v0.41.0) - 2026-10-30
 
 ### Fixed

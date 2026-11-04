@@ -359,7 +359,7 @@ pub fn render_gap_report(from: &str, hooks: &[Hook], harnesses: &[GapHarness]) -
         source: from,
         version: 1,
     };
-    crate::export::stable_json(&report)
+    crate::harness::manifest::stable_json(&report)
 }
 
 #[cfg(test)]
