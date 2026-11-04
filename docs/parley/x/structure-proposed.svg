@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 470" font-family="ui-sans-serif, -apple-system, Helvetica, Arial" font-size="13">
+  <style>
+    .box{fill:#fff;stroke:#7a8494}
+    .model{fill:#eaf7ee;stroke:#3f9b5b}
+    .tr{fill:#eef4ff;stroke:#5b7fc7}
+    .lbl{font-weight:600;fill:#222}
+    .small{font-size:11px;fill:#555}
+    .arrow{stroke:#555;stroke-width:1.5;fill:none;marker-end:url(#a)}
+  </style>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#555"/></marker></defs>
+
+  <rect class="box" x="10" y="150" width="120" height="70" rx="6"/>
+  <text class="lbl" x="22" y="175">Vault</text>
+  <text class="small" x="22" y="193">notes + peers</text>
+  <text class="small" x="22" y="207">skillwright.yaml</text>
+
+  <rect class="box" x="160" y="120" width="170" height="130" rx="6"/>
+  <text class="lbl" x="172" y="145">1. Load</text>
+  <text class="small" x="172" y="165">discover + read</text>
+  <text class="small" x="172" y="180">frontmatter, settings</text>
+  <text class="small" x="172" y="195">compile, harness-neutral:</text>
+  <text class="small" x="172" y="210">embeds expanded,</text>
+  <text class="small" x="172" y="225">links/calls kept as refs</text>
+
+  <rect class="model" x="360" y="40" width="250" height="300" rx="8"/>
+  <text class="lbl" x="372" y="64">2. Marketplace model</text>
+  <text class="small" x="372" y="86">Marketplace { name, owner, license }</text>
+  <text class="small" x="384" y="102">└ Plugin { name, version, author, … }</text>
+  <text class="small" x="396" y="118">├ Skill { name, description,</text>
+  <text class="small" x="408" y="132">frontmatter, targets,</text>
+  <text class="small" x="408" y="146">body: [Text | Link | Call | Cli],</text>
+  <text class="small" x="408" y="160">resources[] }</text>
+  <text class="small" x="396" y="176">├ Command  ├ Hook  ├ Asset</text>
+  <text class="small" x="372" y="202">ids are vault paths; every node</text>
+  <text class="small" x="372" y="216">keeps its source note + closure</text>
+  <text class="small" x="372" y="240">Validate on the model:</text>
+  <text class="small" x="372" y="256">collisions, empty, descriptions,</text>
+  <text class="small" x="372" y="272">unknown calls, cycles</text>
+  <text class="small" x="372" y="300">Serializable: CLI, wasm, Obsidian,</text>
+  <text class="small" x="372" y="314">--json all see the same thing</text>
+
+  <rect class="tr" x="640" y="40" width="200" height="300" rx="8"/>
+  <text class="lbl" x="652" y="64">3. Translate</text>
+  <text class="small" x="652" y="84">one Translator per harness,</text>
+  <text class="small" x="652" y="98">driven by one HarnessSpec row</text>
+  <rect class="box" x="652" y="112" width="176" height="28" rx="4"/>
+  <text class="small" x="662" y="130">claude</text>
+  <rect class="box" x="652" y="146" width="176" height="28" rx="4"/>
+  <text class="small" x="662" y="164">codex</text>
+  <rect class="box" x="652" y="180" width="176" height="28" rx="4"/>
+  <text class="small" x="662" y="198">cursor</text>
+  <rect class="box" x="652" y="214" width="176" height="28" rx="4"/>
+  <text class="small" x="662" y="232">pi  (+ amp, opencode, …)</text>
+  <text class="small" x="652" y="262">narrow by targets/kind,</text>
+  <text class="small" x="652" y="276">name skills, render calls,</text>
+  <text class="small" x="652" y="290">frontmatter via agent-adapt,</text>
+  <text class="small" x="652" y="304">typed manifests → JSON</text>
+  <text class="small" x="652" y="324">→ FileTree (pure, no I/O)</text>
+
+  <rect class="box" x="870" y="40" width="160" height="300" rx="8"/>
+  <text class="lbl" x="882" y="64">4. Emit</text>
+  <text class="small" x="882" y="90">build: diff + swap trees</text>
+  <text class="small" x="882" y="112">check: diff, write nothing</text>
+  <text class="small" x="882" y="134">publish: subset of model,</text>
+  <text class="small" x="882" y="148">destination layout,</text>
+  <text class="small" x="882" y="162">manifest + classify</text>
+  <text class="small" x="882" y="184">status: publish dry-run</text>
+  <text class="small" x="882" y="214">guard rails here</text>
+  <text class="small" x="882" y="228">all I/O via Vfs</text>
+
+  <path class="arrow" d="M130,185 L158,185"/>
+  <path class="arrow" d="M330,185 L358,185"/>
+  <path class="arrow" d="M610,185 L638,185"/>
+  <path class="arrow" d="M840,185 L868,185"/>
+
+  <rect class="box" x="160" y="370" width="450" height="80" rx="6"/>
+  <text class="lbl" x="172" y="394">Reverse direction (unchanged in shape)</text>
+  <text class="small" x="172" y="414">adopt: published SKILL.md → parsed by a harness's Translator in reverse?</text>
+  <text class="small" x="172" y="430">authoring: plans edits against the model, host applies them</text>
+  <path class="arrow" d="M360,370 C 300,330 260,300 240,252"/>
+</svg>
