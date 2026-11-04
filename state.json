@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 23,
-  "head": "10493d070b90c4e56e5865e367e082faaa4ddb81",
-  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
-  "round": 1,
+  "head": "9c099b68e7ec7c57185d2240e84f852bded1a736",
+  "base": "8d1a267cf2bbc815e002f12d3cf1f4670ef58364",
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-04T06:05:57.839Z"
@@ -85,6 +85,61 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "cdb5bde"
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/apply.rs",
+      "line": 467,
+      "title": "bundle entry-rename Partial never names where the entry note now is",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/apply.rs",
+      "line": 621,
+      "title": "delete doc comment still promises all-or-nothing",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/apply.rs",
+      "line": 690,
+      "title": "member frontmatter check re-walks raw members outside the validating closure",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 252,
+      "title": "try_machine_config_path copies config-layers' env rule",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-5",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "commit 287bbef message says ~\\ expands",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
