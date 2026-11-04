@@ -1443,13 +1443,10 @@ impl<'a> Renderer<'a> {
 
         // A target with an extension is addressed as a file; one without gets
         // `.md` appended and is addressed as a note. Obsidian's rule.
-        let has_extension = extension_of_target(target).is_some();
+        let extension = extension_of_target(target);
+        let has_extension = extension.is_some();
         let as_note = format!("{target}.md");
-        let candidate = if has_extension {
-            target.to_owned()
-        } else {
-            as_note.clone()
-        };
+        let candidate = if has_extension { target } else { &as_note };
         let from_dir = from_file.parent().unwrap_or(Path::new(""));
         // The vault-relative path, then the path relative to the linking file.
         let exact_or_relative = |candidate: &str| -> Option<PathBuf> {
@@ -1474,22 +1471,19 @@ impl<'a> Renderer<'a> {
                 .filter(|path| extension_of_path(path).as_deref() == Some(".md"))
                 .collect()
         };
-        if let Some(hit) = exact_or_relative(&candidate) {
+        if let Some(hit) = exact_or_relative(candidate) {
             return Ok(Some((hit, fragment)));
         }
 
         let mut matches = if has_extension {
-            self.index.by_filename(basename(&candidate))
+            self.index.by_filename(basename(candidate))
         } else {
             notes_by_stem()
         };
         // A dot inside a note's name reads as an extension (`[[v1.2 notes]]`).
         // When nothing answers it as a file, it is retried as a note, as
         // Obsidian does.
-        if matches.is_empty()
-            && has_extension
-            && extension_of_target(target).as_deref() != Some(".md")
-        {
+        if matches.is_empty() && extension.as_deref().is_some_and(|ext| ext != ".md") {
             if let Some(hit) = exact_or_relative(&as_note) {
                 return Ok(Some((hit, fragment)));
             }
@@ -3939,7 +3933,7 @@ mod tests {
         assert_eq!(compiled.body, "# Demo\n\nThen run `/tools:called`.\n");
     }
 
-    // --- bug-fix regressions -------------------------------------------------
+    // --- Wikilink parsing and resolution -------------------------------------
 
     /// Obsidian wikilinks never cross lines: a stray `[[` stays text, and the
     /// real link after it still converts.

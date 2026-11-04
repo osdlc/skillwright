@@ -659,8 +659,7 @@ fn classify_existing(
     // source through it reads an untouched note as `updated` and replaces
     // somebody else's adoption. The recorded value is authoritative even where
     // a hand edit put it there (A5), so a wrong source refuses rather than
-    // clobbers. A repository label's trailing `@<commit>` is the source's
-    // revision, not its identity: a new commit is the source moved on.
+    // clobbers. See source_identity for what counts as the same source.
     let Some(recorded_source) = provenance.source.as_deref() else {
         return Ok(diverged(format!(
             "{} records no source, so it cannot be compared with {}",
@@ -953,9 +952,10 @@ fn plan_one(
     // already there would be overwritten. Compared case-insensitively for
     // case-folding filesystems.
     let entry_rel = format!("{name}.md");
+    let entry_rel_lower = entry_rel.to_lowercase();
     if let Some(clash) = resource_paths
         .iter()
-        .find(|relative| relative.to_lowercase() == entry_rel.to_lowercase())
+        .find(|relative| relative.to_lowercase() == entry_rel_lower)
     {
         return Err(CoreError::refused(
             "path-collision",
@@ -1771,10 +1771,9 @@ fn has_scheme(path: &str) -> bool {
 /// exact skill-relative path, then by path relative to `dir` (the linking file's skill-relative
 /// folder), then by a basename unique among the resources.
 ///
-/// The target is the resource's path relative to `dir`, `.md` dropped: compile resolves a link
-/// beside the linking file, and a bare basename would resolve vault-wide and be refused
-/// `link-ambiguous` once another skill bundles a file of the same name. A resource outside `dir`
-/// has no such path without `..`, which compile refuses, so it stays code.
+/// The target is the resource's path relative to `dir`, `.md` dropped, for the reason
+/// [`convert_link`] gives. A resource outside `dir` has no such path without `..`, which compile
+/// refuses, so it stays code.
 fn resolve_resource_mention(content: &str, resources: &[String], dir: &str) -> Option<String> {
     if resources.is_empty() {
         return None;
@@ -2407,15 +2406,7 @@ mod tests {
             ..request()
         };
         let report = adopt_skills(&vfs, &unlabelled, &sw()).unwrap();
-        assert_eq!(report.skills[0].status, AdoptStatus::Refused);
-        assert!(
-            report.skills[0]
-                .reason
-                .as_deref()
-                .is_some_and(|r| r.starts_with("foreign-provenance:")),
-            "{:?}",
-            report.skills[0].reason
-        );
+        assert_refused_foreign_provenance(&report);
     }
 
     #[test]
@@ -3268,7 +3259,7 @@ mod tests {
         assert!(!vault.join("lib").exists(), "nothing was written");
     }
 
-    // --- bug-fix regressions -------------------------------------------------
+    // --- collisions, round trips, re-adopt -----------------------------------
 
     /// A resource at `<name>.md` would be overwritten by the entry note, and
     /// the stamped hash would cover both files while the vault keeps one.
@@ -3358,20 +3349,7 @@ mod tests {
             "---\nname: other\n---\nOther.\n",
         );
         adopt_skills(&vfs, &request(), &sw()).unwrap();
-        let entry = Path::new("/vault/plugins/demos/skills/me/me.md");
-        let note = read_vault_skill(&vfs, entry, &sw()).unwrap();
-        let compiled = compile_note(
-            &vfs,
-            &CompileSource {
-                vault_root: Path::new("/vault"),
-                entry_path: entry,
-                bundle_root: None,
-                skill_name: "me",
-                calls: None,
-            },
-            &note.projection.content.body,
-        )
-        .unwrap();
+        let compiled = republish(&vfs, "me", false);
         assert!(
             compiled.body.contains("See [me.md](SKILL.md#Usage)."),
             "{}",
@@ -3401,22 +3379,7 @@ mod tests {
             );
         }
         adopt_skills(&vfs, &request(), &sw()).unwrap();
-
-        let entry = Path::new("/vault/plugins/demos/skills/alpha/alpha.md");
-        let bundle = Path::new("/vault/plugins/demos/skills/alpha");
-        let note = read_vault_skill(&vfs, entry, &sw()).unwrap();
-        let compiled = compile_note(
-            &vfs,
-            &CompileSource {
-                vault_root: Path::new("/vault"),
-                entry_path: entry,
-                bundle_root: Some(bundle),
-                skill_name: "alpha",
-                calls: None,
-            },
-            &note.projection.content.body,
-        )
-        .unwrap();
+        let compiled = republish(&vfs, "alpha", true);
         assert_eq!(
             compiled.body.trim(),
             "Read [the guide](references/guide.md)."
@@ -3455,22 +3418,7 @@ mod tests {
             );
         }
         adopt_skills(&vfs, &request(), &sw()).unwrap();
-
-        let entry = Path::new("/vault/plugins/demos/skills/alpha/alpha.md");
-        let bundle = Path::new("/vault/plugins/demos/skills/alpha");
-        let note = read_vault_skill(&vfs, entry, &sw()).unwrap();
-        let compiled = compile_note(
-            &vfs,
-            &CompileSource {
-                vault_root: Path::new("/vault"),
-                entry_path: entry,
-                bundle_root: Some(bundle),
-                skill_name: "alpha",
-                calls: None,
-            },
-            &note.projection.content.body,
-        )
-        .unwrap();
+        let compiled = republish(&vfs, "alpha", true);
         assert_eq!(
             resource_bytes(&compiled, "references/other.md"),
             b"See [guide.md](guide.md).\n"
@@ -3493,6 +3441,38 @@ mod tests {
         assert_eq!(
             rewrite_links("Run `tool.sh`.", &resources, "", None),
             "Run [[scripts/tool.sh]]."
+        );
+    }
+
+    /// Compiles the adopted skill `name` back out of the vault, as a bundle
+    /// when `bundled`.
+    fn republish(vfs: &MemVfs, name: &str, bundled: bool) -> crate::compile::CompiledNote {
+        let bundle = PathBuf::from(format!("/vault/plugins/demos/skills/{name}"));
+        let entry = bundle.join(format!("{name}.md"));
+        let note = read_vault_skill(vfs, &entry, &sw()).unwrap();
+        compile_note(
+            vfs,
+            &CompileSource {
+                vault_root: Path::new("/vault"),
+                entry_path: &entry,
+                bundle_root: bundled.then_some(bundle.as_path()),
+                skill_name: name,
+                calls: None,
+            },
+            &note.projection.content.body,
+        )
+        .unwrap()
+    }
+
+    fn assert_refused_foreign_provenance(report: &AdoptReport) {
+        assert_eq!(report.skills[0].status, AdoptStatus::Refused);
+        assert!(
+            report.skills[0]
+                .reason
+                .as_deref()
+                .is_some_and(|r| r.starts_with("foreign-provenance:")),
+            "{:?}",
+            report.skills[0].reason
         );
     }
 
@@ -3564,15 +3544,7 @@ mod tests {
             ..request()
         };
         let report = adopt_skills(&vfs, &other, &sw()).unwrap();
-        assert_eq!(report.skills[0].status, AdoptStatus::Refused);
-        assert!(
-            report.skills[0]
-                .reason
-                .as_deref()
-                .is_some_and(|r| r.starts_with("foreign-provenance:")),
-            "{:?}",
-            report.skills[0].reason
-        );
+        assert_refused_foreign_provenance(&report);
     }
 
     /// An `also_scan` root is a courtesy: a file in it that cannot be read
@@ -3688,15 +3660,7 @@ mod tests {
         let vfs = demo_source();
         adopt_skills(&vfs, &at("/work/skills@deadbeef"), &sw()).unwrap();
         let report = adopt_skills(&vfs, &at("/work/skills@cafebabe"), &sw()).unwrap();
-        assert_eq!(report.skills[0].status, AdoptStatus::Refused);
-        assert!(
-            report.skills[0]
-                .reason
-                .as_deref()
-                .is_some_and(|r| r.starts_with("foreign-provenance:")),
-            "{:?}",
-            report.skills[0].reason
-        );
+        assert_refused_foreign_provenance(&report);
 
         let vfs = demo_source();
         adopt_skills(&vfs, &at("git@github.com:o/r@aaaaaaa"), &sw()).unwrap();
