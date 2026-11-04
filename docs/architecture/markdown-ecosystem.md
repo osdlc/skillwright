@@ -64,8 +64,9 @@ As an image: [markdown-ecosystem-before.svg](img/markdown-ecosystem-before.svg).
 New crates have a thick green border. File access goes through one trait,
 `vfs-seam`, so the same code runs on disk, in memory, as a preview and in
 the browser. `vfs-walk` walks any tree through it and knows nothing about
-Markdown or Obsidian. `markdown-vault-fs` is the vault layer on top: it
-reads Obsidian's excluded files and passes them to the walk as a filter. `markdown-vault` is the one vault model, built from
+Markdown or vaults. `markdown-vault-fs` is the vault layer on top: it reads
+the vault's excluded files (Obsidian's `userIgnoreFilters`, for example) and
+passes them to the walk as a filter. `markdown-vault` is the one vault model, built from
 determined's `LinkGraph`. Everything that needs a vault graph uses it.
 
 ```mermaid
@@ -79,7 +80,7 @@ flowchart TB
   subgraph VAULT[vault]
     MR["<b>markdown-relink</b> 0.2<br/>rename / move plans,<br/>facts from the vault model"]:::md
     MV["<b>markdown-vault</b> 0.1<br/>the vault model: link graph,<br/>backlinks, frontmatter index,<br/>tolerant note read, refresh"]:::new
-    MVF["<b>markdown-vault-fs</b> 0.4<br/>vault layer: notes vs attachments,<br/>Obsidian excluded files, _system rules"]:::md
+    MVF["<b>markdown-vault-fs</b> 0.4<br/>vault layer: notes vs attachments,<br/>excluded files, _system rules"]:::md
   end
 
   subgraph DOC[one note]
@@ -135,8 +136,8 @@ As an image: [markdown-ecosystem-after.svg](img/markdown-ecosystem-after.svg).
 |---|---|---|
 | `vfs-seam` | — (lived in skillwright core) | New. The one file-access trait. |
 | `markdown-vault` | — (determined's `LinkGraph` and `FrontmatterIndex`) | New. The one vault model. |
-| `vfs-walk` | — (inside `markdown-vault-fs`) | New. The general walk, with no Markdown or Obsidian rules. |
-| `markdown-vault-fs` | 0.3, walks with `std::fs` | 0.4, the vault layer on `vfs-walk`; reads Obsidian's excluded files and passes them in |
+| `vfs-walk` | — (inside `markdown-vault-fs`) | New. The general walk, with no Markdown or vault rules. |
+| `markdown-vault-fs` | 0.3, walks with `std::fs` | 0.4, the vault layer on `vfs-walk`; reads the vault's excluded files and passes them in |
 | `markdown-link` | 0.5 | 0.7, scan options, strict resolve, link encoding from skillwright |
 | `markdown-contract` | 0.3, not published | 0.4, published; heading and block selection from skillwright |
 | `markdown-relink` | 0.1, its own scan | 0.2, facts from `markdown-vault`; plans read through `vfs-seam` |
