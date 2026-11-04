@@ -15,10 +15,10 @@
       "path": "packages/rust/skillwright/src/apply.rs",
       "line": 556,
       "title": "rename_plugin: member outside dir_from is only path-guarded, not checked to exist",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/20#discussion_r4440493499",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "b6de190"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "packages/rust/tradecraft-core/src/authoring.rs",
       "line": 428,
       "title": "bundle_dir fallback still treats unshaped paths inside a kind folder as bundles",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/20#discussion_r4440493518",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "b6de190"
     },
     {
       "id": "r1-3",
@@ -37,7 +37,7 @@
       "path": "packages/rust/tradecraft-core/src/authoring.rs",
       "line": 1171,
       "title": "ns_field_edits branches and the whole-block rewrite have no direct tests",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/20#discussion_r4440493530",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -48,7 +48,7 @@
       "path": "packages/rust/tradecraft-core/src/authoring.rs",
       "line": 1456,
       "title": "plan_rename_plugin new failure paths are untested",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/20#discussion_r4440493543",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -59,10 +59,10 @@
       "path": "packages/rust/tradecraft-core/src/authoring.rs",
       "line": 1160,
       "title": "ns_field_edits doc names a parameter that does not exist",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/20#discussion_r4440493550",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "b6de190"
     },
     {
       "id": "r1-6",
@@ -70,10 +70,10 @@
       "path": "packages/rust/tradecraft-core/src/authoring.rs",
       "line": 1441,
       "title": "plan_rename_plugin doc was left with a broken line wrap",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/20#discussion_r4440493556",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "b6de190"
     },
     {
       "id": "r1-7",
@@ -81,10 +81,10 @@
       "path": "packages/rust/skillwright/src/commands/bump.rs",
       "line": 169,
       "title": "bump reports a nested version as the flat sw-version key",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/20#discussion_r4440493565",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "b6de190"
     }
   ]
 }
