@@ -49,6 +49,22 @@ describe('the link methods', () => {
   })
 })
 
+describe('stat', () => {
+  test('describes a file, a directory and a link without following it, and throws on a missing path', () => {
+    writeFileSync(path.join(tmp, 'a.md'), 'alpha')
+    mkdirSync(path.join(tmp, 'dir'))
+    symlinkSync(path.join(tmp, 'a.md'), path.join(tmp, 'link.md'))
+    const vfs = createNodeVfs()
+
+    const file = vfs.stat(path.join(tmp, 'a.md'))
+    expect(file).toMatchObject({ size: 5, isDir: false, isSymlink: false })
+    expect(file.mtimeMs).toBeGreaterThan(0)
+    expect(vfs.stat(path.join(tmp, 'dir'))).toMatchObject({ size: 0, isDir: true, isSymlink: false })
+    expect(vfs.stat(path.join(tmp, 'link.md'))).toMatchObject({ isDir: false, isSymlink: true })
+    expect(() => vfs.stat(path.join(tmp, 'missing'))).toThrow()
+  })
+})
+
 /** A repository holding its vault at `src/`, the out root being the repository. */
 function repoWithVault(name: string): { repo: string; vault: string } {
   const repo = path.join(tmp, name)
@@ -96,6 +112,17 @@ describe('export at a repository root that holds its vault', () => {
     const { realpath: _r, readLink: _l, isSymlink: _s, ...blind } = createNodeVfs()
 
     expect(() => build(blind, repo, vault)).toThrow(/unsafe-root/)
+  })
+})
+
+describe('a host without stat', () => {
+  test('discovers the same components as one with it', () => {
+    const { vault } = repoWithVault('no-stat')
+    const { stat: _stat, ...withoutStat } = createNodeVfs()
+    const names = (vfs: Vfs) =>
+      discoverComponents(vfs, { vault_root: vault }).components.map((c) => c.name)
+    expect(names(withoutStat)).toEqual(names(createNodeVfs()))
+    expect(names(withoutStat)).toContain('review')
   })
 })
 

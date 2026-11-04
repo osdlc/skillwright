@@ -1308,7 +1308,7 @@ fn swap_one(
         if vfs.exists(saved) && !vfs.exists(dest) {
             let _ = vfs.rename(saved, dest);
         }
-        return Err(error);
+        return Err(error.into());
     }
     Ok(())
 }
@@ -3230,35 +3230,41 @@ mod tests {
     }
 
     impl Vfs for FailingRename<'_> {
-        fn read_file(&self, path: &Path) -> Result<Vec<u8>, CoreError> {
+        fn read_file(&self, path: &Path) -> Result<Vec<u8>, crate::vfs::VfsError> {
             self.inner.read_file(path)
         }
-        fn read_dir(&self, path: &Path) -> Result<Vec<crate::vfs::DirEntry>, CoreError> {
+        fn read_dir(&self, path: &Path) -> Result<Vec<crate::vfs::DirEntry>, crate::vfs::VfsError> {
             self.inner.read_dir(path)
         }
-        fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
+        fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), crate::vfs::VfsError> {
             self.inner.write_file(path, bytes)
         }
-        fn create_dir_all(&self, path: &Path) -> Result<(), CoreError> {
+        fn create_dir_all(&self, path: &Path) -> Result<(), crate::vfs::VfsError> {
             self.inner.create_dir_all(path)
         }
         fn exists(&self, path: &Path) -> bool {
             self.inner.exists(path)
         }
+        fn metadata(&self, path: &Path) -> Result<crate::vfs::Metadata, crate::vfs::VfsError> {
+            self.inner.metadata(path)
+        }
         fn is_executable(&self, path: &Path) -> bool {
             self.inner.is_executable(path)
         }
-        fn set_executable(&self, path: &Path, yes: bool) -> Result<(), CoreError> {
+        fn set_executable(&self, path: &Path, yes: bool) -> Result<(), crate::vfs::VfsError> {
             self.inner.set_executable(path, yes)
         }
-        fn rename(&self, from: &Path, to: &Path) -> Result<(), CoreError> {
+        fn rename(&self, from: &Path, to: &Path) -> Result<(), crate::vfs::VfsError> {
             if normalize(to) == self.to && self.remaining.get() > 0 {
                 self.remaining.set(self.remaining.get() - 1);
-                return Err(CoreError::io(to, std::io::Error::other("injected failure")));
+                return Err(crate::vfs::VfsError::io(
+                    to,
+                    std::io::Error::other("injected failure"),
+                ));
             }
             self.inner.rename(from, to)
         }
-        fn remove(&self, path: &Path) -> Result<(), CoreError> {
+        fn remove(&self, path: &Path) -> Result<(), crate::vfs::VfsError> {
             self.inner.remove(path)
         }
     }

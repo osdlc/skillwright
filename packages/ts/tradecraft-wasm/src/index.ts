@@ -60,4 +60,4 @@ export type {
 
 export { toCorePath, toHostPath } from './host-path.ts'
 export { createNodeVfs } from './node-vfs.ts'
-export type { BaseVfs, LinkMethods, NodeFs, NodeVfsOptions, Vfs } from './node-vfs.ts'
+export type { BaseVfs, LinkMethods, NodeFs, NodeVfsOptions, Vfs, VfsStat } from './node-vfs.ts'

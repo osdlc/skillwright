@@ -61,6 +61,15 @@ pub enum CoreError {
     SwapFailed(String),
 }
 
+/// A failed [`crate::vfs::Vfs`] call is a read failure against its path:
+/// `reading <path>: <cause>`, as it was when the trait returned this type.
+impl From<crate::vfs::VfsError> for CoreError {
+    fn from(err: crate::vfs::VfsError) -> Self {
+        let path = err.path().to_path_buf();
+        Self::io(path, err.into_io_error())
+    }
+}
+
 impl CoreError {
     /// Attach a path to an [`std::io::Error`]. Threading the path through
     /// every `?` is the whole reason this helper exists.

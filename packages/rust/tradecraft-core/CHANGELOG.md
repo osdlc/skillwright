@@ -16,6 +16,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - `build` and `check` apply a note's `sw-overrides` block for each harness to that harness's tree, as `publish` does. A block naming an unknown target, or a key its harness does not read, now refuses the build (`unknown-target`, `unknown-override-key`).
 - `publish` of a plugin note to `cursor` or `pi` writes that harness's pack — its manifest and its members' skills, in the shape `build` writes — instead of refusing `no-renderer`. Every publish renders through the same model and translator as `build`.
+- `vfs` re-exports the `vfs-seam` crate, the file-access trait the osdlc vault crates share. The paths are unchanged. A `Vfs` method now returns `VfsError`, which `?` turns into `CoreError::Io` with the same message, and `Vfs` has a required `metadata` method (size, modification time, directory, symlink).
 
 ## [0.41.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.40.2...tradecraft-core/v0.41.0) - 2026-10-30
 

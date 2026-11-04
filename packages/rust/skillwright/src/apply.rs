@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
+use tradecraft_core::vfs::NativeVfs;
 
 /// Write or rehearse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -380,9 +381,9 @@ fn move_note(
 ) -> Result<(), ApplyError> {
     let facts = VaultFacts::scan(vault_dir);
     let plan = if bundle {
-        markdown_relink::plan_bundle(vault_dir, &facts, from, to)?
+        markdown_relink::plan_bundle(&NativeVfs, vault_dir, &facts, from, to)?
     } else {
-        markdown_relink::plan(vault_dir, &facts, from, to)?
+        markdown_relink::plan(&NativeVfs, vault_dir, &facts, from, to)?
     };
     if let Some(conflict) = plan.conflict {
         return Err(ApplyError::Refused(conflict));

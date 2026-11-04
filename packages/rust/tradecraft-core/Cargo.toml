@@ -37,6 +37,9 @@ frontmatter-lossless = { workspace = true }
 yaml-splice = { workspace = true }
 # The code fence and inline span lexer the compile and adopt passes share.
 markdown-link = { workspace = true }
+# The file-access trait (`crate::vfs`), shared with the osdlc vault crates.
+# `native` for `NativeVfs`, which the CLI and the tests use.
+vfs-seam = { workspace = true, features = ["native"] }
 # Symlink-aware containment checks, over the `Vfs` seam.
 path-guard = { workspace = true }
 
