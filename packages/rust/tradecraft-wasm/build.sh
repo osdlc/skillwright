@@ -5,13 +5,13 @@
 #   cargo build --profile wasm-release --target wasm32-unknown-unknown  (cdylib)
 #     -> wasm-bindgen --target nodejs                        (JS/TS glue)
 #       -> wasm-opt -Oz                                      (size)
-#         -> $OUT_DIR, default packages/ts/tradecraft-wasm/wasm/ (the npm
-#            package's committed copy)
+#         -> $OUT_DIR, default packages/ts/tradecraft-wasm/wasm/ (gitignored;
+#            the npm package's build copies it into dist/)
 #
 # `wasm-release` is the size profile in packages/rust/Cargo.toml.
 #
-# The npm package @osdlc/tradecraft-wasm commits this output, and CI fails
-# when a rebuild differs from the committed files.
+# The output is not committed. CI builds it with this script in the
+# `packages` job in ts.yml.
 #
 # Pinned tool versions. The artifact is only reproducible with these:
 #   * wasm-bindgen CLI : 0.2.126   (must equal the wasm-bindgen crate pin in
@@ -24,10 +24,8 @@
 #
 # Same tools and source in, the same output out on CI: machine paths are
 # remapped (below), so the build machine does not show in the bytes. A local
-# macOS build is not verified to match CI. When CI's check fails, take the
-# `tradecraft-wasm` artifact from the CI run instead of a local build.
-# CI builds the merge of the pull request with main, so a change that lands on
-# main can fail the check on an open pull request until it is rebuilt.
+# macOS build is not verified to match CI. CI's build is uploaded as the
+# `tradecraft-wasm` artifact of the ts.yml run.
 # Override the tool locations with WASM_BINDGEN / WASM_OPT if they are not on
 # PATH (for example, prebuilt tarballs). CARGO_TARGET_DIR is honoured.
 # OUT_DIR overrides the output folder.
@@ -69,10 +67,16 @@ if [ "$GOT_VERSION" != "$REQUIRED_WASM_BINDGEN" ]; then
 fi
 
 GOT_WASM_OPT="$("$WASM_OPT" --version | awk '{print $3}')"
+# Another wasm-opt emits different bytes but working wasm, so a mismatch
+# fails only on CI (`CI` set) and is a warning on a local build.
 if [ "$GOT_WASM_OPT" != "$REQUIRED_WASM_OPT" ]; then
-  echo "error: wasm-opt version mismatch: need $REQUIRED_WASM_OPT, got $GOT_WASM_OPT." >&2
-  echo "       CI compares the built bytes with the committed ones." >&2
-  exit 1
+  if [ -n "${CI:-}" ]; then
+    echo "error: wasm-opt version mismatch: need $REQUIRED_WASM_OPT, got $GOT_WASM_OPT." >&2
+    echo "       Another version emits different bytes." >&2
+    exit 1
+  fi
+  echo "warning: wasm-opt version mismatch: need $REQUIRED_WASM_OPT, got $GOT_WASM_OPT." >&2
+  echo "         The build works, but its bytes differ from CI's." >&2
 fi
 
 # --- 1. compile the cdylib to wasm32 ---------------------------------------
@@ -123,8 +127,8 @@ mv "$BG_WASM.tmp" "$BG_WASM"
 # layout a formatter gives it.
 printf '{\n  "type": "commonjs"\n}\n' > "$OUT_DIR/package.json"
 
-# The wasm is meant to be published, so it must not name the machine that
-# built it. A path left here means the remapping above missed one.
+# The bytes must not depend on the machine that built them, so no machine
+# path may remain. A path left here means the remapping above missed one.
 LEAKED="$(strings "$BG_WASM" | grep -cE -e '/Users/|/home/|/root/' -e "$HOME" -e "$REPO_ROOT" || true)"
 if [ "$LEAKED" != "0" ]; then
   echo "error: $BG_WASM still contains $LEAKED machine path(s):" >&2

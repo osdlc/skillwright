@@ -1,6 +1,7 @@
 /**
  * The seam to the Rust core — `tradecraft-core`, reached through the
- * committed WASM binding in `wasm/` (`packages/rust/tradecraft-wasm`).
+ * WASM binding that `pnpm run build:wasm` writes to `wasm/`
+ * (`packages/rust/tradecraft-wasm`).
  *
  * This is the ONLY file in the package that imports the wasm glue. Nothing
  * above this module may decide anything a publish, adopt, or status

@@ -22,6 +22,9 @@ npm install @osdlc/tradecraft-wasm
 
 `pnpm add @osdlc/tradecraft-wasm` and `yarn add @osdlc/tradecraft-wasm` work too.
 
+The releases on npm were published from osdlc/osdlc and are behind this
+source; to use this source, see [Building from source](#building-from-source).
+
 ESM only. Node.js 22 or later, or Bun.
 
 ## Quick start
@@ -87,6 +90,14 @@ reads the `.wasm` file with `fs` from beside itself. So the package does not
 load in a browser or through a bundler such as Vite. It has no native code.
 The path conversion for Windows is tested against a stand-in filesystem on
 every platform.
+
+## Building from source
+
+A checkout of the repository does not contain the built WebAssembly:
+`pnpm run build:wasm` builds it from the Rust crates into `wasm/`. It needs
+the Rust toolchain, `wasm-bindgen` and `wasm-opt`.
+[CONTRIBUTING.md](./CONTRIBUTING.md#building-the-webassembly) lists the
+versions.
 
 ## Licence
 
