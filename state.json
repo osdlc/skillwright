@@ -49,9 +49,9 @@
       "line": 681,
       "title": "no test for RenamePlugin preview or non-bundle execute failure",
       "comment": "https://github.com/osdlc/skillwright/pull/23#discussion_r4441119854",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "9c099b68e7ec7c57185d2240e84f852bded1a736"
     },
     {
       "id": "r1-5",
