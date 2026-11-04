@@ -71,9 +71,9 @@
       "line": null,
       "title": "require_descriptions refusal, warning text and key help still treat a configured description as the filler",
       "comment": "https://github.com/osdlc/skillwright/pull/17#pullrequestreview-5723682234",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "613accadbd3a664a6c27a5e796a8905d84624c04"
     },
     {
       "id": "r2-1",
