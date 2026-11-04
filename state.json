@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 22,
-  "head": "06ebaf79180659f28fb4a5258deb5252ab1beb99",
-  "base": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f",
-  "round": 1,
+  "head": "97897e8cccb6a79979af6b0260772b4a24a3a01f",
+  "base": "9e2073ccba7ce517d214cc880c554ba9fe4c8083",
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-04T05:46:41.559Z"
@@ -82,6 +82,50 @@
       "line": null,
       "title": "PR body fix count and Not fixed section inaccurate",
       "comment": "https://github.com/osdlc/skillwright/pull/22#pullrequestreview-5734644399",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/scan.rs",
+      "line": 245,
+      "title": "no test for a root that is itself a skills directory",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/scan.rs",
+      "line": 53,
+      "title": "SKILLS_CONTAINER doc contradicts NEVER_A_SKILL",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/scan.rs",
+      "line": 220,
+      "title": "is_skills_container doc restates the name",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "PR body stale after rebase: wasm check, publish.rs line, 7ad9f0e",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
