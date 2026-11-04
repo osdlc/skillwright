@@ -212,7 +212,7 @@ pub fn read_vault_skill(
 /// placement to follow, and its named folder still travels with it, so there
 /// `SKILL.md` names its folder anywhere.
 ///
-/// Inside a kind folder this asks [`crate::discover::is_entry`], the rule
+/// Inside a kind folder this asks `crate::discover::is_entry`, the rule
 /// discovery places a component by, so the two cannot diverge. If they did, a
 /// component in the canonical layout would publish its `SKILL.md` alone, or a
 /// lone note would carry every sibling in its kind folder as its resources.
