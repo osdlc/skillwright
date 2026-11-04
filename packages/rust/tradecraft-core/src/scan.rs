@@ -30,8 +30,8 @@ use crate::vfs::Vfs;
 /// Directory names never descended into. These are build output, dependency
 /// trees and VCS internals, and walking them would dominate a scan. One
 /// exception: a pruned name directly under a `skills` directory is a skill's
-/// own directory (`.claude/skills/build`), so its `SKILL.md` is still listed.
-/// `.git` and `node_modules` get no such exception.
+/// own directory (`.claude/skills/build`), so its `SKILL.md` is still listed,
+/// unless the name is in `NEVER_A_SKILL`.
 pub const SKIP_DIRS: &[&str] = &[
     ".git",
     "node_modules",
@@ -190,16 +190,16 @@ fn collect_skill_files(
     for entry in entries {
         if entry.is_dir {
             if SKIP_DIRS.contains(&entry.name.as_str()) {
-                // A pruned name directly under `skills/` (`skills/build`) is a
-                // skill's own directory. Take its `SKILL.md`, but do not
-                // descend: below it the pruning applies as before.
-                let skill_md = dir.join(&entry.name).join("SKILL.md");
+                // A skill's own directory (see `SKIP_DIRS`): take its
+                // `SKILL.md`, but do not descend into it.
                 if is_skills_container(dir)
                     && !NEVER_A_SKILL.contains(&entry.name.as_str())
                     && depth + 1 < max_depth
-                    && vfs.exists(&skill_md)
                 {
-                    out.push((skill_md, relative.join(&entry.name)));
+                    let skill_md = dir.join(&entry.name).join("SKILL.md");
+                    if vfs.exists(&skill_md) {
+                        out.push((skill_md, relative.join(&entry.name)));
+                    }
                 }
                 continue;
             }
@@ -229,21 +229,20 @@ fn is_skills_container(dir: &Path) -> bool {
 /// directly under `skills/`: there it is a skill that happens to be named
 /// `test`. A skill at the root itself is never a fixture.
 fn looks_like_fixture(root: &Path, relative_dir: &Path) -> bool {
-    let is_fixture_name = |name: Option<&std::ffi::OsStr>| {
-        name.and_then(|n| n.to_str())
-            .is_some_and(|s| FIXTURE_SEGMENTS.contains(&s))
-    };
-    let Some(ancestors) = relative_dir.parent() else {
+    let is_fixture_name =
+        |name: &std::ffi::OsStr| name.to_str().is_some_and(|s| FIXTURE_SEGMENTS.contains(&s));
+    let (Some(ancestors), Some(own_name)) = (relative_dir.parent(), relative_dir.file_name())
+    else {
         return false;
     };
     if ancestors
         .components()
-        .any(|c| is_fixture_name(Some(c.as_os_str())))
+        .any(|c| is_fixture_name(c.as_os_str()))
     {
         return true;
     }
-    let skill_dir = root.join(relative_dir);
-    is_fixture_name(skill_dir.file_name()) && !skill_dir.parent().is_some_and(is_skills_container)
+    // `root` is joined so a skill one level down sees the root's own name.
+    is_fixture_name(own_name) && !is_skills_container(&root.join(ancestors))
 }
 
 #[cfg(test)]
@@ -406,6 +405,29 @@ mod tests {
         assert_eq!(dirs, vec![".claude/skills/dotted", "top"]);
     }
 
+    /// Writes a minimal `SKILL.md` into each of `dirs` under `/c`.
+    fn mem_corpus(dirs: &[&str]) -> (MemVfs, CorpusRoot) {
+        let vfs = MemVfs::new();
+        for rel in dirs {
+            let dir = Path::new("/c").join(rel);
+            vfs.create_dir_all(&dir).unwrap();
+            vfs.write_file(
+                &dir.join("SKILL.md"),
+                b"---\nname: n\ndescription: d\n---\n",
+            )
+            .unwrap();
+        }
+        (vfs, CorpusRoot::new("c", "C", "/c", RootKind::Project))
+    }
+
+    fn listed(report: &ScanReport) -> Vec<&str> {
+        report
+            .skills
+            .iter()
+            .map(|s| s.relative_dir.as_str())
+            .collect()
+    }
+
     // A root registered at a skill directory lists that skill, and the row
     // opens: the roster and the detail view agree on it.
     #[test]
@@ -430,26 +452,14 @@ mod tests {
     // about it: it lists even when named like a pruned or fixture directory.
     #[test]
     fn a_skill_named_like_a_pruned_or_fixture_dir_is_listed() {
-        let vfs = MemVfs::new();
-        for name in ["build", "test", "ok"] {
-            let dir = PathBuf::from("/c/.claude/skills").join(name);
-            vfs.create_dir_all(&dir).unwrap();
-            vfs.write_file(
-                &dir.join("SKILL.md"),
-                format!("---\nname: {name}\ndescription: d\n---\nbody\n").as_bytes(),
-            )
-            .unwrap();
-        }
-        let root = CorpusRoot::new("c", "C", "/c", RootKind::Project);
-
+        let (vfs, root) = mem_corpus(&[
+            ".claude/skills/build",
+            ".claude/skills/test",
+            ".claude/skills/ok",
+        ]);
         let report = scan_root(&vfs, &root, &ScanOptions::default());
-        let dirs: Vec<_> = report
-            .skills
-            .iter()
-            .map(|s| s.relative_dir.as_str())
-            .collect();
         assert_eq!(
-            dirs,
+            listed(&report),
             vec![
                 ".claude/skills/build",
                 ".claude/skills/ok",
@@ -457,29 +467,6 @@ mod tests {
             ]
         );
         assert_eq!(report.excluded_fixtures, 0);
-    }
-
-    /// Writes a minimal `SKILL.md` into each of `dirs` under `/c`.
-    fn mem_corpus(dirs: &[&str]) -> (MemVfs, CorpusRoot) {
-        let vfs = MemVfs::new();
-        for rel in dirs {
-            let dir = Path::new("/c").join(rel);
-            vfs.create_dir_all(&dir).unwrap();
-            vfs.write_file(
-                &dir.join("SKILL.md"),
-                b"---\nname: n\ndescription: d\n---\n",
-            )
-            .unwrap();
-        }
-        (vfs, CorpusRoot::new("c", "C", "/c", RootKind::Project))
-    }
-
-    fn listed(report: &ScanReport) -> Vec<&str> {
-        report
-            .skills
-            .iter()
-            .map(|s| s.relative_dir.as_str())
-            .collect()
     }
 
     // The pruned-name exception holds only directly under `skills/`, never for
