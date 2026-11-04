@@ -27,9 +27,9 @@
       "line": 652,
       "title": "conflicts with PR 20 in rename_plugin member mapping",
       "comment": "https://github.com/osdlc/skillwright/pull/23#discussion_r4441119833",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "9c099b68e7ec7c57185d2240e84f852bded1a736"
     },
     {
       "id": "r1-3",
