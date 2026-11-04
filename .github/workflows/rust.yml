@@ -439,13 +439,25 @@ jobs:
       # is not in this history, so the walk reaches the imported commits,
       # which have no Cargo workspace, and fails. The `release --dry-run` step
       # above still checks the release pull request.
+      #
+      # TODO(osdlc#618): skipped while packages/rust/Cargo.toml pins osdlc
+      # crates to a git commit. Its semver check resolves each crate on its
+      # own against crates.io, where markdown-link 0.7 and the other #618
+      # versions are not yet. Runs again once the `[patch.crates-io]` section
+      # is deleted.
       - name: release-plz update
         if: >-
           !(github.event_name == 'pull_request' &&
             startsWith(github.head_ref, 'release-plz-') &&
             github.event.pull_request.user.type == 'Bot' &&
             github.event.pull_request.head.repo.full_name == github.repository)
-        run: release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
+        run: |
+          set -euo pipefail
+          if grep -qE '^\[patch\.crates-io\]' packages/rust/Cargo.toml; then
+            echo "::warning::release-plz update skipped: packages/rust/Cargo.toml pins osdlc crates to a git commit until osdlc releases them (osdlc/osdlc#618)."
+            exit 0
+          fi
+          release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
 
   rust:
     needs: [changes, lint, rust-test, msrv, minimal-versions, wasm, release-plz]

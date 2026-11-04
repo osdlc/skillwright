@@ -1,5 +1,3 @@
 {
-  "userIgnoreFilters": [
-    "marketplaces/house/plugins/tools/skills/hidden/"
-  ]
+  "userIgnoreFilters": ["marketplaces/house/plugins/tools/skills/hidden/"]
 }
