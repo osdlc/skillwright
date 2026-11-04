@@ -15,10 +15,10 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 747,
       "title": "override_states still reports agent override keys as set",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110955",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "4d06b03"
     },
     {
       "id": "r1-2",
@@ -26,7 +26,7 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 6429,
       "title": "no test for pack redundant overrides or command member override output",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110963",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -37,10 +37,10 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 6485,
       "title": "manifest collision test does not prove the rendered manifest wins",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110967",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "4d06b03"
     },
     {
       "id": "r1-4",
@@ -48,7 +48,7 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 6509,
       "title": "agent override refusal: only the refusing case is tested",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110973",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -59,10 +59,10 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 110,
       "title": "module doc says the rail runs first, which is wrong",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110980",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "4d06b03"
     },
     {
       "id": "r1-6",
@@ -70,10 +70,10 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 913,
       "title": "unreachable exclusion arm in finish",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110988",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "4d06b03"
     },
     {
       "id": "r1-7",
@@ -81,10 +81,10 @@
       "path": "packages/rust/tradecraft-core/src/compile.rs",
       "line": 324,
       "title": "Closure::hash still takes an owner argument the closure now carries",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110992",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "4d06b03"
     },
     {
       "id": "r1-8",
@@ -92,10 +92,10 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 1597,
       "title": "redundant-override mapping and member prep duplicated",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440110997",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "4d06b03"
     },
     {
       "id": "r1-9",
@@ -103,10 +103,10 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 1457,
       "title": "new too_many_arguments allow for one extra parameter",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440111003",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "4d06b03"
     },
     {
       "id": "r1-10",
@@ -114,10 +114,10 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 1709,
       "title": "imported container plugin.json dropped silently",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/18#discussion_r4440111008",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "4d06b03"
     }
   ]
 }
