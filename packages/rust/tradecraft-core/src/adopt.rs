@@ -45,7 +45,9 @@
 //! `references/guide.md` keep linking their own. A link to `SKILL.md` from the
 //! entry or a file beside it names the entry note, which adoption renames to
 //! `<name>.md`. What passes through untouched, and the inline-code span that
-//! does not, are [`rewrite_to_wikilinks`]'s contract.
+//! does not, are [`rewrite_to_wikilinks`]'s contract. A code mention in a
+//! nested resource links relative to that file's folder, or stays code (see
+//! `resolve_resource_mention`).
 //!
 //! # Frontmatter: rebuilt at the namespace, with provenance
 //!
@@ -1450,9 +1452,8 @@ pub fn rewrite_to_wikilinks(markdown: &str, resources: &[String]) -> String {
 }
 
 /// [`rewrite_to_wikilinks`] for a file in `dir`, its skill-relative folder
-/// (`""` at the skill root). A code mention links by its path relative to
-/// `dir`, which is how compile resolves it, and stays code when the resource
-/// lies outside `dir`. A link to `SKILL.md` names `entry_name`, the adopted
+/// (`""` at the skill root), against which code mentions resolve as
+/// [`resolve_resource_mention`] describes. A link to `SKILL.md` names `entry_name`, the adopted
 /// entry note, because adoption renames the entry to `<name>.md`. With
 /// `None`, `SKILL.md` is a file like any other.
 fn rewrite_links(
@@ -1768,8 +1769,8 @@ fn has_scheme(path: &str) -> bool {
 /// Resolves an inline-code span's content to a bundled resource and returns its wikilink target,
 /// or `None` to leave the span as code. Only something that looks like a lone filename is ever
 /// considered, so `` `sbt test` `` and prose code stay code. A match is, case-insensitively, by
-/// exact skill-relative path, then by path relative to `dir` (the linking file's skill-relative
-/// folder), then by a basename unique among the resources.
+/// path relative to `dir` (the linking file's skill-relative folder), then by exact skill-relative
+/// path, then by a basename unique among the resources.
 ///
 /// The target is the resource's path relative to `dir`, `.md` dropped, for the reason
 /// [`convert_link`] gives. A resource outside `dir` has no such path without `..`, which compile
@@ -1795,9 +1796,12 @@ fn resolve_resource_mention(content: &str, resources: &[String], dir: &str) -> O
             .find(|resource| resource.to_lowercase() == wanted)
             .map(String::as_str)
     };
-    let mut resource_path = exact(&lower);
-    if resource_path.is_none() && !dir.is_empty() {
+    let mut resource_path = None;
+    if !dir.is_empty() {
         resource_path = exact(&format!("{}/{lower}", dir.to_lowercase()));
+    }
+    if resource_path.is_none() {
+        resource_path = exact(&lower);
     }
     if resource_path.is_none() && !candidate.contains('/') {
         let matches: Vec<&str> = resources
@@ -3441,6 +3445,40 @@ mod tests {
         assert_eq!(
             rewrite_links("Run `tool.sh`.", &resources, "", None),
             "Run [[scripts/tool.sh]]."
+        );
+    }
+
+    /// In a nested file the folder-relative match wins over a skill-relative
+    /// one outside the folder, so `guide.md` named from `references/other.md`
+    /// links the `references/guide.md` beside it, as a markdown link does.
+    #[test]
+    fn a_nested_code_mention_prefers_the_file_beside_it() {
+        let resources = vec![
+            "guide.md".to_owned(),
+            "references/guide.md".to_owned(),
+            "references/other.md".to_owned(),
+        ];
+        assert_eq!(
+            rewrite_links("See `guide.md`.", &resources, "references", None),
+            "See [[guide]]."
+        );
+        assert_eq!(
+            rewrite_links("See [g](guide.md).", &resources, "references", None),
+            "See [[guide|g]]."
+        );
+    }
+
+    /// A skill-relative mention inside the linking file's folder links by its
+    /// path relative to that folder.
+    #[test]
+    fn a_nested_skill_relative_code_mention_links_relative_to_the_folder() {
+        let resources = vec![
+            "references/guide.md".to_owned(),
+            "references/other.md".to_owned(),
+        ];
+        assert_eq!(
+            rewrite_links("See `references/guide.md`.", &resources, "references", None),
+            "See [[guide]]."
         );
     }
 
