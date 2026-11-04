@@ -60,9 +60,9 @@
       "line": 316,
       "title": "comment restates the code",
       "comment": "https://github.com/osdlc/skillwright/pull/24#discussion_r4441340838",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "151b853f01638452cf94065cea8d30317dd02ae5"
     },
     {
       "id": "r1-6",
