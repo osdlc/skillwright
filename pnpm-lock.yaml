@@ -44,6 +44,12 @@ importers:
 
   harness-reference:
     dependencies:
+      '@osdlc/frontmatter-lossless':
+        specifier: 1.1.2
+        version: 1.1.2
+      '@osdlc/markdown-link':
+        specifier: 0.8.0
+        version: 0.8.0
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -123,6 +129,14 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@osdlc/frontmatter-lossless@1.1.2':
+    resolution: {integrity: sha512-ckZPpz+i5aRTmncUvrPOvuXm7rQDqaaluhkUn/wxCmWXFwdGyxJgLkGBpqnyd1AyYUoDiMZ3vmV4dsW2tv7J6Q==}
+    engines: {node: '>=22'}
+
+  '@osdlc/markdown-link@0.8.0':
+    resolution: {integrity: sha512-ILXDRoTavBWeSni8jNjA6fsF1FL6++3uEvdvt7aEcAEOo9SG9DxzVcIQRh5Ts9VcYEXH0ZmSAhu2m2rQghc5MQ==}
+    engines: {node: '>=22'}
 
   '@osdlc/prettier-config@0.3.1':
     resolution: {integrity: sha512-zo1nSAOg3itmyt1LTJ9pH+qxQ0j9tJlZneqIDBBBIGf14senf302jCeKsU5X446lB2uCYTK/Y/G5gKCgXr5ItQ==}
@@ -721,6 +735,10 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  '@osdlc/frontmatter-lossless@1.1.2': {}
+
+  '@osdlc/markdown-link@0.8.0': {}
 
   '@osdlc/prettier-config@0.3.1': {}
 
