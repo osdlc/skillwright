@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `build` and `publish` find links in a note the way the other osdlc tools do. A wikilink holding a `[` or `]`, or code, is no longer a link and is left as written; `[[]]` is no longer a link to the note itself; and `[[Note\|alias]]` in a table cell now links to `Note`.
+
 ## [0.5.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.4.0...skillwright/v0.5.0) - 2026-11-05
 
 ### Other

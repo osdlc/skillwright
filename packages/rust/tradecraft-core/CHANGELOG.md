@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The compile pass finds `[[links]]` and `![[embeds]]` with `markdown-link`'s scanner, the one the other osdlc tools use. `/[[calls]]`, `\/[[x]]` escapes and hand-written calls stay this crate's, read on top of it. What changes is at the edges: a wikilink holding a `[` or `]`, or code, is no longer a link and is left as written; `[[]]` and `[[ |alias]]` are no longer links to the note itself; a `\|` escaping the pipe in a table cell is no longer part of the target; and a block fragment `#^ id` is read as `#^id`.
+
 ## [0.42.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.41.0...tradecraft-core/v0.42.0) - 2026-11-05
 
 ### Other
@@ -36,7 +40,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `build` and `check` apply a note's `sw-overrides` block for each harness to that harness's tree, as `publish` does. A block naming an unknown target, or a key its harness does not read, now refuses the build (`unknown-target`, `unknown-override-key`).
 - `publish` of a plugin note to `cursor` or `pi` writes that harness's pack — its manifest and its members' skills, in the shape `build` writes — instead of refusing `no-renderer`. Every publish renders through the same model and translator as `build`.
 - Discovery leaves out the files the vault excludes in Obsidian ("Excluded files", `userIgnoreFilters` in `.obsidian/app.json`), so `build`, `check` and a whole-vault `publish` no longer publish them. Links may still point at them.
-- Links resolve through `markdown-link`'s `LinkIndex::resolve_strict`, so they resolve as other osdlc tools resolve them. An exact path, a path from the linking note's folder and a unique name resolve as before, and an ambiguous name is still refused (`link-ambiguous`), its candidates now listed shortest path first. What changes is at the edges: a partial path (`[[sub/x]]`) names the one file whose path ends with it, where it used to fall back to the bare name and be refused when that name was shared; a `./` or `../` target is relative to the linking note; a percent-encoded target is decoded.
+- Links resolve through `markdown-link`'s `LinkIndex::resolve_strict`, so they resolve as other osdlc tools resolve them. An exact path, a path from the linking note's folder and a unique name resolve as before, and an ambiguous name is still refused (`link-ambiguous`), its candidates now listed shortest path first. What changes is at the edges: a partial path (`[[sub/x]]`) names the one file whose path ends with it, where it used to fall back to the bare name and be refused when that name was shared; a `./` target is relative to the linking note (a `../` one is still refused, `unsafe-path`); a percent-encoded target is decoded.
 - Asset, script, bundle and adoption-source walks go through the new `vfs-walk` crate, with no vault rules; the vault walks go through `markdown-vault-fs`. The files each walk finds are unchanged.
 - `vfs` re-exports the `vfs-seam` crate, the file-access trait the osdlc vault crates share. The paths are unchanged. A `Vfs` method now returns `VfsError`, which `?` turns into `CoreError::Io` with the same message, and `Vfs` has a required `metadata` method (size, modification time, directory, symlink).
 

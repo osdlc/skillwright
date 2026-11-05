@@ -1499,34 +1499,6 @@ fn convert_markdown_link(text: &str) -> Option<(usize, String)> {
     Some((at + 1, converted))
 }
 
-/// The inverse of [`crate::compile`]'s percent-encoding, over one path
-/// segment or fragment.
-///
-/// A `%` that does not introduce two hex digits, and a decoded byte run that
-/// is not UTF-8, both keep their raw spelling: a link whose text was never
-/// encoded reads back unchanged rather than becoming a ghost.
-fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] == b'%'
-            && at + 2 < bytes.len()
-            && bytes[at + 1].is_ascii_hexdigit()
-            && bytes[at + 2].is_ascii_hexdigit()
-            && let Ok(hex) = std::str::from_utf8(&bytes[at + 1..at + 3])
-            && let Ok(byte) = u8::from_str_radix(hex, 16)
-        {
-            out.push(byte);
-            at += 3;
-            continue;
-        }
-        out.push(bytes[at]);
-        at += 1;
-    }
-    String::from_utf8(out).unwrap_or_else(|_| s.to_owned())
-}
-
 /// Converts one markdown link's parts into a wikilink, or `None` to leave the
 /// link as written.
 ///
@@ -1558,14 +1530,15 @@ fn convert_link(embed: bool, label: &str, target: &str) -> Option<String> {
     // as a wikilink to a note by that literal name, which no vault holds.
     // Decoded after the basename so an encoded `/` inside a filename stays
     // part of that filename rather than splitting it.
-    let base = percent_decode(basename(path_part.strip_prefix("./").unwrap_or(path_part)));
+    let base =
+        markdown_link::percent_decode(basename(path_part.strip_prefix("./").unwrap_or(path_part)));
     let extension = extension_of_target(&base).unwrap_or_default();
     let wiki_target = if extension == ".md" {
         &base[..base.len() - extension.len()]
     } else {
         &base[..]
     };
-    let fragment = percent_decode(fragment);
+    let fragment = markdown_link::percent_decode(fragment);
     let alias = if !label.is_empty() && label != wiki_target {
         label
     } else {
