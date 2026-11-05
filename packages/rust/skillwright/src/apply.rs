@@ -390,16 +390,18 @@ fn move_note(
         .with_link_walk(walk.clone())
         .with_frontmatter_walk(walk)
         .with_split(SplitMode::Lenient);
-    let corpus =
-        Corpus::try_load(&NativeVfs, vault_dir, options).map_err(|err| ApplyError::Io {
+    // Symlinks are listed, so a walk only fails on a folder or a file it
+    // cannot read. The error names that path, not only the vault.
+    let corpus = Corpus::try_load(&NativeVfs, vault_dir, options).map_err(|err| match err {
+        WalkError::Io(err) => ApplyError::Io {
+            what: format!("walking {}", err.path().display()),
+            source: err.into_io_error(),
+        },
+        other => ApplyError::Io {
             what: format!("walking {}", vault_dir.display()),
-            // Symlinks are listed, so a walk only fails on a folder or a file it
-            // cannot read.
-            source: match err {
-                WalkError::Io(err) => err.into_io_error(),
-                other => std::io::Error::other(other),
-            },
-        })?;
+            source: std::io::Error::other(other),
+        },
+    })?;
     let facts = VaultFacts::from_corpus(&corpus);
     let plan = if bundle {
         markdown_relink::plan_bundle(&NativeVfs, vault_dir, &facts, from, to)?
@@ -844,6 +846,35 @@ mod tests {
             read(v.path(), "notes/Strict.md"),
             "---\nup: \"[[Alpha]]\"\n---\nsee [[Gamma]]\n"
         );
+    }
+
+    /// A folder the rename's walk cannot list stops the rename, and the
+    /// error names that folder, not only the vault.
+    #[cfg(unix)]
+    #[test]
+    fn a_rename_names_the_folder_it_cannot_list() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "subject\n");
+        let locked = v.path().join("notes/locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // Root lists any folder, so there is nothing to test.
+        let listable = std::fs::read_dir(&locked).is_ok();
+        let op = AuthoringOp::Rename {
+            from: "notes/Alpha.md".to_owned(),
+            to: "notes/Gamma.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+        };
+        let result = apply(v.path(), &op);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if listable {
+            return;
+        }
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("notes/locked"), "{err}");
     }
 
     #[test]

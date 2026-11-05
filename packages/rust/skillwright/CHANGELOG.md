@@ -13,6 +13,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `build`, `check` and `publish` refuse a note with a `[[` that is not a link (`unresolved-syntax`): a `[` or `]` before the closing `]]`, a target that is only code or has code in it, an empty target, or no closing `]]`. Before, it shipped as literal brackets.
 - The skills source walk leaves out `.obsidian` and `node_modules` wherever they sit, as it already left out `.trash`.
 - A rename or move reads the vault as a build does: dot-named files are seen, `.obsidian`, `.trash` and `node_modules` are not, and frontmatter is split leniently. A link the build reads as ambiguous because one candidate sits under a dot-named folder is no longer rewritten as if it named the other. A block with spaces after a fence is frontmatter, so a link in it is left alone like any frontmatter link, instead of being rewritten as a body link.
+- A rename or move stops on a folder in the vault it cannot list, and the error names that folder. Before, the folder was skipped, so links in it were not rewritten.
 
 ## [0.5.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.4.0...skillwright/v0.5.0) - 2026-11-05
 
