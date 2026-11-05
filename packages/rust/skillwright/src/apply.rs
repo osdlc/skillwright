@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use markdown_corpus::{Corpus, LoadOptions, SplitMode};
+use markdown_corpus::{Corpus, LoadOptions, SplitMode, WalkError};
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
 use tradecraft_core::vfs::NativeVfs;
@@ -393,7 +393,12 @@ fn move_note(
     let corpus =
         Corpus::try_load(&NativeVfs, vault_dir, options).map_err(|err| ApplyError::Io {
             what: format!("walking {}", vault_dir.display()),
-            source: std::io::Error::other(err),
+            // Symlinks are listed, so a walk only fails on a folder or a file it
+            // cannot read.
+            source: match err {
+                WalkError::Io(err) => err.into_io_error(),
+                other => std::io::Error::other(other),
+            },
         })?;
     let facts = VaultFacts::from_corpus(&corpus);
     let plan = if bundle {

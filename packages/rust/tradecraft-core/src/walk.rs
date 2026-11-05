@@ -139,8 +139,10 @@ pub(crate) fn vault_files_refusing_symlinks(
     root: &Path,
     prune: &[&str],
     refuse: impl Fn(&Path) -> CoreError,
-) -> Result<Vec<vault::Entry>, CoreError> {
-    vault::walk(vfs, root, &vault_options(prune, true, true)).map_err(|err| core_error(err, refuse))
+) -> Result<Vec<PathBuf>, CoreError> {
+    vault::walk(vfs, root, &vault_options(prune, true, true))
+        .map(|entries| entries.into_iter().map(|entry| entry.abs).collect())
+        .map_err(|err| core_error(err, refuse))
 }
 
 /// Every file under the vault folder `root` this walk can read, without

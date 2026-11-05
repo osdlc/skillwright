@@ -432,10 +432,7 @@ pub(crate) fn load_source(
                 ),
             )
         },
-    )?
-    .into_iter()
-    .map(|entry| entry.abs)
-    .collect();
+    )?;
     Ok(Source { root, files })
 }
 
@@ -450,12 +447,12 @@ pub(crate) fn discover_in(
     source: &Source,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    let root = source.root.clone();
+    let root = &source.root;
     let files = source_files(vfs, vault_root, source);
 
     // Structure first, over the whole file set: a note's shape depends on what
     // sits beside it, so no single path can be classified on its own.
-    let placed = place(&root, &files);
+    let placed = place(root, &files);
 
     let mut discovered = Vec::new();
     let mut skipped = Vec::new();
@@ -466,8 +463,8 @@ pub(crate) fn discover_in(
             // and a note there is not a malformed component however it is
             // shaped. Only inside a marketplace is a declared note at an
             // unrecognised path a mistake worth naming.
-            if under_a_kind_folder(&root, entry_path)
-                && let Err(err) = refuse_stray(vfs, &root, entry_path, ns)
+            if under_a_kind_folder(root, entry_path)
+                && let Err(err) = refuse_stray(vfs, root, entry_path, ns)
             {
                 // A stray sits at no recognised shape, so it is a member of
                 // nothing and blocks no pack.
