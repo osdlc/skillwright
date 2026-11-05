@@ -1,12 +1,68 @@
 {
   "schema": 1,
   "pr": 33,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "3ec26af0892faa07a299e96470e0a17d44b2bb7f",
+  "base": "2ef65e2fea15b1f64486b2194b4941ef18fbf897",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-05T01:48:41.792Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "harness-reference/src/render.ts",
+      "line": 189,
+      "title": "changes() compares each observation with only the last observation of the previous date",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "harness-reference/src/render.ts",
+      "line": 248,
+      "title": "Comparison cell hides still-in-force older observations under 'N earlier' and shows overlapping same-date parts without distinction",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "harness-reference/src/load.ts",
+      "line": 120,
+      "title": "MACHINE_PATH misses ~/ and $HOME",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "No tests for currentSet, the multi-observation cell, or the new changes() date rule",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "harness-reference/bundle/facts/dsh/skills/body-size.md",
+      "line": 10,
+      "title": "dsh body-size open question is answered by the tool-skill README",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
