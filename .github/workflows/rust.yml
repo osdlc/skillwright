@@ -118,38 +118,20 @@ jobs:
 
       # The osdlc library crates come from crates.io. A `[patch]` that points
       # one at a local checkout must not reach main.
-      #
-      # TODO(osdlc#618): a `[patch.crates-io]` pinned to a git commit of
-      # osdlc/osdlc is allowed until osdlc releases the crates #618 adds.
-      # Then the section is deleted and this step goes back to failing on any
-      # `[patch]`.
       - name: No cargo patch
         run: |
           set -euo pipefail
           if grep -nE '^\[patch' Cargo.toml; then
-            body="$(sed -n '/^\[patch/,$p' Cargo.toml | grep -vE '^\s*(#|$|\[patch)')"
-            if grep -vE '^[a-z0-9-]+ = \{ git = "https://github.com/osdlc/osdlc", rev = "[0-9a-f]{40}" \}$' <<<"$body"; then
-              echo "::error::packages/rust/Cargo.toml has a [patch] entry that is not a pinned osdlc/osdlc git commit. Release the crate in osdlc/osdlc and depend on that version instead."
-              exit 1
-            fi
-            echo "::warning::packages/rust/Cargo.toml pins osdlc crates to a git commit. Replace them with crates.io versions once osdlc releases them."
+            echo "::error::packages/rust/Cargo.toml has a [patch] section. Release the crate in osdlc/osdlc and depend on that version instead."
+            exit 1
           fi
 
       # Builds each crate from its packaged files only, so a file missing from
       # a crate's `include` list fails here and not on crates.io. Crates with
       # `publish = false` are left out: they never ship.
-      #
-      # TODO(osdlc#618): skipped while Cargo.toml pins osdlc crates to a git
-      # commit. A packaged crate resolves its dependencies against crates.io,
-      # where markdown-link 0.7 and the other #618 versions are not yet.
-      # Runs again once the `[patch.crates-io]` section is deleted.
       - name: Package
         run: |
           set -euo pipefail
-          if grep -qE '^\[patch\.crates-io\]' Cargo.toml; then
-            echo "::warning::cargo package skipped: Cargo.toml pins osdlc crates to a git commit until osdlc releases them (osdlc/osdlc#618)."
-            exit 0
-          fi
           unpublished="$(cargo metadata --no-deps --format-version 1 --locked | jq -r '.packages[] | select(.publish == []) | "--exclude=" + .name')"
           # shellcheck disable=SC2086 # one flag per word
           cargo package --workspace --locked $unpublished
@@ -439,25 +421,13 @@ jobs:
       # is not in this history, so the walk reaches the imported commits,
       # which have no Cargo workspace, and fails. The `release --dry-run` step
       # above still checks the release pull request.
-      #
-      # TODO(osdlc#618): skipped while packages/rust/Cargo.toml pins osdlc
-      # crates to a git commit. Its semver check resolves each crate on its
-      # own against crates.io, where markdown-link 0.7 and the other #618
-      # versions are not yet. Runs again once the `[patch.crates-io]` section
-      # is deleted.
       - name: release-plz update
         if: >-
           !(github.event_name == 'pull_request' &&
             startsWith(github.head_ref, 'release-plz-') &&
             github.event.pull_request.user.type == 'Bot' &&
             github.event.pull_request.head.repo.full_name == github.repository)
-        run: |
-          set -euo pipefail
-          if grep -qE '^\[patch\.crates-io\]' packages/rust/Cargo.toml; then
-            echo "::warning::release-plz update skipped: packages/rust/Cargo.toml pins osdlc crates to a git commit until osdlc releases them (osdlc/osdlc#618)."
-            exit 0
-          fi
-          release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
+        run: release-plz update --config packages/rust/release-plz.toml --manifest-path packages/rust/Cargo.toml
 
   rust:
     needs: [changes, lint, rust-test, msrv, minimal-versions, wasm, release-plz]

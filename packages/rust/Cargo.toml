@@ -11,11 +11,6 @@
 # crates.io. They are developed in https://github.com/osdlc/osdlc. A change that
 # needs a new version of one is released there first, then bumped here. Do not
 # commit a `[patch.crates-io]` that points at a local checkout.
-#
-# The one exception is the `[patch.crates-io]` at the end of this file. It pins
-# the osdlc crates to one git commit of osdlc/osdlc#618, whose versions are
-# not on crates.io yet. It is temporary: once osdlc releases them, delete the
-# whole section and keep the versions above.
 [workspace]
 # resolver 3 picks dependency versions that support `rust-version` (the MSRV).
 resolver = "3"
@@ -63,13 +58,13 @@ wasm-bindgen = "=0.2.126"
 agent-adapt = "0.19.2"
 config-layers = "0.8.0"
 etag-write = "0.2.4"
-frontmatter-lossless = "1.1.1"
+frontmatter-lossless = "1.1.2"
 markdown-contract = { version = "0.4.0", default-features = false }
 markdown-corpus = "0.1.0"
 markdown-link = "0.7.0"
 markdown-relink = "0.2.0"
 markdown-vault-fs = { version = "0.4.0", default-features = false }
-path-guard = "0.3.2"
+path-guard = "0.3.3"
 tiered-dirs = "0.3.7"
 typed-git = "0.4.0"
 vfs-seam = { version = "0.1.0", default-features = false }
@@ -94,27 +89,3 @@ codegen-units = 1
 # wasm32-unknown-unknown has no unwinder, so unwind tables are dead weight.
 panic = "abort"
 strip = "symbols"
-
-# TEMPORARY, until osdlc releases osdlc/osdlc#618. vfs-seam, vfs-walk and
-# markdown-corpus are new there, and markdown-link 0.7, markdown-relink 0.2,
-# markdown-vault-fs 0.4 and markdown-contract 0.4 are not on crates.io yet.
-# Every osdlc crate in the graph is pinned to the same commit, so each one is
-# built once, from one source. After the release, delete this section; the
-# versions in `[workspace.dependencies]` already name the released ones.
-[patch.crates-io]
-agent-adapt = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-config-layers = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-etag-write = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-frontmatter-lossless = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-markdown-contract = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-markdown-corpus = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-markdown-link = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-markdown-relink = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-markdown-vault-fs = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-path-guard = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-slug-collate = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-tiered-dirs = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-typed-git = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-vfs-seam = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-vfs-walk = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
-yaml-splice = { git = "https://github.com/osdlc/osdlc", rev = "aca4d0c095017f9f78f4157b71eaefbf6213521a" }
