@@ -542,7 +542,7 @@ mod tests {
     /// frontmatter is read; the prose below it restates the same values.
     fn observed(harness: &str, subject: &str) -> Option<String> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../harness-reference/bundle/facts")
+            .join("../../../harness-reference/corpora/alpha/facts")
             .join(harness)
             .join(format!("{subject}.md"));
         let text = std::fs::read_to_string(path).ok()?;
