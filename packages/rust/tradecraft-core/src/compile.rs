@@ -1942,11 +1942,7 @@ fn opens_markdown_link(text: &str, at: usize) -> bool {
 /// Whether `rest`, the text after a `\n`, starts with a blank line: one of
 /// only spaces, tabs and a `\r`, which ends a paragraph.
 fn is_blank_line(rest: &[u8]) -> bool {
-    rest.iter().position(|&b| b == b'\n').is_some_and(|end| {
-        rest[..end]
-            .iter()
-            .all(|b| matches!(b, b' ' | b'\t' | b'\r'))
-    })
+    rest.iter().find(|b| !matches!(b, b' ' | b'\t' | b'\r')) == Some(&b'\n')
 }
 
 /// A link's text before any `|`, trimmed, as written, without the `\` that

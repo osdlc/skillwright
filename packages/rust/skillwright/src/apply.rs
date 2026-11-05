@@ -392,15 +392,15 @@ fn move_note(
         .with_split(SplitMode::Lenient);
     // Symlinks are listed, so a walk only fails on a folder or a file it
     // cannot read. The error names that path, not only the vault.
-    let corpus = Corpus::try_load(&NativeVfs, vault_dir, options).map_err(|err| match err {
-        WalkError::Io(err) => ApplyError::Io {
-            what: format!("walking {}", err.path().display()),
-            source: err.into_io_error(),
-        },
-        other => ApplyError::Io {
-            what: format!("walking {}", vault_dir.display()),
-            source: std::io::Error::other(other),
-        },
+    let corpus = Corpus::try_load(&NativeVfs, vault_dir, options).map_err(|err| {
+        let (path, source) = match err {
+            WalkError::Io(err) => (err.path().to_path_buf(), err.into_io_error()),
+            other => (vault_dir.to_path_buf(), std::io::Error::other(other)),
+        };
+        ApplyError::Io {
+            what: format!("walking {}", path.display()),
+            source,
+        }
     })?;
     let facts = VaultFacts::from_corpus(&corpus);
     let plan = if bundle {
