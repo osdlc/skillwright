@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use markdown_corpus::{Corpus, LoadOptions};
+use markdown_corpus::{Corpus, LoadOptions, SplitMode};
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
 use tradecraft_core::vfs::NativeVfs;
@@ -381,8 +381,15 @@ fn move_note(
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
     // The vault as the shared model reads it, so the planner resolves links
-    // over the same walk and link index as every other osdlc tool.
-    let corpus = Corpus::load(&NativeVfs, vault_dir, LoadOptions::default());
+    // over the same walk and link index as every other osdlc tool. Split
+    // leniently, as a build reads a note: a link in a block only the lenient
+    // split takes as frontmatter is a frontmatter value here too, not a body
+    // link to rewrite.
+    let corpus = Corpus::load(
+        &NativeVfs,
+        vault_dir,
+        LoadOptions::default().with_split(SplitMode::Lenient),
+    );
     let facts = VaultFacts::from_corpus(&corpus);
     let plan = if bundle {
         markdown_relink::plan_bundle(&NativeVfs, vault_dir, &facts, from, to)?
@@ -789,6 +796,43 @@ mod tests {
                 ("notes/Beta.md", "relinked"),
                 ("notes/Gamma.md", "field-set"),
             ]
+        );
+    }
+
+    #[test]
+    fn rename_reads_a_loosely_fenced_note_as_a_build_does() {
+        // Spaces after the fences: only the lenient split takes this block as
+        // frontmatter, and a build reads it that way. The rename does too, so
+        // the link in it is a frontmatter value, left alone as one in a
+        // strictly fenced block is, and only the body link moves.
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "subject\n");
+        for (rel, fence, close) in [
+            ("notes/Loose.md", "--- ", "---  "),
+            ("notes/Strict.md", "---", "---"),
+        ] {
+            write(
+                v.path(),
+                rel,
+                &format!("{fence}\nup: \"[[Alpha]]\"\n{close}\nsee [[Alpha]]\n"),
+            );
+        }
+
+        let op = AuthoringOp::Rename {
+            from: "notes/Alpha.md".to_owned(),
+            to: "notes/Gamma.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+        };
+        apply(v.path(), &op).unwrap();
+
+        assert_eq!(
+            read(v.path(), "notes/Loose.md"),
+            "--- \nup: \"[[Alpha]]\"\n---  \nsee [[Gamma]]\n"
+        );
+        assert_eq!(
+            read(v.path(), "notes/Strict.md"),
+            "---\nup: \"[[Alpha]]\"\n---\nsee [[Gamma]]\n"
         );
     }
 
