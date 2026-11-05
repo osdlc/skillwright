@@ -291,12 +291,12 @@ impl Vfs for JsVfs {
         match self.read_file(path) {
             Ok(bytes) => Ok(Metadata {
                 is_symlink,
-                ..Metadata::file(bytes.len() as u64, None)
+                ..Metadata::file_ns(bytes.len() as u64, None)
             }),
             Err(error) => match self.read_dir(path) {
                 Ok(_) => Ok(Metadata {
                     is_symlink,
-                    ..Metadata::dir(None)
+                    ..Metadata::dir_ns(None)
                 }),
                 Err(_) => Err(error),
             },
@@ -455,14 +455,16 @@ fn to_path(path: &Path, value: &JsValue, what: &str) -> Result<PathBuf, VfsError
 }
 
 /// `stat`'s return value as metadata. `mtimeMs` may be `null` or absent; a
-/// fractional one (Node's) is truncated to whole milliseconds.
+/// fractional one (Node's) keeps its fraction, see [`ms_f64_to_ns`].
 fn to_metadata(path: &Path, value: &JsValue) -> Result<Metadata, VfsError> {
     let what = "stat must return { size, mtimeMs, isDir, isSymlink }";
     let size = field(value, "size")
         .and_then(|v| v.as_f64())
         .filter(|n| *n >= 0.0)
         .ok_or_else(|| protocol(path, what))?;
-    let modified_ms = field(value, "mtimeMs").and_then(|v| v.as_f64());
+    let modified_ns = field(value, "mtimeMs")
+        .and_then(|v| v.as_f64())
+        .and_then(ms_f64_to_ns);
     let flag = |key: &str| {
         field(value, key)
             .and_then(|v| v.as_bool())
@@ -472,10 +474,26 @@ fn to_metadata(path: &Path, value: &JsValue) -> Result<Metadata, VfsError> {
     let is_symlink = flag("isSymlink")?;
     Ok(Metadata {
         len: if is_dir { 0 } else { size as u64 },
-        modified_ms: modified_ms.map(|ms| ms as i64),
+        modified_ns,
         is_dir,
         is_symlink,
     })
+}
+
+/// A JS `mtimeMs` (milliseconds as an `f64`, maybe fractional) as whole
+/// nanoseconds, or `None` when it is not finite.
+///
+/// The whole milliseconds and the fraction are converted apart: an `f64` of
+/// nanoseconds since 1970 has no room for the last digits, but `ms - ms.floor()`
+/// is exact. This undoes vfs-seam's `ns_to_ms_f64`, which is how Node builds
+/// `mtimeMs`, to the nearest nanosecond.
+fn ms_f64_to_ns(ms: f64) -> Option<i64> {
+    if !ms.is_finite() {
+        return None;
+    }
+    let whole = ms.floor();
+    let frac_ns = ((ms - whole) * 1_000_000.0).round() as i64;
+    (whole as i64).checked_mul(1_000_000)?.checked_add(frac_ns)
 }
 
 fn field(value: &JsValue, key: &str) -> Option<JsValue> {
@@ -529,4 +547,31 @@ fn message_of(error: &JsValue) -> String {
         .ok()
         .map(String::from)
         .unwrap_or_else(|| "the host filesystem threw a value with no message".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ms_f64_to_ns;
+
+    #[test]
+    fn a_fractional_mtime_keeps_its_fraction_in_nanoseconds() {
+        assert_eq!(ms_f64_to_ns(1.5), Some(1_500_000));
+        assert_eq!(ms_f64_to_ns(0.000_001), Some(1));
+        assert_eq!(ms_f64_to_ns(-1.25), Some(-1_250_000));
+        // A present-day Node `mtimeMs`: 2026-11-05, plus 123_456 ns.
+        let ns: i64 = 1_793_836_800_000_123_456;
+        let ms = (ns / 1_000_000_000) as f64 * 1000.0 + (ns % 1_000_000_000) as f64 / 1_000_000.0;
+        let back = ms_f64_to_ns(ms).unwrap();
+        // An f64 of ms this large holds the time to within a quarter
+        // microsecond, so the fraction comes back to that precision.
+        assert!((back - ns).abs() < 250, "{back} vs {ns}");
+        assert_eq!(back / 1_000_000, ns / 1_000_000);
+    }
+
+    #[test]
+    fn a_non_finite_or_out_of_range_mtime_is_no_time() {
+        assert_eq!(ms_f64_to_ns(f64::NAN), None);
+        assert_eq!(ms_f64_to_ns(f64::INFINITY), None);
+        assert_eq!(ms_f64_to_ns(1e300), None);
+    }
 }

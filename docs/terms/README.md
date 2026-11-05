@@ -33,6 +33,6 @@ The words used for skillwright's parts. One file per term. A term marked *planne
 | [File tree](file-tree.md) | current | What a translator returns: paths mapped to bytes, the execute bit, and the notes each file came from |
 | [Emit](emit.md) | current | The last stage: write a [file-tree](file-tree.md) out |
 | [Vfs](vfs.md) | current, moving | The file-access trait every read and write goes through; osdlc's `vfs-seam` |
-| [markdown-corpus](markdown-corpus.md) | planned | osdlc's corpus model, which load reads through |
+| [markdown-corpus](markdown-corpus.md) | current | osdlc's corpus model, which renames read the vault through |
 
 Terms for the shared vault crates are in [osdlc's terms](https://github.com/osdlc/osdlc/blob/main/docs/terms/README.md).

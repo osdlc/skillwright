@@ -1976,6 +1976,7 @@ mod tests {
                 bundle_root: skill.bundle_root.as_deref(),
                 skill_name: &skill.name,
                 calls: None,
+                links: None,
             },
             &note.projection.content.body,
         )

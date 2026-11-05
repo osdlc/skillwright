@@ -9,9 +9,11 @@ one implementation per vault concept.
 
 - **skillwright keeps no vault code of its own.** Load reads the vault
   through osdlc's crates: `vfs-seam` for file access, `vfs-walk` and
-  `markdown-vault-fs` for the walk, `markdown-corpus` for notes and links,
-  `markdown-link` for parsing and resolution, `markdown-contract` for
-  heading and block selection.
+  `markdown-vault-fs` for the walk, `markdown-link` for parsing, the link
+  index and resolution, `markdown-contract` for heading and block selection.
+  Renames use `markdown-corpus`, because the planner needs every note's
+  links. Load does not: it needs only the walk's paths, and a corpus would
+  read and scan every note to give them.
 - **What stays in skillwright is its own:** skill calls (`/[[call]]`) as a
   layer over `markdown-link`'s tokens, component kinds, `sw-` frontmatter,
   and the refusals that guard publishing.
