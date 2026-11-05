@@ -375,13 +375,16 @@ mod tests {
         // `fs::write` empties the file before writing it, and a rebuild that
         // reads the note in that instant fails, leaves the old output in
         // place, and still counts as the one rebuild this test waits for.
+        // The staged file sits beside the note so the rename never crosses
+        // filesystems, which `persist` cannot do.
         let stop = Arc::new(AtomicBool::new(false));
         let saver = {
             let stop = Arc::clone(&stop);
+            let folder = skill_path.parent().unwrap().to_path_buf();
             thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
                     thread::sleep(Duration::from_millis(200));
-                    let Ok(mut staged) = tempfile::NamedTempFile::new() else {
+                    let Ok(mut staged) = tempfile::NamedTempFile::new_in(&folder) else {
                         continue;
                     };
                     if std::io::Write::write_all(&mut staged, edited.as_bytes()).is_ok() {
