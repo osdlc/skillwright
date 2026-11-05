@@ -1924,7 +1924,7 @@ fn opens_markdown_link(text: &str, at: usize) -> bool {
     while i < bytes.len() {
         match bytes[i] {
             b'\\' => i += 1,
-            b'\n' if bytes.get(i + 1) == Some(&b'\n') => return false,
+            b'\n' if is_blank_line(&bytes[i + 1..]) => return false,
             b'[' => depth += 1,
             b']' => {
                 depth -= 1;
@@ -1937,6 +1937,16 @@ fn opens_markdown_link(text: &str, at: usize) -> bool {
         i += 1;
     }
     false
+}
+
+/// Whether `rest`, the text after a `\n`, starts with a blank line: one of
+/// only spaces, tabs and a `\r`, which ends a paragraph.
+fn is_blank_line(rest: &[u8]) -> bool {
+    rest.iter().position(|&b| b == b'\n').is_some_and(|end| {
+        rest[..end]
+            .iter()
+            .all(|b| matches!(b, b' ' | b'\t' | b'\r'))
+    })
 }
 
 /// A link's text before any `|`, trimmed, as written, without the `\` that
@@ -3167,11 +3177,18 @@ mod tests {
             let compiled = compile_note(&vfs, &source(None), body);
             assert!(compiled.is_ok(), "{body:?}: {:?}", compiled.err());
         }
-        // A bracket that opens no Markdown link is still refused.
-        let err = compile_note(&vfs, &source(None), "See [[WIP] Fix parser.\n")
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("unresolved-syntax"), "{err}");
+        // A bracket that opens no Markdown link is still refused, and a blank
+        // line ends the search whatever its line endings or spaces.
+        for body in [
+            "See [[WIP] Fix parser.\n",
+            "See [[WIP] x\r\n\r\nthen](https://example.com)\r\n",
+            "See [[WIP] x\n  \t\nthen](https://example.com)\n",
+        ] {
+            let err = compile_note(&vfs, &source(None), body)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("unresolved-syntax"), "{body:?}: {err}");
+        }
     }
 
     #[test]
