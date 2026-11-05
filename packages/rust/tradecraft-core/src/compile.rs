@@ -1768,6 +1768,12 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
                 _ => (kind, at),
             };
             let inner = &markdown[at + opener..link.byte_end - 2];
+            // `raw` has code blanked. Code before the alias would leave a
+            // target that is not what was written, so the link is left as
+            // written, as one that is all code is.
+            if !inner.starts_with(link.raw.split('|').next().unwrap_or_default()) {
+                return None;
+            }
             Some(WikiToken::new(
                 (start, link.byte_end),
                 kind,
@@ -1783,15 +1789,27 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
             scan_code_calls(markdown, from, to, &mut tokens);
         }
         tokens.sort_by_key(|token| token.start);
+        // A call in code inside a link's alias is part of that alias.
+        let mut end = 0;
+        tokens.retain(|token| {
+            let free = token.start >= end;
+            if free {
+                end = token.end;
+            }
+            free
+        });
     }
     tokens
 }
 
-/// A link's text before any `|`, trimmed, as written.
+/// A link's text before any `|`, trimmed, as written, without the `\` that
+/// escapes the pipe in a table cell.
 fn written_destination(inner: &str) -> &str {
     inner
         .split_once('|')
-        .map_or(inner, |(before, _)| before)
+        .map_or(inner, |(before, _)| {
+            before.strip_suffix('\\').unwrap_or(before)
+        })
         .trim()
 }
 
@@ -2972,6 +2990,44 @@ mod tests {
         assert_eq!(compiled.body, body);
         assert!(compiled.resources.is_empty(), "{:?}", paths(&compiled));
         assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
+    }
+
+    #[test]
+    fn a_wikilink_with_code_in_part_of_its_target_is_not_a_link() {
+        // markdown-link blanks code before it reads a target, so a target
+        // with code in it would resolve against the blanked text: the code
+        // would vanish, or the link would reach another note.
+        let vfs = demo_vault();
+        let body = "A [[My `code` note]] B [[Shared `v2`]]\n";
+        let compiled = compile_note(&vfs, &source(None), body).unwrap();
+        assert_eq!(compiled.body, body);
+        assert!(compiled.resources.is_empty(), "{:?}", paths(&compiled));
+        assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
+    }
+
+    #[test]
+    fn a_call_in_code_in_a_links_alias_is_part_of_that_alias() {
+        // The link spans the code, so a call found inside that code is not
+        // a token of its own.
+        let vfs = demo_vault();
+        let compiled = compile_note(&vfs, &source(None), "[[Shared|`/[[called]]`]]\n").unwrap();
+        assert!(
+            compiled
+                .body
+                .contains("[`/\\[\\[called\\]\\]`](references/vault/Shared.md)"),
+            "{}",
+            compiled.body
+        );
+    }
+
+    #[test]
+    fn a_refusal_quotes_a_table_cells_target_without_the_pipes_escape() {
+        let vfs = demo_vault();
+        let message = compile_note(&vfs, &source(None), "| [[../up\\|Up]] |\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("unsafe-path"), "{message}");
+        assert!(message.ends_with("../up"), "{message}");
     }
 
     #[test]
