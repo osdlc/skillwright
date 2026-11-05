@@ -7,6 +7,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.4.0...skillwright/v0.5.0) - 2026-11-05
+
+### Other
+
+- watch test: save atomically so a rebuild never reads a half-written note
+- Rename markdown-vault to markdown-corpus; bump osdlc#618 pin
+- Honour the vault's excluded files
+- plan moves over the shared vault model
+- Vfs from vfs-seam; bump the osdlc crates to osdlc/osdlc#618
+- Expose the marketplace model: loadMarketplace in wasm, list --model in the CLI
+- Publish renders through the model and translators; cursor and pi take packs
+- Marketplace model and harness translators; build renders through them
+- Harness profile: one row of facts per harness
+- Fix the review findings on the comment sweep
+- make CLI comments and test notes match the code
+
 ### Added
 
 - `list --model` prints the loaded marketplace model as JSON. `list --json` is unchanged.

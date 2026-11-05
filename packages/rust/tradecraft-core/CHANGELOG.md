@@ -7,6 +7,25 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.42.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.41.0...tradecraft-core/v0.42.0) - 2026-11-05
+
+### Other
+
+- Rename markdown-vault to markdown-corpus; bump osdlc#618 pin
+- Plain walks through vfs-walk; bump osdlc#618 pin
+- resolve at load; the pass count is a detail
+- link resolution at the edges follows markdown-link
+- Resolve links, select fragments and write hrefs with the shared crates
+- Honour the vault's excluded files
+- Walk the vault with markdown-vault-fs
+- Vfs from vfs-seam; bump the osdlc crates to osdlc/osdlc#618
+- Expose the marketplace model: loadMarketplace in wasm, list --model in the CLI
+- Publish renders through the model and translators; cursor and pi take packs
+- Marketplace model and harness translators; build renders through them
+- Harness profile: one row of facts per harness
+- Fix the review findings on the comment sweep
+- make doc comments match the code
+
 ### Added
 
 - `harness`: one `HarnessProfile` row per harness, and a `HarnessTranslator` per harness that writes the marketplace model as a `FileTree`.
