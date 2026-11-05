@@ -10,6 +10,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - The compile pass finds `[[links]]` and `![[embeds]]` with `markdown-link`'s scanner, the one the other osdlc tools use. `/[[calls]]`, `\/[[x]]` escapes and hand-written calls stay this crate's, read on top of it. What changes is at the edges: a wikilink holding a `[` or `]`, or code, is no longer a link and is left as written; `[[]]` and `[[ |alias]]` are no longer links to the note itself; a `\|` escaping the pipe in a table cell is no longer part of the target; and a block fragment `#^ id` is read as `#^id`.
+- Discovery and `load` read the skills source through `markdown-corpus` (`discover::load_source`, `discover::discover_in`). The walk is the same except that `.obsidian` and `node_modules` are now left out wherever they sit, as `.trash` already was: a declared note under one is no longer refused as a stray, and a bundle no longer lists their files. `model::read_notes` also returns the vault's link index when it walked the whole vault, and `CompileSource::links` lets compile use it instead of walking the vault again.
+- A `[[` that is not a link is refused as `unresolved-syntax`, like any other Obsidian syntax left in a compiled file: a `[` or `]` before the closing `]]`, a target that is only code or has code in it, an empty target (`[[]]`, `[[ |alias]]`), or no closing `]]`. Such notes used to compile with the brackets left as written. Code, HTML comments and a resource's frontmatter are not checked.
+- vfs-seam 0.2, vfs-walk 0.2, markdown-vault-fs 0.5, markdown-link 0.8, markdown-corpus 0.2 and markdown-relink 0.3. File times are nanoseconds.
 
 ## [0.42.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.41.0...tradecraft-core/v0.42.0) - 2026-11-05
 

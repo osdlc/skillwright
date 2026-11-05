@@ -1,16 +1,18 @@
 # markdown-corpus
 
-Status: planned.
+Status: current.
 
 osdlc's corpus model, which [load](load.md) reads the vault through (a corpus is a folder of Markdown notes and the files they link to; a vault is one): notes, links and backlinks. Headings and blocks come from `markdown-contract`, which skillwright calls itself. Defined in osdlc's [markdown-corpus](https://github.com/osdlc/osdlc/blob/main/docs/terms/markdown-corpus.md) ([D-TZFV](../decisions/D-TZFV-shared-vault-model.md)).
 
 ## In code
 
-Load does not use it yet; `apply`'s note move builds `markdown-relink`'s facts from it. Today load reads notes with core's `discover_components`, walking through `markdown-vault-fs` and splitting frontmatter with `frontmatter-lossless`, and resolves links with `markdown-link`'s `LinkIndex::resolve_strict` over a walk of its own.
+`discover::load_source` reads the skills source with `Corpus::try_load`, and discovery and load's pass 1 place and read notes from its walk. When the skills source is the whole vault, compile resolves links with the corpus's link index instead of walking the vault again. `apply`'s note move builds `markdown-relink`'s facts from a corpus of the whole vault.
 
-## What it needs first
+## The options load sets
 
-Moving load onto it would change what skillwright publishes, so these come first, as options in osdlc:
+What load needed from markdown-corpus 0.1.0 is in 0.2.0 (osdlc/osdlc#621), so these gaps are closed:
 
-- **The walk's options.** `Corpus::load` walks with fixed rules: dot-named files left out, `node_modules` kept, a folder it cannot list skipped, symlinks listed. Load needs dot-named files kept (a bundle may ship one, a link may name one), `node_modules`, `.obsidian` and `.trash` left out, a symlink refused, a walk limited to the skills root, and a folder it cannot list to fail the load. `LoadOptions` would take a `markdown_vault_fs::walk::WalkOptions`, and a `Corpus::try_load` would return the walk's error.
-- **A lenient frontmatter split.** `read_note` uses `frontmatter_lossless::split`. Load reads with `split_lenient`, which also accepts an indented opening fence and trailing spaces on the fences. `read_note` would take an option to read that way.
+- **The walk.** `LoadOptions` takes a `WalkOptions` for each walk, and `Corpus::try_load` returns the walk's error. Load's walk keeps dot-named files (a bundle may ship one, a link may name one), leaves out `node_modules`, `.obsidian` and `.trash`, refuses a symlink, walks only the skills root, and fails when it cannot list a folder.
+- **A lenient frontmatter split.** `SplitMode::Lenient`, which also accepts blank lines before the opening fence and spaces after a fence, as load's own `split_frontmatter` does. `apply` uses it too, so a rename reads a note the way a build does.
+
+The vault's excluded files are still applied by discovery after the walk: a walk that sees dot-named files ignores them.

@@ -115,6 +115,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use markdown_corpus::{Corpus, LoadOptions, SplitMode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -374,6 +375,7 @@ impl SkippedNote {
 ///
 /// * [`CoreError::RootNotFound`] — the content root does not exist.
 /// * `refused: unsafe-path` — a symlink anywhere in the source.
+/// * [`CoreError::Io`] — a folder in the source that cannot be listed.
 /// * `refused: path-collision` — a duplicate skill name, or a bundle that
 ///   contains another skill's entry.
 pub fn discover_components(
@@ -382,14 +384,65 @@ pub fn discover_components(
     content_root: Option<&Path>,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    let root = content_root
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| vault_root.to_path_buf());
-    if !vfs.exists(&root) {
-        return Err(CoreError::RootNotFound(root));
-    }
+    let corpus = load_source(vfs, vault_root, content_root)?;
+    discover_in(vfs, vault_root, &corpus, ns)
+}
 
-    let files = walk(vfs, vault_root, &root)?;
+/// The skills source at `content_root` (the vault root when `None`), read as
+/// a corpus the way [`discover_components`] reads it.
+///
+/// Both walks keep dot-named files (a bundle may ship one, a link may name
+/// one), never enter `.obsidian`, `.trash` or `node_modules`, and walk only
+/// the content root. A symlink anywhere in it, or a folder that cannot be
+/// listed, fails the load. Notes are split leniently, as
+/// [`split_frontmatter`] splits them.
+///
+/// # Errors
+///
+/// * [`CoreError::RootNotFound`] — the content root does not exist.
+/// * `refused: unsafe-path` — a symlink anywhere in the source.
+/// * [`CoreError::Io`] — a folder that cannot be listed.
+pub fn load_source(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    content_root: Option<&Path>,
+) -> Result<Corpus, CoreError> {
+    let root = content_root.unwrap_or(vault_root);
+    if !vfs.exists(root) {
+        return Err(CoreError::RootNotFound(root.to_path_buf()));
+    }
+    let walk = crate::walk::source_walk(crate::compile::EXCLUDED_VAULT_DIRECTORIES);
+    let options = LoadOptions::default()
+        .with_link_walk(walk.clone())
+        .with_frontmatter_walk(walk)
+        .with_split(SplitMode::Lenient);
+    Corpus::try_load(vfs, root, options).map_err(|err| {
+        crate::walk::core_error(err, |path| {
+            CoreError::refused(
+                "unsafe-path",
+                format!(
+                    "{}: a symlink in a skills source — it reads as inside the tree and \
+                     resolves outside it; replace it with the real file or directory",
+                    path.display()
+                ),
+            )
+        })
+    })
+}
+
+/// [`discover_components`] over a source [`load_source`] already read.
+///
+/// # Errors
+///
+/// `refused: path-collision`, as [`discover_components`].
+pub fn discover_in(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    corpus: &Corpus,
+    ns: &Namespace,
+) -> Result<DiscoveryReport, CoreError> {
+    let root = corpus.root().to_path_buf();
+    let files = source_files(vfs, vault_root, corpus);
 
     // Structure first, over the whole file set: a note's shape depends on what
     // sits beside it, so no single path can be classified on its own.
@@ -837,48 +890,34 @@ fn owned_resources(
     out
 }
 
-/// Every file under `root`, in walk order, refusing symlinks, without the
-/// vault's excluded files.
+/// Every file in the source corpus, in walk order, without the vault's
+/// excluded files.
 ///
-/// Unlike [`crate::scan`]'s walker this one propagates read failures and has
-/// no depth bound: a skills source is a curated tree feeding a publish, an
-/// unreadable corner of it must not silently under-publish, and there is no
-/// cycle to bound — a symlinked directory is refused before it could matter.
-///
-/// The trash folder holds notes `delete` moved out of the tree — not
-/// content. Under a dot-directory their shapes resolve to no valid placement,
-/// so walking in would surface them as unreadable strays.
+/// The corpus walk propagates read failures and refuses symlinks (see
+/// [`load_source`]): a skills source is a curated tree feeding a publish, and
+/// an unreadable corner of it must not silently under-publish. The trash
+/// folder holds notes `delete` moved out of the tree, which are not content.
 ///
 /// A file the vault excludes (Obsidian's "Excluded files", see
 /// [`crate::walk::excluded_files`]) is left out, so it is neither placed nor
 /// published.
-fn walk(vfs: &dyn Vfs, vault_root: &Path, root: &Path) -> Result<Vec<PathBuf>, CoreError> {
-    let entries = crate::walk::vault_files_refusing_symlinks(
-        vfs,
-        root,
-        &[crate::authoring::TRASH_DIR],
-        |path| {
-            CoreError::refused(
-                "unsafe-path",
-                format!(
-                    "{}: a symlink in a skills source — it reads as inside the tree and \
-                     resolves outside it; replace it with the real file or directory",
-                    path.display()
-                ),
-            )
-        },
-    )?;
+fn source_files(vfs: &dyn Vfs, vault_root: &Path, corpus: &Corpus) -> Vec<PathBuf> {
     let excluded = crate::walk::excluded_files(vfs, vault_root);
-    Ok(entries
-        .into_iter()
-        .map(|entry| entry.abs)
+    let mut files: Vec<PathBuf> = corpus
+        .paths()
+        .iter()
+        .map(|relative| corpus.root().join(relative))
         // A path outside the vault (a content root elsewhere) has no
         // vault-relative spelling for the list to match, so it stays.
         .filter(|path| {
             path.strip_prefix(vault_root)
                 .map_or(true, |relative| !excluded(&forward_slashed(relative)))
         })
-        .collect())
+        .collect();
+    // The corpus sorts its paths for lookup. A path compares by component, so
+    // sorting restores the walk's order: depth first, by name in each folder.
+    files.sort();
+    files
 }
 
 /// Reads one note at a recognised shape and decides: a component (`Some`),
@@ -2461,5 +2500,58 @@ mod tests {
         let found = discover(&vfs).unwrap();
 
         assert!(found.is_empty(), "{found:?}");
+    }
+
+    /// Tooling folders are never walked, wherever they sit: a declared note
+    /// under one is not a stray, and a bundle does not own their files. A
+    /// dot-named file is still walked: a bundle may ship one.
+    #[test]
+    fn tooling_folders_are_never_walked_and_dot_files_are() {
+        let vfs = vault();
+        write(&vfs, "plugins/demo/demo.md", &source("demo", &[], None));
+        write(&vfs, "plugins/demo/.env.example", "KEY=\n");
+        write(&vfs, "plugins/demo/node_modules/pkg/index.js", "x\n");
+        write(
+            &vfs,
+            "plugins/demo/node_modules/skills/vendored.md",
+            &source("vendored", &[], None),
+        );
+        write(
+            &vfs,
+            ".obsidian/plugins/tool/skills/tool.md",
+            &source("tool", &[], None),
+        );
+
+        let found = discover(&vfs).unwrap();
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].resources, vec![".env.example".to_owned()]);
+    }
+
+    /// A folder the walk cannot list fails the scan rather than shrinking it.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_that_cannot_be_listed_fails_the_scan() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("plugins/demo/locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::write(
+            dir.path().join("plugins/demo/demo.md"),
+            "---\nname: demo\ndescription: d\n---\nb\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // Root lists any folder, so there is nothing to test.
+        let listable = std::fs::read_dir(&locked).is_ok();
+        let result = discover_components(&NativeVfs, dir.path(), None, &Namespace::default());
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if listable {
+            return;
+        }
+        let err = result.unwrap_err();
+        assert!(matches!(err, CoreError::Io { .. }), "{err}");
+        assert!(err.to_string().contains("locked"), "{err}");
     }
 }

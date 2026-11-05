@@ -67,7 +67,7 @@ fn vault_options(
 }
 
 /// A walk error as core's, with `refuse` making the error for a symlink.
-fn core_error(err: WalkError, refuse: impl Fn(&Path) -> CoreError) -> CoreError {
+pub(crate) fn core_error(err: WalkError, refuse: impl Fn(&Path) -> CoreError) -> CoreError {
     match err {
         WalkError::Io(err) => err.into(),
         WalkError::Symlink(path) => refuse(&path),
@@ -127,15 +127,11 @@ pub(crate) fn vault_files(
         .map_err(|err| core_error(err, not_refused))
 }
 
-/// Every file under the vault folder `root`, refusing a symlink anywhere in
-/// it with the error `refuse` makes from its path.
-pub(crate) fn vault_files_refusing_symlinks(
-    vfs: &dyn Vfs,
-    root: &Path,
-    prune: &[&str],
-    refuse: impl Fn(&Path) -> CoreError,
-) -> Result<Vec<vault::Entry>, CoreError> {
-    vault::walk(vfs, root, &vault_options(prune, true, true)).map_err(|err| core_error(err, refuse))
+/// The walk a skills source is read with, as a corpus walk: what
+/// [`vault_files`] lists under `prune`, but a symlink anywhere in it fails the
+/// walk instead of being listed.
+pub(crate) fn source_walk(prune: &[&str]) -> vault::WalkOptions {
+    vault_options(prune, true, true)
 }
 
 /// Every file under the vault folder `root` this walk can read, without
