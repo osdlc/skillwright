@@ -24,7 +24,7 @@ use markdown_vault_fs::walk::{self as vault, Hide, Visibility};
 use vfs_walk::{Errors, Symlinks, WalkError};
 
 use crate::error::CoreError;
-use crate::vfs::Vfs;
+use crate::vfs::{Vfs, VfsError};
 
 /// The names skipped wherever they appear. `.git` is also what a vault walk
 /// under `Visibility::Everything` drops, so both walks see the same files.
@@ -118,6 +118,19 @@ pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path) -> Vec<vfs_walk::Entry>
 /// The options of [`vault_files`]'s walk.
 pub(crate) fn vault_walk(prune: &[&str]) -> vault::WalkOptions {
     vault_options(prune, false, true)
+}
+
+/// What [`vault_walk`]'s walk under `root` cannot read: each folder it
+/// cannot list and each file it cannot stat, in walk order. A plain walk with
+/// the same skips and prunes, so it meets the same folders.
+pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Vec<VfsError> {
+    vfs_walk::walk_subtree(
+        vfs,
+        root,
+        "",
+        &plain_options(prune, Symlinks::List, Errors::Report),
+    )
+    .map_or_else(|_| Vec::new(), |outcome| outcome.errors)
 }
 
 /// Every file under the vault folder `root`. A symlinked file is listed like

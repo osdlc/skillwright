@@ -804,6 +804,14 @@ pub fn vault_walk_options() -> markdown_vault_fs::walk::WalkOptions {
     crate::walk::vault_walk(EXCLUDED_VAULT_DIRECTORIES)
 }
 
+/// What a walk with [`vault_walk_options`] cannot read under `vault_root`:
+/// each folder it cannot list and each file it cannot stat, in walk order.
+/// For a caller that walks with `propagate_errors` off and must say what the
+/// walk passed over.
+pub fn vault_walk_errors(vfs: &dyn Vfs, vault_root: &Path) -> Vec<crate::vfs::VfsError> {
+    crate::walk::vault_walk_errors(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)
+}
+
 /// Every file under `vault_root`, by vault-relative path, indexed for link
 /// resolution, leaving out [`EXCLUDED_VAULT_DIRECTORIES`].
 pub(crate) fn vault_link_index(vfs: &dyn Vfs, vault_root: &Path) -> Result<LinkIndex, CoreError> {

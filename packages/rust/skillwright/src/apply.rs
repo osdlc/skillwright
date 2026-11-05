@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use markdown_corpus::{Corpus, LoadOptions, SplitMode, WalkError};
+use markdown_corpus::{Corpus, LoadOptions, SplitMode, WalkError, WalkOptions};
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
 use tradecraft_core::vfs::NativeVfs;
@@ -380,29 +380,14 @@ fn move_note(
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    // The vault as a build reads it: compile's walk, so the planner resolves
-    // a link to the file a build does, and the lenient split, so a block only
-    // that split takes is frontmatter here too, not body links to rewrite.
-    // Unlike a build's skills source, symlinks are listed, not refused: one
-    // anywhere in the vault must not block a rename.
-    let walk = tradecraft_core::compile::vault_walk_options();
-    let options = LoadOptions::default()
-        .with_link_walk(walk.clone())
-        .with_frontmatter_walk(walk)
-        .with_split(SplitMode::Lenient);
-    // Symlinks are listed, so a walk only fails on a folder or a file it
-    // cannot read. The error names that path, not only the vault.
-    let corpus = Corpus::try_load(&NativeVfs, vault_dir, options).map_err(|err| {
-        let (path, source) = match err {
-            WalkError::Io(err) => (err.path().to_path_buf(), err.into_io_error()),
-            other => (vault_dir.to_path_buf(), std::io::Error::other(other)),
-        };
-        ApplyError::Io {
-            what: format!("walking {}", path.display()),
-            source,
-        }
-    })?;
-    let facts = VaultFacts::from_corpus(&corpus);
+    let corpus = load_vault(vault_dir, from, to, outcome)?;
+    // Links resolve against every file a build sees, so a rename picks the
+    // target a build does. Only notes outside dot-named folders are edited:
+    // `.github`, `.claude` or another checkout under `.worktrees` is not the
+    // author's notes, and a rename must not write there.
+    let mut facts = VaultFacts::from_corpus(&corpus);
+    facts.links.retain(|path, _| !in_dot_folder(path));
+    facts.frontmatter.retain(|path, _| !in_dot_folder(path));
     let plan = if bundle {
         markdown_relink::plan_bundle(&NativeVfs, vault_dir, &facts, from, to)?
     } else {
@@ -432,6 +417,73 @@ fn move_note(
     }
     record_executed(&plan, &result, from, to, outcome);
     Ok(())
+}
+
+/// The vault as a build reads it: compile's walk, so the planner resolves a
+/// link to the file a build does, and the lenient split, so a block only that
+/// split takes is frontmatter here too, not body links to rewrite. Unlike a
+/// build's skills source, symlinks are listed, not refused: one anywhere in
+/// the vault must not block a rename.
+///
+/// A folder the walk cannot list is skipped, with a `skipped` row naming it,
+/// since a corner of the vault the rename cannot read must not block every
+/// rename. One that holds `from` or `to`, or lies inside a moved bundle, stops
+/// the rename instead, with an error naming it.
+fn load_vault(
+    vault_dir: &Path,
+    from: &str,
+    to: &str,
+    outcome: &mut Outcome,
+) -> Result<Corpus, ApplyError> {
+    let options = |walk: WalkOptions| {
+        LoadOptions::default()
+            .with_link_walk(walk.clone())
+            .with_frontmatter_walk(walk)
+            .with_split(SplitMode::Lenient)
+    };
+    let mut walk = tradecraft_core::compile::vault_walk_options();
+    match Corpus::try_load(&NativeVfs, vault_dir, options(walk.clone())) {
+        Ok(corpus) => return Ok(corpus),
+        // Symlinks are listed, so a walk fails only on what it cannot read.
+        Err(WalkError::Io(_)) => {}
+        Err(other) => {
+            return Err(ApplyError::Io {
+                what: format!("walking {}", vault_dir.display()),
+                source: std::io::Error::other(other),
+            });
+        }
+    }
+    for err in tradecraft_core::compile::vault_walk_errors(&NativeVfs, vault_dir) {
+        let relative = err.path().strip_prefix(vault_dir).unwrap_or(err.path());
+        let (from, to) = (Path::new(from), Path::new(to));
+        if from.starts_with(relative) || to.starts_with(relative) || relative.starts_with(from) {
+            return Err(ApplyError::Io {
+                what: format!("walking {}", err.path().display()),
+                source: err.into_io_error(),
+            });
+        }
+        outcome.push(
+            forward_slashed(relative),
+            Applied::Skipped {
+                reason: "unreadable, so links in it are not rewritten".to_owned(),
+            },
+        );
+    }
+    walk.propagate_errors = false;
+    Ok(Corpus::load(&NativeVfs, vault_dir, options(walk)))
+}
+
+/// Whether the vault-relative `path` sits under a dot-named folder.
+fn in_dot_folder(path: &str) -> bool {
+    path.rsplit_once('/')
+        .is_some_and(|(folders, _)| folders.split('/').any(|name| name.starts_with('.')))
+}
+
+fn forward_slashed(path: &Path) -> String {
+    path.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn record_planned(plan: &RenamePlan, outcome: &mut Outcome) {
@@ -848,33 +900,82 @@ mod tests {
         );
     }
 
-    /// A folder the rename's walk cannot list stops the rename, and the
-    /// error names that folder, not only the vault.
+    /// A folder the rename's walk cannot list is skipped with a row naming
+    /// it, and the rename goes on. Renaming into that folder stops, and the
+    /// error names it.
     #[cfg(unix)]
     #[test]
-    fn a_rename_names_the_folder_it_cannot_list() {
+    fn a_rename_skips_a_folder_it_cannot_list_unless_it_moves_into_it() {
         use std::os::unix::fs::PermissionsExt;
 
         let v = vault();
         write(v.path(), "notes/Alpha.md", "subject\n");
+        write(v.path(), "notes/a.md", "see [[Alpha]]\n");
         let locked = v.path().join("notes/locked");
         std::fs::create_dir_all(&locked).unwrap();
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
         // Root lists any folder, so there is nothing to test.
         let listable = std::fs::read_dir(&locked).is_ok();
+        let rename = |to: &str| {
+            let op = AuthoringOp::Rename {
+                from: "notes/Alpha.md".to_owned(),
+                to: to.to_owned(),
+                bundle: false,
+                frontmatter: vec![],
+            };
+            apply(v.path(), &op)
+        };
+        let into = rename("notes/locked/Gamma.md");
+        let beside = rename("notes/Gamma.md");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if listable {
+            return;
+        }
+
+        let err = into.unwrap_err().to_string();
+        assert!(err.contains("notes/locked"), "{err}");
+
+        let outcome = beside.unwrap();
+        assert!(
+            outcome.entries.contains(&AppliedEntry {
+                path: "notes/locked".to_owned(),
+                applied: Applied::Skipped {
+                    reason: "unreadable, so links in it are not rewritten".to_owned(),
+                },
+            }),
+            "{outcome:?}"
+        );
+        assert_eq!(read(v.path(), "notes/a.md"), "see [[Gamma]]\n");
+    }
+
+    /// A rename resolves links against dot-named folders too, but edits
+    /// none of their files: they are tooling and other checkouts, not notes.
+    #[test]
+    fn a_rename_edits_no_file_in_a_dot_named_folder() {
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "subject\n");
+        let linking = [
+            "notes/a.md",
+            ".github/x.md",
+            ".worktrees/b/y.md",
+            ".claude/z.md",
+        ];
+        for rel in linking {
+            write(v.path(), rel, "see [[Alpha]]\n");
+        }
+
         let op = AuthoringOp::Rename {
             from: "notes/Alpha.md".to_owned(),
             to: "notes/Gamma.md".to_owned(),
             bundle: false,
             frontmatter: vec![],
         };
-        let result = apply(v.path(), &op);
-        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
-        if listable {
-            return;
+        apply(v.path(), &op).unwrap();
+
+        assert_eq!(read(v.path(), "notes/a.md"), "see [[Gamma]]\n");
+        for rel in &linking[1..] {
+            assert_eq!(read(v.path(), rel), "see [[Alpha]]\n", "{rel}");
         }
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("notes/locked"), "{err}");
     }
 
     #[test]
