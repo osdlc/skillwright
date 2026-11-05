@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use markdown_corpus::{Corpus, LoadOptions, SplitMode, WalkError, WalkOptions};
+use markdown_corpus::{Corpus, LoadOptions, SplitMode};
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
 use tradecraft_core::vfs::NativeVfs;
@@ -435,27 +435,11 @@ fn load_vault(
     to: &str,
     outcome: &mut Outcome,
 ) -> Result<Corpus, ApplyError> {
-    let options = |walk: WalkOptions| {
-        LoadOptions::default()
-            .with_link_walk(walk.clone())
-            .with_frontmatter_walk(walk)
-            .with_split(SplitMode::Lenient)
-    };
-    let mut walk = tradecraft_core::compile::vault_walk_options();
-    match Corpus::try_load(&NativeVfs, vault_dir, options(walk.clone())) {
-        Ok(corpus) => return Ok(corpus),
-        // Symlinks are listed, so a walk fails only on what it cannot read.
-        Err(WalkError::Io(_)) => {}
-        Err(other) => {
-            return Err(ApplyError::Io {
-                what: format!("walking {}", vault_dir.display()),
-                source: std::io::Error::other(other),
-            });
-        }
-    }
+    let (from, to) = (Path::new(from), Path::new(to));
+    // A walk that lists and stats only, so finding what cannot be read costs
+    // no note reads.
     for err in tradecraft_core::compile::vault_walk_errors(&NativeVfs, vault_dir) {
         let relative = err.path().strip_prefix(vault_dir).unwrap_or(err.path());
-        let (from, to) = (Path::new(from), Path::new(to));
         if from.starts_with(relative) || to.starts_with(relative) || relative.starts_with(from) {
             return Err(ApplyError::Io {
                 what: format!("walking {}", err.path().display()),
@@ -463,27 +447,27 @@ fn load_vault(
             });
         }
         outcome.push(
-            forward_slashed(relative),
+            relative.to_string_lossy().replace('\\', "/"),
             Applied::Skipped {
                 reason: "unreadable, so links in it are not rewritten".to_owned(),
             },
         );
     }
+    let mut walk = tradecraft_core::compile::vault_walk_options();
     walk.propagate_errors = false;
-    Ok(Corpus::load(&NativeVfs, vault_dir, options(walk)))
+    let options = LoadOptions::default()
+        .with_link_walk(walk.clone())
+        .with_frontmatter_walk(walk)
+        .with_split(SplitMode::Lenient);
+    Ok(Corpus::load(&NativeVfs, vault_dir, options))
 }
 
 /// Whether the vault-relative `path` sits under a dot-named folder.
 fn in_dot_folder(path: &str) -> bool {
-    path.rsplit_once('/')
-        .is_some_and(|(folders, _)| folders.split('/').any(|name| name.starts_with('.')))
-}
-
-fn forward_slashed(path: &Path) -> String {
-    path.components()
-        .map(|c| c.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
+    path.split('/')
+        .rev()
+        .skip(1)
+        .any(|name| name.starts_with('.'))
 }
 
 fn record_planned(plan: &RenamePlan, outcome: &mut Outcome) {

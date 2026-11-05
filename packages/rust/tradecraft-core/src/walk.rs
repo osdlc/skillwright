@@ -48,6 +48,9 @@ fn plain_options(
 /// A vault walk's options. `Everything` keeps dot-prefixed names (it drops
 /// only `.git`), and hides nothing: a caller that honours the vault's
 /// excluded files filters with [`excluded_files`].
+///
+/// [`vault_walk_errors`] repeats this walk's skips and prunes as a plain walk;
+/// a change to what this walk enters must change that one too.
 fn vault_options(
     prune: &[&str],
     refuse_symlinks: bool,
