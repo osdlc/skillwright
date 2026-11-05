@@ -1,12 +1,189 @@
 {
   "schema": 1,
   "pr": 35,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "ac5df72992382b1eac3808fcf7d4f31e7c6becf7",
+  "base": "e14c0981ccd35384c262dcafb640c3c379584524",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-r7q2xm",
     "at": "2026-11-05T07:24:20.766Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/validate.ts",
+      "line": 456,
+      "title": "x-ref link that leaves the corpus passes with only a warning",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/validate.ts",
+      "line": 237,
+      "title": "ajv strict:true rejects valid 2020-12 schemas (strictTypes, strictRequired)",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/validate.ts",
+      "line": 76,
+      "title": "root file detection is case-insensitive on macOS/Windows",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/validate.ts",
+      "line": 328,
+      "title": "upper-case .MD/.YML in a type folder pass silently as attachments",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/validate.ts",
+      "line": 377,
+      "title": "wikilink into a nested corpus errors where the Markdown link warns",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/validate.ts",
+      "line": 400,
+      "title": "link to an existing dot-path file reports no such file",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/links.ts",
+      "line": 83,
+      "title": "leading slash in a wikilink is stripped silently",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/links.ts",
+      "line": 44,
+      "title": "hand-rolled link and frontmatter parsing duplicates @osdlc/markdown-link and @osdlc/frontmatter-lossless",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/cli.ts",
+      "line": 35,
+      "title": "cli.ts has no tests",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "docs/terms/vault.md",
+      "line": 7,
+      "title": "vault.md says corpus means markdown-db corpus in this repo; Rust code uses osdlc sense",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": "harness-reference/README.md",
+      "line": 8,
+      "title": "README calls alpha a corpus; it has no root file",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-12",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/README.md",
+      "line": 20,
+      "title": "beta README says the schema body is the source of truth",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-13",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/harnesses/harnesses.schema.md",
+      "line": 90,
+      "title": "field table duplicates the schema descriptions",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-14",
+      "round": 1,
+      "path": ".github/workflows/harness-reference.yml",
+      "line": 1,
+      "title": "workflow header describes alpha only",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-15",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/validate.ts",
+      "line": 24,
+      "title": "FORMATS duplicates RECORD_EXTENSIONS",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-16",
+      "round": 1,
+      "path": "harness-reference/src/markdown-db/validate.ts",
+      "line": 397,
+      "title": "link resolution is O(links x files) and re-reads files",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
