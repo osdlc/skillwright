@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use markdown_corpus::{Corpus, LoadOptions};
+use markdown_corpus::{Corpus, LoadOptions, SplitMode};
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
 use tradecraft_core::vfs::NativeVfs;
@@ -106,8 +106,9 @@ pub enum Applied {
         to: String,
     },
     /// A note `markdown_relink` declined to write, with its stable reason
-    /// (`drifted`, `not_previewed`, `unreadable`, `write_failed`). Its links
-    /// still name the old path.
+    /// (`drifted`, `not_previewed`, `unreadable`, `write_failed`), or a
+    /// folder the rename could not list (`unreadable`). Its links still name
+    /// the old path.
     Skipped {
         /// The stable reason token.
         reason: String,
@@ -380,10 +381,14 @@ fn move_note(
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    // The vault as the shared model reads it, so the planner resolves links
-    // over the same walk and link index as every other osdlc tool.
-    let corpus = Corpus::load(&NativeVfs, vault_dir, LoadOptions::default());
-    let facts = VaultFacts::from_corpus(&corpus);
+    let (corpus, unreadable) = load_vault(vault_dir, from, to, bundle)?;
+    // Links resolve against every file a build sees, so a rename picks the
+    // target a build does. Only notes outside dot-named folders are edited:
+    // `.github`, `.claude` or another checkout under `.worktrees` is not the
+    // author's notes, and a rename must not write there.
+    let mut facts = VaultFacts::from_corpus(&corpus);
+    facts.links.retain(|path, _| !in_dot_folder(path));
+    facts.frontmatter.retain(|path, _| !in_dot_folder(path));
     let plan = if bundle {
         markdown_relink::plan_bundle(&NativeVfs, vault_dir, &facts, from, to)?
     } else {
@@ -393,26 +398,119 @@ fn move_note(
         return Err(ApplyError::Refused(conflict));
     }
 
-    if !mode.writes() {
+    if mode.writes() {
+        execute_move(vault_dir, &facts, &plan, from, to, bundle, outcome)?;
+    } else {
         record_planned(&plan, outcome);
-        return Ok(());
     }
+    record_unreadable(unreadable, outcome);
+    Ok(())
+}
 
+/// Execute `plan`, recording what it wrote.
+fn execute_move(
+    vault_dir: &Path,
+    facts: &VaultFacts,
+    plan: &RenamePlan,
+    from: &str,
+    to: &str,
+    bundle: bool,
+    outcome: &mut Outcome,
+) -> Result<(), ApplyError> {
     // `execute` re-plans and treats `expect` as the assertion "these are the
     // bytes the user was shown"; a file missing from it is skipped as
     // `not_previewed`. The plan just computed IS what this run previewed, so
     // its own `expect` set is the honest one to pass, and `subject_etag` is
     // `None` because a CLI has no etag from an earlier session to assert.
     let result = if bundle {
-        markdown_relink::execute_bundle(vault_dir, &facts, from, to, None, &plan.expect)?
+        markdown_relink::execute_bundle(vault_dir, facts, from, to, None, &plan.expect)?
     } else {
-        markdown_relink::execute(vault_dir, &facts, from, to, None, &plan.expect)?
+        markdown_relink::execute(vault_dir, facts, from, to, None, &plan.expect)?
     };
     if let Some(conflict) = result.conflict {
         return Err(ApplyError::Refused(conflict));
     }
-    record_executed(&plan, &result, from, to, outcome);
+    record_executed(plan, &result, from, to, outcome);
     Ok(())
+}
+
+/// A `skipped` row for each path the rename could not read, after the rows
+/// for what it did.
+fn record_unreadable(paths: Vec<String>, outcome: &mut Outcome) {
+    for path in paths {
+        outcome.push(
+            path,
+            Applied::Skipped {
+                reason: "unreadable".to_owned(),
+            },
+        );
+    }
+}
+
+/// The vault as a build reads it: compile's walk, so the planner resolves a
+/// link to the file a build does, and the lenient split, so a block only that
+/// split takes is frontmatter here too, not body links to rewrite. Unlike a
+/// build's skills source, symlinks are listed, not refused: one anywhere in
+/// the vault must not block a rename.
+///
+/// A folder the walk cannot list is skipped, since a corner of the vault the
+/// rename cannot read must not block every rename, and returned so it gets a
+/// `skipped` row. One in or under a dot-named folder is not returned: a
+/// rename edits nothing there anyway. One that holds `from` or `to`, or lies
+/// inside a moved bundle, stops the rename instead, with an error naming it.
+fn load_vault(
+    vault_dir: &Path,
+    from: &str,
+    to: &str,
+    bundle: bool,
+) -> Result<(Corpus, Vec<String>), ApplyError> {
+    let (from, to) = (Path::new(from), Path::new(to));
+    // What the move carries: the note, or a bundle's whole folder.
+    let moved = if bundle {
+        from.parent().unwrap_or(from)
+    } else {
+        from
+    };
+    let mut unreadable = Vec::new();
+    // A walk that lists and stats only, so finding what cannot be read costs
+    // no note reads.
+    for err in tradecraft_core::compile::vault_walk_errors(&NativeVfs, vault_dir) {
+        let relative = err.path().strip_prefix(vault_dir).unwrap_or(err.path());
+        if from.starts_with(relative) || to.starts_with(relative) || relative.starts_with(moved) {
+            return Err(ApplyError::Io {
+                what: format!("walking {}", err.path().display()),
+                source: err.into_io_error(),
+            });
+        }
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        // Every file in a folder named here sits under its own name too.
+        let edits_nothing = if err.path().is_dir() {
+            has_dot_name(&relative)
+        } else {
+            in_dot_folder(&relative)
+        };
+        if !edits_nothing {
+            unreadable.push(relative);
+        }
+    }
+    let mut walk = tradecraft_core::compile::vault_walk_options();
+    walk.propagate_errors = false;
+    let options = LoadOptions::default()
+        .with_link_walk(walk.clone())
+        .with_frontmatter_walk(walk)
+        .with_split(SplitMode::Lenient);
+    Ok((Corpus::load(&NativeVfs, vault_dir, options), unreadable))
+}
+
+/// Whether the vault-relative `path` sits under a dot-named folder.
+fn in_dot_folder(path: &str) -> bool {
+    path.rsplit_once('/')
+        .is_some_and(|(folders, _)| has_dot_name(folders))
+}
+
+/// Whether any name in the `/`-separated `path` starts with a dot.
+fn has_dot_name(path: &str) -> bool {
+    path.split('/').any(|name| name.starts_with('.'))
 }
 
 fn record_planned(plan: &RenamePlan, outcome: &mut Outcome) {
@@ -717,6 +815,29 @@ mod tests {
         out
     }
 
+    /// Make each folder under `dir` and take every permission off it.
+    /// Whether the first can still be listed: root lists any folder, so a
+    /// test of an unlistable one has nothing to test.
+    #[cfg(unix)]
+    fn lock(dir: &Path, folders: &[&str]) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        for rel in folders {
+            let abs = dir.join(rel);
+            std::fs::create_dir_all(&abs).unwrap();
+            std::fs::set_permissions(&abs, std::fs::Permissions::from_mode(0o000)).unwrap();
+        }
+        std::fs::read_dir(dir.join(folders[0])).is_ok()
+    }
+
+    /// Give back what [`lock`] took, from each of `folders` that exists.
+    #[cfg(unix)]
+    fn unlock(dir: &Path, folders: &[&str]) {
+        use std::os::unix::fs::PermissionsExt;
+        for rel in folders {
+            let _ = std::fs::set_permissions(dir.join(rel), std::fs::Permissions::from_mode(0o755));
+        }
+    }
+
     fn outcomes(outcome: &Outcome) -> Vec<(&str, &str)> {
         outcome
             .entries
@@ -790,6 +911,191 @@ mod tests {
                 ("notes/Gamma.md", "field-set"),
             ]
         );
+    }
+
+    #[test]
+    fn rename_reads_a_loosely_fenced_note_as_a_build_does() {
+        // Spaces after the fences: only the lenient split takes this block as
+        // frontmatter, and a build reads it that way. The rename does too, so
+        // the link in it is a frontmatter value, left alone as one in a
+        // strictly fenced block is, and only the body link moves.
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "subject\n");
+        for (rel, fence, close) in [
+            ("notes/Loose.md", "--- ", "---  "),
+            ("notes/Strict.md", "---", "---"),
+        ] {
+            write(
+                v.path(),
+                rel,
+                &format!("{fence}\nup: \"[[Alpha]]\"\n{close}\nsee [[Alpha]]\n"),
+            );
+        }
+
+        let op = AuthoringOp::Rename {
+            from: "notes/Alpha.md".to_owned(),
+            to: "notes/Gamma.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+        };
+        apply(v.path(), &op).unwrap();
+
+        assert_eq!(
+            read(v.path(), "notes/Loose.md"),
+            "--- \nup: \"[[Alpha]]\"\n---  \nsee [[Gamma]]\n"
+        );
+        assert_eq!(
+            read(v.path(), "notes/Strict.md"),
+            "---\nup: \"[[Alpha]]\"\n---\nsee [[Gamma]]\n"
+        );
+    }
+
+    /// A folder the rename's walk cannot list is skipped with an
+    /// `unreadable` row naming it, after the rows for what the rename did,
+    /// and the rename goes on. One under a dot-named folder gets no row: a
+    /// rename edits nothing there anyway. Renaming into that folder stops,
+    /// and the error names it.
+    #[cfg(unix)]
+    #[test]
+    fn a_rename_skips_a_folder_it_cannot_list_unless_it_moves_into_it() {
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "subject\n");
+        write(v.path(), "notes/a.md", "see [[Alpha]]\n");
+        let folders = ["notes/locked", ".cache", ".worktrees/b/locked"];
+        let listable = lock(v.path(), &folders);
+        let rename = |to: &str| {
+            let op = AuthoringOp::Rename {
+                from: "notes/Alpha.md".to_owned(),
+                to: to.to_owned(),
+                bundle: false,
+                frontmatter: vec![],
+            };
+            apply(v.path(), &op)
+        };
+        let into = rename("notes/locked/Gamma.md");
+        let beside = rename("notes/Gamma.md");
+        unlock(v.path(), &folders);
+        if listable {
+            return;
+        }
+
+        let err = into.unwrap_err().to_string();
+        assert!(err.contains("notes/locked"), "{err}");
+
+        let outcome = beside.unwrap();
+        assert_eq!(
+            outcomes(&outcome),
+            [
+                ("notes/Gamma.md", "renamed"),
+                ("notes/a.md", "relinked"),
+                ("notes/locked", "skipped"),
+            ],
+            "{outcome:?}"
+        );
+        assert_eq!(
+            outcome.entries[2].applied,
+            Applied::Skipped {
+                reason: "unreadable".to_owned()
+            }
+        );
+        assert_eq!(read(v.path(), "notes/a.md"), "see [[Gamma]]\n");
+    }
+
+    /// A folder the walk cannot list inside a bundle stops the bundle's
+    /// move, naming the folder: the move would carry files whose inbound
+    /// links the rename cannot see.
+    #[cfg(unix)]
+    #[test]
+    fn a_bundle_rename_stops_on_a_folder_inside_it_it_cannot_list() {
+        let v = vault();
+        write(v.path(), "skills/alpha/alpha.md", "subject\n");
+        write(v.path(), "notes/a.md", "see [[alpha]]\n");
+        let listable = lock(v.path(), &["skills/alpha/assets"]);
+        let op = AuthoringOp::Rename {
+            from: "skills/alpha/alpha.md".to_owned(),
+            to: "skills/gamma/gamma.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let result = apply(v.path(), &op);
+        // Wherever the folder ended up.
+        unlock(v.path(), &["skills/alpha/assets", "skills/gamma/assets"]);
+        if listable {
+            return;
+        }
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("skills/alpha/assets"), "{err}");
+        assert_eq!(read(v.path(), "skills/alpha/alpha.md"), "subject\n");
+    }
+
+    /// A rename resolves links against dot-named folders too, but edits
+    /// none of their files: they are tooling and other checkouts, not notes.
+    #[test]
+    fn a_rename_edits_no_file_in_a_dot_named_folder() {
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "subject\n");
+        let linking = [
+            "notes/a.md",
+            ".github/x.md",
+            ".worktrees/b/y.md",
+            ".claude/z.md",
+        ];
+        for rel in linking {
+            write(v.path(), rel, "see [[Alpha]]\n");
+        }
+
+        let op = AuthoringOp::Rename {
+            from: "notes/Alpha.md".to_owned(),
+            to: "notes/Gamma.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+        };
+        apply(v.path(), &op).unwrap();
+
+        assert_eq!(read(v.path(), "notes/a.md"), "see [[Gamma]]\n");
+        for rel in &linking[1..] {
+            assert_eq!(read(v.path(), rel), "see [[Alpha]]\n", "{rel}");
+        }
+    }
+
+    #[test]
+    fn a_rename_reads_an_ambiguous_link_as_a_build_does() {
+        // `[[Guide]]` names two files, one under a dot-named folder. A build
+        // sees both and refuses the link as ambiguous. The rename sees both
+        // too, so renaming `docs/long/Guide.md` leaves the link alone. A walk
+        // without dot folders saw one candidate and rewrote it to `[[Manual]]`.
+        let v = vault();
+        write(v.path(), ".config/Guide.md", "one\n");
+        write(v.path(), "docs/long/Guide.md", "two\n");
+        write(v.path(), "notes/a.md", "see [[Guide]]\n");
+
+        let entry = v.path().join("notes/a.md");
+        let built = tradecraft_core::compile::compile_note(
+            &NativeVfs,
+            &tradecraft_core::compile::CompileSource {
+                vault_root: v.path(),
+                entry_path: &entry,
+                bundle_root: None,
+                skill_name: "a",
+                calls: None,
+                links: None,
+            },
+            "see [[Guide]]\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(built.contains(".config/Guide.md"), "{built}");
+        assert!(built.contains("docs/long/Guide.md"), "{built}");
+
+        let op = AuthoringOp::Rename {
+            from: "docs/long/Guide.md".to_owned(),
+            to: "docs/long/Manual.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+        };
+        apply(v.path(), &op).unwrap();
+        assert_eq!(read(v.path(), "notes/a.md"), "see [[Guide]]\n");
     }
 
     #[test]

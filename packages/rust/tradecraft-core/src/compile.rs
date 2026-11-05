@@ -65,13 +65,15 @@
 //! too; hand-written calls; where resources land; and the validation that no
 //! Obsidian syntax survives.
 
+use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use markdown_link::code::{CodeRules, FenceLine, Fences, Spans};
 use markdown_link::{
-    BodyLinkKind, LinkIndex, ResolveError, ScanOptions, body_links_spanned_with, parse_inner_self,
+    AbandonReason, BodyLinkKind, LinkIndex, ResolveError, ScanOptions, parse_inner_self,
+    scan_body_with,
 };
 use sha2::{Digest, Sha256};
 
@@ -104,6 +106,11 @@ pub struct CompileSource<'a> {
     /// one that does not is recorded unresolved, since there is no index for
     /// the by-name fallback. A plain `[[x]]` stays a link.
     pub calls: Option<&'a CallContext<'a>>,
+    /// The vault's files, indexed for link resolution, when the caller has
+    /// them: a load passes the index of the walk it read the vault with.
+    /// `None` walks `vault_root` for them, leaving out tooling folders
+    /// (`.obsidian`, `.trash`, `node_modules`).
+    pub links: Option<&'a LinkIndex>,
 }
 
 /// One skill a call can name: its entry note and who publishes it.
@@ -539,7 +546,7 @@ pub fn compile_note(
     // splicing can move text across fence boundaries and frontmatter is
     // carried untransformed, so the emitted files are scanned once more.
     let shown = &renderer.shown_notation;
-    validate_no_obsidian_syntax(&compiled_body, "SKILL.md", source.skill_name, shown)?;
+    validate_no_obsidian_syntax(&compiled_body, 0, "SKILL.md", source.skill_name, shown)?;
     for (output_path, (bytes, _)) in &outputs {
         if !output_path.to_lowercase().ends_with(".md") {
             continue;
@@ -548,7 +555,13 @@ pub fn compile_note(
         // UTF-8 by construction; the fallback only guards the invariant.
         let text = std::str::from_utf8(bytes)
             .map_err(|e| CoreError::malformed(Path::new(output_path), format!("not UTF-8: {e}")))?;
-        validate_no_obsidian_syntax(text, output_path, source.skill_name, shown)?;
+        validate_no_obsidian_syntax(
+            text,
+            body_start(text),
+            output_path,
+            source.skill_name,
+            shown,
+        )?;
     }
 
     // Every emitted file's closure starts with the file that owns it, so a
@@ -754,7 +767,8 @@ const REFERENCE_EXTENSIONS: &[&str] = &[
 
 /// Directories the vault index never descends into — tooling and trash, not
 /// notes.
-const EXCLUDED_VAULT_DIRECTORIES: &[&str] = &[".git", ".obsidian", ".trash", "node_modules"];
+pub(crate) const EXCLUDED_VAULT_DIRECTORIES: &[&str] =
+    &[".git", ".obsidian", ".trash", "node_modules"];
 
 /// Directories a skill's own bundle sweep never ships, at any depth under the
 /// bundle root — dev-only fixtures and vendored/tooling trees, never the
@@ -782,6 +796,43 @@ pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
     "node_modules",
 ];
 
+/// The walk compile indexes a vault with, for a caller that must see the
+/// same files: every file, dot-named ones too, except under `.git`,
+/// `.obsidian`, `.trash` and `node_modules`. A symlink is listed, and a folder
+/// that cannot be listed fails the walk.
+pub fn vault_walk_options() -> markdown_vault_fs::walk::WalkOptions {
+    crate::walk::vault_walk(EXCLUDED_VAULT_DIRECTORIES)
+}
+
+/// What a walk with [`vault_walk_options`] cannot read under `vault_root`:
+/// each folder it cannot list and each file it cannot stat, in walk order.
+/// For a caller that walks with `propagate_errors` off and must say what the
+/// walk passed over.
+pub fn vault_walk_errors(vfs: &dyn Vfs, vault_root: &Path) -> Vec<crate::vfs::VfsError> {
+    crate::walk::vault_walk_errors(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)
+}
+
+/// Every file under `vault_root`, by vault-relative path, indexed for link
+/// resolution, leaving out [`EXCLUDED_VAULT_DIRECTORIES`].
+pub(crate) fn vault_link_index(vfs: &dyn Vfs, vault_root: &Path) -> Result<LinkIndex, CoreError> {
+    let files = crate::walk::vault_files(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)?;
+    link_index(vault_root, &files)
+}
+
+/// `files`, by their path relative to `vault_root`, indexed for link
+/// resolution.
+pub(crate) fn link_index(vault_root: &Path, files: &[PathBuf]) -> Result<LinkIndex, CoreError> {
+    let mut paths = Vec::new();
+    for path in files {
+        let relative = path
+            .strip_prefix(vault_root)
+            .map(forward_slashed)
+            .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
+        paths.push(relative);
+    }
+    Ok(LinkIndex::build(&paths))
+}
+
 // --- The renderer -----------------------------------------------------------
 
 /// One skill's compile state: the vault's link index, and the resources
@@ -796,7 +847,7 @@ struct Renderer<'a> {
     /// resolution. Built once per compile — the vault is the resolution
     /// universe, and walking it lazily would make "not found" depend on what
     /// happened to have been walked.
-    index: LinkIndex,
+    index: Cow<'a, LinkIndex>,
     /// Per emitted file, the notes it consumed and the links it could not
     /// resolve. Accumulated as the walk runs; the walk is the only place that
     /// knows either.
@@ -852,15 +903,10 @@ impl<'a> Renderer<'a> {
         {
             return Err(CoreError::PathEscapesRoot(root.clone()));
         }
-        let mut paths = Vec::new();
-        for path in crate::walk::vault_files(vfs, &vault_root, EXCLUDED_VAULT_DIRECTORIES)? {
-            let relative = path
-                .strip_prefix(&vault_root)
-                .map(forward_slashed)
-                .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
-            paths.push(relative);
-        }
-        let index = LinkIndex::build(&paths);
+        let index = match source.links {
+            Some(index) => Cow::Borrowed(index),
+            None => Cow::Owned(vault_link_index(vfs, &vault_root)?),
+        };
         let mut destinations = BTreeMap::new();
         destinations.insert("SKILL.md".to_owned(), entry_path.clone());
         Ok(Renderer {
@@ -1582,35 +1628,60 @@ type TransclusionHop = (PathBuf, Option<String>);
 /// vault to resolve it against, so anything left is a broken reference the
 /// author would only find after installing.
 ///
+/// That includes a `[[` that is not a link (see [`scan_wiki`]): it would ship
+/// as literal brackets. Only one at or after `body_start` counts, so stray
+/// brackets in a resource's frontmatter, carried as written, are not refused.
+/// A link there still is, as before.
+///
 /// The one exception is `shown`: the `/[[x]]` texts an escape wrote out on
 /// purpose. Only that exact text, `/` included, passes.
 fn validate_no_obsidian_syntax(
     text: &str,
+    body_start: usize,
     output_path: &str,
     skill_name: &str,
     shown: &BTreeSet<String>,
 ) -> Result<(), CoreError> {
     // Calls are not rescanned: every live one was replaced or refused, and
     // what is left in code is content.
-    let leftover = scan_wiki_tokens(text, false);
-    let first = leftover.iter().find(|token| {
-        let notation = token
-            .start
-            .checked_sub(1)
-            .filter(|&slash| token.kind == TokenKind::Link && text.as_bytes()[slash] == b'/')
-            .map(|slash| &text[slash..token.end]);
-        !notation.is_some_and(|notation| shown.contains(notation))
-    });
-    if let Some(first) = first {
-        return Err(CoreError::refused(
-            "unresolved-syntax",
-            format!(
-                "compiled skill {skill_name} still contains Obsidian syntax in {output_path}: {}",
-                &text[first.start..first.end]
-            ),
-        ));
-    }
-    Ok(())
+    let (links, leftovers) = scan_wiki(text, false);
+    let link = links
+        .iter()
+        .find(|token| {
+            let notation = token
+                .start
+                .checked_sub(1)
+                .filter(|&slash| token.kind == TokenKind::Link && text.as_bytes()[slash] == b'/')
+                .map(|slash| &text[slash..token.end]);
+            !notation.is_some_and(|notation| shown.contains(notation))
+        })
+        .map(|token| (token.start, token.end, None));
+    let leftover = leftovers
+        .iter()
+        .filter(|leftover| leftover.start >= body_start)
+        .min_by_key(|leftover| leftover.start)
+        .map(|leftover| (leftover.start, leftover.end, Some(leftover.why)));
+    let Some((start, end, why)) = link.into_iter().chain(leftover).min_by_key(|first| first.0)
+    else {
+        return Ok(());
+    };
+    // An unclosed `[[` runs to the end of the text; its line is enough.
+    let written = &text[start..end];
+    let written = written.split('\n').next().unwrap_or(written);
+    let why = why.map_or_else(String::new, |why| format!(" (not a link: {why})"));
+    Err(CoreError::refused(
+        "unresolved-syntax",
+        format!(
+            "compiled skill {skill_name} still contains Obsidian syntax in {output_path}: \
+             {written}{why}"
+        ),
+    ))
+}
+
+/// Where a composed file's body starts: past its frontmatter, as the strict
+/// split that carried it finds it.
+fn body_start(text: &str) -> usize {
+    text.len() - frontmatter_lossless::split(text).body.len()
 }
 
 // --- Destinations, extensions, labels ---------------------------------------
@@ -1743,8 +1814,49 @@ const SCAN: ScanOptions = ScanOptions {
 /// exactly what it finds, and the validation refuses anything it still finds
 /// afterwards. One scanner means the two cannot disagree about what counts.
 fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
+    scan_wiki(markdown, calls).0
+}
+
+/// A `[[` in a body that is not a link, so would ship as literal brackets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Leftover {
+    /// Byte offset of the `[[`, or of the `!` before it.
+    start: usize,
+    /// Byte offset just past what the scanner read.
+    end: usize,
+    /// Why it is not a link, for a refusal.
+    why: &'static str,
+}
+
+/// [`scan_wiki_tokens`], and each `[[` that is not a token: one
+/// `markdown-link` gave up on, and a link with code in its target, which
+/// this pass leaves as written.
+fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>) {
     let bytes = markdown.as_bytes();
-    let mut tokens: Vec<WikiToken<'_>> = body_links_spanned_with(markdown, &SCAN)
+    let scan = scan_body_with(markdown, &SCAN);
+    let mut leftovers: Vec<Leftover> = scan
+        .abandoned
+        .iter()
+        // `[[WIP] Fix](url)` and `[[Note](Note.md)]` are Markdown links with
+        // a `[` beside them, not wikilinks gone wrong.
+        .filter(|abandoned| {
+            let at = abandoned.byte_start + usize::from(abandoned.embed);
+            abandoned.reason != AbandonReason::Bracket
+                || !(opens_markdown_link(markdown, at) || opens_markdown_link(markdown, at + 1))
+        })
+        .map(|abandoned| Leftover {
+            start: abandoned.byte_start,
+            end: abandoned.byte_end,
+            why: match abandoned.reason {
+                AbandonReason::Bracket => "a `[` or `]` comes before its closing `]]`",
+                AbandonReason::Code => "its target is only code",
+                AbandonReason::EmptyTarget => "it has no target",
+                AbandonReason::Unclosed => "it has no closing `]]`",
+            },
+        })
+        .collect();
+    let mut tokens: Vec<WikiToken<'_>> = scan
+        .links
         .into_iter()
         .filter_map(|link| {
             let (kind, opener) = match link.kind {
@@ -1772,6 +1884,11 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
             // target that is not what was written, so the link is left as
             // written, as one that is all code is.
             if !inner.starts_with(link.raw.split('|').next().unwrap_or_default()) {
+                leftovers.push(Leftover {
+                    start: link.byte_start,
+                    end: link.byte_end,
+                    why: "its target has code in it",
+                });
                 return None;
             }
             Some(WikiToken::new(
@@ -1799,7 +1916,41 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
             free
         });
     }
-    tokens
+    (tokens, leftovers)
+}
+
+/// Whether the `[` at byte `at` opens a Markdown link: its brackets balance
+/// before a blank line, and the closing `]` is followed by `(` (inline) or
+/// `[` (reference). A `\`-escaped bracket does not count.
+fn opens_markdown_link(text: &str, at: usize) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.get(at) != Some(&b'[') {
+        return false;
+    }
+    let mut depth = 0usize;
+    let mut i = at;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 1,
+            b'\n' if is_blank_line(&bytes[i + 1..]) => return false,
+            b'[' => depth += 1,
+            b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return matches!(bytes.get(i + 1), Some(b'(' | b'['));
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Whether `rest`, the text after a `\n`, starts with a blank line: one of
+/// only spaces, tabs and a `\r`, which ends a paragraph.
+fn is_blank_line(rest: &[u8]) -> bool {
+    rest.iter().find(|b| !matches!(b, b' ' | b'\t' | b'\r')) == Some(&b'\n')
 }
 
 /// A link's text before any `|`, trimmed, as written, without the `\` that
@@ -2161,6 +2312,7 @@ mod tests {
             bundle_root,
             skill_name: "demo",
             calls: None,
+            links: None,
         }
     }
 
@@ -2472,6 +2624,7 @@ mod tests {
             bundle_root: Some(&bundle),
             skill_name: "workflow-checklist",
             calls: None,
+            links: None,
         };
         let compiled = compile_note(&vfs, &compile_source, body).unwrap();
 
@@ -2523,6 +2676,7 @@ mod tests {
                 bundle_root: bundle,
                 skill_name: "demo",
                 calls: None,
+                links: None,
             };
             let err = compile_note(&vfs, &compile_source, "# Demo\n").unwrap_err();
             // The early check names the root it refused; a later failure in
@@ -2542,6 +2696,7 @@ mod tests {
             bundle_root: Some(&inside_bundle),
             skill_name: "demo",
             calls: None,
+            links: None,
         };
         compile_note(&vfs, &compile_source, "# Demo\n").unwrap();
     }
@@ -2915,6 +3070,7 @@ mod tests {
             bundle_root: Some(Path::new("/vault/skills/demo")),
             skill_name: &note.projection.content.name.clone(),
             calls: None,
+            links: None,
         };
         compile_projection(&vfs, &compile_source, &mut note.projection).unwrap();
 
@@ -2980,29 +3136,118 @@ mod tests {
     }
 
     #[test]
-    fn a_wikilink_holding_a_bracket_or_code_or_no_target_is_not_a_link() {
+    fn a_wikilink_holding_a_bracket_or_code_or_no_target_is_refused() {
         // markdown-link's reading: `[[` does not nest, a `[` or `]` inside
         // ends the attempt, code inside is blanked, and a link needs a target
-        // or a `#` fragment. Each is left as written.
+        // or a `#` fragment. None is a link, so each would ship as literal
+        // brackets, and each is refused as leftover syntax.
         let vfs = demo_vault();
-        let body = "A [[Shared|see [1]]] B [[x]y]] C [[`Shared`]] D [[]] E [[ |alone]]\n";
-        let compiled = compile_note(&vfs, &source(None), body).unwrap();
-        assert_eq!(compiled.body, body);
-        assert!(compiled.resources.is_empty(), "{:?}", paths(&compiled));
-        assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
+        const BRACKET: &str = "a `[` or `]` comes before its closing `]]`";
+        for (body, written, why) in [
+            ("A [[Shared|see [1]]] B\n", "[[Shared|see ", BRACKET),
+            ("A [[x]y]] B\n", "[[x", BRACKET),
+            (
+                "A [[`Shared`]] B\n",
+                "[[`Shared`]]",
+                "its target is only code",
+            ),
+            ("A [[]] B\n", "[[]]", "it has no target"),
+            ("A [[ |alone]] B\n", "[[ |alone]]", "it has no target"),
+            ("A ![[TODO\nB [[ later\n", "![[TODO", BRACKET),
+            ("A [[TODO\nB\n", "[[TODO", "it has no closing `]]`"),
+        ] {
+            let err = compile_note(&vfs, &source(None), body)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("unresolved-syntax"), "{body:?}: {err}");
+            assert!(
+                err.contains(&format!("in SKILL.md: {written} (not a link: {why})")),
+                "{body:?}: {err}"
+            );
+        }
     }
 
     #[test]
-    fn a_wikilink_with_code_in_part_of_its_target_is_not_a_link() {
+    fn a_markdown_link_beside_a_bracket_is_not_a_leftover() {
+        // CommonMark link text may start with a `[`, and a wikilink after a
+        // literal `[` compiles to a Markdown link inside that `[`. Neither is
+        // a wikilink gone wrong.
+        let vfs = demo_vault();
+        for body in [
+            "See [[WIP] Fix parser](https://example.com/pull/1).\n",
+            "See [[RFC] Design][rfc].\n\n[rfc]: https://example.com\n",
+            "See [[[Shared]]].\n",
+        ] {
+            let compiled = compile_note(&vfs, &source(None), body);
+            assert!(compiled.is_ok(), "{body:?}: {:?}", compiled.err());
+        }
+        // A bracket that opens no Markdown link is still refused, and a blank
+        // line ends the search whatever its line endings or spaces.
+        for body in [
+            "See [[WIP] Fix parser.\n",
+            "See [[WIP] x\r\n\r\nthen](https://example.com)\r\n",
+            "See [[WIP] x\n  \t\nthen](https://example.com)\n",
+        ] {
+            let err = compile_note(&vfs, &source(None), body)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("unresolved-syntax"), "{body:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_wikilink_with_code_in_part_of_its_target_is_refused() {
         // markdown-link blanks code before it reads a target, so a target
         // with code in it would resolve against the blanked text: the code
-        // would vanish, or the link would reach another note.
+        // would vanish, or the link would reach another note. It is left as
+        // written, so it is refused as leftover syntax.
         let vfs = demo_vault();
-        let body = "A [[My `code` note]] B [[Shared `v2`]]\n";
-        let compiled = compile_note(&vfs, &source(None), body).unwrap();
-        assert_eq!(compiled.body, body);
-        assert!(compiled.resources.is_empty(), "{:?}", paths(&compiled));
-        assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
+        for (body, written) in [
+            ("A [[My `code` note]]\n", "[[My `code` note]]"),
+            ("B [[Shared `v2`]]\n", "[[Shared `v2`]]"),
+        ] {
+            let err = compile_note(&vfs, &source(None), body)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(&format!(
+                    "in SKILL.md: {written} (not a link: its target has code in it)"
+                )),
+                "{body:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_leftover_bracket_in_code_or_a_comment_or_a_resources_frontmatter_passes() {
+        // Code and HTML comments are content, and a resource's frontmatter
+        // travels as written: none of them is read as markdown links.
+        assert!(
+            validate_no_obsidian_syntax(
+                "`a[[0` and\n\n```\n[[TODO\n```\n<!-- [[draft -->\n",
+                0,
+                "SKILL.md",
+                "demo",
+                &BTreeSet::new(),
+            )
+            .is_ok()
+        );
+        let resource = "---\nmatrix: [[1, 2], [3]]\n---\nBody.\n";
+        assert!(
+            validate_no_obsidian_syntax(
+                resource,
+                body_start(resource),
+                "references/x.md",
+                "demo",
+                &BTreeSet::new()
+            )
+            .is_ok()
+        );
+        let err =
+            validate_no_obsidian_syntax(resource, 0, "references/x.md", "demo", &BTreeSet::new())
+                .unwrap_err()
+                .to_string();
+        assert!(err.contains("unresolved-syntax"), "{err}");
     }
 
     #[test]
@@ -3300,10 +3545,10 @@ mod tests {
     fn only_an_escape_lets_the_notation_through_validation() {
         let shown = BTreeSet::from(["/[[called]]".to_owned()]);
         assert!(
-            validate_no_obsidian_syntax("Esc /[[called]].", "SKILL.md", "demo", &shown).is_ok()
+            validate_no_obsidian_syntax("Esc /[[called]].", 0, "SKILL.md", "demo", &shown).is_ok()
         );
         for leftover in ["Esc [[called]].", "Esc /[[other]].", "Esc x[[called]]."] {
-            let err = validate_no_obsidian_syntax(leftover, "SKILL.md", "demo", &shown)
+            let err = validate_no_obsidian_syntax(leftover, 0, "SKILL.md", "demo", &shown)
                 .unwrap_err()
                 .to_string();
             assert!(err.contains("unresolved-syntax"), "{leftover}: {err}");

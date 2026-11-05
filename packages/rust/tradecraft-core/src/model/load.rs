@@ -15,6 +15,7 @@ use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use markdown_link::LinkIndex;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -28,7 +29,7 @@ use crate::compile::{
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION_REASON,
-    discover_components,
+    discover_in, load_source,
 };
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig, PluginOverrides};
@@ -71,19 +72,31 @@ pub struct LoadRequest {
 /// Pass 1: every note in the vault, read into a node — its frontmatter, kind,
 /// plugin, marketplace and files.
 ///
-/// The one function here that walks the vault. A shared vault reader takes
-/// its place without the passes after it noticing.
+/// The one function here that walks the vault, with `markdown-vault-fs`. Beside
+/// the report it returns the vault's link index, so pass 2 resolves every link
+/// without walking again: built from the same walk when the skills root is the
+/// vault, else from one walk of the vault.
 ///
 /// # Errors
 ///
-/// What [`discover_components`] refuses.
+/// What [`crate::discover::discover_components`] refuses.
 pub fn read_notes(
     vfs: &dyn Vfs,
     vault_root: &Path,
     skills_root: Option<&Path>,
     ns: &Namespace,
-) -> Result<DiscoveryReport, CoreError> {
-    discover_components(vfs, vault_root, skills_root, ns)
+) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
+    let source = load_source(vfs, vault_root, skills_root)?;
+    let report = discover_in(vfs, vault_root, &source, ns)?;
+    // The source walk and compile's vault walk prune the same folders, and
+    // the source walk refused any symlink, so over the vault they list the
+    // same files.
+    let links = if normalize(&source.root) == normalize(vault_root) {
+        crate::compile::link_index(&source.root, &source.files)?
+    } else {
+        crate::compile::vault_link_index(vfs, &normalize(vault_root))?
+    };
+    Ok((report, links))
 }
 
 /// The harnesses `names` selects, every one with a plugin format when empty.
@@ -150,7 +163,7 @@ pub fn load(
     let roots = selected_harnesses(&request.harnesses)?;
 
     // Pass 1.
-    let scan = read_notes(vfs, &vault_root, request.skills_root.as_deref(), ns)?;
+    let (scan, links) = read_notes(vfs, &vault_root, request.skills_root.as_deref(), ns)?;
     if !scan.skipped.is_empty() {
         let notes: Vec<String> = scan
             .skipped
@@ -260,12 +273,15 @@ pub fn load(
     // under the plugin it ships in, whether or not a given harness ships it:
     // which harness ships what is asked when the call is written.
     let checked = skills.len();
-    let index = skill_index(plugins.values().flat_map(|plugin| {
-        plugin
-            .skills
-            .iter()
-            .map(|skill| (&skill.discovered, Some(plugin.name.as_str())))
-    }));
+    let index = skill_index(
+        plugins.values().flat_map(|plugin| {
+            plugin
+                .skills
+                .iter()
+                .map(|skill| (&skill.discovered, Some(plugin.name.as_str())))
+        }),
+        Some(links),
+    );
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for plugin in plugins.values_mut() {
@@ -373,8 +389,8 @@ pub fn load_component(
         crate::publish::overrides_for(&note.frontmatter, request.path, request.target, ns)?;
     let targets: OnceCell<BTreeMap<PathBuf, Option<Vec<String>>>> = OnceCell::new();
     let build = || -> Result<SkillIndex, CoreError> {
-        let scan = read_notes(vfs, request.root, None, ns)?;
-        let built = skill_index(scan.components.iter().map(|c| (c, None)));
+        let (scan, _) = read_notes(vfs, request.root, None, ns)?;
+        let built = skill_index(scan.components.iter().map(|c| (c, None)), None);
         let _ = targets.set(built.targets);
         Ok(built.skills)
     };
@@ -390,6 +406,7 @@ pub fn load_component(
         request.kind,
         &calls,
         &record,
+        None,
         None,
     )?;
     if let Some(targets) = targets.get() {
@@ -446,7 +463,7 @@ pub fn load_plugin(
 ) -> Result<Pack, CoreError> {
     let canonical = profile.name;
     let carries_commands = profile.format().carries_commands;
-    let scan = read_notes(vfs, vault_root, None, ns)?;
+    let (scan, links) = read_notes(vfs, vault_root, None, ns)?;
     // A note elsewhere in the vault that does not parse is not this pack's
     // problem, and a shared vault always holds one. A note this pack holds
     // is. Membership is the note's own `sw-plugin` first and its folder
@@ -509,6 +526,7 @@ pub fn load_plugin(
             .iter()
             .filter(|c| c.kind == EntityKind::Skill)
             .map(|c| (c, c.plugin.as_deref())),
+        Some(links),
     );
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
@@ -612,20 +630,24 @@ pub fn resolve_body(
         calls,
         record,
         shim_target,
+        index.links.as_ref(),
     )?;
     fill_targets(&mut resolved, &index.targets);
     Ok((resolved, content))
 }
 
-/// The skills a call may name, and each one's `sw-targets`.
+/// The skills a call may name, each one's `sw-targets`, and the vault's link
+/// index when pass 1 built it.
 #[derive(Debug, Clone, Default)]
 pub struct Index {
     skills: SkillIndex,
     targets: BTreeMap<PathBuf, Option<Vec<String>>>,
+    links: Option<LinkIndex>,
 }
 
 fn skill_index<'a>(
     skills: impl Iterator<Item = (&'a DiscoveredComponent, Option<&'a str>)>,
+    links: Option<LinkIndex>,
 ) -> Index {
     let mut targets = BTreeMap::new();
     let skills = SkillIndex::new(
@@ -642,7 +664,11 @@ fn skill_index<'a>(
             })
             .collect::<Vec<_>>(),
     );
-    Index { skills, targets }
+    Index {
+        skills,
+        targets,
+        links,
+    }
 }
 
 fn recording_context<'a>(
@@ -677,6 +703,7 @@ fn resolve_compiled(
     calls: &CallContext<'_>,
     record: &RefCell<Recorded>,
     shim_target: Option<&str>,
+    links: Option<&LinkIndex>,
 ) -> Result<(Resolved, SkillContent), CoreError> {
     let mut projection: SkillProjection = note.projection.clone();
     // Only the two kinds an invocation actually takes arguments at.
@@ -695,6 +722,7 @@ fn resolve_compiled(
             bundle_root: component.bundle_root.as_deref(),
             skill_name: &component.name,
             calls: Some(calls),
+            links,
         },
         &mut projection,
     )?;
@@ -1412,5 +1440,53 @@ fn overrides_from(identity: &ContainerIdentity) -> PluginOverrides {
         keywords: identity.keywords.clone(),
         category: identity.category.clone(),
         display_name: identity.display_name.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vfs::MemVfs;
+
+    fn vault() -> MemVfs {
+        let vfs = MemVfs::new();
+        for (path, text) in [
+            (
+                "/vault/src/skills/demo/demo.md",
+                "---\ndescription: d\n---\nSee [[Notes/elsewhere]].\n",
+            ),
+            ("/vault/Notes/elsewhere.md", "outside the skills root\n"),
+        ] {
+            vfs.create_dir_all(Path::new(path).parent().unwrap())
+                .unwrap();
+            vfs.write_file(Path::new(path), text.as_bytes()).unwrap();
+        }
+        vfs
+    }
+
+    /// The walk pass 1 reads the vault with is the set links resolve
+    /// against, so pass 2 takes an index of it rather than walking again.
+    #[test]
+    fn pass_one_hands_on_a_link_index_of_its_walk_of_the_vault() {
+        let vfs = vault();
+        let (_, links) =
+            read_notes(&vfs, Path::new("/vault"), None, &Namespace::default()).unwrap();
+        assert_eq!(links.resolve("Notes/elsewhere"), Some("Notes/elsewhere.md"));
+    }
+
+    /// A skills root below the vault walks less than a link may reach, so
+    /// the vault is walked once for the index.
+    #[test]
+    fn pass_one_indexes_the_whole_vault_for_a_skills_root_below_it() {
+        let vfs = vault();
+        let (report, links) = read_notes(
+            &vfs,
+            Path::new("/vault"),
+            Some(Path::new("/vault/src")),
+            &Namespace::default(),
+        )
+        .unwrap();
+        assert_eq!(report.components.len(), 1);
+        assert_eq!(links.resolve("Notes/elsewhere"), Some("Notes/elsewhere.md"));
     }
 }

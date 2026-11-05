@@ -24,7 +24,7 @@ use markdown_vault_fs::walk::{self as vault, Hide, Visibility};
 use vfs_walk::{Errors, Symlinks, WalkError};
 
 use crate::error::CoreError;
-use crate::vfs::Vfs;
+use crate::vfs::{Vfs, VfsError};
 
 /// The names skipped wherever they appear. `.git` is also what a vault walk
 /// under `Visibility::Everything` drops, so both walks see the same files.
@@ -48,6 +48,9 @@ fn plain_options(
 /// A vault walk's options. `Everything` keeps dot-prefixed names (it drops
 /// only `.git`), and hides nothing: a caller that honours the vault's
 /// excluded files filters with [`excluded_files`].
+///
+/// [`vault_walk_errors`] repeats this walk's skips and prunes as a plain walk;
+/// a change to what this walk enters must change that one too.
 fn vault_options(
     prune: &[&str],
     refuse_symlinks: bool,
@@ -115,6 +118,24 @@ pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path) -> Vec<vfs_walk::Entry>
     vfs_walk::walk(vfs, root, &plain_options(&[], Symlinks::List, Errors::Skip)).unwrap_or_default()
 }
 
+/// The options of [`vault_files`]'s walk.
+pub(crate) fn vault_walk(prune: &[&str]) -> vault::WalkOptions {
+    vault_options(prune, false, true)
+}
+
+/// What [`vault_walk`]'s walk under `root` cannot read: each folder it
+/// cannot list and each file it cannot stat, in walk order. A plain walk with
+/// the same skips and prunes, so it meets the same folders.
+pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Vec<VfsError> {
+    vfs_walk::walk_subtree(
+        vfs,
+        root,
+        "",
+        &plain_options(prune, Symlinks::List, Errors::Report),
+    )
+    .map_or_else(|_| Vec::new(), |outcome| outcome.errors)
+}
+
 /// Every file under the vault folder `root`. A symlinked file is listed like
 /// any other.
 pub(crate) fn vault_files(
@@ -122,7 +143,7 @@ pub(crate) fn vault_files(
     root: &Path,
     prune: &[&str],
 ) -> Result<Vec<PathBuf>, CoreError> {
-    vault::walk(vfs, root, &vault_options(prune, false, true))
+    vault::walk(vfs, root, &vault_walk(prune))
         .map(|entries| entries.into_iter().map(|entry| entry.abs).collect())
         .map_err(|err| core_error(err, not_refused))
 }
@@ -134,8 +155,10 @@ pub(crate) fn vault_files_refusing_symlinks(
     root: &Path,
     prune: &[&str],
     refuse: impl Fn(&Path) -> CoreError,
-) -> Result<Vec<vault::Entry>, CoreError> {
-    vault::walk(vfs, root, &vault_options(prune, true, true)).map_err(|err| core_error(err, refuse))
+) -> Result<Vec<PathBuf>, CoreError> {
+    vault::walk(vfs, root, &vault_options(prune, true, true))
+        .map(|entries| entries.into_iter().map(|entry| entry.abs).collect())
+        .map_err(|err| core_error(err, refuse))
 }
 
 /// Every file under the vault folder `root` this walk can read, without
