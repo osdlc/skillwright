@@ -12,6 +12,6 @@ random keys, so parallel branches do not collide.
 | [D-FDLQ](D-FDLQ-harness-profile-and-translator.md) | Each harness is a profile and a translator |
 | [D-TZFV](D-TZFV-shared-vault-model.md) | Read the vault through osdlc's shared crates |
 
-Terms are defined in [../terms](../terms/README.md).
+Terms are defined in [../terms](../terms/README.md). Standards are in [../standards](../standards/README.md).
 
 Decisions about the shared vault crates themselves are in [osdlc's decisions](https://github.com/osdlc/osdlc/blob/main/docs/decisions/README.md).
