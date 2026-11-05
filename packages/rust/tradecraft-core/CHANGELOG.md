@@ -7,6 +7,25 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.43.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.42.0...tradecraft-core/v0.43.0) - 2026-11-05
+
+### Other
+
+- find what the walk cannot read first, then load the vault once
+- edit no file in a dot-named folder; skip a folder it cannot list
+- one ApplyError for the walk failure; one pass for a blank line
+- a blank line with spaces or a CRLF ends a Markdown link search
+- pass the walk's io error through; the refusing walk returns paths
+- Discovery and compile use the walk and the link index, not a Corpus
+- Review fixes: a Markdown link beside a [ is not a leftover; one link index per load
+- one leftover merge, a body_start helper, skill_index takes the link index, no frontmatter index; fix doc links
+- Load reads the skills source through markdown-corpus; refuse a [[ that is not a link
+- move the prototype into a frozen alpha corpus
+- fixes from review of the scanner move
+- build wiki tokens in one place; code_token needs no opener argument
+- Test link resolution at the edges resolve_strict changed
+- Find links with markdown-link's scanner; calls stay a layer on top
+
 ### Changed
 
 - The compile pass finds `[[links]]` and `![[embeds]]` with `markdown-link`'s scanner, the one the other osdlc tools use. `/[[calls]]`, `\/[[x]]` escapes and hand-written calls stay this crate's, read on top of it. What changes is at the edges: a wikilink holding a `[` or `]`, or code, is no longer a link and is left as written; `[[]]` and `[[ |alias]]` are no longer links to the note itself; a `\|` escaping the pipe in a table cell is no longer part of the target; and a block fragment `#^ id` is read as `#^id`.
