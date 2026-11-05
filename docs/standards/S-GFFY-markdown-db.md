@@ -6,7 +6,7 @@ This standard lives in skillwright until it is promoted to osdlc.
 markdown-db keeps typed records as files in a folder that people browse and edit as plain notes,
 and tools validate. The folder is pure data. Every rule a tool enforces is written in this standard
 or in the corpus's own files, never only in code. Code is one implementation of it; the reference
-validator is `harness-reference/src/markdown-db/`.
+validator is the [`@osdlc/markdown-db`](../../packages/ts/markdown-db/README.md) package.
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
