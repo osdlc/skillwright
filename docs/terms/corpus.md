@@ -2,9 +2,10 @@
 
 Status: current.
 
-A folder holding a `markdown-db.md` root file (or `.yaml` / `.json`), and everything under it: types
-of records, their schemas and free-form narrative. Its name is its folder name. Defined in
-[S-GFFY](../standards/S-GFFY-markdown-db.md).
+In harness-reference and [S-GFFY](../standards/S-GFFY-markdown-db.md): a folder holding a
+`markdown-db.md` root file (or `.yaml` / `.json`), and everything under it: types of records, their
+schemas and free-form narrative. Its name is its folder name. Elsewhere in this repository, corpus
+has osdlc's meaning (see below).
 
 ## In code
 

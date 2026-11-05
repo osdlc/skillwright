@@ -13,7 +13,8 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 ## Terms
 
 - **Corpus**: a folder holding a root file, and everything under it.
-- **Root file**: `markdown-db.md`, `markdown-db.yaml` or `markdown-db.json`.
+- **Root file**: `markdown-db.md`, `markdown-db.yaml` or `markdown-db.json`. The name matches
+  exactly, case included, so a corpus is the same on every file system.
 - **Type**: a folder holding a schema file named after the folder.
 - **Record**: one file of a type. Its id is its file name.
 - **Narrative**: every other file in a corpus.
@@ -66,11 +67,13 @@ notes, even in one type.
 
 - A record in a format the corpus does not list is an error.
 - A `.yml` file in a type folder is an error. The extension is `.yaml`.
+- Extensions are lower case. A file in a type folder whose extension is `.md`, `.yaml`, `.json` or
+  `.yml` in any other case, such as `X.MD`, is an error.
 
 ## Types
 
 - A type is a folder holding a schema file named after the folder: `harnesses/harnesses.schema.md`,
-  `.yaml` or `.json`. A type folder MUST NOT hold more than one.
+  `.yaml` or `.json`, matched exactly, case included. A type folder MUST NOT hold more than one.
 - The type's name is its folder name. Type names MUST be unique within a corpus. A type folder MAY
   sit at any depth in the corpus, but MUST NOT sit inside another type folder.
 - The schema is a JSON Schema, draft 2020-12, for a record's data. In `.md` the schema is the
@@ -132,8 +135,9 @@ them stops working anywhere else.
   same case. A validator MUST NOT fall back to matching by name, as Obsidian does: a broken path is
   always an error. A fragment (`#heading`) is not checked.
 - A path that starts with `/` is an error. Links in a corpus are relative.
-- A link that leaves the corpus, above its root or into a nested corpus, is a link between corpora.
-  v0 does not define those. A validator SHOULD warn and MUST NOT report an error.
+- A link that leaves the corpus, above its root, into a nested corpus or into a path the corpus
+  excludes (a `.` component or `node_modules`), is a link between corpora. v0 does not define
+  those. A validator SHOULD warn and MUST NOT report an error, except for `x-ref` (see References).
 
 Wikilinks are accepted but not canonical: `[[target]]`, `[[target|text]]`, `[[target#heading]]`
 and `![[target]]`.
@@ -142,6 +146,9 @@ and `![[target]]`.
   folding. `[[Claude Code]]`, `[[harnesses/Claude Code]]` and `[[harnesses/Claude Code.md]]` all
   match `harnesses/Claude Code.md`. The extension of a record MAY be left out.
 - No match is an error. More than one match is an error.
+- A wikilink that matches no file in the corpus but matches one in a nested corpus leaves the
+  corpus, and warns as a Markdown link does.
+- A target that starts with `/` is an error, as in a Markdown link.
 - A validator SHOULD warn on every wikilink, and SHOULD offer a fix that rewrites it as a relative
   Markdown link.
 
@@ -158,6 +165,7 @@ successor: { type: string, x-ref: harnesses }
   the named type.
 - On the `items` of a top-level array property, each item MUST be such a link.
 - The named type MUST exist in the corpus.
+- An `x-ref` link that leaves the corpus is an error.
 - v0 defines `x-ref` only in those two places. A validator MUST report it anywhere else.
 
 `x-ref` and `x-id-pattern` are markdown-db's vocabulary. JSON Schema validators reject unknown
