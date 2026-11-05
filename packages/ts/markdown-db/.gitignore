@@ -1,0 +1,5 @@
+# Dependencies installed for the extracted package.
+node_modules/
+
+# Test coverage (`pnpm run coverage`).
+coverage/

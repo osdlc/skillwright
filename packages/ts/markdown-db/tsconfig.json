@@ -1,0 +1,9 @@
+{
+  // Typechecks src/ and tests/. Nothing is emitted: Node runs the source
+  // directly by stripping the types, so only erasable syntax is allowed.
+  "extends": "@osdlc/tsconfig/node-lib",
+  "compilerOptions": {
+    "erasableSyntaxOnly": true
+  },
+  "include": ["src", "tests", "vitest.config.ts"]
+}

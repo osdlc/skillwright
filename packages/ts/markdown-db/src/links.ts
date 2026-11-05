@@ -24,8 +24,9 @@ export interface Link {
   end: number
 }
 
-// Gap: @osdlc/markdown-link 0.8.0 harvests only `.md` and attachment URLs, with no title and no
-// balanced parentheses, and S-GFFY checks every relative link. So Markdown links are found here.
+// Gap (osdlc/osdlc#635): @osdlc/markdown-link 0.8.0 harvests only `.md` and attachment URLs, with
+// no title and no balanced parentheses, and S-GFFY checks every relative link. So Markdown links are
+// found here.
 // [text](dest "title"): dest is <...> or a run with balanced parentheses, as in CommonMark.
 const MARKDOWN =
   /(!?)\[((?:\\.|[^[\]\\\n])*)\]\(\s*(<[^<>\n]*>|(?:\\.|[^\s()\\]|\((?:\\.|[^\s()\\])*\))*)(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\s*\)/g

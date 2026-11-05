@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
-import { afterEach, beforeEach, describe, test } from 'node:test'
+import { afterEach, beforeEach, describe, test } from 'vitest'
 
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-const CLI = join(import.meta.dirname, 'cli.ts')
+const CLI = join(import.meta.dirname, '../src/cli.ts')
 
 let dir = ''
 const put = (rel: string, text: string): void => {
@@ -31,7 +31,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('cli.ts validate', () => {
+describe('markdown-db validate', () => {
   test('passes every valid corpus and warns when two share an id', () => {
     corpus('one', 'shared')
     corpus('two', 'shared')
@@ -60,11 +60,24 @@ describe('cli.ts validate', () => {
     assert.equal(cli('validate', 'missing').status, 1)
   })
 
+  test('validates each folder given, once per corpus, and fails a folder with none', () => {
+    corpus('one', 'a')
+    corpus('two', 'b')
+    put('empty/A.md', 'A.\n')
+    const r = cli('validate', 'one', 'two', 'one')
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(r.stdout, 'ok: one: 1 notes\nok: two: 1 notes\n')
+    const bad = cli('validate', 'one', 'empty')
+    assert.equal(bad.status, 1)
+    assert.equal(bad.stdout, 'ok: one: 1 notes\n')
+    assert.equal(bad.stderr, 'empty: no markdown-db root file at or below it\n')
+  })
+
   test('exits 2 on bad usage', () => {
-    for (const args of [[], ['check', '.'], ['validate'], ['validate', '.', 'extra']]) {
+    for (const args of [[], ['check', '.'], ['validate'], ['validate', '--fix']]) {
       const r = cli(...args)
       assert.equal(r.status, 2, args.join(' '))
-      assert.equal(r.stderr, 'usage: cli.ts validate [--fix] <folder>\n')
+      assert.equal(r.stderr, 'usage: markdown-db validate [--fix] <folder>...\n')
     }
   })
 
