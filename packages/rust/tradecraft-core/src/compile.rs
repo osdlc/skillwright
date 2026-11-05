@@ -1696,6 +1696,29 @@ struct WikiToken<'a> {
     alias: Option<String>,
 }
 
+impl<'a> WikiToken<'a> {
+    /// A token over `start..end` from a link `markdown-link` read out of
+    /// `inner`, the text between its brackets.
+    fn new(
+        (start, end): (usize, usize),
+        kind: TokenKind,
+        inner: &'a str,
+        target: String,
+        fragment: Option<String>,
+        alias: Option<String>,
+    ) -> Self {
+        WikiToken {
+            start,
+            end,
+            kind,
+            destination: written_destination(inner),
+            target,
+            fragment,
+            alias: alias.filter(|alias| !alias.is_empty()),
+        }
+    }
+}
+
 /// How this pass reads a body's links: code by `skill-export`'s rules,
 /// links in HTML comments skipped, and `[[#Heading]]` a link to the note it
 /// is written in.
@@ -1730,25 +1753,29 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
                 BodyLinkKind::Markdown => return None,
             };
             let at = link.byte_start;
-            let (kind, start) = if !calls || kind == TokenKind::Embed {
-                (kind, at)
-            } else if at >= 2 && &bytes[at - 2..at] == b"\\/" && sigil_at(bytes, at - 2) {
-                (TokenKind::Escape, at - 2)
-            } else if at >= 1 && sigil_at(bytes, at - 1) {
-                (TokenKind::Call { in_code: false }, at - 1)
-            } else {
-                (kind, at)
+            let (kind, start) = match kind {
+                TokenKind::Link
+                    if calls
+                        && at >= 2
+                        && &bytes[at - 2..at] == b"\\/"
+                        && sigil_at(bytes, at - 2) =>
+                {
+                    (TokenKind::Escape, at - 2)
+                }
+                TokenKind::Link if calls && at >= 1 && sigil_at(bytes, at - 1) => {
+                    (TokenKind::Call { in_code: false }, at - 1)
+                }
+                _ => (kind, at),
             };
             let inner = &markdown[at + opener..link.byte_end - 2];
-            Some(WikiToken {
-                start,
-                end: link.byte_end,
+            Some(WikiToken::new(
+                (start, link.byte_end),
                 kind,
-                destination: written_destination(inner),
-                target: link.target,
-                fragment: fragment_of(link.heading, link.block),
-                alias: link.alias,
-            })
+                inner,
+                link.target,
+                fragment_of(link.heading, link.block),
+                link.alias,
+            ))
         })
         .collect();
     if calls {
@@ -1846,16 +1873,16 @@ fn scan_code_calls<'a>(markdown: &'a str, from: usize, to: usize, tokens: &mut V
     while offset < to {
         let token = if sigil_at(bytes, offset) {
             if bytes[offset] == b'\\' {
-                code_token(markdown, offset, 3, to, TokenKind::Escape)
+                code_token(markdown, offset, to, TokenKind::Escape)
             } else {
-                code_token(markdown, offset, 3, to, TokenKind::Call { in_code: true })
+                code_token(markdown, offset, to, TokenKind::Call { in_code: true })
             }
         } else if bytes[offset..to].starts_with(b"/[[")
             && offset
                 .checked_sub(1)
                 .is_none_or(|before| bytes[before] != b'\\')
         {
-            code_token(markdown, offset, 3, to, TokenKind::Unconverted)
+            code_token(markdown, offset, to, TokenKind::Unconverted)
         } else {
             None
         };
@@ -1896,15 +1923,10 @@ fn sigil_at(bytes: &[u8], offset: usize) -> bool {
 fn code_token(
     markdown: &str,
     offset: usize,
-    opener: usize,
     limit: usize,
     kind: TokenKind,
 ) -> Option<WikiToken<'_>> {
-    let opener = if kind == TokenKind::Escape {
-        opener + 1
-    } else {
-        opener
-    };
+    let opener = if kind == TokenKind::Escape { 4 } else { 3 };
     let content_start = offset + opener;
     let close = markdown
         .get(content_start..)?
@@ -1915,15 +1937,14 @@ fn code_token(
     // UTF-8 territory.
     let inner = &markdown[content_start..close];
     let link = parse_inner_self(inner, false)?;
-    Some(WikiToken {
-        start: offset,
-        end: close + 2,
+    Some(WikiToken::new(
+        (offset, close + 2),
         kind,
-        destination: written_destination(inner),
-        target: link.target,
-        fragment: fragment_of(link.heading, link.block),
-        alias: link.alias.filter(|alias| !alias.is_empty()),
-    })
+        inner,
+        link.target,
+        fragment_of(link.heading, link.block),
+        link.alias,
+    ))
 }
 
 /// A call as written into output: bare in code, in backticks in prose.
