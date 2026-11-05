@@ -613,7 +613,7 @@ checksum = "292fbad99df2a5478168246bdc899b1dd2fec230b094ce6745867202e735389a"
 dependencies = [
  "comrak",
  "globset",
- "markdown-link",
+ "markdown-link 0.7.0",
  "regex",
  "serde",
  "serde_json",
@@ -623,12 +623,12 @@ dependencies = [
 
 [[package]]
 name = "markdown-corpus"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a48c6796b5e0214061bfc3ace920ad10dc76503ec40ea463c43132e8fb7e1d0"
+checksum = "98f41b185c9b7b6cd859920377f854714f35229f92d06f82cd7db5bb07899e0a"
 dependencies = [
  "frontmatter-lossless",
- "markdown-link",
+ "markdown-link 0.8.0",
  "markdown-vault-fs",
  "slug-collate",
  "vfs-seam",
@@ -646,15 +646,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "markdown-relink"
-version = "0.2.0"
+name = "markdown-link"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3573b4cb085e6e468885f9386f8f483448e54eb6d4df5bcf52bd64cab61bc9bc"
+checksum = "70578cf8c4bb6c593943a8330bbdac1c2b29cf9fa25b36ccca2edb2429c29365"
+dependencies = [
+ "slug-collate",
+ "yaml-splice",
+]
+
+[[package]]
+name = "markdown-relink"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f96ed05b1bec82829b5cd16e2293a31db8903f170954abb31360da42fca4896"
 dependencies = [
  "etag-write",
- "frontmatter-lossless",
  "markdown-corpus",
- "markdown-link",
+ "markdown-link 0.8.0",
  "markdown-vault-fs",
  "slug-collate",
  "thiserror",
@@ -664,9 +673,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-vault-fs"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b6dc9b4f751936c97e5552cef1fa3b8c304c79a3a9b8d79cba7f78ca07024a6"
+checksum = "20e01ebb088ba2abfa09093419234ca0b6db4f57f8ce296f4017c766efaebe7d"
 dependencies = [
  "path-guard",
  "regex",
@@ -1257,7 +1266,7 @@ dependencies = [
  "agent-adapt",
  "frontmatter-lossless",
  "markdown-contract",
- "markdown-link",
+ "markdown-link 0.8.0",
  "markdown-vault-fs",
  "path-guard",
  "serde",
@@ -1355,18 +1364,18 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vfs-seam"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e01ab63ae478959ecf2d3a7c6c95d50e501b5d7f96742ee98864fd6c761e79c7"
+checksum = "23639d4340fded7ca3c23a53ef8e8d6bdd4c97880d6863e952d7e1eb6aae6891"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "vfs-walk"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f3030ccb6fbd2fc2e6f082f993443c1acf5fd265e3ca43836aabff2721133cc"
+checksum = "9661061db069f0cb29d03736987d5b731a4ba637dfb05b024e95727f180eccec"
 dependencies = [
  "thiserror",
  "vfs-seam",
