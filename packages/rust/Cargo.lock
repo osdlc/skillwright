@@ -1266,7 +1266,6 @@ dependencies = [
  "agent-adapt",
  "frontmatter-lossless",
  "markdown-contract",
- "markdown-corpus",
  "markdown-link 0.8.0",
  "markdown-vault-fs",
  "path-guard",

@@ -72,10 +72,10 @@ pub struct LoadRequest {
 /// Pass 1: every note in the vault, read into a node — its frontmatter, kind,
 /// plugin, marketplace and files.
 ///
-/// The one function here that walks the vault, through `markdown-corpus`
-/// (see [`load_source`]). Beside the report it returns the vault's link
-/// index, so pass 2 resolves every link without walking again: the corpus's
-/// own when it covered the whole vault, else one walk of the vault.
+/// The one function here that walks the vault, with `markdown-vault-fs`. Beside
+/// the report it returns the vault's link index, so pass 2 resolves every link
+/// without walking again: built from the same walk when the skills root is the
+/// vault, else from one walk of the vault.
 ///
 /// # Errors
 ///
@@ -86,10 +86,13 @@ pub fn read_notes(
     skills_root: Option<&Path>,
     ns: &Namespace,
 ) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
-    let corpus = load_source(vfs, vault_root, skills_root)?;
-    let report = discover_in(vfs, vault_root, &corpus, ns)?;
-    let links = if normalize(corpus.root()) == normalize(vault_root) {
-        corpus.links().with_index(LinkIndex::clone)
+    let source = load_source(vfs, vault_root, skills_root)?;
+    let report = discover_in(vfs, vault_root, &source, ns)?;
+    // The source walk and compile's vault walk prune the same folders, and
+    // the source walk refused any symlink, so over the vault they list the
+    // same files.
+    let links = if normalize(&source.root) == normalize(vault_root) {
+        crate::compile::link_index(&source.root, &source.files)?
     } else {
         crate::compile::vault_link_index(vfs, &normalize(vault_root))?
     };
@@ -1462,9 +1465,9 @@ mod tests {
     }
 
     /// The walk pass 1 reads the vault with is the set links resolve
-    /// against, so pass 2 takes its index rather than walking again.
+    /// against, so pass 2 takes an index of it rather than walking again.
     #[test]
-    fn pass_one_hands_on_the_corpus_link_index_when_it_walked_the_vault() {
+    fn pass_one_hands_on_a_link_index_of_its_walk_of_the_vault() {
         let vfs = vault();
         let (_, links) =
             read_notes(&vfs, Path::new("/vault"), None, &Namespace::default()).unwrap();

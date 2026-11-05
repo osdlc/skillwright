@@ -67,7 +67,7 @@ fn vault_options(
 }
 
 /// A walk error as core's, with `refuse` making the error for a symlink.
-pub(crate) fn core_error(err: WalkError, refuse: impl Fn(&Path) -> CoreError) -> CoreError {
+fn core_error(err: WalkError, refuse: impl Fn(&Path) -> CoreError) -> CoreError {
     match err {
         WalkError::Io(err) => err.into(),
         WalkError::Symlink(path) => refuse(&path),
@@ -115,6 +115,11 @@ pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path) -> Vec<vfs_walk::Entry>
     vfs_walk::walk(vfs, root, &plain_options(&[], Symlinks::List, Errors::Skip)).unwrap_or_default()
 }
 
+/// The options of [`vault_files`]'s walk.
+pub(crate) fn vault_walk(prune: &[&str]) -> vault::WalkOptions {
+    vault_options(prune, false, true)
+}
+
 /// Every file under the vault folder `root`. A symlinked file is listed like
 /// any other.
 pub(crate) fn vault_files(
@@ -122,16 +127,20 @@ pub(crate) fn vault_files(
     root: &Path,
     prune: &[&str],
 ) -> Result<Vec<PathBuf>, CoreError> {
-    vault::walk(vfs, root, &vault_options(prune, false, true))
+    vault::walk(vfs, root, &vault_walk(prune))
         .map(|entries| entries.into_iter().map(|entry| entry.abs).collect())
         .map_err(|err| core_error(err, not_refused))
 }
 
-/// The walk a skills source is read with, as a corpus walk: what
-/// [`vault_files`] lists under `prune`, but a symlink anywhere in it fails the
-/// walk instead of being listed.
-pub(crate) fn source_walk(prune: &[&str]) -> vault::WalkOptions {
-    vault_options(prune, true, true)
+/// Every file under the vault folder `root`, refusing a symlink anywhere in
+/// it with the error `refuse` makes from its path.
+pub(crate) fn vault_files_refusing_symlinks(
+    vfs: &dyn Vfs,
+    root: &Path,
+    prune: &[&str],
+    refuse: impl Fn(&Path) -> CoreError,
+) -> Result<Vec<vault::Entry>, CoreError> {
+    vault::walk(vfs, root, &vault_options(prune, true, true)).map_err(|err| core_error(err, refuse))
 }
 
 /// Every file under the vault folder `root` this walk can read, without

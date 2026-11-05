@@ -2,17 +2,14 @@
 
 Status: current.
 
-osdlc's corpus model, which [load](load.md) reads the vault through (a corpus is a folder of Markdown notes and the files they link to; a vault is one): notes, links and backlinks. Headings and blocks come from `markdown-contract`, which skillwright calls itself. Defined in osdlc's [markdown-corpus](https://github.com/osdlc/osdlc/blob/main/docs/terms/markdown-corpus.md) ([D-TZFV](../decisions/D-TZFV-shared-vault-model.md)).
+osdlc's corpus model (a corpus is a folder of Markdown notes and the files they link to; a vault is one): notes, links and backlinks. Defined in osdlc's [markdown-corpus](https://github.com/osdlc/osdlc/blob/main/docs/terms/markdown-corpus.md) ([D-TZFV](../decisions/D-TZFV-shared-vault-model.md)).
 
 ## In code
 
-`discover::load_source` reads the skills source with `Corpus::try_load`, and discovery and load's pass 1 place and read notes from its walk. When the skills source is the whole vault, compile resolves links with the corpus's link index instead of walking the vault again. `apply`'s note move builds `markdown-relink`'s facts from a corpus of the whole vault.
+Only renames use it. `apply`'s note move loads a `Corpus` of the whole vault and builds `markdown-relink`'s facts from it, because the planner needs every note's links. It loads with the walk a build indexes the vault with (dot-named files kept; `.git`, `.obsidian`, `.trash` and `node_modules` left out), except that a symlink is listed rather than refused, so one anywhere in the vault does not block a rename. It splits frontmatter leniently (`SplitMode::Lenient`), as a build does. So a rename resolves a link to the file a build does.
 
-## The options load sets
+[Load](load.md) and discovery do not use it. They need only the walk's paths and a link index, which `markdown-vault-fs` and `markdown-link` give without reading every note. A corpus would read and link-scan every note to give the same paths.
 
-What load needed from markdown-corpus 0.1.0 is in 0.2.0 (osdlc/osdlc#621), so these gaps are closed:
+## What it needed
 
-- **The walk.** `LoadOptions` takes a `WalkOptions` for each walk, and `Corpus::try_load` returns the walk's error. Load's walk keeps dot-named files (a bundle may ship one, a link may name one), leaves out `node_modules`, `.obsidian` and `.trash`, refuses a symlink, walks only the skills root, and fails when it cannot list a folder.
-- **A lenient frontmatter split.** `SplitMode::Lenient`, which also accepts blank lines before the opening fence and spaces after a fence, as load's own `split_frontmatter` does. `apply` uses it too, so a rename reads a note the way a build does.
-
-The vault's excluded files are still applied by discovery after the walk: a walk that sees dot-named files ignores them.
+markdown-corpus 0.2.0 (osdlc/osdlc#621) added what skillwright asked for, so these gaps are closed: `LoadOptions` takes a `WalkOptions` for each walk, `Corpus::try_load` returns the walk's error, and `SplitMode::Lenient` reads a block with blank lines before it or spaces after a fence.

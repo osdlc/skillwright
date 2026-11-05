@@ -796,11 +796,26 @@ pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
     "node_modules",
 ];
 
+/// The walk compile indexes a vault with, for a caller that must see the
+/// same files: every file, dot-named ones too, except under `.git`,
+/// `.obsidian`, `.trash` and `node_modules`. A symlink is listed, and a folder
+/// that cannot be listed fails the walk.
+pub fn vault_walk_options() -> markdown_vault_fs::walk::WalkOptions {
+    crate::walk::vault_walk(EXCLUDED_VAULT_DIRECTORIES)
+}
+
 /// Every file under `vault_root`, by vault-relative path, indexed for link
 /// resolution, leaving out [`EXCLUDED_VAULT_DIRECTORIES`].
 pub(crate) fn vault_link_index(vfs: &dyn Vfs, vault_root: &Path) -> Result<LinkIndex, CoreError> {
+    let files = crate::walk::vault_files(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)?;
+    link_index(vault_root, &files)
+}
+
+/// `files`, by their path relative to `vault_root`, indexed for link
+/// resolution.
+pub(crate) fn link_index(vault_root: &Path, files: &[PathBuf]) -> Result<LinkIndex, CoreError> {
     let mut paths = Vec::new();
-    for path in crate::walk::vault_files(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)? {
+    for path in files {
         let relative = path
             .strip_prefix(vault_root)
             .map(forward_slashed)

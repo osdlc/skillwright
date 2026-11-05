@@ -380,16 +380,21 @@ fn move_note(
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    // The vault as the shared model reads it, so the planner resolves links
-    // over the same walk and link index as every other osdlc tool. Split
-    // leniently, as a build reads a note: a link in a block only the lenient
-    // split takes as frontmatter is a frontmatter value here too, not a body
-    // link to rewrite.
-    let corpus = Corpus::load(
-        &NativeVfs,
-        vault_dir,
-        LoadOptions::default().with_split(SplitMode::Lenient),
-    );
+    // The vault as a build reads it: compile's walk, so the planner resolves
+    // a link to the file a build does, and the lenient split, so a block only
+    // that split takes is frontmatter here too, not body links to rewrite.
+    // Unlike a build's skills source, symlinks are listed, not refused: one
+    // anywhere in the vault must not block a rename.
+    let walk = tradecraft_core::compile::vault_walk_options();
+    let options = LoadOptions::default()
+        .with_link_walk(walk.clone())
+        .with_frontmatter_walk(walk)
+        .with_split(SplitMode::Lenient);
+    let corpus =
+        Corpus::try_load(&NativeVfs, vault_dir, options).map_err(|err| ApplyError::Io {
+            what: format!("walking {}", vault_dir.display()),
+            source: std::io::Error::other(err),
+        })?;
     let facts = VaultFacts::from_corpus(&corpus);
     let plan = if bundle {
         markdown_relink::plan_bundle(&NativeVfs, vault_dir, &facts, from, to)?
@@ -834,6 +839,45 @@ mod tests {
             read(v.path(), "notes/Strict.md"),
             "---\nup: \"[[Alpha]]\"\n---\nsee [[Gamma]]\n"
         );
+    }
+
+    #[test]
+    fn a_rename_reads_an_ambiguous_link_as_a_build_does() {
+        // `[[Guide]]` names two files, one under a dot-named folder. A build
+        // sees both and refuses the link as ambiguous. The rename sees both
+        // too, so renaming `docs/long/Guide.md` leaves the link alone. A walk
+        // without dot folders saw one candidate and rewrote it to `[[Manual]]`.
+        let v = vault();
+        write(v.path(), ".config/Guide.md", "one\n");
+        write(v.path(), "docs/long/Guide.md", "two\n");
+        write(v.path(), "notes/a.md", "see [[Guide]]\n");
+
+        let entry = v.path().join("notes/a.md");
+        let built = tradecraft_core::compile::compile_note(
+            &NativeVfs,
+            &tradecraft_core::compile::CompileSource {
+                vault_root: v.path(),
+                entry_path: &entry,
+                bundle_root: None,
+                skill_name: "a",
+                calls: None,
+                links: None,
+            },
+            "see [[Guide]]\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(built.contains(".config/Guide.md"), "{built}");
+        assert!(built.contains("docs/long/Guide.md"), "{built}");
+
+        let op = AuthoringOp::Rename {
+            from: "docs/long/Guide.md".to_owned(),
+            to: "docs/long/Manual.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+        };
+        apply(v.path(), &op).unwrap();
+        assert_eq!(read(v.path(), "notes/a.md"), "see [[Guide]]\n");
     }
 
     #[test]

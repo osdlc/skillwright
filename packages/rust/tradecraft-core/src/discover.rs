@@ -115,7 +115,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use markdown_corpus::{Corpus, LoadOptions, SplitMode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -384,47 +383,46 @@ pub fn discover_components(
     content_root: Option<&Path>,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    let corpus = load_source(vfs, vault_root, content_root)?;
-    discover_in(vfs, vault_root, &corpus, ns)
+    let source = load_source(vfs, vault_root, content_root)?;
+    discover_in(vfs, vault_root, &source, ns)
 }
 
-/// The skills source at `content_root` (the vault root when `None`), read as
-/// a corpus the way [`discover_components`] reads it.
+/// The skills source at `content_root` (the vault root when `None`): its
+/// root, and every file under it in walk order.
 ///
-/// The walk keeps dot-named files (a bundle may ship one, a link may name
-/// one), never enters `.obsidian`, `.trash` or `node_modules`, and walks only
-/// the content root. A symlink anywhere in it, or a folder that cannot be
-/// listed, fails the load. Notes are split leniently, as
-/// [`split_frontmatter`] splits them.
+/// The walk is markdown-vault-fs's. It keeps dot-named files (a bundle may
+/// ship one, a link may name one), never enters `.obsidian`, `.trash` or
+/// `node_modules`, and walks only the content root. A symlink anywhere in it,
+/// or a folder that cannot be listed, fails the walk: a skills source feeds a
+/// publish, and an unreadable corner of it must not silently under-publish.
+/// The vault's excluded files are still listed; discovery leaves them out.
+#[derive(Debug, Clone)]
+pub(crate) struct Source {
+    pub(crate) root: PathBuf,
+    pub(crate) files: Vec<PathBuf>,
+}
+
+/// Walks the skills source. See [`Source`].
 ///
 /// # Errors
 ///
 /// * [`CoreError::RootNotFound`] — the content root does not exist.
 /// * `refused: unsafe-path` — a symlink anywhere in the source.
 /// * [`CoreError::Io`] — a folder that cannot be listed.
-pub fn load_source(
+pub(crate) fn load_source(
     vfs: &dyn Vfs,
     vault_root: &Path,
     content_root: Option<&Path>,
-) -> Result<Corpus, CoreError> {
-    let root = content_root.unwrap_or(vault_root);
-    if !vfs.exists(root) {
-        return Err(CoreError::RootNotFound(root.to_path_buf()));
+) -> Result<Source, CoreError> {
+    let root = content_root.unwrap_or(vault_root).to_path_buf();
+    if !vfs.exists(&root) {
+        return Err(CoreError::RootNotFound(root));
     }
-    let walk = crate::walk::source_walk(crate::compile::EXCLUDED_VAULT_DIRECTORIES);
-    // Discovery reads each note's frontmatter itself, so the frontmatter
-    // index's walk collects nothing: it would read every note again.
-    let unindexed = markdown_corpus::WalkOptions {
-        notes: false,
-        attachments: false,
-        ..walk.clone()
-    };
-    let options = LoadOptions::default()
-        .with_link_walk(walk)
-        .with_frontmatter_walk(unindexed)
-        .with_split(SplitMode::Lenient);
-    Corpus::try_load(vfs, root, options).map_err(|err| {
-        crate::walk::core_error(err, |path| {
+    let files = crate::walk::vault_files_refusing_symlinks(
+        vfs,
+        &root,
+        crate::compile::EXCLUDED_VAULT_DIRECTORIES,
+        |path| {
             CoreError::refused(
                 "unsafe-path",
                 format!(
@@ -433,11 +431,15 @@ pub fn load_source(
                     path.display()
                 ),
             )
-        })
-    })
+        },
+    )?
+    .into_iter()
+    .map(|entry| entry.abs)
+    .collect();
+    Ok(Source { root, files })
 }
 
-/// [`discover_components`] over a source [`load_source`] already read.
+/// [`discover_components`] over a source [`load_source`] already walked.
 ///
 /// # Errors
 ///
@@ -445,11 +447,11 @@ pub fn load_source(
 pub(crate) fn discover_in(
     vfs: &dyn Vfs,
     vault_root: &Path,
-    corpus: &Corpus,
+    source: &Source,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    let root = corpus.root().to_path_buf();
-    let files = source_files(vfs, vault_root, corpus);
+    let root = source.root.clone();
+    let files = source_files(vfs, vault_root, source);
 
     // Structure first, over the whole file set: a note's shape depends on what
     // sits beside it, so no single path can be classified on its own.
@@ -897,34 +899,22 @@ fn owned_resources(
     out
 }
 
-/// Every file in the source corpus, in walk order, without the vault's
-/// excluded files.
-///
-/// The corpus walk propagates read failures and refuses symlinks (see
-/// [`load_source`]): a skills source is a curated tree feeding a publish, and
-/// an unreadable corner of it must not silently under-publish. The trash
-/// folder holds notes `delete` moved out of the tree, which are not content.
-///
-/// A file the vault excludes (Obsidian's "Excluded files", see
-/// [`crate::walk::excluded_files`]) is left out, so it is neither placed nor
-/// published.
-fn source_files(vfs: &dyn Vfs, vault_root: &Path, corpus: &Corpus) -> Vec<PathBuf> {
+/// Every file in the source, in walk order, without the vault's excluded
+/// files (Obsidian's "Excluded files", see [`crate::walk::excluded_files`]),
+/// so an excluded file is neither placed nor published.
+fn source_files(vfs: &dyn Vfs, vault_root: &Path, source: &Source) -> Vec<PathBuf> {
     let excluded = crate::walk::excluded_files(vfs, vault_root);
-    let mut files: Vec<PathBuf> = corpus
-        .paths()
+    source
+        .files
         .iter()
-        .map(|relative| corpus.root().join(relative))
         // A path outside the vault (a content root elsewhere) has no
         // vault-relative spelling for the list to match, so it stays.
         .filter(|path| {
             path.strip_prefix(vault_root)
                 .map_or(true, |relative| !excluded(&forward_slashed(relative)))
         })
-        .collect();
-    // The corpus sorts its paths for lookup. A path compares by component, so
-    // sorting restores the walk's order: depth first, by name in each folder.
-    files.sort();
-    files
+        .cloned()
+        .collect()
 }
 
 /// Reads one note at a recognised shape and decides: a component (`Some`),
