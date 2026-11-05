@@ -1,12 +1,57 @@
 {
   "schema": 1,
   "pr": 34,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "7bd399b3b1ca28d34fc464d3fdfd46db30ed36c7",
+  "base": "101d25879600d54d943fd1ea6100ee1774f940b5",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-rfapum",
     "at": "2026-11-05T03:46:15.858Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "harness-reference/bundle/facts/pi/skills/project-dirs.md",
+      "line": 14,
+      "title": "<cwd>/.pi/skills normalised to .pi/skills drops the cwd-only scope",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "harness-reference/src/load.ts",
+      "line": 132,
+      "title": "trailing-punctuation strip misses : ? ! so a trailing slash before them passes",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "harness-reference/README.md",
+      "line": 76,
+      "title": "$VAR rule contradicts the $HOME rule",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "harness-reference/src/load.ts",
+      "line": 124,
+      "title": "doc comment restates the README rule list",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
