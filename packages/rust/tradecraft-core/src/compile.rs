@@ -796,6 +796,20 @@ pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
     "node_modules",
 ];
 
+/// Every file under `vault_root`, by vault-relative path, indexed for link
+/// resolution, leaving out [`EXCLUDED_VAULT_DIRECTORIES`].
+pub(crate) fn vault_link_index(vfs: &dyn Vfs, vault_root: &Path) -> Result<LinkIndex, CoreError> {
+    let mut paths = Vec::new();
+    for path in crate::walk::vault_files(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)? {
+        let relative = path
+            .strip_prefix(vault_root)
+            .map(forward_slashed)
+            .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
+        paths.push(relative);
+    }
+    Ok(LinkIndex::build(&paths))
+}
+
 // --- The renderer -----------------------------------------------------------
 
 /// One skill's compile state: the vault's link index, and the resources
@@ -868,18 +882,7 @@ impl<'a> Renderer<'a> {
         }
         let index = match source.links {
             Some(index) => Cow::Borrowed(index),
-            None => {
-                let mut paths = Vec::new();
-                for path in crate::walk::vault_files(vfs, &vault_root, EXCLUDED_VAULT_DIRECTORIES)?
-                {
-                    let relative = path
-                        .strip_prefix(&vault_root)
-                        .map(forward_slashed)
-                        .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
-                    paths.push(relative);
-                }
-                Cow::Owned(LinkIndex::build(&paths))
-            }
+            None => Cow::Owned(vault_link_index(vfs, &vault_root)?),
         };
         let mut destinations = BTreeMap::new();
         destinations.insert("SKILL.md".to_owned(), entry_path.clone());
@@ -1603,8 +1606,9 @@ type TransclusionHop = (PathBuf, Option<String>);
 /// author would only find after installing.
 ///
 /// That includes a `[[` that is not a link (see [`scan_wiki`]): it would ship
-/// as literal brackets. Only one at or after `body_start` counts, so a
-/// resource's frontmatter, carried as written, is not read as markdown.
+/// as literal brackets. Only one at or after `body_start` counts, so stray
+/// brackets in a resource's frontmatter, carried as written, are not refused.
+/// A link there still is, as before.
 ///
 /// The one exception is `shown`: the `/[[x]]` texts an escape wrote out on
 /// purpose. Only that exact text, `/` included, passes.
@@ -1810,6 +1814,13 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
     let mut leftovers: Vec<Leftover> = scan
         .abandoned
         .iter()
+        // `[[WIP] Fix](url)` and `[[Note](Note.md)]` are Markdown links with
+        // a `[` beside them, not wikilinks gone wrong.
+        .filter(|abandoned| {
+            let at = abandoned.byte_start + usize::from(abandoned.embed);
+            abandoned.reason != AbandonReason::Bracket
+                || !(opens_markdown_link(markdown, at) || opens_markdown_link(markdown, at + 1))
+        })
         .map(|abandoned| Leftover {
             start: abandoned.byte_start,
             end: abandoned.byte_end,
@@ -1883,6 +1894,34 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
         });
     }
     (tokens, leftovers)
+}
+
+/// Whether the `[` at byte `at` opens a Markdown link: its brackets balance
+/// before a blank line, and the closing `]` is followed by `(` (inline) or
+/// `[` (reference). A `\`-escaped bracket does not count.
+fn opens_markdown_link(text: &str, at: usize) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.get(at) != Some(&b'[') {
+        return false;
+    }
+    let mut depth = 0usize;
+    let mut i = at;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 1,
+            b'\n' if bytes.get(i + 1) == Some(&b'\n') => return false,
+            b'[' => depth += 1,
+            b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return matches!(bytes.get(i + 1), Some(b'(' | b'['));
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
 }
 
 /// A link's text before any `|`, trimmed, as written, without the `\` that
@@ -3097,6 +3136,27 @@ mod tests {
                 "{body:?}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn a_markdown_link_beside_a_bracket_is_not_a_leftover() {
+        // CommonMark link text may start with a `[`, and a wikilink after a
+        // literal `[` compiles to a Markdown link inside that `[`. Neither is
+        // a wikilink gone wrong.
+        let vfs = demo_vault();
+        for body in [
+            "See [[WIP] Fix parser](https://example.com/pull/1).\n",
+            "See [[RFC] Design][rfc].\n\n[rfc]: https://example.com\n",
+            "See [[[Shared]]].\n",
+        ] {
+            let compiled = compile_note(&vfs, &source(None), body);
+            assert!(compiled.is_ok(), "{body:?}: {:?}", compiled.err());
+        }
+        // A bracket that opens no Markdown link is still refused.
+        let err = compile_note(&vfs, &source(None), "See [[WIP] Fix parser.\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unresolved-syntax"), "{err}");
     }
 
     #[test]

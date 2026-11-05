@@ -74,9 +74,8 @@ pub struct LoadRequest {
 ///
 /// The one function here that walks the vault, through `markdown-corpus`
 /// (see [`load_source`]). Beside the report it returns the vault's link
-/// index from that walk when the walk covered the whole vault, so pass 2
-/// resolves links without walking again. A skills root below the vault
-/// walked less than links resolve against, so then it is `None`.
+/// index, so pass 2 resolves every link without walking again: the corpus's
+/// own when it covered the whole vault, else one walk of the vault.
 ///
 /// # Errors
 ///
@@ -86,11 +85,14 @@ pub fn read_notes(
     vault_root: &Path,
     skills_root: Option<&Path>,
     ns: &Namespace,
-) -> Result<(DiscoveryReport, Option<LinkIndex>), CoreError> {
+) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
     let corpus = load_source(vfs, vault_root, skills_root)?;
     let report = discover_in(vfs, vault_root, &corpus, ns)?;
-    let links = (normalize(corpus.root()) == normalize(vault_root))
-        .then(|| corpus.links().with_index(LinkIndex::clone));
+    let links = if normalize(corpus.root()) == normalize(vault_root) {
+        corpus.links().with_index(LinkIndex::clone)
+    } else {
+        crate::compile::vault_link_index(vfs, &normalize(vault_root))?
+    };
     Ok((report, links))
 }
 
@@ -275,7 +277,7 @@ pub fn load(
                 .iter()
                 .map(|skill| (&skill.discovered, Some(plugin.name.as_str())))
         }),
-        links,
+        Some(links),
     );
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
@@ -521,7 +523,7 @@ pub fn load_plugin(
             .iter()
             .filter(|c| c.kind == EntityKind::Skill)
             .map(|c| (c, c.plugin.as_deref())),
-        links,
+        Some(links),
     );
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
@@ -1462,18 +1464,17 @@ mod tests {
     /// The walk pass 1 reads the vault with is the set links resolve
     /// against, so pass 2 takes its index rather than walking again.
     #[test]
-    fn pass_one_hands_on_the_vaults_link_index_when_it_walked_the_vault() {
+    fn pass_one_hands_on_the_corpus_link_index_when_it_walked_the_vault() {
         let vfs = vault();
         let (_, links) =
             read_notes(&vfs, Path::new("/vault"), None, &Namespace::default()).unwrap();
-        let links = links.expect("the whole vault was walked");
         assert_eq!(links.resolve("Notes/elsewhere"), Some("Notes/elsewhere.md"));
     }
 
     /// A skills root below the vault walks less than a link may reach, so
-    /// there is no index to hand on.
+    /// the vault is walked once for the index.
     #[test]
-    fn pass_one_hands_on_no_link_index_for_a_skills_root_below_the_vault() {
+    fn pass_one_indexes_the_whole_vault_for_a_skills_root_below_it() {
         let vfs = vault();
         let (report, links) = read_notes(
             &vfs,
@@ -1483,6 +1484,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(report.components.len(), 1);
-        assert!(links.is_none());
+        assert_eq!(links.resolve("Notes/elsewhere"), Some("Notes/elsewhere.md"));
     }
 }

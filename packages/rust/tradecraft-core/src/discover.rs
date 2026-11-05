@@ -442,7 +442,7 @@ pub fn load_source(
 /// # Errors
 ///
 /// `refused: path-collision`, as [`discover_components`].
-pub fn discover_in(
+pub(crate) fn discover_in(
     vfs: &dyn Vfs,
     vault_root: &Path,
     corpus: &Corpus,
