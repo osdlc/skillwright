@@ -1,12 +1,145 @@
 {
   "schema": 1,
   "pr": 40,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "cf16ded05423cd77b619cf68155a2e938be2de67",
+  "base": "a35fed53aa101ec0e00ea534156e4bc34d95cbc9",
+  "round": 1,
   "claim": {
     "owner": "KellyMBP.local:claude-r7m2qx",
     "at": "2026-11-05T08:02:02.603Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/ts/markdown-db/src/cli.ts",
+      "line": 15,
+      "title": "Unknown flags are taken as folders and exit 1, not usage exit 2",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/ts/markdown-db/tests/cases/broken/expected.json",
+      "line": 4,
+      "title": "Case pins a line with no <field>, against S-GFFY's line format",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/ts/markdown-db/tests/cases/broken/expected.json",
+      "line": 3,
+      "title": "Cases pin Ajv wording and this validator's order, so another language cannot run them",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/ts/markdown-db/tests/cli.test.ts",
+      "line": 67,
+      "title": "Overlapping folders (parent and child) not tested",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/ts/markdown-db/tests/cases.test.ts",
+      "line": 7,
+      "title": "No package test goes through the entry point src/index.ts",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/ts/markdown-db/src/index.ts",
+      "line": 5,
+      "title": "Public surface exports internals no consumer uses",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "Relationship to markdown-contract not stated before the package heads to osdlc",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "packages/ts/markdown-db/README.md",
+      "line": 47,
+      "title": "README export list is partial and duplicates index.ts",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "packages/ts/markdown-db/src/links.ts",
+      "line": 27,
+      "title": "Gap comment pins a version and repeats the README",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "packages/ts/markdown-db/tsconfig.json",
+      "line": 2,
+      "title": "tsconfig comment restates include",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": "packages/ts/markdown-db/.gitignore",
+      "line": 1,
+      "title": "Copied comment says 'extracted package' and restates the line",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-12",
+      "round": 1,
+      "path": "packages/ts/markdown-db/package.json",
+      "line": 33,
+      "title": "--noEmit repeats the preset",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
