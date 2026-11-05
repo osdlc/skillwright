@@ -80,7 +80,7 @@ pub struct LoadRequest {
 ///
 /// # Errors
 ///
-/// What [`discover_components`] refuses.
+/// What [`crate::discover::discover_components`] refuses.
 pub fn read_notes(
     vfs: &dyn Vfs,
     vault_root: &Path,
@@ -268,13 +268,15 @@ pub fn load(
     // under the plugin it ships in, whether or not a given harness ships it:
     // which harness ships what is asked when the call is written.
     let checked = skills.len();
-    let mut index = skill_index(plugins.values().flat_map(|plugin| {
-        plugin
-            .skills
-            .iter()
-            .map(|skill| (&skill.discovered, Some(plugin.name.as_str())))
-    }));
-    index.links = links;
+    let index = skill_index(
+        plugins.values().flat_map(|plugin| {
+            plugin
+                .skills
+                .iter()
+                .map(|skill| (&skill.discovered, Some(plugin.name.as_str())))
+        }),
+        links,
+    );
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for plugin in plugins.values_mut() {
@@ -383,7 +385,7 @@ pub fn load_component(
     let targets: OnceCell<BTreeMap<PathBuf, Option<Vec<String>>>> = OnceCell::new();
     let build = || -> Result<SkillIndex, CoreError> {
         let (scan, _) = read_notes(vfs, request.root, None, ns)?;
-        let built = skill_index(scan.components.iter().map(|c| (c, None)));
+        let built = skill_index(scan.components.iter().map(|c| (c, None)), None);
         let _ = targets.set(built.targets);
         Ok(built.skills)
     };
@@ -514,13 +516,13 @@ pub fn load_plugin(
 
     // A pack's calls name each skill under its own plugin, the way the
     // harness names a plugin's skills.
-    let mut index = skill_index(
+    let index = skill_index(
         scan.components
             .iter()
             .filter(|c| c.kind == EntityKind::Skill)
             .map(|c| (c, c.plugin.as_deref())),
+        links,
     );
-    index.links = links;
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for member in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
@@ -640,6 +642,7 @@ pub struct Index {
 
 fn skill_index<'a>(
     skills: impl Iterator<Item = (&'a DiscoveredComponent, Option<&'a str>)>,
+    links: Option<LinkIndex>,
 ) -> Index {
     let mut targets = BTreeMap::new();
     let skills = SkillIndex::new(
@@ -659,7 +662,7 @@ fn skill_index<'a>(
     Index {
         skills,
         targets,
-        links: None,
+        links,
     }
 }
 

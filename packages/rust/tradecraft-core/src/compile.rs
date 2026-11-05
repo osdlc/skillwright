@@ -108,8 +108,8 @@ pub struct CompileSource<'a> {
     pub calls: Option<&'a CallContext<'a>>,
     /// The vault's files, indexed for link resolution, when the caller has
     /// them: a load passes the index of the walk it read the vault with.
-    /// `None` walks `vault_root` for them, leaving out
-    /// [`EXCLUDED_VAULT_DIRECTORIES`].
+    /// `None` walks `vault_root` for them, leaving out tooling folders
+    /// (`.obsidian`, `.trash`, `node_modules`).
     pub links: Option<&'a LinkIndex>,
 }
 
@@ -555,8 +555,13 @@ pub fn compile_note(
         // UTF-8 by construction; the fallback only guards the invariant.
         let text = std::str::from_utf8(bytes)
             .map_err(|e| CoreError::malformed(Path::new(output_path), format!("not UTF-8: {e}")))?;
-        let body_start = text.len() - frontmatter_lossless::split(text).body.len();
-        validate_no_obsidian_syntax(text, body_start, output_path, source.skill_name, shown)?;
+        validate_no_obsidian_syntax(
+            text,
+            body_start(text),
+            output_path,
+            source.skill_name,
+            shown,
+        )?;
     }
 
     // Every emitted file's closure starts with the file that owns it, so a
@@ -1629,11 +1634,8 @@ fn validate_no_obsidian_syntax(
         .filter(|leftover| leftover.start >= body_start)
         .min_by_key(|leftover| leftover.start)
         .map(|leftover| (leftover.start, leftover.end, Some(leftover.why)));
-    let first = match (link, leftover) {
-        (Some(a), Some(b)) => Some(if b.0 < a.0 { b } else { a }),
-        (a, b) => a.or(b),
-    };
-    let Some((start, end, why)) = first else {
+    let Some((start, end, why)) = link.into_iter().chain(leftover).min_by_key(|first| first.0)
+    else {
         return Ok(());
     };
     // An unclosed `[[` runs to the end of the text; its line is enough.
@@ -1647,6 +1649,12 @@ fn validate_no_obsidian_syntax(
              {written}{why}"
         ),
     ))
+}
+
+/// Where a composed file's body starts: past its frontmatter, as the strict
+/// split that carried it finds it.
+fn body_start(text: &str) -> usize {
+    text.len() - frontmatter_lossless::split(text).body.len()
 }
 
 // --- Destinations, extensions, labels ---------------------------------------
@@ -3066,17 +3074,10 @@ mod tests {
         // or a `#` fragment. None is a link, so each would ship as literal
         // brackets, and each is refused as leftover syntax.
         let vfs = demo_vault();
+        const BRACKET: &str = "a `[` or `]` comes before its closing `]]`";
         for (body, written, why) in [
-            (
-                "A [[Shared|see [1]]] B\n",
-                "[[Shared|see ",
-                "a `[` or `]` comes before its closing `]]`",
-            ),
-            (
-                "A [[x]y]] B\n",
-                "[[x",
-                "a `[` or `]` comes before its closing `]]`",
-            ),
+            ("A [[Shared|see [1]]] B\n", "[[Shared|see ", BRACKET),
+            ("A [[x]y]] B\n", "[[x", BRACKET),
             (
                 "A [[`Shared`]] B\n",
                 "[[`Shared`]]",
@@ -3084,11 +3085,7 @@ mod tests {
             ),
             ("A [[]] B\n", "[[]]", "it has no target"),
             ("A [[ |alone]] B\n", "[[ |alone]]", "it has no target"),
-            (
-                "A ![[TODO\nB [[ later\n",
-                "![[TODO",
-                "a `[` or `]` comes before its closing `]]`",
-            ),
+            ("A ![[TODO\nB [[ later\n", "![[TODO", BRACKET),
             ("A [[TODO\nB\n", "[[TODO", "it has no closing `]]`"),
         ] {
             let err = compile_note(&vfs, &source(None), body)
@@ -3140,11 +3137,10 @@ mod tests {
             .is_ok()
         );
         let resource = "---\nmatrix: [[1, 2], [3]]\n---\nBody.\n";
-        let body_start = resource.len() - frontmatter_lossless::split(resource).body.len();
         assert!(
             validate_no_obsidian_syntax(
                 resource,
-                body_start,
+                body_start(resource),
                 "references/x.md",
                 "demo",
                 &BTreeSet::new()

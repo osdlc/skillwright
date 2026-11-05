@@ -391,8 +391,8 @@ pub fn discover_components(
 /// The skills source at `content_root` (the vault root when `None`), read as
 /// a corpus the way [`discover_components`] reads it.
 ///
-/// Both walks keep dot-named files (a bundle may ship one, a link may name
-/// one), never enter `.obsidian`, `.trash` or `node_modules`, and walk only
+/// The walk keeps dot-named files (a bundle may ship one, a link may name
+/// one), never enters `.obsidian`, `.trash` or `node_modules`, and walks only
 /// the content root. A symlink anywhere in it, or a folder that cannot be
 /// listed, fails the load. Notes are split leniently, as
 /// [`split_frontmatter`] splits them.
@@ -412,9 +412,16 @@ pub fn load_source(
         return Err(CoreError::RootNotFound(root.to_path_buf()));
     }
     let walk = crate::walk::source_walk(crate::compile::EXCLUDED_VAULT_DIRECTORIES);
+    // Discovery reads each note's frontmatter itself, so the frontmatter
+    // index's walk collects nothing: it would read every note again.
+    let unindexed = markdown_corpus::WalkOptions {
+        notes: false,
+        attachments: false,
+        ..walk.clone()
+    };
     let options = LoadOptions::default()
-        .with_link_walk(walk.clone())
-        .with_frontmatter_walk(walk)
+        .with_link_walk(walk)
+        .with_frontmatter_walk(unindexed)
         .with_split(SplitMode::Lenient);
     Corpus::try_load(vfs, root, options).map_err(|err| {
         crate::walk::core_error(err, |path| {
