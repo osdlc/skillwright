@@ -44,6 +44,25 @@ importers:
 
   harness-reference:
     dependencies:
+      '@osdlc/markdown-db':
+        specifier: workspace:*
+        version: link:../packages/ts/markdown-db
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.6
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
+  packages/ts/markdown-db:
+    dependencies:
       '@osdlc/frontmatter-lossless':
         specifier: 1.1.2
         version: 1.1.2
@@ -59,16 +78,31 @@ importers:
       yaml:
         specifier: 2.9.1
         version: 2.9.1
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
     devDependencies:
+      '@osdlc/prettier-config':
+        specifier: ^0.3.1
+        version: 0.3.1
+      '@osdlc/tsconfig':
+        specifier: ^0.4.1
+        version: 0.4.1
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
+      '@vitest/coverage-v8':
+        specifier: 'catalog:'
+        version: 5.0.5(vitest@5.0.5)
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.90.0
+      prettier:
+        specifier: 'catalog:'
+        version: 3.9.6
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.5(@types/node@26.6.6)(@vitest/coverage-v8@5.0.5)(vite@8.3.5(@types/node@26.6.6)(yaml@2.9.1))
 
   packages/ts/tradecraft-wasm:
     devDependencies:

@@ -9,7 +9,7 @@ has osdlc's meaning (see below).
 
 ## In code
 
-`validateCorpus` in `harness-reference/src/markdown-db/validate.ts`. `harness-reference/corpora/beta/` is one.
+`validateCorpus` in `packages/ts/markdown-db/src/validate.ts`. `harness-reference/corpora/beta/` is one.
 
 ## Not to be confused with
 

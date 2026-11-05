@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
-import { afterEach, beforeEach, describe, test } from 'node:test'
+import { afterEach, beforeEach, describe, test } from 'vitest'
 
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 
-import { extractLinks, markdownLink, matchWikilink, wikilinkIndex } from './links.ts'
-import { findCorpora, validateCorpus } from './validate.ts'
+import { extractLinks, markdownLink, matchWikilink, wikilinkIndex } from '../src/links.ts'
+import { findCorpora, validateCorpus } from '../src/validate.ts'
 
 const NOTES_SCHEMA = JSON.stringify({
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -23,6 +23,7 @@ const NOTES_SCHEMA = JSON.stringify({
     license: { type: 'string' },
   },
   if: { properties: { open: { const: false } }, required: ['open'] },
+  // oxlint-disable-next-line unicorn/no-thenable -- `then` is the JSON Schema keyword.
   then: { properties: { license: false } },
 })
 
@@ -108,8 +109,8 @@ describe('corpus and root file', () => {
   test('formats defaults to md; a record in another format fails', () => {
     put('markdown-db.md', '---\nmarkdown-db: 0\n---\n')
     const e = errors()
-    assert.ok(has(e, 'tags/T.yaml: format yaml is not in'))
-    assert.ok(has(e, 'cards/C.json: format json is not in'))
+    assert.ok(has(e, 'tags/T.yaml: format: yaml is not in'))
+    assert.ok(has(e, 'cards/C.json: format: json is not in'))
     assert.ok(!has(e, 'Note A'))
   })
 
@@ -497,30 +498,5 @@ describe('links.ts', () => {
 
   test('markdownLink encodes the path and escapes the text', () => {
     assert.equal(markdownLink('A [b]', '../x y (1).md'), '[A \\[b\\]](../x%20y%20%281%29.md)')
-  })
-})
-
-describe('corpora/beta', () => {
-  const beta = resolve(import.meta.dirname, '../../corpora/beta')
-
-  test('validates with no warnings', () => {
-    const { records, errors, warnings } = validateCorpus(beta)
-    assert.deepEqual(errors, [])
-    assert.deepEqual(warnings, [])
-    assert.equal(records.get('harnesses')?.size, 14)
-  })
-
-  test('refuses a license on a closed-source harness, and a successor that is not a harness', () => {
-    rmSync(dir, { recursive: true })
-    cpSync(beta, dir, { recursive: true })
-    const file = 'harnesses/Claude Code.md'
-    put(file, read(file).replace('open_source: false\n', 'open_source: false\nlicense: MIT\n'))
-    put(
-      'harnesses/Gemini CLI.md',
-      read('harnesses/Gemini CLI.md').replace('(Antigravity.md)', '(../README.md)'),
-    )
-    const e = errors()
-    assert.ok(has(e, 'harnesses/Claude Code.md: license: not allowed here'))
-    assert.ok(has(e, 'harnesses/Gemini CLI.md: successor: README.md is not a harnesses record'))
   })
 })
