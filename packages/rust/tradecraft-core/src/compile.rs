@@ -2582,6 +2582,73 @@ mod tests {
         );
     }
 
+    // --- Resolution at the edges, as `resolve_strict` reads them ------------
+
+    #[test]
+    fn a_partial_path_names_the_one_file_whose_path_ends_with_it() {
+        // The bare name `x` is shared, but only one path ends with `sub/x`.
+        let vfs = demo_vault();
+        write(&vfs, "/vault/One/sub/x.md", b"One sub.\n");
+        write(&vfs, "/vault/Two/x.md", b"Two.\n");
+        let compiled = compile_note(&vfs, &source(None), "![[sub/x]]\n").unwrap();
+        assert_eq!(compiled.body, "One sub.\n");
+
+        // Two paths ending with it are still ambiguous.
+        write(&vfs, "/vault/Two/sub/x.md", b"Two sub.\n");
+        let message = compile_note(&vfs, &source(None), "![[sub/x]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("link-ambiguous"), "{message}");
+        assert!(
+            message.contains("(One/sub/x.md, Two/sub/x.md)"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn a_dot_slash_target_is_relative_to_the_linking_note() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/near.md", b"At the root.\n");
+        write(&vfs, "/vault/plugins/demo/near.md", b"Beside the entry.\n");
+        let compiled = compile_note(&vfs, &source(None), "![[near]]\n\n![[./near]]\n").unwrap();
+        // The bare name is the exact vault path; `./` is the linking note's
+        // folder.
+        assert_eq!(compiled.body, "At the root.\n\nBeside the entry.\n");
+    }
+
+    #[test]
+    fn a_dot_dot_target_is_refused_before_it_resolves() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/up.md", b"One up.\n");
+        let message = compile_note(&vfs, &source(None), "![[../up]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("unsafe-path"), "{message}");
+        assert!(message.contains("../up"), "{message}");
+    }
+
+    #[test]
+    fn a_percent_encoded_target_is_decoded() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/My Note.md", b"Spaced.\n");
+        let compiled = compile_note(&vfs, &source(None), "![[My%20Note]]\n").unwrap();
+        assert_eq!(compiled.body, "Spaced.\n");
+    }
+
+    #[test]
+    fn ambiguous_candidates_are_listed_shortest_path_first() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/Deep/er/Shared2.md", b"Deep.\n");
+        write(&vfs, "/vault/Two/Shared2.md", b"Two.\n");
+        let message = compile_note(&vfs, &source(None), "[[Shared2]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("(Two/Shared2.md, Deep/er/Shared2.md)"),
+            "{message}"
+        );
+    }
+
     // The compile spec: "An unresolved link is not a blocker, and that is
     // deliberate. The rest of the skill publishes. The name is reported
     // against the note it appears in and recorded in the manifest's
