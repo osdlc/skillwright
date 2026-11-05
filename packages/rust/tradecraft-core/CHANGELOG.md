@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The compile pass finds `[[links]]` and `![[embeds]]` with `markdown-link`'s scanner, the one the other osdlc tools use. `/[[calls]]`, `\/[[x]]` escapes and hand-written calls stay this crate's, read on top of it. What changes is at the edges: a wikilink holding a `[` or `]`, or code, is no longer a link and is left as written; `[[]]` and `[[ |alias]]` are no longer links to the note itself; a `\|` escaping the pipe in a table cell is no longer part of the target; and a block fragment `#^ id` is read as `#^id`.
+
 ## [0.42.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.41.0...tradecraft-core/v0.42.0) - 2026-11-05
 
 ### Other

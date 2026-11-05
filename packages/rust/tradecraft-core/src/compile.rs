@@ -50,23 +50,29 @@
 //! the resource set is *recomputed* from this source, not merged with one
 //! computed elsewhere, so a peer folder not named here does not travel.
 //!
-//! # What comes from the `markdown-link` crate, and what stays here
+//! # What comes from the shared crates, and what stays here
 //!
-//! What counts as code comes from [`markdown_link::code`], under
-//! [`CodeRules::SkillExport`] so this pass keeps matching `skill-export`'s
-//! renderer. The link rules stay here, because `markdown-link`'s serve a different
-//! product: this pass skips HTML comments; it refuses an ambiguous basename
-//! where `markdown_link::LinkIndex` picks the shallowest path; and it reads an
-//! empty target (`[[#Heading]]`) as a self-reference where
-//! `markdown_link::parse_inner` drops it. Changing any of those in `markdown-link` would
-//! change the rendered graph.
+//! The links come from `markdown-link`: its scanner finds each `[[link]]` and
+//! `![[embed]]` (code by [`CodeRules::SkillExport`], so this pass keeps
+//! matching `skill-export`'s renderer; links in HTML comments skipped;
+//! `[[#Heading]]` a link to the note it is in), its `LinkIndex::resolve_strict`
+//! resolves them, and its `relative_link` and `escape_label` write them back
+//! out. `markdown-contract`'s `select` cuts a `#heading` or `#^block` out of an
+//! embedded note.
+//!
+//! What stays here is skillwright's own: `/[[call]]` calls and `\/[[x]]`
+//! escapes, read as a layer over `markdown-link`'s links and found in code
+//! too; hand-written calls; where resources land; and the validation that no
+//! Obsidian syntax survives.
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use markdown_link::code::{CodeRules, FenceLine, Fences, Spans};
-use markdown_link::{LinkIndex, ResolveError};
+use markdown_link::{
+    BodyLinkKind, LinkIndex, ResolveError, ScanOptions, body_links_spanned_with, parse_inner_self,
+};
 use sha2::{Digest, Sha256};
 
 use crate::content::SkillProjection;
@@ -1096,16 +1102,15 @@ impl<'a> Renderer<'a> {
             return Ok(call);
         }
         let embed = token.kind == TokenKind::Embed;
-        let Some((resolved, fragment)) = self.resolve(token.destination, source_path)? else {
+        let Some((resolved, fragment)) = self.resolve(token, source_path)? else {
             // The name is kept so status can see a note appearing at it later,
             // and the reader is left the words rather than a dangling
             // `[[…]]`, which step 3 would refuse as surviving Obsidian syntax.
-            let (target, _) = split_destination(token.destination);
             self.unresolved
                 .entry(output_path.to_owned())
                 .or_default()
-                .insert(target.to_owned());
-            return Ok(token.alias.unwrap_or(target).to_owned());
+                .insert(token.target.clone());
+            return Ok(token.alias.as_deref().unwrap_or(&token.target).to_owned());
         };
         let extension = extension_of_path(&resolved).unwrap_or_default();
 
@@ -1158,7 +1163,7 @@ impl<'a> Renderer<'a> {
             self.ensure_binary_resource(&resolved)?
         };
         let site = LinkSite {
-            label: markdown_link::escape_label(&display_label(token.alias, &resolved)),
+            label: markdown_link::escape_label(&display_label(token.alias.as_deref(), &resolved)),
             href: markdown_link::relative_link(output_path, &resource_output, fragment.as_deref()),
             image: embed && IMAGE_EXTENSIONS.contains(&extension.as_str()),
             target: String::new(),
@@ -1186,8 +1191,8 @@ impl<'a> Renderer<'a> {
         output_path: &str,
         in_code: bool,
     ) -> Result<String, CoreError> {
-        let resolved = self.resolve(token.destination, source_path)?;
-        let (target, _) = split_destination(token.destination);
+        let resolved = self.resolve(token, source_path)?;
+        let target = token.target.as_str();
         if let Some(context) = self.call_context {
             match self.render_call(context, token, resolved.clone(), source_path, output_path) {
                 Ok(call) => return Ok(format_call(&call, in_code)),
@@ -1222,7 +1227,7 @@ impl<'a> Renderer<'a> {
         source_path: &Path,
         output_path: &str,
     ) -> Result<String, CoreError> {
-        let (target, written_fragment) = split_destination(token.destination);
+        let (target, written_fragment) = (token.target.as_str(), token.fragment.clone());
         let skills = context.skills.get()?;
         let caller = self.relative_or_verbatim(source_path);
         let (skill, fragment) = match resolved {
@@ -1290,8 +1295,8 @@ impl<'a> Renderer<'a> {
         let Some(context) = self.call_context.filter(|context| context.implicit) else {
             return Ok(None);
         };
-        let (target, written_fragment) = split_destination(token.destination);
-        let resolved = self.resolve(token.destination, source_path)?;
+        let (target, written_fragment) = (token.target.as_str(), token.fragment.clone());
+        let resolved = self.resolve(token, source_path)?;
         let Some(skills) = context.skills.get_or_none() else {
             return Ok(None);
         };
@@ -1406,6 +1411,8 @@ impl<'a> Renderer<'a> {
                         end: literal.start + 1,
                         kind: TokenKind::LiteralEscape,
                         destination: "",
+                        target: String::new(),
+                        fragment: None,
                         alias: None,
                     });
                 }
@@ -1512,10 +1519,11 @@ impl<'a> Renderer<'a> {
     /// failure from a name that is simply not there yet.
     fn resolve(
         &self,
-        destination: &str,
+        token: &WikiToken<'_>,
         from_file: &Path,
     ) -> Result<Option<(PathBuf, Option<String>)>, CoreError> {
-        let (target, fragment) = split_destination(destination);
+        let (destination, target) = (token.destination, token.target.as_str());
+        let fragment = token.fragment.clone();
         if target.is_empty() {
             // `[[#Heading]]` — a self-reference; the fragment addresses the
             // note it appears in.
@@ -1607,22 +1615,6 @@ fn validate_no_obsidian_syntax(
 
 // --- Destinations, extensions, labels ---------------------------------------
 
-/// `target#fragment` split on the *first* `#`: a heading path like
-/// `Note#Parent#Child` keeps its inner `#`s in the fragment, where the
-/// heading selector needs them.
-fn split_destination(destination: &str) -> (&str, Option<String>) {
-    match destination.find('#') {
-        None => (destination.trim(), None),
-        Some(at) => {
-            let fragment = destination[at + 1..].trim();
-            (
-                destination[..at].trim(),
-                (!fragment.is_empty()).then(|| fragment.to_owned()),
-            )
-        }
-    }
-}
-
 /// The extension of a link target as written, lowercased with its dot —
 /// `None` when the basename has no dot or only a leading one. This decides
 /// whether a target is addressed as a file or as a note.
@@ -1693,33 +1685,109 @@ struct WikiToken<'a> {
     /// Byte offset just past the closing `]]`, exclusive.
     end: usize,
     kind: TokenKind,
-    /// The text before any `|`, trimmed. May still carry a `#fragment`.
+    /// The text before any `|`, trimmed, as written. What a refusal quotes.
     destination: &'a str,
+    /// What resolution runs against, as `markdown-link` reads it: the text
+    /// before any `#`, trimmed. Empty for a link to the note it is in.
+    target: String,
+    /// The `#heading` path, or `^block` with its caret.
+    fragment: Option<String>,
     /// The text after the first `|`, trimmed; `None` when empty or absent.
-    alias: Option<&'a str>,
+    alias: Option<String>,
 }
+
+/// How this pass reads a body's links: code by `skill-export`'s rules,
+/// links in HTML comments skipped, and `[[#Heading]]` a link to the note it
+/// is written in.
+const SCAN: ScanOptions = ScanOptions {
+    code_rules: CodeRules::SkillExport,
+    skip_html_comments: true,
+    self_links: true,
+};
 
 /// Every wiki token in `markdown` that is *live* — not inside a fenced code
 /// block, an inline code span, or an HTML comment, where the same characters
 /// are content rather than references.
 ///
-/// With `calls`, `/[[x]]` calls and `\/[[x]]` escapes are also found, in
-/// prose and in code alike: a usage line in code is where a call most often
-/// sits. See [`sigil_at`] for where a `/` is a sigil. An escape is the text
-/// `/[[x]]`. In code, a `/[[x]]` whose `/` is not a sigil is found too, as
-/// [`TokenKind::Unconverted`].
+/// The links and embeds are `markdown-link`'s, read under [`SCAN`]. Calls are
+/// this crate's layer over them: with `calls`, a link whose `[[` follows a
+/// `/` sigil is a `/[[x]]` call, and one whose `/` follows a `\` is a
+/// `\/[[x]]` escape. See [`sigil_at`] for where a `/` is a sigil. Calls are
+/// also found in code, where a usage line most often sits; in code, a
+/// `/[[x]]` whose `/` is not a sigil is found as [`TokenKind::Unconverted`].
 ///
 /// This is both halves of the pass in one function: the transform replaces
 /// exactly what it finds, and the validation refuses anything it still finds
 /// afterwards. One scanner means the two cannot disagree about what counts.
-///
-/// Fences and inline spans are [`markdown_link::code`]'s lexer under
-/// [`CodeRules::SkillExport`]. A comment runs to `-->` or the end of input.
-/// All markers are ASCII, so the byte-wise scan can never split a UTF-8
-/// character — every slice boundary sits beside an ASCII byte.
 fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
     let bytes = markdown.as_bytes();
-    let mut tokens = Vec::new();
+    let mut tokens: Vec<WikiToken<'_>> = body_links_spanned_with(markdown, &SCAN)
+        .into_iter()
+        .filter_map(|link| {
+            let (kind, opener) = match link.kind {
+                BodyLinkKind::Wikilink => (TokenKind::Link, 2),
+                BodyLinkKind::Embed => (TokenKind::Embed, 3),
+                BodyLinkKind::Markdown => return None,
+            };
+            let at = link.byte_start;
+            let (kind, start) = if !calls || kind == TokenKind::Embed {
+                (kind, at)
+            } else if at >= 2 && &bytes[at - 2..at] == b"\\/" && sigil_at(bytes, at - 2) {
+                (TokenKind::Escape, at - 2)
+            } else if at >= 1 && sigil_at(bytes, at - 1) {
+                (TokenKind::Call { in_code: false }, at - 1)
+            } else {
+                (kind, at)
+            };
+            let inner = &markdown[at + opener..link.byte_end - 2];
+            Some(WikiToken {
+                start,
+                end: link.byte_end,
+                kind,
+                destination: written_destination(inner),
+                target: link.target,
+                fragment: fragment_of(link.heading, link.block),
+                alias: link.alias,
+            })
+        })
+        .collect();
+    if calls {
+        for (from, to) in code_regions(markdown) {
+            scan_code_calls(markdown, from, to, &mut tokens);
+        }
+        tokens.sort_by_key(|token| token.start);
+    }
+    tokens
+}
+
+/// A link's text before any `|`, trimmed, as written.
+fn written_destination(inner: &str) -> &str {
+    inner
+        .split_once('|')
+        .map_or(inner, |(before, _)| before)
+        .trim()
+}
+
+/// `markdown-link`'s heading or block as the fragment selectors read it: a
+/// heading path as written, a block with its `^`, nothing for an empty one.
+fn fragment_of(heading: Option<String>, block: Option<String>) -> Option<String> {
+    match (heading, block) {
+        (_, Some(block)) => Some(format!("^{block}")),
+        (Some(heading), None) => (!heading.is_empty()).then_some(heading),
+        (None, None) => None,
+    }
+}
+
+/// The byte ranges of `markdown` that are code: the inside of each inline
+/// span and each fenced line, outside HTML comments.
+///
+/// Fences and inline spans are [`markdown_link::code`]'s lexer under
+/// [`CodeRules::SkillExport`], the rules [`SCAN`] gives the link scanner. A
+/// comment runs to `-->` or the end of input. All markers are ASCII, so the
+/// byte-wise scan can never split a UTF-8 character.
+fn code_regions(markdown: &str) -> Vec<(usize, usize)> {
+    let bytes = markdown.as_bytes();
+    let mut regions = Vec::new();
     let mut offset = 0usize;
     let mut fences = Fences::new(CodeRules::SkillExport);
     let mut spans = Spans::new(CodeRules::SkillExport, bytes);
@@ -1738,9 +1806,7 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
                     continue;
                 }
                 FenceLine::Inside => {
-                    if calls {
-                        scan_code_calls(markdown, offset, line_end, &mut tokens);
-                    }
+                    regions.push((offset, line_end));
                     offset = advance_past(line_end, bytes.len());
                     continue;
                 }
@@ -1759,9 +1825,7 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
             let (run, close) = spans.close(offset);
             offset = match close {
                 Some(at) => {
-                    if calls {
-                        scan_code_calls(markdown, offset + run, at, &mut tokens);
-                    }
+                    regions.push((offset + run, at));
                     at + run
                 }
                 None => offset + run,
@@ -1769,45 +1833,9 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
             continue;
         }
 
-        if calls && sigil_at(bytes, offset) {
-            if bytes[offset] == b'\\' {
-                if let Some(escape) = escape_token(markdown, offset, bytes.len()) {
-                    offset = escape.end;
-                    tokens.push(escape);
-                    continue;
-                }
-            } else if let Some(token) = wiki_token(markdown, offset, 3, bytes.len()) {
-                offset = token.end;
-                tokens.push(WikiToken {
-                    kind: TokenKind::Call { in_code: false },
-                    ..token
-                });
-                continue;
-            }
-        }
-
-        let embed = bytes[offset..].starts_with(b"![[");
-        let link = !embed && bytes[offset..].starts_with(b"[[");
-        if embed || link {
-            let opener = if embed { 3 } else { 2 };
-            if let Some(token) = wiki_token(markdown, offset, opener, bytes.len()) {
-                offset = token.end;
-                tokens.push(WikiToken {
-                    kind: if embed {
-                        TokenKind::Embed
-                    } else {
-                        TokenKind::Link
-                    },
-                    ..token
-                });
-                continue;
-            }
-        }
-
         offset += 1;
     }
-
-    tokens
+    regions
 }
 
 /// The calls, escapes and unconverted calls in a code span or fenced line,
@@ -1818,22 +1846,16 @@ fn scan_code_calls<'a>(markdown: &'a str, from: usize, to: usize, tokens: &mut V
     while offset < to {
         let token = if sigil_at(bytes, offset) {
             if bytes[offset] == b'\\' {
-                escape_token(markdown, offset, to)
+                code_token(markdown, offset, 3, to, TokenKind::Escape)
             } else {
-                wiki_token(markdown, offset, 3, to).map(|token| WikiToken {
-                    kind: TokenKind::Call { in_code: true },
-                    ..token
-                })
+                code_token(markdown, offset, 3, to, TokenKind::Call { in_code: true })
             }
         } else if bytes[offset..to].starts_with(b"/[[")
             && offset
                 .checked_sub(1)
                 .is_none_or(|before| bytes[before] != b'\\')
         {
-            wiki_token(markdown, offset, 3, to).map(|token| WikiToken {
-                kind: TokenKind::Unconverted,
-                ..token
-            })
+            code_token(markdown, offset, 3, to, TokenKind::Unconverted)
         } else {
             None
         };
@@ -1868,19 +1890,21 @@ fn sigil_at(bytes: &[u8], offset: usize) -> bool {
     }
 }
 
-/// The `\/[[x]]` at `offset`, closed before `limit`.
-fn escape_token(markdown: &str, offset: usize, limit: usize) -> Option<WikiToken<'_>> {
-    let link = wiki_token(markdown, offset + 2, 2, limit)?;
-    Some(WikiToken {
-        start: offset,
-        kind: TokenKind::Escape,
-        ..link
-    })
-}
-
-/// The token opening at `offset` with an `opener`-byte prefix, closed by the
-/// first `]]` ending at or before `limit`. Its kind is the caller's to set.
-fn wiki_token(markdown: &str, offset: usize, opener: usize, limit: usize) -> Option<WikiToken<'_>> {
+/// A call in code opening at `offset` (`/[[`, or `\/[[` for an escape),
+/// closed by the first `]]` ending at or before `limit`. The text between
+/// the brackets is read by `markdown-link`'s `parse_inner_self`.
+fn code_token(
+    markdown: &str,
+    offset: usize,
+    opener: usize,
+    limit: usize,
+    kind: TokenKind,
+) -> Option<WikiToken<'_>> {
+    let opener = if kind == TokenKind::Escape {
+        opener + 1
+    } else {
+        opener
+    };
     let content_start = offset + opener;
     let close = markdown
         .get(content_start..)?
@@ -1890,19 +1914,15 @@ fn wiki_token(markdown: &str, offset: usize, opener: usize, limit: usize) -> Opt
     // Both boundaries sit beside ASCII brackets, so the str slice is valid
     // UTF-8 territory.
     let inner = &markdown[content_start..close];
-    let (destination, alias) = match inner.find('|') {
-        None => (inner.trim(), None),
-        Some(at) => {
-            let alias = inner[at + 1..].trim();
-            (inner[..at].trim(), (!alias.is_empty()).then_some(alias))
-        }
-    };
+    let link = parse_inner_self(inner, false)?;
     Some(WikiToken {
         start: offset,
         end: close + 2,
-        kind: TokenKind::Link,
-        destination,
-        alias,
+        kind,
+        destination: written_destination(inner),
+        target: link.target,
+        fragment: fragment_of(link.heading, link.block),
+        alias: link.alias.filter(|alias| !alias.is_empty()),
     })
 }
 
@@ -2827,15 +2847,16 @@ mod tests {
         let compiled = compile_note(
             &vfs,
             &source(None),
-            "See [[Docs/manual.pdf|notes [2\\]].\n\n![[Media/pic.png|Diagram]]\n\n![[Media/pic.png|640x480]]\n",
+            "See [[Docs/manual.pdf|notes \\ 3]].\n\n![[Media/pic.png|Diagram]]\n\n![[Media/pic.png|640x480]]\n",
         )
         .unwrap();
-        // `[`, `]`, `\` in an alias are escaped so the label cannot break the
-        // link syntax around it.
+        // A `\` in an alias is escaped so the label cannot break the link
+        // syntax around it. (A `[` or `]` cannot reach a label: a wikilink
+        // holding one is not a link.)
         assert!(
             compiled
                 .body
-                .contains("[notes \\[2\\\\](references/vault/Docs/manual.pdf)"),
+                .contains("[notes \\\\ 3](references/vault/Docs/manual.pdf)"),
             "{}",
             compiled.body
         );
@@ -2850,6 +2871,44 @@ mod tests {
                 .body
                 .contains("![pic.png](assets/vault/Media/pic.png)")
         );
+    }
+
+    #[test]
+    fn a_wikilink_holding_a_bracket_or_code_or_no_target_is_not_a_link() {
+        // markdown-link's reading: `[[` does not nest, a `[` or `]` inside
+        // ends the attempt, code inside is blanked, and a link needs a target
+        // or a `#` fragment. Each is left as written.
+        let vfs = demo_vault();
+        let body = "A [[Shared|see [1]]] B [[x]y]] C [[`Shared`]] D [[]] E [[ |alone]]\n";
+        let compiled = compile_note(&vfs, &source(None), body).unwrap();
+        assert_eq!(compiled.body, body);
+        assert!(compiled.resources.is_empty(), "{:?}", paths(&compiled));
+        assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
+    }
+
+    #[test]
+    fn a_pipe_escaped_for_a_table_cell_is_not_part_of_the_target() {
+        let vfs = demo_vault();
+        let compiled = compile_note(
+            &vfs,
+            &source(None),
+            "| Doc |\n|---|\n| [[Shared\\|the shared note]] |\n",
+        )
+        .unwrap();
+        assert!(
+            compiled
+                .body
+                .contains("| [the shared note](references/vault/Shared.md) |"),
+            "{}",
+            compiled.body
+        );
+    }
+
+    #[test]
+    fn a_block_fragment_is_read_without_the_space_after_its_caret() {
+        let vfs = demo_vault();
+        let compiled = compile_note(&vfs, &source(None), "![[Blocks#^ example]]\n").unwrap();
+        assert_eq!(compiled.body, "Block content for export.\n");
     }
 
     #[test]
@@ -2923,7 +2982,7 @@ mod tests {
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0].kind, TokenKind::Embed);
         assert_eq!(tokens[0].destination, "x");
-        assert_eq!(tokens[0].alias, Some("alias"));
+        assert_eq!(tokens[0].alias.as_deref(), Some("alias"));
         assert_eq!(&markdown[tokens[0].start..tokens[0].end], "![[x|alias]]");
         assert_eq!(tokens[1].kind, TokenKind::Link);
         assert_eq!(tokens[1].alias, None);
