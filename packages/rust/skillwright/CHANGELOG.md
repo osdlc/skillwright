@@ -7,6 +7,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.5.0...skillwright/v0.5.1) - 2026-11-05
+
+### Other
+
+- stop on an unlistable folder inside a moved bundle; quieter skip rows
+- find what the walk cannot read first, then load the vault once
+- edit no file in a dot-named folder; skip a folder it cannot list
+- one ApplyError for the walk failure; one pass for a blank line
+- name the folder the walk cannot list, not only the vault
+- pass the walk's io error through; the refusing walk returns paths
+- Discovery and compile use the walk and the link index, not a Corpus
+- read the vault with the lenient frontmatter split, as a build does
+- watch test: stage each save beside the note so the rename stays on one filesystem
+- Find links with markdown-link's scanner; calls stay a layer on top
+
 ### Changed
 
 - `build` and `publish` find links in a note the way the other osdlc tools do. A wikilink holding a `[` or `]`, or code, is no longer a link and is left as written; `[[]]` is no longer a link to the note itself; and `[[Note\|alias]]` in a table cell now links to `Note`.
