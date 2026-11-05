@@ -8,15 +8,25 @@
  */
 import { existsSync, statSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
+import { parseArgs } from 'node:util'
 import { findCorpora, validateCorpus } from './validate.ts'
 
-const args = process.argv.slice(2)
-const fix = args.includes('--fix')
-const [verb, ...dirs] = args.filter((a) => a !== '--fix')
-if (verb !== 'validate' || dirs.length === 0) {
+const usage = (): never => {
   process.stderr.write('usage: markdown-db validate [--fix] <folder>...\n')
   process.exit(2)
 }
+
+const parse = () => {
+  try {
+    return parseArgs({ allowPositionals: true, options: { fix: { type: 'boolean' } } })
+  } catch {
+    return usage()
+  }
+}
+const parsed = parse()
+const fix = parsed.values.fix === true
+const [verb, ...dirs] = parsed.positionals
+if (verb !== 'validate' || dirs.length === 0) usage()
 
 let failed = false
 const roots = new Set<string>()

@@ -31,7 +31,7 @@ Markdown link.
 | --------- | --------------------------------------------------------- |
 | `0`       | Every corpus is valid. Warnings may have been printed.    |
 | `1`       | A corpus has an error, or a folder holds no corpus.       |
-| `2`       | Bad usage: an unknown verb, or no folder.                 |
+| `2`       | Bad usage: an unknown verb or option, or no folder.       |
 
 ## Library
 
@@ -39,18 +39,22 @@ Markdown link.
 import { findCorpora, validateCorpus } from '@osdlc/markdown-db'
 
 for (const root of findCorpora('Data')) {
-  const report = validateCorpus(root) // { name, id, records, errors, warnings, fixed }
+  const report = validateCorpus(root) // a CorpusReport
   for (const e of report.errors) console.error(e)
 }
 ```
 
-`src/index.ts` also exports `readData` and `idProblem`, and the link helpers the validator uses:
-`extractLinks`, `wikilinkIndex`, `matchWikilink` and `markdownLink`.
+`src/index.ts` lists the exports.
+
+Unlike [markdown-contract](https://github.com/sksizer/markdown-contract), which checks the section and
+block structure of a Markdown document, this package checks a corpus: frontmatter and data files
+against JSON Schema, and links, ids and references across files.
 
 ## Tests
 
 `pnpm run test`. `tests/cases/` holds corpora with their expected reports, written so that a
-validator in another language can run the same cases.
+validator in another language can run the same cases. A case compares only the `<file>: <field>`
+prefix of each problem, as a set; message text and order are not part of it.
 
 ## Known gap
 

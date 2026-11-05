@@ -1,12 +1,9 @@
 {
   "errors": [
-    "harnesses/Antigravity.md: status: must be equal to one of the allowed values",
-    "vendors/Acme.json: format json is not in the corpus's formats",
-    "harnesses/Antigravity.md: body: Missing.md: no such file",
-    "harnesses/Antigravity.md: body: /harnesses/Antigravity.md: links in a corpus must be relative",
-    "harnesses/Gemini CLI.md: successor: vendors/Google.yaml is not a harnesses record"
+    "harnesses/Antigravity.md: status",
+    "vendors/Acme.json: format",
+    "harnesses/Antigravity.md: body",
+    "harnesses/Gemini CLI.md: successor"
   ],
-  "warnings": [
-    "harnesses/Gemini CLI.md: body: [[Antigravity]] is a wikilink; validate --fix rewrites it"
-  ]
+  "warnings": ["harnesses/Gemini CLI.md: body"]
 }

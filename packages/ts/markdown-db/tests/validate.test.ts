@@ -109,8 +109,8 @@ describe('corpus and root file', () => {
   test('formats defaults to md; a record in another format fails', () => {
     put('markdown-db.md', '---\nmarkdown-db: 0\n---\n')
     const e = errors()
-    assert.ok(has(e, 'tags/T.yaml: format yaml is not in'))
-    assert.ok(has(e, 'cards/C.json: format json is not in'))
+    assert.ok(has(e, 'tags/T.yaml: format: yaml is not in'))
+    assert.ok(has(e, 'cards/C.json: format: json is not in'))
     assert.ok(!has(e, 'Note A'))
   })
 

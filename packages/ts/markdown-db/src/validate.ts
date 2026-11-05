@@ -27,7 +27,7 @@ const addFormats = (addFormatsModule as unknown as { default: FormatsPlugin }).d
 export const ROOT_FILES = ['markdown-db.md', 'markdown-db.yaml', 'markdown-db.json']
 const ROOT_KEYS = new Set(['markdown-db', 'id', 'formats'])
 
-type Data = Record<string, unknown>
+export type Data = Record<string, unknown>
 
 interface Ref {
   field: string
@@ -364,7 +364,7 @@ function readRecords(
         continue
       }
       if (!extensions.includes(ext)) {
-        c.errors.push(`${file}: format ${ext.slice(1)} is not in the corpus's formats`)
+        c.errors.push(`${file}: format: ${ext.slice(1)} is not in the corpus's formats`)
         continue
       }
       c.recordType.set(file, type)

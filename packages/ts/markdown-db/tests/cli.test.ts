@@ -73,8 +73,22 @@ describe('markdown-db validate', () => {
     assert.equal(bad.stderr, 'empty: no markdown-db root file at or below it\n')
   })
 
+  test('validates a parent and a child folder once per corpus', () => {
+    corpus('one', 'a')
+    const r = cli('validate', '.', 'one')
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(r.stdout, 'ok: one: 1 notes\n')
+    assert.equal(r.stderr, '')
+  })
+
   test('exits 2 on bad usage', () => {
-    for (const args of [[], ['check', '.'], ['validate'], ['validate', '--fix']]) {
+    for (const args of [
+      [],
+      ['check', '.'],
+      ['validate'],
+      ['validate', '--fix'],
+      ['validate', '.', '--bogus'],
+    ]) {
       const r = cli(...args)
       assert.equal(r.status, 2, args.join(' '))
       assert.equal(r.stderr, 'usage: markdown-db validate [--fix] <folder>...\n')
