@@ -583,6 +583,14 @@ pub fn plugin_manifest_path(root: &str) -> Option<&'static str> {
         .map(|spec| spec.format().plugin_manifest)
 }
 
+/// Where `root`'s packs sit under a built marketplace, one directory per
+/// plugin. `None` for an unknown root.
+pub fn packs_path(root: &str) -> Option<&'static str> {
+    with_plugin_format()
+        .find(|spec| spec.name == root)
+        .map(|spec| spec.format().packs)
+}
+
 /// The tree under `out_root` (one of `trees`, or the stage) that holds
 /// `path`, if any. A swap replaces each of them whole.
 fn replaced_tree_holding(

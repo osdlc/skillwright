@@ -8,7 +8,8 @@
 //! **The machine file** is `<config-home>/skillwright/config.yaml` in the
 //! standalone tier of [`crate::dirs`], never committed, relocated by
 //! `SKILLWRIGHT_MACHINE_CONFIG`. It has the same shape and stands in, per
-//! top-level key, where the project file leaves that key out or empty.
+//! top-level key, where the project file leaves that key out or empty —
+//! except `bump:`, which only the project file may set.
 //! Nested values are not merged. `paths:` merges by name instead, and the
 //! machine file's entry wins when both define a name.
 //!
@@ -42,6 +43,12 @@ pub const TOOL: &str = "skillwright";
 const COMMAND: &str = "skillwright";
 /// The committed project file, looked for from the working directory upward.
 pub const PROJECT_FILE: &str = tradecraft_core::PROJECT_FILE;
+/// Every name a project file may have, tried in this order where a ref's
+/// checkout is searched for one (`bump --changed-since <ref>`).
+pub const PROJECT_FILES: &[&str] = &[PROJECT_FILE];
+/// Top-level keys only the project file may set: they describe the
+/// published marketplace, so a machine file must not change them.
+const PROJECT_ONLY_KEYS: &[&str] = &["bump"];
 /// Env var that relocates the machine file, for tests and one-off runs.
 pub const MACHINE_CONFIG_ENV: &str = "SKILLWRIGHT_MACHINE_CONFIG";
 
@@ -113,6 +120,30 @@ pub struct SkillwrightConfig {
     /// Canonical hooks files; see `tradecraft_core::HookFileSpec`.
     #[serde(default)]
     pub hooks: Vec<HookFileEntry>,
+    /// How `bump` writes a version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bump: Option<BumpConfig>,
+}
+
+/// The `bump:` block.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct BumpConfig {
+    /// How a bump writes the patch number.
+    #[serde(default)]
+    pub patch: PatchScheme,
+}
+
+/// How `bump` writes the patch number of the version it sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PatchScheme {
+    /// Semver: a patch bump adds one, a minor or major bump resets it to 0.
+    #[default]
+    Increment,
+    /// Every bump sets the patch to the UTC time as `YYYYMMDDHHMMSS`, or to
+    /// one more than the current patch when that is larger.
+    Timestamp,
 }
 
 /// One `hooks:` entry, as written in the project file.
@@ -155,6 +186,7 @@ fn is_blank(config: &SkillwrightConfig) -> bool {
         && config.marketplace.is_blank()
         && config.assets.is_empty()
         && config.hooks.is_empty()
+        && config.bump.is_none()
 }
 
 /// The result of reading the configuration for one run.
@@ -421,7 +453,11 @@ fn resolve_machine_mapping(
 /// Top-level keys whose value is a struct, and whether the field is an
 /// `Option` (so a bare `key:` reads as unset). `serde_json` reads a sequence
 /// into a struct, so without this check `marketplace: []` would load.
-const STRUCT_KEYS: &[(&str, bool)] = &[("declared_folders", true), ("marketplace", false)];
+const STRUCT_KEYS: &[(&str, bool)] = &[
+    ("declared_folders", true),
+    ("marketplace", false),
+    ("bump", true),
+];
 
 /// The key in [`STRUCT_KEYS`] whose value is not a mapping, if any.
 fn non_mapping_struct_key(
@@ -487,6 +523,7 @@ fn annotate_detail(
     check!("marketplace", MarketplaceSettings);
     check!("assets", Vec<AssetEntry>);
     check!("hooks", Vec<HookFileEntry>);
+    check!("bump", BumpConfig);
     if issues.is_empty() {
         base_detail
     } else {
@@ -610,6 +647,15 @@ fn load_config_at(
         return ConfigLoad::Malformed {
             path: machine_path,
             detail,
+        };
+    }
+    if let Some(key) = PROJECT_ONLY_KEYS
+        .iter()
+        .find(|key| machine_mapping.contains_key(**key))
+    {
+        return ConfigLoad::Malformed {
+            path: machine_path,
+            detail: format!("`{key}` belongs in the project file only; remove it from this file"),
         };
     }
 
@@ -751,6 +797,11 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
             key: "hooks",
             scope: Scope::Both,
             description: "Canonical hooks files, one per plugin, rendered into each harness's pack with a gap report.",
+        },
+        KeySpec {
+            key: "bump",
+            scope: Scope::Project,
+            description: "How `bump` writes a version: `patch: increment` (the default) or `patch: timestamp`.",
         },
         KeySpec {
             key: "marketplace.name",
@@ -895,6 +946,28 @@ mod tests {
             resolve_configured_path(&config.hooks[0].from, &dir),
             machine_dir.join("hooks.json")
         );
+    }
+
+    /// `bump:` sets the published version scheme, so a machine file that
+    /// carries it is refused rather than overlaid.
+    #[test]
+    fn a_bump_block_in_the_machine_file_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let machine_path = tmp.path().join("machine").join("config.yaml");
+        std::fs::create_dir_all(machine_path.parent().unwrap()).unwrap();
+        std::fs::write(&machine_path, "bump:\n  patch: timestamp\n").unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join(PROJECT_FILE), "namespace: sw\n").unwrap();
+
+        let ConfigLoad::Malformed { path, detail } =
+            load_config_at(None, &project, machine_path.clone(), &home)
+        else {
+            panic!("expected the machine file to be refused");
+        };
+        assert_eq!(path, machine_path);
+        assert!(detail.contains("project file only"), "{detail}");
     }
 
     /// Only `~` and `~/` name the home directory. `~alice/notes` and

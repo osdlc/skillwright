@@ -70,6 +70,7 @@ to the harness. The `sw` prefix is the project's `namespace` setting.
    | `delete <entry> [--force]` | moves a note to the vault's trash; `--force` also trashes a non-empty container's members |
    | `convert <entry> --kind <kind>` | changes a note's kind and moves it into that kind's folder |
    | `bump <plugin> [--major\|--minor\|--patch]` | raises a plugin's `sw-version`; patch is the default |
+   | `bump --changed-since <ref\|dir>` | raises every plugin whose output changed since a git ref or a built folder |
    | `adopt [source...] [--plugin <p>] [--into <path>]` | turns SKILL.md folders already on disk into notes; `--from-git owner/repo[/path][@ref]` reads a repository |
 
    An `<entry>` is a note's `name`. Edit a note's body directly; no verb is needed for that.
