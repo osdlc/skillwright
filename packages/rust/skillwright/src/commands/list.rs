@@ -1,7 +1,7 @@
 //! `skillwright list` — the roster, and nothing else.
 //!
 //! A read-only verb, like `status` and `check`. It walks the vault's content
-//! root through the core's [`discover_components`] and prints what it found:
+//! root through the core's [`tradecraft_core::discover_roster`] and prints what it found:
 //! one row per publishable note, with the note's own answer to "where does
 //! this publish". It writes nothing, prompts about nothing, and never touches
 //! a destination.
