@@ -60,6 +60,11 @@ A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-v
 - `\/[[skill]]` calls another skill. The build writes each harness's own form, such as
   `/plugin:skill` for Claude Code, `$plugin:skill` for Codex and `/skill:plugin-skill` for Pi.
   Write calls this way, not in one harness's form, so one note works in every harness.
+- `[[skill]]` without the slash names another skill without calling it. The build writes the
+  skill's name as each harness knows it: `plugin:skill` for Claude Code and Codex,
+  `plugin-skill` for Pi and `skill` for Cursor. Nothing of the named skill is copied.
+  `[[skill|words]]` keeps your words and adds the name after them: words (`plugin:skill`).
+  A `#fragment` is checked, then ignored.
 - To show a call as literal text, put a backslash before its slash. A fenced code block does
   not escape it; the build still resolves the call.
 
@@ -78,6 +83,7 @@ A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-v
    | `delete <entry> [--force]` | moves a note to the vault's trash; `--force` also trashes a non-empty container's members |
    | `convert <entry> --kind <kind>` | changes a note's kind and moves it into that kind's folder |
    | `bump <plugin> [--major\|--minor\|--patch]` | raises a plugin's `version`; patch is the default |
+   | `bump --changed-since <ref\|dir>` | raises every plugin whose output changed since a git ref or a built folder |
    | `adopt [source...] [--plugin <p>] [--into <path>]` | turns SKILL.md folders already on disk into notes; `--from-git owner/repo[/path][@ref]` reads a repository |
 
    An `<entry>` is a note's `name`. Edit a note's body directly; no verb is needed for that.

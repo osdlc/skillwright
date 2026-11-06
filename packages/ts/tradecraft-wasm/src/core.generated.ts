@@ -500,6 +500,9 @@ export interface BuildSettings {
    */
   launcher_path?: string;
 
+  /** How `bump` writes a version. */
+  bump?: BumpSettings;
+
   /**
    * Refuse a note with a `name` and no `description` instead of
    * publishing a filler.
@@ -530,6 +533,15 @@ export interface BuildSettings {
   /** Globs that stand in for the conventional folders. Experimental. */
   patterns?: FolderPatterns;
 }
+
+/** `build.bump`: how `bump` writes a version. */
+export interface BumpSettings {
+  /** How a bump writes the patch number. */
+  patch: PatchScheme;
+}
+
+/** How `bump` writes the patch number of the version it sets. */
+export type PatchScheme = "increment" | "timestamp";
 
 /** Where `publish` writes when `--to` is not given. */
 export interface DestinationSetting {
@@ -1582,6 +1594,12 @@ export interface Call {
 
   /** The call as written, for a refusal. */
   destination: string;
+
+  /**
+   * A plain `[[skill]]`: written as the skill's published name, with no
+   * call sigil, rather than as an invocation.
+   */
+  mention: boolean;
 
   /** The note the call is in, for a refusal. */
   caller: string;

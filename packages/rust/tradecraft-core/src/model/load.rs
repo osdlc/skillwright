@@ -744,7 +744,7 @@ fn recording_context<'a>(
 }
 
 /// The renderer a recording compile never calls.
-fn no_render(_: &IndexedSkill) -> Result<String, CoreError> {
+fn no_render(_: &IndexedSkill, _: bool) -> Result<String, CoreError> {
     Ok(String::new())
 }
 

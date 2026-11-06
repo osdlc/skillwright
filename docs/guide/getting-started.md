@@ -102,8 +102,8 @@ skillwright harness install claude --yes
 ```
 
 `codex` works the same way. Cursor also needs `--git-url <url>`, because it only
-registers a marketplace from git. Pi has no install verb: point Pi at the pack
-folder under `.pi/packs/`.
+registers a marketplace from git. `harness install pi` runs `pi install` for each
+built pack under `.pi/packs/`.
 
 To write skills straight into a harness's user folder instead of building a
 marketplace, run `skillwright publish --yes`. It writes each skill on its own and

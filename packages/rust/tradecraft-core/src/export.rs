@@ -616,6 +616,14 @@ pub fn plugin_manifest_path(root: &str) -> Option<&'static str> {
         .map(|spec| spec.format().plugin_manifest)
 }
 
+/// Where `root`'s packs sit under a built marketplace built with `config`, one
+/// directory per plugin. `None` for an unknown root.
+pub fn packs_path<'a>(config: &'a MarketplaceConfig, root: &str) -> Option<&'a str> {
+    with_plugin_format()
+        .find(|spec| spec.name == root)
+        .map(|spec| packs_of(config, spec))
+}
+
 /// The entry under `out_root` (one of `owned`, or the stage) that holds
 /// `path`, if any. A swap replaces each of them whole.
 fn replaced_entry_holding(
@@ -1466,7 +1474,13 @@ fn plugin_version_bump(
     slice: Option<&PluginSlice<'_>>,
     config: &MarketplaceConfig,
 ) -> Option<VersionBumpSuggestion> {
-    let current_version = overrides_for(config, plugin).and_then(|o| o.version.clone())?;
+    // The plugin named after the marketplace has no note of its own to carry one.
+    let own = (config.name.as_deref() == Some(plugin))
+        .then(|| config.version.clone())
+        .flatten();
+    let current_version = overrides_for(config, plugin)
+        .and_then(|o| o.version.clone())
+        .or(own)?;
     let manifest_key = format!(
         "{}/{plugin}/{}",
         packs_of(config, spec),
@@ -2368,10 +2382,10 @@ mod tests {
         );
         let report = build(&vfs);
 
-        for (tree, b, c) in [
-            (".claude-plugin", "/tools:b", "/other:c"),
-            (".agents", "$tools:b", "$other:c"),
-            (".cursor-plugin", "/b", "/c"),
+        for (tree, b, named, c) in [
+            (".claude-plugin", "/tools:b", "tools:b", "/other:c"),
+            (".agents", "$tools:b", "tools:b", "$other:c"),
+            (".cursor-plugin", "/b", "b", "/c"),
         ] {
             let body = skill_md(&vfs, tree, "a");
             assert!(
@@ -2386,7 +2400,11 @@ mod tests {
                 body.contains(&format!("```sh\n{b} now\n```")),
                 "{tree}: {body}"
             );
-            assert!(body.contains(&format!("See also `{b}`.")), "{tree}: {body}");
+            // A plain `[[b]]` names the skill: no sigil, no link, no copy.
+            assert!(
+                body.contains(&format!("See also `{named}`.")),
+                "{tree}: {body}"
+            );
             assert!(body.contains(&format!("Then `{c}`.")), "{tree}: {body}");
             assert!(!body.contains("B's own prose"), "{tree}: {body}");
             let copied: Vec<String> = paths_under(
@@ -2396,21 +2414,36 @@ mod tests {
             assert_eq!(copied, vec!["SKILL.md".to_owned()], "{tree}");
         }
 
-        let implicit: Vec<&DiscoveryWarning> = report
-            .warnings
-            .iter()
-            .filter(|w| w.reason == "implicit-skill-call")
-            .collect();
-        assert_eq!(implicit.len(), 1, "{:?}", report.warnings);
-        assert_eq!(
-            implicit[0].path,
-            "marketplaces/house/plugins/tools/skills/a.md"
-        );
         assert!(
-            implicit[0].detail.contains("/[[b]]"),
-            "{}",
-            implicit[0].detail
+            !report.warnings.iter().any(|w| w.detail.contains("[[b")),
+            "{:?}",
+            report.warnings
         );
+    }
+
+    #[test]
+    fn a_mention_keeps_its_alias_and_ignores_its_fragment() {
+        let vfs = calls_vault(
+            "# a\n\nUse [[b|the b skill]] next, see [[b#Steps]] and [[b#Steps|the steps]].\n",
+        );
+        build(&vfs);
+        for (tree, named) in [
+            (".claude-plugin", "tools:b"),
+            (".agents", "tools:b"),
+            (".cursor-plugin", "b"),
+            (".pi", "tools-b"),
+        ] {
+            let skill = if tree == ".pi" { "tools-a" } else { "a" };
+            let body = skill_md(&vfs, tree, skill);
+            let want = format!(
+                "Use the b skill (`{named}`) next, see `{named}` and the steps (`{named}`)."
+            );
+            assert!(body.contains(&want), "{tree}: {body}");
+        }
+
+        let vfs = calls_vault("# a\n\nSee [[b#Missing]].\n");
+        let err = export_refusal(&vfs);
+        assert!(err.contains("fragment-unresolved"), "{err}");
     }
 
     #[test]
@@ -2441,7 +2474,7 @@ mod tests {
         let vfs = calls_vault(
             "# a\n\nWrite \\/[[plain]] in prose and `\\/[[b]]` in code.\n\nCite \\/[[b]] too.\n",
         );
-        let report = build(&vfs);
+        build(&vfs);
         let body = skill_md(&vfs, ".claude-plugin", "a");
         // In prose and code alike the notation is written out, and nothing is
         // copied, even when it names a skill.
@@ -2459,14 +2492,6 @@ mod tests {
                 "{note}"
             );
         }
-        assert!(
-            !report
-                .warnings
-                .iter()
-                .any(|w| w.reason == "implicit-skill-call"),
-            "{:?}",
-            report.warnings
-        );
     }
 
     #[test]
@@ -2546,7 +2571,7 @@ mod tests {
     #[test]
     fn the_pi_root_writes_a_package_per_plugin_with_prefixed_names() {
         let vfs = calls_vault(
-            "# a\n\nRun /[[b]], then `${CLAUDE_PLUGIN_ROOT}/bin/tool go`.\n\n\
+            "# a\n\nRun /[[b]], then `${CLAUDE_PLUGIN_ROOT}/bin/tool go`. See [[b]].\n\n\
              Read `${CLAUDE_PLUGIN_ROOT}/skills/b/ref.md` and `${CLAUDE_PLUGIN_ROOT}/skills/c/x`.\n",
         );
         write(&vfs, "/host/bin/tool", "#!/bin/sh\n");
@@ -2579,7 +2604,7 @@ mod tests {
         assert!(b.contains("name: tools-b\n"), "{b}");
         let a = text_at(&vfs, "/market/.pi/packs/tools/skills/tools-a/SKILL.md");
         assert!(
-            a.contains("Run `/skill:tools-b`, then `../../bin/tool go`."),
+            a.contains("Run `/skill:tools-b`, then `../../bin/tool go`. See `tools-b`."),
             "{a}"
         );
         // A sibling's path follows its rename; another plugin's skill does not.

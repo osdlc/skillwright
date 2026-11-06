@@ -508,7 +508,13 @@ pub const PI: HarnessProfile = HarnessProfile {
         marketplace_fields: &[],
         entry_fields: &[],
     }),
-    install: None,
+    // `pi install <path>` records a package in the user's settings, or with
+    // `-l` the project's. Pi has no marketplace, so packs install by path.
+    install: Some(InstallCli {
+        scopes: &["user", "project"],
+        needs_git_url: false,
+        takes_git_ref: false,
+    }),
 };
 
 /// The Amp row.

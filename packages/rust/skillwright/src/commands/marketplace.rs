@@ -185,6 +185,40 @@ fn fix_hashes_of(flags: &ExportFlags, run: &ResolvedRun, ctx: &mut CommandContex
     }
 }
 
+/// The export request a run's root file describes, rendered into `out_root`
+/// in `mode`, for a verb other than `build` and `check` that needs the
+/// marketplace's render: `bump --changed-since`.
+pub(crate) fn configured_request(
+    run: &ResolvedRun,
+    out_root: PathBuf,
+    mode: ExportMode,
+) -> ExportRequest {
+    let MarketplaceInputs {
+        config,
+        harnesses,
+        assets,
+        hooks,
+        ..
+    } = marketplace_inputs(run);
+    let config = effective_config(
+        &run.config_vfs(),
+        run.scope(None, None),
+        &config,
+        &run.core_namespace(),
+    );
+    ExportRequest {
+        vault_root: run.vault.clone(),
+        skills_root: None,
+        marketplace: None,
+        out_root,
+        mode,
+        config,
+        harnesses,
+        assets,
+        hooks,
+    }
+}
+
 /// Run one export. `verb` decides the mode a plain run uses and what a
 /// drifted report exits with; everything else about the two verbs is
 /// identical.

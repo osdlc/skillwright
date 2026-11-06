@@ -4169,6 +4169,30 @@ mod tests {
     }
 
     #[test]
+    fn a_standalone_mention_names_the_skill_bare_and_is_recorded() {
+        let vfs = vault_with_commit_body("See [[rebase-guide]].\n");
+        publish_skill(&vfs, &commit_helper_request("claude"), &sw()).unwrap();
+
+        let body = text_at(&vfs, "/dest/.claude/skills/commit-helper/SKILL.md");
+        assert!(body.contains("See `rebase-guide`."), "{body}");
+        let manifest = manifest_of(&vfs, "/dest");
+        let entry = manifest
+            .get(".claude/skills/commit-helper/SKILL.md")
+            .expect("the skill is recorded");
+        assert_eq!(entry.calls, vec!["rebase-guide".to_owned()]);
+    }
+
+    #[test]
+    fn a_pack_mention_names_the_skill_under_its_plugin() {
+        let vfs = vault_with_commit_body("See [[rebase-guide]].\n");
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+
+        let path = ".claude/skills/git-tools/skills/commit-helper/SKILL.md";
+        let body = text_at(&vfs, &format!("/dest/{path}"));
+        assert!(body.contains("See `git-tools:rebase-guide`."), "{body}");
+    }
+
+    #[test]
     fn a_pack_call_names_the_skill_under_its_plugin() {
         let vfs = vault_with_commit_body("Then run /[[rebase-guide]].\n");
         publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
@@ -4219,7 +4243,7 @@ mod tests {
         with_dup(&vfs);
         publish_skill(&vfs, &commit_helper_request("claude"), &sw()).unwrap();
 
-        // A plain link is read as a call only when the index can be built.
+        // A plain link is read as a mention only when the index can be built.
         let vfs = vault_with_commit_body("See [[rebase-guide]]. Also [[nowhere]].\n");
         with_dup(&vfs);
         publish_skill(&vfs, &commit_helper_request("claude"), &sw()).unwrap();

@@ -126,7 +126,7 @@ pub use error::*;
 pub use export::{
     AssetSpec, ExportMode, ExportReport, ExportRequest, ExportUnit, HookFileSpec,
     MarketplaceConfig, PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_skills,
-    marketplace_manifest_path, owned_paths, plugin_manifest_path, published_skill_name,
+    marketplace_manifest_path, owned_paths, packs_path, plugin_manifest_path, published_skill_name,
     rendered_skill_call,
 };
 pub use frontmatter::{
@@ -148,8 +148,8 @@ pub use publish::{
 };
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
-    AssetSetting, BuildSettings, DestinationSetting, HookSetting, MarketplaceFields, ROOT_FILE,
-    RootFile, SettingsError, compose_root_file, parse_root_file,
+    AssetSetting, BuildSettings, BumpSettings, DestinationSetting, HookSetting, MarketplaceFields,
+    PatchScheme, ROOT_FILE, RootFile, SettingsError, compose_root_file, parse_root_file,
 };
 pub use source_view::{
     SourceView, VaultScope, effective_config, effective_configs, marketplace_folder, source_view,

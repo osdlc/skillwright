@@ -715,3 +715,43 @@ fn rename_at_a_workspace_root_says_how_to_rename_a_marketplace() {
     assert_eq!(ran.code, 2, "{}", ran.text);
     assert!(ran.text.contains("rename its folder"), "{}", ran.text);
 }
+
+#[test]
+fn a_plain_skill_mention_renders_on_bare_keys_in_build_and_publish() {
+    let note = "---\ndescription: A.\n---\nSee [[b]] and [[b|the other]].\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/tools/tools.md", PLUGIN),
+        ("plugins/tools/skills/a.md", note),
+        ("plugins/tools/skills/b.md", SKILL),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    let read = |rel: &str| std::fs::read_to_string(dir.path().join(rel)).unwrap();
+    let claude = read("dist/.claude-plugin/packs/tools/skills/a/SKILL.md");
+    assert!(
+        claude.contains("See `tools:b` and the other (`tools:b`)."),
+        "{claude}"
+    );
+    let pi = read("dist/.pi/packs/tools/skills/tools-a/SKILL.md");
+    assert!(pi.contains("See `tools-b`"), "{pi}");
+    let cursor = read("dist/.cursor-plugin/packs/tools/skills/a/SKILL.md");
+    assert!(cursor.contains("See `b`"), "{cursor}");
+
+    let dest = dir.home().join("dest");
+    let ran = sw(
+        &dir.path(),
+        &[
+            "publish",
+            "plugins/tools/skills/a.md",
+            "--to",
+            dest.to_str().unwrap(),
+            "--target",
+            "claude",
+            "--yes",
+        ],
+    );
+    assert_eq!(ran.code, 0, "{}", ran.text);
+    let published = std::fs::read_to_string(dest.join(".claude/skills/a/SKILL.md")).unwrap();
+    assert!(published.contains("See `b`"), "{published}");
+}

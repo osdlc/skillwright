@@ -1,6 +1,6 @@
 ---
 name: publish
-description: "Publish and build a skillwright vault into the formats of Claude Code, Codex, Cursor and Pi: `publish` notes into a project or home directory, `build` plugin marketplaces, `check` and `status` for drift, and `harness install`, `update` and `uninstall` to register a built marketplace with a harness. Use when asked to publish or ship skills, build the marketplace, find out why a published skill differs from its note, fix a drift failure, or install the plugins into Claude Code, Codex or Cursor."
+description: "Publish and build a skillwright vault into the formats of Claude Code, Codex, Cursor and Pi: `publish` notes into a project or home directory, `build` plugin marketplaces, `check` and `status` for drift, and `harness install`, `update` and `uninstall` to register a built marketplace with a harness, and `harness link` to symlink built skills into a harness for a fast edit loop. Use when asked to publish or ship skills, build the marketplace, find out why a published skill differs from its note, fix a drift failure, or install the plugins into Claude Code, Codex, Cursor or Pi."
 license: MIT OR Apache-2.0
 ---
 
@@ -69,15 +69,40 @@ skillwright harness update claude --yes    # installs what is missing, updates c
 skillwright harness uninstall claude --yes [--marketplace]
 ```
 
-- The harness is `claude`, `codex` or `cursor`. Pi has no install verb: point Pi at the pack folder
-  under `.pi/packs/`. `--yes` is needed when not running interactively. Each verb runs that harness's own `plugin`
-  command (`claude plugin`, `codex plugin`, `cursor-agent plugin`), which must be on `PATH`.
+- The harness is `claude`, `codex`, `cursor` or `pi`. `--yes` is needed when not running
+  interactively. Each verb runs that harness's own command (`claude plugin`, `codex plugin`,
+  `cursor-agent plugin`, `pi install`), which must be on `PATH`.
 - `--plugin` is repeatable and defaults to every plugin the built tree holds.
 - Codex and Cursor support user scope only. Cursor needs `--git-url <url>` for install and update.
 - `--path <path>` names the built marketplace folder; `--git-url <url>` and `--git-ref <ref>`
   register it from git instead.
 - `--marketplace` on uninstall also removes the registration.
 - Running a harness verb a second time changes nothing.
+- Pi has no marketplace. Install runs `pi install <pack>` for each plugin's built pack, with
+  `-l` for `--scope project`. Pi reads a local pack in place, so update only installs what is
+  missing. Pi has no recorded remove command: uninstall prints which entry to delete from Pi's
+  `settings.json`.
+
+## Link for a fast edit loop
+
+```sh
+skillwright harness link claude [--plugin <name>]   # symlink built skills into ~/.claude/skills
+skillwright harness unlink claude                   # remove those links
+```
+
+- The harness is `claude` or `codex`. Each built skill folder is linked into its user skill
+  folder: `~/.claude/skills` or `~/.agents/skills`. A rebuild, or `build --watch`, then reaches
+  the harness with no install.
+- Cursor and Pi are refused: harness-reference does not yet record whether they follow a
+  symlinked skill folder.
+- Cursor and Pi also read `~/.agents/skills`, so `link codex` gives them the Codex builds too. The
+  run prints a warning.
+- Every built plugin is linked unless `--plugin` is given.
+- A real folder, or a link to somewhere else, is never replaced: that skill is refused. Unlink
+  removes only links into the build, including links to skills that are no longer built, and works
+  when the build folder is gone.
+- A linked skill loads on its own, so the harness calls it by its bare name, not
+  `plugin:skill`.
 
 ## Exit codes
 

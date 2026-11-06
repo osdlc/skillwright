@@ -48,6 +48,7 @@ generator and regenerate.
    | `namespace: <stem>` | `build.namespace`, or remove it for bare keys |
    | `marketplace.name`, `.display_name`, `.owner`, `.author`, `.license` | the same key at the top level |
    | `marketplace.out`, `.harnesses`, `.require_descriptions` | the same key under `build:` |
+   | `bump:` | `build.bump:`, with the same `patch` value. A top-level `bump:` is refused |
    | `marketplace.shim_target` | `build.launcher_path`, with the same value. If the key was absent and the vault relied on the old default, set `build.launcher_path: cli/sdlc`, because there is no default now |
    | `marketplace.default_plugin` | none: see step 4 |
    | `marketplace.plugins.<p>` | the keys of `plugins/<p>/<p>.md` |

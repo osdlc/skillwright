@@ -82,15 +82,17 @@ an output folder: `--out <path>`, or `build.out` in `skillwright.md`.
 | `list` | List every publishable note in the vault |
 | `adopt` | Bring skills already on disk, or in a repository with `--from-git`, into the vault as notes |
 | `status` | Report each unit's publish state at each configured destination |
-| `bump` | Raise a plugin's `version` by one semver level |
+| `bump` | Raise a plugin's `version` by one semver level, or with `--changed-since` every plugin that changed since a baseline |
 | `new` | Author a new marketplace, plugin or skill note |
 | `rename` | Rename a component, plugin or marketplace, and rewrite every link to it |
 | `move` | Move a component to another plugin or marketplace |
 | `delete` | Move a component's note to the vault's trash |
 | `convert` | Change a note's kind and move it into that kind's folder |
-| `harness install <claude\|codex\|cursor>` | Register the built marketplace with a harness and install its plugins, through the harness's own `plugin` command |
-| `harness update <claude\|codex\|cursor>` | Install what is missing, then update each plugin whose version changed |
-| `harness uninstall <claude\|codex\|cursor>` | Remove the marketplace's plugins from a harness, and with `--marketplace` its registration too |
+| `harness install <claude\|codex\|cursor\|pi>` | Register the built marketplace with a harness and install its plugins, through the harness's own `plugin` command. On Pi, `pi install` each built pack |
+| `harness update <claude\|codex\|cursor\|pi>` | Install what is missing, then update each plugin whose version changed |
+| `harness uninstall <claude\|codex\|cursor\|pi>` | Remove the marketplace's plugins from a harness, and with `--marketplace` its registration too. On Pi, print the settings entry to remove |
+| `harness link <claude\|codex>` | Dev mode: symlink each built skill into the harness's user skill folder. Never replaces a real folder. Cursor and Pi are refused until harness-reference records that they follow symlinked skill folders |
+| `harness unlink <claude\|codex>` | Remove the links into the build, including links to skills no longer built, and nothing else |
 | `init` | Write a `skillwright.md` in the current folder, with the marketplace's name and `build.out` |
 | `unpublish` | Declared, and exits `not implemented` |
 
@@ -126,9 +128,11 @@ Each verb's own options:
 | `init` | `--out <path>`, `--name <name>` |
 | `list` | `--skills-root <path>`, `--model` (print the loaded marketplace model as JSON) |
 | `status` | `[note]`, `--check` |
+| `bump` | `[plugin]`, `--major`, `--minor`, `--patch`, `--changed-since <ref\|dir>` |
 | `adopt` | `[source...]`, `--from <location>` (repeatable), `--from-git <ref>` (repeatable), `--plugin <name>`, `--into <path>`, `--set-targets <target>` (repeatable), `--only <name>` (repeatable), `--overwrite <path>` (repeatable) |
 | `harness install` / `harness update` | `--plugin <name>` (repeatable), `--scope <user\|project\|local>`, `--path <path>`, `--git-url <url>`, `--git-ref <ref>` |
 | `harness uninstall` | the same, plus `--marketplace` |
+| `harness link` / `harness unlink` | `--plugin <name>` (repeatable; default every built plugin), `--path <path>` |
 
 `adopt` also accepts `--as <name>` and `--promote`. Both exit with
 `not implemented`.
@@ -169,7 +173,7 @@ build:
 ---
 ```
 
-The `build:` keys are `out`, `harnesses`, `namespace`, `launcher_path`,
+The `build:` keys are `out`, `harnesses`, `namespace`, `launcher_path`, `bump`,
 `require_descriptions`, `destinations`, `scan_locations`, `assets`, `hooks`,
 `exclude` and `patterns`. An unknown key is a warning, not an error. See the
 [`skillwright.md` reference](../../../docs/reference/skillwright-md.md), and the
@@ -210,6 +214,41 @@ skill folder, such as `~/.claude/skills`. With no `build.scan_locations`,
 
 Relative paths in the root file resolve against its folder. A flag's path
 resolves against the working directory. A flag overrides the root file.
+
+### Bump
+
+`bump --changed-since <ref|dir>` compares the vault's render with a baseline
+and bumps each plugin whose skills or files differ while its `version`
+has not moved. A directory is read as an already-built marketplace, such as
+the committed output; one that holds no plugin manifest for any configured
+harness is refused. Anything else is a git ref: it is checked out into a
+temporary worktree with the repository's hooks off, built there with the
+ref's own copy of the root file and the ref's own vault, and removed
+afterwards. Git LFS files are not fetched, so they compare as pointers. A ref
+that holds no `skillwright.md` is refused: compare against a built folder
+instead. A run also removes the baselines an interrupted earlier run left behind.
+
+A drifted plugin that is not bumped is `skipped`, with one reason:
+`version-moved` (its version already changed since the baseline, so a second
+run bumps nothing), `not-in-baseline` (the baseline does not hold it) or
+`manifest-only` (only its manifest changed). A plugin whose note has no
+`version` is bumped on any change. A plugin named after the marketplace with no
+folder of its own bumps the root file's `version`. Any other plugin with no note
+is refused if it changed.
+
+`build.bump.patch` picks how the patch number is written:
+
+```yaml
+build:
+  bump:
+    patch: timestamp # or increment, the default
+```
+
+With `timestamp`, every bump sets the patch to the UTC time as
+`YYYYMMDDHHMMSS` (`1.4.20261105143000`), or to one more than the current
+patch when that is larger, so each release of a plugin gets a new,
+increasing version even twice in one second. The patch is a 64-bit number;
+a consumer that stores version parts as 32-bit integers cannot hold it.
 
 ### Hooks
 
