@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/osdlc/skillwright/compare/skillwright/v0.5.1...skillwright/v0.5.2) - 2026-11-06
+
+### Other
+
+- update Cargo.lock dependencies
+
 ## [0.5.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.5.0...skillwright/v0.5.1) - 2026-11-05
 
 ### Other
