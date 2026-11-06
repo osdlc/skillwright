@@ -617,6 +617,11 @@ pub(crate) fn discover_in(
             // and a note there is not a malformed component however it is
             // shaped. Only inside a marketplace is a declared note at an
             // unrecognised path a mistake worth naming.
+            if let Some(market) = old_member_note(vfs, root, entry_path) {
+                let err = old_note_refusal(entry_path, market);
+                skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+                continue;
+            }
             let reads_as = conventional(root, entry_path, &patterns);
             if under_a_kind_folder(root, &reads_as) {
                 let relative = |path: &Path| {
@@ -625,13 +630,7 @@ pub(crate) fn discover_in(
                         .unwrap_or_else(|_| path.display().to_string())
                 };
                 if let Some(market) = old_marketplace_note(&relative(entry_path)) {
-                    let err = CoreError::malformed(
-                        entry_path,
-                        format!(
-                            "a marketplace's note is `marketplaces/{market}/skillwright.md` now: \
-                             move this file there"
-                        ),
-                    );
+                    let err = old_note_refusal(entry_path, market);
                     skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
                 } else if patterns.never_ships(&relative(entry_path))
                     || patterns.in_a_named_never_ship_folder(&relative(entry_path))
@@ -945,6 +944,39 @@ fn in_a_skill_folder(path: &Path, placed: &BTreeMap<PathBuf, Placement>, root: &
 fn old_marketplace_note(rel: &str) -> Option<&str> {
     let (market, file) = rel.strip_prefix("marketplaces/")?.split_once('/')?;
     (md_stem(file) == Some(market)).then_some(market)
+}
+
+/// The marketplace folder of the old note form as a workspace member scans
+/// it: `<m>.md` at the member's own root. A note with no keys is the author's.
+fn old_member_note<'a>(vfs: &dyn Vfs, root: &'a Path, path: &Path) -> Option<&'a str> {
+    let market = root.file_name()?.to_str()?;
+    let file = path.strip_prefix(root).ok()?.to_str()?;
+    (md_stem(file) == Some(market)
+        && has_frontmatter_keys(vfs, path)
+        && matches!(crate::patterns::workspace_above(vfs, root), Ok(Some(_))))
+    .then_some(market)
+}
+
+/// The refusal of a marketplace note in the old form.
+fn old_note_refusal(path: &Path, market: &str) -> CoreError {
+    CoreError::malformed(
+        path,
+        format!(
+            "a marketplace's note is `marketplaces/{market}/skillwright.md` now: move this file \
+             there"
+        ),
+    )
+}
+
+/// The folder of the plugin `name` in a vault-relative `path`, as a scan
+/// spells it. A marketplace of the same name is skipped first.
+pub fn plugin_folder_in(path: &str, name: &str) -> Option<String> {
+    let start = path
+        .strip_prefix("marketplaces/")
+        .and_then(|rest| rest.split_once('/'))
+        .map_or(0, |(market, _)| "marketplaces/".len() + market.len());
+    let at = start + path[start..].find(&format!("/{name}/"))?;
+    Some(path[..at + 1 + name.len()].to_owned())
 }
 
 /// Whether the note at `path` has a frontmatter block holding any key.

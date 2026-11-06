@@ -221,6 +221,9 @@ fn fix_hashes_of(flags: &ExportFlags, run: &ResolvedRun, ctx: &mut CommandContex
             };
             let _ = writeln!(ctx.out, "{}  {word}", fix.note);
         }
+        if plan.is_empty() {
+            let _ = writeln!(ctx.out, "no adopt hash to refresh");
+        }
     }
     if plan
         .iter()

@@ -492,6 +492,7 @@ pub struct Pack {
 /// * `refused: unreadable-note` — a member the scan could not read. A pack
 ///   must not install a subset silently.
 /// * `refused: empty-plugin` — nothing this destination admits.
+/// * `refused: malformed-block` — a block `metadata` that is not a mapping.
 /// * What [`resolve_body`] refuses for any member.
 pub fn load_plugin(
     vfs: &dyn Vfs,
@@ -501,6 +502,7 @@ pub fn load_plugin(
     profile: &'static HarnessProfile,
     ns: &Namespace,
 ) -> Result<Pack, CoreError> {
+    crate::harness::manifest::check_block_metadata(&cascade.config)?;
     let canonical = profile.name;
     let carries_commands = profile.format().carries_commands;
     let (mut scan, links) = read_notes(vfs, vault_root, None, ns)?;
@@ -1006,11 +1008,7 @@ fn members_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name
     discovered
         .iter()
         .filter(|c| c.plugin.as_deref() == Some(name) && belongs_to(c, market))
-        .find_map(|c| {
-            let path = c.vault_relative_path.as_str();
-            let at = path.find(&format!("/{name}/"))?;
-            Some(path[..at + 1 + name.len()].to_owned())
-        })
+        .find_map(|c| crate::discover::plugin_folder_in(&c.vault_relative_path, name))
         .unwrap_or_else(|| format!("plugins/{name}"))
 }
 

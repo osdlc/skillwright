@@ -490,6 +490,17 @@ fn build(
         match key.as_str() {
             Some("exclude") => exclude = globs("build.exclude", value)?,
             Some("patterns") => patterns = folder_patterns(value, warnings)?,
+            // Ignored, it would ship the launcher calls unrewritten.
+            Some("shim_target") => {
+                return Err(SettingsError {
+                    key: "build.shim_target".to_owned(),
+                    what: "read any more",
+                    detail: format!(
+                        "it is `build.launcher_path` now. See {}",
+                        crate::keys::MIGRATING_GUIDE
+                    ),
+                });
+            }
             Some(name) if BUILD_KEYS.contains(&name) => {
                 warn_nested(name, value, warnings);
                 kept.insert(key.clone(), value.clone());
@@ -874,6 +885,13 @@ mod tests {
             root.warnings
         );
         assert_eq!(root.build.out, None);
+    }
+
+    #[test]
+    fn a_leftover_shim_target_is_refused_naming_its_new_key() {
+        let err = parse_root_file("---\nbuild:\n  shim_target: bin/tool\n---\n").unwrap_err();
+        assert_eq!(err.key, "build.shim_target");
+        assert!(err.detail.contains("build.launcher_path"), "{err}");
     }
 
     #[test]

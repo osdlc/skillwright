@@ -135,36 +135,48 @@ pub const BLOCK_IDENTITY_KEYS: &[&str] =
 pub const REMOVED: &[&str] = &["kind", "plugin"];
 
 /// The stems a vault used before keys were bare.
-const LEGACY_STEMS: &[&str] = &["sw", "tc"];
+const LEGACY_STEMS: &[&str] = &["sw"];
 
-/// Old prefixed keys whose new home is not the same word, bare.
+/// The guide a refusal of an old spelling points to.
+pub const MIGRATING_GUIDE: &str =
+    "https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md";
+
+/// Old prefixed keys whose new home is not the same word, bare, and the fix
+/// for each. `build.namespace` does not help these.
 const LEGACY_MOVED: &[(&str, &str)] = &[
-    ("kind", "the folder the note sits in"),
-    ("plugin", "the folder the note sits in"),
-    ("overrides", "a block named for the harness"),
-    ("source", "`adopted.source`"),
-    ("format", "`adopted.format`"),
-    ("source-hash", "`adopted.source_hash`"),
-    ("adopted-hash", "`adopted.hash`"),
-    ("adopted-at", "`adopted.at`"),
-    ("also-at", "`adopted.also_at`"),
+    ("kind", "delete it and move the note into the right folder"),
+    (
+        "plugin",
+        "delete it and move the note into the right folder",
+    ),
+    (
+        "overrides",
+        "move each entry to a block named for the harness",
+    ),
+    ("source", "move it to `adopted.source`"),
+    ("format", "move it to `adopted.format`"),
+    ("source-hash", "move it to `adopted.source_hash`"),
+    ("adopted-hash", "move it to `adopted.hash`"),
+    ("adopted-at", "move it to `adopted.at`"),
+    ("also-at", "move it to `adopted.also_at`"),
 ];
 
-/// The stem and the new home of `key`, when it is an old prefixed spelling of
-/// a key skillwright owns. A `sw-` key that matches nothing is not one.
-pub fn legacy_key(key: &str) -> Option<(&'static str, String)> {
+/// The fix for `key`, when it is an old prefixed spelling of a key skillwright
+/// owns. A `sw-` key that matches nothing is not one.
+pub fn legacy_key(key: &str) -> Option<String> {
     let (stem, rest) = key.split_once('-')?;
     let stem = LEGACY_STEMS.iter().find(|known| **known == stem)?;
-    if let Some((_, home)) = LEGACY_MOVED.iter().find(|(old, _)| *old == rest) {
-        return Some((stem, (*home).to_owned()));
+    if let Some((_, fix)) = LEGACY_MOVED.iter().find(|(old, _)| *old == rest) {
+        return Some((*fix).to_owned());
     }
     let bare = rest.replace('-', "_");
-    is_skillwright_key(&bare).then(|| (*stem, format!("`{bare}`")))
+    is_skillwright_key(&bare)
+        .then(|| format!("rename it `{bare}`, or set `build.namespace: {stem}` to keep the prefix"))
 }
 
-/// The first old prefixed key in a nested `sw:` block, when `key` is a stem
-/// and `value` a mapping holding one.
-pub fn legacy_block(key: &str, value: &Value) -> Option<(&'static str, String)> {
+/// The fix for the first old prefixed key in a nested `sw:` block, when `key`
+/// is a stem and `value` a mapping holding one.
+pub fn legacy_block(key: &str, value: &Value) -> Option<String> {
     if !LEGACY_STEMS.contains(&key) {
         return None;
     }
@@ -284,7 +296,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::StringList,
         inherits: true,
-        summary: "Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `copilot`, `opencode` and `portable` for `publish`. `claude-code`, `codex-cli` and `github-copilot` also work. Absent means all; `[]` means none. Another name is refused.",
+        summary: "Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused.",
     },
     KeySpec {
         key: "arguments",

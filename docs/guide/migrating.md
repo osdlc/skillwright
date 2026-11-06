@@ -21,7 +21,12 @@ file is the only copy of the procedure and its key tables.
 | `sw-kind`, `sw-plugin` | The note's folder |
 | `sw-overrides: {claude: …}` | A `claude:` block |
 | Six `sw-` provenance keys | One `adopted:` block |
-| A default output folder | `build.out` or `--out`, required |
+| A default output folder | `build.out` or `--out`, required to build |
+| `marketplace.shim_target` | `build.launcher_path` |
+| A `scripts/<name>` shim in each skill | No shim: calls to `${CLAUDE_PLUGIN_ROOT}/<launcher>` become paths relative to the skill on Codex, Cursor and Pi |
+
+The last row changes many built files in a vault with a launcher. The `migrate`
+skill's verify step lists every difference to expect.
 
 ## Example
 

@@ -141,7 +141,7 @@ Each verb's own options:
 | 1 | The run completed and something was refused, or `check` found drift |
 | 2 | A run-level blocker. Nothing was attempted |
 | 3 | Usage error |
-| 4 | No vault: no `skillwright.md` and no convention folder, and none supplied |
+| 4 | No vault: no `skillwright.md` and no convention folder, and none supplied. Also `build` or `check` with no output folder |
 | 130 | Interrupted |
 
 ## Configuration
@@ -188,7 +188,7 @@ The marketplace's name defaults to the vault folder's name. A folder holding
 `plugins/` or `skills/` builds with no root file at all.
 
 A root file with `workspace: true` holds shared defaults (`author`,
-`license` and the `build:` keys other than paths) for every
+`license` and every `build:` key but `out`) for every
 `marketplaces/<m>/skillwright.md` below it. A marketplace's own value wins,
 key by key: set `build.namespace` in a marketplace and the rest of the
 workspace's `build:` keys still apply. `build.out` is a path, so each
@@ -277,9 +277,11 @@ Each release is listed in the [changelog](CHANGELOG.md).
 
 This crate was published as `tradecraft` up to 0.3.7. skillwright is in
 alpha and does not read the old names, so a project that used them must be
-renamed by hand: the configuration, manifest folder, frontmatter keys and
-environment variables all take the `skillwright` and `sw` spellings. Old `tc-` keys are not errors: they publish as ordinary keys, and a
-note with `tc-kind: plugin` reads as a skill.
+renamed by hand: the configuration, manifest folder and environment variables
+take the `skillwright` spellings, and frontmatter keys are bare by default. Old
+`tc-` keys are unknown keys: each one warns and ships under `metadata:`, and a note
+with `tc-kind: plugin` reads as a skill. See the
+[migration guide](https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md).
 
 A note's harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`) apply to `publish`, `build` and `check`.
 

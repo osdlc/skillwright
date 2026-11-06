@@ -13,7 +13,12 @@ or `plugin` key, or a `sw-<key>` spelling of a key skillwright owns, is refused 
 `build` and `check` refuse to run until it is gone. A `sw-` key that matches nothing is only an
 unknown key. Do the whole move in one pass, on a branch.
 
-The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move the same way.
+The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move the same way, but only
+`sw-` keys are refused when left behind: a leftover `tc-` key is an unknown key, so search for them.
+
+A note another tool generates or seals, such as one with a hash or a generated marker, must change at
+its generator. Do not hand-edit it: the next run undoes the edit, or the seal breaks. Change the
+generator and regenerate.
 
 ## Steps
 
@@ -42,15 +47,20 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
    | `vault: <path>` | none: the file sits in that folder |
    | `namespace: <stem>` | `build.namespace`, or remove it for bare keys |
    | `marketplace.name`, `.display_name`, `.owner`, `.author`, `.license` | the same key at the top level |
-   | `marketplace.out`, `.harnesses`, `.launcher_path`, `.require_descriptions` | the same key under `build:` |
+   | `marketplace.out`, `.harnesses`, `.require_descriptions` | the same key under `build:` |
+   | `marketplace.shim_target` | `build.launcher_path`, with the same value. If the key was absent and the vault relied on the old default, set `build.launcher_path: cli/sdlc`, because there is no default now |
    | `marketplace.default_plugin` | none: see step 4 |
    | `marketplace.plugins.<p>` | the keys of `plugins/<p>/<p>.md` |
    | `marketplace.skills_root` | none: put `skillwright.md` where the kind folders are, or pass `--skills-root` |
    | `destinations`, `scan_locations`, `assets`, `hooks` | the same key under `build:` |
    | `paths`, `declared_folders` | none: use `build.patterns` for a layout that differs |
 
-   `build.out` is required, here or as `--out`, because there is no default output folder. If the
-   old file set no `marketplace.out`, ask where builds should land.
+   `build`, `check` and `build --watch` need `build.out` or `--out`, because there is no default
+   output folder. A vault that only publishes can leave it out. If the old file set no
+   `marketplace.out` and the vault builds, ask where builds should land.
+
+   A leftover `build.shim_target` is refused. Without `build.launcher_path`, `${CLAUDE_PLUGIN_ROOT}`
+   calls ship unrewritten to Codex, Cursor and Pi.
 
    Every relative path in the file resolves against the file's own folder. When the new file sits
    in a different folder from the old one, rewrite each path so it names the same place. With
@@ -71,7 +81,8 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
    | `sw-kind: <kind>` | move the note into that kind's folder, and remove the key |
    | `sw-plugin: <p>` | move the note under `plugins/<p>/`, and remove the key |
    | no `sw-plugin`, joined `default_plugin` | move the note under `plugins/<default_plugin>/`, or leave it in a top-level `skills/` to join a plugin named after the marketplace |
-   | `marketplaces/<m>/<m>.md` | `marketplaces/<m>/skillwright.md`, with `workspace: true` in an outer `skillwright.md`; each of these files needs its own `build.out`, which resolves against that file |
+   | `marketplaces/<m>/<m>.md`, with the plugins inside `marketplaces/<m>/` | `marketplaces/<m>/skillwright.md`, with `workspace: true` in an outer `skillwright.md`; each of these files needs its own `build.out`, which resolves against that file |
+   | `marketplaces/<m>/<m>.md`, with the plugins beside `marketplaces/` at the vault root | fold the note's keys into the vault's `skillwright.md`, and delete the note and its folder. Moving it instead leaves a marketplace with nothing in it, and `build` fails `empty-marketplace` |
 
    A vault that cannot move its notes maps them with `build.patterns`. Patterns are experimental.
 
@@ -99,6 +110,9 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
    is the spec field and would ship as written. If the value matters, tell the user: moving it to
    the plugin note changes that plugin's manifest, so it is a separate decision.
 
+   An unknown key ships under `metadata:` as YAML, so an unquoted `true` now publishes as `true`,
+   where it used to be `"true"`. Quote a value that must stay a string.
+
 6. Move each `sw-overrides` entry to a top-level block named for the harness, and remove
    `sw-overrides`:
 
@@ -113,6 +127,9 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
    ```
 
    Under `build.namespace: sw` the block is `sw-claude:`.
+
+   Delete `policy.allow_implicit_invocation` rather than moving it. No harness fact shows Codex reads
+   it, and a block holding it stops the build with `unknown-override-key`.
 
    Only `claude`, `codex`, `cursor` and `pi` have blocks. Move an override for any other target
    into the note, or drop it. A block a skill inherits cannot set its `name` or `description`, and a
@@ -147,13 +164,20 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
    treats it as edited.
 
 9. Replace old names in scripts and CI. Add `--out` to any `build` or `check` that relied on a
-   default, and read `version`, not `sw-version`, in anything that parses a note.
+   default, and read `version`, not `sw-version`, in anything that parses a note. Anything that read
+   `kind` or `plugin` from a note must read the folder instead. Anything that reads notes from old
+   git refs must accept both spellings.
 
    skillwright finds `skillwright.md` by walking up, so it must be at or above the folder a command
    runs from. If the file moved down into `notes/`, a command run from the repository root exits 4.
    Run it from `notes/`, or pass `--config notes/skillwright.md`.
 
-10. Verify:
+10. Fix links to files that never ship. A link or embed that reaches a never-ship or excluded file,
+    such as `docs/x.md`, is now refused `excluded-link`, in every link form, and stops the build.
+    Move the file into the skill's folder or a plugin's `assets/`, or remove the link.
+
+11. Verify. If `skillwright.md` moved and you run from another folder, add `--config <path>` to each
+    command:
 
     ```sh
     skillwright list            # every note listed, with the kind and plugin you meant
@@ -161,6 +185,10 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
     skillwright check           # exits 0
     skillwright status --check  # destinations match the vault
     ```
+
+    `list` passing does not prove `build` will. `build` is the real check, because it follows links
+    and renders every harness. A vault with no `build.out` still needs this: pass
+    `--out <scratch folder>` to `build` and `check`.
 
     Each unknown key is a warning, and it ships under `metadata:`, so clear them all and search for
     `sw-` again. A note that still has a `kind` or `plugin` key, or a `sw-<key>` spelling of a key
@@ -176,10 +204,16 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
     - Fields a harness does not document, which are no longer written: `version` in Claude's
       marketplace entry, and `author.url` and `owner.url` for Cursor.
     - A space-separated `allowed-tools` string is now read as a real list.
+    - The per-skill `scripts/<name>` shim is gone, so each of those files disappears from the output.
+    - Calls to `${CLAUDE_PLUGIN_ROOT}/<launcher>` are rewritten to the launcher's path relative to the
+      skill's folder on Codex, Cursor and Pi. In a vault with a launcher this can touch most built
+      files.
+    - Unknown keys under `metadata:` keep their YAML type, as step 5 says.
     - Plugin overrides, which now reach that plugin's manifest.
 
     Anything else is a change to explain to the user before merging.
 
     A build replaces each harness's packs folder and the manifests it writes. Files the old build
-    left elsewhere in a harness folder stay. A folder the old `out` or `packs` left inside the vault
-    gets a `stale-output` warning. Remove these by hand.
+    left elsewhere in a harness folder stay. Delete any folder the old `out` or `packs` left behind.
+    A moved `out` reports nothing, and a non-default `packs` folder inside the vault stops the build
+    until it is gone.

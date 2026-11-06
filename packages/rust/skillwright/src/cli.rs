@@ -295,7 +295,7 @@ struct PublishArgs {
     /// Narrow to one target across the destinations selected.
     #[arg(long, value_name = "target")]
     target: Option<String>,
-    /// Every publishable unit in the vault — every skill note and every plugin note. The default when no note is named.
+    /// Every skill note in the vault, each once. The default when no note is named. A plugin's pack, an agent or a command publishes when its note is named.
     #[arg(long)]
     all: bool,
     /// Repeatable. Resolves exactly one conflicted file, by its destination-relative path — the spelling the refusal printed, not an absolute one.

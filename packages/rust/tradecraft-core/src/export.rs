@@ -758,8 +758,8 @@ fn with_stale_output_cause(source: &dyn Vfs, vault_root: &Path, err: CoreError) 
     CoreError::Refused(match built {
         Some(file) => format!(
             "{message}. Note: {file} was written by an earlier build, and no `packs` setting \
-             points at its folder now, so it reads as source. If `packs` moved, delete the old \
-             folder"
+             points at its folder now, so it reads as source. If `packs` or `out` moved, delete \
+             the old folder"
         ),
         None => message,
     })

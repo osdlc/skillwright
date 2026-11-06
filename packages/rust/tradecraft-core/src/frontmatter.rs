@@ -412,16 +412,16 @@ impl VaultFrontmatter {
             let legacy = fields.iter().find_map(|(key, value)| {
                 crate::keys::legacy_key(key)
                     .or_else(|| crate::keys::legacy_block(key, value))
-                    .map(|(stem, home)| (key, stem, home))
+                    .map(|fix| (key, fix))
             });
-            if let Some((key, stem, home)) = legacy {
+            if let Some((key, fix)) = legacy {
                 return Err(refuse(
                     "removed-key",
                     path,
                     format!(
-                        "`{key}` is an old spelling: its home is now {home}. Rename it, or set \
-                         `build.namespace: {stem}` to keep the prefix. See \
-                         docs/guide/migrating.md"
+                        "`{key}` is an old spelling: {fix}. If it is another tool's key, move it \
+                         under `metadata:`. See {}",
+                        crate::keys::MIGRATING_GUIDE
                     ),
                 ));
             }

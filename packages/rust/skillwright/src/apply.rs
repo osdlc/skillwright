@@ -454,8 +454,8 @@ fn move_note(
 }
 
 /// Moves a folder whose entry note the relinker cannot name: a marketplace's
-/// `skillwright.md` is not `<dir>/<dir>.md`. Links inside it move with it; a
-/// link into it from outside stays as written, and the build reports it.
+/// `skillwright.md` is not `<dir>/<dir>.md`. Links inside it move with it. A
+/// link into it from outside and a path in the root file stay as written.
 fn move_folder(
     vault_dir: &Path,
     from: &str,

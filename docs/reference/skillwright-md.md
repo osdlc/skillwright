@@ -51,7 +51,7 @@ are also defaults for every plugin and component below. See
 | Key | Value | Meaning |
 |---|---|---|
 | `out` | path | Where harness trees are written. Required here or as `--out`. There is no default. `.` builds beside this file. |
-| `harnesses` | list | Which harnesses to build. Absent means all of them. |
+| `harnesses` | list | Which harnesses to build: `claude`, `codex`, `cursor`, `pi`. Absent means all of them. The long spellings `targets` takes, `claude-code` and `codex-cli`, are refused here. |
 | `namespace` | stem | Restores prefixed keys: `sw` reads `sw-version` or a `sw:` block. Absent means bare keys. |
 | `launcher_path` | path | The plugin's launcher, relative to the plugin's root. |
 | `require_descriptions` | boolean | Refuse a note with a `name` and no `description`, instead of publishing a filler. |
@@ -97,11 +97,12 @@ segment matches any number of segments. Globs are relative to this file.
   vault root stays the author's own and gets no warning.
 - A plugin named `docs` or `tests` ships normally, and so does a skill with that
   name.
-- Inside a skill's folder, `docs/` and `tests/` never ship, and any other `.md`
+- Inside a skill's folder, `docs/`, `tests/` and `fixtures/` never ship, and any other `.md`
   ships as a file of that skill, with or without a `description`.
 - A plugin's `assets/` ships whatever its folders are called, and a link into it
   is allowed.
-- Generated output is never read as source.
+- Output under the current `out` and `packs` is never read as source. A folder an
+  earlier build left elsewhere can be: see `packs` below.
 
 `exclude` adds to the folders that never ship, and `publish <note>` refuses a note
 it matches. It does not apply to a plugin's `assets/`. A body link or embed that reaches a never-ship or excluded file is
@@ -148,8 +149,17 @@ in its marketplaces.
 An inherited glob that matches nothing in one marketplace warns only if it matches
 nothing in any of them.
 
-`rename` moves a marketplace's folder. A link into that folder from outside it is
-not rewritten, and the build reports it.
+`rename` of a marketplace works in a vault that holds `marketplaces/`, not in a
+workspace: at the workspace root it is refused, and inside a member it finds no
+component of that name. It moves the folder and updates the note's `name`.
+Links inside the folder move with it. It rewrites nothing else:
+
+- A wikilink or embed from outside that spells the old path still resolves by file
+  name. If another file has that name, the build stops with `link-ambiguous`.
+- A plain markdown link from outside goes dead, and nothing reports it.
+- A path in `skillwright.md`, such as a `build.exclude` entry, keeps the old folder.
+  The file it excluded then ships, with only an `unmatched-glob` warning. Update
+  these paths by hand.
 
 ## Where a value comes from
 
@@ -205,7 +215,9 @@ each one is listed `not carried`. `publish <note>` writes one to a harness with 
 agent layout. A kind a harness cannot carry shows as `n/a` in `status`, and
 `status --check` passes it.
 
-A bare `publish` writes skills only. A plugin's pack, an agent and a command
+Two skills that would land on one folder, such as `review` in two plugins, stop
+the run with `path-collision`, naming both notes, and nothing is written. Name one
+note to publish it, or rename one. A bare `publish` writes skills only. A plugin's pack, an agent and a command
 publish when their note is named.
 
 ## What a manifest holds
@@ -238,9 +250,15 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
   takes effect is refused if it overlaps a manifest path, a folder the harness
   owns or, when the output overlaps the vault, a source folder. It is also refused
   when it equals the root file.
-  When you change `packs` or `out`, a folder inside the vault that the old value
-  left behind gets a `stale-output` warning and stays in place. A folder outside
-  the vault gets no warning, because nothing records it. Remove either one
-  yourself.
+  Nothing records an old `out` or `packs`, so a move leaves the old folder in
+  place. What happens next depends on the folder, and the fix is always to delete
+  it:
+  - `out: dist` to `out: dist2` reports nothing.
+  - A harness's default packs folder under `out`, after `packs` moved away from it,
+    gets a `stale-output` warning.
+  - A `packs` folder with no leading dot, inside the vault, reads as source. After
+    `packs: alt` moves, `build` and `check` stop on `dist/alt`, and the message says
+    an earlier build wrote the file.
+  - A folder outside the vault gets no warning.
 - `pi: {naming: bare}` on the marketplace or a plugin publishes Pi skills under
   their bare names. `prefixed` is the default.

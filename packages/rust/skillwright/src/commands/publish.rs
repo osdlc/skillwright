@@ -4,9 +4,10 @@
 //!
 //! A whole-vault run is the same fan-out over a longer list. `--all` — and a
 //! bare `publish`, which means the same thing — takes its list from
-//! [`discover_components`] and narrows it to the two kinds the publish spec
-//! calls publishable UNITS: every skill note and every plugin note, each
-//! classified by the core, never by a guess made here.
+//! [`discover_components`] and narrows it to the skill notes, each classified
+//! by the core, never by a guess made here. A pack, an agent or a command
+//! publishes when its note is named. Two notes that would land on one skill
+//! folder stop the run before anything is written.
 //!
 //! `--dry-run` needs nothing this file doesn't already have: the core carries
 //! a `mode` on [`PublishRequest`] ([`PublishMode::Write`], the default, or
@@ -16,14 +17,14 @@
 //! is setting the one field and skipping the confirmation prompt, which a
 //! plan must never trigger.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tradecraft_core::{
-    CoreError, EntityKind, KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason,
-    PublishRequest, PublishStatus, PublishedFile, ReasonToken, SkippedNote, canonical_target,
-    discover_components, publish_skill,
+    CoreError, DiscoveredComponent, EntityKind, KNOWN_TARGETS, PublishMode, PublishOutcome,
+    PublishReason, PublishRequest, PublishStatus, PublishedFile, ReasonToken, SkippedNote,
+    canonical_target, discover_components, inherit_targets, publish_skill,
 };
 
 use crate::config::{normalize_join, relative_path, resolve_against_cwd};
@@ -38,15 +39,15 @@ use crate::resolve::{CommonFlags, refuse_workspace, resolve_run};
 
 /// The resolved flags of `skillwright publish`.
 pub struct PublishFlags {
-    /// Vault-relative paths to the notes to publish. Empty means every
-    /// publishable unit — the same run `--all` spells explicitly.
+    /// Vault-relative paths to the notes to publish. Empty means every skill
+    /// note — the same run `--all` spells explicitly.
     pub notes: Vec<String>,
     /// Repeatable. Destination roots. Requires `--target`.
     pub to: Vec<String>,
     /// Narrows to one target across the destinations selected.
     pub target: Option<String>,
-    /// Every publishable unit in the vault. The default when no note is
-    /// named; naming both is a usage error rather than a guess.
+    /// Every skill note in the vault. The default when no note is named;
+    /// naming both is a usage error rather than a guess.
     pub all: bool,
     /// Repeatable. Resolves exactly one conflicted file, by its
     /// destination-relative path.
@@ -129,6 +130,35 @@ struct PublishDocument<'a> {
     replaced_manifests: Option<&'a [ReplacedManifest]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skipped: Option<&'a [SkippedNote]>,
+}
+
+/// The refusal of two `skills` that land on one folder of one destination:
+/// a second write would replace the first with no warning.
+fn skill_collision(skills: &[DiscoveredComponent], destinations: &[Destination]) -> Option<String> {
+    let reaches = |skill: &DiscoveredComponent, dest: &Destination| {
+        let wanted = canonical_target(&dest.target);
+        skill.targets.as_ref().is_none_or(|targets| {
+            targets
+                .iter()
+                .any(|target| canonical_target(target) == wanted)
+        })
+    };
+    destinations.iter().find_map(|dest| {
+        let mut seen: HashMap<&str, &str> = HashMap::new();
+        skills
+            .iter()
+            .filter(|skill| reaches(skill, dest))
+            .find_map(|skill| {
+                let path = skill.vault_relative_path.as_str();
+                let first = seen.insert(skill.name.as_str(), path)?;
+                Some(format!(
+                    "path-collision: `{first}` and `{path}` both publish to the skill folder \
+                     `{}`, and the second would replace the first. Nothing was written. Name one \
+                     of the notes to publish it, or rename one",
+                    skill.name
+                ))
+            })
+    })
 }
 
 /// Which closed-set token a thrown [`CoreError`] becomes, by variant.
@@ -253,8 +283,10 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Each warning once: a report repeats it for every destination, and a
     // whole-vault scan has already printed it.
     let mut warned: HashSet<String> = HashSet::new();
+    // The skills this run writes, to catch two that land on one folder.
+    let mut skills: Vec<DiscoveredComponent> = Vec::new();
     if whole_vault {
-        let scan = match discover_components(
+        let mut scan = match discover_components(
             &run.source_vfs(None),
             &run.vault,
             None,
@@ -270,9 +302,11 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
         // Skills only, each once: a plugin's skills publish here on their own,
         // so its pack would write them again. A pack, an agent or a command
         // publishes when its note is named.
+        inherit_targets(&mut scan, &run.root_config());
         for component in &scan.components {
             if component.kind == EntityKind::Skill {
                 note_paths.push(component.entry_path.clone());
+                skills.push(component.clone());
             }
         }
         for warning in &scan.warnings {
@@ -298,6 +332,26 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             }
             note_paths.push(note_path);
         }
+        // A scan that fails here is not this run's concern: each named note
+        // is read on its own below.
+        if note_paths.len() > 1
+            && let Ok(mut scan) = discover_components(
+                &run.source_vfs(None),
+                &run.vault,
+                None,
+                &run.core_namespace(),
+            )
+        {
+            inherit_targets(&mut scan, &run.root_config());
+            skills = scan
+                .components
+                .into_iter()
+                .filter(|c| c.kind == EntityKind::Skill && note_paths.contains(&c.entry_path))
+                .collect();
+        }
+    }
+    if let Some(refusal) = skill_collision(&skills, &destinations) {
+        return blocked(ctx.err, &refusal);
     }
 
     // --- confirmation --------------------------------------------------

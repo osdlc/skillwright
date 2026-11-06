@@ -10,7 +10,7 @@
 use serde::Serialize;
 use tradecraft_core::{
     BumpLevel, EntityKind, NativeVfs, Vfs, apply_field_edits, discover_components, next_version,
-    ns_field_edits, ns_field_label, read_ns_field,
+    ns_field_edits, ns_field_label, plugin_folder_in, read_ns_field,
 };
 
 use crate::ctx::CommandContext;
@@ -129,11 +129,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 .components
                 .iter()
                 .filter(|c| c.plugin.as_deref() == Some(name))
-                .find_map(|c| {
-                    let path = &c.vault_relative_path;
-                    let at = path.find(&format!("/{name}/"))?;
-                    Some(path[..at + 1 + name.len()].to_owned())
-                })
+                .find_map(|c| plugin_folder_in(&c.vault_relative_path, name))
                 .unwrap_or_else(|| format!("plugins/{name}"));
             return usage_error(
                 ctx.err,

@@ -25,7 +25,9 @@ There are two ways out of a vault:
 ## Publish to a destination
 
 1. Run `skillwright publish --dry-run` to see the plan. With no note named, it publishes every
-   skill on its own (`--all`), and writes no plugin manifests. Name a note by vault-relative path to
+   skill on its own (`--all`), and writes no plugin manifests. Two skills that would land on one
+   folder, such as `review` in two plugins, stop the run with `path-collision`, naming both notes:
+   publish one by naming its note, or rename one. Name a note by vault-relative path to
    publish that note, or a plugin note to publish its whole pack. `--to <root>` (repeatable) picks
    destinations other than the configured ones, and needs `--target <target>`. `--target` alone
    narrows to one harness, such as `claude-code`, `codex`, `cursor` or `pi`. A destination inside
@@ -48,9 +50,10 @@ There are two ways out of a vault:
 4. Verify with `skillwright check`. It writes nothing and exits 1 on drift, so it suits CI. Fix
    drift by changing the note and building again; a hand edit to a built file is drift.
 
-Changing `build.out` or a `packs` value leaves the old folder behind. A folder inside the vault gets
-a `stale-output` warning and stays in place. A folder outside the vault gets no warning. Remove
-either one yourself.
+Changing `build.out` or a `packs` value leaves the old folder behind, and nothing records it. Delete
+the old folder. A moved `out` reports nothing. A harness's default packs folder gets a `stale-output`
+warning. A non-default `packs` folder inside the vault reads as source, so `build` and `check` stop,
+and the message says an earlier build wrote the file.
 
 A build replaces only what skillwright owns: each harness's packs folder and the manifests it
 writes. Everything else in those harness folders stays. A pack in a packs folder that the vault

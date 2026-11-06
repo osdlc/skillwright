@@ -49,9 +49,9 @@ pub struct SkillContent {
     /// 500 characters by [`crate::discover`].
     #[serde(default)]
     pub compatibility: Option<String>,
-    /// The Agent Skills spec's `metadata:` — a string-to-string map. Only the entries the
-    /// note wrote under that key; the unmodeled top-level keys in
-    /// [`Self::annotations`] join them in one block at render time.
+    /// The Agent Skills spec's `metadata:`. Only the entries the note wrote under that key;
+    /// the unmodeled top-level keys in [`Self::annotations`] join them in one block at render
+    /// time, as YAML, so an unquoted `true` publishes as a boolean.
     #[serde(default)]
     pub metadata: std::collections::BTreeMap<String, String>,
     /// Model the skill asks to run on, when it names one.

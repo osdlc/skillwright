@@ -1420,9 +1420,9 @@ export interface SkillContent {
   compatibility: string | null;
 
   /**
-   * The Agent Skills spec's `metadata:` — a string-to-string map. Only the entries the
-   * note wrote under that key; the unmodeled top-level keys in
-   * [`Self::annotations`] join them in one block at render time.
+   * The Agent Skills spec's `metadata:`. Only the entries the note wrote under that key;
+   * the unmodeled top-level keys in [`Self::annotations`] join them in one block at render
+   * time, as YAML, so an unquoted `true` publishes as a boolean.
    */
   metadata: Record<string, string>;
 

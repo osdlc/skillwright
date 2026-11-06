@@ -554,7 +554,7 @@ fn fix_adopt_hashes_refreshes_a_note_whose_only_change_is_the_rename() {
 
     let again = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
     assert_eq!(again.code, 0, "{}", again.stderr);
-    assert_eq!(again.stdout, "");
+    assert_eq!(again.stdout, "no adopt hash to refresh\n");
 }
 
 #[test]

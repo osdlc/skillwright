@@ -80,16 +80,22 @@ fn an_old_prefixed_key_on_a_bare_vault_is_refused_naming_its_new_home() {
         ("sw-targets: [claude]", "`targets`"),
         ("sw-source: x", "`adopted.source`"),
         ("sw-display-name: X", "`display_name`"),
-        ("tc-license: MIT", "`license`"),
         ("sw:\n  version: 1.0.0", "`version`"),
     ] {
         let note = format!("---\ndescription: D.\n{key}\n---\nBody.\n");
         let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", &note)]);
         let built = sw(&dir.path(), &["build", "--yes"]);
         assert_ne!(built.code, 0, "{key}: {}", built.text);
-        for said in [home, "build.namespace", "docs/guide/migrating.md"] {
+        for said in [home, "`metadata:`", "docs/guide/migrating.md"] {
             assert!(built.text.contains(said), "{key}: {}", built.text);
         }
+        let moved = key.starts_with("sw-source");
+        assert_eq!(
+            built.text.contains("build.namespace"),
+            !moved,
+            "{}",
+            built.text
+        );
         let listed = sw(&dir.path(), &["list"]);
         assert!(listed.text.contains("removed-key"), "{}", listed.text);
     }
@@ -97,11 +103,25 @@ fn an_old_prefixed_key_on_a_bare_vault_is_refused_naming_its_new_home() {
 
 #[test]
 fn a_prefixed_key_that_matches_nothing_stays_a_warning() {
-    let note = "---\ndescription: D.\nsw-nonsense: 1\n---\nBody.\n";
-    let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", note)]);
-    let built = sw(&dir.path(), &["build", "--yes"]);
-    assert_eq!(built.code, 0, "{}", built.text);
-    assert!(built.text.contains("unknown-key"), "{}", built.text);
+    for key in ["sw-nonsense: 1", "tc-license: MIT"] {
+        let note = format!("---\ndescription: D.\n{key}\n---\nBody.\n");
+        let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", &note)]);
+        let built = sw(&dir.path(), &["build", "--yes"]);
+        assert_eq!(built.code, 0, "{}", built.text);
+        assert!(built.text.contains("unknown-key"), "{}", built.text);
+    }
+}
+
+#[test]
+fn fix_adopt_hashes_says_when_there_is_nothing_to_do() {
+    let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", SKILL)]);
+    let ran = sw(&dir.path(), &["check", "--fix-adopt-hashes", "--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+    assert!(
+        ran.text.contains("no adopt hash to refresh"),
+        "{}",
+        ran.text
+    );
 }
 
 #[test]
@@ -497,5 +517,189 @@ fn a_link_into_a_plugin_s_assets_ships() {
         dir.path()
             .join("dist/.claude-plugin/packs/p/docs/guide.md")
             .is_file()
+    );
+}
+
+#[test]
+fn publish_refuses_two_plugins_writing_one_skill_folder() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/skills/review.md", SKILL),
+        ("plugins/q/skills/review.md", SKILL),
+    ]);
+    let dest = dir.home().join("dest");
+    let to = dest.to_str().unwrap();
+    let flags = ["--to", to, "--target", "claude", "--yes"];
+
+    let bare = sw(&dir.path(), &[&["publish"], &flags[..]].concat());
+    assert_eq!(bare.code, 2, "{}", bare.text);
+    assert!(bare.text.contains("path-collision"), "{}", bare.text);
+    assert!(
+        bare.text.contains("plugins/p/skills/review.md"),
+        "{}",
+        bare.text
+    );
+    assert!(
+        bare.text.contains("plugins/q/skills/review.md"),
+        "{}",
+        bare.text
+    );
+    assert!(!dest.exists(), "nothing is written");
+
+    let both = [
+        "publish",
+        "plugins/p/skills/review.md",
+        "plugins/q/skills/review.md",
+    ];
+    let named = sw(&dir.path(), &[&both[..], &flags[..]].concat());
+    assert_eq!(named.code, 2, "{}", named.text);
+
+    let one = sw(&dir.path(), &[&both[..2], &flags[..]].concat());
+    assert_eq!(one.code, 0, "{}", one.text);
+    assert!(
+        dest.join(".claude/skills/review/SKILL.md").exists(),
+        "{}",
+        one.text
+    );
+}
+
+#[test]
+fn publish_allows_one_skill_name_on_two_harnesses() {
+    let aimed = |to: &str| format!("---\ndescription: D.\ntargets: [{to}]\n---\nBody.\n");
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/skills/review.md", &aimed("claude")),
+        ("plugins/q/skills/review.md", &aimed("codex")),
+    ]);
+    let dest = dir.home().join("dest");
+    let flags = [
+        "--to",
+        dest.to_str().unwrap(),
+        "--target",
+        "claude",
+        "--yes",
+    ];
+    let ran = sw(&dir.path(), &[&["publish"], &flags[..]].concat());
+    assert_eq!(ran.code, 0, "{}", ran.text);
+}
+
+#[test]
+fn publish_of_a_plugin_note_refuses_block_metadata_that_is_not_a_mapping() {
+    let note = "---\ndescription: P.\nversion: 1.0.0\nclaude:\n  metadata: 5\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", note),
+        ("plugins/p/skills/a.md", SKILL),
+    ]);
+    let dest = dir.home().join("dest");
+    let ran = sw(
+        &dir.path(),
+        &[
+            "publish",
+            "plugins/p/p.md",
+            "--to",
+            dest.to_str().unwrap(),
+            "--target",
+            "claude",
+            "--yes",
+        ],
+    );
+    assert_ne!(ran.code, 0, "{}", ran.text);
+    assert!(
+        ran.text.contains("`claude.metadata` must be a mapping"),
+        "{}",
+        ran.text
+    );
+}
+
+#[test]
+fn a_hint_for_a_plugin_named_like_its_marketplace_gives_the_plugin_folder() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("marketplaces/rev/skillwright.md", "---\nname: rev\n---\n"),
+        ("marketplaces/rev/plugins/rev/skills/a.md", SKILL),
+    ]);
+    let bumped = sw(&dir.path(), &["bump", "rev", "--patch", "--yes"]);
+    let hint = "add `marketplaces/rev/plugins/rev/rev.md`";
+    assert!(bumped.text.contains(hint), "{}", bumped.text);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert!(
+        built.text.contains("marketplaces/rev/plugins/rev/rev.md"),
+        "{}",
+        built.text
+    );
+}
+
+#[test]
+fn a_leftover_old_note_in_a_workspace_member_is_refused() {
+    let dir = vault(&[
+        ("skillwright.md", WORKSPACE),
+        ("marketplaces/foo/skillwright.md", &member("foo", "")),
+        ("marketplaces/foo/foo.md", "---\nlicense: GPL-3.0\n---\n"),
+        ("marketplaces/foo/plugins/p/skills/a.md", SKILL),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 2, "{}", built.text);
+    assert!(
+        built.text.contains("marketplaces/foo/skillwright.md"),
+        "{}",
+        built.text
+    );
+}
+
+#[test]
+fn an_old_spelling_of_a_moved_key_is_not_told_to_set_a_namespace() {
+    let note = "---\ndescription: D.\nsw-adopted-hash: abc\n---\nBody.\n";
+    let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", note)]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 2, "{}", built.text);
+    assert!(built.text.contains("`adopted.hash`"), "{}", built.text);
+    assert!(built.text.contains("`metadata:`"), "{}", built.text);
+    assert!(!built.text.contains("build.namespace"), "{}", built.text);
+}
+
+#[test]
+fn a_tc_kind_note_reads_as_a_skill_with_a_warning() {
+    let note = "---\ndescription: D.\ntc-kind: plugin\n---\nBody.\n";
+    let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", note)]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    assert!(built.text.contains("unknown-key"), "{}", built.text);
+    let listed = sw(&dir.path(), &["list"]);
+    assert!(listed.text.contains("skill"), "{}", listed.text);
+}
+
+#[test]
+fn a_moved_out_reports_nothing_and_a_moved_packs_names_the_earlier_build() {
+    let out_moved = vault(&[("skillwright.md", ROOT), ("plugins/p/skills/a.md", SKILL)]);
+    assert_eq!(sw(&out_moved.path(), &["build", "--yes"]).code, 0);
+    std::fs::write(
+        out_moved.path().join("skillwright.md"),
+        ROOT.replace("dist", "dist2"),
+    )
+    .unwrap();
+    let built = sw(&out_moved.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    assert!(!built.text.contains("stale-output"), "{}", built.text);
+
+    let packs =
+        |to: &str| format!("---\nname: v\nclaude:\n  packs: {to}\nbuild:\n  out: dist\n---\n");
+    let dir = vault(&[
+        ("skillwright.md", &packs("alt")),
+        ("plugins/p/skills/a.md", SKILL),
+    ]);
+    assert_eq!(sw(&dir.path(), &["build", "--yes"]).code, 0);
+    std::fs::write(dir.path().join("skillwright.md"), packs("alt2")).unwrap();
+    let stopped = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(stopped.code, 2, "{}", stopped.text);
+    assert!(
+        stopped.text.contains("written by an earlier build"),
+        "{}",
+        stopped.text
+    );
+    assert!(
+        stopped.text.contains("delete the old folder"),
+        "{}",
+        stopped.text
     );
 }

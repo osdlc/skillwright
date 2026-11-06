@@ -67,7 +67,7 @@ code and is part of this spec.
 
 1. A skill is `<s>.md`, `<s>/<s>.md` or `<s>/SKILL.md`. Anything else in a skill's
    folder ships with the skill, including a `.md` with a `description`, except
-   `docs/` and `tests/`, which never ship. A note in `skills/docs/` with no
+   `docs/`, `tests/` and `fixtures/`, which never ship. A note in `skills/docs/` with no
    `docs` skill warns that it will not ship.
 2. Agents and commands are `<name>.md` or `<name>/<name>.md`.
 3. A note is a component only if it has a `description`, or a `name` alone.
@@ -106,7 +106,7 @@ adds to what never ships. See the
    is ignored.
 5. A note with a `kind` or `plugin` key is refused and skipped: the folder decides
    both. Under a namespace, the bare words are ordinary unknown keys, and the
-   warning names the right spelling. With no namespace, a `sw-<key>` or `tc-<key>`
+   warning names the right spelling. With no namespace, a `sw-<key>`
    spelling of a key skillwright owns is refused `removed-key`, like `kind` and
    `plugin`. A `sw-` key that matches nothing is an ordinary unknown key.
 6. `license` on a plugin or marketplace is the pack's licence. On a skill it is
