@@ -71,9 +71,9 @@
       "line": 155,
       "title": "Comment says the hooks gap report names no host path; it can",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "ac6a209634702a2a850b89f1e84f03a220729427"
     },
     {
       "id": "r1-7",
