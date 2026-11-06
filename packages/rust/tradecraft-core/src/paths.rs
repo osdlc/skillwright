@@ -1,5 +1,6 @@
-//! Lexical path arithmetic and the root file's reading of it: finding the
-//! root file, and resolving what it names into a build's inputs.
+//! Loading a vault's root file: find it, fold in its workspace, and resolve
+//! what it names into a build's inputs. [`load_marketplace`] does all of it
+//! in one call. The pieces it is made of are public.
 //!
 //! Nothing here reads the environment. A host passes the home directory.
 
@@ -7,12 +8,18 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::discover::KIND_DIRS;
+use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
-use crate::settings::{ROOT_FILE, RootFile};
+use crate::namespace::Namespace;
+use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
+
+/// The folder a workspace keeps its marketplaces in.
+pub const WORKSPACE_DIR: &str = "marketplaces";
 
 /// Join `rel` onto `base` and lexically collapse `.` and `..`, without
 /// touching the filesystem. A `..` with nothing to pop is kept.
+#[doc(hidden)]
 pub fn normalize_join(base: &Path, rel: &Path) -> PathBuf {
     use std::path::Component;
     let mut out = PathBuf::new();
@@ -34,6 +41,7 @@ pub fn normalize_join(base: &Path, rel: &Path) -> PathBuf {
 /// `to` expressed relative to `from`, lexically. Both sides are collapsed
 /// first, and a target outside `from` comes back with the `..` segments that
 /// reach it. An empty result means the two are the same path.
+#[doc(hidden)]
 pub fn relative_path(from: &Path, to: &Path) -> PathBuf {
     let from = normalize_join(from, Path::new(""));
     let to = normalize_join(to, Path::new(""));
@@ -108,8 +116,40 @@ fn is_component_note(path: &Path) -> bool {
     named && in_kind
 }
 
+/// The workspace root file above the marketplace whose root is `dir`, when
+/// `dir` is `<workspace>/marketplaces/<m>/` and that file says
+/// `workspace: true`. A file that cannot be read is returned too: an exclusion
+/// it holds must not fail open, so loading it refuses the run.
+pub fn workspace_above(vfs: &dyn Vfs, dir: &Path) -> Option<PathBuf> {
+    let parent = dir.parent()?;
+    if parent.file_name()? != WORKSPACE_DIR {
+        return None;
+    }
+    let file = parent.parent()?.join(ROOT_FILE);
+    if !vfs.exists(&file) {
+        return None;
+    }
+    match read_root(vfs, &file) {
+        Ok(root) if !root.workspace => None,
+        _ => Some(file),
+    }
+}
+
+fn read_root(vfs: &dyn Vfs, file: &Path) -> Result<RootFile, CoreError> {
+    let bytes = vfs.read_file(file)?;
+    let text = String::from_utf8(bytes).map_err(|_| {
+        CoreError::refused(
+            "root-file",
+            format!("{} is not valid UTF-8", file.display()),
+        )
+    })?;
+    parse_root_file(&text)
+        .map_err(|err| CoreError::refused("root-file", format!("{}: {err}", file.display())))
+}
+
 /// What a marketplace load reads from the root file besides the vault: the
 /// identity, the harnesses, the assets and the hooks files.
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct MarketplaceInputs {
     /// The build config, named by the root file or else the folder.
@@ -125,7 +165,9 @@ pub struct MarketplaceInputs {
 
 /// The root file as the inputs of an [`crate::ExportRequest`]: config,
 /// harnesses, assets and hooks. Pass the result's fields to the request, or a
-/// build gets no assets and no hooks.
+/// build gets no assets and no hooks. [`load_marketplace`] calls this after
+/// folding in the workspace; call it directly only with a `root` that is
+/// already complete.
 ///
 /// `folder_name` is the marketplace's name when the file gives none.
 /// `config_dir` is the root file's folder: each `from` resolves against it,
@@ -152,7 +194,8 @@ pub fn marketplace_inputs(
         .iter()
         .map(|entry| {
             let source = resolve_path(&entry.from, config_dir, home);
-            // Root-relative, so the gap report names no host path.
+            // Root-relative when the file is under the root folder; a file
+            // outside it is named by its `..` path.
             let from = relative_path(config_dir, &source)
                 .to_string_lossy()
                 .replace('\\', "/");
@@ -169,6 +212,88 @@ pub fn marketplace_inputs(
         assets,
         hooks,
     }
+}
+
+/// One marketplace as a build needs it, loaded from a root file.
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct LoadedMarketplace {
+    /// The root file that was read.
+    pub root_file: PathBuf,
+    /// The folder holding it: the vault.
+    pub dir: PathBuf,
+    /// The root file, with the workspace's shared settings folded in.
+    pub root: RootFile,
+    /// `build.namespace`, or the default bare namespace.
+    pub namespace: Namespace,
+    /// `build.out` resolved against `dir`, when set. This is the
+    /// [`crate::ExportRequest::out_root`].
+    pub out_root: Option<PathBuf>,
+    /// Config, harnesses, assets and hooks for the [`crate::ExportRequest`].
+    pub inputs: MarketplaceInputs,
+}
+
+/// Load the marketplace whose root file is at or above `start`: find the
+/// root file, fold in the workspace above it, check the namespace, and
+/// resolve the build inputs. `Ok(None)` means no root file was found.
+///
+/// A workspace member inherits the workspace's `build:` settings and shared
+/// fields ([`RootFile::inherit`]); a consumer that reads the member file alone
+/// builds without them. A root file that is itself a workspace
+/// (`root.workspace`) builds nothing: its members are the
+/// `marketplaces/<m>/skillwright.md` files below it, each loaded by passing
+/// its folder as `start`.
+///
+/// # Errors
+///
+/// [`CoreError::Refused`] when a root file cannot be read or parsed, or its
+/// namespace is invalid.
+pub fn load_marketplace(
+    vfs: &dyn Vfs,
+    start: &Path,
+    home: &Path,
+) -> Result<Option<LoadedMarketplace>, CoreError> {
+    let Some(root_file) = find_root_file(vfs, start) else {
+        return Ok(None);
+    };
+    let dir = root_file
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let mut root = read_root(vfs, &root_file)?;
+    if !root.workspace
+        && let Some(shared) = workspace_above(vfs, &dir)
+    {
+        root.inherit(&read_root(vfs, &shared)?);
+    }
+    let namespace = match &root.build.namespace {
+        Some(stem) => Namespace::new(stem).map_err(|invalid| {
+            CoreError::refused(
+                "namespace",
+                format!("{invalid} (`build.namespace` in {})", root_file.display()),
+            )
+        })?,
+        None => Namespace::default(),
+    };
+    let out_root = root
+        .build
+        .out
+        .as_deref()
+        .map(|out| resolve_path(out, &dir, home));
+    let folder = vfs.canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+    let folder = folder
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let inputs = marketplace_inputs(&root, &folder, &dir, home);
+    Ok(Some(LoadedMarketplace {
+        root_file,
+        dir,
+        root,
+        namespace,
+        out_root,
+        inputs,
+    }))
 }
 
 #[cfg(test)]
@@ -216,6 +341,44 @@ mod tests {
         assert_eq!(
             find_root_file(&vfs, Path::new("/v/marketplaces/skillwright")),
             Some(PathBuf::from("/v/marketplaces/skillwright/skillwright.md"))
+        );
+    }
+
+    #[test]
+    fn a_member_loads_with_its_workspaces_settings() {
+        let vfs = MemVfs::new();
+        vfs.create_dir_all(Path::new("/w/marketplaces/m1/plugins/p/skills"))
+            .unwrap();
+        vfs.write_file(
+            Path::new("/w/skillwright.md"),
+            b"---\nworkspace: true\nbuild:\n  harnesses: [claude]\n  namespace: sw\n  assets:\n    - from: shared/run.sh\n      to: bin/run.sh\n---\n",
+        )
+        .unwrap();
+        vfs.write_file(
+            Path::new("/w/marketplaces/m1/skillwright.md"),
+            b"---\nname: m1\nbuild:\n  out: ~/dist\n---\n",
+        )
+        .unwrap();
+        let loaded = load_marketplace(
+            &vfs,
+            Path::new("/w/marketplaces/m1/plugins/p/skills"),
+            Path::new("/home/u"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(loaded.dir, PathBuf::from("/w/marketplaces/m1"));
+        assert_eq!(loaded.inputs.harnesses.len(), 1);
+        assert_eq!(loaded.inputs.assets.len(), 1);
+        assert_eq!(
+            loaded.inputs.assets[0].source,
+            PathBuf::from("/w/marketplaces/m1/shared/run.sh")
+        );
+        assert_eq!(loaded.out_root, Some(PathBuf::from("/home/u/dist")));
+        assert!(!loaded.namespace.is_bare());
+        assert!(
+            load_marketplace(&vfs, Path::new("/nowhere"), Path::new("/"))
+                .unwrap()
+                .is_none()
         );
     }
 

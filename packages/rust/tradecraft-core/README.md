@@ -55,24 +55,36 @@ assert_eq!(report.files.len(), 2);
 
 ## Load a vault and build it
 
-A host that embeds the library does these three steps, in order. The CLI does
-the same.
+The CLI does the same steps.
 
-1. `find_root_file(&vfs, start)` walks up from `start` to the nearest
-   `skillwright.md`. The folder holding it is the vault. Read the file and
-   `parse_root_file(&text)` gives a `RootFile`.
-2. `marketplace_inputs(&root, folder_name, config_dir, home)` resolves the
-   root file into a `MarketplaceInputs`: the config, the harnesses, and the
-   `build.assets` and `build.hooks` with their paths resolved. Skip it and a
-   build gets no assets and no hooks.
-3. `export_skills(&vfs, &request, &ns)` builds, or checks, the marketplace.
-   Put the `MarketplaceInputs` fields in the `ExportRequest`.
+1. `load_marketplace(&vfs, start, home)` finds the nearest `skillwright.md` at
+   or above `start`, folds in the workspace above it when the file is a
+   member (`marketplaces/<m>/skillwright.md`), and checks `build.namespace`.
+   It returns a `LoadedMarketplace`: the vault folder `dir`, the merged
+   `RootFile`, the `namespace`, `out_root` (`build.out` resolved with `~`
+   expanded), and `inputs`, the config, harnesses, assets and hooks. `home`
+   is the home directory; the library reads no environment. `Ok(None)` means
+   no root file. A root file with `workspace: true` builds nothing itself;
+   load each member by passing its folder as `start`.
+2. `export_skills(&vfs, &request, &loaded.namespace)` builds, or checks, the
+   marketplace. Fill the `ExportRequest` from the result: `vault_root` from
+   `dir`, `out_root` from `out_root`, and `config`, `harnesses`, `assets` and
+   `hooks` from `inputs`. Leave out `inputs` and a build gets no assets and
+   no hooks.
+
+The steps inside are public if a host needs them apart: `find_root_file`,
+`workspace_above`, `RootFile::inherit`, `marketplace_inputs` and
+`resolve_path` for any other path read from the file.
 
 To rename or delete a marketplace folder, plan it with
 `plan_rename_marketplace` or `plan_delete_container(…, EntityKind::Marketplace)`,
 passing the entry `marketplaces/<m>/skillwright.md`. The returned
-`AuthoringOp` moves or trashes the whole folder. The library plans; the host
-applies the op.
+`AuthoringOp` moves or trashes the whole folder. The library only plans.
+Apply the op with `skillwright::apply::{apply, Vault}` from the `skillwright`
+crate, which also relinks notes outside the folder that link into it; that
+crate pulls in the CLI's dependencies. A path written in the root file, and a
+link that names `skillwright.md` itself, are not rewritten. The CLI's `rename`
+refuses to run at a workspace root.
 
 ## What it covers
 
@@ -84,7 +96,7 @@ applies the op.
 | `projection` | Render one skill into one tool's files, through `agent-adapt` |
 | `publish` | Write a note onto a destination, idempotently, or report what a write would do |
 | `export` | Build the vault into one marketplace tree per tool, or check the tree for drift |
-| `paths` | Find the root file and resolve it into a build's inputs |
+| `paths` | Load the root file with its workspace and resolve it into a build's inputs |
 | `status` | Report a note's publish state at a destination |
 | `adopt` | Import published `SKILL.md` bundles as vault notes |
 | `authoring` | Plan a new, renamed, moved, deleted or converted note |

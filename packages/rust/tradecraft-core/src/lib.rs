@@ -22,7 +22,7 @@
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
 //! | [`harness`] | Each harness as a profile row (data) and a translator (code) |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
-//! | [`paths`] | Find the root file ([`find_root_file`]) and resolve it into a build's inputs ([`marketplace_inputs`]) |
+//! | [`paths`] | Load the root file with its workspace folded in ([`load_marketplace`]), or its pieces |
 //! | [`adopt`] | Published SKILL.md bundles imported as vault notes |
 //! | [`authoring`] | Where a note goes, what it collides with, what it says |
 //! | [`guard`] | The rails that keep a publish out of a source root |
@@ -138,8 +138,8 @@ pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, REMOVED, Shape};
 pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use paths::{
-    MarketplaceInputs, find_root_file, marketplace_inputs, normalize_join, relative_path,
-    resolve_path,
+    LoadedMarketplace, MarketplaceInputs, WORKSPACE_DIR, find_root_file, load_marketplace,
+    marketplace_inputs, resolve_path, workspace_above,
 };
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,

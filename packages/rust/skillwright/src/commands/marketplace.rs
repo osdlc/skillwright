@@ -289,6 +289,7 @@ fn export_one(
         harnesses,
         assets,
         hooks,
+        ..
     } = marketplace_inputs(run);
     let vfs = run.config_vfs();
     let marketplace_config = effective_config(

@@ -180,12 +180,11 @@ pub struct ExportRequest {
     /// Paths are absolute, resolved by the caller: this core never reads an
     /// ambient root file, so it has nothing to resolve a relative asset
     /// path against (see the crate doc's wasm-boundary note on
-    /// [`MarketplaceConfig`]). [`crate::marketplace_inputs`] resolves `build.assets`
-    /// entries against the root file's own directory.
+    /// [`MarketplaceConfig`]). The Rust helper `marketplace_inputs` resolves
+    /// `build.assets` entries against the root file's own directory.
     #[serde(default)]
     pub assets: Vec<AssetSpec>,
-    /// Canonical hooks files; see [`HookFileSpec`] and
-    /// [`crate::marketplace_inputs`].
+    /// Canonical hooks files; see [`HookFileSpec`].
     #[serde(default)]
     pub hooks: Vec<HookFileSpec>,
 }

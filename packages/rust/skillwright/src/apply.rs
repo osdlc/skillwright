@@ -412,6 +412,9 @@ fn move_note(
 ) -> Result<(), ApplyError> {
     let vault_dir = vault.dir;
     let root_file = |path: &str| path.rsplit('/').next() == Some(tradecraft_core::ROOT_FILE);
+    if bundle && root_file(from) && root_file(to) {
+        return move_marketplace(vault, from, to, mode, outcome);
+    }
     if bundle && (root_file(from) || root_file(to)) {
         return move_folder(vault_dir, from, to, mode, outcome);
     }
@@ -448,6 +451,73 @@ fn move_note(
     }
     record_unreadable(unreadable, outcome);
     Ok(())
+}
+
+/// Moves a marketplace folder, rewriting links into it from outside.
+///
+/// The relinker names a bundle by `<dir>/<dir>.md`, and a marketplace's entry
+/// is `skillwright.md`. So the entry takes the folder's name for the move and
+/// gets its own back after, and the relinker plans and executes the move as a
+/// bundle. A preview does the same and puts the name back. A path in the root
+/// file, and a link that names `skillwright.md` itself, stay as written.
+fn move_marketplace(
+    vault: Vault<'_>,
+    from: &str,
+    to: &str,
+    mode: Mode,
+    outcome: &mut Outcome,
+) -> Result<(), ApplyError> {
+    let leaf = |path: &str| -> Option<String> {
+        let (dir, _) = path.rsplit_once('/')?;
+        Some(format!("{dir}/{}.md", dir.rsplit('/').next()?))
+    };
+    let (Some(temp_from), Some(temp_to)) = (leaf(from), leaf(to)) else {
+        return move_folder(vault.dir, from, to, mode, outcome);
+    };
+    let (root_from, root_to) = (resolve(vault.dir, from)?, resolve(vault.dir, to)?);
+    let (abs_from, abs_to) = (
+        resolve(vault.dir, &temp_from)?,
+        resolve(vault.dir, &temp_to)?,
+    );
+    if abs_from != root_from && abs_from.exists() {
+        return Err(ApplyError::Refused(format!(
+            "{temp_from} already exists, and the move needs that name free"
+        )));
+    }
+    if abs_from != root_from {
+        std::fs::rename(&root_from, &abs_from).map_err(|source| ApplyError::Io {
+            what: format!("preparing {from}"),
+            source,
+        })?;
+    }
+    let before = outcome.entries.len();
+    let moved = move_note(vault, &temp_from, &temp_to, true, mode, outcome);
+    // Put the entry's own name back wherever the folder ended up.
+    let mut restored = Ok(());
+    for (temp, real) in [(&abs_to, &root_to), (&abs_from, &root_from)] {
+        if temp != real && temp.exists() && !real.exists() {
+            restored = std::fs::rename(temp, real).map_err(|source| ApplyError::Io {
+                what: format!("restoring {}", real.display()),
+                source,
+            });
+            break;
+        }
+    }
+    for entry in &mut outcome.entries[before..] {
+        if entry.path == temp_to {
+            entry.path = to.to_owned();
+        }
+        if let Applied::Renamed { from: old } = &mut entry.applied
+            && *old == temp_from
+        {
+            *old = from.to_owned();
+        }
+    }
+    match (moved, restored) {
+        (Err(err), _) => Err(err),
+        (Ok(()), Err(err)) => Err(err),
+        (Ok(()), Ok(())) => Ok(()),
+    }
 }
 
 /// Moves a folder whose entry note the relinker cannot name: a marketplace's
@@ -1266,6 +1336,49 @@ mod tests {
         };
         apply(v.path(), &op).unwrap();
         assert_eq!(read(v.path(), "notes/a.md"), "see [[Guide]]\n");
+    }
+
+    #[test]
+    fn a_marketplace_rename_moves_the_folder_and_relinks_notes_outside_it() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        write(
+            v.path(),
+            "marketplaces/m1/plugins/review/skills/triage.md",
+            "---\nname: triage\ndescription: d\n---\nbody\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "see [t](marketplaces/m1/plugins/review/skills/triage.md)\n",
+        );
+        let op = AuthoringOp::Rename {
+            from: "marketplaces/m1/skillwright.md".to_owned(),
+            to: "marketplaces/m2/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let before = tree(v.path());
+        preview(v.path(), &op).unwrap();
+        assert_eq!(tree(v.path()), before, "a preview writes nothing");
+
+        let outcome = apply(v.path(), &op).unwrap();
+        assert!(v.path().join("marketplaces/m2/skillwright.md").is_file());
+        assert!(!v.path().join("marketplaces/m1").exists());
+        assert!(!v.path().join("marketplaces/m2/m2.md").exists());
+        assert_eq!(
+            read(v.path(), "notes.md"),
+            "see [t](marketplaces/m2/plugins/review/skills/triage.md)\n"
+        );
+        assert!(outcome.entries.iter().all(|e| !e.path.ends_with("m2.md")));
+        assert!(outcome.entries.iter().any(|e| matches!(
+            &e.applied,
+            Applied::Renamed { from } if from == "marketplaces/m1/skillwright.md"
+        ) && e.path == "marketplaces/m2/skillwright.md"));
     }
 
     #[test]

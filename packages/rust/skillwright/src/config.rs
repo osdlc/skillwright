@@ -23,13 +23,11 @@
 
 use std::path::{Path, PathBuf};
 
+pub use tradecraft_core::paths::{normalize_join, relative_path};
 pub use tradecraft_core::{
     AssetSetting, BuildSettings, DestinationSetting, HookSetting, ROOT_FILE, RootFile,
-    normalize_join, relative_path, resolve_path,
+    WORKSPACE_DIR, resolve_path,
 };
-
-/// The folder a workspace keeps its marketplaces in.
-pub const WORKSPACE_DIR: &str = "marketplaces";
 
 /// The folders whose presence makes a folder a vault with no root file.
 const CONVENTION_DIRS: &[&str] = &["plugins", "skills"];
@@ -73,23 +71,9 @@ pub fn is_convention_vault(dir: &Path) -> bool {
     CONVENTION_DIRS.iter().any(|name| dir.join(name).is_dir())
 }
 
-/// The workspace root file above the marketplace whose root is `dir`, when
-/// `dir` is `<workspace>/marketplaces/<m>/` and that file says
-/// `workspace: true`. A file that cannot be read is returned too: an exclusion
-/// it holds must not fail open, so loading it refuses the run.
+/// [`tradecraft_core::workspace_above`] over the real filesystem.
 pub fn workspace_above(dir: &Path) -> Option<PathBuf> {
-    let parent = dir.parent()?;
-    if parent.file_name()? != WORKSPACE_DIR {
-        return None;
-    }
-    let file = parent.parent()?.join(ROOT_FILE);
-    if !file.exists() {
-        return None;
-    }
-    match read_root_file(&file) {
-        RootLoad::Loaded(root) if !root.workspace => None,
-        _ => Some(file),
-    }
+    tradecraft_core::workspace_above(&tradecraft_core::NativeVfs, dir)
 }
 
 /// Each `marketplaces/<m>/skillwright.md` under a workspace root, by name.

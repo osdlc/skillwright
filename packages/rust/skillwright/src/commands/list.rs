@@ -189,6 +189,7 @@ fn print_model(
         harnesses,
         assets,
         hooks,
+        ..
     } = marketplace_inputs(run);
     let request = LoadRequest {
         vault_root: run.vault.clone(),
