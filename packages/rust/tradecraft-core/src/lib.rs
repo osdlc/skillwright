@@ -98,8 +98,8 @@ pub mod vfs;
 mod walk;
 
 pub use adopt::{
-    AdoptMode, AdoptReport, AdoptRequest, AdoptStatus, AdoptedSkill, DEFAULT_ADOPTED_PLUGIN,
-    adopt_skills, rewrite_to_wikilinks,
+    AdoptHashFix, AdoptHashStatus, AdoptMode, AdoptReport, AdoptRequest, AdoptStatus, AdoptedSkill,
+    DEFAULT_ADOPTED_PLUGIN, adopt_skills, fix_adopt_hashes, rewrite_to_wikilinks,
 };
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
 pub use authoring::{
@@ -140,7 +140,7 @@ pub use publish::{
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
     AssetSetting, BuildSettings, DestinationSetting, HookSetting, MarketplaceFields, ROOT_FILE,
-    RootFile, SettingsError, parse_root_file,
+    RootFile, SettingsError, compose_root_file, parse_root_file,
 };
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};

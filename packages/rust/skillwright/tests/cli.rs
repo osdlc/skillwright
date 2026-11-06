@@ -212,20 +212,6 @@ fn a_verb_that_writes_declares_all_seven() {
 // --- the not-implemented verbs -----------------------------------------------
 
 #[test]
-fn init_has_a_real_argv_surface_and_exits_2() {
-    let dir = tempfile::tempdir().unwrap();
-    let run = run(&["init"], dir.path());
-    assert_eq!(run.code, 2);
-    assert_eq!(run.stdout, "");
-    assert!(
-        run.stderr.starts_with("not implemented: init\n"),
-        "{}",
-        run.stderr
-    );
-    assert!(run.stderr.contains("tradecraft-core has neither"));
-}
-
-#[test]
 fn unpublish_with_its_note_exits_2() {
     let dir = tempfile::tempdir().unwrap();
     let run = run(
@@ -249,25 +235,167 @@ fn unpublish_without_its_required_note_is_a_usage_error() {
 #[test]
 fn a_stub_verbs_help_says_it_is_not_implemented_and_names_the_exit() {
     let dir = tempfile::tempdir().unwrap();
-    for verb in ["init", "unpublish"] {
-        let helped = run(&[verb, "--help"], dir.path());
-        assert_eq!(helped.code, 0);
-        assert!(helped.stdout.contains(&format!("not implemented: {verb}")));
-        assert!(helped.stdout.contains("exits 2"));
-        // The marker is the same sentence the exit prints. `init` takes no
-        // positional, so running it with one is a clap error and never
-        // reaches the exit.
-        let argv: Vec<&str> = if verb == "init" {
-            vec![verb]
-        } else {
-            vec![verb, "note.md"]
-        };
-        let ran = run(&argv, dir.path());
-        assert_eq!(ran.code, 2, "{}", ran.stderr);
-        let sentence = ran.stderr.lines().nth(1).unwrap();
-        assert!(!sentence.is_empty());
-        assert!(helped.stdout.contains(sentence), "{}", helped.stdout);
-    }
+    let helped = run(&["unpublish", "--help"], dir.path());
+    assert_eq!(helped.code, 0);
+    assert!(helped.stdout.contains("not implemented: unpublish"));
+    assert!(helped.stdout.contains("exits 2"));
+    // The marker is the same sentence the exit prints.
+    let ran = run(&["unpublish", "note.md"], dir.path());
+    assert_eq!(ran.code, 2, "{}", ran.stderr);
+    let sentence = ran.stderr.lines().nth(1).unwrap();
+    assert!(!sentence.is_empty());
+    assert!(helped.stdout.contains(sentence), "{}", helped.stdout);
+}
+
+// --- init --------------------------------------------------------------------
+
+#[test]
+fn init_writes_the_name_and_the_output_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("My Skills");
+    std::fs::create_dir(&folder).unwrap();
+    let ran = run(&["init", "--out", "dist"], &folder);
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    let root = tradecraft_core::parse_root_file(
+        &std::fs::read_to_string(folder.join("skillwright.md")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(root.build.out.as_deref(), Some("dist"));
+    assert_eq!(root.marketplace.name.as_deref(), Some("my-skills"));
+}
+
+#[test]
+fn init_takes_a_name_and_refuses_a_bad_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let bad = run(
+        &["init", "--out", "dist", "--name", "Not A Slug"],
+        dir.path(),
+    );
+    assert_eq!(bad.code, 3, "{}", bad.stderr);
+    assert!(!dir.path().join("skillwright.md").exists());
+
+    let good = run(&["init", "--out", "dist", "--name", "tools"], dir.path());
+    assert_eq!(good.code, 0, "{}", good.stderr);
+    let text = std::fs::read_to_string(dir.path().join("skillwright.md")).unwrap();
+    assert!(text.contains("name: tools"), "{text}");
+}
+
+#[test]
+fn init_needs_out_off_a_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    let ran = run(&["init"], dir.path());
+    assert_eq!(ran.code, 3, "{}", ran.stderr);
+    assert!(ran.stderr.contains("--out"), "{}", ran.stderr);
+    assert!(!dir.path().join("skillwright.md").exists());
+}
+
+#[test]
+fn init_refuses_an_existing_root_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("skillwright.md"), "---\nname: kept\n---\n").unwrap();
+    let ran = run(&["init", "--out", "dist"], dir.path());
+    assert_eq!(ran.code, 1, "{}", ran.stderr);
+    assert!(ran.stderr.contains("already exists"), "{}", ran.stderr);
+    let text = std::fs::read_to_string(dir.path().join("skillwright.md")).unwrap();
+    assert!(text.contains("kept"));
+}
+
+#[test]
+fn a_vault_init_wrote_builds() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);
+    let skill = dir.path().join("skills/one");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("one.md"),
+        "---\nname: one\ndescription: The first skill.\n---\nBody.\n",
+    )
+    .unwrap();
+    let ran = run(&["build", "--yes"], dir.path());
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    assert!(dir.path().join("dist").is_dir());
+}
+
+// --- check --fix-adopt-hashes ------------------------------------------------
+
+/// A vault holding one adopted skill, as `adopt` wrote it.
+fn adopted_vault() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source/demo");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("SKILL.md"),
+        "---\nname: demo\ndescription: A demo.\narguments:\n  - path\n---\nBody.\n",
+    )
+    .unwrap();
+    let vault = dir.path().join("vault");
+    std::fs::create_dir_all(&vault).unwrap();
+    std::fs::write(
+        vault.join("skillwright.md"),
+        "---\nname: v\nbuild:\n  out: dist\n  namespace: sw\n---\n",
+    )
+    .unwrap();
+    let source = source.to_string_lossy().into_owned();
+    let ran = run(&["adopt", &source, "--yes"], &vault);
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    (dir, vault)
+}
+
+/// Rewrite a prefixed note and its vault to bare keys, as `migrate` does.
+fn rename_to_bare(vault: &std::path::Path, note: &std::path::Path) {
+    let text = std::fs::read_to_string(note).unwrap();
+    std::fs::write(note, text.replace("sw-", "")).unwrap();
+    std::fs::write(
+        vault.join("skillwright.md"),
+        "---\nname: v\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn fix_adopt_hashes_refreshes_a_note_whose_only_change_is_the_rename() {
+    let (_dir, vault) = adopted_vault();
+    let note = vault.join("plugins/adopted/skills/demo/demo.md");
+    rename_to_bare(&vault, &note);
+    let before = std::fs::read_to_string(&note).unwrap();
+
+    let dry = run(&["check", "--fix-adopt-hashes", "--dry-run"], &vault);
+    assert_eq!(dry.code, 0, "{}", dry.stderr);
+    assert!(dry.stdout.contains("would refresh"), "{}", dry.stdout);
+    assert_eq!(std::fs::read_to_string(&note).unwrap(), before);
+
+    let fixed = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
+    assert_eq!(fixed.code, 0, "{}", fixed.stderr);
+    assert!(fixed.stdout.contains("refreshed"), "{}", fixed.stdout);
+    assert_ne!(std::fs::read_to_string(&note).unwrap(), before);
+
+    let again = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert_eq!(again.stdout, "");
+}
+
+#[test]
+fn fix_adopt_hashes_leaves_a_real_edit_alone() {
+    let (_dir, vault) = adopted_vault();
+    let note = vault.join("plugins/adopted/skills/demo/demo.md");
+    rename_to_bare(&vault, &note);
+    let edited = std::fs::read_to_string(&note).unwrap() + "A new line.\n";
+    std::fs::write(&note, &edited).unwrap();
+
+    let ran = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
+    assert_eq!(ran.code, 1, "{}", ran.stderr);
+    assert!(ran.stdout.contains("edited, left alone"), "{}", ran.stdout);
+    assert_eq!(std::fs::read_to_string(&note).unwrap(), edited);
+}
+
+#[test]
+fn fix_adopt_hashes_asks_for_yes_off_a_terminal() {
+    let (_dir, vault) = adopted_vault();
+    let note = vault.join("plugins/adopted/skills/demo/demo.md");
+    rename_to_bare(&vault, &note);
+    let ran = run(&["check", "--fix-adopt-hashes"], &vault);
+    assert_eq!(ran.code, 3, "{}", ran.stderr);
+    assert!(ran.stderr.contains("--yes"), "{}", ran.stderr);
 }
 
 #[test]

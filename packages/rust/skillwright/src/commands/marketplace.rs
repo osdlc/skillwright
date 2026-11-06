@@ -26,8 +26,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use tradecraft_core::{
-    AssetSpec, ExportMode, ExportRequest, ExportUnit, HookFileSpec, MarketplaceConfig, NativeVfs,
-    export_skills, owned_paths,
+    AdoptHashFix, AdoptHashStatus, AdoptMode, AssetSpec, ExportMode, ExportRequest, ExportUnit,
+    HookFileSpec, MarketplaceConfig, NativeVfs, export_skills, fix_adopt_hashes, owned_paths,
 };
 
 use crate::config::{ROOT_FILE, resolve_against_cwd, resolve_configured_path};
@@ -135,6 +135,97 @@ pub(crate) fn marketplace_inputs(run: &ResolvedRun) -> MarketplaceInputs {
         harnesses,
         assets,
         hooks,
+    }
+}
+
+/// Run `skillwright check --fix-adopt-hashes` and return the exit code.
+///
+/// Like every verb that writes, it lists the plan and asks; `--yes` accepts,
+/// and `--dry-run` stops at the list. It reads no output folder. Exits 1 when
+/// a note was really edited, because that hash is left alone.
+pub fn run_fix_adopt_hashes(flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
+    let run = match resolve_run(&flags.common, &ctx.cwd, ctx.err) {
+        Ok(run) => run,
+        Err(code) => return code,
+    };
+    let runs = if run.is_workspace() {
+        match workspace_runs(&run, &flags.common, flags.marketplace.as_deref(), ctx.err) {
+            Ok(runs) => runs,
+            Err(code) => return code,
+        }
+    } else {
+        vec![run]
+    };
+
+    let mut exit = EXIT_OK;
+    for member in &runs {
+        let code = fix_hashes_of(flags, member, ctx);
+        if exit == EXIT_OK {
+            exit = code;
+        }
+    }
+    exit
+}
+
+/// [`run_fix_adopt_hashes`] for one marketplace.
+fn fix_hashes_of(flags: &ExportFlags, run: &ResolvedRun, ctx: &mut CommandContext<'_>) -> i32 {
+    let skills_root = resolve_skills_root(flags.skills_root.as_deref(), &ctx.cwd);
+    let fix = |mode| {
+        fix_adopt_hashes(
+            &NativeVfs,
+            &run.vault,
+            skills_root.as_deref(),
+            &run.core_namespace(),
+            mode,
+        )
+    };
+    let plan = match fix(AdoptMode::DryRun) {
+        Ok(plan) => plan,
+        Err(err) => return blocked(ctx.err, &format!("the vault scan could not run: {err}")),
+    };
+    let refreshed = |fix: &&AdoptHashFix| fix.status == AdoptHashStatus::Refreshed;
+
+    if !flags.dry_run && !flags.yes && plan.iter().any(|fix| refreshed(&fix)) {
+        let lines: Vec<String> = plan
+            .iter()
+            .filter(refreshed)
+            .map(|fix| format!("refresh the adopt hash of {}", fix.note))
+            .collect();
+        let gate = confirm_write("check --fix-adopt-hashes", &lines, ctx.err);
+        if gate != EXIT_OK {
+            return gate;
+        }
+    }
+    if !flags.dry_run
+        && let Err(err) = fix(AdoptMode::Write)
+    {
+        return blocked(ctx.err, &format!("the hashes could not be written: {err}"));
+    }
+
+    if flags.json {
+        match serde_json::to_string_pretty(&plan) {
+            Ok(document) => {
+                let _ = writeln!(ctx.out, "{document}");
+            }
+            Err(err) => return blocked(ctx.err, &format!("the report would not serialize: {err}")),
+        }
+    } else {
+        for fix in &plan {
+            let word = match fix.status {
+                AdoptHashStatus::Edited => "edited, left alone",
+                _ if flags.dry_run => "would refresh",
+                _ => "refreshed",
+            };
+            let _ = writeln!(ctx.out, "{}  {word}", fix.note);
+        }
+    }
+    if plan
+        .iter()
+        .all(|fix| fix.status == AdoptHashStatus::Refreshed)
+    {
+        EXIT_OK
+    } else {
+        EXIT_REFUSED
     }
 }
 

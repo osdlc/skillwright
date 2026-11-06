@@ -9,10 +9,11 @@
 //! `adopt` ([`crate::commands::adopt`]), `publish`
 //! ([`crate::commands::publish`]), `harness install|update|uninstall`
 //! ([`crate::commands::harness`]) and `new`, `rename`, `move`, `delete`,
-//! `convert` ([`crate::commands::authoring`]). `init` and `unpublish` have a
-//! real argv surface but exit honestly `not implemented` rather than fake a
-//! result — see `WAITS_ON_CORE`. Their `--help` says so too, from the
-//! same sentence the exit prints.
+//! `convert` ([`crate::commands::authoring`]) and `init`
+//! ([`crate::commands::init`]). `unpublish` has a real argv surface but exits
+//! honestly `not implemented` rather than fake a result — see
+//! `WAITS_ON_CORE`. Its `--help` says so too, from the same sentence the exit
+//! prints.
 //!
 //! Global flags (`--vault --config --namespace --json --dry-run --yes
 //! --quiet`) are declared on each subcommand rather than once on the root —
@@ -40,8 +41,9 @@ use crate::commands::authoring::{
 use crate::commands::bump::{BumpFlags, run_bump};
 use crate::commands::harness::adapter::{CLAUDE, CODEX, CURSOR, HarnessAdapter, Scope};
 use crate::commands::harness::{HarnessFlags, HarnessVerb, run_harness};
+use crate::commands::init::{InitFlags, run_init};
 use crate::commands::list::{ListFlags, run_list};
-use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export};
+use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export, run_fix_adopt_hashes};
 use crate::commands::publish::{PublishFlags, run_publish};
 use crate::commands::status::{StatusFlags, run_status};
 use crate::commands::watch::run_watch;
@@ -73,16 +75,10 @@ const VERBS: [&str; 9] = [
 ///
 /// What remains waits on a capability the core does not have — a wizard, a
 /// removal path — rather than on a binding nobody wrote.
-const WAITS_ON_CORE: [(&str, &str); 2] = [
-    (
-        "init",
-        "needs the wizard's vault-detection and prompt flow, plus a config-writing capability. tradecraft-core has neither, and this package never writes configuration.",
-    ),
-    (
-        "unpublish",
-        "needs removal logic: PublishStatus is written/unchanged/refused with no `removed`, and nothing in tradecraft-core deletes a published file.",
-    ),
-];
+const WAITS_ON_CORE: [(&str, &str); 1] = [(
+    "unpublish",
+    "needs removal logic: PublishStatus is written/unchanged/refused with no `removed`, and nothing in tradecraft-core deletes a published file.",
+)];
 
 fn waits_on(verb: &str) -> &'static str {
     WAITS_ON_CORE
@@ -245,12 +241,11 @@ enum Verb {
     /// Render the vault into its standalone marketplaces and swap them into place.
     Build(BuildArgs),
     /// Report the marketplace's drift against the vault. Writes nothing; exits 1 on drift.
-    Check(ExportArgs),
+    Check(CheckArgs),
     /// List every publishable note in the vault. Writes nothing.
     List(ListArgs),
-    /// Set up a vault: config, folders, an example skill, destinations.
-    #[command(before_help = stub_help("init"))]
-    Init(StubArgs),
+    /// Write a `skillwright.md` in the current folder.
+    Init(InitArgs),
     /// Bring skills already on disk into the vault as notes.
     Adopt(AdoptArgs),
     /// Report each skill's state at each destination.
@@ -325,6 +320,16 @@ struct ExportArgs {
     marketplace: Option<String>,
     #[command(flatten)]
     globals: Globals,
+}
+
+/// `check`'s own args, layered over the shared [`ExportArgs`].
+#[derive(Args, Debug)]
+struct CheckArgs {
+    #[command(flatten)]
+    export: ExportArgs,
+    /// Refresh the adopt hash of each note whose only change is the key rename, instead of checking. Needs no output folder.
+    #[arg(long)]
+    fix_adopt_hashes: bool,
 }
 
 /// `build`'s own args, layered over the shared [`ExportArgs`]: everything
@@ -410,19 +415,19 @@ struct AdoptArgs {
     globals: Globals,
 }
 
-/// A stubbed verb whose only flags are the globals.
-///
-/// Parsed and then dropped: the argv surface exists so the invocation is
-/// accepted and refused honestly, and nothing reads a value until the verb
-/// is implemented.
-#[allow(dead_code)]
+/// `init`'s flags. It reads no configuration, so it takes none of the globals.
 #[derive(Args, Debug)]
-struct StubArgs {
-    #[command(flatten)]
-    globals: Globals,
+struct InitArgs {
+    /// Where `build` and `check` write. Asked for on a terminal, required otherwise.
+    #[arg(long, value_name = "path")]
+    out: Option<String>,
+    /// The marketplace name. Defaults to the folder's name.
+    #[arg(long, value_name = "name")]
+    name: Option<String>,
 }
 
-/// `unpublish`'s surface, parsed and then dropped — see [`StubArgs`].
+/// `unpublish`'s surface, parsed and then dropped: the argv exists so the
+/// invocation is accepted and refused honestly.
 #[allow(dead_code)]
 #[derive(Args, Debug)]
 struct UnpublishArgs {
@@ -891,7 +896,10 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
         Verb::Publish(args) => run_publish(&args.flags(), ctx),
         Verb::Build(args) if args.watch => run_watch(&args.export.flags(), ctx),
         Verb::Build(args) => run_export(ExportVerb::Build, &args.export.flags(), ctx),
-        Verb::Check(args) => run_export(ExportVerb::Check, &args.flags(), ctx),
+        Verb::Check(args) if args.fix_adopt_hashes => {
+            run_fix_adopt_hashes(&args.export.flags(), ctx)
+        }
+        Verb::Check(args) => run_export(ExportVerb::Check, &args.export.flags(), ctx),
         Verb::List(args) => run_list(
             &ListFlags {
                 skills_root: args.skills_root.clone(),
@@ -912,7 +920,13 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
             },
             ctx,
         ),
-        Verb::Init(_) => not_implemented(ctx.err, "init", waits_on("init")),
+        Verb::Init(args) => run_init(
+            &InitFlags {
+                out: args.out.clone(),
+                name: args.name.clone(),
+            },
+            ctx,
+        ),
         Verb::Adopt(args) => run_adopt(&args.flags(), ctx),
         Verb::Unpublish(_) => not_implemented(ctx.err, "unpublish", waits_on("unpublish")),
         Verb::Bump(args) => run_bump(&args.flags(), ctx),

@@ -278,6 +278,22 @@ fn from_yaml<T: DeserializeOwned>(value: &serde_yaml::Value) -> Result<T, serde_
     serde_json::to_value(value).and_then(serde_json::from_value)
 }
 
+/// A new root file naming the marketplace and its output folder, the file
+/// `skillwright init` writes.
+#[must_use]
+pub fn compose_root_file(name: &str, out: &str) -> String {
+    use serde_yaml::{Mapping, Value};
+
+    let string = |value: &str| Value::String(value.to_owned());
+    let mut build = Mapping::new();
+    build.insert(string("out"), string(out));
+    let mut map = Mapping::new();
+    map.insert(string("name"), string(name));
+    map.insert(string("build"), Value::Mapping(build));
+    let yaml = serde_yaml::to_string(&map).expect("a mapping of strings serializes");
+    format!("---\n{yaml}---\n")
+}
+
 /// Read a root file's text. A file with no frontmatter is a root file with
 /// every default.
 ///
