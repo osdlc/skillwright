@@ -214,9 +214,9 @@
       "line": 73,
       "title": "the no-root-file note does not name init",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
     },
     {
       "id": "r2-1",
