@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 63,
-  "head": "737ff3bb24d29d3c8c89c19042ab1b4182cf8234",
+  "head": "4e78f201a83d6cc5fd18f47b9a0c888991e041d2",
   "base": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6",
-  "round": 1,
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-06T07:24:17.275Z"
@@ -148,6 +148,171 @@
       "line": 541,
       "title": "empty-plugin refusal hard-codes sw-targets",
       "comment": "https://github.com/osdlc/skillwright/pull/63#pullrequestreview-5796820114",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/model/cascade.rs",
+      "line": 251,
+      "title": "An inherited block key overrides the note's own frontmatter",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/model/cascade.rs",
+      "line": 156,
+      "title": "Single-note and pack publish ignore the marketplace note for vault-level members",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/model/cascade.rs",
+      "line": 262,
+      "title": "list reports targets the build does not use",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/model/cascade.rs",
+      "line": 71,
+      "title": "A container note whose name differs from its folder is not read",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-5",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/discover.rs",
+      "line": 1077,
+      "title": "A plain note at a container path inside a skill bundle stops the whole scan",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-6",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/model/cascade.rs",
+      "line": 238,
+      "title": "The manifest rule hides plugin block keys only the marketplace manifest reads",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-7",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/discover.rs",
+      "line": 315,
+      "title": "Block keys held back from every file get no warning",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-8",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/keys.rs",
+      "line": 76,
+      "title": "A blank author or owner on a note now stops the build",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-9",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/keys.rs",
+      "line": 461,
+      "title": "Under a namespace, bare Claude arguments get a false warning",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-10",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/discover.rs",
+      "line": 228,
+      "title": "A dotted user key is reported as dropped but is published",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-11",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 981,
+      "title": "A non-mapping block metadata is dropped when the skill has unknown keys",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-12",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/model/cascade.rs",
+      "line": 242,
+      "title": "An agent-only block key is inherited by skills and commands",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-13",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/vault.rs",
+      "line": 381,
+      "title": "The take_string_list doc comment now sits on take_argument_names",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-14",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/keys.rs",
+      "line": 3,
+      "title": "The module doc count and the arguments summary are stale",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-15",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/keys.rs",
+      "line": 247,
+      "title": "A string allowed-tools is published under metadata with no warning",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
