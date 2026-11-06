@@ -277,13 +277,10 @@ fn run(vault: Vault<'_>, op: &AuthoringOp, mode: Mode) -> Result<Outcome, ApplyE
             to,
             bundle,
             frontmatter,
-        }
-        | AuthoringOp::Move {
-            from,
-            to,
-            bundle,
-            frontmatter,
         } => relocate(vault, from, to, *bundle, frontmatter, &[], mode),
+        AuthoringOp::Move { from, to, bundle } => {
+            relocate(vault, from, to, *bundle, &[], &[], mode)
+        }
         AuthoringOp::ConvertKind {
             from,
             to,
@@ -1281,7 +1278,6 @@ mod tests {
             from: "inbox/a.md".to_owned(),
             to: "archive/a.md".to_owned(),
             bundle: false,
-            frontmatter: vec![],
         };
         apply(v.path(), &op).unwrap();
 
@@ -1635,7 +1631,6 @@ mod tests {
             from: "locked/alpha.md".to_owned(),
             to: "moved/gamma.md".to_owned(),
             bundle: false,
-            frontmatter: vec![],
         };
         let err = apply(v.path(), &op).unwrap_err();
         unlock_writes(&v.path().join("locked"));

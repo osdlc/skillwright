@@ -18,9 +18,9 @@ use tradecraft_core::{
 };
 
 use crate::config::{
-    ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, find_root_file, is_convention_vault,
-    print_warnings, read_root_file, resolve_against_cwd, resolve_configured_path, user_skills_dir,
-    workspace_above, workspace_members,
+    ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, is_convention_vault, print_warnings,
+    read_root_file, resolve_against_cwd, resolve_configured_path, user_skills_dir, workspace_above,
+    workspace_members,
 };
 use crate::exit::{blocked, no_config};
 
@@ -260,7 +260,7 @@ pub fn resolve_run(
         let file = dir.join(ROOT_FILE);
         let file = file.is_file().then_some(file);
         (dir, file)
-    } else if let Some(file) = find_root_file(cwd) {
+    } else if let Some(file) = tradecraft_core::find_root_file(&tradecraft_core::NativeVfs, cwd) {
         let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
         (dir, Some(file))
     } else if is_convention_vault(cwd) {

@@ -53,6 +53,27 @@ assert_eq!(report.files.len(), 2);
 `examples/publish.rs` is the same code as a program:
 `cargo run -p tradecraft-core --example publish`.
 
+## Load a vault and build it
+
+A host that embeds the library does these three steps, in order. The CLI does
+the same.
+
+1. `find_root_file(&vfs, start)` walks up from `start` to the nearest
+   `skillwright.md`. The folder holding it is the vault. Read the file and
+   `parse_root_file(&text)` gives a `RootFile`.
+2. `marketplace_inputs(&root, folder_name, config_dir, home)` resolves the
+   root file into a `MarketplaceInputs`: the config, the harnesses, and the
+   `build.assets` and `build.hooks` with their paths resolved. Skip it and a
+   build gets no assets and no hooks.
+3. `export_skills(&vfs, &request, &ns)` builds, or checks, the marketplace.
+   Put the `MarketplaceInputs` fields in the `ExportRequest`.
+
+To rename or delete a marketplace folder, plan it with
+`plan_rename_marketplace` or `plan_delete_container(…, EntityKind::Marketplace)`,
+passing the entry `marketplaces/<m>/skillwright.md`. The returned
+`AuthoringOp` moves or trashes the whole folder. The library plans; the host
+applies the op.
+
 ## What it covers
 
 | Module | Does |
@@ -63,6 +84,7 @@ assert_eq!(report.files.len(), 2);
 | `projection` | Render one skill into one tool's files, through `agent-adapt` |
 | `publish` | Write a note onto a destination, idempotently, or report what a write would do |
 | `export` | Build the vault into one marketplace tree per tool, or check the tree for drift |
+| `paths` | Find the root file and resolve it into a build's inputs |
 | `status` | Report a note's publish state at a destination |
 | `adopt` | Import published `SKILL.md` bundles as vault notes |
 | `authoring` | Plan a new, renamed, moved, deleted or converted note |

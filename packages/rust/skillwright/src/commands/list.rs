@@ -22,7 +22,7 @@ use tradecraft_core::model::load::{LoadRequest, load};
 use tradecraft_core::settings::ROOT_FILE;
 use tradecraft_core::{DiscoveryReport, EntityKind, discover_components, inherit_targets};
 
-use crate::commands::marketplace::{MarketplaceInputs, marketplace_inputs};
+use crate::commands::marketplace::marketplace_inputs;
 use crate::config::relative_path;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked};
@@ -31,6 +31,7 @@ use crate::resolve::{
     CommonFlags, ResolvedRun, refuse_workspace, resolve_run, resolve_skills_root, workspace_runs,
     workspace_warnings,
 };
+use tradecraft_core::MarketplaceInputs;
 
 /// The resolved flags of `skillwright list`.
 pub struct ListFlags {
