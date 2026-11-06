@@ -170,9 +170,9 @@
       "line": 206,
       "title": "harness install ignores a moved packs folder",
       "comment": "https://github.com/osdlc/skillwright/pull/64#pullrequestreview-5796895579",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "1eb93caea312eb8fbdde432aee1acf247f41d9d3"
     },
     {
       "id": "r2-1",
