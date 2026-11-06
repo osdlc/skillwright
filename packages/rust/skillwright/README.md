@@ -88,18 +88,20 @@ publishing skills/code-review.md -> /path/to/my-project (claude-code)
 | `harness install <claude\|codex\|cursor>` | Register the built marketplace with a harness and install its plugins, through the harness's own `plugin` command |
 | `harness update <claude\|codex\|cursor>` | Install what is missing, then update each plugin whose version changed |
 | `harness uninstall <claude\|codex\|cursor>` | Remove the marketplace's plugins from a harness, and with `--marketplace` its registration too |
-| `init` | Declared, and exits `not implemented` |
+| `init` | Write a `skillwright.md` in the current folder, with the marketplace's name and `build.out` |
 | `unpublish` | Declared, and exits `not implemented` |
 
-`build` and `check` are one path in two modes. The `harness` verbs change
-nothing when run a second time.
+`build` and `check` are one path in two modes. `check --fix-adopt-hashes` does
+not check: it refreshes the adopt hash of each note whose only change is the key
+rename, and needs no output folder. The `harness` verbs change nothing when run
+a second time.
 
 stdout carries the report and nothing else. Progress, tallies, prompts and
 error messages go to stderr. `--json` prints the report as one JSON document.
 
 ## Options
 
-Every verb accepts these after the verb name, for example
+Every verb but `init` accepts these after the verb name, for example
 `skillwright build --vault ~/notes --out dist`:
 
 | Option | Does |
@@ -117,7 +119,8 @@ Each verb's own options:
 | Verb | Its own options |
 |---|---|
 | `publish` | `[note...]`, `--to <root>` (repeatable), `--target <target>`, `--all`, `--overwrite <path>` (repeatable) |
-| `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--watch` (`build` only) |
+| `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--watch` (`build` only), `--fix-adopt-hashes` (`check` only) |
+| `init` | `--out <path>`, `--name <name>` |
 | `list` | `--skills-root <path>`, `--model` (print the loaded marketplace model as JSON) |
 | `status` | `[note]`, `--check` |
 | `adopt` | `[source...]`, `--from <location>` (repeatable), `--from-git <ref>` (repeatable), `--plugin <name>`, `--into <path>`, `--set-targets <target>` (repeatable), `--only <name>` (repeatable), `--overwrite <path>` (repeatable) |
@@ -156,7 +159,6 @@ owner: acme
 license: MIT
 build:
   out: dist             # required, here or as --out; `.` builds beside this file
-  namespace: sw
   harnesses: [claude, codex]
   destinations:
     - root: ~/code/my-project
@@ -165,8 +167,10 @@ build:
 ```
 
 The `build:` keys are `out`, `harnesses`, `namespace`, `launcher_path`,
-`require_descriptions`, `destinations`, `scan_locations`, `assets` and
-`hooks`. An unknown key is a warning, not an error.
+`require_descriptions`, `destinations`, `scan_locations`, `assets`, `hooks`,
+`exclude` and `patterns`. An unknown key is a warning, not an error. See the
+[`skillwright.md` reference](../../../docs/reference/skillwright-md.md), and the
+[field reference](../../../docs/reference/fields.md) for every frontmatter key.
 
 The vault follows a folder convention:
 
