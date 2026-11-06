@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 65,
-  "head": "c90480485bd93ba1ea808d2c5697827738687922",
+  "head": "93aab210db1425e4be2ff9d665d33b352d24fdb6",
   "base": "6db7f65d7c881d173a1eee2ebd13989c12e05094",
-  "round": 3,
+  "round": 4,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-06T09:41:58.071Z"
@@ -525,6 +525,17 @@
       "status": "fixed",
       "reason": null,
       "fixedIn": "93aab21"
+    },
+    {
+      "id": "r4-1",
+      "round": 4,
+      "path": null,
+      "line": null,
+      "title": "workspace refusal tells rename to run inside a member, where it cannot",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
     }
   ]
 }
