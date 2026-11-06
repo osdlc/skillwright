@@ -104,9 +104,9 @@
       "line": 97,
       "title": "plain Markdown links to a never-ship file are not refused",
       "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032144",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
     },
     {
       "id": "r1-10",
