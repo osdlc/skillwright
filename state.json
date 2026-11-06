@@ -412,9 +412,9 @@
       "line": 144,
       "title": "crate README: all three points of consumer item 17 remain, and it says tc- keys are not errors",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5798131165",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab210db1425e4be2ff9d665d33b352d24fdb6"
     },
     {
       "id": "r3-3",
