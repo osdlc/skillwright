@@ -4888,14 +4888,11 @@ mod tests {
         // keyed by the runtime rather than the destination would hand
         // `portable` the `codex` block. The block is keyed by the destination
         // it names, and `portable` is not that destination.
-        let block = "sw-codex:\n  policy.allow_implicit_invocation: true\n";
+        let block = "sw-codex:\n  compatibility: codex only\n";
         let vfs = vault_with_overrides(block);
         publish_skill(&vfs, &request("/dest", "portable"), &sw()).unwrap();
         let portable = published_skill_md(&vfs, "/dest/.agents/skills/code-review/SKILL.md");
-        assert!(
-            !portable.contains("policy.allow_implicit_invocation"),
-            "{portable}"
-        );
+        assert!(!portable.contains("codex only"), "{portable}");
     }
 
     #[test]

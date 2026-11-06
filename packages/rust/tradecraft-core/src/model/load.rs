@@ -30,7 +30,7 @@ use crate::compile::{
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION_REASON,
-    NEVER_SHIPS_REASON, UNKNOWN_KEY_REASON, discover_in, load_source,
+    NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON, UNKNOWN_KEY_REASON, discover_in, load_source,
 };
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
@@ -212,7 +212,8 @@ pub fn load(
         .into_iter()
         .filter(|w| {
             ours.contains(w.path.as_str())
-                || (w.reason == NEVER_SHIPS_REASON && !another_marketplace(&w.path))
+                || ([NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON].contains(&w.reason.as_str())
+                    && !another_marketplace(&w.path))
         })
         .collect();
     // Named, never dropped: a pack has a place for skills, commands and hooks
@@ -370,6 +371,7 @@ pub fn load(
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
     apply_naming(&mut plugins, config)?;
     crate::harness::manifest::check_packs(config)?;
+    crate::harness::manifest::check_block_metadata(config)?;
 
     Ok(Marketplace {
         name,
@@ -999,6 +1001,19 @@ pub(crate) fn targets_name(targets: Option<&[String]>, canonical: &str) -> bool 
 /// note or the config. It ships as [`DEFAULT_PLUGIN_VERSION`], and a harness compares versions
 /// to decide whether an installed pack is out of date — so a pack that never
 /// states one never looks updated.
+/// The folder a plugin's members sit in, as a scan spells it.
+fn members_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name: &str) -> String {
+    discovered
+        .iter()
+        .filter(|c| c.plugin.as_deref() == Some(name) && belongs_to(c, market))
+        .find_map(|c| {
+            let path = c.vault_relative_path.as_str();
+            let at = path.find(&format!("/{name}/"))?;
+            Some(path[..at + 1 + name.len()].to_owned())
+        })
+        .unwrap_or_else(|| format!("plugins/{name}"))
+}
+
 fn missing_versions(
     discovered: &[DiscoveredComponent],
     market: Option<&str>,
@@ -1019,13 +1034,16 @@ fn missing_versions(
                 .and_then(|o| o.version.as_ref())
                 .is_none()
         })
-        .map(|name| DiscoveryWarning {
-            path: format!("plugins/{name}"),
-            reason: "missing-version".to_owned(),
-            detail: format!(
-                "plugin `{name}` has no note, so it states no version; published as `0.1.0`. \
-                 Add `plugins/{name}/{name}.md` with a `version`"
-            ),
+        .map(|name| {
+            let folder = members_folder(discovered, market, name);
+            DiscoveryWarning {
+                detail: format!(
+                    "plugin `{name}` has no note, so it states no version; published as `0.1.0`. \
+                     Add `{folder}/{name}.md` with a `version`"
+                ),
+                path: folder,
+                reason: "missing-version".to_owned(),
+            }
         });
     noted
         .iter()

@@ -254,6 +254,12 @@ fn is_build_output(event: &notify::Event, out: &Path, built: &[String]) -> bool 
 fn watch_targets(run: &crate::resolve::ResolvedRun) -> Vec<(PathBuf, RecursiveMode)> {
     let mut targets: BTreeMap<PathBuf, RecursiveMode> = BTreeMap::new();
     targets.insert(run.vault.clone(), RecursiveMode::Recursive);
+    // A workspace file above feeds this build too.
+    if let Some(parent) =
+        crate::config::workspace_above(&run.vault).and_then(|file| Some(file.parent()?.to_owned()))
+    {
+        targets.insert(parent, RecursiveMode::NonRecursive);
+    }
     let build = &run.config.build;
     let sources = build
         .assets
@@ -484,6 +490,31 @@ mod tests {
         // rename-over save is still seen.
         assert!(targets.contains(&(root.path().join("bin"), RecursiveMode::NonRecursive)));
         assert_eq!(targets.len(), 3);
+    }
+
+    #[test]
+    fn a_workspace_file_above_is_watched() {
+        use crate::config::RootFile;
+        use crate::resolve::ResolvedRun;
+
+        let root = tempfile::tempdir().unwrap();
+        let vault = root.path().join("marketplaces/m");
+        fs::create_dir_all(&vault).unwrap();
+        fs::write(
+            root.path().join("skillwright.md"),
+            "---\nworkspace: true\n---\n",
+        )
+        .unwrap();
+        let run = ResolvedRun {
+            config: RootFile::default(),
+            config_dir: vault.clone(),
+            config_path: None,
+            namespace: None,
+            vault,
+        };
+        assert!(
+            watch_targets(&run).contains(&(root.path().to_path_buf(), RecursiveMode::NonRecursive))
+        );
     }
 
     #[test]

@@ -5,7 +5,8 @@
 //! * **The publish strip.** A key skillwright owns ([`Owner::Skillwright`])
 //!   is read into the model and never reaches a destination as written.
 //! * **Validation.** A key outside the table for a note's kind is unknown,
-//!   and gets a warning. It is never refused. A key of ours with the wrong
+//!   and gets a warning. Only a removed key or, with no namespace, an old
+//!   prefixed spelling ([`legacy_key`]) is refused. A key of ours with the wrong
 //!   [`Shape`] is refused when the note is read; [`Owner::Spec`] keys keep
 //!   their own readers in [`crate::vault`], so their shape is documentation.
 //! * **The cascade.** [`KeySpec::inherits`] decides which keys come down from
@@ -133,6 +134,52 @@ pub const BLOCK_IDENTITY_KEYS: &[&str] =
 /// note sits in decides its kind and its plugin.
 pub const REMOVED: &[&str] = &["kind", "plugin"];
 
+/// The stems a vault used before keys were bare.
+const LEGACY_STEMS: &[&str] = &["sw", "tc"];
+
+/// Old prefixed keys whose new home is not the same word, bare.
+const LEGACY_MOVED: &[(&str, &str)] = &[
+    ("kind", "the folder the note sits in"),
+    ("plugin", "the folder the note sits in"),
+    ("overrides", "a block named for the harness"),
+    ("source", "`adopted.source`"),
+    ("format", "`adopted.format`"),
+    ("source-hash", "`adopted.source_hash`"),
+    ("adopted-hash", "`adopted.hash`"),
+    ("adopted-at", "`adopted.at`"),
+    ("also-at", "`adopted.also_at`"),
+];
+
+/// The stem and the new home of `key`, when it is an old prefixed spelling of
+/// a key skillwright owns. A `sw-` key that matches nothing is not one.
+pub fn legacy_key(key: &str) -> Option<(&'static str, String)> {
+    let (stem, rest) = key.split_once('-')?;
+    let stem = LEGACY_STEMS.iter().find(|known| **known == stem)?;
+    if let Some((_, home)) = LEGACY_MOVED.iter().find(|(old, _)| *old == rest) {
+        return Some((stem, (*home).to_owned()));
+    }
+    let bare = rest.replace('-', "_");
+    is_skillwright_key(&bare).then(|| (*stem, format!("`{bare}`")))
+}
+
+/// The first old prefixed key in a nested `sw:` block, when `key` is a stem
+/// and `value` a mapping holding one.
+pub fn legacy_block(key: &str, value: &Value) -> Option<(&'static str, String)> {
+    if !LEGACY_STEMS.contains(&key) {
+        return None;
+    }
+    value
+        .as_object()?
+        .keys()
+        .find_map(|field| legacy_key(&format!("{key}-{field}")))
+}
+
+/// Whether any kind's row owns `key`.
+pub fn is_skillwright_key(key: &str) -> bool {
+    KEYS.iter()
+        .any(|spec| spec.key == key && spec.owner == Owner::Skillwright)
+}
+
 /// Every key skillwright reads, in the order the field reference lists them.
 pub const KEYS: &[KeySpec] = &[
     KeySpec {
@@ -237,7 +284,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::StringList,
         inherits: true,
-        summary: "Which harnesses get it. Absent means all; `[]` means none.",
+        summary: "Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `copilot`, `opencode` and `portable` for `publish`. `claude-code`, `codex-cli` and `github-copilot` also work. Absent means all; `[]` means none. Another name is refused.",
     },
     KeySpec {
         key: "arguments",

@@ -37,6 +37,7 @@ use tradecraft_core::{
 use yaml_splice::Value;
 
 use crate::apply::{self, Applied, ApplyError, Outcome, Vault};
+use crate::config::workspace_above;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
@@ -198,6 +199,12 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
         Ok(run) => run,
         Err(code) => return code,
     };
+    if workspace_above(&run.vault).is_some() {
+        return usage_error(
+            ctx.err,
+            "a marketplace holds no marketplaces: run `new marketplace` at the workspace root",
+        );
+    }
     let ns = run.core_namespace();
 
     let placement = Placement {

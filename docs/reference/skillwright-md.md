@@ -92,9 +92,15 @@ segment matches any number of segments. Globs are relative to this file.
   `build` and `check`.
 - A folder that never ships stays out whatever a pattern says, with a warning.
 - A note with a `description` in a never-ship folder under a kind folder, such as
-  `plugins/p/docs/x.md`, warns that it will not ship. A `docs/` page at the vault
-  root stays the author's own and gets no warning.
-- A plugin named `docs` or `tests` ships normally.
+  `plugins/p/docs/x.md`, warns that it will not ship. So does
+  `plugins/p/skills/docs/z.md`, where no skill claims `docs`. A `docs/` page at the
+  vault root stays the author's own and gets no warning.
+- A plugin named `docs` or `tests` ships normally, and so does a skill with that
+  name.
+- Inside a skill's folder, `docs/` and `tests/` never ship, and any other `.md`
+  ships as a file of that skill, with or without a `description`.
+- A plugin's `assets/` ships whatever its folders are called, and a link into it
+  is allowed.
 - Generated output is never read as source.
 
 `exclude` adds to the folders that never ship, and `publish <note>` refuses a note
@@ -128,9 +134,22 @@ that marketplace's file. A relative path or glob in an inherited key, such as
 `assets[].from`, reads from the member's folder, not the workspace's. A list a
 member leaves empty inherits, so `[]` cannot clear an inherited list.
 
-`skillwright new marketplace <name>` at the workspace root writes
-`marketplaces/<name>/skillwright.md`. Add its `build.out` before you build. Other
-authoring verbs run inside a marketplace folder.
+`skillwright new marketplace <name> --description <text>` at the workspace root
+writes `marketplaces/<name>/skillwright.md`. Add its `build.out` before you build.
+It is refused inside a marketplace. Other authoring verbs run inside a marketplace
+folder.
+
+A workspace builds only its marketplaces. `build`, `check` and `list` warn about
+components at its root, and about a `build.out` on the workspace file, which is
+not read. `list` at the root reads each marketplace with its own `exclude`,
+`patterns` and namespace. A workspace file that cannot be read stops every verb
+in its marketplaces.
+
+An inherited glob that matches nothing in one marketplace warns only if it matches
+nothing in any of them.
+
+`rename` moves a marketplace's folder. A link into that folder from outside it is
+not rewritten, and the build reports it.
 
 ## Where a value comes from
 
@@ -169,6 +188,38 @@ component in it does not count.
 
 A plugin note's `name` must match its folder, or it is refused.
 
+A note under a kind folder with frontmatter but no `name` or `description` warns
+`no-component-keys`, so a `desciption:` typo does not make it vanish.
+
+## What reaches each harness
+
+| Kind | Claude | Codex | Cursor | Pi |
+|---|---|---|---|---|
+| Skill | build, publish | build, publish | build, publish | build, publish |
+| Command | build, `publish <note>` | `publish <note>` | no | no |
+| Hook | build | build | build | no |
+| Agent | `publish <note>` | `publish <note>` | no | no |
+
+Agents reach no build on any harness, by design: a pack has no place for them, so
+each one is listed `not carried`. `publish <note>` writes one to a harness with an
+agent layout. A kind a harness cannot carry shows as `n/a` in `status`, and
+`status --check` passes it.
+
+A bare `publish` writes skills only. A plugin's pack, an agent and a command
+publish when their note is named.
+
+## What a manifest holds
+
+Each manifest keeps to what that harness documents:
+
+- Claude's marketplace entry has no `version`. `plugin.json` holds it: with both,
+  that one wins and `claude plugin validate` warns.
+- Cursor gets no `author.url` or `owner.url`, because its docs and schema list only
+  `name` and `email`.
+- Cursor's marketplace entry keeps `version`, `category` and `tags`. Cursor's docs
+  list them, and the entry is merged with `plugin.json`. The schema of the
+  `cursor/plugins` repository rejects them, so a listing there needs them removed.
+
 ## Harness blocks
 
 `claude:`, `codex:`, `cursor:` and `pi:` hold fields only that harness reads. On
@@ -188,7 +239,8 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
   owns or, when the output overlaps the vault, a source folder. It is also refused
   when it equals the root file.
   When you change `packs` or `out`, a folder inside the vault that the old value
-  left behind is reported. A folder outside the vault is left in place with no
-  warning, because nothing records it, so remove it yourself.
+  left behind gets a `stale-output` warning and stays in place. A folder outside
+  the vault gets no warning, because nothing records it. Remove either one
+  yourself.
 - `pi: {naming: bare}` on the marketplace or a plugin publishes Pi skills under
   their bare names. `prefixed` is the default.

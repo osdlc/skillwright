@@ -2685,7 +2685,17 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
     )
     .unwrap();
     let config = status_config(dir.path(), &vault);
-    let published = run(&["publish", "--config", &config, "--yes"], dir.path());
+    let pack = plugin.join("core-tools.md");
+    let published = run(
+        &[
+            "publish",
+            pack.to_str().unwrap(),
+            "--config",
+            &config,
+            "--yes",
+        ],
+        dir.path(),
+    );
     assert_eq!(published.code, 0, "{}", published.stderr);
     fs::write(
         &member,

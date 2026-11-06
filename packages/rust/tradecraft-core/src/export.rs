@@ -713,6 +713,17 @@ fn check_output(
     // The swap deletes each path it replaces, so an asset sourced from inside
     // one would be gone after the build that copied it.
     for asset in &request.assets {
+        if !vfs.exists(&asset.source) {
+            return Err(CoreError::refused(
+                "missing-asset",
+                format!(
+                    "`build.assets` names `{}`, which is not there. A relative `from` reads from \
+                     the marketplace's own folder, also when a workspace file set it. Nothing \
+                     was written",
+                    asset.source.display()
+                ),
+            ));
+        }
         if asset.source.is_absolute()
             && let Some(replaced) = replaced_entry_holding(vfs, &out_root, &owned, &asset.source)?
         {
@@ -829,7 +840,11 @@ pub fn export_skills(
         .filter_map(|path| path.strip_prefix(&vault_root).ok())
         .map(crate::skill::forward_slashed)
         .collect();
-    warnings.extend(patterns.warnings(&crate::walk::glob_files(&source, &vault_root), &output));
+    warnings.extend(patterns.warnings(
+        &crate::walk::glob_files(&source, &vault_root),
+        &output,
+        &patterns.sibling_files(vfs, &vault_root),
+    ));
     warnings.extend(stale_output_warnings(
         vfs,
         &out_root,
@@ -3248,14 +3263,12 @@ mod tests {
     {
       "name": "git-tools",
       "source": "./.claude-plugin/packs/git-tools",
-      "description": "Skills: commit-helper, rebase-guide.",
-      "version": "0.1.0"
+      "description": "Skills: commit-helper, rebase-guide."
     },
     {
       "name": "tools",
       "source": "./.claude-plugin/packs/tools",
-      "description": "Skills: review-guide.",
-      "version": "0.1.0"
+      "description": "Skills: review-guide."
     }
   ]
 }
@@ -3401,7 +3414,8 @@ mod tests {
             market.contains("\"description\": \"Git helpers.\""),
             "{market}"
         );
-        assert!(market.contains("\"version\": \"2.0.0\""), "{market}");
+        // `plugin.json` holds the version: with both, `claude plugin validate` warns.
+        assert!(!market.contains("\"version\": \"2.0.0\""), "{market}");
     }
 
     #[test]

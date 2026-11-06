@@ -62,7 +62,7 @@ Scope: installs the binary and writes the root file. It does not author notes (s
    build:                       # how skillwright runs
      out: dist
      destinations:              # where `publish` writes; absent means each harness's user folder
-       - root: .
+       - root: ../my-project    # must sit outside the vault, or `publish` refuses `unsafe-root`
          target: claude-code
    ---
    ```

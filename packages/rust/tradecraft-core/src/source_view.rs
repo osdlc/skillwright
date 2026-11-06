@@ -186,16 +186,33 @@ pub fn effective_configs(
 /// `config` with the harness blocks of the marketplace `note`.
 fn with_note(config: &MarketplaceConfig, note: &DiscoveredComponent) -> MarketplaceConfig {
     let mut config = config.clone();
-    let name = note.name.clone();
-    config.blocks = Cascade::over(std::slice::from_ref(note), Some(&name), &config)
+    config.blocks = Cascade::over(std::slice::from_ref(note), Some(note.folder()), &config)
         .config
         .blocks;
     config
 }
 
-/// The notes of the marketplaces `scope` reads: the one it names, else all of
-/// them. Only the marketplace folders are read, so they can be found before
-/// the vault's output is known.
+/// The folder of the marketplace published as `name`, for a caller that holds
+/// a built manifest's name. A marketplace's `name` need not match its folder.
+pub fn marketplace_folder(
+    vfs: &dyn Vfs,
+    scope: VaultScope<'_>,
+    name: &str,
+    ns: &Namespace,
+) -> Option<String> {
+    let every = VaultScope {
+        marketplace: None,
+        ..scope
+    };
+    marketplace_notes(vfs, every, ns)
+        .iter()
+        .find(|note| note.name == name)
+        .map(|note| note.folder().to_owned())
+}
+
+/// The notes of the marketplaces `scope` reads: the one whose folder it names,
+/// else all of them. Only the notes are read, so they can be found before the
+/// vault's output is known.
 fn marketplace_notes(
     vfs: &dyn Vfs,
     scope: VaultScope<'_>,
@@ -205,17 +222,9 @@ fn marketplace_notes(
     let folder = root.join("marketplaces");
     let mut files = Vec::new();
     for entry in vfs.read_dir(&folder).unwrap_or_default() {
-        let path = folder.join(&entry.name);
-        if entry.is_dir {
-            let inside = vfs.read_dir(&path).unwrap_or_default();
-            files.extend(
-                inside
-                    .iter()
-                    .filter(|file| !file.is_dir)
-                    .map(|file| path.join(&file.name)),
-            );
-        } else {
-            files.push(path);
+        let note = folder.join(&entry.name).join(ROOT_FILE);
+        if entry.is_dir && vfs.exists(&note) {
+            files.push(note);
         }
     }
     let source = Source { root, files };
@@ -226,7 +235,7 @@ fn marketplace_notes(
         .components
         .into_iter()
         .filter(|component| component.kind == EntityKind::Marketplace)
-        .filter(|note| scope.marketplace.is_none_or(|name| note.name == name))
+        .filter(|note| scope.marketplace.is_none_or(|name| note.folder() == name))
         .collect()
 }
 
@@ -360,15 +369,23 @@ pub(crate) fn check_pack_location(
 }
 
 /// What the root file at `vault_root` configures, for a caller that holds no
-/// configuration of its own. Default when the file is missing or unreadable:
-/// a build says what is wrong with it.
+/// configuration of its own, over what a workspace file above it sets. Default
+/// when the file is missing or unreadable: a build says what is wrong with it.
 pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> MarketplaceConfig {
-    vfs.read_file(&vault_root.join(ROOT_FILE))
+    let Some(mut root) = vfs
+        .read_file(&vault_root.join(ROOT_FILE))
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .and_then(|text| parse_root_file(&text).ok())
-        .map(|root| root.to_config(""))
-        .unwrap_or_default()
+    else {
+        return MarketplaceConfig::default();
+    };
+    if !root.workspace
+        && let Ok(Some(shared)) = crate::patterns::workspace_above(vfs, vault_root)
+    {
+        root.inherit(&shared);
+    }
+    root.to_config("")
 }
 
 /// The view of the vault for a run that does not build: `base`, less the
@@ -397,4 +414,27 @@ pub fn source_view<'v>(
         }
     }
     base.hiding(paths)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vfs::MemVfs;
+
+    #[test]
+    fn vault_config_folds_in_the_workspace_above() {
+        let vfs = MemVfs::new();
+        let member = Path::new("/w/marketplaces/m");
+        vfs.create_dir_all(member).unwrap();
+        vfs.write_file(
+            Path::new("/w/skillwright.md"),
+            b"---\nworkspace: true\nclaude: {packs: alt}\nlicense: MIT\n---\n",
+        )
+        .unwrap();
+        vfs.write_file(&member.join(ROOT_FILE), b"---\nname: m\n---\n")
+            .unwrap();
+        let config = vault_config(&vfs, member);
+        assert_eq!(config.license.as_deref(), Some("MIT"));
+        assert!(config.blocks.contains_key("claude"));
+    }
 }

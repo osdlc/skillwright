@@ -212,10 +212,17 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 }
                 Err(err) => {
                     let message = err.to_string();
+                    let reason = normalize_thrown_reason(&message).to_string();
+                    // A kind this harness cannot carry is not a stale file.
+                    let state = if reason.contains("no-renderer") {
+                        RowState::NotApplicable
+                    } else {
+                        RowState::State(PublishState::Unknown)
+                    };
                     rows.push(AttributedState {
                         attribution,
-                        state: Some(RowState::State(PublishState::Unknown)),
-                        reason: Some(normalize_thrown_reason(&message).to_string()),
+                        state: Some(state),
+                        reason: Some(reason),
                         published_at: None,
                         files: Vec::new(),
                     });

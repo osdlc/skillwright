@@ -69,6 +69,8 @@ fn never_ship_folders(folders: &[&str]) -> Vec<usize> {
     let mut at = 0;
     while let Some(segment) = folders.get(at) {
         match crate::discover::kind_dir(segment).filter(|_| holds_kinds) {
+            // A plugin's `assets/` ships as written, whatever its folders say.
+            None if holds_kinds && *segment == "assets" => break,
             Some(kind) => {
                 holds_kinds = matches!(kind, EntityKind::Marketplace | EntityKind::Plugin);
                 at += 1;
@@ -140,6 +142,8 @@ fn segment_match(glob: &[u8], text: &[u8]) -> bool {
 pub struct Patterns {
     folders: FolderPatterns,
     exclude: Vec<String>,
+    /// The globs a workspace file gave this marketplace.
+    inherited: BTreeSet<String>,
 }
 
 impl Patterns {
@@ -159,15 +163,49 @@ impl Patterns {
     /// not fail open.
     pub fn load(vfs: &dyn Vfs, vault_root: &Path) -> Result<Self, CoreError> {
         let mut root = read_root(vfs, &vault_root.join(ROOT_FILE))?.unwrap_or_default();
+        let mut own = Self {
+            folders: root.build.patterns.clone(),
+            exclude: root.build.exclude.clone(),
+            inherited: BTreeSet::new(),
+        };
+        let written: BTreeSet<String> = own.globs().map(str::to_owned).collect();
         if !root.workspace
             && let Some(shared) = workspace_above(vfs, vault_root)?
         {
             root.inherit(&shared);
         }
-        Ok(Self {
-            folders: root.build.patterns,
-            exclude: root.build.exclude,
-        })
+        own.folders = root.build.patterns;
+        own.exclude = root.build.exclude;
+        own.inherited = own
+            .globs()
+            .filter(|glob| !written.contains(*glob))
+            .map(str::to_owned)
+            .collect();
+        Ok(own)
+    }
+
+    /// Every glob, whichever key holds it.
+    fn globs(&self) -> impl Iterator<Item = &str> {
+        self.kinds()
+            .into_iter()
+            .flat_map(|(_, globs)| globs)
+            .chain(&self.exclude)
+            .map(String::as_str)
+    }
+
+    /// The files of the other marketplaces beside the one at `vault_root`, for
+    /// a glob a workspace shares among them. Empty when this one inherits none.
+    pub(crate) fn sibling_files(&self, vfs: &dyn Vfs, vault_root: &Path) -> Vec<String> {
+        let Some(folder) = vault_root.parent().filter(|_| !self.inherited.is_empty()) else {
+            return Vec::new();
+        };
+        vfs.read_dir(folder)
+            .unwrap_or_default()
+            .iter()
+            .map(|entry| folder.join(&entry.name))
+            .filter(|path| path != vault_root && vfs.exists(&path.join(ROOT_FILE)))
+            .flat_map(|path| crate::walk::glob_files(vfs, &path))
+            .collect()
     }
 
     /// Each folder-pattern key with its globs, in the order a path is claimed.
@@ -201,7 +239,14 @@ impl Patterns {
     /// vault-relative: a glob that matches nothing, a path two kinds claim,
     /// and one plugin read from two folders. `output` is what a build owns in
     /// the vault: not source, but a fair thing for `build.exclude` to name.
-    pub(crate) fn warnings(&self, files: &[String], output: &[String]) -> Vec<DiscoveryWarning> {
+    /// `siblings` are the other marketplaces' files: a glob a workspace shares
+    /// need only match in one of them.
+    pub(crate) fn warnings(
+        &self,
+        files: &[String],
+        output: &[String],
+        siblings: &[String],
+    ) -> Vec<DiscoveryWarning> {
         let warn = |path: &str, reason: &str, detail: String| DiscoveryWarning {
             path: path.to_owned(),
             reason: reason.to_owned(),
@@ -224,7 +269,8 @@ impl Patterns {
             .chain(self.exclude.iter().map(|g| ("build.exclude".to_owned(), g)));
         for (key, glob) in keyed {
             let names_output = key == "build.exclude" && matches_some(output, glob);
-            if !names_output && !matches_some(files, glob) {
+            let shared = self.inherited.contains(glob) && matches_some(siblings, glob);
+            if !names_output && !shared && !matches_some(files, glob) {
                 warnings.push(warn(
                     ROOT_FILE,
                     "unmatched-glob",
@@ -316,6 +362,16 @@ impl Patterns {
     /// Whether a folder that never ships holds `rel`.
     pub(crate) fn never_ships(&self, rel: &str) -> bool {
         !never_ship_folders(&folders_of(&self.canonical(rel))).is_empty()
+    }
+
+    /// Whether `rel` sits in a `docs`, `tests` or `fixtures` folder where a
+    /// skill's folder would be, and no skill claimed it.
+    pub(crate) fn in_a_named_never_ship_folder(&self, rel: &str) -> bool {
+        let canonical = self.canonical(rel);
+        folders_of(&canonical).windows(2).any(|pair| {
+            NAMEABLE_NEVER_SHIP.contains(&pair[1])
+                && crate::discover::kind_dir(pair[0]).is_some_and(|kind| !kind.holds_components())
+        })
     }
 
     /// Whether a link from the file `from` to the file `to` goes into a folder
@@ -446,7 +502,10 @@ fn read_root(vfs: &dyn Vfs, file: &Path) -> Result<Option<RootFile>, CoreError> 
 
 /// The workspace file above the marketplace at `vault_root`, when that is
 /// `<workspace>/marketplaces/<m>/` and the file says `workspace: true`.
-fn workspace_above(vfs: &dyn Vfs, vault_root: &Path) -> Result<Option<RootFile>, CoreError> {
+pub(crate) fn workspace_above(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+) -> Result<Option<RootFile>, CoreError> {
     let Some(above) = vault_root
         .parent()
         .filter(|folder| {
@@ -477,6 +536,7 @@ mod tests {
         Patterns {
             folders,
             exclude: Vec::new(),
+            inherited: BTreeSet::new(),
         }
     }
 
@@ -654,7 +714,7 @@ mod tests {
             agents: vec!["notes/bots/*".to_owned()],
             ..FolderPatterns::default()
         });
-        let warnings = p.warnings(&["notes/bots/b.md".to_owned()], &[]);
+        let warnings = p.warnings(&["notes/bots/b.md".to_owned()], &[], &[]);
         let conflict = warnings
             .iter()
             .find(|warning| warning.reason == "pattern-conflict")
@@ -673,7 +733,7 @@ mod tests {
             skills: vec!["packs/*/guides/*".to_owned()],
             ..FolderPatterns::default()
         });
-        let warnings = p.warnings(&["packs/p/guides/g.md".to_owned()], &[]);
+        let warnings = p.warnings(&["packs/p/guides/g.md".to_owned()], &[], &[]);
         assert!(warnings.is_empty(), "{warnings:?}");
     }
 
@@ -688,7 +748,7 @@ mod tests {
             "old/rev/skills/b.md".to_owned(),
         ];
         let merged = |p: &Patterns| {
-            p.warnings(&files, &[])
+            p.warnings(&files, &[], &[])
                 .iter()
                 .any(|warning| warning.reason == "plugin-merged")
         };
@@ -702,8 +762,8 @@ mod tests {
         let mut p = patterns(FolderPatterns::default());
         p.exclude = vec!["dist".to_owned(), "dist/**".to_owned()];
         let output = ["dist/.claude-plugin/packs".to_owned()];
-        assert!(p.warnings(&[], &output).is_empty());
-        assert_eq!(p.warnings(&[], &[]).len(), 2);
+        assert!(p.warnings(&[], &output, &[]).is_empty());
+        assert_eq!(p.warnings(&[], &[], &[]).len(), 2);
     }
 
     #[test]
@@ -739,6 +799,7 @@ mod tests {
                 ..FolderPatterns::default()
             },
             exclude: vec!["gone/**".to_owned()],
+            inherited: BTreeSet::new(),
         };
         let files = [
             "notes/a.md",
@@ -746,7 +807,7 @@ mod tests {
             "plugins/rev/skills/y.md",
         ]
         .map(str::to_owned);
-        let warnings = p.warnings(&files, &[]);
+        let warnings = p.warnings(&files, &[], &[]);
         let detail = |reason: &str| -> Vec<&str> {
             warnings
                 .iter()
@@ -784,6 +845,7 @@ mod tests {
         let p = Patterns {
             folders: FolderPatterns::default(),
             exclude: vec!["drafts".to_owned(), "**/*.draft.md".to_owned()],
+            inherited: BTreeSet::new(),
         };
         assert!(p.excluded("drafts/a/b.md"));
         assert!(p.excluded("skills/x.draft.md"));

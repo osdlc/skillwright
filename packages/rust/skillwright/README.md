@@ -61,10 +61,13 @@ Publish the note into a Claude Code project:
 ```console
 $ skillwright publish skills/code-review.md --vault my-vault --to my-project --target claude-code --yes
 publishing skills/code-review.md -> /path/to/my-project (claude-code)
-.skillwright/manifest.json  written
 .claude/skills/code-review/SKILL.md  written · first-write
+.skillwright/manifest.json  written
 2 written
 ```
+
+`--to` needs `--target`, and the folder must sit outside the vault. `build` needs
+an output folder: `--out <path>`, or `build.out` in `skillwright.md`.
 
 `--dry-run` shows the plan and writes nothing. `skillwright --help` and
 `skillwright <verb> --help` list every verb and option.

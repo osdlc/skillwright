@@ -89,6 +89,9 @@ prefix, so the blocks do too:
 | `claude:` | `sw-claude:` |
 | `adopted:` | `sw-adopted:` |
 
+With no namespace set, a leftover `sw-version` or any other `sw-<key>` spelling of
+a key skillwright owns is refused `removed-key`, so nothing ships wrong by accident.
+
 A bare `claude:` in a namespaced vault does not reach Claude, and a bare `adopted:`
 would ship its source path under `metadata:`. Keys in `skillwright.md` itself are
 always bare.

@@ -113,16 +113,20 @@ pub fn is_convention_vault(dir: &Path) -> bool {
 
 /// The workspace root file above the marketplace whose root is `dir`, when
 /// `dir` is `<workspace>/marketplaces/<m>/` and that file says
-/// `workspace: true`.
+/// `workspace: true`. A file that cannot be read is returned too: an exclusion
+/// it holds must not fail open, so loading it refuses the run.
 pub fn workspace_above(dir: &Path) -> Option<PathBuf> {
     let parent = dir.parent()?;
     if parent.file_name()? != WORKSPACE_DIR {
         return None;
     }
     let file = parent.parent()?.join(ROOT_FILE);
+    if !file.exists() {
+        return None;
+    }
     match read_root_file(&file) {
-        RootLoad::Loaded(root) if root.workspace => Some(file),
-        _ => None,
+        RootLoad::Loaded(root) if !root.workspace => None,
+        _ => Some(file),
     }
 }
 

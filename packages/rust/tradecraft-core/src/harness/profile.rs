@@ -648,30 +648,33 @@ impl HarnessProfile {
     }
 
     /// The keys this harness reads in a harness block, from its
-    /// runtime's own capability declaration.
+    /// runtime's own capability declaration, less those no harness fact backs.
     pub fn accepted_override_keys(&self) -> std::collections::BTreeSet<String> {
         agent_adapt::runtimes::declaration_for(self.declaration)
             .overrides
             .into_keys()
+            .filter(|key| !UNREAD_OVERRIDES.contains(&key.as_str()))
             .collect()
     }
 
-    /// The override keys this harness reads on a subagent and nowhere else,
-    /// told by the page each key was read from.
+    /// The override keys this harness reads on a subagent and nowhere else.
     pub fn agent_override_keys(&self) -> std::collections::BTreeSet<String> {
-        agent_adapt::runtimes::declaration_for(self.declaration)
-            .overrides
-            .into_iter()
-            .filter(|(_, claim)| {
-                claim
-                    .evidence
-                    .as_ref()
-                    .is_some_and(|evidence| evidence.url.ends_with("/sub-agents"))
-            })
-            .map(|(key, _)| key)
-            .collect()
+        let keys: &[&str] = if self.declaration == RuntimeId::ClaudeCode {
+            CLAUDE_AGENT_ONLY_OVERRIDES
+        } else {
+            &[]
+        };
+        keys.iter().map(|key| (*key).to_owned()).collect()
     }
 }
+
+/// Claude's override keys that only a subagent reads. `agent_adapt` declares
+/// them with every other key, and a test holds this list to that declaration.
+const CLAUDE_AGENT_ONLY_OVERRIDES: &[&str] = &["permissionMode"];
+
+/// Declared override keys that no harness fact shows being read in a
+/// `SKILL.md`.
+const UNREAD_OVERRIDES: &[&str] = &["policy.allow_implicit_invocation"];
 
 /// The row a name answers to, by any of its spellings.
 pub fn profile_for(name: &str) -> Option<&'static HarnessProfile> {
@@ -692,6 +695,31 @@ pub fn with_plugin_format() -> impl Iterator<Item = &'static HarnessProfile> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn the_agent_only_keys_are_keys_the_harness_declares() {
+        let claude = profile_for("claude").unwrap();
+        let declared: std::collections::BTreeSet<String> =
+            agent_adapt::runtimes::declaration_for(claude.declaration)
+                .overrides
+                .into_keys()
+                .collect();
+        let agent_only = claude.agent_override_keys();
+        assert_eq!(agent_only.len(), CLAUDE_AGENT_ONLY_OVERRIDES.len());
+        assert!(agent_only.is_subset(&declared), "{agent_only:?}");
+        assert!(
+            profile_for("codex")
+                .unwrap()
+                .agent_override_keys()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_key_no_fact_backs_is_not_accepted() {
+        let codex = profile_for("codex").unwrap();
+        assert!(!codex.accepted_override_keys().contains(UNREAD_OVERRIDES[0]));
+    }
 
     #[test]
     fn every_known_target_spelling_has_exactly_one_row() {

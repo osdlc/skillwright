@@ -266,7 +266,10 @@ pub fn run_harness(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandCon
         Err(message) => return blocked(ctx.err, &message),
     };
     // The manifest names the marketplace built here. Failing that, any of them.
-    let configs = run.effective_configs(found.as_deref());
+    let folder = found
+        .as_deref()
+        .and_then(|name| run.marketplace_folder(name));
+    let configs = run.effective_configs(folder.as_deref().or(found.as_deref()));
     for config in &configs {
         if let Err(err) = tradecraft_core::check_packs(config) {
             return blocked(ctx.err, &err.to_string());

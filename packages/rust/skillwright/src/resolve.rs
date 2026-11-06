@@ -12,7 +12,10 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use tradecraft_core::{MarketplaceConfig, Namespace, NativeVfs, SourceView, VaultScope};
+use tradecraft_core::{
+    DiscoveryWarning, MarketplaceConfig, Namespace, NativeVfs, SourceView, VaultScope,
+    discover_components,
+};
 
 use crate::config::{
     ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, find_root_file, is_convention_vault,
@@ -118,6 +121,16 @@ impl ResolvedRun {
         )
     }
 
+    /// The folder of the marketplace published as `name`.
+    pub fn marketplace_folder(&self, name: &str) -> Option<String> {
+        tradecraft_core::marketplace_folder(
+            &self.config_vfs(),
+            self.scope(None, None),
+            name,
+            &self.core_namespace(),
+        )
+    }
+
     /// Whether this run's root file is a workspace's.
     pub fn is_workspace(&self) -> bool {
         self.config.workspace
@@ -198,6 +211,19 @@ pub struct RunDestination {
     pub user_folders: bool,
 }
 
+/// Says so when `dir` holds a configuration file from before `skillwright.md`.
+fn note_old_config(dir: &Path, err: &mut dyn Write) {
+    for old in ["skillwright.yaml", "tradecraft.yaml"] {
+        if dir.join(old).is_file() {
+            let _ = writeln!(
+                err,
+                "note: `{old}` is no longer read. Move its settings to `{ROOT_FILE}`: see \
+                 docs/guide/migrating.md, or run the `migrate` skill"
+            );
+        }
+    }
+}
+
 /// Load the root file, validate the namespace, and resolve the vault —
 /// writing any failure to `err` and handing back the exit code it earned.
 ///
@@ -245,6 +271,7 @@ pub fn resolve_run(
         );
         (cwd.to_path_buf(), None)
     } else {
+        note_old_config(cwd, err);
         return Err(no_config(
             err,
             &format!(
@@ -255,6 +282,7 @@ pub fn resolve_run(
         ));
     };
 
+    note_old_config(&vault, err);
     let mut config = match &file {
         Some(path) => load_root(path, err)?,
         None => RootFile::default(),
@@ -386,6 +414,45 @@ pub fn refuse_workspace(verb: &str, run: &ResolvedRun, err: &mut dyn Write) -> R
             run.vault.display()
         ),
     ))
+}
+
+/// What a workspace file holds that no build acts on: a `build.out`, and
+/// components at its root, since each marketplace is a vault of its own.
+pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
+    let mut warnings = Vec::new();
+    if run.config.build.out.is_some() {
+        warnings.push(DiscoveryWarning {
+            path: ROOT_FILE.to_owned(),
+            reason: "workspace-out".to_owned(),
+            detail: "`build.out` on a workspace file is not read: each marketplace sets its own"
+                .to_owned(),
+        });
+    }
+    let scan = discover_components(
+        &run.source_vfs(None),
+        &run.vault,
+        None,
+        &run.core_namespace(),
+    );
+    let folders: std::collections::BTreeSet<String> = scan
+        .iter()
+        .flat_map(|scan| &scan.components)
+        .filter(|c| !c.vault_relative_path.starts_with("marketplaces/"))
+        .filter_map(|c| c.vault_relative_path.split('/').next())
+        .map(|folder| format!("`{folder}/`"))
+        .collect();
+    if !folders.is_empty() {
+        let named: Vec<String> = folders.into_iter().collect();
+        warnings.push(DiscoveryWarning {
+            path: ROOT_FILE.to_owned(),
+            reason: "outside-marketplaces".to_owned(),
+            detail: format!(
+                "{} at a workspace root builds nowhere: move it under `marketplaces/<m>/`",
+                named.join(", ")
+            ),
+        });
+    }
+    warnings
 }
 
 /// The skills root a `--skills-root` or `adopt --into` flag names, resolved

@@ -124,11 +124,21 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         .collect();
     let component = match matches.as_slice() {
         [] => {
+            let name = &flags.plugin;
+            let folder = scan
+                .components
+                .iter()
+                .filter(|c| c.plugin.as_deref() == Some(name))
+                .find_map(|c| {
+                    let path = &c.vault_relative_path;
+                    let at = path.find(&format!("/{name}/"))?;
+                    Some(path[..at + 1 + name.len()].to_owned())
+                })
+                .unwrap_or_else(|| format!("plugins/{name}"));
             return usage_error(
                 ctx.err,
                 &format!(
-                    "no plugin note named `{0}` in this vault. A folder-only plugin has no note to bump: add `plugins/{0}/{0}.md` with a `version`",
-                    flags.plugin
+                    "no plugin note named `{name}` in this vault. A folder-only plugin has no note to bump: add `{folder}/{name}.md` with a `version`"
                 ),
             );
         }

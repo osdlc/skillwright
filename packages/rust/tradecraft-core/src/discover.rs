@@ -280,8 +280,12 @@ pub(crate) fn unknown_key_warning(
     } else {
         let respelled: Vec<String> = unknown
             .iter()
-            .filter(|key| *key == "adopted" || crate::harness::profile_named(key).is_some())
-            .map(|key| format!("`{key}` is `{}`", ns.key(key)))
+            .filter_map(|key| {
+                let field = ns.field(key).replace('-', "_");
+                let bare = key == "adopted" || crate::harness::profile_named(key).is_some();
+                let hyphen = field != ns.field(key) && crate::keys::is_skillwright_key(&field);
+                (bare || hyphen).then(|| format!("`{key}` is `{}`", ns.key(&field)))
+            })
             .collect();
         let examples = if respelled.is_empty() {
             String::new()
@@ -367,6 +371,10 @@ pub(crate) fn unknown_container_block_keys(
 /// The warning reason for a note that declares a description where it cannot
 /// ship.
 pub const NEVER_SHIPS_REASON: &str = "never-ships";
+
+/// The reason a note under a kind folder that declares no component is named:
+/// a typo in `description` must not make a note vanish.
+pub const NO_COMPONENT_KEYS_REASON: &str = "no-component-keys";
 
 /// The warning reason for a key the key table does not list.
 pub const UNKNOWN_KEY_REASON: &str = "unknown-key";
@@ -616,7 +624,18 @@ pub(crate) fn discover_in(
                         .map(forward_slashed)
                         .unwrap_or_else(|_| path.display().to_string())
                 };
-                if patterns.never_ships(&relative(entry_path)) {
+                if let Some(market) = old_marketplace_note(&relative(entry_path)) {
+                    let err = CoreError::malformed(
+                        entry_path,
+                        format!(
+                            "a marketplace's note is `marketplaces/{market}/skillwright.md` now: \
+                             move this file there"
+                        ),
+                    );
+                    skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+                } else if patterns.never_ships(&relative(entry_path))
+                    || patterns.in_a_named_never_ship_folder(&relative(entry_path))
+                {
                     if declares_description(vfs, entry_path, ns).unwrap_or(false) {
                         warnings.push(DiscoveryWarning {
                             path: relative(entry_path),
@@ -626,6 +645,8 @@ pub(crate) fn discover_in(
                                 .to_owned(),
                         });
                     }
+                } else if in_a_skill_folder(entry_path, &placed, root) {
+                    // A file of that skill: it ships with it, whatever it declares.
                 } else if let Err(err) = refuse_stray(vfs, root, entry_path, &reads_as, ns) {
                     // A stray sits at no recognised shape, so it is a member
                     // of nothing and blocks no pack.
@@ -666,7 +687,22 @@ pub(crate) fn discover_in(
                 }
                 discovered.push(component);
             }
-            Ok(None) => {}
+            Ok(None) => {
+                if placement.kind.is_some_and(|kind| !kind.holds_components())
+                    && has_frontmatter_keys(vfs, entry_path)
+                {
+                    warnings.push(DiscoveryWarning {
+                        path: entry_path
+                            .strip_prefix(root)
+                            .map(forward_slashed)
+                            .unwrap_or_else(|_| entry_path.display().to_string()),
+                        reason: NO_COMPONENT_KEYS_REASON.to_owned(),
+                        detail: "this note has frontmatter but no `name` or `description`, so \
+                                 it is not a component and will not ship"
+                            .to_owned(),
+                    });
+                }
+            }
             Err(err) => {
                 // The folder names the pack, so a pack never ships without
                 // a member it could not read.
@@ -888,6 +924,34 @@ pub(crate) fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
     path.strip_prefix(root).is_ok_and(|rest| {
         rest.iter()
             .any(|part| kind_dir(&part.to_string_lossy()).is_some())
+    })
+}
+
+/// Whether `path` sits in the folder of a skill whose entry note is placed.
+fn in_a_skill_folder(path: &Path, placed: &BTreeMap<PathBuf, Placement>, root: &Path) -> bool {
+    placed.iter().any(|(entry, placement)| {
+        let bundled = entry
+            .strip_prefix(root)
+            .is_ok_and(|rel| is_bundle_entry(&forward_slashed(rel)).unwrap_or(false));
+        placement.kind == Some(EntityKind::Skill)
+            && bundled
+            && entry
+                .parent()
+                .is_some_and(|folder| path.starts_with(folder))
+    })
+}
+
+/// The marketplace folder of the old note form `marketplaces/<m>/<m>.md`.
+fn old_marketplace_note(rel: &str) -> Option<&str> {
+    let (market, file) = rel.strip_prefix("marketplaces/")?.split_once('/')?;
+    (md_stem(file) == Some(market)).then_some(market)
+}
+
+/// Whether the note at `path` has a frontmatter block holding any key.
+fn has_frontmatter_keys(vfs: &dyn Vfs, path: &Path) -> bool {
+    read_utf8(vfs, path).is_ok_and(|source| {
+        let (frontmatter, _body) = split_frontmatter(&source);
+        frontmatter_map(frontmatter, path).is_ok_and(|fields| !fields.is_empty())
     })
 }
 
@@ -1308,55 +1372,6 @@ fn read_source(
         unknown_keys,
         blocks: ours.overrides,
     }))
-}
-
-/// The vault's one marketplace folder and the path its note would have, or
-/// `None` when it holds none or several. A folder with no component in it is
-/// not a marketplace, as it is not to a build. A listing, not a scan: a publish
-/// of one note must not fail on a problem elsewhere in the vault.
-pub(crate) fn only_marketplace(
-    vfs: &dyn Vfs,
-    patterns: &crate::patterns::Patterns,
-    root: &Path,
-) -> Option<(String, PathBuf)> {
-    let (dir, _) = KIND_DIRS
-        .iter()
-        .find(|(_, kind)| *kind == EntityKind::Marketplace)?;
-    let folder = root.join(dir);
-    let entries = vfs.read_dir(&folder).ok()?;
-    let mut names = entries.iter().filter(|entry| {
-        entry.is_dir
-            && !entry.name.starts_with('.')
-            && holds_a_component(vfs, patterns, root, &folder.join(&entry.name))
-    });
-    let name = names.next()?.name.clone();
-    if names.next().is_some() {
-        return None;
-    }
-    let note = folder.join(&name).join(crate::settings::ROOT_FILE);
-    Some((name, note))
-}
-
-/// Whether any Markdown file under `dir` sits where a component would.
-fn holds_a_component(
-    vfs: &dyn Vfs,
-    patterns: &crate::patterns::Patterns,
-    root: &Path,
-    dir: &Path,
-) -> bool {
-    vfs.read_dir(dir).is_ok_and(|entries| {
-        entries.iter().any(|entry| {
-            let path = dir.join(&entry.name);
-            if entry.name.starts_with('.') {
-                false
-            } else if entry.is_dir {
-                holds_a_component(vfs, patterns, root, &path)
-            } else {
-                entry.name.ends_with(".md")
-                    && folder_placement_with(patterns, root, &path).kind.is_some()
-            }
-        })
-    })
 }
 
 /// The notes of the containers `entry` sits in, outermost first, as the paths
@@ -2026,11 +2041,10 @@ mod tests {
             "marketplaces/house/plugins/core/skills/a/a.md",
             &source("a", &[]),
         );
-        // Two levels below a kind folder, under a directory that is not its
-        // own name.
+        // Inside a plugin, in a folder that is no kind folder.
         write(
             &vfs,
-            "marketplaces/house/plugins/core/skills/a/extra/stray.md",
+            "marketplaces/house/plugins/core/extra/stray.md",
             &source("stray", &[]),
         );
 
@@ -2077,7 +2091,7 @@ mod tests {
         );
         write(
             &vfs,
-            "marketplaces/house/plugins/core/skills/a/extra/stray.md",
+            "marketplaces/house/plugins/core/extra/stray.md",
             "---\ndescription: half a draft\n---\nb\n",
         );
 

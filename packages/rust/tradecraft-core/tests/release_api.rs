@@ -552,6 +552,53 @@ fn a_vault_level_pack_takes_the_one_marketplace_on_publish() {
     );
 }
 
+/// `publish` of a vault-level note agrees with what `build` counts: the first
+/// two cases hold one marketplace, the last two hold two.
+#[test]
+fn a_note_counts_the_marketplaces_a_build_counts() {
+    fn targets_codex(vfs: &MemVfs) -> bool {
+        !publish(vfs, "/vault/skills/loose.md", "codex")
+            .files
+            .is_empty()
+    }
+    let empty = beside_a_marketplace();
+    write(
+        &empty,
+        "/vault/marketplaces/ghost/skills/empty.md",
+        "Plain.\n",
+    );
+    assert!(!targets_codex(&empty), "a note with no frontmatter");
+
+    let excluded = beside_a_marketplace();
+    write(
+        &excluded,
+        "/vault/skillwright.md",
+        "---\nname: v\nbuild:\n  exclude: marketplaces/ghost\n---\n",
+    );
+    write(
+        &excluded,
+        "/vault/marketplaces/ghost/skills/x.md",
+        &note("x", ""),
+    );
+    assert!(!targets_codex(&excluded), "an excluded folder");
+
+    let upper = beside_a_marketplace();
+    write(
+        &upper,
+        "/vault/marketplaces/ghost/skills/UP.MD",
+        &note("up", ""),
+    );
+    assert!(targets_codex(&upper), "a note with an upper-case extension");
+
+    let hidden = beside_a_marketplace();
+    write(
+        &hidden,
+        "/vault/marketplaces/.hidden/skills/h.md",
+        &note("h", ""),
+    );
+    assert!(targets_codex(&hidden), "a dot folder");
+}
+
 #[test]
 fn a_folder_with_no_component_is_not_a_second_marketplace_on_publish() {
     let vfs = beside_a_marketplace();
@@ -1769,9 +1816,19 @@ fn a_stray_in_a_component_named_for_a_never_ship_folder_is_still_a_stray() {
     );
     let report = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
     let skipped = serde_json::to_string(&report.skipped).unwrap();
-    for stray in ["plugins/tests/z.md", "misplaced/y.md", "skills/tests/t.md"] {
+    for stray in ["plugins/tests/z.md", "misplaced/y.md"] {
         assert!(skipped.contains(stray), "{stray}: {skipped}");
     }
+    // No skill claims `tests` here, so it is a folder that never ships.
+    assert!(!skipped.contains("skills/tests/t.md"), "{skipped}");
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.reason == "never-ships" && w.path == "plugins/rev/skills/tests/t.md"),
+        "{:?}",
+        report.warnings
+    );
 }
 
 #[test]

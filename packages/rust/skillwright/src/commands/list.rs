@@ -19,14 +19,17 @@
 //! `--json` prints because `--json`'s rows are an existing contract.
 
 use tradecraft_core::model::load::{LoadRequest, load};
-use tradecraft_core::{DiscoveryReport, discover_components, inherit_targets};
+use tradecraft_core::settings::ROOT_FILE;
+use tradecraft_core::{DiscoveryReport, EntityKind, discover_components, inherit_targets};
 
 use crate::commands::marketplace::{MarketplaceInputs, marketplace_inputs};
+use crate::config::relative_path;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked};
 use crate::report::{render_roster, render_roster_tally, render_warning_line, roster_row};
 use crate::resolve::{
     CommonFlags, ResolvedRun, refuse_workspace, resolve_run, resolve_skills_root, workspace_runs,
+    workspace_warnings,
 };
 
 /// The resolved flags of `skillwright list`.
@@ -78,7 +81,7 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // A roster says where a note goes, so it shows what the note inherits.
     inherit_targets(&mut scan, &run.root_config());
     if run.is_workspace()
-        && let Err(code) = inherit_from_members(&mut scan, &run, &flags.common, ctx)
+        && let Err(code) = read_members(&mut scan, &run, &flags.common, ctx)
     {
         return code;
     }
@@ -122,9 +125,10 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     EXIT_OK
 }
 
-/// Gives each row of a workspace roster the `targets` its marketplace's own
-/// run gives it: a build reads each marketplace as a vault of its own.
-fn inherit_from_members(
+/// Replaces what a workspace scan says about each marketplace with that
+/// marketplace's own scan: a build reads each one as a vault of its own, with
+/// its own `exclude`, `patterns` and namespace. What sits outside them stays.
+fn read_members(
     scan: &mut DiscoveryReport,
     run: &ResolvedRun,
     common: &CommonFlags,
@@ -136,16 +140,34 @@ fn inherit_from_members(
             discover_components(&member.source_vfs(None), &member.vault, None, &namespace)
                 .map_err(|err| blocked(ctx.err, &format!("the vault scan could not run: {err}")))?;
         inherit_targets(&mut inner, &member.root_config());
-        for component in inner.components {
-            if let Some(row) = scan
-                .components
-                .iter_mut()
-                .find(|row| row.entry_path == component.entry_path)
-            {
-                row.targets = component.targets;
-            }
+
+        let folder = member.folder_name();
+        let prefix =
+            format!("{}/", relative_path(&run.vault, &member.vault).display()).replace('\\', "/");
+        let note = format!("{prefix}{ROOT_FILE}");
+        scan.components.retain(|c| {
+            c.kind == EntityKind::Marketplace || !c.vault_relative_path.starts_with(&prefix)
+        });
+        scan.skipped.retain(|s| !s.path.starts_with(&prefix));
+        scan.warnings
+            .retain(|w| w.path == note || !w.path.starts_with(&prefix));
+        for mut component in inner.components {
+            component.vault_relative_path = format!("{prefix}{}", component.vault_relative_path);
+            component.marketplace = Some(folder.clone());
+            scan.components.push(component);
+        }
+        for mut skipped in inner.skipped {
+            skipped.path = format!("{prefix}{}", skipped.path);
+            scan.skipped.push(skipped);
+        }
+        for mut warning in inner.warnings {
+            warning.path = format!("{prefix}{}", warning.path);
+            scan.warnings.push(warning);
         }
     }
+    scan.components
+        .sort_by(|a, b| a.vault_relative_path.cmp(&b.vault_relative_path));
+    scan.warnings.extend(workspace_warnings(run));
     Ok(())
 }
 

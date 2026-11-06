@@ -17,7 +17,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | `repository` | URL | skillwright | yes | The source repository URL, written into every manifest that has the field. |
 | `homepage` | URL | skillwright | yes | The documentation URL, written into every manifest that has the field. |
 | `display_name` | string | skillwright | no | The human-facing name, Codex's `interface.displayName`. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `copilot`, `opencode` and `portable` for `publish`. `claude-code`, `codex-cli` and `github-copilot` also work. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -37,7 +37,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | `keywords` | list of strings | skillwright | no | Plugin keywords; also the Claude and Cursor marketplace entry's `tags`. |
 | `category` | string | skillwright | no | The plugin's category in a marketplace entry. Codex defaults it to Productivity. |
 | `display_name` | string | skillwright | no | The human-facing name, Codex's `interface.displayName`. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `copilot`, `opencode` and `portable` for `publish`. `claude-code`, `codex-cli` and `github-copilot` also work. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -50,7 +50,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin or marketplace. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `copilot`, `opencode` and `portable` for `publish`. `claude-code`, `codex-cli` and `github-copilot` also work. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one space-separated string. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
@@ -73,7 +73,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `copilot`, `opencode` and `portable` for `publish`. `claude-code`, `codex-cli` and `github-copilot` also work. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one space-separated string. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
@@ -97,7 +97,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `copilot`, `opencode` and `portable` for `publish`. `claude-code`, `codex-cli` and `github-copilot` also work. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one space-separated string. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
@@ -119,7 +119,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `copilot`, `opencode` and `portable` for `publish`. `claude-code`, `codex-cli` and `github-copilot` also work. Absent means all; `[]` means none. Another name is refused. |
 | `event` | string | spec | no | The event the hook runs on, in Claude Code's spelling. |
 | `matcher` | string | spec | no | Which tool or source the hook matches. |
 | `type` | string | spec | no | `command`, `http` or `prompt`. Defaults to `command`. |
@@ -144,9 +144,9 @@ A block holds fields only that harness reads. These are the keys each block acce
 
 ### `codex:`
 
-- Component: `allowed-tools`, `compatibility`, `description`, `license`, `metadata`, `name`, `policy.allow_implicit_invocation`
-- Plugin: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `policy`, `policy.allow_implicit_invocation`, `skills`, `source`, `version`
-- Marketplace: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `packs`, `plugins`, `policy`, `policy.allow_implicit_invocation`, `skills`, `source`, `version`
+- Component: `allowed-tools`, `compatibility`, `description`, `license`, `metadata`, `name`
+- Plugin: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `policy`, `skills`, `source`, `version`
+- Marketplace: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `packs`, `plugins`, `policy`, `skills`, `source`, `version`
 
 ### `cursor:`
 

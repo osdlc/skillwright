@@ -145,8 +145,7 @@ pub enum AuthoringOp {
 /// The vault-relative folder a delete moves its paths into.
 pub const TRASH_DIR: &str = ".trash";
 
-/// The vault-relative directory discovery scans —
-/// [`discover_components`] with `skills_root: None`, spelled out.
+/// The vault-relative folder that holds plugins.
 pub const SKILLS_ROOT: &str = "plugins";
 
 /// The folder marketplaces are looked for in, under the content root.
@@ -631,9 +630,9 @@ fn convert_placement(
 /// kind-directory sibling of [`move_destination`], which it delegates to for
 /// every leaf kind.
 ///
-/// The one shape a move never produces: a container is authored as its own
-/// folder's note (`<name>/<name>.md`) whatever shape the note has now, so a
-/// lone file converting to `plugin` or `marketplace` gains a folder.
+/// The one shape a move never produces: a container is authored in a folder
+/// of its own whatever shape the note has now, so a lone file gains a folder:
+/// `<name>/<name>.md` for a plugin, `<name>/skillwright.md` for a marketplace.
 pub fn convert_kind_destination(
     entry: &str,
     to_kind: EntityKind,
@@ -650,7 +649,10 @@ pub fn convert_kind_destination(
         folder: None,
     }))?;
     let name = component_slug(entry);
-    Ok(format!("{dir}/{name}/{name}.md"))
+    Ok(format!(
+        "{dir}/{name}/{}",
+        bundle_entry_file(entry, name, to_kind)
+    ))
 }
 
 /// The member folders a container of `kind` holds, read off [`KIND_DIRS`] so

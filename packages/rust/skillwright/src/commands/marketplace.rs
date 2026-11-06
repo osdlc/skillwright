@@ -39,7 +39,9 @@ use crate::report::{
     count_checked_units, normalize_thrown_reason, render_export_tally, render_unit_line,
     render_warning_line,
 };
-use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, resolve_skills_root, workspace_runs};
+use crate::resolve::{
+    CommonFlags, ResolvedRun, resolve_run, resolve_skills_root, workspace_runs, workspace_warnings,
+};
 
 /// Which of the two verbs this run is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,6 +257,9 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
         Ok(runs) => runs,
         Err(code) => return code,
     };
+    for warning in workspace_warnings(&run) {
+        let _ = writeln!(ctx.err, "{}", render_warning_line(&warning));
+    }
     let mut exit = EXIT_OK;
     for member in &runs {
         if !flags.quiet {

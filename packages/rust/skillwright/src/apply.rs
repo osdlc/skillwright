@@ -414,6 +414,10 @@ fn move_note(
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
     let vault_dir = vault.dir;
+    let root_file = |path: &str| path.rsplit('/').next() == Some(tradecraft_core::ROOT_FILE);
+    if bundle && (root_file(from) || root_file(to)) {
+        return move_folder(vault_dir, from, to, mode, outcome);
+    }
     let (corpus, unreadable) = load_vault(vault, from, to, bundle)?;
     // Links resolve against every file a build sees, so a rename picks the
     // target a build does. Only notes outside dot-named folders are edited:
@@ -446,6 +450,48 @@ fn move_note(
         record_planned(&plan, outcome);
     }
     record_unreadable(unreadable, outcome);
+    Ok(())
+}
+
+/// Moves a folder whose entry note the relinker cannot name: a marketplace's
+/// `skillwright.md` is not `<dir>/<dir>.md`. Links inside it move with it; a
+/// link into it from outside stays as written, and the build reports it.
+fn move_folder(
+    vault_dir: &Path,
+    from: &str,
+    to: &str,
+    mode: Mode,
+    outcome: &mut Outcome,
+) -> Result<(), ApplyError> {
+    let (old, new) = (resolve(vault_dir, from)?, resolve(vault_dir, to)?);
+    let (Some(old_dir), Some(new_dir)) = (old.parent(), new.parent()) else {
+        return Err(ApplyError::Refused(format!("{from} has no folder to move")));
+    };
+    if new_dir.exists() {
+        return Err(ApplyError::Refused(format!(
+            "{} already exists",
+            new_dir.display()
+        )));
+    }
+    if mode.writes() {
+        let io = |source| ApplyError::Io {
+            what: format!("moving {from} to {to}"),
+            source,
+        };
+        if let Some(parent) = new_dir.parent() {
+            std::fs::create_dir_all(parent).map_err(io)?;
+        }
+        std::fs::rename(old_dir, new_dir).map_err(io)?;
+        if let Some(leaf) = old.file_name() {
+            std::fs::rename(new_dir.join(leaf), &new).map_err(io)?;
+        }
+    }
+    outcome.push(
+        to,
+        Applied::Renamed {
+            from: from.to_owned(),
+        },
+    );
     Ok(())
 }
 

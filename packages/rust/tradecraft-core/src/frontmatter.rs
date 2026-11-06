@@ -373,7 +373,8 @@ impl VaultFrontmatter {
     ///
     /// # Errors
     ///
-    /// * `refused: removed-key` — the note carries `kind` or `plugin`.
+    /// * `refused: removed-key` — the note carries `kind` or `plugin`, or, with
+    ///   no namespace, an old prefixed spelling of a key skillwright owns.
     /// * `refused: mixed-frontmatter-shape` — under a prefixed namespace, the
     ///   note carries the nested block *and* at least one flat key.
     /// * A content error naming the key and the path when one of
@@ -401,6 +402,26 @@ impl VaultFrontmatter {
                     format!(
                         "`{key}` is no longer read: the folder a note sits in decides its \
                          {removed}. Remove the key and move the note into the right folder"
+                    ),
+                ));
+            }
+        }
+
+        // A marketplace note is always read bare, so a prefix says nothing there.
+        if ns.is_bare() && kind != EntityKind::Marketplace {
+            let legacy = fields.iter().find_map(|(key, value)| {
+                crate::keys::legacy_key(key)
+                    .or_else(|| crate::keys::legacy_block(key, value))
+                    .map(|(stem, home)| (key, stem, home))
+            });
+            if let Some((key, stem, home)) = legacy {
+                return Err(refuse(
+                    "removed-key",
+                    path,
+                    format!(
+                        "`{key}` is an old spelling: its home is now {home}. Rename it, or set \
+                         `build.namespace: {stem}` to keep the prefix. See \
+                         docs/guide/migrating.md"
                     ),
                 ));
             }

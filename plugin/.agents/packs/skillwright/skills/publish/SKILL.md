@@ -25,9 +25,11 @@ There are two ways out of a vault:
 ## Publish to a destination
 
 1. Run `skillwright publish --dry-run` to see the plan. With no note named, it publishes every
-   unit (`--all`). Name notes by vault-relative path to narrow it. `--to <root>` (repeatable)
-   picks destinations other than the configured ones; `--target <target>` narrows to one harness,
-   such as `claude-code`, `codex`, `cursor` or `pi`.
+   skill on its own (`--all`), and writes no plugin manifests. Name a note by vault-relative path to
+   publish that note, or a plugin note to publish its whole pack. `--to <root>` (repeatable) picks
+   destinations other than the configured ones, and needs `--target <target>`. `--target` alone
+   narrows to one harness, such as `claude-code`, `codex`, `cursor` or `pi`. A destination inside
+   the vault is refused `unsafe-root`.
 2. Run it again with `--yes`.
 3. If a file is refused because it was edited at the destination, decide which copy wins. To keep
    the note's version, run again with `--overwrite <path>`, using the path exactly as the refusal
@@ -46,8 +48,9 @@ There are two ways out of a vault:
 4. Verify with `skillwright check`. It writes nothing and exits 1 on drift, so it suits CI. Fix
    drift by changing the note and building again; a hand edit to a built file is drift.
 
-Changing `build.out` or a `packs` value leaves the old folder behind. A folder outside the vault
-gets no warning, so remove it yourself.
+Changing `build.out` or a `packs` value leaves the old folder behind. A folder inside the vault gets
+a `stale-output` warning and stays in place. A folder outside the vault gets no warning. Remove
+either one yourself.
 
 A build replaces only what skillwright owns: each harness's packs folder and the manifests it
 writes. Everything else in those harness folders stays. A pack in a packs folder that the vault
@@ -58,12 +61,13 @@ does not produce is swept as stale, so do not share a packs folder with another 
 Register the built marketplace with a harness and install its plugins:
 
 ```sh
-skillwright harness install claude [--plugin <name>] [--scope user|project|local]
-skillwright harness update claude    # installs what is missing, updates changed versions
-skillwright harness uninstall claude [--marketplace]
+skillwright harness install claude --yes [--plugin <name>] [--scope user|project|local]
+skillwright harness update claude --yes    # installs what is missing, updates changed versions
+skillwright harness uninstall claude --yes [--marketplace]
 ```
 
-- The harness is `claude`, `codex` or `cursor`. Each verb runs that harness's own `plugin`
+- The harness is `claude`, `codex` or `cursor`. Pi has no install verb: point Pi at the pack folder
+  under `.pi/packs/`. `--yes` is needed when not running interactively. Each verb runs that harness's own `plugin`
   command (`claude plugin`, `codex plugin`, `cursor-agent plugin`), which must be on `PATH`.
 - `--plugin` is repeatable and defaults to every plugin the built tree holds.
 - Codex and Cursor support user scope only. Cursor needs `--git-url <url>` for install and update.

@@ -500,6 +500,12 @@ fn build(
             None => warnings.push("a `build:` key that is not a string is ignored".to_owned()),
         }
     }
+    // Key by key first, so a wrong value is named by its own key.
+    for (key, value) in &kept {
+        let one: serde_yaml::Mapping = [(key.clone(), value.clone())].into_iter().collect();
+        let name = format!("build.{}", key.as_str().unwrap_or_default());
+        field::<BuildSettings>(&name, &serde_yaml::Value::Mapping(one), "valid")?;
+    }
     let build: BuildSettings = field("build", &serde_yaml::Value::Mapping(kept), "a build block")?;
     Ok(BuildSettings {
         exclude,
@@ -873,7 +879,7 @@ mod tests {
     #[test]
     fn a_known_key_of_the_wrong_shape_is_named() {
         let err = parse_root_file("---\nbuild:\n  harnesses: claude\n---\n").unwrap_err();
-        assert_eq!(err.key, "build");
+        assert_eq!(err.key, "build.harnesses");
         assert!(err.detail.contains("sequence"), "{err}");
         let err = parse_root_file("---\nworkspace: maybe\n---\n").unwrap_err();
         assert_eq!(err.key, "workspace");

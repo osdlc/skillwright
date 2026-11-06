@@ -267,12 +267,11 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             // a roster worth publishing half of.
             Err(err) => return blocked(ctx.err, &err.to_string()),
         };
-        // The kinds the publish spec calls publishable units. A marketplace
-        // note names a distribution and publishes to no destination; an
-        // agent or a command publishes on its own and is not swept up by a
-        // vault run.
+        // Skills only, each once: a plugin's skills publish here on their own,
+        // so its pack would write them again. A pack, an agent or a command
+        // publishes when its note is named.
         for component in &scan.components {
-            if component.kind == EntityKind::Skill || component.kind == EntityKind::Plugin {
+            if component.kind == EntityKind::Skill {
                 note_paths.push(component.entry_path.clone());
             }
         }

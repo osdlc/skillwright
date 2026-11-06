@@ -146,7 +146,8 @@ pub use settings::{
     RootFile, SettingsError, compose_root_file, parse_root_file,
 };
 pub use source_view::{
-    SourceView, VaultScope, effective_config, effective_configs, source_view, vault_config,
+    SourceView, VaultScope, effective_config, effective_configs, marketplace_folder, source_view,
+    vault_config,
 };
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};
