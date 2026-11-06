@@ -11,8 +11,8 @@ license: MIT OR Apache-2.0
 
 Scope: moves one vault. If `skillwright --version` fails, run `$skillwright:setup` first.
 
-skillwright has no `migrate` verb and reads none of the old shape. It ignores `skillwright.yaml`
-and skips a note with a `kind` or `plugin` key. Do the whole move in one pass, on a branch.
+skillwright has no `migrate` verb and reads none of the old shape. It ignores `skillwright.yaml`,
+and `build` and `check` refuse to run while a note has a `kind` or `plugin` key. Do the whole move in one pass, on a branch.
 
 The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move the same way.
 
@@ -23,8 +23,10 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
 
 2. Decide on the keys. Bare keys are the default. If the notes share their frontmatter with another
    tool and `version` or `targets` means something else there, keep the prefix: set
-   `build.namespace: sw` in step 3 and skip the key renames in step 5. Step 4 and the block moves
-   still apply.
+   `build.namespace: sw` in step 3 and skip the key renames in step 5. Under a namespace every key
+   skillwright owns takes the prefix, including the blocks in steps 6 and 7: write `sw-claude:` and
+   `sw-adopted:`, never `claude:` and `adopted:`. A bare `claude:` would miss the harness, and a bare
+   `adopted:` would ship its source path under `metadata:`.
 
 3. Write `skillwright.md` in the vault folder, the folder that holds the notes, and delete the old
    file. It is the only configuration file. Use `skillwright init --out <path>` to start one, or
@@ -43,8 +45,13 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
    | `paths`, `declared_folders` | none: use `build.patterns` for a layout that differs |
 
    `build.out` is required, here or as `--out`, because there is no default output folder. If the
-   old file set no `marketplace.out`, ask where builds should land. `out: .` builds beside
-   `skillwright.md`. Paths in the file resolve against its folder, so rewrite any that moved.
+   old file set no `marketplace.out`, ask where builds should land.
+
+   Every relative path in the file resolves against the file's own folder. When the new file sits
+   in a different folder from the old one, rewrite each path so it names the same place. With
+   `vault: notes` and `out: .` at the repository root, the new file is `notes/skillwright.md` and
+   needs `out: ..` to keep the output at the root. A wrong `out` builds without any error, in the
+   wrong folder.
 
    An `assets` or `hooks` entry with no `plugin` used `default_plugin`. Name the plugin.
 
@@ -59,20 +66,33 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
    | `sw-kind: <kind>` | move the note into that kind's folder, and remove the key |
    | `sw-plugin: <p>` | move the note under `plugins/<p>/`, and remove the key |
    | no `sw-plugin`, joined `default_plugin` | move the note under `plugins/<default_plugin>/`, or leave it in a top-level `skills/` to join a plugin named after the marketplace |
-   | `marketplaces/<m>/<m>.md` | `marketplaces/<m>/skillwright.md`, with `workspace: true` in an outer `skillwright.md` |
+   | `marketplaces/<m>/<m>.md` | `marketplaces/<m>/skillwright.md`, with `workspace: true` in an outer `skillwright.md`; each of these files needs its own `build.out`, which resolves against that file |
 
    A vault that cannot move its notes maps them with `build.patterns`. Patterns are experimental.
 
-5. Rename the keys in every note:
+5. Rename the keys. The migration must not change what ships, and the rule depends on the kind of
+   note.
+
+   On a plugin note or the marketplace:
 
    | Old | New |
    |---|---|
-   | `sw-version`, `sw-author`, `sw-owner`, `sw-license`, `sw-keywords`, `sw-category`, `sw-targets`, `sw-arguments` | the same word, bare |
+   | `sw-version`, `sw-author`, `sw-owner`, `sw-license`, `sw-keywords`, `sw-category`, `sw-targets` | the same word, bare |
    | `sw-display-name` | `display_name` |
    | `sw: {version: …}` | the same keys at the top level |
 
-   On a note that has both a bare `license` and `sw-license`, keep the one for that kind: the pack's
-   on a plugin, the spec field on a skill.
+   On a skill, agent or command:
+
+   | Old | New |
+   |---|---|
+   | `sw-targets`, `sw-arguments` | `targets`, `arguments` |
+   | `sw-version`, `sw-author`, `sw-owner`, `sw-keywords`, `sw-category`, `sw-display-name` | delete the key |
+   | `sw-license` | delete the key, and leave any bare `license` as it is |
+
+   The deleted keys shipped nothing, because they were stripped at publish. Do not rename them.
+   `version` on a skill is an unknown key and would ship under `metadata:`, and `license` on a skill
+   is the spec field and would ship as written. If the value matters, tell the user: moving it to
+   the plugin note changes that plugin's manifest, so it is a separate decision.
 
 6. Move each `sw-overrides` entry to a top-level block named for the harness, and remove
    `sw-overrides`:
@@ -87,13 +107,16 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
      allowed-tools: Bash(cargo:*)
    ```
 
+   Under `build.namespace: sw` the block is `sw-claude:`.
+
    Only `claude`, `codex`, `cursor` and `pi` have blocks. Move an override for any other target
    into the note, or drop it. A block a skill inherits cannot set its `name` or `description`, and a
    block's `metadata` merges with the note's own. Blocks and `author`, `license`, `repository`,
    `homepage` and `targets` inherit from the plugin note and `skillwright.md`, so a value repeated on
    every note can move up once.
 
-7. Fold adoption provenance into one `adopted:` block, leaving every value as it is:
+7. Fold adoption provenance into one `adopted:` block, or `sw-adopted:` under `build.namespace: sw`,
+   leaving every value as it is:
 
    | Old | New |
    |---|---|
@@ -105,7 +128,8 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
    | `sw-also-at` | `adopted.also_at` |
 
 8. Refresh the adopt hashes. A key that is skillwright's now, such as `arguments`, was covered by
-   the old hash, so the rename alone can read as an edit:
+   the old hash, and a `license` renamed from `sw-license` was not, so the rename alone can read as
+   an edit:
 
    ```sh
    skillwright check --fix-adopt-hashes --dry-run
@@ -119,6 +143,10 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
 9. Replace old names in scripts and CI. Add `--out` to any `build` or `check` that relied on a
    default, and read `version`, not `sw-version`, in anything that parses a note.
 
+   skillwright finds `skillwright.md` by walking up, so it must be at or above the folder a command
+   runs from. If the file moved down into `notes/`, a command run from the repository root exits 4.
+   Run it from `notes/`, or pass `--config notes/skillwright.md`.
+
 10. Verify:
 
     ```sh
@@ -129,8 +157,10 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
     ```
 
     Each unknown key is a warning. A leftover `sw-` key on a bare vault is one, and it would ship
-    under `metadata:`, so clear them all and search for `sw-` again. A note that still has a `kind`
-    or `plugin` key is listed as `skipped · removed-key` and is not built.
+    under `metadata:`, so clear them all and search for `sw-` again. Compare the build with the old
+    output: nothing but the `Generated by` line should differ. A note that still has a `kind` or
+    `plugin` key is listed as `skipped · removed-key`, and `build` and `check` refuse to run until
+    the key is gone.
 
     A build replaces each harness's packs folder and the manifests it writes. Files the old build
     left elsewhere in a harness folder stay, so remove them by hand if they are stale.

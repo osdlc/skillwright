@@ -34,7 +34,7 @@ marketplace:
   name: house
   owner: acme
   default_plugin: tools
-  out: .
+  out: .                # relative to skillwright.yaml: the repository root
 ```
 
 ```markdown
@@ -56,7 +56,7 @@ The same vault after:
 name: house
 owner: acme
 build:
-  out: .
+  out: ..               # relative to this file: still the repository root
 ---
 ```
 
@@ -70,5 +70,25 @@ claude:
 ---
 ```
 
-A vault that cannot rename its keys can keep them: set `build.namespace: sw`.
-Everything else on this page still applies.
+The file moved down into `notes/`, which changes two things:
+
+- `out` is relative to `skillwright.md`, so `.` became `..`. With `.`, the build
+  would succeed and land in `notes/`.
+- skillwright finds the file by walking up, so a command run from the repository
+  root no longer finds it. Run from `notes/`, or pass `--config notes/skillwright.md`.
+
+## Keeping the prefix
+
+A vault that cannot rename its keys can keep them by setting
+`build.namespace: sw`. Under a namespace every key skillwright owns takes the
+prefix, so the blocks do too:
+
+| Bare vault | Namespaced vault |
+|---|---|
+| `version`, `targets` | `sw-version`, `sw-targets` |
+| `claude:` | `sw-claude:` |
+| `adopted:` | `sw-adopted:` |
+
+A bare `claude:` in a namespaced vault does not reach Claude, and a bare `adopted:`
+would ship its source path under `metadata:`. Keys in `skillwright.md` itself are
+always bare.

@@ -69,17 +69,18 @@ pub struct MarketplaceFields {
 
 /// Where `publish` writes when `--to` is not given.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct DestinationSetting {
     /// The destination root directory, relative to the root file.
     pub root: String,
     /// The target rendered into the root.
     pub target: String,
+    /// `project` or `user`. Informational: nothing reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 /// One `build.assets` entry: a file or folder copied into a plugin's root.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AssetSetting {
     /// The source file or folder, relative to the root file.
     pub from: String,
@@ -92,7 +93,6 @@ pub struct AssetSetting {
 
 /// One `build.hooks` entry: a Claude Code `hooks.json` rendered per harness.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct HookSetting {
     /// The file, relative to the root file.
     pub from: String,
@@ -442,6 +442,7 @@ fn build(
     for (key, value) in map {
         match key.as_str() {
             Some(name) if BUILD_KEYS.contains(&name) => {
+                warn_nested(name, value, warnings);
                 kept.insert(key.clone(), value.clone());
             }
             Some(name) => warnings.push(format!(
@@ -451,6 +452,28 @@ fn build(
         }
     }
     field("build", &serde_yaml::Value::Mapping(kept), "a build block")
+}
+
+/// Warn about each unknown key in an entry of a `build:` list. Each entry's
+/// struct ignores them when it is read.
+fn warn_nested(list: &str, value: &serde_yaml::Value, warnings: &mut Vec<String>) {
+    let known: &[&str] = match list {
+        "destinations" => &["root", "target", "scope"],
+        "assets" => &["from", "to", "plugin"],
+        "hooks" => &["from", "plugin"],
+        _ => return,
+    };
+    let entries = value.as_sequence().map_or(&[][..], Vec::as_slice);
+    let keys = entries
+        .iter()
+        .filter_map(serde_yaml::Value::as_mapping)
+        .flat_map(|entry| entry.keys())
+        .filter_map(serde_yaml::Value::as_str);
+    for key in keys.filter(|key| !known.contains(key)) {
+        warnings.push(format!(
+            "`build.{list}[].{key}` is not a key skillwright reads; it is ignored"
+        ));
+    }
 }
 
 /// The build config a root file's text describes: [`parse_root_file`], then

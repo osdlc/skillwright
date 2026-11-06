@@ -240,7 +240,7 @@ enum Verb {
     Publish(PublishArgs),
     /// Render the vault into its standalone marketplaces and swap them into place.
     Build(BuildArgs),
-    /// Report the marketplace's drift against the vault. Writes nothing; exits 1 on drift.
+    /// Report the marketplace's drift against the vault and exit 1 on drift. Writes nothing unless `--fix-adopt-hashes` is given.
     Check(CheckArgs),
     /// List every publishable note in the vault. Writes nothing.
     List(ListArgs),

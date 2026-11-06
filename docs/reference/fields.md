@@ -9,7 +9,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. |
-| `description` | string | spec | no | What it does. A component with no description is not published. |
+| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
 | `owner` | string or `{name, email, url}` | skillwright | no | The marketplace owner, a name or `{name, email, url}`. |
@@ -28,7 +28,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. |
-| `description` | string | spec | no | What it does. A component with no description is not published. |
+| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
 | `license` | string | skillwright | yes | The pack license, an SPDX expression. Defaults to UNLICENSED. |
@@ -48,7 +48,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. |
-| `description` | string | spec | no | What it does. A component with no description is not published. |
+| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin or marketplace. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
 | `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings is Claude's own `arguments` key. |
@@ -65,14 +65,14 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
 | `pi` | harness block | skillwright | yes | Fields only Pi reads, in its own key names. |
-| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, hash, at}`. Written by `adopt`. |
+| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`. |
 
 ## Agent
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. |
-| `description` | string | spec | no | What it does. A component with no description is not published. |
+| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
 | `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking. |
@@ -89,14 +89,14 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
 | `pi` | harness block | skillwright | yes | Fields only Pi reads, in its own key names. |
-| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, hash, at}`. Written by `adopt`. |
+| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`. |
 
 ## Command
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. |
-| `description` | string | spec | no | What it does. A component with no description is not published. |
+| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
 | `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking. |
@@ -112,7 +112,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
 | `pi` | harness block | skillwright | yes | Fields only Pi reads, in its own key names. |
-| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, hash, at}`. Written by `adopt`. |
+| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`. |
 
 ## Hook
 
@@ -130,7 +130,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | `async` | boolean | spec | no | True runs the hook without waiting for it. |
 | `once` | boolean | spec | no | True runs the hook once per session. |
 | `timeout` | number | spec | no | The timeout in seconds. |
-| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, hash, at}`. Written by `adopt`. |
+| `adopted` | adopted block | skillwright | no | Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`. |
 
 ## Harness blocks
 

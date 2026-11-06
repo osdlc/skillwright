@@ -301,6 +301,27 @@ fn init_refuses_an_existing_root_file() {
 }
 
 #[test]
+fn init_refuses_a_blank_out() {
+    let dir = tempfile::tempdir().unwrap();
+    for out in ["", "  "] {
+        let ran = run(&["init", "--out", out], dir.path());
+        assert_eq!(ran.code, 3, "{}", ran.stderr);
+    }
+    assert!(!dir.path().join("skillwright.md").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn init_does_not_write_through_a_dangling_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("elsewhere.md");
+    std::os::unix::fs::symlink(&target, dir.path().join("skillwright.md")).unwrap();
+    let ran = run(&["init", "--out", "dist"], dir.path());
+    assert_eq!(ran.code, 1, "{}", ran.stderr);
+    assert!(!target.exists());
+}
+
+#[test]
 fn a_vault_init_wrote_builds() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);
@@ -314,6 +335,25 @@ fn a_vault_init_wrote_builds() {
     let ran = run(&["build", "--yes"], dir.path());
     assert_eq!(ran.code, 0, "{}", ran.stderr);
     assert!(dir.path().join("dist").is_dir());
+}
+
+#[test]
+fn a_destination_scope_is_read_and_an_unknown_nested_key_only_warns() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: v\nbuild:\n  out: dist\n  destinations:\n    - root: dest\n      target: claude-code\n      scope: project\n      flavour: mild\n---\n",
+    )
+    .unwrap();
+    std::fs::create_dir(dir.path().join("skills")).unwrap();
+    let ran = run(&["list"], dir.path());
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    assert!(
+        ran.stderr.contains("destinations[].flavour"),
+        "{}",
+        ran.stderr
+    );
+    assert!(!ran.stderr.contains("scope"), "{}", ran.stderr);
 }
 
 // --- check --fix-adopt-hashes ------------------------------------------------
@@ -372,6 +412,20 @@ fn fix_adopt_hashes_refreshes_a_note_whose_only_change_is_the_rename() {
     let again = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
     assert_eq!(again.code, 0, "{}", again.stderr);
     assert_eq!(again.stdout, "");
+}
+
+#[test]
+fn fix_adopt_hashes_treats_a_key_the_rename_brings_into_the_hash_as_a_rename() {
+    let (_dir, vault) = adopted_vault();
+    let note = vault.join("plugins/adopted/skills/demo/demo.md");
+    let text = std::fs::read_to_string(&note).unwrap();
+    let text = text.replacen("---\n", "---\nsw-license: MIT\nsw-version: 2.0.0\n", 1);
+    std::fs::write(&note, text).unwrap();
+    rename_to_bare(&vault, &note);
+
+    let ran = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
+    assert_eq!(ran.code, 0, "{}{}", ran.stdout, ran.stderr);
+    assert!(ran.stdout.contains("refreshed"), "{}", ran.stdout);
 }
 
 #[test]
@@ -2191,6 +2245,7 @@ fn publish(vault: &Path, dest: &Path, note: &str) {
         &PublishRequest {
             skill_path: vault.join(note),
             destination_root: dest.to_path_buf(),
+            user_folders: false,
             target: "claude".to_string(),
             mode: PublishMode::Write,
             skills_root: Some(vault.to_path_buf()),

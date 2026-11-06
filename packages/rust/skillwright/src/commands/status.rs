@@ -49,7 +49,7 @@ use crate::report::{
     AttributedState, Attribution, RowState, has_drift, normalize_thrown_reason, render_state_line,
     render_state_tally,
 };
-use crate::resolve::{CommonFlags, refuse_workspace, resolve_run};
+use crate::resolve::{CommonFlags, RunDestination, refuse_workspace, resolve_run};
 
 /// The resolved flags of `skillwright status`.
 pub struct StatusFlags {
@@ -87,7 +87,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     if let Err(code) = refuse_workspace("status", &run, ctx.err) {
         return code;
     }
-    let destinations: Vec<(PathBuf, String)> = run.destinations();
+    let destinations = run.destinations();
 
     // --- the units ----------------------------------------------------------
     // A named note is taken as given; without one the vault scan supplies the
@@ -149,7 +149,12 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // field for this.
     let mut suggestions: Vec<(String, PathBuf, VersionBumpSuggestion)> = Vec::new();
     'outer: for note_path in &note_paths {
-        for (root, target) in &destinations {
+        for RunDestination {
+            root,
+            target,
+            user_folders,
+        } in &destinations
+        {
             if ctx.is_interrupted() {
                 break 'outer;
             }
@@ -163,6 +168,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 skill_path: note_path.clone(),
                 destination_root: root.clone(),
                 target: target.clone(),
+                user_folders: *user_folders,
                 // The vault root, so the kind gate has its structural layer: a
                 // note in `agents/` declaring no kind is not a skill, and
                 // reporting on it as one would state a skill's status for
@@ -219,7 +225,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Named after the rows the core answered, so the table reads publishable
     // units first and the notes nobody publishes at the end.
     for (path, kind) in &unpublishable {
-        for (root, target) in &destinations {
+        for RunDestination { root, target, .. } in &destinations {
             rows.push(AttributedState {
                 attribution: Attribution {
                     skill: path.clone(),

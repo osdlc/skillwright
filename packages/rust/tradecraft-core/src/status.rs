@@ -46,6 +46,9 @@ pub struct StatusRequest {
     #[serde(default)]
     /// Root of the vault, when the caller knows it.
     pub skills_root: Option<PathBuf>,
+    /// See [`PublishRequest::user_folders`].
+    #[serde(default)]
+    pub user_folders: bool,
 }
 
 /// What a unit's publish state is at one destination.
@@ -168,6 +171,7 @@ pub fn status_of(
             // A status acknowledges nothing. Overwriting is a decision taken
             // at a publish, by a person who has seen this.
             overwrite: Vec::new(),
+            user_folders: request.user_folders,
         },
         ns,
     )?;
@@ -439,6 +443,7 @@ mod tests {
         StatusRequest {
             skill_path: PathBuf::from("/vault/skills/code-review.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             skills_root: Some(PathBuf::from("/vault")),
         }
@@ -450,6 +455,7 @@ mod tests {
             &PublishRequest {
                 skill_path: PathBuf::from("/vault/skills/code-review.md"),
                 destination_root: PathBuf::from("/dest"),
+                user_folders: false,
                 target: "claude".to_owned(),
                 mode: PublishMode::Write,
                 skills_root: Some(PathBuf::from("/vault")),
@@ -677,6 +683,7 @@ mod tests {
         StatusRequest {
             skill_path: PathBuf::from(PLUGIN_NOTE),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             skills_root: Some(PathBuf::from("/vault")),
         }
@@ -688,6 +695,7 @@ mod tests {
             &PublishRequest {
                 skill_path: PathBuf::from(PLUGIN_NOTE),
                 destination_root: PathBuf::from("/dest"),
+                user_folders: false,
                 target: "claude".to_owned(),
                 mode: PublishMode::Write,
                 skills_root: Some(PathBuf::from("/vault")),
@@ -801,6 +809,7 @@ mod tests {
         let request = PublishRequest {
             skill_path: PathBuf::from(note),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -827,6 +836,7 @@ mod tests {
             &StatusRequest {
                 skill_path: request.skill_path.clone(),
                 destination_root: request.destination_root.clone(),
+                user_folders: false,
                 target: request.target.clone(),
                 skills_root: request.skills_root.clone(),
             },

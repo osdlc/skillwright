@@ -68,6 +68,7 @@ pub struct PublishFlags {
 struct Destination {
     root: PathBuf,
     target: String,
+    user_folders: bool,
 }
 
 /// One outcome, attributed to the (skill, destination, target) that produced
@@ -208,13 +209,18 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             .map(|root| Destination {
                 root: resolve_against_cwd(root, &ctx.cwd),
                 target: target.clone(),
+                user_folders: false,
             })
             .collect()
     } else {
         let mut destinations: Vec<Destination> = run
             .destinations()
             .into_iter()
-            .map(|(root, target)| Destination { root, target })
+            .map(|d| Destination {
+                root: d.root,
+                target: d.target,
+                user_folders: d.user_folders,
+            })
             .collect();
         if let Some(target) = &flags.target {
             let mut configured_targets: Vec<String> =
@@ -372,6 +378,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 skill_path: note_path.clone(),
                 destination_root: dest.root.clone(),
                 target: dest.target.clone(),
+                user_folders: dest.user_folders,
                 mode: if flags.dry_run {
                     PublishMode::DryRun
                 } else {

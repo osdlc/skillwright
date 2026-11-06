@@ -50,7 +50,7 @@ pub enum Shape {
     Arguments,
     /// A mapping of one harness's own keys.
     HarnessBlock,
-    /// The `{source, format, hash, at}` block adoption writes.
+    /// The `{source, format, source_hash, hash, at, also_at}` block adoption writes.
     Adopted,
 }
 
@@ -104,7 +104,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: false,
-        summary: "What it does. A component with no description is not published.",
+        summary: "What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published.",
     },
     KeySpec {
         key: "version",
@@ -400,7 +400,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::Adopted,
         inherits: false,
-        summary: "Where adoption read the note from: `{source, format, hash, at}`. Written by `adopt`.",
+        summary: "Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`.",
     },
 ];
 

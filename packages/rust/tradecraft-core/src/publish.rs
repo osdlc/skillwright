@@ -239,6 +239,11 @@ pub struct PublishRequest {
     /// at once would make the decision invisible at the moment it is taken.
     #[serde(default)]
     pub overwrite: Vec<String>,
+    /// `destination_root` is the home directory, and files land in the
+    /// harness's user folders rather than its project folders. The two differ
+    /// for Pi, whose user skills are `.pi/agent/skills`.
+    #[serde(default)]
+    pub user_folders: bool,
 }
 
 /// Whether a publish writes, or only reports what it would write.
@@ -885,6 +890,22 @@ fn refuse_agent_overrides(
     ))
 }
 
+/// A project-relative path as it lands under the home directory: the
+/// harness's project folder swapped for its user folder.
+fn user_folder_path(canonical: &str, relative: &str) -> String {
+    let format = crate::harness::profile_named(canonical).and_then(|p| p.plugin.as_ref());
+    let bases = format.and_then(|format| {
+        Some((
+            format.skills_dir.strip_suffix("skills")?,
+            format.user_skills_dir.strip_suffix("skills")?,
+        ))
+    });
+    match bases.and_then(|(project, user)| Some((relative.strip_prefix(project)?, user))) {
+        Some((rest, user)) => format!("{user}{rest}"),
+        None => relative.to_owned(),
+    }
+}
+
 /// The half every kind shares: the rail, the `targets` blocker, the
 /// manifest, and the write.
 ///
@@ -910,6 +931,16 @@ fn finish(
     replaced_manifest: Option<&str>,
     redundant_overrides: &[PublishReason],
 ) -> Result<PublishReport, CoreError> {
+    let mut files = files;
+    let mut relocated_entry = entry_output.map(str::to_owned);
+    if request.user_folders {
+        for file in &mut files {
+            file.relative_path = user_folder_path(canonical, &file.relative_path);
+        }
+        relocated_entry = relocated_entry.map(|path| user_folder_path(canonical, &path));
+    }
+    let entry_output = relocated_entry.as_deref();
+
     // The rail, before any byte is written.
     let rail = match request.skills_root.as_deref() {
         // The vault root is known and this host can see links, so the rail
@@ -2011,6 +2042,7 @@ mod tests {
         PublishRequest {
             skill_path: PathBuf::from("/vault/skills/code-review/code-review.md"),
             destination_root: PathBuf::from(destination_root),
+            user_folders: false,
             target: target.to_owned(),
             mode: PublishMode::Write,
             // These fixtures sit at `<root>/skills/<name>.md`, a shape the
@@ -2627,6 +2659,7 @@ mod tests {
         PublishRequest {
             skill_path: vault.join("skills/code-review/code-review.md"),
             destination_root: tmp.join("dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: None,
@@ -2792,6 +2825,7 @@ mod tests {
         let asked = PublishRequest {
             skill_path: PathBuf::from("/home/.claude/skills/code-review/code-review.md"),
             destination_root: PathBuf::from("/home"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/home/.claude")),
@@ -2860,6 +2894,7 @@ mod tests {
             let request = PublishRequest {
                 skill_path: vault.join("skills/code-review/code-review.md"),
                 destination_root: home.clone(),
+                user_folders: false,
                 target: "claude".to_owned(),
                 mode,
                 skills_root: Some(vault.clone()),
@@ -2894,6 +2929,7 @@ mod tests {
         let request = PublishRequest {
             skill_path: vault.join("skills/code-review/code-review.md"),
             destination_root: home.clone(),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(vault.clone()),
@@ -2945,6 +2981,7 @@ mod tests {
         let request = PublishRequest {
             skill_path: vault.join("library/code-review/code-review.md"),
             destination_root: home.clone(),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(vault.clone()),
@@ -3200,6 +3237,7 @@ mod tests {
         PublishRequest {
             skill_path: PathBuf::from("/vault/agents/senior-reviewer.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -3372,6 +3410,7 @@ mod tests {
         PublishRequest {
             skill_path: PathBuf::from("/vault/commands/ship.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: target.to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -3549,6 +3588,7 @@ mod tests {
         let request = PublishRequest {
             skill_path: PathBuf::from("/vault/skills/review.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -3789,6 +3829,7 @@ mod tests {
         PublishRequest {
             skill_path: PathBuf::from("/vault/marketplaces/house/plugins/git-tools/git-tools.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: target.to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -4562,6 +4603,7 @@ mod tests {
         PublishRequest {
             skill_path: PathBuf::from("/vault/skills/code-review.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),

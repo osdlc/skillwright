@@ -805,14 +805,15 @@ fn adopted_note_hash(
     note_hash_keeping(entry_rel, note_text, peers, ns, about, &[])
 }
 
-/// [`adopted_note_hash`] with `kept` left in, though they are ours now.
+/// [`adopted_note_hash`] with the keys in `flipped` treated the other way
+/// round: left in if they are ours, left out if they are not.
 fn note_hash_keeping(
     entry_rel: &str,
     note_text: &str,
     peers: &[(String, Vec<u8>, bool)],
     ns: &Namespace,
     about: &Path,
-    kept: &[&str],
+    flipped: &[&str],
 ) -> Result<String, CoreError> {
     use serde_yaml::{Mapping, Value as Yaml};
 
@@ -820,7 +821,7 @@ fn note_hash_keeping(
     let fields = frontmatter_map(frontmatter, about)?;
     let mut map = Mapping::new();
     for (key, value) in &fields {
-        if is_ours(ns, key) && !kept.contains(&key.as_str()) {
+        if is_ours(ns, key) != flipped.contains(&key.as_str()) {
             continue;
         }
         let value = serde_yaml::to_value(value).map_err(|e| {
@@ -852,9 +853,21 @@ fn note_hash_keeping(
 
 // --- Refreshing the hash after a key rename ---------------------------------
 
-/// The most owned keys a note may carry for [`fix_adopt_hashes`] to try every
+/// The most keys a rename can have moved for [`fix_adopt_hashes`] to try every
 /// subset of them.
 const MAX_RENAMED_KEYS: usize = 12;
+
+/// Keys a rename brings into the hash: `sw-license` on a skill sat outside it,
+/// and bare `license` sits inside it.
+const RENAMED_IN: &[&str] = &[
+    "license",
+    "version",
+    "author",
+    "owner",
+    "keywords",
+    "category",
+    "display_name",
+];
 
 /// What [`fix_adopt_hashes`] found on one adopted note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -879,11 +892,13 @@ pub struct AdoptHashFix {
 /// Refresh `adopted.hash` on every adopted skill whose only change is the key
 /// rename from prefixed to bare frontmatter.
 ///
-/// A key such as `version` was foreign on a prefixed note, so its hash
+/// A key such as `arguments` was foreign on a prefixed note, so its hash
 /// covered it. On a bare note the key is skillwright's and the hash leaves it
-/// out, so the rename alone reads as an edit. A note qualifies when its hash,
-/// with some of those keys put back, equals the recorded one. Any other
-/// mismatch is a real edit, and is reported and left alone.
+/// out. `sw-license` goes the other way: outside the hash as written, inside
+/// it as `license`. Either way the rename alone reads as an edit. A note
+/// qualifies when its hash, with some of those keys moved back, equals the
+/// recorded one. Any other mismatch is a real edit, and is reported and left
+/// alone.
 ///
 /// # Errors
 ///
@@ -930,7 +945,7 @@ pub fn fix_adopt_hashes(
     Ok(fixes)
 }
 
-/// Whether putting some of the note's owned keys back reproduces `recorded`.
+/// Whether moving some keys back across the hash reproduces `recorded`.
 fn only_renamed(
     entry_rel: &str,
     raw: &str,
@@ -941,22 +956,24 @@ fn only_renamed(
 ) -> Result<bool, CoreError> {
     let (frontmatter, _) = split_frontmatter(raw);
     let fields = frontmatter_map(frontmatter, about)?;
-    let owned: Vec<&str> = fields
+    let moved: Vec<&str> = fields
         .keys()
         .map(String::as_str)
-        .filter(|key| is_ours(ns, key) && *key != "adopted")
+        .filter(|key| {
+            (is_ours(ns, key) && *key != "adopted") || (ns.is_bare() && RENAMED_IN.contains(key))
+        })
         .collect();
-    if owned.len() > MAX_RENAMED_KEYS {
+    if moved.len() > MAX_RENAMED_KEYS {
         return Ok(false);
     }
-    for subset in 1..1_usize << owned.len() {
-        let kept: Vec<&str> = owned
+    for subset in 1..1_usize << moved.len() {
+        let flipped: Vec<&str> = moved
             .iter()
             .enumerate()
             .filter(|(index, _)| subset >> index & 1 == 1)
             .map(|(_, key)| *key)
             .collect();
-        if note_hash_keeping(entry_rel, raw, peers, ns, about, &kept)? == recorded {
+        if note_hash_keeping(entry_rel, raw, peers, ns, about, &flipped)? == recorded {
             return Ok(true);
         }
     }

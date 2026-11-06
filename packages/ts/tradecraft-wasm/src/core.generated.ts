@@ -86,6 +86,13 @@ export interface PublishRequest {
   overwrite?: string[];
 
   /**
+   * `destination_root` is the home directory, and files land in the
+   * harness's user folders rather than its project folders. The two differ
+   * for Pi, whose user skills are `.pi/agent/skills`.
+   */
+  user_folders?: boolean;
+
+  /**
    * The vault's frontmatter namespace, as a stem, such as `sw`, or whatever the
    * host configured. Absent means [`Namespace::default`].
    */
@@ -353,6 +360,9 @@ export interface DestinationSetting {
 
   /** The target rendered into the root. */
   target: string;
+
+  /** `project` or `user`. Informational: nothing reads it. */
+  scope?: string;
 }
 
 /** One `build.assets` entry: a file or folder copied into a plugin's root. */
@@ -1765,6 +1775,9 @@ export interface StatusRequest {
 
   /** Root of the vault, when the caller knows it. */
   skills_root?: string;
+
+  /** See [`PublishRequest::user_folders`]. */
+  user_folders?: boolean;
 
   /**
    * The vault's frontmatter namespace, as a stem. Absent means

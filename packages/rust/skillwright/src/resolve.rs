@@ -73,26 +73,29 @@ impl ResolvedRun {
     }
 
     /// Where `publish` and `status` look when no `--to` is given:
-    /// `build.destinations`, else each harness's user skill folder for the
+    /// `build.destinations`, else each harness's user folders, for the
     /// harnesses this vault builds for.
-    pub fn destinations(&self) -> Vec<(PathBuf, String)> {
+    pub fn destinations(&self) -> Vec<RunDestination> {
         if !self.config.build.destinations.is_empty() {
             return self
                 .config
                 .build
                 .destinations
                 .iter()
-                .map(|d| {
-                    (
-                        resolve_configured_path(&d.root, &self.config_dir),
-                        d.target.clone(),
-                    )
+                .map(|d| RunDestination {
+                    root: resolve_configured_path(&d.root, &self.config_dir),
+                    target: d.target.clone(),
+                    user_folders: false,
                 })
                 .collect();
         }
         self.user_skill_folders()
             .into_iter()
-            .map(|(dir, name)| (dir, name.to_owned()))
+            .map(|(_, name)| RunDestination {
+                root: user_skills_dir(""),
+                target: name.to_owned(),
+                user_folders: true,
+            })
             .collect()
     }
 
@@ -118,6 +121,17 @@ impl ResolvedRun {
             .name
             .unwrap_or_default()
     }
+}
+
+/// One place `publish` and `status` write to or read from.
+#[derive(Debug, Clone)]
+pub struct RunDestination {
+    /// The destination root.
+    pub root: PathBuf,
+    /// The harness.
+    pub target: String,
+    /// The root is the home directory, and the harness's user folders apply.
+    pub user_folders: bool,
 }
 
 /// Load the root file, validate the namespace, and resolve the vault —
@@ -162,7 +176,7 @@ pub fn resolve_run(
     } else if is_convention_vault(cwd) {
         let _ = writeln!(
             err,
-            "note: no {ROOT_FILE} at or above {}; reading it with every default. Add a {ROOT_FILE} to name the marketplace and set its fields.",
+            "note: no {ROOT_FILE} at or above {}; reading it with every default. Run `skillwright init --out <path>` to add a {ROOT_FILE}.",
             cwd.display()
         );
         (cwd.to_path_buf(), None)

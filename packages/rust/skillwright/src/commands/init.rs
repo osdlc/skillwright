@@ -2,7 +2,11 @@
 //!
 //! The file holds the two things a build cannot go without: the marketplace
 //! name and `build.out`. There is no default output location, so `--out` is
-//! asked for on a terminal and required otherwise.
+//! asked for on a terminal and required otherwise, and a blank one is refused.
+
+use std::fs::OpenOptions;
+use std::io::{ErrorKind, Write};
+use std::path::Path;
 
 use tradecraft_core::authoring::slug_refusal;
 use tradecraft_core::discover::slugify;
@@ -23,13 +27,8 @@ pub struct InitFlags {
 /// Run `skillwright init` and return the exit code.
 pub fn run_init(flags: &InitFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let file = ctx.cwd.join(ROOT_FILE);
-    if file.exists() {
-        let _ = writeln!(
-            ctx.err,
-            "refused: {} already exists, so nothing was written",
-            file.display()
-        );
-        return EXIT_REFUSED;
+    if file.symlink_metadata().is_ok() {
+        return already_exists(&file, ctx);
     }
 
     let name = flags.name.clone().unwrap_or_else(|| {
@@ -43,6 +42,9 @@ pub fn run_init(flags: &InitFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
 
     let out = match &flags.out {
+        Some(out) if out.trim().is_empty() => {
+            return usage_error(ctx.err, "an output folder is required");
+        }
         Some(out) => out.clone(),
         None if is_interactive() => match ask("Output folder for builds:", ctx.err) {
             Some(out) => out,
@@ -56,15 +58,34 @@ pub fn run_init(flags: &InitFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
     };
 
-    if let Err(err) = std::fs::write(&file, compose_root_file(&name, &out)) {
-        return blocked(
-            ctx.err,
-            &format!("{} was not written: {err}", file.display()),
-        );
+    // `create_new` never follows a link, and closes the gap after the check.
+    let written = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&file)
+        .and_then(|mut opened| opened.write_all(compose_root_file(&name, &out).as_bytes()));
+    match written {
+        Ok(()) => {}
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => return already_exists(&file, ctx),
+        Err(err) => {
+            return blocked(
+                ctx.err,
+                &format!("{} was not written: {err}", file.display()),
+            );
+        }
     }
     let _ = writeln!(
         ctx.out,
         "wrote {ROOT_FILE}: marketplace {name}, output {out}"
     );
     EXIT_OK
+}
+
+fn already_exists(file: &Path, ctx: &mut CommandContext<'_>) -> i32 {
+    let _ = writeln!(
+        ctx.err,
+        "refused: {} already exists, so nothing was written",
+        file.display()
+    );
+    EXIT_REFUSED
 }

@@ -55,7 +55,7 @@ are also defaults for every plugin and component below. See
 | `namespace` | stem | Restores prefixed keys: `sw` reads `sw-version` or a `sw:` block. Absent means bare keys. |
 | `launcher_path` | path | The plugin's launcher, relative to the plugin's root. |
 | `require_descriptions` | boolean | Refuse a note with a `name` and no `description`, instead of publishing a filler. |
-| `destinations` | list of `{root, target, scope}` | Where `publish` writes when `--to` is not given. Empty means each harness's user skill folder. |
+| `destinations` | list of `{root, target, scope}` | Where `publish` writes when `--to` is not given. Empty means each harness's user skill folder, such as `~/.claude/skills`. `scope` is `project` or `user`, and is informational. |
 | `scan_locations` | list of paths | Folders a bare `adopt` reads. Empty means each harness's user skill folder. |
 | `assets` | list of `{from, to, plugin}` | Files copied into a plugin's root, besides each plugin's `assets/`. |
 | `hooks` | list of `{from, plugin}` | Canonical hooks files. |
