@@ -290,7 +290,7 @@ pub fn resolve_configured_path(path: &str, base: &Path) -> PathBuf {
 
 /// The user's home directory, read directly from `$HOME`. Falls back to `/`
 /// rather than panicking when unset.
-fn home_dir() -> PathBuf {
+pub(crate) fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))

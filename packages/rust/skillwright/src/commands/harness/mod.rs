@@ -1,7 +1,12 @@
-//! `skillwright harness install|update|uninstall <claude|codex|cursor>` —
+//! `skillwright harness install|update|uninstall <claude|codex|cursor|pi>` —
 //! register this crate's built marketplace with a harness through the
 //! harness's own `plugin` CLI and install its plugins where that CLI can,
-//! bring them to the built versions, or remove them.
+//! bring them to the built versions, or remove them. Pi has no marketplace;
+//! its packs install by path ([`pi`]).
+//!
+//! `harness link|unlink <harness>` is the dev loop: each built skill folder
+//! symlinked into the harness's user skill folder, so an edit and a build
+//! reach the harness with no install ([`link`]).
 //!
 //! Nothing here names a marketplace or a plugin. The marketplace name comes
 //! from the harness root's own `marketplace.json`, since that manifest is
@@ -11,6 +16,8 @@
 
 pub mod adapter;
 pub mod cli_runner;
+pub mod link;
+pub mod pi;
 pub mod reconcile;
 
 use std::collections::BTreeMap;
@@ -25,7 +32,7 @@ use crate::config::{NEEDS, resolve_against_cwd, resolve_configured_path};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
-use crate::resolve::{CommonFlags, resolve_run};
+use crate::resolve::{CommonFlags, ResolvedRun, resolve_run};
 
 use adapter::{HarnessAdapter, MarketSource, Scope, Want, str_at};
 use reconcile::{
@@ -140,6 +147,10 @@ pub enum HarnessVerb {
         /// Also remove the marketplace registration.
         marketplace: bool,
     },
+    /// Symlink built skills into the harness's user skill folder.
+    Link,
+    /// Remove the symlinks [`HarnessVerb::Link`] made.
+    Unlink,
 }
 
 impl HarnessVerb {
@@ -148,20 +159,41 @@ impl HarnessVerb {
             Self::Install => "install",
             Self::Update => "update",
             Self::Uninstall { .. } => "uninstall",
+            Self::Link => "link",
+            Self::Unlink => "unlink",
         }
     }
 
     /// Install and update register the marketplace from a source. Uninstall
     /// also matches it by name, so it needs none.
     fn registers(self) -> bool {
-        !matches!(self, Self::Uninstall { .. })
+        matches!(self, Self::Install | Self::Update)
+    }
+}
+
+/// The harness a run acts on.
+#[derive(Clone, Copy)]
+pub enum Harness {
+    /// One whose `plugin` CLI registers a marketplace.
+    Market(&'static HarnessAdapter),
+    /// Pi, whose packs install by path.
+    Pi,
+}
+
+impl Harness {
+    /// The CLI target name, which is also the harness's build root.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Market(adapter) => adapter.name,
+            Self::Pi => pi::NAME,
+        }
     }
 }
 
 /// The resolved flags of `skillwright harness install|update|uninstall`.
 pub struct HarnessFlags {
     /// The harness to act on.
-    pub adapter: &'static HarnessAdapter,
+    pub harness: Harness,
     /// The scope to register and install at.
     pub scope: Scope,
     /// Plugins to act on. Empty means `marketplace.default_plugin`.
@@ -201,7 +233,77 @@ struct InstallDocument<'a> {
 
 /// Run `harness <verb> <harness>` and return the exit code.
 pub fn run_harness(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandContext<'_>) -> i32 {
-    let adapter = flags.adapter;
+    match (verb, flags.harness) {
+        (HarnessVerb::Link | HarnessVerb::Unlink, harness) => {
+            link::run_link(verb, harness, flags, ctx)
+        }
+        (_, Harness::Pi) => pi::run_pi(verb, flags, ctx),
+        (_, Harness::Market(adapter)) => run_market(verb, adapter, flags, ctx),
+    }
+}
+
+/// The built marketplace directory: `--path`, else `marketplace.out`.
+///
+/// # Errors
+///
+/// The exit code of the usage error printed when neither is set.
+pub(crate) fn built_root(
+    run: &ResolvedRun,
+    flags: &HarnessFlags,
+    ctx: &mut CommandContext<'_>,
+    argv_verb: &[&str],
+) -> Result<PathBuf, i32> {
+    if let Some(path) = &flags.path {
+        return Ok(resolve_against_cwd(path, &ctx.cwd));
+    }
+    run.config
+        .as_ref()
+        .and_then(|c| c.marketplace.out.as_deref())
+        .map(|out| resolve_configured_path(out, &run.config_dir))
+        .ok_or_else(|| {
+            let need = Need {
+                config: "marketplace.out",
+                unless_input: Some("path"),
+            };
+            usage_error(ctx.err, &NEEDS.message(&need, &run.config_dir, argv_verb))
+        })
+}
+
+/// `--plugin`, else `marketplace.default_plugin`, else `None`.
+pub(crate) fn configured_plugins(run: &ResolvedRun, flags: &HarnessFlags) -> Option<Vec<String>> {
+    if !flags.plugins.is_empty() {
+        return Some(flags.plugins.clone());
+    }
+    run.config
+        .as_ref()
+        .and_then(|c| c.marketplace.default_plugin.clone())
+        .map(|p| vec![p])
+}
+
+/// Asks to approve a plan of commands, unless `--yes` was given.
+pub(crate) fn approve_commands(
+    flags: &HarnessFlags,
+    argv_verb: &[&str],
+    commands: &[Vec<String>],
+    err: &mut dyn std::io::Write,
+) -> i32 {
+    if flags.yes {
+        return EXIT_OK;
+    }
+    let mut plan = vec![argv_verb[1..].join(" "), String::new()];
+    plan.extend(plan_flow(&[(
+        "run",
+        commands.iter().map(|argv| argv.join(" ")).collect(),
+    )]));
+    confirm_write(&argv_verb.join(" "), &plan, err)
+}
+
+fn run_market(
+    verb: HarnessVerb,
+    adapter: &'static HarnessAdapter,
+    flags: &HarnessFlags,
+    ctx: &mut CommandContext<'_>,
+) -> i32 {
     let usage = if verb.registers() {
         adapter.check_usage(
             flags.scope,
@@ -339,17 +441,7 @@ pub fn run_harness(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandCon
     };
 
     let err = &mut *ctx.err;
-    let mut approve = |commands: &[Vec<String>]| {
-        if flags.yes {
-            return EXIT_OK;
-        }
-        let mut plan = vec![format!("{verb_name} {}", adapter.name), String::new()];
-        plan.extend(plan_flow(&[(
-            "run",
-            commands.iter().map(|argv| argv.join(" ")).collect(),
-        )]));
-        confirm_write(&argv_verb.join(" "), &plan, err)
-    };
+    let mut approve = |commands: &[Vec<String>]| approve_commands(flags, &argv_verb, commands, err);
     let exec = Execution {
         runner: ctx.runner,
         cwd: &run.config_dir,
@@ -362,6 +454,7 @@ pub fn run_harness(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandCon
         HarnessVerb::Uninstall { marketplace } => {
             reconcile_uninstall(adapter, &want, flags.scope, marketplace, exec)
         }
+        HarnessVerb::Link | HarnessVerb::Unlink => unreachable!("run_harness sends these to link"),
     };
     let report = match result {
         Ok(report) => report,

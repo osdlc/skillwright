@@ -1005,3 +1005,248 @@ fn uninstall_refuses_a_git_ref() {
     assert!(result.stderr.contains("--git-ref"), "{}", result.stderr);
     assert!(fake.calls().is_empty());
 }
+
+// --- pi ---------------------------------------------------------------------
+
+/// `run`, with `home` standing in for the user's home directory.
+fn run_home(argv: &[&str], cwd: &Path, home: &Path, runner: &dyn Runner) -> Run {
+    let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
+    let mut out: Vec<u8> = Vec::new();
+    let mut err: Vec<u8> = Vec::new();
+    let code = with_machine_env(Some(&cwd.join("no-machine-config.yaml")), || {
+        let mut ctx = CommandContext::new(cwd, &mut out, &mut err)
+            .with_runner(runner)
+            .with_home(home);
+        run_with(&owned, &mut ctx)
+    });
+    Run {
+        code,
+        stdout: String::from_utf8(out).unwrap(),
+        stderr: String::from_utf8(err).unwrap(),
+    }
+}
+
+/// A built skill folder at `<root>/<packs>/<plugin>/skills/<skill>`.
+fn write_built_skill(root: &Path, packs: &str, plugin: &str, skill: &str) -> std::path::PathBuf {
+    let dir = root.join(packs).join(plugin).join("skills").join(skill);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("SKILL.md"), format!("---\nname: {skill}\n---\n")).unwrap();
+    dir
+}
+
+#[test]
+fn pi_install_runs_pi_install_for_each_pack_the_settings_do_not_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_project(dir.path());
+    let home = dir.path().join("home");
+    write_built_skill(Path::new(&root), ".pi/packs", "tools", "tools-a");
+    let pack = format!("{root}/.pi/packs/tools");
+    let fake = FakeRunner::new("", "");
+
+    let result = run_home(
+        &["harness", "install", "pi", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert_eq!(fake.calls(), [format!("pi install {pack}")]);
+
+    // Project scope passes `-l`.
+    let fake = FakeRunner::new("", "");
+    let result = run_home(
+        &["harness", "install", "pi", "--scope", "project", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert_eq!(fake.calls(), [format!("pi install {pack} -l")]);
+
+    // Listed in the user settings: nothing runs, on install or update.
+    let settings = home.join(".pi/agent/settings.json");
+    fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    fs::write(&settings, format!(r#"{{"packages": ["{pack}"]}}"#)).unwrap();
+    for verb in ["install", "update"] {
+        let fake = FakeRunner::new("", "");
+        let result = run_home(&["harness", verb, "pi", "--yes"], dir.path(), &home, &fake);
+        assert_eq!(result.code, 0, "{}", result.stderr);
+        assert!(fake.calls().is_empty(), "{verb}: {:?}", fake.calls());
+        assert!(
+            result.stdout.contains("pi  unchanged · exists"),
+            "{}",
+            result.stdout
+        );
+    }
+}
+
+#[test]
+fn pi_uninstall_runs_nothing_and_names_the_manual_step() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_project(dir.path());
+    let home = dir.path().join("home");
+    let pack = format!("{root}/.pi/packs/tools");
+    let settings = home.join(".pi/agent/settings.json");
+    fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    fs::write(&settings, format!(r#"{{"packages": ["{pack}"]}}"#)).unwrap();
+    let fake = FakeRunner::new("", "");
+
+    let result = run_home(
+        &["harness", "uninstall", "pi", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(result.code, EXIT_BLOCKED, "{}", result.stderr);
+    assert!(fake.calls().is_empty(), "{:?}", fake.calls());
+    assert!(result.stderr.contains(&pack), "{}", result.stderr);
+    assert!(result.stderr.contains("settings.json"), "{}", result.stderr);
+}
+
+#[test]
+fn pi_refuses_local_scope_a_git_url_and_a_marketplace() {
+    let dir = tempfile::tempdir().unwrap();
+    write_project(dir.path());
+    let home = dir.path().join("home");
+    for argv in [
+        &["harness", "install", "pi", "--scope", "local", "--yes"][..],
+        &[
+            "harness",
+            "install",
+            "pi",
+            "--git-url",
+            "https://x/r.git",
+            "--yes",
+        ][..],
+        &["harness", "uninstall", "pi", "--marketplace", "--yes"][..],
+    ] {
+        let fake = FakeRunner::new("", "");
+        let result = run_home(argv, dir.path(), &home, &fake);
+        assert_eq!(result.code, EXIT_USAGE, "{argv:?}: {}", result.stderr);
+        assert!(fake.calls().is_empty());
+    }
+}
+
+// --- link -------------------------------------------------------------------
+
+#[test]
+fn link_symlinks_each_built_skill_and_unlink_removes_only_those_links() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_project(dir.path());
+    let root = Path::new(&root).canonicalize().unwrap();
+    let home = dir.path().join("home");
+    let a = write_built_skill(&root, ".claude-plugin/packs", "tools", "a");
+    let b = write_built_skill(&root, ".claude-plugin/packs", "other", "b");
+    let fake = FakeRunner::new("", "");
+    let skills = home.join(".claude/skills");
+
+    let dry = run_home(
+        &["harness", "link", "claude", "--dry-run"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(dry.code, 0, "{}", dry.stderr);
+    assert!(dry.stdout.contains("would-link"), "{}", dry.stdout);
+    assert!(!skills.exists());
+
+    let linked = run_home(
+        &["harness", "link", "claude", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(linked.code, 0, "{}", linked.stderr);
+    assert_eq!(fs::read_link(skills.join("a")).unwrap(), a);
+    assert_eq!(fs::read_link(skills.join("b")).unwrap(), b);
+    assert!(fake.calls().is_empty(), "link runs no harness CLI");
+
+    // A second run changes nothing.
+    let again = run_home(
+        &["harness", "link", "claude", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert_eq!(
+        again.stdout.matches("unchanged").count(),
+        2,
+        "{}",
+        again.stdout
+    );
+
+    // A real folder of the same name is left alone and unlink skips it.
+    fs::remove_file(skills.join("b")).unwrap();
+    fs::create_dir_all(skills.join("b")).unwrap();
+    fs::write(skills.join("b/SKILL.md"), "mine\n").unwrap();
+    let refused = run_home(
+        &["harness", "link", "claude", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(refused.code, 1, "{}", refused.stderr);
+    assert!(refused.stdout.contains("refused"), "{}", refused.stdout);
+    assert_eq!(
+        fs::read_to_string(skills.join("b/SKILL.md")).unwrap(),
+        "mine\n"
+    );
+
+    let unlinked = run_home(
+        &["harness", "unlink", "claude", "--yes", "--json"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(unlinked.code, 0, "{}", unlinked.stderr);
+    let doc: serde_json::Value = serde_json::from_str(&unlinked.stdout).unwrap();
+    let statuses: Vec<&str> = doc["links"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(statuses, ["unlinked", "unchanged"]);
+    assert!(fs::symlink_metadata(skills.join("a")).is_err());
+    assert!(skills.join("b/SKILL.md").is_file());
+}
+
+#[test]
+fn link_uses_each_harnesss_user_folder_and_a_plugin_filter() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_project(dir.path());
+    let root = Path::new(&root).canonicalize().unwrap();
+    let home = dir.path().join("home");
+    write_built_skill(&root, ".pi/packs", "tools", "tools-a");
+    write_built_skill(&root, ".pi/packs", "other", "other-b");
+    write_built_skill(&root, ".agents/packs", "tools", "a");
+    let fake = FakeRunner::new("", "");
+
+    let pi = run_home(
+        &["harness", "link", "pi", "--plugin", "tools", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(pi.code, 0, "{}", pi.stderr);
+    assert!(fs::read_link(home.join(".pi/agent/skills/tools-a")).is_ok());
+    assert!(!home.join(".pi/agent/skills/other-b").exists());
+
+    let codex = run_home(
+        &["harness", "link", "codex", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(codex.code, 0, "{}", codex.stderr);
+    assert!(fs::read_link(home.join(".agents/skills/a")).is_ok());
+
+    let scoped = run_home(
+        &["harness", "link", "codex", "--scope", "project", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(scoped.code, EXIT_USAGE, "{}", scoped.stderr);
+}
