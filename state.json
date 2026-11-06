@@ -27,9 +27,9 @@
       "line": 68,
       "title": "Step 3 gives no source for out_root or namespace",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "ac6a209634702a2a850b89f1e84f03a220729427"
     },
     {
       "id": "r1-3",
