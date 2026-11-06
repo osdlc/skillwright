@@ -91,6 +91,10 @@ segment matches any number of segments. Globs are relative to this file.
 - An invalid glob is refused. A glob that matches nothing gets a warning from
   `build` and `check`.
 - A folder that never ships stays out whatever a pattern says, with a warning.
+- A note with a `description` in a never-ship folder under a kind folder, such as
+  `plugins/p/docs/x.md`, warns that it will not ship. A `docs/` page at the vault
+  root stays the author's own and gets no warning.
+- A plugin named `docs` or `tests` ships normally.
 - Generated output is never read as source.
 
 `exclude` adds to the folders that never ship, and `publish <note>` refuses a note
@@ -98,7 +102,9 @@ it matches. It does not apply to a plugin's `assets/`. A body link or embed that
 refused with the same diagnostic in every link form, so a skill cannot point at a
 file that will not be there.
 
-Patterns are read per marketplace and are not inherited from a workspace. The
+`build.exclude` and each key of `build.patterns` inherit from a workspace, key by
+key, and their globs read from each member's folder. A member's empty
+`exclude: []` cannot clear an inherited exclusion. The
 authoring verbs (`new`, `move`, `convert`) always write to the conventional
 folders: `new skill` to `skills/`, and `new plugin` to `plugins/`.
 
@@ -116,8 +122,11 @@ workspace/
     └── internal/skillwright.md
 ```
 
-A marketplace's own value wins, key by key. `build.out` is a path, so each
-marketplace sets its own, and it resolves against that marketplace's file.
+A marketplace's own value wins, key by key. Every `build:` key inherits from the
+workspace except `out`: each marketplace sets its own, and it resolves against
+that marketplace's file. A relative path or glob in an inherited key, such as
+`assets[].from`, reads from the member's folder, not the workspace's. A list a
+member leaves empty inherits, so `[]` cannot clear an inherited list.
 
 `skillwright new marketplace <name>` at the workspace root writes
 `marketplaces/<name>/skillwright.md`. Add its `build.out` before you build. Other
@@ -154,6 +163,12 @@ For one key on a member, the first of these wins:
 A key in an inherited block must be one the member's kind accepts. If it is not,
 it stays with the container.
 
+A note under no marketplace folder takes the vault's one marketplace. With
+several, it stays on the root file. A folder under `marketplaces/` with no
+component in it does not count.
+
+A plugin note's `name` must match its folder, or it is refused.
+
 ## Harness blocks
 
 `claude:`, `codex:`, `cursor:` and `pi:` hold fields only that harness reads. On
@@ -167,7 +182,8 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
 - A block a component inherits cannot set that component's `name` or
   `description`. A block on the note itself can.
 - `<harness>: {packs: <path>}` on the marketplace moves that harness's packs
-  folder inside the output. Root catalogs stay where they are. The value that
+  folder inside the output. `.DS_Store` and similar OS files in a moved folder are
+  ignored. Root catalogs stay where they are. The value that
   takes effect is refused if it overlaps a manifest path, a folder the harness
   owns or, when the output overlaps the vault, a source folder. It is also refused
   when it equals the root file.

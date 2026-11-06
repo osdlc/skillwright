@@ -624,9 +624,10 @@ impl RootFile {
     /// The marketplace fields every plugin inherits (`author`, `license`,
     /// `targets`, `repository`, `homepage` and the harness blocks, key by key)
     /// inherit from the workspace too. So do `harnesses`, `namespace`,
-    /// `launcher_path`, `require_descriptions`, `exclude` and each key of
-    /// `patterns`, whose globs read from each marketplace's own folder. An
-    /// exclusion must not fail open. `out` is each marketplace's own.
+    /// `launcher_path`, `require_descriptions`, `destinations`,
+    /// `scan_locations`, `assets`, `hooks`, `exclude` and each key of
+    /// `patterns`. Their paths and globs read from each marketplace's own
+    /// folder. An exclusion must not fail open. `out` is each marketplace's own.
     ///
     /// Key by key: a value this file sets wins, and every other key still
     /// comes from the workspace. The workspace root holds shared defaults and
@@ -670,6 +671,18 @@ impl RootFile {
         }
         if build.require_descriptions.is_none() {
             build.require_descriptions = shared.require_descriptions;
+        }
+        if build.destinations.is_empty() {
+            build.destinations.clone_from(&shared.destinations);
+        }
+        if build.scan_locations.is_empty() {
+            build.scan_locations.clone_from(&shared.scan_locations);
+        }
+        if build.assets.is_empty() {
+            build.assets.clone_from(&shared.assets);
+        }
+        if build.hooks.is_empty() {
+            build.hooks.clone_from(&shared.hooks);
         }
         if build.exclude.is_empty() {
             build.exclude.clone_from(&shared.exclude);
@@ -791,7 +804,7 @@ mod tests {
         assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
         assert_eq!(member.build.launcher_path.as_deref(), Some("bin/ws"));
         assert_eq!(member.marketplace.license.as_deref(), Some("MIT"));
-        // A path names a place relative to the workspace, so it does not.
+        // The output is each member's own.
         assert_eq!(member.build.out, None);
     }
 
@@ -896,6 +909,22 @@ mod tests {
         assert_eq!(member.build.exclude, ["**/*.draft.md"]);
         assert_eq!(member.build.patterns.skills, ["mine/*"]);
         assert_eq!(member.build.patterns.plugins, ["packs/*"]);
+    }
+
+    #[test]
+    fn a_marketplace_inherits_its_build_lists_key_by_key() {
+        let workspace = parse_root_file(
+            "---\nworkspace: true\nbuild:\n  destinations:\n    - {root: d, target: claude}\n  \
+             scan_locations: [shared]\n  assets:\n    - {from: a, to: b}\n  hooks:\n    \
+             - {from: h.json}\n---\n",
+        )
+        .unwrap();
+        let mut member = parse_root_file("---\nbuild:\n  scan_locations: [mine]\n---\n").unwrap();
+        member.inherit(&workspace);
+        assert_eq!(member.build.destinations, workspace.build.destinations);
+        assert_eq!(member.build.scan_locations, ["mine"]);
+        assert_eq!(member.build.assets, workspace.build.assets);
+        assert_eq!(member.build.hooks, workspace.build.hooks);
     }
 
     #[test]

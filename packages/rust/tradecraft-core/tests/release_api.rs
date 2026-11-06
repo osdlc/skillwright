@@ -553,6 +553,16 @@ fn a_vault_level_pack_takes_the_one_marketplace_on_publish() {
 }
 
 #[test]
+fn a_folder_with_no_component_is_not_a_second_marketplace_on_publish() {
+    let vfs = beside_a_marketplace();
+    write(&vfs, "/vault/marketplaces/n/README.md", "Plain text.\n");
+    write(&vfs, "/vault/marketplaces/n/notes/idea.md", "Plain text.\n");
+    let report = publish(&vfs, "/vault/skills/loose.md", "claude");
+    let skill = published(&vfs, &report, "SKILL.md");
+    assert!(skill.contains("license: ISC"), "{skill}");
+}
+
+#[test]
 fn a_vault_level_note_stays_on_the_root_file_beside_several_marketplaces() {
     let vfs = beside_a_marketplace();
     write(&vfs, "/vault/marketplaces/n/skillwright.md", &note("n", ""));
@@ -1762,6 +1772,21 @@ fn a_stray_in_a_component_named_for_a_never_ship_folder_is_still_a_stray() {
     for stray in ["plugins/tests/z.md", "misplaced/y.md", "skills/tests/t.md"] {
         assert!(skipped.contains(stray), "{stray}: {skipped}");
     }
+}
+
+#[test]
+fn a_build_names_a_described_note_in_a_never_ship_folder() {
+    let root = "---\nname: m\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL, ("plugins/rev/docs/x.md", USE_IT)]);
+    let report = build_to(&vfs, "/out", root).unwrap();
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.reason == "never-ships" && w.path == "plugins/rev/docs/x.md"),
+        "{:?}",
+        report.warnings
+    );
 }
 
 #[test]

@@ -278,8 +278,18 @@ pub(crate) fn unknown_key_warning(
     let mut hint = if ns.is_bare() {
         String::new()
     } else {
+        let respelled: Vec<String> = unknown
+            .iter()
+            .filter(|key| *key == "adopted" || crate::harness::profile_named(key).is_some())
+            .map(|key| format!("`{key}` is `{}`", ns.key(key)))
+            .collect();
+        let examples = if respelled.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", respelled.join(", "))
+        };
         format!(
-            ". Under namespace `{}`, skillwright's keys are spelled `{}`",
+            ". Under namespace `{}`, skillwright's keys are spelled `{}`{examples}",
             ns.stem(),
             ns.key("<key>")
         )
@@ -1301,23 +1311,52 @@ fn read_source(
 }
 
 /// The vault's one marketplace folder and the path its note would have, or
-/// `None` when it holds none or several. A listing, not a scan: a publish of
-/// one note must not fail on a problem elsewhere in the vault.
-pub(crate) fn only_marketplace(vfs: &dyn Vfs, root: &Path) -> Option<(String, PathBuf)> {
+/// `None` when it holds none or several. A folder with no component in it is
+/// not a marketplace, as it is not to a build. A listing, not a scan: a publish
+/// of one note must not fail on a problem elsewhere in the vault.
+pub(crate) fn only_marketplace(
+    vfs: &dyn Vfs,
+    patterns: &crate::patterns::Patterns,
+    root: &Path,
+) -> Option<(String, PathBuf)> {
     let (dir, _) = KIND_DIRS
         .iter()
         .find(|(_, kind)| *kind == EntityKind::Marketplace)?;
     let folder = root.join(dir);
     let entries = vfs.read_dir(&folder).ok()?;
-    let mut names = entries
-        .iter()
-        .filter(|entry| entry.is_dir && !entry.name.starts_with('.'));
+    let mut names = entries.iter().filter(|entry| {
+        entry.is_dir
+            && !entry.name.starts_with('.')
+            && holds_a_component(vfs, patterns, root, &folder.join(&entry.name))
+    });
     let name = names.next()?.name.clone();
     if names.next().is_some() {
         return None;
     }
     let note = folder.join(&name).join(crate::settings::ROOT_FILE);
     Some((name, note))
+}
+
+/// Whether any Markdown file under `dir` sits where a component would.
+fn holds_a_component(
+    vfs: &dyn Vfs,
+    patterns: &crate::patterns::Patterns,
+    root: &Path,
+    dir: &Path,
+) -> bool {
+    vfs.read_dir(dir).is_ok_and(|entries| {
+        entries.iter().any(|entry| {
+            let path = dir.join(&entry.name);
+            if entry.name.starts_with('.') {
+                false
+            } else if entry.is_dir {
+                holds_a_component(vfs, patterns, root, &path)
+            } else {
+                entry.name.ends_with(".md")
+                    && folder_placement_with(patterns, root, &path).kind.is_some()
+            }
+        })
+    })
 }
 
 /// The notes of the containers `entry` sits in, outermost first, as the paths

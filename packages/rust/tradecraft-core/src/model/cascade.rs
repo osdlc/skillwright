@@ -173,7 +173,7 @@ impl Cascade {
         let mut paths = crate::discover::container_notes_with(&patterns, root, note_path);
         let placed = crate::discover::folder_placement_with(&patterns, root, note_path).marketplace;
         let market = placed.or_else(|| {
-            let (name, note) = crate::discover::only_marketplace(vfs, root)?;
+            let (name, note) = crate::discover::only_marketplace(vfs, &patterns, root)?;
             paths.push(note);
             Some(name)
         });

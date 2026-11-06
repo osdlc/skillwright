@@ -30,7 +30,7 @@ use crate::compile::{
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION_REASON,
-    UNKNOWN_KEY_REASON, discover_in, load_source,
+    NEVER_SHIPS_REASON, UNKNOWN_KEY_REASON, discover_in, load_source,
 };
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
@@ -201,10 +201,19 @@ pub fn load(
         .filter(|c| c.kind != EntityKind::Marketplace || market.as_deref() == Some(c.folder()))
         .map(|c| c.vault_relative_path.as_str())
         .collect();
+    // A never-ship note is no component, so only its path says whose it is.
+    let another_marketplace = |path: &str| {
+        path.strip_prefix("marketplaces/")
+            .and_then(|rest| rest.split('/').next())
+            .is_some_and(|folder| market.as_deref() != Some(folder))
+    };
     let mut warnings: Vec<DiscoveryWarning> = scan
         .warnings
         .into_iter()
-        .filter(|w| ours.contains(w.path.as_str()))
+        .filter(|w| {
+            ours.contains(w.path.as_str())
+                || (w.reason == NEVER_SHIPS_REASON && !another_marketplace(&w.path))
+        })
         .collect();
     // Named, never dropped: a pack has a place for skills, commands and hooks
     // and for nothing else, and a build that quietly omitted an agent would

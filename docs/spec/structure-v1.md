@@ -24,7 +24,9 @@ code and is part of this spec.
    default, and a note suggests adding one.
 6. An outer root file with `workspace: true` holds shared defaults. Each
    `marketplaces/<m>/skillwright.md` below it is a marketplace. That file is the
-   only form a marketplace's note has.
+   only form a marketplace's note has. Every `build:` key inherits from the
+   workspace except `out`, and a relative path in an inherited key reads from the
+   member's folder.
 
 ## 2. Folders
 
@@ -45,7 +47,8 @@ code and is part of this spec.
 
 1. A folder under `plugins/` is a plugin, named after the folder. The folder is
    enough: the plugin note is optional, and a plugin note with no `name` or
-   `description` is kept and takes both defaults.
+   `description` is kept and takes both defaults. A plugin note's `name` must
+   match its folder, or it is refused.
 2. `skills/`, `agents/`, `commands/` and `hooks/` decide the kind of what they
    hold. Frontmatter never decides kind or plugin.
 3. A root `skills/`, `agents/`, `commands/` or `hooks/` folder belongs to a plugin
@@ -53,7 +56,9 @@ code and is part of this spec.
 4. `assets/bin/tool` ships as `bin/tool`.
 5. `check` warns when a plugin's `version` has no entry in its `CHANGELOG.md`.
 6. These never ship: `docs/`, `tests/`, `fixtures/`, `.git`, `.obsidian`, `.trash`
-   and `node_modules`.
+   and `node_modules`. A plugin named `docs` or `tests` ships normally.
+7. A note with a `description` in a never-ship folder under a kind folder warns
+   that it will not ship.
 
 ## 3. Components
 
@@ -78,6 +83,9 @@ adds to what never ships. See the
    note it matches.
 4. A link to a never-ship or excluded file is refused with the same diagnostic in
    every link form.
+5. `build.exclude` and each key of `build.patterns` inherit from a workspace, key
+   by key, and their globs read from each member's folder. A member's empty
+   `exclude: []` cannot clear an inherited exclusion.
 
 ## 5. Frontmatter
 
@@ -114,6 +122,9 @@ each one.
    values.
 6. A key in an inherited block must be one the member's kind accepts. If it is
    not, it stays with the container.
+7. A note under no marketplace folder takes the vault's one marketplace. With
+   several, it stays on the root file. A folder under `marketplaces/` with no
+   component in it does not count.
 
 ## 7. Harness blocks
 
@@ -135,5 +146,6 @@ each one.
    The value that takes effect is refused if it overlaps a manifest path, a folder
    the harness owns or, when the output overlaps the vault, a source folder, and
    if it equals the root file.
-5. Moving the output from one folder outside the vault to another leaves the old
+5. `.DS_Store` and similar OS files in a moved packs folder are ignored.
+6. Moving the output from one folder outside the vault to another leaves the old
    folder in place with no warning, because nothing records it.

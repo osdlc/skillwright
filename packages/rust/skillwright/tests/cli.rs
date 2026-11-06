@@ -1900,6 +1900,78 @@ fn namespace_decides_how_the_provenance_is_spelled() {
 }
 
 #[test]
+fn a_bare_key_in_a_namespaced_vault_warns_with_its_spelling() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: v\nbuild:\n  namespace: sw\n---\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("skills")).unwrap();
+    fs::write(
+        dir.path().join("skills/s.md"),
+        "---\nname: s\ndescription: D.\nadopted: {from: x}\nclaude: {model: opus}\n---\nBody.\n",
+    )
+    .unwrap();
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    for spelling in ["`adopted` is `sw-adopted`", "`claude` is `sw-claude`"] {
+        assert!(listed.stderr.contains(spelling), "{}", listed.stderr);
+    }
+}
+
+#[test]
+fn a_member_reads_an_inherited_asset_from_its_own_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\nbuild:\n  assets:\n    - {from: NOTICE, to: NOTICE, plugin: p}\n---\n",
+    )
+    .unwrap();
+    let member = dir.path().join("marketplaces/m");
+    fs::create_dir_all(member.join("plugins/p/skills")).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: built\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        member.join("plugins/p/p.md"),
+        "---\nname: p\ndescription: P.\nversion: 1.0.0\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        member.join("plugins/p/skills/s.md"),
+        "---\nname: s\ndescription: D.\n---\nBody.\n",
+    )
+    .unwrap();
+    fs::write(member.join("NOTICE"), "member\n").unwrap();
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    let copied: Vec<_> = walkdir_files(&member.join("built"))
+        .into_iter()
+        .filter(|path| path.ends_with("NOTICE"))
+        .collect();
+    assert!(!copied.is_empty());
+    for path in copied {
+        assert_eq!(fs::read_to_string(path).unwrap(), "member\n");
+    }
+}
+
+fn walkdir_files(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir).unwrap().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(walkdir_files(&path));
+        } else {
+            found.push(path);
+        }
+    }
+    found
+}
+
+#[test]
 fn as_and_promote_are_honestly_not_implemented_exit_2() {
     let (dir, vault) = fixture();
     let source = adopt_source(dir.path());
