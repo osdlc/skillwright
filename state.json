@@ -82,9 +82,9 @@
       "line": 183,
       "title": "Rust-only doc link reaches the generated TypeScript",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "ac6a209634702a2a850b89f1e84f03a220729427"
     },
     {
       "id": "r2-1",
