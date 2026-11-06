@@ -1,7 +1,7 @@
 //! `skillwright list` — the roster, and nothing else.
 //!
 //! A read-only verb, like `status` and `check`. It walks the vault's content
-//! root through the core's [`discover_components`] and prints what it found:
+//! root through the core's [`tradecraft_core::discover_roster`] and prints what it found:
 //! one row per publishable note, with the note's own answer to "where does
 //! this publish". It writes nothing, prompts about nothing, and never touches
 //! a destination.
@@ -20,17 +20,18 @@
 
 use tradecraft_core::model::load::{LoadRequest, load};
 use tradecraft_core::settings::ROOT_FILE;
-use tradecraft_core::{DiscoveryReport, EntityKind, discover_components, inherit_targets};
+use tradecraft_core::{DiscoveryReport, EntityKind, discover_roster, inherit_targets};
 
-use crate::commands::marketplace::{MarketplaceInputs, marketplace_inputs};
+use crate::commands::marketplace::marketplace_inputs;
 use crate::config::relative_path;
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_OK, blocked};
+use crate::exit::{EXIT_BLOCKED, EXIT_OK, blocked};
 use crate::report::{render_roster, render_roster_tally, render_warning_line, roster_row};
 use crate::resolve::{
     CommonFlags, ResolvedRun, refuse_workspace, resolve_run, resolve_skills_root, workspace_runs,
     workspace_warnings,
 };
+use tradecraft_core::MarketplaceInputs;
 
 /// The resolved flags of `skillwright list`.
 pub struct ListFlags {
@@ -62,17 +63,18 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return print_model(&run, skills_root, ctx);
     }
 
-    let mut scan = match discover_components(
+    let mut scan = match discover_roster(
         &run.source_vfs(skills_root.as_deref()),
         &run.vault,
         skills_root.as_deref(),
         &run.core_namespace(),
     ) {
         Ok(scan) => scan,
-        // What still fails is run-level by construction — a duplicate name, a
-        // bundle overlap, a symlink, a missing root — so this stays a blocker
-        // rather than a refused row. A note the scan could not read is not
-        // one of these; it comes back in `skipped` instead.
+        // What still fails is run-level by construction — a symlink, a
+        // missing root — so this stays a blocker rather than a refused row. A
+        // note the scan could not read is not one of these; it comes back in
+        // `skipped` instead. A duplicate name or bundle overlap does not
+        // abort: it flags the rows involved and the exit code.
         Err(err) => {
             return blocked(ctx.err, &format!("the vault scan could not run: {err}"));
         }
@@ -86,8 +88,27 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return code;
     }
 
+    let collisions: std::collections::BTreeMap<&str, &str> = scan
+        .warnings
+        .iter()
+        .filter(|w| w.reason == "path-collision")
+        .map(|w| (w.path.as_str(), w.detail.as_str()))
+        .collect();
     if flags.json {
-        let rows: Vec<_> = scan.components.iter().map(roster_row).collect();
+        let rows: Vec<_> = scan
+            .components
+            .iter()
+            .map(|c| {
+                let mut row = serde_json::to_value(roster_row(c)).unwrap_or_default();
+                if let (Some(detail), Some(map)) = (
+                    collisions.get(c.vault_relative_path.as_str()),
+                    row.as_object_mut(),
+                ) {
+                    map.insert("collision".to_owned(), (*detail).into());
+                }
+                row
+            })
+            .collect();
         match serde_json::to_string_pretty(&rows) {
             Ok(document) => {
                 let _ = writeln!(ctx.out, "{document}");
@@ -95,8 +116,16 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
             Err(err) => return blocked(ctx.err, &format!("the report would not serialize: {err}")),
         }
     } else {
-        for line in render_roster(&scan.components) {
-            let _ = writeln!(ctx.out, "{line}");
+        for (line, c) in render_roster(&scan.components)
+            .into_iter()
+            .zip(&scan.components)
+        {
+            let flag = if collisions.contains_key(c.vault_relative_path.as_str()) {
+                "  [path-collision]"
+            } else {
+                ""
+            };
+            let _ = writeln!(ctx.out, "{line}{flag}");
         }
     }
     for note in &scan.skipped {
@@ -122,7 +151,11 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
         );
     }
 
-    EXIT_OK
+    if collisions.is_empty() {
+        EXIT_OK
+    } else {
+        EXIT_BLOCKED
+    }
 }
 
 /// Replaces what a workspace scan says about each marketplace with that
@@ -136,9 +169,8 @@ fn read_members(
 ) -> Result<(), i32> {
     for member in workspace_runs(run, common, None, ctx.err)? {
         let namespace = member.core_namespace();
-        let mut inner =
-            discover_components(&member.source_vfs(None), &member.vault, None, &namespace)
-                .map_err(|err| blocked(ctx.err, &format!("the vault scan could not run: {err}")))?;
+        let mut inner = discover_roster(&member.source_vfs(None), &member.vault, None, &namespace)
+            .map_err(|err| blocked(ctx.err, &format!("the vault scan could not run: {err}")))?;
         inherit_targets(&mut inner, &member.root_config());
 
         let folder = member.folder_name();
@@ -188,6 +220,7 @@ fn print_model(
         harnesses,
         assets,
         hooks,
+        ..
     } = marketplace_inputs(run);
     let request = LoadRequest {
         vault_root: run.vault.clone(),

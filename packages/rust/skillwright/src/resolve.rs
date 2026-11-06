@@ -18,9 +18,9 @@ use tradecraft_core::{
 };
 
 use crate::config::{
-    ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, find_root_file, is_convention_vault,
-    print_warnings, read_root_file, resolve_against_cwd, resolve_configured_path, user_skills_dir,
-    workspace_above, workspace_members,
+    ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, is_convention_vault, print_warnings,
+    read_root_file, resolve_against_cwd, resolve_configured_path, user_skills_dir, workspace_above,
+    workspace_members,
 };
 use crate::exit::{blocked, no_config};
 
@@ -260,7 +260,7 @@ pub fn resolve_run(
         let file = dir.join(ROOT_FILE);
         let file = file.is_file().then_some(file);
         (dir, file)
-    } else if let Some(file) = find_root_file(cwd) {
+    } else if let Some(file) = tradecraft_core::find_root_file(&tradecraft_core::NativeVfs, cwd) {
         let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
         (dir, Some(file))
     } else if is_convention_vault(cwd) {
@@ -465,6 +465,70 @@ pub fn resolve_skills_root(flag: Option<&str>, cwd: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use crate::exit::{EXIT_BLOCKED, EXIT_NO_CONFIG};
+
+    /// `load_marketplace` is the library's copy of what `resolve_run` does for
+    /// a CLI run. They must give one answer, or a consumer builds something
+    /// other than `skillwright build` does.
+    #[test]
+    fn load_marketplace_agrees_with_resolve_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |rel: &str, text: &str| {
+            let path = tmp.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write(
+            "plain/skillwright.md",
+            "---\nname: plain\nbuild:\n  out: dist\n  namespace: sw\n  harnesses: [codex]\n  assets:\n    - {from: scripts/run.sh, to: bin/run.sh}\n  hooks:\n    - {from: hooks.json}\n---\n",
+        );
+        write("plain/plugins/p/skills/a.md", "---\nname: a\n---\n");
+        write(
+            "ws/skillwright.md",
+            "---\nworkspace: true\nbuild:\n  harnesses: [claude]\n  namespace: sw\n  assets:\n    - {from: shared/run.sh, to: bin/run.sh}\n---\n",
+        );
+        write(
+            "ws/marketplaces/m1/skillwright.md",
+            "---\nname: m1\nbuild:\n  out: dist\n---\n",
+        );
+        write(
+            "ws/marketplaces/m1/plugins/p/skills/a.md",
+            "---\nname: a\n---\n",
+        );
+        let home = crate::config::home_dir();
+
+        for start in [
+            "plain/plugins/p/skills",
+            "ws/marketplaces/m1/plugins/p/skills",
+        ] {
+            let cwd = tmp.path().join(start);
+            let mut err: Vec<u8> = Vec::new();
+            let run = resolve_run(&CommonFlags::default(), &cwd, &mut err).unwrap();
+            let loaded = tradecraft_core::load_marketplace(&NativeVfs, &cwd, &home)
+                .unwrap()
+                .unwrap();
+            let inputs = crate::commands::marketplace::marketplace_inputs(&run);
+
+            assert_eq!(loaded.dir, run.vault, "{start}");
+            assert_eq!(Some(&loaded.root_file), run.config_path.as_ref(), "{start}");
+            assert_eq!(loaded.root, run.config, "{start}");
+            assert_eq!(loaded.namespace, run.core_namespace(), "{start}");
+            let out = run
+                .config
+                .build
+                .out
+                .as_deref()
+                .map(|out| resolve_configured_path(out, &run.config_dir));
+            assert_eq!(loaded.out_root, out, "{start}");
+            assert_eq!(
+                serde_json::to_value(&loaded.inputs.config).unwrap(),
+                serde_json::to_value(&inputs.config).unwrap(),
+                "{start}"
+            );
+            assert_eq!(loaded.inputs.harnesses, inputs.harnesses, "{start}");
+            assert_eq!(loaded.inputs.assets, inputs.assets, "{start}");
+            assert_eq!(loaded.inputs.hooks, inputs.hooks, "{start}");
+        }
+    }
 
     #[test]
     fn a_folder_with_no_root_file_and_no_convention_folder_is_no_vault() {

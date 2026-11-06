@@ -540,6 +540,25 @@ pub fn discover_components(
     discover_in(vfs, vault_root, &source, ns)
 }
 
+/// [`discover_components`] for a roster: a duplicate name or a bundle overlap
+/// is not an error. Every component stays, and each note involved gets a
+/// `path-collision` entry in [`DiscoveryReport::warnings`] naming the other
+/// party. A host that builds from the result must refuse on those warnings;
+/// [`discover_components`] does it for every build.
+///
+/// # Errors
+///
+/// As [`discover_components`], less `path-collision`.
+pub fn discover_roster(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    content_root: Option<&Path>,
+    ns: &Namespace,
+) -> Result<DiscoveryReport, CoreError> {
+    let source = load_source(vfs, vault_root, content_root)?;
+    discover_with(vfs, vault_root, &source, ns, true)
+}
+
 /// The skills source at `content_root` (the vault root when `None`): its
 /// root, and every file under it in walk order.
 ///
@@ -599,6 +618,18 @@ pub(crate) fn discover_in(
     vault_root: &Path,
     source: &Source,
     ns: &Namespace,
+) -> Result<DiscoveryReport, CoreError> {
+    discover_with(vfs, vault_root, source, ns, false)
+}
+
+/// [`discover_in`], with `roster` turning each path collision into warnings
+/// instead of a refusal.
+fn discover_with(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    source: &Source,
+    ns: &Namespace,
+    roster: bool,
 ) -> Result<DiscoveryReport, CoreError> {
     let root = &source.root;
     let files = source_files(vfs, vault_root, source);
@@ -729,21 +760,25 @@ pub(crate) fn discover_in(
             component.name.as_str(),
         );
         if let Some(first) = by_key.get(&key) {
-            return Err(CoreError::refused(
-                "path-collision",
-                format!(
-                    "duplicate {} name `{}` in {}: {}, {} — two components cannot publish onto \
-                     one directory",
-                    component.kind.as_str(),
-                    component.name,
-                    component
-                        .plugin
-                        .as_deref()
-                        .map_or_else(|| "no plugin".to_owned(), |p| format!("plugin `{p}`")),
-                    first.vault_relative_path,
-                    component.vault_relative_path
-                ),
-            ));
+            let detail = format!(
+                "duplicate {} name `{}` in {}: {}, {} — two components cannot publish onto \
+                 one directory",
+                component.kind.as_str(),
+                component.name,
+                component
+                    .plugin
+                    .as_deref()
+                    .map_or_else(|| "no plugin".to_owned(), |p| format!("plugin `{p}`")),
+                first.vault_relative_path,
+                component.vault_relative_path
+            );
+            if !roster {
+                return Err(CoreError::refused("path-collision", detail));
+            }
+            for path in [&first.vault_relative_path, &component.vault_relative_path] {
+                warnings.push(collision_warning(path, &detail));
+            }
+            continue;
         }
         by_key.insert(key, component);
     }
@@ -760,21 +795,31 @@ pub(crate) fn discover_in(
         };
         for inner in &discovered {
             if inner.entry_path != outer.entry_path && inner.entry_path.starts_with(bundle) {
-                return Err(CoreError::refused(
-                    "path-collision",
-                    format!(
-                        "component bundles cannot overlap: {} contains {} — everything under a \
-                         bundle ships with it, so an inner component would publish twice",
-                        outer.vault_relative_path, inner.vault_relative_path
-                    ),
-                ));
+                let detail = format!(
+                    "component bundles cannot overlap: {} contains {} — everything under a \
+                     bundle ships with it, so an inner component would publish twice",
+                    outer.vault_relative_path, inner.vault_relative_path
+                );
+                if !roster {
+                    return Err(CoreError::refused("path-collision", detail));
+                }
+                for path in [&outer.vault_relative_path, &inner.vault_relative_path] {
+                    warnings.push(collision_warning(path, &detail));
+                }
             }
         }
     }
 
-    // Keys are unique by the check above, so this order is total.
+    warnings.sort_by(|a, b| a.path.cmp(&b.path));
+    // Keys are unique by the check above, so this order is total (a roster
+    // keeps colliding keys, and then sorts by path too).
     discovered.sort_by(|a, b| {
-        (&a.name, a.kind.as_str(), &a.plugin).cmp(&(&b.name, b.kind.as_str(), &b.plugin))
+        (&a.name, a.kind.as_str(), &a.plugin, &a.vault_relative_path).cmp(&(
+            &b.name,
+            b.kind.as_str(),
+            &b.plugin,
+            &b.vault_relative_path,
+        ))
     });
     // `skipped` and `warnings` are already in path order: `walk` sorts every
     // directory before it descends, and nothing has reordered the file list
@@ -784,6 +829,15 @@ pub(crate) fn discover_in(
         skipped,
         warnings,
     })
+}
+
+/// The warning a roster carries for one note in a path collision.
+fn collision_warning(path: &str, detail: &str) -> DiscoveryWarning {
+    DiscoveryWarning {
+        path: path.to_owned(),
+        reason: "path-collision".to_owned(),
+        detail: detail.to_owned(),
+    }
 }
 
 /// A note at no recognised shape, which declares itself a component anyway.

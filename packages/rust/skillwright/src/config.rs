@@ -23,12 +23,11 @@
 
 use std::path::{Path, PathBuf};
 
+pub use tradecraft_core::paths::{normalize_join, relative_path};
 pub use tradecraft_core::{
     AssetSetting, BuildSettings, DestinationSetting, HookSetting, ROOT_FILE, RootFile,
+    WORKSPACE_DIR, resolve_path,
 };
-
-/// The folder a workspace keeps its marketplaces in.
-pub const WORKSPACE_DIR: &str = "marketplaces";
 
 /// The folders whose presence makes a folder a vault with no root file.
 const CONVENTION_DIRS: &[&str] = &["plugins", "skills"];
@@ -66,68 +65,15 @@ pub fn read_root_file(path: &Path) -> RootLoad {
     }
 }
 
-/// The nearest root file at or above `start`.
-///
-/// A `skillwright.md` that sits where a component note sits —
-/// `<kind>/skillwright/skillwright.md`, a plugin or skill named
-/// `skillwright` — is that component's note, not a root file, and the walk
-/// goes past it.
-pub fn find_root_file(start: &Path) -> Option<PathBuf> {
-    let mut dir = Some(start);
-    while let Some(here) = dir {
-        let candidate = here.join(ROOT_FILE);
-        if candidate.is_file() && !is_component_note(&candidate) {
-            return Some(candidate);
-        }
-        dir = here.parent();
-    }
-    None
-}
-
-/// Whether `path` is `<kind>/skillwright/skillwright.md`, a component note
-/// and not a root file. `marketplaces/skillwright/skillwright.md` is not one:
-/// that is the root file of a workspace member named `skillwright`.
-fn is_component_note(path: &Path) -> bool {
-    let folder = path.parent();
-    let named = folder
-        .and_then(Path::file_name)
-        .is_some_and(|name| name == "skillwright");
-    let in_kind = folder
-        .and_then(Path::parent)
-        .and_then(Path::file_name)
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            name != "marketplaces"
-                && tradecraft_core::KIND_DIRS
-                    .iter()
-                    .any(|(dir, _)| *dir == name)
-        });
-    named && in_kind
-}
-
 /// Whether `dir` holds a folder the convention reads (`plugins/`,
 /// `skills/`), so it builds with no root file.
 pub fn is_convention_vault(dir: &Path) -> bool {
     CONVENTION_DIRS.iter().any(|name| dir.join(name).is_dir())
 }
 
-/// The workspace root file above the marketplace whose root is `dir`, when
-/// `dir` is `<workspace>/marketplaces/<m>/` and that file says
-/// `workspace: true`. A file that cannot be read is returned too: an exclusion
-/// it holds must not fail open, so loading it refuses the run.
+/// [`tradecraft_core::workspace_above`] over the real filesystem.
 pub fn workspace_above(dir: &Path) -> Option<PathBuf> {
-    let parent = dir.parent()?;
-    if parent.file_name()? != WORKSPACE_DIR {
-        return None;
-    }
-    let file = parent.parent()?.join(ROOT_FILE);
-    if !file.exists() {
-        return None;
-    }
-    match read_root_file(&file) {
-        RootLoad::Loaded(root) if !root.workspace => None,
-        _ => Some(file),
-    }
+    tradecraft_core::workspace_above(&tradecraft_core::NativeVfs, dir)
 }
 
 /// Each `marketplaces/<m>/skillwright.md` under a workspace root, by name.
@@ -151,22 +97,10 @@ pub fn user_skills_dir(relative: &str) -> PathBuf {
 
 /// Resolve a flag's path as the shell would: absolute as given, `~` or a
 /// `~/` prefix against the home directory, anything else relative to
-/// `base`. `~name` and `~\` are not expanded: they are relative paths. The
-/// rule `--vault`, `--to`, `--out` and `--config` share, with `base` the
-/// working directory.
+/// `base`. The rule `--vault`, `--to`, `--out` and `--config` share, with
+/// `base` the working directory.
 pub fn resolve_against_cwd(path: &str, base: &Path) -> PathBuf {
-    if path == "~" || path == "~/" {
-        return home_dir();
-    }
-    if let Some(rest) = path.strip_prefix("~/") {
-        return home_dir().join(rest);
-    }
-    let p = Path::new(path);
-    if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        normalize_join(base, p)
-    }
+    resolve_path(path, base, &home_dir())
 }
 
 /// [`resolve_against_cwd`] for a value read from the root file: the same
@@ -178,53 +112,10 @@ pub fn resolve_configured_path(path: &str, base: &Path) -> PathBuf {
 
 /// The user's home directory, read directly from `$HOME`. Falls back to `/`
 /// rather than panicking when unset.
-fn home_dir() -> PathBuf {
+pub(crate) fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
-}
-
-/// Join `rel` onto `base` and lexically collapse `.`/`..`, without touching
-/// the filesystem — the Rust equivalent of Node's `path.resolve`.
-pub fn normalize_join(base: &Path, rel: &Path) -> PathBuf {
-    use std::path::Component;
-    let mut out = PathBuf::new();
-    for component in base.join(rel).components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => match out.components().next_back() {
-                Some(Component::Normal(_)) => {
-                    out.pop();
-                }
-                _ => out.push(".."),
-            },
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
-
-/// `to` expressed relative to `from`, lexically — the Rust equivalent of
-/// Node's `path.relative`. Both sides are collapsed first, and a target
-/// outside `from` comes back with the `..` segments that reach it. An empty
-/// result means the two are the same path.
-pub fn relative_path(from: &Path, to: &Path) -> PathBuf {
-    let from = normalize_join(from, Path::new(""));
-    let to = normalize_join(to, Path::new(""));
-    let mut from = from.components().peekable();
-    let mut to = to.components().peekable();
-    while from.peek().is_some() && from.peek() == to.peek() {
-        from.next();
-        to.next();
-    }
-    let mut out = PathBuf::new();
-    for _ in from {
-        out.push("..");
-    }
-    for component in to {
-        out.push(component.as_os_str());
-    }
-    out
 }
 
 /// Print each warning the root file at `path` carries to `err`.
@@ -237,41 +128,6 @@ pub fn print_warnings(root: &RootFile, path: &Path, err: &mut dyn std::io::Write
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_walk_up_finds_the_nearest_root_file() {
-        let tmp = tempfile::tempdir().unwrap();
-        let nested = tmp.path().join("a/plugins/p/skills");
-        std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(tmp.path().join("a").join(ROOT_FILE), "---\n---\n").unwrap();
-        assert_eq!(
-            find_root_file(&nested),
-            Some(tmp.path().join("a").join(ROOT_FILE))
-        );
-    }
-
-    #[test]
-    fn a_component_named_skillwright_is_not_a_root_file() {
-        let tmp = tempfile::tempdir().unwrap();
-        let plugin = tmp.path().join("plugins/skillwright");
-        std::fs::create_dir_all(plugin.join("skills")).unwrap();
-        std::fs::write(plugin.join(ROOT_FILE), "---\nname: skillwright\n---\n").unwrap();
-        std::fs::write(tmp.path().join(ROOT_FILE), "---\nname: osdlc\n---\n").unwrap();
-        assert_eq!(
-            find_root_file(&plugin.join("skills")),
-            Some(tmp.path().join(ROOT_FILE))
-        );
-    }
-
-    #[test]
-    fn a_member_named_skillwright_keeps_its_root_file() {
-        let tmp = tempfile::tempdir().unwrap();
-        let member = tmp.path().join("marketplaces/skillwright");
-        std::fs::create_dir_all(&member).unwrap();
-        std::fs::write(member.join(ROOT_FILE), "---\nname: skillwright\n---\n").unwrap();
-        std::fs::write(tmp.path().join(ROOT_FILE), "---\nworkspace: true\n---\n").unwrap();
-        assert_eq!(find_root_file(&member), Some(member.join(ROOT_FILE)));
-    }
 
     #[test]
     fn a_marketplace_under_a_workspace_finds_its_workspace() {

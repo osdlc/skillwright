@@ -22,13 +22,11 @@
 //! the drift and exits 0, exactly as the build it previews would. `check` is
 //! the CI verb: the same render, the same report, and exit 1 on any drift.
 
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use tradecraft_core::{
-    AdoptHashFix, AdoptHashStatus, AdoptMode, AssetSpec, ExportMode, ExportRequest, ExportUnit,
-    HookFileSpec, MarketplaceConfig, NativeVfs, effective_config, export_skills, fix_adopt_hashes,
-    owned_paths,
+    AdoptHashFix, AdoptHashStatus, AdoptMode, ExportMode, ExportRequest, ExportUnit,
+    MarketplaceInputs, NativeVfs, effective_config, export_skills, fix_adopt_hashes, owned_paths,
 };
 
 use crate::config::{ROOT_FILE, resolve_against_cwd, resolve_configured_path};
@@ -82,63 +80,15 @@ pub struct ExportFlags {
     pub quiet: bool,
 }
 
-/// What a marketplace load reads from the root file besides the vault: the
-/// identity, the harnesses, the assets and the hooks files.
-pub(crate) struct MarketplaceInputs {
-    pub config: MarketplaceConfig,
-    pub harnesses: BTreeSet<String>,
-    pub assets: Vec<AssetSpec>,
-    pub hooks: Vec<HookFileSpec>,
-}
-
-/// The root file as the core's inputs, resolved the one way `build`,
-/// `check` and `list --model` share.
+/// [`tradecraft_core::marketplace_inputs`] for a resolved run, shared by
+/// `build`, `check` and `list --model`.
 pub(crate) fn marketplace_inputs(run: &ResolvedRun) -> MarketplaceInputs {
-    let root = &run.config;
-    // Which harnesses this marketplace is built for. Absent is every one the
-    // core supports; the core refuses a name no harness answers to, so a typo
-    // is named rather than quietly publishing less than was asked for.
-    let harnesses = root.harness_set();
-    let config = root.to_config(&run.folder_name());
-
-    // Each `from` resolves against the root file's own folder — the same
-    // rule `build.out` follows — because the core never reads an ambient
-    // config file and has nothing to resolve a relative path against (see
-    // [`tradecraft_core::export::AssetSpec`]).
-    let assets: Vec<AssetSpec> = root
-        .build
-        .assets
-        .iter()
-        .map(|entry| AssetSpec {
-            source: resolve_configured_path(&entry.from, &run.config_dir),
-            dest: entry.to.clone(),
-            plugin: entry.plugin.clone(),
-        })
-        .collect();
-    let hooks: Vec<HookFileSpec> = root
-        .build
-        .hooks
-        .iter()
-        .map(|entry| {
-            let source = resolve_configured_path(&entry.from, &run.config_dir);
-            // Root-relative, so the gap report names no host path.
-            let from = crate::config::relative_path(&run.config_dir, &source)
-                .to_string_lossy()
-                .replace('\\', "/");
-            HookFileSpec {
-                source,
-                from,
-                plugin: entry.plugin.clone(),
-            }
-        })
-        .collect();
-
-    MarketplaceInputs {
-        config,
-        harnesses,
-        assets,
-        hooks,
-    }
+    tradecraft_core::marketplace_inputs(
+        &run.config,
+        &run.folder_name(),
+        &run.config_dir,
+        &crate::config::home_dir(),
+    )
 }
 
 /// Run `skillwright check --fix-adopt-hashes` and return the exit code.
@@ -339,6 +289,7 @@ fn export_one(
         harnesses,
         assets,
         hooks,
+        ..
     } = marketplace_inputs(run);
     let vfs = run.config_vfs();
     let marketplace_config = effective_config(

@@ -480,6 +480,72 @@ fn the_old_marketplace_note_form_is_not_read() {
 }
 
 #[test]
+fn the_marketplaces_own_plugin_is_bumped_in_the_root_file() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: home\nversion: 1.0.0\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("skills")).unwrap();
+    fs::write(
+        dir.path().join("skills/one.md"),
+        "---\ndescription: One.\n---\nB\n",
+    )
+    .unwrap();
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(
+        !built.stderr.contains("missing-version"),
+        "{}",
+        built.stderr
+    );
+    let bumped = run(&["bump", "home", "--yes"], dir.path());
+    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
+    let root = fs::read_to_string(dir.path().join("skillwright.md")).unwrap();
+    assert!(root.contains("version: 1.0.1"), "{root}");
+}
+
+#[test]
+fn list_shows_the_roster_around_a_path_collision() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: home\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    for (rel, text) in [
+        ("skills/a.md", "---\nname: dup\ndescription: A.\n---\n"),
+        ("skills/b.md", "---\nname: dup\ndescription: B.\n---\n"),
+        ("skills/c.md", "---\nname: other\ndescription: C.\n---\n"),
+    ] {
+        fs::write(dir.path().join(rel), text).unwrap_or_else(|_| {
+            fs::create_dir_all(dir.path().join("skills")).unwrap();
+            fs::write(dir.path().join(rel), text).unwrap();
+        });
+    }
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 2, "{}", listed.stderr);
+    let lines: Vec<&str> = listed.stdout.lines().collect();
+    assert_eq!(lines.len(), 3, "{}", listed.stdout);
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|l| l.ends_with("[path-collision]"))
+            .count(),
+        2
+    );
+    assert!(listed.stdout.contains("skills/c.md"), "{}", listed.stdout);
+    assert!(
+        listed.stderr.contains("duplicate skill name `dup`"),
+        "{}",
+        listed.stderr
+    );
+    let built = run(&["build", "--yes"], dir.path());
+    assert_ne!(built.code, 0);
+}
+
+#[test]
 fn a_plugin_with_no_note_warns_about_its_version() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);

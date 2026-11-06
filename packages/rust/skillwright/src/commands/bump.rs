@@ -122,23 +122,37 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         .iter()
         .filter(|c| c.kind == EntityKind::Plugin && c.name == flags.plugin)
         .collect();
-    let component = match matches.as_slice() {
+    // The note to edit and its vault-relative name. The plugin named after
+    // the marketplace, when it has no folder of its own, is the marketplace
+    // itself: its version is the root file's.
+    let (entry_path, rel): (std::path::PathBuf, String) = match matches.as_slice() {
         [] => {
             let name = &flags.plugin;
-            let folder = scan
-                .components
-                .iter()
-                .filter(|c| c.plugin.as_deref() == Some(name))
-                .find_map(|c| plugin_folder_in(&c.vault_relative_path, name))
-                .unwrap_or_else(|| format!("plugins/{name}"));
-            return usage_error(
-                ctx.err,
-                &format!(
-                    "no plugin note named `{name}` in this vault. A folder-only plugin has no note to bump: add `{folder}/{name}.md` with a `version`"
-                ),
-            );
+            let members = || {
+                scan.components
+                    .iter()
+                    .filter(|c| c.plugin.as_deref() == Some(name))
+                    .find_map(|c| plugin_folder_in(&c.vault_relative_path, name))
+            };
+            if members().is_none()
+                && run.root_config().name.as_deref() == Some(name.as_str())
+                && let Some(file) = &run.config_path
+            {
+                let rel = crate::config::relative_path(&run.vault, file)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                (file.clone(), rel)
+            } else {
+                let folder = members().unwrap_or_else(|| format!("plugins/{name}"));
+                return usage_error(
+                    ctx.err,
+                    &format!(
+                        "no plugin note named `{name}` in this vault. A folder-only plugin has no note to bump: add `{folder}/{name}.md` with a `version`"
+                    ),
+                );
+            }
         }
-        [one] => *one,
+        [one] => (one.entry_path.clone(), one.vault_relative_path.clone()),
         many => {
             // This verb has no `--marketplace` flag to disambiguate with (a
             // known gap), so a name two marketplaces share is a usage error.
@@ -157,7 +171,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
     };
 
-    let bytes = match NativeVfs.read_file(&component.entry_path) {
+    let bytes = match NativeVfs.read_file(&entry_path) {
         Ok(bytes) => bytes,
         Err(err) => return bump_failed(ctx.err, err),
     };
@@ -166,10 +180,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Err(err) => {
             return blocked(
                 ctx.err,
-                &format!(
-                    "bump failed: {} is not valid UTF-8: {err}",
-                    component.vault_relative_path
-                ),
+                &format!("bump failed: {} is not valid UTF-8: {err}", rel),
             );
         }
     };
@@ -188,7 +199,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Err(err) => return bump_failed(ctx.err, err),
     };
 
-    let rel = component.vault_relative_path.as_str();
+    let rel = rel.as_str();
     let new = next_version(&current, flags.level);
 
     let Some(new) = new else {
@@ -232,7 +243,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(edited) => edited,
         Err(err) => return bump_failed(ctx.err, err),
     };
-    if let Err(err) = NativeVfs.write_file(&component.entry_path, edited.as_bytes()) {
+    if let Err(err) = NativeVfs.write_file(&entry_path, edited.as_bytes()) {
         return bump_failed(ctx.err, err);
     }
 

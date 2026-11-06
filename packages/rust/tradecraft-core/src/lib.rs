@@ -22,6 +22,7 @@
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
 //! | [`harness`] | Each harness as a profile row (data) and a translator (code) |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
+//! | [`paths`] | Load the root file with its workspace folded in ([`load_marketplace`]), or its pieces |
 //! | [`adopt`] | Published SKILL.md bundles imported as vault notes |
 //! | [`authoring`] | Where a note goes, what it collides with, what it says |
 //! | [`guard`] | The rails that keep a publish out of a source root |
@@ -84,6 +85,7 @@ pub mod keys;
 pub mod manifest;
 pub mod model;
 pub mod namespace;
+pub mod paths;
 pub mod patterns;
 pub mod projection;
 pub mod publish;
@@ -118,7 +120,7 @@ pub use corpus::*;
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION,
     MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON, default_name,
-    discover_components, folder_kind, is_skill_entry, plugin_folder_in,
+    discover_components, discover_roster, folder_kind, is_skill_entry, plugin_folder_in,
 };
 pub use error::*;
 pub use export::{
@@ -135,6 +137,10 @@ pub use harness::manifest::{check_packs, packs_of};
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, REMOVED, Shape};
 pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
+pub use paths::{
+    LoadedMarketplace, MarketplaceInputs, WORKSPACE_DIR, find_root_file, load_marketplace,
+    marketplace_inputs, resolve_path, workspace_above,
+};
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,
     PublishStatus, PublishedFile, ReasonToken, canonical_target, canonical_targets, publish_skill,

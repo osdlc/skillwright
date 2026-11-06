@@ -108,7 +108,8 @@ pub enum AuthoringOp {
         /// Frontmatter edits to apply to the note at `to`.
         frontmatter: Vec<FieldEdit>,
     },
-    /// The same move, to a placement rather than to a name.
+    /// The same move, to a placement rather than to a name. The folder names
+    /// the plugin, so no frontmatter changes.
     Move {
         /// Current vault-relative path.
         from: String,
@@ -116,8 +117,6 @@ pub enum AuthoringOp {
         to: String,
         /// Whether the note's whole bundle folder moves.
         bundle: bool,
-        /// Frontmatter edits to apply to the note at `to`.
-        frontmatter: Vec<FieldEdit>,
     },
     /// Trash every path, into `trash_dir`.
     Delete {
@@ -1277,12 +1276,10 @@ pub fn plan_move_component(
     ) {
         return Err(refusal);
     }
-    let frontmatter = Vec::new();
     Ok(AuthoringOp::Move {
         from: entry.to_owned(),
         to,
         bundle: bundle_dir(entry).is_some(),
-        frontmatter,
     })
 }
 
@@ -2082,9 +2079,9 @@ mod tests {
     }
 
     #[test]
-    fn a_move_of_an_unkeyed_note_edits_no_frontmatter() {
+    fn a_move_names_the_new_path_and_nothing_else() {
         let vfs = one_plugin();
-        let AuthoringOp::Move { frontmatter, .. } = plan_move_component(
+        let AuthoringOp::Move { from, to, bundle } = plan_move_component(
             &vfs,
             vault(),
             &sw(),
@@ -2095,7 +2092,9 @@ mod tests {
         .unwrap() else {
             panic!("expected a move");
         };
-        assert!(frontmatter.is_empty());
+        assert_eq!(from, "marketplaces/house/plugins/tools/skills/review.md");
+        assert_eq!(to, "marketplaces/house/plugins/extras/skills/review.md");
+        assert!(!bundle);
     }
 
     #[test]
@@ -2273,6 +2272,32 @@ mod tests {
             .unwrap_err(),
             "`marketplaces/house/plugins/tools/tools.md` is not a marketplace's own entry note"
         );
+    }
+
+    /// A marketplace's entry note is `marketplaces/<m>/skillwright.md`, and a
+    /// rename or delete of it works on the whole folder.
+    #[test]
+    fn a_marketplace_folder_renames_and_deletes_through_its_root_file() {
+        let vfs = one_plugin();
+        write(
+            &vfs,
+            "marketplaces/house/skillwright.md",
+            &note("house", ""),
+        );
+        let entry = "marketplaces/house/skillwright.md";
+        let AuthoringOp::Rename { to, bundle, .. } =
+            plan_rename_marketplace(&vfs, vault(), &sw(), entry, "shop").unwrap()
+        else {
+            panic!("expected a rename");
+        };
+        assert_eq!(to, "marketplaces/shop/skillwright.md");
+        assert!(bundle);
+        let AuthoringOp::Delete { paths, .. } =
+            plan_delete_container(&vfs, vault(), &sw(), entry, EntityKind::Marketplace).unwrap()
+        else {
+            panic!("expected a delete");
+        };
+        assert_eq!(paths, vec!["marketplaces/house"]);
     }
 
     // ── Convert ─────────────────────────────────────────────────────────────

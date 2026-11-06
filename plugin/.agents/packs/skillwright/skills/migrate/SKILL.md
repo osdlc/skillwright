@@ -197,9 +197,10 @@ generator and regenerate.
 
     `list` passing does not prove `build` will. `build` is the real check, because it follows links
     and renders every harness. A vault with no `build.out` still needs this: pass
-    `--out <scratch folder>` to `build` and `check`. Ignore a `missing-version` warning there for a
-    plugin named after the marketplace, which defaults to the folder's name. The build makes that
-    plugin to hold top-level skills, and `publish` never writes it.
+    `--out <scratch folder>` to `build` and `check`. A `missing-version` warning for the plugin
+    named after the marketplace (the folder's name by default) means `skillwright.md` has no
+    `version`: set it there. The build makes that plugin to hold top-level skills, and `publish`
+    never writes it.
 
     Each unknown key is a warning, and it ships under `metadata:`, so clear them all and search for
     `sw-` again. A note that still has a `kind` or `plugin` key, or a `sw-<key>` spelling of a key
