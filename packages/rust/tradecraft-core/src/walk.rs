@@ -45,6 +45,22 @@ fn plain_options(
     }
 }
 
+/// What a build writes under its output folder, as path fragments a vault
+/// walk leaves out: each harness's packs folder and marketplace manifest.
+/// The output lands beside the root file by default, inside the vault, and
+/// its built copies of the vault's notes are not notes. Fragments rather than
+/// whole folder names, so a plugin folder's own `.claude-plugin/plugin.json`
+/// is still read.
+pub(crate) fn built_paths() -> Vec<String> {
+    let mut paths = Vec::new();
+    for profile in crate::harness::with_plugin_format() {
+        let format = profile.format();
+        paths.push(format!("{}/", format.packs));
+        paths.extend(format.marketplace_manifest.map(str::to_owned));
+    }
+    paths
+}
+
 /// A vault walk's options. `Everything` keeps dot-prefixed names (it drops
 /// only `.git`), and hides nothing: a caller that honours the vault's
 /// excluded files filters with [`excluded_files`].
@@ -65,6 +81,7 @@ fn vault_options(
         propagate_errors,
         skip_names: vec![SKIPPED[0].to_owned()],
         prune_dirs: prune.iter().map(|name| (*name).to_owned()).collect(),
+        exclude: built_paths(),
         ..vault::WalkOptions::default()
     }
 }

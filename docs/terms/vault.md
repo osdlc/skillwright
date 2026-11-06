@@ -8,7 +8,7 @@ osdlc's shared crates call it a [corpus](https://github.com/osdlc/osdlc/blob/mai
 
 ## In code
 
-`--vault`, `vault:` in `skillwright.yaml`; read by `tradecraft-core/src/vault.rs`.
+`--vault`, or the folder holding `skillwright.md`; read by `tradecraft-core/src/vault.rs`.
 
 ## Not to be confused with
 

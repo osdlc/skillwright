@@ -115,13 +115,13 @@ struct ReadOnlyGlobals {
     #[arg(
         long,
         value_name = "path",
-        help = "Vault root. Overrides the configuration for this run."
+        help = "Vault root: the folder holding `skillwright.md`. Overrides the walk up from the working directory for this run."
     )]
     vault: Option<String>,
     #[arg(
         long,
         value_name = "path",
-        help = "Read this project file instead of the nearest `skillwright.yaml` above the working directory."
+        help = "Read this root file instead of the nearest `skillwright.md` at or above the working directory."
     )]
     config: Option<String>,
     #[arg(
@@ -314,18 +314,15 @@ struct PublishArgs {
 /// one render, compared once, two things to do with the comparison.
 #[derive(Args, Debug)]
 struct ExportArgs {
-    /// Where the marketplace roots land. Overrides `marketplace.out`.
+    /// Where the marketplace roots land. Overrides `build.out`; the default is beside `skillwright.md`.
     #[arg(long, value_name = "path")]
     out: Option<String>,
-    /// The skills root to scan. Overrides the configured one.
+    /// The skills root to scan. Defaults to the vault root.
     #[arg(long, value_name = "path")]
     skills_root: Option<String>,
-    /// Which of the vault's marketplaces to build. Refused if the vault holds marketplaces and none has this name; a vault with none builds under it. The marketplace note's own name, or else a configured `marketplace.name`, is what gets published.
+    /// In a workspace, the one marketplace under `marketplaces/<name>/` to build. Refused when there is none.
     #[arg(long, value_name = "name")]
     marketplace: Option<String>,
-    /// The plugin a note with no `sw-plugin` belongs to. Overrides `marketplace.default_plugin`.
-    #[arg(long, value_name = "name")]
-    default_plugin: Option<String>,
     #[command(flatten)]
     globals: Globals,
 }
@@ -635,14 +632,14 @@ struct HarnessUninstallTargetArgs {
 /// harness's configuration, so it takes the full set, not [`ReadOnlyGlobals`].
 #[derive(Args, Debug)]
 struct HarnessTargetArgs {
-    /// A plugin from the marketplace. Repeatable. Defaults to
-    /// `marketplace.default_plugin`.
+    /// A plugin from the marketplace. Repeatable. Defaults to every plugin
+    /// the built tree holds.
     #[arg(long = "plugin", value_name = "name")]
     plugin: Vec<String>,
     /// Where the harness records the install.
     #[arg(long, value_enum, default_value_t = Scope::User)]
     scope: Scope,
-    /// The built marketplace directory. Overrides `marketplace.out`.
+    /// The built marketplace directory. Overrides `build.out`.
     #[arg(long, value_name = "path")]
     path: Option<String>,
     /// Register the marketplace from this git URL instead of the directory.
@@ -709,7 +706,6 @@ impl ExportArgs {
             out: self.out.clone(),
             skills_root: self.skills_root.clone(),
             marketplace: self.marketplace.clone(),
-            default_plugin: self.default_plugin.clone(),
             common: self.globals.read_only.common(),
             json: self.globals.read_only.json,
             dry_run: self.globals.dry_run,

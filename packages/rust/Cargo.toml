@@ -18,9 +18,8 @@ members = ["skillwright", "tradecraft-core", "tradecraft-typegen", "tradecraft-w
 
 [workspace.package]
 edition = "2024"
-# The MSRV. Edition 2024 needs 1.85, but slug-collate's let-chain needs 1.88
-# and serde-saphyr (config-layers) needs 1.89, so the floor is 1.89. CI builds
-# every member on it.
+# The MSRV. Edition 2024 needs 1.85 and slug-collate's let-chain needs 1.88.
+# The floor stays at 1.89, where it was set. CI builds every member on it.
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/osdlc/skillwright"
@@ -56,7 +55,6 @@ wasm-bindgen = "=0.2.126"
 
 # The osdlc library crates, from crates.io.
 agent-adapt = "0.19.2"
-config-layers = "0.8.0"
 etag-write = "0.2.4"
 frontmatter-lossless = "1.1.2"
 markdown-contract = { version = "0.4.1", default-features = false }

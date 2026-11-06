@@ -11,7 +11,8 @@
 //! publishable, how they group into plugins, what each manifest says, which
 //! root a skill's `sw-targets` admits it to, what counts as stale, and
 //! whether the swap is safe all live in [`tradecraft_core::export`]. This
-//! file resolves flags against configuration, calls once, and renders.
+//! file resolves flags against the root file, calls once per marketplace,
+//! and renders.
 //!
 //! # `--dry-run` on `build` is not `check`
 //!
@@ -24,13 +25,12 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use config_layers::needs::Need;
 use tradecraft_core::{
     AssetSpec, ExportMode, ExportRequest, ExportUnit, HookFileSpec, MarketplaceConfig, NativeVfs,
     export_skills, root_trees,
 };
 
-use crate::config::{NEEDS, resolve_against_cwd, resolve_configured_path};
+use crate::config::{resolve_against_cwd, resolve_configured_path};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
@@ -38,7 +38,7 @@ use crate::report::{
     count_checked_units, normalize_thrown_reason, render_export_tally, render_unit_line,
     render_warning_line,
 };
-use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, resolve_skills_root};
+use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, resolve_skills_root, workspace_runs};
 
 /// Which of the two verbs this run is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,17 +60,13 @@ impl ExportVerb {
 
 /// The resolved flags of `skillwright build and check`.
 pub struct ExportFlags {
-    /// Where the roots land. Overrides `marketplace.out`.
+    /// Where the roots land. Overrides `build.out`.
     pub out: Option<String>,
-    /// The skills root to scan. Overrides `marketplace.skills_root`.
+    /// The skills root to scan. Absent means the vault root.
     pub skills_root: Option<String>,
-    /// Which marketplace to build. Refused if the vault holds marketplaces and
-    /// none has this name; a vault with none builds under it. The note's own
-    /// name, or else a configured `marketplace.name`, is what gets published.
+    /// Which marketplace to build. In a workspace, the one under
+    /// `marketplaces/<name>/`; refused when there is none.
     pub marketplace: Option<String>,
-    /// The plugin a note with no `sw-plugin` belongs to. Overrides
-    /// `marketplace.default_plugin`.
-    pub default_plugin: Option<String>,
     /// The global `--vault`, `--config` and `--namespace` flags.
     pub common: CommonFlags,
     /// `--json`: print the report as one JSON document.
@@ -83,8 +79,8 @@ pub struct ExportFlags {
     pub quiet: bool,
 }
 
-/// What a marketplace load reads from the project file besides the vault:
-/// the identity, the harnesses, the assets and the hooks files.
+/// What a marketplace load reads from the root file besides the vault: the
+/// identity, the harnesses, the assets and the hooks files.
 pub(crate) struct MarketplaceInputs {
     pub config: MarketplaceConfig,
     pub harnesses: BTreeSet<String>,
@@ -92,43 +88,23 @@ pub(crate) struct MarketplaceInputs {
     pub hooks: Vec<HookFileSpec>,
 }
 
-/// The project file's marketplace settings as the core's inputs, resolved the
-/// one way `build`, `check` and `list --model` share.
-///
-/// # Errors
-///
-/// A setting that will not convert, as the line to print. A configuration
-/// fault, not a usage error: the invocation is well-formed.
-pub(crate) fn marketplace_inputs(
-    run: &ResolvedRun,
-    default_plugin: String,
-) -> Result<MarketplaceInputs, String> {
-    let settings = run.config.as_ref().map(|c| c.marketplace.clone());
-
+/// The root file as the core's inputs, resolved the one way `build`,
+/// `check` and `list --model` share.
+pub(crate) fn marketplace_inputs(run: &ResolvedRun) -> MarketplaceInputs {
+    let root = &run.config;
     // Which harnesses this marketplace is built for. Absent is every one the
     // core supports; the core refuses a name no harness answers to, so a typo
     // is named rather than quietly publishing less than was asked for.
-    let harnesses: BTreeSet<String> = settings
-        .as_ref()
-        .map(|s| s.harness_set())
-        .unwrap_or_default();
+    let harnesses = root.harness_set();
+    let config = root.to_config(&run.folder_name());
 
-    // A setting that will not convert is a configuration fault, not a usage
-    // error: the invocation is well-formed.
-    let config = settings
-        .unwrap_or_default()
-        .to_config(default_plugin)
-        .map_err(|err| format!("configuration error: {err}"))?;
-
-    // Each `from` resolves against this project file's own directory — the
-    // same rule `marketplace.out` follows — because the core never reads an
-    // ambient config file and has nothing to resolve a relative path
-    // against (see [`tradecraft_core::export::AssetSpec`]).
-    let assets: Vec<AssetSpec> = run
-        .config
-        .as_ref()
-        .map(|c| c.assets.as_slice())
-        .unwrap_or(&[])
+    // Each `from` resolves against the root file's own folder — the same
+    // rule `build.out` follows — because the core never reads an ambient
+    // config file and has nothing to resolve a relative path against (see
+    // [`tradecraft_core::export::AssetSpec`]).
+    let assets: Vec<AssetSpec> = root
+        .build
+        .assets
         .iter()
         .map(|entry| AssetSpec {
             source: resolve_configured_path(&entry.from, &run.config_dir),
@@ -136,15 +112,13 @@ pub(crate) fn marketplace_inputs(
             plugin: entry.plugin.clone(),
         })
         .collect();
-    let hooks: Vec<HookFileSpec> = run
-        .config
-        .as_ref()
-        .map(|c| c.hooks.as_slice())
-        .unwrap_or(&[])
+    let hooks: Vec<HookFileSpec> = root
+        .build
+        .hooks
         .iter()
         .map(|entry| {
             let source = resolve_configured_path(&entry.from, &run.config_dir);
-            // Config-relative, so the gap report names no host path.
+            // Root-relative, so the gap report names no host path.
             let from = crate::config::relative_path(&run.config_dir, &source)
                 .to_string_lossy()
                 .replace('\\', "/");
@@ -156,101 +130,89 @@ pub(crate) fn marketplace_inputs(
         })
         .collect();
 
-    Ok(MarketplaceInputs {
+    MarketplaceInputs {
         config,
         harnesses,
         assets,
         hooks,
-    })
+    }
 }
 
 /// Run one export. `verb` decides the mode a plain run uses and what a
 /// drifted report exits with; everything else about the two verbs is
 /// identical.
+///
+/// In a workspace, each marketplace under `marketplaces/` is built in turn,
+/// or only the one `--marketplace` names. The run exits with the first
+/// failure's code, after trying every marketplace.
 pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let run = match resolve_run(&flags.common, &ctx.cwd, ctx.err) {
         Ok(run) => run,
         Err(code) => return code,
     };
-    let settings = run.config.as_ref().map(|c| c.marketplace.clone());
-
-    // --- the marketplace's own identity -------------------------------------
-    // `name` is not asked for here. A marketplace note names itself and the
-    // core reads it; where a vault holds no marketplace at all the core
-    // refuses `unnamed-marketplace`, naming what is missing and where to
-    // write it. Passed through when configured, as the fallback.
-    //
-    // `--marketplace` is the SELECTOR: which of the vault's marketplaces to
-    // build. It reaches `ExportRequest::marketplace`, which is validated
-    // against what the vault actually holds, so a typo is refused by name
-    // instead of quietly renaming the output.
-    //
-    // What the verb cannot run without is asked of the needs check, so the
-    // "set it in …" clause names the right file for where the person is
-    // standing.
-    let project = run
-        .config
-        .as_ref()
-        .and_then(|c| serde_json::to_value(c).ok());
-    let input_set = |key: &str| match key {
-        "defaultPlugin" => flags.default_plugin.is_some(),
-        "out" => flags.out.is_some(),
-        _ => false,
-    };
-    // Each need is checked and its value taken in one step, so nothing below
-    // has to assume the check ran.
-    macro_rules! required {
-        ($need:expr, $value:expr) => {{
-            let need = $need;
-            match $value {
-                Some(value) if NEEDS.met(&need, project.as_ref(), None, &input_set) => value,
-                _ => {
-                    return usage_error(
-                        ctx.err,
-                        &NEEDS.message(&need, &run.config_dir, &[verb.as_str()]),
-                    );
-                }
-            }
-        }};
+    if !run.is_workspace() {
+        return export_one(verb, flags, &run, flags.marketplace.clone(), ctx);
     }
-
-    let default_plugin = required!(
-        Need {
-            config: "marketplace.default_plugin",
-            unless_input: Some("defaultPlugin"),
-        },
-        flags
-            .default_plugin
-            .clone()
-            .or_else(|| settings.as_ref().and_then(|s| s.default_plugin.clone()))
-    );
-    let out_root: PathBuf = required!(
-        Need {
-            config: "marketplace.out",
-            unless_input: Some("out"),
-        },
-        match &flags.out {
-            Some(out) => Some(resolve_against_cwd(out, &ctx.cwd)),
-            None => settings
-                .as_ref()
-                .and_then(|s| s.out.as_deref())
-                .map(|out| resolve_configured_path(out, &run.config_dir)),
+    if flags.out.is_some() {
+        return usage_error(
+            ctx.err,
+            "--out names one output folder, and a workspace builds several; pass --marketplace to build one",
+        );
+    }
+    let runs = match workspace_runs(&run, &flags.common, flags.marketplace.as_deref(), ctx.err) {
+        Ok(runs) => runs,
+        Err(code) => return code,
+    };
+    let mut exit = EXIT_OK;
+    for member in &runs {
+        if !flags.quiet {
+            let _ = writeln!(ctx.err, "marketplace {}:", member.vault.display());
         }
-    );
+        let code = export_one(verb, flags, member, None, ctx);
+        if exit == EXIT_OK {
+            exit = code;
+        }
+    }
+    exit
+}
 
-    // The one precedence, shared with `adopt`: what a build scans must be
-    // what an adoption writes into.
-    let skills_root = resolve_skills_root(flags.skills_root.as_deref(), &run, &ctx.cwd);
+/// Where one marketplace's harness trees land: `--out`, else `build.out`,
+/// else beside the root file.
+pub(crate) fn out_root(flags: &ExportFlags, run: &ResolvedRun, cwd: &std::path::Path) -> PathBuf {
+    match &flags.out {
+        Some(out) => resolve_against_cwd(out, cwd),
+        None => run.config.build.out.as_deref().map_or_else(
+            || run.config_dir.clone(),
+            |out| resolve_configured_path(out, &run.config_dir),
+        ),
+    }
+}
+
+/// [`run_export`] over one marketplace's run.
+fn export_one(
+    verb: ExportVerb,
+    flags: &ExportFlags,
+    run: &ResolvedRun,
+    marketplace: Option<String>,
+    ctx: &mut CommandContext<'_>,
+) -> i32 {
+    // `--marketplace` outside a workspace is the core's selector: which of
+    // the vault's `marketplaces/` to build. It reaches
+    // `ExportRequest::marketplace`, which is validated against what the vault
+    // actually holds, so a typo is refused by name.
+    //
+    // The output lands beside the root file unless the flag or `build.out`
+    // moves it.
+    let out_root = out_root(flags, run, &ctx.cwd);
+
+    let skills_root = resolve_skills_root(flags.skills_root.as_deref(), &ctx.cwd);
 
     let MarketplaceInputs {
-        config: marketplace,
+        config: marketplace_config,
         harnesses,
         assets,
         hooks,
-    } = match marketplace_inputs(&run, default_plugin) {
-        Ok(inputs) => inputs,
-        Err(err) => return blocked(ctx.err, &err),
-    };
+    } = marketplace_inputs(run);
 
     // --- the mode -----------------------------------------------------------
     // `check` never writes; `build --dry-run` renders through the same
@@ -261,14 +223,14 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     let request = ExportRequest {
         vault_root: run.vault.clone(),
         skills_root,
-        marketplace: flags.marketplace.clone(),
+        marketplace,
         out_root: out_root.clone(),
         mode: if writes {
             ExportMode::Build
         } else {
             ExportMode::Check
         },
-        config: marketplace,
+        config: marketplace_config,
         harnesses,
         assets,
         hooks,

@@ -264,15 +264,26 @@ pub fn load(
             ),
         ));
     }
-    let mut plugins = group_by_plugin(&skills, &commands, &hooks, &config.default_plugin)?;
+    let mut plugins = group_by_plugin(&skills, &commands, &hooks, &name)?;
     warnings.extend(missing_versions(
         &discovered,
         market.as_deref(),
         &plugins,
         &config,
     ));
-    load_assets(vfs, &request.assets, &roots, &mut plugins, &config)?;
-    load_hook_files(vfs, &request.hooks, &mut plugins, &config)?;
+    let folder_assets = folder_assets(vfs, &vault_root, &plugins);
+    warnings.extend(changelog_warnings(
+        vfs,
+        &vault_root,
+        &folder_assets,
+        &config,
+    ));
+    let assets: Vec<AssetSpec> = folder_assets
+        .into_iter()
+        .chain(request.assets.iter().cloned())
+        .collect();
+    load_assets(vfs, &assets, &roots, &mut plugins, &config, &name)?;
+    load_hook_files(vfs, &request.hooks, &mut plugins, &name)?;
 
     // Pass 2. One index for every call, over every skill in the marketplace
     // under the plugin it ships in, whether or not a given harness ships it:
@@ -568,8 +579,12 @@ pub fn load_plugin(
                 .parent()
                 .map(|dir| dir.join(relative));
             let Some(from) = from else { continue };
+            // `assets/` lands at the plugin root, as a build lands it.
+            let dest = relative
+                .strip_prefix(&format!("{ASSETS_DIR}/"))
+                .unwrap_or(relative);
             plugin.assets.push(Asset {
-                dest: relative.clone(),
+                dest: dest.to_owned(),
                 bytes: vfs.read_file(&from)?,
                 executable: vfs.is_executable(&from),
             });
@@ -586,7 +601,6 @@ pub fn load_plugin(
         description: None,
         author: identity.author.clone(),
         license: None,
-        default_plugin: plugin_name.to_owned(),
         plugins: [(plugin_name.to_owned(), overrides_from(identity))]
             .into_iter()
             .collect(),
@@ -1147,12 +1161,16 @@ fn named(names: &BTreeSet<&str>) -> String {
 
 /// Plugins, members in discovery's name order.
 ///
-/// A bare member belongs to no plugin in the vault, but every member needs
-/// *some* plugin directory in a marketplace tree — so the configured default
-/// is applied here rather than in the scan. Where a member lives is a fact
-/// about the vault; where it publishes is a fact about this build.
+/// A member outside every plugin folder belongs to the marketplace's own
+/// plugin, named after the marketplace (`own_plugin`). That name is applied
+/// here rather than in the scan, because the marketplace's name is settled
+/// only once its root file and notes are read.
 ///
 /// # Errors
+///
+/// `refused: own-plugin-clash` — the vault has members outside `plugins/`
+/// and also a `plugins/<own_plugin>/` folder, so two sources would fill one
+/// plugin.
 ///
 /// `refused: path-collision` — two members of the same kind landing on one
 /// directory. This vault is legal and discovery passed it: a promoted skill
@@ -1164,8 +1182,22 @@ fn group_by_plugin(
     skills: &[&DiscoveredComponent],
     commands: &[&DiscoveredComponent],
     hooks: &[&DiscoveredComponent],
-    default_plugin: &str,
+    own_plugin: &str,
 ) -> Result<BTreeMap<String, Plugin>, CoreError> {
+    let all = || skills.iter().chain(commands).chain(hooks);
+    if let Some(loose) = all().find(|m| m.plugin.is_none())
+        && let Some(folder) = all().find(|m| m.folder_plugin.as_deref() == Some(own_plugin))
+    {
+        return Err(CoreError::refused(
+            "own-plugin-clash",
+            format!(
+                "`{}` sits outside `plugins/`, so it belongs to the plugin named after the \
+                 marketplace, `{own_plugin}`; `{}` sits in a `plugins/{own_plugin}/` folder too. \
+                 Move the loose members into that folder, or rename it. Nothing was written",
+                loose.vault_relative_path, folder.vault_relative_path
+            ),
+        ));
+    }
     type Pick = fn(&mut Plugin) -> &mut Vec<Component>;
     let kinds: [(&[&DiscoveredComponent], Pick); 3] = [
         (skills, |plugin| &mut plugin.skills),
@@ -1175,7 +1207,7 @@ fn group_by_plugin(
     let mut plugins: BTreeMap<String, Plugin> = BTreeMap::new();
     for (members, pick) in kinds {
         for member in members {
-            let name = member.plugin.as_deref().unwrap_or(default_plugin);
+            let name = member.plugin.as_deref().unwrap_or(own_plugin);
             let plugin = plugins.entry(name.to_owned()).or_insert_with(|| Plugin {
                 name: name.to_owned(),
                 ..Plugin::default()
@@ -1229,6 +1261,7 @@ fn load_assets(
     roots: &[&HarnessProfile],
     plugins: &mut BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
+    own_plugin: &str,
 ) -> Result<(), CoreError> {
     let mut checked: Vec<(&AssetSpec, String)> = Vec::new();
     for asset in assets {
@@ -1260,10 +1293,7 @@ fn load_assets(
                 ),
             ));
         }
-        let plugin = asset
-            .plugin
-            .as_deref()
-            .unwrap_or(config.default_plugin.as_str());
+        let plugin = asset.plugin.as_deref().unwrap_or(own_plugin);
         if !plugins.contains_key(plugin) {
             return Err(CoreError::refused(
                 "unknown-asset-plugin",
@@ -1293,6 +1323,106 @@ fn load_assets(
         plugin.assets.extend(files);
     }
     Ok(())
+}
+
+/// The file a plugin folder keeps its changelog in, beside the plugin note.
+pub const CHANGELOG_FILE: &str = "CHANGELOG.md";
+
+/// The folder inside a plugin folder whose contents land at the plugin's
+/// root in every pack.
+pub const ASSETS_DIR: &str = "assets";
+
+/// The assets the folder convention supplies: each plugin folder's `assets/`,
+/// copied to the plugin root, and its `CHANGELOG.md`, copied beside the
+/// manifest. A plugin's folder is found from where its members sit
+/// (`…/plugins/<p>/`), so a plugin with no note still has one.
+fn folder_assets(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    plugins: &BTreeMap<String, Plugin>,
+) -> Vec<AssetSpec> {
+    let mut specs = Vec::new();
+    for (name, plugin) in plugins {
+        let Some(folder) = plugin
+            .components()
+            .find_map(|member| plugin_folder(&member.discovered.vault_relative_path, name))
+        else {
+            continue;
+        };
+        let folder = vault_root.join(folder);
+        let assets = folder.join(ASSETS_DIR);
+        if is_directory(vfs, &assets) {
+            specs.push(AssetSpec {
+                source: assets,
+                dest: String::new(),
+                plugin: Some(name.clone()),
+            });
+        }
+        let changelog = folder.join(CHANGELOG_FILE);
+        if vfs.exists(&changelog) && !is_directory(vfs, &changelog) {
+            specs.push(AssetSpec {
+                source: changelog,
+                dest: CHANGELOG_FILE.to_owned(),
+                plugin: Some(name.clone()),
+            });
+        }
+    }
+    specs
+}
+
+/// `…/plugins/<plugin>` out of a member's vault-relative path, or `None` for
+/// a member outside that plugin's folder.
+fn plugin_folder(member: &str, plugin: &str) -> Option<String> {
+    let parts: Vec<&str> = member.split('/').collect();
+    parts
+        .windows(2)
+        .position(|pair| pair[0] == "plugins" && pair[1] == plugin)
+        .map(|i| parts[..i + 2].join("/"))
+}
+
+/// A warning for each plugin whose `CHANGELOG.md` has no heading naming the
+/// version the plugin ships, so a release does not go out undescribed.
+fn changelog_warnings(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    assets: &[AssetSpec],
+    config: &MarketplaceConfig,
+) -> Vec<DiscoveryWarning> {
+    let mut warnings = Vec::new();
+    for asset in assets.iter().filter(|a| a.dest == CHANGELOG_FILE) {
+        let Some(plugin) = asset.plugin.as_deref() else {
+            continue;
+        };
+        let Some(version) = config
+            .plugins
+            .get(plugin)
+            .and_then(|o| o.version.as_deref())
+        else {
+            continue;
+        };
+        let Ok(bytes) = vfs.read_file(&asset.source) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        let named = text
+            .lines()
+            .any(|line| line.trim_start().starts_with('#') && line.contains(version));
+        if !named {
+            warnings.push(DiscoveryWarning {
+                path: asset
+                    .source
+                    .strip_prefix(vault_root)
+                    .map(crate::skill::forward_slashed)
+                    .unwrap_or_else(|_| asset.source.display().to_string()),
+                reason: "changelog-missing-version".to_owned(),
+                detail: format!(
+                    "plugin `{plugin}` ships version `{version}`, and its `{CHANGELOG_FILE}` has \
+                     no heading naming it"
+                ),
+            });
+        }
+    }
+    warnings
 }
 
 /// One asset's files, read verbatim.
@@ -1391,13 +1521,10 @@ fn load_hook_files(
     vfs: &dyn Vfs,
     specs: &[HookFileSpec],
     plugins: &mut BTreeMap<String, Plugin>,
-    config: &MarketplaceConfig,
+    own_plugin: &str,
 ) -> Result<(), CoreError> {
     for spec in specs {
-        let plugin = spec
-            .plugin
-            .as_deref()
-            .unwrap_or(config.default_plugin.as_str());
+        let plugin = spec.plugin.as_deref().unwrap_or(own_plugin);
         let list = plugin_list(plugins);
         let Some(group) = plugins.get_mut(plugin) else {
             return Err(CoreError::refused(

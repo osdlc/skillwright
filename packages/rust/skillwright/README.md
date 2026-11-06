@@ -104,8 +104,8 @@ Every verb accepts these after the verb name, for example
 
 | Option | Does |
 |---|---|
-| `--vault <path>` | The vault root, overriding the configuration |
-| `--config <path>` | Read this project file instead of the nearest one above the working directory |
+| `--vault <path>` | The vault root: the folder holding `skillwright.md` |
+| `--config <path>` | Read this root file instead of the nearest `skillwright.md` at or above the working directory |
 | `--namespace <stem>` | The frontmatter namespace stem, the `sw` of `sw-kind` |
 | `--json` | Print the report on stdout as one JSON document |
 | `--quiet` | Drop progress and the tally from stderr |
@@ -117,7 +117,7 @@ Each verb's own options:
 | Verb | Its own options |
 |---|---|
 | `publish` | `[note...]`, `--to <root>` (repeatable), `--target <target>`, `--all`, `--overwrite <path>` (repeatable) |
-| `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--default-plugin <name>`, `--watch` (`build` only) |
+| `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--watch` (`build` only) |
 | `list` | `--skills-root <path>`, `--model` (print the loaded marketplace model as JSON) |
 | `status` | `[note]`, `--check` |
 | `adopt` | `[source...]`, `--from <location>` (repeatable), `--from-git <ref>` (repeatable), `--plugin <name>`, `--into <path>`, `--set-targets <target>` (repeatable), `--only <name>` (repeatable), `--overwrite <path>` (repeatable) |
@@ -135,55 +135,72 @@ Each verb's own options:
 | 1 | The run completed and something was refused, or `check` found drift |
 | 2 | A run-level blocker. Nothing was attempted |
 | 3 | Usage error |
-| 4 | No configuration, and none supplied |
+| 4 | No vault: no `skillwright.md` and no convention folder, and none supplied |
 | 130 | Interrupted |
 
 ## Configuration
 
-Two files, both optional. A flag overrides the project file, which overrides
-the machine file, except for `paths:` (below). `skillwright` never writes
-either one.
+The only configuration file is `skillwright.md`, the root file. The folder
+holding it is the vault. It is committed, and found by walking up from the
+working directory, the way git finds a repository, or named with `--config`.
+`skillwright` never writes it.
 
-- **The project file** is `skillwright.yaml`. It is committed, and found by
-  walking up from the working directory, or named with `--config`. It holds
-  the vault path, the frontmatter namespace, the destinations and the
-  `marketplace:` block.
-- **The machine file** is `<config-home>/skillwright/config.yaml`, set by
-  `SKILLWRIGHT_MACHINE_CONFIG` when that is set. It has the same shape. It
-  supplies a whole top-level key when the project file leaves that key out
-  or empty. Nested values are not merged: a project `marketplace:` block
-  replaces the machine one entirely.
+Its frontmatter's top-level keys are the marketplace's fields. Settings for
+how `skillwright` runs sit under `build:`. The body is ignored.
 
-`paths:` is the exception. Names from both files merge, and when both define
-the same name the machine file's value wins.
-
-`<config-home>` comes from [`tiered-dirs`](https://crates.io/crates/tiered-dirs): for example
-`~/Library/Application Support` on macOS and `~/.config` on Linux.
-`SKILLWRIGHT_ROOT` and the other `SKILLWRIGHT_*` variables move it.
-
-Relative paths in a config file resolve against that file's directory,
-including relative entries under `paths:` in the machine file. A flag's path
-resolves against the working directory.
-
-```yaml
-vault: notes
-namespace: sw
-destinations:
-  - root: ~/code/my-project
-    target: claude-code
-marketplace:
-  name: house
-  default_plugin: tools
+```markdown
+---
+name: house
+description: Skills for the house projects.
+owner: acme
+license: MIT
+build:
+  out: dist             # default: beside this file
+  namespace: sw
+  harnesses: [claude, codex]
+  destinations:
+    - root: ~/code/my-project
+      target: claude-code
+---
 ```
+
+The `build:` keys are `out`, `harnesses`, `namespace`, `launcher_path`,
+`require_descriptions`, `destinations`, `scan_locations`, `assets` and
+`hooks`. An unknown key is a warning, not an error.
+
+The vault follows a folder convention:
+
+- `plugins/<p>/` is a plugin, and `plugins/<p>/<p>.md` is its optional note.
+- `skills/`, `agents/`, `commands/` and `hooks/` are kind folders.
+- A root `skills/` folder is a plugin named after the marketplace.
+- `plugins/<p>/assets/` is copied to the plugin's root, and
+  `plugins/<p>/CHANGELOG.md` into every pack.
+- `docs/` never ships.
+
+The marketplace's name defaults to the vault folder's name. A folder holding
+`plugins/` or `skills/` builds with no root file at all.
+
+A root file with `workspace: true` holds shared defaults (`author`,
+`license` and the `build:` keys other than paths) for every
+`marketplaces/<m>/skillwright.md` below it. `build` and `check` there run
+over each marketplace; `--marketplace <name>` picks one.
+
+With no `build.destinations`, `publish` and `status` use each harness's user
+skill folder, such as `~/.claude/skills`. With no `build.scan_locations`,
+`adopt` reads the same folders.
+
+Relative paths in the root file resolve against its folder. A flag's path
+resolves against the working directory. A flag overrides the root file.
 
 ### Hooks
 
-`hooks:` names one hooks file per plugin:
+`build.hooks` names one hooks file per plugin:
 
 ```yaml
-hooks:
-  - from: plugin/hooks.json   # relative to this file
-    plugin: tools             # absent means marketplace.default_plugin
+build:
+  hooks:
+    - from: plugin/hooks.json   # relative to skillwright.md
+      plugin: tools             # absent means the marketplace's own plugin
 ```
 
 The file is a Claude Code `hooks.json`, with event names from Claude Code's
@@ -206,14 +223,12 @@ or hand-edited report as drift.
 
 ### Launcher
 
-`marketplace.launcher_path` names a launcher script the plugin ships as an
-asset, relative to the plugin's root:
+`build.launcher_path` names a launcher script the plugin ships as an
+asset, relative to the plugin's root. With the script at
+`plugins/<p>/assets/bin/tool`:
 
 ```yaml
-assets:
-  - from: scripts/tool
-    to: bin/tool
-marketplace:
+build:
   launcher_path: bin/tool
 ```
 
@@ -243,9 +258,8 @@ Each release is listed in the [changelog](CHANGELOG.md).
 
 This crate was published as `tradecraft` up to 0.3.7. skillwright is in
 alpha and does not read the old names, so a project that used them must be
-renamed by hand: the project file, manifest folder, frontmatter keys,
-environment variables and machine file all take the `skillwright` and `sw`
-spellings. Old `tc-` keys are not errors: they publish as ordinary keys, and a
+renamed by hand: the configuration, manifest folder, frontmatter keys and
+environment variables all take the `skillwright` and `sw` spellings. Old `tc-` keys are not errors: they publish as ordinary keys, and a
 note with `tc-kind: plugin` reads as a skill.
 
 `publish` applies a note's `sw-overrides`; `build` and `check` do not.

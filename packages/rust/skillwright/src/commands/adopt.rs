@@ -218,21 +218,29 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let sources: Vec<ResolvedSource> = if asked_for_a_source {
         named.into_iter().chain(fetched).collect()
     } else {
-        run.config
-            .as_ref()
-            .map(|c| c.scan_locations.as_slice())
-            .unwrap_or_default()
-            .iter()
-            .map(|s| ResolvedSource {
-                path: resolve_configured_path(s, &run.config_dir),
-                label: None,
-            })
-            .collect()
+        // `build.scan_locations`, else each harness's user skill folder that
+        // exists: a folder that is not there holds nothing to adopt.
+        let configured = &run.config.build.scan_locations;
+        if configured.is_empty() {
+            run.user_skill_folders()
+                .into_iter()
+                .filter(|(dir, _)| dir.is_dir())
+                .map(|(path, _)| ResolvedSource { path, label: None })
+                .collect()
+        } else {
+            configured
+                .iter()
+                .map(|s| ResolvedSource {
+                    path: resolve_configured_path(s, &run.config_dir),
+                    label: None,
+                })
+                .collect()
+        }
     };
     if sources.is_empty() && fetch_failed.is_empty() {
         return usage_error(
             ctx.err,
-            "adopt needs a source: pass a path (or --from <location> / --from-git <ref>), or register scan locations in the configuration",
+            "adopt needs a source: pass a path (or --from <location> / --from-git <ref>), or set `build.scan_locations` in skillwright.md",
         );
     }
     // `--only` names skills WITHIN a source, and the core refuses a name
@@ -251,7 +259,7 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // be what a build scans. A source that is not there is left to the
     // core, which answers `corpus root not found` — checking it here would
     // be a second, stricter spelling of that refusal.
-    let skills_root = resolve_skills_root(flags.into.as_deref(), &run, &ctx.cwd);
+    let skills_root = resolve_skills_root(flags.into.as_deref(), &ctx.cwd);
 
     // --- confirmation -----------------------------------------------------
     // Adoption writes notes into the vault, so it confirms like a publish.

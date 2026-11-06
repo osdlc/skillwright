@@ -26,7 +26,7 @@ use tradecraft_core::{
     discover_components, publish_skill,
 };
 
-use crate::config::{normalize_join, relative_path, resolve_against_cwd, resolve_configured_path};
+use crate::config::{normalize_join, relative_path, resolve_against_cwd};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
@@ -34,7 +34,7 @@ use crate::report::{
     AttributedExclusion, Attribution, has_refusal, normalize_thrown_reason, render_exclusion,
     render_file_line, render_reason, render_tally, render_unmatched_overwrite, render_warning_line,
 };
-use crate::resolve::{CommonFlags, RunNotes, refuse_separate_skills_root, resolve_run};
+use crate::resolve::{CommonFlags, refuse_workspace, resolve_run};
 
 /// The resolved flags of `skillwright publish`.
 pub struct PublishFlags {
@@ -175,6 +175,9 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("publish", &run, ctx.err) {
+        return code;
+    }
 
     // --- the target ------------------------------------------------------
     // Checked here, against the core's own list, so a name the tool does
@@ -208,23 +211,10 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             })
             .collect()
     } else {
-        let configured = run
-            .config
-            .as_ref()
-            .map(|c| c.destinations.as_slice())
-            .filter(|destinations| !destinations.is_empty());
-        let Some(configured) = configured else {
-            return usage_error(
-                ctx.err,
-                "no destinations configured; pass --to and --target, or run `skillwright init`",
-            );
-        };
-        let mut destinations: Vec<Destination> = configured
-            .iter()
-            .map(|d| Destination {
-                root: resolve_configured_path(&d.root, &run.config_dir),
-                target: d.target.clone(),
-            })
+        let mut destinations: Vec<Destination> = run
+            .destinations()
+            .into_iter()
+            .map(|(root, target)| Destination { root, target })
             .collect();
         if let Some(target) = &flags.target {
             let mut configured_targets: Vec<String> =
@@ -241,7 +231,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 return usage_error(
                     ctx.err,
                     &format!(
-                        "no configured destination for target: {target}\nconfigured targets: {}",
+                        "no destination for target: {target}\ndestinations: {}",
                         configured_targets.join(", ")
                     ),
                 );
@@ -263,15 +253,6 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             // a roster worth publishing half of.
             Err(err) => return blocked(ctx.err, &err.to_string()),
         };
-        if let Err(code) = refuse_separate_skills_root(
-            "publish",
-            &run,
-            &ctx.cwd,
-            RunNotes::Skipped(&scan.skipped),
-            ctx.err,
-        ) {
-            return code;
-        }
         // The kinds the publish spec calls publishable units. A marketplace
         // note names a distribution and publishes to no destination; an
         // agent or a command publishes on its own and is not swept up by a
@@ -301,15 +282,6 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 return blocked(ctx.err, &format!("note not found: {}", note_path.display()));
             }
             note_paths.push(note_path);
-        }
-        if let Err(code) = refuse_separate_skills_root(
-            "publish",
-            &run,
-            &ctx.cwd,
-            RunNotes::Named(&note_paths),
-            ctx.err,
-        ) {
-            return code;
         }
     }
 

@@ -41,17 +41,17 @@
 //! change on every save, write nothing" loop.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use notify::{RecursiveMode, Watcher};
 
-use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export};
+use crate::commands::marketplace::{ExportFlags, ExportVerb, out_root, run_export};
 use crate::config::resolve_configured_path;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked};
-use crate::resolve::resolve_run;
+use crate::resolve::{refuse_workspace, resolve_run};
 
 /// How long a burst of filesystem events is treated as one save. Long enough
 /// to swallow an editor's create/write/rename trio; short enough that the
@@ -86,6 +86,13 @@ pub fn run_watch_for(
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("watch", &run, ctx.err) {
+        return code;
+    }
+    // What a build writes lands under dot-named folders at the top of the
+    // output folder (the harness trees and the build's stage). The output is
+    // inside the vault by default, so those writes are not changes.
+    let out = out_root(flags, &run, &ctx.cwd);
 
     // Every rebuild this loop triggers writes unattended — see the module
     // doc's "No confirmation prompt" section.
@@ -93,7 +100,6 @@ pub fn run_watch_for(
         out: flags.out.clone(),
         skills_root: flags.skills_root.clone(),
         marketplace: flags.marketplace.clone(),
-        default_plugin: flags.default_plugin.clone(),
         common: flags.common.clone(),
         json: flags.json,
         dry_run: flags.dry_run,
@@ -150,7 +156,7 @@ pub fn run_watch_for(
 
     let mut rebuilds = 0usize;
     loop {
-        match next_batch(&rx, DEBOUNCE) {
+        match next_batch(&rx, DEBOUNCE, &out) {
             // The sender lives inside the watcher's OS callback; a closed
             // channel means the watcher itself was torn down.
             None => return EXIT_OK,
@@ -189,7 +195,9 @@ pub fn run_watch_for(
 fn next_batch(
     rx: &mpsc::Receiver<notify::Result<notify::Event>>,
     debounce: Duration,
+    out: &Path,
 ) -> Option<bool> {
+    let is_change = |event: &notify::Event| is_change(event) && !is_build_output(event, out);
     let first = rx.recv().ok()?;
     let mut changed = first.as_ref().is_ok_and(is_change);
     let deadline = Instant::now() + debounce;
@@ -214,6 +222,18 @@ fn is_change(event: &notify::Event) -> bool {
     }
 }
 
+/// Whether every path in `event` sits under a dot-named folder at the top
+/// of `out`, where a build writes.
+fn is_build_output(event: &notify::Event, out: &Path) -> bool {
+    !event.paths.is_empty()
+        && event.paths.iter().all(|path| {
+            path.strip_prefix(out)
+                .ok()
+                .and_then(|rest| rest.components().next())
+                .is_some_and(|first| first.as_os_str().to_string_lossy().starts_with('.'))
+        })
+}
+
 /// Every path the watcher arms, each with its recursion: the vault itself,
 /// then each `assets:` and `hooks:` source resolved the way the build
 /// resolves it, with the recursion rule in the module doc. A path named
@@ -221,12 +241,12 @@ fn is_change(event: &notify::Event) -> bool {
 fn watch_targets(run: &crate::resolve::ResolvedRun) -> Vec<(PathBuf, RecursiveMode)> {
     let mut targets: BTreeMap<PathBuf, RecursiveMode> = BTreeMap::new();
     targets.insert(run.vault.clone(), RecursiveMode::Recursive);
-    let sources = run.config.as_ref().into_iter().flat_map(|c| {
-        c.assets
-            .iter()
-            .map(|a| &a.from)
-            .chain(c.hooks.iter().map(|h| &h.from))
-    });
+    let build = &run.config.build;
+    let sources = build
+        .assets
+        .iter()
+        .map(|a| &a.from)
+        .chain(build.hooks.iter().map(|h| &h.from));
     for from in sources {
         let source = resolve_configured_path(from, &run.config_dir);
         let (path, mode) = if source.is_dir() {
@@ -293,7 +313,6 @@ mod tests {
             // the same way `marketplace_parity.rs` does, or the render
             // refuses `ambiguous-marketplace`.
             marketplace: Some("acme".to_string()),
-            default_plugin: Some("core".to_string()),
             common: CommonFlags {
                 vault: Some(vault.display().to_string()),
                 config: None,
@@ -334,15 +353,15 @@ mod tests {
 
         tx.send(event(open)).unwrap();
         tx.send(event(read)).unwrap();
-        assert_eq!(next_batch(&rx, debounce), Some(false));
+        assert_eq!(next_batch(&rx, debounce, Path::new("/out")), Some(false));
 
         tx.send(event(open)).unwrap();
         tx.send(event(EventKind::Modify(ModifyKind::Any))).unwrap();
         tx.send(event(read)).unwrap();
-        assert_eq!(next_batch(&rx, debounce), Some(true));
+        assert_eq!(next_batch(&rx, debounce, Path::new("/out")), Some(true));
 
         drop(tx);
-        assert_eq!(next_batch(&rx, debounce), None);
+        assert_eq!(next_batch(&rx, debounce, Path::new("/out")), None);
     }
 
     #[test]
@@ -368,8 +387,25 @@ mod tests {
     }
 
     #[test]
+    fn a_write_under_the_output_s_harness_trees_is_not_a_change() {
+        let event =
+            |path: &str| notify::Event::new(notify::EventKind::Any).add_path(PathBuf::from(path));
+        let out = Path::new("/vault");
+        assert!(is_build_output(
+            &event("/vault/.claude-plugin/packs/x"),
+            out
+        ));
+        assert!(is_build_output(&event("/vault/.skillwright-stage/a"), out));
+        assert!(!is_build_output(
+            &event("/vault/plugins/p/skills/s.md"),
+            out
+        ));
+        assert!(!is_build_output(&event("/elsewhere/.pi/x"), out));
+    }
+
+    #[test]
     fn asset_sources_are_watched_beside_the_vault() {
-        use crate::config::{AssetEntry, SkillwrightConfig};
+        use crate::config::{AssetSetting, RootFile};
         use crate::resolve::ResolvedRun;
 
         let root = tempfile::tempdir().unwrap();
@@ -378,16 +414,17 @@ mod tests {
         fs::create_dir_all(root.path().join("conventions")).unwrap();
         fs::create_dir_all(root.path().join("bin")).unwrap();
         fs::write(root.path().join("bin/tool"), "launcher\n").unwrap();
-        let asset = |from: &str| AssetEntry {
+        let asset = |from: &str| AssetSetting {
             from: from.to_owned(),
             to: from.to_owned(),
             plugin: None,
         };
         let run = ResolvedRun {
-            config: Some(SkillwrightConfig {
-                assets: vec![asset("conventions"), asset("bin/tool")],
-                ..SkillwrightConfig::default()
-            }),
+            config: {
+                let mut config = RootFile::default();
+                config.build.assets = vec![asset("conventions"), asset("bin/tool")];
+                config
+            },
             config_dir: root.path().to_path_buf(),
             config_path: None,
             namespace: None,

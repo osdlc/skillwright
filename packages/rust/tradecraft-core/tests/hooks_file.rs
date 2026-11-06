@@ -51,13 +51,14 @@ fn request(mode: ExportMode) -> ExportRequest {
         harnesses: BTreeSet::new(),
         mode,
         config: MarketplaceConfig {
-            name: Some("demo".to_owned()),
+            // Members outside `plugins/` land in the plugin named after the
+            // marketplace.
+            name: Some("core".to_owned()),
             display_name: None,
             owner: None,
             description: None,
             author: None,
             license: None,
-            default_plugin: "core".to_owned(),
             plugins: BTreeMap::new(),
             require_descriptions: false,
             launcher_path: None,

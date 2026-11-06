@@ -13,7 +13,6 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use common::with_machine_env;
 use skillwright::cli::run_with;
 use skillwright::ctx::CommandContext;
 
@@ -23,17 +22,14 @@ struct Run {
     stderr: String,
 }
 
-/// One invocation, with the machine config relocated into `cwd` so the
-/// developer's real one never leaks into a run — the same helper
-/// `tests/bump.rs` uses.
+/// One invocation in `cwd`.
 fn run(argv: &[&str], cwd: &Path) -> Run {
     let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
-    let code = with_machine_env(Some(&cwd.join("no-machine-config.yaml")), || {
-        let mut ctx = CommandContext::new(cwd, &mut out, &mut err);
-        run_with(&owned, &mut ctx)
-    });
+    let mut ctx = CommandContext::new(cwd, &mut out, &mut err);
+    let code = run_with(&owned, &mut ctx);
+    drop(ctx);
     Run {
         code,
         stdout: String::from_utf8(out).unwrap(),
@@ -494,21 +490,7 @@ fn list_and_check_stay_clean_after_a_forced_delete() {
     let (dir, vault) = fixture();
     let vault_s = vault_str(&vault);
     let out = dir.path().join("market").display().to_string();
-    let build = |cwd: &Path| {
-        run(
-            &[
-                "build",
-                "--vault",
-                &vault_s,
-                "--out",
-                &out,
-                "--default-plugin",
-                "tools",
-                "--yes",
-            ],
-            cwd,
-        )
-    };
+    let build = |cwd: &Path| run(&["build", "--vault", &vault_s, "--out", &out, "--yes"], cwd);
 
     // `README.md` is never touched by this test's own ops. A byte check on
     // it after every step pins that this test's own build/delete/build
@@ -544,18 +526,7 @@ fn list_and_check_stay_clean_after_a_forced_delete() {
     assert!(!listed.stdout.contains("skipped"), "{}", listed.stdout);
     assert!(!listed.stdout.contains(".trash"), "{}", listed.stdout);
 
-    let checked = run(
-        &[
-            "check",
-            "--vault",
-            &vault_s,
-            "--out",
-            &out,
-            "--default-plugin",
-            "tools",
-        ],
-        dir.path(),
-    );
+    let checked = run(&["check", "--vault", &vault_s, "--out", &out], dir.path());
     assert_eq!(checked.code, 0, "{}", checked.stdout);
     assert!(!checked.stdout.contains("skipped"), "{}", checked.stdout);
 }

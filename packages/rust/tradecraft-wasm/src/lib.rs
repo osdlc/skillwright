@@ -590,14 +590,14 @@ mod tests {
             r#"{
                 "vault_root": "/vault",
                 "out_root": "/out",
-                "config": { "name": "market", "default_plugin": "tools" }
+                "config": { "name": "market" }
             }"#,
         )
         .unwrap();
 
         assert_eq!(wire.request.vault_root, PathBuf::from("/vault"));
         assert_eq!(wire.request.out_root, PathBuf::from("/out"));
-        assert_eq!(wire.request.config.default_plugin, "tools");
+        assert_eq!(wire.request.config.name.as_deref(), Some("market"));
         // Every absence, at its documented default.
         assert_eq!(wire.request.mode, ExportMode::Build);
         assert_eq!(wire.request.skills_root, None);
@@ -614,7 +614,7 @@ mod tests {
                 "out_root": "/out",
                 "mode": "check",
                 "namespace": "x",
-                "config": { "name": "market", "default_plugin": "tools" }
+                "config": { "name": "market" }
             }"#,
         )
         .unwrap();

@@ -14,20 +14,20 @@
 //! is named on the error sink, one line per note.
 //!
 //! `--model` prints something else: the marketplace model `build` renders
-//! from, loaded by the core's [`load`] with the project file's marketplace
+//! from, loaded by the core's [`load`] with the root file's marketplace
 //! settings, as one JSON document. It is a separate flag rather than what
 //! `--json` prints because `--json`'s rows are an existing contract.
 
-use config_layers::needs::Need;
 use tradecraft_core::model::load::{LoadRequest, load};
 use tradecraft_core::{NativeVfs, discover_components};
 
 use crate::commands::marketplace::{MarketplaceInputs, marketplace_inputs};
-use crate::config::NEEDS;
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_OK, blocked, usage_error};
+use crate::exit::{EXIT_OK, blocked};
 use crate::report::{render_roster, render_roster_tally, render_warning_line, roster_row};
-use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, resolve_skills_root};
+use crate::resolve::{
+    CommonFlags, ResolvedRun, refuse_workspace, resolve_run, resolve_skills_root,
+};
 
 /// The resolved flags of `skillwright list`.
 pub struct ListFlags {
@@ -47,13 +47,13 @@ pub struct ListFlags {
 pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // The same three questions, answered the same way, as every other verb —
     // so `--vault` and `--namespace` behave here exactly as they do on
-    // `build`, including their exit codes: 4 with no configuration and no
+    // `build`, including their exit codes: 4 when no vault is found and no
     // `--vault`, 2 for a vault that is not there.
     let run = match resolve_run(&flags.common, &ctx.cwd, ctx.err) {
         Ok(run) => run,
         Err(code) => return code,
     };
-    let skills_root = resolve_skills_root(flags.skills_root.as_deref(), &run, &ctx.cwd);
+    let skills_root = resolve_skills_root(flags.skills_root.as_deref(), &ctx.cwd);
 
     if flags.model {
         return print_model(&run, skills_root, ctx);
@@ -123,35 +123,15 @@ fn print_model(
     skills_root: Option<std::path::PathBuf>,
     ctx: &mut CommandContext<'_>,
 ) -> i32 {
-    let need = Need {
-        config: "marketplace.default_plugin",
-        unless_input: None,
-    };
-    let project = run
-        .config
-        .as_ref()
-        .and_then(|c| serde_json::to_value(c).ok());
-    let default_plugin = run
-        .config
-        .as_ref()
-        .and_then(|c| c.marketplace.default_plugin.clone());
-    let Some(default_plugin) =
-        default_plugin.filter(|_| NEEDS.met(&need, project.as_ref(), None, &|_| false))
-    else {
-        return usage_error(
-            ctx.err,
-            &NEEDS.message(&need, &run.config_dir, &["list --model"]),
-        );
-    };
+    if let Err(code) = refuse_workspace("list --model", run, ctx.err) {
+        return code;
+    }
     let MarketplaceInputs {
         config,
         harnesses,
         assets,
         hooks,
-    } = match marketplace_inputs(run, default_plugin) {
-        Ok(inputs) => inputs,
-        Err(err) => return blocked(ctx.err, &err),
-    };
+    } = marketplace_inputs(run);
     let request = LoadRequest {
         vault_root: run.vault.clone(),
         skills_root,

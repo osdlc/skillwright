@@ -624,10 +624,10 @@ export interface ExportRequest {
    * artifact, a launcher: authored on disk, never as a vault note.
    *
    * Paths are absolute, resolved by the caller: this core never reads an
-   * ambient project file, so it has nothing to resolve a relative asset
+   * ambient root file, so it has nothing to resolve a relative asset
    * path against (see the crate doc's wasm-boundary note on
-   * [`MarketplaceConfig`]). The CLI resolves `assets:` entries against the
-   * project file's own directory before building this request.
+   * [`MarketplaceConfig`]). The CLI resolves `build.assets` entries against the
+   * root file's own directory before building this request.
    */
   assets?: AssetSpec[];
 
@@ -652,10 +652,8 @@ export type ExportMode = "build" | "check";
  * marketplace note is the marketplace, and a build flag is one invocation of
  * it.
  *
- * `name` and `default_plugin` stay required, because a vault holding no
- * marketplace directory at all is legal and has no note to read.
- * `default_plugin` is never in a note at all: what to do with a skill that
- * names no plugin is a property of the build.
+ * A member outside every plugin folder belongs to the marketplace's own
+ * plugin, which is named after the marketplace.
  */
 export interface MarketplaceConfig {
   /**
@@ -703,9 +701,6 @@ export interface MarketplaceConfig {
    */
   license?: string;
 
-  /** The plugin a note with no `sw-plugin` belongs to. */
-  default_plugin: string;
-
   /** Per-plugin manifest overrides, keyed by plugin name. */
   plugins?: Record<string, PluginOverrides>;
 
@@ -723,7 +718,7 @@ export interface MarketplaceConfig {
    * root whose harness does not expand that variable, the build rewrites
    * each call to the launcher's path relative to the skill's own folder,
    * when the plugin ships an asset at this path. Absent turns the rewrite
-   * off. Project files declare it as `marketplace.launcher_path`.
+   * off. The root file declares it as `build.launcher_path`.
    */
   launcher_path?: string;
 }
@@ -781,8 +776,8 @@ export interface AssetSpec {
   dest: string;
 
   /**
-   * Which plugin's root this asset lands in. `None` means
-   * [`MarketplaceConfig::default_plugin`].
+   * Which plugin's root this asset lands in. `None` means the
+   * marketplace's own plugin, named after the marketplace.
    */
   plugin?: string;
 }
@@ -800,15 +795,16 @@ export interface HookFileSpec {
   source: string;
 
   /**
-   * The path relative to the project file, after token expansion.
+   * The path relative to the root file.
    * Refusals and the gap report's `source` name the file by this, so the
    * report holds no host path.
    */
   from: string;
 
   /**
-   * Which plugin's packs carry it. `None` means
-   * [`MarketplaceConfig::default_plugin`].
+   * Which plugin's packs carry it. `None` means the marketplace's own
+   * plugin, which holds the members outside `plugins/` and is named after
+   * the marketplace.
    */
   plugin?: string;
 }

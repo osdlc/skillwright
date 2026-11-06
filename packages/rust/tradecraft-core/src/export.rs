@@ -30,7 +30,7 @@
 //! them is read, compared or replaced, because the render produces no path
 //! beginning with anything else. That is a structural guarantee rather than a
 //! denylist, and it is what makes `out_root` safe to point at a directory
-//! holding a `.git`, a vault and a project file.
+//! holding a `.git`, a vault and its root file.
 //!
 //! A plugin's commands render alongside its skills, at
 //! `<packs>/<plugin>/commands/<name>.<ext>`, on the one harness whose plugin
@@ -94,12 +94,15 @@
 //!
 //! On a host whose [`crate::vfs::Vfs::sees_links`] is `true`,
 //! [`crate::guard::assert_destination_allowed_for_vault`] runs before anything
-//! is staged: a destination that is the vault or sits inside it is refused,
+//! is staged: a destination inside the vault's kind folders is refused,
 //! and so is an ancestor of the vault when a tree this build replaces would
 //! land inside the vault. On any other host, such as the wasm bridge over a host object without
 //! link methods, [`crate::guard::assert_destination_allowed`] also refuses every ancestor of
 //! the vault, because a link the host cannot see is what the narrowed check
 //! would miss. `publish` takes the same two rails on the same condition.
+//! A destination inside the vault but outside its kind folders — the vault
+//! root itself is the default — is accepted: the trees a build writes there
+//! are its own, and the vault walk leaves them out.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -164,10 +167,10 @@ pub struct ExportRequest {
     /// artifact, a launcher: authored on disk, never as a vault note.
     ///
     /// Paths are absolute, resolved by the caller: this core never reads an
-    /// ambient project file, so it has nothing to resolve a relative asset
+    /// ambient root file, so it has nothing to resolve a relative asset
     /// path against (see the crate doc's wasm-boundary note on
-    /// [`MarketplaceConfig`]). The CLI resolves `assets:` entries against the
-    /// project file's own directory before building this request.
+    /// [`MarketplaceConfig`]). The CLI resolves `build.assets` entries against the
+    /// root file's own directory before building this request.
     #[serde(default)]
     pub assets: Vec<AssetSpec>,
     /// Canonical hooks files; see [`HookFileSpec`].
@@ -183,12 +186,13 @@ pub struct HookFileSpec {
     /// Absolute host path to the file, resolved by the caller the way an
     /// [`AssetSpec::source`] is.
     pub source: PathBuf,
-    /// The path relative to the project file, after token expansion.
+    /// The path relative to the root file.
     /// Refusals and the gap report's `source` name the file by this, so the
     /// report holds no host path.
     pub from: String,
-    /// Which plugin's packs carry it. `None` means
-    /// [`MarketplaceConfig::default_plugin`].
+    /// Which plugin's packs carry it. `None` means the marketplace's own
+    /// plugin, which holds the members outside `plugins/` and is named after
+    /// the marketplace.
     #[serde(default)]
     pub plugin: Option<String>,
 }
@@ -211,8 +215,8 @@ pub struct AssetSpec {
     /// (`<packs>/<plugin>/`), forward-slashed. For a directory source, the
     /// directory its tree lands under.
     pub dest: String,
-    /// Which plugin's root this asset lands in. `None` means
-    /// [`MarketplaceConfig::default_plugin`].
+    /// Which plugin's root this asset lands in. `None` means the
+    /// marketplace's own plugin, named after the marketplace.
     #[serde(default)]
     pub plugin: Option<String>,
 }
@@ -235,10 +239,8 @@ pub enum ExportMode {
 /// marketplace note is the marketplace, and a build flag is one invocation of
 /// it.
 ///
-/// `name` and `default_plugin` stay required, because a vault holding no
-/// marketplace directory at all is legal and has no note to read.
-/// `default_plugin` is never in a note at all: what to do with a skill that
-/// names no plugin is a property of the build.
+/// A member outside every plugin folder belongs to the marketplace's own
+/// plugin, which is named after the marketplace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketplaceConfig {
     /// The name both manifests publish under, **when the vault does not supply
@@ -278,8 +280,6 @@ pub struct MarketplaceConfig {
     /// own note.
     #[serde(default)]
     pub license: Option<String>,
-    /// The plugin a note with no `sw-plugin` belongs to.
-    pub default_plugin: String,
     /// Per-plugin manifest overrides, keyed by plugin name.
     #[serde(default)]
     pub plugins: BTreeMap<String, PluginOverrides>,
@@ -294,7 +294,7 @@ pub struct MarketplaceConfig {
     /// root whose harness does not expand that variable, the build rewrites
     /// each call to the launcher's path relative to the skill's own folder,
     /// when the plugin ships an asset at this path. Absent turns the rewrite
-    /// off. Project files declare it as `marketplace.launcher_path`.
+    /// off. The root file declares it as `build.launcher_path`.
     #[serde(default)]
     pub launcher_path: Option<String>,
 }
@@ -582,6 +582,25 @@ fn replaced_tree_holding(
     Ok(None)
 }
 
+/// Whether `out_root` is the vault root, or a folder inside it with no kind
+/// folder on the way, where a build may write its trees.
+fn output_beside_the_notes(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    out_root: &Path,
+) -> Result<bool, CoreError> {
+    if !within(vfs, vault_root, out_root)? {
+        return Ok(false);
+    }
+    let Ok(rest) = out_root.strip_prefix(vault_root) else {
+        // Inside only once links are resolved: not a spelling to trust.
+        return Ok(false);
+    };
+    Ok(!rest
+        .iter()
+        .any(|part| crate::discover::kind_dir(&part.to_string_lossy()).is_some()))
+}
+
 /// Renders the vault into one marketplace directory, or checks it against what is already there.
 ///
 /// A note's `sw-overrides` block for a harness is applied in that harness's
@@ -613,7 +632,16 @@ pub fn export_skills(
     // Narrowed only where the host can see links, as `publish` does. Anywhere
     // else an ancestor of the vault stays refused, because a link under it
     // into the vault is exactly what the narrowed check cannot see.
-    if vfs.sees_links() {
+    //
+    // The output may sit inside the vault — beside the root file is the
+    // default, or a folder such as `dist/` — when no kind folder is on the way
+    // to it: the trees a build replaces there (`.claude-plugin/`, `.agents/`,
+    // …) are its own, and the vault walk never reads them. A folder inside the
+    // structure (`plugins/tools/`) stays refused, because its
+    // `.claude-plugin/` can be a plugin's own authored manifest.
+    if output_beside_the_notes(vfs, &vault_root, &out_root)? {
+        // Nothing to check: the vault cannot sit inside a tree it holds.
+    } else if vfs.sees_links() {
         assert_destination_allowed_for_vault(vfs, &out_root, &vault_root, trees.iter().copied())?;
         // The third: a swap removes each tree, and the stage, whole.
         if let Some(replaced) = replaced_tree_holding(vfs, &out_root, &trees, &vault_root)? {
@@ -1471,7 +1499,7 @@ mod tests {
         AssetSpec {
             source: PathBuf::from("/host/bin/tool"),
             dest: LAUNCHER.to_owned(),
-            plugin: None,
+            plugin: Some("tools".to_owned()),
         }
     }
 
@@ -1483,7 +1511,6 @@ mod tests {
             description: None,
             author: None,
             license: None,
-            default_plugin: "tools".to_owned(),
             plugins: BTreeMap::new(),
             require_descriptions: false,
             launcher_path: None,
@@ -1508,7 +1535,7 @@ mod tests {
         export_skills(vfs, &request(ExportMode::Build), &sw()).unwrap()
     }
 
-    /// A build whose project file says something, for the configuration rungs
+    /// A build whose root file says something, for the configuration rungs
     /// a vault note cannot supply.
     fn build_with(vfs: &dyn Vfs, config: MarketplaceConfig) -> ExportReport {
         let mut request = request(ExportMode::Build);
@@ -1718,13 +1745,89 @@ mod tests {
     }
 
     #[test]
+    fn a_plugin_folder_s_assets_and_changelog_land_at_its_pack_root() {
+        let vfs = example_vault();
+        let folder = "/vault/marketplaces/house/plugins/tools";
+        write(&vfs, &format!("{folder}/assets/bin/tool"), "#!/bin/sh\n");
+        write(
+            &vfs,
+            &format!("{folder}/CHANGELOG.md"),
+            "# Changelog\n\n## 0.9.0\n",
+        );
+        write(
+            &vfs,
+            &format!("{folder}/tools.md"),
+            "---\nname: tools\ndescription: Tools.\nsw-version: 1.0.0\n---\n",
+        );
+        let report = export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+
+        let paths = paths_under(&vfs, Path::new("/market"));
+        for path in [
+            ".claude-plugin/packs/tools/bin/tool",
+            ".claude-plugin/packs/tools/CHANGELOG.md",
+            ".pi/packs/tools/CHANGELOG.md",
+        ] {
+            assert!(paths.contains(&path.to_owned()), "{path}: {paths:?}");
+        }
+        // The folder itself never ships under its own name.
+        assert!(!paths.iter().any(|p| p.contains("/assets/")), "{paths:?}");
+        // 1.0.0 has no heading in the changelog.
+        let warned: Vec<&str> = report.warnings.iter().map(|w| w.reason.as_str()).collect();
+        assert!(warned.contains(&"changelog-missing-version"), "{warned:?}");
+    }
+
+    #[test]
+    fn members_outside_plugins_land_in_a_plugin_named_after_the_marketplace() {
+        let vfs = MemVfs::new();
+        write(&vfs, "/vault/skills/tone.md", &note("tone", None, &[]));
+        export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+        assert!(
+            paths_under(&vfs, Path::new("/market"))
+                .contains(&".claude-plugin/packs/demo-market/skills/tone/SKILL.md".to_owned())
+        );
+
+        // A plugin folder of that name as well is two sources for one plugin.
+        write(
+            &vfs,
+            "/vault/plugins/demo-market/skills/voice.md",
+            &note("voice", None, &[]),
+        );
+        let err = export_skills(&vfs, &request(ExportMode::Build), &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("own-plugin-clash"), "{err}");
+    }
+
+    /// The default output is beside the root file, inside the vault. What the
+    /// first build writes there is not read back as notes by the second.
+    #[test]
+    fn output_inside_the_vault_is_not_read_back_as_notes() {
+        let vfs = example_vault();
+        let request = ExportRequest {
+            out_root: PathBuf::from("/vault"),
+            ..request(ExportMode::Build)
+        };
+        export_skills(&vfs, &request, &sw()).unwrap();
+        let again = export_skills(
+            &vfs,
+            &ExportRequest {
+                mode: ExportMode::Check,
+                ..request.clone()
+            },
+            &sw(),
+        )
+        .unwrap();
+        assert!(!again.changed, "{:?}", again.units);
+        assert_eq!(again.checked, 3);
+    }
+
+    #[test]
     fn a_plugin_asset_lands_verbatim_in_its_own_plugin() {
         let vfs = example_vault();
         write(&vfs, "/host/bin/tool", "#!/bin/sh\nexec tool \"$@\"\n");
         vfs.set_executable(Path::new("/host/bin/tool"), true)
             .unwrap();
         let mut request = request(ExportMode::Build);
-        // No `plugin:`, so it lands in `default_plugin` (`tools`).
         request.assets = vec![launcher_asset()];
         assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
 
@@ -1816,7 +1919,7 @@ mod tests {
         let directory = AssetSpec {
             source: PathBuf::from("/host/bin"),
             dest: "bin".to_owned(),
-            plugin: None,
+            plugin: Some("tools".to_owned()),
         };
         for asset in [file, directory] {
             let vfs = example_vault();
@@ -1865,12 +1968,12 @@ mod tests {
         let file = AssetSpec {
             source: PathBuf::from("/src/docs"),
             dest: "docs".to_owned(),
-            plugin: None,
+            plugin: Some("tools".to_owned()),
         };
         let directory = AssetSpec {
             source: PathBuf::from("/src2/docs"),
             dest: "docs".to_owned(),
-            plugin: None,
+            plugin: Some("tools".to_owned()),
         };
         // Each case carries the path the second build lands and its bytes.
         for (first, second, landed, bytes) in [
@@ -2299,7 +2402,7 @@ mod tests {
         request.assets = vec![AssetSpec {
             source: PathBuf::from("/host/conventions"),
             dest: "conventions".to_owned(),
-            plugin: None,
+            plugin: Some("tools".to_owned()),
         }];
         export_skills(&vfs, &request, &sw()).unwrap();
 
@@ -2335,7 +2438,7 @@ mod tests {
         request.assets = vec![AssetSpec {
             source: PathBuf::from("/host/bin/tool"),
             dest: "../../escaped".to_owned(),
-            plugin: None,
+            plugin: Some("tools".to_owned()),
         }];
         let err = export_skills(&vfs, &request, &sw())
             .unwrap_err()
@@ -2353,7 +2456,7 @@ mod tests {
         request.assets = vec![AssetSpec {
             source: PathBuf::from("/host/bin/tool"),
             dest: "/etc/escaped".to_owned(),
-            plugin: None,
+            plugin: Some("tools".to_owned()),
         }];
         let err = export_skills(&vfs, &request, &sw())
             .unwrap_err()
@@ -2376,7 +2479,7 @@ mod tests {
             request.assets = vec![AssetSpec {
                 source: PathBuf::from(source),
                 dest: dest.to_owned(),
-                plugin: None,
+                plugin: Some("tools".to_owned()),
             }];
             let err = export_skills(&vfs, &request, &sw())
                 .unwrap_err()
@@ -2413,7 +2516,7 @@ mod tests {
         request.assets = vec![AssetSpec {
             source: PathBuf::from("/host/bin/tool"),
             dest: LAUNCHER.to_owned(),
-            plugin: None,
+            plugin: Some("tools".to_owned()),
         }];
         export_skills(&vfs, &request, &sw()).unwrap();
 
@@ -2568,7 +2671,7 @@ mod tests {
     }
 
     /// The filler is the vault being silent, so a plugin description the
-    /// project file sets outranks it.
+    /// root file sets outranks it.
     #[test]
     fn a_configured_plugin_description_outranks_a_silent_plugin_note() {
         let vfs = nameonly_vault();
@@ -3662,15 +3765,14 @@ mod tests {
     }
 
     #[test]
-    fn a_marketplace_directory_that_would_be_the_vault_is_refused() {
+    fn a_marketplace_directory_that_is_the_vault_builds_beside_its_notes() {
         let vfs = MemVfs::new();
         let mut request = repo_vault(&vfs);
         request.out_root = PathBuf::from("/repo/src");
 
-        let err = export_skills(&vfs, &request, &sw()).unwrap_err();
-        let message = err.to_string();
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
-        assert!(message.contains("unsafe-root"), "{message}");
+        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        assert!(report.changed);
+        assert!(vfs.exists(Path::new("/repo/src/.claude-plugin/marketplace.json")));
     }
 
     #[test]
@@ -3731,7 +3833,7 @@ mod tests {
         request.assets = vec![AssetSpec {
             source: PathBuf::from(source),
             dest: "bin/tool".to_owned(),
-            plugin: None,
+            plugin: Some("tools".to_owned()),
         }];
         let message = export_skills(&vfs, &request, &sw())
             .unwrap_err()
@@ -3900,11 +4002,11 @@ mod tests {
 
     #[test]
     fn the_rail_refuses_a_destination_overlapping_the_vault() {
-        // Inside the vault and the vault itself — refused before discovery
-        // reads a note. A directory that merely CONTAINS the vault is not
-        // here: that is a repository publishing itself, and it is the case
-        // the marketplace directory exists for.
-        for out in ["/vault/market", "/vault"] {
+        // Inside the vault's structure — refused before discovery reads a
+        // note. The vault root and a plain folder in it are not here: output
+        // beside the root file is the default. Nor is a directory that merely
+        // CONTAINS the vault: that is a repository publishing itself.
+        for out in ["/vault/plugins/tools", "/vault/marketplaces/house"] {
             let vfs = example_vault();
             let mut request = request(ExportMode::Build);
             request.out_root = PathBuf::from(out);
@@ -3914,7 +4016,10 @@ mod tests {
             assert!(matches!(err, CoreError::Refused(_)), "{out}: {message}");
             assert!(message.contains("unsafe-root"), "{out}: {message}");
             // Nothing was staged anywhere.
-            assert!(!vfs.exists(Path::new("/vault/market")), "{out}");
+            assert!(
+                !vfs.exists(Path::new(out).join(".claude-plugin").as_path()),
+                "{out}"
+            );
             assert!(!vfs.exists(Path::new("/vault/.skillwright-stage")), "{out}");
         }
     }
@@ -4068,10 +4173,10 @@ mod tests {
         assert_eq!(license_of(&vfs, "tools"), "MIT");
     }
 
-    /// The vault is the source of truth the project file falls back to, the
+    /// The vault is the source of truth the root file falls back to, the
     /// same precedence `owner` and `author` already follow.
     #[test]
-    fn the_marketplace_note_beats_the_project_file() {
+    fn the_marketplace_note_beats_the_root_file() {
         let vfs = vault_with_licenses(Some("MIT"));
         let config = MarketplaceConfig {
             license: Some("GPL-3.0-only".to_owned()),
@@ -4806,9 +4911,10 @@ mod tests {
             let report = export_skills(&vfs, &request, &sw()).unwrap();
             assert_eq!(report.checked, 2, "{market}");
             let paths = paths_under(&vfs, &out);
-            // `tone` has no `sw-plugin`, so it lands in the configured default.
+            // `tone` sits outside `plugins/`, so it lands in the plugin named
+            // after the marketplace.
             assert!(
-                paths.contains(&".claude-plugin/packs/tools/skills/tone/SKILL.md".to_owned()),
+                paths.contains(&".claude-plugin/packs/demo-market/skills/tone/SKILL.md".to_owned()),
                 "{market}: {paths:?}"
             );
             assert!(
@@ -4856,7 +4962,7 @@ mod tests {
         assert_eq!(report.checked, 1);
         assert!(
             paths_under(&vfs, Path::new("/market"))
-                .contains(&".claude-plugin/packs/tools/skills/tone/SKILL.md".to_owned())
+                .contains(&".claude-plugin/packs/demo-market/skills/tone/SKILL.md".to_owned())
         );
     }
 
@@ -4909,10 +5015,9 @@ mod tests {
         );
         // And a request with no mode means build — the write, as with
         // `PublishMode`.
-        let request: ExportRequest = serde_json::from_str(
-            r#"{"vault_root":"/v","out_root":"/m","config":{"name":"m","default_plugin":"tools"}}"#,
-        )
-        .unwrap();
+        let request: ExportRequest =
+            serde_json::from_str(r#"{"vault_root":"/v","out_root":"/m","config":{"name":"m"}}"#)
+                .unwrap();
         assert_eq!(request.mode, ExportMode::Build);
         assert!(request.skills_root.is_none());
     }

@@ -91,7 +91,7 @@ function build(vfs: Vfs, repo: string, vault: string) {
     vault_root: vault,
     out_root: repo,
     mode: 'build',
-    config: { default_plugin: 'core' },
+    config: { name: 'core' },
   })
 }
 

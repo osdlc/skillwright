@@ -20,7 +20,7 @@
 //! | [`publish`] | A vault note written onto a destination, idempotently |
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
 //! | [`harness`] | Each harness as a profile row (data) and a translator (code) |
-//! | [`settings`] | `skillwright.yaml`'s `marketplace:` block, as a build config |
+//! | [`settings`] | `skillwright.md`, the root file, as a build config |
 //! | [`adopt`] | Published SKILL.md bundles imported as vault notes |
 //! | [`authoring`] | Where a note goes, what it collides with, what it says |
 //! | [`guard`] | The rails that keep a publish out of a source root |
@@ -136,7 +136,8 @@ pub use publish::{
 };
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
-    MarketplaceSettings, PROJECT_FILE, ProjectMarketplace, SettingsError, parse_project_marketplace,
+    AssetSetting, BuildSettings, DestinationSetting, HookSetting, MarketplaceFields, ROOT_FILE,
+    RootFile, SettingsError, parse_root_file,
 };
 pub use vault::{VaultNote, bundle_root, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};

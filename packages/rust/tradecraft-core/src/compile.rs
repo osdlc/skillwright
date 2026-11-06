@@ -785,16 +785,19 @@ pub(crate) const EXCLUDED_VAULT_DIRECTORIES: &[&str] =
 /// gets — a vendored `node_modules` under such a tree is exactly as
 /// unwanted as one under a skill bundle.
 ///
-/// `tests`/`fixtures` are a fixed convention rather than a project-file
+/// `docs`/`tests`/`fixtures` are a fixed convention rather than a root-file
 /// setting: every skill gets this for free, with nothing to declare and
 /// nothing to forget to declare. Fixture markdown is often literal
 /// `[[decision-note]]`-shaped test data, not real Obsidian links; swept as an
 /// ordinary bundle resource, it reads as a broken link and fails
-/// `unresolved-syntax` on a vault that has nothing wrong with it. The rest
+/// `unresolved-syntax` on a vault that has nothing wrong with it. A `docs`
+/// folder holds writing about the skill for its authors, not for the agent
+/// that loads it. The rest
 /// mirror [`EXCLUDED_VAULT_DIRECTORIES`] above: no
 /// bundle or asset tree should ship a `.git`, `.obsidian`, `.trash` or
 /// vendored `node_modules` either.
 pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
+    "docs",
     "tests",
     "fixtures",
     ".git",

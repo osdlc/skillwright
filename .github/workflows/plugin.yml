@@ -64,7 +64,7 @@ jobs:
 
       - name: Build the plugin
         working-directory: packages/rust
-        run: cargo run --locked -p skillwright -- build --yes --config ../../plugin/skillwright.yaml
+        run: cargo run --locked -p skillwright -- build --yes --config ../../plugin/skillwright.md
 
       - name: The build matches what is committed
         run: |
@@ -78,4 +78,4 @@ jobs:
 
       - name: Check
         working-directory: packages/rust
-        run: cargo run --locked -p skillwright -- check --config ../../plugin/skillwright.yaml
+        run: cargo run --locked -p skillwright -- check --config ../../plugin/skillwright.md

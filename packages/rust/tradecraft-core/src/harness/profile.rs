@@ -62,6 +62,12 @@ pub struct PluginFormat {
     /// The project directory the runtime's projection puts a skill under,
     /// and so where a pack published to a destination lands.
     pub skills_dir: &'static str,
+    /// The folder under the home directory the harness loads a user's own
+    /// skills from. `publish` writes there and `adopt` reads from there when
+    /// no destination or source is named. Recorded in harness-reference as
+    /// each harness's `skills/user-dirs` fact (Claude Code's in
+    /// `skills/live-reload`); where a harness reads several, the first.
+    pub user_skills_dir: &'static str,
     /// The pack manifest, relative to a pack's own directory, in this
     /// harness's dialect.
     pub plugin_manifest: &'static str,
@@ -192,6 +198,7 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
     declaration: RuntimeId::ClaudeCode,
     plugin: Some(PluginFormat {
         skills_dir: ".claude/skills",
+        user_skills_dir: ".claude/skills",
         plugin_manifest: ".claude-plugin/plugin.json",
         marketplace_manifest: Some(".claude-plugin/marketplace.json"),
         packs: ".claude-plugin/packs",
@@ -224,6 +231,7 @@ pub const CODEX: HarnessProfile = HarnessProfile {
     declaration: RuntimeId::CodexCli,
     plugin: Some(PluginFormat {
         skills_dir: ".agents/skills",
+        user_skills_dir: ".agents/skills",
         plugin_manifest: ".codex-plugin/plugin.json",
         marketplace_manifest: Some(".agents/plugins/marketplace.json"),
         packs: ".agents/packs",
@@ -259,6 +267,7 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
     declaration: RuntimeId::Cursor,
     plugin: Some(PluginFormat {
         skills_dir: ".cursor/skills",
+        user_skills_dir: ".cursor/skills",
         plugin_manifest: ".cursor-plugin/plugin.json",
         marketplace_manifest: Some(".cursor-plugin/marketplace.json"),
         packs: ".cursor-plugin/packs",
@@ -294,6 +303,7 @@ pub const PI: HarnessProfile = HarnessProfile {
     declaration: RuntimeId::Pi,
     plugin: Some(PluginFormat {
         skills_dir: ".pi/skills",
+        user_skills_dir: ".pi/agent/skills",
         plugin_manifest: "package.json",
         marketplace_manifest: None,
         packs: ".pi/packs",

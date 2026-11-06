@@ -7,7 +7,6 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 
-use common::with_machine_env;
 use skillwright::cli::run_with;
 use skillwright::commands::harness::cli_runner::{RunResult, Runner};
 use skillwright::ctx::CommandContext;
@@ -72,19 +71,33 @@ impl Runner for FakeRunner {
 const CLAUDE_MARKETS: &str = "claude plugin marketplace list --json";
 const CLAUDE_PLUGINS: &str = "claude plugin list --json";
 
+/// The packs folder of each harness `harness` drives, relative to the built
+/// marketplace.
+const PACKS: [&str; 3] = [
+    ".claude-plugin/packs",
+    ".agents/packs",
+    ".cursor-plugin/packs",
+];
+
+/// A built `tools` pack under `root` for each harness, so `harness` finds
+/// the plugin to install without `--plugin`.
+fn write_packs(root: &Path) {
+    for packs in PACKS {
+        fs::create_dir_all(root.join(packs).join("tools")).unwrap();
+    }
+}
+
 /// A project whose built marketplace at `published/acme` carries a manifest
-/// for each harness root, all naming it `acme`. Returns that root.
+/// for each harness root, all naming it `acme`, and a `tools` pack. Returns
+/// that root.
 fn write_project(dir: &Path) -> String {
-    fs::create_dir_all(dir.join("vault")).unwrap();
     fs::write(
-        dir.join("skillwright.yaml"),
-        "vault: vault\n\
-         marketplace:\n  \
-         out: published/acme\n  \
-         default_plugin: tools\n",
+        dir.join("skillwright.md"),
+        "---\nbuild:\n  out: published/acme\n---\n",
     )
     .unwrap();
     let root = dir.join("published/acme");
+    write_packs(&root);
     for manifest in [
         ".claude-plugin/marketplace.json",
         ".agents/plugins/marketplace.json",
@@ -107,10 +120,10 @@ fn run(argv: &[&str], cwd: &Path, runner: &dyn Runner) -> Run {
     let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
-    let code = with_machine_env(Some(&cwd.join("no-machine-config.yaml")), || {
+    let code = {
         let mut ctx = CommandContext::new(cwd, &mut out, &mut err).with_runner(runner);
         run_with(&owned, &mut ctx)
-    });
+    };
     Run {
         code,
         stdout: String::from_utf8(out).unwrap(),
@@ -490,21 +503,17 @@ fn a_failing_list_command_blocks_with_its_stderr() {
     assert_eq!(fake.calls(), vec![CLAUDE_MARKETS]);
 }
 
-/// No manifest at the target root: `marketplace.name` names the
+/// No manifest at the target root: the root file's `name` names the
 /// marketplace, so it is what the plugin id carries.
 #[test]
 fn a_configured_marketplace_name_is_the_fallback_for_an_unbuilt_root() {
     let dir = tempfile::tempdir().unwrap();
-    fs::create_dir_all(dir.path().join("vault")).unwrap();
     fs::write(
-        dir.path().join("skillwright.yaml"),
-        "vault: vault\n\
-         marketplace:\n  \
-         out: published/acme\n  \
-         name: configured\n  \
-         default_plugin: tools\n",
+        dir.path().join("skillwright.md"),
+        "---\nname: configured\nbuild:\n  out: published/acme\n---\n",
     )
     .unwrap();
+    write_packs(&dir.path().join("published/acme"));
     let fake = FakeRunner::new("[]", "[]");
 
     let result = run(

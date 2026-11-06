@@ -42,14 +42,14 @@ use tradecraft_core::{
     NativeVfs, PublishStatus, SkippedNote, discover_components, read_vault_skill,
 };
 
-use crate::config::{normalize_join, relative_path, resolve_configured_path};
+use crate::config::{normalize_join, relative_path};
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked, usage_error};
+use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked};
 use crate::report::{
     AttributedState, Attribution, RowState, has_drift, normalize_thrown_reason, render_state_line,
     render_state_tally,
 };
-use crate::resolve::{CommonFlags, RunNotes, refuse_separate_skills_root, resolve_run};
+use crate::resolve::{CommonFlags, refuse_workspace, resolve_run};
 
 /// The resolved flags of `skillwright status`.
 pub struct StatusFlags {
@@ -84,26 +84,10 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     };
     let namespace = run.core_namespace();
 
-    let Some(configured) = run
-        .config
-        .as_ref()
-        .map(|c| c.destinations.as_slice())
-        .filter(|destinations| !destinations.is_empty())
-    else {
-        return usage_error(
-            ctx.err,
-            "no destinations configured; there is nothing to report a state against",
-        );
-    };
-    let destinations: Vec<(PathBuf, String)> = configured
-        .iter()
-        .map(|d| {
-            (
-                resolve_configured_path(&d.root, &run.config_dir),
-                d.target.clone(),
-            )
-        })
-        .collect();
+    if let Err(code) = refuse_workspace("status", &run, ctx.err) {
+        return code;
+    }
+    let destinations: Vec<(PathBuf, String)> = run.destinations();
 
     // --- the units ----------------------------------------------------------
     // A named note is taken as given; without one the vault scan supplies the
@@ -121,15 +105,6 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             if !note_path.exists() {
                 return blocked(ctx.err, &format!("note not found: {}", note_path.display()));
             }
-            if let Err(code) = refuse_separate_skills_root(
-                "status",
-                &run,
-                &ctx.cwd,
-                RunNotes::Named(std::slice::from_ref(&note_path)),
-                ctx.err,
-            ) {
-                return code;
-            }
             note_paths.push(note_path);
         }
         None => {
@@ -144,15 +119,6 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                                 component.kind.as_str().to_string(),
                             ));
                         }
-                    }
-                    if let Err(code) = refuse_separate_skills_root(
-                        "status",
-                        &run,
-                        &ctx.cwd,
-                        RunNotes::Skipped(&scan.skipped),
-                        ctx.err,
-                    ) {
-                        return code;
                     }
                     unreadable = scan.skipped;
                 }

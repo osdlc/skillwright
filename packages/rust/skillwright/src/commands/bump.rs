@@ -17,7 +17,7 @@ use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::normalize_thrown_reason;
-use crate::resolve::{CommonFlags, resolve_run, resolve_skills_root};
+use crate::resolve::{CommonFlags, resolve_run};
 
 /// The resolved flags of `skillwright bump`.
 pub struct BumpFlags {
@@ -99,10 +99,8 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Err(code) => return code,
     };
     let namespace = run.core_namespace();
-    let skills_root = resolve_skills_root(None, &run, &ctx.cwd);
 
-    let scan = match discover_components(&NativeVfs, &run.vault, skills_root.as_deref(), &namespace)
-    {
+    let scan = match discover_components(&NativeVfs, &run.vault, None, &namespace) {
         Ok(scan) => scan,
         Err(err) => {
             let message = err.to_string();

@@ -31,7 +31,7 @@ test('loadMarketplace returns the model with calls resolved', () => {
 
     const market = loadMarketplace(createNodeVfs(), {
       vault_root: vault,
-      config: { name: 'house', default_plugin: 'tools' },
+      config: { name: 'house' },
     })
 
     const tools = market.plugins['tools']
