@@ -177,7 +177,8 @@ The first of these that has a value wins:
 6. The environment. The editor comes from `$VISUAL` or `$EDITOR`, and `publish`
    and `adopt` default to each harness's user skill folder. Nothing here changes
    what a build emits.
-7. Built-in defaults: `version` 0.1.0 with a warning, `license` UNLICENSED, every
+7. Built-in defaults: `version` 0.1.0 with a warning (for the plugin named
+   after the marketplace, the warning asks for `version` in this file), `license` UNLICENSED, every
    harness.
 
 Inheritance works the same on every path: `build`, `publish` of one note, and

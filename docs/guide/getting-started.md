@@ -21,7 +21,8 @@ my-marketplace/
 - A folder under `plugins/` is a plugin, named after the folder.
 - A note under `skills/` is a skill. Agents go in `agents/`, commands in
   `commands/` and hooks in `hooks/`.
-- A `skills/` folder at the top is a plugin named after the marketplace.
+- A `skills/` folder at the top is a plugin named after the marketplace. It
+  takes its `version` from `skillwright.md`.
 
 See the [structure spec](../spec/structure-v1.md) for every rule.
 

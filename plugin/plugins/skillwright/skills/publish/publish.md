@@ -42,7 +42,7 @@ There are two ways out of a vault:
    installable as a marketplace.
 2. Run `skillwright build --dry-run`, then `skillwright build --yes`. `--watch` rebuilds on every
    save until interrupted. In a workspace, `--marketplace <name>` picks one marketplace.
-3. Read the warnings. A plugin with no `version` is published as `0.1.0`; set the key.
+3. Read the warnings. A plugin with no `version` is published as `0.1.0`; set the key. For the plugin named after the marketplace, set `version` in `skillwright.md`.
 4. Verify with `skillwright check`. It writes nothing and exits 1 on drift, so it suits CI. Fix
    drift by changing the note and building again; a hand edit to a built file is drift.
 

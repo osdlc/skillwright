@@ -282,6 +282,7 @@ pub fn load(
     warnings.extend(missing_versions(
         &discovered,
         market.as_deref(),
+        &name,
         &plugins,
         config,
     ));
@@ -1015,6 +1016,7 @@ fn members_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name
 fn missing_versions(
     discovered: &[DiscoveredComponent],
     market: Option<&str>,
+    own_plugin: &str,
     plugins: &BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Vec<DiscoveryWarning> {
@@ -1022,6 +1024,14 @@ fn missing_versions(
         .iter()
         .filter(|c| c.kind == EntityKind::Plugin && belongs_to(c, market))
         .collect();
+    let implicit = |name: &str| {
+        name == own_plugin
+            && !discovered.iter().any(|c| {
+                c.plugin.as_deref() == Some(name)
+                    && belongs_to(c, market)
+                    && crate::discover::plugin_folder_in(&c.vault_relative_path, name).is_some()
+            })
+    };
     let folder_only = plugins
         .keys()
         .filter(|name| !noted.iter().any(|c| c.folder() == name.as_str()))
@@ -1032,7 +1042,25 @@ fn missing_versions(
                 .and_then(|o| o.version.as_ref())
                 .is_none()
         })
+        // The plugin named after the marketplace has no note: its note is the
+        // marketplace's, so its version is the root file's.
+        .filter(|name| !implicit(name) || config.version.is_none())
         .map(|name| {
+            if implicit(name) {
+                let file = match market {
+                    Some(m) => format!("marketplaces/{m}/{}", crate::settings::ROOT_FILE),
+                    None => crate::settings::ROOT_FILE.to_owned(),
+                };
+                return DiscoveryWarning {
+                    detail: format!(
+                        "plugin `{name}` is the marketplace's own, so it takes its version from \
+                         the root file, and `{file}` states none; published as `0.1.0`. Set \
+                         `version` there"
+                    ),
+                    path: file,
+                    reason: "missing-version".to_owned(),
+                };
+            }
             let folder = members_folder(discovered, market, name);
             DiscoveryWarning {
                 detail: format!(
