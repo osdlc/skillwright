@@ -280,9 +280,9 @@
       "line": 124,
       "title": "a malformed workspace file is ignored on member runs that do not build, so an exclusion fails open",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
     },
     {
       "id": "r2-7",
