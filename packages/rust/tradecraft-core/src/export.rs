@@ -120,7 +120,7 @@ use serde::{Deserialize, Serialize};
 use crate::discover::{DiscoveryWarning, name_refusal};
 use crate::error::CoreError;
 use crate::guard::{assert_destination_allowed, assert_destination_allowed_for_vault, within};
-use crate::harness::manifest::{overrides_for, packs_of};
+use crate::harness::manifest::{first_not_a_pack, is_os_file, overrides_for, packs_of};
 use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
 use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
@@ -634,9 +634,11 @@ fn replaced_entry_holding(
 }
 
 /// Whether `out_root` is the vault root, or a folder inside it with no kind
-/// folder on the way, where a build may write its trees.
+/// folder on the way, by convention or by pattern, where a build may write its
+/// trees.
 fn output_beside_the_notes(
     vfs: &dyn Vfs,
+    patterns: &Patterns,
     vault_root: &Path,
     out_root: &Path,
 ) -> Result<bool, CoreError> {
@@ -647,9 +649,10 @@ fn output_beside_the_notes(
         // Inside only once links are resolved: not a spelling to trust.
         return Ok(false);
     };
-    Ok(!rest
-        .iter()
-        .any(|part| crate::discover::kind_dir(&part.to_string_lossy()).is_some()))
+    Ok(!patterns
+        .canonical(&crate::skill::forward_slashed(rest))
+        .split('/')
+        .any(|part| crate::discover::kind_dir(part).is_some()))
 }
 
 /// The rails on where a build lands, for one resolved `config`. Each one fires
@@ -689,7 +692,7 @@ fn check_output(
     // to it: the vault walk never reads what a build writes there. A folder
     // inside the structure (`plugins/tools/`) stays refused, because its
     // `.claude-plugin/` can be a plugin's own authored manifest.
-    if output_beside_the_notes(vfs, &vault_root, &out_root)? {
+    if output_beside_the_notes(vfs, patterns, &vault_root, &out_root)? {
         // Nothing to check: the vault cannot sit inside a tree it holds.
     } else if vfs.sees_links() {
         assert_destination_allowed_for_vault(vfs, &out_root, &vault_root, owned.iter().copied())?;
@@ -821,7 +824,12 @@ pub fn export_skills(
     // The load picked the marketplace itself, and the swap uses what it says.
     check_output(vfs, request, &roots, &market.config, &patterns)?;
     let mut warnings = market.warnings.clone();
-    warnings.extend(patterns.warnings(&crate::walk::glob_files(&source, &vault_root)));
+    let output: Vec<String> = output_paths(vfs, scope, &out_root, &market.config)
+        .iter()
+        .filter_map(|path| path.strip_prefix(&vault_root).ok())
+        .map(crate::skill::forward_slashed)
+        .collect();
+    warnings.extend(patterns.warnings(&crate::walk::glob_files(&source, &vault_root), &output));
     warnings.extend(stale_output_warnings(
         vfs,
         &out_root,
@@ -886,12 +894,19 @@ pub fn export_skills(
         // A rebuild is told from a stranger by the rule in
         // [`DestTree::built_here`]. Refused on `check` too — it exists to say
         // what a build would do.
-        if diff.foreign {
+        if diff.foreign || diff.not_a_pack.is_some() {
+            let why = diff.not_a_pack.as_ref().map_or_else(
+                || {
+                    "it holds files this build does not produce (and none carries this tool's \
+                     generated-file marker)"
+                        .to_owned()
+                },
+                |file| format!("`{file}` is not part of a pack this build wrote"),
+            );
             return Err(CoreError::refused(
                 "foreign-tree",
                 format!(
-                    "{} already holds `{}`, and it holds files this build does not produce \
-                     (and none carries this tool's generated-file marker): rendering `{}` here \
+                    "{} already holds `{}`, and {why}: rendering `{}` here \
                      would replace it wholesale. Move it aside, or point `build.out` (or \
                      `--out`) somewhere else. Nothing was written",
                     out_root.display(),
@@ -989,6 +1004,8 @@ struct RootDiff {
     /// What this root owns is already there, and none of it is this build's
     /// — so it was put there by someone else. See [`DestTree::built_here`].
     foreign: bool,
+    /// The first file of a moved packs folder that is no pack's.
+    not_a_pack: Option<String>,
 }
 
 /// What the destination root actually holds.
@@ -1153,7 +1170,7 @@ impl<'v> DestTree<'v> {
             .state
             .files
             .keys()
-            .filter(|relative| !rendered.contains_key(*relative))
+            .filter(|relative| !rendered.contains_key(*relative) && !is_os_file(relative))
             .cloned()
             .collect();
         sets
@@ -1186,46 +1203,39 @@ impl<'v> DestTree<'v> {
     /// this build renders. That satisfies the second clause and is still
     /// replaced.
     fn built_here(&self, rendered: &BTreeMap<String, PreviewWrite>) -> bool {
-        self.state
-            .files
-            .keys()
-            .any(|relative| self.carries_marker(relative))
-            || self
-                .state
-                .files
-                .keys()
-                .all(|relative| rendered.contains_key(relative))
+        let mut files = self.state.files.keys().filter(|file| !is_os_file(file));
+        files.clone().any(|relative| self.carries_marker(relative))
+            || files.all(|relative| rendered.contains_key(relative))
     }
 
     /// [`Self::built_here`] for a packs folder the user named, which may be a
-    /// folder of their own. One marker anywhere does not do: everything in it
-    /// must be a pack, each with its plugin manifest and built here by the
-    /// same rule, or a path this render produces.
-    fn packs_built_here(
+    /// folder of their own: the first file that says it is not ours. One
+    /// marker anywhere does not do: everything in it must be a pack, each with
+    /// its plugin manifest and built here by the same rule, or a path this
+    /// render produces.
+    fn not_built_here(
         &self,
         packs: &str,
         plugin_manifest: &str,
         rendered: &BTreeMap<String, PreviewWrite>,
-    ) -> bool {
-        let mut by_pack: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for relative in self.state.files.keys() {
-            if !Path::new(relative).starts_with(packs) {
-                continue;
-            }
-            match HarnessProfile::split_pack(packs, relative) {
-                Some((name, tail)) if !tail.is_empty() => {
-                    by_pack.entry(name).or_default().push(relative);
-                }
-                _ if rendered.contains_key(relative) => {}
-                _ => return false,
-            }
-        }
-        by_pack.iter().all(|(name, files)| {
-            let manifest = format!("{packs}/{name}/{plugin_manifest}");
-            files.contains(&manifest.as_str())
-                && (files.iter().any(|file| self.carries_marker(file))
-                    || files.iter().all(|file| rendered.contains_key(*file)))
-        })
+    ) -> Option<String> {
+        let files = self
+            .state
+            .files
+            .keys()
+            .map(String::as_str)
+            .filter(|relative| Path::new(relative).starts_with(packs));
+        first_not_a_pack(
+            packs,
+            plugin_manifest,
+            files,
+            |file| rendered.contains_key(file),
+            |files| {
+                files.iter().any(|file| self.carries_marker(file))
+                    || files.iter().all(|file| rendered.contains_key(*file))
+            },
+        )
+        .map(str::to_owned)
     }
 
     /// Does this installed file carry the provenance marker? Read lazily and short-circuited by
@@ -1482,8 +1492,10 @@ fn diff_root(
     Ok(RootDiff {
         equal: root_is_equal(&sets, &dest),
         units: describe_root(&dest, spec, admitted, rendered, &sets, config),
-        foreign: !dest.built_here(rendered)
-            || (moved && !dest.packs_built_here(packs, spec.format().plugin_manifest, rendered)),
+        foreign: !dest.built_here(rendered),
+        not_a_pack: moved
+            .then(|| dest.not_built_here(packs, spec.format().plugin_manifest, rendered))
+            .flatten(),
     })
 }
 

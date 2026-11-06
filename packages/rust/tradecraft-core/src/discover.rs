@@ -351,6 +351,10 @@ pub(crate) fn unknown_container_block_keys(
     unknown
 }
 
+/// The warning reason for a note that declares a description where it cannot
+/// ship.
+pub const NEVER_SHIPS_REASON: &str = "never-ships";
+
 /// The warning reason for a key the key table does not list.
 pub const UNKNOWN_KEY_REASON: &str = "unknown-key";
 
@@ -592,13 +596,28 @@ pub(crate) fn discover_in(
             // and a note there is not a malformed component however it is
             // shaped. Only inside a marketplace is a declared note at an
             // unrecognised path a mistake worth naming.
-            if under_a_kind_folder(root, &conventional(root, entry_path, &patterns))
-                && !never_ships(root, entry_path)
-                && let Err(err) = refuse_stray(vfs, root, entry_path, ns)
-            {
-                // A stray sits at no recognised shape, so it is a member of
-                // nothing and blocks no pack.
-                skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+            let reads_as = conventional(root, entry_path, &patterns);
+            if under_a_kind_folder(root, &reads_as) {
+                let relative = |path: &Path| {
+                    path.strip_prefix(root)
+                        .map(forward_slashed)
+                        .unwrap_or_else(|_| path.display().to_string())
+                };
+                if patterns.never_ships(&relative(entry_path)) {
+                    if declares_description(vfs, entry_path, ns).unwrap_or(false) {
+                        warnings.push(DiscoveryWarning {
+                            path: relative(entry_path),
+                            reason: NEVER_SHIPS_REASON.to_owned(),
+                            detail: "this note declares a description and will not be published, \
+                                     because a folder that never ships holds it"
+                                .to_owned(),
+                        });
+                    }
+                } else if let Err(err) = refuse_stray(vfs, root, entry_path, &reads_as, ns) {
+                    // A stray sits at no recognised shape, so it is a member
+                    // of nothing and blocks no pack.
+                    skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+                }
             }
             continue;
         };
@@ -731,22 +750,10 @@ fn refuse_stray(
     vfs: &dyn Vfs,
     skills_root: &Path,
     entry_path: &Path,
+    reads_as: &Path,
     ns: &Namespace,
 ) -> Result<(), CoreError> {
-    let markdown = entry_path
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("md"));
-    if !markdown {
-        return Ok(());
-    }
-    let source = read_utf8(vfs, entry_path)?;
-    let (frontmatter, _body) = split_frontmatter(&source);
-    let mut fields = frontmatter_map(frontmatter, entry_path)?;
-    // Drained for its refusals: a removed key on a stray note is still worth
-    // naming, and it names itself better than the shape does.
-    VaultFrontmatter::take_from(&mut fields, entry_path, ns, EntityKind::Skill)?;
-
-    if trimmed_string(&fields, "description").is_none() {
+    if !declares_description(vfs, entry_path, ns)? {
         return Ok(());
     }
 
@@ -755,10 +762,19 @@ fn refuse_stray(
         .strip_prefix(skills_root)
         .map(forward_slashed)
         .unwrap_or_else(|_| entry_path.display().to_string());
+    let conventional = reads_as
+        .strip_prefix(skills_root)
+        .map(forward_slashed)
+        .unwrap_or_else(|_| reads_as.display().to_string());
+    let pattern = if conventional == relative {
+        String::new()
+    } else {
+        format!(" (`build.patterns` reads it as `{conventional}`)")
+    };
     Err(CoreError::malformed(
         entry_path,
         format!(
-            "`{relative}` declares a `description` but sits where no component can \
+            "`{relative}`{pattern} declares a `description` but sits where no component can \
              be read. A component is `<name>.md` or `<name>/<name>.md` directly inside a kind \
              folder (`{}`), and a skill may use `<name>/SKILL.md`. A kind folder sits at the \
              root or inside whatever the folder above it holds — \
@@ -862,6 +878,23 @@ pub(crate) fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
     })
 }
 
+/// Whether the note at `path` is Markdown and declares a `description`.
+fn declares_description(vfs: &dyn Vfs, path: &Path, ns: &Namespace) -> Result<bool, CoreError> {
+    let markdown = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+    if !markdown {
+        return Ok(false);
+    }
+    let source = read_utf8(vfs, path)?;
+    let (frontmatter, _body) = split_frontmatter(&source);
+    let mut fields = frontmatter_map(frontmatter, path)?;
+    // Drained for its refusals: a removed key on a stray note is still worth
+    // naming, and it names itself better than the shape does.
+    VaultFrontmatter::take_from(&mut fields, path, ns, EntityKind::Skill)?;
+    Ok(trimmed_string(&fields, "description").is_some())
+}
+
 /// The kind a folder name declares, or `None` for any other folder.
 pub(crate) fn kind_dir(name: &str) -> Option<EntityKind> {
     KIND_DIRS
@@ -925,12 +958,6 @@ fn place(
         }
     }
     placed
-}
-
-/// Whether a folder that never ships holds `path`: a note there is no stray.
-fn never_ships(root: &Path, path: &Path) -> bool {
-    path.strip_prefix(root)
-        .is_ok_and(|rest| crate::patterns::in_never_ship_folder(&forward_slashed(rest)))
 }
 
 /// `path` as the conventional path it plays the part of under `root`.

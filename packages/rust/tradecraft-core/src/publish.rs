@@ -327,7 +327,7 @@ pub enum ReasonToken {
     EmptyPlugin,
     /// The note carries both our nested block and our flat keys.
     MixedFrontmatterShape,
-    /// `build.exclude` holds the note, so it never ships.
+    /// `build.exclude` or a folder that never ships holds the note.
     ExcludedNote,
     /// Not a refusal, and the one token here that names a success: the file
     /// was already byte-identical to our own output, so this run claimed it
@@ -629,7 +629,8 @@ pub struct PublishReport {
 ///   name this build does not know. The same name in `targets` never
 ///   reaches here — it is a blocker, so it comes back *inside* the report,
 ///   stamped on every projected file.
-/// * `refused: excluded-note` when `build.exclude` holds the note.
+/// * `refused: excluded-note` when `build.exclude` or a folder that never ships
+///   holds the note.
 /// * A destination the note's `targets` excludes is `Ok` with an empty
 ///   report and [`PublishReport::not_published`] set. See the module doc.
 pub fn publish_skill(
@@ -1056,8 +1057,8 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
     }
 }
 
-/// Refuses a note `build.exclude` holds, named or not: what never ships from a
-/// build does not ship from a publish either.
+/// Refuses a note `build.exclude` or a folder that never ships holds, named or
+/// not: what never ships from a build does not ship from a publish either.
 fn refuse_excluded(vfs: &dyn Vfs, request: &PublishRequest) -> Result<(), CoreError> {
     let Some(root) = request.skills_root.as_deref() else {
         return Ok(());
@@ -1066,10 +1067,17 @@ fn refuse_excluded(vfs: &dyn Vfs, request: &PublishRequest) -> Result<(), CoreEr
         return Ok(());
     };
     let relative = crate::skill::forward_slashed(relative);
-    if crate::patterns::Patterns::read(vfs, root).excluded(&relative) {
+    let patterns = crate::patterns::Patterns::read(vfs, root);
+    if patterns.excluded(&relative) {
         return Err(CoreError::refused(
             "excluded-note",
             format!("{relative} matches `build.exclude`, so it never ships"),
+        ));
+    }
+    if patterns.never_ships(&relative) {
+        return Err(CoreError::refused(
+            "excluded-note",
+            format!("{relative} is in a folder that never ships"),
         ));
     }
     Ok(())

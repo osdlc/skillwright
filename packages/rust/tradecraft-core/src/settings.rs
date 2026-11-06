@@ -197,6 +197,23 @@ impl FolderPatterns {
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
     }
+
+    /// Fill each key this leaves unset from `shared`.
+    fn inherit(&mut self, shared: &Self) {
+        let keys = [
+            (&mut self.plugins, &shared.plugins),
+            (&mut self.skills, &shared.skills),
+            (&mut self.agents, &shared.agents),
+            (&mut self.commands, &shared.commands),
+            (&mut self.hooks, &shared.hooks),
+            (&mut self.assets, &shared.assets),
+        ];
+        for (own, shared) in keys {
+            if own.is_empty() {
+                own.clone_from(shared);
+            }
+        }
+    }
 }
 
 /// A string or a list of strings, as a list.
@@ -297,6 +314,13 @@ fn check_person(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsErro
     }
 }
 
+/// Whether a file split into `frontmatter` and `body` opened frontmatter it
+/// never closed: read as a body, its settings would silently be lost.
+fn unterminated(frontmatter: &str, body: &str) -> bool {
+    let first = body.trim_start_matches('\u{feff}').lines().next();
+    frontmatter.is_empty() && first.is_some_and(|line| line.trim_end() == "---")
+}
+
 /// Read a root file's text. A file with no frontmatter is a root file with
 /// every default.
 ///
@@ -305,7 +329,14 @@ fn check_person(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsErro
 /// Frontmatter that is not a YAML mapping, and a known key whose value has
 /// the wrong shape.
 pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
-    let (frontmatter, _body) = split_frontmatter(text);
+    let (frontmatter, body) = split_frontmatter(text);
+    if unterminated(frontmatter, body) {
+        return Err(SettingsError {
+            key: ROOT_FILE.to_owned(),
+            what: "frontmatter closed with `---`",
+            detail: "it opens with `---` and never closes".to_owned(),
+        });
+    }
     let doc: serde_yaml::Value = if frontmatter.trim().is_empty() {
         serde_yaml::Value::Null
     } else {
@@ -500,7 +531,7 @@ fn folder_patterns(
         let key = format!("build.patterns.{name}");
         *slot = globs(&key, value)?;
         for glob in slot.iter() {
-            if crate::patterns::names_a_never_ship_folder(glob) {
+            if crate::patterns::names_a_never_ship_folder(glob, name != "assets") {
                 warnings.push(format!(
                     "`{key}` glob `{glob}` names a folder that never ships; it ships nothing"
                 ));
@@ -553,10 +584,10 @@ impl RootFile {
     ///
     /// The marketplace fields every plugin inherits (`author`, `license`,
     /// `targets`, `repository`, `homepage` and the harness blocks, key by key)
-    /// inherit from the workspace too. So do the `build:` settings that are
-    /// not paths (`harnesses`, `namespace`, `launcher_path`,
-    /// `require_descriptions`): a path in the workspace file names a place
-    /// relative to the workspace, not to each marketplace.
+    /// inherit from the workspace too. So do `harnesses`, `namespace`,
+    /// `launcher_path`, `require_descriptions`, `exclude` and each key of
+    /// `patterns`, whose globs read from each marketplace's own folder. An
+    /// exclusion must not fail open. `out` is each marketplace's own.
     ///
     /// Key by key: a value this file sets wins, and every other key still
     /// comes from the workspace. The workspace root holds shared defaults and
@@ -601,6 +632,10 @@ impl RootFile {
         if build.require_descriptions.is_none() {
             build.require_descriptions = shared.require_descriptions;
         }
+        if build.exclude.is_empty() {
+            build.exclude.clone_from(&shared.exclude);
+        }
+        build.patterns.inherit(&shared.patterns);
     }
 
     /// The build config this file describes. `folder_name` is the root
@@ -805,7 +840,37 @@ mod tests {
         assert_eq!(member.marketplace.license.as_deref(), Some("Apache-2.0"));
         assert_eq!(member.marketplace.author, Some(serde_json::json!("Ada")));
         assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
-        // A path is the member's own.
+        // The output is the member's own.
         assert_eq!(member.build.out, None);
+    }
+
+    #[test]
+    fn a_marketplace_inherits_exclusions_and_patterns_key_by_key() {
+        let workspace = parse_root_file(
+            "---\nworkspace: true\nbuild:\n  exclude: '**/*.draft.md'\n  patterns:\n    \
+             skills: notes/*\n    plugins: packs/*\n---\n",
+        )
+        .unwrap();
+        let mut member =
+            parse_root_file("---\nbuild:\n  patterns:\n    skills: mine/*\n---\n").unwrap();
+        member.inherit(&workspace);
+        assert_eq!(member.build.exclude, ["**/*.draft.md"]);
+        assert_eq!(member.build.patterns.skills, ["mine/*"]);
+        assert_eq!(member.build.patterns.plugins, ["packs/*"]);
+    }
+
+    #[test]
+    fn an_unterminated_root_file_is_refused_and_a_readme_is_not() {
+        for text in [
+            "---\nbuild:\n  exclude: a\n",
+            "\u{feff}---\nbuild:\n  exclude: a\n",
+            "---\r\nname: m\r\n",
+        ] {
+            let err = parse_root_file(text).unwrap_err();
+            assert!(err.detail.contains("never closes"), "{err}");
+        }
+        for text in ["", "# Notes\n", "# Notes\n\n---\n\nmore\n"] {
+            parse_root_file(text).unwrap();
+        }
     }
 }

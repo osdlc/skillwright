@@ -3127,6 +3127,34 @@ fn a_config_file_carries_its_patterns_and_exclusions() {
 }
 
 #[test]
+fn list_leaves_out_the_moved_folder_of_one_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: .\n---\n",
+    )
+    .unwrap();
+    for (name, note) in [
+        ("a", "---\nname: a\nclaude: {packs: mva}\n---\n"),
+        ("b", "---\nname: b\n---\n"),
+    ] {
+        std::fs::create_dir_all(dir.path().join("marketplaces").join(name)).unwrap();
+        std::fs::write(
+            dir.path().join(format!("marketplaces/{name}/{name}.md")),
+            note,
+        )
+        .unwrap();
+    }
+    skill(&dir.path().join("marketplaces/a/plugins/p/skills/s.md"));
+    let built = run(&["build", "--marketplace", "a", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(dir.path().join("mva/p").is_dir());
+    let list = run(&["list"], dir.path());
+    assert_eq!(list.code, 0, "{}", list.stderr);
+    assert!(!list.stdout.contains("mva/"), "{}", list.stdout);
+}
+
+#[test]
 fn list_leaves_out_a_moved_packs_folder_a_marketplace_note_names() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(

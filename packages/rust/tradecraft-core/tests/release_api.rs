@@ -1715,3 +1715,313 @@ fn a_single_note_publish_finds_a_plugin_note_a_pattern_moved() {
     assert!(text.contains("license: MIT"), "{text}");
     assert!(text.contains("model: opus"), "{text}");
 }
+
+const USE_IT: &str = "---\ndescription: Use it.\n---\n\nbody\n";
+
+#[test]
+fn a_link_to_a_component_named_for_a_never_ship_folder_builds() {
+    let root = "---\nname: m\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            (
+                "plugins/rev/skills/a.md",
+                "---\ndescription: Use a.\n---\n\n[[guide]] and [[plugins/rev/skills/docs/ref]]\n",
+            ),
+            (
+                "plugins/rev/skills/b/b.md",
+                "---\ndescription: Use b.\n---\n\n[t](../tests/ref.md)\n",
+            ),
+            ("plugins/docs/skills/guide.md", USE_IT),
+            ("plugins/rev/skills/docs/ref.md", "# Ref\n"),
+            ("plugins/rev/skills/docs/docs.md", USE_IT),
+            ("plugins/rev/skills/tests/ref.md", "# Ref\n"),
+            ("plugins/rev/skills/tests/tests.md", USE_IT),
+        ],
+    );
+    build_to(&vfs, "/market", root).unwrap();
+}
+
+#[test]
+fn a_stray_in_a_component_named_for_a_never_ship_folder_is_still_a_stray() {
+    let root = "---\nname: m\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            TOOL_SKILL,
+            ("plugins/tests/z.md", USE_IT),
+            ("plugins/docs/misplaced/y.md", USE_IT),
+            ("plugins/rev/skills/tests/t.md", USE_IT),
+        ],
+    );
+    let report = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    let skipped = serde_json::to_string(&report.skipped).unwrap();
+    for stray in ["plugins/tests/z.md", "misplaced/y.md", "skills/tests/t.md"] {
+        assert!(skipped.contains(stray), "{stray}: {skipped}");
+    }
+}
+
+#[test]
+fn a_described_note_in_a_never_ship_folder_warns_that_it_will_not_ship() {
+    let root = "---\nname: m\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            TOOL_SKILL,
+            ("plugins/rev/docs/x.md", USE_IT),
+            ("docs/plugins/q/skills/w.md", USE_IT),
+            ("plugins/rev/docs/plain.md", "# Just a page\n"),
+            ("docs/outside.md", USE_IT),
+        ],
+    );
+    let report = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    assert!(report.skipped.is_empty(), "{:?}", report.skipped);
+    let warned: Vec<&str> = report
+        .warnings
+        .iter()
+        .filter(|warning| warning.reason == "never-ships")
+        .map(|warning| warning.path.as_str())
+        .collect();
+    assert_eq!(
+        warned,
+        ["docs/plugins/q/skills/w.md", "plugins/rev/docs/x.md"]
+    );
+}
+
+#[test]
+fn a_nested_note_under_a_deep_glob_names_the_pattern() {
+    let root = "---\nname: m\nbuild:\n  patterns:\n    skills: notes/**\n---\n";
+    let vfs = root_vault(root, &[("notes/d/y.md", USE_IT)]);
+    let report = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    let skipped = serde_json::to_string(&report.skipped).unwrap();
+    assert!(
+        skipped.contains("`build.patterns` reads it as `skills/d/y.md`"),
+        "{skipped}"
+    );
+}
+
+#[test]
+fn an_os_file_in_a_moved_packs_folder_does_not_block_a_rebuild() {
+    let root = "---\nname: m\nclaude: {packs: built}\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    build_to(&vfs, "/vault", root).unwrap();
+    for junk in [".DS_Store", "Thumbs.db", "rev/.DS_Store", "gone/.DS_Store"] {
+        write(&vfs, &format!("/vault/built/{junk}"), "x");
+        let report = build_to(&vfs, "/vault", root).unwrap();
+        assert!(!report.changed, "{junk}");
+    }
+}
+
+#[test]
+fn a_user_file_in_a_moved_packs_folder_is_named() {
+    let root = "---\nname: m\nclaude: {packs: built}\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    build_to(&vfs, "/vault", root).unwrap();
+    write(&vfs, "/vault/built/mine.txt", "mine");
+    let err = build_to(&vfs, "/vault", root).unwrap_err();
+    assert!(err.contains("foreign-tree"), "{err}");
+    assert!(
+        err.contains("`built/mine.txt` is not part of a pack"),
+        "{err}"
+    );
+    assert_eq!(text_at(&vfs, "/vault/built/mine.txt"), "mine");
+}
+
+#[test]
+fn a_packs_inside_the_stage_folder_is_refused() {
+    for packs in [".skillwright-stage", ".skillwright-stage/x"] {
+        let root = format!("---\nname: m\nclaude: {{packs: {packs}}}\n---\n");
+        let vfs = root_vault(&root, &[TOOL_SKILL]);
+        let err = build_to(&vfs, "/market", &root).unwrap_err();
+        assert!(err.contains("path-collision"), "{packs}: {err}");
+    }
+}
+
+#[test]
+fn packs_differing_in_unicode_case_or_form_collide() {
+    for (a, b) in [("\u{c9}crit", "\u{e9}crit"), ("caf\u{e9}", "cafe\u{301}")] {
+        let root = format!("---\nname: m\nclaude: {{packs: {a}}}\ncodex: {{packs: {b}}}\n---\n");
+        let vfs = root_vault(&root, &[TOOL_SKILL]);
+        let err = build_to(&vfs, "/market", &root).unwrap_err();
+        assert!(err.contains("path-collision"), "{a}: {err}");
+    }
+}
+
+/// A workspace at `/ws` whose root file is `workspace`, with the member `a`.
+fn workspace(workspace: &str, member: &str) -> (MemVfs, ExportRequest) {
+    let vfs = MemVfs::new();
+    write(&vfs, "/ws/skillwright.md", workspace);
+    write(&vfs, "/ws/marketplaces/a/skillwright.md", member);
+    write(
+        &vfs,
+        "/ws/marketplaces/a/plugins/rev/skills/keep.md",
+        USE_IT,
+    );
+    write(
+        &vfs,
+        "/ws/marketplaces/a/plugins/rev/skills/h.draft.md",
+        USE_IT,
+    );
+    let mut build = request();
+    build.vault_root = PathBuf::from("/ws/marketplaces/a");
+    build.marketplace = None;
+    build.config = tradecraft_core::settings::root_file_config(member, "a").unwrap();
+    (vfs, build)
+}
+
+#[test]
+fn a_workspace_exclusion_reaches_its_members() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: '**/*.draft.md'\n---\n";
+    let (vfs, build) = workspace(shared, "---\nname: a\n---\n");
+    export_skills(&vfs, &build, &Namespace::bare()).unwrap();
+    let built = "/market/.claude-plugin/packs/rev/skills";
+    assert!(vfs.exists(Path::new(&format!("{built}/keep/SKILL.md"))));
+    assert!(!vfs.exists(Path::new(&format!("{built}/h-draft/SKILL.md"))));
+    assert!(!vfs.exists(Path::new(&format!("{built}/h.draft/SKILL.md"))));
+}
+
+#[test]
+fn a_members_own_exclusion_replaces_the_workspaces() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: '**/*.draft.md'\n---\n";
+    let member = "---\nname: a\nbuild:\n  exclude: '**/keep.md'\n---\n";
+    let (vfs, build) = workspace(shared, member);
+    export_skills(&vfs, &build, &Namespace::bare()).unwrap();
+    let built = "/market/.claude-plugin/packs/rev/skills/keep/SKILL.md";
+    assert!(!vfs.exists(Path::new(built)));
+}
+
+#[test]
+fn a_malformed_workspace_file_refuses_a_member_build() {
+    let (vfs, build) = workspace("---\nworkspace: [\n---\n", "---\nname: a\n---\n");
+    let err = export_skills(&vfs, &build, &Namespace::bare()).unwrap_err();
+    assert!(err.to_string().contains("malformed-root-file"), "{err}");
+}
+
+#[test]
+fn a_pattern_under_a_marketplace_ships_only_from_that_marketplace() {
+    let root = "---\nbuild:\n  patterns:\n    plugins: marketplaces/a/packs/*\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            (
+                "marketplaces/a/a.md",
+                "---\nname: a\ntargets: [claude-code]\n---\n",
+            ),
+            ("marketplaces/a/packs/rev/skills/s.md", USE_IT),
+            ("marketplaces/b/b.md", "---\nname: b\n---\n"),
+            ("marketplaces/b/plugins/own/skills/t.md", USE_IT),
+        ],
+    );
+    let mut build = request();
+    build.marketplace = Some("b".to_owned());
+    build.config = tradecraft_core::settings::root_file_config(root, "house").unwrap();
+    export_skills(&vfs, &build, &Namespace::bare()).unwrap();
+    assert!(vfs.exists(Path::new(
+        "/market/.claude-plugin/packs/own/.claude-plugin/plugin.json"
+    )));
+    assert!(!vfs.exists(Path::new("/market/.claude-plugin/packs/rev")));
+
+    build.marketplace = Some("a".to_owned());
+    build.out_root = PathBuf::from("/market-a");
+    export_skills(&vfs, &build, &Namespace::bare()).unwrap();
+    let manifest = "/market-a/.claude-plugin/packs/rev/.claude-plugin/plugin.json";
+    assert!(vfs.exists(Path::new(manifest)));
+    // The marketplace note's `targets` reach the plugin.
+    let codex = "/market-a/.agents/plugins/marketplace.json";
+    assert!(!vfs.exists(Path::new(codex)) || !text_at(&vfs, codex).contains("rev"));
+}
+
+#[test]
+fn a_named_publish_of_a_note_in_a_never_ship_folder_is_refused() {
+    let vfs = root_vault(
+        "---\nname: m\n---\n",
+        &[
+            ("docs/y.md", USE_IT),
+            ("plugins/rev/docs/x.md", USE_IT),
+            ("plugins/docs/skills/g.md", USE_IT),
+        ],
+    );
+    for note in ["/vault/docs/y.md", "/vault/plugins/rev/docs/x.md"] {
+        let request = PublishRequest {
+            skill_path: PathBuf::from(note),
+            destination_root: PathBuf::from("/dest"),
+            target: "claude-code".to_owned(),
+            mode: PublishMode::Write,
+            skills_root: Some(PathBuf::from("/vault")),
+            config: None,
+            published_at: None,
+            overwrite: Vec::new(),
+        };
+        let err = publish_skill(&vfs, &request, &Namespace::default()).unwrap_err();
+        assert!(err.to_string().contains("excluded-note"), "{note}: {err}");
+    }
+    publish(&vfs, "/vault/plugins/docs/skills/g.md", "claude-code");
+}
+
+#[test]
+fn an_output_inside_a_pattern_plugin_folder_is_refused() {
+    let root = "---\nname: m\nbuild:\n  patterns:\n    plugins: packs/*\n---\n";
+    let vfs = root_vault(root, &[("packs/rev/skills/a.md", USE_IT)]);
+    let err = build_to(&vfs, "/vault/packs/rev", root).unwrap_err();
+    assert!(err.contains("unsafe-root"), "{err}");
+}
+
+#[test]
+fn an_unterminated_root_file_refuses_a_build() {
+    let root = "---\nbuild:\n  exclude: '**/*.draft.md'\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    let mut build = request();
+    build.marketplace = None;
+    let err = export_skills(&vfs, &build, &Namespace::bare()).unwrap_err();
+    assert!(err.to_string().contains("malformed-root-file"), "{err}");
+}
+
+fn view_of<'v>(vfs: &'v dyn Vfs, config: &MarketplaceConfig) -> tradecraft_core::SourceView<'v> {
+    let scope = tradecraft_core::VaultScope {
+        vault_root: Path::new("/vault"),
+        skills_root: None,
+        marketplace: None,
+    };
+    tradecraft_core::source_view(
+        tradecraft_core::SourceView::over(vfs),
+        scope,
+        Some(Path::new("/vault")),
+        config,
+        &Namespace::bare(),
+    )
+}
+
+#[test]
+fn a_moved_folder_holding_real_notes_is_not_hidden() {
+    let root = "---\nname: m\nclaude: {packs: x/guides}\nbuild:\n  patterns:\n    skills: '*/guides/*'\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL, ("x/guides/g.md", USE_IT)]);
+    let config = tradecraft_core::settings::root_file_config(root, "house").unwrap();
+    let view = view_of(&vfs, &config);
+    assert!(view.exists(Path::new("/vault/x/guides/g.md")));
+}
+
+#[test]
+fn several_marketplaces_each_hide_their_own_moved_folder() {
+    let root = "---\nname: m\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            (
+                "marketplaces/a/a.md",
+                "---\nname: a\nclaude: {packs: mva}\n---\n",
+            ),
+            (
+                "marketplaces/b/b.md",
+                "---\nname: b\nclaude: {packs: mvb}\n---\n",
+            ),
+            ("marketplaces/a/plugins/p/skills/s.md", USE_IT),
+            ("mva/p/.claude-plugin/plugin.json", "{}"),
+            ("mva/p/skills/s/SKILL.md", USE_IT),
+            ("mvb/p/.claude-plugin/plugin.json", "{}"),
+        ],
+    );
+    let config = tradecraft_core::settings::root_file_config(root, "house").unwrap();
+    let view = view_of(&vfs, &config);
+    assert!(!view.exists(Path::new("/vault/mva/p/skills/s/SKILL.md")));
+    assert!(!view.exists(Path::new("/vault/mvb/p/.claude-plugin/plugin.json")));
+}

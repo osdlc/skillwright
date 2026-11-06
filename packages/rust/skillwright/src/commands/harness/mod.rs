@@ -265,13 +265,26 @@ pub fn run_harness(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandCon
         Ok(found) => found.flatten(),
         Err(message) => return blocked(ctx.err, &message),
     };
+    // The manifest names the marketplace built here. Failing that, any of them.
+    let configs = run.effective_configs(found.as_deref());
+    for config in &configs {
+        if let Err(err) = tradecraft_core::check_packs(config) {
+            return blocked(ctx.err, &err.to_string());
+        }
+    }
     let market_name = found.unwrap_or_else(|| run.marketplace_name());
 
     // `--plugin`, else every plugin this harness's tree holds a pack for.
     let plugins: Vec<String> = if !flags.plugins.is_empty() {
         flags.plugins.clone()
     } else {
-        built_plugins(&root, adapter.name, &run.effective_config(None))
+        let mut names: Vec<String> = configs
+            .iter()
+            .flat_map(|config| built_plugins(&root, adapter.name, config))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
     };
     if installs_plugins && plugins.is_empty() {
         return usage_error(

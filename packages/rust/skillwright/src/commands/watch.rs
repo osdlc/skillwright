@@ -160,7 +160,11 @@ pub fn run_watch_for(
     let mut rebuilds = 0usize;
     loop {
         // Read each time: a rebuild's note edit can move the packs folder.
-        let built = built_paths_for(&run.effective_config(None));
+        let built: Vec<String> = run
+            .effective_configs(flags.marketplace.as_deref())
+            .iter()
+            .flat_map(built_paths_for)
+            .collect();
         match next_batch(&rx, DEBOUNCE, &out, &built) {
             // The sender lives inside the watcher's OS callback; a closed
             // channel means the watcher itself was torn down.

@@ -850,10 +850,8 @@ mod tests {
             "---\nname: m\nclaude: {packs: built}\n---\n",
         );
         file("/vault/marketplaces/m/plugins/rev/skills/a.md", skill);
-        file(
-            "/vault/built/marketplaces/m/plugins/rev/skills/stale.md",
-            skill,
-        );
+        file("/vault/built/rev/.claude-plugin/plugin.json", "{}");
+        file("/vault/built/rev/skills/stale.md", skill);
         vfs
     }
 
