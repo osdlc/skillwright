@@ -484,24 +484,6 @@ pub fn rendered_skill_call(
     }
 }
 
-/// The name a plain `[[skill]]` renders as: the published name, qualified by
-/// its plugin on a harness that namespaces skills (`plugin:skill`).
-///
-/// # Errors
-///
-/// What [`published_skill_name`] refuses.
-pub(crate) fn mentioned_skill_name(
-    naming: SkillNaming,
-    plugin: &str,
-    skill: &str,
-) -> Result<String, CoreError> {
-    let name = published_skill_name(naming, plugin, skill)?;
-    Ok(match naming {
-        SkillNaming::HostNamespaced => format!("{plugin}:{name}"),
-        SkillNaming::Bare | SkillNaming::PluginPrefixed => name,
-    })
-}
-
 /// `RuntimeId::skill_call`, with its error as a `skill-call-invalid` refusal.
 pub(crate) fn checked_skill_call(
     runtime: RuntimeId,
@@ -2001,6 +1983,29 @@ mod tests {
             "{:?}",
             report.warnings
         );
+    }
+
+    #[test]
+    fn a_mention_keeps_its_alias_and_ignores_its_fragment() {
+        let vfs = calls_vault(
+            "# a\n\nUse [[b|the b skill]] next, see [[b#Steps]] and [[b#Steps|the steps]].\n",
+        );
+        build(&vfs);
+        for (tree, named) in [
+            (".claude-plugin", "tools:b"),
+            (".agents", "tools:b"),
+            (".cursor-plugin", "b"),
+        ] {
+            let body = skill_md(&vfs, tree, "a");
+            let want = format!(
+                "Use the b skill (`{named}`) next, see `{named}` and the steps (`{named}`)."
+            );
+            assert!(body.contains(&want), "{tree}: {body}");
+        }
+
+        let vfs = calls_vault("# a\n\nSee [[b#Missing]].\n");
+        let err = export_refusal(&vfs);
+        assert!(err.contains("fragment-unresolved"), "{err}");
     }
 
     #[test]

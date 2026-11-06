@@ -557,21 +557,22 @@ fn render_call(
     naming: SkillNaming,
 ) -> Result<String, CoreError> {
     call.check_shipped(targets_name(call.targets.as_deref(), canonical), canonical)?;
-    if call.mention {
-        return match &call.skill.plugin {
-            Some(plugin) => crate::export::mentioned_skill_name(naming, plugin, &call.skill.name),
-            None => Ok(call.skill.name.clone()),
-        };
-    }
     let Some(runtime) = runtime else {
         return Ok(call.skill.name.clone());
     };
-    match &call.skill.plugin {
+    let rendered = match &call.skill.plugin {
         Some(plugin) => {
-            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)
+            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)?
         }
-        None => crate::export::checked_skill_call(runtime, None, &call.skill.name),
+        None => crate::export::checked_skill_call(runtime, None, &call.skill.name)?,
+    };
+    if !call.mention {
+        return Ok(rendered);
     }
+    let prefix = runtime.skill_call_syntax().prefix;
+    Ok(rendered
+        .strip_prefix(prefix)
+        .map_or(rendered.clone(), str::to_owned))
 }
 
 /// How a harness names a published skill; [`SkillNaming::Bare`] for a row
