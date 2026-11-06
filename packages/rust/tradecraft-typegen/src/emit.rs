@@ -279,6 +279,7 @@ fn is_builtin(name: &str) -> bool {
             | "Vec"
             | "BTreeMap"
             | "HashMap"
+            | "Map"
             | "BTreeSet"
             | "HashSet"
             | "String"
@@ -319,7 +320,8 @@ fn ts_type(model: &Model, ty: &syn::Type) -> Result<String, Error> {
         "Value" => "unknown".to_string(),
         "Option" => arg(0)?,
         "Vec" | "BTreeSet" | "HashSet" => format!("{}[]", arg(0)?),
-        "BTreeMap" | "HashMap" => format!("Record<{}, {}>", arg(0)?, arg(1)?),
+        // `Map` is `serde_json::Map<String, Value>`: an object, as a map is.
+        "BTreeMap" | "HashMap" | "Map" => format!("Record<{}, {}>", arg(0)?, arg(1)?),
         _ if is_builtin(&head) => "number".to_string(),
         _ => ts_name(model, &head)?,
     })

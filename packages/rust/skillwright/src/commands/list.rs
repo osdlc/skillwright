@@ -12,13 +12,22 @@
 //!
 //! A note the scan could not read does not hide the rest of the roster: it
 //! is named on the error sink, one line per note.
+//!
+//! `--model` prints something else: the marketplace model `build` renders
+//! from, loaded by the core's [`load`] with the project file's marketplace
+//! settings, as one JSON document. It is a separate flag rather than what
+//! `--json` prints because `--json`'s rows are an existing contract.
 
+use config_layers::needs::Need;
+use tradecraft_core::model::load::{LoadRequest, load};
 use tradecraft_core::{NativeVfs, discover_components};
 
+use crate::commands::marketplace::{MarketplaceInputs, marketplace_inputs};
+use crate::config::NEEDS;
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_OK, blocked};
+use crate::exit::{EXIT_OK, blocked, usage_error};
 use crate::report::{render_roster, render_roster_tally, render_warning_line, roster_row};
-use crate::resolve::{CommonFlags, resolve_run, resolve_skills_root};
+use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, resolve_skills_root};
 
 /// The resolved flags of `skillwright list`.
 pub struct ListFlags {
@@ -28,6 +37,8 @@ pub struct ListFlags {
     pub common: CommonFlags,
     /// `--json`: print the report as one JSON document.
     pub json: bool,
+    /// `--model`: print the loaded marketplace model instead of the roster.
+    pub model: bool,
     /// `--quiet`: drop progress and the tally from stderr.
     pub quiet: bool,
 }
@@ -43,6 +54,10 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Err(code) => return code,
     };
     let skills_root = resolve_skills_root(flags.skills_root.as_deref(), &run, &ctx.cwd);
+
+    if flags.model {
+        return print_model(&run, skills_root, ctx);
+    }
 
     let scan = match discover_components(
         &NativeVfs,
@@ -97,4 +112,64 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
 
     EXIT_OK
+}
+
+/// `list --model`: the marketplace model as one JSON document on stdout.
+///
+/// Loaded with the same inputs `build` resolves, through the same function,
+/// so what this prints is what a build would translate.
+fn print_model(
+    run: &ResolvedRun,
+    skills_root: Option<std::path::PathBuf>,
+    ctx: &mut CommandContext<'_>,
+) -> i32 {
+    let need = Need {
+        config: "marketplace.default_plugin",
+        unless_input: None,
+    };
+    let project = run
+        .config
+        .as_ref()
+        .and_then(|c| serde_json::to_value(c).ok());
+    let default_plugin = run
+        .config
+        .as_ref()
+        .and_then(|c| c.marketplace.default_plugin.clone());
+    let Some(default_plugin) =
+        default_plugin.filter(|_| NEEDS.met(&need, project.as_ref(), None, &|_| false))
+    else {
+        return usage_error(
+            ctx.err,
+            &NEEDS.message(&need, &run.config_dir, &["list --model"]),
+        );
+    };
+    let MarketplaceInputs {
+        config,
+        harnesses,
+        assets,
+        hooks,
+    } = match marketplace_inputs(run, default_plugin) {
+        Ok(inputs) => inputs,
+        Err(err) => return blocked(ctx.err, &err),
+    };
+    let request = LoadRequest {
+        vault_root: run.vault.clone(),
+        skills_root,
+        marketplace: None,
+        harnesses,
+        config,
+        assets,
+        hooks,
+    };
+    let market = match load(&NativeVfs, &request, &run.core_namespace()) {
+        Ok(market) => market,
+        Err(err) => return blocked(ctx.err, &format!("the marketplace would not load: {err}")),
+    };
+    match serde_json::to_string_pretty(&market) {
+        Ok(document) => {
+            let _ = writeln!(ctx.out, "{document}");
+            EXIT_OK
+        }
+        Err(err) => blocked(ctx.err, &format!("the model would not serialize: {err}")),
+    }
 }

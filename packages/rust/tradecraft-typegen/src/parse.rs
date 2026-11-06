@@ -52,6 +52,9 @@ pub struct SerdeAttrs {
     pub skip_serializing_if: bool,
     /// `#[serde(flatten)]` — the field's own fields are spliced in.
     pub flatten: bool,
+    /// `#[serde(skip)]` — the field never crosses the wire, in either
+    /// direction, so it is not read at all.
+    pub skip: bool,
     /// `#[serde(tag = "...")]` — an internally tagged enum.
     pub tag: Option<String>,
 }
@@ -202,14 +205,23 @@ fn parse_file(path: &Path) -> Result<syn::File, Error> {
     syn::parse_file(&text).map_err(|e| format!("parsing {}: {e}", path.display()))
 }
 
-/// Every `.rs` file directly under `dir`, sorted, so the read is deterministic.
+/// Every `.rs` file under `dir`, at any depth, sorted, so the read is
+/// deterministic. Recursive because the core keeps whole modules in
+/// directories (`model/`, `harness/`), and an export may return a type
+/// declared there.
 fn rust_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, Error> {
-    let mut paths: Vec<_> = fs::read_dir(dir)
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(dir)
         .map_err(|e| format!("reading {}: {e}", dir.display()))?
         .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "rs"))
-        .collect();
+    {
+        let path = entry.path();
+        if path.is_dir() {
+            paths.extend(rust_files(&path)?);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            paths.push(path);
+        }
+    }
     paths.sort();
     Ok(paths)
 }
@@ -276,7 +288,7 @@ fn is_pub(vis: &syn::Visibility) -> bool {
 
 fn read_struct(item: &syn::ItemStruct) -> Struct {
     let (fields, unsupported) = match &item.fields {
-        syn::Fields::Named(named) => (named.named.iter().map(read_field).collect(), None),
+        syn::Fields::Named(named) => (read_fields(named), None),
         _ => (
             Vec::new(),
             Some(format!(
@@ -300,7 +312,7 @@ fn read_enum(item: &syn::ItemEnum) -> Enum {
     for v in &item.variants {
         let (fields, unsupported) = match &v.fields {
             syn::Fields::Unit => (None, None),
-            syn::Fields::Named(named) => (Some(named.named.iter().map(read_field).collect()), None),
+            syn::Fields::Named(named) => (Some(read_fields(named)), None),
             syn::Fields::Unnamed(_) => (
                 None,
                 Some(format!(
@@ -326,6 +338,16 @@ fn read_enum(item: &syn::ItemEnum) -> Enum {
         variants,
         unsupported: None,
     }
+}
+
+/// The named fields that cross the wire: every one but a `#[serde(skip)]`.
+fn read_fields(named: &syn::FieldsNamed) -> Vec<Field> {
+    named
+        .named
+        .iter()
+        .map(read_field)
+        .filter(|field| !field.attrs.skip)
+        .collect()
 }
 
 fn read_field(field: &syn::Field) -> Field {
@@ -387,6 +409,7 @@ fn serde_attrs(attrs: &[syn::Attribute]) -> SerdeAttrs {
             match key.as_str() {
                 "default" => out.default = true,
                 "flatten" => out.flatten = true,
+                "skip" => out.skip = true,
                 "skip_serializing_if" => out.skip_serializing_if = true,
                 "rename" => out.rename = meta_str(&meta),
                 "rename_all" => out.rename_all = meta_str(&meta),

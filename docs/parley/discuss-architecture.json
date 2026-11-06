@@ -1,0 +1,1117 @@
+{
+ "id": "discuss-architecture",
+ "title": "skillwright architecture: build a marketplace model, then translate it per harness?",
+ "summary": "How skillwright is built today (structure and the build, check and publish flows), where the harness knowledge sits, and whether to move to a load \u2192 model \u2192 translate \u2192 emit pipeline.",
+ "created": "2026-11-04",
+ "repo": {
+  "remote": "https://github.com/osdlc/skillwright",
+  "commit": "adbb3ea153b9f67ea7f7e99bc6fddd1d39ed147f"
+ },
+ "blocks": [
+  {
+   "id": "problem",
+   "type": "prose",
+   "title": "The question",
+   "text": "Your proposal: build a data representation of the whole marketplace first, then emit it through a translator per harness.\n\nToday there is **no marketplace model**. `build`/`check` (`export.rs`) and `publish` (`publish.rs`) are two separate pipelines. Each one reads notes, compiles them and writes bytes in one pass, and each pass already knows which harness it is writing for. The only grouping is `PluginGroup`: borrowed lists of discovered notes, with no compiled content in them.\n\nWhy it matters now: adding a harness or a component kind means editing both pipelines and about five separate tables of harness facts. `publish` can only write a plugin for Claude and Codex, while `build` supports four harnesses. That gap is a symptom of the split.\n\nConstraints any answer has to keep:\n- The core stays I/O-free above `Vfs`, so it still runs as wasm (Obsidian, TS).\n- `check` must never disagree with `build`. Today that holds because both render into a `PreviewVfs`.\n- Refusal tokens and the byte-for-byte output of the committed `plugin/` trees must not change. CI diffs them.\n- The `sw-` strip and the rail against writing into the vault both stay.\n\nFiles read: `tradecraft-core/src/{lib,export,publish,compile,projection,discover,vault,content,frontmatter,vfs,authoring,status,manifest,guard}.rs`, `skillwright/src/{cli,lib}.rs`, `skillwright/src/commands/*`, `tradecraft-wasm/src/lib.rs`, `plugin/skillwright.yaml`.",
+   "source": [
+    {
+     "uri": "packages/rust/tradecraft-core/src/lib.rs"
+    },
+    {
+     "uri": "packages/rust/tradecraft-core/src/export.rs"
+    },
+    {
+     "uri": "packages/rust/tradecraft-core/src/publish.rs"
+    },
+    {
+     "uri": "plugin/skillwright.yaml"
+    }
+   ]
+  },
+  {
+   "id": "h-today",
+   "type": "heading",
+   "title": "Structure today",
+   "level": 1
+  },
+  {
+   "id": "fig-today",
+   "type": "figure",
+   "title": "Layers and modules",
+   "src": "x/structure-today.svg",
+   "alt": "Layer diagram: hosts (CLI, wasm, typegen) over tradecraft-core (read, transform, render+write, plan, projection, rails), over the Vfs seam, over the osdlc library crates, over the output trees. Orange boxes hold harness facts.",
+   "caption": "Orange = holds harness-specific facts. The render+write box holds two pipelines.",
+   "detail": "The core is cleanly layered on its inputs. Discover/vault/frontmatter all read into typed structs, and `authoring` already uses decide-then-execute: it returns an `AuthoringOp` and the host applies it. The output side has no such split. `export` and `publish` decide what to write and write it in the same function."
+  },
+  {
+   "id": "tree-crates",
+   "type": "tree",
+   "title": "Crates and the biggest modules",
+   "columns": [
+    {
+     "id": "lines",
+     "title": "Lines (incl. tests)",
+     "kind": "number"
+    }
+   ],
+   "bar": "lines",
+   "open": 2,
+   "nodes": [
+    {
+     "id": "n-cli",
+     "title": "skillwright (CLI)",
+     "cells": {
+      "lines": 7600
+     },
+     "detail": "Flags \u2192 request \u2192 one core call \u2192 report. `commands/harness/adapter.rs` holds a separate harness table for the install/update CLIs.",
+     "source": {
+      "uri": "packages/rust/skillwright/src/cli.rs"
+     }
+    },
+    {
+     "id": "n-core",
+     "title": "tradecraft-core",
+     "cells": {
+      "lines": 37700
+     }
+    },
+    {
+     "id": "n-export",
+     "parent": "n-core",
+     "title": "export.rs: build / check",
+     "cells": {
+      "lines": 6848
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/export.rs"
+     }
+    },
+    {
+     "id": "n-publish",
+     "parent": "n-core",
+     "title": "publish.rs: one note \u2192 one destination",
+     "cells": {
+      "lines": 6117
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/publish.rs"
+     }
+    },
+    {
+     "id": "n-compile",
+     "parent": "n-core",
+     "title": "compile.rs: embeds, links, calls",
+     "cells": {
+      "lines": 3918
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/compile.rs"
+     }
+    },
+    {
+     "id": "n-adopt",
+     "parent": "n-core",
+     "title": "adopt.rs: SKILL.md \u2192 notes",
+     "cells": {
+      "lines": 3106
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/adopt.rs"
+     }
+    },
+    {
+     "id": "n-discover",
+     "parent": "n-core",
+     "title": "discover.rs: publishable notes",
+     "cells": {
+      "lines": 2428
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/discover.rs"
+     }
+    },
+    {
+     "id": "n-authoring",
+     "parent": "n-core",
+     "title": "authoring.rs: plans",
+     "cells": {
+      "lines": 2341
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/authoring.rs"
+     }
+    },
+    {
+     "id": "n-fm",
+     "parent": "n-core",
+     "title": "frontmatter.rs",
+     "cells": {
+      "lines": 1878
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/frontmatter.rs"
+     }
+    },
+    {
+     "id": "n-vfs",
+     "parent": "n-core",
+     "title": "vfs.rs: I/O seam",
+     "cells": {
+      "lines": 1686
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/vfs.rs"
+     }
+    },
+    {
+     "id": "n-proj",
+     "parent": "n-core",
+     "title": "projection.rs: \u2192 agent-adapt",
+     "cells": {
+      "lines": 1130
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/projection.rs"
+     }
+    },
+    {
+     "id": "n-wasm",
+     "title": "tradecraft-wasm",
+     "cells": {
+      "lines": 1147
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-wasm/src/lib.rs"
+     }
+    },
+    {
+     "id": "n-typegen",
+     "title": "tradecraft-typegen",
+     "cells": {
+      "lines": 1518
+     }
+    }
+   ]
+  },
+  {
+   "id": "h-flows",
+   "type": "heading",
+   "title": "Flows today",
+   "level": 1
+  },
+  {
+   "id": "wf-build",
+   "type": "workflow",
+   "title": "build / check: export_skills",
+   "trigger": "skillwright build | check",
+   "source": {
+    "uri": "packages/rust/tradecraft-core/src/export.rs",
+    "range": {
+     "start": {
+      "line": 842,
+      "character": 0
+     },
+     "end": {
+      "line": 1181,
+      "character": 0
+     }
+    }
+   },
+   "lanes": [
+    {
+     "id": "l-cli",
+     "title": "CLI"
+    },
+    {
+     "id": "l-read",
+     "title": "Core: read + group"
+    },
+    {
+     "id": "l-render",
+     "title": "Core: render, once per harness root"
+    },
+    {
+     "id": "l-emit",
+     "title": "Core: diff + commit"
+    }
+   ],
+   "steps": [
+    {
+     "id": "b1",
+     "lane": "l-cli",
+     "kind": "start",
+     "title": "Resolve config",
+     "summary": "skillwright.yaml + flags \u2192 ExportRequest.",
+     "source": {
+      "uri": "packages/rust/skillwright/src/commands/marketplace.rs"
+     }
+    },
+    {
+     "id": "b2",
+     "lane": "l-read",
+     "kind": "action",
+     "title": "Rail",
+     "summary": "Refuse an out root that would swap a tree inside the vault."
+    },
+    {
+     "id": "b3",
+     "lane": "l-read",
+     "kind": "action",
+     "title": "discover_components",
+     "summary": "Walk the vault \u2192 DiscoveredComponent[]. Refuse if any note was unreadable."
+    },
+    {
+     "id": "b4",
+     "lane": "l-read",
+     "kind": "action",
+     "title": "Filter + split",
+     "summary": "By marketplace, then into skills / commands / hooks. Refuse empty or undescribed."
+    },
+    {
+     "id": "b5",
+     "lane": "l-read",
+     "kind": "action",
+     "title": "group_by_plugin",
+     "summary": "PluginGroup = borrowed refs per plugin. The closest thing to a model.",
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/export.rs",
+      "range": {
+       "start": {
+        "line": 1411,
+        "character": 0
+       },
+       "end": {
+        "line": 1486,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "b6",
+     "lane": "l-render",
+     "kind": "action",
+     "title": "render_root (\u00d74)",
+     "summary": "A fresh PreviewVfs per root: claude, codex, cursor, pi.",
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/export.rs",
+      "range": {
+       "start": {
+        "line": 1574,
+        "character": 0
+       },
+       "end": {
+        "line": 1684,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "b7",
+     "lane": "l-render",
+     "kind": "action",
+     "title": "render_skill",
+     "summary": "Reads and compiles the note again for this root, rewrites strings, projects via agent-adapt.",
+     "detail": "`read_vault_skill` and `compile_projection` run once per root, because a call's spelling (`/plugin:skill` vs `plugin-skill`) and the set of shipped skills differ per root. The CLI-shim rewrite, the sibling-path rewrite and the generated marker are string edits on the compiled body.",
+     "warnings": [
+      "Same note read and compiled 4 times"
+     ],
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/export.rs",
+      "range": {
+       "start": {
+        "line": 1705,
+        "character": 0
+       },
+       "end": {
+        "line": 1806,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "b8",
+     "lane": "l-render",
+     "kind": "action",
+     "title": "Manifests",
+     "summary": "plugin_manifest + per-dialect marketplace JSON builders.",
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/export.rs",
+      "range": {
+       "start": {
+        "line": 2945,
+        "character": 0
+       },
+       "end": {
+        "line": 3258,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "b9",
+     "lane": "l-emit",
+     "kind": "action",
+     "title": "diff_root",
+     "summary": "Compare each capture with the tree on disk. Refuse a foreign tree."
+    },
+    {
+     "id": "b10",
+     "lane": "l-emit",
+     "kind": "decision",
+     "title": "Mode?",
+     "summary": "check returns the report; build swaps changed trees.",
+     "next": [
+      {
+       "to": "b11",
+       "when": "check"
+      },
+      {
+       "to": "b12",
+       "when": "build"
+      }
+     ]
+    },
+    {
+     "id": "b11",
+     "lane": "l-emit",
+     "kind": "end",
+     "title": "Report drift",
+     "summary": "Exit 1 on drift."
+    },
+    {
+     "id": "b12",
+     "lane": "l-emit",
+     "kind": "end",
+     "title": "commit",
+     "summary": "Stage, rename into place, roll back on failure."
+    }
+   ]
+  },
+  {
+   "id": "cf-publish",
+   "type": "code-flow",
+   "title": "publish: one note onto one destination",
+   "entry": "skillwright publish <note> --to <dir> --target <t>",
+   "language": "rust",
+   "source": {
+    "uri": "packages/rust/tradecraft-core/src/publish.rs",
+    "range": {
+     "start": {
+      "line": 618,
+      "character": 0
+     },
+     "end": {
+      "line": 831,
+      "character": 0
+     }
+    }
+   },
+   "steps": [
+    {
+     "id": "p1",
+     "title": "Fan out",
+     "symbol": "commands::publish::run",
+     "summary": "One PublishRequest per (note, destination, target).",
+     "source": {
+      "uri": "packages/rust/skillwright/src/commands/publish.rs"
+     }
+    },
+    {
+     "id": "p2",
+     "title": "Read the note",
+     "symbol": "read_vault_skill",
+     "kind": "call",
+     "depth": 1,
+     "summary": "VaultNote: typed sw- frontmatter + SkillProjection."
+    },
+    {
+     "id": "p3",
+     "title": "Resolve kind",
+     "symbol": "resolve_kind",
+     "kind": "call",
+     "depth": 1,
+     "summary": "Frontmatter beats folder. Refuse kinds with no renderer."
+    },
+    {
+     "id": "p4",
+     "title": "Plugin note? \u2192 separate branch",
+     "symbol": "project_plugin",
+     "kind": "call",
+     "depth": 1,
+     "summary": "Scans the vault for members and renders a pack. Only claude and codex have a PluginLayout.",
+     "warnings": [
+      "Second implementation of pack rendering"
+     ],
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/publish.rs",
+      "range": {
+       "start": {
+        "line": 1368,
+        "character": 0
+       },
+       "end": {
+        "line": 1420,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "p5",
+     "title": "Overrides + compile",
+     "symbol": "compile_projection",
+     "kind": "call",
+     "depth": 1,
+     "summary": "Builds a lazy SkillIndex for calls; the body comes out harness-specific."
+    },
+    {
+     "id": "p6",
+     "title": "Project",
+     "symbol": "project_skill_reporting",
+     "kind": "call",
+     "depth": 1,
+     "summary": "agent-adapt renders files for one runtime."
+    },
+    {
+     "id": "p7",
+     "title": "finish",
+     "symbol": "finish",
+     "kind": "call",
+     "depth": 1,
+     "summary": "Rail, sw-targets narrowing, hash closures, classify against the manifest, write."
+    },
+    {
+     "id": "p8",
+     "title": "status = this in DryRun",
+     "symbol": "status_of",
+     "kind": "return",
+     "summary": "status re-runs publish through PreviewVfs, so it cannot drift from publish.",
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/status.rs"
+     }
+    }
+   ]
+  },
+  {
+   "id": "t-facts",
+   "type": "table",
+   "title": "Where harness facts live today",
+   "columns": [
+    {
+     "id": "where",
+     "title": "Where"
+    },
+    {
+     "id": "what",
+     "title": "What it knows"
+    },
+    {
+     "id": "harnesses",
+     "title": "Harnesses"
+    }
+   ],
+   "rows": [
+    {
+     "id": "r1",
+     "cells": {
+      "where": "export.rs ROOTS",
+      "what": "runtime, paths, manifest dialect, naming, CLI invocation, plugin-root var",
+      "harnesses": "claude, codex, cursor, pi"
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/export.rs",
+      "range": {
+       "start": {
+        "line": 617,
+        "character": 0
+       },
+       "end": {
+        "line": 692,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "r2",
+     "cells": {
+      "where": "publish.rs PluginLayout",
+      "what": "plugins root, manifest dir, dialect, projection prefix",
+      "harnesses": "claude, codex"
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/publish.rs",
+      "range": {
+       "start": {
+        "line": 1368,
+        "character": 0
+       },
+       "end": {
+        "line": 1390,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "r3",
+     "cells": {
+      "where": "publish.rs plugin_format_carries_*",
+      "what": "which kinds a plugin format holds",
+      "harnesses": "claude, codex, cursor"
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/publish.rs",
+      "range": {
+       "start": {
+        "line": 1391,
+        "character": 0
+       },
+       "end": {
+        "line": 1420,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "r4",
+     "cells": {
+      "where": "publish.rs canonical_target / runtime_target_for / runtime_id_for_canonical / KNOWN_TARGETS",
+      "what": "name spellings \u2192 runtime ids",
+      "harnesses": "9 targets"
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/publish.rs",
+      "range": {
+       "start": {
+        "line": 2162,
+        "character": 0
+       },
+       "end": {
+        "line": 2305,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "r5",
+     "cells": {
+      "where": "export.rs *_marketplace_manifest",
+      "what": "manifest JSON shape per dialect",
+      "harnesses": "claude, codex, cursor, pi"
+     },
+     "source": {
+      "uri": "packages/rust/tradecraft-core/src/export.rs",
+      "range": {
+       "start": {
+        "line": 3046,
+        "character": 0
+       },
+       "end": {
+        "line": 3258,
+        "character": 0
+       }
+      }
+     }
+    },
+    {
+     "id": "r6",
+     "cells": {
+      "where": "skillwright harness/adapter.rs",
+      "what": "install CLI argv + JSON parsing",
+      "harnesses": "claude, codex, cursor"
+     },
+     "source": {
+      "uri": "packages/rust/skillwright/src/commands/harness/adapter.rs"
+     }
+    },
+    {
+     "id": "r7",
+     "cells": {
+      "where": "agent-adapt (external)",
+      "what": "frontmatter dialect, tool names, skills_dir, skill_call",
+      "harnesses": "10+ runtimes"
+     }
+    },
+    {
+     "id": "r8",
+     "cells": {
+      "where": "harness-reference/bundle",
+      "what": "sourced facts as markdown; code does not read it",
+      "harnesses": "17"
+     },
+     "source": {
+      "uri": "harness-reference/README.md"
+     }
+    }
+   ]
+  },
+  {
+   "id": "spec-sketch",
+   "type": "code",
+   "title": "Sketch: a HarnessProfile (data) and a HarnessTranslator (code) per harness",
+   "language": "rust",
+   "code": "/// Everything skillwright does differently per harness, in one row.\n/// Frontmatter dialect and tool names stay in agent-adapt (`runtime`).\nstruct HarnessProfile {\n    name: &'static str,                 // \"claude\"\n    aliases: &'static [&'static str],   // [\"claude-code\"]\n    runtime: RuntimeId,                 // agent-adapt runtime\n\n    // Layouts: where files land\n    destination_skills: &'static str,   // \".claude/skills\"\n    marketplace: Option<MarketplaceLayout>, // manifest path, packs dir, pack manifest\n    manifest_dialect: PluginDialect,    // JSON shape of plugin/marketplace manifests\n\n    // How things are named and referenced\n    naming: SkillNaming,                // HostNamespaced | Bare | PluginPrefixed\n    plugin_files: CliInvocation,        // ${CLAUDE_PLUGIN_ROOT} token | skill-relative shim\n\n    // What a plugin can carry\n    carries_commands: bool,\n    hooks: Option<HooksSupport>,        // root var, manifest entry, supported events\n\n    // What a note may set for this harness only\n    accepted_overrides: &'static [&'static str],\n\n    // Installing a built marketplace (used by `harness install`)\n    installer: Option<&'static InstallerCli>,\n}\n\nconst CLAUDE: HarnessProfile = HarnessProfile { name: \"claude\", destination_skills: \".claude/skills\", naming: SkillNaming::HostNamespaced, carries_commands: true, /* ... */ };\nconst PI: HarnessProfile = HarnessProfile { name: \"pi\", destination_skills: \".pi/skills\", marketplace: Some(/* packs only, no manifest */), naming: SkillNaming::PluginPrefixed, carries_commands: false, hooks: None, /* ... */ };\n\n/// The code half. Defaults do the shared work from the profile;\n/// a harness overrides only what is code for it.\ntrait HarnessTranslator {\n    fn profile(&self) -> &HarnessProfile;\n\n    // Shared defaults, driven by the profile\n    fn admits(&self, node: &Component) -> bool { /* kind + sw-targets */ }\n    fn skill_name(&self, plugin: &Plugin, skill: &Skill) -> String { /* naming */ }\n    fn render_call(&self, target: &Skill) -> Result<String> { /* runtime.skill_call */ }\n    fn skill_files(&self, skill: &Skill, ext: &Extensions) -> FileTree { /* agent-adapt */ }\n\n    // Usually overridden: each is real per-harness code\n    fn plugin_manifest(&self, plugin: &Plugin) -> Option<File>;\n    fn marketplace_manifest(&self, market: &Marketplace) -> Option<File>;\n    fn hooks(&self, plugin: &Plugin) -> HooksResult { /* default: none */ }\n}\n\nstruct Claude; struct Codex; struct Cursor; struct Pi;   // one small impl each",
+   "caption": "Built from today's `RootSpec` (export.rs), `PluginLayout` and the target functions (publish.rs), and `Adapter` (skillwright harness/adapter.rs). The fields are the union of those tables; nothing new is invented.",
+   "source": {
+    "uri": "packages/rust/tradecraft-core/src/export.rs"
+   }
+  },
+  {
+   "id": "findings",
+   "type": "prose",
+   "tone": "note",
+   "title": "What the review found",
+   "text": "1. **Your direction fits the code.** The input side already produces typed data (`DiscoveredComponent`, `VaultNote`, `VaultFrontmatter`). `authoring` already separates deciding from doing. `PreviewVfs` already makes check = build. What is missing is the middle: a compiled, harness-neutral `Marketplace` value.\n2. **Compile is where harness knowledge gets in too early.** `compile_projection` turns `/[[call]]` into a harness's call string, so it needs a per-root `CallContext`. That is why `export` reads and compiles each note once per root. A model needs bodies that keep calls and links as references, rendered later by the translator.\n3. **Two pipelines, one job.** `publish`'s plugin branch (`project_plugin`) re-does grouping, admission and manifests with its own layout table. That is how publish ended up supporting only 2 harnesses for packs.\n4. **Harness facts are in about 8 places** (table above). A translator architecture needs one `HarnessProfile` per harness that every stage reads.\n5. **Keep as is:** the Vfs seam, the rails in `guard`, the manifest's two hashes, refusal tokens, and status-as-dry-run. These belong in the Emit stage and do not need to change."
+  },
+  {
+   "id": "h-proposed",
+   "type": "heading",
+   "title": "Proposed: load \u2192 model \u2192 translate \u2192 emit",
+   "level": 1
+  },
+  {
+   "id": "fig-proposed",
+   "type": "figure",
+   "title": "Proposed structure",
+   "src": "x/structure-proposed.svg",
+   "alt": "Pipeline diagram: Vault \u2192 1 Load \u2192 2 Marketplace model (marketplace, plugins, skills with segment bodies, commands, hooks, assets; validated, serializable) \u2192 3 Translate, one translator per harness from one HarnessProfile row, producing a pure FileTree \u2192 4 Emit (build swap, check diff, publish to destination with manifest, status dry-run). Adopt and authoring read and plan against the model.",
+   "caption": "Each stage hands a value to the next. Only Load and Emit touch the Vfs."
+  },
+  {
+   "id": "wf-proposed",
+   "type": "workflow",
+   "title": "Proposed flow, all verbs",
+   "trigger": "build | check | publish | status | list",
+   "lanes": [
+    {
+     "id": "q-load",
+     "title": "Load"
+    },
+    {
+     "id": "q-model",
+     "title": "Model"
+    },
+    {
+     "id": "q-tr",
+     "title": "Translate (pure)"
+    },
+    {
+     "id": "q-emit",
+     "title": "Emit"
+    }
+   ],
+   "steps": [
+    {
+     "id": "w1",
+     "lane": "q-load",
+     "kind": "start",
+     "title": "load_marketplace(vfs, vault, settings)",
+     "summary": "discover + read + compile once, harness-neutral."
+    },
+    {
+     "id": "w2",
+     "lane": "q-model",
+     "kind": "action",
+     "title": "Marketplace value",
+     "summary": "Plugins \u2192 skills/commands/hooks/assets, bodies as segments, closures attached.",
+     "detail": "`list` reads it directly. `--json` can print it. wasm can return it to Obsidian."
+    },
+    {
+     "id": "w3",
+     "lane": "q-model",
+     "kind": "action",
+     "title": "validate",
+     "summary": "Collisions, empty marketplace, missing descriptions, unknown calls. One place, all verbs."
+    },
+    {
+     "id": "w4",
+     "lane": "q-tr",
+     "kind": "action",
+     "title": "translate(&model, &HarnessProfile, Layout)",
+     "summary": "Narrow by kind and targets, name skills, render calls and links, frontmatter via agent-adapt, typed manifests.",
+     "detail": "`Layout` is `Marketplace` (packs under `.claude-plugin/packs/\u2026`) or `Destination` (`.claude/skills/\u2026`). That one parameter replaces `PluginLayout` vs `RootSpec`."
+    },
+    {
+     "id": "w5",
+     "lane": "q-tr",
+     "kind": "action",
+     "title": "FileTree",
+     "summary": "path \u2192 bytes + exec bit + source closure. Pure data; snapshot-testable."
+    },
+    {
+     "id": "w6",
+     "lane": "q-emit",
+     "kind": "decision",
+     "title": "Verb?",
+     "summary": "Same FileTree, different writer.",
+     "next": [
+      {
+       "to": "w7",
+       "when": "build / check"
+      },
+      {
+       "to": "w8",
+       "when": "publish / status"
+      }
+     ]
+    },
+    {
+     "id": "w7",
+     "lane": "q-emit",
+     "kind": "end",
+     "title": "Tree swap / diff",
+     "summary": "Today's diff_root + commit, unchanged."
+    },
+    {
+     "id": "w8",
+     "lane": "q-emit",
+     "kind": "end",
+     "title": "Destination write",
+     "summary": "Today's guard + manifest + classify, unchanged."
+    }
+   ]
+  },
+  {
+   "id": "ext",
+   "type": "prose",
+   "title": "Harness-specific additions in the model",
+   "text": "Each model node (skill, command, plugin, marketplace) has three layers of data:\n\n1. **Common fields:** name, description, body, arguments, allowed tools. Every translator reads these.\n2. **Extensions, per harness:** e.g. Claude's `disable-model-invocation`. Today they come from `sw-overrides` in frontmatter and are validated against `accepted_override_keys`. Only that harness's translator reads them.\n3. **Annotations:** unknown non-`sw-` keys, passed through as written (today's carry rule).\n\n**A current bug this fixes:** `sw-overrides` is applied by `publish` but not by `build`, so a Claude-only field reaches `.claude/skills` and goes missing from the built marketplace.",
+   "source": [
+    {
+     "uri": "packages/rust/tradecraft-core/src/content.rs"
+    },
+    {
+     "uri": "packages/rust/tradecraft-core/src/publish.rs",
+     "range": {
+      "start": {
+       "line": 1939,
+       "character": 0
+      },
+      "end": {
+       "line": 2160,
+       "character": 0
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "tr-shape",
+   "type": "tradeoffs",
+   "title": "Options scored",
+   "question": "q-shape",
+   "scale": {
+    "min": 1,
+    "max": 5
+   },
+   "criteria": [
+    {
+     "id": "c-cost",
+     "title": "Low cost to make the change",
+     "weight": 1
+    },
+    {
+     "id": "c-facts",
+     "title": "One source of harness facts",
+     "weight": 2
+    },
+    {
+     "id": "c-add",
+     "title": "Adding a harness or kind is one change",
+     "weight": 2
+    },
+    {
+     "id": "c-agree",
+     "title": "build, publish and status cannot disagree",
+     "weight": 2
+    },
+    {
+     "id": "c-test",
+     "title": "Translators testable without a filesystem",
+     "weight": 1
+    },
+    {
+     "id": "c-risk",
+     "title": "Low risk to current output",
+     "weight": 1
+    }
+   ],
+   "scores": [
+    {
+     "criterion": "c-cost",
+     "option": "o-tables",
+     "score": 5,
+     "reason": "A few days: merge the tables into one HarnessProfile."
+    },
+    {
+     "criterion": "c-cost",
+     "option": "o-build",
+     "score": 3
+    },
+    {
+     "criterion": "c-cost",
+     "option": "o-all",
+     "score": 2,
+     "reason": "export and publish together are ~13k lines including tests."
+    },
+    {
+     "criterion": "c-facts",
+     "option": "o-tables",
+     "score": 4
+    },
+    {
+     "criterion": "c-facts",
+     "option": "o-build",
+     "score": 4
+    },
+    {
+     "criterion": "c-facts",
+     "option": "o-all",
+     "score": 5
+    },
+    {
+     "criterion": "c-add",
+     "option": "o-tables",
+     "score": 2,
+     "reason": "Still two render paths to extend."
+    },
+    {
+     "criterion": "c-add",
+     "option": "o-build",
+     "score": 3
+    },
+    {
+     "criterion": "c-add",
+     "option": "o-all",
+     "score": 5
+    },
+    {
+     "criterion": "c-agree",
+     "option": "o-tables",
+     "score": 2
+    },
+    {
+     "criterion": "c-agree",
+     "option": "o-build",
+     "score": 2,
+     "reason": "publish stays a second renderer."
+    },
+    {
+     "criterion": "c-agree",
+     "option": "o-all",
+     "score": 5,
+     "reason": "One FileTree feeds every writer."
+    },
+    {
+     "criterion": "c-test",
+     "option": "o-tables",
+     "score": 2
+    },
+    {
+     "criterion": "c-test",
+     "option": "o-build",
+     "score": 4
+    },
+    {
+     "criterion": "c-test",
+     "option": "o-all",
+     "score": 5
+    },
+    {
+     "criterion": "c-risk",
+     "option": "o-tables",
+     "score": 5
+    },
+    {
+     "criterion": "c-risk",
+     "option": "o-build",
+     "score": 3
+    },
+    {
+     "criterion": "c-risk",
+     "option": "o-all",
+     "score": 3,
+     "reason": "The committed plugin/ trees and test snapshots act as a byte-for-byte oracle, which brings the risk down."
+    }
+   ]
+  }
+ ],
+ "questions": [
+  {
+   "id": "q-shape",
+   "prompt": "Which architecture should skillwright move to?",
+   "kind": "single",
+   "priority": "blocking",
+   "group": "Architecture",
+   "recommended": "o-all",
+   "options": [
+    {
+     "id": "o-tables",
+     "title": "Keep the pipelines; merge harness facts into one HarnessProfile table",
+     "detail": "Cheapest, and it fixes the scattered tables. It leaves two renderers, per-root recompiles and the publish/build gap (packs only for claude and codex)."
+    },
+    {
+     "id": "o-build",
+     "title": "Model + translators for build/check only; publish stays as is",
+     "detail": "Proves the model on the verb with the strongest oracle (the committed plugin/ trees). publish keeps its own renderer, so the two can still drift. A reasonable first step but not a place to stop."
+    },
+    {
+     "id": "o-all",
+     "title": "Model + translators for every verb (load \u2192 model \u2192 translate \u2192 emit)",
+     "detail": "Your proposal. Recommended: the inputs and the emit side are already in good shape, so the work is mostly moving compile's harness decisions into translators and deleting `project_plugin`. It can be phased: build/check first, then publish on the same translators."
+    }
+   ]
+  },
+  {
+   "id": "q-body",
+   "prompt": "How should calls and links be represented once the model is loaded?",
+   "kind": "single",
+   "priority": "high",
+   "group": "Model",
+   "about": "fig-proposed",
+   "recommended": "o-seg",
+   "options": [
+    {
+     "id": "o-seg",
+     "title": "Two-phase load: resolve links and calls to model nodes; translators only spell them",
+     "detail": "Recommended. Pass 1 reads every note into a node. Pass 2 resolves each [[link]] and /[[call]] against those nodes and stores a reference to the target; broken ones become validation errors on the model. The body is text with those resolved references in it. A translator does not decide validity, only spelling: /plugin:skill on Claude, plugin-skill on Pi, refused where sw-targets narrows the target out of that harness. This also replaces the string rewrites in render_skill."
+    },
+    {
+     "id": "o-tok",
+     "title": "A string with placeholder tokens filled in at translate time",
+     "detail": "Smaller change to compile.rs, but tokens can collide with author text and a second lexer pass is needed to find them again."
+    },
+    {
+     "id": "o-keep",
+     "title": "Keep compiling per harness; the model holds one body per harness",
+     "detail": "No change to compile.rs, but the model is no longer harness-neutral and you still compile N times."
+    }
+   ]
+  },
+  {
+   "id": "q-ext",
+   "prompt": "How should harness extensions be typed in the model?",
+   "kind": "single",
+   "priority": "high",
+   "group": "Model",
+   "about": "ext",
+   "recommended": "o-ext-map",
+   "options": [
+    {
+     "id": "o-ext-map",
+     "title": "A validated key/value map per harness, checked against that harness's accepted keys",
+     "detail": "Recommended. It matches today's sw-overrides and the agent-adapt capability matrix. Adding a field is a table change, not a type change, and it serializes cleanly to wasm."
+    },
+    {
+     "id": "o-ext-typed",
+     "title": "A typed struct per harness (ClaudeSkillExt, CodexSkillExt, ...)",
+     "detail": "Compile-time checks and better docs, but every new harness field becomes a code change in core plus a typegen update."
+    },
+    {
+     "id": "o-ext-both",
+     "title": "Typed for the fields skillwright acts on, a map for the rest",
+     "detail": "Typed where the translator makes decisions from a field (e.g. naming, hooks). Map for plain pass-through. More rules to explain."
+    }
+   ]
+  },
+  {
+   "id": "q-facts",
+   "prompt": "Where should the per-harness facts (the HarnessProfile rows) live?",
+   "kind": "single",
+   "group": "Model",
+   "recommended": "o-rust",
+   "options": [
+    {
+     "id": "o-rust",
+     "title": "One Rust HarnessProfile table in core, with links to harness-reference facts",
+     "detail": "Recommended. Typed, compiled into wasm, and checked by tests. A test can assert that each row's sourced fields match a harness-reference fact, so the docs and code stay in sync."
+    },
+    {
+     "id": "o-gen",
+     "title": "Generate the table from harness-reference/bundle at build time",
+     "detail": "Single source, but behavior (how a call is spelled, the shim rewrite) is code, not data, so part of each harness stays in Rust anyway."
+    },
+    {
+     "id": "o-adapt",
+     "title": "Push it all into agent-adapt",
+     "detail": "agent-adapt already owns per-runtime rendering. But marketplace layout and install CLIs are skillwright concepts, so this widens agent-adapt's scope."
+    }
+   ]
+  },
+  {
+   "id": "q-translator",
+   "prompt": "How much of a translator is data (the profile) and how much is per-harness code?",
+   "kind": "single",
+   "priority": "high",
+   "group": "Model",
+   "about": "spec-sketch",
+   "recommended": "o-tr-trait",
+   "options": [
+    {
+     "id": "o-tr-data",
+     "title": "Data only: one generic translator driven by the profile",
+     "detail": "Adding a harness would mean adding a row. But manifest JSON shapes, Cursor's hook rules and Pi's package.json are code, so the profile ends up full of enums that each switch into code, which is how today's PluginDialect works."
+    },
+    {
+     "id": "o-tr-trait",
+     "title": "Profile + one HarnessTranslator trait with shared default methods",
+     "detail": "Recommended. The defaults do the common work from the profile: narrowing, naming, skill placement, writing calls and links. Each harness overrides only what is code for it, mostly manifests and hook rules. A new harness is a profile plus a few methods."
+    },
+    {
+     "id": "o-tr-each",
+     "title": "One hand-written translator per harness, sharing helper functions",
+     "detail": "Each translator is easy to read on its own, but the common rules (sw-targets narrowing, calls) are copied four times and can drift. That is today's export/publish problem, moved."
+    }
+   ]
+  },
+  {
+   "id": "q-public",
+   "prompt": "Should the Marketplace model be a public, serialized contract (wasm, --json, Obsidian)?",
+   "kind": "single",
+   "group": "Model",
+   "options": [
+    {
+     "id": "o-pub",
+     "title": "Yes: exported through tradecraft-wasm and typegen",
+     "detail": "Lets the Obsidian plugin show the whole marketplace and its per-harness results without re-implementing discovery. It becomes an API to keep stable."
+    },
+    {
+     "id": "o-int",
+     "title": "Not yet: internal to core until it settles",
+     "detail": "Free to change while the refactor lands. Can be exported later."
+    }
+   ]
+  },
+  {
+   "id": "q-adopt",
+   "prompt": "Should adopt become the reverse of a translator (harness files \u2192 model \u2192 notes)?",
+   "kind": "single",
+   "priority": "low",
+   "group": "Scope",
+   "options": [
+    {
+     "id": "o-adopt-yes",
+     "title": "Yes, in scope",
+     "detail": "Symmetric and it would let adopt read Cursor/Pi layouts too. It makes the refactor bigger."
+    },
+    {
+     "id": "o-adopt-later",
+     "title": "Later, separate work",
+     "detail": "adopt.rs works today and does not block the forward path."
+    }
+   ]
+  },
+  {
+   "id": "q-missed",
+   "prompt": "What did this review miss or get wrong? Constraints, plans for more harnesses, or Obsidian-side needs I should know about.",
+   "kind": "text"
+  }
+ ]
+}

@@ -1,0 +1,303 @@
+{
+  "doc": "discuss-architecture",
+  "updated": "2026-11-04T06:27:05.891Z",
+  "verdict": "approved",
+  "comments": [],
+  "choices": {
+    "q-shape": {
+      "selected": [
+        "o-all"
+      ],
+      "note": "yeah, I was expecting a singular model that could support the core data model but also support harness specific additions (like claude has several frontmatter fields that aren't supported elsewhere in a skill), and then specific translators from that model. I don't care too much what the model looks like in memory if it's an actual object graph (which is definitely simpler to conceptualize) or not.",
+      "at": "2026-11-04T06:26:04.535Z",
+      "replies": [
+        {
+          "id": "1d3ce11b-2f0b-4ed3-8f89-5887cc38ddff",
+          "from": "agent",
+          "text": "Agreed, and that is what the last option means: one model, then translators. An object graph is the simplest way to build it, so I'd go that way.\n\nFor harness-specific additions there is already a starting point: `sw-overrides`, a per-target block in a note's frontmatter (e.g. `sw-overrides: { claude: { disable-model-invocation: true } }`). Today it is checked against each harness's accepted keys (`overrides_for`, `accepted_override_keys` in publish.rs). But only `publish` applies it. `build` does not (see the doc on `SkillContent::apply_overrides` in content.rs). So a Claude-only field set this way reaches `.claude/skills` and is silently missing from the built marketplace. That is one more symptom of the two pipelines.\n\nIn the model: each node holds the common fields, plus `extensions: { harness → fields }`, plus pass-through `annotations`. Each translator reads the common fields and its own extensions and ignores the rest. I've added a section and a question on the page about how to type extensions.",
+          "at": "2026-11-04T06:19:18.194Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "a1a7696545e506cdbcdf6742",
+          "from": "reviewer",
+          "text": "yeah, I was expecting a singular model that could support the core data model but also support harness specific additions (like claude has several frontmatter fields that aren't supported elsewhere in a skill), and then specific translators from that model. I don't care too much what the model looks like in memory if it's an actual object graph (which is definitely simpler to conceptualize) or not.",
+          "at": "2026-11-04T06:23:41.602Z",
+          "sent": "2026-11-04T06:23:41.602Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "0355ec0f-45be-47df-9b98-a462bb200938",
+          "from": "agent",
+          "text": "Noted with your answer: one model with common fields plus per-harness extensions, then a translator per harness. I'll plan it as an object graph.",
+          "at": "2026-11-04T06:23:53.488Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "hash": "59d4d0e1b5ba",
+      "revision": 1,
+      "tab": "52ce86c194cb0b096651f3b2",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "sent": "2026-11-04T06:23:41.602Z"
+    },
+    "q-body": {
+      "selected": [
+        "o-seg"
+      ],
+      "note": "not sure what a segment list means - a list of structs? I feel like the calls and links should be realized by the time it gets to a translator - so there is probably at least a two phase pass for the model - read the model the first time, and then fill in whether calls/links are valid and then fill in the data model appropriately (again whether its a graph object or a database style data in memory I don't care as much)",
+      "at": "2026-11-04T06:22:25.589Z",
+      "replies": [
+        {
+          "id": "997c8c4c-8006-4583-99fe-16496c3ad667",
+          "from": "agent",
+          "text": "Yes, a list of structs: one enum with a variant per kind of span. Your two-phase load is the same idea, and a clearer way to say it:\n\nPass 1, read: every note becomes a node (skill, command, plugin, ...).\nPass 2, resolve: every [[link]] and /[[call]] is checked against the nodes from pass 1 and stored as a reference to its target, e.g. Call -> skill 'plugins/skillwright/skills/setup'. Broken ones become validation errors or warnings on the model, before any translator runs.\n\nSo by translate time every call and link is realized: valid, and pointing at a known node. The one thing still left for the translator is spelling, because it differs per harness. The same resolved call is written /skillwright:setup for Claude and skillwright-setup for Pi, and is refused if the target skill is narrowed out of that harness by sw-targets. A link is the same: resolved to a resource, and the translator picks the path it lands at in that harness's layout.\n\nThe body holds text between those references, which is all 'segment list' meant. I've reworded the question to describe it this way.",
+          "at": "2026-11-04T06:20:42.304Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "0072b62445a28f2901c81fc4",
+          "from": "reviewer",
+          "text": "not sure what a segment list means - a list of structs? I feel like the calls and links should be realized by the time it gets to a translator - so there is probably at least a two phase pass for the model - read the model the first time, and then fill in whether calls/links are valid and then fill in the data model appropriately (again whether its a graph object or a database style data in memory I don't care as much)",
+          "at": "2026-11-04T06:23:41.602Z",
+          "sent": "2026-11-04T06:23:41.602Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "ad79c2af-6c0b-4f3d-ba32-ab43bf3152e9",
+          "from": "agent",
+          "text": "Noted with your answer: a two-phase load (read the notes, then resolve links and calls against the model), so translators get resolved references and only decide how to spell them.",
+          "at": "2026-11-04T06:23:53.672Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "hash": "9cdadeea25bb",
+      "revision": 1,
+      "tab": "52ce86c194cb0b096651f3b2",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "sent": "2026-11-04T06:23:41.602Z"
+    },
+    "q-ext": {
+      "selected": [
+        "o-ext-map"
+      ],
+      "at": "2026-11-04T06:20:28.548Z",
+      "hash": "bf897b9ec098",
+      "revision": 1,
+      "tab": "52ce86c194cb0b096651f3b2",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "sent": "2026-11-04T06:26:54.459Z"
+    },
+    "q-facts": {
+      "selected": [
+        "o-rust"
+      ],
+      "note": "what does harness spec mean exactly? what are these facts?",
+      "at": "2026-11-04T06:26:47.905Z",
+      "replies": [
+        {
+          "id": "64494efc-5667-4c50-a6b0-cb9cefaa2348",
+          "from": "agent",
+          "text": "A 'harness fact' is anything skillwright does differently depending on which tool it writes for. 'HarnessSpec' is my name for one struct per harness that holds all of them, so one record answers every question about a harness. Real examples from the code today (Claude / Pi):\n\n- Where skills go when published to a project: .claude/skills vs .pi/skills\n- Where the marketplace manifest lives: .claude-plugin/marketplace.json vs none (Pi installs packs by path)\n- Where packs go in a built marketplace, and the pack manifest file: .claude-plugin/plugin.json vs package.json\n- Manifest JSON shape (dialect): Claude vs Codex vs Cursor vs Pi builders\n- How a skill is named: plain 'setup' (Claude adds the plugin namespace itself) vs 'skillwright-setup' (Pi has no namespace)\n- How a call is written: /skillwright:setup vs skillwright-setup\n- Which kinds a plugin can carry: commands only on Claude; hooks on Claude, Codex and Cursor\n- How a skill body points at the plugin's own files: ${CLAUDE_PLUGIN_ROOT} vs a skill-relative scripts/ shim\n- Hooks: the plugin-root variable name, and whether the manifest has to name the hooks file (Cursor)\n- Which sw-overrides keys the harness accepts\n- Name spellings that map to it: claude / claude-code\n- Install CLI commands, used by 'skillwright harness install'\n\nToday these sit in about 8 places (the table on the page). Some harnesses have some of them and not others, e.g. publish knows pack layouts only for Claude and Codex.\n\nNot in it: frontmatter dialect and tool-name translation. agent-adapt already owns those per runtime, and the spec would just point at the agent-adapt runtime id.\n\nI've added a code sketch of the struct to the page, next to the table.",
+          "at": "2026-11-04T06:21:40.558Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "c0a6716c8784b48a343c330a",
+          "from": "reviewer",
+          "text": "ok, that makes sense. Is 'spec' the right term? it gets confusing with specs being used to define specifications for the software itself or often tests . \n\nBut yes, we should have a unified way of modeling this.  The one thing I'm unsure of - is can the spec capture everything, or must there be some specific knowledge of how to convert model to translator for specific target harnesses?",
+          "at": "2026-11-04T06:24:26.579Z",
+          "sent": "2026-11-04T06:24:26.579Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "af689a4c-6753-4270-af2c-158b43bf91eb",
+          "from": "agent",
+          "text": "Name: agreed, 'spec' is overloaded here; the repo already says 'publish spec', 'vault spec' and so on. I'd call it HarnessProfile: a profile of what a harness supports and where it puts things. I've renamed it on the page.\n\nCan the profile capture everything? No. Some differences are data and some are code:\n\nData, so it fits in the profile: paths, file names, which kinds a plugin carries, the naming rule (one of three choices), accepted override keys, alias spellings, the plugin-root variable name.\n\nCode, so it does not fit: building each manifest's JSON (the Codex marketplace manifest is a different structure, not the Claude one with other paths; Pi's is an npm package.json); Cursor refusing some hook shapes; writing the scripts/ shim for harnesses without ${CLAUDE_PLUGIN_ROOT}; how agent-adapt renders frontmatter and tool names.\n\nToday's code mixes these too: ROOTS has a PluginDialect field that is really a switch into four hand-written manifest builders.\n\nSo I'd make it a profile plus a small translator per harness: one HarnessTranslator trait with default methods that do the common work from the profile (narrowing, naming, placing skill files, writing calls), and each harness overriding only what is code for it (its manifests, hook rules). Most of a translator is then shared, and a new harness is a profile plus the methods it really needs. I've added a question for this.",
+          "at": "2026-11-04T06:24:53.157Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "e940e28d39c021473fb716a2",
+          "from": "reviewer",
+          "text": "what does harness spec mean exactly? what are these facts?",
+          "at": "2026-11-04T06:26:54.459Z",
+          "sent": "2026-11-04T06:26:54.459Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "6defb220-c6af-421a-8342-7ee6c6a33190",
+          "from": "agent",
+          "text": "Answered in the thread above: a HarnessProfile holds the data facts per harness, and a small HarnessTranslator holds the code.",
+          "at": "2026-11-04T06:27:05.891Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "hash": "31d9c2e78cd0",
+      "revision": 1,
+      "tab": "52ce86c194cb0b096651f3b2",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "sent": "2026-11-04T06:26:54.459Z"
+    },
+    "q-public": {
+      "selected": [
+        "o-pub"
+      ],
+      "at": "2026-11-04T06:21:20.862Z",
+      "hash": "4e635cda1d30",
+      "revision": 1,
+      "tab": "52ce86c194cb0b096651f3b2",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "sent": "2026-11-04T06:26:54.459Z"
+    },
+    "q-adopt": {
+      "selected": [
+        "o-adopt-yes"
+      ],
+      "at": "2026-11-04T06:21:42.971Z",
+      "hash": "c52027f34e41",
+      "revision": 1,
+      "tab": "52ce86c194cb0b096651f3b2",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "sent": "2026-11-04T06:26:54.459Z"
+    },
+    "q-missed": {
+      "selected": [],
+      "note": "I want to capture this as a decision document of how this project is structured. I want to implement more targets. It's implementation detail but we need to make sure the agent-pants and obsidian plugin in dev are updated accordingly if needed.",
+      "at": "2026-11-04T06:25:37.790Z",
+      "hash": "722277147826",
+      "revision": 1,
+      "tab": "52ce86c194cb0b096651f3b2",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "sent": "2026-11-04T06:26:54.459Z"
+    },
+    "q-translator": {
+      "selected": [
+        "o-tr-trait"
+      ],
+      "at": "2026-11-04T06:26:40.227Z",
+      "hash": "42c893134258",
+      "revision": 1,
+      "tab": "52ce86c194cb0b096651f3b2",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "sent": "2026-11-04T06:26:54.459Z"
+    }
+  },
+  "seen": {
+    "q-shape": "59d4d0e1b5ba",
+    "q-body": "9cdadeea25bb",
+    "q-facts": "31d9c2e78cd0",
+    "q-ext": "bf897b9ec098",
+    "q-public": "4e635cda1d30",
+    "q-missed": "722277147826",
+    "q-adopt": "c52027f34e41",
+    "q-translator": "42c893134258"
+  },
+  "seenReplies": {
+    "1d3ce11b-2f0b-4ed3-8f89-5887cc38ddff": "2026-11-04T06:22:08.224Z",
+    "997c8c4c-8006-4583-99fe-16496c3ad667": "2026-11-04T06:22:25.589Z",
+    "64494efc-5667-4c50-a6b0-cb9cefaa2348": "2026-11-04T06:23:41.602Z",
+    "0355ec0f-45be-47df-9b98-a462bb200938": "2026-11-04T06:26:04.535Z"
+  },
+  "finished": "2026-11-04T06:26:54.459Z",
+  "agentReadAt": "2026-11-04T06:27:06.077Z"
+}

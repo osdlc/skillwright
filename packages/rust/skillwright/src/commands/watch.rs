@@ -430,7 +430,9 @@ mod tests {
         // The watcher arms only after the initial build, so one early save
         // can go unseen: save again until the watch returns. Each save is a
         // rename, so a rebuild never reads a half-written note (a truncated
-        // note renders no skill and the build removes its output).
+        // note renders no skill and the build removes its output). Both temp
+        // dirs sit under the same temp root, so the rename stays on one
+        // filesystem.
         let ceiling = Instant::now() + Duration::from_secs(30);
         while !watch.is_finished() {
             assert!(
@@ -441,8 +443,12 @@ mod tests {
             fs::rename(&staged, &skill_path).unwrap();
             thread::sleep(Duration::from_millis(200));
         }
-        let (code, err) = watch.join().unwrap();
-        assert_eq!(code, EXIT_OK, "{err}");
+        let (code, log) = watch.join().unwrap();
+        assert_eq!(code, EXIT_OK, "{log}");
+        assert!(
+            !log.contains("rebuild failed"),
+            "the rebuild after the save failed: {log}"
+        );
 
         let rendered = fs::read_to_string(
             out_dir
@@ -452,7 +458,7 @@ mod tests {
         .expect("the rebuilt output should carry the edited skill");
         assert!(
             rendered.contains("Reviews a diff, now edited."),
-            "the rebuild did not pick up the saved change: {rendered}"
+            "the rebuild did not pick up the saved change: {rendered}\nwatch log: {log}"
         );
     }
 }

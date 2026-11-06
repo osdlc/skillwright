@@ -14,6 +14,7 @@
 //! | `validateNamespace` | `Namespace::new` | every verb, once, at configuration load |
 //! | `discoverComponents` | `discover::discover_components` | the vault scan every other verb needs |
 //! | `exportSkills` | `export::export_skills` | `build`, and `check` through `mode` |
+//! | `loadMarketplace` | `model::load::load` | `list --json`, and any host that wants the model rather than files |
 //! | `adoptSkills` | `adopt::adopt_skills` | `adopt`, and its preview through `mode` |
 //! | `knownTargets` | `publish::KNOWN_TARGETS` | every verb that takes a target name |
 //! | `canonicalTarget` | `publish::canonical_target` | a host narrowing a run by target |
@@ -73,6 +74,7 @@ use tradecraft_core::Namespace;
 use tradecraft_core::adopt::{AdoptRequest, adopt_skills as core_adopt_skills};
 use tradecraft_core::discover::discover_components as core_discover_components;
 use tradecraft_core::export::{ExportRequest, export_skills as core_export_skills};
+use tradecraft_core::model::load::{LoadRequest, load as core_load};
 use tradecraft_core::namespace::InvalidStem;
 use tradecraft_core::publish::{
     KNOWN_TARGETS, PublishRequest, canonical_target as core_canonical_target, kind_has_renderer,
@@ -351,6 +353,45 @@ pub fn export_skills(vfs: JsValue, request_json: &str) -> Result<String, JsValue
     let report = core_export_skills(&vfs, &wire.request, &ns).map_err(|e| core_error_to_js(&e))?;
 
     report_json("export report", &report)
+}
+
+/// What crosses as `request_json` for [`load_marketplace`]: the core's
+/// [`LoadRequest`], flattened, plus the namespace stem this layer adds.
+#[derive(Deserialize)]
+struct WireLoadRequest {
+    /// Flattened, not re-declared, as on [`WireExportRequest`].
+    #[serde(flatten)]
+    request: LoadRequest,
+    /// The vault's frontmatter namespace, as a stem. Absent means
+    /// [`Namespace::default`].
+    #[serde(default)]
+    namespace: Option<String>,
+}
+
+/// Load the vault into the marketplace model — every plugin and its members,
+/// with each body's links and calls resolved — and write nothing.
+///
+/// `vfs` is the host's filesystem object; `request_json` is a serialized
+/// `LoadRequest` optionally carrying a `namespace` stem. Returns a serialized
+/// `Marketplace`: the same model `exportSkills` translates into files, so a
+/// host that wants to show a vault's structure reads it here rather than
+/// re-deriving it from a built tree.
+///
+/// # Errors
+///
+/// Everything the load refuses, thrown as on `exportSkills`: an unreadable
+/// member note, a call or link that does not resolve, an override key a
+/// requested harness does not read, an empty marketplace.
+#[wasm_bindgen(js_name = loadMarketplace)]
+pub fn load_marketplace(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
+    let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
+    let wire: WireLoadRequest = serde_json::from_str(request_json)
+        .map_err(|e| throwable(&format!("request is not a valid LoadRequest: {e}")))?;
+    let ns = namespace_of(wire.namespace.as_deref())?;
+
+    let market = core_load(&vfs, &wire.request, &ns).map_err(|e| core_error_to_js(&e))?;
+
+    report_json("marketplace model", &market)
 }
 
 // --- adoption ----------------------------------------------------------------

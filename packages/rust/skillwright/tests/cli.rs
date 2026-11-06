@@ -344,6 +344,50 @@ fn list_json_carries_the_same_rows_the_table_does() {
     assert!(rows[0].get("folder_kind").is_some());
 }
 
+// `--model` prints the marketplace model `build` translates, from the same
+// project settings, and leaves `--json`'s rows as they were.
+#[test]
+fn list_model_prints_the_loaded_marketplace() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.yaml"),
+        format!(
+            "vault: {}\nmarketplace:\n  default_plugin: tools\n  out: market\n",
+            donor_vault()
+        ),
+    )
+    .unwrap();
+
+    let run = run(&["list", "--model", "--quiet"], dir.path());
+    assert_eq!(run.code, 0, "{}", run.stderr);
+
+    let model: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+    let tools = &model["plugins"]["tools"];
+    assert_eq!(tools["name"], "tools");
+    let skill = &tools["skills"][0];
+    assert_eq!(skill["kind"], "skill");
+    assert!(
+        skill["resolved"]["body"]["segments"].is_array(),
+        "{}",
+        run.stdout
+    );
+    // Nothing was built.
+    assert!(!dir.path().join("market").exists());
+}
+
+// Without a default plugin there is no marketplace to load, and the message
+// says where to set one.
+#[test]
+fn list_model_without_a_default_plugin_is_a_usage_error() {
+    let (dir, vault) = fixture();
+    let run = run(
+        &["list", "--model", "--vault", &vault_str(&vault)],
+        dir.path(),
+    );
+    assert_eq!(run.code, 3, "{}", run.stderr);
+    assert!(run.stderr.contains("default_plugin"), "{}", run.stderr);
+}
+
 #[test]
 fn list_with_no_configuration_and_no_vault_is_exit_4_naming_both_files() {
     let dir = tempfile::tempdir().unwrap();
@@ -569,6 +613,79 @@ fn a_build_renders_the_roots_and_a_check_then_agrees_with_it() {
     assert_eq!(checked.code, 0, "{}", checked.stderr);
     assert!(checked.stdout.contains("claude/tools  ok · 1 skill"));
     assert!(checked.stderr.contains("7 ok"), "{}", checked.stderr);
+}
+
+/// A vault whose `.obsidian/app.json` excludes one skill's folder
+/// (`userIgnoreFilters`), read read-only.
+fn excluded_vault() -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/excluded-vault")
+        .canonicalize()
+        .unwrap()
+        .display()
+        .to_string()
+}
+
+#[test]
+fn a_note_the_vault_excludes_is_not_built() {
+    let dir = tempfile::tempdir().unwrap();
+    let market = dir.path().join("market");
+    let market_arg = market.display().to_string();
+    let vault = excluded_vault();
+    let argv = [
+        "build",
+        "--vault",
+        &vault,
+        "--out",
+        &market_arg,
+        "--default-plugin",
+        "tools",
+        "--yes",
+    ];
+    let built = run(&argv, dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(
+        built.stdout.contains("claude/tools  written · 1 skill"),
+        "{}",
+        built.stdout
+    );
+    assert!(find_file(&market, "kept").is_some(), "kept is built");
+    assert!(
+        find_file(&market, "hidden").is_none(),
+        "hidden is not built"
+    );
+}
+
+#[test]
+fn a_note_the_vault_excludes_is_not_published() {
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("dest");
+    let dest_arg = dest.display().to_string();
+    let vault = excluded_vault();
+    let argv = [
+        "publish", "--all", "--vault", &vault, "--to", &dest_arg, "--target", "claude", "--yes",
+    ];
+    let published = run(&argv, dir.path());
+    assert_eq!(published.code, 0, "{}", published.stderr);
+    assert!(dest.join(".claude/skills/kept/SKILL.md").is_file());
+    assert!(!dest.join(".claude/skills/hidden").exists());
+    assert!(!published.stderr.contains("hidden"), "{}", published.stderr);
+}
+
+/// The first path under `root` with a component named `name`, depth first.
+fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
+    for entry in fs::read_dir(root).ok()?.flatten() {
+        let path = entry.path();
+        if path.file_name().is_some_and(|n| n == name) {
+            return Some(path);
+        }
+        if path.is_dir()
+            && let Some(hit) = find_file(&path, name)
+        {
+            return Some(hit);
+        }
+    }
+    None
 }
 
 /// The project file's marketplace-wide license reaches a pack manifest.
