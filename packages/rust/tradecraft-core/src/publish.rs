@@ -7,6 +7,13 @@
 //! expansion, `[[link]]` collection, reference-file emission — are
 //! [`crate::compile`]'s, run between the read and the render.
 //!
+//! Both halves go through the same seams the marketplace build uses: the note
+//! is loaded into the model by [`crate::model::load::load_component`] (or, for
+//! a plugin, [`crate::model::load::load_plugin`]), and its files are written by
+//! the target's [`crate::harness::HarnessTranslator`] in the destination
+//! layout. One note therefore produces the same bytes on both paths, and a
+//! harness that has a pack shape in its profile row takes a pack here too.
+//!
 //! # Idempotence is a comparison, not a manifest
 //!
 //! The publish spec requires that publishing twice with no edits changes no
@@ -165,33 +172,26 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use crate::compile::{
-    CallContext, Closure, CompileSource, IndexedSkill, SkillIndex, SkillSource, compile_projection,
-};
-use crate::content::{SkillContent, SkillProjection};
-use crate::discover::{DiscoveredComponent, KIND_DIRS, discover_components};
+use crate::compile::Closure;
+use crate::content::SkillProjection;
 use crate::error::CoreError;
-use crate::export::{MarketplaceConfig, PluginDialect, PluginOverrides, render_plugin_manifest};
 use crate::frontmatter::{
-    ContainerIdentity, EntityKind, KindHints, KindSource, ResolvedKind, VaultFrontmatter,
-    resolve_kind,
+    EntityKind, KindHints, KindSource, ResolvedKind, VaultFrontmatter, resolve_kind,
 };
 use crate::guard::{
     assert_destination_allowed, assert_destination_allowed_for_vault, resolve_write_path,
 };
+use crate::harness::{Destination, profile_for, profile_named, translator_for, write_component};
 use crate::manifest::{
     DestinationManifest, MANIFEST_RELATIVE_PATH, ManifestEntry, ManifestState, manifest_path,
     read_manifest, write_manifest,
 };
+use crate::model::load::{ComponentRequest, load_component, load_plugin};
 use crate::namespace::Namespace;
-use crate::projection::{
-    ProjectedFile, RedundantOverride, file_hash, project_agent, project_command,
-    project_skill_reporting,
-};
-use crate::vault::{VaultNote, read_vault_skill};
+use crate::projection::{ProjectedFile, RedundantOverride, file_hash};
+use crate::vault::read_vault_skill;
 use crate::vfs::{PreviewVfs, Vfs};
 
 /// One publish: this note, to this destination, for this target.
@@ -708,15 +708,69 @@ fn publish_onto(
     // note's prose is not published: a plugin's file at a destination is its
     // pack manifest, and its members are their own files.
     if resolved.kind == EntityKind::Plugin {
-        let pack = project_plugin(
+        let translator = translator_for(canonical)
+            .filter(|t| t.profile().plugin.is_some())
+            .ok_or_else(|| {
+                CoreError::refused(
+                    "no-renderer",
+                    format!(
+                        "{} defines no plugin layout, so a pack cannot be published there",
+                        request.target
+                    ),
+                )
+            })?;
+        let mut pack = load_plugin(
             vfs,
-            request,
-            &note.projection.content,
-            &note.frontmatter.identity,
             compile_root,
-            canonical,
+            &note.projection.content.name,
+            &note.frontmatter.identity,
+            translator.profile(),
             ns,
         )?;
+        // The manifest's description is the plugin note's own, as the build
+        // fills it.
+        if let Some(overrides) = pack.config.plugins.get_mut(&pack.plugin.name) {
+            overrides.description = Some(note.projection.content.description.clone());
+        }
+        // A manifest of the folder's own at the path the pack's is rendered to
+        // (an imported plugin carries one) is left behind: the rendered one
+        // replaces it. When its bytes differ it is named in
+        // `replaced_manifest`, since it may hold fields the frontmatter does
+        // not.
+        let manifest_relative = translator.profile().format().plugin_manifest;
+        let own_manifest = pack
+            .plugin
+            .assets
+            .iter()
+            .position(|asset| asset.dest == manifest_relative)
+            .map(|at| pack.plugin.assets.remove(at));
+        let tree = translator.translate_pack(&pack, ns)?;
+        let manifest_path = format!(
+            "{}/{}/{manifest_relative}",
+            translator.profile().format().skills_dir,
+            pack.plugin.name
+        );
+        let replaced_manifest = own_manifest
+            .filter(|own| {
+                tree.files
+                    .get(&manifest_path)
+                    .is_none_or(|rendered| rendered.bytes != own.bytes)
+            })
+            .and_then(|own| {
+                request
+                    .skill_path
+                    .parent()
+                    .map(|dir| vault_relative(compile_root, &dir.join(&own.dest)))
+            });
+        let mut closures = BTreeMap::new();
+        for (path, file) in &tree.files {
+            if let Some(source) = &file.source {
+                closures.insert(
+                    path.clone(),
+                    hash_one(vfs, compile_root, &source.closure, &source.note)?,
+                );
+            }
+        }
         // The pack manifest is the one file with no closure of its own — it is
         // rendered from frontmatter rather than compiled from a body — so the
         // plugin note stands as its source.
@@ -725,91 +779,68 @@ fn publish_onto(
             vfs,
             request,
             unknown_target.as_ref(),
-            pack.files,
-            pack.closures,
+            tree.projected(),
+            closures,
             canonical,
             &source_note,
             None,
             &pack.not_carried,
-            pack.replaced_manifest.as_deref(),
-            // The members' own redundant keys. A pack's manifest is rendered
-            // from frontmatter, not through a dialect, so it adds none.
-            &pack.redundant,
+            replaced_manifest.as_deref(),
+            &redundant_reasons(&tree.redundant_overrides),
         );
     }
 
-    // The compile pass, between the read and the render, exactly where the
+    // The load, between the read and the render, exactly where the
     // marketplace build runs it, so one note produces the same bytes on both
-    // paths. Without it a published `SKILL.md` carries the author's
-    // `![[embeds]]` and `[[links]]` verbatim, and no harness resolves either
-    // sigil.
-    let mut projection = prepare_projection(
-        note,
-        resolved.kind,
-        &request.skill_path,
-        &request.target,
+    // paths: embeds expanded, links and calls resolved, `sw-arguments` and
+    // `sw-overrides` carried. Folded and checked before anything renders: an
+    // unknown destination name or a key this harness does not read refuses
+    // there, with no file built.
+    let component = load_component(
+        vfs,
+        &ComponentRequest {
+            path: &request.skill_path,
+            root: compile_root,
+            bundle_root,
+            kind: resolved.kind,
+            canonical,
+            target: &request.target,
+        },
+        &note,
         ns,
     )?;
-    let skill_name = projection.content.name.clone();
-    // A skill published on its own has no plugin, so a call to another
-    // skill is the runtime's form without a namespace. The index needs a
-    // whole-vault scan, so it is built only when the body has a call or a
-    // link to check, and a scan that fails blocks only a call: a plain link
-    // then stays a link.
-    let build_index = || -> Result<SkillIndex, CoreError> {
-        let scan = discover_components(vfs, compile_root, None, ns)?;
-        Ok(publish_skill_index(&scan.components, false, canonical))
-    };
-    let runtime = runtime_id_for_canonical(canonical);
-    let render = |skill: &IndexedSkill| match runtime {
-        Some(runtime) => crate::export::checked_skill_call(runtime, None, &skill.name),
-        None => Ok(skill.name.clone()),
-    };
-    let calls = CallContext {
-        skills: SkillSource::lazy(&build_index),
-        render: &render,
-        target: canonical,
-        implicit: matches!(resolved.kind, EntityKind::Skill | EntityKind::Command),
-        warnings: RefCell::new(Vec::new()),
-    };
-    let closures = compile_projection(
-        vfs,
-        &CompileSource {
-            vault_root: compile_root,
-            entry_path: &request.skill_path,
-            bundle_root,
-            skill_name: &skill_name,
-            calls: Some(&calls),
-        },
-        &mut projection,
-    )?;
-
+    if resolved.kind == EntityKind::Agent {
+        refuse_agent_overrides(
+            &component.extensions.blocks,
+            &request.skill_path,
+            canonical,
+            ns,
+        )?;
+    }
     // Only the projectable half is handed on. `note.frontmatter` — the kind,
     // the targets, the provenance — stays on this side of the seam by
-    // construction, because `project_skill` has no parameter that could carry
-    // it to a destination. The `ns` it does take is the same one the read used
-    // a few lines up, which is the whole point of taking one here.
-    let mut redundant = Vec::new();
-    let files = match resolved.kind {
-        // Both single-file kinds refuse a note that carries peers, for the
-        // same reason: one emitted file leaves those files nowhere to go, and
-        // a copy set that silently loses what the model cannot represent is
-        // this crate's recorded failure rather than a hypothetical one.
-        EntityKind::Command => {
-            refuse_carried_peers(&projection, "command")?;
-            project_command(&projection, &[runtime_target], ns, Some(canonical))?
-        }
-        EntityKind::Agent => {
-            refuse_carried_peers(&projection, "agent")?;
-            project_agent(&projection, &[runtime_target], ns)?
-        }
-        _ => {
-            let (files, diagnostics) =
-                project_skill_reporting(&projection, &[runtime_target], ns, Some(canonical))?;
-            redundant = redundant_reasons(&diagnostics);
-            files
-        }
+    // construction, because a projection has no parameter that could carry
+    // it to a destination.
+    let tree = match translator_for(&request.target) {
+        Some(translator) => translator.translate_component(&component, ns)?,
+        // A runtime name no harness row holds renders through as given, and
+        // writes a call as the skill's bare name.
+        None => write_component(
+            &component,
+            &Destination {
+                canonical,
+                runtime: &runtime_target,
+                calls: runtime_id_for_canonical(canonical),
+            },
+            ns,
+        )?,
     };
+    let redundant = redundant_reasons(&tree.redundant_overrides);
+    let files = tree.projected();
+    let closures = component
+        .resolved
+        .map(|resolved| resolved.closures)
+        .unwrap_or_default();
 
     let source_note = vault_relative(compile_root, &request.skill_path);
     let hashed = hash_closures(vfs, compile_root, &closures, &source_note)?;
@@ -832,6 +863,39 @@ fn publish_onto(
         None,
         &redundant,
     )
+}
+
+/// The render's redundant `sw-overrides` keys as report lines.
+fn redundant_reasons(diagnostics: &[RedundantOverride]) -> Vec<PublishReason> {
+    diagnostics
+        .iter()
+        .map(|d| PublishReason::new(ReasonToken::RedundantOverride, d.to_string()))
+        .collect()
+}
+
+/// Refuses an agent's non-empty `sw-overrides` block for this destination.
+/// An agent's renderer has no place for an override, so accepting the block
+/// would tell the author it reached the destination when it did not.
+fn refuse_agent_overrides(
+    blocks: &BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
+    note_path: &Path,
+    canonical: &str,
+    ns: &Namespace,
+) -> Result<(), CoreError> {
+    let Some(block) = blocks.get(canonical).filter(|b| !b.is_empty()) else {
+        return Ok(());
+    };
+    let keys: Vec<&str> = block.keys().map(String::as_str).collect();
+    Err(CoreError::refused(
+        "unknown-override-key",
+        format!(
+            "{}: `{}.{canonical}` names {}, but an agent takes no overrides: \
+             its renderer has no place for them",
+            note_path.display(),
+            ns.key("overrides"),
+            quoted(&keys)
+        ),
+    ))
 }
 
 /// The half every kind shares: the rail, the `sw-targets` blocker, the
@@ -1368,59 +1432,12 @@ enum Verdict {
     },
 }
 
-/// Where a pack lands at a destination, for the targets that have a plugin
-/// layout.
-///
-/// A plugin claims a slugged directory inside the target's own skills root —
-/// never the destination root itself, which would let exactly one plugin exist
-/// per destination — holding its pack manifest and its members' skills. The
-/// build renders the same shape under its own `plugins/` tree; this is that
-/// shape rooted where a runtime actually reads from.
-struct PluginLayout {
-    /// The target's skills root, which is also its plugins root.
-    plugins_root: &'static str,
-    /// The pack manifest's directory, in this target's dialect.
-    manifest_dir: &'static str,
-    dialect: PluginDialect,
-    /// The runtime members are rendered through.
-    runtime: &'static str,
-    /// The prefix that runtime puts on a member's files, stripped on the way
-    /// into the pack.
-    projection_prefix: &'static str,
-}
-
-/// The plugin layout for a canonical target, or `None` where the target
-/// defines none.
-///
-/// Two targets have one. The portable Agent Skills layout has no plugin
-/// concept at all, and the remaining runtimes define no pack shape this build
-/// can render into — a pack published there is refused rather than written to
-/// a path invented for the occasion.
-fn plugin_layout_for(canonical: &str) -> Option<PluginLayout> {
-    Some(match canonical {
-        "claude" => PluginLayout {
-            plugins_root: ".claude/skills",
-            manifest_dir: ".claude-plugin",
-            dialect: PluginDialect::Claude,
-            runtime: "claude-code",
-            projection_prefix: ".claude/skills",
-        },
-        "codex" => PluginLayout {
-            plugins_root: ".agents/skills",
-            manifest_dir: ".codex-plugin",
-            dialect: PluginDialect::Codex,
-            runtime: "codex-cli",
-            projection_prefix: ".agents/skills",
-        },
-        _ => return None,
-    })
-}
-
 /// Whether a canonical target's plugin format has a place for a command.
-/// The one function both `PluginLayout` and `export::RootSpec` read, so the
-/// per-target fact exists once.
+/// Read from the harness profile, so the per-target fact exists once.
 pub fn plugin_format_carries_commands(canonical: &str) -> bool {
-    canonical == "claude"
+    profile_named(canonical)
+        .and_then(|p| p.plugin.as_ref())
+        .is_some_and(|f| f.carries_commands)
 }
 
 /// Whether a canonical target's plugin format has a place for a hook.
@@ -1432,454 +1449,17 @@ pub fn plugin_format_carries_commands(canonical: &str) -> bool {
 /// <https://developers.openai.com/codex/plugins/build>); Cursor reads the file
 /// its manifest's `hooks` entry names
 /// (<https://cursor.com/docs/reference/plugins>), all read 2026-10-05. Pi takes
-/// lifecycle events as TypeScript extensions and has no hooks file.
+/// lifecycle events as TypeScript extensions and has no hooks file. The
+/// answer is the harness profile's.
 pub fn plugin_format_carries_hooks(canonical: &str) -> bool {
-    matches!(canonical, "claude" | "codex" | "cursor")
+    profile_named(canonical)
+        .and_then(|p| p.plugin.as_ref())
+        .is_some_and(|f| f.carries_hooks)
 }
 
 /// Where a plugin's hooks land inside its own root, for the formats that
 /// carry them.
 pub const PLUGIN_HOOKS_PATH: &str = "hooks/hooks.json";
-
-/// Renders one plugin note as a pack: its skills and, where the target's
-/// plugin format has a slot, its commands — plus the pack manifest — under
-/// a slugged directory at the destination.
-///
-/// The members come from the vault scan rather than from the note's body,
-/// which is the same rule the build follows: a component's plugin is decided
-/// by the folder holding it and overruled by `sw-plugin`, so the pack's roster
-/// is a fact about the vault rather than a list the author maintains twice.
-///
-/// A member narrowed away by its own `sw-targets` is absent from the pack
-/// here, exactly as it is absent from a build's root — the narrowing is the
-/// member's, and a pack does not override it.
-///
-/// `content` is the plugin note's own: its name names the pack, and its
-/// description goes into the manifest.
-fn project_plugin(
-    vfs: &dyn Vfs,
-    request: &PublishRequest,
-    content: &SkillContent,
-    identity: &ContainerIdentity,
-    vault_root: &Path,
-    canonical: &str,
-    ns: &Namespace,
-) -> Result<PluginProjection, CoreError> {
-    let plugin_name = content.name.as_str();
-    let layout = plugin_layout_for(canonical).ok_or_else(|| {
-        CoreError::refused(
-            "no-renderer",
-            format!(
-                "{} defines no plugin layout, so a pack cannot be published there",
-                request.target
-            ),
-        )
-    })?;
-
-    let scan = discover_components(vfs, vault_root, None, ns)?;
-    // A note elsewhere in the vault that does not parse is not this pack's
-    // problem, and a shared vault always holds one. A note this pack holds
-    // is: the publish spec forbids installing a subset silently, so a member the scan
-    // could not read stops the pack rather than shrinking it. Membership is
-    // the note's own `sw-plugin` first and its folder second, the ranking a
-    // readable member follows.
-    let blocked: Vec<&str> = scan
-        .skipped
-        .iter()
-        .filter(|note| note.plugin.as_deref() == Some(plugin_name))
-        .map(|note| note.path.as_str())
-        .collect();
-    if !blocked.is_empty() {
-        return Err(CoreError::refused(
-            "unreadable-note",
-            format!(
-                "`{plugin_name}` holds {} note(s) this scan could not read: {} — a pack must \
-                 not install a subset silently",
-                blocked.len(),
-                blocked.join(", ")
-            ),
-        ));
-    }
-    let admitted: Vec<&DiscoveredComponent> = scan
-        .components
-        .iter()
-        .filter(|c| c.plugin.as_deref() == Some(plugin_name) && admits_target(c, canonical))
-        .collect();
-
-    // A member this pack layout cannot hold is named, never dropped.
-    let carries_commands = plugin_format_carries_commands(canonical);
-    let uncarried: Vec<&str> = admitted
-        .iter()
-        .filter(|c| {
-            !(matches!(c.kind, EntityKind::Skill)
-                || (c.kind == EntityKind::Command && carries_commands))
-        })
-        .map(|c| c.vault_relative_path.as_str())
-        .collect();
-    let not_carried: Vec<String> = uncarried.iter().map(|p| (*p).to_owned()).collect();
-
-    let members: Vec<&DiscoveredComponent> = admitted
-        .iter()
-        .copied()
-        .filter(|c| matches!(c.kind, EntityKind::Skill))
-        .collect();
-    let commands: Vec<&DiscoveredComponent> = if carries_commands {
-        admitted
-            .into_iter()
-            .filter(|c| c.kind == EntityKind::Command)
-            .collect()
-    } else {
-        Vec::new()
-    };
-    if members.is_empty() && commands.is_empty() {
-        return Err(CoreError::refused(
-            "empty-plugin",
-            format!(
-                "`{plugin_name}` has no member this destination admits — every member is either \
-                 absent or narrowed away by its own `sw-targets`"
-            ),
-        ));
-    }
-
-    let base = format!("{}/{plugin_name}", layout.plugins_root);
-    let mut files = Vec::new();
-    let mut closures = BTreeMap::new();
-
-    // A pack's calls name each skill under its own plugin, the way the
-    // harness names a plugin's skills, where the harness has a namespace.
-    let skills = publish_skill_index(&scan.components, true, canonical);
-    let runtime = crate::projection::parse_runtime_target(layout.runtime)?;
-    let namespaced = runtime.skill_call_syntax().namespaced;
-    let render = |skill: &IndexedSkill| {
-        let plugin = skill.plugin.as_deref().filter(|_| namespaced);
-        crate::export::checked_skill_call(runtime, plugin, &skill.name)
-    };
-    let calls = CallContext {
-        skills: SkillSource::ready(&skills),
-        render: &render,
-        target: canonical,
-        implicit: true,
-        warnings: RefCell::new(Vec::new()),
-    };
-
-    let mut redundant = Vec::new();
-    for member in &members {
-        let note = read_vault_skill(vfs, &member.entry_path, ns)?;
-        let mut projection =
-            prepare_projection(note, member.kind, &member.entry_path, &request.target, ns)?;
-        let member_closures = compile_projection(
-            vfs,
-            &CompileSource {
-                vault_root,
-                entry_path: &member.entry_path,
-                bundle_root: member.bundle_root.as_deref(),
-                skill_name: &member.name,
-                calls: Some(&calls),
-            },
-            &mut projection,
-        )?;
-        let (rendered, diagnostics) = project_skill_reporting(
-            &projection,
-            &[layout.runtime.to_owned()],
-            ns,
-            Some(canonical),
-        )?;
-        redundant.extend(redundant_reasons(&diagnostics));
-        let strip = format!("{}/{}/", layout.projection_prefix, member.name);
-        for file in rendered {
-            let relative = file.relative_path.strip_prefix(&strip).ok_or_else(|| {
-                CoreError::Projection(format!(
-                    "{}: `{}` did not land under `{strip}` — the {} projection moved its layout",
-                    member.name, file.relative_path, layout.runtime
-                ))
-            })?;
-            let path = format!("{base}/skills/{}/{relative}", member.name);
-            if let Some(closure) = member_closures.get(relative).or_else(|| {
-                // The entry's closure is keyed by the name a skill's own
-                // output has, which is what `relative` is for a member's
-                // `SKILL.md` — the lookup only misses for a target that
-                // renames it, and a missing closure is recorded as such rather
-                // than guessed at.
-                member_closures.get(ENTRY_CLOSURE_KEY)
-            }) {
-                closures.insert(
-                    path.clone(),
-                    hash_one(vfs, vault_root, closure, &member.vault_relative_path)?,
-                );
-            }
-            files.push(ProjectedFile {
-                relative_path: path,
-                content: file.content,
-                executable: file.executable,
-            });
-        }
-    }
-
-    // One command's file, at `{base}/commands/<slug>.<ext>`.
-    for command in &commands {
-        let note = read_vault_skill(vfs, &command.entry_path, ns)?;
-        let mut projection =
-            prepare_projection(note, command.kind, &command.entry_path, &request.target, ns)?;
-        let command_closures = compile_projection(
-            vfs,
-            &CompileSource {
-                vault_root,
-                entry_path: &command.entry_path,
-                bundle_root: command.bundle_root.as_deref(),
-                skill_name: &command.name,
-                calls: Some(&calls),
-            },
-            &mut projection,
-        )?;
-        // After the compile, like the single-command path above: compiling
-        // adds what the body's links and embeds reach to
-        // `projection.resources`, and those peers have nowhere to go either.
-        refuse_carried_peers(&projection, "command")?;
-        let rendered = project_command(
-            &projection,
-            &[layout.runtime.to_owned()],
-            ns,
-            Some(canonical),
-        )?;
-        for file in rendered {
-            let filename = Path::new(&file.relative_path).file_name().ok_or_else(|| {
-                CoreError::Projection(format!(
-                    "{}: `{}` names no file — the {} projection moved its layout",
-                    command.name, file.relative_path, layout.runtime
-                ))
-            })?;
-            let path = format!("{base}/commands/{}", filename.to_string_lossy());
-            if let Some(closure) = command_closures.get(ENTRY_CLOSURE_KEY) {
-                closures.insert(
-                    path.clone(),
-                    hash_one(vfs, vault_root, closure, &command.vault_relative_path)?,
-                );
-            }
-            files.push(ProjectedFile {
-                relative_path: path,
-                content: file.content,
-                executable: file.executable,
-            });
-        }
-    }
-
-    // The container's own files, at the pack root beside its manifest.
-    //
-    // A plugin folder holds more than its members: a licence, a readme, an
-    // icon. `owned_resources` already separates those from the members' own
-    // files — a path belongs to the innermost component directory containing
-    // it — so what reaches here is exactly the container's, and dropping it
-    // would lose the part of a pack that is not a skill.
-    //
-    // A manifest of the folder's own at the path the pack's is rendered to
-    // (an imported plugin carries one) is left behind: the rendered one
-    // replaces it, and writing both to one path is never idempotent. When
-    // its bytes differ from the rendered manifest it is named in
-    // `replaced_manifest`, since it may hold fields the frontmatter does not.
-    let manifest_relative = format!("{}/plugin.json", layout.manifest_dir);
-    let mut own_manifest: Option<(String, Vec<u8>)> = None;
-    if let Some(note) = scan
-        .components
-        .iter()
-        .find(|c| c.kind == EntityKind::Plugin && c.name == plugin_name)
-    {
-        let source_note = note.vault_relative_path.clone();
-        for relative in note.resources.iter().filter(|r| is_container_own(r)) {
-            let from = vault_root
-                .join(&source_note)
-                .parent()
-                .map(|dir| dir.join(relative));
-            let Some(from) = from else { continue };
-            let content = vfs.read_file(&from)?;
-            if *relative == manifest_relative {
-                own_manifest = Some((vault_relative(vault_root, &from), content));
-                continue;
-            }
-            files.push(ProjectedFile {
-                relative_path: format!("{base}/{relative}"),
-                content,
-                executable: vfs.is_executable(&from),
-            });
-        }
-    }
-
-    // The pack manifest, owned by the plugin note and by nothing else:
-    // publishing a member standalone never writes one.
-    let config = MarketplaceConfig {
-        // A per-destination publish has no marketplace above it, so the
-        // marketplace-level fallbacks are absent and the plugin note's own
-        // frontmatter is the only source of identity there is.
-        name: None,
-        display_name: None,
-        owner: None,
-        description: None,
-        author: identity.author.clone(),
-        license: None,
-        default_plugin: plugin_name.to_owned(),
-        plugins: [(
-            plugin_name.to_owned(),
-            overrides_from(&content.description, identity),
-        )]
-        .into_iter()
-        .collect(),
-        require_descriptions: false,
-        // Unread here: only `export_skills` rewrites launcher calls.
-        launcher_path: None,
-    };
-    let manifest =
-        render_plugin_manifest(layout.dialect, plugin_name, &members, &config, None).into_bytes();
-    let replaced_manifest = own_manifest
-        .filter(|(_, bytes)| *bytes != manifest)
-        .map(|(path, _)| path);
-    files.push(ProjectedFile {
-        relative_path: format!("{base}/{manifest_relative}"),
-        content: manifest,
-        executable: false,
-    });
-
-    files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    Ok(PluginProjection {
-        files,
-        closures,
-        not_carried,
-        replaced_manifest,
-        redundant,
-    })
-}
-
-/// What a pack projects, and what it had to leave behind.
-struct PluginProjection {
-    files: Vec<ProjectedFile>,
-    closures: BTreeMap<String, HashedClosure>,
-    not_carried: Vec<String>,
-    /// The folder's own manifest, when the rendered one replaced it.
-    replaced_manifest: Option<String>,
-    /// Members' `sw-overrides` keys the render already wrote.
-    redundant: Vec<PublishReason>,
-}
-
-/// A note's projection with its frontmatter folded in, ready to compile: its
-/// `sw-arguments` and its checked `sw-overrides`. One function for a note
-/// published on its own and for a pack member, so one note renders the same
-/// bytes on both paths.
-///
-/// Arguments are carried for a skill and a command, the two kinds an
-/// invocation takes them at. Overrides are folded and checked before anything
-/// renders, so an unknown destination name or a key this harness does not read
-/// refuses with no file built. An agent's renderer has no place for an
-/// override, so a non-empty block for this destination refuses rather than
-/// being accepted and dropped.
-fn prepare_projection(
-    note: VaultNote,
-    kind: EntityKind,
-    note_path: &Path,
-    target: &str,
-    ns: &Namespace,
-) -> Result<SkillProjection, CoreError> {
-    let VaultNote {
-        mut projection,
-        frontmatter,
-    } = note;
-    if matches!(kind, EntityKind::Skill | EntityKind::Command) {
-        projection.content.apply_arguments(&frontmatter.arguments);
-    }
-    let overrides = overrides_for(&frontmatter, note_path, target, ns)?;
-    let canonical = canonical_target(target).unwrap_or(target);
-    if kind == EntityKind::Agent
-        && let Some(block) = overrides.get(canonical).filter(|b| !b.is_empty())
-    {
-        let keys: Vec<&str> = block.keys().map(String::as_str).collect();
-        return Err(CoreError::refused(
-            "unknown-override-key",
-            format!(
-                "{}: `{}.{canonical}` names {}, but an agent takes no overrides: \
-                 its renderer has no place for them",
-                note_path.display(),
-                ns.key("overrides"),
-                quoted(&keys)
-            ),
-        ));
-    }
-    projection.content.apply_overrides(overrides);
-    Ok(projection)
-}
-
-/// The render's redundant `sw-overrides` keys as report lines.
-fn redundant_reasons(diagnostics: &[RedundantOverride]) -> Vec<PublishReason> {
-    diagnostics
-        .iter()
-        .map(|d| PublishReason::new(ReasonToken::RedundantOverride, d.to_string()))
-        .collect()
-}
-
-/// Is this path the container's own content, rather than something living in
-/// the structure it holds?
-///
-/// `owned_resources` gives a path to the innermost *component* directory
-/// containing it, and a kind folder is not a component — so a snippet at
-/// `skills/snippets/reviewer.md`, which no component claims, arrives as the
-/// plugin's resource. It is not the plugin's content: it is vault-internal
-/// writing that an embed inlines, and shipping it raw would put a copy of it
-/// in the pack beside the skill that already contains it.
-///
-/// The container's own files are the ones outside every kind folder — a
-/// licence, a readme, an icon, sitting beside the note that names the pack.
-fn is_container_own(relative: &str) -> bool {
-    let first = relative.split('/').next().unwrap_or("");
-    !KIND_DIRS.iter().any(|(dir, _)| *dir == first)
-}
-
-/// The plugin note's own frontmatter as the build's override shape, so the two
-/// paths read identity from one place. The description is the note's own, as
-/// the build fills it.
-fn overrides_from(description: &str, identity: &ContainerIdentity) -> PluginOverrides {
-    PluginOverrides {
-        version: identity.version.clone(),
-        description: Some(description.to_owned()),
-        author: identity.author.clone(),
-        license: identity.license.clone(),
-        keywords: identity.keywords.clone(),
-        category: identity.category.clone(),
-        display_name: identity.display_name.clone(),
-    }
-}
-
-/// Does this member's `sw-targets` admit the destination being published to?
-///
-/// The same three readings [`publishes_to`] applies to a standalone publish —
-/// absent is every destination, empty is none — spelled over a discovered
-/// component because a pack's members are scanned rather than read one at a
-/// time.
-fn admits_target(member: &DiscoveredComponent, canonical: &str) -> bool {
-    match &member.targets {
-        None => true,
-        Some(names) => names
-            .iter()
-            .any(|name| canonical_target(name) == Some(canonical)),
-    }
-}
-
-/// Every skill the scan found, for a publish's calls. `namespaced` keeps each
-/// skill's plugin, as a pack's calls need; without it every call is bare. A
-/// skill counts as shipped when its `sw-targets` admit `canonical`; whether
-/// its plugin is ever published there is beyond what one publish can see.
-fn publish_skill_index(
-    components: &[DiscoveredComponent],
-    namespaced: bool,
-    canonical: &str,
-) -> SkillIndex {
-    SkillIndex::new(
-        components
-            .iter()
-            .filter(|c| c.kind == EntityKind::Skill)
-            .map(|c| IndexedSkill {
-                entry_path: c.entry_path.clone(),
-                plugin: c.plugin.clone().filter(|_| namespaced),
-                name: c.name.clone(),
-                shipped: admits_target(c, canonical),
-            }),
-    )
-}
 
 /// One closure, hashed against the note that owns its file. `source_note` is
 /// only what the manifest row records: for a pack member's reference file it
@@ -2262,34 +1842,20 @@ pub fn override_states(
 /// Empty for a name this build maps to no runtime, which is what makes every
 /// key under such a target a refusal rather than an unchecked write.
 pub fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<String> {
-    let Some(runtime) = runtime_id_for_canonical(canonical) else {
-        return std::collections::BTreeSet::new();
-    };
-    agent_adapt::runtimes::declaration_for(runtime)
-        .overrides
-        .into_keys()
-        .collect()
+    profile_named(canonical)
+        .map(|p| p.accepted_override_keys())
+        .unwrap_or_default()
 }
 
-/// The runtime whose declaration answers for one canonical destination.
+/// The runtime whose declaration answers for one canonical destination,
+/// from the harness profile.
 ///
 /// `portable` answers with the standards-only adapter's declaration, though
 /// [`runtime_target_for`] renders it through `codex-cli`. Every canonical
 /// destination has one, so the `None` arm is for a name outside
 /// [`canonical_target`] entirely.
-fn runtime_id_for_canonical(canonical: &str) -> Option<agent_adapt::RuntimeId> {
-    Some(match canonical {
-        "claude" => agent_adapt::RuntimeId::ClaudeCode,
-        "codex" => agent_adapt::RuntimeId::CodexCli,
-        "cursor" => agent_adapt::RuntimeId::Cursor,
-        "pi" => agent_adapt::RuntimeId::Pi,
-        "antigravity" => agent_adapt::RuntimeId::Antigravity,
-        "opencode" => agent_adapt::RuntimeId::OpenCode,
-        "amp" => agent_adapt::RuntimeId::Amp,
-        "copilot" => agent_adapt::RuntimeId::GithubCopilot,
-        "portable" => agent_adapt::RuntimeId::Portable,
-        _ => return None,
-    })
+pub(crate) fn runtime_id_for_canonical(canonical: &str) -> Option<agent_adapt::RuntimeId> {
+    profile_named(canonical).map(|p| p.declaration)
 }
 
 /// Every name `sw-targets` and [`PublishRequest::target`] accept, sorted — the
@@ -2321,18 +1887,7 @@ pub const KNOWN_TARGETS: &[&str] = &[
 /// Public so the marketplace ([`crate::export`]) and other hosts fold a
 /// spelling the same way a publish does.
 pub fn canonical_target(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "claude" | "claude-code" => "claude",
-        "codex" | "codex-cli" => "codex",
-        "portable" => "portable",
-        "cursor" => "cursor",
-        "pi" => "pi",
-        "antigravity" => "antigravity",
-        "opencode" => "opencode",
-        "amp" => "amp",
-        "copilot" | "github-copilot" => "copilot",
-        _ => return None,
-    })
+    profile_for(name).map(|p| p.name)
 }
 
 /// [`KNOWN_TARGETS`] folded through [`canonical_target`], deduplicated and
@@ -2411,14 +1966,11 @@ fn protected_trees(skill_path: &Path) -> Vec<PathBuf> {
 ///   straight through and is validated by `project_skill`/`project_command`,
 ///   so a caller already holding one does not have to learn a second
 ///   vocabulary.
-fn runtime_target_for(target: &str) -> String {
-    let runtime = match target {
-        "claude" => "claude-code",
-        "codex" | "portable" => "codex-cli",
-        "copilot" => "github-copilot",
-        other => other,
-    };
-    runtime.to_owned()
+pub(crate) fn runtime_target_for(target: &str) -> String {
+    profile_for(target)
+        .map(|p| p.runtime)
+        .unwrap_or(target)
+        .to_owned()
 }
 
 #[cfg(test)]
@@ -2498,25 +2050,16 @@ mod tests {
     /// Every file under `root`, with bytes and execute bit — the thing an
     /// "and mutates nothing" assertion has to compare.
     fn snapshot(vfs: &dyn Vfs, root: &Path) -> Vec<(String, Vec<u8>, bool)> {
-        fn walk(vfs: &dyn Vfs, dir: &Path, out: &mut Vec<(String, Vec<u8>, bool)>) {
-            let Ok(entries) = vfs.read_dir(dir) else {
-                return;
-            };
-            for entry in entries {
-                let path = dir.join(&entry.name);
-                if entry.is_dir {
-                    walk(vfs, &path, out);
-                } else {
-                    out.push((
-                        path.display().to_string(),
-                        vfs.read_file(&path).unwrap(),
-                        vfs.is_executable(&path),
-                    ));
-                }
-            }
-        }
-        let mut out = Vec::new();
-        walk(vfs, root, &mut out);
+        let mut out: Vec<_> = crate::walk::readable_files(vfs, root)
+            .into_iter()
+            .map(|entry| {
+                (
+                    entry.abs.display().to_string(),
+                    vfs.read_file(&entry.abs).unwrap(),
+                    vfs.is_executable(&entry.abs),
+                )
+            })
+            .collect();
         out.sort();
         out
     }
@@ -4311,6 +3854,45 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    // Every harness with a plugin format takes a pack, in its own shape: the
+    // profile row says where, so cursor and pi publish what the build writes
+    // for them rather than refusing `no-renderer`. Pi names a member's
+    // directory by plugin and skill, because its skills share one flat root.
+    #[test]
+    fn a_plugin_publishes_a_pack_to_cursor_and_pi() {
+        let cases = [
+            (
+                "cursor",
+                vec![
+                    ".cursor/skills/git-tools/.cursor-plugin/plugin.json",
+                    ".cursor/skills/git-tools/skills/commit-helper/SKILL.md",
+                ],
+            ),
+            (
+                "pi",
+                vec![
+                    ".pi/skills/git-tools/package.json",
+                    ".pi/skills/git-tools/skills/git-tools-commit-helper/SKILL.md",
+                ],
+            ),
+        ];
+        for (target, expected) in cases {
+            let vfs = vault_with_plugin();
+
+            let report = publish_skill(&vfs, &plugin_request(target), &sw()).unwrap();
+
+            let written: Vec<&str> = statuses(&report)
+                .into_iter()
+                .map(|(path, status)| {
+                    assert_eq!(status, PublishStatus::Written, "{target}: {path}");
+                    path
+                })
+                .collect();
+            // `rebase-guide` narrows itself to claude, so neither pack holds it.
+            assert_eq!(written, expected, "{target}");
+        }
     }
 
     // One person's half-written draft, anywhere else in a shared vault, is
@@ -6418,7 +6000,7 @@ mod tests {
             b"---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\nsw-targets: [claude]\n---\n\nThe pack.\n",
         )
         .unwrap();
-        for target in ["cursor", "pi"] {
+        for target in ["opencode", "amp"] {
             let report = publish_skill(&vfs, &plugin_request(target), &sw()).unwrap();
             assert!(report.files.is_empty(), "{target}: {report:?}");
             assert!(report.not_published.is_some(), "{target}: {report:?}");

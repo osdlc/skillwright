@@ -88,7 +88,7 @@ impl Resolver for VfsResolver<'_> {
             // A missing path, or one with a file where a directory should be.
             self.classify(
                 p,
-                e,
+                e.into(),
                 &[io::ErrorKind::NotFound, io::ErrorKind::NotADirectory],
             )
         })
@@ -99,7 +99,7 @@ impl Resolver for VfsResolver<'_> {
             // Missing, or there but not a link (`EINVAL`), or a host with no links.
             self.classify(
                 p,
-                e,
+                e.into(),
                 &[
                     io::ErrorKind::NotFound,
                     io::ErrorKind::NotADirectory,
@@ -567,31 +567,34 @@ mod tests {
     struct DeniedVfs(crate::vfs::MemVfs);
 
     impl Vfs for DeniedVfs {
-        fn read_file(&self, path: &Path) -> Result<Vec<u8>, CoreError> {
+        fn read_file(&self, path: &Path) -> Result<Vec<u8>, crate::vfs::VfsError> {
             self.0.read_file(path)
         }
-        fn read_dir(&self, path: &Path) -> Result<Vec<crate::vfs::DirEntry>, CoreError> {
+        fn read_dir(&self, path: &Path) -> Result<Vec<crate::vfs::DirEntry>, crate::vfs::VfsError> {
             self.0.read_dir(path)
         }
-        fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
+        fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), crate::vfs::VfsError> {
             self.0.write_file(path, bytes)
         }
-        fn create_dir_all(&self, path: &Path) -> Result<(), CoreError> {
+        fn create_dir_all(&self, path: &Path) -> Result<(), crate::vfs::VfsError> {
             self.0.create_dir_all(path)
         }
         fn exists(&self, path: &Path) -> bool {
             self.0.exists(path)
         }
+        fn metadata(&self, path: &Path) -> Result<crate::vfs::Metadata, crate::vfs::VfsError> {
+            self.0.metadata(path)
+        }
         fn is_executable(&self, path: &Path) -> bool {
             self.0.is_executable(path)
         }
-        fn set_executable(&self, path: &Path, yes: bool) -> Result<(), CoreError> {
+        fn set_executable(&self, path: &Path, yes: bool) -> Result<(), crate::vfs::VfsError> {
             self.0.set_executable(path, yes)
         }
-        fn rename(&self, from: &Path, to: &Path) -> Result<(), CoreError> {
+        fn rename(&self, from: &Path, to: &Path) -> Result<(), crate::vfs::VfsError> {
             self.0.rename(from, to)
         }
-        fn remove(&self, path: &Path) -> Result<(), CoreError> {
+        fn remove(&self, path: &Path) -> Result<(), crate::vfs::VfsError> {
             self.0.remove(path)
         }
         fn sees_links(&self) -> bool {
@@ -599,7 +602,7 @@ mod tests {
         }
         /// Denied under `/locked`, missing under `/gone` and `/unreadable`,
         /// lexical elsewhere.
-        fn canonicalize(&self, path: &Path) -> Result<PathBuf, CoreError> {
+        fn canonicalize(&self, path: &Path) -> Result<PathBuf, crate::vfs::VfsError> {
             let kind = if path.starts_with("/locked") {
                 std::io::ErrorKind::PermissionDenied
             } else if path.starts_with("/gone") || path.starts_with("/unreadable") {
@@ -607,16 +610,16 @@ mod tests {
             } else {
                 return Ok(crate::vfs::normalize(path));
             };
-            Err(CoreError::io(path, std::io::Error::from(kind)))
+            Err(crate::vfs::VfsError::io(path, std::io::Error::from(kind)))
         }
         /// Denied for `/unreadable`; elsewhere nothing is a link.
-        fn read_link(&self, path: &Path) -> Result<PathBuf, CoreError> {
+        fn read_link(&self, path: &Path) -> Result<PathBuf, crate::vfs::VfsError> {
             let kind = if path == Path::new("/unreadable") {
                 std::io::ErrorKind::PermissionDenied
             } else {
                 std::io::ErrorKind::InvalidInput
             };
-            Err(CoreError::io(path, std::io::Error::from(kind)))
+            Err(crate::vfs::VfsError::io(path, std::io::Error::from(kind)))
         }
     }
 

@@ -7,6 +7,61 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/osdlc/skillwright/compare/skillwright/v0.5.1...skillwright/v0.5.2) - 2026-11-06
+
+### Other
+
+- update Cargo.lock dependencies
+
+## [0.5.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.5.0...skillwright/v0.5.1) - 2026-11-05
+
+### Other
+
+- stop on an unlistable folder inside a moved bundle; quieter skip rows
+- find what the walk cannot read first, then load the vault once
+- edit no file in a dot-named folder; skip a folder it cannot list
+- one ApplyError for the walk failure; one pass for a blank line
+- name the folder the walk cannot list, not only the vault
+- pass the walk's io error through; the refusing walk returns paths
+- Discovery and compile use the walk and the link index, not a Corpus
+- read the vault with the lenient frontmatter split, as a build does
+- watch test: stage each save beside the note so the rename stays on one filesystem
+- Find links with markdown-link's scanner; calls stay a layer on top
+
+### Changed
+
+- `build` and `publish` find links in a note the way the other osdlc tools do. A wikilink holding a `[` or `]`, or code, is no longer a link and is left as written; `[[]]` is no longer a link to the note itself; and `[[Note\|alias]]` in a table cell now links to `Note`.
+- `build`, `check` and `publish` refuse a note with a `[[` that is not a link (`unresolved-syntax`): a `[` or `]` before the closing `]]`, a target that is only code or has code in it, an empty target, or no closing `]]`. Before, it shipped as literal brackets.
+- The skills source walk leaves out `.obsidian` and `node_modules` wherever they sit, as it already left out `.trash`.
+- A rename or move reads the vault as a build does: dot-named files are seen, `.obsidian`, `.trash` and `node_modules` are not, and frontmatter is split leniently. A file in a dot-named folder is still never edited. A link the build reads as ambiguous because one candidate sits under a dot-named folder is no longer rewritten as if it named the other. A block with spaces after a fence is frontmatter, so a link in it is left alone like any frontmatter link, instead of being rewritten as a body link.
+- A rename or move skips a folder in the vault it cannot list and reports it as a `skipped` row (`unreadable`), so links in it are not rewritten, as before. A folder under a dot-named folder gets no row, since nothing there is edited. It stops, with an error naming the folder, only when that folder holds the note or its destination, or sits inside a bundle the move carries.
+
+## [0.5.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.4.0...skillwright/v0.5.0) - 2026-11-05
+
+### Other
+
+- watch test: save atomically so a rebuild never reads a half-written note
+- Rename markdown-vault to markdown-corpus; bump osdlc#618 pin
+- Honour the vault's excluded files
+- plan moves over the shared vault model
+- Vfs from vfs-seam; bump the osdlc crates to osdlc/osdlc#618
+- Expose the marketplace model: loadMarketplace in wasm, list --model in the CLI
+- Publish renders through the model and translators; cursor and pi take packs
+- Marketplace model and harness translators; build renders through them
+- Harness profile: one row of facts per harness
+- Fix the review findings on the comment sweep
+- make CLI comments and test notes match the code
+
+### Added
+
+- `list --model` prints the loaded marketplace model as JSON. `list --json` is unchanged.
+
+### Changed
+
+- `build` and `check` apply a note's `sw-overrides` block for each harness to that harness's tree, as `publish` does. A block naming an unknown target, or a key its harness does not read, now refuses the build.
+- `publish` of a plugin note to `cursor` or `pi` writes that harness's pack instead of refusing.
+- A note the vault excludes in Obsidian ("Excluded files", `userIgnoreFilters` in `.obsidian/app.json`) is no longer built or published by `build`, `check` or `publish --all`.
+
 ## [0.4.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.3.9...skillwright/v0.4.0) - 2026-10-30
 
 ### Fixed

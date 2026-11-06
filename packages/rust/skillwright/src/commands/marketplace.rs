@@ -26,8 +26,8 @@ use std::path::PathBuf;
 
 use config_layers::needs::Need;
 use tradecraft_core::{
-    AssetSpec, ExportMode, ExportRequest, ExportUnit, HookFileSpec, NativeVfs, export_skills,
-    root_trees,
+    AssetSpec, ExportMode, ExportRequest, ExportUnit, HookFileSpec, MarketplaceConfig, NativeVfs,
+    export_skills, root_trees,
 };
 
 use crate::config::{NEEDS, resolve_against_cwd, resolve_configured_path};
@@ -38,7 +38,7 @@ use crate::report::{
     count_checked_units, normalize_thrown_reason, render_export_tally, render_unit_line,
     render_warning_line,
 };
-use crate::resolve::{CommonFlags, resolve_run, resolve_skills_root};
+use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, resolve_skills_root};
 
 /// Which of the two verbs this run is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +81,87 @@ pub struct ExportFlags {
     pub yes: bool,
     /// `--quiet`: drop progress and the tally from stderr.
     pub quiet: bool,
+}
+
+/// What a marketplace load reads from the project file besides the vault:
+/// the identity, the harnesses, the assets and the hooks files.
+pub(crate) struct MarketplaceInputs {
+    pub config: MarketplaceConfig,
+    pub harnesses: BTreeSet<String>,
+    pub assets: Vec<AssetSpec>,
+    pub hooks: Vec<HookFileSpec>,
+}
+
+/// The project file's marketplace settings as the core's inputs, resolved the
+/// one way `build`, `check` and `list --model` share.
+///
+/// # Errors
+///
+/// A setting that will not convert, as the line to print. A configuration
+/// fault, not a usage error: the invocation is well-formed.
+pub(crate) fn marketplace_inputs(
+    run: &ResolvedRun,
+    default_plugin: String,
+) -> Result<MarketplaceInputs, String> {
+    let settings = run.config.as_ref().map(|c| c.marketplace.clone());
+
+    // Which harnesses this marketplace is built for. Absent is every one the
+    // core supports; the core refuses a name no harness answers to, so a typo
+    // is named rather than quietly publishing less than was asked for.
+    let harnesses: BTreeSet<String> = settings
+        .as_ref()
+        .map(|s| s.harness_set())
+        .unwrap_or_default();
+
+    // A setting that will not convert is a configuration fault, not a usage
+    // error: the invocation is well-formed.
+    let config = settings
+        .unwrap_or_default()
+        .to_config(default_plugin)
+        .map_err(|err| format!("configuration error: {err}"))?;
+
+    // Each `from` resolves against this project file's own directory — the
+    // same rule `marketplace.out` follows — because the core never reads an
+    // ambient config file and has nothing to resolve a relative path
+    // against (see [`tradecraft_core::export::AssetSpec`]).
+    let assets: Vec<AssetSpec> = run
+        .config
+        .as_ref()
+        .map(|c| c.assets.as_slice())
+        .unwrap_or(&[])
+        .iter()
+        .map(|entry| AssetSpec {
+            source: resolve_configured_path(&entry.from, &run.config_dir),
+            dest: entry.to.clone(),
+            plugin: entry.plugin.clone(),
+        })
+        .collect();
+    let hooks: Vec<HookFileSpec> = run
+        .config
+        .as_ref()
+        .map(|c| c.hooks.as_slice())
+        .unwrap_or(&[])
+        .iter()
+        .map(|entry| {
+            let source = resolve_configured_path(&entry.from, &run.config_dir);
+            // Config-relative, so the gap report names no host path.
+            let from = crate::config::relative_path(&run.config_dir, &source)
+                .to_string_lossy()
+                .replace('\\', "/");
+            HookFileSpec {
+                source,
+                from,
+                plugin: entry.plugin.clone(),
+            }
+        })
+        .collect();
+
+    Ok(MarketplaceInputs {
+        config,
+        harnesses,
+        assets,
+        hooks,
+    })
 }
 
 /// Run one export. `verb` decides the mode a plain run uses and what a
@@ -161,56 +242,15 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     // what an adoption writes into.
     let skills_root = resolve_skills_root(flags.skills_root.as_deref(), &run, &ctx.cwd);
 
-    // Which harnesses this marketplace is built for. Absent is every one the
-    // core supports; the core refuses a name no harness answers to, so a typo
-    // is named rather than quietly publishing less than was asked for.
-    let harnesses: BTreeSet<String> = settings
-        .as_ref()
-        .map(|s| s.harness_set())
-        .unwrap_or_default();
-
-    // A setting that will not convert is a configuration fault, not a usage
-    // error: the invocation is well-formed.
-    let marketplace = match settings.unwrap_or_default().to_config(default_plugin) {
-        Ok(config) => config,
-        Err(err) => return blocked(ctx.err, &format!("configuration error: {err}")),
+    let MarketplaceInputs {
+        config: marketplace,
+        harnesses,
+        assets,
+        hooks,
+    } = match marketplace_inputs(&run, default_plugin) {
+        Ok(inputs) => inputs,
+        Err(err) => return blocked(ctx.err, &err),
     };
-
-    // Each `from` resolves against this project file's own directory — the
-    // same rule `marketplace.out` follows — because the core never reads an
-    // ambient config file and has nothing to resolve a relative path
-    // against (see [`tradecraft_core::export::AssetSpec`]).
-    let assets: Vec<AssetSpec> = run
-        .config
-        .as_ref()
-        .map(|c| c.assets.as_slice())
-        .unwrap_or(&[])
-        .iter()
-        .map(|entry| AssetSpec {
-            source: resolve_configured_path(&entry.from, &run.config_dir),
-            dest: entry.to.clone(),
-            plugin: entry.plugin.clone(),
-        })
-        .collect();
-    let hooks: Vec<HookFileSpec> = run
-        .config
-        .as_ref()
-        .map(|c| c.hooks.as_slice())
-        .unwrap_or(&[])
-        .iter()
-        .map(|entry| {
-            let source = resolve_configured_path(&entry.from, &run.config_dir);
-            // Config-relative, so the gap report names no host path.
-            let from = crate::config::relative_path(&run.config_dir, &source)
-                .to_string_lossy()
-                .replace('\\', "/");
-            HookFileSpec {
-                source,
-                from,
-                plugin: entry.plugin.clone(),
-            }
-        })
-        .collect();
 
     // --- the mode -----------------------------------------------------------
     // `check` never writes; `build --dry-run` renders through the same

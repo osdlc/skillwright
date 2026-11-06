@@ -1,6 +1,6 @@
 [package]
 name = "skillwright"
-version = "0.4.0"
+version = "0.5.2"
 edition.workspace = true
 rust-version.workspace = true
 description = "A command-line tool that publishes a vault of markdown skill notes into the formats of coding-agent tools (Claude Code, Codex, Cursor and Pi), checks them for drift, and authors and reorganises the vault."
@@ -51,6 +51,7 @@ yaml-splice = { workspace = true }
 # the link-rewriting rename, the vault-relative path guards and the durable
 # note write.
 markdown-relink = { workspace = true }
+markdown-corpus = { workspace = true }
 # Also guards the untrusted subpath of a --from-git clone.
 path-guard = { workspace = true }
 etag-write = { workspace = true }

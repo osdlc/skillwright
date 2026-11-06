@@ -107,11 +107,10 @@ impl SkillContent {
     /// Carries the checked per-destination override blocks onto this content.
     ///
     /// Keyed by the canonical destination name, which is what
-    /// [`crate::projection::project_skill`] looks one up by. Called by
-    /// `publish` between reading a note and projecting it, on the same seam
-    /// as [`SkillContent::apply_arguments`] — never by
-    /// [`crate::vault::read_vault_skill`], which has no destination roster,
-    /// and not by `export`, which does not apply per-target overrides.
+    /// [`crate::projection::project_skill`] looks one up by. Called by a
+    /// harness translator between the model and the projection, on the same
+    /// seam as [`SkillContent::apply_arguments`] — never by
+    /// [`crate::vault::read_vault_skill`], which has no destination roster.
     pub fn apply_overrides(
         &mut self,
         overrides: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
