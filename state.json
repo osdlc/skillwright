@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 66,
-  "head": "84825bb1fb4f563dc3914403cf8759846c63a510",
+  "head": "ac6a209634702a2a850b89f1e84f03a220729427",
   "base": "0c0aefa154524c500457d8900deb72dd447dd568",
-  "round": 1,
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-06T11:03:13.115Z"
@@ -81,6 +81,17 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 183,
       "title": "Rust-only doc link reaches the generated TypeScript",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/apply.rs",
+      "line": 497,
+      "title": "Refused marketplace rename onto a folder holding <m>.md renames the user file and strands the source entry",
       "comment": null,
       "status": "open",
       "reason": null,
