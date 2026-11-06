@@ -38,8 +38,8 @@ use crate::commands::authoring::{
     run_new_skill, run_rename,
 };
 use crate::commands::bump::{BumpFlags, run_bump};
-use crate::commands::harness::adapter::{CLAUDE, CODEX, CURSOR, HarnessAdapter, Scope};
-use crate::commands::harness::{HarnessFlags, HarnessVerb, run_harness};
+use crate::commands::harness::adapter::{CLAUDE, CODEX, CURSOR, Scope};
+use crate::commands::harness::{Harness, HarnessFlags, HarnessVerb, run_harness};
 use crate::commands::list::{ListFlags, run_list};
 use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export};
 use crate::commands::publish::{PublishFlags, run_publish};
@@ -591,6 +591,13 @@ enum HarnessAction {
     Update(HarnessVerbArgs),
     /// Remove this marketplace's plugins from a harness.
     Uninstall(HarnessUninstallArgs),
+    /// Dev mode: symlink each built skill into the harness's user skill
+    /// folder, so a rebuild reaches the harness with no install. Every pack
+    /// unless `--plugin` is given. Claude and Codex only.
+    Link(HarnessVerbArgs),
+    /// Remove the symlinks into the build, including links to skills no
+    /// longer built. Nothing else is touched.
+    Unlink(HarnessVerbArgs),
 }
 
 #[derive(Args, Debug)]
@@ -615,14 +622,18 @@ enum HarnessTarget<A: Args> {
     /// Cursor, through `cursor-agent plugin`. User scope only; install and
     /// update need `--git-url`.
     Cursor(A),
+    /// Pi, through `pi install`, one package per built pack. User or project
+    /// scope; no marketplace.
+    Pi(A),
 }
 
 impl<A: Args> HarnessTarget<A> {
-    fn split(&self) -> (&'static HarnessAdapter, &A) {
+    fn split(&self) -> (Harness, &A) {
         match self {
-            Self::Claude(args) => (&CLAUDE, args),
-            Self::Codex(args) => (&CODEX, args),
-            Self::Cursor(args) => (&CURSOR, args),
+            Self::Claude(args) => (Harness::Market(&CLAUDE), args),
+            Self::Codex(args) => (Harness::Market(&CODEX), args),
+            Self::Cursor(args) => (Harness::Market(&CURSOR), args),
+            Self::Pi(args) => (Harness::Pi, args),
         }
     }
 }
@@ -675,9 +686,9 @@ struct ConvertArgs {
 }
 
 impl HarnessTargetArgs {
-    fn flags(&self, adapter: &'static HarnessAdapter) -> HarnessFlags {
+    fn flags(&self, harness: Harness) -> HarnessFlags {
         HarnessFlags {
-            adapter,
+            harness,
             scope: self.scope,
             plugins: self.plugin.clone(),
             path: self.path.clone(),
@@ -943,11 +954,16 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
 /// Dispatch over `harness`'s nested `<verb> <harness>` shape.
 fn dispatch_harness(args: &HarnessArgs, ctx: &mut CommandContext<'_>) -> i32 {
     let (verb, adapter, target) = match &args.action {
-        HarnessAction::Install(verb_args) | HarnessAction::Update(verb_args) => {
+        HarnessAction::Install(verb_args)
+        | HarnessAction::Update(verb_args)
+        | HarnessAction::Link(verb_args)
+        | HarnessAction::Unlink(verb_args) => {
             let (adapter, target) = verb_args.target.split();
             let verb = match args.action {
                 HarnessAction::Install(_) => HarnessVerb::Install,
-                _ => HarnessVerb::Update,
+                HarnessAction::Update(_) => HarnessVerb::Update,
+                HarnessAction::Link(_) => HarnessVerb::Link,
+                _ => HarnessVerb::Unlink,
             };
             (verb, adapter, target)
         }

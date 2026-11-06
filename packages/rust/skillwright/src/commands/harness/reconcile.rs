@@ -221,7 +221,7 @@ fn plan_install(
     (commands, outcome)
 }
 
-fn execute(
+pub(super) fn execute(
     outcome: Outcome,
     commands: Vec<Argv>,
     exec: Execution<'_>,
