@@ -13,9 +13,9 @@
       "line": 647,
       "title": "Any existing directory is accepted as a baseline; a wrong one makes every versioned plugin skipped with exit 0",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     },
     {
       "id": "r1-2",
@@ -24,9 +24,9 @@
       "line": 776,
       "title": "Baseline build can read the live vault when the config's vault resolves outside the checkout",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     },
     {
       "id": "r1-3",
@@ -35,9 +35,9 @@
       "line": 750,
       "title": "git worktree add runs repo hooks and LFS, and a kill leaves the worktree registered",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     },
     {
       "id": "r1-4",
@@ -46,9 +46,9 @@
       "line": 118,
       "title": "bump: is honoured from the machine file, so two machines can version the same commit differently",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     },
     {
       "id": "r1-5",
@@ -57,9 +57,9 @@
       "line": 760,
       "title": "Ref baseline looks up the project file by its current path; breaks across the skillwright.md rename",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     },
     {
       "id": "r1-6",
@@ -68,9 +68,9 @@
       "line": 494,
       "title": "A write failure mid-loop exits without reporting the bumps already written",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     },
     {
       "id": "r1-7",
@@ -79,9 +79,9 @@
       "line": 802,
       "title": "Drop discards a worktree remove failure and then deletes the directory, leaving a stale admin entry",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     },
     {
       "id": "r1-8",
@@ -90,9 +90,9 @@
       "line": 761,
       "title": "No test covers cleanup on a failure after the worktree is added",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     },
     {
       "id": "r1-9",
@@ -101,9 +101,9 @@
       "line": 449,
       "title": "No test covers the unversioned-note branch of --changed-since",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     },
     {
       "id": "r1-10",
@@ -112,9 +112,9 @@
       "line": 9,
       "title": "Docs say the ref is built with this run's project file; the code uses the ref's copy",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "fixed as suggested; see the reply on the inline comment",
+      "fixedIn": "2a957c98cd977fac5e56f682456b78afc855617e"
     }
   ]
 }
