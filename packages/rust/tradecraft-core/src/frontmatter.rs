@@ -357,6 +357,10 @@ pub struct VaultFrontmatter {
     /// `metadata:`; on a container they are ignored.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown: Vec<String>,
+    /// Every key the note sets to a value, in its bare spelling. An inherited
+    /// block key yields to these ([`crate::model::Cascade::apply`]).
+    #[serde(skip)]
+    pub own_keys: std::collections::BTreeSet<String>,
 }
 
 impl VaultFrontmatter {
@@ -381,6 +385,12 @@ impl VaultFrontmatter {
         kind: EntityKind,
     ) -> Result<Self, CoreError> {
         let mut ours = claim(fields, path, ns, kind)?;
+        let own_keys = fields
+            .iter()
+            .chain(ours.iter())
+            .filter(|(_, value)| !value.is_null())
+            .map(|(key, _)| ns.field(key).to_owned())
+            .collect();
 
         for removed in crate::keys::REMOVED {
             let key = ns.key(removed);
@@ -422,8 +432,8 @@ impl VaultFrontmatter {
 
         let identity = if kind.holds_components() {
             ContainerIdentity {
-                owner: ours.remove(&ns.key("owner")),
-                author: ours.remove(&ns.key("author")),
+                owner: ours.remove(&ns.key("owner")).filter(|v| !v.is_null()),
+                author: ours.remove(&ns.key("author")).filter(|v| !v.is_null()),
                 display_name: take_string(&mut ours, &ns.key("display_name"), path)?,
                 license: take_string(&mut ours, &ns.key("license"), path)?,
                 keywords: take_string_list(&mut ours, &ns.key("keywords"), path)?,
@@ -439,9 +449,9 @@ impl VaultFrontmatter {
         unknown.extend(ours.keys().cloned());
         unknown.extend(
             fields
-                .keys()
-                .filter(|key| !crate::keys::is_known(kind, key, ns))
-                .cloned(),
+                .iter()
+                .filter(|(key, value)| !reads_as_written(kind, key, value, ns))
+                .map(|(key, _)| key.clone()),
         );
         unknown.sort();
         unknown.dedup();
@@ -454,6 +464,7 @@ impl VaultFrontmatter {
             overrides,
             unknown_ours: ours,
             unknown,
+            own_keys,
         })
     }
 }
@@ -540,6 +551,17 @@ fn claim(
 
 /// Claude's own `arguments` key: a space-separated string, or a list of
 /// strings.
+/// Whether a key left in the note's own fields is one the read takes as
+/// written. `arguments` holding names is Claude's key under any namespace. An
+/// `allowed-tools` value no harness reads is listed, and still warns.
+fn reads_as_written(kind: EntityKind, key: &str, value: &Value, ns: &Namespace) -> bool {
+    match key {
+        "arguments" if is_claude_arguments(value) => crate::keys::lookup(kind, key).is_some(),
+        "allowed-tools" if crate::vault::tool_list(value).is_none() && !value.is_null() => false,
+        _ => crate::keys::is_known(kind, key, ns),
+    }
+}
+
 fn is_claude_arguments(value: &Value) -> bool {
     match value {
         Value::String(_) => true,

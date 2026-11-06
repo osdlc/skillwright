@@ -13,20 +13,35 @@
 //! Which keys come down is the key table's answer ([`crate::keys::inherits`]).
 //! Names, descriptions and versions never do.
 //!
+//! A container is known by its folder, as its members are. A marketplace
+//! note's `name` is only what it publishes under.
+//!
+//! A note under no marketplace folder takes the one marketplace the vault
+//! holds, as a build does. In a vault of several there is no single answer, so
+//! it stays on the request's config.
+//!
 //! # A harness block key goes where the harness reads it
 //!
-//! Blocks inherit key by key, with two limits:
+//! For one key on a member, the order is: the note's own harness block, the
+//! note's own frontmatter, an inherited block (nearest container first), then
+//! what skillwright generates. `metadata` follows that order key by key.
 //!
-//! * A key the container's own manifests read stays with the container and
-//!   never reaches a skill, command or agent. `description`, `name`, `license`
-//!   and Claude's `metadata` sit on both lists; on a container they describe
-//!   the pack. A note's own block can still set them.
+//! Blocks inherit key by key, with these limits:
+//!
+//! * A key the member's kind does not accept stays with the container.
+//! * A key the container's own manifests read stays with the container.
+//!   `description`, `name`, `license` and Claude's `metadata` sit on both
+//!   lists; on a container they describe the pack. A note's own block can
+//!   still set them.
 //! * A plugin takes neither the marketplace manifest's top-level keys nor
 //!   [`crate::keys::BLOCK_IDENTITY_KEYS`] from a marketplace block.
+//!
+//! A block key that reaches no file warns.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use serde_json::map::Entry;
 use serde_json::{Map, Value};
 
 use crate::discover::{DiscoveredComponent, DiscoveryReport, read_container};
@@ -48,6 +63,9 @@ pub struct Cascade {
     /// The vault-relative paths of the silent notes whose description the
     /// request supplied.
     pub configured: BTreeSet<String>,
+    /// The marketplace folded in, which a note under no marketplace folder
+    /// takes as its own.
+    market: Option<String>,
     /// The request's own `targets`, for a component of another marketplace.
     requested_targets: Option<Vec<String>>,
 }
@@ -63,12 +81,12 @@ impl Cascade {
         let mut config = requested.clone();
         let mut configured = BTreeSet::new();
 
-        // A marketplace's own note is the one component that belongs to no
-        // marketplace while naming one — see `DiscoveredComponent::marketplace`.
+        // A marketplace's own note belongs to no marketplace, so its folder
+        // finds it — see `DiscoveredComponent::marketplace`.
         let note = market.and_then(|name| {
             containers
                 .iter()
-                .find(|c| c.kind == EntityKind::Marketplace && c.name == name)
+                .find(|c| c.kind == EntityKind::Marketplace && c.folder() == name)
         });
         if let Some(note) = note {
             config.name = Some(note.name.clone());
@@ -102,7 +120,7 @@ impl Cascade {
             .filter(|c| c.kind == EntityKind::Plugin)
             .filter(|c| belongs_to(c, market))
         {
-            let overrides = config.plugins.entry(note.name.clone()).or_default();
+            let overrides = config.plugins.entry(note.folder().to_owned()).or_default();
             // A plugin note describes its pack in the same place a skill note
             // describes itself.
             if take_description(&mut overrides.description, note) {
@@ -126,6 +144,7 @@ impl Cascade {
         Self {
             config,
             configured,
+            market: market.map(str::to_owned),
             requested_targets: requested.targets.clone(),
         }
     }
@@ -150,31 +169,40 @@ impl Cascade {
             return Ok(Self::over(&[], None, requested));
         };
         let patterns = crate::patterns::Patterns::read(vfs, root);
+        let mut paths = crate::discover::container_notes_with(&patterns, root, note_path);
+        let placed = crate::discover::folder_placement_with(&patterns, root, note_path).marketplace;
+        let market = placed.or_else(|| {
+            let (name, note) = crate::discover::only_marketplace(vfs, root)?;
+            paths.push(note);
+            Some(name)
+        });
         let mut containers = Vec::new();
-        for path in crate::discover::container_notes_with(&patterns, root, note_path) {
+        for path in paths {
             containers.extend(read_container(vfs, root, &path, ns)?);
         }
-        let market = crate::discover::folder_placement_with(&patterns, root, note_path).marketplace;
         Ok(Self::over(&containers, market.as_deref(), requested))
     }
 
     /// Gives every scanned component with no `targets` of its own what its
-    /// containers say. `built` is the marketplace a vault-level component is
-    /// being built into, which has none of its own.
-    pub fn resolve_targets(&self, components: &mut [DiscoveredComponent], built: Option<&str>) {
+    /// containers say.
+    pub fn resolve_targets(&self, components: &mut [DiscoveredComponent]) {
         let from_plugins: BTreeMap<(Option<String>, String), Vec<String>> = components
             .iter()
             .filter(|c| c.kind == EntityKind::Plugin)
             .filter_map(|c| {
                 c.targets
                     .clone()
-                    .map(|targets| ((c.marketplace.clone(), c.name.clone()), targets))
+                    .map(|targets| ((c.marketplace.clone(), c.folder().to_owned()), targets))
             })
             .collect();
         let from_markets: BTreeMap<String, Vec<String>> = components
             .iter()
             .filter(|c| c.kind == EntityKind::Marketplace)
-            .filter_map(|c| c.targets.clone().map(|targets| (c.name.clone(), targets)))
+            .filter_map(|c| {
+                c.targets
+                    .clone()
+                    .map(|targets| (c.folder().to_owned(), targets))
+            })
             .collect();
         for note in components.iter_mut() {
             if note.kind == EntityKind::Marketplace
@@ -187,21 +215,26 @@ impl Cascade {
                 .plugin
                 .as_ref()
                 .and_then(|plugin| from_plugins.get(&(note.marketplace.clone(), plugin.clone())));
-            let market = note
-                .marketplace
-                .as_deref()
-                .or(built)
-                .and_then(|m| from_markets.get(m));
-            note.targets = plugin
-                .or(market)
-                .or(self.requested_targets.as_ref())
-                .cloned();
+            let own = note.marketplace.as_deref().or(self.market.as_deref());
+            let market = if own == self.market.as_deref() {
+                self.config.targets.as_ref()
+            } else {
+                own.and_then(|m| from_markets.get(m))
+                    .or(self.requested_targets.as_ref())
+            };
+            note.targets = plugin.or(market).cloned();
         }
     }
 
     /// Gives one read note what it leaves out: `targets`, a skill's `license`,
     /// and each harness block key by key. `plugin` is the plugin holding it.
-    pub fn apply(&self, note: &mut VaultNote, kind: EntityKind, plugin: Option<&str>) {
+    pub fn apply(
+        &self,
+        note: &mut VaultNote,
+        kind: EntityKind,
+        plugin: Option<&str>,
+        ns: &Namespace,
+    ) {
         let plugin = plugin.unwrap_or_default();
         if note.frontmatter.targets.is_none() && keys::inherits(kind, "targets") {
             note.frontmatter.targets = inherited(
@@ -226,21 +259,16 @@ impl Cascade {
                 |market| &market.license,
             );
         }
+        let own_metadata = crate::projection::skill_metadata(&note.projection.content, ns);
         for harness in keys::HARNESS_BLOCKS
             .iter()
             .filter(|harness| keys::inherits(kind, harness))
         {
-            let accepted = accepted_keys(kind, harness);
-            let format = crate::harness::profile_named(harness).map(|p| p.format());
-            let on_a_manifest = |key: &str| {
-                format.is_some_and(|f| {
-                    f.manifest_fields.contains(&key)
-                        || f.entry_fields.contains(&key)
-                        || f.marketplace_fields.contains(&key)
-                })
-            };
+            let reaching = member_block_keys(kind, harness);
             for (key, value) in plugin_block(&self.config, plugin, harness) {
-                if !accepted.contains(&key) || on_a_manifest(&key) {
+                let merges = key == "metadata" && value.is_object();
+                if !reaching.contains(&key) || (!merges && note.frontmatter.own_keys.contains(&key))
+                {
                     continue;
                 }
                 let block = note
@@ -248,7 +276,12 @@ impl Cascade {
                     .overrides
                     .entry((*harness).to_owned())
                     .or_insert_with(|| Value::Object(Map::new()));
-                if let Some(block) = block.as_object_mut() {
+                let Some(block) = block.as_object_mut() else {
+                    continue;
+                };
+                if merges {
+                    merge_metadata(block, value, &own_metadata);
+                } else {
                     block.entry(key).or_insert(value);
                 }
             }
@@ -256,11 +289,70 @@ impl Cascade {
     }
 }
 
+/// Adds an inherited `metadata` block to a note's block, key by key, under the
+/// keys the block and the note's own metadata already set.
+fn merge_metadata(block: &mut Map<String, Value>, inherited: Value, own: &Map<String, Value>) {
+    let Value::Object(inherited) = inherited else {
+        return;
+    };
+    let kept = inherited
+        .into_iter()
+        .filter(|(key, _)| !own.contains_key(key));
+    match block.entry("metadata") {
+        Entry::Vacant(slot) => {
+            slot.insert(Value::Object(kept.collect()));
+        }
+        // Anything but a mapping is refused by `publish::overrides_for`.
+        Entry::Occupied(mut slot) => {
+            if let Some(into) = slot.get_mut().as_object_mut() {
+                for (key, value) in kept {
+                    into.entry(key).or_insert(value);
+                }
+            }
+        }
+    }
+}
+
+/// The keys of `harness`'s block a note of `kind` takes from a container: the
+/// keys its kind accepts, less those a container's own manifests read and
+/// those the harness reads on a subagent alone.
+pub(crate) fn member_block_keys(kind: EntityKind, harness: &str) -> BTreeSet<String> {
+    let mut keys = accepted_keys(kind, harness);
+    if let Some(profile) = crate::harness::profile_named(harness) {
+        let format = profile.format();
+        let agent_only = profile.agent_override_keys();
+        keys.retain(|key| {
+            !agent_only.contains(key)
+                && !format.manifest_fields.contains(&key.as_str())
+                && !format.entry_fields.contains(&key.as_str())
+        });
+    }
+    keys
+}
+
+/// The marketplaces a scan holds, by folder. A marketplace's own note counts:
+/// a marketplace need not hold a member of its own.
+pub(super) fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
+    components
+        .iter()
+        .filter_map(|c| match c.kind {
+            EntityKind::Marketplace => Some(c.folder()),
+            _ => c.marketplace.as_deref(),
+        })
+        .collect()
+}
+
 /// Gives every component of a scan what its containers say about `targets`,
 /// for a caller reporting on the vault with no build to run. `requested` is
 /// the root file's config.
 pub fn inherit_targets(report: &mut DiscoveryReport, requested: &MarketplaceConfig) {
-    Cascade::over(&[], None, requested).resolve_targets(&mut report.components, None);
+    let present = marketplaces_in(&report.components);
+    let market = match present.len() {
+        1 => present.first().map(|name| (*name).to_owned()),
+        _ => None,
+    };
+    Cascade::over(&report.components, market.as_deref(), requested)
+        .resolve_targets(&mut report.components);
 }
 
 /// Does this component render into the marketplace being built?

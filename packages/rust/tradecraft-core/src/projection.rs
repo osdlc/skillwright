@@ -991,7 +991,7 @@ fn to_adapt_skill(
 /// A skill's `metadata:` block: its unknown keys, as YAML, with the note's
 /// own `metadata` over them. skillwright's own keys never travel, whichever
 /// route they arrived by.
-fn skill_metadata(
+pub(crate) fn skill_metadata(
     content: &crate::content::SkillContent,
     ns: &Namespace,
 ) -> serde_json::Map<String, serde_json::Value> {

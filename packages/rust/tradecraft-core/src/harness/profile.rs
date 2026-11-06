@@ -655,6 +655,22 @@ impl HarnessProfile {
             .into_keys()
             .collect()
     }
+
+    /// The override keys this harness reads on a subagent and nowhere else,
+    /// told by the page each key was read from.
+    pub fn agent_override_keys(&self) -> std::collections::BTreeSet<String> {
+        agent_adapt::runtimes::declaration_for(self.declaration)
+            .overrides
+            .into_iter()
+            .filter(|(_, claim)| {
+                claim
+                    .evidence
+                    .as_ref()
+                    .is_some_and(|evidence| evidence.url.ends_with("/sub-agents"))
+            })
+            .map(|(key, _)| key)
+            .collect()
+    }
 }
 
 /// The row a name answers to, by any of its spellings.

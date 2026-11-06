@@ -19,14 +19,14 @@
 //! `--json` prints because `--json`'s rows are an existing contract.
 
 use tradecraft_core::model::load::{LoadRequest, load};
-use tradecraft_core::{discover_components, inherit_targets};
+use tradecraft_core::{DiscoveryReport, discover_components, inherit_targets};
 
 use crate::commands::marketplace::{MarketplaceInputs, marketplace_inputs};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked};
 use crate::report::{render_roster, render_roster_tally, render_warning_line, roster_row};
 use crate::resolve::{
-    CommonFlags, ResolvedRun, refuse_workspace, resolve_run, resolve_skills_root,
+    CommonFlags, ResolvedRun, refuse_workspace, resolve_run, resolve_skills_root, workspace_runs,
 };
 
 /// The resolved flags of `skillwright list`.
@@ -77,6 +77,11 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
 
     // A roster says where a note goes, so it shows what the note inherits.
     inherit_targets(&mut scan, &run.root_config());
+    if run.is_workspace()
+        && let Err(code) = inherit_from_members(&mut scan, &run, &flags.common, ctx)
+    {
+        return code;
+    }
 
     if flags.json {
         let rows: Vec<_> = scan.components.iter().map(roster_row).collect();
@@ -115,6 +120,33 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
 
     EXIT_OK
+}
+
+/// Gives each row of a workspace roster the `targets` its marketplace's own
+/// run gives it: a build reads each marketplace as a vault of its own.
+fn inherit_from_members(
+    scan: &mut DiscoveryReport,
+    run: &ResolvedRun,
+    common: &CommonFlags,
+    ctx: &mut CommandContext<'_>,
+) -> Result<(), i32> {
+    for member in workspace_runs(run, common, None, ctx.err)? {
+        let namespace = member.core_namespace();
+        let mut inner =
+            discover_components(&member.source_vfs(None), &member.vault, None, &namespace)
+                .map_err(|err| blocked(ctx.err, &format!("the vault scan could not run: {err}")))?;
+        inherit_targets(&mut inner, &member.root_config());
+        for component in inner.components {
+            if let Some(row) = scan
+                .components
+                .iter_mut()
+                .find(|row| row.entry_path == component.entry_path)
+            {
+                row.targets = component.targets;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `list --model`: the marketplace model as one JSON document on stdout.

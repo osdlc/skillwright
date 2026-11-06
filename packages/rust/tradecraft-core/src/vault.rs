@@ -179,7 +179,7 @@ pub fn read_vault_note(
         // called after both, by the same two callers.
         overrides: Default::default(),
         body: body.to_owned(),
-        allowed_tools: take_string_list(&mut fields, "allowed-tools"),
+        allowed_tools: take_tools(&mut fields),
         // The Agent Skills spec's three optional keys.
         license: take_string(&mut fields, "license"),
         compatibility: take_string(&mut fields, "compatibility"),
@@ -378,8 +378,53 @@ fn take_string_map(
         .unwrap_or_default()
 }
 
-/// A list of strings, all-or-nothing: a sequence with a non-string in it is
-/// left in place whole rather than partially lifted.
+/// `allowed-tools`, when [`tool_list`] reads it. Any other value stays in place
+/// and warns.
+fn take_tools(fields: &mut Map<String, Value>) -> Vec<String> {
+    let tools = fields.get("allowed-tools").and_then(tool_list);
+    if tools.is_some() {
+        fields.remove("allowed-tools");
+    }
+    tools.unwrap_or_default()
+}
+
+/// The tools an `allowed-tools` value names: a list of strings, or the Agent
+/// Skills spec's space-separated string. A space inside parentheses belongs to
+/// the tool, as in `Bash(git status)`. `None` for anything else, a comma
+/// between tools included: no harness fact says one is read.
+pub(crate) fn tool_list(value: &Value) -> Option<Vec<String>> {
+    let tools = match value {
+        Value::String(tools) => tools,
+        Value::Array(items) => {
+            return items
+                .iter()
+                .map(|item| item.as_str().map(str::to_owned))
+                .collect();
+        }
+        _ => return None,
+    };
+    let (mut list, mut tool, mut depth) = (Vec::new(), String::new(), 0usize);
+    for c in tools.chars() {
+        match c {
+            ',' if depth == 0 => return None,
+            c if c.is_whitespace() && depth == 0 => {
+                if !tool.is_empty() {
+                    list.push(std::mem::take(&mut tool));
+                }
+                continue;
+            }
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        tool.push(c);
+    }
+    if !tool.is_empty() {
+        list.push(tool);
+    }
+    Some(list)
+}
+
 /// Claude's `arguments`: a list of names, or the names in one space-separated
 /// string.
 fn take_argument_names(fields: &mut Map<String, Value>) -> Vec<String> {
@@ -391,6 +436,8 @@ fn take_argument_names(fields: &mut Map<String, Value>) -> Vec<String> {
     take_string_list(fields, "arguments")
 }
 
+/// A list of strings, all-or-nothing: a sequence with a non-string in it is
+/// left in place whole rather than partially lifted.
 fn take_string_list(fields: &mut Map<String, Value>, key: &str) -> Vec<String> {
     let matches = fields
         .get(key)
@@ -706,7 +753,7 @@ mod tests {
     fn a_wrong_shaped_modeled_key_is_carried_rather_than_swallowed() {
         let (vfs, path) = vault(
             "odd",
-            "---\ndescription: d\nallowed-tools: Read\nuser-invocable: yes-please\n---\nb\n",
+            "---\ndescription: d\nallowed-tools: Read, Grep\nuser-invocable: yes-please\n---\nb\n",
         );
         let content = read_vault_skill(&vfs, &path, &sw())
             .unwrap()
@@ -717,7 +764,7 @@ mod tests {
         assert!(content.user_invocable, "falls back to the default");
         assert_eq!(
             content.annotations["allowed-tools"],
-            serde_json::json!("Read")
+            serde_json::json!("Read, Grep")
         );
         assert_eq!(
             content.annotations["user-invocable"],

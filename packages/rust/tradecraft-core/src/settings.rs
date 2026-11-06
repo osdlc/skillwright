@@ -284,7 +284,7 @@ fn from_yaml<T: DeserializeOwned>(value: &serde_yaml::Value) -> Result<T, serde_
 fn check_person(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsError> {
     let person = crate::keys::lookup(crate::frontmatter::EntityKind::Marketplace, key)
         .is_some_and(|spec| spec.shape == crate::keys::Shape::Person);
-    if !person || value.is_null() {
+    if !person {
         return Ok(());
     }
     match serde_json::to_value(value) {
@@ -355,7 +355,7 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
                         crate::frontmatter::EntityKind::Marketplace,
                     ) {
                         root.warnings.push(format!(
-                            "`{unknown}` is not a key that harness reads; it is ignored"
+                            "`{unknown}` reaches no file that harness reads; it is ignored"
                         ));
                     }
                     root.marketplace.blocks.insert(key, block);
