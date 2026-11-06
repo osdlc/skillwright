@@ -12,11 +12,11 @@
 //!
 //! # What is modeled, and what is merely carried
 //!
-//! Three classes of key, not two. **Ours** — anything in the `sw-` namespace —
-//! is lifted into [`VaultNote::frontmatter`] by [`crate::frontmatter`] and
+//! Three classes of key, not two. **Ours** — what [`crate::keys`] lists for the
+//! note's kind, or anything a namespace prefixes — is lifted into [`VaultNote::frontmatter`] by [`crate::frontmatter`] and
 //! never reaches [`SkillContent`] *through this function* — it is
 //! configuration about *this vault* and a destination has no business reading
-//! it. `sw-arguments` is the one exception, and it is not this function's:
+//! it. `arguments` is the one exception, and it is not this function's:
 //! `SkillContent::arguments` stays empty here, and `publish` and `export` are
 //! the ones that carry it over, once, after this read — see
 //! [`SkillContent::apply_arguments`].
@@ -74,17 +74,17 @@ use crate::vfs::Vfs;
 ///
 /// The two halves are separate types rather than one flat struct because the
 /// separation is the strip. [`SkillProjection`] is everything that may reach a
-/// destination, and it has nowhere to put an `sw-` key —
+/// destination, and it has nowhere to put a key of ours —
 /// [`crate::projection::project_skill`] takes only that half, so our fields
 /// cannot travel by accident. [`VaultNote::frontmatter`] is everything that
 /// must not travel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VaultNote {
-    /// The content and peers, ready to project. Carries no `sw-` data by
+    /// The content and peers, ready to project. Carries no key of ours by
     /// construction.
     pub projection: SkillProjection,
-    /// What the `sw-` namespace declared: the kind, the targets, provenance,
-    /// and any key inside the prefix this build does not model.
+    /// What skillwright's own keys declared: the targets, provenance, and any
+    /// key inside the prefix this build does not model.
     pub frontmatter: VaultFrontmatter,
 }
 
@@ -103,7 +103,8 @@ pub struct VaultNote {
 ///
 /// A `description` or a `name` is then required — either makes a note
 /// publish — and a note with neither is an error naming the path, so a caller
-/// holding several is told which one was not. A `name` alone reads with
+/// holding several is told which one was not. A container's note is the
+/// exception: it reads with an empty description. A `name` alone reads with
 /// [`crate::discover::MISSING_DESCRIPTION`] as its description. `name`
 /// defaults to the filename slugified — via [`crate::discover::default_name`],
 /// the one derivation the scan uses too — so the ordinary note needs no
@@ -144,6 +145,9 @@ pub fn read_vault_note(
             name.is_some()
                 .then(|| crate::discover::MISSING_DESCRIPTION.to_owned())
         })
+        // A container's note is optional and may hold any of its keys, so it
+        // need not describe itself.
+        .or_else(|| kind.holds_components().then(String::new))
         .ok_or_else(|| {
             CoreError::malformed(
                 skill_path,
@@ -159,13 +163,13 @@ pub fn read_vault_note(
         // `None` — see `SkillContent::argument_names`'s own doc for why that
         // simplification is fine here where it is not for `targets`: an
         // author has no reason to write `arguments: []` on purpose the way
-        // they would `sw-targets: []`, so there is no second outcome worth
+        // they would `targets: []`, so there is no second outcome worth
         // keeping distinct from "derive it".
         argument_names: {
-            let names = take_string_list(&mut fields, "arguments");
+            let names = take_argument_names(&mut fields);
             (!names.is_empty()).then_some(names)
         },
-        // Never `sw-arguments` here — see the module doc's three classes.
+        // Never our own `arguments` here — see the module doc's three classes.
         // `publish` and `export` call `SkillContent::apply_arguments` after
         // this read, with `ours.arguments`, once the kind is resolved.
         arguments: Vec::new(),
@@ -239,8 +243,8 @@ pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
 ///
 /// The note is excluded because it is *inside* what it owns: the renderer
 /// writes it as `SKILL.md`, and carrying it a second time under its vault name
-/// would publish the same content twice, once with the `sw-` frontmatter this
-/// crate exists to strip.
+/// would publish the same content twice, once with the frontmatter this crate
+/// exists to strip.
 ///
 /// Unlike [`crate::skill`]'s supporting-file listing — an aid to a view, which
 /// skips what it cannot read — this feeds a publish, so an unreadable peer is
@@ -376,6 +380,17 @@ fn take_string_map(
 
 /// A list of strings, all-or-nothing: a sequence with a non-string in it is
 /// left in place whole rather than partially lifted.
+/// Claude's `arguments`: a list of names, or the names in one space-separated
+/// string.
+fn take_argument_names(fields: &mut Map<String, Value>) -> Vec<String> {
+    if let Some(Value::String(names)) = fields.get("arguments") {
+        let names = names.split_whitespace().map(str::to_owned).collect();
+        fields.remove("arguments");
+        return names;
+    }
+    take_string_list(fields, "arguments")
+}
+
 fn take_string_list(fields: &mut Map<String, Value>, key: &str) -> Vec<String> {
     let matches = fields
         .get(key)

@@ -5,18 +5,25 @@
 //! * **The publish strip.** A key skillwright owns ([`Owner::Skillwright`])
 //!   is read into the model and never reaches a destination as written.
 //! * **Validation.** A key outside the table for a note's kind is unknown,
-//!   and gets a warning. It is never refused.
+//!   and gets a warning. It is never refused. A key of ours with the wrong
+//!   [`Shape`] is refused when the note is read; [`Owner::Spec`] keys keep
+//!   their own readers in [`crate::vault`], so their shape is documentation.
+//! * **The cascade.** [`KeySpec::inherits`] decides which keys come down from
+//!   a container; [`crate::model::cascade`] reads it through [`inherits`].
 //! * **The field reference** the docs publish, generated from [`KEYS`].
 //!
 //! Keys are bare by default. Under a namespace (`build.namespace: sw`), every
-//! [`Owner::Skillwright`] key takes the prefix (`version`), or sits in the
+//! [`Owner::Skillwright`] key takes the prefix (`sw-version`), or sits in the
 //! nested block (`sw: {version: …}`). [`Owner::Spec`] keys are never
 //! prefixed.
 //!
 //! The kind comes from the folder a note sits in, never from the note. The
 //! `kind` and `plugin` keys are removed ([`REMOVED`]).
 
+use serde_json::Value;
+
 use crate::frontmatter::EntityKind;
+use crate::namespace::Namespace;
 
 /// Who a key belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +61,34 @@ pub enum Shape {
     Adopted,
 }
 
+impl Shape {
+    /// Whether `value` has this shape. `null` passes only where the reader
+    /// takes it as absent: a harness block and the `adopted` block.
+    pub fn accepts(self, value: &Value) -> bool {
+        match self {
+            Self::String => value.is_string(),
+            Self::Url => value.as_str().is_some_and(is_url),
+            Self::StringList => value
+                .as_array()
+                .is_some_and(|items| items.iter().all(Value::is_string)),
+            Self::Bool => value.is_boolean(),
+            Self::Number => value.is_number(),
+            Self::Person => value.is_string() || value.get("name").is_some_and(Value::is_string),
+            Self::StringMap => value
+                .as_object()
+                .is_some_and(|map| map.values().all(Value::is_string)),
+            Self::Arguments => value.is_array(),
+            Self::HarnessBlock | Self::Adopted => value.is_object() || value.is_null(),
+        }
+    }
+}
+
+/// Whether `value` is an `http` or `https` URL with no whitespace.
+pub fn is_url(value: &str) -> bool {
+    (value.starts_with("https://") || value.starts_with("http://"))
+        && !value.contains(char::is_whitespace)
+}
+
 /// One key the table lists.
 #[derive(Debug, Clone, Copy)]
 pub struct KeySpec {
@@ -65,8 +100,9 @@ pub struct KeySpec {
     pub owner: Owner,
     /// What its value must be.
     pub shape: Shape,
-    /// Whether a component inherits it from the nearest container that sets
-    /// it: the plugin note, then `skillwright.md`, then the workspace.
+    /// Whether a note leaving it out takes it from the nearest container that
+    /// sets it: the plugin note, the marketplace note, then `skillwright.md`,
+    /// which holds what the workspace file gave it.
     pub inherits: bool,
     /// One line for the field reference.
     pub summary: &'static str,
@@ -83,6 +119,11 @@ const ADOPTABLE: &[EntityKind] = &[Skill, Agent, Command, Hook];
 /// The harnesses that take a block of their own keys: `claude:`, `codex:`,
 /// `cursor:` and `pi:`.
 pub const HARNESS_BLOCKS: &[&str] = &["claude", "codex", "cursor", "pi"];
+
+/// Harness block keys that say which thing a manifest describes. A plugin
+/// never takes one from the marketplace's block: each plugin has its own.
+pub const BLOCK_IDENTITY_KEYS: &[&str] =
+    &["name", "description", "version", "displayName", "source"];
 
 /// Keys that structured a vault before 1.0 and are refused now: the folder a
 /// note sits in decides its kind and its plugin.
@@ -168,7 +209,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::StringList,
         inherits: false,
-        summary: "Plugin keywords.",
+        summary: "Plugin keywords; also the Claude and Cursor marketplace entry's `tags`.",
     },
     KeySpec {
         key: "category",
@@ -176,7 +217,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::String,
         inherits: false,
-        summary: "The plugin's category in a marketplace entry. Defaults to Productivity.",
+        summary: "The plugin's category in a marketplace entry. Codex defaults it to Productivity.",
     },
     KeySpec {
         key: "display_name",
@@ -410,21 +451,20 @@ pub fn lookup(kind: EntityKind, key: &str) -> Option<&'static KeySpec> {
         .find(|spec| spec.key == key && spec.kinds.contains(&kind))
 }
 
-/// skillwright's own keys on a note of `kind`: the ones a namespace
-/// prefixes and the publish strip removes.
-pub fn owned(kind: EntityKind) -> impl Iterator<Item = &'static KeySpec> {
-    KEYS.iter()
-        .filter(move |spec| spec.owner == Owner::Skillwright && spec.kinds.contains(&kind))
-}
-
 /// Whether `key` (bare) is skillwright's own on a note of `kind`.
 pub fn is_owned(kind: EntityKind, key: &str) -> bool {
     lookup(kind, key).is_some_and(|spec| spec.owner == Owner::Skillwright)
 }
 
-/// Whether `key` (bare) is in the table for `kind` at all.
-pub fn is_known(kind: EntityKind, key: &str) -> bool {
-    lookup(kind, key).is_some()
+/// Whether a note of `kind` reads the bare spelling `key` under `ns`. Under a
+/// namespace nothing reads a bare key of ours: only its prefixed form counts.
+pub fn is_known(kind: EntityKind, key: &str, ns: &Namespace) -> bool {
+    lookup(kind, key).is_some_and(|spec| ns.is_bare() || spec.owner == Owner::Spec)
+}
+
+/// Whether a note of `kind` takes `key` from its containers.
+pub fn inherits(kind: EntityKind, key: &str) -> bool {
+    lookup(kind, key).is_some_and(|spec| spec.inherits)
 }
 
 #[cfg(test)]
@@ -436,8 +476,41 @@ mod tests {
         assert!(is_owned(Plugin, "license"));
         assert!(is_owned(Marketplace, "license"));
         assert!(!is_owned(Skill, "license"));
-        assert!(is_known(Skill, "license"));
-        assert!(!is_known(Agent, "license"));
+        let bare = Namespace::default();
+        assert!(is_known(Skill, "license", &bare));
+        assert!(!is_known(Agent, "license", &bare));
+    }
+
+    #[test]
+    fn under_a_namespace_only_spec_keys_are_known_bare() {
+        let sw = Namespace::sw();
+        assert!(is_known(Skill, "license", &sw));
+        assert!(!is_known(Skill, "targets", &sw));
+        assert!(!is_known(Plugin, "license", &sw));
+    }
+
+    /// The Decided block's list, for the kinds that carry each key.
+    #[test]
+    fn the_inherited_keys_are_the_decided_list() {
+        let listed: std::collections::BTreeSet<&str> = KEYS
+            .iter()
+            .filter(|spec| spec.inherits)
+            .map(|spec| spec.key)
+            .collect();
+        let mut decided = vec!["author", "license", "repository", "homepage", "targets"];
+        decided.extend(HARNESS_BLOCKS);
+        assert_eq!(listed, decided.into_iter().collect());
+        assert!(inherits(Skill, "license"));
+        assert!(!inherits(Agent, "license"));
+        assert!(!inherits(Hook, "claude"));
+    }
+
+    #[test]
+    fn a_person_is_a_name_or_a_mapping_holding_one() {
+        assert!(Shape::Person.accepts(&serde_json::json!("Ada")));
+        assert!(Shape::Person.accepts(&serde_json::json!({"name": "Ada", "url": "u"})));
+        assert!(!Shape::Person.accepts(&serde_json::json!(5)));
+        assert!(!Shape::Person.accepts(&serde_json::json!({"email": "a@b"})));
     }
 
     #[test]

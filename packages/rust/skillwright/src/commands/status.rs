@@ -83,6 +83,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Err(code) => return code,
     };
     let namespace = run.core_namespace();
+    let root_config = run.root_config();
 
     if let Err(code) = refuse_workspace("status", &run, ctx.err) {
         return code;
@@ -168,6 +169,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 // reporting on it as one would state a skill's status for
                 // something that is not one.
                 skills_root: Some(run.vault.clone()),
+                config: Some(root_config.clone()),
             };
             match status_of(&run.config_vfs(), &request, &namespace) {
                 Ok(status) => {

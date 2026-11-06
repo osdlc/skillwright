@@ -278,6 +278,25 @@ fn from_yaml<T: DeserializeOwned>(value: &serde_yaml::Value) -> Result<T, serde_
     serde_json::to_value(value).and_then(serde_json::from_value)
 }
 
+/// Refuses an `owner` or `author` that the key table's
+/// [`crate::keys::Shape::Person`] does not accept. Their fields are untyped,
+/// so nothing else would catch `author: 5` before it reached a manifest.
+fn check_person(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsError> {
+    let person = crate::keys::lookup(crate::frontmatter::EntityKind::Marketplace, key)
+        .is_some_and(|spec| spec.shape == crate::keys::Shape::Person);
+    if !person || value.is_null() {
+        return Ok(());
+    }
+    match serde_json::to_value(value) {
+        Ok(json) if crate::keys::Shape::Person.accepts(&json) => Ok(()),
+        _ => Err(SettingsError {
+            key: key.to_owned(),
+            what: "a name or a `{name, email, url}` mapping",
+            detail: format!("{value:?}"),
+        }),
+    }
+}
+
 /// Read a root file's text. A file with no frontmatter is a root file with
 /// every default.
 ///
@@ -320,6 +339,7 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             "workspace" => root.workspace = field(&key, &value, "true or false")?,
             "build" => root.build = build(&value, &mut root.warnings)?,
             known if MARKETPLACE_KEYS.contains(&known) => {
+                check_person(known, &value)?;
                 marketplace.insert(serde_yaml::Value::String(key), value);
             }
             harness if crate::keys::HARNESS_BLOCKS.contains(&harness) => {
@@ -371,7 +391,7 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
         ("homepage", &root.marketplace.homepage),
     ] {
         if let Some(url) = value
-            && !is_url(url)
+            && !crate::keys::is_url(url)
         {
             return Err(SettingsError {
                 key: key.to_owned(),
@@ -381,12 +401,6 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
         }
     }
     Ok(root)
-}
-
-/// `http://` or `https://` with no whitespace.
-fn is_url(value: &str) -> bool {
-    (value.starts_with("https://") || value.starts_with("http://"))
-        && !value.contains(char::is_whitespace)
 }
 
 /// One value read as `T`, its error naming `key`. Null reads as `T`'s default
@@ -538,8 +552,8 @@ impl RootFile {
     /// Fill what this file leaves unset from the workspace file above it.
     ///
     /// The marketplace fields every plugin inherits (`author`, `license`,
-    /// `targets`, `repository`, `homepage` and the harness blocks, key by key) inherit
-    /// from the workspace too. So do the `build:` settings that are
+    /// `targets`, `repository`, `homepage` and the harness blocks, key by key)
+    /// inherit from the workspace too. So do the `build:` settings that are
     /// not paths (`harnesses`, `namespace`, `launcher_path`,
     /// `require_descriptions`): a path in the workspace file names a place
     /// relative to the workspace, not to each marketplace.

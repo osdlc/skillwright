@@ -6,7 +6,7 @@
 //! emission are its contract. This module maps the store
 //! snapshot into `agent_adapt::Skill` and hashes what comes back.
 //!
-//! # The `sw-` strip, again
+//! # The strip, again
 //!
 //! The namespace spec put the strip in two places, and
 //! this is the second. [`crate::vault::read_vault_skill`] lifts our namespace
@@ -24,10 +24,10 @@
 //! reference validator rejects it as an unknown top-level key.
 //!
 //! **The same predicate means the same [`crate::Namespace`]**, which is why
-//! [`project_skill`] takes one rather than assuming `sw-`. A vault configured
-//! to `x-` and emitted under `sw-` would publish every `x-` key its author
-//! wrote, and strip an `sw-` annotation that was never ours to touch — the
-//! strip failing in both directions at once.
+//! [`project_skill`] takes one rather than assuming a prefix. A vault
+//! configured to `x-` and emitted under `sw-` would publish every `x-` key its
+//! author wrote, and strip an `sw-` annotation that was never ours to touch —
+//! the strip failing in both directions at once.
 
 use agent_adapt::RuntimeId;
 use sha2::{Digest, Sha256};
@@ -975,9 +975,12 @@ fn to_adapt_skill(
         .unwrap_or_default();
     // Through the override, not `Skill::annotations`: the renderer writes
     // annotations as JSON strings, and a nested value must stay YAML. A
-    // harness block's own `metadata` has the last word.
-    let metadata = skill_metadata(content, ns);
-    if !metadata.is_empty() && !skill.overrides.contains_key("metadata") {
+    // harness block's `metadata` merges over the note's own, key by key.
+    let mut metadata = skill_metadata(content, ns);
+    if let Some(serde_json::Value::Object(block)) = skill.overrides.get("metadata") {
+        metadata.extend(block.clone());
+    }
+    if !metadata.is_empty() {
         skill
             .overrides
             .insert("metadata".to_owned(), serde_json::Value::Object(metadata));

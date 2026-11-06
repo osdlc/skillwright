@@ -44,6 +44,7 @@
 //! the model keeps the expanded text and records what it consumed in the
 //! node's closures rather than as a segment.
 
+pub mod cascade;
 pub mod load;
 
 use std::collections::BTreeMap;
@@ -58,6 +59,7 @@ use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 
+pub use cascade::{Cascade, inherit_targets};
 pub use load::{
     ComponentRequest, LoadRequest, load, load_component, load_plugin, read_notes, resolve_body,
 };

@@ -16,6 +16,7 @@ use serde::Serialize;
 
 use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, PluginOverrides};
+use crate::frontmatter::EntityKind;
 use crate::harness::{HarnessProfile, PluginDialect};
 
 /// Two-space indentation, stable key order, one trailing newline — the byte
@@ -223,8 +224,9 @@ pub(crate) fn bare_on_pi(config: &MarketplaceConfig, plugin: &str) -> Result<boo
 }
 
 /// One plugin's harness block for `harness`: the marketplace's block, less
-/// the keys that belong to the marketplace manifest's own top level, overlaid
-/// by the plugin note's block key by key.
+/// the keys that belong to the marketplace manifest's own top level and the
+/// keys that say which plugin this is, overlaid by the plugin note's block key
+/// by key.
 pub(crate) fn plugin_block(config: &MarketplaceConfig, plugin: &str, harness: &str) -> Block {
     let top = format_of(harness).marketplace_fields;
     let mut block: Block = config
@@ -232,7 +234,11 @@ pub(crate) fn plugin_block(config: &MarketplaceConfig, plugin: &str, harness: &s
         .get(harness)
         .into_iter()
         .flatten()
-        .filter(|(key, _)| !top.contains(&key.as_str()))
+        .filter(|_| crate::keys::inherits(EntityKind::Plugin, harness))
+        .filter(|(key, _)| {
+            !top.contains(&key.as_str())
+                && !crate::keys::BLOCK_IDENTITY_KEYS.contains(&key.as_str())
+        })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     if let Some(own) = overrides_for(config, plugin).and_then(|o| o.blocks.get(harness)) {
@@ -296,17 +302,26 @@ fn insert_after(map: &mut Block, after: &str, key: &str, value: serde_json::Valu
 /// added after `license` when the dialect's manifest has the field.
 fn add_links(map: &mut Block, config: &MarketplaceConfig, plugin: &str, harness: &str) {
     let fields = format_of(harness).manifest_fields;
-    let own = overrides_for(config, plugin);
     let links = [
         (
             "repository",
-            own.and_then(|o| o.repository.clone())
-                .or_else(|| config.repository.clone()),
+            inherited(
+                config,
+                plugin,
+                "repository",
+                |own| &own.repository,
+                |market| &market.repository,
+            ),
         ),
         (
             "homepage",
-            own.and_then(|o| o.homepage.clone())
-                .or_else(|| config.homepage.clone()),
+            inherited(
+                config,
+                plugin,
+                "homepage",
+                |own| &own.homepage,
+                |market| &market.homepage,
+            ),
         ),
     ];
     let mut after = "license".to_owned();
@@ -376,6 +391,24 @@ pub(crate) fn overrides_for<'a>(
     config.plugins.get(plugin)
 }
 
+/// `plugin`'s value for `key`: its own, then the marketplace's where the key
+/// table says the key inherits. The one reading of a plugin's inherited field.
+pub(crate) fn inherited<T: Clone>(
+    config: &MarketplaceConfig,
+    plugin: &str,
+    key: &str,
+    own: impl Fn(&PluginOverrides) -> &Option<T>,
+    market: impl Fn(&MarketplaceConfig) -> &Option<T>,
+) -> Option<T> {
+    overrides_for(config, plugin)
+        .and_then(|overrides| own(overrides).clone())
+        .or_else(|| {
+            crate::keys::inherits(EntityKind::Plugin, key)
+                .then(|| market(config).clone())
+                .flatten()
+        })
+}
+
 /// The version a plugin ships as when nothing states one.
 pub(crate) const DEFAULT_PLUGIN_VERSION: &str = "0.1.0";
 
@@ -393,6 +426,25 @@ fn plugin_description(config: &MarketplaceConfig, plugin: &str, members: &[&str]
         .unwrap_or_else(|| format!("Skills: {}.", members.join(", ")))
 }
 
+/// The `category` and `tags` a Claude or Cursor marketplace entry carries:
+/// what the plugin note states, with `tags` read from its `keywords`. Neither
+/// has a default here, so a plugin that states none adds nothing to the index.
+#[derive(Serialize)]
+struct EntryListing {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tags: Vec<String>,
+}
+
+fn entry_listing(config: &MarketplaceConfig, plugin: &str) -> EntryListing {
+    let own = overrides_for(config, plugin);
+    EntryListing {
+        category: own.and_then(|o| o.category.clone()),
+        tags: own.and_then(|o| o.keywords.clone()).unwrap_or_default(),
+    }
+}
+
 fn plugin_category(config: &MarketplaceConfig, plugin: &str) -> String {
     overrides_for(config, plugin)
         .and_then(|o| o.category.clone())
@@ -400,22 +452,30 @@ fn plugin_category(config: &MarketplaceConfig, plugin: &str) -> String {
 }
 
 fn plugin_license(config: &MarketplaceConfig, plugin: &str) -> String {
-    overrides_for(config, plugin)
-        .and_then(|o| o.license.clone())
-        .or_else(|| config.license.clone())
-        .unwrap_or_else(|| "UNLICENSED".to_owned())
+    inherited(
+        config,
+        plugin,
+        "license",
+        |own| &own.license,
+        |market| &market.license,
+    )
+    .unwrap_or_else(|| "UNLICENSED".to_owned())
 }
 
 fn plugin_author(config: &MarketplaceConfig, plugin: &str) -> Option<serde_json::Value> {
-    overrides_for(config, plugin)
-        .and_then(|o| o.author.clone())
-        .or_else(|| config.author.clone())
-        .or_else(|| config.owner.clone())
-        .map(normalize_author)
+    inherited(
+        config,
+        plugin,
+        "author",
+        |own| &own.author,
+        |market| &market.author,
+    )
+    .or_else(|| config.owner.clone())
+    .map(normalize_author)
 }
 
 /// Claude's plugin schema requires `author` as `{ name, email? }`, but a
-/// marketplace note may still write `sw-author: <name>` as a bare string.
+/// marketplace note may still write `author: <name>` as a bare string.
 /// A string is promoted to `{ "name": <string> }`; anything else (already an
 /// object, or a type the schema does not expect) passes through unchanged.
 /// The one call site both dialects render through, so both get it.
@@ -616,6 +676,8 @@ pub fn claude_marketplace_manifest(
             source: String,
             description: String,
             version: String,
+            #[serde(flatten)]
+            listing: EntryListing,
         }
         #[derive(Serialize)]
         struct Manifest {
@@ -643,6 +705,7 @@ pub fn claude_marketplace_manifest(
                     source: format!("./{packs}/{plugin}"),
                     description: plugin_description(config, plugin, members),
                     version: plugin_version(config, plugin),
+                    listing: entry_listing(config, plugin),
                 })
                 .collect(),
         };
@@ -674,6 +737,8 @@ pub fn cursor_marketplace_manifest(
         source: String,
         description: String,
         version: String,
+        #[serde(flatten)]
+        listing: EntryListing,
     }
     #[derive(Serialize)]
     struct Metadata {
@@ -710,6 +775,7 @@ pub fn cursor_marketplace_manifest(
                 source: format!("{packs}/{plugin}"),
                 description: plugin_description(config, plugin, members),
                 version: plugin_version(config, plugin),
+                listing: entry_listing(config, plugin),
             })
             .collect(),
     };

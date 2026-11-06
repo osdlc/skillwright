@@ -45,7 +45,10 @@
 //! `name` without `description` also opts in: the note is admitted with
 //! [`MISSING_DESCRIPTION`] and named in [`DiscoveryReport::warnings`].
 //! Defaulting the description for a note with neither key would make every
-//! note in the tree a component. A note that declares a description but sits
+//! note in the tree a component. A container's own note (`<p>/<p>.md`) is the
+//! exception: the folder already makes the container, the note is optional,
+//! and it is read whatever keys it holds, with an empty description and no
+//! warning. A note that declares a description but sits
 //! at no shape is refused, and told where a component can live — dropping it
 //! silently is the failure this reader exists to avoid.
 //!
@@ -125,7 +128,7 @@ use crate::vfs::Vfs;
 /// `targets` keeps the three-outcome `targets` reading instead of being
 /// expanded to an explicit all-targets list, so the layer that knows what
 /// "every destination" means today is the one that decides it.
-// No `Eq`: `identity` carries free-shaped JSON for the two manifest fields
+// No `Eq`: `identity` carries JSON for the two manifest fields
 // whose dialects allow an object, and `serde_json::Value` is only `PartialEq`
 // because it can hold a float. Nothing keys a map or a set on a whole
 // component — uniqueness is keyed on `(marketplace, plugin, kind, name)`.
@@ -134,9 +137,10 @@ pub struct DiscoveredComponent {
     /// The frontmatter `name`, already validated against the Agent Skills spec.
     pub name: String,
     /// The frontmatter `description`, ≤1024 characters, or
-    /// [`MISSING_DESCRIPTION`] when the note wrote none.
+    /// [`MISSING_DESCRIPTION`] when the note wrote none. Empty on a container
+    /// note with neither `name` nor `description`.
     pub description: String,
-    /// `description` is [`MISSING_DESCRIPTION`], not the note's own.
+    /// `description` is not the note's own.
     #[serde(default)]
     pub description_filled: bool,
     /// What this component is, resolved across the layers that can decide it.
@@ -216,25 +220,44 @@ pub struct DiscoveredComponent {
     pub unknown_keys: Vec<String>,
 }
 
+/// What happens to one unknown key, as a warning says it. A key the namespace
+/// claims and a field of the `adopted` block are consumed on the read.
+fn unknown_key_fate(kind: EntityKind, key: &str, ns: &Namespace) -> &'static str {
+    match kind {
+        EntityKind::Plugin | EntityKind::Marketplace | EntityKind::Hook => "ignored",
+        _ if ns.is_ours(key) || key.contains('.') => "dropped",
+        EntityKind::Skill => "published under `metadata:`",
+        EntityKind::Command => "carried as written",
+        EntityKind::Agent => "carried as written when the agent publishes on its own",
+    }
+}
+
 /// The warning for a note's unknown keys, or `None` when it has none.
-fn unknown_key_warning(
-    component: &DiscoveredComponent,
+pub(crate) fn unknown_key_warning(
+    path: &str,
+    kind: EntityKind,
+    unknown: &[String],
     ns: &Namespace,
 ) -> Option<DiscoveryWarning> {
-    if component.unknown_keys.is_empty() {
+    if unknown.is_empty() {
         return None;
     }
-    let keys = quoted(
-        &component
-            .unknown_keys
+    let keys = quoted(&unknown.iter().map(String::as_str).collect::<Vec<_>>());
+    let mut fates: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for key in unknown {
+        fates
+            .entry(unknown_key_fate(kind, key, ns))
+            .or_default()
+            .push(key);
+    }
+    let fate = if fates.len() == 1 {
+        fates.into_keys().collect::<String>()
+    } else {
+        fates
             .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-    );
-    let fate = match component.kind {
-        EntityKind::Skill => "published under `metadata:`",
-        EntityKind::Plugin | EntityKind::Marketplace => "ignored",
-        _ => "carried as written",
+            .map(|(fate, keys)| format!("{} {fate}", quoted(keys)))
+            .collect::<Vec<_>>()
+            .join("; ")
     };
     let hint = if ns.is_bare() {
         String::new()
@@ -245,25 +268,36 @@ fn unknown_key_warning(
             ns.key("<key>")
         )
     };
+    let subject = if unknown.len() == 1 {
+        "is not a key"
+    } else {
+        "are not keys"
+    };
+    let article = if kind == EntityKind::Agent { "an" } else { "a" };
     Some(DiscoveryWarning {
-        path: component.vault_relative_path.clone(),
+        path: path.to_owned(),
         reason: UNKNOWN_KEY_REASON.to_owned(),
         detail: format!(
-            "{keys} {} not a key skillwright reads on a {}; {fate}{hint}",
-            if component.unknown_keys.len() == 1 {
-                "is"
-            } else {
-                "are"
-            },
-            component.kind.as_str()
+            "{keys} {subject} skillwright reads on {article} {}; {fate}{hint}",
+            kind.as_str()
         ),
     })
 }
 
+/// A note's unknown keys, the keys in a container's blocks that nothing reads
+/// included.
+pub(crate) fn unknown_keys(frontmatter: &VaultFrontmatter, kind: EntityKind) -> Vec<String> {
+    let mut unknown = frontmatter.unknown.clone();
+    if kind.holds_components() {
+        unknown.extend(unknown_container_block_keys(&frontmatter.overrides, kind));
+    }
+    unknown
+}
+
 /// The keys in a container note's harness blocks that no file the block
 /// reaches reads, as `<harness>.<key>`. A plugin's block reaches its pack
-/// manifest, its marketplace entry and its members; a marketplace's reaches
-/// its marketplace manifest too.
+/// manifest, its marketplace entry and, for a key neither reads, its members;
+/// a marketplace's reaches its marketplace manifest too.
 pub(crate) fn unknown_container_block_keys(
     blocks: &Map<String, Value>,
     kind: EntityKind,
@@ -428,7 +462,7 @@ impl SkippedNote {
 /// # A bad note stops itself, not the scan
 ///
 /// Everything wrong with *one* note — an illegal name, an over-long
-/// description, an `targets` this build does
+/// description, a `targets` this build does
 /// not know, a declared note at no recognised shape, frontmatter that will
 /// not parse — lands in [`DiscoveryReport::skipped`] and the walk carries on.
 /// One person's half-written draft must not block everybody else's publish.
@@ -545,7 +579,9 @@ pub(crate) fn discover_in(
         };
         match read_source(vfs, vault_root, entry_path, placement, &placed, &files, ns) {
             Ok(Some(component)) => {
-                if component.description_filled {
+                // An empty description is a container note that names and
+                // describes nothing, which is valid: it is not a filler.
+                if component.description_filled && !component.description.is_empty() {
                     // Only these two kinds can take a configured description.
                     let unless =
                         if matches!(component.kind, EntityKind::Plugin | EntityKind::Marketplace) {
@@ -563,7 +599,12 @@ pub(crate) fn discover_in(
                         ),
                     });
                 }
-                if let Some(warning) = unknown_key_warning(&component, ns) {
+                if let Some(warning) = unknown_key_warning(
+                    &component.vault_relative_path,
+                    component.kind,
+                    &component.unknown_keys,
+                    ns,
+                ) {
                     warnings.push(warning);
                 }
                 discovered.push(component);
@@ -1050,6 +1091,7 @@ fn read_source(
         folder: placement.kind,
     });
     let ours = VaultFrontmatter::take_from(&mut fields, entry_path, ns, resolved.kind)?;
+    let unknown_keys = unknown_keys(&ours, resolved.kind);
 
     let name = trimmed_string(&fields, "name");
     let description = trimmed_string(&fields, "description");
@@ -1063,6 +1105,11 @@ fn read_source(
             description,
             false,
         ),
+        // A container's own note is optional and holds whichever of its keys
+        // it needs: the folder names it, and it need not describe itself.
+        (None, None) if resolved.kind.holds_components() && placement.dir.is_some() => {
+            (default_name(entry_path), String::new(), true)
+        }
         // Neither: an ordinary note sharing the tree. The common case, and
         // the silence that lets bundle resources live beside their entry.
         (None, None) => return Ok(None),
@@ -1141,15 +1188,91 @@ fn read_source(
         vault_relative_path,
         identity: ours.identity,
         hook: (resolved.kind == EntityKind::Hook).then(|| read_hook(&fields, body)),
-        unknown_keys: {
-            let mut unknown = ours.unknown;
-            if resolved.kind.holds_components() {
-                unknown.extend(unknown_container_block_keys(&ours.overrides, resolved.kind));
-            }
-            unknown
-        },
+        unknown_keys,
         blocks: ours.overrides,
     }))
+}
+
+/// The notes of the containers `entry` sits in, outermost first, as the paths
+/// they would have: `plugins/p/skills/s.md` passes through `plugins/p/p.md`. A
+/// container's own note is listed as its own container.
+pub(crate) fn container_notes(root: &Path, entry: &Path) -> Vec<PathBuf> {
+    let Ok(rest) = entry.strip_prefix(root) else {
+        return Vec::new();
+    };
+    let parts: Vec<String> = rest
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    let mut notes = Vec::new();
+    let mut dir = root.to_path_buf();
+    for level in parts.windows(2).step_by(2) {
+        let [folder, name] = level else { continue };
+        let Some(kind) = kind_dir(folder) else {
+            break;
+        };
+        dir = dir.join(folder).join(name);
+        if kind.holds_components() {
+            notes.push(dir.join(format!("{name}.md")));
+        }
+    }
+    notes
+}
+
+/// [`container_notes`] through the root file's patterns: the path of a plugin
+/// note is the plugin's real folder, whatever a pattern calls it.
+pub(crate) fn container_notes_with(
+    patterns: &crate::patterns::Patterns,
+    root: &Path,
+    entry: &Path,
+) -> Vec<PathBuf> {
+    let Ok(rest) = entry.strip_prefix(root) else {
+        return Vec::new();
+    };
+    let relative = forward_slashed(rest);
+    let folder = patterns.plugin_folder(&relative);
+    container_notes(root, &conventional(root, entry, patterns))
+        .into_iter()
+        .map(|note| {
+            let in_plugins = note
+                .parent()
+                .and_then(Path::parent)
+                .is_some_and(|above| above.ends_with("plugins"));
+            match (folder, note.file_name()) {
+                (Some(folder), Some(name)) if in_plugins => root.join(folder).join(name),
+                _ => note,
+            }
+        })
+        .collect()
+}
+
+/// Reads one container's note the way a scan reads it. `None` when it does not
+/// exist: a container's note is optional.
+pub(crate) fn read_container(
+    vfs: &dyn Vfs,
+    root: &Path,
+    entry: &Path,
+    ns: &Namespace,
+) -> Result<Option<DiscoveredComponent>, CoreError> {
+    if !vfs.exists(entry) {
+        return Ok(None);
+    }
+    let patterns = crate::patterns::Patterns::read(vfs, root);
+    let conventional = conventional(root, entry, &patterns);
+    let Ok(rest) = conventional.strip_prefix(root) else {
+        return Ok(None);
+    };
+    let parts: Vec<String> = rest
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    let Some(mut placement) = classify(root, &parts) else {
+        return Ok(None);
+    };
+    if placement.dir.is_some() {
+        placement.dir = entry.parent().map(Path::to_path_buf);
+    }
+    read_source(vfs, root, entry, &placement, &BTreeMap::new(), &[], ns)
 }
 
 /// One hook note's routing and payload off its own frontmatter and body.

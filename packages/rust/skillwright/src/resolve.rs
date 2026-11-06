@@ -164,10 +164,12 @@ impl ResolvedRun {
 
     /// The marketplace's name: the root file's `name`, else the folder's.
     pub fn marketplace_name(&self) -> String {
-        self.config
-            .to_config(&self.folder_name())
-            .name
-            .unwrap_or_default()
+        self.root_config().name.unwrap_or_default()
+    }
+
+    /// The root file as a config: the top of the cascade.
+    pub fn root_config(&self) -> tradecraft_core::MarketplaceConfig {
+        self.config.to_config(&self.folder_name())
     }
 }
 

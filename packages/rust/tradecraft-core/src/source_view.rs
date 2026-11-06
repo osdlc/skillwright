@@ -19,7 +19,8 @@ use crate::export::{MarketplaceConfig, STAGE_DIR};
 use crate::frontmatter::EntityKind;
 use crate::harness::manifest::{check_packs, check_packs_against_sources, packs_of};
 use crate::harness::with_plugin_format;
-use crate::model::load::{ASSETS_DIR, merge_blocks};
+use crate::model::cascade::Cascade;
+use crate::model::load::ASSETS_DIR;
 use crate::namespace::Namespace;
 use crate::patterns::Patterns;
 use crate::settings::ROOT_FILE;
@@ -145,9 +146,10 @@ pub struct VaultScope<'a> {
     pub marketplace: Option<&'a str>,
 }
 
-/// `config` with the marketplace note's harness blocks over it: every source
-/// of a `packs` value, resolved. A build, and anything else that asks where a
-/// harness's packs are, starts here, so all of them hold the one value.
+/// `config` with the harness blocks the cascade gives the marketplace: every
+/// source of a `packs` value, resolved. A build, and anything else that asks
+/// where a harness's packs are, starts here, so all of them hold the one
+/// value. Only the blocks: the load folds the note's other fields itself.
 ///
 /// With no note, or several and none named, `config` stands.
 pub fn effective_config(
@@ -158,7 +160,8 @@ pub fn effective_config(
 ) -> MarketplaceConfig {
     let mut config = config.clone();
     if let Some(note) = marketplace_note(vfs, scope, ns) {
-        merge_blocks(&mut config.blocks, &note.blocks);
+        let name = note.name.clone();
+        config.blocks = Cascade::over(&[note], Some(&name), &config).config.blocks;
     }
     config
 }
