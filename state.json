@@ -15,10 +15,10 @@
       "path": "docs/guide/getting-started.md",
       "line": 104,
       "title": "publish default writes to a doubled path no harness reads",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032109",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "docs/guide/migrating.md",
       "line": 74,
       "title": "namespace path: claude: and adopted: are not read under build.namespace",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032116",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-3",
@@ -37,10 +37,10 @@
       "path": "docs/guide/migrating.md",
       "line": 59,
       "title": "worked example moves the output from the repository root into notes/",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032122",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-4",
@@ -48,10 +48,10 @@
       "path": "plugin/plugins/skillwright/skills/migrate/migrate.md",
       "line": 58,
       "title": "workspace row leaves build.out in the outer file, so the build exits 4",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032126",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-5",
@@ -59,10 +59,10 @@
       "path": "docs/reference/skillwright-md.md",
       "line": 58,
       "title": "destinations scope is documented and is refused",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032130",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-6",
@@ -70,10 +70,10 @@
       "path": "plugin/plugins/skillwright/skills/migrate/migrate.md",
       "line": 66,
       "title": "step 5 renames container keys on skills, which changes the output",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032133",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-7",
@@ -81,10 +81,10 @@
       "path": "packages/rust/tradecraft-core/src/adopt.rs",
       "line": 949,
       "title": "only_renamed reports a pure key rename as edited",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032140",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-8",
@@ -92,7 +92,7 @@
       "path": "plugin/plugins/skillwright/skills/author/author.md",
       "line": 73,
       "title": "new plugin and new skill do not write the conventional folders",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -103,7 +103,7 @@
       "path": "docs/reference/skillwright-md.md",
       "line": 97,
       "title": "plain Markdown links to a never-ship file are not refused",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032144",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -114,10 +114,10 @@
       "path": "packages/rust/tradecraft-core/tests/field_reference.rs",
       "line": 4,
       "title": "drift test does not run on a PR that only edits fields.md",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032153",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-11",
@@ -125,10 +125,10 @@
       "path": "packages/rust/skillwright/src/commands/init.rs",
       "line": 46,
       "title": "init --out '' writes an empty output folder that builds into the vault",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032156",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-12",
@@ -136,10 +136,10 @@
       "path": "packages/rust/skillwright/src/commands/init.rs",
       "line": 26,
       "title": "exists check then write follows a dangling symlink",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032159",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-13",
@@ -147,10 +147,10 @@
       "path": "docs/reference/skillwright-md.md",
       "line": 136,
       "title": "no version warning for a plugin with no note",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032165",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "e801243"
     },
     {
       "id": "r1-14",
@@ -158,10 +158,10 @@
       "path": "plugin/plugins/skillwright/skills/migrate/migrate.md",
       "line": 129,
       "title": "a removed key fails the whole build, not one note",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032184",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-15",
@@ -169,10 +169,10 @@
       "path": "docs/reference/fields.md",
       "line": 12,
       "title": "description row says a component with no description is not published",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032187",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-16",
@@ -180,10 +180,10 @@
       "path": "docs/reference/fields.md",
       "line": 68,
       "title": "adopted row omits source_hash and also_at",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032192",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-17",
@@ -191,18 +191,18 @@
       "path": "packages/rust/skillwright/src/cli.rs",
       "line": 243,
       "title": "check help says it writes nothing",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032198",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c2a01ee"
     },
     {
       "id": "r1-18",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "plugin/plugins/skillwright/skills/author/author.md",
+      "line": 73,
       "title": "a marketplace skillwright.md with a description is listed as unreadable from the workspace root",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -210,10 +210,10 @@
     {
       "id": "r1-19",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "plugin/plugins/skillwright/skills/author/author.md",
+      "line": 73,
       "title": "the no-root-file note does not name init",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
       "status": "open",
       "reason": null,
       "fixedIn": null
