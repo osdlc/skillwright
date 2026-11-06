@@ -148,9 +148,9 @@
       "line": 541,
       "title": "empty-plugin refusal hard-codes sw-targets",
       "comment": "https://github.com/osdlc/skillwright/pull/63#pullrequestreview-5796820114",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "4e78f201a83d6cc5fd18f47b9a0c888991e041d2"
     },
     {
       "id": "r2-1",
