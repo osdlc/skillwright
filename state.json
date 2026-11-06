@@ -1,12 +1,57 @@
 {
   "schema": 1,
   "pr": 58,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "6a0c4e8550a507d6a60dcdfdbc18ebffd9a12b3d",
+  "base": "1d1667e0d212580dfb04bead18378cb0af034221",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-06T06:05:47.762Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 500,
+      "title": "mention hand-spells the plugin:skill separator and skips the runtime's name check",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/compile.rs",
+      "line": 1378,
+      "title": "a mention silently drops the author's alias and fragment",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/translator.rs",
+      "line": 560,
+      "title": "standalone-publish mention path has no test",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "docs that describe recorded calls now also cover mentions",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
