@@ -410,14 +410,35 @@ fn move_note(
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    let vault_dir = vault.dir;
     let root_file = |path: &str| path.rsplit('/').next() == Some(tradecraft_core::ROOT_FILE);
+    // `<dir>/skillwright.md` is a marketplace's entry, unless `<dir>` is named
+    // `skillwright`: then it is also an ordinary `<dir>/<dir>.md` bundle entry.
+    let marketplace_entry = |path: &str| {
+        root_file(path)
+            && path
+                .rsplit('/')
+                .nth(1)
+                .is_none_or(|dir| dir != tradecraft_core::ROOT_FILE.trim_end_matches(".md"))
+    };
     if bundle && root_file(from) && root_file(to) {
         return move_marketplace(vault, from, to, mode, outcome);
     }
-    if bundle && (root_file(from) || root_file(to)) {
-        return move_folder(vault_dir, from, to, mode, outcome);
+    if bundle && (marketplace_entry(from) || marketplace_entry(to)) {
+        return move_folder(vault.dir, from, to, mode, outcome);
     }
+    relink_move(vault, from, to, bundle, mode, outcome)
+}
+
+/// [`move_note`] once the entry is known to be one the relinker can name.
+fn relink_move(
+    vault: Vault<'_>,
+    from: &str,
+    to: &str,
+    bundle: bool,
+    mode: Mode,
+    outcome: &mut Outcome,
+) -> Result<(), ApplyError> {
+    let vault_dir = vault.dir;
     let (corpus, unreadable) = load_vault(vault, from, to, bundle)?;
     // Links resolve against every file a build sees, so a rename picks the
     // target a build does. Only notes outside dot-named folders are edited:
@@ -509,7 +530,7 @@ fn move_marketplace(
                 source,
             })?;
         }
-        let moved = move_note(vault, &temp_from, &temp_to, true, mode, outcome);
+        let moved = relink_move(vault, &temp_from, &temp_to, true, mode, outcome);
         let restored = restore_entry(&root_from, &abs_from, &new_dir, &root_to, &abs_to);
         match (moved, restored) {
             (Err(err), _) | (Ok(()), Err(err)) => Err(err),
@@ -527,7 +548,7 @@ fn move_marketplace(
             dir: vault.dir,
             source: &overlay,
         };
-        move_note(view, &temp_from, &temp_to, true, mode, outcome)
+        relink_move(view, &temp_from, &temp_to, true, mode, outcome)
     };
     for entry in &mut outcome.entries[before..] {
         if entry.path == temp_to {
@@ -1542,6 +1563,81 @@ mod tests {
         unlock_writes(&v.path().join("marketplaces"));
         assert!(err.to_string().contains("read-only"), "{err}");
         assert_eq!(tree(v.path()), before);
+    }
+
+    /// A marketplace folder named `skillwright` is renamed like any other:
+    /// the temporary entry name is its own, and links into it are rewritten.
+    #[test]
+    fn a_marketplace_named_skillwright_renames_and_relinks() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/skillwright/skillwright.md",
+            "---\nname: skillwright\n---\n",
+        );
+        write(
+            v.path(),
+            "marketplaces/skillwright/plugins/p/skills/a.md",
+            "---\nname: a\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[a](marketplaces/skillwright/plugins/p/skills/a.md)\n",
+        );
+        let op = AuthoringOp::Rename {
+            from: "marketplaces/skillwright/skillwright.md".to_owned(),
+            to: "marketplaces/shop/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let before = tree(v.path());
+        preview(v.path(), &op).unwrap();
+        assert_eq!(tree(v.path()), before);
+        apply(v.path(), &op).unwrap();
+        assert!(v.path().join("marketplaces/shop/skillwright.md").is_file());
+        assert!(!v.path().join("marketplaces/skillwright").exists());
+        assert_eq!(
+            read(v.path(), "notes.md"),
+            "[a](marketplaces/shop/plugins/p/skills/a.md)\n"
+        );
+    }
+
+    /// A bundled component named `skillwright` is an ordinary `<dir>/<dir>.md`
+    /// bundle: converting it previews and applies, with links rewritten.
+    #[test]
+    fn a_converted_bundle_named_skillwright_does_not_recurse() {
+        let v = vault();
+        write(
+            v.path(),
+            "skills/skillwright/skillwright.md",
+            "---\nname: skillwright\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[s](skills/skillwright/skillwright.md)\n",
+        );
+        let op = AuthoringOp::ConvertKind {
+            from: "skills/skillwright/skillwright.md".to_owned(),
+            to: "commands/skillwright/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+            scaffold: vec![],
+        };
+        let before = tree(v.path());
+        preview(v.path(), &op).unwrap();
+        assert_eq!(tree(v.path()), before);
+        apply(v.path(), &op).unwrap();
+        assert!(
+            v.path()
+                .join("commands/skillwright/skillwright.md")
+                .is_file()
+        );
+        assert_eq!(
+            read(v.path(), "notes.md"),
+            "[s](commands/skillwright/skillwright.md)\n"
+        );
     }
 
     #[test]
