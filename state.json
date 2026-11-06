@@ -390,9 +390,9 @@
       "line": 661,
       "title": "leftovers from the removed marketplace note form",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
     },
     {
       "id": "r3-1",
