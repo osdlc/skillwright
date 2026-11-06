@@ -46,19 +46,29 @@ fn plain_options(
 }
 
 /// What a build writes under its output folder, as path fragments a vault
-/// walk leaves out: each harness's packs folder and marketplace manifest.
-/// The output lands beside the root file by default, inside the vault, and
-/// its built copies of the vault's notes are not notes. Fragments rather than
-/// whole folder names, so a plugin folder's own `.claude-plugin/plugin.json`
-/// is still read.
-pub(crate) fn built_paths() -> Vec<String> {
-    let mut paths = Vec::new();
+/// walk leaves out: each harness's packs folder and marketplace manifest, and
+/// the stage. The output can land inside the vault, and its built copies of the
+/// vault's notes are not notes. Fragments
+/// rather than whole folder names, so a plugin folder's own
+/// `.claude-plugin/plugin.json` is still read.
+pub fn built_paths() -> Vec<String> {
+    let mut paths = vec![format!("{}/", crate::export::STAGE_DIR)];
     for profile in crate::harness::with_plugin_format() {
         let format = profile.format();
         paths.push(format!("{}/", format.packs));
         paths.extend(format.marketplace_manifest.map(str::to_owned));
     }
     paths
+}
+
+/// Whether vault-relative `rel` sits under a plugin folder's `assets/`. Those
+/// files are copied as they are, and are not notes. A vault walk has no hook
+/// for a folder found by shape, so each one filters its entries by this.
+fn in_plugin_assets(rel: &str) -> bool {
+    let parts: Vec<&str> = rel.split('/').collect();
+    parts[..parts.len() - 1]
+        .windows(3)
+        .any(|part| part[0] == "plugins" && part[2] == crate::model::load::ASSETS_DIR)
 }
 
 /// A vault walk's options. `Everything` keeps dot-prefixed names (it drops
@@ -153,6 +163,15 @@ pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> V
     .map_or_else(|_| Vec::new(), |outcome| outcome.errors)
 }
 
+/// The paths of a vault walk's `entries`, plugin assets left out.
+fn notes_and_resources(entries: Vec<vault::Entry>) -> Vec<PathBuf> {
+    entries
+        .into_iter()
+        .filter(|entry| !in_plugin_assets(&entry.rel))
+        .map(|entry| entry.abs)
+        .collect()
+}
+
 /// Every file under the vault folder `root`. A symlinked file is listed like
 /// any other.
 pub(crate) fn vault_files(
@@ -161,7 +180,7 @@ pub(crate) fn vault_files(
     prune: &[&str],
 ) -> Result<Vec<PathBuf>, CoreError> {
     vault::walk(vfs, root, &vault_walk(prune))
-        .map(|entries| entries.into_iter().map(|entry| entry.abs).collect())
+        .map(notes_and_resources)
         .map_err(|err| core_error(err, not_refused))
 }
 
@@ -174,14 +193,16 @@ pub(crate) fn vault_files_refusing_symlinks(
     refuse: impl Fn(&Path) -> CoreError,
 ) -> Result<Vec<PathBuf>, CoreError> {
     vault::walk(vfs, root, &vault_options(prune, true, true))
-        .map(|entries| entries.into_iter().map(|entry| entry.abs).collect())
+        .map(notes_and_resources)
         .map_err(|err| core_error(err, refuse))
 }
 
 /// Every file under the vault folder `root` this walk can read, without
 /// failing: a folder that cannot be listed is skipped.
 pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path) -> Vec<vault::Entry> {
-    vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default()
+    let mut entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
+    entries.retain(|entry| !in_plugin_assets(&entry.rel));
+    entries
 }
 
 /// The vault's excluded files (Obsidian's `userIgnoreFilters`, read from

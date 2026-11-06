@@ -20,6 +20,8 @@
 //! | `canonicalTarget` | `publish::canonical_target` | a host narrowing a run by target |
 //! | `publishableKinds` | `publish::kind_has_renderer` | a host choosing which notes to ask a status of |
 //! | `statusOf` | `status::status_of` | `status` |
+//! | `parseRootFile` | `settings::parse_root_file` | a host reading `skillwright.md` |
+//! | `rootFileConfig` | `settings::root_file_config` | a host building from `skillwright.md` |
 //!
 //! `build` and `check` share an export, as do `adopt` and its preview, because
 //! a mode is a key on the request rather than an export of its own. See
@@ -79,6 +81,9 @@ use tradecraft_core::namespace::InvalidStem;
 use tradecraft_core::publish::{
     KNOWN_TARGETS, PublishRequest, canonical_target as core_canonical_target, kind_has_renderer,
     publish_skill as core_publish_skill,
+};
+use tradecraft_core::settings::{
+    parse_root_file as core_parse_root_file, root_file_config as core_root_file_config,
 };
 use tradecraft_core::status::{StatusRequest, status_of as core_status_of};
 use wasm_bindgen::prelude::*;
@@ -239,6 +244,39 @@ pub fn publishable_kinds() -> Vec<String> {
         .filter(|name| EntityKind::from_str(name).is_ok_and(kind_has_renderer))
         .map(|name| (*name).to_owned())
         .collect()
+}
+
+// --- the root file -----------------------------------------------------------
+
+/// Read a `skillwright.md`'s text into a serialized `RootFile`, the reader the
+/// CLI uses. It takes text and no vfs: finding the file is the host's.
+///
+/// # Errors
+///
+/// An `Error` carrying the core's message: frontmatter that is not a YAML
+/// mapping, or a known key of the wrong shape. An unknown key is a warning on
+/// the `RootFile`.
+#[wasm_bindgen(js_name = parseRootFile)]
+pub fn parse_root_file(text: &str) -> Result<String, JsValue> {
+    let root = core_parse_root_file(text).map_err(|e| throwable(&e.to_string()))?;
+    report_json("root file", &root)
+}
+
+/// The `MarketplaceConfig` a `skillwright.md`'s text describes. `folder_name`
+/// is the root file's folder, the marketplace's name when the file gives none,
+/// so a host does not rebuild that default.
+///
+/// Returns a JS object, not a JSON string. `MarketplaceConfig` is a request
+/// type, and the generator spells each type for one direction, so this stays
+/// outside it. `core.ts` types the result, which goes back in as a request.
+///
+/// # Errors
+///
+/// As [`parse_root_file`].
+#[wasm_bindgen(js_name = rootFileConfig)]
+pub fn root_file_config(text: &str, folder_name: &str) -> Result<JsValue, JsValue> {
+    let config = core_root_file_config(text, folder_name).map_err(|e| throwable(&e.to_string()))?;
+    js_sys::JSON::parse(&report_json("marketplace config", &config)?)
 }
 
 // --- discovery ---------------------------------------------------------------

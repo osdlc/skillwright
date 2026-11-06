@@ -191,6 +191,8 @@ fn a_verb_that_writes_declares_all_seven() {
             "build",
             "--vault",
             &vault_str(&vault),
+            "--out",
+            &vault_str(&vault),
             "--dry-run",
             "--yes",
             "--quiet",
@@ -454,10 +456,24 @@ fn a_malformed_root_file_is_a_run_level_blocker() {
     );
 }
 
-// With no flags, a build writes beside the root file.
+// There is no default output: nothing builds into a vault unless asked.
 #[test]
-fn a_build_with_no_configuration_writes_beside_the_vault() {
+fn build_and_check_with_no_output_folder_refuse_and_say_to_set_one() {
     let (_dir, vault) = fixture();
+    for argv in [&["build", "--yes"][..], &["check"]] {
+        let refused = run(argv, &vault);
+        assert_eq!(refused.code, 4, "{}", refused.stderr);
+        assert!(refused.stderr.contains("--out"), "{}", refused.stderr);
+        assert!(refused.stderr.contains("build.out"), "{}", refused.stderr);
+    }
+    assert!(!vault.join(".claude-plugin").exists());
+}
+
+// `out: .` builds beside the root file.
+#[test]
+fn out_dot_writes_beside_the_vault() {
+    let (_dir, vault) = fixture();
+    fs::write(vault.join("skillwright.md"), "---\nbuild:\n  out: .\n---\n").unwrap();
     let built = run(&["build", "--yes", "--quiet"], &vault);
     assert_eq!(built.code, 0, "{}", built.stderr);
     assert!(
@@ -470,8 +486,8 @@ fn a_build_with_no_configuration_writes_beside_the_vault() {
     assert_eq!(again.code, 0, "{}{}", again.stdout, again.stderr);
 }
 
-// A workspace builds each marketplace under `marketplaces/`, each beside its
-// own root file, with the workspace's shared fields.
+// A workspace builds each marketplace under `marketplaces/`, each to its own
+// `build.out`, with the workspace's shared fields.
 #[test]
 fn a_workspace_builds_each_marketplace_beside_its_root_file() {
     let dir = tempfile::tempdir().unwrap();
@@ -485,7 +501,7 @@ fn a_workspace_builds_each_marketplace_beside_its_root_file() {
         fs::create_dir_all(member.join("skills")).unwrap();
         fs::write(
             member.join("skillwright.md"),
-            format!("---\nname: {name}\n---\n"),
+            format!("---\nname: {name}\nbuild:\n  out: .\n---\n"),
         )
         .unwrap();
         fs::write(
@@ -507,10 +523,27 @@ fn a_workspace_builds_each_marketplace_beside_its_root_file() {
         let text = fs::read_to_string(&manifest).unwrap();
         assert!(text.contains("\"license\": \"MIT\""), "{text}");
     }
-    // One verb that acts on a single marketplace refuses at the workspace.
-    let publish = run(&["publish", "--dry-run"], dir.path());
-    assert_eq!(publish.code, 2, "{}", publish.stderr);
-    assert!(publish.stderr.contains("workspace"), "{}", publish.stderr);
+    // A verb that acts on a single marketplace refuses at the workspace.
+    for verb in [
+        &["publish", "--dry-run"][..],
+        &["adopt", "src", "--yes"],
+        &["bump", "tools", "--patch"],
+        &["new", "skill", "zed", "--description", "Zed."],
+        &[
+            "new",
+            "plugin",
+            "zed",
+            "--marketplace",
+            "alpha",
+            "--description",
+            "Zed.",
+        ],
+        &["new", "marketplace", "zed", "--description", "Zed."],
+    ] {
+        let refused = run(verb, dir.path());
+        assert_eq!(refused.code, 2, "{verb:?}: {}", refused.stderr);
+        assert!(refused.stderr.contains("workspace"), "{}", refused.stderr);
+    }
 }
 
 #[test]
@@ -836,8 +869,7 @@ fn check_market(market: &Path, extra: &[&str], cwd: &Path) -> Run {
     market_run("check", market, extra, cwd)
 }
 
-/// The top-level tree one harness owns in the marketplace directory. The
-/// whole of what a build of that harness reads, compares or replaces.
+/// The top-level folder one harness writes under in the marketplace directory.
 fn tree_of(harness: &str) -> &'static str {
     match harness {
         "claude" => ".claude-plugin",
@@ -932,9 +964,29 @@ fn a_plugin_the_vault_no_longer_produces_is_drift_for_check_and_gone_after_build
     assert!(ghost.exists(), "check wrote something");
 
     assert_eq!(build_market(&market, &[], dir.path()).code, 0);
-    // The swap unit is the whole harness tree, so what the render did not
-    // produce goes with it.
+    // The packs folder is generated output: what the render did not produce
+    // goes with the swap.
     assert!(!ghost.exists());
+}
+
+#[test]
+fn a_rebuild_keeps_what_was_authored_beside_the_packs() {
+    let dir = tempfile::tempdir().unwrap();
+    let market = dir.path().join("market");
+    assert_eq!(build_market(&market, &[], dir.path()).code, 0);
+
+    let mine = market.join(".agents/skills/mine/SKILL.md");
+    fs::create_dir_all(mine.parent().unwrap()).unwrap();
+    fs::write(&mine, "by hand\n").unwrap();
+    fs::write(skill_md(&market, "codex"), "hand-edited\n").unwrap();
+
+    assert_eq!(build_market(&market, &[], dir.path()).code, 0);
+    assert_eq!(fs::read_to_string(&mine).unwrap(), "by hand\n");
+    assert!(
+        !fs::read_to_string(skill_md(&market, "codex"))
+            .unwrap()
+            .contains("hand-edited")
+    );
 }
 
 #[test]

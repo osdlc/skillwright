@@ -86,7 +86,7 @@ export interface PublishRequest {
   overwrite?: string[];
 
   /**
-   * The vault's frontmatter namespace, as a stem — `sw`, or whatever the
+   * The vault's frontmatter namespace, as a stem, such as `sw`, or whatever the
    * host configured. Absent means [`Namespace::default`].
    */
   namespace?: string;
@@ -225,6 +225,153 @@ export interface PublishReason {
  * table it reproduces.
  */
 export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "claimed" | "redundant-override" | "overwritten";
+
+/** A parsed root file. */
+export interface RootFile {
+  /** The marketplace's own fields. */
+  marketplace: MarketplaceFields;
+
+  /**
+   * `workspace: true`: this file holds shared defaults for every
+   * `marketplaces/<m>/skillwright.md` below it and builds them all.
+   */
+  workspace: boolean;
+
+  /** The `build:` block. */
+  build: BuildSettings;
+
+  /** One line per key the file carries that skillwright does not read. */
+  warnings?: string[];
+}
+
+/** The marketplace's own fields: the root file's top-level keys. */
+export interface MarketplaceFields {
+  /** The marketplace's name. Absent means the root folder's name. */
+  name?: string;
+
+  /** One line on what the marketplace holds. */
+  description?: string;
+
+  /** Codex's `interface.displayName`. */
+  display_name?: string;
+
+  /**
+   * Claude's and Cursor's marketplace `owner`; a string or
+   * `{name, email, url}`.
+   */
+  owner?: unknown;
+
+  /**
+   * Default plugin author; falls back to `owner`. Inherited by every
+   * plugin.
+   */
+  author?: unknown;
+
+  /**
+   * Default plugin license, as an SPDX identifier. Inherited by every
+   * plugin.
+   */
+  license?: string;
+
+  /** The marketplace's own version. */
+  version?: string;
+
+  /**
+   * Which harnesses get what the marketplace holds. Inherited by every
+   * plugin and member with none of its own.
+   */
+  targets?: string[];
+
+  /** The source repository URL. Inherited by every plugin. */
+  repository?: string;
+
+  /** The documentation URL. Inherited by every plugin. */
+  homepage?: string;
+
+  /**
+   * The harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`), keyed by
+   * harness. Inherited by every plugin, key by key.
+   */
+  blocks?: Record<string, Record<string, unknown>>;
+}
+
+/** The `build:` block: how skillwright runs, never what lands in a manifest. */
+export interface BuildSettings {
+  /**
+   * Where the harness trees are written, relative to the root file.
+   * Required, here or as `--out`: there is no default.
+   */
+  out?: string;
+
+  /** Which harnesses to build. Absent means all of them. */
+  harnesses?: string[];
+
+  /** The frontmatter namespace stem. */
+  namespace?: string;
+
+  /**
+   * The plugin's launcher, relative to the plugin's root. See
+   * [`MarketplaceConfig::launcher_path`].
+   */
+  launcher_path?: string;
+
+  /**
+   * Refuse a note with a `name` and no `description` instead of
+   * publishing a filler.
+   */
+  require_descriptions?: boolean;
+
+  /**
+   * Where `publish` writes when `--to` is not given. Empty means each
+   * harness's user skill folder.
+   */
+  destinations?: DestinationSetting[];
+
+  /**
+   * Folders a bare `adopt` reads from. Empty means each harness's user
+   * skill folder.
+   */
+  scan_locations?: string[];
+
+  /** Files copied into a plugin's root besides each plugin's `assets/`. */
+  assets?: AssetSetting[];
+
+  /** Canonical hooks files. */
+  hooks?: HookSetting[];
+}
+
+/** Where `publish` writes when `--to` is not given. */
+export interface DestinationSetting {
+  /** The destination root directory, relative to the root file. */
+  root: string;
+
+  /** The target rendered into the root. */
+  target: string;
+}
+
+/** One `build.assets` entry: a file or folder copied into a plugin's root. */
+export interface AssetSetting {
+  /** The source file or folder, relative to the root file. */
+  from: string;
+
+  /** Where it lands, relative to the built plugin's own root. */
+  to: string;
+
+  /** Which plugin it lands in. Absent means the marketplace's own plugin. */
+  plugin?: string;
+}
+
+/** One `build.hooks` entry: a Claude Code `hooks.json` rendered per harness. */
+export interface HookSetting {
+  /** The file, relative to the root file. */
+  from: string;
+
+  /**
+   * Which plugin's packs carry it. Absent means the marketplace's own
+   * plugin.
+   */
+  plugin?: string;
+}
 
 /**
  * What crosses as `request_json` for [`discover_components`].
@@ -1667,6 +1814,7 @@ export interface WasmRequests {
 export interface WasmResponses {
   publishSkill: PublishReport;
   knownTargets: string[];
+  parseRootFile: RootFile;
   discoverComponents: DiscoveryReport;
   exportSkills: ExportReport;
   loadMarketplace: Marketplace;
@@ -1678,4 +1826,4 @@ export interface WasmResponses {
  * Exports with no JSON on either side, so nothing here can drift for them.
  * `validateNamespace(stem: string): void` is the whole signature.
  */
-export type WasmExportsWithoutJson = "validateNamespace" | "canonicalTarget" | "publishableKinds";
+export type WasmExportsWithoutJson = "validateNamespace" | "canonicalTarget" | "publishableKinds" | "rootFileConfig";

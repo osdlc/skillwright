@@ -338,7 +338,7 @@ pub struct DiscoveryReport {
 
 /// The description a component gets when its note names itself but writes no
 /// `description`. [`DiscoveryReport::warnings`] names every note it stands in
-/// for; `marketplace.require_descriptions` refuses the build instead.
+/// for; `build.require_descriptions` refuses the build instead.
 pub const MISSING_DESCRIPTION: &str = "No description provided.";
 
 /// The warning reason naming a note published with [`MISSING_DESCRIPTION`].

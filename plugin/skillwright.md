@@ -3,6 +3,7 @@ name: osdlc
 owner: osdlc
 license: MIT OR Apache-2.0
 build:
+  out: .
   namespace: sw
 ---
 

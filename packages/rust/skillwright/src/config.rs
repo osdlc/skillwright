@@ -2,14 +2,15 @@
 //!
 //! The root file is a note at the top of the vault. Its frontmatter's
 //! top-level keys are the marketplace's fields; settings for how skillwright
-//! runs sit under `build:`. The folder holding it is the vault, and a build
-//! writes beside it unless `build.out` says otherwise. The core parses the
-//! file ([`tradecraft_core::parse_root_file`]); this module finds it.
+//! runs sit under `build:`. The folder holding it is the vault. The core
+//! parses the file ([`tradecraft_core::parse_root_file`]); this module finds
+//! it.
 //!
 //! It is found by walking up from the working directory, the way git finds a
 //! repository, or named with `--config`. `--vault` names the folder instead,
 //! and its `skillwright.md` is read when there is one. With no file at all, a
-//! folder holding `plugins/` or `skills/` builds with every default.
+//! folder holding `plugins/` or `skills/` builds with every default, given
+//! `--out`.
 //!
 //! A root file with `workspace: true` holds shared defaults for every
 //! `marketplaces/<m>/skillwright.md` below it, and `build` and `check` run
@@ -83,7 +84,9 @@ pub fn find_root_file(start: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Whether `path` is `<kind>/skillwright/skillwright.md`.
+/// Whether `path` is `<kind>/skillwright/skillwright.md`, a component note
+/// and not a root file. `marketplaces/skillwright/skillwright.md` is not one:
+/// that is the root file of a workspace member named `skillwright`.
 fn is_component_note(path: &Path) -> bool {
     let folder = path.parent();
     let named = folder
@@ -94,9 +97,10 @@ fn is_component_note(path: &Path) -> bool {
         .and_then(Path::file_name)
         .and_then(|name| name.to_str())
         .is_some_and(|name| {
-            tradecraft_core::KIND_DIRS
-                .iter()
-                .any(|(dir, _)| *dir == name)
+            name != "marketplaces"
+                && tradecraft_core::KIND_DIRS
+                    .iter()
+                    .any(|(dir, _)| *dir == name)
         });
     named && in_kind
 }
@@ -253,6 +257,16 @@ mod tests {
             find_root_file(&plugin.join("skills")),
             Some(tmp.path().join(ROOT_FILE))
         );
+    }
+
+    #[test]
+    fn a_member_named_skillwright_keeps_its_root_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let member = tmp.path().join("marketplaces/skillwright");
+        std::fs::create_dir_all(&member).unwrap();
+        std::fs::write(member.join(ROOT_FILE), "---\nname: skillwright\n---\n").unwrap();
+        std::fs::write(tmp.path().join(ROOT_FILE), "---\nworkspace: true\n---\n").unwrap();
+        assert_eq!(find_root_file(&member), Some(member.join(ROOT_FILE)));
     }
 
     #[test]

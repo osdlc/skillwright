@@ -20,7 +20,8 @@ use serde::Serialize;
 use serde_json::Value;
 use tradecraft_core::{marketplace_manifest_path, plugin_manifest_path};
 
-use crate::config::{resolve_against_cwd, resolve_configured_path};
+use crate::commands::marketplace::configured_out;
+use crate::config::resolve_against_cwd;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
@@ -165,7 +166,7 @@ pub struct HarnessFlags {
     pub scope: Scope,
     /// Plugins to act on. Empty means every pack the built tree holds.
     pub plugins: Vec<String>,
-    /// The built marketplace directory. Overrides `marketplace.out`.
+    /// The built marketplace directory. Overrides `build.out`.
     pub path: Option<String>,
     /// Register the marketplace from this git URL instead of the directory.
     pub git_url: Option<String>,
@@ -247,14 +248,13 @@ pub fn run_harness(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandCon
         return code;
     }
 
-    // The built marketplace: `--path`, else `build.out`, else beside the
-    // root file.
+    // The built marketplace: `--path`, else `build.out`.
     let root: PathBuf = match &flags.path {
         Some(p) => resolve_against_cwd(p, &ctx.cwd),
-        None => run.config.build.out.as_deref().map_or_else(
-            || run.config_dir.clone(),
-            |out| resolve_configured_path(out, &run.config_dir),
-        ),
+        None => match configured_out(&run, ctx.err) {
+            Ok(out) => out,
+            Err(code) => return code,
+        },
     };
 
     let manifest = marketplace_manifest_path(adapter.name).map(|rel| root.join(rel));

@@ -27,12 +27,12 @@ use std::path::PathBuf;
 
 use tradecraft_core::{
     AssetSpec, ExportMode, ExportRequest, ExportUnit, HookFileSpec, MarketplaceConfig, NativeVfs,
-    export_skills, root_trees,
+    export_skills, owned_paths,
 };
 
-use crate::config::{resolve_against_cwd, resolve_configured_path};
+use crate::config::{ROOT_FILE, resolve_against_cwd, resolve_configured_path};
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
+use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, no_config, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
 use crate::report::{
     count_checked_units, normalize_thrown_reason, render_export_tally, render_unit_line,
@@ -176,15 +176,42 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     exit
 }
 
-/// Where one marketplace's harness trees land: `--out`, else `build.out`,
-/// else beside the root file.
-pub(crate) fn out_root(flags: &ExportFlags, run: &ResolvedRun, cwd: &std::path::Path) -> PathBuf {
+/// Where one marketplace's harness trees land: `--out`, else `build.out`.
+/// There is no default, so nothing builds into a vault unless asked.
+///
+/// # Errors
+///
+/// The exit code, having said so, when neither names a folder.
+pub(crate) fn out_root(
+    flags: &ExportFlags,
+    run: &ResolvedRun,
+    cwd: &std::path::Path,
+    err: &mut dyn std::io::Write,
+) -> Result<PathBuf, i32> {
     match &flags.out {
-        Some(out) => resolve_against_cwd(out, cwd),
-        None => run.config.build.out.as_deref().map_or_else(
-            || run.config_dir.clone(),
-            |out| resolve_configured_path(out, &run.config_dir),
-        ),
+        Some(out) => Ok(resolve_against_cwd(out, cwd)),
+        None => configured_out(run, err),
+    }
+}
+
+/// `build.out`, resolved against the root file's folder.
+///
+/// # Errors
+///
+/// The exit code, having said so, when the file sets none.
+pub(crate) fn configured_out(
+    run: &ResolvedRun,
+    err: &mut dyn std::io::Write,
+) -> Result<PathBuf, i32> {
+    match &run.config.build.out {
+        Some(out) => Ok(resolve_configured_path(out, &run.config_dir)),
+        None => Err(no_config(
+            err,
+            &format!(
+                "No output folder for {}: pass --out, or set `build.out` in its {ROOT_FILE}. `out: .` builds beside {ROOT_FILE}.",
+                run.vault.display()
+            ),
+        )),
     }
 }
 
@@ -200,10 +227,10 @@ fn export_one(
     // the vault's `marketplaces/` to build. It reaches
     // `ExportRequest::marketplace`, which is validated against what the vault
     // actually holds, so a typo is refused by name.
-    //
-    // The output lands beside the root file unless the flag or `build.out`
-    // moves it.
-    let out_root = out_root(flags, run, &ctx.cwd);
+    let out_root = match out_root(flags, run, &ctx.cwd, ctx.err) {
+        Ok(out_root) => out_root,
+        Err(code) => return code,
+    };
 
     let skills_root = resolve_skills_root(flags.skills_root.as_deref(), &ctx.cwd);
 
@@ -237,17 +264,16 @@ fn export_one(
     };
 
     // --- confirmation -------------------------------------------------------
-    // A build replaces a whole tree per harness at the output path, so it
+    // A build replaces each harness's owned paths at the output path, so it
     // confirms like a publish. A run that writes nothing has nothing to
     // confirm and is not asked, rather than auto-answered.
     if writes && !flags.yes {
-        // The harnesses are named, and the one directory each one replaces
-        // with them. The marketplace directory can be a repository root, so
-        // "everything under <out>" would be alarming and also untrue — what
-        // this replaces is one entry per harness, and naming them says so.
-        // The list comes from `root_trees`, not from a copy of the table here.
-        let trees = match root_trees(&request) {
-            Ok(trees) => trees,
+        // The harnesses are named, and the paths each one replaces with them.
+        // The marketplace directory can be a repository root, so "everything
+        // under <out>" would be alarming and also untrue.
+        // The list comes from `owned_paths`, not from a copy of the table here.
+        let owned = match owned_paths(&request) {
+            Ok(owned) => owned,
             Err(err) => {
                 return blocked(
                     ctx.err,
@@ -258,19 +284,19 @@ fn export_one(
                 );
             }
         };
-        // The trees are padded to each other so the harness names line up
+        // The paths are padded to each other so the harness names line up
         // after them, the way `plan_flow` lines the labels up against each
         // other.
-        let width = trees.iter().map(|(_, tree)| tree.len()).max().unwrap_or(0);
+        let width = owned.iter().map(|(_, path)| path.len()).max().unwrap_or(0);
         let mut plan = vec!["build the marketplace".to_string(), String::new()];
         plan.extend(plan_flow(&[
             ("from vault", vec![run.vault.display().to_string()]),
             ("into", vec![out_root.display().to_string()]),
             (
                 "replacing",
-                trees
+                owned
                     .iter()
-                    .map(|(name, tree)| format!("{tree:width$}  {name}"))
+                    .map(|(name, path)| format!("{path:width$}  {name}"))
                     .collect(),
             ),
         ]));

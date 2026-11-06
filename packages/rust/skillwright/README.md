@@ -100,7 +100,7 @@ error messages go to stderr. `--json` prints the report as one JSON document.
 ## Options
 
 Every verb accepts these after the verb name, for example
-`skillwright build --vault ~/notes`:
+`skillwright build --vault ~/notes --out dist`:
 
 | Option | Does |
 |---|---|
@@ -155,7 +155,7 @@ description: Skills for the house projects.
 owner: acme
 license: MIT
 build:
-  out: dist             # default: beside this file
+  out: dist             # required, here or as --out; `.` builds beside this file
   namespace: sw
   harnesses: [claude, codex]
   destinations:
@@ -173,7 +173,7 @@ The vault follows a folder convention:
 - `plugins/<p>/` is a plugin, and `plugins/<p>/<p>.md` is its optional note.
 - `skills/`, `agents/`, `commands/` and `hooks/` are kind folders.
 - A root `skills/` folder is a plugin named after the marketplace.
-- `plugins/<p>/assets/` is copied to the plugin's root, and
+- `plugins/<p>/assets/` is copied as it is to the plugin's root, and
   `plugins/<p>/CHANGELOG.md` into every pack.
 - `docs/` never ships.
 
@@ -182,8 +182,20 @@ The marketplace's name defaults to the vault folder's name. A folder holding
 
 A root file with `workspace: true` holds shared defaults (`author`,
 `license` and the `build:` keys other than paths) for every
-`marketplaces/<m>/skillwright.md` below it. `build` and `check` there run
-over each marketplace; `--marketplace <name>` picks one.
+`marketplaces/<m>/skillwright.md` below it. A marketplace's own value wins,
+key by key: set `build.namespace` in a marketplace and the rest of the
+workspace's `build:` keys still apply. `build.out` is a path, so each
+marketplace sets its own. `build` and `check` there run over each marketplace;
+`--marketplace <name>` picks one.
+
+`build` and `check` need an output folder: `--out`, or `build.out`. There is no
+default, so nothing builds into the vault unless you ask. `out: .` builds beside
+the root file, which makes the repository installable as a marketplace.
+
+Each harness's packs folder and marketplace manifest (`.agents/packs/`,
+`.agents/plugins/marketplace.json`, and so on) are generated output, replaced
+on every build, so do not edit them. A build leaves everything else in those
+harness folders alone, such as your own `.agents/skills/`.
 
 With no `build.destinations`, `publish` and `status` use each harness's user
 skill folder, such as `~/.claude/skills`. With no `build.scan_locations`,

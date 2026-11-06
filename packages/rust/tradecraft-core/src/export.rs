@@ -63,23 +63,30 @@
 //! the very bytes the diff compared and swapped in. The two verdicts cannot
 //! disagree, because there is only one render and one comparison.
 //!
-//! # The commit is stage-then-swap, one tree at a time, with backup
+//! # The commit is stage-then-swap, one path at a time, with backup
 //!
-//! A changed tree is written under `<out>/.skillwright-stage/new/`, the live
-//! tree is renamed aside to `…/backup/<tree>`, and the staged tree is renamed
-//! into place — the temp-and-rename [`crate::vfs::Vfs::rename`] and
+//! A changed harness is written under `<out>/.skillwright-stage/new/`, each
+//! path it owns is renamed aside to `…/backup/<path>`, and the staged path is
+//! renamed into place — the temp-and-rename [`crate::vfs::Vfs::rename`] and
 //! [`crate::vfs::Vfs::remove`] exist for. The stage lives under `out_root`
 //! itself, because a rename is only atomic within one filesystem and the one
 //! directory guaranteed to share a filesystem with the thing being replaced
-//! is its own parent. A failure mid-swap rolls back every tree already
-//! swapped, restores the failing tree's own backup, and surfaces as
+//! is its own parent. A failure mid-swap rolls back every path already
+//! swapped, restores the failing path's own backup, and surfaces as
 //! [`CoreError::SwapFailed`] saying so.
 //!
-//! The swap unit is the harness tree. Anything inside one that the render did
-//! not produce — a stale pack, a stray file, an empty directory — goes with
-//! the swap, and `check` reports exactly that set as stale, which is what
-//! keeps its verdict honest about what `build` would change. Anything outside
-//! the trees is never looked at.
+//! # A build replaces only what it owns
+//!
+//! The swap unit is what [`HarnessProfile::owned_paths`] names: a harness's
+//! packs folder and its marketplace manifest. Those are generated output,
+//! replaced on every build. Anything inside them the render did not produce —
+//! a stale pack, a stray file, an empty directory — goes with the swap, and
+//! `check` reports exactly that set as stale, which is what keeps its verdict
+//! honest about what `build` would change.
+//!
+//! The folders around them are not swapped: `.agents/` and `.pi/` also hold
+//! skills and config people author, and `out: .` lands the output beside the
+//! root file. Anything outside the owned paths is never looked at.
 //!
 //! # Manifests are byte-deterministic
 //!
@@ -95,14 +102,14 @@
 //! On a host whose [`crate::vfs::Vfs::sees_links`] is `true`,
 //! [`crate::guard::assert_destination_allowed_for_vault`] runs before anything
 //! is staged: a destination inside the vault's kind folders is refused,
-//! and so is an ancestor of the vault when a tree this build replaces would
+//! and so is an ancestor of the vault when a path this build replaces would
 //! land inside the vault. On any other host, such as the wasm bridge over a host object without
 //! link methods, [`crate::guard::assert_destination_allowed`] also refuses every ancestor of
 //! the vault, because a link the host cannot see is what the narrowed check
 //! would miss. `publish` takes the same two rails on the same condition.
-//! A destination inside the vault but outside its kind folders — the vault
-//! root itself is the default — is accepted: the trees a build writes there
-//! are its own, and the vault walk leaves them out.
+//! A destination inside the vault but outside its kind folders, the vault root
+//! itself included, is accepted: the vault walk leaves out what a
+//! build writes there.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -524,6 +531,11 @@ pub(crate) fn checked_skill_call(
         .map_err(|err| CoreError::refused("skill-call-invalid", err.to_string()))
 }
 
+/// Does `bytes` hold `marker` anywhere?
+fn contains(bytes: &[u8], marker: &str) -> bool {
+    bytes.windows(marker.len()).any(|w| w == marker.as_bytes())
+}
+
 /// Where a build stages and backs up, under the root's own base — created
 /// only when a swap is actually needed, removed when the build ends.
 ///
@@ -533,12 +545,7 @@ pub(crate) fn checked_skill_call(
 /// thing being replaced is the thing's own parent. It stays invisible to the
 /// diff because [`scan_destination`] reads only the entries a root owns, and
 /// this is never one of them.
-const STAGE_DIR: &str = ".skillwright-stage";
-
-/// Does `bytes` hold `marker` anywhere?
-fn contains(bytes: &[u8], marker: &str) -> bool {
-    bytes.windows(marker.len()).any(|w| w == marker.as_bytes())
-}
+pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 
 /// Renders the vault into every selected marketplace root and, per
 /// [`ExportRequest::mode`], either swaps the drifted roots into place or
@@ -566,15 +573,17 @@ fn selected_roots(request: &ExportRequest) -> Result<Vec<&'static HarnessProfile
     selected_harnesses(&request.harnesses)
 }
 
-/// Which harnesses this request renders, and the one top-level entry each
-/// one owns in the marketplace directory.
+/// Which harnesses this request renders, each with every path it owns in the
+/// marketplace directory.
 ///
 /// So a caller can say what a build is about to replace without owning a
 /// second copy of the roots table or of the harness selection.
-pub fn root_trees(request: &ExportRequest) -> Result<Vec<(&'static str, &'static str)>, CoreError> {
+pub fn owned_paths(
+    request: &ExportRequest,
+) -> Result<Vec<(&'static str, &'static str)>, CoreError> {
     Ok(selected_roots(request)?
         .into_iter()
-        .map(|spec| (spec.name, spec.tree()))
+        .flat_map(|spec| spec.owned_paths().into_iter().map(|path| (spec.name, path)))
         .collect())
 }
 
@@ -594,16 +603,16 @@ pub fn plugin_manifest_path(root: &str) -> Option<&'static str> {
         .map(|spec| spec.format().plugin_manifest)
 }
 
-/// The tree under `out_root` (one of `trees`, or the stage) that holds
+/// The entry under `out_root` (one of `owned`, or the stage) that holds
 /// `path`, if any. A swap replaces each of them whole.
-fn replaced_tree_holding(
+fn replaced_entry_holding(
     vfs: &dyn Vfs,
     out_root: &Path,
-    trees: &[&str],
+    owned: &[&str],
     path: &Path,
 ) -> Result<Option<PathBuf>, CoreError> {
-    for tree in trees.iter().copied().chain([STAGE_DIR]) {
-        let replaced = out_root.join(tree);
+    for entry in owned.iter().copied().chain([STAGE_DIR]) {
+        let replaced = out_root.join(entry);
         if within(vfs, &replaced, path)? {
             return Ok(Some(replaced));
         }
@@ -644,7 +653,7 @@ pub fn export_skills(
 
     // Which harnesses this build renders, before anything reads or writes.
     let roots = selected_roots(request)?;
-    let trees: Vec<&'static str> = roots.iter().map(|spec| spec.tree()).collect();
+    let owned: Vec<&'static str> = roots.iter().flat_map(|spec| spec.owned_paths()).collect();
 
     // The rail, before discovery reads a byte: both sides resolved as far as
     // the filesystem goes, so a symlinked spelling of the vault cannot slip a
@@ -653,7 +662,7 @@ pub fn export_skills(
     // The question is narrow, and it has to be. The case this exists for is a
     // repository root, which legitimately contains its own vault, so an
     // ancestor rule would refuse exactly what the feature is for. What
-    // matters is what the swap touches — would any tree this build replaces
+    // matters is what the swap touches — would any path this build replaces
     // be, sit inside, or contain the vault? Same refusal token, same symlink
     // resolution, and the first two are the rail `publish` already runs
     // against a destination's own relative paths.
@@ -662,18 +671,17 @@ pub fn export_skills(
     // else an ancestor of the vault stays refused, because a link under it
     // into the vault is exactly what the narrowed check cannot see.
     //
-    // The output may sit inside the vault — beside the root file is the
-    // default, or a folder such as `dist/` — when no kind folder is on the way
-    // to it: the trees a build replaces there (`.claude-plugin/`, `.agents/`,
-    // …) are its own, and the vault walk never reads them. A folder inside the
-    // structure (`plugins/tools/`) stays refused, because its
+    // The output may sit inside the vault — beside the root file with
+    // `out: .`, or in a folder such as `dist/` — when no kind folder is on the way
+    // to it: the vault walk never reads what a build writes there. A folder
+    // inside the structure (`plugins/tools/`) stays refused, because its
     // `.claude-plugin/` can be a plugin's own authored manifest.
     if output_beside_the_notes(vfs, &vault_root, &out_root)? {
         // Nothing to check: the vault cannot sit inside a tree it holds.
     } else if vfs.sees_links() {
-        assert_destination_allowed_for_vault(vfs, &out_root, &vault_root, trees.iter().copied())?;
-        // The third: a swap removes each tree, and the stage, whole.
-        if let Some(replaced) = replaced_tree_holding(vfs, &out_root, &trees, &vault_root)? {
+        assert_destination_allowed_for_vault(vfs, &out_root, &vault_root, owned.iter().copied())?;
+        // The third: a swap removes each owned path, and the stage, whole.
+        if let Some(replaced) = replaced_entry_holding(vfs, &out_root, &owned, &vault_root)? {
             return Err(CoreError::refused(
                 "unsafe-root",
                 format!(
@@ -686,11 +694,11 @@ pub fn export_skills(
     } else {
         assert_destination_allowed(vfs, &out_root, std::slice::from_ref(&vault_root))?;
     }
-    // The swap deletes each tree it replaces, so an asset sourced from inside
+    // The swap deletes each path it replaces, so an asset sourced from inside
     // one would be gone after the build that copied it.
     for asset in &request.assets {
         if asset.source.is_absolute()
-            && let Some(replaced) = replaced_tree_holding(vfs, &out_root, &trees, &asset.source)?
+            && let Some(replaced) = replaced_entry_holding(vfs, &out_root, &owned, &asset.source)?
         {
             return Err(CoreError::refused(
                 "unsafe-root",
@@ -759,9 +767,9 @@ pub fn export_skills(
             &market.config,
         )?;
         // The one thing a build landing in a directory it does not own must
-        // not do quietly. The swap replaces this root's whole tree; a tree of
-        // that name holding work this build did not produce is far likelier
-        // to be a misconfiguration than an invitation.
+        // not do quietly. The swap replaces this root's owned paths; holding
+        // work this build did not produce, they are far likelier to be a
+        // misconfiguration than an invitation.
         //
         // A rebuild is told from a stranger by the rule in
         // [`DestTree::built_here`]. Refused on `check` too — it exists to say
@@ -772,10 +780,10 @@ pub fn export_skills(
                 format!(
                     "{} already holds `{}`, and it holds files this build does not produce \
                      (and none carries this tool's generated-file marker): rendering `{}` here \
-                     would replace it wholesale. Move it aside, or point `marketplace.out` \
-                     somewhere else. Nothing was written",
+                     would replace it wholesale. Move it aside, or point `build.out` (or \
+                     `--out`) somewhere else. Nothing was written",
                     out_root.display(),
-                    spec.tree(),
+                    spec.owned_paths().join("` and `"),
                     spec.name,
                 ),
             ));
@@ -860,14 +868,13 @@ impl ExportRequest {
 
 // --- Comparison --------------------------------------------------------------
 
-/// One root's comparison: whole-tree equality (the swap's grain) and the
-/// per-unit stories a report tells about it.
+/// One root's comparison: equality across what it owns (the swap's grain) and
+/// the per-unit stories a report tells about it.
 struct RootDiff {
     equal: bool,
     units: Vec<ExportUnit>,
-    /// This root's tree is already there, and nothing it renders is — so
-    /// whatever is there was put there by someone else. See
-    /// [`RootDiff::foreign`]'s only caller.
+    /// What this root owns is already there, and none of it is this build's
+    /// — so it was put there by someone else. See [`DestTree::built_here`].
     foreign: bool,
 }
 
@@ -884,31 +891,40 @@ struct DestState {
     plugin_dirs: Vec<String>,
 }
 
-/// Reads `base`, but only the top-level entries named — never the whole
+/// Reads `base`, but only the paths this harness owns — never the whole
 /// directory.
 ///
 /// The scope is the swap's: what the swap would replace is exactly what the
 /// report may call stale, or `check` would claim a build removes something it
 /// leaves alone. It matters most where a root shares its directory with
 /// things that are not marketplace — at a repository root, walking the whole
-/// base would read `.git` as drift and rewrite it on every build.
+/// base would read `.git` as drift and rewrite it on every build, and `.agents/`
+/// holds a person's skills beside the packs.
 fn scan_destination(
     vfs: &dyn Vfs,
     base: &Path,
     spec: &HarnessProfile,
 ) -> Result<DestState, CoreError> {
     let mut state = DestState::default();
-    let tree = base.join(spec.tree());
-    if vfs.exists(&tree) {
-        // A symlink AT the tree is one unmatched path, never descended into —
-        // the same rule `walk_destination` applies further down.
-        if vfs.is_symlink(&tree) {
-            state.files.insert(spec.tree().to_owned(), true);
-        } else if vfs.read_dir(&tree).is_err() {
-            // A file where the render wants a directory.
-            state.files.insert(spec.tree().to_owned(), false);
+    for owned in spec.owned_paths() {
+        // A link or a file above an owned path is recorded and goes no
+        // further: a swap through it would land somewhere else, or fail.
+        if let Some((blocker, is_link)) = blocked_above(vfs, base, owned) {
+            state.files.insert(blocker, is_link);
+            continue;
+        }
+        let path = base.join(owned);
+        // A symlink AT an owned path is one unmatched path, never descended
+        // into — the same rule `walk_destination` applies further down.
+        if vfs.is_symlink(&path) {
+            state.files.insert(owned.to_owned(), true);
+        } else if !vfs.exists(&path) {
+            continue;
+        } else if vfs.read_dir(&path).is_err() {
+            // A file: a manifest, or something where the render wants a folder.
+            state.files.insert(owned.to_owned(), false);
         } else {
-            walk_destination(vfs, base, &tree, &mut state)?;
+            walk_destination(vfs, base, &path, &mut state)?;
         }
     }
     let packs = base.join(spec.format().packs);
@@ -922,6 +938,23 @@ fn scan_destination(
             .collect();
     }
     Ok(state)
+}
+
+/// The first folder on the way to `owned` that is a link or not a folder, with
+/// whether it is a link.
+fn blocked_above(vfs: &dyn Vfs, base: &Path, owned: &str) -> Option<(String, bool)> {
+    let parent = Path::new(owned).parent()?;
+    let mut ancestors: Vec<&Path> = parent
+        .ancestors()
+        .filter(|path| !path.as_os_str().is_empty())
+        .collect();
+    ancestors.reverse();
+    ancestors.into_iter().find_map(|relative| {
+        let path = base.join(relative);
+        let is_link = vfs.is_symlink(&path);
+        (is_link || (vfs.exists(&path) && vfs.read_dir(&path).is_err()))
+            .then(|| (forward_slashed(relative), is_link))
+    })
 }
 
 fn walk_destination(
@@ -957,7 +990,7 @@ fn walk_destination(
 /// every caller shares.
 ///
 /// The comparison lives here rather than in a closure per caller because two
-/// callers ask it: the swap, which wants one boolean about the whole tree,
+/// callers ask it: the swap, which wants one boolean about all a root owns,
 /// and the report, which wants a story per plugin. Read off one scan and one
 /// `matches`, they cannot disagree.
 struct DestTree<'v> {
@@ -1007,7 +1040,7 @@ impl<'v> DestTree<'v> {
         sets
     }
 
-    /// Did a previous build of this vault write this tree?
+    /// Did a previous build of this vault write what this root owns here?
     ///
     /// **Provenance, not path overlap.** A rendered path being occupied says
     /// only that something is where this build would put something — and a
@@ -1017,23 +1050,22 @@ impl<'v> DestTree<'v> {
     /// repository that already is a marketplace, pointed at by `out: "."`,
     /// which is the adoption this feature invites.
     ///
-    /// [`GENERATED_MARKER`] is the one thing in the tree that only this crate
-    /// writes. Every emitted skill body opens with it, so a tree this vault
-    /// built carries it and a tree someone wrote by hand does not.
+    /// [`GENERATED_MARKER`] is the one thing here that only this crate
+    /// writes. Every emitted skill body opens with it, so packs this vault
+    /// built carry it and packs someone wrote by hand do not.
     ///
     /// A marker is not always available: only one plugin format carries
     /// commands ([`crate::publish::plugin_format_carries_commands`]), so a
-    /// commands-only plugin leaves the other harness a tree of manifests and
-    /// nothing else. The second clause covers that — a tree holding nothing
-    /// but paths this render also produces is one this render owns.
+    /// commands-only plugin leaves the other harness manifests and nothing
+    /// else. The second clause covers that — holding nothing but paths this
+    /// render also produces is holding what this render owns. It also answers
+    /// for nothing being here at all.
     ///
     /// **The residue, stated rather than hidden.** A hand-written Claude
     /// marketplace laid out the documented way keeps its packs in a *sibling*
-    /// `plugins/`, so its `.claude-plugin/` holds only `marketplace.json` —
-    /// a path this build renders. That tree satisfies the second clause and
-    /// is still replaced. Closing it needs provenance this crate writes and
-    /// can read back, which is a file in the tree, not a cleverer reading of
-    /// the files already there.
+    /// `plugins/`, so all that sits here is its `marketplace.json` — a path
+    /// this build renders. That satisfies the second clause and is still
+    /// replaced.
     fn built_here(&self, rendered: &BTreeMap<String, PreviewWrite>) -> bool {
         self.state
             .files
@@ -1072,7 +1104,7 @@ struct FileSets {
     extra: BTreeSet<String>,
 }
 
-/// The swap's own question: is this root, as a tree, exactly the render?
+/// The swap's own question: is what this root owns exactly the render?
 ///
 /// Every rendered file matched, nothing else present, no empty directory.
 /// Given every rendered path matched, the destination holds all of them, so
@@ -1294,11 +1326,10 @@ fn diff_root(
 ) -> Result<RootDiff, CoreError> {
     let dest = DestTree::scan(vfs, out_root.to_path_buf(), spec)?;
     let sets = dest.compare(rendered);
-    let occupied = vfs.exists(&out_root.join(spec.tree()));
     Ok(RootDiff {
         equal: root_is_equal(&sets, &dest),
         units: describe_root(&dest, spec, admitted, rendered, &sets, config),
-        foreign: occupied && !dest.built_here(rendered),
+        foreign: !dest.built_here(rendered),
     })
 }
 
@@ -1329,22 +1360,24 @@ fn commit(
         }
     }
 
+    let entries = swapping.iter().flat_map(|(spec, _)| spec.owned_paths());
     let mut swapped: Vec<(PathBuf, PathBuf)> = Vec::new();
-    for (spec, _) in swapping {
-        let tree = spec.tree();
-        let dest = out_root.join(tree);
-        let staged = stage.join("new").join(tree);
-        let saved = stage.join("backup").join(tree);
+    for entry in entries {
+        let dest = out_root.join(entry);
+        let staged = stage.join("new").join(entry);
+        let saved = stage.join("backup").join(entry);
         let staged = vfs.exists(&staged).then_some(staged);
         // Nothing here and nothing to put here: a root that renders nothing.
         if staged.is_none() && !vfs.exists(&dest) {
             continue;
         }
-        if let Some(parent) = saved.parent() {
-            vfs.create_dir_all(parent)?;
+        for path in [&saved, &dest] {
+            if let Some(parent) = path.parent() {
+                vfs.create_dir_all(parent)?;
+            }
         }
         if let Err(error) = swap_one(vfs, &dest, &saved, staged.as_deref()) {
-            // Everything the rollback could not put back, the failing tree
+            // Everything the rollback could not put back, the failing path
             // included: `swap_one` restores its own backup best-effort, and
             // this is the check on whether it managed.
             let mut unrestored: Vec<PathBuf> = Vec::new();
@@ -1355,7 +1388,7 @@ fn commit(
                 unrestored.push(failed);
             }
             let mut message = format!(
-                "swapping `{tree}` into {}: {error}; everything already swapped was rolled back \
+                "swapping `{entry}` into {}: {error}; everything already swapped was rolled back \
                  and the destination is as it was",
                 out_root.display()
             );
@@ -1376,13 +1409,31 @@ fn commit(
         }
         swapped.push((dest, saved));
     }
+    for (dest, _) in &swapped {
+        remove_emptied_folders(vfs, out_root, dest)?;
+    }
     vfs.remove(&stage)?;
     Ok(())
 }
 
-/// One root's swap: the live tree aside, the staged tree in. On failure the
-/// root's own backup is restored before the error surfaces, so the caller
-/// only ever rolls back *completed* swaps.
+/// Removes the folders above a swapped-out `path` that it left empty, up to
+/// `out_root`. A swap that kept the path leaves them all in place.
+fn remove_emptied_folders(vfs: &dyn Vfs, out_root: &Path, path: &Path) -> Result<(), CoreError> {
+    if vfs.exists(path) {
+        return Ok(());
+    }
+    for folder in path.ancestors().skip(1) {
+        if folder == out_root || !vfs.read_dir(folder)?.is_empty() {
+            break;
+        }
+        vfs.remove(folder)?;
+    }
+    Ok(())
+}
+
+/// One path's swap: the live entry aside, the staged entry in. On failure its
+/// own backup is restored before the error surfaces, so the caller only ever
+/// rolls back *completed* swaps.
 fn swap_one(
     vfs: &dyn Vfs,
     dest: &Path,
@@ -1804,6 +1855,68 @@ mod tests {
         // 1.0.0 has no heading in the changelog.
         let warned: Vec<&str> = report.warnings.iter().map(|w| w.reason.as_str()).collect();
         assert!(warned.contains(&"changelog-missing-version"), "{warned:?}");
+    }
+
+    /// `assets/` is copied as it is: not read as notes, and with nothing left
+    /// out, whatever the folders are called.
+    #[test]
+    fn a_plugin_folder_s_assets_land_whole_and_are_not_notes() {
+        let vfs = example_vault();
+        let assets = "/vault/marketplaces/house/plugins/tools/assets";
+        write(
+            &vfs,
+            &format!("{assets}/skills/helper.md"),
+            &note("helper", &[]),
+        );
+        write(&vfs, &format!("{assets}/docs/guide.txt"), "Guide.\n");
+        write(&vfs, &format!("{assets}/tests/case.test.txt"), "Case.\n");
+        let report = export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+
+        assert_eq!(report.checked, 3, "the asset is not a fourth note");
+        let paths = paths_under(&vfs, Path::new("/market"));
+        for path in [
+            ".claude-plugin/packs/tools/skills/helper.md",
+            ".claude-plugin/packs/tools/docs/guide.txt",
+            ".claude-plugin/packs/tools/tests/case.test.txt",
+        ] {
+            assert!(paths.contains(&path.to_owned()), "{path}: {paths:?}");
+        }
+    }
+
+    /// The warnings a build with this `CHANGELOG.md` and plugin note gives.
+    fn changelog_reasons(changelog: &str, plugin_note: Option<&str>) -> Vec<String> {
+        let vfs = example_vault();
+        let folder = "/vault/marketplaces/house/plugins/tools";
+        write(&vfs, &format!("{folder}/CHANGELOG.md"), changelog);
+        if let Some(plugin_note) = plugin_note {
+            write(&vfs, &format!("{folder}/tools.md"), plugin_note);
+        }
+        let report = export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+        report.warnings.into_iter().map(|w| w.reason).collect()
+    }
+
+    #[test]
+    fn a_changelog_heading_names_a_version_only_as_a_whole_token() {
+        let plugin = "---\nname: tools\ndescription: Tools.\nsw-version: 1.0.0\n---\n";
+        let warned = |changelog: &str| {
+            changelog_reasons(changelog, Some(plugin))
+                .contains(&"changelog-missing-version".to_owned())
+        };
+        for changelog in ["## 1.0.0\n", "## [1.0.0] - 2026-01-02\n", "## v1.0.0\n"] {
+            assert!(!warned(changelog), "{changelog}");
+        }
+        for changelog in ["## 11.0.0\n", "## 1.0.0-rc.1\n", "1.0.0\n"] {
+            assert!(warned(changelog), "{changelog}");
+        }
+    }
+
+    #[test]
+    fn a_plugin_with_no_note_is_checked_at_the_version_it_ships() {
+        let warned = |changelog: &str| {
+            changelog_reasons(changelog, None).contains(&"changelog-missing-version".to_owned())
+        };
+        assert!(warned("# Changelog\n"));
+        assert!(!warned("## 0.1.0\n"));
     }
 
     #[test]
@@ -3320,13 +3433,16 @@ mod tests {
     fn stale_content_is_reported_by_check_and_swept_by_build() {
         let vfs = example_vault();
         build(&vfs);
-        // A whole stale plugin, a stray root-level file, an empty directory.
+        // A stale plugin and an empty directory among the packs. Beside the
+        // packs, nothing is stale.
         write(
             &vfs,
             "/market/.claude-plugin/packs/legacy/junk.md",
             "junk\n",
         );
-        write(&vfs, "/market/.claude-plugin/README.md", "stray\n");
+        vfs.create_dir_all(Path::new("/market/.agents/packs/empty"))
+            .unwrap();
+        write(&vfs, "/market/.claude-plugin/README.md", "kept\n");
         vfs.create_dir_all(Path::new("/market/.agents/empty"))
             .unwrap();
 
@@ -3337,18 +3453,13 @@ mod tests {
             BTreeSet::from([
                 (
                     "claude".to_owned(),
-                    ".claude-plugin/README.md".to_owned(),
-                    StaleKind::File,
-                ),
-                (
-                    "claude".to_owned(),
                     ".claude-plugin/packs/legacy".to_owned(),
                     StaleKind::Plugin,
                 ),
                 (
                     "codex".to_owned(),
-                    ".agents/empty".to_owned(),
-                    StaleKind::EmptyDir
+                    ".agents/packs/empty".to_owned(),
+                    StaleKind::Plugin,
                 ),
             ]),
             "one unit per stale thing — the stale plugin's files do not \
@@ -3359,10 +3470,11 @@ mod tests {
 
         let report = build(&vfs);
         assert!(report.changed);
-        assert_eq!(stale_set(&report).len(), 3, "{report:?}");
+        assert_eq!(stale_set(&report).len(), 2, "{report:?}");
         assert!(!vfs.exists(Path::new("/market/.claude-plugin/packs/legacy")));
-        assert!(!vfs.exists(Path::new("/market/.claude-plugin/README.md")));
-        assert!(!vfs.exists(Path::new("/market/.agents/empty")));
+        assert!(!vfs.exists(Path::new("/market/.agents/packs/empty")));
+        assert!(vfs.exists(Path::new("/market/.claude-plugin/README.md")));
+        assert!(vfs.exists(Path::new("/market/.agents/empty")));
         assert!(!check(&vfs).changed);
     }
 
@@ -3511,7 +3623,7 @@ mod tests {
         // The swap unit is an entry, so the injected failure names one.
         let failing = FailingRename {
             inner: &vfs,
-            to: PathBuf::from("/market/.agents"),
+            to: PathBuf::from("/market/.agents/packs"),
             remaining: Cell::new(1),
         };
         let err = export_skills(&failing, &request(ExportMode::Build), &sw()).unwrap_err();
@@ -3546,7 +3658,7 @@ mod tests {
         // Two failures on the same path: the swap-in, then the restore.
         let failing = FailingRename {
             inner: &vfs,
-            to: PathBuf::from("/market/.agents"),
+            to: PathBuf::from("/market/.agents/packs"),
             remaining: Cell::new(2),
         };
         let err = export_skills(&failing, &request(ExportMode::Build), &sw()).unwrap_err();
@@ -3814,9 +3926,9 @@ mod tests {
     #[test]
     fn a_vault_inside_a_swapped_tree_is_refused() {
         for (vault, sees_links) in [
-            ("/repo/.claude-plugin/vault", true),
+            ("/repo/.claude-plugin/packs/vault", true),
             (&format!("/repo/{STAGE_DIR}/vault"), true),
-            ("/repo/.claude-plugin/vault", false),
+            ("/repo/.claude-plugin/packs/vault", false),
         ] {
             let mem = MemVfs::new();
             let mut request = repo_vault(&mem);
@@ -3851,7 +3963,7 @@ mod tests {
         let mut request = repo_vault(&vfs);
         assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
 
-        let source = "/repo/.claude-plugin/launcher";
+        let source = "/repo/.claude-plugin/packs/launcher";
         write(&vfs, source, "#!/bin/sh\n");
         request.assets = vec![AssetSpec {
             source: PathBuf::from(source),
@@ -3866,49 +3978,68 @@ mod tests {
         assert!(vfs.exists(Path::new(source)));
     }
 
-    /// Every row's `packs` must begin with its own `tree()`, or that
-    /// component would sit outside the swap unit: never replaced, never
-    /// swept, never reported stale, with `check` saying `ok` about it
-    /// forever. The module header calls the ownership structural; this is
-    /// what makes that true of the table rather than of a comment.
+    /// The regression that shaped the swap: output beside the root file
+    /// shares `.agents/` and `.pi/` with skills and config people author.
     #[test]
-    fn every_root_keeps_its_packs_inside_the_tree_it_owns() {
-        for spec in with_plugin_format() {
-            let packs = spec.format().packs;
-            assert!(
-                packs == spec.tree() || packs.starts_with(&format!("{}/", spec.tree())),
-                "{}: packs `{}` is outside its tree `{}`",
-                spec.name,
-                packs,
-                spec.tree()
-            );
+    fn a_hand_added_file_beside_the_packs_survives_a_rebuild() {
+        let vfs = MemVfs::new();
+        let request = repo_vault(&vfs);
+        export_skills(&vfs, &request, &sw()).unwrap();
+        let mine = "/repo/.agents/skills/mine/SKILL.md";
+        write(&vfs, mine, "---\nname: mine\n---\n\nBy hand.\n");
+        write(&vfs, "/repo/.pi/settings.json", "{}\n");
+        write(&vfs, "/repo/.claude-plugin/notes.txt", "mine\n");
+
+        // Nothing reports them, and a rebuild that changes the trees keeps them.
+        assert!(
+            !export_skills(&vfs, &check_of(&request), &sw())
+                .unwrap()
+                .changed
+        );
+        write(
+            &vfs,
+            "/repo/src/marketplaces/house/plugins/tools/skills/review-guide.md",
+            &note_with_body("review-guide", &[], "Revised.\n"),
+        );
+        let report = export_skills(&vfs, &request, &sw()).unwrap();
+
+        assert!(report.changed);
+        assert!(stale_set(&report).is_empty(), "{:?}", stale_set(&report));
+        assert_eq!(text_at(&vfs, mine), "---\nname: mine\n---\n\nBy hand.\n");
+        assert!(vfs.exists(Path::new("/repo/.pi/settings.json")));
+        assert!(vfs.exists(Path::new("/repo/.claude-plugin/notes.txt")));
+    }
+
+    /// `request` as a check.
+    fn check_of(request: &ExportRequest) -> ExportRequest {
+        ExportRequest {
+            mode: ExportMode::Check,
+            ..request.clone()
         }
     }
 
     #[test]
-    fn a_tree_this_vault_did_not_build_is_refused() {
+    fn packs_this_vault_did_not_build_are_refused() {
         let vfs = MemVfs::new();
         let request = repo_vault(&vfs);
-        write(&vfs, "/repo/.claude-plugin/plugin.json", "{}\n");
+        let hand = "/repo/.claude-plugin/packs/hand/plugin.json";
+        write(&vfs, hand, "{}\n");
 
         let err = export_skills(&vfs, &request, &sw()).unwrap_err();
         let message = err.to_string();
         assert!(matches!(err, CoreError::Refused(_)), "{message}");
         assert!(message.contains("foreign-tree"), "{message}");
-        assert!(message.contains(".claude-plugin"), "{message}");
+        assert!(message.contains(".claude-plugin/packs"), "{message}");
+        assert!(message.contains("build.out"), "{message}");
         // And it stopped before writing anything.
-        assert_eq!(
-            vfs.read_file(Path::new("/repo/.claude-plugin/plugin.json"))
-                .unwrap(),
-            b"{}\n"
-        );
+        assert_eq!(vfs.read_file(Path::new(hand)).unwrap(), b"{}\n");
     }
 
     /// The case the fixture above does not reach, and the one that matters:
     /// a repository that already *is* a marketplace. Its manifest sits at the
     /// path this build renders one to, so every rendered-path test says
-    /// "ours" and the swap takes the tree without a word. Provenance is what
-    /// tells them apart.
+    /// "ours" and the swap takes it without a word. Provenance is what tells
+    /// them apart.
     #[test]
     fn a_hand_written_marketplace_at_the_same_path_is_refused_not_replaced() {
         let vfs = MemVfs::new();
@@ -3936,15 +4067,14 @@ mod tests {
         )));
     }
 
-    /// The residue, pinned so it is a decision rather than a surprise. A
-    /// tree holding only a `marketplace.json` — no marker to read — is
-    /// claimed as ours on the strength of the path alone, because a
-    /// commands-only plugin leaves exactly that tree for the harness whose
-    /// plugin format carries no commands. A hand-written Claude marketplace
-    /// laid out the documented way looks identical, and is replaced. See
-    /// [`DestTree::built_here`].
+    /// The residue, pinned so it is a decision rather than a surprise. Only a
+    /// `marketplace.json`, with no marker to read, is claimed as ours on the
+    /// strength of the path alone, because a commands-only plugin leaves
+    /// exactly that for the harness whose plugin format carries no commands.
+    /// A hand-written Claude marketplace laid out the documented way looks
+    /// identical, and is replaced. See [`DestTree::built_here`].
     #[test]
-    fn a_tree_holding_only_a_manifest_is_claimed_on_its_path_alone() {
+    fn a_lone_manifest_is_claimed_on_its_path_alone() {
         let vfs = MemVfs::new();
         let request = repo_vault(&vfs);
         write(
@@ -3956,6 +4086,52 @@ mod tests {
         // No refusal: the one file present is a path this render produces.
         let report = export_skills(&vfs, &request, &sw()).unwrap();
         assert!(report.changed);
+    }
+
+    #[test]
+    fn a_harness_that_renders_nothing_loses_only_its_packs() {
+        let vfs = MemVfs::new();
+        let mut request = repo_vault(&vfs);
+        export_skills(&vfs, &request, &sw()).unwrap();
+        write(&vfs, "/repo/.pi/settings.json", "{}\n");
+        vfs.remove(Path::new("/repo/src/marketplaces/house/plugins/tools"))
+            .unwrap();
+        write(
+            &vfs,
+            "/repo/src/marketplaces/house/plugins/gear/commands/run.md",
+            "---\nname: run\ndescription: Run.\n---\n\nBody.\n",
+        );
+        request.harnesses = BTreeSet::from(["pi".to_owned()]);
+
+        export_skills(&vfs, &request, &sw()).unwrap();
+        assert!(!vfs.exists(Path::new("/repo/.pi/packs")));
+        assert!(vfs.exists(Path::new("/repo/.pi/settings.json")));
+    }
+
+    /// A link above an owned path would carry the swap out of the directory.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_above_an_owned_path_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path();
+        let vault = root.join("vault/plugins/tools/skills");
+        std::fs::create_dir_all(&vault).unwrap();
+        std::fs::write(vault.join("guide.md"), note("guide", &[])).unwrap();
+        let out = root.join("out");
+        let elsewhere = root.join("elsewhere");
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, out.join(".agents")).unwrap();
+
+        let mut request = request(ExportMode::Build);
+        request.vault_root = root.join("vault");
+        request.out_root = out;
+        let message = export_skills(&NativeVfs, &request, &sw())
+            .unwrap_err()
+            .to_string();
+
+        assert!(message.contains("foreign-tree"), "{message}");
+        assert!(std::fs::read_dir(&elsewhere).unwrap().next().is_none());
     }
 
     #[test]
@@ -4000,7 +4176,7 @@ mod tests {
     #[test]
     fn a_tree_with_an_earlier_marker_and_the_same_file_set_is_rebuilt() {
         // No marker counts as ours, but every file is at a path this render
-        // produces, so the tree is still claimed.
+        // produces, so it is still claimed.
         let vfs = MemVfs::new();
         let request = repo_vault(&vfs);
         built_tree_with_an_earlier_marker(&vfs, &request);
@@ -4010,24 +4186,25 @@ mod tests {
     }
 
     #[test]
-    fn a_tree_with_an_earlier_marker_and_an_extra_file_is_refused() {
+    fn packs_with_an_earlier_marker_and_an_extra_file_are_refused() {
         let vfs = MemVfs::new();
         let request = repo_vault(&vfs);
         built_tree_with_an_earlier_marker(&vfs, &request);
-        write(&vfs, "/repo/.claude-plugin/stray.txt", "left over\n");
+        let stray = "/repo/.claude-plugin/packs/tools/stray.txt";
+        write(&vfs, stray, "left over\n");
 
         let err = export_skills(&vfs, &request, &sw()).unwrap_err();
         let message = err.to_string();
         assert!(matches!(err, CoreError::Refused(_)), "{message}");
         assert!(message.contains("foreign-tree"), "{message}");
-        assert!(vfs.exists(Path::new("/repo/.claude-plugin/stray.txt")));
+        assert!(vfs.exists(Path::new(stray)));
     }
 
     #[test]
     fn the_rail_refuses_a_destination_overlapping_the_vault() {
         // Inside the vault's structure — refused before discovery reads a
         // note. The vault root and a plain folder in it are not here: output
-        // beside the root file is the default. Nor is a directory that merely
+        // `out: .` builds beside the root file. Nor is a directory that merely
         // CONTAINS the vault: that is a repository publishing itself.
         for out in ["/vault/plugins/tools", "/vault/marketplaces/house"] {
             let vfs = example_vault();
