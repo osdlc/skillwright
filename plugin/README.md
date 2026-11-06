@@ -5,7 +5,7 @@ The `skillwright` agent plugin. Its skills teach a coding agent to use the skill
 - `setup` installs the CLI and writes a `skillwright.md`.
 - `author` writes skills, plugins and marketplaces as markdown notes in a vault.
 - `publish` builds and publishes them to Claude Code, Codex, Cursor and Pi.
-- `migrate` moves a project over from tradecraft, the CLI's earlier name.
+- `migrate` moves a vault to the `skillwright.md` structure and bare frontmatter keys.
 
 The plugin ships in the `osdlc` marketplace as `skillwright@osdlc`.
 
@@ -43,8 +43,8 @@ from the marketplace with that harness's own tooling.
 
 ## Release
 
-1. Change the notes, rebuild, and raise `sw-version` in `plugins/skillwright/skillwright.md`
+1. Change the notes, rebuild, and raise `version` in `plugins/skillwright/skillwright.md`
    (`skillwright bump skillwright`). Merge the pull request.
-2. Push the tag `plugin/vX.Y.Z` on main, where `X.Y.Z` is that `sw-version`.
+2. Push the tag `plugin/vX.Y.Z` on main, where `X.Y.Z` is that `version`.
 3. The `plugin-release` workflow opens a pull request on `osdlc/marketplace` that replaces only
    this plugin's pack and manifest entry. Merging it publishes the plugin.

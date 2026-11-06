@@ -1,6 +1,6 @@
 ---
 name: migrate
-description: "Move a project from tradecraft, the earlier name of skillwright, to skillwright: rename the project file, the manifest folders, the frontmatter keys and the environment variables, then verify with list, status and check. Use when skillwright stops with an `old project file`, `old-key`, `old-tree` or old-manifest error, when a repository has a `tradecraft.yaml`, or when asked to upgrade from tradecraft."
+description: "Move a skillwright vault to the current structure: `skillwright.yaml` to `skillwright.md`, prefixed frontmatter keys to bare, `sw-kind` and `sw-plugin` to folders, `sw-overrides` to harness blocks, then refresh adopt hashes and verify with list and check. Use when a repository has a `skillwright.yaml` or `tradecraft.yaml`, when notes carry `sw-*` or `tc-*` keys, when skillwright refuses a `kind` or `plugin` key, or when asked to upgrade a vault."
 license: MIT OR Apache-2.0
 ---
 
@@ -9,50 +9,128 @@ license: MIT OR Apache-2.0
 
 # `/migrate`
 
-Scope: renames old names in one repository. If `skillwright --version` fails, run `/setup`
-first.
+Scope: moves one vault. If `skillwright --version` fails, run `/setup` first.
 
-skillwright was published as `tradecraft` up to 0.3.7. It does
-not read the old names. An old project file, manifest folder or frontmatter key stops the run with
-one line that says what to rename.
+skillwright has no `migrate` verb and reads none of the old shape. It ignores `skillwright.yaml`
+and skips a note with a `kind` or `plugin` key. Do the whole move in one pass, on a branch.
 
-| Old | New |
-|---|---|
-| `tradecraft.yaml` | `skillwright.yaml` |
-| `.tradecraft/` (manifest folder at a destination) | `.skillwright/` |
-| `tc-*` frontmatter keys, `tc:` block | `sw-*`, `sw:` |
-| `TRADECRAFT_*` environment variables | `SKILLWRIGHT_*` |
-| `<config-home>/tradecraft/config.yaml` | `<config-home>/skillwright/config.yaml` |
-| `.tradecraft-stage/` (build staging folder) | `.skillwright-stage/` |
-| the `tradecraft` command | `skillwright` |
+The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move the same way.
 
 ## Steps
 
-1. Find the old names: search the repository for `tradecraft` and `tc-` in
-   project files, vault notes, scripts and CI. List the hits before changing anything.
-2. Rename the project file to `skillwright.yaml`. If it sets `namespace: tc`,
-   decide on the keys first (step 3).
-3. Rename the frontmatter keys in every vault note: `tc-kind` becomes `sw-kind`, and so on, and a
-   `tc:` block becomes `sw:`. skillwright names an old `tc-` key
-   in an error. To keep
-   `tc-*` keys for now, set `namespace: tc` in `skillwright.yaml` instead.
-4. At each destination you publish to, rename the manifest folder `.tradecraft/` to `.skillwright/`.
-5. Move by hand what skillwright does not check: rename `TRADECRAFT_*` variables to
-   `SKILLWRIGHT_*`, and move the machine file to `<config-home>/skillwright/config.yaml`. Delete
-   any `.tradecraft-stage/` folder; it is not used.
-6. Replace `tradecraft` in scripts and CI with `skillwright`.
-7. Verify:
+1. List what is there before changing anything. Search the repository for `skillwright.yaml`,
+   `tradecraft.yaml`, `sw-`, `sw:`, `tc-` and `tc:` in project files, notes, scripts and CI.
 
-   ```sh
-   skillwright list            # every note listed, none skipped for an old key
-   skillwright status --check  # destinations match the vault
-   skillwright check           # the built marketplace matches the vault
+2. Decide on the keys. Bare keys are the default. If the notes share their frontmatter with another
+   tool and `version` or `targets` means something else there, keep the prefix: set
+   `build.namespace: sw` in step 3 and skip the key renames in step 5. Step 4 and the block moves
+   still apply.
+
+3. Write `skillwright.md` in the vault folder, the folder that holds the notes, and delete the old
+   file. It is the only configuration file. Use `skillwright init --out <path>` to start one, or
+   write it by hand:
+
+   | `skillwright.yaml` | `skillwright.md` |
+   |---|---|
+   | `vault: <path>` | none: the file sits in that folder |
+   | `namespace: <stem>` | `build.namespace`, or remove it for bare keys |
+   | `marketplace.name`, `.display_name`, `.owner`, `.author`, `.license` | the same key at the top level |
+   | `marketplace.out`, `.harnesses`, `.launcher_path`, `.require_descriptions` | the same key under `build:` |
+   | `marketplace.default_plugin` | none: see step 4 |
+   | `marketplace.plugins.<p>` | the keys of `plugins/<p>/<p>.md` |
+   | `marketplace.skills_root` | none: put `skillwright.md` where the kind folders are, or pass `--skills-root` |
+   | `destinations`, `scan_locations`, `assets`, `hooks` | the same key under `build:` |
+   | `paths`, `declared_folders` | none: use `build.patterns` for a layout that differs |
+
+   `build.out` is required, here or as `--out`, because there is no default output folder. If the
+   old file set no `marketplace.out`, ask where builds should land. `out: .` builds beside
+   `skillwright.md`. Paths in the file resolve against its folder, so rewrite any that moved.
+
+   An `assets` or `hooks` entry with no `plugin` used `default_plugin`. Name the plugin.
+
+   Delete the machine file `<config-home>/skillwright/config.yaml` after moving any key the project
+   needs. Personal defaults now come from the environment. Remove `SKILLWRIGHT_MACHINE_CONFIG` from
+   scripts and CI.
+
+4. Move notes so the folder says what the keys said. Use `git mv`, because a move keeps the history.
+
+   | Old | New |
+   |---|---|
+   | `sw-kind: <kind>` | move the note into that kind's folder, and remove the key |
+   | `sw-plugin: <p>` | move the note under `plugins/<p>/`, and remove the key |
+   | no `sw-plugin`, joined `default_plugin` | move the note under `plugins/<default_plugin>/`, or leave it in a top-level `skills/` to join a plugin named after the marketplace |
+   | `marketplaces/<m>/<m>.md` | `marketplaces/<m>/skillwright.md`, with `workspace: true` in an outer `skillwright.md` |
+
+   A vault that cannot move its notes maps them with `build.patterns`. Patterns are experimental.
+
+5. Rename the keys in every note:
+
+   | Old | New |
+   |---|---|
+   | `sw-version`, `sw-author`, `sw-owner`, `sw-license`, `sw-keywords`, `sw-category`, `sw-targets`, `sw-arguments` | the same word, bare |
+   | `sw-display-name` | `display_name` |
+   | `sw: {version: …}` | the same keys at the top level |
+
+   On a note that has both a bare `license` and `sw-license`, keep the one for that kind: the pack's
+   on a plugin, the spec field on a skill.
+
+6. Move each `sw-overrides` entry to a top-level block named for the harness, and remove
+   `sw-overrides`:
+
+   ```yaml
+   # before
+   sw-overrides:
+     claude:
+       allowed-tools: Bash(cargo:*)
+   # after
+   claude:
+     allowed-tools: Bash(cargo:*)
    ```
 
-   A marketplace tree built by tradecraft is still recognised as skillwright's own, so the next
-   `skillwright build --yes` rewrites it. Each built file's marker then reads
-   `Generated by skillwright`, which `check` reports as drift until you build.
+   Only `claude`, `codex`, `cursor` and `pi` have blocks. Move an override for any other target
+   into the note, or drop it. A block a skill inherits cannot set its `name` or `description`, and a
+   block's `metadata` merges with the note's own. Blocks and `author`, `license`, `repository`,
+   `homepage` and `targets` inherit from the plugin note and `skillwright.md`, so a value repeated on
+   every note can move up once.
 
-   A marketplace tree built by a tool older than tradecraft is not recognised. `build` and `check`
-   refuse it with `old-tree`, and the error names the old marker. Delete that tree and run
-   `skillwright build --yes` again.
+7. Fold adoption provenance into one `adopted:` block, leaving every value as it is:
+
+   | Old | New |
+   |---|---|
+   | `sw-source` | `adopted.source` |
+   | `sw-format` | `adopted.format` |
+   | `sw-source-hash` | `adopted.source_hash` |
+   | `sw-adopted-hash` | `adopted.hash` |
+   | `sw-adopted-at` | `adopted.at` |
+   | `sw-also-at` | `adopted.also_at` |
+
+8. Refresh the adopt hashes. A key that is skillwright's now, such as `arguments`, was covered by
+   the old hash, so the rename alone can read as an edit:
+
+   ```sh
+   skillwright check --fix-adopt-hashes --dry-run
+   skillwright check --fix-adopt-hashes --yes
+   ```
+
+   A note listed as `edited, left alone` changed in more than its keys, and the command exits 1. Do
+   not change its hash by hand. Tell the user: the note keeps its edit, and the next `adopt` of it
+   treats it as edited.
+
+9. Replace old names in scripts and CI. Add `--out` to any `build` or `check` that relied on a
+   default, and read `version`, not `sw-version`, in anything that parses a note.
+
+10. Verify:
+
+    ```sh
+    skillwright list            # every note listed, with the kind and plugin you meant
+    skillwright build --yes     # rebuild; read the warnings
+    skillwright check           # exits 0
+    skillwright status --check  # destinations match the vault
+    ```
+
+    Each unknown key is a warning. A leftover `sw-` key on a bare vault is one, and it would ship
+    under `metadata:`, so clear them all and search for `sw-` again. A note that still has a `kind`
+    or `plugin` key is listed as `skipped · removed-key` and is not built.
+
+    A build replaces each harness's packs folder and the manifests it writes. Files the old build
+    left elsewhere in a harness folder stay, so remove them by hand if they are stale.

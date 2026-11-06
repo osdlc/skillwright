@@ -13,7 +13,7 @@ There are two ways out of a vault:
 - `publish` writes notes into destinations: a project or home folder a harness reads, such as
   `.claude/skills/<name>/SKILL.md`. It records what it wrote in `.skillwright/manifest.json` at
   each destination.
-- `build` renders the whole vault into plugin marketplaces under `marketplace.out`:
+- `build` renders the whole vault into plugin marketplaces under the output folder:
   `.claude-plugin/` (Claude Code), `.agents/` (Codex), `.cursor-plugin/` (Cursor) and `.pi/`
   (Pi), each with its packs and marketplace manifest. Pi has no marketplace manifest; a Pi pack
   installs by path.
@@ -33,15 +33,18 @@ There are two ways out of a vault:
 
 ## Build a marketplace
 
-1. Run `skillwright build --dry-run`, then `skillwright build --yes`. `--out <path>` overrides
-   `marketplace.out`. `--watch` rebuilds on every save until interrupted.
-2. Read the warnings. A plugin with no `sw-version` is published as `0.1.0`; set the key.
-3. Verify with `skillwright check`. It writes nothing and exits 1 on drift, so it suits CI. Fix
+1. `build` and `check` need an output folder: `--out <path>`, or `build.out` in `skillwright.md`.
+   There is no default. `out: .` builds beside `skillwright.md`, which makes the repository
+   installable as a marketplace.
+2. Run `skillwright build --dry-run`, then `skillwright build --yes`. `--watch` rebuilds on every
+   save until interrupted. In a workspace, `--marketplace <name>` picks one marketplace.
+3. Read the warnings. A plugin with no `version` is published as `0.1.0`; set the key.
+4. Verify with `skillwright check`. It writes nothing and exits 1 on drift, so it suits CI. Fix
    drift by changing the note and building again; a hand edit to a built file is drift.
 
-`build` owns everything under each harness root it writes. A plugin directory there that the
-vault does not produce is swept as stale. Do not build into a tree that holds another tool's
-plugins.
+A build replaces only what skillwright owns: each harness's packs folder and the manifests it
+writes. Everything else in those harness folders stays. A pack in a packs folder that the vault
+does not produce is swept as stale, so do not share a packs folder with another tool.
 
 ## Install into a harness
 
@@ -55,7 +58,7 @@ skillwright harness uninstall claude [--marketplace]
 
 - The harness is `claude`, `codex` or `cursor`. Each verb runs that harness's own `plugin`
   command (`claude plugin`, `codex plugin`, `cursor-agent plugin`), which must be on `PATH`.
-- `--plugin` is repeatable and defaults to `marketplace.default_plugin`.
+- `--plugin` is repeatable and defaults to every plugin the built tree holds.
 - Codex and Cursor support user scope only. Cursor needs `--git-url <url>` for install and update.
 - `--path <path>` names the built marketplace folder; `--git-url <url>` and `--git-ref <ref>`
   register it from git instead.
@@ -70,7 +73,7 @@ skillwright harness uninstall claude [--marketplace]
 | 1 | done, but something was refused, or `check` found drift |
 | 2 | a run-level blocker; nothing was attempted |
 | 3 | usage error |
-| 4 | no configuration found |
+| 4 | no vault found, or `build` or `check` has no output folder |
 | 130 | interrupted, such as Ctrl-C ending `build --watch` |
 
 The report is on stdout; progress and errors are on stderr. `--json` prints the report as one

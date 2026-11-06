@@ -1,6 +1,6 @@
 ---
 name: author
-description: "Author coding-agent skills, plugins and marketplaces as markdown notes in a skillwright vault: the folder layout, the frontmatter (`description`, `name` and the `sw-*` keys), and the verbs that create and reorganise notes (`new`, `rename`, `move`, `delete`, `convert`, `bump`, `adopt`, `list`). Use when asked to write a new skill, add a plugin or marketplace, rename or move a skill, bump a plugin version, or bring existing SKILL.md files into a vault."
+description: "Author coding-agent skills, plugins and marketplaces as markdown notes in a skillwright vault: the folder layout, the frontmatter (`description`, `name`, `version`, `targets` and the harness blocks), and the verbs that create and reorganise notes (`new`, `rename`, `move`, `delete`, `convert`, `bump`, `adopt`, `list`). Use when asked to write a new skill, add a plugin or marketplace, rename or move a skill, bump a plugin version, or bring existing SKILL.md files into a vault."
 ---
 
 # /[[author]]
@@ -17,11 +17,16 @@ A vault is a folder of markdown notes. Where a note sits decides what it is:
 | `skills/<name>.md` | a skill |
 | `skills/<name>/<name>.md` | a skill that carries the files beside it (scripts, references) |
 | `skills/<name>/SKILL.md` | the same, named by its folder |
-| `plugins/<p>/<p>.md` | a plugin; its skills go in `plugins/<p>/skills/` |
-| `marketplaces/<m>/<m>.md` | a marketplace; its plugins go in `marketplaces/<m>/plugins/` |
+| `plugins/<p>/` | a plugin, named after the folder; its skills go in `plugins/<p>/skills/` |
+| `plugins/<p>/<p>.md` | the plugin's optional note, for its fields |
+| `plugins/<p>/assets/` | copied as it is to the plugin's root |
+| `plugins/<p>/CHANGELOG.md` | rendered into each pack |
+| `skillwright.md` | the marketplace: its fields, and tool settings under `build:` |
+| `marketplaces/<m>/skillwright.md` | one marketplace of several; its plugins go in `marketplaces/<m>/plugins/` |
 
-So `marketplaces/<m>/plugins/<p>/skills/<s>.md` is the full shape. A note under no kind folder is
-a resource or the author's own writing, and is never published.
+The folder alone decides what a note is and which plugin it joins. A `skills/` folder at the top is
+a plugin named after the marketplace. A note under no kind folder is a resource or the author's own
+writing, and is never published. `docs/`, `tests/` and `fixtures/` never ship.
 
 ## Frontmatter
 
@@ -29,15 +34,22 @@ a resource or the author's own writing, and is never published.
   the skill does and when to use it. The limit is 1024 characters.
 - `name` is optional and defaults to the file name. Names are lowercase words joined by hyphens,
   at most 64 characters.
-- `sw-kind` overrides the kind the folder implies.
-- `sw-plugin` puts a skill in a plugin when the folder does not.
-- `sw-targets` limits a note to some harnesses, for example `[claude-code, codex]`. Absent means
-  every destination.
-- `sw-version` is a plugin's semver. Set it on every plugin note; a build warns when it is missing.
-- `sw-owner` and `sw-author` go on a marketplace note.
+- `targets` limits a note to some harnesses, for example `[claude-code, codex]`. Absent means
+  every destination, and `[]` means none.
+- `version` is a plugin's semver. Set it on every plugin note; a build warns when it is missing.
+- `owner` goes on the marketplace; `author`, `license`, `repository` and `homepage` go on the
+  marketplace or a plugin.
+- `claude:`, `codex:`, `cursor:` and `pi:` hold fields only that harness reads, such as Codex's
+  `interface` on a plugin. A block's `metadata` merges with the note's.
 
-The `sw-` keys are stripped on publish. Everything else, such as `allowed-tools`, passes through
-to the harness. The `sw` prefix is the project's `namespace` setting.
+`author`, `license`, `repository`, `homepage`, `targets` and the harness blocks inherit from the
+plugin note, then `skillwright.md`, so set them once. An inherited block cannot set a component's
+`name` or `description`.
+
+skillwright's own keys are stripped on publish. Spec keys such as `allowed-tools` pass through to
+the harness. An unknown key gets a warning: on a skill it travels under `metadata:`, and on a
+plugin note or `skillwright.md` it is ignored. There is no `kind` or `plugin` key; move the note.
+A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-version`).
 
 ## Links
 
@@ -63,7 +75,7 @@ to the harness. The `sw` prefix is the project's `namespace` setting.
    | `move <entry> --to-plugin <p> [--to-marketplace <m>]` | moves a component to another plugin |
    | `delete <entry> [--force]` | moves a note to the vault's trash; `--force` also trashes a non-empty container's members |
    | `convert <entry> --kind <kind>` | changes a note's kind and moves it into that kind's folder |
-   | `bump <plugin> [--major\|--minor\|--patch]` | raises a plugin's `sw-version`; patch is the default |
+   | `bump <plugin> [--major\|--minor\|--patch]` | raises a plugin's `version`; patch is the default |
    | `adopt [source...] [--plugin <p>] [--into <path>]` | turns SKILL.md folders already on disk into notes; `--from-git owner/repo[/path][@ref]` reads a repository |
 
    An `<entry>` is a note's `name`. Edit a note's body directly; no verb is needed for that.
