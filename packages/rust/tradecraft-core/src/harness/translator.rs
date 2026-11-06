@@ -548,7 +548,8 @@ pub fn write_component(
 }
 
 /// A call at `canonical`, written in `runtime`'s syntax, a skill of a plugin
-/// named by `naming`.
+/// named by `naming`. A mention is the skill's name as that harness
+/// qualifies it, with no call sigil.
 fn render_call(
     call: &Call,
     canonical: &str,
@@ -556,6 +557,12 @@ fn render_call(
     naming: SkillNaming,
 ) -> Result<String, CoreError> {
     call.check_shipped(targets_name(call.targets.as_deref(), canonical), canonical)?;
+    if call.mention {
+        return match &call.skill.plugin {
+            Some(plugin) => crate::export::mentioned_skill_name(naming, plugin, &call.skill.name),
+            None => Ok(call.skill.name.clone()),
+        };
+    }
     let Some(runtime) = runtime else {
         return Ok(call.skill.name.clone());
     };
