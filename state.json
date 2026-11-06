@@ -13,9 +13,9 @@
       "line": 114,
       "title": "unlink removes whatever is at the path after the prompt; remove_dir fallback can delete a real empty folder",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     },
     {
       "id": "r1-2",
@@ -24,9 +24,9 @@
       "line": 37,
       "title": "codex link folder ~/.agents/skills is also read by Cursor and Pi",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     },
     {
       "id": "r1-3",
@@ -35,9 +35,9 @@
       "line": 38,
       "title": "symlink following is an open question in the Cursor and Pi discovery-walk facts",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     },
     {
       "id": "r1-4",
@@ -46,9 +46,9 @@
       "line": 143,
       "title": "unlink needs the build present; stale links from removed or renamed skills are never removed",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     },
     {
       "id": "r1-5",
@@ -57,9 +57,9 @@
       "line": 288,
       "title": "a failed link mid-run returns without the report; earlier links are made but unreported",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     },
     {
       "id": "r1-6",
@@ -68,20 +68,20 @@
       "line": 64,
       "title": "packages entry shapes and the relative-path base are not in the Pi facts",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     },
     {
       "id": "r1-7",
       "round": 1,
       "path": "packages/rust/skillwright/src/commands/harness/pi.rs",
       "line": 188,
-      "title": "pi uninstall with nothing installed reports unchanged · exists",
+      "title": "pi uninstall with nothing installed reports unchanged \u00b7 exists",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     },
     {
       "id": "r1-8",
@@ -90,9 +90,9 @@
       "line": 117,
       "title": "--git-ref is silently accepted by harness <verb> pi and by link/unlink",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     },
     {
       "id": "r1-9",
@@ -101,9 +101,9 @@
       "line": 250,
       "title": "built_root and configured_plugins duplicate the inline logic run_market still uses",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     },
     {
       "id": "r1-10",
@@ -112,9 +112,9 @@
       "line": 215,
       "title": "no test for the duplicate-name refusal, the other-link refusal, unlink leaving a foreign link, pi update, or cursor link",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "7d839fd7e456f3a40672a114b2d442f8dc9d7579"
     }
   ]
 }
