@@ -642,7 +642,7 @@ pub struct RelatedSplit {
     /// since a non-markdown embed is rewritten as a link too. Never the entry
     /// itself, which a self-reference resolves to.
     pub links: Vec<String>,
-    /// Notes this note calls. With a [`CallContext`] these are skills; without
+    /// Notes this note calls or names. With a [`CallContext`] these are skills; without
     /// one, whatever note each `/[[…]]` resolved to by path. A call copies
     /// nothing, so a called note is never also in [`Self::links`] for that
     /// call.
@@ -1345,7 +1345,9 @@ impl<'a> Renderer<'a> {
     /// another is never what was meant, and `/[[x]]` is the call. `None`
     /// leaves the token to the link path, as does a name several skills
     /// share, or an index that cannot be built: the reading is a heuristic,
-    /// so a fault elsewhere in the vault must not block a link.
+    /// so a fault elsewhere in the vault must not block a link. An author's
+    /// `|alias` stays as the words and the name follows in parentheses; a
+    /// `#fragment` is checked and then ignored.
     fn skill_mention(
         &mut self,
         token: &WikiToken<'_>,
@@ -1376,7 +1378,11 @@ impl<'a> Renderer<'a> {
         self.check_call_fragment(skill, fragment.as_deref())?;
         self.record_call(skill, output_path);
         let name = render_or_mark(context, skill, token.destination, caller, true)?;
-        Ok(Some(format_call(&name, false)))
+        let name = format_call(&name, false);
+        Ok(Some(match text_alias(token.alias.as_deref()) {
+            Some(alias) => format!("{alias} ({name})"),
+            None => name,
+        }))
     }
 
     /// A call to a skill the destination does not carry would name a command
