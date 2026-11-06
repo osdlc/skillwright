@@ -657,7 +657,8 @@ export interface DiscoveredComponent {
 
   /**
    * The marketplace this belongs to — the directory holding the `plugins/`
-   * folder it sits under. `None` only for a marketplace's own note.
+   * folder it sits under. `None` for a marketplace's own note, and for a
+   * component with no marketplace folder above it.
    *
    * Structural, with no frontmatter counterpart.
    */
