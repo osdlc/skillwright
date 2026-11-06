@@ -93,9 +93,9 @@
       "line": 73,
       "title": "new plugin and new skill do not write the conventional folders",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "cd5dcad0dbbbfe08e851abb52462d667b544bd42"
+      "fixedIn": null
     },
     {
       "id": "r1-9",
@@ -104,9 +104,9 @@
       "line": 97,
       "title": "plain Markdown links to a never-ship file are not refused",
       "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032144",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "cd5dcad0dbbbfe08e851abb52462d667b544bd42"
+      "fixedIn": null
     },
     {
       "id": "r1-10",
@@ -203,9 +203,9 @@
       "line": 73,
       "title": "a marketplace skillwright.md with a description is listed as unreadable from the workspace root",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "cd5dcad0dbbbfe08e851abb52462d667b544bd42"
+      "fixedIn": null
     },
     {
       "id": "r1-19",
@@ -214,9 +214,9 @@
       "line": 73,
       "title": "the no-root-file note does not name init",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "cd5dcad0dbbbfe08e851abb52462d667b544bd42"
+      "fixedIn": null
     },
     {
       "id": "r2-1",
@@ -224,7 +224,7 @@
       "path": null,
       "line": null,
       "title": "a marketplace note whose name differs from its folder loses its packs on every path that asks effective_config",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -235,18 +235,18 @@
       "path": "packages/rust/tradecraft-core/src/authoring.rs",
       "line": 445,
       "title": "rename of a marketplace is refused for the only note form",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490579297",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c904804"
     },
     {
       "id": "r2-3",
       "round": 2,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/authoring.rs",
+      "line": 653,
       "title": "convert to marketplace writes the removed note form and the next build fails",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -257,10 +257,10 @@
       "path": "packages/rust/tradecraft-core/src/discover.rs",
       "line": 1355,
       "title": "only_marketplace counts folders the build does not, and the reverse",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490579310",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c904804"
     },
     {
       "id": "r2-5",
@@ -268,7 +268,7 @@
       "path": null,
       "line": null,
       "title": "list at a workspace root ignores each member's exclude, patterns and namespace",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -276,10 +276,10 @@
     {
       "id": "r2-6",
       "round": 2,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 124,
       "title": "a malformed workspace file is ignored on member runs that do not build, so an exclusion fails open",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -287,10 +287,10 @@
     {
       "id": "r2-7",
       "round": 2,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 124,
       "title": "a component at the workspace root is listed as shipping and no build ships it",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -301,10 +301,10 @@
       "path": "packages/rust/tradecraft-core/src/discover.rs",
       "line": 1050,
       "title": "an old marketplaces/m/m.md with no description is ignored in silence",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490579335",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c904804"
     },
     {
       "id": "r2-9",
@@ -312,10 +312,10 @@
       "path": "packages/rust/skillwright/src/commands/authoring.rs",
       "line": 201,
       "title": "new marketplace inside a workspace member nests a marketplace in it",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490579345",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c904804"
     },
     {
       "id": "r2-10",
@@ -323,18 +323,18 @@
       "path": "packages/rust/tradecraft-core/src/model/load.rs",
       "line": 1026,
       "title": "the missing-version hint names the wrong path under patterns",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490579352",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c904804"
     },
     {
       "id": "r2-11",
       "round": 2,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 661,
       "title": "the agent-only key rule depends on a URL suffix",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -342,10 +342,10 @@
     {
       "id": "r2-12",
       "round": 2,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 661,
       "title": "a non-mapping block metadata on a container is not refused",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -353,10 +353,10 @@
     {
       "id": "r2-13",
       "round": 2,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 661,
       "title": "a link into assets/docs is refused as never shipping, and it ships",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -364,10 +364,10 @@
     {
       "id": "r2-14",
       "round": 2,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 661,
       "title": "build --watch does not see the workspace file",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -375,10 +375,10 @@
     {
       "id": "r2-15",
       "round": 2,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 661,
       "title": "wasm discovery does not fold the workspace into its config",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -386,10 +386,10 @@
     {
       "id": "r2-16",
       "round": 2,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 661,
       "title": "leftovers from the removed marketplace note form",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
       "status": "open",
       "reason": null,
       "fixedIn": null
