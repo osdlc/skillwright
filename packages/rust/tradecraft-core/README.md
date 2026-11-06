@@ -68,9 +68,10 @@ assert_eq!(report.files.len(), 2);
 | `guard` | Refuse any write into a source root or the vault |
 | `vfs` | The filesystem seam |
 
-Frontmatter keys under the `sw-` prefix (`sw-kind`, `sw-targets`,
-`sw-version` and so on) belong to this library and are stripped on publish.
-`Namespace` sets the prefix; `Namespace::default()` is `sw`.
+The `keys` module lists the frontmatter keys this library owns, per kind.
+They are stripped on publish, and an unknown key on a skill travels under
+`metadata:`. Keys are bare by default. `Namespace::new("sw")` restores the
+prefixed forms, flat (`sw-version`) or nested (`sw:`).
 
 ## Runtime names
 

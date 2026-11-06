@@ -1192,14 +1192,14 @@ fn adopt_imports_the_bundle_rewrites_links_and_stamps_provenance_exit_0() {
 
     let note = fs::read_to_string(adopted_note(&vault, "adopted")).unwrap();
     assert!(note.contains("name: code-review"));
-    assert!(note.contains("sw-plugin: adopted"));
-    // Five of the provenance keys. `sw-also-at` is the sixth and is absent
+    // Five of the provenance keys. `adopted.also_at` is the sixth and is absent
     // here on purpose: nothing was cross-referenced.
-    assert!(note.contains("sw-source:"));
-    assert!(note.contains("sw-format:"));
-    assert!(note.contains("sw-source-hash:"));
-    assert!(note.contains("sw-adopted-hash:"));
-    assert!(note.contains("sw-adopted-at:"));
+    assert!(note.contains("adopted:\n"));
+    assert!(note.contains("  source:"));
+    assert!(note.contains("  format:"));
+    assert!(note.contains("  source_hash:"));
+    assert!(note.contains("  hash:"));
+    assert!(note.contains("  at:"));
     // A relative markdown link became a wikilink.
     assert!(note.contains("[[references/checklist|the review checklist]]"));
     assert!(!note.contains("](references/checklist.md)"));
@@ -1398,8 +1398,7 @@ fn plugin_groups_the_adoption_and_set_targets_narrows_what_it_will_publish_to() 
     assert_eq!(result.code, 0, "{}", result.stderr);
 
     let note = fs::read_to_string(adopted_note(&vault, "reviewing")).unwrap();
-    assert!(note.contains("sw-plugin: reviewing"));
-    assert!(note.contains("sw-targets"));
+    assert!(note.contains("targets"));
     assert!(note.contains("claude"));
 }
 
@@ -1488,9 +1487,8 @@ fn namespace_decides_how_the_provenance_is_spelled() {
     assert_eq!(result.code, 0, "{}", result.stderr);
 
     let note = fs::read_to_string(adopted_note(&vault, "adopted")).unwrap();
-    assert!(note.contains("x-source:"));
-    assert!(note.contains("x-plugin: adopted"));
-    assert!(!note.contains("sw-source:"));
+    assert!(note.contains("x-adopted:\n"));
+    assert!(!note.contains("\nadopted:"));
 }
 
 #[test]
@@ -1763,7 +1761,7 @@ fn from_git_stamps_the_repository_and_the_commit_never_the_checkout_path() {
         );
 
         let note = fs::read_to_string(adopted_note(&vault, "adopted")).unwrap();
-        assert!(note.contains("sw-source:"));
+        assert!(note.contains("  source:"));
         // The repository and the commit, which still name the same bytes
         // after the cache is purged — not the checkout directory, which does
         // not.
@@ -1858,12 +1856,12 @@ fn widen_vault(vault: &Path) {
     fs::create_dir_all(vault.join("commands").join("tidy")).unwrap();
     fs::write(
         vault.join("commands").join("tidy").join("tidy.md"),
-        "---\nname: tidy\ndescription: tidies up\nsw-kind: skill\nsw-targets: []\n---\nTidy.\n",
+        "---\nname: tidy\ndescription: tidies up\ntargets: []\n---\nTidy.\n",
     )
     .unwrap();
     fs::write(
         vault.join("skills").join("code-review").join("code-review.md"),
-        "---\nname: code-review\ndescription: reviews code\nsw-targets: [claude-code, codex]\n---\nReview the diff.\n",
+        "---\nname: code-review\ndescription: reviews code\ntargets: [claude-code, codex]\n---\nReview the diff.\n",
     )
     .unwrap();
 }
@@ -1977,7 +1975,7 @@ fn namespace_works_with_no_config_file_at_all() {
     fs::create_dir_all(vault.join("commands").join("tidy")).unwrap();
     fs::write(
         vault.join("commands").join("tidy").join("tidy.md"),
-        "---\nname: tidy\ndescription: tidies up\nv-kind: skill\n---\nTidy.\n",
+        "---\nname: tidy\ndescription: tidies up\nv-targets: []\n---\nTidy.\n",
     )
     .unwrap();
 
@@ -1993,13 +1991,8 @@ fn namespace_works_with_no_config_file_at_all() {
         dir.path(),
     );
     assert_eq!(run.code, 0, "{}", run.stderr);
-    // The declared kind won over the folder's guess, which only happens if
-    // `v-kind` was read as ours.
-    assert!(
-        run.stdout.contains("skill (folder: command)"),
-        "{}",
-        run.stdout
-    );
+    // `nowhere` only happens if `v-targets` was read as ours.
+    assert!(run.stdout.contains("nowhere"), "{}", run.stdout);
 }
 
 // --- status: the states a published destination can be in --------------------
@@ -2133,7 +2126,7 @@ fn a_destination_the_notes_sw_targets_excludes_reads_as_not_published() {
     let config = status_config(dir.path(), &vault);
     fs::write(
         vault.join("skills").join("code-review").join("code-review.md"),
-        "---\nname: code-review\ndescription: reviews code\nsw-targets:\n  - codex\n---\nReview the diff.\n",
+        "---\nname: code-review\ndescription: reviews code\ntargets:\n  - codex\n---\nReview the diff.\n",
     )
     .unwrap();
 
@@ -2188,7 +2181,7 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
         .join("marketplaces")
         .join("acme")
         .join("plugins")
-        .join("core");
+        .join("core-tools");
     fs::create_dir_all(plugin.join("skills")).unwrap();
     fs::write(
         vault.join("marketplaces").join("acme").join("acme.md"),
@@ -2196,14 +2189,14 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
     )
     .unwrap();
     fs::write(
-        plugin.join("core.md"),
-        "---\nname: core-tools\ndescription: The core tools.\nsw-version: 1.0.0\n---\n\nThe plugin.\n",
+        plugin.join("core-tools.md"),
+        "---\nname: core-tools\ndescription: The core tools.\nversion: 1.0.0\n---\n\nThe plugin.\n",
     )
     .unwrap();
     let member = plugin.join("skills").join("review.md");
     fs::write(
         &member,
-        "---\nname: review\ndescription: Reviews a diff.\nsw-plugin: core-tools\n---\n\nRead the diff.\n",
+        "---\nname: review\ndescription: Reviews a diff.\n---\n\nRead the diff.\n",
     )
     .unwrap();
     let config = status_config(dir.path(), &vault);
@@ -2211,7 +2204,7 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
     assert_eq!(published.code, 0, "{}", published.stderr);
     fs::write(
         &member,
-        "---\nname: review\ndescription: Reviews a diff.\nsw-plugin: core-tools\n---\n\nRead the whole diff.\n",
+        "---\nname: review\ndescription: Reviews a diff.\n---\n\nRead the whole diff.\n",
     )
     .unwrap();
 
@@ -2227,7 +2220,7 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
     let one = run(
         &[
             "status",
-            "marketplaces/acme/plugins/core/core.md",
+            "marketplaces/acme/plugins/core-tools/core-tools.md",
             "--config",
             &config,
         ],
@@ -2267,7 +2260,7 @@ fn a_hook_is_n_a_rather_than_unknown_and_status_check_still_passes() {
     .unwrap();
     fs::write(
         plugin.join("review.md"),
-        "---\nname: review\ndescription: Skills for reviewing a change.\nsw-version: 1.0.0\n---\n\nThe review plugin.\n",
+        "---\nname: review\ndescription: Skills for reviewing a change.\nversion: 1.0.0\n---\n\nThe review plugin.\n",
     )
     .unwrap();
     fs::write(
@@ -2872,15 +2865,18 @@ fn a_run_that_projected_nothing_blames_the_flag_for_nothing() {
     // with no member this destination admits reaches the loop with a known
     // target and throws `empty-plugin` there, which is the shape this test
     // needs.
+    let pack = vault.join("plugins").join("review-pack");
+    fs::create_dir_all(&pack).unwrap();
     fs::write(
-        vault.join("skills").join("code-review").join("code-review.md"),
-        "---\nname: code-review\ndescription: the review pack\nsw-kind: plugin\n---\nReview the diff.\n",
+        pack.join("review-pack.md"),
+        "---\nname: review-pack\ndescription: the review pack\n---\nReview the diff.\n",
     )
     .unwrap();
 
-    let run = publish_real(
-        &vault,
-        &dest,
+    let mut argv = publish_argv(&vault, &dest, "--yes");
+    argv[1] = "plugins/review-pack/review-pack.md".to_string();
+    let run = run_argv(
+        argv,
         &["--overwrite", ".claude/skills/typo/SKILL.md"],
         dir.path(),
     );
@@ -2908,7 +2904,7 @@ fn a_packs_replaced_manifest_is_named_as_replaced_not_as_not_carried() {
     fs::create_dir_all(base.join(".claude-plugin")).unwrap();
     fs::write(
         base.join("git-tools.md"),
-        "---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\n---\nThe pack.\n",
+        "---\nname: git-tools\ndescription: Git helpers.\n---\nThe pack.\n",
     )
     .unwrap();
     fs::write(

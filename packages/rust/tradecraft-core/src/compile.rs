@@ -3076,7 +3076,7 @@ mod tests {
         vfs.set_executable(Path::new("/vault/skills/demo/scripts/run.sh"), true)
             .unwrap();
 
-        let ns = Namespace::default();
+        let ns = Namespace::sw();
         let mut note = read_vault_skill(&vfs, Path::new("/vault/skills/demo.md"), &ns).unwrap();
         let compile_source = CompileSource {
             vault_root: Path::new("/vault"),

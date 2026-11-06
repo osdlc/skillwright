@@ -3,7 +3,7 @@
 //!
 //! `build` and `publish` used to be two pipelines that each read and
 //! compiled a note: `build` once per harness, `publish` once per
-//! destination. They drifted — `build` ignored `sw-overrides`, and `publish`
+//! destination. They drifted — `build` ignored harness blocks, and `publish`
 //! wrote packs for two harnesses of four. Here the vault is read into one
 //! object graph, marketplace → plugins → skills, commands, hooks and assets,
 //! and each harness's [`crate::harness::HarnessTranslator`] writes that graph
@@ -137,7 +137,7 @@ pub struct Component {
     pub name: String,
     /// The note, vault-relative.
     pub path: String,
-    /// Its `sw-targets`, as written. `None` publishes everywhere.
+    /// Its `targets`, as written. `None` publishes everywhere.
     pub targets: Option<Vec<String>>,
     /// Its harness-only fields, by harness.
     pub extensions: Extensions,
@@ -277,7 +277,7 @@ impl ResolvedRef {
 pub struct Call {
     /// The skill it names.
     pub skill: SkillId,
-    /// That skill's `sw-targets`, which decide whether a harness ships it.
+    /// That skill's `targets`, which decide whether a harness ships it.
     pub targets: Option<Vec<String>>,
     /// The call as written, for a refusal.
     pub destination: String,
@@ -330,7 +330,7 @@ impl SkillId {
     }
 }
 
-/// A node's harness-only fields: `sw-overrides`, folded onto canonical
+/// A node's harness-only fields: harness blocks, folded onto canonical
 /// harness names (D-ISOU).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Extensions {

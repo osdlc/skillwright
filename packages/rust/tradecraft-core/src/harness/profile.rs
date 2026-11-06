@@ -40,7 +40,7 @@ pub struct HarnessProfile {
     pub name: &'static str,
     /// The harness's product name, for messages.
     pub label: &'static str,
-    /// Every name `sw-targets`, `sw-overrides` and a publish's target accept
+    /// Every name `targets`, harness blocks and a publish's target accept
     /// for this harness, the canonical one first.
     pub spellings: &'static [&'static str],
     /// The `agent-adapt` runtime a note renders through for this destination.
@@ -101,7 +101,190 @@ pub struct PluginFormat {
     /// Whether the pack carries a hooks file at
     /// [`crate::publish::PLUGIN_HOOKS_PATH`].
     pub carries_hooks: bool,
+    /// The keys this harness reads in a pack manifest. A container note's
+    /// harness block may set these, and the build merges them over what it
+    /// generates. Recorded in harness-reference as each harness's
+    /// `plugins/manifest-fields` fact.
+    pub manifest_fields: &'static [&'static str],
+    /// The keys this harness reads at the top of its marketplace manifest,
+    /// from its `plugins/marketplace-fields` fact. Empty with no marketplace.
+    pub marketplace_fields: &'static [&'static str],
+    /// The keys this harness reads in one marketplace entry, from the same
+    /// fact.
+    pub entry_fields: &'static [&'static str],
 }
+
+/// Claude Code's `plugin.json` keys, from its `plugins/manifest-fields` fact.
+const CLAUDE_MANIFEST_FIELDS: &[&str] = &[
+    "$schema",
+    "name",
+    "displayName",
+    "version",
+    "description",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "metadata",
+    "icon",
+    "documentationUrl",
+    "supportUrl",
+    "privacyPolicyUrl",
+    "termsOfServiceUrl",
+    "defaultEnabled",
+    "dependencies",
+    "settings",
+    "userConfig",
+    "types",
+    "channels",
+    "skills",
+    "commands",
+    "agents",
+    "hooks",
+    "mcpServers",
+    "lspServers",
+    "outputStyles",
+    "workflows",
+    "experimental",
+    "themes",
+    "monitors",
+];
+/// Claude Code's `marketplace.json` top-level keys.
+const CLAUDE_MARKETPLACE_FIELDS: &[&str] = &[
+    "$schema",
+    "name",
+    "owner",
+    "plugins",
+    "description",
+    "version",
+    "metadata",
+    "forceRemoveDeletedPlugins",
+    "allowCrossMarketplaceDependenciesOn",
+    "renames",
+];
+/// Claude Code's marketplace entry keys: its own, plus every `plugin.json`
+/// key but the directory listing fields.
+const CLAUDE_ENTRY_FIELDS: &[&str] = &[
+    "name",
+    "source",
+    "description",
+    "version",
+    "category",
+    "tags",
+    "strict",
+    "relevance",
+    "dependencies",
+    "defaultEnabled",
+    "displayName",
+    "metadata",
+    "headers",
+    "headersHelper",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "settings",
+    "userConfig",
+    "types",
+    "channels",
+    "skills",
+    "commands",
+    "agents",
+    "hooks",
+    "mcpServers",
+    "lspServers",
+    "outputStyles",
+    "workflows",
+    "experimental",
+    "themes",
+    "monitors",
+];
+/// The keys Codex reads in `.codex-plugin/plugin.json`, plus the `author` and
+/// `license` every pack manifest carries.
+const CODEX_MANIFEST_FIELDS: &[&str] = &[
+    "name",
+    "version",
+    "description",
+    "author",
+    "license",
+    "keywords",
+    "skills",
+    "commands",
+    "mcpServers",
+    "apps",
+    "hooks",
+    "interface",
+    "extensions",
+];
+/// Codex's marketplace top-level keys.
+const CODEX_MARKETPLACE_FIELDS: &[&str] = &["name", "interface", "plugins"];
+/// Codex's marketplace entry keys.
+const CODEX_ENTRY_FIELDS: &[&str] = &["name", "source", "policy", "category"];
+/// Cursor's `plugin.json` keys, the docs' and the schema's.
+const CURSOR_MANIFEST_FIELDS: &[&str] = &[
+    "name",
+    "description",
+    "version",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "logo",
+    "rules",
+    "agents",
+    "skills",
+    "commands",
+    "hooks",
+    "mcpServers",
+    "variables",
+    "displayName",
+    "minClientVersions",
+    "publisher",
+    "category",
+    "tags",
+];
+/// Cursor's marketplace top-level keys.
+const CURSOR_MARKETPLACE_FIELDS: &[&str] = &["name", "owner", "plugins", "metadata"];
+/// Cursor's marketplace entry keys.
+const CURSOR_ENTRY_FIELDS: &[&str] = &[
+    "name",
+    "source",
+    "description",
+    "version",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "logo",
+    "category",
+    "tags",
+    "skills",
+    "rules",
+    "agents",
+    "commands",
+    "hooks",
+    "mcpServers",
+    "variables",
+];
+/// The `package.json` keys a Pi package uses: npm's standard fields and the
+/// `pi` block.
+const PI_MANIFEST_FIELDS: &[&str] = &[
+    "name",
+    "version",
+    "description",
+    "author",
+    "license",
+    "keywords",
+    "repository",
+    "homepage",
+    "dependencies",
+    "peerDependencies",
+    "pi",
+];
 
 /// What `skillwright harness` needs to know about a harness's own CLI that
 /// is a fact rather than an argv builder. The builders stay in the CLI crate,
@@ -214,6 +397,9 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
         hooks_manifest_entry: None,
         carries_commands: true,
         carries_hooks: true,
+        manifest_fields: CLAUDE_MANIFEST_FIELDS,
+        marketplace_fields: CLAUDE_MARKETPLACE_FIELDS,
+        entry_fields: CLAUDE_ENTRY_FIELDS,
     }),
     install: Some(InstallCli {
         scopes: &["user", "project", "local"],
@@ -250,6 +436,9 @@ pub const CODEX: HarnessProfile = HarnessProfile {
         hooks_manifest_entry: None,
         carries_commands: false,
         carries_hooks: true,
+        manifest_fields: CODEX_MANIFEST_FIELDS,
+        marketplace_fields: CODEX_MARKETPLACE_FIELDS,
+        entry_fields: CODEX_ENTRY_FIELDS,
     }),
     install: Some(InstallCli {
         scopes: &["user"],
@@ -286,6 +475,9 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         hooks_manifest_entry: Some("./hooks/hooks.json"),
         carries_commands: false,
         carries_hooks: true,
+        manifest_fields: CURSOR_MANIFEST_FIELDS,
+        marketplace_fields: CURSOR_MARKETPLACE_FIELDS,
+        entry_fields: CURSOR_ENTRY_FIELDS,
     }),
     install: Some(InstallCli {
         scopes: &["user"],
@@ -316,6 +508,9 @@ pub const PI: HarnessProfile = HarnessProfile {
         // Pi takes lifecycle events as TypeScript extensions and has no
         // hooks file.
         carries_hooks: false,
+        manifest_fields: PI_MANIFEST_FIELDS,
+        marketplace_fields: &[],
+        entry_fields: &[],
     }),
     install: None,
 };
@@ -448,7 +643,7 @@ impl HarnessProfile {
         })
     }
 
-    /// The keys this harness reads in an `sw-overrides` block, from its
+    /// The keys this harness reads in a harness block, from its
     /// runtime's own capability declaration.
     pub fn accepted_override_keys(&self) -> std::collections::BTreeSet<String> {
         agent_adapt::runtimes::declaration_for(self.declaration)

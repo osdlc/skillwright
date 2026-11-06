@@ -11,8 +11,9 @@
 //! | [`scan`] | Walk a root and find the skills in it |
 //! | [`discover`] | Walk a vault's skills root and vet every publishable note |
 //! | [`skill`] | The on-disk skill: frontmatter framing, refs, detail reads |
-//! | [`namespace`] | Which prefix we claim — `sw-` by default, configurable |
-//! | [`frontmatter`] | That namespace read out of a note, typed |
+//! | [`keys`] | The closed key table: every frontmatter key, per kind |
+//! | [`namespace`] | Which prefix skillwright's keys carry — none by default |
+//! | [`frontmatter`] | skillwright's keys read out of a note, typed |
 //! | [`vault`] | The *vault* skill: a note plus a sibling folder of peers |
 //! | [`content`] | The skill shape projection renders, and its peer resources |
 //! | [`compile`] | Embeds expanded, links rewritten, references collected |
@@ -33,11 +34,11 @@
 //!
 //! | Name | Rule set | Where |
 //! |---|---|---|
-//! | publish spec | What a publish may write: per-file statuses, the closed set of refusal tokens, `sw-targets` exclusion, destination overlap | [`publish`], [`export`], [`guard`], [`manifest`] |
+//! | publish spec | What a publish may write: per-file statuses, the closed set of refusal tokens, `targets` exclusion, destination overlap | [`publish`], [`export`], [`guard`], [`manifest`] |
 //! | vault spec | A skill is a note plus a sibling folder of peers; publishing is five steps (embeds, links, references, peers, target dialect) | [`vault`], [`publish`] |
 //! | compile spec | Embeds are expanded and links rewritten; an unresolved link is not a blocker | [`compile`] |
 //! | marketplace layout spec | How one marketplace tree per harness is laid out and checked | [`export`] |
-//! | namespace spec | Frontmatter keys under the `sw-` prefix belong to this tool and are stripped on publish | [`namespace`], [`frontmatter`] |
+//! | namespace spec | The keys the key table lists as skillwright's belong to this tool and are stripped on publish; a configured prefix moves them under it | [`keys`], [`namespace`], [`frontmatter`] |
 //! | write-guard spec | A publish never writes into the source root or the vault | [`guard`] |
 //! | status spec | The per-file states a status report uses, including `unknown` | [`status`] |
 //! | CLI spec | Exit codes, stdout versus stderr, `--dry-run`, confirmation before writes | the `skillwright` crate |
@@ -61,13 +62,11 @@
 //!
 //! # No ambient configuration either, for the same reason
 //!
-//! Every function that consults the frontmatter prefix takes a
-//! [`Namespace`] alongside its `&dyn Vfs`. A vault may configure its own
-//! (the namespace spec claims `sw-` wholesale, and
-//! `sw-` is short enough to collide), so there is no one true prefix to read
-//! from a global — and a caller reading one note under `sw` and another under
-//! `x` must be able to, in one process. `Namespace::default()` is `sw`, so a
-//! caller with no opinion writes one extra argument and nothing else.
+//! Every function that consults the frontmatter namespace takes a
+//! [`Namespace`] alongside its `&dyn Vfs`. A vault may configure a prefix, so
+//! there is no one true spelling to read from a global — and a caller reading
+//! one note bare and another under `sw` must be able to, in one process.
+//! `Namespace::default()` is bare.
 
 pub mod adopt;
 pub mod authoring;
@@ -81,6 +80,7 @@ pub mod frontmatter;
 pub mod guard;
 pub mod harness;
 pub mod hooks_file;
+pub mod keys;
 pub mod manifest;
 pub mod model;
 pub mod namespace;
@@ -126,8 +126,10 @@ pub use export::{
     root_trees,
 };
 pub use frontmatter::{
-    EntityKind, KindHints, KindSource, Provenance, ResolvedKind, VaultFrontmatter, resolve_kind,
+    ADOPTED_FIELDS, ContainerIdentity, EntityKind, KindHints, KindSource, Provenance, ResolvedKind,
+    VaultFrontmatter, resolve_kind,
 };
+pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, REMOVED, Shape};
 pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,
@@ -139,5 +141,5 @@ pub use settings::{
     AssetSetting, BuildSettings, DestinationSetting, HookSetting, MarketplaceFields, ROOT_FILE,
     RootFile, SettingsError, parse_root_file,
 };
-pub use vault::{VaultNote, bundle_root, read_vault_skill};
+pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};

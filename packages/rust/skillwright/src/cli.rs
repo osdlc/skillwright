@@ -127,7 +127,7 @@ struct ReadOnlyGlobals {
     #[arg(
         long,
         value_name = "stem",
-        help = "Frontmatter namespace stem — the `sw` of `sw-kind`. Overrides the configuration for this run."
+        help = "Frontmatter namespace stem, such as `sw` for `sw-version`. Overrides `build.namespace` for this run."
     )]
     namespace: Option<String>,
     #[arg(long, help = "Emit the report on stdout as one JSON document.")]
@@ -258,7 +258,7 @@ enum Verb {
     /// Remove a note's files from a destination.
     #[command(before_help = stub_help("unpublish"))]
     Unpublish(UnpublishArgs),
-    /// Raise a plugin's `sw-version` by one semver level: `--major`, `--minor`, or `--patch` (default).
+    /// Raise a plugin's `version` by one semver level: `--major`, `--minor`, or `--patch` (default).
     Bump(BumpArgs),
     /// Author a new marketplace, plugin, or skill note.
     New {

@@ -77,7 +77,7 @@ function repoWithVault(name: string): { repo: string; vault: string } {
   mkdirSync(skill, { recursive: true })
   writeFileSync(
     path.join(vault, 'marketplaces/house/house.md'),
-    '---\nname: house\ndescription: The house marketplace.\nsw-owner: acme\n---\n',
+    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
   writeFileSync(
     path.join(skill, 'review.md'),

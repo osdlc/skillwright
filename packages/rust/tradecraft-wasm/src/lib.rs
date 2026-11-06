@@ -102,7 +102,7 @@ struct WireRequest {
     /// `target` are read by the core's own derive.
     #[serde(flatten)]
     request: PublishRequest,
-    /// The vault's frontmatter namespace, as a stem — `sw`, or whatever the
+    /// The vault's frontmatter namespace, as a stem, such as `sw`, or whatever the
     /// host configured. Absent means [`Namespace::default`].
     #[serde(default)]
     namespace: Option<String>,

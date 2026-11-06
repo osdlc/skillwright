@@ -1,9 +1,9 @@
 ---
 name: review
 description: Reviews a diff.
-sw-targets: [claude]
+targets: [claude]
 license: MIT
-sw-arguments:
+arguments:
   - name: pr-number
     description: The pull request to review.
     required: true

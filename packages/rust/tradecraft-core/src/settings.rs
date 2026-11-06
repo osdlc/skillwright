@@ -48,6 +48,23 @@ pub struct MarketplaceFields {
     /// plugin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
+    /// The marketplace's own version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Which harnesses get what the marketplace holds. Inherited by every
+    /// plugin and member with none of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub targets: Option<Vec<String>>,
+    /// The source repository URL. Inherited by every plugin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    /// The documentation URL. Inherited by every plugin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+    /// The harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`), keyed by
+    /// harness. Inherited by every plugin, key by key.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub blocks: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
 }
 
 /// Where `publish` writes when `--to` is not given.
@@ -160,6 +177,10 @@ pub const MARKETPLACE_KEYS: &[&str] = &[
     "owner",
     "author",
     "license",
+    "version",
+    "targets",
+    "repository",
+    "homepage",
 ];
 
 /// The keys of the `build:` block.
@@ -225,17 +246,71 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             known if MARKETPLACE_KEYS.contains(&known) => {
                 marketplace.insert(serde_yaml::Value::String(key), value);
             }
+            harness if crate::keys::HARNESS_BLOCKS.contains(&harness) => {
+                let block: Option<serde_json::Map<String, serde_json::Value>> =
+                    field(&key, &value, "a mapping of that harness's own keys")?;
+                if let Some(block) = block {
+                    let known = serde_json::Map::from_iter([(
+                        key.clone(),
+                        serde_json::Value::Object(block.clone()),
+                    )]);
+                    for unknown in crate::discover::unknown_container_block_keys(
+                        &known,
+                        crate::frontmatter::EntityKind::Marketplace,
+                    ) {
+                        root.warnings.push(format!(
+                            "`{unknown}` is not a key that harness reads; it is ignored"
+                        ));
+                    }
+                    root.marketplace.blocks.insert(key, block);
+                }
+            }
             _ => root.warnings.push(format!(
                 "`{key}` is not a key skillwright reads in {ROOT_FILE}; it is ignored"
             )),
         }
     }
+    let blocks = std::mem::take(&mut root.marketplace.blocks);
     root.marketplace = field(
         "marketplace fields",
         &serde_yaml::Value::Mapping(marketplace),
         "the marketplace's fields",
     )?;
+    root.marketplace.blocks = blocks;
+    if let Some(unknown) = root
+        .marketplace
+        .targets
+        .iter()
+        .flatten()
+        .find(|target| !crate::publish::KNOWN_TARGETS.contains(&target.as_str()))
+    {
+        return Err(SettingsError {
+            key: "targets".to_owned(),
+            what: "harness names",
+            detail: format!("`{unknown}`"),
+        });
+    }
+    for (key, value) in [
+        ("repository", &root.marketplace.repository),
+        ("homepage", &root.marketplace.homepage),
+    ] {
+        if let Some(url) = value
+            && !is_url(url)
+        {
+            return Err(SettingsError {
+                key: key.to_owned(),
+                what: "an http or https URL",
+                detail: format!("`{url}`"),
+            });
+        }
+    }
     Ok(root)
+}
+
+/// `http://` or `https://` with no whitespace.
+fn is_url(value: &str) -> bool {
+    (value.starts_with("https://") || value.starts_with("http://"))
+        && !value.contains(char::is_whitespace)
 }
 
 /// One value read as `T`, its error naming `key`. Null reads as `T`'s default
@@ -289,8 +364,9 @@ fn build(
 impl RootFile {
     /// Fill what this file leaves unset from the workspace file above it.
     ///
-    /// The marketplace fields every plugin inherits (`author`, `license`)
-    /// inherit from the workspace too. So do the `build:` settings that are
+    /// The marketplace fields every plugin inherits (`author`, `license`,
+    /// `targets`, `repository`, `homepage` and the harness blocks, key by key) inherit
+    /// from the workspace too. So do the `build:` settings that are
     /// not paths (`harnesses`, `namespace`, `launcher_path`,
     /// `require_descriptions`): a path in the workspace file names a place
     /// relative to the workspace, not to each marketplace.
@@ -301,6 +377,23 @@ impl RootFile {
         }
         if fields.license.is_none() {
             fields.license.clone_from(&workspace.marketplace.license);
+        }
+        if fields.targets.is_none() {
+            fields.targets.clone_from(&workspace.marketplace.targets);
+        }
+        if fields.repository.is_none() {
+            fields
+                .repository
+                .clone_from(&workspace.marketplace.repository);
+        }
+        if fields.homepage.is_none() {
+            fields.homepage.clone_from(&workspace.marketplace.homepage);
+        }
+        for (harness, shared) in &workspace.marketplace.blocks {
+            let block = fields.blocks.entry(harness.clone()).or_default();
+            for (key, value) in shared {
+                block.entry(key.clone()).or_insert_with(|| value.clone());
+            }
         }
         let build = &mut self.build;
         let shared = &workspace.build;
@@ -334,6 +427,11 @@ impl RootFile {
             description: fields.description.clone(),
             author: fields.author.clone(),
             license: fields.license.clone(),
+            version: fields.version.clone(),
+            targets: fields.targets.clone(),
+            repository: fields.repository.clone(),
+            homepage: fields.homepage.clone(),
+            blocks: fields.blocks.clone(),
             plugins: BTreeMap::new(),
             require_descriptions: self.build.require_descriptions.unwrap_or(false),
             launcher_path: self.build.launcher_path.clone(),
@@ -349,6 +447,27 @@ impl RootFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_block_key_the_harness_does_not_read_warns() {
+        let root =
+            parse_root_file("---\nname: m\ncodex:\n  interface: {}\n  nonsense: 1\n---\n").unwrap();
+        assert_eq!(root.warnings.len(), 1, "{:?}", root.warnings);
+        assert!(root.warnings[0].contains("`codex.nonsense`"));
+        assert!(root.marketplace.blocks["codex"].contains_key("interface"));
+    }
+
+    #[test]
+    fn a_target_that_is_not_a_harness_is_refused() {
+        let err = parse_root_file("---\nname: m\ntargets: [emacs]\n---\n").unwrap_err();
+        assert!(err.to_string().contains("emacs"), "{err}");
+    }
+
+    #[test]
+    fn a_repository_that_is_not_a_url_is_refused() {
+        let err = parse_root_file("---\nname: m\nrepository: not a url\n---\n").unwrap_err();
+        assert!(err.to_string().contains("repository"), "{err}");
+    }
 
     #[test]
     fn a_root_file_maps_onto_a_build_config() {

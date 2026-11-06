@@ -38,7 +38,7 @@ use crate::harness::{HarnessProfile, with_plugin_format};
 use crate::namespace::Namespace;
 use crate::projection::parse_runtime_target;
 use crate::publish::{PLUGIN_HOOKS_PATH, canonical_target, refuse_carried_peers};
-use crate::vault::{VaultNote, read_vault_skill};
+use crate::vault::{VaultNote, read_vault_note};
 use crate::vfs::{Vfs, normalize};
 
 /// What a marketplace load reads: this vault, this marketplace of it, for
@@ -151,7 +151,7 @@ pub(crate) fn selected_harnesses(
 ///   `unknown-asset-plugin` — an asset that cannot land where it says.
 /// * `refused: unknown-hooks-plugin` / `duplicate-hooks-file` and what
 ///   [`crate::hooks_file::parse_hooks_file`] refuses.
-/// * `refused: unknown-target` / `unknown-override-key` — an `sw-overrides`
+/// * `refused: unknown-target` / `unknown-override-key` — an harness blocks
 ///   block one of the requested harnesses cannot take.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
 pub fn load(
@@ -180,7 +180,8 @@ pub fn load(
             ),
         ));
     }
-    let discovered = scan.components;
+    let mut discovered = scan.components;
+    inherit_targets(&mut discovered, request.config.targets.as_deref());
     // Which marketplaces the vault holds is read from every kind, not from the
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing publishable rather than that it is not there.
@@ -302,6 +303,7 @@ pub fn load(
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for plugin in plugins.values_mut() {
         let launcher = plugin.launcher.clone();
+        let plugin_name = plugin.name.clone();
         for component in plugin
             .skills
             .iter_mut()
@@ -311,7 +313,9 @@ pub fn load(
             if !roots.iter().any(|root| admits(&component.discovered, root)) {
                 continue;
             }
-            let note = read_vault_skill(vfs, &component.discovered.entry_path, ns)?;
+            let mut note =
+                read_vault_note(vfs, &component.discovered.entry_path, ns, component.kind)?;
+            inherit_into_note(&mut note, component.kind, &plugin_name, &config);
             let admitting: Vec<&HarnessProfile> = roots
                 .iter()
                 .copied()
@@ -394,7 +398,7 @@ pub struct ComponentRequest<'a> {
 /// # Errors
 ///
 /// `refused: unknown-target` / `unknown-override-key` from the note's
-/// `sw-overrides`, and what [`resolve_body`] refuses.
+/// harness blocks, and what [`resolve_body`] refuses.
 pub fn load_component(
     vfs: &dyn Vfs,
     request: &ComponentRequest<'_>,
@@ -458,9 +462,9 @@ pub struct Pack {
 /// Loads one plugin as a pack for `profile`.
 ///
 /// The members come from the vault scan rather than from the note's body,
-/// which is the same rule a build follows: a component's plugin is decided by
-/// the folder holding it and overruled by `sw-plugin`. A member narrowed away
-/// by its own `sw-targets` is absent from the pack, exactly as it is absent
+/// which is the same rule a build follows: the folder holding a component
+/// decides its plugin. A member narrowed away
+/// by its own `targets` is absent from the pack, exactly as it is absent
 /// from a built tree.
 ///
 /// # Errors
@@ -482,8 +486,7 @@ pub fn load_plugin(
     let (scan, links) = read_notes(vfs, vault_root, None, ns)?;
     // A note elsewhere in the vault that does not parse is not this pack's
     // problem, and a shared vault always holds one. A note this pack holds
-    // is. Membership is the note's own `sw-plugin` first and its folder
-    // second, the ranking a readable member follows.
+    // is.
     let blocked: Vec<&str> = scan
         .skipped
         .iter()
@@ -547,7 +550,7 @@ pub fn load_plugin(
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for member in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
-        let note = read_vault_skill(vfs, &member.discovered.entry_path, ns)?;
+        let note = read_vault_note(vfs, &member.discovered.entry_path, ns, member.kind)?;
         member.extensions = extensions(&note.frontmatter, &member.discovered, &[profile], ns)?;
         let (resolved, content) = resolve_body(
             vfs,
@@ -601,6 +604,11 @@ pub fn load_plugin(
         description: None,
         author: identity.author.clone(),
         license: None,
+        version: None,
+        targets: None,
+        repository: None,
+        homepage: None,
+        blocks: BTreeMap::new(),
         plugins: [(plugin_name.to_owned(), overrides_from(identity))]
             .into_iter()
             .collect(),
@@ -655,7 +663,7 @@ pub fn resolve_body(
     Ok((resolved, content))
 }
 
-/// The skills a call may name, each one's `sw-targets`, and the vault's link
+/// The skills a call may name, each one's `targets`, and the vault's link
 /// index when pass 1 built it.
 #[derive(Debug, Clone, Default)]
 pub struct Index {
@@ -789,7 +797,7 @@ fn resolve_compiled(
     ))
 }
 
-/// Gives every call the `sw-targets` of the skill it names.
+/// Gives every call the `targets` of the skill it names.
 fn fill_targets(resolved: &mut Resolved, targets: &BTreeMap<PathBuf, Option<Vec<String>>>) {
     let bodies =
         std::iter::once(&mut resolved.body).chain(resolved.resources.iter_mut().filter_map(
@@ -840,7 +848,6 @@ fn standalone(request: &ComponentRequest<'_>, note: &VaultNote) -> DiscoveredCom
         folder_kind: None,
         targets: note.frontmatter.targets.clone(),
         plugin: None,
-        folder_plugin: None,
         marketplace: None,
         entry_path: request.path.to_path_buf(),
         bundle_root: request.bundle_root.map(Path::to_path_buf),
@@ -848,6 +855,8 @@ fn standalone(request: &ComponentRequest<'_>, note: &VaultNote) -> DiscoveredCom
         vault_relative_path: vault_relative(request.root, request.path),
         hook: None,
         identity: ContainerIdentity::default(),
+        blocks: note.frontmatter.overrides.clone(),
+        unknown_keys: note.frontmatter.unknown.clone(),
     }
 }
 
@@ -865,7 +874,7 @@ pub(crate) fn vault_relative(vault_root: &Path, path: &Path) -> String {
         })
 }
 
-/// A note's `sw-overrides`, folded onto canonical names and checked for each
+/// A note's harness blocks, folded onto canonical names and checked for each
 /// of `harnesses` (D-ISOU).
 ///
 /// # Errors
@@ -889,7 +898,7 @@ fn extensions(
 // --- What the build used to decide before it rendered ------------------------
 
 /// Does this member publish to this harness? Two gates: the harness's pack
-/// has a place for the member's kind, and its `sw-targets` names the harness.
+/// has a place for the member's kind, and its `targets` names the harness.
 pub(crate) fn admits(component: &DiscoveredComponent, spec: &HarnessProfile) -> bool {
     kind_carried(component, spec) && targets_admit(component, spec.name)
 }
@@ -904,7 +913,7 @@ pub(crate) fn kind_carried(component: &DiscoveredComponent, spec: &HarnessProfil
     }
 }
 
-/// Gate 2 of [`admits`]: whether the member's `sw-targets` names this
+/// Gate 2 of [`admits`]: whether the member's `targets` names this
 /// destination. Absent is every destination, empty is none — matched on the
 /// destination a name resolves to, so `claude-code` admits `claude`.
 pub(crate) fn targets_admit(component: &DiscoveredComponent, canonical: &str) -> bool {
@@ -946,7 +955,7 @@ fn missing_versions(
             path: c.vault_relative_path.clone(),
             reason: "missing-version".to_owned(),
             detail: format!(
-                "plugin `{}` states no version; published as `0.1.0`. Set `sw-version` on \
+                "plugin `{}` states no version; published as `0.1.0`. Set `version` on \
                  its note so a harness can tell an update from what it has",
                 c.name
             ),
@@ -1000,6 +1009,10 @@ fn resolve_config(
         take(&mut config.owner, note.identity.owner.clone());
         take(&mut config.author, note.identity.author.clone());
         take(&mut config.license, note.identity.license.clone());
+        take(&mut config.version, note.identity.version.clone());
+        take(&mut config.repository, note.identity.repository.clone());
+        take(&mut config.homepage, note.identity.homepage.clone());
+        merge_blocks(&mut config.blocks, &note.blocks);
     }
     // Failing a note, the marketplace's own name is what it is called: the
     // folder named the level, and a distribution named `house` on disk should
@@ -1051,12 +1064,105 @@ fn resolve_config(
             &mut overrides.display_name,
             note.identity.display_name.clone(),
         );
+        take(&mut overrides.repository, note.identity.repository.clone());
+        take(&mut overrides.homepage, note.identity.homepage.clone());
+        merge_blocks(&mut overrides.blocks, &note.blocks);
     }
 
     // Settled, so nothing below has to hold an `Option` it has already proved
     // is `Some`. The name and the rest travel together from here.
     let name = config.name.clone().unwrap_or_default();
     Ok((name, config, configured))
+}
+
+/// What a member inherits from its containers when the note leaves it out: a
+/// skill's `license`, and each harness block key by key, where the key is one
+/// a member can carry for that harness.
+fn inherit_into_note(
+    note: &mut VaultNote,
+    kind: EntityKind,
+    plugin: &str,
+    config: &MarketplaceConfig,
+) {
+    if kind == EntityKind::Skill && note.projection.content.license.is_none() {
+        note.projection.content.license = config
+            .plugins
+            .get(plugin)
+            .and_then(|own| own.license.clone())
+            .or_else(|| config.license.clone());
+    }
+    if kind == EntityKind::Hook {
+        return;
+    }
+    for harness in crate::keys::HARNESS_BLOCKS {
+        let accepted = crate::publish::accepted_override_keys(harness);
+        let inherited = crate::harness::manifest::plugin_block(config, plugin, harness);
+        for (key, value) in inherited {
+            if !accepted.contains(&key) {
+                continue;
+            }
+            let block = note
+                .frontmatter
+                .overrides
+                .entry((*harness).to_owned())
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+            if let Some(block) = block.as_object_mut() {
+                block.entry(key).or_insert(value);
+            }
+        }
+    }
+}
+
+/// A note with no `targets` of its own takes the nearest container's: a
+/// member its plugin note's, then the root file's `root`, then its
+/// marketplace note's.
+fn inherit_targets(discovered: &mut [DiscoveredComponent], root: Option<&[String]>) {
+    let from_plugins: BTreeMap<(Option<String>, String), Vec<String>> = discovered
+        .iter()
+        .filter(|c| c.kind == EntityKind::Plugin)
+        .filter_map(|c| {
+            c.targets
+                .clone()
+                .map(|targets| ((c.marketplace.clone(), c.name.clone()), targets))
+        })
+        .collect();
+    let from_markets: BTreeMap<String, Vec<String>> = discovered
+        .iter()
+        .filter(|c| c.kind == EntityKind::Marketplace)
+        .filter_map(|c| c.targets.clone().map(|targets| (c.name.clone(), targets)))
+        .collect();
+    for note in discovered.iter_mut() {
+        if note.kind == EntityKind::Marketplace || note.targets.is_some() {
+            continue;
+        }
+        let plugin = note
+            .plugin
+            .as_ref()
+            .filter(|_| note.kind != EntityKind::Plugin)
+            .and_then(|plugin| from_plugins.get(&(note.marketplace.clone(), plugin.clone())));
+        let market = note.marketplace.as_ref().and_then(|m| from_markets.get(m));
+        note.targets = plugin
+            .map(Vec::as_slice)
+            .or(root)
+            .or(market.map(Vec::as_slice))
+            .map(<[String]>::to_vec);
+    }
+}
+
+/// Lays a note's harness blocks over `slot`, key by key: the note wins where
+/// both set a key.
+fn merge_blocks(
+    slot: &mut BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
+    from: &serde_json::Map<String, serde_json::Value>,
+) {
+    for (harness, block) in from {
+        if let Some(block) = block.as_object() {
+            let into = slot.entry(harness.clone()).or_default();
+            for (key, value) in block {
+                into.insert(key.clone(), value.clone());
+            }
+        }
+    }
 }
 
 /// Writes `from` into `slot` when the note supplied it, leaving a request-only
@@ -1186,7 +1292,7 @@ fn group_by_plugin(
 ) -> Result<BTreeMap<String, Plugin>, CoreError> {
     let all = || skills.iter().chain(commands).chain(hooks);
     if let Some(loose) = all().find(|m| m.plugin.is_none())
-        && let Some(folder) = all().find(|m| m.folder_plugin.as_deref() == Some(own_plugin))
+        && let Some(folder) = all().find(|m| m.plugin.as_deref() == Some(own_plugin))
     {
         return Err(CoreError::refused(
             "own-plugin-clash",
@@ -1596,6 +1702,9 @@ fn overrides_from(identity: &ContainerIdentity) -> PluginOverrides {
         keywords: identity.keywords.clone(),
         category: identity.category.clone(),
         display_name: identity.display_name.clone(),
+        repository: identity.repository.clone(),
+        homepage: identity.homepage.clone(),
+        blocks: BTreeMap::new(),
     }
 }
 
@@ -1625,8 +1734,7 @@ mod tests {
     #[test]
     fn pass_one_hands_on_a_link_index_of_its_walk_of_the_vault() {
         let vfs = vault();
-        let (_, links) =
-            read_notes(&vfs, Path::new("/vault"), None, &Namespace::default()).unwrap();
+        let (_, links) = read_notes(&vfs, Path::new("/vault"), None, &Namespace::sw()).unwrap();
         assert_eq!(links.resolve("Notes/elsewhere"), Some("Notes/elsewhere.md"));
     }
 
@@ -1639,7 +1747,7 @@ mod tests {
             &vfs,
             Path::new("/vault"),
             Some(Path::new("/vault/src")),
-            &Namespace::default(),
+            &Namespace::sw(),
         )
         .unwrap();
         assert_eq!(report.components.len(), 1);

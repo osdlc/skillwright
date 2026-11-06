@@ -397,21 +397,6 @@ pub fn render_targets(targets: Option<&[String]>) -> String {
     }
 }
 
-/// The resolved kind, and the folder's guess beside it when the two
-/// disagree.
-///
-/// Agreement prints once. Disagreement prints both, because a note in
-/// `commands/` that declares itself a skill publishes as a skill, and a
-/// reader who cannot see the disagreement cannot see why.
-pub fn render_kind(component: &DiscoveredComponent) -> String {
-    match component.folder_kind {
-        Some(folder) if folder != component.kind => {
-            format!("{} (folder: {})", component.kind.as_str(), folder.as_str())
-        }
-        _ => component.kind.as_str().to_string(),
-    }
-}
-
 /// One roster row, in the fields the human table and `--json` both carry.
 #[derive(Debug, Clone, Serialize)]
 pub struct RosterRow<'a> {
@@ -456,7 +441,7 @@ pub fn render_roster(components: &[DiscoveredComponent]) -> Vec<String> {
         .map(|c| {
             [
                 c.vault_relative_path.clone(),
-                render_kind(c),
+                c.kind.as_str().to_string(),
                 c.name.clone(),
                 c.plugin.as_deref().unwrap_or("-").to_string(),
                 render_targets(c.targets.as_deref()),

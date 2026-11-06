@@ -398,7 +398,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                             target: dest.target.clone(),
                         });
                     }
-                    // The note's `sw-targets` excluded this destination. Not
+                    // The note's `targets` excluded this destination. Not
                     // a failure and not an outcome.
                     if let Some(reason) = report.not_published {
                         excluded.push(AttributedExclusion {

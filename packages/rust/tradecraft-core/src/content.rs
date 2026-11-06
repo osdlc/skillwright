@@ -66,7 +66,7 @@ pub struct SkillContent {
     pub tags: Vec<String>,
     /// Unmodeled frontmatter, preserved as-is. A JSON object.
     pub annotations: serde_json::Map<String, serde_json::Value>,
-    /// `sw-overrides`, keyed by **canonical** destination name — what one
+    /// harness blocks, keyed by **canonical** destination name — what one
     /// harness receives that the shared model cannot say.
     ///
     /// The second field here sourced from our `sw-` namespace, and it is
@@ -77,7 +77,7 @@ pub struct SkillContent {
     /// [`crate::publish::overrides_for`] has folded the target names and
     /// checked every key against the harness that will receive it.
     ///
-    /// The raw `sw-overrides` key still reaches no destination — the strip
+    /// The raw harness block key still reaches no destination — the strip
     /// is unaffected, because this is not `annotations`.
     #[serde(default)]
     pub overrides: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>,

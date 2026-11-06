@@ -3,7 +3,7 @@
 //!
 //! [`HarnessTranslator`]'s default methods do the work every harness shares,
 //! reading the harness's [`HarnessProfile`] for what differs as data:
-//! admission by kind and `sw-targets`, how a published skill is named, how a
+//! admission by kind and `targets`, how a published skill is named, how a
 //! call is spelled, where a pack's files land, and a skill's files through
 //! `agent-adapt`. A harness overrides what is its own code — its manifests,
 //! mostly.
@@ -60,7 +60,7 @@ pub struct FileTree {
     /// Forward-slashed paths, relative to the directory the tree is emitted
     /// into, to their content.
     pub files: BTreeMap<String, TreeFile>,
-    /// `sw-overrides` keys that changed nothing — a diagnostic, never a
+    /// harness block keys that changed nothing — a diagnostic, never a
     /// refusal.
     pub redundant_overrides: Vec<RedundantOverride>,
 }
@@ -145,7 +145,7 @@ pub trait HarnessTranslator: Sync {
     }
 
     /// Does this member publish here? Its kind has a place in the pack, and
-    /// its `sw-targets` names this harness.
+    /// its `targets` names this harness.
     fn admits(&self, component: &Component) -> bool {
         admits(&component.discovered, self.profile())
     }
@@ -201,9 +201,9 @@ pub trait HarnessTranslator: Sync {
     /// `base`. Returns whether a hooks file was written.
     ///
     /// A hook note this harness cannot carry stops the build, rather than
-    /// writing a partial hooks file — unless the note has no `sw-targets` and
+    /// writing a partial hooks file — unless the note has no `targets` and
     /// another harness carries it, when it is left off here the way
-    /// `sw-targets` would narrow it. A canonical file's uncarried hooks are
+    /// `targets` would narrow it. A canonical file's uncarried hooks are
     /// not a refusal; the gap report says where each went.
     ///
     /// # Errors

@@ -39,7 +39,7 @@ test('statusOf hands back exactly the keys of the generated report', () => {
   mkdirSync(skill, { recursive: true })
   writeFileSync(
     path.join(vault, 'marketplaces/house/house.md'),
-    '---\nname: house\ndescription: The house marketplace.\nsw-owner: acme\n---\n',
+    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
   const note = path.join(skill, 'review.md')
   writeFileSync(note, '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n')

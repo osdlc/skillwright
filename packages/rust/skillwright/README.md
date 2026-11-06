@@ -79,7 +79,7 @@ publishing skills/code-review.md -> /path/to/my-project (claude-code)
 | `list` | List every publishable note in the vault |
 | `adopt` | Bring skills already on disk, or in a repository with `--from-git`, into the vault as notes |
 | `status` | Report each unit's publish state at each configured destination |
-| `bump` | Raise a plugin's `sw-version` by one semver level |
+| `bump` | Raise a plugin's `version` by one semver level |
 | `new` | Author a new marketplace, plugin or skill note |
 | `rename` | Rename a component, plugin or marketplace, and rewrite every link to it |
 | `move` | Move a component to another plugin or marketplace |
@@ -106,7 +106,7 @@ Every verb accepts these after the verb name, for example
 |---|---|
 | `--vault <path>` | The vault root: the folder holding `skillwright.md` |
 | `--config <path>` | Read this root file instead of the nearest `skillwright.md` at or above the working directory |
-| `--namespace <stem>` | The frontmatter namespace stem, the `sw` of `sw-kind` |
+| `--namespace <stem>` | The frontmatter namespace stem, the `sw` of `sw-version`. Bare keys are the default |
 | `--json` | Print the report on stdout as one JSON document |
 | `--quiet` | Drop progress and the tally from stderr |
 | `--dry-run` | Show the plan; write nothing (verbs that write) |
@@ -262,7 +262,7 @@ renamed by hand: the configuration, manifest folder, frontmatter keys and
 environment variables all take the `skillwright` and `sw` spellings. Old `tc-` keys are not errors: they publish as ordinary keys, and a
 note with `tc-kind: plugin` reads as a skill.
 
-`publish` applies a note's `sw-overrides`; `build` and `check` do not.
+A note's harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`) apply to `publish`, `build` and `check`.
 
 ## License
 

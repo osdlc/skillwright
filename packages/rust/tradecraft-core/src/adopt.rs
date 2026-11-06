@@ -21,7 +21,7 @@
 //! |---|---|
 //! | `<dir>/SKILL.md` | `<root>/plugins/<plugin>/skills/<name>/<name>.md`, frontmatter rebuilt |
 //! | any other file under `<dir>` | the same relative path beside that entry, markdown bodies rewritten, bytes and execute bits otherwise verbatim |
-//! | — | `<root>/plugins/<plugin>/<plugin>.md`, a bare `sw-kind: plugin` note, created once and never rewritten |
+//! | — | `<root>/plugins/<plugin>/<plugin>.md`, a plain plugin note, created once and never rewritten |
 //!
 //! `<root>` is [`AdoptRequest::skills_root`], the vault root unless configured.
 //! `plugins/<plugin>/skills/<name>/<name>.md` is one of discovery's shapes, so
@@ -52,27 +52,27 @@
 //! # Frontmatter: rebuilt at the namespace, with provenance
 //!
 //! The adopted entry note carries the Agent Skills spec's bare `name` and `description`,
-//! every *foreign* source key verbatim, and then our namespace's keys —
-//! `sw-kind: skill`, `sw-plugin`, `sw-targets` when the request narrows, and
-//! every one of [`crate::frontmatter::Provenance`]'s six:
+//! every *foreign* source key verbatim, and then our own keys: `targets` when
+//! the request narrows, and one `adopted` block holding every one of
+//! [`crate::frontmatter::Provenance`]'s six:
 //!
 //! | Key | What it records |
 //! |---|---|
-//! | `sw-source` | Where the skill came from: the directory read, or [`AdoptRequest::source_label`] where a caller fetched the tree from somewhere durable |
-//! | `sw-format` | The harness layout it was read in — [`AdoptRequest::format`], or [`detect_format`]'s answer |
-//! | `sw-source-hash` | [`crate::projection::content_hash`] over the source files as read |
-//! | `sw-adopted-hash` | The same formula over what adoption wrote |
-//! | `sw-adopted-at` | The caller's clock |
-//! | `sw-also-at` | Every other root in [`AdoptRequest::also_scan`] holding the same content |
+//! | `adopted.source` | Where the skill came from: the directory read, or [`AdoptRequest::source_label`] where a caller fetched the tree from somewhere durable |
+//! | `adopted.format` | The harness layout it was read in — [`AdoptRequest::format`], or [`detect_format`]'s answer |
+//! | `adopted.source_hash` | [`crate::projection::content_hash`] over the source files as read |
+//! | `adopted.hash` | The same formula over what adoption wrote |
+//! | `adopted.at` | The caller's clock |
+//! | `adopted.also_at` | Every other root in [`AdoptRequest::also_scan`] holding the same content |
 //!
-//! `sw-also-at` is the one with three outcomes rather than two, spelled the
-//! way `sw-targets` is: no roots to cross-reference writes no key at all,
+//! `adopted.also_at` is the one with three outcomes rather than two, spelled the
+//! way `targets` is: no roots to cross-reference writes no key at all,
 //! because a key would claim a scan that never ran; roots that turned up
 //! nothing write `[]`, which is a different and useful fact.
 //!
 //! # Re-adopt is a three-way comparison, not an existence check
 //!
-//! `sw-source-hash` answers "has the source moved on". `sw-adopted-hash`
+//! `adopted.source_hash` answers "has the source moved on". `adopted.hash`
 //! answers "has the note been edited since". Together they place a re-adopt
 //! in one of four quadrants (the publish spec): neither moved is
 //! [`AdoptStatus::Unchanged`] and writes nothing; only the source moved is
@@ -83,7 +83,7 @@
 //! A note carrying no provenance at all was written by hand, and is
 //! `refused: hand-authored` rather than compared. A note whose hashes are
 //! absent or unparseable proves nothing, and is `refused: diverged`. A note
-//! recording a *different* `sw-source` — a repository label compared without
+//! recording a *different* `adopted.source` — a repository label compared without
 //! its trailing `@<commit>`, so a new commit of one repository is the same
 //! source — is `refused: foreign-provenance`: both its hashes were taken
 //! against that other source, so the quadrant cannot speak about this one, and
@@ -95,13 +95,13 @@
 //! is no run-wide force: discarding a note somebody edited is a decision about
 //! *that note*.
 //!
-//! `sw-adopted-hash` is computed over the entry note **with every key under
+//! `adopted.hash` is computed over the entry note **with every key under
 //! the namespace prefix removed**, plus every peer file. The exclusion is what
 //! makes it satisfiable — one of those keys holds the hash — and it is also
-//! what makes hand-editing `sw-targets` in Obsidian not read as an edit to the
+//! what makes hand-editing `targets` in Obsidian not read as an edit to the
 //! note's content.
 //!
-//! `sw-adopted-at` is the *caller's* clock, a field on [`AdoptRequest`]. This
+//! `adopted.at` is the *caller's* clock, a field on [`AdoptRequest`]. This
 //! crate reads no clock, for the same reason it opens no file without a
 //! [`Vfs`]: `wasm32-unknown-unknown` has neither.
 //!
@@ -114,13 +114,12 @@
 //! * **A source key inside the namespace is refused.** A published `SKILL.md`
 //!   never carries our keys — the publish-time strip guarantees it — so one
 //!   that does was not made by this pipeline, and carrying it would let the
-//!   source dictate the vault's own configuration (`sw-kind: plugin` would
-//!   silently re-kind the note).
+//!   source dictate the vault's own configuration.
 //! * **What adoption writes is pre-validated with discovery's rules** — the
 //!   skills-spec name rule for skill and plugin names, the 1024-character
 //!   description cap — so the written vault discovers instead of failing one
 //!   scan later. Targets validate against [`KNOWN_TARGETS`] with the core's
-//!   three-outcome contract: `None` writes no `sw-targets` key at all.
+//!   three-outcome contract: `None` writes no `targets` key at all.
 //! * **Collisions and misses are loud.** Two source directories adopting onto
 //!   one name are refused naming both, and so is a resource at `<name>.md`,
 //!   where the entry note lands; a requested skill that matches nothing
@@ -180,12 +179,12 @@ pub struct AdoptRequest {
     /// that root reads.
     #[serde(default)]
     pub skills_root: Option<PathBuf>,
-    /// The plugin group stamped as `sw-plugin`;
+    /// The plugin folder the skill lands in;
     /// [`DEFAULT_ADOPTED_PLUGIN`] when `None`. Validated with the skills
     /// spec's name rule — it becomes a directory name.
     #[serde(default)]
     pub plugin: Option<String>,
-    /// What [`Self::source`] is CALLED in `sw-source`, when the path is not
+    /// What [`Self::source`] is CALLED in `adopted.source`, when the path is not
     /// the honest answer.
     ///
     /// A source fetched from a repository lives in a cache directory whose
@@ -201,7 +200,7 @@ pub struct AdoptRequest {
     /// `None` stamps the source path, which is what a local adoption wants.
     #[serde(default)]
     pub source_label: Option<String>,
-    /// The harness layout stamped as `sw-format` — `claude`, `codex`, and
+    /// The harness layout stamped as `adopted.format` — `claude`, `codex`, and
     /// the rest of [`crate::skill::RUNTIME_DIRS`]'s second column.
     ///
     /// `None` derives one from the source path, so a caller that knows the
@@ -209,12 +208,12 @@ pub struct AdoptRequest {
     /// not gets the heuristic. See [`detect_format`].
     #[serde(default)]
     pub format: Option<String>,
-    /// Further roots to cross-reference for `sw-also-at`: every other place
+    /// Further roots to cross-reference for `adopted.also_at`: every other place
     /// this machine holds the same skill. Three outcomes, like
-    /// [`Self::targets`] — see the module doc's `sw-also-at` row.
+    /// [`Self::targets`] — see the module doc's `adopted.also_at` row.
     #[serde(default)]
     pub also_scan: Vec<PathBuf>,
-    /// What lands in `sw-targets`, with the key's own three-outcome contract:
+    /// What lands in `targets`, with the key's own three-outcome contract:
     /// `None` writes no key (every destination), an empty list writes `[]`
     /// (nowhere), names are validated against [`KNOWN_TARGETS`].
     #[serde(default)]
@@ -235,7 +234,7 @@ pub struct AdoptRequest {
     /// Write, or classify only. Absent on the wire means [`AdoptMode::Write`].
     #[serde(default)]
     pub mode: AdoptMode,
-    /// The timestamp stamped as `sw-adopted-at`, supplied by the caller —
+    /// The timestamp stamped as `adopted.at`, supplied by the caller —
     /// the layer that has a clock. See the module doc.
     pub adopted_at: String,
 }
@@ -282,7 +281,7 @@ pub struct AdoptedSkill {
     /// The adopted name: the source frontmatter's `name` slugified, or the
     /// source directory's basename where the frontmatter is silent.
     pub name: String,
-    /// The plugin it was grouped under — stamped as `sw-plugin`.
+    /// The plugin folder it landed in.
     pub plugin: String,
     /// Whether the source carried resources beside its `SKILL.md`.
     pub bundle: bool,
@@ -386,8 +385,8 @@ fn adopt_onto(
         .plugin
         .clone()
         .unwrap_or_else(|| DEFAULT_ADOPTED_PLUGIN.to_owned());
-    // The plugin becomes a directory name and an `sw-plugin` value discovery
-    // re-validates, so a bad one fails here rather than as a broken vault.
+    // The plugin becomes a directory name discovery re-validates, so a bad one
+    // fails here rather than as a broken vault.
     validate_name(&plugin, "plugin name", &source)?;
 
     let vault_root = normalize(&request.vault_root);
@@ -425,7 +424,7 @@ fn adopt_onto(
         skill_dirs = filter_requested(&source, skill_dirs, requested)?;
     }
 
-    // `sw-format` is a property of the SOURCE, read once: one adoption reads
+    // `adopted.format` is a property of the SOURCE, read once: one adoption reads
     // one installation, and asking per skill would let two skills out of one
     // tree disagree about the tree they came from.
     let format = match request.format.as_deref() {
@@ -493,7 +492,7 @@ fn adopt_onto(
         if let Some(parent) = plugin_note_path.parent() {
             vfs.create_dir_all(parent)?;
         }
-        vfs.write_file(&plugin_note_path, plugin_note(&plugin, ns)?.as_bytes())?;
+        vfs.write_file(&plugin_note_path, plugin_note(&plugin)?.as_bytes())?;
     }
 
     let mut report = Vec::with_capacity(plans.len());
@@ -598,7 +597,7 @@ enum Existing {
 /// Places one re-adopt in the four-quadrant table, or refuses it.
 ///
 /// The comparison reads the vault note itself rather than trusting a name:
-/// `sw-source-hash` against the source as just read, and `sw-adopted-hash`
+/// `adopted.source_hash` against the source as just read, and `adopted.hash`
 /// against the note and its peers as they stand now. Absent provenance is not
 /// a match and not a miss — it is proof somebody else wrote the file.
 fn classify_existing(
@@ -777,7 +776,7 @@ fn acknowledged(
     })
 }
 
-/// `sw-adopted-hash`: [`content_hash`] over the entry note with every key
+/// `adopted.hash`: [`content_hash`] over the entry note with every key
 /// under the namespace prefix removed, plus every peer file.
 ///
 /// One function, called from both sides — the write that stamps the hash and
@@ -807,7 +806,7 @@ fn adopted_note_hash(
     let fields = frontmatter_map(frontmatter, about)?;
     let mut map = Mapping::new();
     for (key, value) in &fields {
-        if ns.is_ours(key) {
+        if is_ours(ns, key) {
             continue;
         }
         let value = serde_yaml::to_value(value).map_err(|e| {
@@ -844,11 +843,11 @@ struct SkillPlan {
     name: String,
     bundle: bool,
     source_dir: PathBuf,
-    /// What `sw-source` records: [`AdoptRequest::source_label`] where the
+    /// What `adopted.source` records: [`AdoptRequest::source_label`] where the
     /// caller supplied one, and the source directory's path otherwise. The
     /// re-adopt comparison reads it, so it is held rather than re-derived.
     source_label: String,
-    /// `sw-source-hash` as just computed — what a recorded one is compared to.
+    /// `adopted.source_hash` as just computed — what a recorded one is compared to.
     source_hash: String,
     /// `<plugin>/skills/<name>`, relative to `<content-root>/plugins`.
     dest_rel: String,
@@ -1001,7 +1000,7 @@ fn plan_one(
         Some(label) => label.to_owned(),
         None => skill_dir.display().to_string(),
     };
-    // `sw-also-at`: every other scanned root holding this exact content.
+    // `adopted.also_at`: every other scanned root holding this exact content.
     // Compared by hash, not by name — two directories called `review` are not
     // the same skill, and one called `review` and one called `pr-review` may
     // be.
@@ -1022,7 +1021,6 @@ fn plan_one(
             name: &name,
             description: &description,
             carried: &fields,
-            plugin,
             targets: request.targets.as_deref(),
             source_label: &source_label,
             format,
@@ -1084,22 +1082,26 @@ struct EntryNote<'a> {
     name: &'a str,
     description: &'a str,
     carried: &'a Map<String, Value>,
-    plugin: &'a str,
     targets: Option<&'a [String]>,
-    /// `sw-source`: the source path, or what the caller called it.
+    /// `adopted.source`: the source path, or what the caller called it.
     source_label: &'a str,
-    /// `sw-format`: the harness layout the source was read in.
+    /// `adopted.format`: the harness layout the source was read in.
     format: &'a str,
     source_hash: &'a str,
     /// `None` for the throwaway render the hash itself is taken over.
     adopted_hash: Option<&'a str>,
     adopted_at: &'a str,
-    /// `sw-also-at`, with the key's own three outcomes: `None` writes no key
+    /// `adopted.also_at`, with the key's own three outcomes: `None` writes no key
     /// (nothing was cross-referenced), a list writes it, empty included.
     also_at: Option<&'a [String]>,
     body: &'a str,
     entry_source: &'a Path,
     ns: &'a Namespace,
+}
+
+/// Whether `key` is skillwright's on an adopted skill note.
+fn is_ours(ns: &Namespace, key: &str) -> bool {
+    ns.is_ours(key) || (ns.is_bare() && crate::keys::is_owned(EntityKind::Skill, key))
 }
 
 /// The adopted entry note: Agent Skills spec fields first, carried foreign keys next, the
@@ -1111,6 +1113,9 @@ fn render_entry_note(note: &EntryNote<'_>) -> Result<String, CoreError> {
     let mut map = Mapping::new();
     map.insert(string("name"), string(note.name));
     map.insert(string("description"), string(note.description));
+    // A carried key that a bare vault would read as skillwright's moves under
+    // `metadata:`, where it publishes as the source wrote it.
+    let mut displaced = Mapping::new();
     for (key, value) in note.carried {
         let value = serde_yaml::to_value(value).map_err(|e| {
             CoreError::malformed(
@@ -1118,45 +1123,50 @@ fn render_entry_note(note: &EntryNote<'_>) -> Result<String, CoreError> {
                 format!("`{key}` is not representable in frontmatter: {e}"),
             )
         })?;
-        map.insert(string(key), value);
+        if is_ours(note.ns, key)
+            || (note.ns.is_bare() && crate::keys::REMOVED.contains(&key.as_str()))
+        {
+            displaced.insert(string(key), value);
+        } else {
+            map.insert(string(key), value);
+        }
     }
-    map.insert(string(&note.ns.key("kind")), string("skill"));
-    map.insert(string(&note.ns.key("plugin")), string(note.plugin));
+    if !displaced.is_empty() {
+        let metadata = map
+            .entry(string("metadata"))
+            .or_insert_with(|| Yaml::Mapping(Mapping::new()));
+        if let Yaml::Mapping(metadata) = metadata {
+            metadata.extend(displaced);
+        }
+    }
     if let Some(targets) = note.targets {
         map.insert(
             string(&note.ns.key("targets")),
             Yaml::Sequence(targets.iter().map(|t| string(t)).collect()),
         );
     }
-    map.insert(string(&note.ns.key("source")), string(note.source_label));
-    map.insert(string(&note.ns.key("format")), string(note.format));
-    map.insert(
-        string(&note.ns.key("source-hash")),
-        string(note.source_hash),
-    );
+    let mut adopted = Mapping::new();
+    adopted.insert(string("source"), string(note.source_label));
+    adopted.insert(string("format"), string(note.format));
     if let Some(adopted_hash) = note.adopted_hash {
-        map.insert(string(&note.ns.key("adopted-hash")), string(adopted_hash));
+        adopted.insert(string("hash"), string(adopted_hash));
     }
-    map.insert(string(&note.ns.key("adopted-at")), string(note.adopted_at));
+    adopted.insert(string("source_hash"), string(note.source_hash));
+    adopted.insert(string("at"), string(note.adopted_at));
     if let Some(also_at) = note.also_at {
-        map.insert(
-            string(&note.ns.key("also-at")),
+        adopted.insert(
+            string("also_at"),
             Yaml::Sequence(also_at.iter().map(|path| string(path)).collect()),
         );
     }
+    map.insert(string(&note.ns.key("adopted")), Yaml::Mapping(adopted));
 
     compose_note(&map, note.body, note.entry_source)
 }
 
-/// The plugin note adoption creates when the group has none: `sw-kind:
-/// plugin`, a `name`, a placeholder `description`, an empty body — a stub the
-/// author grows.
-///
-/// `description` + `sw-kind` is the publishable contract for every kind, not
-/// for skills alone: a note carrying one and not the other is refused
-/// half-declared. The scan returns plugins, so a stub with no description would
-/// refuse the vault it was just written into.
-fn plugin_note(plugin: &str, ns: &Namespace) -> Result<String, CoreError> {
+/// The plugin note adoption creates when the group has none: a `name`, a
+/// placeholder `description` and an empty body — a stub the author grows.
+fn plugin_note(plugin: &str) -> Result<String, CoreError> {
     use serde_yaml::{Mapping, Value as Yaml};
     let mut map = Mapping::new();
     map.insert(
@@ -1166,12 +1176,6 @@ fn plugin_note(plugin: &str, ns: &Namespace) -> Result<String, CoreError> {
     map.insert(
         Yaml::String("description".to_owned()),
         Yaml::String(format!("Skills adopted into the {plugin} plugin.")),
-    );
-    map.insert(
-        Yaml::String(ns.key("kind")),
-        // The enum's own spelling, not a copy of it: one vocabulary, and a
-        // renamed variant cannot leave a stale literal behind here.
-        Yaml::String(EntityKind::Plugin.as_str().to_owned()),
     );
     compose_note(&map, "", Path::new(plugin))
 }
@@ -1192,7 +1196,7 @@ fn compose_note(map: &serde_yaml::Mapping, body: &str, about: &Path) -> Result<S
 
 // --- Provenance the source itself answers -----------------------------------
 
-/// The layout stamped as `sw-format`, when nobody said.
+/// The layout stamped as `adopted.format`, when nobody said.
 ///
 /// Two signals, in order, because they answer for different sources. A tree
 /// under a runtime's own directory names that runtime: `~/.claude/skills/x`
@@ -1217,7 +1221,7 @@ pub fn detect_format(vfs: &dyn Vfs, source: &Path) -> String {
     STANDARD_FORMAT.to_owned()
 }
 
-/// `sw-format` for a source that declares no harness: the published layout
+/// `adopted.format` for a source that declares no harness: the published layout
 /// the Agent Skills spec itself describes, which is what adoption reads.
 pub const STANDARD_FORMAT: &str = "standard";
 
@@ -1232,7 +1236,7 @@ const PLUGIN_MARKERS: &[(&str, &str)] = &[
 ];
 
 /// Every skill directory under `roots`, paired with the hash of its contents
-/// — the index `sw-also-at` is answered from.
+/// — the index `adopted.also_at` is answered from.
 ///
 /// `None` when the caller named no roots, which is the difference between a
 /// cross-reference that found nothing and one that never ran. A root that is
@@ -1826,7 +1830,7 @@ mod tests {
     use crate::vfs::MemVfs;
 
     fn sw() -> Namespace {
-        Namespace::default()
+        Namespace::sw()
     }
 
     fn write(vfs: &dyn Vfs, path: &str, content: &str) {
@@ -2062,19 +2066,17 @@ mod tests {
             entry.contains("description: A demo skill for adoption."),
             "{entry}"
         );
-        // Ours, at the namespace: the kind, the grouping, the narrowing.
-        assert!(entry.contains("sw-kind: skill"), "{entry}");
-        assert!(entry.contains("sw-plugin: demos"), "{entry}");
+        // Ours, at the namespace: the narrowing. The folder says the rest.
+        assert!(!entry.contains("sw-kind"), "{entry}");
+        assert!(!entry.contains("sw-plugin"), "{entry}");
         assert!(entry.contains("sw-targets:"), "{entry}");
         assert!(entry.contains("- codex"), "{entry}");
         assert!(entry.contains("- claude"), "{entry}");
         // The provenance the adopt step records.
-        assert!(entry.contains("sw-source: /src/skills/demo"), "{entry}");
-        assert!(entry.contains("sw-source-hash:"), "{entry}");
-        assert!(
-            entry.contains("sw-adopted-at: 2026-08-22T12:00:00Z"),
-            "{entry}"
-        );
+        assert!(entry.contains("sw-adopted:\n"), "{entry}");
+        assert!(entry.contains("  source: /src/skills/demo"), "{entry}");
+        assert!(entry.contains("  source_hash:"), "{entry}");
+        assert!(entry.contains("  at: 2026-08-22T12:00:00Z"), "{entry}");
         // The rewrite: a relative link became a path wikilink.
         assert!(
             entry.contains("[[references/environments|the environments guide]]"),
@@ -2089,10 +2091,9 @@ mod tests {
             ),
             "# Environments\n\nDetails here.\n"
         );
-        // And the plugin note exists, kinded at the namespace.
+        // And the plugin note exists; its folder says what it is.
         let pack = read(&vfs, "/vault/plugins/demos/demos.md");
         assert!(pack.contains("name: demos"), "{pack}");
-        assert!(pack.contains("sw-kind: plugin"), "{pack}");
     }
 
     #[test]
@@ -2188,12 +2189,12 @@ mod tests {
         assert_eq!(adopted.len(), 64, "a SHA-256 hex digest");
         assert!(adopted.bytes().all(|b| b.is_ascii_hexdigit()), "{adopted}");
         assert_ne!(adopted, hash, "two hashes over two file sets");
-        // Written through the same serialiser as `sw-source-hash`, which
+        // Written through the same serialiser as `source_hash`, which
         // quotes exactly the values a reader would otherwise type as
         // something else — an all-digit digest among them.
         assert!(
             read(&vfs, "/vault/plugins/demos/skills/demo/demo.md")
-                .contains(&format!("sw-adopted-hash: {adopted}")),
+                .contains(&format!("  hash: {adopted}")),
         );
         // `/src` declares no runtime directory and carries no plugin
         // manifest, so the layout it was read in is the published standard.
@@ -2202,13 +2203,10 @@ mod tests {
         // empty: "not scanned" and "scanned, found nowhere else" are
         // different facts.
         assert_eq!(provenance.also_at, None);
-
-        assert_eq!(note.frontmatter.declared_kind, Some(EntityKind::Skill));
-        assert_eq!(note.frontmatter.plugin.as_deref(), Some("demos"));
         assert!(note.frontmatter.unknown_ours.is_empty());
     }
 
-    /// `sw-format`'s three sources, in the order [`detect_format`] asks.
+    /// `adopted.format`'s three sources, in the order [`detect_format`] asks.
     #[test]
     fn the_format_comes_from_the_request_then_the_path_then_the_manifest() {
         // Named by the caller wins over everything the tree could say.
@@ -2218,9 +2216,7 @@ mod tests {
             ..request()
         };
         adopt_skills(&vfs, &named, &sw()).unwrap();
-        assert!(
-            read(&vfs, "/vault/plugins/demos/skills/demo/demo.md").contains("sw-format: codex")
-        );
+        assert!(read(&vfs, "/vault/plugins/demos/skills/demo/demo.md").contains("  format: codex"));
 
         // A runtime directory anywhere above the source names the runtime.
         let vfs = MemVfs::new();
@@ -2235,7 +2231,7 @@ mod tests {
         };
         adopt_skills(&vfs, &under_claude, &sw()).unwrap();
         assert!(
-            read(&vfs, "/vault/plugins/demos/skills/demo/demo.md").contains("sw-format: claude")
+            read(&vfs, "/vault/plugins/demos/skills/demo/demo.md").contains("  format: claude")
         );
 
         // No runtime directory, but a plugin manifest declaring the harness
@@ -2252,12 +2248,10 @@ mod tests {
             ..request()
         };
         adopt_skills(&vfs, &packed, &sw()).unwrap();
-        assert!(
-            read(&vfs, "/vault/plugins/demos/skills/demo/demo.md").contains("sw-format: codex")
-        );
+        assert!(read(&vfs, "/vault/plugins/demos/skills/demo/demo.md").contains("  format: codex"));
     }
 
-    /// `sw-also-at` is content-addressed and has three outcomes, not two.
+    /// `adopted.also_at` is content-addressed and has three outcomes, not two.
     #[test]
     fn also_at_names_every_other_root_holding_the_same_bytes() {
         let vfs = demo_source();
@@ -2448,11 +2442,8 @@ mod tests {
         // Adding, removing, and hand-editing our own keys: still `unchanged`.
         let note = read(&vfs, ENTRY);
         let rewritten = note
-            .replace(
-                "sw-plugin: demos",
-                "sw-plugin: something-else\nsw-invented: 1",
-            )
-            .replace("sw-adopted-at: ", "sw-adopted-at-was: x\nsw-adopted-at: ");
+            .replace("sw-adopted:\n", "sw-invented: 1\nsw-adopted:\n")
+            .replace("  at: ", "  at-was: x\n  at: ");
         vfs.write_file(Path::new(ENTRY), rewritten.as_bytes())
             .unwrap();
         let report = adopt_skills(&vfs, &request(), &sw()).unwrap();
@@ -2619,23 +2610,23 @@ mod tests {
                 .unwrap()
                 .starts_with("overwritten · hand-authored: ")
         );
-        assert!(read(&vfs, ENTRY).contains("sw-adopted-hash:"));
+        assert!(read(&vfs, ENTRY).contains("sw-adopted:"));
     }
 
     #[test]
     fn absent_or_unparseable_hashes_are_diverged_rather_than_matching() {
-        for broken in ["", "sw-adopted-hash: not-a-digest\n"] {
+        for broken in ["", "  hash: not-a-digest\n"] {
             let vfs = demo_source();
             adopt_skills(&vfs, &request(), &sw()).unwrap();
             let note = read(&vfs, ENTRY);
             // Drop the recorded pair, then optionally put back a wrong one.
             let stripped: String = note
                 .lines()
-                .filter(|line| !line.starts_with("sw-adopted-hash:"))
+                .filter(|line| !line.starts_with("  hash:"))
                 .map(|line| format!("{line}\n"))
                 .collect();
             let stripped =
-                stripped.replacen("sw-source-hash:", &format!("{broken}sw-source-hash:"), 1);
+                stripped.replacen("  source_hash:", &format!("{broken}  source_hash:"), 1);
             vfs.write_file(Path::new(ENTRY), stripped.as_bytes())
                 .unwrap();
 
@@ -2934,7 +2925,7 @@ mod tests {
         write(
             &vfs,
             "/src/skills/demo/SKILL.md",
-            "---\nname: demo\ndescription: d\nsw-kind: plugin\n---\nb\n",
+            "---\nname: demo\ndescription: d\nsw-kind: keep-me\n---\nb\n",
         );
         let err = adopt_skills(&vfs, &request(), &sw())
             .unwrap_err()
@@ -2948,7 +2939,7 @@ mod tests {
     fn a_configured_namespace_stamps_its_own_keys_and_carries_the_default_one() {
         let x = Namespace::new("x").unwrap();
         let vfs = MemVfs::new();
-        // `sw-kind` is somebody else's key in this vault — carried, not ours.
+        // `sw-kind` is somebody else's key in this vault: carried, not ours.
         write(
             &vfs,
             "/src/skills/demo/SKILL.md",
@@ -2957,9 +2948,8 @@ mod tests {
         adopt_skills(&vfs, &request(), &x).unwrap();
 
         let entry = read(&vfs, "/vault/plugins/demos/skills/demo/demo.md");
-        assert!(entry.contains("x-kind: skill"), "{entry}");
-        assert!(entry.contains("x-plugin: demos"), "{entry}");
-        assert!(entry.contains("x-source: /src/skills/demo"), "{entry}");
+        assert!(entry.contains("x-adopted:\n"), "{entry}");
+        assert!(entry.contains("  source: /src/skills/demo"), "{entry}");
         assert!(entry.contains("sw-kind: keep-me"), "{entry}");
 
         let note = read_vault_skill(
@@ -2968,7 +2958,6 @@ mod tests {
             &x,
         )
         .unwrap();
-        assert_eq!(note.frontmatter.declared_kind, Some(EntityKind::Skill));
         assert_eq!(
             note.frontmatter.provenance.source.as_deref(),
             Some("/src/skills/demo")
@@ -2983,7 +2972,7 @@ mod tests {
         write(
             &vfs,
             "/src/skills/demo/SKILL.md",
-            "---\nname: demo\ndescription: d\nx-kind: skill\n---\nb\n",
+            "---\nname: demo\ndescription: d\nx-kind: keep-me\n---\nb\n",
         );
         let err = adopt_skills(&vfs, &request(), &x).unwrap_err().to_string();
         assert!(err.contains("x-kind"), "{err}");
@@ -3039,12 +3028,12 @@ mod tests {
         write(
             &vfs,
             "/vault/plugins/demos/demos.md",
-            "---\nname: demos\nsw-kind: plugin\n---\nThe author's own prose.\n",
+            "---\nname: demos\n---\nThe author's own prose.\n",
         );
         adopt_skills(&vfs, &request(), &sw()).unwrap();
         assert_eq!(
             read(&vfs, "/vault/plugins/demos/demos.md"),
-            "---\nname: demos\nsw-kind: plugin\n---\nThe author's own prose.\n",
+            "---\nname: demos\n---\nThe author's own prose.\n",
             "an existing plugin note is the author's"
         );
     }

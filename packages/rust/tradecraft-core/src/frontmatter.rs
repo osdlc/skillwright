@@ -1,71 +1,35 @@
-//! The `sw-` namespace — the frontmatter skillwright owns in a note.
+//! skillwright's own frontmatter keys, read out of a note and typed.
 //!
-//! The namespace spec splits a note's frontmatter into
-//! three classes, and this module is the boundary between the first two and
-//! the third:
+//! A note's frontmatter splits three ways:
 //!
 //! | Class | Where it goes | At publish |
 //! |---|---|---|
-//! | Ours — every key under the namespace (`sw-` by default) | [`VaultFrontmatter`], typed | **dropped** |
-//! | The standard's fields | [`crate::SkillContent`]'s modeled fields | emitted |
-//! | Anything else | `SkillContent::annotations`, verbatim | carried |
+//! | skillwright's — the [`crate::keys`] table's owned keys for the note's kind | [`VaultFrontmatter`], typed | **dropped** |
+//! | The spec's and the harness's fields | [`crate::SkillContent`]'s modeled fields | emitted |
+//! | Anything else | `SkillContent::annotations`, with a warning | under `metadata:` on a skill |
 //!
-//! # Which prefix, is the caller's to say
+//! # Bare or prefixed
 //!
-//! `sw-` is the default and what every document spells, but it is not wired
-//! in: the prefix is a [`Namespace`] this module takes as a parameter, and a
-//! vault that already has an `sw-` key of somebody else's configures its own
-//! stem. Nothing below writes a literal `sw-…` — every key is
-//! [`Namespace::key`] of a field name, which is what keeps the keys the drain
-//! asks for inside the predicate the strip is built on. Below, "`sw-`" means
-//! the configured prefix.
+//! Keys are bare by default, and the key table says which bare keys are
+//! skillwright's for each kind, so `license` is the pack's on a plugin note
+//! and the spec's on a skill. Under a namespace ([`Namespace`]), every key
+//! the prefix claims is skillwright's, in the flat shape (`version`) or
+//! the nested one (`sw: {version: …}`); a note carrying both is refused ·
+//! `mixed-frontmatter-shape`. A prefixed key this build does not model is
+//! consumed into [`VaultFrontmatter::unknown_ours`] so it cannot reach a
+//! destination.
 //!
-//! # Why the prefix is claimed wholesale
+//! # A wrong-shaped value of ours is refused
 //!
-//! `sw-` is a **namespace we take**, not a list of keys we know. A key inside
-//! it is ours whether this build models it yet or not, which is what makes the
-//! publish-time strip one predicate instead of an allow-list that drifts every
-//! time a field is added. So an unmodeled `sw-` key is *consumed* here — it
-//! never reaches `annotations`, because a key that reached `annotations` would
-//! reach a destination — and parked in [`VaultFrontmatter::unknown_ours`]
-//! rather than refused or dropped:
+//! skillwright's keys are stripped at emit, so carrying a wrong-shaped one
+//! verbatim would lose it. An absent key and a present-but-wrong key must not
+//! share an outcome: `targets: claude` (a scalar where a list belongs) read
+//! as "publish everywhere" would push files where the author meant not to.
 //!
-//! * **Not refused**, because the Obsidian plugin and the CLI edit one
-//!   vault and ship on their own schedules: every field either side adds would
-//!   break the other until both are upgraded.
-//! * **Not dropped.** Everything unmodeled survives the read, addressable by a
-//!   caller that wants to warn about it.
+//! # The kind comes from the folder
 //!
-//! # Why a wrong-shaped value inside the prefix is refused
-//!
-//! [`crate::vault`] carries a wrong-shaped *modeled* key verbatim rather than
-//! swallowing it — `name: [a]` stays in the note's own bytes and travels on.
-//! Inside `sw-` it cannot: our keys are stripped at emit, so "carry it
-//! verbatim" and "lose it" are the same outcome. That leaves refusing, which is
-//! also the rule the decision states for `sw-kind` and `sw-targets` — **an
-//! absent key and a present-but-wrong key must not share an outcome.**
-//! `sw-targets: claude` (a scalar where a list belongs) read as "no value, so
-//! publish everywhere" would push files at destinations the author was trying
-//! to exclude, with nothing on screen.
-//!
-//! # The kind is resolved, not just read
-//!
-//! `sw-kind` is one layer of several: [`resolve_kind`] ranks it against a
-//! caller's override and the kind folder a note sits in. See its documentation
-//! for the precedence and for what the folder layer costs.
-//!
-//! # Two shapes, one reader
-//!
-//! The CLI writes flat keys, because the author edits them in vanilla Obsidian
-//! whose Properties panel renders a nested mapping through an inert read-only
-//! widget. The plugin supplies its own UI and may write a nested `sw:`
-//! block. Both are read here — `claim` normalises the nested
-//! shape onto the flat spelling and everything downstream sees one vocabulary
-//! — and a note carrying both is refused · `mixed-frontmatter-shape` rather
-//! than reconciled. There is no field-by-field comparison, only a shape check;
-//! deciding what *agree* means across two shapes is a judgement call that is
-//! eventually wrong, and picking a winner silently drops a field the author
-//! typed.
+//! [`resolve_kind`] ranks a caller's request over the kind folder a note sits
+//! in. The `kind` and `plugin` keys are refused · `removed-key`.
 
 use std::fmt;
 use std::path::Path;
@@ -78,10 +42,8 @@ use serde_json::{Map, Value};
 use crate::error::CoreError;
 use crate::namespace::Namespace;
 
-/// Which publishable unit a note is — what `sw-kind` names.
+/// Which publishable unit a note is: what the folder it sits in names.
 ///
-/// Absent means [`EntityKind::Skill`]: a vault of skills declares nothing at
-/// all, and the key appears only on the notes that are something else. That
 /// default is for **absence only**. An unrecognised value is a typo, and
 /// defaulting it would publish a `SKILL.md` at every destination for something
 /// that is not a skill — silently, and as a write.
@@ -155,14 +117,10 @@ impl EntityKind {
     }
 }
 
-/// `sw-kind` named something this build does not publish.
+/// A kind name this build does not publish.
 ///
 /// A distinct type rather than a bare `CoreError` so [`EntityKind::from_str`]
-/// stays usable without a path in hand; [`VaultFrontmatter::take_from`] is
-/// what pairs it with the note it came from and with the key it was spelled
-/// under — which is why nothing here names that key. The stem is
-/// configurable, and only the caller holding the [`Namespace`] knows whether
-/// the note said `sw-kind` or `x-kind`.
+/// stays usable without a path in hand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownKind {
     /// The value as the note spelled it.
@@ -211,12 +169,10 @@ impl FromStr for EntityKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum KindSource {
-    /// Layer 1 — the caller said so explicitly.
+    /// The caller said so explicitly.
     Override,
-    /// Layer 2 — the note's own `sw-kind`.
-    Frontmatter,
-    /// Layer 3 — the kind folder the note sits in (`skills/`, `plugins/` and
-    /// so on; see [`crate::discover`]).
+    /// The kind folder the note sits in (`skills/`, `plugins/` and so on;
+    /// see [`crate::discover`]).
     Directory,
     /// No layer applied. Absent means `skill`.
     Default,
@@ -228,7 +184,6 @@ impl KindSource {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Override => "override",
-            Self::Frontmatter => "frontmatter",
             Self::Directory => "directory",
             Self::Default => "default",
         }
@@ -244,77 +199,25 @@ pub struct ResolvedKind {
     pub source: KindSource,
 }
 
-/// What the *caller* knows about a note's kind that the note itself does not
-/// say. Both layers are the caller's to supply; neither is implemented here.
-///
-/// Default is "the caller knows nothing", which is what
-/// [`VaultFrontmatter::kind`] passes and what makes `sw-kind` the whole story
-/// for that caller.
+/// What the caller knows about a note's kind. A note never says its own kind:
+/// the folder decides.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct KindHints {
-    /// **Layer 1.** An explicit instruction — "treat this note as a skill" —
-    /// from a flag, a prompt, or a conversion that is about to stamp
-    /// `sw-kind` into the note. Wins outright: nothing is more explicit than
-    /// being told.
+    /// An explicit instruction — "treat this note as a skill" — from a flag
+    /// or a conversion. Wins outright.
     pub requested: Option<EntityKind>,
-    /// **Layer 3.** What the note's kind folder said, already resolved by the
-    /// caller against the note's path. The folder list is fixed and always
-    /// on. `None` when no folder matched — a note at the root of a skills
-    /// source has no folder above it naming a kind.
-    ///
-    /// [`crate::discover`] and [`crate::publish`] both supply this from the
-    /// folder a note sits in; it is the reason [`KindSource::Directory`] is
-    /// reachable at all.
+    /// What the note's kind folder said, already resolved by the caller
+    /// against the note's path. `None` when no folder matched.
     pub folder: Option<EntityKind>,
 }
 
-/// Resolves a note's kind across the layers that can decide it.
-///
-/// Precedence, highest first:
-///
-/// | Layer | Source | Implemented here |
-/// |---|---|---|
-/// | 1 | A caller-supplied override ([`KindHints::requested`]) | no — a parameter |
-/// | 2 | `sw-kind` in the note ([`VaultFrontmatter::declared_kind`]) | **yes** |
-/// | 3 | The kind folder the note sits in ([`KindHints::folder`]) | no — a parameter |
-/// | 4 | The default, [`EntityKind::Skill`] | yes |
-///
-/// Layers 1 and 3 are parameters rather than logic: the CLI flag belongs to
-/// the surface that offers it, and the folder layer needs the whole file
-/// set to read a folder — [`crate::discover`] holds that and passes the
-/// answer. What lives here is the *order*, in one place.
-///
-/// # The folder layer makes folders load-bearing
-///
-/// The vault's model is that a declared folder is scaffolding and never a type
-/// — a note is whatever another note does with it, and `skills/` is where
-/// skills are kept rather than what makes something a skill. Layer 3 breaks
-/// that property: moving a note between kind folders changes what it
-/// publishes as.
-///
-/// That is acceptable because frontmatter **outranks** it, so a note that
-/// says what it is is never overruled by where it sits. A vault that stamps
-/// `sw-kind` is unaffected by the folders at all.
-///
-/// # Why this is infallible
-///
-/// Every way kind identification can fail is a *parse* failure — `sw-kind`
-/// naming a value this build does not know, refused · `unknown-kind` by
-/// [`VaultFrontmatter::take_from`] before a resolution is ever attempted — and
-/// the precedence above is total, so there is no disagreement left for this
-/// function to arbitrate. A layer that can conflict rather than be outranked
-/// would change that, and would be the moment to make this fallible.
-pub fn resolve_kind(declared: Option<EntityKind>, hints: KindHints) -> ResolvedKind {
+/// Resolves a note's kind: the caller's request, then the kind folder, then
+/// [`EntityKind::Skill`].
+pub fn resolve_kind(hints: KindHints) -> ResolvedKind {
     if let Some(kind) = hints.requested {
         return ResolvedKind {
             kind,
             source: KindSource::Override,
-        };
-    }
-    if let Some(kind) = declared {
-        return ResolvedKind {
-            kind,
-            source: KindSource::Frontmatter,
         };
     }
     if let Some(kind) = hints.folder {
@@ -329,7 +232,8 @@ pub fn resolve_kind(declared: Option<EntityKind>, hints: KindHints) -> ResolvedK
     }
 }
 
-/// Where adoption read a note from, written by adoption and by nothing else.
+/// Where adoption read a note from: the `adopted` block, written by adoption
+/// and by nothing else.
 ///
 /// Every field is optional and a note carrying none of them is hand-authored
 /// ([`Provenance::is_hand_authored`]). It is data in the user's file rather
@@ -337,20 +241,20 @@ pub fn resolve_kind(declared: Option<EntityKind>, hints: KindHints) -> ResolvedK
 /// a refusal rather than a clobber.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Provenance {
-    /// `sw-source` — the path adoption read the skill from.
+    /// `adopted.source` — the path adoption read the skill from.
     pub source: Option<String>,
-    /// `sw-format` — the runtime layout it was read in (`claude`, `codex`,
-    /// `agents`, …), or `none`.
+    /// `adopted.format` — the runtime layout it was read in (`claude`,
+    /// `codex`, `agents`, …), or `none`.
     pub format: Option<String>,
-    /// `sw-source-hash` — hash over the source folder as read. Answers "has
-    /// the source moved on".
+    /// `adopted.source_hash` — hash over the source folder as read. Answers
+    /// "has the source moved on".
     pub source_hash: Option<String>,
-    /// `sw-adopted-hash` — hash over what adoption wrote. Answers "has the
-    /// note been edited since".
+    /// `adopted.hash` — hash over what adoption wrote. Answers "has the note
+    /// been edited since".
     pub adopted_hash: Option<String>,
-    /// `sw-adopted-at` — when adoption wrote it.
+    /// `adopted.at` — when adoption wrote it.
     pub adopted_at: Option<String>,
-    /// `sw-also-at` — other paths the same content was found at.
+    /// `adopted.also_at` — other paths the same content was found at.
     pub also_at: Option<Vec<String>>,
 }
 
@@ -361,42 +265,46 @@ impl Provenance {
     }
 }
 
+/// The fields of the `adopted` block, in the order adoption writes them.
+pub const ADOPTED_FIELDS: &[&str] = &["source", "format", "hash", "source_hash", "at", "also_at"];
+
 /// What a container note says about the thing it names — the manifest fields
 /// a marketplace or a plugin publishes under.
 ///
-/// Meaningful only on a container. A skill note may spell these keys and they
-/// are read the same way, but nothing consults them: a skill's manifest entry
-/// is derived from the skill, and there is no second place for it to disagree.
+/// Read only on a container: the same words on a skill are the skill's own
+/// (`license`) or unknown.
 ///
 /// **Every field is optional and every absence has a default**, resolved by
 /// [`crate::export`] rather than here, because the defaults are a property of
-/// the manifest dialect being written and not of the note. Reading them is
-/// this module's job; deciding what a missing `license` means is not.
+/// the manifest dialect being written and not of the note.
 ///
 /// `owner` and `author` are [`Value`] rather than `String` because an author
 /// may spell either as `{name, email, url}`, and narrowing them here would
-/// refuse a shape the manifest accepts. The converse is not true for `owner`:
-/// Claude and Cursor both require an object there, so a bare name written
-/// here is normalised on the way into a manifest rather than passed through —
-/// see [`crate::export::MarketplaceConfig::owner`].
+/// refuse a shape the manifest accepts.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContainerIdentity {
-    /// `sw-owner` — the marketplace's owner, free-shaped.
+    /// `owner` — the marketplace's owner, free-shaped.
     pub owner: Option<Value>,
-    /// `sw-author` — the author a plugin publishes under, free-shaped. On a
+    /// `author` — the author a plugin publishes under, free-shaped. On a
     /// marketplace note it is the default for every plugin under it.
     pub author: Option<Value>,
-    /// `sw-display-name` — the human-facing name where a dialect carries one
+    /// `display_name` — the human-facing name where a dialect carries one
     /// separately from the slug.
     pub display_name: Option<String>,
-    /// `sw-license` — an SPDX identifier, unread and passed through.
+    /// `license` — an SPDX identifier, unread and passed through.
     pub license: Option<String>,
-    /// `sw-keywords`.
+    /// `keywords`.
     pub keywords: Option<Vec<String>>,
-    /// `sw-category` — Codex's plugin category.
+    /// `category` — the plugin's marketplace category.
     pub category: Option<String>,
-    /// `sw-version` — the plugin's own version.
+    /// `version` — the plugin's or marketplace's own version.
     pub version: Option<String>,
+    /// `repository` — the source repository URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    /// `homepage` — the documentation URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
 }
 
 impl ContainerIdentity {
@@ -407,201 +315,164 @@ impl ContainerIdentity {
     }
 }
 
-/// Everything the `sw-` namespace said about one note, read out of its
+/// Everything skillwright's own keys said about one note, read out of its
 /// frontmatter and typed.
 ///
-/// This is deliberately **not** part of [`crate::SkillContent`]. Our keys are
-/// machine-local configuration about *this* vault — a source path, a hash, a
-/// list of destinations — and a consumer reading them would learn something
-/// true about the vault and nothing about the skill in front of it. Keeping
-/// them off the type [`crate::projection::project_skill`] renders makes the
-/// strip structural: there is no field for them to leak through.
+/// Deliberately **not** part of [`crate::SkillContent`]: these keys are
+/// configuration about *this* vault, and keeping them off the type
+/// [`crate::projection::project_skill`] renders makes the strip structural.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct VaultFrontmatter {
-    /// `sw-kind`, exactly as the note declared it — `None` when the key is
-    /// absent, which is the ordinary vault.
-    ///
-    /// Deliberately not pre-defaulted to [`EntityKind::Skill`]: the default
-    /// belongs to [`resolve_kind`], one layer down, and folding it in here
-    /// would make "the note said skill" and "the note said nothing"
-    /// indistinguishable to the layer that has to rank them. Use
-    /// [`VaultFrontmatter::kind`] for the resolved answer.
-    pub declared_kind: Option<EntityKind>,
-    /// `sw-targets`. **Three outcomes, not two:** `None` is absent and means
-    /// every destination; `Some(vec![])` is an empty list and means nowhere;
-    /// `Some(names)` narrows to those. Collapsing absent into empty would
-    /// stop a vault publishing at all, and empty into absent would publish
-    /// where the author said not to.
+    /// `targets`. **Three outcomes, not two:** `None` is absent and means
+    /// every destination (or what the plugin says); `Some(vec![])` is an
+    /// empty list and means nowhere; `Some(names)` narrows to those.
     pub targets: Option<Vec<String>>,
-    /// `sw-plugin` — which plugin this note's skill belongs to when a
-    /// marketplace groups it. `None` is absent, and absent means *the caller's
-    /// configured default plugin* — the default is configuration, not a
-    /// property of the note, so it is not folded in here for the same reason
-    /// [`VaultFrontmatter::declared_kind`] is not pre-defaulted: the layer
-    /// that knows the default has to be able to tell "said nothing" from
-    /// "said the default's name". The value is not validated here — what makes
-    /// a plugin name legal is the Agent Skills spec's name rule, which belongs to
-    /// discovery ([`crate::discover`]) beside the identical rule for skill
-    /// names, not to a frontmatter reader that types every vault's notes.
-    pub plugin: Option<String>,
-    /// `sw-arguments` — what this skill or command's invocation takes,
+    /// `arguments` — what this skill or command's invocation takes,
     /// validated: every name is a slug, every name is unique, no `values`
     /// list is empty, and every `default` is one of its own `values` when
-    /// `values` is present. Empty when the key is absent, which is the
-    /// ordinary note.
+    /// `values` is present. Empty when the key is absent.
     ///
-    /// The one field in this struct that is not purely vault bookkeeping —
-    /// [`crate::publish::publish_skill`] and [`crate::export`] carry it onto
-    /// [`crate::content::SkillContent::arguments`] rather than dropping it,
-    /// because unlike a source path or a destination list it describes the
-    /// skill's own contract, which every destination needs to render.
-    /// [`crate::content::SkillContent::apply_arguments`] is the one seam that
-    /// does the carrying, and it is never called from
-    /// [`crate::vault::read_vault_skill`] — this field's raw `sw-arguments`
-    /// key still never reaches a destination, only what is derived from it.
+    /// [`crate::content::SkillContent::apply_arguments`] carries it onto the
+    /// published content; the raw key never reaches a destination.
     pub arguments: Vec<Argument>,
-    /// The six adoption-written keys.
+    /// The `adopted` block.
     pub provenance: Provenance,
-    /// The manifest fields a container note publishes under. Empty on the
-    /// ordinary skill note, which has no manifest of its own.
+    /// The manifest fields a container note publishes under. Empty on any
+    /// other note.
     pub identity: ContainerIdentity,
-    /// `sw-overrides` — what one destination receives that the canonical
-    /// model cannot say, keyed by target name and then by that harness's own
-    /// key names. Empty when the key is absent, which is the ordinary note.
+    /// The harness blocks — `claude:`, `codex:`, `cursor:`, `pi:` — keyed by
+    /// harness and then by that harness's own key names. Empty when the note
+    /// has none.
     ///
-    /// Read and shape-checked here; **not** validated here. Neither half of
-    /// the validation belongs to a frontmatter reader: folding a target name
-    /// onto its destination is [`crate::publish::canonical_target`]'s job,
-    /// and deciding whether a harness knows a key is the capability matrix's.
-    /// [`crate::publish::overrides_for`] does both, which is the same seam
-    /// [`VaultFrontmatter::targets`] is validated at and for the same reason
-    /// — a reader that types every vault's notes should not also hold the
-    /// destination roster.
+    /// Read and shape-checked here; validated against the harness's key list
+    /// by [`crate::publish::overrides_for`] for a component, and by the
+    /// manifest writer for a container.
     pub overrides: Map<String, Value>,
-    /// Keys inside our namespace this build does not model, under their flat
-    /// spelling — consumed so they cannot reach a destination, kept so nothing
-    /// is lost silently. Nothing warns on a non-empty map today: no caller
-    /// reads it outside tests.
-    ///
-    /// Named for the namespace rather than for `sw`, because which prefix
-    /// these keys carry is the vault's to configure.
+    /// Keys inside a prefixed namespace this build does not model, under
+    /// their flat spelling — consumed so they cannot reach a destination.
     pub unknown_ours: Map<String, Value>,
+    /// Every key on the note that the key table does not list for its kind,
+    /// sorted. Each gets a warning. On a skill they publish under
+    /// `metadata:`; on a container they are ignored.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unknown: Vec<String>,
 }
 
 impl VaultFrontmatter {
-    /// The kind this note publishes as, with no caller hints in play — the
-    /// note's own `sw-kind`, or [`EntityKind::Skill`] when it carries none.
+    /// Takes skillwright's keys for a note of `kind` out of `fields`, leaving
+    /// the note's own keys.
     ///
-    /// The convenience for callers that have no override and no folder hint.
-    /// Anything holding either one — [`crate::discover`], [`crate::publish`] —
-    /// calls [`resolve_kind`] directly.
-    pub fn kind(&self) -> EntityKind {
-        resolve_kind(self.declared_kind, KindHints::default()).kind
-    }
-
-    /// Takes the whole of `ns` out of `fields`, leaving only keys that are
-    /// genuinely foreign.
-    ///
-    /// `fields` is the note's frontmatter as a JSON object, and the caller is
-    /// expected to have removed nothing from it yet — the shape check counts
-    /// keys, so a partly-drained map would misread a mixed note as a clean
-    /// one. `path` is only ever used to name the note in a refusal.
-    ///
-    /// `ns` is the namespace this vault configured, and it must be the same
-    /// one the emit-side strip uses ([`crate::projection::project_skill`]).
-    /// Two namespaces on one path is the failure this parameter exists to make
-    /// visible: a note read under `x` and emitted under `sw` publishes every
-    /// `x-` key it declared.
+    /// `fields` is the note's frontmatter as a JSON object, untouched yet.
+    /// `ns` is the vault's namespace, and must be the one the emit side uses.
+    /// `path` names the note in a refusal.
     ///
     /// # Errors
     ///
-    /// * `refused: mixed-frontmatter-shape` — the note carries the nested
-    ///   block *and* at least one flat key of the same namespace.
-    /// * `refused: unknown-kind` — the kind key names a value this build does
-    ///   not know.
-    /// * A content error naming the key and the path when a value inside the
-    ///   namespace is the wrong shape.
+    /// * `refused: removed-key` — the note carries `kind` or `plugin`.
+    /// * `refused: mixed-frontmatter-shape` — under a prefixed namespace, the
+    ///   note carries the nested block *and* at least one flat key.
+    /// * A content error naming the key and the path when one of
+    ///   skillwright's keys is the wrong shape.
     pub fn take_from(
         fields: &mut Map<String, Value>,
         path: &Path,
         ns: &Namespace,
+        kind: EntityKind,
     ) -> Result<Self, CoreError> {
-        let mut ours = claim(fields, path, ns)?;
+        let mut ours = claim(fields, path, ns, kind)?;
 
-        // Every key below is `ns.key(field)` and never a literal, so the drain
-        // asks for exactly what `Namespace::is_ours` accepts — see `claim`.
-        let kind_key = ns.key("kind");
-        let declared_kind = take_string(&mut ours, &kind_key, path)?
-            .map(|value| {
-                value
-                    .parse::<EntityKind>()
-                    .map_err(|e| refuse("unknown-kind", path, format!("`{kind_key}`: {e}")))
-            })
-            .transpose()?;
+        for removed in crate::keys::REMOVED {
+            let key = ns.key(removed);
+            if ours.contains_key(&key) || (ns.is_bare() && fields.contains_key(*removed)) {
+                return Err(refuse(
+                    "removed-key",
+                    path,
+                    format!(
+                        "`{key}` is no longer read: the folder a note sits in decides its \
+                         {removed}. Remove the key and move the note into the right folder"
+                    ),
+                ));
+            }
+        }
 
         let targets = take_string_list(&mut ours, &ns.key("targets"), path)?;
-        let plugin = take_string(&mut ours, &ns.key("plugin"), path)?;
-        let overrides = take_override_blocks(&mut ours, &ns.key("overrides"), path)?;
         let arguments = take_arguments(&mut ours, &ns.key("arguments"), path)?;
+        let mut overrides = Map::new();
+        for harness in crate::keys::HARNESS_BLOCKS {
+            if let Some(block) = take_harness_block(&mut ours, &ns.key(harness), path)? {
+                overrides.insert((*harness).to_owned(), Value::Object(block));
+            }
+        }
+        let mut unknown: Vec<String> = Vec::new();
+        let provenance = take_adopted(&mut ours, &ns.key("adopted"), path, &mut unknown)?;
 
-        let provenance = Provenance {
-            source: take_string(&mut ours, &ns.key("source"), path)?,
-            format: take_string(&mut ours, &ns.key("format"), path)?,
-            source_hash: take_string(&mut ours, &ns.key("source-hash"), path)?,
-            adopted_hash: take_string(&mut ours, &ns.key("adopted-hash"), path)?,
-            adopted_at: take_string(&mut ours, &ns.key("adopted-at"), path)?,
-            also_at: take_string_list(&mut ours, &ns.key("also-at"), path)?,
+        let identity = if kind.holds_components() {
+            ContainerIdentity {
+                owner: ours.remove(&ns.key("owner")),
+                author: ours.remove(&ns.key("author")),
+                display_name: take_string(&mut ours, &ns.key("display_name"), path)?,
+                license: take_string(&mut ours, &ns.key("license"), path)?,
+                keywords: take_string_list(&mut ours, &ns.key("keywords"), path)?,
+                category: take_string(&mut ours, &ns.key("category"), path)?,
+                version: take_string(&mut ours, &ns.key("version"), path)?,
+                repository: take_url(&mut ours, &ns.key("repository"), path)?,
+                homepage: take_url(&mut ours, &ns.key("homepage"), path)?,
+            }
+        } else {
+            ContainerIdentity::default()
         };
 
-        // Read for every note, consulted only for a container. Taking them
-        // here rather than in a container-only reader is what keeps them out
-        // of `unknown_ours`: a key this build models is a key it must claim,
-        // or a marketplace note's `sw-owner` reads as unmodeled on the one
-        // hand and is silently ignored on the other.
-        let identity = ContainerIdentity {
-            owner: ours.remove(&ns.key("owner")),
-            author: ours.remove(&ns.key("author")),
-            display_name: take_string(&mut ours, &ns.key("display-name"), path)?,
-            license: take_string(&mut ours, &ns.key("license"), path)?,
-            keywords: take_string_list(&mut ours, &ns.key("keywords"), path)?,
-            category: take_string(&mut ours, &ns.key("category"), path)?,
-            version: take_string(&mut ours, &ns.key("version"), path)?,
-        };
+        unknown.extend(ours.keys().cloned());
+        unknown.extend(
+            fields
+                .keys()
+                .filter(|key| !crate::keys::is_known(kind, key))
+                .cloned(),
+        );
+        unknown.sort();
+        unknown.dedup();
 
         Ok(Self {
-            declared_kind,
             targets,
-            plugin,
-            overrides,
             arguments,
             provenance,
             identity,
-            // Whatever is left is inside our prefix and unmodeled. It is
-            // already out of `fields`, which is the half that matters.
+            overrides,
             unknown_ours: ours,
+            unknown,
         })
     }
 }
 
-/// Splits the namespace off `fields` and normalises it onto the flat spelling.
+/// Splits skillwright's keys off `fields` and normalises them onto the flat
+/// spelling.
 ///
-/// A nested `sw: {kind: plugin}` comes back as `{"sw-kind": "plugin"}`, which
-/// is what makes the two shapes parse identically rather than through two
-/// readers that drift.
-///
-/// # The drain is defined by the predicate
-///
-/// What moves is spelled `ns.is_ours(key)` and nothing else — the flat sweep
-/// is *ours minus the block*, rather than a second `starts_with` that happens
-/// to agree with [`Namespace::is_ours`] today. A key the predicate claims and
-/// the drain left behind would be published and then stripped; a key the drain
-/// took and the predicate disowned would vanish from a note with no refusal.
-/// Both are one expression away, so there is only one expression.
+/// Under a prefixed namespace, every key the prefix claims moves, and a
+/// nested `sw: {version: 1.0.0}` comes back as `{"sw-version": "1.0.0"}`.
+/// Bare, the key table decides: the keys it lists as skillwright's for `kind`
+/// move. `arguments` holding plain strings stays: that is Claude's own key.
 fn claim(
     fields: &mut Map<String, Value>,
     path: &Path,
     ns: &Namespace,
+    kind: EntityKind,
 ) -> Result<Map<String, Value>, CoreError> {
+    if ns.is_bare() {
+        let owned: Vec<String> = fields
+            .keys()
+            .filter(|key| crate::keys::is_owned(kind, key))
+            .filter(|key| key.as_str() != "arguments" || !is_name_list(&fields[key.as_str()]))
+            .cloned()
+            .collect();
+        let mut ours = Map::new();
+        for key in owned {
+            if let Some(value) = fields.remove(&key) {
+                ours.insert(key, value);
+            }
+        }
+        return Ok(ours);
+    }
+
     let block_key = ns.block_key();
     let flat: Vec<String> = fields
         .keys()
@@ -611,8 +482,7 @@ fn claim(
     let nested = fields.contains_key(block_key);
 
     // The shape check comes first and is not a reconciliation: it refuses
-    // whether or not the two shapes carry the same fields, and whether or not
-    // their values agree.
+    // whether or not the two shapes carry the same fields.
     if nested && !flat.is_empty() {
         return Err(refuse(
             "mixed-frontmatter-shape",
@@ -650,6 +520,95 @@ fn claim(
             ),
         )),
     }
+}
+
+/// A list whose entries are all strings: Claude's own `arguments` key.
+fn is_name_list(value: &Value) -> bool {
+    matches!(value, Value::Array(items) if items.iter().all(Value::is_string))
+}
+
+/// Removes a harness block and returns it, refusing anything but a mapping.
+/// `key: null` reads as no block.
+fn take_harness_block(
+    ours: &mut Map<String, Value>,
+    key: &str,
+    path: &Path,
+) -> Result<Option<Map<String, Value>>, CoreError> {
+    match ours.remove(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Object(block)) => Ok(Some(block)),
+        Some(other) => Err(CoreError::malformed(
+            path,
+            format!(
+                "`{key}` must be a mapping of that harness's own keys, not {}",
+                type_name(&other)
+            ),
+        )),
+    }
+}
+
+/// Removes the `adopted` block and reads it. A field the block does not
+/// define is added to `unknown` as `adopted.<field>`.
+fn take_adopted(
+    ours: &mut Map<String, Value>,
+    key: &str,
+    path: &Path,
+    unknown: &mut Vec<String>,
+) -> Result<Provenance, CoreError> {
+    let mut block = match ours.remove(key) {
+        None | Some(Value::Null) => return Ok(Provenance::default()),
+        Some(Value::Object(block)) => block,
+        Some(other) => {
+            return Err(CoreError::malformed(
+                path,
+                format!(
+                    "`{key}` must be a mapping of {}, not {}",
+                    ADOPTED_FIELDS.join(", "),
+                    type_name(&other)
+                ),
+            ));
+        }
+    };
+    let field = |name: &str| format!("{key}.{name}");
+    let provenance = Provenance {
+        source: take_string(&mut block, "source", path)
+            .map_err(|_| shape(path, &field("source")))?,
+        format: take_string(&mut block, "format", path)
+            .map_err(|_| shape(path, &field("format")))?,
+        adopted_hash: take_string(&mut block, "hash", path)
+            .map_err(|_| shape(path, &field("hash")))?,
+        source_hash: take_string(&mut block, "source_hash", path)
+            .map_err(|_| shape(path, &field("source_hash")))?,
+        adopted_at: take_string(&mut block, "at", path).map_err(|_| shape(path, &field("at")))?,
+        also_at: take_string_list(&mut block, "also_at", path)?,
+    };
+    unknown.extend(block.keys().map(|name| field(name)));
+    Ok(provenance)
+}
+
+/// The wrong-shape error for one string field of the `adopted` block.
+fn shape(path: &Path, key: &str) -> CoreError {
+    CoreError::malformed(path, format!("`{key}` must be a string"))
+}
+
+/// [`take_string`] for a URL: `http://` or `https://` with no whitespace.
+fn take_url(
+    ours: &mut Map<String, Value>,
+    key: &str,
+    path: &Path,
+) -> Result<Option<String>, CoreError> {
+    let Some(value) = take_string(ours, key, path)? else {
+        return Ok(None);
+    };
+    let is_url = (value.starts_with("https://") || value.starts_with("http://"))
+        && !value.contains(char::is_whitespace);
+    if !is_url {
+        return Err(CoreError::malformed(
+            path,
+            format!("`{key}` must be an http or https URL, not `{value}`"),
+        ));
+    }
+    Ok(Some(value))
 }
 
 /// Removes `key` and returns it as a string, refusing any other shape.
@@ -839,53 +798,6 @@ fn take_arguments(
     Ok(out)
 }
 
-/// Removes `key` and returns it as a map of per-target override blocks.
-///
-/// Absent means no overrides — the ordinary note. Two shapes are refused,
-/// both `CoreError::malformed` naming the key: a value that is not a mapping,
-/// and a block under a target that is not a mapping either. Neither is a
-/// `refused` token, because both are the same wrong-shape class every other
-/// typed key in this module raises — a *value* problem, before anything has
-/// been asked about destinations.
-///
-/// The keys inside a block are not inspected at all. They are the harness's
-/// own vocabulary, and what they mean is the capability matrix's answer, one
-/// layer out.
-///
-/// # Errors
-///
-/// See above.
-fn take_override_blocks(
-    ours: &mut Map<String, Value>,
-    key: &str,
-    path: &Path,
-) -> Result<Map<String, Value>, CoreError> {
-    let Some(value) = ours.remove(key) else {
-        return Ok(Map::new());
-    };
-    let Value::Object(blocks) = value else {
-        return Err(CoreError::malformed(
-            path,
-            format!(
-                "`{key}` must be a mapping of destination to that harness's own keys, not {}",
-                type_name(&value)
-            ),
-        ));
-    };
-    for (target, block) in &blocks {
-        if !block.is_object() {
-            return Err(CoreError::malformed(
-                path,
-                format!(
-                    "`{key}.{target}` must be a mapping of that harness's own keys, not {}",
-                    type_name(block)
-                ),
-            ));
-        }
-    }
-    Ok(blocks)
-}
-
 /// `take_string`, scoped to one field of one `sw-arguments` entry, so every
 /// entry-level string error names the argument it is about.
 fn take_entry_string(
@@ -1024,7 +936,7 @@ fn type_name(value: &Value) -> &'static str {
     }
 }
 
-/// "flat key `sw-kind`" / "flat keys `sw-kind`, `sw-targets`" — a refusal has
+/// "flat key `sw-license`" / "flat keys `sw-license`, `sw-targets`" — a refusal has
 /// to name every offending key, because the fix is to move each one.
 fn listed(keys: &[String]) -> String {
     let quoted: Vec<String> = keys.iter().map(|k| format!("`{k}`")).collect();
@@ -1057,10 +969,9 @@ mod tests {
         }
     }
 
-    /// The default namespace, which is what every test below uses unless it is
-    /// about the configured one.
+    /// The `sw` namespace.
     fn read(value: Value) -> Result<(VaultFrontmatter, Map<String, Value>), CoreError> {
-        read_as(&Namespace::default(), value)
+        read_as(&Namespace::sw(), value)
     }
 
     fn read_as(
@@ -1068,609 +979,256 @@ mod tests {
         value: Value,
     ) -> Result<(VaultFrontmatter, Map<String, Value>), CoreError> {
         let mut map = fields(value);
-        let ours = VaultFrontmatter::take_from(&mut map, Path::new(NOTE), ns)?;
+        let ours = VaultFrontmatter::take_from(&mut map, Path::new(NOTE), ns, EntityKind::Skill)?;
         Ok((ours, map))
     }
 
-    #[test]
-    fn overrides_are_read_as_a_map_of_blocks_and_never_reach_annotations() {
-        let (ours, rest) = read(json!({
-            "description": "d",
-            "sw-overrides": {"claude": {"permissionMode": "plan"}},
-        }))
-        .unwrap();
-        assert_eq!(ours.overrides["claude"]["permissionMode"], json!("plan"));
-        assert!(!rest.contains_key("sw-overrides"));
+    fn read_kind(
+        ns: &Namespace,
+        kind: EntityKind,
+        value: Value,
+    ) -> Result<(VaultFrontmatter, Map<String, Value>), CoreError> {
+        let mut map = fields(value);
+        let ours = VaultFrontmatter::take_from(&mut map, Path::new(NOTE), ns, kind)?;
+        Ok((ours, map))
     }
 
-    #[test]
-    fn an_absent_overrides_key_is_an_empty_map() {
-        let (ours, _) = read(json!({"description": "d"})).unwrap();
-        assert!(ours.overrides.is_empty());
+    fn bare(kind: EntityKind, value: Value) -> (VaultFrontmatter, Map<String, Value>) {
+        read_kind(&Namespace::bare(), kind, value).unwrap()
     }
 
-    #[test]
-    fn a_wrong_shaped_overrides_value_is_refused_naming_the_key() {
-        for value in [json!("claude"), json!(["claude"]), json!(3)] {
-            let err = read(json!({"description": "d", "sw-overrides": value})).unwrap_err();
-            let message = err.to_string();
-            assert!(
-                message.contains("`sw-overrides` must be a mapping"),
-                "{message}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_wrong_shaped_block_is_refused_naming_its_destination() {
-        let err = read(json!({
-            "description": "d",
-            "sw-overrides": {"claude": "plan"},
-        }))
-        .unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("`sw-overrides.claude`"), "{message}");
-    }
-
-    #[test]
-    fn an_absent_kind_is_a_skill() {
-        let (ours, _) = read(json!({"description": "d"})).unwrap();
-        assert_eq!(ours.kind(), EntityKind::Skill);
-        assert_eq!(EntityKind::default(), EntityKind::Skill);
-        // Absent and "declared skill" stay distinguishable one layer down,
-        // which is what lets a directory mapping rank below one and above the
-        // other.
-        assert_eq!(ours.declared_kind, None);
-    }
-
-    #[test]
-    fn both_known_kinds_parse() {
-        for (spelled, expected) in [("skill", EntityKind::Skill), ("plugin", EntityKind::Plugin)] {
-            let (ours, _) = read(json!({ "sw-kind": spelled })).unwrap();
-            assert_eq!(ours.declared_kind, Some(expected), "{spelled}");
-            assert_eq!(ours.kind(), expected, "{spelled}");
-            assert_eq!(expected.as_str(), spelled);
-        }
-    }
-
-    #[test]
-    fn the_kind_layers_rank_override_then_frontmatter_then_directory() {
-        // Layer 2 alone — the whole story for a caller with no hints.
-        assert_eq!(
-            resolve_kind(Some(EntityKind::Plugin), KindHints::default()),
-            ResolvedKind {
-                kind: EntityKind::Plugin,
-                source: KindSource::Frontmatter
-            }
-        );
-
-        // Layer 1 wins outright, over frontmatter and over a mapping.
-        assert_eq!(
-            resolve_kind(
-                Some(EntityKind::Plugin),
-                KindHints {
-                    requested: Some(EntityKind::Skill),
-                    folder: Some(EntityKind::Plugin),
-                }
-            ),
-            ResolvedKind {
-                kind: EntityKind::Skill,
-                source: KindSource::Override
-            }
-        );
-
-        // Layer 3 applies only where the note said nothing — a note that
-        // declares its kind is never overruled by where it sits.
-        assert_eq!(
-            resolve_kind(
-                Some(EntityKind::Skill),
-                KindHints {
-                    requested: None,
-                    folder: Some(EntityKind::Plugin),
-                }
-            ),
-            ResolvedKind {
-                kind: EntityKind::Skill,
-                source: KindSource::Frontmatter
-            }
-        );
-        assert_eq!(
-            resolve_kind(
-                None,
-                KindHints {
-                    requested: None,
-                    folder: Some(EntityKind::Plugin),
-                }
-            ),
-            ResolvedKind {
-                kind: EntityKind::Plugin,
-                source: KindSource::Directory
-            }
-        );
-
-        // Nothing said anything.
-        assert_eq!(
-            resolve_kind(None, KindHints::default()),
-            ResolvedKind {
-                kind: EntityKind::Skill,
-                source: KindSource::Default
-            }
-        );
-    }
-
-    #[test]
-    fn an_unrecognised_kind_is_refused_by_name_never_defaulted() {
-        // The typo from the decision, plus a case variant: a default that
-        // swallowed either would publish a `SKILL.md` for something that is
-        // not a skill.
-        for value in ["skil", "Skill", "mcp-server", ""] {
-            let err = read(json!({ "sw-kind": value })).unwrap_err();
-            let message = err.to_string();
-            assert!(message.contains("unknown-kind"), "{message}");
-            assert!(message.contains(NOTE), "{message}");
-            assert!(message.contains(value), "{message}");
-            // The refusal lists what it does know, so the fix is on screen.
-            assert!(message.contains("skill"), "{message}");
-            assert!(message.contains("plugin"), "{message}");
-        }
-    }
-
-    #[test]
-    fn a_wrong_shaped_kind_is_refused_rather_than_defaulted() {
-        let err = read(json!({"sw-kind": ["skill"]})).unwrap_err();
-        assert!(err.to_string().contains("sw-kind"), "{err}");
-        assert!(err.to_string().contains(NOTE), "{err}");
-    }
-
-    #[test]
-    fn targets_absent_empty_and_populated_are_three_outcomes() {
-        // Absent: every destination.
-        let (absent, _) = read(json!({"description": "d"})).unwrap();
-        assert_eq!(absent.targets, None);
-
-        // Empty: nowhere. Distinct from absent, and it must stay distinct —
-        // reading it as "all" publishes where the author said not to.
-        let (empty, _) = read(json!({"sw-targets": []})).unwrap();
-        assert_eq!(empty.targets, Some(vec![]));
-
-        // Populated: exactly these.
-        let (some, _) = read(json!({"sw-targets": ["claude-code", "portable"]})).unwrap();
-        assert_eq!(
-            some.targets,
-            Some(vec!["claude-code".to_owned(), "portable".to_owned()])
-        );
-
-        assert_ne!(absent.targets, empty.targets);
-    }
-
-    #[test]
-    fn plugin_absent_means_the_callers_default_present_is_typed() {
-        // Absent: `None`, and the *caller* supplies the default plugin —
-        // folding a default in here would make "said nothing" and "named the
-        // default" indistinguishable to the layer that owns the configuration.
-        let (absent, _) = read(json!({"description": "d"})).unwrap();
-        assert_eq!(absent.plugin, None);
-
-        let (named, foreign) = read(json!({"sw-plugin": "tools"})).unwrap();
-        assert_eq!(named.plugin, Some("tools".to_owned()));
-        // Consumed, like every key of ours: never an annotation.
-        assert!(!foreign.contains_key("sw-plugin"));
-
-        // The key follows the configured stem, as every key of ours does.
-        let (ours, foreign) = read_as(&x(), json!({"x-plugin": "tools"})).unwrap();
-        assert_eq!(ours.plugin, Some("tools".to_owned()));
-        assert!(!foreign.contains_key("x-plugin"));
-        // And under the default stem, `x-plugin` is somebody else's key.
-        let (ours, foreign) = read(json!({"x-plugin": "tools"})).unwrap();
-        assert_eq!(ours.plugin, None);
-        assert_eq!(foreign["x-plugin"], json!("tools"));
-    }
-
-    #[test]
-    fn a_wrong_shaped_plugin_is_refused_never_read_as_the_default() {
-        // The same rule as every modeled key of ours: absent and
-        // present-but-wrong must not share an outcome. A list here read as
-        // "no plugin, so the default" would group a skill into a plugin the
-        // author never named.
-        let err = read(json!({"sw-plugin": ["tools"]})).unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("sw-plugin"), "{message}");
-        assert!(message.contains(NOTE), "{message}");
-
-        // A bare number gets the quoting rule, same as the hashes.
-        let err = read(json!({"sw-plugin": 2026})).unwrap_err();
-        assert!(err.to_string().contains("quote it"), "{err}");
-    }
-
-    #[test]
-    fn a_scalar_targets_is_refused_not_read_as_everywhere() {
-        // The dangerous shape: one destination that would silently become all
-        // of them.
-        let err = read(json!({"sw-targets": "claude-code"})).unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("sw-targets"), "{message}");
-        assert!(message.contains("must be a list"), "{message}");
-
-        // A list with a non-string in it is refused whole, not partly lifted.
-        let err = read(json!({"sw-targets": ["claude-code", 3]})).unwrap_err();
-        assert!(err.to_string().contains("sw-targets"), "{err}");
-    }
-
-    #[test]
-    fn every_provenance_key_round_trips_into_the_struct() {
-        let (ours, foreign) = read(json!({
-            "description": "d",
-            "sw-source": "~/.claude/skills/review",
-            "sw-format": "claude",
-            "sw-source-hash": "3f9a",
-            "sw-adopted-hash": "b17c",
-            "sw-adopted-at": "2026-08-11T09:00:00Z",
-            "sw-also-at": ["~/.codex/skills/review", "~/other/review"],
-        }))
-        .unwrap();
-
-        assert_eq!(
-            ours.provenance.source.as_deref(),
-            Some("~/.claude/skills/review")
-        );
-        assert_eq!(ours.provenance.format.as_deref(), Some("claude"));
-        assert_eq!(ours.provenance.source_hash.as_deref(), Some("3f9a"));
-        assert_eq!(ours.provenance.adopted_hash.as_deref(), Some("b17c"));
-        assert_eq!(
-            ours.provenance.adopted_at.as_deref(),
-            Some("2026-08-11T09:00:00Z")
-        );
-        assert_eq!(
-            ours.provenance.also_at,
-            Some(vec![
-                "~/.codex/skills/review".to_owned(),
-                "~/other/review".to_owned()
-            ])
-        );
-        assert!(!ours.provenance.is_hand_authored());
-        // Not one of them was left behind for `annotations`.
-        assert_eq!(foreign.keys().collect::<Vec<_>>(), vec!["description"]);
-    }
-
-    #[test]
-    fn a_note_with_no_provenance_is_hand_authored() {
-        let (ours, _) = read(json!({"description": "d", "sw-kind": "skill"})).unwrap();
-        assert!(ours.provenance.is_hand_authored());
-        assert_eq!(Provenance::default(), ours.provenance);
-    }
-
-    #[test]
-    fn an_unquoted_all_digit_hash_is_refused_with_the_quoting_rule() {
-        // The float trap, caught rather than stored: by the time YAML has
-        // typed `1234…` as a number the digest is already gone, so reading it
-        // back as a hash would be reading a corrupted one.
-        let err = read(json!({"sw-source-hash": 1.2345678901234568e39})).unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("sw-source-hash"), "{message}");
-        assert!(message.contains("quote it"), "{message}");
-    }
-
-    #[test]
-    fn a_nested_block_parses_identically_to_the_flat_form() {
-        let flat = read(json!({
-            "description": "d",
-            "sw-kind": "plugin",
-            "sw-targets": ["claude-code"],
-            "sw-plugin": "tools",
-            "sw-source": "/src",
-            "sw-format": "claude",
-            "sw-source-hash": "3f9a",
-            "sw-adopted-hash": "b17c",
-            "sw-adopted-at": "2026-08-11",
-            "sw-also-at": ["/elsewhere"],
-        }))
-        .unwrap();
-
-        let nested = read(json!({
-            "description": "d",
-            "sw": {
-                "kind": "plugin",
-                "targets": ["claude-code"],
-                "plugin": "tools",
-                "source": "/src",
-                "format": "claude",
-                "source-hash": "3f9a",
-                "adopted-hash": "b17c",
-                "adopted-at": "2026-08-11",
-                "also-at": ["/elsewhere"],
-            },
-        }))
-        .unwrap();
-
-        assert_eq!(flat, nested);
-        assert_eq!(nested.0.declared_kind, Some(EntityKind::Plugin));
-        assert_eq!(nested.0.plugin, Some("tools".to_owned()));
-        // The block itself is consumed too, in either direction.
-        assert!(!nested.1.contains_key("sw"));
-    }
-
-    #[test]
-    fn an_empty_nested_block_reads_as_the_defaults() {
-        let (ours, foreign) = read(json!({"description": "d", "sw": null})).unwrap();
-        assert_eq!(ours, VaultFrontmatter::default());
-        assert!(!foreign.contains_key("sw"));
-
-        let (ours, _) = read(json!({"sw": {}})).unwrap();
-        assert_eq!(ours, VaultFrontmatter::default());
-    }
-
-    #[test]
-    fn a_nested_block_that_is_not_a_mapping_is_refused() {
-        let err = read(json!({"sw": "skill"})).unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("must be a mapping"), "{message}");
-        assert!(message.contains(NOTE), "{message}");
-    }
-
-    #[test]
-    fn both_shapes_on_one_note_is_refused_naming_the_block_and_the_keys() {
-        let err = read(json!({
-            "description": "d",
-            "sw": {"kind": "skill"},
-            "sw-targets": ["claude-code"],
-            "sw-kind": "skill",
-        }))
-        .unwrap_err();
-        let message = err.to_string();
-
-        assert!(message.contains("mixed-frontmatter-shape"), "{message}");
-        assert!(message.contains(NOTE), "{message}");
-        assert!(message.contains("`sw:`"), "{message}");
-        assert!(message.contains("`sw-kind`"), "{message}");
-        assert!(message.contains("`sw-targets`"), "{message}");
-        // Both ways out are named.
-        assert!(message.contains("Move the flat keys"), "{message}");
-        assert!(message.contains("remove the block"), "{message}");
-    }
-
-    #[test]
-    fn mixing_is_refused_even_when_the_two_shapes_agree() {
-        // No reconciliation: agreement is not a licence, because deciding what
-        // *agree* means across shapes is the judgement call this avoids.
-        let err = read(json!({
-            "sw": {"kind": "plugin"},
-            "sw-kind": "plugin",
-        }))
-        .unwrap_err();
-        assert!(err.to_string().contains("mixed-frontmatter-shape"), "{err}");
-
-        // And when they carry disjoint fields.
-        let err = read(json!({
-            "sw": {"kind": "plugin"},
-            "sw-source": "/src",
-        }))
-        .unwrap_err();
-        assert!(err.to_string().contains("mixed-frontmatter-shape"), "{err}");
-    }
-
-    #[test]
-    fn an_unmodeled_sw_key_is_consumed_and_kept_rather_than_refused() {
-        // The namespace is claimed wholesale, so a key we do not model yet is
-        // still ours: out of the map that becomes `annotations`, and into
-        // `unknown_ours` where a caller can see it.
-        let (ours, foreign) = read(json!({
-            "description": "d",
-            "sw-future-field": "value",
-            "sw-nested-thing": {"a": 1},
-        }))
-        .unwrap();
-
-        assert_eq!(ours.unknown_ours["sw-future-field"], json!("value"));
-        assert_eq!(ours.unknown_ours["sw-nested-thing"], json!({"a": 1}));
-        assert!(!foreign.contains_key("sw-future-field"));
-        assert!(!foreign.contains_key("sw-nested-thing"));
-        // An unmodeled key is not a wrong-shaped modeled one: no shape rule
-        // applies to a field we have no shape for.
-        assert_eq!(ours.declared_kind, None);
-    }
-
-    #[test]
-    fn an_unmodeled_key_in_the_nested_block_is_kept_under_its_flat_spelling() {
-        let (ours, _) = read(json!({"sw": {"future-field": "value"}})).unwrap();
-        assert_eq!(ours.unknown_ours["sw-future-field"], json!("value"));
-    }
-
-    #[test]
-    fn foreign_keys_are_left_exactly_where_they_were() {
-        let (_, foreign) = read(json!({
-            "description": "d",
-            "license": "MIT",
-            "tags": ["review"],
-            "metadata": {"author": "kelly"},
-            // Near-misses: neither is inside the namespace.
-            "apex": "not ours",
-            "kind": "not ours either",
-        }))
-        .unwrap();
-
-        assert_eq!(foreign["license"], json!("MIT"));
-        assert_eq!(foreign["tags"], json!(["review"]));
-        assert_eq!(foreign["metadata"], json!({"author": "kelly"}));
-        assert_eq!(foreign["apex"], json!("not ours"));
-        assert_eq!(foreign["kind"], json!("not ours either"));
-        assert_eq!(foreign.len(), 6);
-    }
-
-    #[test]
-    fn the_predicate_is_the_prefix_and_the_block() {
-        let ns = Namespace::default();
-        assert!(ns.is_ours("sw-kind"));
-        assert!(ns.is_ours("sw-anything-at-all"));
-        assert!(ns.is_ours("sw"));
-        assert!(!ns.is_ours("apex"));
-        assert!(!ns.is_ours("kind"));
-        assert!(!ns.is_ours("targets"));
-        assert!(!ns.is_ours("TC-KIND"), "the prefix is not case-folded");
-    }
-
-    // --- a configured namespace ---------------------------------------------
-
-    /// A vault that configured `x`, which is a stem with nothing in common
-    /// with the default — so a test cannot pass by accident.
     fn x() -> Namespace {
         Namespace::new("x").unwrap()
     }
 
     #[test]
-    fn a_configured_stem_parses_its_own_keys_exactly_as_the_default_does() {
-        let (ours, foreign) = read_as(
-            &x(),
-            json!({
-                "description": "d",
-                "x-kind": "plugin",
-                "x-targets": ["claude-code"],
-                "x-source": "/src/review",
-                "x-format": "claude",
-                "x-source-hash": "3f9a",
-                "x-adopted-hash": "b17c",
-                "x-adopted-at": "2026-08-11",
-                "x-also-at": ["/elsewhere"],
-                "x-not-modeled-yet": "keep me",
-            }),
-        )
-        .unwrap();
-
-        assert_eq!(ours.declared_kind, Some(EntityKind::Plugin));
-        assert_eq!(ours.targets, Some(vec!["claude-code".to_owned()]));
-        assert_eq!(ours.provenance.source.as_deref(), Some("/src/review"));
-        assert_eq!(ours.provenance.also_at, Some(vec!["/elsewhere".to_owned()]));
-        assert_eq!(ours.unknown_ours["x-not-modeled-yet"], json!("keep me"));
-        assert_eq!(foreign.keys().collect::<Vec<_>>(), vec!["description"]);
-
-        // Every refusal follows the stem too, naming the key the note carries
-        // rather than one it does not.
-        let err = read_as(&x(), json!({"x-kind": "skil"})).unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("unknown-kind"), "{message}");
-        assert!(message.contains("`x-kind`"), "{message}");
-        assert!(!message.contains("sw-kind"), "{message}");
+    fn harness_blocks_are_read_and_never_reach_annotations() {
+        let (ours, rest) = bare(
+            EntityKind::Skill,
+            json!({"description": "d", "claude": {"effort": "high"}}),
+        );
+        assert_eq!(ours.overrides["claude"]["effort"], "high");
+        assert!(!rest.contains_key("claude"));
+        assert!(ours.unknown.is_empty(), "{:?}", ours.unknown);
     }
 
     #[test]
-    fn in_a_configured_vault_the_default_prefix_is_a_foreign_annotation() {
-        // The airtight half of the strip, at the read: `x-` is drained, and
-        // `sw-kind` is somebody else's key — carried, not claimed, not typed.
-        let (ours, foreign) = read_as(
-            &x(),
-            json!({
-                "description": "d",
-                "x-kind": "plugin",
-                "sw-kind": "skill",
-                "sw-targets": ["claude-code"],
-                "sw": {"kind": "skill"},
-            }),
-        )
-        .unwrap();
-
-        assert_eq!(ours.declared_kind, Some(EntityKind::Plugin));
-        assert!(ours.unknown_ours.is_empty());
-        assert_eq!(foreign["sw-kind"], json!("skill"));
-        assert_eq!(foreign["sw-targets"], json!(["claude-code"]));
-        assert_eq!(foreign["sw"], json!({"kind": "skill"}));
-        assert!(!foreign.contains_key("x-kind"));
-
-        // And the reverse, which is the same bug seen from the other side: in
-        // the ordinary vault, a configured vault's keys are foreign.
-        let (ours, foreign) = read(json!({"description": "d", "x-kind": "plugin"})).unwrap();
-        assert_eq!(ours.declared_kind, None);
-        assert_eq!(foreign["x-kind"], json!("plugin"));
+    fn a_wrong_shaped_harness_block_is_refused_naming_the_key() {
+        let err = read_kind(&Namespace::bare(), EntityKind::Skill, json!({"codex": "x"}))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`codex`"), "{err}");
     }
 
     #[test]
-    fn the_nested_block_and_the_mixed_shape_refusal_both_follow_the_stem() {
-        // The block is the stem, so a configured vault's nested shape parses
-        // identically to its flat one — the same property the default has.
-        let flat = read_as(&x(), json!({"x-kind": "plugin", "x-source": "/src"})).unwrap();
-        let nested = read_as(&x(), json!({"x": {"kind": "plugin", "source": "/src"}})).unwrap();
+    fn the_kind_layers_rank_the_request_then_the_folder_then_skill() {
+        let resolved = resolve_kind(KindHints {
+            requested: Some(EntityKind::Agent),
+            folder: Some(EntityKind::Plugin),
+        });
+        assert_eq!(resolved.kind, EntityKind::Agent);
+        assert_eq!(resolved.source, KindSource::Override);
+        let resolved = resolve_kind(KindHints {
+            requested: None,
+            folder: Some(EntityKind::Plugin),
+        });
+        assert_eq!(resolved.kind, EntityKind::Plugin);
+        assert_eq!(resolved.source, KindSource::Directory);
+        let resolved = resolve_kind(KindHints::default());
+        assert_eq!(resolved.kind, EntityKind::Skill);
+        assert_eq!(resolved.source, KindSource::Default);
+    }
+
+    #[test]
+    fn kind_and_plugin_are_refused_bare_and_prefixed() {
+        for key in ["kind", "plugin"] {
+            let err = read_kind(
+                &Namespace::bare(),
+                EntityKind::Skill,
+                json!({"description": "d", key: "x"}),
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(err.contains("removed-key"), "{err}");
+            let err = read(json!({"description": "d", format!("sw-{key}"): "x"}))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("removed-key"), "{err}");
+        }
+        // Under a namespace, a bare `kind` is the author's own key.
+        let (_, rest) = read(json!({"description": "d", "kind": "x"})).unwrap();
+        assert!(rest.contains_key("kind"));
+    }
+
+    #[test]
+    fn targets_absent_empty_and_populated_are_three_outcomes() {
+        let target = |value: Value| bare(EntityKind::Skill, value).0.targets;
+        assert_eq!(target(json!({"description": "d"})), None);
+        assert_eq!(target(json!({"targets": []})), Some(vec![]));
+        assert_eq!(
+            target(json!({"targets": ["claude"]})),
+            Some(vec!["claude".to_owned()])
+        );
+    }
+
+    #[test]
+    fn a_scalar_targets_is_refused_not_read_as_everywhere() {
+        let err = read_kind(
+            &Namespace::bare(),
+            EntityKind::Skill,
+            json!({"targets": "claude"}),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("`targets`"), "{err}");
+    }
+
+    #[test]
+    fn the_adopted_block_round_trips_into_provenance() {
+        let (ours, _) = bare(
+            EntityKind::Skill,
+            json!({"adopted": {
+                "source": "/a", "format": "claude", "hash": "h1",
+                "source_hash": "h2", "at": "2026-11-06", "also_at": ["/b"],
+            }}),
+        );
+        let provenance = ours.provenance;
+        assert_eq!(provenance.source.as_deref(), Some("/a"));
+        assert_eq!(provenance.format.as_deref(), Some("claude"));
+        assert_eq!(provenance.adopted_hash.as_deref(), Some("h1"));
+        assert_eq!(provenance.source_hash.as_deref(), Some("h2"));
+        assert_eq!(provenance.adopted_at.as_deref(), Some("2026-11-06"));
+        assert_eq!(provenance.also_at, Some(vec!["/b".to_owned()]));
+        assert!(!provenance.is_hand_authored());
+    }
+
+    #[test]
+    fn an_unknown_field_in_the_adopted_block_is_reported() {
+        let (ours, _) = bare(EntityKind::Skill, json!({"adopted": {"odd": "x"}}));
+        assert_eq!(ours.unknown, vec!["adopted.odd".to_owned()]);
+    }
+
+    #[test]
+    fn a_note_with_no_provenance_is_hand_authored() {
+        let (ours, _) = bare(EntityKind::Skill, json!({"description": "d"}));
+        assert!(ours.provenance.is_hand_authored());
+    }
+
+    #[test]
+    fn license_is_the_pack_s_on_a_plugin_and_the_spec_s_on_a_skill() {
+        let note = json!({"description": "d", "license": "MIT"});
+        let (ours, rest) = bare(EntityKind::Plugin, note.clone());
+        assert_eq!(ours.identity.license.as_deref(), Some("MIT"));
+        assert!(!rest.contains_key("license"));
+        let (ours, rest) = bare(EntityKind::Skill, note);
+        assert_eq!(ours.identity.license, None);
+        assert!(rest.contains_key("license"));
+    }
+
+    #[test]
+    fn repository_and_homepage_must_be_urls() {
+        let (ours, _) = bare(
+            EntityKind::Plugin,
+            json!({"repository": "https://example.com/r", "homepage": "http://example.com"}),
+        );
+        assert_eq!(
+            ours.identity.repository.as_deref(),
+            Some("https://example.com/r")
+        );
+        assert_eq!(
+            ours.identity.homepage.as_deref(),
+            Some("http://example.com")
+        );
+        let err = read_kind(
+            &Namespace::bare(),
+            EntityKind::Plugin,
+            json!({"repository": "not a url"}),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("`repository`"), "{err}");
+    }
+
+    #[test]
+    fn bare_arguments_of_plain_strings_are_claude_s_own_key() {
+        let (ours, rest) = bare(EntityKind::Skill, json!({"arguments": ["a", "b"]}));
+        assert!(ours.arguments.is_empty());
+        assert!(rest.contains_key("arguments"));
+        let (ours, rest) = bare(EntityKind::Skill, json!({"arguments": [{"name": "pr"}]}));
+        assert_eq!(ours.arguments.len(), 1);
+        assert!(!rest.contains_key("arguments"));
+    }
+
+    #[test]
+    fn unknown_keys_are_reported_and_left_in_place() {
+        let (ours, rest) = bare(
+            EntityKind::Skill,
+            json!({"description": "d", "zeta": 1, "alpha": {"nested": true}}),
+        );
+        assert_eq!(ours.unknown, vec!["alpha".to_owned(), "zeta".to_owned()]);
+        assert!(rest.contains_key("zeta") && rest.contains_key("alpha"));
+        // A container's keys are not a skill's, and the other way round.
+        let (ours, _) = bare(EntityKind::Skill, json!({"version": "1.0.0"}));
+        assert_eq!(ours.unknown, vec!["version".to_owned()]);
+        let (ours, _) = bare(EntityKind::Plugin, json!({"model": "opus"}));
+        assert_eq!(ours.unknown, vec!["model".to_owned()]);
+    }
+
+    #[test]
+    fn a_prefixed_namespace_reads_flat_and_nested_alike() {
+        let flat = read_kind(
+            &Namespace::sw(),
+            EntityKind::Plugin,
+            json!({"sw-version": "1.0.0", "sw-codex": {"interface": {}}}),
+        )
+        .unwrap()
+        .0;
+        let nested = read_kind(
+            &Namespace::sw(),
+            EntityKind::Plugin,
+            json!({"sw": {"version": "1.0.0", "codex": {"interface": {}}}}),
+        )
+        .unwrap()
+        .0;
         assert_eq!(flat, nested);
-        assert_eq!(nested.0.declared_kind, Some(EntityKind::Plugin));
-
-        // Mixing is refused between `x-` and `x:`, and the refusal names them.
-        let err = read_as(&x(), json!({"x": {"kind": "skill"}, "x-targets": []})).unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("mixed-frontmatter-shape"), "{message}");
-        assert!(message.contains("`x:`"), "{message}");
-        assert!(message.contains("`x-targets`"), "{message}");
-
-        // But `x:` beside `sw-kind` is not a mixed note. `sw-` is not a shape
-        // of ours in this vault; it is a key somebody else owns, and refusing
-        // it would refuse a note this vault has every right to hold.
-        let (ours, foreign) =
-            read_as(&x(), json!({"x": {"kind": "plugin"}, "sw-kind": "skill"})).unwrap();
-        assert_eq!(ours.declared_kind, Some(EntityKind::Plugin));
-        assert_eq!(foreign["sw-kind"], json!("skill"));
-
-        // Symmetrically, `sw:` beside `x-kind` is not mixed either.
-        let (ours, foreign) =
-            read_as(&x(), json!({"sw": {"kind": "skill"}, "x-kind": "plugin"})).unwrap();
-        assert_eq!(ours.declared_kind, Some(EntityKind::Plugin));
-        assert_eq!(foreign["sw"], json!({"kind": "skill"}));
+        assert_eq!(flat.identity.version.as_deref(), Some("1.0.0"));
     }
 
     #[test]
-    fn the_predicate_agrees_with_what_the_drain_actually_takes() {
-        // The bug `claim`'s doc warns against: `is_ours` and the drain
-        // disagreeing on a key.
-        //
-        // So: for every key on the way in, "did the drain take it" must equal
-        // "does the predicate claim it" — checked under both namespaces, on
-        // the same battery of keys, with one shape at a time because carrying
-        // both is itself a refusal.
-        let battery = |block: &str| {
-            json!({
-                "description": "d",
-                "name": "n",
-                "allowed-tools": ["Read"],
-                "sw-kind": "skill",
-                "sw-not-modeled-yet": "v",
-                "x-kind": "skill",
-                "x-not-modeled-yet": "v",
-                "apex": "near miss",
-                "xylophone": "near miss",
-                "kind": "no prefix at all",
-                "TC-KIND": "not case-folded",
-                block: {"kind": "skill"},
-            })
-        };
+    fn an_empty_nested_block_reads_as_the_defaults() {
+        let (ours, _) = read(json!({"sw": null})).unwrap();
+        assert_eq!(ours, VaultFrontmatter::default());
+    }
 
-        for (ns, block) in [(Namespace::default(), "x"), (x(), "sw")] {
-            // The block key belongs to the *other* namespace each time, so a
-            // nested block that is not ours has to stay foreign as well.
-            let before = fields(battery(block));
-            let mut after = before.clone();
-            VaultFrontmatter::take_from(&mut after, Path::new(NOTE), &ns).unwrap();
+    #[test]
+    fn a_nested_block_that_is_not_a_mapping_is_refused() {
+        let err = read(json!({"sw": "x"})).unwrap_err().to_string();
+        assert!(err.contains("`sw:`"), "{err}");
+    }
 
-            for key in before.keys() {
-                assert_eq!(
-                    !after.contains_key(key),
-                    ns.is_ours(key),
-                    "`{key}` under `{}`: the drain and the predicate disagree",
-                    ns.prefix()
-                );
-            }
-            // Nothing was invented, and nothing survived with a changed value.
-            for (key, value) in &after {
-                assert_eq!(before.get(key), Some(value), "`{key}` was rewritten");
-            }
-        }
+    #[test]
+    fn both_shapes_on_one_note_is_refused_only_under_a_namespace() {
+        let err = read(json!({"sw": {"targets": []}, "sw-targets": []}))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("mixed-frontmatter-shape"), "{err}");
+        assert!(err.contains("sw-targets"), "{err}");
+    }
 
-        // And the nested shape, where the drain removes one key and the
-        // predicate has to claim exactly that one.
-        for (ns, block) in [(Namespace::default(), "sw"), (x(), "x")] {
-            let before = fields(json!({ "description": "d", block: {"kind": "skill"} }));
-            let mut after = before.clone();
-            let ours = VaultFrontmatter::take_from(&mut after, Path::new(NOTE), &ns).unwrap();
+    #[test]
+    fn an_unmodeled_prefixed_key_is_consumed_and_reported() {
+        let (ours, rest) = read(json!({"sw-invented": 1})).unwrap();
+        assert!(!rest.contains_key("sw-invented"));
+        assert_eq!(ours.unknown_ours["sw-invented"], 1);
+        assert_eq!(ours.unknown, vec!["sw-invented".to_owned()]);
+    }
 
-            assert_eq!(ours.declared_kind, Some(EntityKind::Skill));
-            for key in before.keys() {
-                assert_eq!(!after.contains_key(key), ns.is_ours(key), "`{key}`");
-            }
-        }
+    #[test]
+    fn a_configured_stem_leaves_other_prefixes_foreign() {
+        let (ours, rest) =
+            read_as(&x(), json!({"x-targets": [], "sw-targets": ["claude"]})).unwrap();
+        assert_eq!(ours.targets, Some(vec![]));
+        assert!(rest.contains_key("sw-targets"));
     }
 
     #[test]
@@ -1845,19 +1403,6 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("invalid-arguments"), "{message}");
         assert!(message.contains("more than once"), "{message}");
-    }
-
-    #[test]
-    fn the_stem_tc_reads_tc_keys_as_ours() {
-        let tc = Namespace::new("tc").unwrap();
-        let (ours, foreign) = read_as(
-            &tc,
-            json!({"description": "d", "tc-kind": "plugin", "sw-kind": "hook"}),
-        )
-        .unwrap();
-        assert_eq!(ours.declared_kind, Some(EntityKind::Plugin));
-        assert!(!foreign.contains_key("tc-kind"));
-        assert!(foreign.contains_key("sw-kind"));
     }
 
     #[test]

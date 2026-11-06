@@ -129,14 +129,10 @@ fn new_skill_writes_the_note_at_its_derived_path() {
         format!("{path}  written \u{b7} first-write\n")
     );
 
-    // Divergence from the spec transcript: `--plugin dev-agent` places the
-    // note under the plugin's own folder, but the core does not mirror an
-    // `sw-plugin` key into the frontmatter on create — a skill's plugin is
-    // read off its folder alone, and `run_new_skill` never adds the key.
+    // `--plugin dev-agent` places the note under the plugin's own folder.
     // Only `name` (slugged) and the typed `description` land.
     let note = fs::read_to_string(vault.join(&path)).unwrap();
     assert_eq!(note, "---\nname: foo\ndescription: First skill.\n---\n");
-    assert!(!note.contains("sw-plugin"));
 }
 
 #[test]
@@ -210,7 +206,7 @@ fn move_leaves_an_unrelated_link_byte_identical() {
     assert_eq!(
         result.stdout,
         "marketplaces/studio/plugins/tools/skills/dev-update-docs/dev-update-docs.md  \
-         written \u{b7} moved, sw-plugin removed\n"
+         written \u{b7} moved\n"
     );
     let after = fs::read(&unrelated).unwrap();
     assert_eq!(before, after, "an unrelated note's bytes must not change");
@@ -529,42 +525,4 @@ fn list_and_check_stay_clean_after_a_forced_delete() {
     let checked = run(&["check", "--vault", &vault_s, "--out", &out], dir.path());
     assert_eq!(checked.code, 0, "{}", checked.stdout);
     assert!(!checked.stdout.contains("skipped"), "{}", checked.stdout);
-}
-
-/// A note outside a plugin's folder that joins it through `sw-plugin` is a
-/// member too: a rename rewrites it at its own path, and does not refuse
-/// because the note sits outside the folder that moves.
-#[test]
-fn rename_plugin_rekeys_a_member_outside_its_folder_in_place() {
-    let dir = tempfile::tempdir().unwrap();
-    let vault = dir.path().join("vault");
-    let note = |name: &str, extra: &str| {
-        format!("---\nname: {name}\ndescription: Use this to test {name}.\n{extra}---\n\nbody\n")
-    };
-    write(&vault, "marketplaces/m/plugins/p/p.md", &note("p", ""));
-    write(
-        &vault,
-        "marketplaces/m/plugins/p/skills/inside.md",
-        &note("inside", ""),
-    );
-    write(
-        &vault,
-        "marketplaces/m/skills/out.md",
-        &note("out", "sw-plugin: p\n"),
-    );
-
-    let result = run(
-        &["rename", "p", "q", "--yes", "--vault", &vault_str(&vault)],
-        dir.path(),
-    );
-
-    assert_eq!(result.code, 0, "{}\n{}", result.stdout, result.stderr);
-    assert!(vault.join("marketplaces/m/plugins/q/q.md").is_file());
-    assert!(
-        vault
-            .join("marketplaces/m/plugins/q/skills/inside.md")
-            .is_file()
-    );
-    let out = fs::read_to_string(vault.join("marketplaces/m/skills/out.md")).unwrap();
-    assert!(out.contains("sw-plugin: q"), "{out}");
 }

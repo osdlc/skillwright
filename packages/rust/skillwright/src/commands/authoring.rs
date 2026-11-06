@@ -97,7 +97,7 @@ pub struct NewSkillFlags {
     pub plugin: Option<String>,
     /// The description written into the new note.
     pub description: Option<String>,
-    /// Targets written to `sw-targets`.
+    /// Targets written to `targets`.
     pub targets: Vec<String>,
     /// The global `--vault`, `--config` and `--namespace` flags.
     pub common: CommonFlags,
@@ -510,8 +510,7 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let entry = component.vault_relative_path.as_str();
 
     let op_result = plan_convert_kind(&NativeVfs, &run.vault, &ns, entry, to_kind, &[]);
-    let kind_key = ns.key("kind");
-    let label = label_convert(kind_key, to_kind);
+    let label = label_convert(to_kind);
     execute(
         op_result,
         entry,
@@ -699,9 +698,8 @@ fn report_success(
 }
 
 /// [`Outcome::entries`] grouped by path, in first-occurrence order, each
-/// path's facts joined into one reason — so a rename's link rewrite and a
-/// move's dropped `sw-plugin` land as one row each, exactly as
-/// the CLI spec's transcripts show them.
+/// path's facts joined into one reason, so a rename's link rewrite and its
+/// `name` edit land as one row, as the CLI spec's transcripts show them.
 ///
 /// A [`Applied::Skipped`] fact is the one status word this file adds beyond
 /// `written`/`refused`: the op still succeeded, but `markdown_relink` left
@@ -842,19 +840,12 @@ fn label_delete(applied: &Applied) -> Option<String> {
 }
 
 /// `convert`'s own labeller, closed over the kind key and the target kind:
-/// [`Applied::FieldSet`] only ever carries the key it set, never the value,
-/// so the value shown (`sw-kind: plugin`) is this verb's own, not read back
-/// off the outcome. The physical relocation a conversion into or out of a
-/// container kind makes is not reported on its own line — `sw-kind: <k>` is
-/// the fact the CLI spec asks this verb to lead with, and the move is
-/// what becoming that kind implies.
-fn label_convert(kind_key: String, to_kind: EntityKind) -> impl Fn(&Applied) -> Option<String> {
+/// The folder carries the kind, so the move is the fact this verb leads
+/// with.
+fn label_convert(to_kind: EntityKind) -> impl Fn(&Applied) -> Option<String> {
     move |applied: &Applied| match applied {
-        Applied::Renamed { .. } => None,
+        Applied::Renamed { .. } => Some(format!("now a {}", to_kind.as_str())),
         Applied::Scaffolded => Some("scaffold".to_string()),
-        Applied::FieldSet { key } if *key == kind_key => {
-            Some(format!("{kind_key}: {}", to_kind.as_str()))
-        }
         Applied::FieldSet { key } => Some(format!("{key} set")),
         Applied::FieldRemoved { key } => Some(format!("{key} removed")),
         other => Some(generic_label(other)),

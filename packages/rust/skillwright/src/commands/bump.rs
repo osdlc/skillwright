@@ -1,10 +1,10 @@
-//! `skillwright bump` — raise one plugin's `sw-version` by a semver level,
+//! `skillwright bump` — raise one plugin's `version` by a semver level,
 //! rewriting only that frontmatter key (or, for a note that uses the nested
 //! `sw:` block, only that block). Contract: the CLI spec's `bump` section.
 //!
 //! A version that does not parse as plain `MAJOR.MINOR.PATCH` is refused
 //! rather than guessed at ([`tradecraft_core::next_version`]); an absent
-//! `sw-version` starts from the core's own default, `0.1.0` — so a note that
+//! `version` starts from the core's own default, `0.1.0` — so a note that
 //! has never carried the key is bumped, not refused.
 
 use serde::Serialize;
@@ -162,7 +162,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         }
     };
 
-    // Either shape the note writes it in: flat `sw-version`, or `version`
+    // Either shape the note writes it in: flat `version`, or `version`
     // inside a nested `sw:` block. Messages name the key as the note spells it.
     let version_key = match ns_field_label(&source, &namespace, "version") {
         Ok(label) => label,

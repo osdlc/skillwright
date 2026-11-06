@@ -24,7 +24,7 @@ import {
 
 assert.ok(knownTargets().includes('claude'))
 validateNamespace('sw')
-assert.throws(() => validateNamespace(''), InvalidNamespaceError)
+assert.throws(() => validateNamespace('my-vault'), InvalidNamespaceError)
 
 const root = mkdtempSync(join(tmpdir(), 'tradecraft-smoke-'))
 try {
@@ -33,7 +33,7 @@ try {
   mkdirSync(folder, { recursive: true })
   writeFileSync(
     join(vault, 'marketplaces/house/house.md'),
-    '---\nname: house\ndescription: The house marketplace.\nsw-owner: acme\n---\n',
+    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
   const note = join(folder, 'review.md')
   writeFileSync(note, '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n')

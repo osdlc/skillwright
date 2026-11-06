@@ -29,6 +29,172 @@ pub(crate) fn stable_json<T: Serialize>(value: &T) -> String {
     out
 }
 
+/// The harness a dialect belongs to, as its profile and its block name it.
+fn harness_of(dialect: PluginDialect) -> &'static str {
+    match dialect {
+        PluginDialect::Claude => "claude",
+        PluginDialect::Codex => "codex",
+        PluginDialect::Cursor => "cursor",
+        PluginDialect::Pi => "pi",
+    }
+}
+
+/// The harness's plugin format, for its manifest key lists.
+fn format_of(harness: &str) -> &'static crate::harness::PluginFormat {
+    crate::harness::profile_named(harness)
+        .expect("every dialect has a profile")
+        .format()
+}
+
+type Block = serde_json::Map<String, serde_json::Value>;
+
+/// One plugin's harness block for `harness`: the marketplace's block, less
+/// the keys that belong to the marketplace manifest's own top level, overlaid
+/// by the plugin note's block key by key.
+pub(crate) fn plugin_block(config: &MarketplaceConfig, plugin: &str, harness: &str) -> Block {
+    let top = format_of(harness).marketplace_fields;
+    let mut block: Block = config
+        .blocks
+        .get(harness)
+        .into_iter()
+        .flatten()
+        .filter(|(key, _)| !top.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    if let Some(own) = overrides_for(config, plugin).and_then(|o| o.blocks.get(harness)) {
+        for (key, value) in own {
+            block.insert(key.clone(), value.clone());
+        }
+    }
+    block
+}
+
+/// `generated` as JSON with `block`'s keys from `allowed` merged over it. A
+/// mapping merges one level deep, so `interface: {displayName: …}` keeps the
+/// generated `category`; anything else replaces the generated value.
+fn merged<T: Serialize>(generated: &T, block: &Block, allowed: &[&str]) -> serde_json::Value {
+    let mut value = serde_json::to_value(generated).expect("manifest types serialize infallibly");
+    if let serde_json::Value::Object(map) = &mut value {
+        merge_into(map, block, allowed);
+    }
+    value
+}
+
+/// [`merged`] over a map already in hand.
+fn merge_into(map: &mut Block, block: &Block, allowed: &[&str]) {
+    for (key, over) in block {
+        if !allowed.contains(&key.as_str()) {
+            continue;
+        }
+        match (map.get_mut(key), over) {
+            (Some(serde_json::Value::Object(into)), serde_json::Value::Object(over)) => {
+                for (inner, value) in over {
+                    into.insert(inner.clone(), value.clone());
+                }
+            }
+            _ => {
+                map.insert(key.clone(), over.clone());
+            }
+        }
+    }
+}
+
+/// Insert `key` right after `after` in `map`, or at the end when `after` is
+/// absent, so a generated field keeps its place in the byte form.
+fn insert_after(map: &mut Block, after: &str, key: &str, value: serde_json::Value) {
+    let mut out = Block::new();
+    let mut placed = false;
+    for (k, v) in std::mem::take(map) {
+        let here = k == after;
+        out.insert(k, v);
+        if here {
+            out.insert(key.to_owned(), value.clone());
+            placed = true;
+        }
+    }
+    if !placed {
+        out.insert(key.to_owned(), value);
+    }
+    *map = out;
+}
+
+/// A plugin's `repository` and `homepage`, its own or the marketplace's,
+/// added after `license` when the dialect's manifest has the field.
+fn add_links(map: &mut Block, config: &MarketplaceConfig, plugin: &str, harness: &str) {
+    let fields = format_of(harness).manifest_fields;
+    let own = overrides_for(config, plugin);
+    let links = [
+        (
+            "repository",
+            own.and_then(|o| o.repository.clone())
+                .or_else(|| config.repository.clone()),
+        ),
+        (
+            "homepage",
+            own.and_then(|o| o.homepage.clone())
+                .or_else(|| config.homepage.clone()),
+        ),
+    ];
+    let mut after = "license".to_owned();
+    for (key, value) in links {
+        if let Some(value) = value
+            && fields.contains(&key)
+        {
+            insert_after(map, &after, key, value.into());
+            after = key.to_owned();
+        }
+    }
+}
+
+/// The finished manifest, after the plugin's links and block.
+fn finish_plugin<T: Serialize>(
+    generated: &T,
+    config: &MarketplaceConfig,
+    plugin: &str,
+    harness: &str,
+) -> String {
+    let mut value = serde_json::to_value(generated).expect("manifest types serialize infallibly");
+    if let serde_json::Value::Object(map) = &mut value {
+        add_links(map, config, plugin, harness);
+        merge_into(
+            map,
+            &plugin_block(config, plugin, harness),
+            format_of(harness).manifest_fields,
+        );
+    }
+    stable_json(&value)
+}
+
+/// The finished marketplace manifest: the marketplace block's top-level keys
+/// over the top, and each plugin's block over its entry.
+fn finish_marketplace<T: Serialize>(
+    generated: &T,
+    config: &MarketplaceConfig,
+    harness: &str,
+) -> String {
+    let format = format_of(harness);
+    let empty = Block::new();
+    let top = config.blocks.get(harness).unwrap_or(&empty);
+    let mut value = merged(generated, top, format.marketplace_fields);
+    if let Some(serde_json::Value::Array(entries)) = value.get_mut("plugins") {
+        for entry in entries {
+            let name = entry
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            if let serde_json::Value::Object(map) = entry {
+                merge_into(
+                    map,
+                    &plugin_block(config, &name, harness),
+                    format.entry_fields,
+                );
+            }
+        }
+    }
+    stable_json(&value)
+}
+
 pub(crate) fn overrides_for<'a>(
     config: &'a MarketplaceConfig,
     plugin: &str,
@@ -127,7 +293,7 @@ pub fn render_plugin_manifest(
             .unwrap_or_else(|| plugin.to_owned()),
         category: plugin_category(config, plugin),
     });
-    stable_json(&Manifest {
+    let manifest = Manifest {
         name: plugin.to_owned(),
         version: plugin_version(config, plugin),
         description: plugin_description(config, plugin, members),
@@ -139,7 +305,8 @@ pub fn render_plugin_manifest(
         skills: "./skills/",
         hooks,
         interface,
-    })
+    };
+    finish_plugin(&manifest, config, plugin, harness_of(dialect))
 }
 
 /// Pi's pack manifest: a `package.json` naming the pack's `skills/`
@@ -165,7 +332,7 @@ pub(crate) fn pi_package_manifest(
         license: String,
         pi: Pi,
     }
-    stable_json(&Manifest {
+    let manifest = Manifest {
         name: plugin.to_owned(),
         version: plugin_version(config, plugin),
         description: plugin_description(config, plugin, members),
@@ -174,7 +341,8 @@ pub(crate) fn pi_package_manifest(
         pi: Pi {
             skills: ["./skills"],
         },
-    })
+    };
+    finish_plugin(&manifest, config, plugin, "pi")
 }
 
 /// Codex's index: a `interface.displayName` beside the name, and an entry
@@ -214,7 +382,7 @@ pub fn codex_marketplace_manifest(
             interface: Interface,
             plugins: Vec<Entry>,
         }
-        stable_json(&Manifest {
+        let manifest = Manifest {
             name: name.to_owned(),
             interface: Interface {
                 display_name: config
@@ -237,7 +405,8 @@ pub fn codex_marketplace_manifest(
                     category: plugin_category(config, plugin),
                 })
                 .collect(),
-        })
+        };
+        finish_marketplace(&manifest, config, "codex")
     }
 }
 
@@ -277,9 +446,11 @@ pub fn claude_marketplace_manifest(
             owner: serde_json::Value,
             #[serde(skip_serializing_if = "Option::is_none")]
             description: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            version: Option<String>,
             plugins: Vec<Entry>,
         }
-        stable_json(&Manifest {
+        let manifest = Manifest {
             name: name.to_owned(),
             owner: config
                 .owner
@@ -287,6 +458,7 @@ pub fn claude_marketplace_manifest(
                 .map(normalize_author)
                 .unwrap_or_else(|| serde_json::json!({ "name": name })),
             description: config.description.clone(),
+            version: config.version.clone(),
             plugins: listed
                 .iter()
                 .map(|(plugin, members)| Entry {
@@ -296,7 +468,8 @@ pub fn claude_marketplace_manifest(
                     version: plugin_version(config, plugin),
                 })
                 .collect(),
-        })
+        };
+        finish_marketplace(&manifest, config, "claude")
     }
 }
 
@@ -327,7 +500,10 @@ pub fn cursor_marketplace_manifest(
     }
     #[derive(Serialize)]
     struct Metadata {
-        description: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        version: Option<String>,
     }
     #[derive(Serialize)]
     struct Manifest {
@@ -339,17 +515,17 @@ pub fn cursor_marketplace_manifest(
         metadata: Option<Metadata>,
         plugins: Vec<Entry>,
     }
-    stable_json(&Manifest {
+    let manifest = Manifest {
         name: name.to_owned(),
         owner: config
             .owner
             .clone()
             .map(normalize_author)
             .unwrap_or_else(|| serde_json::json!({ "name": name })),
-        metadata: config
-            .description
-            .clone()
-            .map(|description| Metadata { description }),
+        metadata: (config.description.is_some() || config.version.is_some()).then(|| Metadata {
+            description: config.description.clone(),
+            version: config.version.clone(),
+        }),
         plugins: listed
             .iter()
             .map(|(plugin, members)| Entry {
@@ -359,5 +535,6 @@ pub fn cursor_marketplace_manifest(
                 version: plugin_version(config, plugin),
             })
             .collect(),
-    })
+    };
+    finish_marketplace(&manifest, config, "cursor")
 }

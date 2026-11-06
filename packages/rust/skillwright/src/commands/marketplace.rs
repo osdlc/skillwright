@@ -9,7 +9,7 @@
 //!
 //! Nothing about the marketplace is decided here. Which skills are
 //! publishable, how they group into plugins, what each manifest says, which
-//! root a skill's `sw-targets` admits it to, what counts as stale, and
+//! root a skill's `targets` admits it to, what counts as stale, and
 //! whether the swap is safe all live in [`tradecraft_core::export`]. This
 //! file resolves flags against the root file, calls once per marketplace,
 //! and renders.
@@ -357,7 +357,7 @@ fn export_one(
         );
     }
 
-    // A plugin whose members drifted with its own `sw-version` unmoved since
+    // A plugin whose members drifted with its own `version` unmoved since
     // is a `check`-only callout — `build` just swapped the drift away, so
     // there is nothing left to suggest bumping. Stderr, never stdout: the
     // human table and `--json` already carry this fact (the report's own
@@ -374,7 +374,7 @@ fn export_one(
             {
                 let _ = writeln!(
                     ctx.err,
-                    "advisory: {root}/{name} sw-version {} unmoved since members changed — `skillwright bump {name}` is available",
+                    "advisory: {root}/{name} version {} unmoved since members changed — `skillwright bump {name}` is available",
                     vbs.current_version
                 );
             }

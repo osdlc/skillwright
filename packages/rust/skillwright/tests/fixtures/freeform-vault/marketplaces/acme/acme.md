@@ -1,9 +1,9 @@
 ---
 name: acme
 description: A marketplace that carries its identity.
-sw-owner:
+owner:
   name: Acme Engineering
-sw-author: platform-team
+author: platform-team
 ---
 
 Its own note, holding what a build needs.

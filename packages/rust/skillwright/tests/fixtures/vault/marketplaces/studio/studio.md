@@ -1,9 +1,9 @@
 ---
 name: studio
 description: The plugins studio publishes for coding agents.
-sw-owner:
+owner:
   name: studio
-sw-author: studio
+author: studio
 ---
 
 The house marketplace. Every plugin under `plugins/` ships in it, and the
