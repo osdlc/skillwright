@@ -171,7 +171,7 @@ pub fn resolve_run(
             err,
             &format!(
                 "No vault: no `{ROOT_FILE}` at or above {}, and it holds no `plugins/` or `skills/` folder.\n\
-                 Run from inside a vault, pass --vault, or add a `{ROOT_FILE}` at the vault's root.",
+                 A vault with no `{ROOT_FILE}` is found only from its own root. Run from there, pass --vault, or add a `{ROOT_FILE}` at the vault's root.",
                 cwd.display()
             ),
         ));

@@ -10,4 +10,4 @@ A directory `publish` writes a note into for one [target](target.md), such as a 
 
 ## Not to be confused with
 
-The marketplace output directory of `build` (`marketplace.out`).
+The marketplace output directory of `build` (`build.out`).

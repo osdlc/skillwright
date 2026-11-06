@@ -11,7 +11,7 @@
  * `CoreError` into a typed one, exactly mirroring what
  * `@osdlc/yaml-splice`'s `index.ts` does for `yaml-splice-wasm`.
  *
- * The binding exports ten functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
+ * The binding exports twelve functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
  *
  * | Export | Reaches | Serves |
  * |---|---|---|
@@ -25,6 +25,8 @@
  * | `canonicalTarget` | the target-name fold | a host narrowing a run by target |
  * | `publishableKinds` | the kinds a publish can project | a host choosing which notes to ask a status of |
  * | `statusOf` | one unit's state at one destination | `status` |
+ * | `parseRootFile` | the `skillwright.md` reader | a host reading the root file |
+ * | `rootFileConfig` | the root file's build config | a host building from the root file |
  *
  * A mode is a key on a request, never an export of its own — `check` is
  * `exportSkills` with `mode: "check"`, a dry-run adopt is `adoptSkills` with
@@ -42,8 +44,10 @@ import {
   exportSkills as exportSkillsWasm,
   loadMarketplace as loadMarketplaceWasm,
   knownTargets as knownTargetsWasm,
+  parseRootFile as parseRootFileWasm,
   publishableKinds as publishableKindsWasm,
   publishSkill as publishSkillWasm,
+  rootFileConfig as rootFileConfigWasm,
   statusOf as statusOfWasm,
   validateNamespace as validateNamespaceWasm,
 } from '#wasm'
@@ -60,9 +64,11 @@ import type {
   ExportRequest,
   LoadRequest,
   Marketplace,
+  MarketplaceConfig,
   PublishReport,
   PublishRequest,
   PublishOutcome,
+  RootFile,
   PublishStatus,
   PublishUnitStatus as WirePublishUnitStatus,
   StatusRequest as WireStatusRequest,
@@ -112,6 +118,8 @@ export type {
   PublishRequest,
   PublishState,
   PublishStatus,
+  RootFile,
+  BuildSettings,
   SkippedNote,
   UnitStatus,
   VersionBumpSuggestion,
@@ -409,6 +417,34 @@ export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
  */
 export function loadMarketplace(vfs: Vfs, request: LoadRequest): Marketplace {
   return callCore<Marketplace>(() => loadMarketplaceWasm(vfs, JSON.stringify(request)))
+}
+
+// --- the root file -----------------------------------------------------------
+
+/**
+ * Read a `skillwright.md`'s text, with the reader the CLI uses. Finding the
+ * file is the caller's; an unknown key comes back in `warnings`.
+ *
+ * @throws {CoreError} on frontmatter that is not a mapping, or a known key of
+ * the wrong shape.
+ */
+export function parseRootFile(text: string): RootFile {
+  return callCore<RootFile>(() => parseRootFileWasm(text))
+}
+
+/**
+ * The {@link MarketplaceConfig} a `skillwright.md`'s text describes, ready for
+ * an {@link ExportRequest}. `folderName` is the root file's folder, the
+ * marketplace's name when the file gives none.
+ *
+ * @throws {CoreError} as {@link parseRootFile}.
+ */
+export function rootFileConfig(text: string, folderName: string): MarketplaceConfig {
+  try {
+    return rootFileConfigWasm(text, folderName) as MarketplaceConfig
+  } catch (raw) {
+    throw toThrown(raw)
+  }
 }
 
 // --- adoption ----------------------------------------------------------------

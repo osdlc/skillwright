@@ -46,6 +46,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use notify::{RecursiveMode, Watcher};
+use tradecraft_core::built_paths;
 
 use crate::commands::marketplace::{ExportFlags, ExportVerb, out_root, run_export};
 use crate::config::resolve_configured_path;
@@ -89,10 +90,12 @@ pub fn run_watch_for(
     if let Err(code) = refuse_workspace("watch", &run, ctx.err) {
         return code;
     }
-    // What a build writes lands under dot-named folders at the top of the
-    // output folder (the harness trees and the build's stage). The output is
-    // inside the vault by default, so those writes are not changes.
-    let out = out_root(flags, &run, &ctx.cwd);
+    // The output can be inside the vault, and what a build writes there is
+    // not a change.
+    let out = match out_root(flags, &run, &ctx.cwd, ctx.err) {
+        Ok(out) => out,
+        Err(code) => return code,
+    };
 
     // Every rebuild this loop triggers writes unattended — see the module
     // doc's "No confirmation prompt" section.
@@ -222,15 +225,19 @@ fn is_change(event: &notify::Event) -> bool {
     }
 }
 
-/// Whether every path in `event` sits under a dot-named folder at the top
-/// of `out`, where a build writes.
+/// Whether every path in `event` is something a build writes under `out`.
+/// Only those: with `out` at the vault root, a `build.hooks` source can sit
+/// in a dot folder beside them.
 fn is_build_output(event: &notify::Event, out: &Path) -> bool {
+    let built = built_paths();
     !event.paths.is_empty()
         && event.paths.iter().all(|path| {
-            path.strip_prefix(out)
-                .ok()
-                .and_then(|rest| rest.components().next())
-                .is_some_and(|first| first.as_os_str().to_string_lossy().starts_with('.'))
+            path.strip_prefix(out).is_ok_and(|rest| {
+                let rest = rest.to_string_lossy().replace('\\', "/");
+                built.iter().any(|fragment| {
+                    rest == fragment.trim_end_matches('/') || rest.starts_with(fragment.as_str())
+                })
+            })
         })
 }
 
@@ -387,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn a_write_under_the_output_s_harness_trees_is_not_a_change() {
+    fn only_a_write_a_build_makes_under_the_output_is_not_a_change() {
         let event =
             |path: &str| notify::Event::new(notify::EventKind::Any).add_path(PathBuf::from(path));
         let out = Path::new("/vault");
@@ -395,11 +402,15 @@ mod tests {
             &event("/vault/.claude-plugin/packs/x"),
             out
         ));
+        assert!(is_build_output(&event("/vault/.claude-plugin/packs"), out));
         assert!(is_build_output(&event("/vault/.skillwright-stage/a"), out));
         assert!(!is_build_output(
             &event("/vault/plugins/p/skills/s.md"),
             out
         ));
+        // A source in a dot folder beside the output.
+        assert!(!is_build_output(&event("/vault/.claude/hooks.json"), out));
+        assert!(!is_build_output(&event("/vault/.agents/skills/s.md"), out));
         assert!(!is_build_output(&event("/elsewhere/.pi/x"), out));
     }
 

@@ -806,6 +806,18 @@ pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
     "node_modules",
 ];
 
+/// [`EXCLUDED_BUNDLE_DIRECTORIES`] for a `build.assets` directory, without
+/// `docs`: a shared tree of reference docs is what such an asset is for. The
+/// folder convention's `assets/` excludes nothing.
+pub(crate) const EXCLUDED_ASSET_DIRECTORIES: &[&str] = &[
+    "tests",
+    "fixtures",
+    ".git",
+    ".obsidian",
+    ".trash",
+    "node_modules",
+];
+
 /// The walk compile indexes a vault with, for a caller that must see the
 /// same files: every file, dot-named ones too, except under `.git`,
 /// `.obsidian`, `.trash` and `node_modules`. A symlink is listed, and a folder

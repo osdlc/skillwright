@@ -89,7 +89,7 @@ pub struct HookSetting {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct BuildSettings {
     /// Where the harness trees are written, relative to the root file.
-    /// Absent means beside it.
+    /// Required, here or as `--out`: there is no default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub out: Option<String>,
     /// Which harnesses to build. Absent means all of them.
@@ -286,6 +286,16 @@ fn build(
     field("build", &serde_yaml::Value::Mapping(kept), "a build block")
 }
 
+/// The build config a root file's text describes: [`parse_root_file`], then
+/// [`RootFile::to_config`], for a host that wants the config and not the file.
+///
+/// # Errors
+///
+/// As [`parse_root_file`].
+pub fn root_file_config(text: &str, folder_name: &str) -> Result<MarketplaceConfig, SettingsError> {
+    Ok(parse_root_file(text)?.to_config(folder_name))
+}
+
 impl RootFile {
     /// Fill what this file leaves unset from the workspace file above it.
     ///
@@ -294,6 +304,11 @@ impl RootFile {
     /// not paths (`harnesses`, `namespace`, `launcher_path`,
     /// `require_descriptions`): a path in the workspace file names a place
     /// relative to the workspace, not to each marketplace.
+    ///
+    /// Key by key: a value this file sets wins, and every other key still
+    /// comes from the workspace. The workspace root holds shared defaults and
+    /// the `build:` settings for its members. The decided list of inherited
+    /// fields is about frontmatter moving down notes, not this block.
     pub fn inherit(&mut self, workspace: &RootFile) {
         let fields = &mut self.marketplace;
         if fields.author.is_none() {
@@ -349,6 +364,37 @@ impl RootFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_member_s_build_value_overrides_the_workspace_key_by_key() {
+        let workspace = parse_root_file(
+            "---\nworkspace: true\nlicense: MIT\nbuild:\n  harnesses: [claude]\n  \
+             namespace: sw\n  launcher_path: bin/ws\n  require_descriptions: true\n  \
+             out: dist\n---\n",
+        )
+        .unwrap();
+        let mut member =
+            parse_root_file("---\nbuild:\n  namespace: acme\n  require_descriptions: false\n---\n")
+                .unwrap();
+        member.inherit(&workspace);
+
+        // What the member sets wins, a `false` included.
+        assert_eq!(member.build.namespace.as_deref(), Some("acme"));
+        assert_eq!(member.build.require_descriptions, Some(false));
+        // Every other key still comes down.
+        assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
+        assert_eq!(member.build.launcher_path.as_deref(), Some("bin/ws"));
+        assert_eq!(member.marketplace.license.as_deref(), Some("MIT"));
+        // A path names a place relative to the workspace, so it does not.
+        assert_eq!(member.build.out, None);
+    }
+
+    #[test]
+    fn the_config_a_text_describes_takes_the_folder_s_name_by_default() {
+        let config = root_file_config("---\nlicense: MIT\n---\n", "My House").unwrap();
+        assert_eq!(config.name.as_deref(), Some("my-house"));
+        assert_eq!(config.license.as_deref(), Some("MIT"));
+    }
 
     #[test]
     fn a_root_file_maps_onto_a_build_config() {

@@ -40,7 +40,7 @@ use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::normalize_thrown_reason;
-use crate::resolve::{CommonFlags, resolve_run};
+use crate::resolve::{CommonFlags, refuse_workspace, resolve_run};
 
 // ── Flags, one struct per verb — the command layer's own shape, resolved
 // from `cli.rs`'s clap `Args` the way `BumpFlags` is. ─────────────────────────
@@ -196,6 +196,9 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("new marketplace", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
 
     let placement = Placement {
@@ -243,6 +246,9 @@ pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("new plugin", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
 
     let placement = Placement {
@@ -284,6 +290,9 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("new skill", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
     let components = match scan_components(&run.vault, &ns, ctx) {
         Ok(components) => components,
@@ -364,6 +373,9 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("rename", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
     let components = match scan_components(&run.vault, &ns, ctx) {
         Ok(components) => components,
@@ -404,6 +416,9 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("move", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
     let components = match scan_components(&run.vault, &ns, ctx) {
         Ok(components) => components,
@@ -458,6 +473,9 @@ pub fn run_delete(flags: &DeleteFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("delete", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
     let components = match scan_components(&run.vault, &ns, ctx) {
         Ok(components) => components,
@@ -498,6 +516,9 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("convert", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
     let components = match scan_components(&run.vault, &ns, ctx) {
         Ok(components) => components,

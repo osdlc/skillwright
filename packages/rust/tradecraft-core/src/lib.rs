@@ -122,8 +122,8 @@ pub use error::*;
 pub use export::{
     AssetSpec, ExportMode, ExportReport, ExportRequest, ExportUnit, HookFileSpec,
     MarketplaceConfig, PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_skills,
-    marketplace_manifest_path, plugin_manifest_path, published_skill_name, rendered_skill_call,
-    root_trees,
+    marketplace_manifest_path, owned_paths, plugin_manifest_path, published_skill_name,
+    rendered_skill_call,
 };
 pub use frontmatter::{
     EntityKind, KindHints, KindSource, Provenance, ResolvedKind, VaultFrontmatter, resolve_kind,
@@ -141,3 +141,4 @@ pub use settings::{
 };
 pub use vault::{VaultNote, bundle_root, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};
+pub use walk::built_paths;

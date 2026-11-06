@@ -314,7 +314,7 @@ struct PublishArgs {
 /// one render, compared once, two things to do with the comparison.
 #[derive(Args, Debug)]
 struct ExportArgs {
-    /// Where the marketplace roots land. Overrides `build.out`; the default is beside `skillwright.md`.
+    /// Where the marketplace roots land. Overrides `build.out`. One of the two is required.
     #[arg(long, value_name = "path")]
     out: Option<String>,
     /// The skills root to scan. Defaults to the vault root.

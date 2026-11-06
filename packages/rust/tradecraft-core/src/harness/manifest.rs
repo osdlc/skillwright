@@ -36,10 +36,13 @@ pub(crate) fn overrides_for<'a>(
     config.plugins.get(plugin)
 }
 
+/// The version a plugin ships as when nothing states one.
+pub(crate) const DEFAULT_PLUGIN_VERSION: &str = "0.1.0";
+
 pub(crate) fn plugin_version(config: &MarketplaceConfig, plugin: &str) -> String {
     overrides_for(config, plugin)
         .and_then(|o| o.version.clone())
-        .unwrap_or_else(|| "0.1.0".to_owned())
+        .unwrap_or_else(|| DEFAULT_PLUGIN_VERSION.to_owned())
 }
 
 /// The description names the root's *own* members. A narrowed skill is

@@ -23,7 +23,7 @@ use super::{
     ResourceContent, Segment, pack_kind, segments,
 };
 use crate::compile::{
-    CallContext, CompileSource, EXCLUDED_BUNDLE_DIRECTORIES, IndexedSkill, Recorded, SkillIndex,
+    CallContext, CompileSource, EXCLUDED_ASSET_DIRECTORIES, IndexedSkill, Recorded, SkillIndex,
     SkillSource, compile_projection,
 };
 use crate::content::{SkillContent, SkillProjection};
@@ -34,6 +34,7 @@ use crate::discover::{
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig, PluginOverrides};
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
+use crate::harness::manifest::DEFAULT_PLUGIN_VERSION;
 use crate::harness::{HarnessProfile, with_plugin_format};
 use crate::namespace::Namespace;
 use crate::projection::parse_runtime_target;
@@ -140,7 +141,7 @@ pub(crate) fn selected_harnesses(
 /// # Errors
 ///
 /// * `refused: unreadable-note` — a note the scan could not read. A build
-///   swaps whole trees, and a note it could not read would be swept as a
+///   swaps whole packs, and a note it could not read would be swept as a
 ///   note that was deleted.
 /// * `refused: ambiguous-marketplace` / `unknown-marketplace` /
 ///   `unnamed-marketplace` — which marketplace, and what it is called.
@@ -278,11 +279,15 @@ pub fn load(
         &folder_assets,
         &config,
     ));
-    let assets: Vec<AssetSpec> = folder_assets
-        .into_iter()
-        .chain(request.assets.iter().cloned())
-        .collect();
-    load_assets(vfs, &assets, &roots, &mut plugins, &config, &name)?;
+    load_assets(
+        vfs,
+        &folder_assets,
+        &request.assets,
+        &roots,
+        &mut plugins,
+        &config,
+        &name,
+    )?;
     load_hook_files(vfs, &request.hooks, &mut plugins, &name)?;
 
     // Pass 2. One index for every call, over every skill in the marketplace
@@ -922,7 +927,7 @@ pub(crate) fn targets_name(targets: Option<&[String]>, canonical: &str) -> bool 
 }
 
 /// A plugin this build publishes from its own note, with no version from the
-/// note or the config. It ships as `0.1.0`, and a harness compares versions
+/// note or the config. It ships as [`DEFAULT_PLUGIN_VERSION`], and a harness compares versions
 /// to decide whether an installed pack is out of date — so a pack that never
 /// states one never looks updated.
 fn missing_versions(
@@ -1250,21 +1255,27 @@ fn plugin_list(plugins: &BTreeMap<String, Plugin>) -> String {
 /// the same way an unknown `--marketplace` is: writing nothing rather than
 /// silently dropping bytes an author declared.
 ///
-/// A directory source lands file by file, with
-/// [`EXCLUDED_BUNDLE_DIRECTORIES`] pruned at every depth and every `*.test.*`
+/// A `configured` directory source lands file by file, with
+/// [`EXCLUDED_ASSET_DIRECTORIES`] pruned at every depth and every `*.test.*`
 /// file skipped, so a shared tree of reference docs does not carry its own
-/// test suite into the build. An asset is never compiled: its whole point is
-/// to ship exactly the bytes on disk.
+/// test suite into the build. A `folder` asset, from the convention, lands
+/// whole. An asset is never compiled: its whole point is to ship exactly the
+/// bytes on disk.
 fn load_assets(
     vfs: &dyn Vfs,
-    assets: &[AssetSpec],
+    folder: &[AssetSpec],
+    configured: &[AssetSpec],
     roots: &[&HarnessProfile],
     plugins: &mut BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
     own_plugin: &str,
 ) -> Result<(), CoreError> {
-    let mut checked: Vec<(&AssetSpec, String)> = Vec::new();
-    for asset in assets {
+    let mut checked: Vec<(&AssetSpec, String, bool)> = Vec::new();
+    let assets = folder
+        .iter()
+        .map(|asset| (asset, true))
+        .chain(configured.iter().map(|asset| (asset, false)));
+    for (asset, whole) in assets {
         if !asset_dest_is_relative(&asset.dest) {
             return Err(CoreError::refused(
                 "unsafe-asset-dest",
@@ -1305,10 +1316,10 @@ fn load_assets(
                 ),
             ));
         }
-        checked.push((asset, plugin.to_owned()));
+        checked.push((asset, plugin.to_owned(), whole));
     }
-    for (asset, plugin) in checked {
-        let files = read_asset(vfs, asset)?;
+    for (asset, plugin, whole) in checked {
+        let files = read_asset(vfs, asset, whole)?;
         let plugin = plugins
             .get_mut(&plugin)
             .expect("the plugin was checked above");
@@ -1393,20 +1404,16 @@ fn changelog_warnings(
         let Some(plugin) = asset.plugin.as_deref() else {
             continue;
         };
-        let Some(version) = config
+        let version = config
             .plugins
             .get(plugin)
             .and_then(|o| o.version.as_deref())
-        else {
-            continue;
-        };
+            .unwrap_or(DEFAULT_PLUGIN_VERSION);
         let Ok(bytes) = vfs.read_file(&asset.source) else {
             continue;
         };
         let text = String::from_utf8_lossy(&bytes);
-        let named = text
-            .lines()
-            .any(|line| line.trim_start().starts_with('#') && line.contains(version));
+        let named = text.lines().any(|line| heading_names(line, version));
         if !named {
             warnings.push(DiscoveryWarning {
                 path: asset
@@ -1425,8 +1432,19 @@ fn changelog_warnings(
     warnings
 }
 
-/// One asset's files, read verbatim.
-fn read_asset(vfs: &dyn Vfs, asset: &AssetSpec) -> Result<Vec<Asset>, CoreError> {
+/// Whether `line` is a heading naming `version` as a whole token, with or
+/// without a leading `v`: `## [1.2.0] - 2026-01-02` names `1.2.0`, and
+/// `## 11.2.0` and `## 1.2.0-rc.1` do not.
+fn heading_names(line: &str, version: &str) -> bool {
+    line.trim_start().starts_with('#')
+        && line
+            .split(|c: char| !(c.is_alphanumeric() || "+-._".contains(c)))
+            .any(|token| token.strip_prefix('v').unwrap_or(token) == version)
+}
+
+/// One asset's files, read verbatim. A directory asset is filtered unless
+/// `whole`.
+fn read_asset(vfs: &dyn Vfs, asset: &AssetSpec, whole: bool) -> Result<Vec<Asset>, CoreError> {
     let copy = |source: &Path, dest: String| -> Result<Asset, CoreError> {
         Ok(Asset {
             dest,
@@ -1438,8 +1456,13 @@ fn read_asset(vfs: &dyn Vfs, asset: &AssetSpec) -> Result<Vec<Asset>, CoreError>
         return Ok(vec![copy(&asset.source, asset.dest.clone())?]);
     }
     let mut files = Vec::new();
-    for source in crate::walk::files(vfs, &asset.source, EXCLUDED_BUNDLE_DIRECTORIES)? {
-        if is_test_file(&source) {
+    let excluded = if whole {
+        &[]
+    } else {
+        EXCLUDED_ASSET_DIRECTORIES
+    };
+    for source in crate::walk::files(vfs, &asset.source, excluded)? {
+        if !whole && is_test_file(&source) {
             continue;
         }
         let relative = source.strip_prefix(&asset.source).map_err(|_| {

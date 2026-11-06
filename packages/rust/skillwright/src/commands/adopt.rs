@@ -53,7 +53,7 @@ use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked, not_implemen
 use crate::git_source::{fetch_git_source, parse_git_source};
 use crate::prompt::{confirm_write, plan_flow};
 use crate::report::{normalize_thrown_reason, render_adopt_tally, render_adopted_line};
-use crate::resolve::{CommonFlags, resolve_run, resolve_skills_root};
+use crate::resolve::{CommonFlags, refuse_workspace, resolve_run, resolve_skills_root};
 
 /// What `--as` exits 2 with.
 const STUB_AS: &str = "`--as <name>` renames one source on the way in. The core derives the adopted name itself — the source frontmatter's `name` slugified, or the source directory's basename — and `AdoptRequest` carries no override, so honouring the flag would mean naming a skill here instead of leaving that to the core.";
@@ -158,6 +158,9 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("adopt", &run, ctx.err) {
+        return code;
+    }
 
     // --- sources --------------------------------------------------------
     // Positional paths and `--from` are one list, resolved against the

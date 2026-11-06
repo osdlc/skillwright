@@ -77,12 +77,8 @@ pub struct PluginFormat {
     /// for a harness with no marketplace (Pi), whose packs install by path.
     pub marketplace_manifest: Option<&'static str>,
     /// Where this harness's packs land, relative to the marketplace
-    /// directory. Inside the harness's own tree, so two harnesses publishing
-    /// the same pack never render to one path.
-    ///
-    /// Must begin with the same component as `marketplace_manifest`, where
-    /// there is one: that component is the whole of what this harness owns
-    /// on disk ([`HarnessProfile::tree`]).
+    /// directory. Distinct per harness, so two harnesses publishing the same
+    /// pack never render to one path.
     pub packs: &'static str,
     /// Which shape the manifests take.
     pub dialect: PluginDialect,
@@ -420,15 +416,19 @@ impl HarnessProfile {
             .expect("only a harness with a plugin format is asked for one")
     }
 
-    /// The one top-level entry this harness owns in a marketplace directory.
+    /// The paths this harness owns in a marketplace directory: its packs
+    /// folder and its marketplace manifest.
     ///
-    /// Everything it renders — its marketplace manifest, its packs — lives
-    /// under this single name, and nothing else in the directory is read,
-    /// compared or replaced. That is what lets every harness share one
-    /// directory, and what lets that directory be a repository root.
-    pub fn tree(&self) -> &'static str {
+    /// Everything it renders lands at one of these, and nothing else in the
+    /// directory is read, compared or replaced. That is what lets every
+    /// harness share one directory, and what lets that directory be a
+    /// repository root: the folders around them, such as `.agents/skills/`,
+    /// hold what people author.
+    pub fn owned_paths(&self) -> Vec<&'static str> {
         let format = self.format();
-        first_component(format.marketplace_manifest.unwrap_or(format.packs))
+        std::iter::once(format.packs)
+            .chain(format.marketplace_manifest)
+            .collect()
     }
 
     /// `packs/<name>/<tail>` for this harness's pack directory: the plugin and
@@ -456,11 +456,6 @@ impl HarnessProfile {
             .into_keys()
             .collect()
     }
-}
-
-/// The first path component of a relative path, or the whole of it.
-fn first_component(relative: &str) -> &str {
-    relative.split('/').next().unwrap_or(relative)
 }
 
 /// The row a name answers to, by any of its spellings.
@@ -519,21 +514,6 @@ mod tests {
             PROFILES[..4].iter().all(|p| p.plugin.is_some()),
             "a spelling row sits among the plugin rows"
         );
-    }
-
-    #[test]
-    fn a_tree_is_the_first_component_of_both_paths() {
-        for profile in with_plugin_format() {
-            let format = profile.format();
-            assert!(
-                format.packs.starts_with(&format!("{}/", profile.tree())),
-                "{}",
-                profile.name
-            );
-            if let Some(manifest) = format.marketplace_manifest {
-                assert!(manifest.starts_with(&format!("{}/", profile.tree())));
-            }
-        }
     }
 
     #[test]
