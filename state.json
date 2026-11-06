@@ -1,12 +1,156 @@
 {
   "schema": 1,
   "pr": 63,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "737ff3bb24d29d3c8c89c19042ab1b4182cf8234",
+  "base": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-06T06:51:48.733Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/model/load.rs",
+      "line": 1102,
+      "title": "A container harness block overwrites every member name and description",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/projection.rs",
+      "line": 980,
+      "title": "A harness block's metadata silently drops a skill's unknown keys and its own metadata",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/model/load.rs",
+      "line": 185,
+      "title": "Single-note publish ignores inherited targets and license",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/model/load.rs",
+      "line": 1730,
+      "title": "Pack publish drops plugin harness blocks and root links",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/discover.rs",
+      "line": 1019,
+      "title": "A plugin note with no name or description is dropped silently",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/frontmatter.rs",
+      "line": 429,
+      "title": "Under a namespace, bare table keys skip the unknown-key warning",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/model/load.rs",
+      "line": 1151,
+      "title": "Root file outranks a marketplace note for targets only",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/model/load.rs",
+      "line": 864,
+      "title": "A single-note publish never reports unknown keys",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/discover.rs",
+      "line": 235,
+      "title": "The unknown-key warning misstates what happens to the key",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/keys.rs",
+      "line": 67,
+      "title": "Shape and inherits are never read, so values are not validated by the table",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/frontmatter.rs",
+      "line": 464,
+      "title": "Bare arguments as a single string now stops the whole build",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-12",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/namespace.rs",
+      "line": 231,
+      "title": "Find-and-replace left comments that state the wrong key",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-13",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "empty-plugin refusal hard-codes sw-targets",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
