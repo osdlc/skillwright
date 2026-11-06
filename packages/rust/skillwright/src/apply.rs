@@ -437,7 +437,16 @@ fn move_note(
     }
 
     if mode.writes() {
-        execute_move(vault_dir, &facts, &plan, from, to, bundle, outcome)?;
+        match execute_move(vault_dir, &facts, &plan, from, to, bundle, outcome) {
+            Err(ApplyError::Partial {
+                mut outcome,
+                source,
+            }) => {
+                record_unreadable(unreadable, &mut outcome);
+                return Err(ApplyError::Partial { outcome, source });
+            }
+            other => other?,
+        }
     } else {
         record_planned(&plan, outcome);
     }
@@ -1810,6 +1819,37 @@ mod tests {
         assert!(matches!(*source, ApplyError::Transform(_)), "{source:?}");
         assert_eq!(read(v.path(), "notes/n.md"), "see [[sub]]\n");
         assert_eq!(outcomes(&outcome), vec![("notes/n.md", "relinked")]);
+    }
+
+    /// A rename that half-lands still reports the folders the walk could not
+    /// list, after the rows for what landed.
+    #[cfg(unix)]
+    #[test]
+    fn a_partial_move_keeps_the_unreadable_rows() {
+        let v = vault();
+        write(v.path(), "skills/alpha/alpha.md", "---\nname: alpha\n---\n");
+        write(v.path(), "notes/n.md", "see [[alpha]]\n");
+        let folders = ["notes/locked"];
+        let listable = lock(v.path(), &folders);
+        let op = AuthoringOp::Rename {
+            from: "skills/alpha/alpha.md".to_owned(),
+            to: "skills/alpha/sub/sub.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let err = apply(v.path(), &op);
+        unlock(v.path(), &folders);
+        if listable {
+            return;
+        }
+
+        let ApplyError::Partial { outcome, .. } = err.unwrap_err() else {
+            panic!("expected a partial outcome");
+        };
+        assert_eq!(
+            outcomes(&outcome),
+            vec![("notes/n.md", "relinked"), ("notes/locked", "skipped")]
+        );
     }
 
     /// The same for a plain note: `execute` rewrites the linking note, then

@@ -1684,9 +1684,13 @@ fn convert_link(
         inner.push('#');
         inner.push_str(&fragment);
     }
+    // `markdown-link` refuses a `[` or `]` inside a wikilink, and a `|` would
+    // split the target. A target or fragment that decodes to one, or a label
+    // holding a bracket, stays a markdown link.
+    if inner.contains(['[', ']', '|']) {
+        return None;
+    }
     if !alias.is_empty() {
-        // `markdown-link` refuses a `[` or `]` inside a wikilink, so a
-        // label holding one cannot ride as an alias.
         if alias.contains(['[', ']']) {
             return None;
         }
@@ -3305,18 +3309,34 @@ mod tests {
     }
 
     /// compile escapes `\`, `[` and `]` in a label; adopt reads a `\` escape
-    /// back so the round trip does not double it. A label with a bracket is
-    /// left as a markdown link, since a wikilink cannot hold one.
+    /// back so the round trip does not double it.
     #[test]
-    fn an_escaped_label_converts_and_unescapes() {
-        assert_eq!(
-            rewrite_to_wikilinks("Read [a \\[b\\] c](references/vault/note.md).", &[]),
-            "Read [a \\[b\\] c](references/vault/note.md)."
-        );
+    fn an_escaped_backslash_in_a_label_unescapes() {
         assert_eq!(
             rewrite_to_wikilinks("Read [a\\\\b](x.md).", &[]),
             "Read [[x|a\\b]]."
         );
+    }
+
+    /// A wikilink cannot hold a bracket, so a bracketed label stays a
+    /// markdown link.
+    #[test]
+    fn a_bracketed_label_stays_a_markdown_link() {
+        let input = "Read [a \\[b\\] c](references/vault/note.md).";
+        assert_eq!(rewrite_to_wikilinks(input, &[]), input);
+    }
+
+    /// A target or fragment that decodes to `[`, `]` or `|` cannot ride in a
+    /// wikilink either.
+    #[test]
+    fn a_target_that_decodes_to_a_bracket_or_bar_stays_a_markdown_link() {
+        for input in [
+            "See [draft](notes%20%5Bv2%5D.md).",
+            "See [draft](notes.md#a%5Db).",
+            "See [draft](a%7Cb.md).",
+        ] {
+            assert_eq!(rewrite_to_wikilinks(input, &[]), input, "{input}");
+        }
     }
 
     /// A linked image is left for the inner image to convert on its own,
