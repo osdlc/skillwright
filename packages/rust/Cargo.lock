@@ -607,13 +607,13 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "markdown-contract"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "292fbad99df2a5478168246bdc899b1dd2fec230b094ce6745867202e735389a"
+checksum = "ba7af0223d6d3472e9b83ab6274ab4ef5b05f599fa1e9eb9270e09206b2bdb9e"
 dependencies = [
  "comrak",
  "globset",
- "markdown-link 0.7.0",
+ "markdown-link",
  "regex",
  "serde",
  "serde_json",
@@ -628,20 +628,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98f41b185c9b7b6cd859920377f854714f35229f92d06f82cd7db5bb07899e0a"
 dependencies = [
  "frontmatter-lossless",
- "markdown-link 0.8.0",
+ "markdown-link",
  "markdown-vault-fs",
  "slug-collate",
  "vfs-seam",
- "yaml-splice",
-]
-
-[[package]]
-name = "markdown-link"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef9e8cc7fa8927878cf5edd3d25392732ca940d6f623ce01f1f6af875bb7fcb0"
-dependencies = [
- "slug-collate",
  "yaml-splice",
 ]
 
@@ -663,7 +653,7 @@ checksum = "6f96ed05b1bec82829b5cd16e2293a31db8903f170954abb31360da42fca4896"
 dependencies = [
  "etag-write",
  "markdown-corpus",
- "markdown-link 0.8.0",
+ "markdown-link",
  "markdown-vault-fs",
  "slug-collate",
  "thiserror",
@@ -1266,7 +1256,7 @@ dependencies = [
  "agent-adapt",
  "frontmatter-lossless",
  "markdown-contract",
- "markdown-link 0.8.0",
+ "markdown-link",
  "markdown-vault-fs",
  "path-guard",
  "serde",
