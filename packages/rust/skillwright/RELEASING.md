@@ -37,9 +37,8 @@ flowchart TD
 ```
 
 1. **Release PR.** On every push to main, `release-pr` opens or updates a
-   pull request that bumps each changed crate's version and changelog. It
-   also rebuilds the wasm and commits it to the PR. The `osdlc-release`
-   GitHub App opens it, so its checks run.
+   pull request that bumps each changed crate's version and changelog. The
+   `osdlc-release` GitHub App opens it, so its checks run.
 2. **Merge.** The owner merges the release PR once its checks pass.
 3. **Plan.** `plan` compares each crate's version with crates.io. If nothing
    is new it stops. Otherwise it picks one credential for the run:
@@ -260,7 +259,6 @@ trusted once, so the tap and trust commands come before `brew install`.
 | `npm` fails with `404 Not Found - PUT` | The package or its trusted publisher does not exist | Stage the package (see [First release on npm](release/README.md#first-release-on-npm)), then re-run failed jobs |
 | `homebrew` fails: `private-key` input must be set | `RELEASE_PLZ_APP_PRIVATE_KEY` missing from `homebrew-tap` | Add it, then re-run failed jobs |
 | release-plz waits on the index, then times out | crates.io's sparse index lags the API (seen for agent-adapt 0.19.1: the API listed the version for hours before the index did) | Wait for the index, then re-run |
-| `wasm` check fails on a PR | The committed wasm differs from CI's build | `release-pr` rebuilds and commits the wasm on the release PR. On other PRs, take the files from that run's `tradecraft-wasm` artifact |
 
 Re-run only the failed jobs:
 

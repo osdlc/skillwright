@@ -34,7 +34,7 @@ use crate::report::{
     AttributedExclusion, Attribution, has_refusal, normalize_thrown_reason, render_exclusion,
     render_file_line, render_reason, render_tally, render_unmatched_overwrite, render_warning_line,
 };
-use crate::resolve::{CommonFlags, resolve_run};
+use crate::resolve::{CommonFlags, RunNotes, refuse_separate_skills_root, resolve_run};
 
 /// The resolved flags of `skillwright publish`.
 pub struct PublishFlags {
@@ -103,7 +103,18 @@ struct NotCarried {
     target: String,
 }
 
-/// The `--json` document: `not_published`, `not_carried` and `skipped` are
+/// A plugin folder's own manifest that the pack's rendered one replaced,
+/// named per destination.
+#[derive(Serialize)]
+struct ReplacedManifest {
+    manifest: String,
+    skill: String,
+    destination: String,
+    target: String,
+}
+
+/// The `--json` document: `not_published`, `not_carried`,
+/// `replaced_manifests` and `skipped` are
 /// omitted entirely when empty, mirroring the core's own
 /// `skip_serializing_if` on [`tradecraft_core::PublishReport`].
 #[derive(Serialize)]
@@ -113,6 +124,8 @@ struct PublishDocument<'a> {
     not_published: Option<&'a [NotPublished]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     not_carried: Option<&'a [NotCarried]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replaced_manifests: Option<&'a [ReplacedManifest]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skipped: Option<&'a [SkippedNote]>,
 }
@@ -250,6 +263,15 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             // a roster worth publishing half of.
             Err(err) => return blocked(ctx.err, &err.to_string()),
         };
+        if let Err(code) = refuse_separate_skills_root(
+            "publish",
+            &run,
+            &ctx.cwd,
+            RunNotes::Skipped(&scan.skipped),
+            ctx.err,
+        ) {
+            return code;
+        }
         // The kinds the publish spec calls publishable units. A marketplace
         // note names a distribution and publishes to no destination; an
         // agent or a command publishes on its own and is not swept up by a
@@ -279,6 +301,15 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 return blocked(ctx.err, &format!("note not found: {}", note_path.display()));
             }
             note_paths.push(note_path);
+        }
+        if let Err(code) = refuse_separate_skills_root(
+            "publish",
+            &run,
+            &ctx.cwd,
+            RunNotes::Named(&note_paths),
+            ctx.err,
+        ) {
+            return code;
         }
     }
 
@@ -336,6 +367,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let mut excluded: Vec<AttributedExclusion> = Vec::new();
     // Members a pack had no place for, named per destination.
     let mut uncarried: Vec<NotCarried> = Vec::new();
+    let mut replaced: Vec<ReplacedManifest> = Vec::new();
     // Every destination-relative path the run projected, across every
     // note-and-destination pair, so an `--overwrite` entry can be judged
     // once against the whole run. Collected only when there is an entry to
@@ -413,6 +445,16 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                             target: dest.target.clone(),
                         });
                     }
+                    // The folder's own manifest, which the rendered one
+                    // replaced. Not a member, so not a `not_carried` line.
+                    if let Some(manifest) = report.replaced_manifest {
+                        replaced.push(ReplacedManifest {
+                            manifest,
+                            skill: skill_label.clone(),
+                            destination: dest.root.display().to_string(),
+                            target: dest.target.clone(),
+                        });
+                    }
                 }
                 Err(err) => {
                     // The whole request failed before a file list could be
@@ -468,6 +510,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             files: &attributed,
             not_published: (!not_published.is_empty()).then_some(not_published.as_slice()),
             not_carried: (!uncarried.is_empty()).then_some(uncarried.as_slice()),
+            replaced_manifests: (!replaced.is_empty()).then_some(replaced.as_slice()),
             skipped: (!unreadable.is_empty()).then_some(unreadable.as_slice()),
         };
         match serde_json::to_string_pretty(&document) {
@@ -506,6 +549,13 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             ctx.err,
             "not carried into {} at {} ({}): {} — a pack declares only `skills/`; publish it on its own",
             left.skill, left.destination, left.target, left.member
+        );
+    }
+    for left in &replaced {
+        let _ = writeln!(
+            ctx.err,
+            "{} at {} ({}): the folder's own `{}` was not published; the pack's manifest is rendered from the plugin note's frontmatter",
+            left.skill, left.destination, left.target, left.manifest
         );
     }
 

@@ -158,6 +158,7 @@ fn is_blank(config: &SkillwrightConfig) -> bool {
 }
 
 /// The result of reading the configuration for one run.
+#[non_exhaustive]
 pub enum ConfigLoad {
     /// A configuration was read.
     Loaded {
@@ -194,18 +195,14 @@ pub enum ConfigLoad {
         /// What went wrong.
         detail: String,
     },
-}
-
-/// # Panics
-///
-/// When the base directories cannot be resolved (no home directory and no
-/// override), or `TOOL` is not a valid path segment.
-fn machine_file() -> MachineConfigFile<SkillwrightConfig> {
-    let dirs = crate::dirs::system()
-        .unwrap_or_else(|err| panic!("skillwright: cannot resolve the machine directories: {err}"));
-    MachineConfigFile::new(TOOL, &dirs)
-        .unwrap_or_else(|err| panic!("skillwright: invalid tool name {TOOL:?}: {err}"))
-        .with_env(MACHINE_CONFIG_ENV)
+    /// The machine file's default location could not be worked out: the
+    /// base directories did not resolve (no home directory and no override,
+    /// or an override that is not an absolute path) and
+    /// [`MACHINE_CONFIG_ENV`] did not name the file.
+    MachineDirs {
+        /// What went wrong.
+        detail: String,
+    },
 }
 
 /// A path that stands in for the machine file ahead of
@@ -229,47 +226,66 @@ pub fn replace_machine_config_override(path: Option<PathBuf>) -> Option<PathBuf>
 /// `<config-home>/skillwright/config.yaml`, unless [`MACHINE_CONFIG_ENV`]
 /// says otherwise. A test override, set with the `test-support` feature,
 /// comes before both.
+///
+/// # Panics
+///
+/// When neither the override nor [`MACHINE_CONFIG_ENV`] names the file and
+/// the base directories cannot be resolved. [`load_config`] reports that
+/// case as [`ConfigLoad::MachineDirs`] first, so a caller that runs after a
+/// successful load never reaches it.
 pub fn machine_config_path() -> PathBuf {
+    try_machine_config_path()
+        .unwrap_or_else(|err| panic!("skillwright: cannot resolve the machine directories: {err}"))
+}
+
+/// [`machine_config_path`], with a base directory that does not resolve
+/// returned as an error. A path the override or [`MACHINE_CONFIG_ENV`] names
+/// is used without looking the directories up.
+fn try_machine_config_path() -> Result<PathBuf, tiered_dirs::Error> {
     let over = MACHINE_CONFIG_OVERRIDE
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    over.unwrap_or_else(|| machine_file().path())
+    if let Some(over) = over {
+        return Ok(over);
+    }
+    // The same rule `MachineConfigFile::path` applies: a blank value means
+    // unset.
+    if let Some(env) = std::env::var_os(MACHINE_CONFIG_ENV)
+        && !env.to_string_lossy().trim().is_empty()
+    {
+        return Ok(PathBuf::from(env));
+    }
+    let dirs = crate::dirs::system()?;
+    let file: MachineConfigFile<SkillwrightConfig> = MachineConfigFile::new(TOOL, &dirs)?;
+    Ok(file.with_env(MACHINE_CONFIG_ENV).path())
 }
 
-/// Resolve a flag's path as the shell would: absolute or `~`-prefixed as
-/// given, relative against `cwd`. The rule `--vault`, `--to`, `--out` and
-/// `--config` share; a value from a config file uses
-/// [`resolve_configured_path`].
-pub fn resolve_against_cwd(path: &str, cwd: &Path) -> PathBuf {
-    if let Some(rest) = path.strip_prefix('~') {
-        let rest = rest
-            .strip_prefix('/')
-            .or_else(|| rest.strip_prefix('\\'))
-            .unwrap_or(rest);
-        return if rest.is_empty() {
-            home_dir()
-        } else {
-            home_dir().join(rest)
-        };
+/// Resolve a flag's path as the shell would: absolute as given, `~` or a
+/// `~/` prefix against the home directory, anything else relative to
+/// `base`. `~name` and `~\` are not expanded: they are relative paths, as in
+/// `config_layers::paths::resolve_config_path`. The rule `--vault`, `--to`,
+/// `--out` and `--config` share, with `base` the working directory.
+pub fn resolve_against_cwd(path: &str, base: &Path) -> PathBuf {
+    if path == "~" || path == "~/" {
+        return home_dir();
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        return home_dir().join(rest);
     }
     let p = Path::new(path);
     if p.is_absolute() {
         p.to_path_buf()
     } else {
-        normalize_join(cwd, p)
+        normalize_join(base, p)
     }
 }
 
-/// Resolve a config-file path as the file's own rules require: `~` expands,
-/// absolute is used as given, relative resolves against `base_dir` — the
-/// file's directory, never the process's working directory.
-pub fn resolve_configured_path(path: &str, base_dir: &Path) -> PathBuf {
-    if path.starts_with('~') || Path::new(path).is_absolute() {
-        resolve_against_cwd(path, base_dir)
-    } else {
-        normalize_join(base_dir, Path::new(path))
-    }
+/// [`resolve_against_cwd`] for a value read from a config file: the same
+/// rule, with `base` the file's directory, never the process's working
+/// directory. The second name marks that intent at the call site.
+pub fn resolve_configured_path(path: &str, base: &Path) -> PathBuf {
+    resolve_against_cwd(path, base)
 }
 
 /// The user's home directory, read directly from `$HOME`. Falls back to `/`
@@ -385,12 +401,18 @@ fn resolve_machine_mapping(
             }
         }
     }
-    if let Some(serde_json::Value::Array(seq)) = map.get_mut("destinations") {
-        for item in seq.iter_mut() {
-            if let serde_json::Value::Object(m) = item
-                && let Some(serde_json::Value::String(s)) = m.get_mut("root")
-            {
-                resolve(s);
+    for (list, key) in [
+        ("destinations", "root"),
+        ("assets", "from"),
+        ("hooks", "from"),
+    ] {
+        if let Some(serde_json::Value::Array(seq)) = map.get_mut(list) {
+            for item in seq.iter_mut() {
+                if let serde_json::Value::Object(m) = item
+                    && let Some(serde_json::Value::String(s)) = m.get_mut(key)
+                {
+                    resolve(s);
+                }
             }
         }
     }
@@ -554,7 +576,12 @@ fn finish(
 /// reason rather than degraded to defaults. The machine file is checked the
 /// same way when it exists, for the same reason.
 pub fn load_config(config_flag: Option<&str>, cwd: &Path) -> ConfigLoad {
-    load_config_at(config_flag, cwd, machine_config_path(), &home_dir())
+    match try_machine_config_path() {
+        Ok(machine_path) => load_config_at(config_flag, cwd, machine_path, &home_dir()),
+        Err(err) => ConfigLoad::MachineDirs {
+            detail: err.to_string(),
+        },
+    }
 }
 
 /// [`load_config`] with the machine file's path and the home directory
@@ -778,12 +805,12 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
         KeySpec {
             key: "marketplace.require_descriptions",
             scope: Scope::Both,
-            description: "Refuse `build` and `check` when a note has a `name` and no `description`. Absent or `false` publishes a filler and warns.",
+            description: "Refuse `build` and `check` when a note has a `name` and no `description`. Absent or `false` publishes a filler and warns. A plugin or marketplace note whose description the configuration supplies is neither warned about nor refused.",
         },
         KeySpec {
-            key: "marketplace.shim_target",
+            key: "marketplace.launcher_path",
             scope: Scope::Both,
-            description: "Where the per-skill `scripts/sdlc` shim looks for the launcher asset, relative to the plugin's root. Absent means `cli/sdlc`.",
+            description: "The plugin's launcher, relative to the plugin's root. Skills call it as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`; for Codex, Cursor and Pi the build rewrites that call to the launcher's path relative to the skill's folder. There is no PATH fallback. Absent turns the rewrite off.",
         },
     ];
     Needs::new(
@@ -834,5 +861,87 @@ mod tests {
             vec![home.join("skills")]
         );
         assert_eq!(as_path(&config.destinations[0].root), home.join("out"));
+    }
+
+    /// `assets[].from` and `hooks[].from` borrowed from the machine file
+    /// resolve against the machine file's directory, as they do when no
+    /// project file exists — not against the project's.
+    #[test]
+    fn machine_asset_and_hook_sources_resolve_against_the_machine_dir_under_a_project_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let machine_dir = tmp.path().join("machine");
+        let machine_path = machine_dir.join("config.yaml");
+        std::fs::create_dir_all(&machine_dir).unwrap();
+        std::fs::write(
+            &machine_path,
+            "assets:\n  - from: ./bin/cli\n    to: cli/cli\nhooks:\n  - from: ./hooks.json\n",
+        )
+        .unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join(PROJECT_FILE), "namespace: sw\n").unwrap();
+
+        let ConfigLoad::Loaded { config, dir, .. } =
+            load_config_at(None, &project, machine_path, &home)
+        else {
+            panic!("expected the layered config to load");
+        };
+        assert_eq!(
+            resolve_configured_path(&config.assets[0].from, &dir),
+            machine_dir.join("bin/cli")
+        );
+        assert_eq!(
+            resolve_configured_path(&config.hooks[0].from, &dir),
+            machine_dir.join("hooks.json")
+        );
+    }
+
+    /// Only `~` and `~/` name the home directory. `~alice/notes` and
+    /// `~notes` are ordinary relative paths.
+    #[test]
+    fn a_tilde_that_is_not_followed_by_a_separator_is_a_relative_path() {
+        let home = home_dir();
+        assert_eq!(
+            resolve_against_cwd("~alice/notes", Path::new("/work")),
+            PathBuf::from("/work/~alice/notes")
+        );
+        assert_eq!(
+            resolve_configured_path("~notes", Path::new("/proj")),
+            PathBuf::from("/proj/~notes")
+        );
+        assert_eq!(resolve_against_cwd("~", Path::new("/work")), home);
+        assert_eq!(
+            resolve_against_cwd("~/notes", Path::new("/work")),
+            home.join("notes")
+        );
+    }
+
+    /// The same machine-file `vault: ~archive` names one directory whether
+    /// or not a project file exists.
+    #[test]
+    fn a_tilde_name_in_the_machine_file_resolves_the_same_with_or_without_a_project_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let machine_dir = tmp.path().join("machine");
+        let machine_path = machine_dir.join("config.yaml");
+        std::fs::create_dir_all(&machine_dir).unwrap();
+        std::fs::write(&machine_path, "vault: ~archive\n").unwrap();
+        let bare = tmp.path().join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join(PROJECT_FILE), "namespace: sw\n").unwrap();
+
+        let vault_of = |cwd: &Path| {
+            let ConfigLoad::Loaded { config, dir, .. } =
+                load_config_at(None, cwd, machine_path.clone(), &home)
+            else {
+                panic!("expected a config to load from {}", cwd.display());
+            };
+            resolve_configured_path(config.vault.as_deref().unwrap(), &dir)
+        };
+        assert_eq!(vault_of(&bare), machine_dir.join("~archive"));
+        assert_eq!(vault_of(&project), machine_dir.join("~archive"));
     }
 }

@@ -850,6 +850,69 @@ fn update_from_git_refreshes_the_marketplace_before_updating_a_plugin() {
     );
 }
 
+/// The harness installs from its own snapshot of a git marketplace, so a
+/// plugin added to the repository since that snapshot is installed only after
+/// the refresh, and needs one even when nothing installed is out of date.
+#[test]
+fn update_from_git_refreshes_the_marketplace_before_installing_a_new_plugin() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_project(dir.path());
+    publish_tools(&root, "0.2.0");
+    let url = "https://example.com/acme.git";
+    let markets = format!(r#"[{{"name": "acme", "source": "git", "url": "{url}"}}]"#);
+
+    let both = FakeRunner::new(&markets, &claude_plugin_at("0.1.0"));
+    let result = run(
+        &[
+            "harness",
+            "update",
+            "claude",
+            "--git-url",
+            url,
+            "--plugin",
+            "tools",
+            "--plugin",
+            "newp",
+            "--yes",
+        ],
+        dir.path(),
+        &both,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert_eq!(
+        &both.calls()[2..],
+        [
+            "claude plugin marketplace update acme",
+            "claude plugin install newp@acme --scope user",
+            "claude plugin update tools@acme --scope user",
+        ]
+    );
+
+    let only_new = FakeRunner::new(&markets, &claude_plugin_at("0.1.0"));
+    let result = run(
+        &[
+            "harness",
+            "update",
+            "claude",
+            "--git-url",
+            url,
+            "--plugin",
+            "newp",
+            "--yes",
+        ],
+        dir.path(),
+        &only_new,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert_eq!(
+        &only_new.calls()[2..],
+        [
+            "claude plugin marketplace update acme",
+            "claude plugin install newp@acme --scope user",
+        ]
+    );
+}
+
 #[test]
 fn update_skips_a_plugin_whose_listing_has_no_version() {
     let dir = tempfile::tempdir().unwrap();

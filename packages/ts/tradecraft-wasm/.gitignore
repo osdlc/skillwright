@@ -7,8 +7,9 @@ dist/
 # Scratch directories made by the tests.
 .skillwright-*/
 
-# wasm/ is committed on purpose: it is the built WebAssembly and its glue, so
-# building or testing the package needs no Rust toolchain. Do not add it here.
+# The built WebAssembly and its glue (`pnpm run build:wasm`). CI builds it
+# from the Rust crates.
+wasm/
 
 # Test coverage (`pnpm run coverage`).
 coverage/

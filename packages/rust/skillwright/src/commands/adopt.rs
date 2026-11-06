@@ -9,12 +9,13 @@
 //! wikilinks, whether a name collides. This file resolves sources against
 //! configuration, loops, and renders.
 //!
-//! # `--dry-run` is the core's mode, never a prediction
+//! # `--dry-run` is the core's adoption, never a prediction
 //!
-//! The flag sets [`AdoptMode::DryRun`] on the request and nothing else. The
-//! core runs the identical adoption over its own preview overlay and hands
-//! back the report the write would have produced — same names, same
-//! collisions, same per-skill refusals.
+//! The flag runs the identical adoption over one [`PreviewVfs`] shared by
+//! every source in the run, the overlay [`AdoptMode::DryRun`] would build per
+//! source. Shared, so a later source sees what an earlier one would have
+//! written: the report is the one the write would have produced — same
+//! names, same collisions, same per-skill refusals.
 //!
 //! # Replacing a note is per note, and named
 //!
@@ -43,7 +44,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 use tradecraft_core::{
-    AdoptMode, AdoptRequest, AdoptStatus, AdoptedSkill, NativeVfs, adopt_skills,
+    AdoptMode, AdoptRequest, AdoptStatus, AdoptedSkill, NativeVfs, PreviewVfs, Vfs, adopt_skills,
 };
 
 use crate::config::{resolve_against_cwd, resolve_configured_path};
@@ -286,6 +287,10 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let namespace = run.core_namespace();
     let mut adopted: Vec<AttributedSkill> = Vec::new();
     let mut failed: Vec<FailedSource> = fetch_failed;
+    // One overlay for every source; see the module doc. The core test
+    // `a_dry_run_is_a_write_over_a_preview` pins that this matches `DryRun`.
+    let preview = PreviewVfs::over(&NativeVfs);
+    let vfs: &dyn Vfs = if flags.dry_run { &preview } else { &NativeVfs };
 
     for source in &sources {
         if ctx.is_interrupted() {
@@ -307,15 +312,11 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
             targets: (!flags.set_targets.is_empty()).then_some(flags.set_targets.clone()),
             skills: (!flags.only.is_empty()).then_some(flags.only.clone()),
             overwrite: flags.overwrite.clone(),
-            mode: if flags.dry_run {
-                AdoptMode::DryRun
-            } else {
-                AdoptMode::Write
-            },
+            mode: AdoptMode::Write,
             adopted_at: adopted_at.clone(),
         };
 
-        match adopt_skills(&NativeVfs, &request, &namespace) {
+        match adopt_skills(vfs, &request, &namespace) {
             Ok(report) => {
                 for skill in report.skills {
                     adopted.push(AttributedSkill {

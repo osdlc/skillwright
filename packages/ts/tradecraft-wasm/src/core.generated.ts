@@ -141,6 +141,17 @@ export interface PublishReport {
   not_carried?: string[];
 
   /**
+   * Vault-relative path of the plugin folder's own manifest, when the
+   * pack's rendered manifest replaced it and the two differ.
+   *
+   * The rendered manifest comes from the plugin note's frontmatter, so
+   * fields only the folder's copy holds (hooks, MCP servers) do not
+   * travel. Not a member and not publishable on its own. `None` on every
+   * report but a pack's, and omitted from the wire when unset.
+   */
+  replaced_manifest?: string;
+
+  /**
    * `sw-overrides` keys this destination's render already wrote, each as
    * its own reason line.
    *
@@ -699,22 +710,22 @@ export interface MarketplaceConfig {
   plugins?: Record<string, PluginOverrides>;
 
   /**
-   * Refuse the build when a note has a `name` and no `description`,
-   * instead of publishing [`crate::discover::MISSING_DESCRIPTION`] and
-   * reporting it in [`ExportReport::warnings`].
+   * Refuse the build when a note has a `name` and no `description` and
+   * this config supplies none for it, instead of publishing
+   * [`crate::discover::MISSING_DESCRIPTION`] and reporting it in
+   * [`ExportReport::warnings`].
    */
   require_descriptions?: boolean;
 
   /**
-   * Where the per-skill `scripts/sdlc` shim looks for this plugin's own
-   * launcher asset, relative to the plugin's root — and the `dest` an
-   * asset must carry for a build to emit that shim at all (see
-   * `sdlc_shim_script`'s parent-walk). Project-file authors declare it
-   * as `marketplace.shim_target`; [`crate::settings::MarketplaceSettings::to_config`]
-   * defaults it to [`DEFAULT_SHIM_TARGET`] when the project file is
-   * silent.
+   * The plugin's launcher, relative to the plugin's root (`bin/tool`).
+   * Skill bodies call it as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`. On a
+   * root whose harness does not expand that variable, the build rewrites
+   * each call to the launcher's path relative to the skill's own folder,
+   * when the plugin ships an asset at this path. Absent turns the rewrite
+   * off. Project files declare it as `marketplace.launcher_path`.
    */
-  shim_target?: string;
+  launcher_path?: string;
 }
 
 /**
@@ -750,7 +761,7 @@ export interface PluginOverrides {
  *
  * Bundle resources ([`crate::compile::CompileSource::bundle_root`]) already
  * cover a skill's own peers; this is for what a *plugin* carries once, no
- * matter which skill happens to shell out to it. A `cli/sdlc` launcher is the
+ * matter which skill happens to shell out to it. A launcher script is the
  * motivating file case, and shared reference docs the skills read
  * (`conventions/`) the motivating directory case.
  */
@@ -912,7 +923,7 @@ export type UnitStatus = "ok" | "drift" | "written" | "unchanged";
 /**
  * A plugin whose members changed since it was last published here, with its
  * own `sw-version` unmoved since — the callout
- * [`UnitStatus::version_bump_suggestion`] carries so a publish screen can
+ * [`PublishUnitStatus::version_bump_suggestion`] carries so a publish screen can
  * offer a one-click bump.
  *
  * Not a sixth [`PublishState`]: the state stays `stale`, exactly as it would
@@ -1036,10 +1047,11 @@ export interface Plugin {
   assets: Asset[];
 
   /**
-   * Where this plugin's launcher asset lands, when it ships one: the
-   * `${CLAUDE_PLUGIN_ROOT}/<shim_target>` its skills call.
+   * The launcher's path inside the pack, when the plugin ships an asset
+   * at [`crate::export::MarketplaceConfig::launcher_path`]: the
+   * `${CLAUDE_PLUGIN_ROOT}/<launcher>` its skills call.
    */
-  shim_target: string | null;
+  launcher: string | null;
 }
 
 /**
@@ -1270,13 +1282,13 @@ export type Segment =
       call: Call;
     }
   /**
-   * The plugin's own CLI, which the vault writes as
-   * `${CLAUDE_PLUGIN_ROOT}/<shim_target>`.
+   * A call to the plugin's launcher, which the vault writes as
+   * `${CLAUDE_PLUGIN_ROOT}/<launcher>`.
    */
   | {
-      type: "cli-invocation";
+      type: "launcher-call";
       /** The launcher's path inside the plugin. */
-      shim_target: string;
+      launcher: string;
     };
 
 /** A resolved link: the file it reaches and the markdown it renders as. */
@@ -1398,7 +1410,9 @@ export interface AdoptRequest {
    * spelling — `<url>@<sha>` — and hands it over here. The re-adopt
    * comparison reads this too, so a note stamped with a URL is compared
    * against that URL rather than against the checkout it happens to sit
-   * in this run.
+   * in this run. The comparison drops a repository label's trailing
+   * `@<commit>`, so a later commit of the same repository reads as the
+   * source moved on.
    *
    * `None` stamps the source path, which is what a local adoption wants.
    */
@@ -1546,6 +1560,68 @@ export interface StatusRequest {
 }
 
 /**
+ * The answer, and enough of the working to act on it.
+ *
+ * Named apart from [`crate::export::UnitStatus`], the marketplace's
+ * four-word status: two public types with one name cannot both cross the
+ * wasm boundary.
+ */
+export interface PublishUnitStatus {
+  /** Whether the destination is current. */
+  state: PublishState;
+
+  /**
+   * A sentence naming what makes the state what it is, when there is one to
+   * name. `stale` alone is not actionable.
+   */
+  reason: string | null;
+
+  /** When we last wrote anything here, from the manifest. */
+  published_at: string | null;
+
+  /**
+   * Every projected file, classified. This is the drift: what would be
+   * written, what is already right, and what is refused and why.
+   */
+  files: PublishedFile[];
+
+  /**
+   * The notes that fed this unit's output, as the manifest recorded them.
+   * A reverse lookup over these answers *what did editing this make stale*.
+   */
+  contributing_notes: string[];
+
+  /** Recorded contributors that are no longer in the vault. */
+  missing_notes: string[];
+
+  /**
+   * Set when `sw-targets` excludes this destination — the `n/a` cell, which
+   * is not a state.
+   */
+  not_published: string | null;
+
+  /**
+   * A plugin whose members drifted since it was last published here, with
+   * its own `sw-version` unmoved since. `None` for every non-plugin unit,
+   * and for a plugin that does not meet the rule — see
+   * [`VersionBumpSuggestion`].
+   */
+  version_bump_suggestion: VersionBumpSuggestion | null;
+}
+
+/**
+ * What a unit's publish state is at one destination.
+ *
+ * The closed set the status spec specifies, and the same five words on every
+ * surface. Two things that also need a cell in a grid are deliberately not
+ * members: a destination whose target has no renderer, and a destination this
+ * note's `sw-targets` excludes. Neither is a *manifest* state — one is
+ * incapability and the other is deliberate exclusion — and folding them in
+ * here would make them look like conditions a publish could fix.
+ */
+export type PublishState = "never-published" | "current" | "stale" | "conflict" | "unknown";
+
+/**
  * The request each export deserializes, by the name JavaScript calls it.
  */
 export interface WasmRequests {
@@ -1567,7 +1643,7 @@ export interface WasmResponses {
   exportSkills: ExportReport;
   loadMarketplace: Marketplace;
   adoptSkills: AdoptReport;
-  statusOf: UnitStatus;
+  statusOf: PublishUnitStatus;
 }
 
 /**

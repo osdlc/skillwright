@@ -1,6 +1,7 @@
 {
   "name": "@osdlc/tradecraft-wasm",
   "version": "0.2.0",
+  "private": true,
   "description": "Tradecraft's core, built to WebAssembly, for Node.js and Bun: publish, export, adopt and status calls over agent skills, with a Node filesystem adapter.",
   "license": "MIT OR Apache-2.0",
   "author": "sksizer",
@@ -22,9 +23,6 @@
     "wasm",
     "webassembly"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -58,7 +56,6 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "smoke": "node tests/smoke.mjs",
-    "prepublishOnly": "npm run clean && npm run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "oxlint .",

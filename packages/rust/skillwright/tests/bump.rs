@@ -235,3 +235,33 @@ fn no_yes_off_a_tty_is_a_usage_error_and_writes_nothing() {
     let after = fs::read(&path).unwrap();
     assert_eq!(before, after, "a declined/unconfirmable run must not write");
 }
+
+#[test]
+fn a_version_in_a_nested_block_is_bumped_in_place() {
+    let (dir, vault) = fixture(Some("sw:\n  version: 2.3.0"));
+    let path = note_path(&vault);
+
+    let result = run(
+        &[
+            "bump",
+            "widget",
+            "--patch",
+            "--yes",
+            "--vault",
+            &vault_str(&vault),
+        ],
+        dir.path(),
+    );
+
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert_eq!(
+        result.stdout,
+        format!("{REL}  written · sw.version 2.3.0 -> 2.3.1\n")
+    );
+    let after = fs::read_to_string(&path).unwrap();
+    assert!(after.contains("sw:\n  version: 2.3.1\n"), "{after}");
+    assert!(
+        !after.contains("sw-version"),
+        "a flat key beside the block is a mixed shape: {after}"
+    );
+}

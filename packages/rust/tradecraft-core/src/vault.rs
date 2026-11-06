@@ -26,7 +26,8 @@
 //! `annotations` and is re-emitted verbatim, which is the acceptance criterion
 //! the vault spec states and the failure that motivated it: deriving a live
 //! plugin tree through a model that could not represent it lost 89 of 148
-//! files.
+//! files. An agent or a command, whose model has no annotations, writes them
+//! into its own frontmatter instead — see [`crate::projection`].
 //!
 //! Two consequences of the carry rule look like oversights:
 //!
@@ -200,23 +201,37 @@ pub fn read_vault_skill(
 }
 
 /// The folder whose files travel with this note: the one named for it and
-/// holding it. `skills/release/release.md` owns `skills/release/`, and so does
-/// `skills/release/SKILL.md`; `skills/loose.md` owns nothing, which is the
-/// common case.
+/// holding it. `skills/release/release.md` owns `skills/release/`, and so
+/// does `skills/release/SKILL.md`; `skills/loose.md` owns nothing, which is
+/// the common case, and neither does `skills/skills.md` or `skills/SKILL.md`
+/// — the folder holding them is a kind folder, not theirs. Inside a kind
+/// folder, `SKILL.md` names its folder only under `skills/`.
 ///
-/// This is the rule [`crate::discover`] already places a component by, spelled
-/// again here because this function has one path and no scan to consult. They
-/// must not diverge: if they do, a component in the canonical layout publishes
-/// its `SKILL.md` alone and reports it written, because the peers this side
-/// looks for are in a sibling folder that layout does not have.
+/// A note with no kind folder above its folder (`drafts/release/release.md`,
+/// or a project's `my-skill/SKILL.md` published with no vault root) has no
+/// placement to follow, and its named folder still travels with it, so there
+/// `SKILL.md` names its folder anywhere.
+///
+/// Inside a kind folder this asks `crate::discover::is_entry`, the rule
+/// discovery places a component by, so the two cannot diverge. If they did, a
+/// component in the canonical layout would publish its `SKILL.md` alone, or a
+/// lone note would carry every sibling in its kind folder as its resources.
 pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
     let file = skill_path.file_name()?.to_str()?;
     let parent = skill_path.parent()?;
-    if crate::discover::is_skill_entry(file) {
-        return parent.file_name().is_some().then_some(parent);
+    let name = parent.file_name()?.to_str()?;
+    let above = parent
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|n| n.to_str());
+    if let Some(kind) = above.and_then(crate::discover::kind_dir) {
+        return crate::discover::is_entry(file, name, kind).then_some(parent);
     }
-    let stem = skill_path.file_stem()?.to_str()?;
-    (parent.file_name()?.to_str()? == stem).then_some(parent)
+    if crate::discover::kind_dir(name).is_some() {
+        return None;
+    }
+    let owns = crate::discover::is_skill_entry(file) || skill_path.file_stem()?.to_str()? == name;
+    owns.then_some(parent)
 }
 
 /// Every file under the bundle root except the entry note itself, recursively,
@@ -790,6 +805,72 @@ mod tests {
                 .resources
                 .is_empty()
         );
+    }
+
+    /// A note directly inside a kind folder travels alone, even when its name
+    /// matches the kind folder's: `skills/skills.md` and `skills/SKILL.md` do
+    /// not own `skills/`, the same placement `crate::discover` gives them.
+    #[test]
+    fn a_note_named_after_its_kind_folder_does_not_own_that_folder() {
+        for entry in ["skills.md", "SKILL.md"] {
+            let (vfs, _) = vault("alpha", "---\ndescription: a\n---\nb\n");
+            let path = Path::new("/vault/skills").join(entry);
+            vfs.write_file(&path, b"---\ndescription: d\n---\nb\n")
+                .unwrap();
+            vfs.create_dir_all(Path::new("/vault/skills/other"))
+                .unwrap();
+            vfs.write_file(
+                Path::new("/vault/skills/other/other.md"),
+                b"---\ndescription: o\n---\nb\n",
+            )
+            .unwrap();
+
+            assert_eq!(bundle_root(&path), None, "{entry}");
+            assert!(
+                read_vault_skill(&vfs, &path, &sw())
+                    .unwrap()
+                    .projection
+                    .resources
+                    .is_empty(),
+                "{entry}"
+            );
+        }
+    }
+
+    /// `SKILL.md` names its folder only for a skill: discover places
+    /// `agents/foo/SKILL.md` nowhere, so it owns no bundle.
+    #[test]
+    fn skill_md_outside_a_skills_folder_owns_no_bundle() {
+        assert_eq!(bundle_root(Path::new("/vault/agents/foo/SKILL.md")), None);
+        assert_eq!(
+            bundle_root(Path::new("/vault/skills/foo/SKILL.md")),
+            Some(Path::new("/vault/skills/foo"))
+        );
+        assert_eq!(
+            bundle_root(Path::new("/vault/agents/foo/foo.md")),
+            Some(Path::new("/vault/agents/foo"))
+        );
+        // A plugin named after a kind folder still owns its own folder.
+        assert_eq!(
+            bundle_root(Path::new("/vault/plugins/skills/skills.md")),
+            Some(Path::new("/vault/plugins/skills"))
+        );
+    }
+
+    /// Outside a kind folder there is no placement to follow, so the folder
+    /// named for the note still travels with it: `publish` accepts any note
+    /// path, and with no `skills_root` a project's `my-skill/SKILL.md` is one.
+    #[test]
+    fn a_named_folder_outside_a_kind_folder_still_owns_its_files() {
+        assert_eq!(
+            bundle_root(Path::new("/vault/drafts/release/release.md")),
+            Some(Path::new("/vault/drafts/release"))
+        );
+        assert_eq!(
+            bundle_root(Path::new("/proj/my-skill/SKILL.md")),
+            Some(Path::new("/proj/my-skill"))
+        );
+        assert_eq!(bundle_root(Path::new("/proj/my-skill/other.md")), None);
     }
 
     #[test]

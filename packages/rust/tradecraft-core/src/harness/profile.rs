@@ -80,7 +80,7 @@ pub struct PluginFormat {
     pub packs: &'static str,
     /// Which shape the manifests take.
     pub dialect: PluginDialect,
-    /// How a rendered skill's body should refer to the plugin's own CLI.
+    /// How a rendered skill's body should call the plugin's launcher.
     pub cli_invocation: CliInvocation,
     /// The variable this harness's hook commands name the plugin root by.
     /// `None` when its pack carries no hooks file (Pi).
@@ -148,16 +148,16 @@ pub enum SkillNaming {
     PluginPrefixed,
 }
 
-/// How a rendered skill body refers to the plugin's own CLI.
+/// How a rendered skill body calls the plugin's launcher.
 ///
 /// Every skill in the vault writes the call site the same way, as
-/// `${CLAUDE_PLUGIN_ROOT}/<shim_target>` — the vault's own text is written
+/// `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` — the vault's own text is written
 /// for Claude, since that is the harness every skill author develops against.
 /// This decides what each *other* harness does with that same text at render
 /// time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CliInvocation {
-    /// Leave the vault's `${CLAUDE_PLUGIN_ROOT}/<shim_target>` text exactly
+    /// Leave the vault's `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` text exactly
     /// as written. Claude Code substitutes the token itself, inline, when it
     /// loads skill markdown — see the plugin manifest reference's
     /// "Environment variables" section
@@ -166,9 +166,10 @@ pub enum CliInvocation {
     /// agent content" bodies specifically, a Claude Code plugin mechanism
     /// with no counterpart in another harness.
     PluginRootToken,
-    /// Rewrite every `${CLAUDE_PLUGIN_ROOT}/<shim_target>` call site in a
-    /// skill's rendered body to the skill-relative `scripts/sdlc` shim the
-    /// same render emits. Neither Codex CLI nor Cursor substitutes
+    /// Rewrite every `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` call site in a
+    /// skill's rendered body to the launcher's path relative to the skill's
+    /// own folder (`../../bin/tool`), the way a skill names its own files.
+    /// Neither Codex CLI nor Cursor substitutes
     /// `${CLAUDE_PLUGIN_ROOT}` — Codex's own skills documentation
     /// (<https://developers.openai.com/codex/skills>) never mentions the
     /// token, and Cursor's skills documentation
@@ -176,8 +177,10 @@ pub enum CliInvocation {
     /// authors to "reference scripts in your SKILL.md using relative paths
     /// from the skill root" instead — so a literal, un-rewritten
     /// `${CLAUDE_PLUGIN_ROOT}/...` call site is dead text for either
-    /// harness, expanding to `/<shim_target>` with an empty prefix.
-    SkillRelativeShim,
+    /// harness, expanding to `/<launcher_path>` with an empty prefix. Pi does
+    /// not substitute it either, and tells the model a skill's base
+    /// directory so its relative paths resolve.
+    SkillRelativePath,
 }
 
 /// The Claude Code row.
@@ -225,7 +228,7 @@ pub const CODEX: HarnessProfile = HarnessProfile {
         marketplace_manifest: Some(".agents/plugins/marketplace.json"),
         packs: ".agents/packs",
         dialect: PluginDialect::Codex,
-        cli_invocation: CliInvocation::SkillRelativeShim,
+        cli_invocation: CliInvocation::SkillRelativePath,
         plugin_root_var: Some(PluginRootVar {
             name: "PLUGIN_ROOT",
             url: "https://learn.chatgpt.com/docs/hooks",
@@ -260,7 +263,7 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         marketplace_manifest: Some(".cursor-plugin/marketplace.json"),
         packs: ".cursor-plugin/packs",
         dialect: PluginDialect::Cursor,
-        cli_invocation: CliInvocation::SkillRelativeShim,
+        cli_invocation: CliInvocation::SkillRelativePath,
         plugin_root_var: Some(PluginRootVar {
             name: "CURSOR_PLUGIN_ROOT",
             url: "https://cursor.com/docs/reference/plugins",
@@ -295,7 +298,7 @@ pub const PI: HarnessProfile = HarnessProfile {
         marketplace_manifest: None,
         packs: ".pi/packs",
         dialect: PluginDialect::Pi,
-        cli_invocation: CliInvocation::SkillRelativeShim,
+        cli_invocation: CliInvocation::SkillRelativePath,
         plugin_root_var: None,
         naming: SkillNaming::PluginPrefixed,
         hooks_manifest_entry: None,

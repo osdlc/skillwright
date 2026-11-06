@@ -24,6 +24,7 @@ import {
   sumsLine,
   tagVersion,
 } from './dist.ts'
+import { runWithStubNpx } from '../../../../scripts/stub-npx.ts'
 import { PLATFORMS, platformPackageName, PRODUCT, releaseAssetName } from './product.ts'
 
 describe('package manifests', () => {
@@ -62,6 +63,24 @@ describe('package manifests', () => {
     const placeholder = placeholderManifest(names[0]!)
     assert.equal(placeholder['license'], 'MIT OR Apache-2.0')
     assert.equal(placeholder['name'], names[0])
+  })
+
+  test('stage names this repository, workflow and environment in every trusted publisher', () => {
+    // A stub npx reports every package as published and fails `whoami`, so the
+    // dry run prints each `npm trust github` command without running it. The
+    // script requires --repository and --workflow, so a missing flag fails here.
+    const r = runWithStubNpx(() => [join(import.meta.dirname, 'dist.ts'), 'stage', '--dry-run'])
+    assert.equal(r.status, 0, r.stderr)
+    const trusts = r.stdout.split('\n').filter((l) => l.includes('npm trust github'))
+    assert.equal(trusts.length, packageNames().length)
+    for (const line of trusts) {
+      assert.ok(
+        line.includes(
+          `--file ${PRODUCT.workflow} --repository ${PRODUCT.repository} --environment npm `,
+        ),
+        line,
+      )
+    }
   })
 })
 

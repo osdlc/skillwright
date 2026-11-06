@@ -12,7 +12,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use tradecraft_core::Namespace;
+use tradecraft_core::{Namespace, NativeVfs, SkippedNote, discover_components};
 
 use crate::config::{
     ConfigLoad, NEEDS, PROJECT_FILE, SkillwrightConfig, load_config, machine_config_path,
@@ -103,6 +103,12 @@ pub fn resolve_run(
             return Err(blocked(
                 err,
                 &format!("configuration malformed: {} ({detail})", path.display()),
+            ));
+        }
+        ConfigLoad::MachineDirs { detail } => {
+            return Err(blocked(
+                err,
+                &format!("cannot locate the machine configuration file: {detail}"),
             ));
         }
     }
@@ -207,6 +213,97 @@ pub fn resolve_skills_root(flag: Option<&str>, run: &ResolvedRun, cwd: &Path) ->
         return Some(resolve_configured_path(declared, &run.vault));
     }
     None
+}
+
+/// The notes a `publish` or `status` run checks against a separate skills
+/// root.
+pub enum RunNotes<'a> {
+    /// A whole-vault run: the notes its vault scan skipped.
+    Skipped(&'a [SkippedNote]),
+    /// The notes named on the command line.
+    Named(&'a [PathBuf]),
+}
+
+/// Refuse a run of `verb` when a configured skills root apart from the vault
+/// changes what it reads. `publish` and `status` hand the core the vault
+/// root as the one root for kind folders, placement and the rail, so the
+/// notes under a separate skills root cannot be read, and each would be
+/// refused on its own. One blocker is clearer.
+///
+/// The run is refused only when the vault-root scan skips a note under the
+/// root (for named notes, one of those), or, for a whole-vault run, when the
+/// root lies outside the vault where the scan never reaches. A root whose
+/// notes the scan reads, such as `declared_folders.skills: skills`, passes.
+pub fn refuse_separate_skills_root(
+    verb: &str,
+    run: &ResolvedRun,
+    cwd: &Path,
+    notes: RunNotes<'_>,
+    err: &mut dyn Write,
+) -> Result<(), i32> {
+    let Some(root) = resolve_skills_root(None, run, cwd) else {
+        return Ok(());
+    };
+    let root = canonical(&root);
+    let vault = canonical(&run.vault);
+    if root == vault {
+        return Ok(());
+    }
+    let skipped_under_root = |skipped: &[SkippedNote]| -> Vec<PathBuf> {
+        skipped
+            .iter()
+            .map(|note| canonical(&run.vault.join(&note.path)))
+            .filter(|note| note.starts_with(&root))
+            .collect()
+    };
+    let why = match notes {
+        RunNotes::Skipped(skipped) => {
+            if !root.starts_with(&vault) {
+                Some("it lies outside the vault".to_string())
+            } else {
+                skipped_under_root(skipped)
+                    .first()
+                    .map(|note| format!("{} lies under it and cannot be read", note.display()))
+            }
+        }
+        RunNotes::Named(named) => {
+            // A scan that fails names nothing skipped; the run goes on and
+            // reports that failure where it reads the note.
+            let skipped = discover_components(&NativeVfs, &run.vault, None, &run.core_namespace())
+                .map(|scan| skipped_under_root(&scan.skipped))
+                .unwrap_or_default();
+            named
+                .iter()
+                .map(|note| canonical(note))
+                .find(|note| skipped.contains(note))
+                .map(|note| format!("{} lies under it and cannot be read", note.display()))
+        }
+    };
+    let Some(why) = why else {
+        return Ok(());
+    };
+    let key = if run
+        .config
+        .as_ref()
+        .is_some_and(|c| c.marketplace.skills_root.is_some())
+    {
+        "marketplace.skills_root"
+    } else {
+        "declared_folders.skills"
+    };
+    Err(blocked(
+        err,
+        &format!(
+            "{verb} does not support a skills root apart from the vault yet: {key} is {}, the vault is {}, and {why}. publish and status read notes from the vault root; build supports the setting.",
+            root.display(),
+            vault.display()
+        ),
+    ))
+}
+
+/// `path` with symlinks resolved, or as given when it does not exist.
+fn canonical(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 #[cfg(test)]

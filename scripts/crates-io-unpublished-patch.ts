@@ -4,7 +4,7 @@
 //
 //   node scripts/crates-io-unpublished-patch.ts <path/to/Cargo.toml> <path/to/release-plz.toml>
 //
-// The `release-plz` job in rust-ci.yml adds this table to the cargo config
+// The `release-plz` job in rust.yml adds this table to the cargo config
 // before `release-plz release --dry-run`. The dry run packages each
 // unpublished crate with `cargo publish --dry-run`, which resolves the
 // packaged crate's dependencies against crates.io. When a run bumps

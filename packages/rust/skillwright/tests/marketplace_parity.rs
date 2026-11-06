@@ -23,8 +23,7 @@ use common::with_machine_env;
 use skillwright::cli::run_with;
 use skillwright::ctx::CommandContext;
 use tradecraft_core::{
-    DEFAULT_SHIM_TARGET, ExportMode, ExportRequest, MarketplaceConfig, Namespace, NativeVfs,
-    export_skills,
+    ExportMode, ExportRequest, MarketplaceConfig, Namespace, NativeVfs, export_skills,
 };
 
 fn fixture_vault() -> PathBuf {
@@ -121,7 +120,7 @@ fn the_cli_and_a_host_request_render_identical_trees() {
                 default_plugin: "core".to_string(),
                 plugins: BTreeMap::new(),
                 require_descriptions: false,
-                shim_target: DEFAULT_SHIM_TARGET.to_owned(),
+                launcher_path: None,
             },
             harnesses: BTreeSet::new(),
             assets: Vec::new(),

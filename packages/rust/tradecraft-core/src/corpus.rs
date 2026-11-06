@@ -229,7 +229,7 @@ pub fn user_harness_dirs(vfs: &dyn Vfs) -> Option<Result<HarnessDirs, CoreError>
 /// top and reach the installs that sit OUTSIDE those prefixes, which is the
 /// documented `<name>@skills-dir` shape a path rule would never look at.
 ///
-/// A marketplace whose `installLocation` is `directory` is deliberately NOT
+/// A marketplace whose `source.source` is `directory` is deliberately NOT
 /// included: that is the user's own checkout, read out of rather than written
 /// into, and excluding it is the mistake that would hide the user's own
 /// authored plugin source from them.
@@ -305,31 +305,26 @@ fn collect_strings(value: &serde_json::Value, key: &str, out: &mut Vec<PathBuf>)
 }
 
 /// Every marketplace clone the manager wrote, from
-/// `known_marketplaces.json` — an entry whose `installLocation` is anything
-/// but `directory`, keyed by its `installPath`/`path`.
+/// `known_marketplaces.json`. Each top-level entry is
+/// `{"source": {"source": <type>, …}, "installLocation": <path>}`; an entry
+/// whose `source.source` is anything but `directory` is collected by its
+/// `installLocation`.
 fn collect_marketplaces(value: &serde_json::Value, out: &mut Vec<PathBuf>) {
     let serde_json::Value::Object(map) = value else {
         return;
     };
-    for child in map.values() {
-        let Some(entry) = child.as_object() else {
-            collect_marketplaces(child, out);
-            continue;
-        };
+    for entry in map.values() {
         // `directory` means the user's own checkout — excluded; see
         // manager_owned_trees's doc for why. Anything else (a git clone, a
         // fetched archive) the manager wrote and will rewrite, so it is
         // collected.
-        let location = entry.get("installLocation").and_then(|v| v.as_str());
-        if location == Some("directory") {
+        let kind = entry.pointer("/source/source").and_then(|v| v.as_str());
+        if kind == Some("directory") {
             continue;
         }
-        for key in ["installPath", "path"] {
-            if let Some(path) = entry.get(key).and_then(|v| v.as_str()) {
-                out.push(PathBuf::from(path));
-            }
+        if let Some(path) = entry.get("installLocation").and_then(|v| v.as_str()) {
+            out.push(PathBuf::from(path));
         }
-        collect_marketplaces(child, out);
     }
 }
 
@@ -407,14 +402,44 @@ mod tests {
         write_json(
             &vfs,
             "/home/.claude/plugins/known_marketplaces.json",
+            // The shape Claude Code writes: the type under `source.source`,
+            // the checkout or clone at `installLocation`.
             r#"{
-              "tool": {"installLocation": "directory", "installPath": "/work/project/apps/tool"},
-              "acme": {"installLocation": "git", "installPath": "/work/clone/acme"}
+              "tool": {
+                "source": {"source": "directory", "path": "/work/project/apps/tool"},
+                "installLocation": "/work/project/apps/tool"
+              },
+              "acme": {
+                "source": {"source": "github", "repo": "acme/acme"},
+                "installLocation": "/work/clone/acme"
+              },
+              "beta": {
+                "source": {"source": "git", "url": "https://example.com/beta.git"},
+                "installLocation": "/work/clone/beta"
+              }
             }"#,
         );
         let owned = manager_owned_trees(&vfs, Path::new("/home"));
         assert!(owned.contains(&PathBuf::from("/work/clone/acme")));
+        assert!(owned.contains(&PathBuf::from("/work/clone/beta")));
         assert!(!owned.contains(&PathBuf::from("/work/project/apps/tool")));
+    }
+
+    /// A directory marketplace registered against the home itself must not
+    /// hide the user's own skills directory.
+    #[test]
+    fn a_directory_marketplace_at_home_leaves_the_users_skills_offered() {
+        let vfs = MemVfs::new();
+        skill(&vfs, "/home/.claude/skills/foo");
+        write_json(
+            &vfs,
+            "/home/.claude/plugins/known_marketplaces.json",
+            r#"{"mine": {"source": {"source": "directory", "path": "/home"}, "installLocation": "/home"}}"#,
+        );
+        assert!(!manager_owned_trees(&vfs, Path::new("/home")).contains(&PathBuf::from("/home")));
+        let report = harness_dirs(&vfs, Path::new("/home")).unwrap();
+        assert_eq!(report.dirs.len(), 1);
+        assert_eq!(report.dirs[0].skills, 1);
     }
 
     /// An unreadable registry must not read as "nothing is owned".

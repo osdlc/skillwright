@@ -475,12 +475,19 @@ pub(crate) fn discover_in(
         match read_source(vfs, vault_root, entry_path, placement, &placed, &files, ns) {
             Ok(Some(component)) => {
                 if component.description_filled {
+                    // Only these two kinds can take a configured description.
+                    let unless =
+                        if matches!(component.kind, EntityKind::Plugin | EntityKind::Marketplace) {
+                            " unless the build configures one"
+                        } else {
+                            ""
+                        };
                     warnings.push(DiscoveryWarning {
                         path: component.vault_relative_path.clone(),
                         reason: MISSING_DESCRIPTION_REASON.to_owned(),
                         detail: format!(
                             "`{}` has a `name` and no `description`; published with \
-                             \"{MISSING_DESCRIPTION}\"",
+                             \"{MISSING_DESCRIPTION}\"{unless}",
                             component.name
                         ),
                     });
@@ -702,7 +709,7 @@ pub fn folder_kind(content_root: &Path, entry: &Path) -> Option<EntityKind> {
 /// The scan's standing to complain: inside one, a declared note at an
 /// unrecognised path is a mistake worth naming; outside one the vault is
 /// simply the author's.
-fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
+pub(crate) fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
     path.strip_prefix(root).is_ok_and(|rest| {
         rest.iter()
             .any(|part| kind_dir(&part.to_string_lossy()).is_some())
@@ -710,7 +717,7 @@ fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
 }
 
 /// The kind a folder name declares, or `None` for any other folder.
-fn kind_dir(name: &str) -> Option<EntityKind> {
+pub(crate) fn kind_dir(name: &str) -> Option<EntityKind> {
     KIND_DIRS
         .iter()
         .find(|(dir, _)| *dir == name)
@@ -822,7 +829,7 @@ fn classify(root: &Path, parts: &[String]) -> Option<Placement> {
 pub const SKILL_ENTRY: &str = "SKILL.md";
 
 /// Is `file` the entry note of the folder `name`, for a component of `kind`?
-fn is_entry(file: &str, name: &str, kind: EntityKind) -> bool {
+pub(crate) fn is_entry(file: &str, name: &str, kind: EntityKind) -> bool {
     md_stem(file) == Some(name) || (kind == EntityKind::Skill && is_skill_entry(file))
 }
 
@@ -831,9 +838,18 @@ pub fn is_skill_entry(file: &str) -> bool {
     file.eq_ignore_ascii_case(SKILL_ENTRY)
 }
 
+/// Whether the content-relative, `/`-separated `rel` is the entry note of a
+/// component that owns its directory, by the same shape rule the scan reads
+/// (`classify`). A note directly inside a kind folder travels alone, whatever
+/// it is named. `None` for a path the rule gives no shape at all.
+pub(crate) fn is_bundle_entry(rel: &str) -> Option<bool> {
+    let parts: Vec<String> = rel.split('/').map(str::to_owned).collect();
+    classify(Path::new(""), &parts).map(|placement| placement.dir.is_some())
+}
+
 /// The stem of a `.md` filename, case-insensitively. `README.MD` is a note
 /// like any other.
-fn md_stem(name: &str) -> Option<&str> {
+pub(crate) fn md_stem(name: &str) -> Option<&str> {
     name.strip_suffix(".md").or_else(|| {
         name.rfind('.')
             .filter(|i| name[i + 1..].eq_ignore_ascii_case("md"))

@@ -28,12 +28,14 @@ the core does goes into the crate, not here.
 
 The repository is a pnpm workspace. Install from the repository root, then
 work in the package directory. The tests run on Vitest under Node 22 or
-later. No Rust toolchain is needed: the built WebAssembly is committed in
-`wasm/`.
+later. They load the built WebAssembly from `wasm/`, which is not committed:
+build it first with `pnpm run build:wasm` (see
+[Building the WebAssembly](#building-the-webassembly)).
 
 ```sh
 pnpm install
 cd packages/ts/tradecraft-wasm
+pnpm run build:wasm
 pnpm test
 ```
 
@@ -49,28 +51,26 @@ pnpm run lint
 pnpm run format:check
 ```
 
-## Rebuilding the WebAssembly
+## Building the WebAssembly
 
 `wasm/` is built from the crates by `packages/rust/tradecraft-wasm/build.sh`
-(`pnpm run build:wasm`). Rebuild it whenever `tradecraft-core`,
-`tradecraft-wasm` or a crate they depend on changes, and commit the result.
-The script needs:
+(`pnpm run build:wasm`). It is gitignored. Rebuild it whenever
+`tradecraft-core`, `tradecraft-wasm` or a crate they depend on changes. The
+script needs:
 
 - the Rust toolchain pinned in `packages/rust/rust-toolchain.toml`, with the
   `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`);
 - `wasm-bindgen` 0.2.126 (`cargo install wasm-bindgen-cli --version 0.2.126`);
 - `wasm-opt` from binaryen `version_131`.
 
-The `wasm` job in `.github/workflows/rust.yml` rebuilds `wasm/` on every
-pull request that touches the Rust crates or `wasm/`, and fails when the
-result differs from what is committed. When it fails, it uploads the rebuilt
-files as the `tradecraft-wasm` artifact.
-A version bump alone changes the bytes, so the release pull request for the
-Rust crates would fail this check. The `release-pr` job in
-`.github/workflows/release-plz.yml` rebuilds `wasm/` on the release branch
-and commits it.
-The compiler can emit different bytes on macOS and on Linux, so commit the
-Linux build from that artifact when you build on another system.
+In CI, the `packages` job in `.github/workflows/ts.yml` builds `wasm/` on
+every pull request before it builds and tests the package, so the tests run
+against the pull request's own Rust. It uploads the build as the
+`tradecraft-wasm` artifact, kept for 7 days. The compiler can emit different
+bytes on macOS and on Linux; that artifact is the Linux build.
+
+`build.sh` refuses a `wasm-bindgen` other than the pinned one. A different
+`wasm-opt` is a warning on a local build and an error on CI.
 
 ## Regenerating the types
 
@@ -86,7 +86,7 @@ cp tradecraft-typegen/generated/core.generated.ts ../ts/tradecraft-wasm/src/core
 
 `cargo test -p tradecraft-typegen` fails when the crate's file is behind the
 Rust source. A test in this package fails when its copy differs from the
-crate's. The `wasm` job also compares the two.
+crate's. The `typegen` job in `.github/workflows/rust.yml` also compares the two.
 
 ## Code style
 

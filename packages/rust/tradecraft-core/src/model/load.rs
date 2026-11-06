@@ -202,23 +202,6 @@ pub fn load(
         .into_iter()
         .filter(|w| ours.contains(w.path.as_str()))
         .collect();
-    let undescribed: Vec<&str> = warnings
-        .iter()
-        .filter(|w| w.reason == MISSING_DESCRIPTION_REASON)
-        .map(|w| w.path.as_str())
-        .collect();
-    if request.config.require_descriptions && !undescribed.is_empty() {
-        let notes = undescribed;
-        return Err(CoreError::refused(
-            MISSING_DESCRIPTION_REASON,
-            format!(
-                "`require_descriptions` is set and {} note(s) have a `name` and no \
-                 `description`: {}. Nothing was written",
-                notes.len(),
-                notes.join(", ")
-            ),
-        ));
-    }
     // Named, never dropped: a pack has a place for skills, commands and hooks
     // and for nothing else, and a build that quietly omitted an agent would
     // be the failure this crate is built around.
@@ -258,7 +241,29 @@ pub fn load(
             },
         ));
     }
-    let (name, config) = resolve_config(&discovered, market.as_deref(), &request.config)?;
+    let (name, config, configured) =
+        resolve_config(&discovered, market.as_deref(), &request.config)?;
+    // A silent note the config describes ships that value, so it is not
+    // missing one.
+    warnings.retain(|w| {
+        w.reason != MISSING_DESCRIPTION_REASON || !configured.contains(w.path.as_str())
+    });
+    let undescribed: Vec<&str> = warnings
+        .iter()
+        .filter(|w| w.reason == MISSING_DESCRIPTION_REASON)
+        .map(|w| w.path.as_str())
+        .collect();
+    if request.config.require_descriptions && !undescribed.is_empty() {
+        return Err(CoreError::refused(
+            MISSING_DESCRIPTION_REASON,
+            format!(
+                "`require_descriptions` is set and {} note(s) have a `name` and no \
+                 `description`: {}. Nothing was written",
+                undescribed.len(),
+                undescribed.join(", ")
+            ),
+        ));
+    }
     let mut plugins = group_by_plugin(&skills, &commands, &hooks, &config.default_plugin)?;
     warnings.extend(missing_versions(
         &discovered,
@@ -285,7 +290,7 @@ pub fn load(
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for plugin in plugins.values_mut() {
-        let shim_target = plugin.shim_target.clone();
+        let launcher = plugin.launcher.clone();
         for component in plugin
             .skills
             .iter_mut()
@@ -321,7 +326,7 @@ pub fn load(
                         kind,
                         &calls,
                         &index,
-                        shim_target.as_deref(),
+                        launcher.as_deref(),
                     )?;
                     (Some(resolved), content)
                 }
@@ -586,9 +591,9 @@ pub fn load_plugin(
             .into_iter()
             .collect(),
         require_descriptions: false,
-        // Unread on this path: a pack published to a destination ships no
-        // launcher asset, so no skill in it gets the shim.
-        shim_target: crate::export::DEFAULT_SHIM_TARGET.to_owned(),
+        // A pack published to a destination ships no launcher asset, so no
+        // call is rewritten.
+        launcher_path: None,
     };
     Ok(Pack {
         plugin,
@@ -616,7 +621,7 @@ pub fn resolve_body(
     kind: EntityKind,
     calls: &CallContext<'_>,
     index: &Index,
-    shim_target: Option<&str>,
+    launcher: Option<&str>,
 ) -> Result<(Resolved, SkillContent), CoreError> {
     let record = calls
         .record
@@ -629,7 +634,7 @@ pub fn resolve_body(
         kind,
         calls,
         record,
-        shim_target,
+        launcher,
         index.links.as_ref(),
     )?;
     fill_targets(&mut resolved, &index.targets);
@@ -702,7 +707,7 @@ fn resolve_compiled(
     kind: EntityKind,
     calls: &CallContext<'_>,
     record: &RefCell<Recorded>,
-    shim_target: Option<&str>,
+    launcher: Option<&str>,
     links: Option<&LinkIndex>,
 ) -> Result<(Resolved, SkillContent), CoreError> {
     let mut projection: SkillProjection = note.projection.clone();
@@ -735,7 +740,7 @@ fn resolve_compiled(
         _ => {}
     }
     let record = record.borrow();
-    let body = segments(&projection.content.body, &record, shim_target);
+    let body = segments(&projection.content.body, &record, launcher);
     let mut content = projection.content;
     content.body = note.projection.content.body.clone();
     let resources = projection
@@ -951,12 +956,16 @@ fn missing_versions(
 ///
 /// `refused: unnamed-marketplace` — neither a marketplace note nor the request
 /// supplies a name.
+///
+/// The set returned holds the vault-relative paths of the silent notes whose
+/// description the request supplied.
 fn resolve_config(
     discovered: &[DiscoveredComponent],
     market: Option<&str>,
     requested: &MarketplaceConfig,
-) -> Result<(String, MarketplaceConfig), CoreError> {
+) -> Result<(String, MarketplaceConfig, BTreeSet<String>), CoreError> {
     let mut config = requested.clone();
+    let mut configured = BTreeSet::new();
 
     // A marketplace's own note is the one component that belongs to no
     // marketplace while naming one — see `DiscoveredComponent::marketplace`.
@@ -970,7 +979,9 @@ fn resolve_config(
         // The note's `description` is the Agent Skills spec field every component carries,
         // not an `sw-` key — the same rule the plugin loop below follows. A
         // marketplace describes itself where a skill describes itself.
-        take(&mut config.description, Some(note.description.clone()));
+        if take_description(&mut config.description, note) {
+            configured.insert(note.vault_relative_path.clone());
+        }
         take(&mut config.display_name, note.identity.display_name.clone());
         take(&mut config.owner, note.identity.owner.clone());
         take(&mut config.author, note.identity.author.clone());
@@ -1014,7 +1025,9 @@ fn resolve_config(
         // The note's `description` is the Agent Skills spec field every component carries,
         // not an `sw-` key: a plugin note describes its pack in the same place
         // a skill note describes itself.
-        take(&mut overrides.description, Some(note.description.clone()));
+        if take_description(&mut overrides.description, note) {
+            configured.insert(note.vault_relative_path.clone());
+        }
         take(&mut overrides.version, note.identity.version.clone());
         take(&mut overrides.author, note.identity.author.clone());
         take(&mut overrides.license, note.identity.license.clone());
@@ -1029,7 +1042,7 @@ fn resolve_config(
     // Settled, so nothing below has to hold an `Option` it has already proved
     // is `Some`. The name and the rest travel together from here.
     let name = config.name.clone().unwrap_or_default();
-    Ok((name, config))
+    Ok((name, config, configured))
 }
 
 /// Writes `from` into `slot` when the note supplied it, leaving a request-only
@@ -1039,6 +1052,19 @@ fn take<T>(slot: &mut Option<T>, from: Option<T>) {
     if let Some(value) = from {
         *slot = Some(value);
     }
+}
+
+/// [`take`] for a note's `description`. A note with none carries discovery's
+/// [`crate::discover::MISSING_DESCRIPTION`] filler, which is the vault being
+/// silent: it yields to the request's value and stands in only where the
+/// request is silent too. Returns whether the request's value stood in for
+/// the filler.
+fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) -> bool {
+    if !note.description_filled || slot.is_none() {
+        *slot = Some(note.description.clone());
+        return false;
+    }
+    true
 }
 
 /// Which marketplace this build renders, given what the vault holds.
@@ -1256,10 +1282,13 @@ fn load_assets(
         let plugin = plugins
             .get_mut(&plugin)
             .expect("the plugin was checked above");
-        // The shim's only job is finding this plugin's own launcher asset, so
-        // it can exist at all only where that asset does.
-        if asset.dest == config.shim_target {
-            plugin.shim_target = Some(config.shim_target.clone());
+        // Launcher calls are rewritten only for a plugin that ships the
+        // launcher, by `asset_covers`'s rule: a `./`-spelled dest or a
+        // directory asset holding it counts.
+        if let Some(launcher) = &config.launcher_path
+            && asset_covers(vfs, asset, launcher)
+        {
+            plugin.launcher = Some(launcher.clone());
         }
         plugin.assets.extend(files);
     }

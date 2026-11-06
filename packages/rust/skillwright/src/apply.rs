@@ -197,6 +197,19 @@ impl ApplyError {
             source: Box::new(source),
         }
     }
+
+    /// `source` raised after an earlier step in the same op: [`Partial`]
+    /// when that step wrote, `source` itself in a preview, where nothing
+    /// did.
+    ///
+    /// [`Partial`]: ApplyError::Partial
+    fn after_write(mode: Mode, outcome: Outcome, source: ApplyError) -> Self {
+        if mode.writes() {
+            ApplyError::partial(outcome, source)
+        } else {
+            source
+        }
+    }
 }
 
 impl std::fmt::Display for ApplyError {
@@ -307,6 +320,12 @@ fn create(
         .iter()
         .map(|d| rel(d))
         .collect::<Result<Vec<_>, _>>()?;
+    if let Some((parent, _)) = path.rsplit_once('/') {
+        check_dir_creatable(vault_dir, parent)?;
+    }
+    for dir in &dirs {
+        check_dir_creatable(vault_dir, dir)?;
+    }
 
     let mut outcome = Outcome::new(mode);
     if mode.writes() {
@@ -316,13 +335,28 @@ fn create(
         write_note(&abs, bytes)?;
     }
     outcome.push(path, Applied::Created);
-    for dir in dirs {
-        if mode.writes() {
-            make_dir(&resolve(vault_dir, &dir)?)?;
-        }
-        outcome.push(dir, Applied::Scaffolded);
+    // From here the note has landed — a scaffold that fails is reported with
+    // it, not as a bare error.
+    if let Err(err) = scaffold_dirs(vault_dir, &dirs, mode, &mut outcome) {
+        return Err(ApplyError::after_write(mode, outcome, err));
     }
     Ok(outcome)
+}
+
+/// Make each scaffold directory, outside preview, and record it.
+fn scaffold_dirs(
+    vault_dir: &Path,
+    dirs: &[String],
+    mode: Mode,
+    outcome: &mut Outcome,
+) -> Result<(), ApplyError> {
+    for dir in dirs {
+        if mode.writes() {
+            make_dir(&resolve(vault_dir, dir)?)?;
+        }
+        outcome.push(dir.clone(), Applied::Scaffolded);
+    }
+    Ok(())
 }
 
 // ── Rename / Move / ConvertKind ─────────────────────────────────────────────
@@ -342,13 +376,17 @@ fn relocate(
         .iter()
         .map(|d| rel(d))
         .collect::<Result<Vec<_>, _>>()?;
+    for dir in &dirs {
+        check_dir_creatable(vault_dir, dir)?;
+    }
+    check_frontmatter(vault_dir, &from, frontmatter)?;
 
     let mut outcome = Outcome::new(mode);
     move_note(vault_dir, &from, &to, bundle, mode, &mut outcome)?;
     // From here the move has landed — a later failure is reported with what
     // already wrote, not as a bare refusal.
     if let Err(err) = relocate_after_move(vault_dir, &to, frontmatter, &dirs, mode, &mut outcome) {
-        return Err(ApplyError::partial(outcome, err));
+        return Err(ApplyError::after_write(mode, outcome, err));
     }
     Ok(outcome)
 }
@@ -362,17 +400,17 @@ fn relocate_after_move(
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
     edit_frontmatter(vault_dir, to, frontmatter, mode, outcome)?;
-    for dir in dirs {
-        if mode.writes() {
-            make_dir(&resolve(vault_dir, dir)?)?;
-        }
-        outcome.push(dir.clone(), Applied::Scaffolded);
-    }
-    Ok(())
+    scaffold_dirs(vault_dir, dirs, mode, outcome)
 }
 
 /// Plan the move, refuse on a conflict, and — outside preview — execute it,
 /// recording the subject, every relinked note, every peer and every skip.
+///
+/// `execute` rewrites the linking notes before its final rename and rolls
+/// nothing back, so a failure it reports can follow writes that landed. Such
+/// a failure comes back as [`ApplyError::Partial`] carrying them; a bare
+/// [`ApplyError::Refused`] or [`ApplyError::Transform`] means nothing was
+/// written.
 fn move_note(
     vault_dir: &Path,
     from: &str,
@@ -399,7 +437,16 @@ fn move_note(
     }
 
     if mode.writes() {
-        execute_move(vault_dir, &facts, &plan, from, to, bundle, outcome)?;
+        match execute_move(vault_dir, &facts, &plan, from, to, bundle, outcome) {
+            Err(ApplyError::Partial {
+                mut outcome,
+                source,
+            }) => {
+                record_unreadable(unreadable, &mut outcome);
+                return Err(ApplyError::Partial { outcome, source });
+            }
+            other => other?,
+        }
     } else {
         record_planned(&plan, outcome);
     }
@@ -422,16 +469,96 @@ fn execute_move(
     // `not_previewed`. The plan just computed IS what this run previewed, so
     // its own `expect` set is the honest one to pass, and `subject_etag` is
     // `None` because a CLI has no etag from an earlier session to assert.
-    let result = if bundle {
-        markdown_relink::execute_bundle(vault_dir, facts, from, to, None, &plan.expect)?
+    let spliced = spliced_etags(vault_dir, plan);
+    let executed = if bundle {
+        markdown_relink::execute_bundle(vault_dir, facts, from, to, None, &plan.expect)
     } else {
-        markdown_relink::execute(vault_dir, facts, from, to, None, &plan.expect)?
+        markdown_relink::execute(vault_dir, facts, from, to, None, &plan.expect)
     };
-    if let Some(conflict) = result.conflict {
+    let result = match executed {
+        Ok(result) => result,
+        Err(err) => {
+            let before = outcome.entries.len();
+            record_rewritten_on_disk(vault_dir, &spliced, outcome);
+            let err = ApplyError::Transform(err);
+            return Err(if outcome.entries.len() == before {
+                err
+            } else {
+                ApplyError::partial(outcome.clone(), err)
+            });
+        }
+    };
+    if !result.ok
+        && let Some(conflict) = result.conflict
+    {
         return Err(ApplyError::Refused(conflict));
     }
     record_executed(plan, &result, from, to, outcome);
-    Ok(())
+    match result.conflict {
+        // `ok` with a conflict: the bundle directory moved and its links were
+        // rewritten, and only the entry file's own rename failed. The entry
+        // kept its old leaf name inside the new directory; no row names that
+        // path, so the refusal does.
+        Some(conflict) => {
+            let leaf = from.rsplit('/').next().unwrap_or(from);
+            let landed = match to.rsplit_once('/') {
+                Some((dir, _)) => format!("{dir}/{leaf}"),
+                None => leaf.to_owned(),
+            };
+            Err(ApplyError::partial(
+                outcome.clone(),
+                ApplyError::Refused(format!("{conflict}; the entry note is now at {landed}")),
+            ))
+        }
+        None => Ok(()),
+    }
+}
+
+/// A planned note `execute` would rewrite, and the etag its bytes will have
+/// once it does.
+struct SplicedNote {
+    path: String,
+    etag: String,
+    edits: u64,
+}
+
+/// Read each planned note that still matches the plan and work out the etag
+/// `execute`'s splice will give it. A note that already drifted is left
+/// out: `execute` will skip it.
+fn spliced_etags(vault_dir: &Path, plan: &RenamePlan) -> Vec<SplicedNote> {
+    edited_files(plan)
+        .filter_map(|file| {
+            let bytes = std::fs::read(resolve(vault_dir, &file.path).ok()?).ok()?;
+            if etag_write::etag(&bytes) != file.etag {
+                return None;
+            }
+            Some(SplicedNote {
+                path: file.path.clone(),
+                etag: etag_write::etag(&markdown_relink::splice(&bytes, &file.edits)),
+                edits: file.edits.len() as u64,
+            })
+        })
+        .collect()
+}
+
+/// After `execute` failed, record every note whose bytes now match the
+/// spliced etag: `execute` rewrote it before the step that failed. A note
+/// someone else changed meanwhile matches neither etag and is not claimed.
+fn record_rewritten_on_disk(vault_dir: &Path, spliced: &[SplicedNote], outcome: &mut Outcome) {
+    for note in spliced {
+        let Ok(abs) = resolve(vault_dir, &note.path) else {
+            continue;
+        };
+        let Ok(bytes) = std::fs::read(&abs) else {
+            continue;
+        };
+        if etag_write::etag(&bytes) == note.etag {
+            outcome.push(
+                note.path.clone(),
+                Applied::LinksRewritten { edits: note.edits },
+            );
+        }
+    }
 }
 
 /// A `skipped` row for each path the rename could not read, after the rows
@@ -584,7 +711,9 @@ fn edited_files(plan: &RenamePlan) -> impl Iterator<Item = &FileEdits> {
 // ── Delete ──────────────────────────────────────────────────────────────────
 
 /// Every destination is checked before anything moves: a delete of three paths
-/// where the second is already trashed moves none of them.
+/// where the second is already trashed moves none of them. A later move can
+/// still fail, for example on a path nested under an earlier one; the error is
+/// then [`ApplyError::Partial`] with what already moved.
 fn delete(
     vault_dir: &Path,
     paths: &[String],
@@ -611,21 +740,31 @@ fn delete(
 
     let mut outcome = Outcome::new(mode);
     for (from, to, from_abs, to_abs) in moves {
-        if mode.writes() {
-            if let Some(parent) = to_abs.parent() {
-                make_dir(parent)?;
-            }
-            // A same-filesystem rename, which is what a trash folder inside the
-            // vault always is. A cross-device move is an `Io` error, not a
-            // silent copy.
-            std::fs::rename(&from_abs, &to_abs).map_err(|source| ApplyError::Io {
-                what: format!("moving {from} to {to}"),
-                source,
-            })?;
+        if mode.writes()
+            && let Err(err) = trash_one(&from, &to, &from_abs, &to_abs)
+        {
+            // A move after an earlier one landed reports what already moved.
+            return Err(if outcome.entries.is_empty() {
+                err
+            } else {
+                ApplyError::partial(outcome, err)
+            });
         }
         outcome.push(from, Applied::Trashed { to });
     }
     Ok(outcome)
+}
+
+fn trash_one(from: &str, to: &str, from_abs: &Path, to_abs: &Path) -> Result<(), ApplyError> {
+    if let Some(parent) = to_abs.parent() {
+        make_dir(parent)?;
+    }
+    // A same-filesystem rename, which is what a trash folder inside the vault
+    // always is. A cross-device move is an `Io` error, not a silent copy.
+    std::fs::rename(from_abs, to_abs).map_err(|source| ApplyError::Io {
+        what: format!("moving {from} to {to}"),
+        source,
+    })
 }
 
 // ── RenamePlugin ────────────────────────────────────────────────────────────
@@ -645,21 +784,38 @@ fn rename_plugin(
     let to = rel(to)?;
     let dir_from = rel(dir_from)?;
     let dir_to = rel(dir_to)?;
-    // Every member's rebased path is resolved and validated up front: a
-    // member outside `dir_from` must refuse before the folder moves, not
-    // after — nothing here writes yet.
+    // Every member is checked up front, so a bad one refuses before the
+    // folder moves — nothing here writes yet.
     let rebased_members = members
         .iter()
         .map(|(member, edits)| {
             let member = rel(member)?;
-            let rebased = rebase(&member, &dir_from, &dir_to)?;
+            if member == from || member == dir_to || member.starts_with(&format!("{dir_to}/")) {
+                return Err(ApplyError::Refused(format!(
+                    "member {member} is the plugin note or lies under {dir_to}"
+                )));
+            }
+            if !resolve(vault_dir, &member)?.is_file() {
+                return Err(ApplyError::Refused(format!(
+                    "member {member} is not a file in the vault"
+                )));
+            }
+            // Try the splice where the member sits, so YAML it refuses stops
+            // the run before the folder moves.
+            check_frontmatter(vault_dir, &member, edits)?;
+            let rebased = match rebase(&member, &dir_from, &dir_to) {
+                Some(rebased) => rebased?,
+                None => member,
+            };
             Ok::<_, ApplyError>((rebased, edits.clone()))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    check_frontmatter(vault_dir, &from, frontmatter)?;
 
     let mut outcome = Outcome::new(mode);
     // A plugin's entry note is a bundle entry (`<dir>/<dir>.md`), so the
-    // folder and every member ride along on the bundle move.
+    // folder and every member inside it ride along on the bundle move; a
+    // member outside it is edited in place.
     move_note(vault_dir, &from, &to, true, mode, &mut outcome)?;
     // From here the move has landed — a later failure is reported with what
     // already wrote, not as a bare refusal.
@@ -671,7 +827,7 @@ fn rename_plugin(
         mode,
         &mut outcome,
     ) {
-        return Err(ApplyError::partial(outcome, err));
+        return Err(ApplyError::after_write(mode, outcome, err));
     }
     Ok(outcome)
 }
@@ -691,19 +847,43 @@ fn rename_plugin_after_move(
     Ok(())
 }
 
-/// A member's path in the new tree. Members are keyed on the old tree, which
+/// A member's path in the new tree, or `None` for a member outside
+/// `dir_from`, which does not move. Members are keyed on the old tree, which
 /// no longer exists once the folder has moved.
-fn rebase(path: &str, dir_from: &str, dir_to: &str) -> Result<String, ApplyError> {
-    let Some(tail) = path.strip_prefix(&format!("{dir_from}/")) else {
-        return Err(ApplyError::Path {
-            path: path.to_owned(),
-            reason: format!("is not inside {dir_from}"),
-        });
-    };
-    rel(&format!("{dir_to}/{tail}"))
+fn rebase(path: &str, dir_from: &str, dir_to: &str) -> Option<Result<String, ApplyError>> {
+    let tail = path.strip_prefix(&format!("{dir_from}/"))?;
+    Some(rel(&format!("{dir_to}/{tail}")))
 }
 
 // ── Shared ──────────────────────────────────────────────────────────────────
+
+/// Read the note at `path` and splice `edits` into it, without writing.
+/// Run on a note before it moves, in both modes, so YAML the splice refuses
+/// stops the run before anything is written.
+fn check_frontmatter(vault_dir: &Path, path: &str, edits: &[FieldEdit]) -> Result<(), ApplyError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    spliced_frontmatter(vault_dir, path, edits).map(|_| ())
+}
+
+/// The note at `path` with `edits` spliced in, and where it lives.
+fn spliced_frontmatter(
+    vault_dir: &Path,
+    path: &str,
+    edits: &[FieldEdit],
+) -> Result<(PathBuf, String), ApplyError> {
+    let abs = resolve(vault_dir, path)?;
+    let source = std::fs::read_to_string(&abs).map_err(|source| ApplyError::Io {
+        what: format!("reading {path}"),
+        source,
+    })?;
+    let edited = apply_field_edits(&source, edits).map_err(|e| ApplyError::Frontmatter {
+        path: path.to_owned(),
+        reason: e.to_string(),
+    })?;
+    Ok((abs, edited))
+}
 
 fn edit_frontmatter(
     vault_dir: &Path,
@@ -716,15 +896,7 @@ fn edit_frontmatter(
         return Ok(());
     }
     if mode.writes() {
-        let abs = resolve(vault_dir, path)?;
-        let source = std::fs::read_to_string(&abs).map_err(|source| ApplyError::Io {
-            what: format!("reading {path}"),
-            source,
-        })?;
-        let edited = apply_field_edits(&source, edits).map_err(|e| ApplyError::Frontmatter {
-            path: path.to_owned(),
-            reason: e.to_string(),
-        })?;
+        let (abs, edited) = spliced_frontmatter(vault_dir, path, edits)?;
         write_note(&abs, &edited)?;
     }
     for edit in edits {
@@ -755,6 +927,32 @@ fn resolve(vault_dir: &Path, raw: &str) -> Result<PathBuf, ApplyError> {
             path: raw.to_owned(),
             reason: e.to_string(),
         })
+}
+
+/// Refuse a vault-relative directory that cannot be made because a path
+/// component of it that exists is not a directory. Run before the first
+/// write, in both modes, so a preview raises the refusal the real run would.
+fn check_dir_creatable(vault_dir: &Path, dir: &str) -> Result<(), ApplyError> {
+    let mut at = vault_dir.to_path_buf();
+    let mut prefix = String::new();
+    for part in dir.split('/') {
+        at.push(part);
+        if !prefix.is_empty() {
+            prefix.push('/');
+        }
+        prefix.push_str(part);
+        match std::fs::metadata(&at) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => {
+                return Err(ApplyError::Refused(format!(
+                    "cannot create {dir}: {prefix} is not a directory"
+                )));
+            }
+            // Nothing there: this component and the rest are made fresh.
+            Err(_) => return Ok(()),
+        }
+    }
+    Ok(())
 }
 
 fn make_dir(abs: &Path) -> Result<(), ApplyError> {
@@ -1212,59 +1410,103 @@ mod tests {
         assert!(read(v.path(), "plugins/gear/skills/keyed.md").contains("sw-plugin: gear"));
     }
 
-    #[test]
-    fn rename_plugin_refuses_a_member_outside_dir_from_without_moving_anything() {
+    /// A vault holding only the `tools` plugin note.
+    fn tools_plugin() -> tempfile::TempDir {
         let v = vault();
         write(
             v.path(),
             "plugins/tools/tools.md",
             "---\nname: tools\n---\n\nplugin\n",
         );
+        v
+    }
 
-        let op = AuthoringOp::RenamePlugin {
+    /// Rename `tools` to `gear`, rekeying the one `member`.
+    fn rename_tools_to_gear(member: &str) -> AuthoringOp {
+        AuthoringOp::RenamePlugin {
             from: "plugins/tools/tools.md".to_owned(),
             to: "plugins/gear/gear.md".to_owned(),
             dir_from: "plugins/tools".to_owned(),
             dir_to: "plugins/gear".to_owned(),
             frontmatter: vec![],
             members: vec![(
-                "plugins/other/skills/stray.md".to_owned(),
+                member.to_owned(),
                 vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
             )],
-        };
-        let err = apply(v.path(), &op).unwrap_err();
+        }
+    }
+
+    #[test]
+    fn rename_plugin_edits_a_member_outside_dir_from_where_it_sits() {
+        let v = tools_plugin();
+        write(
+            v.path(),
+            "skills/stray.md",
+            "---\nname: stray\nsw-plugin: tools\n---\n\nmember\n",
+        );
+
+        apply(v.path(), &rename_tools_to_gear("skills/stray.md")).unwrap();
+
+        assert!(v.path().join("plugins/gear/gear.md").exists());
+        assert!(read(v.path(), "skills/stray.md").contains("sw-plugin: gear"));
+    }
+
+    #[test]
+    fn rename_plugin_refuses_a_bad_member_path_without_moving_anything() {
+        let v = tools_plugin();
+
+        let err = apply(v.path(), &rename_tools_to_gear("../outside.md")).unwrap_err();
 
         assert!(matches!(err, ApplyError::Path { .. }), "{err:?}");
         assert!(v.path().join("plugins/tools/tools.md").exists());
         assert!(!v.path().join("plugins/gear").exists());
     }
 
+    #[test]
+    fn rename_plugin_refuses_a_missing_or_misplaced_member_without_moving_anything() {
+        for member in [
+            "skills/missing.md",
+            "plugins/tools/skills/missing.md",
+            "skills",
+            "plugins/tools/tools.md",
+            "plugins/gear/gear.md",
+        ] {
+            let v = tools_plugin();
+            write(v.path(), "skills/other.md", "---\nname: other\n---\n");
+
+            let err = apply(v.path(), &rename_tools_to_gear(member)).unwrap_err();
+
+            assert!(matches!(err, ApplyError::Refused(_)), "{member}: {err:?}");
+            assert!(v.path().join("plugins/tools/tools.md").exists(), "{member}");
+            assert!(!v.path().join("plugins/gear").exists(), "{member}");
+        }
+    }
+
     /// If a member's frontmatter edit fails once the bundle has already
     /// moved, the failure carries the [`Outcome`] that already landed rather
-    /// than discarding it behind a bare refusal.
+    /// than discarding it behind a bare refusal. The YAML splice is checked
+    /// before the move, so the failure here is a write: the member sits in a
+    /// read-only directory.
+    #[cfg(unix)]
     #[test]
     fn rename_plugin_reports_the_move_when_a_members_edit_fails_after_it() {
-        let v = vault();
+        let v = tools_plugin();
         write(
             v.path(),
-            "plugins/tools/tools.md",
-            "---\nname: tools\n---\n\nplugin\n",
+            "plugins/tools/skills/member.md",
+            "---\nname: member\nsw-plugin: tools\n---\n\nmember\n",
         );
+        let locked = v.path().join("plugins/tools/skills");
+        if !lock_writes(&locked) {
+            return;
+        }
 
-        let op = AuthoringOp::RenamePlugin {
-            from: "plugins/tools/tools.md".to_owned(),
-            to: "plugins/gear/gear.md".to_owned(),
-            dir_from: "plugins/tools".to_owned(),
-            dir_to: "plugins/gear".to_owned(),
-            frontmatter: vec![],
-            // Valid, and inside `dir_from` — but no such file exists to edit
-            // once the bundle has moved.
-            members: vec![(
-                "plugins/tools/skills/missing.md".to_owned(),
-                vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
-            )],
-        };
-        let err = apply(v.path(), &op).unwrap_err();
+        let err = apply(
+            v.path(),
+            &rename_tools_to_gear("plugins/tools/skills/member.md"),
+        )
+        .unwrap_err();
+        unlock_writes(&v.path().join("plugins/gear/skills"));
 
         let ApplyError::Partial { outcome, .. } = err else {
             panic!("expected a partial outcome, got {err:?}");
@@ -1273,15 +1515,140 @@ mod tests {
         assert!(v.path().join("plugins/gear/gear.md").exists());
         assert_eq!(
             outcomes(&outcome),
-            vec![("plugins/gear/gear.md", "renamed")]
+            vec![
+                ("plugins/gear/gear.md", "renamed"),
+                ("plugins/gear/skills/member.md", "moved"),
+            ]
         );
     }
 
-    /// Same shape for a plain rename/move/convert: a step after the move
-    /// lands (here, a scaffold directory that collides with a file) still
-    /// reports what already happened.
+    /// A preview of a plugin rename lists the move and every edit, and
+    /// writes nothing.
+    #[test]
+    fn rename_plugin_preview_lists_the_edits_and_writes_nothing() {
+        let v = vault();
+        write(
+            v.path(),
+            "plugins/tools/tools.md",
+            "---\nname: tools\n---\n\nplugin\n",
+        );
+        write(
+            v.path(),
+            "plugins/tools/skills/keyed.md",
+            "---\nname: keyed\nsw-plugin: tools\n---\n\nmember\n",
+        );
+        let before = tree(v.path());
+
+        let mut op = rename_tools_to_gear("plugins/tools/skills/keyed.md");
+        if let AuthoringOp::RenamePlugin { frontmatter, .. } = &mut op {
+            frontmatter.push(FieldEdit::set("name", Value::Str("gear".to_owned())));
+        }
+        let outcome = preview(v.path(), &op).unwrap();
+
+        assert_eq!(tree(v.path()), before);
+        let rows = outcomes(&outcome);
+        assert!(
+            rows.contains(&("plugins/gear/gear.md", "renamed")),
+            "{rows:?}"
+        );
+        assert!(
+            rows.contains(&("plugins/gear/gear.md", "field-set")),
+            "{rows:?}"
+        );
+        assert!(
+            rows.contains(&("plugins/gear/skills/keyed.md", "field-set")),
+            "{rows:?}"
+        );
+    }
+
+    /// A member whose YAML the splice refuses is refused before the folder
+    /// moves, by the preview and the real run alike.
+    #[test]
+    fn rename_plugin_refuses_a_member_frontmatter_edit_before_moving() {
+        let v = vault();
+        write(
+            v.path(),
+            "plugins/tools/tools.md",
+            "---\nname: tools\n---\n\nplugin\n",
+        );
+        write(
+            v.path(),
+            "plugins/tools/skills/broken.md",
+            "---\nsw-plugin: tools\nsw-plugin: again\n---\n\nmember\n",
+        );
+        let before = tree(v.path());
+
+        let op = rename_tools_to_gear("plugins/tools/skills/broken.md");
+        let err = preview(v.path(), &op).unwrap_err();
+        assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
+        let err = apply(v.path(), &op).unwrap_err();
+        assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
+
+        assert_eq!(tree(v.path()), before);
+    }
+
+    /// A frontmatter splice the note's YAML refuses is refused before the
+    /// note moves, by the preview and the real run alike, so a dry run does
+    /// not promise what the real run cannot do.
+    #[test]
+    fn a_frontmatter_edit_the_yaml_refuses_is_refused_before_moving() {
+        let v = vault();
+        write(
+            v.path(),
+            "notes/Alpha.md",
+            "---\nname: Alpha\nname: Again\n---\n\nsubject\n",
+        );
+        let before = tree(v.path());
+
+        let op = AuthoringOp::Rename {
+            from: "notes/Alpha.md".to_owned(),
+            to: "notes/Gamma.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![FieldEdit::set("name", Value::Str("Gamma".to_owned()))],
+        };
+        let err = preview(v.path(), &op).unwrap_err();
+        assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
+        let err = apply(v.path(), &op).unwrap_err();
+        assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
+
+        assert_eq!(tree(v.path()), before);
+    }
+
+    /// A step after the move lands (here, a scaffold under a read-only
+    /// directory) reports what already happened rather than a bare error.
+    #[cfg(unix)]
     #[test]
     fn convert_kind_reports_the_move_when_a_later_scaffold_fails_after_it() {
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "---\nname: Alpha\n---\n");
+        std::fs::create_dir_all(v.path().join("locked")).unwrap();
+        if !lock_writes(&v.path().join("locked")) {
+            return;
+        }
+
+        let op = AuthoringOp::ConvertKind {
+            from: "notes/Alpha.md".to_owned(),
+            to: "notes/Gamma.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+            scaffold: vec!["locked/sub".to_owned()],
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+        unlock_writes(&v.path().join("locked"));
+
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(matches!(*source, ApplyError::Io { .. }), "{source:?}");
+        assert!(v.path().join("notes/Gamma.md").exists());
+        assert!(!v.path().join("notes/Alpha.md").exists());
+        assert_eq!(outcomes(&outcome), vec![("notes/Gamma.md", "renamed")]);
+    }
+
+    /// A scaffold directory that collides with a file is refused before the
+    /// note moves, by the preview and the real run alike.
+    #[test]
+    fn convert_kind_refuses_a_scaffold_that_collides_with_a_file_before_moving() {
         let v = vault();
         write(
             v.path(),
@@ -1295,16 +1662,247 @@ mod tests {
             to: "notes/Gamma.md".to_owned(),
             bundle: false,
             frontmatter: vec![],
-            scaffold: vec!["notes/collide".to_owned()],
+            scaffold: vec!["notes/collide/references".to_owned()],
+        };
+        let err = preview(v.path(), &op).unwrap_err();
+        assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
+        let err = apply(v.path(), &op).unwrap_err();
+        assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
+
+        assert!(v.path().join("notes/Alpha.md").exists());
+        assert!(!v.path().join("notes/Gamma.md").exists());
+    }
+
+    /// A note whose folder would sit where a file is, or whose scaffold
+    /// would, is refused before anything is written, by the preview and
+    /// the real run alike.
+    #[test]
+    fn create_refuses_a_folder_that_collides_with_a_file() {
+        let v = vault();
+        write(v.path(), "notes/collide", "occupied");
+        let cases = [
+            ("notes/collide/x.md", vec![]),
+            ("plugins/x/x.md", vec!["notes/collide/skills".to_owned()]),
+        ];
+        for (path, scaffold) in cases {
+            let op = AuthoringOp::Create {
+                path: path.to_owned(),
+                bytes: "---\nname: x\n---\n".to_owned(),
+                scaffold,
+            };
+            let err = preview(v.path(), &op).unwrap_err();
+            assert!(matches!(err, ApplyError::Refused(_)), "{path}: {err:?}");
+            let err = apply(v.path(), &op).unwrap_err();
+            assert!(matches!(err, ApplyError::Refused(_)), "{path}: {err:?}");
+            assert!(!v.path().join(path).exists(), "{path}");
+        }
+    }
+
+    /// Make `dir` read-only and report whether that took: a test run as root
+    /// can still write there, and then the failure under test cannot happen.
+    #[cfg(unix)]
+    fn lock_writes(dir: &Path) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let probe = dir.join(".probe");
+        let writable = std::fs::create_dir(&probe).is_ok();
+        let _ = std::fs::remove_dir(&probe);
+        !writable
+    }
+
+    #[cfg(unix)]
+    fn unlock_writes(dir: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// A scaffold directory that fails after the note was written reports
+    /// the note it left behind.
+    #[cfg(unix)]
+    #[test]
+    fn create_reports_the_note_when_a_scaffold_fails_after_it() {
+        let v = vault();
+        std::fs::create_dir_all(v.path().join("locked")).unwrap();
+        if !lock_writes(&v.path().join("locked")) {
+            return;
+        }
+        let op = AuthoringOp::Create {
+            path: "plugins/x/x.md".to_owned(),
+            bytes: "---\nname: x\n---\n".to_owned(),
+            scaffold: vec!["locked/sub".to_owned()],
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+        unlock_writes(&v.path().join("locked"));
+
+        let ApplyError::Partial { outcome, .. } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(v.path().join("plugins/x/x.md").exists());
+        assert_eq!(outcomes(&outcome), vec![("plugins/x/x.md", "created")]);
+    }
+
+    /// A later path that fails to move after an earlier one was trashed
+    /// reports the one that moved.
+    #[test]
+    fn delete_reports_what_was_trashed_when_a_later_move_fails() {
+        let v = vault();
+        write(v.path(), "a/b.md", "inner");
+        write(v.path(), "a/c.md", "sibling");
+        let op = AuthoringOp::Delete {
+            paths: vec!["a/b.md".to_owned(), "a".to_owned()],
+            trash_dir: TRASH_DIR.to_owned(),
         };
         let err = apply(v.path(), &op).unwrap_err();
 
         let ApplyError::Partial { outcome, .. } = err else {
             panic!("expected a partial outcome, got {err:?}");
         };
-        assert!(v.path().join("notes/Gamma.md").exists());
-        assert!(!v.path().join("notes/Alpha.md").exists());
-        assert_eq!(outcomes(&outcome), vec![("notes/Gamma.md", "renamed")]);
+        assert_eq!(read(v.path(), ".trash/a/b.md"), "inner");
+        assert_eq!(outcomes(&outcome), vec![("a/b.md", "trashed")]);
+    }
+
+    /// A bundle whose directory moved but whose entry file could not take
+    /// its new name reports the rewritten links and the failed rename,
+    /// rather than a bare refusal.
+    #[test]
+    fn a_bundle_move_whose_entry_rename_fails_reports_what_landed() {
+        let v = vault();
+        write(v.path(), "review/review.md", "---\nname: review\n---\n");
+        write(v.path(), "review/code-review.md/keep.txt", "occupied");
+        write(v.path(), "other.md", "see [[review]]\n");
+
+        let op = AuthoringOp::Rename {
+            from: "review/review.md".to_owned(),
+            to: "code-review/code-review.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![FieldEdit::set("name", Value::Str("code-review".to_owned()))],
+        };
+        assert!(preview(v.path(), &op).is_ok());
+        let err = apply(v.path(), &op).unwrap_err();
+
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        let ApplyError::Refused(message) = *source else {
+            panic!("expected a refusal, got {source:?}");
+        };
+        assert!(
+            message.ends_with("the entry note is now at code-review/review.md"),
+            "{message}"
+        );
+        assert!(!v.path().join("review").exists());
+        assert!(v.path().join("code-review/review.md").exists());
+        let rows = outcomes(&outcome);
+        assert!(rows.contains(&("other.md", "relinked")), "{rows:?}");
+        assert!(rows.contains(&("review/review.md", "skipped")), "{rows:?}");
+    }
+
+    /// A move whose final rename fails after the linking notes were already
+    /// rewritten reports those notes rather than a bare transform error.
+    #[test]
+    fn a_move_that_fails_after_rewriting_links_reports_the_rewrites() {
+        let v = vault();
+        write(v.path(), "skills/alpha/alpha.md", "---\nname: alpha\n---\n");
+        write(v.path(), "notes/n.md", "see [[alpha]]\n");
+
+        let op = AuthoringOp::Rename {
+            from: "skills/alpha/alpha.md".to_owned(),
+            to: "skills/alpha/sub/sub.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(matches!(*source, ApplyError::Transform(_)), "{source:?}");
+        assert_eq!(read(v.path(), "notes/n.md"), "see [[sub]]\n");
+        assert_eq!(outcomes(&outcome), vec![("notes/n.md", "relinked")]);
+    }
+
+    /// A rename that half-lands still reports the folders the walk could not
+    /// list, after the rows for what landed.
+    #[cfg(unix)]
+    #[test]
+    fn a_partial_move_keeps_the_unreadable_rows() {
+        let v = vault();
+        write(v.path(), "skills/alpha/alpha.md", "---\nname: alpha\n---\n");
+        write(v.path(), "notes/n.md", "see [[alpha]]\n");
+        let folders = ["notes/locked"];
+        let listable = lock(v.path(), &folders);
+        let op = AuthoringOp::Rename {
+            from: "skills/alpha/alpha.md".to_owned(),
+            to: "skills/alpha/sub/sub.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let err = apply(v.path(), &op);
+        unlock(v.path(), &folders);
+        if listable {
+            return;
+        }
+
+        let ApplyError::Partial { outcome, .. } = err.unwrap_err() else {
+            panic!("expected a partial outcome");
+        };
+        assert_eq!(
+            outcomes(&outcome),
+            vec![("notes/n.md", "relinked"), ("notes/locked", "skipped")]
+        );
+    }
+
+    /// The same for a plain note: `execute` rewrites the linking note, then
+    /// the note itself cannot leave its read-only folder.
+    #[cfg(unix)]
+    #[test]
+    fn a_plain_move_that_fails_after_rewriting_links_reports_the_rewrites() {
+        let v = vault();
+        write(v.path(), "locked/alpha.md", "---\nname: alpha\n---\n");
+        write(v.path(), "notes/n.md", "see [[alpha]]\n");
+        std::fs::create_dir_all(v.path().join("moved")).unwrap();
+        if !lock_writes(&v.path().join("locked")) {
+            return;
+        }
+
+        let op = AuthoringOp::Move {
+            from: "locked/alpha.md".to_owned(),
+            to: "moved/gamma.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+        unlock_writes(&v.path().join("locked"));
+
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(matches!(*source, ApplyError::Transform(_)), "{source:?}");
+        assert!(v.path().join("locked/alpha.md").exists());
+        assert_eq!(read(v.path(), "notes/n.md"), "see [[gamma]]\n");
+        assert_eq!(outcomes(&outcome), vec![("notes/n.md", "relinked")]);
+    }
+
+    /// After a failed `execute`, a note that carries the planned rewrite is
+    /// reported, and one someone else changed is not.
+    #[test]
+    fn only_notes_carrying_the_planned_rewrite_are_reported_as_rewritten() {
+        let v = vault();
+        write(v.path(), "alpha.md", "---\nname: alpha\n---\n");
+        write(v.path(), "rewritten.md", "see [[alpha]]\n");
+        write(v.path(), "drifted.md", "also [[alpha]]\n");
+        let (corpus, _) = load_vault(v.path(), "alpha.md", "gamma.md", false).unwrap();
+        let facts = VaultFacts::from_corpus(&corpus);
+        let plan =
+            markdown_relink::plan(&NativeVfs, v.path(), &facts, "alpha.md", "gamma.md").unwrap();
+        let spliced = spliced_etags(v.path(), &plan);
+
+        write(v.path(), "rewritten.md", "see [[gamma]]\n");
+        write(v.path(), "drifted.md", "also [[alpha]], edited elsewhere\n");
+        let mut outcome = Outcome::new(Mode::Apply);
+        record_rewritten_on_disk(v.path(), &spliced, &mut outcome);
+
+        assert_eq!(outcomes(&outcome), vec![("rewritten.md", "relinked")]);
     }
 
     /// `markdown_link::normalize_target` lowercases and percent-decodes but does

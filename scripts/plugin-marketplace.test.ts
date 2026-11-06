@@ -36,7 +36,7 @@ function fixture(): { plugin: string; target: string } {
       manifest,
       JSON.stringify({
         name: 'm',
-        plugins: [{ name: 'sdlc' }, { name: 'skillwright', version: '0.0.1' }],
+        plugins: [{ name: 'other' }, { name: 'skillwright', version: '0.0.1' }],
       }),
     )
   }
@@ -49,12 +49,12 @@ test('pluginVersion reads sw-version from the plugin note', () => {
 
 test('upsertEntry replaces the entry and keeps the others, sorted', () => {
   const out = upsertEntry(
-    { plugins: [{ name: 'sdlc' }, { name: 'craft' }] },
+    { plugins: [{ name: 'other' }, { name: 'another' }] },
     { name: 'skillwright' },
   )
   assert.deepEqual(
     out.plugins.map((p) => p.name),
-    ['craft', 'sdlc', 'skillwright'],
+    ['another', 'other', 'skillwright'],
   )
 })
 
@@ -67,7 +67,7 @@ test('syncPlugin replaces only the skillwright pack and entry', () => {
     assert.equal(readFileSync(join(target, root, 'packs/other/keep.txt'), 'utf8'), 'keep')
     if (manifest === null) continue
     const plugins = JSON.parse(readFileSync(join(target, manifest), 'utf8')).plugins
-    assert.deepEqual(plugins, [{ name: 'sdlc' }, { name: 'skillwright', version: '1.2.3' }])
+    assert.deepEqual(plugins, [{ name: 'other' }, { name: 'skillwright', version: '1.2.3' }])
   }
 })
 

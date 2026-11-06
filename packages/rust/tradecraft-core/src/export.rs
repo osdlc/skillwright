@@ -109,7 +109,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::discover::{DiscoveryWarning, name_refusal};
 use crate::error::CoreError;
-use crate::guard::{assert_destination_allowed, assert_destination_allowed_for_vault};
+use crate::guard::{assert_destination_allowed, assert_destination_allowed_for_vault, within};
 use crate::harness::manifest::overrides_for;
 use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
@@ -198,7 +198,7 @@ pub struct HookFileSpec {
 ///
 /// Bundle resources ([`crate::compile::CompileSource::bundle_root`]) already
 /// cover a skill's own peers; this is for what a *plugin* carries once, no
-/// matter which skill happens to shell out to it. A `cli/sdlc` launcher is the
+/// matter which skill happens to shell out to it. A launcher script is the
 /// motivating file case, and shared reference docs the skills read
 /// (`conventions/`) the motivating directory case.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -283,28 +283,20 @@ pub struct MarketplaceConfig {
     /// Per-plugin manifest overrides, keyed by plugin name.
     #[serde(default)]
     pub plugins: BTreeMap<String, PluginOverrides>,
-    /// Refuse the build when a note has a `name` and no `description`,
-    /// instead of publishing [`crate::discover::MISSING_DESCRIPTION`] and
-    /// reporting it in [`ExportReport::warnings`].
+    /// Refuse the build when a note has a `name` and no `description` and
+    /// this config supplies none for it, instead of publishing
+    /// [`crate::discover::MISSING_DESCRIPTION`] and reporting it in
+    /// [`ExportReport::warnings`].
     #[serde(default)]
     pub require_descriptions: bool,
-    /// Where the per-skill `scripts/sdlc` shim looks for this plugin's own
-    /// launcher asset, relative to the plugin's root — and the `dest` an
-    /// asset must carry for a build to emit that shim at all (see
-    /// `sdlc_shim_script`'s parent-walk). Project-file authors declare it
-    /// as `marketplace.shim_target`; [`crate::settings::MarketplaceSettings::to_config`]
-    /// defaults it to [`DEFAULT_SHIM_TARGET`] when the project file is
-    /// silent.
-    #[serde(default = "default_shim_target")]
-    pub shim_target: String,
-}
-
-/// [`MarketplaceConfig::shim_target`]'s value when a project file declares
-/// none.
-pub const DEFAULT_SHIM_TARGET: &str = "cli/sdlc";
-
-fn default_shim_target() -> String {
-    DEFAULT_SHIM_TARGET.to_owned()
+    /// The plugin's launcher, relative to the plugin's root (`bin/tool`).
+    /// Skill bodies call it as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`. On a
+    /// root whose harness does not expand that variable, the build rewrites
+    /// each call to the launcher's path relative to the skill's own folder,
+    /// when the plugin ships an asset at this path. Absent turns the rewrite
+    /// off. Project files declare it as `marketplace.launcher_path`.
+    #[serde(default)]
+    pub launcher_path: Option<String>,
 }
 
 /// Manifest fields one plugin overrides. Every absence has a documented
@@ -573,6 +565,23 @@ pub fn plugin_manifest_path(root: &str) -> Option<&'static str> {
         .map(|spec| spec.format().plugin_manifest)
 }
 
+/// The tree under `out_root` (one of `trees`, or the stage) that holds
+/// `path`, if any. A swap replaces each of them whole.
+fn replaced_tree_holding(
+    vfs: &dyn Vfs,
+    out_root: &Path,
+    trees: &[&str],
+    path: &Path,
+) -> Result<Option<PathBuf>, CoreError> {
+    for tree in trees.iter().copied().chain([STAGE_DIR]) {
+        let replaced = out_root.join(tree);
+        if within(vfs, &replaced, path)? {
+            return Ok(Some(replaced));
+        }
+    }
+    Ok(None)
+}
+
 /// Renders the vault into one marketplace directory, or checks it against what is already there.
 ///
 /// A note's `sw-overrides` block for a harness is applied in that harness's
@@ -597,17 +606,45 @@ pub fn export_skills(
     // repository root, which legitimately contains its own vault, so an
     // ancestor rule would refuse exactly what the feature is for. What
     // matters is what the swap touches — would any tree this build replaces
-    // be, or sit inside, the vault? Same refusal token, same symlink
-    // resolution, and it is the rail `publish` already runs against a
-    // destination's own relative paths.
+    // be, sit inside, or contain the vault? Same refusal token, same symlink
+    // resolution, and the first two are the rail `publish` already runs
+    // against a destination's own relative paths.
     //
     // Narrowed only where the host can see links, as `publish` does. Anywhere
     // else an ancestor of the vault stays refused, because a link under it
     // into the vault is exactly what the narrowed check cannot see.
     if vfs.sees_links() {
         assert_destination_allowed_for_vault(vfs, &out_root, &vault_root, trees.iter().copied())?;
+        // The third: a swap removes each tree, and the stage, whole.
+        if let Some(replaced) = replaced_tree_holding(vfs, &out_root, &trees, &vault_root)? {
+            return Err(CoreError::refused(
+                "unsafe-root",
+                format!(
+                    "the vault {} is inside {}, which a build replaces whole",
+                    vault_root.display(),
+                    replaced.display()
+                ),
+            ));
+        }
     } else {
         assert_destination_allowed(vfs, &out_root, std::slice::from_ref(&vault_root))?;
+    }
+    // The swap deletes each tree it replaces, so an asset sourced from inside
+    // one would be gone after the build that copied it.
+    for asset in &request.assets {
+        if asset.source.is_absolute()
+            && let Some(replaced) = replaced_tree_holding(vfs, &out_root, &trees, &asset.source)?
+        {
+            return Err(CoreError::refused(
+                "unsafe-root",
+                format!(
+                    "the asset source `{}` is inside {}, which a build replaces \
+                     whole. Move the source out of it. Nothing was written",
+                    asset.source.display(),
+                    replaced.display()
+                ),
+            ));
+        }
     }
 
     // Load once, for every harness this build renders: the vault read, the
@@ -1329,13 +1366,15 @@ fn roll_back(vfs: &dyn Vfs, swapped: &[(PathBuf, PathBuf)]) -> Result<(), PathBu
 
 #[cfg(test)]
 mod tests {
-    use crate::harness::translator::{rewrite_cli_invocation, rewrite_sibling_paths};
+    use crate::harness::translator::{
+        relative_path, rewrite_launcher_calls, rewrite_sibling_paths,
+    };
     use std::cell::Cell;
 
     use serde_json::json;
 
     use super::*;
-    use crate::discover::MISSING_DESCRIPTION;
+    use crate::discover::{MISSING_DESCRIPTION, MISSING_DESCRIPTION_REASON};
     use crate::vfs::{MemVfs, NativeVfs};
 
     fn sw() -> Namespace {
@@ -1397,17 +1436,12 @@ mod tests {
         vfs
     }
 
-    /// Overwrites `example_vault()`'s `review-guide` note so its body
-    /// actually calls the CLI the vault-standard way, at the given
-    /// `shim_target` — the fixture the shim tests below need now that the
-    /// shim ships only for a skill whose text was actually rewritten (see
-    /// [`CliInvocation::SkillRelativeShim`]), not merely for one whose
-    /// plugin happens to carry the launcher asset. `shim_target` must match
-    /// whatever the test's own `MarketplaceConfig::shim_target` is — a real
-    /// vault's skill prose and its project file's `shim_target:` name the
-    /// same launcher path, by convention, not by anything this render
-    /// enforces.
-    fn write_review_guide_calling(vfs: &dyn Vfs, shim_target: &str) {
+    /// The launcher path the launcher tests configure and call.
+    const LAUNCHER: &str = "bin/tool";
+
+    /// Overwrites `example_vault()`'s `review-guide` note so its body calls
+    /// the launcher at `launcher` the vault-standard way.
+    fn write_review_guide_calling(vfs: &dyn Vfs, launcher: &str) {
         write(
             vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide.md",
@@ -1416,16 +1450,29 @@ mod tests {
                 None,
                 &[],
                 &format!(
-                    "# review-guide\n\nRun `${{CLAUDE_PLUGIN_ROOT}}/{shim_target} entities validate`.\n"
+                    "# review-guide\n\nRun `${{CLAUDE_PLUGIN_ROOT}}/{launcher} entities validate`.\n"
                 ),
             ),
         );
     }
 
-    /// [`write_review_guide_calling`] at the default `cli/sdlc` target —
-    /// the form skills normally write.
-    fn write_review_guide_calling_cli(vfs: &dyn Vfs) {
-        write_review_guide_calling(vfs, DEFAULT_SHIM_TARGET);
+    /// A build of `example_vault()` whose `review-guide` calls [`LAUNCHER`],
+    /// with `launcher_path` set to it and `assets` shipped.
+    fn launcher_build(vfs: &MemVfs, assets: Vec<AssetSpec>) {
+        write_review_guide_calling(vfs, LAUNCHER);
+        write(vfs, "/host/bin/tool", "#!/bin/sh\nexec tool \"$@\"\n");
+        let mut request = request(ExportMode::Build);
+        request.config.launcher_path = Some(LAUNCHER.to_owned());
+        request.assets = assets;
+        export_skills(vfs, &request, &sw()).unwrap();
+    }
+
+    fn launcher_asset() -> AssetSpec {
+        AssetSpec {
+            source: PathBuf::from("/host/bin/tool"),
+            dest: LAUNCHER.to_owned(),
+            plugin: None,
+        }
     }
 
     fn config() -> MarketplaceConfig {
@@ -1439,7 +1486,7 @@ mod tests {
             default_plugin: "tools".to_owned(),
             plugins: BTreeMap::new(),
             require_descriptions: false,
-            shim_target: DEFAULT_SHIM_TARGET.to_owned(),
+            launcher_path: None,
         }
     }
 
@@ -1671,195 +1718,186 @@ mod tests {
     }
 
     #[test]
-    fn a_plugin_asset_lands_verbatim_and_only_its_own_skills_get_the_shim() {
+    fn a_plugin_asset_lands_verbatim_in_its_own_plugin() {
         let vfs = example_vault();
-        write_review_guide_calling_cli(&vfs);
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\nexec launcher \"$@\"\n");
-        vfs.set_executable(Path::new("/host/cli/sdlc"), true)
+        write(&vfs, "/host/bin/tool", "#!/bin/sh\nexec tool \"$@\"\n");
+        vfs.set_executable(Path::new("/host/bin/tool"), true)
             .unwrap();
-
         let mut request = request(ExportMode::Build);
-        // No `plugin:` — falls back to the request's `default_plugin`
-        // (`"tools"`, see `config()`).
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
-            plugin: None,
-        }];
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
-        assert!(report.changed);
+        // No `plugin:`, so it lands in `default_plugin` (`tools`).
+        request.assets = vec![launcher_asset()];
+        assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
 
-        let asset_at = Path::new("/market/.claude-plugin/packs/tools/cli/sdlc");
+        let asset_at = Path::new("/market/.claude-plugin/packs/tools/bin/tool");
         assert_eq!(
             vfs.read_file(asset_at).unwrap(),
-            b"#!/bin/sh\nexec launcher \"$@\"\n"
+            b"#!/bin/sh\nexec tool \"$@\"\n"
         );
         assert!(vfs.is_executable(asset_at));
-
-        // `tools` owns the asset, and Codex/Cursor have no `${CLAUDE_PLUGIN_ROOT}`
-        // substitution of their own, so review-guide's CLI call site was
-        // rewritten and both get the shim...
-        for shim_at in [
-            "/market/.agents/packs/tools/skills/review-guide/scripts/sdlc",
-            "/market/.cursor-plugin/packs/tools/skills/review-guide/scripts/sdlc",
-        ] {
-            let shim_at = Path::new(shim_at);
-            assert!(vfs.exists(shim_at), "{shim_at:?}");
-            assert!(vfs.is_executable(shim_at));
-        }
-
-        // ...but Claude substitutes `${CLAUDE_PLUGIN_ROOT}` itself, so its
-        // copy of the very same skill needs no shim at all, even though it
-        // owns the very same asset.
-        assert!(!vfs.exists(Path::new(
-            "/market/.claude-plugin/packs/tools/skills/review-guide/scripts/sdlc"
-        )));
-
-        // ...and `git-tools`, which declares no asset, gets none at all on
-        // any harness: the shim's whole job is finding an asset this plugin
-        // never ships.
-        assert!(!vfs.exists(Path::new(
-            "/market/.agents/packs/git-tools/skills/commit-helper/scripts/sdlc"
-        )));
-        assert!(!vfs.exists(Path::new(".claude-plugin/packs/git-tools/cli/sdlc")));
+        assert!(!vfs.exists(Path::new("/market/.claude-plugin/packs/git-tools/bin/tool")));
     }
 
+    /// Codex, Cursor and Pi do not expand `${CLAUDE_PLUGIN_ROOT}`, so their
+    /// launcher call becomes a path from the skill's folder; Claude keeps the
+    /// token. Nothing else lands in the skill's folder.
     #[test]
-    fn a_configured_shim_target_replaces_the_cli_sdlc_default() {
+    fn each_harness_without_the_token_gets_a_skill_relative_launcher_path() {
         let vfs = example_vault();
-        write_review_guide_calling(&vfs, "bin/launcher");
-        write(
-            &vfs,
-            "/host/bin/launcher",
-            "#!/bin/sh\nexec launcher \"$@\"\n",
-        );
-        vfs.set_executable(Path::new("/host/bin/launcher"), true)
-            .unwrap();
+        launcher_build(&vfs, vec![launcher_asset()]);
 
-        let mut request = request(ExportMode::Build);
-        request.config = MarketplaceConfig {
-            shim_target: "bin/launcher".to_owned(),
-            ..config()
-        };
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/bin/launcher"),
-            dest: "bin/launcher".to_owned(),
-            plugin: None,
-        }];
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
-        assert!(report.changed);
-
-        let asset_at = Path::new("/market/.claude-plugin/packs/tools/bin/launcher");
-        assert!(vfs.exists(asset_at));
-
-        // The shim still ships, on a root that needs one at all (Codex here)
-        // — an asset lands at the *configured* target — but its parent-walk
-        // now looks for that target, not `cli/sdlc`.
-        let shim_at = Path::new("/market/.agents/packs/tools/skills/review-guide/scripts/sdlc");
-        let shim = String::from_utf8(vfs.read_file(shim_at).unwrap()).unwrap();
-        assert!(shim.contains("$dir/bin/launcher"), "{shim}");
-        assert!(!shim.contains("cli/sdlc"), "{shim}");
-    }
-
-    #[test]
-    fn an_asset_at_the_old_default_path_gets_no_shim_once_the_target_moves() {
-        let vfs = example_vault();
-        write_review_guide_calling_cli(&vfs);
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\nexec launcher \"$@\"\n");
-        vfs.set_executable(Path::new("/host/cli/sdlc"), true)
-            .unwrap();
-
-        let mut request = request(ExportMode::Build);
-        request.config = MarketplaceConfig {
-            shim_target: "bin/launcher".to_owned(),
-            ..config()
-        };
-        // The asset still lands at the old default path, but the configured
-        // shim target has moved elsewhere. The check that decides whether to
-        // emit a shim compares against the *configured* value, not a
-        // hardcoded `cli/sdlc` literal, so no shim ships looking for it —
-        // checked on Codex, the harness that would otherwise need one.
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: "cli/sdlc".to_owned(),
-            plugin: None,
-        }];
-        export_skills(&vfs, &request, &sw()).unwrap();
-
-        assert!(!vfs.exists(Path::new(
-            "/market/.agents/packs/tools/skills/review-guide/scripts/sdlc"
-        )));
-    }
-
-    #[test]
-    fn a_skill_whose_body_never_calls_the_cli_gets_no_shim_even_where_the_plugin_ships_one() {
-        let vfs = example_vault();
-        // review-guide keeps `example_vault()`'s plain fixture body here (no
-        // `write_review_guide_calling_cli`) — it never mentions the CLI at
-        // all, unlike the other shim tests.
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\nexec launcher \"$@\"\n");
-        vfs.set_executable(Path::new("/host/cli/sdlc"), true)
-            .unwrap();
-
-        let mut request = request(ExportMode::Build);
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
-            plugin: None,
-        }];
-        export_skills(&vfs, &request, &sw()).unwrap();
-
-        // Codex has no `${CLAUDE_PLUGIN_ROOT}` substitution and would
-        // otherwise need the shim, but review-guide's body never called the
-        // CLI in the first place — nothing was rewritten, so nothing needs
-        // the shim to serve it. Distinct from the sibling test above, which
-        // covers "the plugin ships no asset at all"; this covers "the plugin
-        // ships one, but this skill never calls it."
-        assert!(!vfs.exists(Path::new(
-            "/market/.agents/packs/tools/skills/review-guide/scripts/sdlc"
-        )));
-    }
-
-    #[test]
-    fn codex_and_cursor_rewrite_the_cli_call_site_while_claude_keeps_the_token() {
-        let vfs = example_vault();
-        write_review_guide_calling_cli(&vfs);
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\nexec launcher \"$@\"\n");
-        vfs.set_executable(Path::new("/host/cli/sdlc"), true)
-            .unwrap();
-
-        let mut request = request(ExportMode::Build);
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
-            plugin: None,
-        }];
-        export_skills(&vfs, &request, &sw()).unwrap();
-
-        // Claude Code substitutes `${CLAUDE_PLUGIN_ROOT}` itself at load
-        // time, so its rendered body keeps the vault's own text unchanged.
         let claude = text_at(
             &vfs,
             "/market/.claude-plugin/packs/tools/skills/review-guide/SKILL.md",
         );
         assert!(
-            claude.contains("${CLAUDE_PLUGIN_ROOT}/cli/sdlc entities validate"),
+            claude.contains("`${CLAUDE_PLUGIN_ROOT}/bin/tool entities validate`"),
             "{claude}"
         );
-        assert!(!claude.contains("scripts/sdlc"), "{claude}");
 
-        // Neither Codex nor Cursor substitutes that token, so both get the
-        // call site rewritten to the skill-relative shim instead.
-        for tree in [".agents", ".cursor-plugin"] {
+        for skill in [
+            "/market/.agents/packs/tools/skills/review-guide",
+            "/market/.cursor-plugin/packs/tools/skills/review-guide",
+            "/market/.pi/packs/tools/skills/tools-review-guide",
+        ] {
+            let body = text_at(&vfs, &format!("{skill}/SKILL.md"));
+            assert!(
+                body.contains("`../../bin/tool entities validate`"),
+                "{skill}: {body}"
+            );
+            assert!(!body.contains("CLAUDE_PLUGIN_ROOT"), "{skill}: {body}");
+            assert!(!vfs.exists(&Path::new(skill).join("scripts")), "{skill}");
+        }
+    }
+
+    /// With no `launcher_path`, nothing is rewritten on any root.
+    #[test]
+    fn no_launcher_path_leaves_every_call_as_written() {
+        let vfs = example_vault();
+        write_review_guide_calling(&vfs, LAUNCHER);
+        write(&vfs, "/host/bin/tool", "#!/bin/sh\n");
+        let mut request = request(ExportMode::Build);
+        request.assets = vec![launcher_asset()];
+        export_skills(&vfs, &request, &sw()).unwrap();
+
+        let body = text_at(
+            &vfs,
+            "/market/.agents/packs/tools/skills/review-guide/SKILL.md",
+        );
+        assert!(body.contains("${CLAUDE_PLUGIN_ROOT}/bin/tool"), "{body}");
+    }
+
+    /// A plugin that ships nothing at `launcher_path` keeps its calls: a
+    /// relative path would name a file that is not there.
+    #[test]
+    fn a_plugin_without_the_launcher_asset_keeps_its_calls() {
+        let vfs = example_vault();
+        launcher_build(
+            &vfs,
+            vec![AssetSpec {
+                dest: "bin/other".to_owned(),
+                ..launcher_asset()
+            }],
+        );
+        let body = text_at(
+            &vfs,
+            "/market/.agents/packs/tools/skills/review-guide/SKILL.md",
+        );
+        assert!(body.contains("${CLAUDE_PLUGIN_ROOT}/bin/tool"), "{body}");
+    }
+
+    /// The launcher lands at `bin/tool` from a `./`-spelled dest and from a
+    /// directory asset holding it, so both get the rewritten call.
+    #[test]
+    fn a_launcher_from_a_dot_dest_or_a_directory_asset_is_rewritten() {
+        let file = AssetSpec {
+            dest: "./bin/tool".to_owned(),
+            ..launcher_asset()
+        };
+        let directory = AssetSpec {
+            source: PathBuf::from("/host/bin"),
+            dest: "bin".to_owned(),
+            plugin: None,
+        };
+        for asset in [file, directory] {
+            let vfs = example_vault();
+            let dest = asset.dest.clone();
+            launcher_build(&vfs, vec![asset]);
+
+            assert!(vfs.exists(Path::new("/market/.agents/packs/tools/bin/tool")));
             let body = text_at(
                 &vfs,
-                &format!("/market/{tree}/packs/tools/skills/review-guide/SKILL.md"),
+                "/market/.agents/packs/tools/skills/review-guide/SKILL.md",
             );
-            assert!(
-                body.contains("scripts/sdlc entities validate"),
-                "{tree}: {body}"
-            );
-            assert!(!body.contains("CLAUDE_PLUGIN_ROOT"), "{tree}: {body}");
+            assert!(body.contains("`../../bin/tool entities"), "{dest}: {body}");
+        }
+    }
+
+    /// `<plugin>-<skill>` is not injective: plugin `a` skill `b-c` and plugin
+    /// `a-b` skill `c` both publish as `a-b-c` on pi, so the build refuses.
+    #[test]
+    fn two_plugins_whose_prefixed_skill_names_meet_are_refused() {
+        let vfs = MemVfs::new();
+        write(
+            &vfs,
+            "/vault/plugins/a/skills/b-c.md",
+            &note("b-c", Some("a"), &[]),
+        );
+        write(
+            &vfs,
+            "/vault/plugins/a-b/skills/c.md",
+            &note("c", Some("a-b"), &[]),
+        );
+        let message = export_skills(&vfs, &request(ExportMode::Build), &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("path-collision"), "{message}");
+        assert!(message.contains("a-b-c"), "{message}");
+        assert!(message.contains("plugins/a/skills/b-c.md"), "{message}");
+        assert!(message.contains("plugins/a-b/skills/c.md"), "{message}");
+        assert!(!vfs.exists(Path::new("/market")));
+    }
+
+    /// The swap replaces each tree whole, so a rendered path that turns from
+    /// a file into a directory (or back) between builds must rebuild, and
+    /// `check` must report it rather than fail.
+    #[test]
+    fn a_rendered_path_that_switches_between_file_and_directory_rebuilds() {
+        let file = AssetSpec {
+            source: PathBuf::from("/src/docs"),
+            dest: "docs".to_owned(),
+            plugin: None,
+        };
+        let directory = AssetSpec {
+            source: PathBuf::from("/src2/docs"),
+            dest: "docs".to_owned(),
+            plugin: None,
+        };
+        // Each case carries the path the second build lands and its bytes.
+        for (first, second, landed, bytes) in [
+            (
+                file.clone(),
+                directory.clone(),
+                "docs/x.md",
+                &b"a directory\n"[..],
+            ),
+            (directory, file, "docs", &b"a file\n"[..]),
+        ] {
+            let vfs = example_vault();
+            write(&vfs, "/src/docs", "a file\n");
+            write(&vfs, "/src2/docs/x.md", "a directory\n");
+            let mut request = request(ExportMode::Build);
+            request.assets = vec![first];
+            assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
+
+            request.assets = vec![second];
+            request.mode = ExportMode::Check;
+            let report = export_skills(&vfs, &request, &sw()).unwrap();
+            assert!(report.changed, "{report:?}");
+            request.mode = ExportMode::Build;
+            assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
+
+            let path = Path::new("/market/.claude-plugin/packs/tools").join(landed);
+            assert_eq!(vfs.read_file(&path).unwrap(), bytes);
         }
     }
 
@@ -2040,7 +2078,7 @@ mod tests {
         // A plugin or skill this vault does not hold is left alone: it may be
         // another vault's. So is a bare name from another plugin, and a path.
         let vfs = calls_vault(
-            "# a\n\nRun `/tools:nope`, `/sdlc:task-work`, /c, or see src/b and /b/x.\n",
+            "# a\n\nRun `/tools:nope`, `/elsewhere:task-work`, /c, or see src/b and /b/x.\n",
         );
         build(&vfs);
     }
@@ -2086,15 +2124,15 @@ mod tests {
     #[test]
     fn the_pi_root_writes_a_package_per_plugin_with_prefixed_names() {
         let vfs = calls_vault(
-            "# a\n\nRun /[[b]], then `${CLAUDE_PLUGIN_ROOT}/cli/sdlc go`.\n\n\
+            "# a\n\nRun /[[b]], then `${CLAUDE_PLUGIN_ROOT}/bin/tool go`.\n\n\
              Read `${CLAUDE_PLUGIN_ROOT}/skills/b/ref.md` and `${CLAUDE_PLUGIN_ROOT}/skills/c/x`.\n",
         );
-        write(&vfs, "/host/cli/sdlc", "#!/bin/sh\n");
+        write(&vfs, "/host/bin/tool", "#!/bin/sh\n");
         let mut request = request(ExportMode::Build);
+        request.config.launcher_path = Some(LAUNCHER.to_owned());
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
             plugin: Some("tools".to_owned()),
+            ..launcher_asset()
         }];
         let report = export_skills(&vfs, &request, &sw()).unwrap();
 
@@ -2103,10 +2141,9 @@ mod tests {
             vec![
                 "packs/other/package.json",
                 "packs/other/skills/other-c/SKILL.md",
-                "packs/tools/cli/sdlc",
+                "packs/tools/bin/tool",
                 "packs/tools/package.json",
                 "packs/tools/skills/tools-a/SKILL.md",
-                "packs/tools/skills/tools-a/scripts/sdlc",
                 "packs/tools/skills/tools-b/SKILL.md",
             ]
         );
@@ -2120,7 +2157,7 @@ mod tests {
         assert!(b.contains("name: tools-b\n"), "{b}");
         let a = text_at(&vfs, "/market/.pi/packs/tools/skills/tools-a/SKILL.md");
         assert!(
-            a.contains("Run `/skill:tools-b`, then `scripts/sdlc go`."),
+            a.contains("Run `/skill:tools-b`, then `../../bin/tool go`."),
             "{a}"
         );
         // A sibling's path follows its rename; another plugin's skill does not.
@@ -2136,9 +2173,6 @@ mod tests {
             claude.contains("${CLAUDE_PLUGIN_ROOT}/skills/b/ref.md"),
             "{claude}"
         );
-        assert!(vfs.is_executable(Path::new(
-            "/market/.pi/packs/tools/skills/tools-a/scripts/sdlc"
-        )));
         // No marketplace index, so no manifest unit either.
         assert!(!report.units.iter().any(|u| matches!(
             u,
@@ -2205,59 +2239,48 @@ mod tests {
         assert_eq!(
             rewrite_sibling_paths(
                 "${CLAUDE_PLUGIN_ROOT}/skills/pr-check/a.sh ${CLAUDE_PLUGIN_ROOT}/skills/pr \
-                 ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/sdlc/skills/pr/pr.md \
+                 ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/tools/skills/pr/pr.md \
                  .claude/skills/pr/ ${CLAUDE_PLUGIN_ROOT}/skills/",
-                "sdlc",
+                "tools",
                 &siblings,
             ),
-            "${CLAUDE_PLUGIN_ROOT}/skills/sdlc-pr-check/a.sh ${CLAUDE_PLUGIN_ROOT}/skills/sdlc-pr \
-             ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/sdlc/skills/pr/pr.md \
+            "${CLAUDE_PLUGIN_ROOT}/skills/tools-pr-check/a.sh ${CLAUDE_PLUGIN_ROOT}/skills/tools-pr \
+             ${CLAUDE_PLUGIN_ROOT}/skills/prx/b plugins/tools/skills/pr/pr.md \
              .claude/skills/pr/ ${CLAUDE_PLUGIN_ROOT}/skills/"
         );
     }
 
     #[test]
-    fn rewrite_cli_invocation_matches_only_the_exact_call_site() {
-        // The plain case: one call site, rewritten, reported.
-        let (out, rewrote) = rewrite_cli_invocation(
-            "Run `${CLAUDE_PLUGIN_ROOT}/cli/sdlc task list`.",
-            "cli/sdlc",
-        );
-        assert_eq!(out, "Run `scripts/sdlc task list`.");
-        assert!(rewrote);
-
-        // Every occurrence in the body, not just the first.
-        let (out, rewrote) = rewrite_cli_invocation(
-            "${CLAUDE_PLUGIN_ROOT}/cli/sdlc a; then ${CLAUDE_PLUGIN_ROOT}/cli/sdlc b",
-            "cli/sdlc",
-        );
-        assert_eq!(out, "scripts/sdlc a; then scripts/sdlc b");
-        assert!(rewrote);
-
-        // A longer path sharing the same prefix is a different call site
-        // entirely (the bundled entry the launcher itself execs) — must not
-        // be truncated into a path this render never writes.
-        let (out, rewrote) =
-            rewrite_cli_invocation("See `${CLAUDE_PLUGIN_ROOT}/cli/sdlc.js`.", "cli/sdlc");
-        assert_eq!(out, "See `${CLAUDE_PLUGIN_ROOT}/cli/sdlc.js`.");
-        assert!(!rewrote);
-
-        // A reference to something else under the same plugin root is
-        // untouched.
-        let (out, rewrote) = rewrite_cli_invocation(
-            "See `${CLAUDE_PLUGIN_ROOT}/conventions/branch-naming.md`.",
-            "cli/sdlc",
+    fn rewrite_launcher_calls_matches_only_the_exact_call_site() {
+        let rewrite = |body| rewrite_launcher_calls(body, "bin/tool", "skills/a");
+        assert_eq!(
+            rewrite("Run `${CLAUDE_PLUGIN_ROOT}/bin/tool task list`."),
+            "Run `../../bin/tool task list`."
         );
         assert_eq!(
-            out,
-            "See `${CLAUDE_PLUGIN_ROOT}/conventions/branch-naming.md`."
+            rewrite("${CLAUDE_PLUGIN_ROOT}/bin/tool a; then ${CLAUDE_PLUGIN_ROOT}/bin/tool b"),
+            "../../bin/tool a; then ../../bin/tool b"
         );
-        assert!(!rewrote);
+        // A longer path sharing the prefix is a different file.
+        for untouched in [
+            "See `${CLAUDE_PLUGIN_ROOT}/bin/tool.js`.",
+            "See `${CLAUDE_PLUGIN_ROOT}/conventions/branch-naming.md`.",
+            "Nothing to see here.",
+        ] {
+            assert_eq!(rewrite(untouched), untouched);
+        }
+    }
 
-        // No call site at all.
-        let (out, rewrote) = rewrite_cli_invocation("Nothing to see here.", "cli/sdlc");
-        assert_eq!(out, "Nothing to see here.");
-        assert!(!rewrote);
+    #[test]
+    fn relative_path_walks_up_from_any_depth() {
+        assert_eq!(relative_path("skills/a", "bin/tool"), "../../bin/tool");
+        assert_eq!(
+            relative_path("skills/group/a", "./bin//tool"),
+            "../../../bin/tool"
+        );
+        assert_eq!(relative_path("skills/a", "skills/a/run.sh"), "run.sh");
+        assert_eq!(relative_path("skills/a", "skills/b/run.sh"), "../b/run.sh");
+        assert_eq!(relative_path("", "bin/tool"), "bin/tool");
     }
 
     #[test]
@@ -2306,11 +2329,11 @@ mod tests {
     #[test]
     fn an_asset_dest_escaping_the_plugin_root_via_dotdot_is_refused() {
         let vfs = example_vault();
-        write(&vfs, "/host/cli/sdlc", "launcher\n");
+        write(&vfs, "/host/bin/tool", "launcher\n");
 
         let mut request = request(ExportMode::Build);
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
+            source: PathBuf::from("/host/bin/tool"),
             dest: "../../escaped".to_owned(),
             plugin: None,
         }];
@@ -2324,11 +2347,11 @@ mod tests {
     #[test]
     fn an_absolute_asset_dest_is_refused() {
         let vfs = example_vault();
-        write(&vfs, "/host/cli/sdlc", "launcher\n");
+        write(&vfs, "/host/bin/tool", "launcher\n");
 
         let mut request = request(ExportMode::Build);
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
+            source: PathBuf::from("/host/bin/tool"),
             dest: "/etc/escaped".to_owned(),
             plugin: None,
         }];
@@ -2367,12 +2390,12 @@ mod tests {
     #[test]
     fn an_asset_naming_a_plugin_the_vault_holds_nothing_for_is_refused() {
         let vfs = example_vault();
-        write(&vfs, "/host/cli/sdlc", "launcher\n");
+        write(&vfs, "/host/bin/tool", "launcher\n");
 
         let mut request = request(ExportMode::Build);
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
+            source: PathBuf::from("/host/bin/tool"),
+            dest: LAUNCHER.to_owned(),
             plugin: Some("nonexistent".to_owned()),
         }];
         let err = export_skills(&vfs, &request, &sw())
@@ -2385,11 +2408,11 @@ mod tests {
     #[test]
     fn check_reports_drift_when_an_asset_changes_on_disk() {
         let vfs = example_vault();
-        write(&vfs, "/host/cli/sdlc", "v1\n");
+        write(&vfs, "/host/bin/tool", "v1\n");
         let mut request = request(ExportMode::Build);
         request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/cli/sdlc"),
-            dest: DEFAULT_SHIM_TARGET.to_owned(),
+            source: PathBuf::from("/host/bin/tool"),
+            dest: LAUNCHER.to_owned(),
             plugin: None,
         }];
         export_skills(&vfs, &request, &sw()).unwrap();
@@ -2401,7 +2424,7 @@ mod tests {
 
         // The source moves, out from under the build; `check` catches it the
         // same way it catches a rendered skill drifting.
-        vfs.write_file(Path::new("/host/cli/sdlc"), b"v2\n")
+        vfs.write_file(Path::new("/host/bin/tool"), b"v2\n")
             .unwrap();
         assert!(export_skills(&vfs, &check_request, &sw()).unwrap().changed);
     }
@@ -2544,6 +2567,54 @@ mod tests {
         assert!(manifest.contains(MISSING_DESCRIPTION), "{manifest}");
     }
 
+    /// The filler is the vault being silent, so a plugin description the
+    /// project file sets outranks it.
+    #[test]
+    fn a_configured_plugin_description_outranks_a_silent_plugin_note() {
+        let vfs = nameonly_vault();
+        let mut config = config();
+        config.plugins.insert(
+            "tools".to_owned(),
+            PluginOverrides {
+                description: Some("Configured description.".to_owned()),
+                ..PluginOverrides::default()
+            },
+        );
+        build_with(&vfs, config);
+        let plugin: serde_json::Value = serde_json::from_str(&text_at(
+            &vfs,
+            "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
+        ))
+        .unwrap();
+        assert_eq!(plugin["description"], "Configured description.");
+        let market: serde_json::Value =
+            serde_json::from_str(&text_at(&vfs, "/market/.claude-plugin/marketplace.json"))
+                .unwrap();
+        assert_eq!(
+            market["plugins"][0]["description"],
+            "Configured description."
+        );
+    }
+
+    /// The marketplace-level twin: a silent marketplace note leaves the
+    /// configured marketplace description in place.
+    #[test]
+    fn a_configured_marketplace_description_outranks_a_silent_marketplace_note() {
+        let vfs = nameonly_vault();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/house.md",
+            "---\nname: house\n---\n",
+        );
+        let mut config = config();
+        config.description = Some("Configured market description".to_owned());
+        build_with(&vfs, config);
+        let market: serde_json::Value =
+            serde_json::from_str(&text_at(&vfs, "/market/.claude-plugin/marketplace.json"))
+                .unwrap();
+        assert_eq!(market["description"], "Configured market description");
+    }
+
     /// A version from the note or from the config silences the warning, and
     /// the warning alone never trips `require_descriptions`.
     #[test]
@@ -2583,6 +2654,44 @@ mod tests {
         request.config.plugins.clear();
         let report = export_skills(&vfs, &request, &sw()).unwrap();
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    }
+
+    /// A configured description is what ships for a silent plugin or
+    /// marketplace note, so that note neither warns nor trips
+    /// `require_descriptions`. A silent skill still does.
+    #[test]
+    fn a_configured_description_neither_warns_nor_refuses() {
+        let vfs = nameonly_vault();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/house.md",
+            "---\nname: house\n---\n",
+        );
+        let mut request = request(ExportMode::Check);
+        request.config.description = Some("Configured market description".to_owned());
+        request.config.plugins.insert(
+            "tools".to_owned(),
+            PluginOverrides {
+                description: Some("Configured description.".to_owned()),
+                ..PluginOverrides::default()
+            },
+        );
+        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let warned: Vec<&str> = report
+            .warnings
+            .iter()
+            .filter(|w| w.reason == MISSING_DESCRIPTION_REASON)
+            .map(|w| w.path.as_str())
+            .collect();
+        assert_eq!(warned, ["marketplaces/house/plugins/tools/skills/quiet.md"]);
+
+        request.config.require_descriptions = true;
+        let message = export_skills(&vfs, &request, &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("skills/quiet.md"), "{message}");
+        assert!(!message.contains("tools/tools.md"), "{message}");
+        assert!(!message.contains("house/house.md"), "{message}");
     }
 
     #[test]
@@ -3571,6 +3680,65 @@ mod tests {
         let vfs = MemVfs::new();
         let report = export_skills(&vfs, &repo_vault(&vfs), &sw()).unwrap();
         assert!(report.changed);
+    }
+
+    /// The swap moves each tree and the stage aside and removes them, so a
+    /// vault inside one would go with it — even a tree an earlier build left
+    /// its marker in. A host that cannot see links refuses it by the ancestor
+    /// rule instead.
+    #[test]
+    fn a_vault_inside_a_swapped_tree_is_refused() {
+        for (vault, sees_links) in [
+            ("/repo/.claude-plugin/vault", true),
+            (&format!("/repo/{STAGE_DIR}/vault"), true),
+            ("/repo/.claude-plugin/vault", false),
+        ] {
+            let mem = MemVfs::new();
+            let mut request = repo_vault(&mem);
+            assert!(export_skills(&mem, &request, &sw()).unwrap().changed);
+
+            write(
+                &mem,
+                &format!("{vault}/marketplaces/house/plugins/tools/skills/review-guide.md"),
+                &note("review-guide", None, &[]),
+            );
+            write(&mem, &format!("{vault}/precious.md"), "# Keep me\n");
+            request.vault_root = PathBuf::from(vault);
+            let vfs: Box<dyn Vfs> = if sees_links {
+                Box::new(mem)
+            } else {
+                Box::new(crate::vfs::LinkBlindVfs(mem))
+            };
+            let message = export_skills(vfs.as_ref(), &request, &sw())
+                .unwrap_err()
+                .to_string();
+            assert!(message.contains("unsafe-root"), "{vault}: {message}");
+            assert!(message.contains(vault), "{vault}: {message}");
+            assert!(vfs.exists(&Path::new(vault).join("precious.md")), "{vault}");
+        }
+    }
+
+    /// The render cannot see a tree it replaces, and the swap deletes it, so
+    /// an asset sourced from inside one is refused up front, by name.
+    #[test]
+    fn an_asset_source_inside_a_swapped_tree_is_refused() {
+        let vfs = MemVfs::new();
+        let mut request = repo_vault(&vfs);
+        assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
+
+        let source = "/repo/.claude-plugin/launcher";
+        write(&vfs, source, "#!/bin/sh\n");
+        request.assets = vec![AssetSpec {
+            source: PathBuf::from(source),
+            dest: "bin/tool".to_owned(),
+            plugin: None,
+        }];
+        let message = export_skills(&vfs, &request, &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("unsafe-root"), "{message}");
+        assert!(message.contains(source), "{message}");
+        assert!(vfs.exists(Path::new(source)));
     }
 
     /// Every row's `packs` must begin with its own `tree()`, or that

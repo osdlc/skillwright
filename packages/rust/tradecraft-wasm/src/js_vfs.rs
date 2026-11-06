@@ -535,7 +535,9 @@ fn protocol(path: &Path, what: &str) -> VfsError {
 /// `throw` accepts any value, so this handles the three that actually occur: an
 /// `Error` (the message, without the `Error:` prefix `toString` would add), a
 /// bare string, and anything else (its JSON form, which is at least
-/// diagnosable).
+/// diagnosable). A value with no JSON form (`undefined`, a symbol) gets a
+/// fixed message: `JSON.stringify` returns `undefined` for those rather than
+/// throwing.
 fn message_of(error: &JsValue) -> String {
     if let Some(err) = error.dyn_ref::<js_sys::Error>() {
         return String::from(err.message());
@@ -545,7 +547,7 @@ fn message_of(error: &JsValue) -> String {
     }
     js_sys::JSON::stringify(error)
         .ok()
-        .map(String::from)
+        .and_then(|json| json.as_string())
         .unwrap_or_else(|| "the host filesystem threw a value with no message".to_string())
 }
 

@@ -114,9 +114,10 @@ pub struct Plugin {
     /// The plugin's canonical hooks file, parsed.
     #[serde(skip)]
     pub hooks_file: Option<HooksFile>,
-    /// Where this plugin's launcher asset lands, when it ships one: the
-    /// `${CLAUDE_PLUGIN_ROOT}/<shim_target>` its skills call.
-    pub shim_target: Option<String>,
+    /// The launcher's path inside the pack, when the plugin ships an asset
+    /// at [`crate::export::MarketplaceConfig::launcher_path`]: the
+    /// `${CLAUDE_PLUGIN_ROOT}/<launcher>` its skills call.
+    pub launcher: Option<String>,
 }
 
 impl Plugin {
@@ -228,11 +229,11 @@ pub enum Segment {
         /// The call.
         call: Call,
     },
-    /// The plugin's own CLI, which the vault writes as
-    /// `${CLAUDE_PLUGIN_ROOT}/<shim_target>`.
-    CliInvocation {
+    /// A call to the plugin's launcher, which the vault writes as
+    /// `${CLAUDE_PLUGIN_ROOT}/<launcher>`.
+    LauncherCall {
         /// The launcher's path inside the plugin.
-        shim_target: String,
+        launcher: String,
     },
 }
 
@@ -371,7 +372,7 @@ pub struct HooksFile {
 /// A mark that does not parse, or names a site the record does not hold, is
 /// left as text: the record is this module's own and a stray mark is a bug,
 /// but writing it out beats losing the bytes around it.
-pub(crate) fn segments(text: &str, record: &Recorded, shim_target: Option<&str>) -> Body {
+pub(crate) fn segments(text: &str, record: &Recorded, launcher: Option<&str>) -> Body {
     let mut out: Vec<Segment> = Vec::new();
     let mut rest = text;
     while let Some(open) = rest.find(MARK_OPEN) {
@@ -394,18 +395,18 @@ pub(crate) fn segments(text: &str, record: &Recorded, shim_target: Option<&str>)
         });
         match parsed {
             Some((segment, consumed)) => {
-                push_text(&mut out, &rest[..open], shim_target);
+                push_text(&mut out, &rest[..open], launcher);
                 out.push(segment);
                 rest = &after[consumed..];
             }
             None => {
                 let end = open + MARK_OPEN.len_utf8();
-                push_text(&mut out, &rest[..end], shim_target);
+                push_text(&mut out, &rest[..end], launcher);
                 rest = &rest[end..];
             }
         }
     }
-    push_text(&mut out, rest, shim_target);
+    push_text(&mut out, rest, launcher);
     Body { segments: out }
 }
 
@@ -423,20 +424,19 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
 }
 
 /// Appends `text`, merged into a preceding text segment, with each
-/// `${CLAUDE_PLUGIN_ROOT}/<shim_target>` call site split out.
+/// `${CLAUDE_PLUGIN_ROOT}/<launcher>` call site split out.
 ///
 /// A site only counts when the character after it cannot continue the same
-/// path — so `${CLAUDE_PLUGIN_ROOT}/cli/sdlc.js`, the entry the launcher
-/// itself execs, stays text.
-fn push_text(out: &mut Vec<Segment>, text: &str, shim_target: Option<&str>) {
+/// path — so `${CLAUDE_PLUGIN_ROOT}/bin/tool.js` stays text.
+fn push_text(out: &mut Vec<Segment>, text: &str, launcher: Option<&str>) {
     if text.is_empty() {
         return;
     }
-    let Some(target) = shim_target else {
+    let Some(launcher) = launcher else {
         append_text(out, text);
         return;
     };
-    let needle = format!("${{CLAUDE_PLUGIN_ROOT}}/{target}");
+    let needle = format!("${{CLAUDE_PLUGIN_ROOT}}/{launcher}");
     let mut rest = text;
     while let Some(offset) = rest.find(&needle) {
         let after = &rest[offset + needle.len()..];
@@ -448,8 +448,8 @@ fn push_text(out: &mut Vec<Segment>, text: &str, shim_target: Option<&str>) {
             append_text(out, &rest[..offset + needle.len()]);
         } else {
             append_text(out, &rest[..offset]);
-            out.push(Segment::CliInvocation {
-                shim_target: target.to_owned(),
+            out.push(Segment::LauncherCall {
+                launcher: launcher.to_owned(),
             });
         }
         rest = after;
@@ -529,21 +529,21 @@ mod tests {
     }
 
     #[test]
-    fn a_cli_call_site_splits_unless_the_path_continues() {
+    fn a_launcher_call_splits_unless_the_path_continues() {
         let body = segments(
-            "x ${CLAUDE_PLUGIN_ROOT}/cli/sdlc y ${CLAUDE_PLUGIN_ROOT}/cli/sdlc.js",
+            "x ${CLAUDE_PLUGIN_ROOT}/bin/tool y ${CLAUDE_PLUGIN_ROOT}/bin/tool.js",
             &Recorded::default(),
-            Some("cli/sdlc"),
+            Some("bin/tool"),
         );
         assert_eq!(
             body.segments,
             vec![
                 Segment::Text { text: "x ".into() },
-                Segment::CliInvocation {
-                    shim_target: "cli/sdlc".into()
+                Segment::LauncherCall {
+                    launcher: "bin/tool".into()
                 },
                 Segment::Text {
-                    text: " y ${CLAUDE_PLUGIN_ROOT}/cli/sdlc.js".into()
+                    text: " y ${CLAUDE_PLUGIN_ROOT}/bin/tool.js".into()
                 },
             ]
         );

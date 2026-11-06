@@ -115,6 +115,9 @@ pub struct Enum {
     pub attrs: SerdeAttrs,
     /// Its variants, in source order.
     pub variants: Vec<Variant>,
+    /// Set when another public type shares this name — see
+    /// [`Struct::unsupported`].
+    pub unsupported: Option<String>,
 }
 
 /// A named type the wire can reach.
@@ -263,19 +266,20 @@ fn collect_items(
 /// Refused where the walk reaches it rather than here: the core holds plenty
 /// of names that repeat across private modules and never cross the boundary.
 fn insert_unique(types: &mut BTreeMap<String, TypeDef>, def: TypeDef, path: &Path) {
-    if types.contains_key(def.name()) {
-        let clash = format!(
-            "two public types are named `{}` (one of them in {}). Which one the \
-             TypeScript describes would depend on which file was read first.",
-            def.name(),
-            path.display()
-        );
-        if let Some(TypeDef::Struct(s)) = types.get_mut(def.name()) {
-            s.unsupported = Some(clash);
-        }
+    let Some(first) = types.get_mut(def.name()) else {
+        types.insert(def.name().to_string(), def);
         return;
+    };
+    let clash = format!(
+        "two public types are named `{}` (one of them in {}). Which one the \
+         TypeScript describes would depend on which file was read first.",
+        def.name(),
+        path.display()
+    );
+    match first {
+        TypeDef::Struct(s) => s.unsupported = Some(clash),
+        TypeDef::Enum(e) => e.unsupported = Some(clash),
     }
-    types.insert(def.name().to_string(), def);
 }
 
 fn is_pub(vis: &syn::Visibility) -> bool {
@@ -332,6 +336,7 @@ fn read_enum(item: &syn::ItemEnum) -> Enum {
         docs: docs_of(&item.attrs),
         attrs: serde_attrs(&item.attrs),
         variants,
+        unsupported: None,
     }
 }
 
@@ -684,5 +689,68 @@ fn peel_refs(ty: &syn::Type) -> &syn::Type {
     match ty {
         syn::Type::Reference(r) => peel_refs(&r.elem),
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The types `collect_items` gathers from `sources`, read in order.
+    fn collect(sources: &[(&str, &str)]) -> BTreeMap<String, TypeDef> {
+        let mut types = BTreeMap::new();
+        let mut fn_returns = BTreeMap::new();
+        let mut const_types = BTreeMap::new();
+        for (path, source) in sources {
+            let file = syn::parse_file(source).expect("parsing the fixture");
+            collect_items(
+                &file.items,
+                &mut types,
+                &mut fn_returns,
+                &mut const_types,
+                Path::new(path),
+            );
+        }
+        types
+    }
+
+    /// A model with one export whose response is `name`.
+    fn emit_response(types: BTreeMap<String, TypeDef>, name: &str) -> Result<String, Error> {
+        crate::emit::emit(&Model {
+            types,
+            exports: vec![Export {
+                js_name: "probe".to_string(),
+                request: None,
+                response: Some((name.to_string(), false)),
+            }],
+        })
+    }
+
+    /// A clash is refused whichever kind of type is read first.
+    #[test]
+    fn a_name_clash_is_refused_in_either_read_order() {
+        let enum_dup = "pub enum Dup { One, Two }";
+        let struct_dup = "pub struct Dup { pub field: String }";
+        for (first, second) in [(enum_dup, struct_dup), (struct_dup, enum_dup)] {
+            let types = collect(&[("a.rs", first), ("b.rs", second)]);
+            let err = emit_response(types, "Dup").expect_err("the clash must be refused");
+            assert!(err.contains("two public types are named `Dup`"), "{err}");
+        }
+    }
+
+    /// A clash is refused when the type is only reached through
+    /// `#[serde(flatten)]`, which splices fields in without visiting the type.
+    #[test]
+    fn a_name_clash_is_refused_through_a_flattened_field() {
+        let types = collect(&[
+            ("a.rs", "pub struct Dup { pub a: String }"),
+            ("b.rs", "pub struct Dup { pub b: String }"),
+            (
+                "c.rs",
+                "pub struct Wire { #[serde(flatten)] pub inner: Dup }",
+            ),
+        ]);
+        let err = emit_response(types, "Wire").expect_err("the clash must be refused");
+        assert!(err.contains("two public types are named `Dup`"), "{err}");
     }
 }

@@ -396,6 +396,11 @@ pub struct Closure {
     /// the note that owns it, plus everything transitively embedded into it.
     /// Sorted, and never empty — the owner is always a member.
     pub contributing_notes: Vec<String>,
+    /// The vault-relative path of the note this file was rendered from: the
+    /// entry note for `SKILL.md`, and the resource's own source otherwise.
+    /// One of `contributing_notes`, not necessarily the first, since they are
+    /// sorted. [`Closure::hash`] reads the whole file for this note.
+    pub owner: String,
     /// Link targets in this file that resolved to nothing, as written and
     /// sorted. Recorded rather than refused, because a note appearing at one
     /// of these names later changes the output while leaving the hash over
@@ -422,12 +427,12 @@ impl Closure {
     /// changes this hash even before it changes the member list. So are the
     /// calls, so renaming or moving a called skill changes the caller's hash.
     /// Both add nothing when empty.
-    pub fn hash(&self, vfs: &dyn Vfs, vault_root: &Path, owner: &str) -> Result<String, CoreError> {
+    pub fn hash(&self, vfs: &dyn Vfs, vault_root: &Path) -> Result<String, CoreError> {
         let mut hasher = Sha256::new();
         for note in &self.contributing_notes {
             let bytes = vfs.read_file(&vault_root.join(note))?;
             let text = String::from_utf8_lossy(&bytes);
-            let consumed = if note == owner {
+            let consumed = if *note == self.owner {
                 text.as_ref()
             } else {
                 split_frontmatter(&text).1
@@ -564,7 +569,7 @@ pub fn compile_note(
         )?;
     }
 
-    // Every emitted file's closure starts with the file that owns it, so a
+    // Every emitted file's closure contains the file that owns it, so a
     // closure is never empty and a resource with no embeds still hashes over
     // something. `SKILL.md` is owned by the entry note; every other output is
     // owned by the vault file it was rendered from.
@@ -583,11 +588,13 @@ pub fn compile_note(
             .get(&output_path)
             .cloned()
             .unwrap_or_default();
-        members.insert(renderer.vault_relative(&source_path)?);
+        let owner = renderer.vault_relative(&source_path)?;
+        members.insert(owner.clone());
         closures.insert(
             output_path.clone(),
             Closure {
                 contributing_notes: members.into_iter().collect(),
+                owner,
                 unresolved: renderer
                     .unresolved
                     .get(&output_path)
@@ -1156,7 +1163,9 @@ impl<'a> Renderer<'a> {
                 .entry(output_path.to_owned())
                 .or_default()
                 .insert(token.target.clone());
-            return Ok(token.alias.as_deref().unwrap_or(&token.target).to_owned());
+            return Ok(text_alias(token.alias.as_deref())
+                .unwrap_or(&token.target)
+                .to_owned());
         };
         let extension = extension_of_path(&resolved).unwrap_or_default();
 
@@ -1711,19 +1720,22 @@ pub(crate) fn basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-/// What a rewritten link displays: the alias when the author wrote one —
-/// unless it is an image size spec like `100` or `640x480`, which Obsidian
-/// reads as geometry, not text — otherwise the resolved file's name.
+/// What a rewritten link displays: the alias when it is text (see
+/// [`text_alias`]), otherwise the resolved file's name.
 fn display_label(alias: Option<&str>, resolved: &Path) -> String {
-    if let Some(alias) = alias
-        && !markdown_link::is_size_spec(alias)
-    {
+    if let Some(alias) = text_alias(alias) {
         return alias.to_owned();
     }
     resolved
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+/// The alias as words to display, or `None` when there is none or it is an
+/// image size spec like `100` or `640x480`, which Obsidian reads as geometry.
+fn text_alias(alias: Option<&str>) -> Option<&str> {
+    alias.filter(|alias| !markdown_link::is_size_spec(alias))
 }
 
 // --- The scanner ------------------------------------------------------------
@@ -2087,8 +2099,9 @@ fn sigil_at(bytes: &[u8], offset: usize) -> bool {
 }
 
 /// A call in code opening at `offset` (`/[[`, or `\/[[` for an escape),
-/// closed by the first `]]` ending at or before `limit`. The text between
-/// the brackets is read by `markdown-link`'s `parse_inner_self`.
+/// closed by the first `]]` ending at or before `limit` and on the same line:
+/// a wikilink never crosses a line, so a stray `[[` stays text. The text
+/// between the brackets is read by `markdown-link`'s `parse_inner_self`.
 fn code_token(
     markdown: &str,
     offset: usize,
@@ -2097,11 +2110,10 @@ fn code_token(
 ) -> Option<WikiToken<'_>> {
     let opener = if kind == TokenKind::Escape { 4 } else { 3 };
     let content_start = offset + opener;
-    let close = markdown
-        .get(content_start..)?
-        .find("]]")
-        .map(|at| content_start + at)
-        .filter(|close| close + 2 <= limit)?;
+    let rest = markdown.get(content_start..)?;
+    let line_len = rest.find('\n').unwrap_or(rest.len());
+    let bound = limit.checked_sub(content_start)?.min(line_len);
+    let close = content_start + rest.get(..bound)?.find("]]")?;
     // Both boundaries sit beside ASCII brackets, so the str slice is valid
     // UTF-8 territory.
     let inner = &markdown[content_start..close];
@@ -2172,7 +2184,7 @@ struct LiteralCall<'a> {
 /// it names a known skill is the caller's question.
 ///
 /// `/plugin:skill`, `$plugin:skill` and `/skill:plugin-skill` count unless
-/// the sigil continues a word or path, so `${CLAUDE_PLUGIN_ROOT}/cli/sdlc`
+/// the sigil continues a word or path, so `${CLAUDE_PLUGIN_ROOT}/bin/tool`
 /// and `a/b:c` are not calls. A bare `/skill` is riskier, so its `/` must
 /// start a line or follow whitespace or one of `` ( " ' ` * > `` (but not the
 /// `(` of a markdown link destination, `[site](/docs)`), and the name must not
@@ -3638,13 +3650,12 @@ mod tests {
         assert_eq!(before.body, "Run `/tools:called`.\n");
         assert_eq!(before.closures["SKILL.md"].calls, vec!["tools:called"]);
         assert_eq!(after.closures["SKILL.md"].calls, vec!["tools:renamed"]);
-        let owner = "plugins/demo/demo.md";
         assert_ne!(
             before.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"), owner)
+                .hash(&vfs, Path::new("/vault"))
                 .unwrap(),
             after.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"), owner)
+                .hash(&vfs, Path::new("/vault"))
                 .unwrap(),
         );
     }
@@ -3883,13 +3894,13 @@ mod tests {
         let err = try_compile_with(
             &vfs,
             SkillSource::lazy(&build),
-            "Run `/sdlc:called`, `/sdlc:unknown` and /called.\n",
+            "Run `/other:called`, `/other:unknown` and /called.\n",
         )
         .unwrap_err()
         .to_string();
         // The plugin is not checked, and a bare call has no plugin to match.
         assert!(err.contains("1 literal skill call in demo"), "{err}");
-        assert!(err.contains("`/sdlc:called`"), "{err}");
+        assert!(err.contains("`/other:called`"), "{err}");
     }
 
     #[test]
@@ -3980,5 +3991,56 @@ mod tests {
         write(&vfs, "/vault/Snippet.md", b"Then run `\\/tools:called`.\n");
         let compiled = compile_with_calls(&vfs, &literal_index(), "# Demo\n\n![[Snippet]]\n");
         assert_eq!(compiled.body, "# Demo\n\nThen run `/tools:called`.\n");
+    }
+
+    // --- Wikilink parsing and resolution -------------------------------------
+
+    /// Obsidian wikilinks never cross lines: a stray `[[` is refused on its
+    /// own, and the refusal does not take in the lines after it.
+    #[test]
+    fn an_unclosed_wikilink_does_not_swallow_the_lines_after_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/note.md", b"# Note\n");
+        let err = compile_note(
+            &vfs,
+            &source(None),
+            "Start [[foo\n\n| a | b |\n|---|---|\n| x | [[note]] |\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("[[foo"), "{err}");
+        assert!(!err.contains("| a |"), "{err}");
+        assert!(!err.contains("[[note"), "{err}");
+    }
+
+    /// A dot in a note's name is not an extension: `[[v1.2 notes]]` finds
+    /// `v1.2 notes.md`, as Obsidian does.
+    #[test]
+    fn a_note_name_with_a_dot_resolves_to_the_note() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/v1.2 notes.md", b"# Notes\n");
+        let compiled = compile_note(&vfs, &source(None), "See [[v1.2 notes]].\n").unwrap();
+        assert!(
+            compiled.body.starts_with("See [v1.2 notes.md]("),
+            "{}",
+            compiled.body
+        );
+        assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
+        // A real extension that names nothing is still unresolved.
+        let compiled = compile_note(&vfs, &source(None), "See [[gone.pdf]].\n").unwrap();
+        assert_eq!(compiled.body, "See gone.pdf.\n");
+    }
+
+    /// A size alias is image geometry, not words for the page.
+    #[test]
+    fn an_unresolved_embed_with_a_size_alias_shows_the_target() {
+        let vfs = demo_vault();
+        let compiled = compile_note(
+            &vfs,
+            &source(None),
+            "A ![[missing.png|100]] and ![[gone.png|640x480]] here.\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "A missing.png and gone.png here.\n");
     }
 }

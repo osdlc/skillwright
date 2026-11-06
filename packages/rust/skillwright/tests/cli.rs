@@ -426,6 +426,76 @@ fn list_over_a_vault_that_is_not_there_is_exit_2() {
     assert!(run.stderr.contains("vault not found"), "{}", run.stderr);
 }
 
+/// The built binary, run as a child process with the base-directory
+/// variables under the test's control. The in-process [`run`] cannot reach
+/// this path: its machine-file override skips the directory lookup.
+fn run_binary(argv: &[&str], cwd: &Path, env: &[(&str, &str)]) -> std::process::Output {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_skillwright"));
+    cmd.args(argv).current_dir(cwd);
+    cmd.env_remove(skillwright::config::MACHINE_CONFIG_ENV);
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+    cmd.output().unwrap()
+}
+
+#[test]
+fn an_explicit_machine_file_needs_no_base_directories() {
+    let (dir, vault) = fixture();
+    let machine = dir.path().join("machine.yaml");
+    let out = run_binary(
+        &["list", "--vault", &vault_str(&vault)],
+        dir.path(),
+        &[
+            (skillwright::dirs::ENV_VARS.config, "rel"),
+            (
+                skillwright::config::MACHINE_CONFIG_ENV,
+                machine.to_str().unwrap(),
+            ),
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
+fn base_directories_that_cannot_resolve_are_a_run_level_blocker_not_a_panic() {
+    let (dir, vault) = fixture();
+    let out = run_binary(
+        &["list", "--vault", &vault_str(&vault)],
+        dir.path(),
+        &[(skillwright::dirs::ENV_VARS.config, "rel")],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(stderr.contains("must be an absolute path"), "{stderr}");
+}
+
+/// A blank `SKILLWRIGHT_MACHINE_CONFIG` counts as unset, the rule
+/// config-layers' `MachineConfigFile::path` applies. `try_machine_config_path`
+/// copies that rule; this pins the copy, so a drift between the two shows up.
+#[test]
+fn a_blank_machine_config_env_falls_back_to_the_base_directories() {
+    let (dir, vault) = fixture();
+    let out = run_binary(
+        &["list", "--vault", &vault_str(&vault)],
+        dir.path(),
+        &[
+            (skillwright::dirs::ENV_VARS.config, "rel"),
+            (skillwright::config::MACHINE_CONFIG_ENV, "  "),
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(
+        stderr.contains("cannot locate the machine configuration file"),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn a_project_file_above_the_working_directory_supplies_the_vault() {
     let (dir, _vault) = fixture();
@@ -1166,7 +1236,7 @@ fn adopt_imports_the_bundle_rewrites_links_and_stamps_provenance_exit_0() {
     assert!(note.contains("sw-adopted-hash:"));
     assert!(note.contains("sw-adopted-at:"));
     // A relative markdown link became a wikilink.
-    assert!(note.contains("[[checklist|the review checklist]]"));
+    assert!(note.contains("[[references/checklist|the review checklist]]"));
     assert!(!note.contains("](references/checklist.md)"));
     assert!(
         vault
@@ -1480,6 +1550,46 @@ fn as_and_promote_are_honestly_not_implemented_exit_2() {
         promoted.stderr
     );
     assert!(!vault.join("plugins").exists());
+}
+
+/// A dry run over several sources sees what the earlier sources would have
+/// written, so it reports the collision the real run refuses.
+#[test]
+fn a_multi_source_dry_run_predicts_the_collision_the_write_refuses() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    fs::create_dir_all(&vault).unwrap();
+    let mut sources = Vec::new();
+    for name in ["src-a", "src-b"] {
+        let skill = dir.path().join(name).join("review");
+        fs::create_dir_all(&skill).unwrap();
+        fs::write(
+            skill.join("SKILL.md"),
+            format!("---\nname: review\ndescription: reviews from {name}\n---\nReview.\n"),
+        )
+        .unwrap();
+        sources.push(dir.path().join(name).display().to_string());
+    }
+    let argv = |extra: &str| {
+        vec![
+            "adopt".to_string(),
+            sources[0].clone(),
+            sources[1].clone(),
+            "--vault".to_string(),
+            vault_str(&vault),
+            extra.to_string(),
+        ]
+    };
+
+    let planned = run_argv(argv("--dry-run"), &[], dir.path());
+    assert!(
+        !vault.join("plugins").exists(),
+        "a dry run must write nothing"
+    );
+    let written = run_argv(argv("--yes"), &[], dir.path());
+    assert_eq!(written.code, 1, "{}", written.stderr);
+    assert_eq!(planned.code, written.code, "{}", planned.stderr);
+    assert_eq!(planned.stdout, written.stdout);
 }
 
 #[test]
@@ -2106,6 +2216,200 @@ fn with_no_note_every_publishable_unit_the_scan_finds_gets_a_row() {
         "{}",
         run.stdout
     );
+}
+
+/// `bump` finds a plugin by its frontmatter `name`, so the advisory has to
+/// name it that way too, not by the note's filename.
+#[test]
+fn the_bump_advisory_names_the_plugin_bump_will_find() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    let plugin = vault
+        .join("marketplaces")
+        .join("acme")
+        .join("plugins")
+        .join("core");
+    fs::create_dir_all(plugin.join("skills")).unwrap();
+    fs::write(
+        vault.join("marketplaces").join("acme").join("acme.md"),
+        "---\nname: acme\ndescription: Acme skills.\n---\n\nOne marketplace.\n",
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("core.md"),
+        "---\nname: core-tools\ndescription: The core tools.\nsw-version: 1.0.0\n---\n\nThe plugin.\n",
+    )
+    .unwrap();
+    let member = plugin.join("skills").join("review.md");
+    fs::write(
+        &member,
+        "---\nname: review\ndescription: Reviews a diff.\nsw-plugin: core-tools\n---\n\nRead the diff.\n",
+    )
+    .unwrap();
+    let config = status_config(dir.path(), &vault);
+    let published = run(&["publish", "--config", &config, "--yes"], dir.path());
+    assert_eq!(published.code, 0, "{}", published.stderr);
+    fs::write(
+        &member,
+        "---\nname: review\ndescription: Reviews a diff.\nsw-plugin: core-tools\n---\n\nRead the whole diff.\n",
+    )
+    .unwrap();
+
+    let status = run(&["status", "--config", &config], dir.path());
+    assert_eq!(status.code, 0, "{}", status.stderr);
+    assert!(
+        status
+            .stderr
+            .contains("`skillwright bump core-tools` is available"),
+        "{}",
+        status.stderr
+    );
+    let one = run(
+        &[
+            "status",
+            "marketplaces/acme/plugins/core/core.md",
+            "--config",
+            &config,
+        ],
+        dir.path(),
+    );
+    assert_eq!(one.code, 0, "{}", one.stderr);
+    assert!(
+        one.stderr
+            .contains("`skillwright bump core-tools` is available"),
+        "{}",
+        one.stderr
+    );
+    let bump = run(
+        &["bump", "core-tools", "--dry-run", "--config", &config],
+        dir.path(),
+    );
+    assert_eq!(bump.code, 0, "{}", bump.stderr);
+}
+
+/// Publish and status hand the core the vault as the content root, so a
+/// configured skills root elsewhere is refused once, by name, rather than
+/// half-honoured.
+#[test]
+fn publish_and_status_refuse_a_skills_root_apart_from_the_vault() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    let plugin = vault.join("library").join("plugins").join("tools");
+    fs::create_dir_all(&plugin).unwrap();
+    fs::write(
+        plugin.join("tools.md"),
+        "---\nname: tools\ndescription: The tools.\n---\n\nThe plugin.\n",
+    )
+    .unwrap();
+    let dest = dir.path().join("dest");
+    fs::create_dir_all(&dest).unwrap();
+    let config = dir.path().join("config.yaml");
+    fs::write(
+        &config,
+        format!(
+            "vault: {}\ndestinations:\n  - root: {}\n    target: claude\nmarketplace:\n  skills_root: vault/library\n",
+            vault.display(),
+            dest.display()
+        ),
+    )
+    .unwrap();
+    let config = config.display().to_string();
+
+    for argv in [
+        vec!["publish", "--config", &config, "--yes"],
+        vec!["publish", "--config", &config, "--dry-run"],
+        vec!["status", "--config", &config],
+        vec![
+            "status",
+            "--config",
+            &config,
+            "library/plugins/tools/tools.md",
+        ],
+    ] {
+        let out = run(&argv, dir.path());
+        assert_eq!(out.code, 2, "{argv:?}: {}", out.stderr);
+        assert!(
+            out.stderr.contains("marketplace.skills_root") && out.stderr.contains("not support"),
+            "{argv:?}: {}",
+            out.stderr
+        );
+        assert_eq!(out.stdout, "", "{argv:?}");
+    }
+    assert_eq!(fs::read_dir(&dest).unwrap().count(), 0, "publish wrote");
+}
+
+/// A vault holding one skill under `skills/`, a destination, and a config file
+/// carrying `extra` — the setup the skills-root guard must let through.
+fn skills_root_fixture(extra: &str) -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    fs::create_dir_all(vault.join("skills")).unwrap();
+    fs::write(
+        vault.join("skills").join("review.md"),
+        "---\nname: review\ndescription: Reviews code.\n---\n\nReview the diff.\n",
+    )
+    .unwrap();
+    let dest = dir.path().join("dest");
+    fs::create_dir_all(&dest).unwrap();
+    let config = dir.path().join("config.yaml");
+    fs::write(
+        &config,
+        format!(
+            "vault: {}\ndestinations:\n  - root: {}\n    target: claude\n{extra}",
+            vault.display(),
+            dest.display()
+        ),
+    )
+    .unwrap();
+    let config = config.display().to_string();
+    (dir, config)
+}
+
+fn assert_publish_and_status_pass(dir: &Path, config: &str) {
+    for argv in [
+        vec!["publish", "--config", config, "--dry-run"],
+        vec!["status", "--config", config],
+        vec!["status", "--config", config, "skills/review.md"],
+    ] {
+        let out = run(&argv, dir);
+        assert_eq!(out.code, 0, "{argv:?}: {}", out.stderr);
+        assert!(
+            !out.stderr.contains("not support"),
+            "{argv:?}: {}",
+            out.stderr
+        );
+    }
+}
+
+/// A skills root inside the vault whose notes the vault scan reads publishes
+/// as it did before the guard.
+#[test]
+fn publish_and_status_accept_a_declared_skills_folder_the_vault_scan_reads() {
+    let (dir, config) = skills_root_fixture("declared_folders:\n  skills: skills\n");
+    let out = run(&["publish", "--config", &config, "--dry-run"], dir.path());
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(
+        out.stdout.contains("review/SKILL.md") || out.stderr.contains("review/SKILL.md"),
+        "stdout: {}\nstderr: {}",
+        out.stdout,
+        out.stderr
+    );
+    assert_publish_and_status_pass(dir.path(), &config);
+}
+
+/// `marketplace.skills_root` naming the vault itself passes the guard, both
+/// spelled directly and reached through a symlink.
+#[test]
+fn publish_and_status_accept_a_skills_root_that_is_the_vault() {
+    let (dir, config) = skills_root_fixture("marketplace:\n  skills_root: vault\n");
+    assert_publish_and_status_pass(dir.path(), &config);
+
+    #[cfg(unix)]
+    {
+        let (dir, config) = skills_root_fixture("marketplace:\n  skills_root: link\n");
+        std::os::unix::fs::symlink(dir.path().join("vault"), dir.path().join("link")).unwrap();
+        assert_publish_and_status_pass(dir.path(), &config);
+    }
 }
 
 #[test]
@@ -2757,6 +3061,72 @@ fn a_run_that_projected_nothing_blames_the_flag_for_nothing() {
     );
 }
 
+// --- publish: a pack whose folder carries its own manifest -----------------------
+
+// The folder's own `plugin.json` is replaced by the rendered one. It is not a
+// member, so the CLI must not tell the user to publish it on its own.
+#[test]
+fn a_packs_replaced_manifest_is_named_as_replaced_not_as_not_carried() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    let base = vault.join("marketplaces/house/plugins/git-tools");
+    fs::create_dir_all(base.join("skills")).unwrap();
+    fs::create_dir_all(base.join(".claude-plugin")).unwrap();
+    fs::write(
+        base.join("git-tools.md"),
+        "---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\n---\nThe pack.\n",
+    )
+    .unwrap();
+    fs::write(
+        base.join("skills/commit-helper.md"),
+        "---\nname: commit-helper\ndescription: Writes commits.\n---\nCommit well.\n",
+    )
+    .unwrap();
+    fs::write(
+        base.join(".claude-plugin/plugin.json"),
+        "{\"name\": \"git-tools\"}\n",
+    )
+    .unwrap();
+    let dest = dest_of(dir.path());
+    fs::create_dir_all(&dest).unwrap();
+    let argv = |json: bool| {
+        let mut argv = vec![
+            "publish".to_string(),
+            "marketplaces/house/plugins/git-tools/git-tools.md".to_string(),
+            "--vault".to_string(),
+            vault_str(&vault),
+            "--to".to_string(),
+            dest.display().to_string(),
+            "--target".to_string(),
+            "claude".to_string(),
+            "--yes".to_string(),
+        ];
+        if json {
+            argv.push("--json".to_string());
+        }
+        argv
+    };
+    let own = "marketplaces/house/plugins/git-tools/.claude-plugin/plugin.json";
+
+    let text = run_argv(argv(false), &[], dir.path());
+    assert_eq!(text.code, 0, "{}", text.stderr);
+    assert!(
+        text.stderr.contains(&format!(
+            "marketplaces/house/plugins/git-tools/git-tools.md at {} (claude): the folder's own `{own}` was not published; the pack's manifest is rendered from the plugin note's frontmatter",
+            dest.display()
+        )),
+        "{}",
+        text.stderr
+    );
+    assert!(!text.stderr.contains("not carried"), "{}", text.stderr);
+
+    let json = run_argv(argv(true), &[], dir.path());
+    assert_eq!(json.code, 0, "{}", json.stderr);
+    let doc: serde_json::Value = serde_json::from_str(&json.stdout).unwrap();
+    assert!(doc.get("not_carried").is_none(), "{doc}");
+    assert_eq!(doc["replaced_manifests"][0]["manifest"], own, "{doc}");
+}
+
 // --- a note with a `name` and no `description` ----------------------------------
 
 /// A vault holding one name-only skill, and a project file naming it — with
@@ -2788,12 +3158,20 @@ fn a_missing_description_warns_on_stderr_even_under_quiet() {
     let dir = name_only_project(false);
     let build = run(&["build", "--yes", "--quiet"], dir.path());
     assert_eq!(build.code, 0, "{}", build.stderr);
-    assert!(build.stderr.contains(QUIET_WARNING), "{}", build.stderr);
+    assert!(
+        build.stderr.lines().any(|line| line == QUIET_WARNING),
+        "{}",
+        build.stderr
+    );
     assert!(!build.stdout.contains("warning"), "{}", build.stdout);
 
     let list = run(&["list", "--quiet"], dir.path());
     assert_eq!(list.code, 0, "{}", list.stderr);
-    assert!(list.stderr.contains(QUIET_WARNING), "{}", list.stderr);
+    assert!(
+        list.stderr.lines().any(|line| line == QUIET_WARNING),
+        "{}",
+        list.stderr
+    );
 }
 
 #[test]

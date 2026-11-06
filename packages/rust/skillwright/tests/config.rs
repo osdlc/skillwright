@@ -385,15 +385,15 @@ mod load_config_tests {
         let fx = Fixture::new();
         fx.write_machine("paths:\n  dev: /work/me/dev\n");
         fx.write_project(
-            "assets:\n  - from: '{dev}/cli/sdlc'\n    to: cli/sdlc\n  \
+            "assets:\n  - from: '{dev}/bin/tool'\n    to: bin/tool\n  \
              - from: launcher\n    to: cli/launcher\n    plugin: other\n",
         );
         fx.run(
             || match load_config(Some(fx.project_file().to_str().unwrap()), fx.path()) {
                 ConfigLoad::Loaded { config, .. } => {
                     assert_eq!(config.assets.len(), 2);
-                    assert_eq!(config.assets[0].from, "/work/me/dev/cli/sdlc");
-                    assert_eq!(config.assets[0].to, "cli/sdlc");
+                    assert_eq!(config.assets[0].from, "/work/me/dev/bin/tool");
+                    assert_eq!(config.assets[0].to, "bin/tool");
                     assert_eq!(config.assets[0].plugin, None);
                     assert_eq!(config.assets[1].from, "launcher");
                     assert_eq!(config.assets[1].plugin.as_deref(), Some("other"));
@@ -406,7 +406,7 @@ mod load_config_tests {
     #[test]
     fn assets_an_unknown_field_on_an_entry_is_refused_by_name() {
         let fx = Fixture::new();
-        fx.write_project("assets:\n  - from: cli/sdlc\n    to: cli/sdlc\n    typo: x\n");
+        fx.write_project("assets:\n  - from: bin/tool\n    to: bin/tool\n    typo: x\n");
         fx.run(
             || match load_config(Some(fx.project_file().to_str().unwrap()), fx.path()) {
                 ConfigLoad::Malformed { detail, .. } => {
@@ -738,5 +738,7 @@ fn kind(load: &ConfigLoad) -> &'static str {
         ConfigLoad::MissingExplicit { .. } => "MissingExplicit",
         ConfigLoad::Unreadable { .. } => "Unreadable",
         ConfigLoad::Malformed { .. } => "Malformed",
+        ConfigLoad::MachineDirs { .. } => "MachineDirs",
+        _ => "unknown",
     }
 }
