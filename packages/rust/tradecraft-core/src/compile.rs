@@ -271,14 +271,15 @@ impl<'a> SkillSource<'a> {
 pub struct CallContext<'a> {
     /// Where the skills a body may name come from.
     pub skills: SkillSource<'a>,
-    /// The call token this target writes for a skill, without backticks.
-    pub render: &'a dyn Fn(&IndexedSkill) -> Result<String, CoreError>,
+    /// What this target writes for a skill, without backticks: its call, or
+    /// with `true` its name (see [`CallSite::mention`]).
+    pub render: &'a dyn Fn(&IndexedSkill, bool) -> Result<String, CoreError>,
     /// The destination's name, for a refusal about what it does not ship.
     pub target: &'a str,
     /// The body is a skill's or a command's, where a plain `[[x]]` to a skill
-    /// is a call too.
+    /// names the skill rather than copying it.
     pub implicit: bool,
-    /// `implicit-skill-call` warnings, deduplicated.
+    /// What the compile warned about, deduplicated.
     pub warnings: RefCell<Vec<DiscoveryWarning>>,
     /// A compile done once for every harness: each call and each link is
     /// written as a mark and its site recorded here, for a translator to
@@ -306,6 +307,9 @@ pub struct CallSite {
     pub skill: IndexedSkill,
     /// The call's target as the author wrote it, fragment and all.
     pub destination: String,
+    /// A plain `[[skill]]`: written as the skill's published name, not as an
+    /// invocation.
+    pub mention: bool,
     /// The note the call is in, as a refusal names it.
     pub caller: String,
 }
@@ -1150,7 +1154,7 @@ impl<'a> Renderer<'a> {
             TokenKind::Link | TokenKind::Embed => {}
         }
         if token.kind == TokenKind::Link
-            && let Some(call) = self.implicit_call(token, source_path, output_path)?
+            && let Some(call) = self.skill_mention(token, source_path, output_path)?
         {
             return Ok(call);
         }
@@ -1333,15 +1337,16 @@ impl<'a> Renderer<'a> {
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
         self.record_call(skill, output_path);
-        render_or_mark(context, skill, token.destination, caller)
+        render_or_mark(context, skill, token.destination, caller, false)
     }
 
     /// A plain `[[x]]` in a skill or command body that names another skill
-    /// is a call: copying one skill into another is never what was meant.
-    /// `None` leaves the token to the link path, as does a name several
-    /// skills share, or an index that cannot be built: the reading is a
-    /// heuristic, so a fault elsewhere in the vault must not block a link.
-    fn implicit_call(
+    /// is written as that skill's published name: copying one skill into
+    /// another is never what was meant, and `/[[x]]` is the call. `None`
+    /// leaves the token to the link path, as does a name several skills
+    /// share, or an index that cannot be built: the reading is a heuristic,
+    /// so a fault elsewhere in the vault must not block a link.
+    fn skill_mention(
         &mut self,
         token: &WikiToken<'_>,
         source_path: &Path,
@@ -1369,19 +1374,9 @@ impl<'a> Renderer<'a> {
         let caller = self.relative_or_verbatim(source_path);
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
-        context.warn(
-            caller.clone(),
-            "implicit-skill-call",
-            format!(
-                "`[[{}]]` names skill `{}`, so it renders as a call; write `/[[{}]]` to say so",
-                token.destination,
-                skill.call_id(),
-                token.destination
-            ),
-        );
         self.record_call(skill, output_path);
-        let call = render_or_mark(context, skill, token.destination, caller)?;
-        Ok(Some(format_call(&call, false)))
+        let name = render_or_mark(context, skill, token.destination, caller, true)?;
+        Ok(Some(format_call(&name, false)))
     }
 
     /// A call to a skill the destination does not carry would name a command
@@ -2128,27 +2123,30 @@ fn code_token(
     ))
 }
 
-/// A call as written into output: bare in code, in backticks in prose.
-/// A call's invocation: `render`'s, or in a recording compile the mark
-/// standing in for it.
+/// A call's invocation, or with `mention` the skill's name: `render`'s, or
+/// in a recording compile the mark standing in for it.
 fn render_or_mark(
     context: &CallContext<'_>,
     skill: &IndexedSkill,
     destination: &str,
     caller: String,
+    mention: bool,
 ) -> Result<String, CoreError> {
     let Some(record) = context.record else {
-        return (context.render)(skill);
+        return (context.render)(skill, mention);
     };
     let mut record = record.borrow_mut();
     record.calls.push(CallSite {
         skill: skill.clone(),
         destination: destination.to_owned(),
+        mention,
         caller,
     });
     Ok(mark('c', record.calls.len() - 1))
 }
 
+/// A call or skill name as written into output: bare in code, in backticks
+/// in prose.
 fn format_call(call: &str, in_code: bool) -> String {
     if in_code {
         call.to_owned()
@@ -3503,7 +3501,10 @@ mod tests {
         skills: SkillSource<'_>,
         body: &str,
     ) -> Result<(CompiledNote, Vec<DiscoveryWarning>), CoreError> {
-        let render = |skill: &IndexedSkill| Ok(format!("/{}", skill.call_id()));
+        let render = |skill: &IndexedSkill, mention: bool| {
+            let sigil = if mention { "" } else { "/" };
+            Ok(format!("{sigil}{}", skill.call_id()))
+        };
         let calls = CallContext {
             skills,
             render: &render,
@@ -3955,7 +3956,7 @@ mod tests {
         let vfs = demo_vault();
         write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
         let skills = call_index("called");
-        let render = |skill: &IndexedSkill| Ok(skill.name.clone());
+        let render = |skill: &IndexedSkill, _| Ok(skill.name.clone());
         let calls = CallContext {
             skills: SkillSource::ready(&skills),
             render: &render,
