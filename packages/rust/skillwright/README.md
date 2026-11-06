@@ -85,6 +85,7 @@ publishing skills/code-review.md -> /path/to/my-project (claude-code)
 | `move` | Move a component to another plugin or marketplace |
 | `delete` | Move a component's note to the vault's trash |
 | `convert` | Change a note's kind and move it into that kind's folder |
+| `author [path]` | Experimental. Open the vault, or a folder or note in it, in an editor |
 | `harness install <claude\|codex\|cursor>` | Register the built marketplace with a harness and install its plugins, through the harness's own `plugin` command |
 | `harness update <claude\|codex\|cursor>` | Install what is missing, then update each plugin whose version changed |
 | `harness uninstall <claude\|codex\|cursor>` | Remove the marketplace's plugins from a harness, and with `--marketplace` its registration too |
@@ -123,9 +124,76 @@ Each verb's own options:
 | `adopt` | `[source...]`, `--from <location>` (repeatable), `--from-git <ref>` (repeatable), `--plugin <name>`, `--into <path>`, `--set-targets <target>` (repeatable), `--only <name>` (repeatable), `--overwrite <path>` (repeatable) |
 | `harness install` / `harness update` | `--plugin <name>` (repeatable), `--scope <user\|project\|local>`, `--path <path>`, `--git-url <url>`, `--git-ref <ref>` |
 | `harness uninstall` | the same, plus `--marketplace` |
+| `author` | `[path]`, `--with <obsidian\|code\|editor\|system>`, `--dry-run` |
 
 `adopt` also accepts `--as <name>` and `--promote`. Both exit with
 `not implemented`.
+
+### author
+
+`skillwright author` opens the vault in an editor. Give a path to open a
+folder or note inside the vault instead. A relative path is tried against
+the working directory first, and against the vault when that misses the
+vault.
+
+`author` is experimental. It runs on macOS and Linux only; on Windows it
+exits with a usage error.
+
+```sh
+skillwright author                              # the vault, in the saved editor
+skillwright author skills/review.md             # one note
+skillwright author --with code                  # VS Code, this run only
+skillwright author --with obsidian --dry-run    # show what would happen
+```
+
+To change the saved editor, edit or delete `author.editor` in the machine
+file; with it gone, the next run on a terminal asks again.
+
+It picks the editor from `--with`, then from `author.editor` in the machine
+file. With neither, it asks once on a terminal and saves the answer there.
+Pressing Ctrl-D at the question cancels and saves nothing. Off a terminal
+it does not ask: it uses the first available editor, in the order Obsidian,
+VS Code (`code`) and the system opener (`open` or `xdg-open`), and says
+which on stderr. `$VISUAL` or `$EDITOR` is used only on a terminal, and is
+run through `sh -c` as git runs it, so quotes and arguments in it work.
+
+Obsidian counts as available when its `obsidian.json` exists:
+`~/Library/Application Support/obsidian/` on macOS, and
+`~/.config/obsidian/` (or the flatpak's `~/.var/app/md.obsidian.Obsidian/config/obsidian/`)
+on Linux. Obsidian opens only folders it knows as vaults. `author` reads
+`obsidian.json` to check. For a folder Obsidian does not know, it explains
+how to add it with "Open folder as vault", then asks what to do:
+
+1. Add it to Obsidian's vault list and open it. Offered only while
+   Obsidian is closed (checked with `pgrep`) and only when `obsidian.json`
+   reads cleanly.
+2. Open the vault picker, with steps for adding the folder there.
+3. Use another editor this time.
+4. Cancel.
+
+Off a terminal it does not ask, and uses the next available editor.
+
+`author` changes `obsidian.json` only when you choose the first answer,
+and only while Obsidian is closed: it checks again right before writing.
+It first copies the file to `obsidian.json.bak` beside it, then adds one
+entry under `vaults` and leaves every other key and vault as it was. If the
+file changed after `author` read it, nothing is written. The format of
+`obsidian.json` is internal to Obsidian, not a public API, so a future
+Obsidian release could change it. To undo the change, quit Obsidian and
+copy `obsidian.json.bak` back over `obsidian.json`.
+
+Obsidian names a vault after its folder. A vault folder called `vault`
+shows as "vault" in the picker and the window title, whichever project it
+belongs to, so name the folder after the project to tell vaults apart.
+
+Obsidian keeps per-vault settings in `.obsidian/` inside the vault folder.
+`author` says whether that folder is gitignored. Add `.obsidian/` to
+`.gitignore` unless the project means to share those settings.
+
+`--dry-run` prints the command and launches nothing. It asks nothing,
+saves nothing and writes nothing to `obsidian.json`; on a terminal it shows
+what the first answer would do, including the planned `obsidian.json`
+write.
 
 ## Exit codes
 
@@ -142,7 +210,8 @@ Each verb's own options:
 
 Two files, both optional. A flag overrides the project file, which overrides
 the machine file, except for `paths:` (below). `skillwright` never writes
-either one.
+the project file. It writes the machine file only to save the editor
+`author` uses.
 
 - **The project file** is `skillwright.yaml`. It is committed, and found by
   walking up from the working directory, or named with `--config`. It holds
@@ -156,6 +225,18 @@ either one.
 
 `paths:` is the exception. Names from both files merge, and when both define
 the same name the machine file's value wins.
+
+`author:` is read from the machine file only. A project file that sets it is
+an error. In the machine file a bad value under `author:` is a warning and
+reads as unset; it never stops another verb. Saving the editor replaces the
+whole `author:` block, keeps the rest of the file and its comments, writes
+through a symlink to its target, and does not overwrite the file if it
+changed since `author` read it.
+
+```yaml
+author:
+  editor: obsidian # or code, editor, system
+```
 
 `<config-home>` comes from [`tiered-dirs`](https://crates.io/crates/tiered-dirs): for example
 `~/Library/Application Support` on macOS and `~/.config` on Linux.

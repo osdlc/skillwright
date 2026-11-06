@@ -7,6 +7,7 @@
 //! on every debounced vault change.
 
 pub mod adopt;
+pub mod author;
 pub mod authoring;
 pub mod bump;
 pub mod harness;
