@@ -93,9 +93,9 @@
       "line": 73,
       "title": "new plugin and new skill do not write the conventional folders",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
     },
     {
       "id": "r1-9",
