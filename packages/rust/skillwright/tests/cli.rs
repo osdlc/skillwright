@@ -811,6 +811,38 @@ fn out_dot_writes_beside_the_vault() {
     assert_eq!(again.code, 0, "{}{}", again.stdout, again.stderr);
 }
 
+// A workspace roster shows what each marketplace's own build uses.
+#[test]
+fn a_workspace_roster_shows_each_marketplaces_targets() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\ntargets: [claude, codex]\n---\n",
+    )
+    .unwrap();
+    let member = dir.path().join("marketplaces/a");
+    fs::create_dir_all(member.join("skills")).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: a\ntargets: [claude]\nbuild:\n  out: .\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        member.join("skills/s.md"),
+        "---\ndescription: A skill.\n---\nBody.\n",
+    )
+    .unwrap();
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    let row = listed
+        .stdout
+        .lines()
+        .find(|line| line.contains("skills/s.md"))
+        .unwrap();
+    assert!(row.contains("claude"), "{row}");
+    assert!(!row.contains("codex"), "{row}");
+}
+
 // A workspace builds each marketplace under `marketplaces/`, each to its own
 // `build.out`, with the workspace's shared fields.
 #[test]
@@ -3423,6 +3455,35 @@ fn a_config_file_carries_its_patterns_and_exclusions() {
     assert!(pack.join("x/SKILL.md").is_file());
     assert!(!pack.join("z-draft").exists());
     assert!(!pack.join("z.draft").exists());
+}
+
+#[test]
+fn list_leaves_out_the_moved_folder_of_one_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: .\n---\n",
+    )
+    .unwrap();
+    for (name, note) in [
+        ("a", "---\nname: a\nclaude: {packs: mva}\n---\n"),
+        ("b", "---\nname: b\n---\n"),
+    ] {
+        std::fs::create_dir_all(dir.path().join("marketplaces").join(name)).unwrap();
+        std::fs::write(
+            dir.path()
+                .join(format!("marketplaces/{name}/skillwright.md")),
+            note,
+        )
+        .unwrap();
+    }
+    skill(&dir.path().join("marketplaces/a/plugins/p/skills/s.md"));
+    let built = run(&["build", "--marketplace", "a", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(dir.path().join("mva/p").is_dir());
+    let list = run(&["list"], dir.path());
+    assert_eq!(list.code, 0, "{}", list.stderr);
+    assert!(!list.stdout.contains("mva/"), "{}", list.stdout);
 }
 
 #[test]

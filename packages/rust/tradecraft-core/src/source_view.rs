@@ -17,13 +17,15 @@ use crate::discover::{DiscoveredComponent, Source, discover_in};
 use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, STAGE_DIR};
 use crate::frontmatter::EntityKind;
-use crate::harness::manifest::{check_packs, check_packs_against_sources, packs_of};
-use crate::harness::with_plugin_format;
+use crate::harness::manifest::{
+    check_packs, check_packs_against_sources, first_not_a_pack, packs_of,
+};
+use crate::harness::{HarnessProfile, with_plugin_format};
 use crate::model::cascade::Cascade;
 use crate::model::load::ASSETS_DIR;
 use crate::namespace::Namespace;
 use crate::patterns::Patterns;
-use crate::settings::ROOT_FILE;
+use crate::settings::{ROOT_FILE, parse_root_file};
 use crate::vfs::{DirEntry, Metadata, Vfs, VfsError, normalize};
 
 /// `inner`, less the hidden paths, with `<vault>/skillwright.md` standing for
@@ -158,25 +160,51 @@ pub fn effective_config(
     config: &MarketplaceConfig,
     ns: &Namespace,
 ) -> MarketplaceConfig {
-    let mut config = config.clone();
-    if let Some(note) = marketplace_note(vfs, scope, ns) {
-        let name = note.name.clone();
-        config.blocks = Cascade::over(&[note], Some(&name), &config).config.blocks;
+    let notes = marketplace_notes(vfs, scope, ns);
+    match &notes[..] {
+        [note] => with_note(config, note),
+        _ => config.clone(),
     }
+}
+
+/// [`effective_config`] for a run that may touch any marketplace: one config
+/// for each one `scope` allows, so several notes each give their own `packs`.
+/// With no note, `config` stands.
+pub fn effective_configs(
+    vfs: &dyn Vfs,
+    scope: VaultScope<'_>,
+    config: &MarketplaceConfig,
+    ns: &Namespace,
+) -> Vec<MarketplaceConfig> {
+    let notes = marketplace_notes(vfs, scope, ns);
+    if notes.is_empty() {
+        return vec![config.clone()];
+    }
+    notes.iter().map(|note| with_note(config, note)).collect()
+}
+
+/// `config` with the harness blocks of the marketplace `note`.
+fn with_note(config: &MarketplaceConfig, note: &DiscoveredComponent) -> MarketplaceConfig {
+    let mut config = config.clone();
+    let name = note.name.clone();
+    config.blocks = Cascade::over(std::slice::from_ref(note), Some(&name), &config)
+        .config
+        .blocks;
     config
 }
 
-/// The note of the marketplace `scope` reads. Only the marketplace folders are
-/// read, so it can be found before the vault's output is known.
-fn marketplace_note(
+/// The notes of the marketplaces `scope` reads: the one it names, else all of
+/// them. Only the marketplace folders are read, so they can be found before
+/// the vault's output is known.
+fn marketplace_notes(
     vfs: &dyn Vfs,
     scope: VaultScope<'_>,
     ns: &Namespace,
-) -> Option<DiscoveredComponent> {
+) -> Vec<DiscoveredComponent> {
     let root = normalize(scope.skills_root.unwrap_or(scope.vault_root));
     let folder = root.join("marketplaces");
     let mut files = Vec::new();
-    for entry in vfs.read_dir(&folder).ok()? {
+    for entry in vfs.read_dir(&folder).unwrap_or_default() {
         let path = folder.join(&entry.name);
         if entry.is_dir {
             let inside = vfs.read_dir(&path).unwrap_or_default();
@@ -191,17 +219,15 @@ fn marketplace_note(
         }
     }
     let source = Source { root, files };
-    let notes = discover_in(vfs, scope.vault_root, &source, ns).ok()?;
-    let mut notes: Vec<DiscoveredComponent> = notes
+    let Ok(notes) = discover_in(vfs, scope.vault_root, &source, ns) else {
+        return Vec::new();
+    };
+    notes
         .components
         .into_iter()
         .filter(|component| component.kind == EntityKind::Marketplace)
-        .collect();
-    match scope.marketplace {
-        Some(name) => notes.into_iter().find(|note| note.name == name),
-        None if notes.len() == 1 => notes.pop(),
-        None => None,
-    }
+        .filter(|note| scope.marketplace.is_none_or(|name| note.name == name))
+        .collect()
 }
 
 /// `path` with its links resolved, as far as it exists.
@@ -217,16 +243,22 @@ pub(crate) fn output_overlaps_vault(vfs: &dyn Vfs, vault_root: &Path, out_root: 
 }
 
 /// What a build owns under `out_root`, for each harness, that sits in `root`,
-/// spelled from `root`.
+/// spelled from `root`. `keep` says whether a packs folder counts.
 fn output_in(
     vfs: &dyn Vfs,
     root: &Path,
     out_root: &Path,
     config: &MarketplaceConfig,
+    keep: &dyn Fn(&HarnessProfile, &Path) -> bool,
 ) -> Vec<PathBuf> {
     let (inside, out) = (resolved(vfs, root), resolved(vfs, out_root));
     with_plugin_format()
-        .flat_map(|profile| profile.owned_paths_at(packs_of(config, profile)))
+        .flat_map(|profile| {
+            let packs = packs_of(config, profile);
+            let mut owned = profile.owned_paths_at(packs);
+            owned.retain(|path| *path != packs || keep(profile, &out.join(packs)));
+            owned
+        })
         .chain([STAGE_DIR])
         .filter_map(|owned| {
             let path = normalize(&out.join(owned));
@@ -244,11 +276,53 @@ pub(crate) fn output_paths(
     out_root: &Path,
     config: &MarketplaceConfig,
 ) -> Vec<PathBuf> {
-    let mut paths = output_in(vfs, scope.vault_root, out_root, config);
+    output_where(vfs, scope, out_root, config, &|_, _| true)
+}
+
+fn output_where(
+    vfs: &dyn Vfs,
+    scope: VaultScope<'_>,
+    out_root: &Path,
+    config: &MarketplaceConfig,
+    keep: &dyn Fn(&HarnessProfile, &Path) -> bool,
+) -> Vec<PathBuf> {
+    let mut paths = output_in(vfs, scope.vault_root, out_root, config, keep);
     if let Some(root) = scope.skills_root {
-        paths.extend(output_in(vfs, root, out_root, config));
+        paths.extend(output_in(vfs, root, out_root, config, keep));
     }
     paths
+}
+
+/// Whether the packs folder at `folder` holds nothing but packs, each with its
+/// plugin manifest. A default folder always counts, and so does one with
+/// nothing to list. Used to hide output, not to replace it, so it asks for no
+/// marker: a commands-only pack carries none.
+fn holds_packs(
+    vfs: &dyn Vfs,
+    profile: &HarnessProfile,
+    config: &MarketplaceConfig,
+    folder: &Path,
+) -> bool {
+    if packs_of(config, profile) == profile.format().packs {
+        return true;
+    }
+    let Ok(files) = crate::walk::files(vfs, folder, &[]) else {
+        return true;
+    };
+    let files: Vec<String> = files
+        .iter()
+        .filter_map(|file| file.strip_prefix(folder).ok())
+        .map(|file| format!("packs/{}", crate::skill::forward_slashed(file)))
+        .collect();
+    let manifest = profile.format().plugin_manifest;
+    first_not_a_pack(
+        "packs",
+        manifest,
+        files.iter().map(String::as_str),
+        |_| false,
+        |_| true,
+    )
+    .is_none()
 }
 
 /// Every check on `config`'s `packs` that needs no destination on disk:
@@ -285,9 +359,23 @@ pub(crate) fn check_pack_location(
     })
 }
 
+/// What the root file at `vault_root` configures, for a caller that holds no
+/// configuration of its own. Default when the file is missing or unreadable:
+/// a build says what is wrong with it.
+pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> MarketplaceConfig {
+    vfs.read_file(&vault_root.join(ROOT_FILE))
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|text| parse_root_file(&text).ok())
+        .map(|root| root.to_config(""))
+        .unwrap_or_default()
+}
+
 /// The view of the vault for a run that does not build: `base`, less the
-/// output at `out_root`. A `packs` a build would refuse hides nothing, so the
-/// run sees the vault as it is and the build says what is wrong.
+/// output at `out_root`, for each marketplace the run may touch. A `packs` a
+/// build would refuse hides nothing, so the run sees the vault as it is and the
+/// build says what is wrong, and a moved folder that holds more than packs
+/// stays visible.
 pub fn source_view<'v>(
     base: SourceView<'v>,
     scope: VaultScope<'_>,
@@ -298,11 +386,15 @@ pub fn source_view<'v>(
     let Some(out_root) = out_root else {
         return base;
     };
-    let config = effective_config(&base, scope, config, ns);
     let patterns = Patterns::read(&base, scope.vault_root);
-    if check_pack_location(&base, scope.vault_root, out_root, &config, &patterns).is_err() {
-        return base;
+    let mut paths = Vec::new();
+    for config in effective_configs(&base, scope, config, ns) {
+        if check_pack_location(&base, scope.vault_root, out_root, &config, &patterns).is_ok() {
+            let keep = |profile: &HarnessProfile, folder: &Path| {
+                holds_packs(&base, profile, &config, folder)
+            };
+            paths.extend(output_where(&base, scope, out_root, &config, &keep));
+        }
     }
-    let paths = output_paths(&base, scope, out_root, &config);
     base.hiding(paths)
 }

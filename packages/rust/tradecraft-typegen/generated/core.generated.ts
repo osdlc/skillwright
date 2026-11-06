@@ -611,6 +611,18 @@ export interface DiscoverRequest {
   skills_root?: string;
 
   /**
+   * Absolute path to the folder a build writes to. The scan leaves out what
+   * a build owns there. Absent means nothing is left out.
+   */
+  out_root?: string;
+
+  /**
+   * Says where the packs folders are, under what the vault's own notes say.
+   * Absent means the vault's root file.
+   */
+  config?: MarketplaceConfig;
+
+  /**
    * The vault's frontmatter namespace, as a stem. Absent means
    * [`Namespace::default`].
    */
@@ -697,7 +709,8 @@ export interface DiscoveredComponent {
 
   /**
    * The marketplace this belongs to — the directory holding the `plugins/`
-   * folder it sits under. `None` only for a marketplace's own note.
+   * folder it sits under. `None` for a marketplace's own note, and for a
+   * component with no marketplace folder above it.
    *
    * Structural, with no frontmatter counterpart.
    */
@@ -1232,6 +1245,12 @@ export interface LoadRequest {
 
   /** Canonical hooks files. */
   hooks?: HookFileSpec[];
+
+  /**
+   * Absolute path to the folder a build writes to. The load leaves out what
+   * a build owns there. Absent means nothing is left out.
+   */
+  out_root?: string;
 
   /**
    * The vault's frontmatter namespace, as a stem. Absent means

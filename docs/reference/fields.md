@@ -8,7 +8,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name. |
+| `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
@@ -27,7 +27,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name. |
+| `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
@@ -47,12 +47,12 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name. |
+| `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin or marketplace. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
-| `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings is Claude's own `arguments` key. |
-| `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking. |
+| `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one space-separated string. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
 | `metadata` | map of strings | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
 | `argument-hint` | string | spec | no | The hint shown after the command name. |
@@ -71,11 +71,11 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name. |
+| `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
-| `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings is Claude's own `arguments` key. |
-| `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking. |
+| `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one space-separated string. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
 | `metadata` | map of strings | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
 | `argument-hint` | string | spec | no | The hint shown after the command name. |
@@ -95,11 +95,11 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name. |
+| `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
-| `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings is Claude's own `arguments` key. |
-| `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking. |
+| `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one space-separated string. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
 | `metadata` | map of strings | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
 | `argument-hint` | string | spec | no | The hint shown after the command name. |
@@ -118,7 +118,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name. |
+| `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
 | `event` | string | spec | no | The event the hook runs on, in Claude Code's spelling. |
 | `matcher` | string | spec | no | Which tool or source the hook matches. |

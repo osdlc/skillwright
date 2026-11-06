@@ -107,6 +107,17 @@ impl ResolvedRun {
         )
     }
 
+    /// The build config of each marketplace `marketplace` allows, every one
+    /// when it names none, for a verb that does not build one.
+    pub fn effective_configs(&self, marketplace: Option<&str>) -> Vec<MarketplaceConfig> {
+        tradecraft_core::effective_configs(
+            &self.config_vfs(),
+            self.scope(None, marketplace),
+            &self.config.to_config(&self.folder_name()),
+            &self.core_namespace(),
+        )
+    }
+
     /// Whether this run's root file is a workspace's.
     pub fn is_workspace(&self) -> bool {
         self.config.workspace

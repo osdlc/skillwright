@@ -1643,27 +1643,19 @@ impl<'a> Renderer<'a> {
     }
 
     /// Refuses a link from `from_file` to a file that never ships, however
-    /// the link is spelled: `build.exclude` holds the file, or a folder that
-    /// never ships sits between the two.
+    /// the link is spelled: `build.exclude` holds the file, or it is in a
+    /// folder that never ships and the linking note is not.
     fn refuse_never_shipped(
         &self,
         from_file: &Path,
         path: &Path,
         destination: &str,
     ) -> Result<(), CoreError> {
-        let above = from_file.parent().unwrap_or(from_file);
-        let shared = above
-            .components()
-            .zip(path.components())
-            .take_while(|(a, b)| a == b)
-            .count();
-        let in_never_ship_folder = path.parent().is_some_and(|folder| {
-            folder
-                .iter()
-                .skip(shared)
-                .any(|part| EXCLUDED_BUNDLE_DIRECTORIES.contains(&part.to_string_lossy().as_ref()))
-        });
-        if in_never_ship_folder || self.excluded_by_pattern(path) {
+        let into_never_ship = match (self.vault_relative(from_file), self.vault_relative(path)) {
+            (Ok(from), Ok(to)) => self.patterns.links_into_never_ship(&from, &to),
+            _ => false,
+        };
+        if into_never_ship || self.excluded_by_pattern(path) {
             return Err(CoreError::refused(
                 "excluded-link",
                 format!(

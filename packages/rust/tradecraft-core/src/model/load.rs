@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use markdown_link::LinkIndex;
 use serde::{Deserialize, Serialize};
 
-use super::cascade::{Cascade, belongs_to};
+use super::cascade::{Cascade, belongs_to, marketplaces_in};
 use super::{
     Asset, Body, Component, Extensions, HooksFile, Marketplace, Plugin, Resolved, Resource,
     ResourceContent, Segment, pack_kind, segments,
@@ -188,7 +188,7 @@ pub fn load(
     // say it holds nothing publishable rather than that it is not there.
     let market = resolve_marketplace(&discovered, request.marketplace.as_deref())?;
     let cascade = Cascade::over(&discovered, market.as_deref(), &request.config);
-    cascade.resolve_targets(&mut discovered, market.as_deref());
+    cascade.resolve_targets(&mut discovered);
     let belonging: Vec<&DiscoveredComponent> = discovered
         .iter()
         .filter(|component| belongs_to(component, market.as_deref()))
@@ -198,7 +198,7 @@ pub fn load(
     // no marketplace of its own, so `belongs_to` admits every one of them.
     let ours: BTreeSet<&str> = belonging
         .iter()
-        .filter(|c| c.kind != EntityKind::Marketplace || market.as_deref() == Some(c.name.as_str()))
+        .filter(|c| c.kind != EntityKind::Marketplace || market.as_deref() == Some(c.folder()))
         .map(|c| c.vault_relative_path.as_str())
         .collect();
     let mut warnings: Vec<DiscoveryWarning> = scan
@@ -317,7 +317,7 @@ pub fn load(
             }
             let mut note =
                 read_vault_note(vfs, &component.discovered.entry_path, ns, component.kind)?;
-            cascade.apply(&mut note, component.kind, Some(&plugin_name));
+            cascade.apply(&mut note, component.kind, Some(&plugin_name), ns);
             let admitting: Vec<&HarnessProfile> = roots
                 .iter()
                 .copied()
@@ -416,7 +416,7 @@ pub fn load_component(
     let targets: OnceCell<BTreeMap<PathBuf, Option<Vec<String>>>> = OnceCell::new();
     let build = || -> Result<SkillIndex, CoreError> {
         let (mut scan, _) = read_notes(vfs, request.root, None, ns)?;
-        cascade.resolve_targets(&mut scan.components, None);
+        cascade.resolve_targets(&mut scan.components);
         let built = skill_index(scan.components.iter().map(|c| (c, None)), None);
         let _ = targets.set(built.targets);
         Ok(built.skills)
@@ -493,7 +493,7 @@ pub fn load_plugin(
     let canonical = profile.name;
     let carries_commands = profile.format().carries_commands;
     let (mut scan, links) = read_notes(vfs, vault_root, None, ns)?;
-    cascade.resolve_targets(&mut scan.components, None);
+    cascade.resolve_targets(&mut scan.components);
     // A note elsewhere in the vault that does not parse is not this pack's
     // problem, and a shared vault always holds one. A note this pack holds
     // is.
@@ -562,7 +562,7 @@ pub fn load_plugin(
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for member in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
         let mut note = read_vault_note(vfs, &member.discovered.entry_path, ns, member.kind)?;
-        cascade.apply(&mut note, member.kind, Some(plugin_name));
+        cascade.apply(&mut note, member.kind, Some(plugin_name), ns);
         member.extensions = extensions(&note.frontmatter, &member.discovered, &[profile], ns)?;
         let (resolved, content) = resolve_body(
             vfs,
@@ -585,7 +585,7 @@ pub fn load_plugin(
     if let Some(note) = scan
         .components
         .iter()
-        .find(|c| c.kind == EntityKind::Plugin && c.name == plugin_name)
+        .find(|c| c.kind == EntityKind::Plugin && c.folder() == plugin_name)
     {
         let source_note = note.vault_relative_path.clone();
         for relative in note.resources.iter().filter(|r| is_container_own(r)) {
@@ -611,7 +611,7 @@ pub fn load_plugin(
         .iter()
         .filter(|c| {
             c.plugin.as_deref() == Some(plugin_name)
-                || (c.kind == EntityKind::Plugin && c.name == plugin_name)
+                || (c.kind == EntityKind::Plugin && c.folder() == plugin_name)
         })
         .map(|c| c.vault_relative_path.as_str())
         .collect();
@@ -1002,7 +1002,7 @@ fn missing_versions(
         .collect();
     let folder_only = plugins
         .keys()
-        .filter(|name| !noted.iter().any(|c| c.name == **name))
+        .filter(|name| !noted.iter().any(|c| c.folder() == name.as_str()))
         .filter(|name| {
             config
                 .plugins
@@ -1020,11 +1020,11 @@ fn missing_versions(
         });
     noted
         .iter()
-        .filter(|c| plugins.contains_key(c.name.as_str()))
+        .filter(|c| plugins.contains_key(c.folder()))
         .filter(|c| {
             config
                 .plugins
-                .get(&c.name)
+                .get(c.folder())
                 .and_then(|o| o.version.as_ref())
                 .is_none()
         })
@@ -1060,7 +1060,7 @@ fn marketplace_name(config: &MarketplaceConfig, market: Option<&str>) -> Result<
             match market {
                 Some(name) => format!(
                     "marketplace `{name}` has no note naming it and the build supplied no name \
-                     either — add a `{name}/{name}.md` carrying `name:`, or configure one"
+                     either — add a `marketplaces/{name}/skillwright.md` carrying `name:`, or configure one"
                 ),
                 None => "this vault holds no marketplace to name one, and the build supplied no \
                          name — configure one, or give the vault a `marketplaces/<name>/` holding \
@@ -1086,10 +1086,7 @@ fn resolve_marketplace(
     discovered: &[DiscoveredComponent],
     requested: Option<&str>,
 ) -> Result<Option<String>, CoreError> {
-    let present: BTreeSet<&str> = discovered
-        .iter()
-        .filter_map(|component| component.marketplace.as_deref())
-        .collect();
+    let present = marketplaces_in(discovered);
     match requested {
         Some(name) => {
             if present.contains(name) {

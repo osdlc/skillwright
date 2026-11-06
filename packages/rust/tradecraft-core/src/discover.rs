@@ -117,6 +117,7 @@ use crate::error::CoreError;
 use crate::frontmatter::{
     ContainerIdentity, EntityKind, KindHints, KindSource, VaultFrontmatter, resolve_kind,
 };
+use crate::model::member_block_keys;
 use crate::namespace::Namespace;
 use crate::publish::KNOWN_TARGETS;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
@@ -169,7 +170,8 @@ pub struct DiscoveredComponent {
     /// about the vault.
     pub plugin: Option<String>,
     /// The marketplace this belongs to — the directory holding the `plugins/`
-    /// folder it sits under. `None` only for a marketplace's own note.
+    /// folder it sits under. `None` for a marketplace's own note, and for a
+    /// component with no marketplace folder above it.
     ///
     /// Structural, with no frontmatter counterpart.
     pub marketplace: Option<String>,
@@ -220,12 +222,26 @@ pub struct DiscoveredComponent {
     pub unknown_keys: Vec<String>,
 }
 
+impl DiscoveredComponent {
+    /// The folder a container is known by: a plugin's entry note is named for
+    /// it, and a marketplace's sits in it as the root file. A marketplace note's
+    /// `name` is only what it publishes under.
+    pub(crate) fn folder(&self) -> &str {
+        let named = if self.kind == EntityKind::Marketplace {
+            self.entry_path.parent().and_then(Path::file_name)
+        } else {
+            self.entry_path.file_stem()
+        };
+        named.and_then(|name| name.to_str()).unwrap_or_default()
+    }
+}
+
 /// What happens to one unknown key, as a warning says it. A key the namespace
 /// claims and a field of the `adopted` block are consumed on the read.
 fn unknown_key_fate(kind: EntityKind, key: &str, ns: &Namespace) -> &'static str {
     match kind {
         EntityKind::Plugin | EntityKind::Marketplace | EntityKind::Hook => "ignored",
-        _ if ns.is_ours(key) || key.contains('.') => "dropped",
+        _ if ns.is_ours(key) || key.starts_with(&format!("{}.", ns.key("adopted"))) => "dropped",
         EntityKind::Skill => "published under `metadata:`",
         EntityKind::Command => "carried as written",
         EntityKind::Agent => "carried as written when the agent publishes on its own",
@@ -259,7 +275,7 @@ pub(crate) fn unknown_key_warning(
             .collect::<Vec<_>>()
             .join("; ")
     };
-    let hint = if ns.is_bare() {
+    let mut hint = if ns.is_bare() {
         String::new()
     } else {
         format!(
@@ -268,6 +284,11 @@ pub(crate) fn unknown_key_warning(
             ns.key("<key>")
         )
     };
+    // The one spec key that lands here: it is listed, but the value is not one
+    // a harness reads.
+    if unknown.iter().any(|key| key == "allowed-tools") {
+        hint.push_str(". `allowed-tools` takes a list, or a space-separated string");
+    }
     let subject = if unknown.len() == 1 {
         "is not a key"
     } else {
@@ -296,8 +317,9 @@ pub(crate) fn unknown_keys(frontmatter: &VaultFrontmatter, kind: EntityKind) -> 
 
 /// The keys in a container note's harness blocks that no file the block
 /// reaches reads, as `<harness>.<key>`. A plugin's block reaches its pack
-/// manifest, its marketplace entry and, for a key neither reads, its members;
-/// a marketplace's reaches its marketplace manifest too.
+/// manifest, its marketplace entry and, for a key neither reads, its members.
+/// A marketplace's reaches its marketplace manifest, and the rest passes down
+/// to its plugins unless it says which plugin this is.
 pub(crate) fn unknown_container_block_keys(
     blocks: &Map<String, Value>,
     kind: EntityKind,
@@ -310,15 +332,20 @@ pub(crate) fn unknown_container_block_keys(
         let Some(format) = profile.plugin.as_ref() else {
             continue;
         };
-        let members = profile.accepted_override_keys();
+        let members = member_block_keys(EntityKind::Skill, harness);
         for key in block.as_object().into_iter().flat_map(|b| b.keys()) {
-            let known = format.manifest_fields.contains(&key.as_str())
-                || format.entry_fields.contains(&key.as_str())
-                || (kind == EntityKind::Marketplace
-                    && (format.marketplace_fields.contains(&key.as_str())
-                        || key == crate::harness::manifest::PACKS_KEY))
+            let name = key.as_str();
+            let on_a_plugin = format.manifest_fields.contains(&name)
+                || format.entry_fields.contains(&name)
                 || (harness == "pi" && key == crate::harness::manifest::NAMING_KEY)
                 || members.contains(key);
+            let known = if kind == EntityKind::Marketplace {
+                format.marketplace_fields.contains(&name)
+                    || key == crate::harness::manifest::PACKS_KEY
+                    || (on_a_plugin && !crate::keys::BLOCK_IDENTITY_KEYS.contains(&name))
+            } else {
+                on_a_plugin
+            };
             if !known {
                 unknown.push(format!("{harness}.{key}"));
             }
@@ -326,6 +353,10 @@ pub(crate) fn unknown_container_block_keys(
     }
     unknown
 }
+
+/// The warning reason for a note that declares a description where it cannot
+/// ship.
+pub const NEVER_SHIPS_REASON: &str = "never-ships";
 
 /// The warning reason for a key the key table does not list.
 pub const UNKNOWN_KEY_REASON: &str = "unknown-key";
@@ -568,13 +599,28 @@ pub(crate) fn discover_in(
             // and a note there is not a malformed component however it is
             // shaped. Only inside a marketplace is a declared note at an
             // unrecognised path a mistake worth naming.
-            if under_a_kind_folder(root, &conventional(root, entry_path, &patterns))
-                && !never_ships(root, entry_path)
-                && let Err(err) = refuse_stray(vfs, root, entry_path, ns)
-            {
-                // A stray sits at no recognised shape, so it is a member of
-                // nothing and blocks no pack.
-                skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+            let reads_as = conventional(root, entry_path, &patterns);
+            if under_a_kind_folder(root, &reads_as) {
+                let relative = |path: &Path| {
+                    path.strip_prefix(root)
+                        .map(forward_slashed)
+                        .unwrap_or_else(|_| path.display().to_string())
+                };
+                if patterns.never_ships(&relative(entry_path)) {
+                    if declares_description(vfs, entry_path, ns).unwrap_or(false) {
+                        warnings.push(DiscoveryWarning {
+                            path: relative(entry_path),
+                            reason: NEVER_SHIPS_REASON.to_owned(),
+                            detail: "this note declares a description and will not be published, \
+                                     because a folder that never ships holds it"
+                                .to_owned(),
+                        });
+                    }
+                } else if let Err(err) = refuse_stray(vfs, root, entry_path, &reads_as, ns) {
+                    // A stray sits at no recognised shape, so it is a member
+                    // of nothing and blocks no pack.
+                    skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+                }
             }
             continue;
         };
@@ -707,22 +753,10 @@ fn refuse_stray(
     vfs: &dyn Vfs,
     skills_root: &Path,
     entry_path: &Path,
+    reads_as: &Path,
     ns: &Namespace,
 ) -> Result<(), CoreError> {
-    let markdown = entry_path
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("md"));
-    if !markdown {
-        return Ok(());
-    }
-    let source = read_utf8(vfs, entry_path)?;
-    let (frontmatter, _body) = split_frontmatter(&source);
-    let mut fields = frontmatter_map(frontmatter, entry_path)?;
-    // Drained for its refusals: a removed key on a stray note is still worth
-    // naming, and it names itself better than the shape does.
-    VaultFrontmatter::take_from(&mut fields, entry_path, ns, EntityKind::Skill)?;
-
-    if trimmed_string(&fields, "description").is_none() {
+    if !declares_description(vfs, entry_path, ns)? {
         return Ok(());
     }
 
@@ -731,10 +765,19 @@ fn refuse_stray(
         .strip_prefix(skills_root)
         .map(forward_slashed)
         .unwrap_or_else(|_| entry_path.display().to_string());
+    let conventional = reads_as
+        .strip_prefix(skills_root)
+        .map(forward_slashed)
+        .unwrap_or_else(|_| reads_as.display().to_string());
+    let pattern = if conventional == relative {
+        String::new()
+    } else {
+        format!(" (`build.patterns` reads it as `{conventional}`)")
+    };
     Err(CoreError::malformed(
         entry_path,
         format!(
-            "`{relative}` declares a `description` but sits where no component can \
+            "`{relative}`{pattern} declares a `description` but sits where no component can \
              be read. A component is `<name>.md` or `<name>/<name>.md` directly inside a kind \
              folder (`{}`), and a skill may use `<name>/SKILL.md`. A kind folder sits at the \
              root or inside whatever the folder above it holds — \
@@ -838,6 +881,23 @@ pub(crate) fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
     })
 }
 
+/// Whether the note at `path` is Markdown and declares a `description`.
+fn declares_description(vfs: &dyn Vfs, path: &Path, ns: &Namespace) -> Result<bool, CoreError> {
+    let markdown = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+    if !markdown {
+        return Ok(false);
+    }
+    let source = read_utf8(vfs, path)?;
+    let (frontmatter, _body) = split_frontmatter(&source);
+    let mut fields = frontmatter_map(frontmatter, path)?;
+    // Drained for its refusals: a removed key on a stray note is still worth
+    // naming, and it names itself better than the shape does.
+    VaultFrontmatter::take_from(&mut fields, path, ns, EntityKind::Skill)?;
+    Ok(trimmed_string(&fields, "description").is_some())
+}
+
 /// The kind a folder name declares, or `None` for any other folder.
 pub(crate) fn kind_dir(name: &str) -> Option<EntityKind> {
     KIND_DIRS
@@ -858,6 +918,9 @@ struct Placement {
     plugin: Option<String>,
     /// The directory this component owns, or `None` for a lone file.
     dir: Option<PathBuf>,
+    /// Whether a container can sit here: at the vault root, or a plugin at a
+    /// marketplace's root. A note deeper down only has a container's shape.
+    container_level: bool,
 }
 
 /// Reads the paths as components, using structure alone.
@@ -898,12 +961,6 @@ fn place(
         }
     }
     placed
-}
-
-/// Whether a folder that never ships holds `path`: a note there is no stray.
-fn never_ships(root: &Path, path: &Path) -> bool {
-    path.strip_prefix(root)
-        .is_ok_and(|rest| crate::patterns::in_never_ship_folder(&forward_slashed(rest)))
 }
 
 /// `path` as the conventional path it plays the part of under `root`.
@@ -1033,6 +1090,11 @@ fn placement(
         marketplace: nearest(EntityKind::Marketplace),
         plugin: nearest(EntityKind::Plugin),
         dir,
+        container_level: match chain {
+            [] => true,
+            [(EntityKind::Marketplace, _)] => kind == EntityKind::Plugin,
+            _ => false,
+        },
     }
 }
 
@@ -1133,7 +1195,11 @@ fn read_source(
         ),
         // A container's own note is optional and holds whichever of its keys
         // it needs: the folder names it, and it need not describe itself.
-        (None, None) if resolved.kind.holds_components() && placement.dir.is_some() => {
+        (None, None)
+            if resolved.kind.holds_components()
+                && placement.dir.is_some()
+                && placement.container_level =>
+        {
             (default_name(entry_path), String::new(), true)
         }
         // Neither: an ordinary note sharing the tree. The common case, and
@@ -1144,6 +1210,21 @@ fn read_source(
     };
 
     validate_name(&name, "component name", entry_path)?;
+    // A plugin is known by its folder in every manifest and every call, so a
+    // `name` that differs could not take effect.
+    if resolved.kind == EntityKind::Plugin
+        && placement.container_level
+        && trimmed_string(&fields, "name").is_some_and(|declared| declared != placement.name)
+    {
+        return Err(CoreError::malformed(
+            entry_path,
+            format!(
+                "`name: {name}` differs from its folder `{}`. A plugin publishes under its \
+                 folder: remove `name`, or rename the folder",
+                placement.name
+            ),
+        ));
+    }
     if let Some(refusal) = description_refusal(&description) {
         return Err(CoreError::malformed(entry_path, refusal));
     }
@@ -1217,6 +1298,26 @@ fn read_source(
         unknown_keys,
         blocks: ours.overrides,
     }))
+}
+
+/// The vault's one marketplace folder and the path its note would have, or
+/// `None` when it holds none or several. A listing, not a scan: a publish of
+/// one note must not fail on a problem elsewhere in the vault.
+pub(crate) fn only_marketplace(vfs: &dyn Vfs, root: &Path) -> Option<(String, PathBuf)> {
+    let (dir, _) = KIND_DIRS
+        .iter()
+        .find(|(_, kind)| *kind == EntityKind::Marketplace)?;
+    let folder = root.join(dir);
+    let entries = vfs.read_dir(&folder).ok()?;
+    let mut names = entries
+        .iter()
+        .filter(|entry| entry.is_dir && !entry.name.starts_with('.'));
+    let name = names.next()?.name.clone();
+    if names.next().is_some() {
+        return None;
+    }
+    let note = folder.join(&name).join(crate::settings::ROOT_FILE);
+    Some((name, note))
 }
 
 /// The notes of the containers `entry` sits in, outermost first, as the paths

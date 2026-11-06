@@ -13,7 +13,8 @@
 //! ([`crate::discover`]) serves both.
 //!
 //! A folder that never ships (`docs/`, `tests/`, `fixtures/` and the like)
-//! stays out whatever a pattern says.
+//! stays out whatever a pattern says. A plugin or skill with such a name is
+//! a component, and ships.
 //!
 //! The root file is read here rather than passed in, the way the vault's own
 //! excluded-files list is, so every entry point answers alike. A host that
@@ -26,7 +27,8 @@ use std::path::Path;
 use crate::compile::EXCLUDED_BUNDLE_DIRECTORIES;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
-use crate::settings::{FolderPatterns, ROOT_FILE, parse_root_file};
+use crate::frontmatter::EntityKind;
+use crate::settings::{FolderPatterns, ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
 
 /// Why `glob` cannot be read, if it cannot. A glob is `/`-separated and
@@ -52,19 +54,56 @@ pub(crate) fn glob_problem(glob: &str) -> Option<&'static str> {
     None
 }
 
-/// Whether a folder that never ships holds vault-relative `rel`.
-pub(crate) fn in_never_ship_folder(rel: &str) -> bool {
-    rel.rsplit_once('/').is_some_and(|(folders, _)| {
-        folders
-            .split('/')
-            .any(|segment| EXCLUDED_BUNDLE_DIRECTORIES.contains(&segment))
-    })
+/// Folders that never ship and are also legal component names.
+const NAMEABLE_NEVER_SHIP: &[&str] = &["docs", "tests", "fixtures"];
+
+/// The index of each folder in `folders`, a conventional path, that never
+/// ships.
+///
+/// Position decides, not the name alone: the segment right after a kind folder
+/// names a component, so `plugins/docs` and `skills/tests` ship. A kind folder
+/// counts only where one can sit, so not inside a skill, command, agent or hook.
+fn never_ship_folders(folders: &[&str]) -> Vec<usize> {
+    let mut found = Vec::new();
+    let mut holds_kinds = true;
+    let mut at = 0;
+    while let Some(segment) = folders.get(at) {
+        match crate::discover::kind_dir(segment).filter(|_| holds_kinds) {
+            Some(kind) => {
+                holds_kinds = matches!(kind, EntityKind::Marketplace | EntityKind::Plugin);
+                at += 1;
+                if folders
+                    .get(at)
+                    .is_some_and(|name| !NAMEABLE_NEVER_SHIP.contains(name))
+                    && EXCLUDED_BUNDLE_DIRECTORIES.contains(&folders[at])
+                {
+                    found.push(at);
+                }
+            }
+            None if EXCLUDED_BUNDLE_DIRECTORIES.contains(segment) => found.push(at),
+            None => {}
+        }
+        at += 1;
+    }
+    found
 }
 
-/// Whether `glob` spells out a folder that never ships.
-pub(crate) fn names_a_never_ship_folder(glob: &str) -> bool {
-    glob.split('/')
-        .any(|segment| EXCLUDED_BUNDLE_DIRECTORIES.contains(&segment))
+/// The folders holding `rel`.
+fn folders_of(rel: &str) -> Vec<&str> {
+    let mut folders: Vec<&str> = rel.split('/').collect();
+    folders.pop();
+    folders
+}
+
+/// Whether `glob` spells out a folder that never ships. The last segment of a
+/// glob that `names_components` is a component's name, as in `packs/docs`.
+pub(crate) fn names_a_never_ship_folder(glob: &str, names_components: bool) -> bool {
+    let segments: Vec<&str> = glob.trim_end_matches('/').split('/').collect();
+    let folders = match segments.split_last() {
+        Some((_, above)) if names_components && !above.is_empty() => above,
+        _ => &segments,
+    };
+    !never_ship_folders(folders).is_empty()
 }
 
 /// `*` and `?` within one path segment; `**` as a whole segment matches any
@@ -110,27 +149,21 @@ impl Patterns {
         Self::load(vfs, vault_root).unwrap_or_default()
     }
 
-    /// The patterns in the root file at `vault_root`, none when there is no
-    /// file.
+    /// The patterns in the root file at `vault_root`, over what a workspace
+    /// file above it sets, key by key. None when there is no file. Globs are
+    /// read from the marketplace's folder wherever they were written.
     ///
     /// # Errors
     ///
     /// `refused: malformed-root-file`: an exclusion that cannot be read must
     /// not fail open.
     pub fn load(vfs: &dyn Vfs, vault_root: &Path) -> Result<Self, CoreError> {
-        let file = vault_root.join(ROOT_FILE);
-        if !vfs.exists(&file) {
-            return Ok(Self::default());
+        let mut root = read_root(vfs, &vault_root.join(ROOT_FILE))?.unwrap_or_default();
+        if !root.workspace
+            && let Some(shared) = workspace_above(vfs, vault_root)?
+        {
+            root.inherit(&shared);
         }
-        let malformed = |detail: String| {
-            CoreError::refused(
-                "malformed-root-file",
-                format!("{}: {detail}. Nothing was written", file.display()),
-            )
-        };
-        let text = String::from_utf8(vfs.read_file(&file)?)
-            .map_err(|_| malformed("it is not UTF-8".to_owned()))?;
-        let root = parse_root_file(&text).map_err(|err| malformed(err.to_string()))?;
         Ok(Self {
             folders: root.build.patterns,
             exclude: root.build.exclude,
@@ -166,14 +199,15 @@ impl Patterns {
 
     /// What is worth saying about these patterns over the vault's `files`,
     /// vault-relative: a glob that matches nothing, a path two kinds claim,
-    /// and one plugin read from two folders.
-    pub(crate) fn warnings(&self, files: &[String]) -> Vec<DiscoveryWarning> {
+    /// and one plugin read from two folders. `output` is what a build owns in
+    /// the vault: not source, but a fair thing for `build.exclude` to name.
+    pub(crate) fn warnings(&self, files: &[String], output: &[String]) -> Vec<DiscoveryWarning> {
         let warn = |path: &str, reason: &str, detail: String| DiscoveryWarning {
             path: path.to_owned(),
             reason: reason.to_owned(),
             detail,
         };
-        let matches_some = |glob: &str| {
+        let matches_some = |files: &[String], glob: &str| {
             files
                 .iter()
                 .any(|file| prefixes(file).any(|prefix| glob_match(glob, prefix)))
@@ -189,7 +223,8 @@ impl Patterns {
             })
             .chain(self.exclude.iter().map(|g| ("build.exclude".to_owned(), g)));
         for (key, glob) in keyed {
-            if !matches_some(glob) {
+            let names_output = key == "build.exclude" && matches_some(output, glob);
+            if !names_output && !matches_some(files, glob) {
                 warnings.push(warn(
                     ROOT_FILE,
                     "unmatched-glob",
@@ -201,9 +236,13 @@ impl Patterns {
         // By the first kind's claim on each path, once per path.
         let mut claimed: BTreeMap<&str, Vec<String>> = BTreeMap::new();
         let mut folders: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for file in files.iter().filter(|file| !in_never_ship_folder(file)) {
+        let ships = |file: &&String| !self.never_ships(file) && !self.excluded(file);
+        for file in files.iter().filter(ships) {
+            // The leaf kind a shorter path claimed: a deeper claim of another
+            // kind loses to it, with no two claims on one path to show it.
+            let mut settled: Option<(&str, String)> = None;
             for prefix in prefixes(file) {
-                let claims: Vec<String> = self
+                let claims: Vec<(&str, String)> = self
                     .kinds()
                     .iter()
                     .flat_map(|(key, globs)| {
@@ -211,20 +250,37 @@ impl Patterns {
                             .iter()
                             .filter(|glob| glob_match(glob, prefix))
                             .take(1)
-                            .map(move |glob| format!("`{key}: {glob}`"))
+                            .map(move |glob| (*key, format!("`{key}: {glob}`")))
                     })
                     .collect();
-                if claims.len() > 1 {
-                    claimed.entry(prefix).or_insert(claims);
+                let leaf = claims.iter().find(|(key, _)| *key != "plugins");
+                if let (Some((first, said)), Some((key, deeper))) = (&settled, leaf)
+                    && first != key
+                {
+                    claimed
+                        .entry(prefix)
+                        .or_insert_with(|| vec![said.clone(), deeper.clone()]);
+                } else if claims.len() > 1 {
+                    let said = claims.iter().map(|(_, said)| said.clone()).collect();
+                    claimed.entry(prefix).or_insert(said);
+                }
+                if settled.is_none() {
+                    settled = leaf.cloned();
                 }
             }
-            if let Some(name) = self.canonical(file).strip_prefix("plugins/")
-                && let Some((name, _)) = name.split_once('/')
-            {
+            let canonical = self.canonical(file);
+            let parts: Vec<&str> = canonical.split('/').collect();
+            let at = if parts.first() == Some(&"marketplaces") {
+                2
+            } else {
+                0
+            };
+            if parts.get(at) == Some(&"plugins") && parts.len() > at + 2 {
+                let conventional = parts[..at + 2].join("/");
                 let folder = self
                     .plugin_folder(file)
-                    .map_or_else(|| format!("plugins/{name}"), str::to_owned);
-                folders.entry(name.to_owned()).or_default().insert(folder);
+                    .map_or_else(|| conventional.clone(), str::to_owned);
+                folders.entry(conventional).or_default().insert(folder);
             }
         }
         for (path, claims) in claimed {
@@ -234,8 +290,9 @@ impl Patterns {
                 format!("{} claim it; the first one wins", claims.join(" and ")),
             ));
         }
-        for (name, folders) in folders {
+        for (conventional, folders) in folders {
             if folders.len() > 1 {
+                let name = conventional.rsplit('/').next().unwrap_or(&conventional);
                 let named: Vec<String> = folders.into_iter().collect();
                 warnings.push(warn(
                     &named[0],
@@ -256,6 +313,26 @@ impl Patterns {
             && prefixes(rel).any(|prefix| self.exclude.iter().any(|g| glob_match(g, prefix)))
     }
 
+    /// Whether a folder that never ships holds `rel`.
+    pub(crate) fn never_ships(&self, rel: &str) -> bool {
+        !never_ship_folders(&folders_of(&self.canonical(rel))).is_empty()
+    }
+
+    /// Whether a link from the file `from` to the file `to` goes into a folder
+    /// that never ships. Inside such a folder, its own files link freely.
+    pub(crate) fn links_into_never_ship(&self, from: &str, to: &str) -> bool {
+        let (from, to) = (self.canonical(from), self.canonical(to));
+        let (above, folders) = (folders_of(&from), folders_of(&to));
+        let shared = above
+            .iter()
+            .zip(&folders)
+            .take_while(|(a, b)| a == b)
+            .count();
+        never_ship_folders(&folders)
+            .into_iter()
+            .any(|at| at >= shared)
+    }
+
     /// The conventional path `rel` plays the part of.
     pub fn canonical(&self, rel: &str) -> String {
         if self.folders.is_empty() {
@@ -272,24 +349,36 @@ impl Patterns {
         let mut out: Vec<&str> = Vec::new();
         let mut pending: Vec<&str> = Vec::new();
         let mut settled = false;
-        for (prefix, segment) in prefixes(rel).zip(rel.split('/')) {
+        for (depth, (prefix, segment)) in prefixes(rel).zip(rel.split('/')).enumerate() {
             let matches = |globs: &[String]| globs.iter().any(|g| glob_match(g, prefix));
-            // A folder that never ships ends the mapping, so nothing under it
-            // reads as what a pattern says.
-            let never_ships = prefix != rel && EXCLUDED_BUNDLE_DIRECTORIES.contains(&segment);
+            // A pattern match below the root names a component, as the segment
+            // after a kind folder does. Any other folder that never ships ends
+            // the mapping, so nothing under it reads as what a pattern says.
+            let names_a_component = depth > 0
+                && (matches(&self.folders.plugins)
+                    || leaves.iter().any(|(globs, _)| matches(globs)));
+            let never_ships = prefix != rel && !names_a_component && {
+                let path: Vec<&str> = out
+                    .iter()
+                    .chain(&pending)
+                    .chain([&segment])
+                    .copied()
+                    .collect();
+                never_ship_folders(&path).contains(&(path.len() - 1))
+            };
             if settled || never_ships {
                 pending.push(segment);
                 settled = true;
             } else if matches(&self.folders.assets) {
-                keep_conventional_plugin(&mut out, &mut pending);
+                keep_conventional(&mut out, &mut pending, &["marketplaces", "plugins"]);
                 out.push(crate::model::load::ASSETS_DIR);
                 settled = true;
             } else if let Some((_, kind)) = leaves.iter().find(|(globs, _)| matches(globs)) {
-                keep_conventional_plugin(&mut out, &mut pending);
+                keep_conventional(&mut out, &mut pending, &["marketplaces", "plugins"]);
                 out.extend([*kind, segment]);
                 settled = true;
             } else if matches(&self.folders.plugins) {
-                pending.clear();
+                keep_conventional(&mut out, &mut pending, &["marketplaces"]);
                 out.extend(["plugins", segment]);
             } else {
                 pending.push(segment);
@@ -322,13 +411,55 @@ impl Patterns {
     }
 }
 
-/// Drops the folders a leaf match replaces, keeping a conventional
-/// `plugins/<p>` at their head: the plugin folder still owns what it holds.
-fn keep_conventional_plugin<'r>(out: &mut Vec<&'r str>, pending: &mut Vec<&'r str>) {
-    if out.is_empty() && pending.len() >= 2 && pending[0] == "plugins" {
-        out.extend(&pending[..2]);
+/// Drops the folders a match replaces, keeping each conventional `<kind>/<name>`
+/// of `kinds` at their head: a container still owns what it holds.
+fn keep_conventional<'r>(out: &mut Vec<&'r str>, pending: &mut Vec<&'r str>, kinds: &[&str]) {
+    if out.is_empty() {
+        let mut kept = 0;
+        for kind in kinds {
+            if pending.len() >= kept + 2 && pending[kept] == *kind {
+                kept += 2;
+            }
+        }
+        out.extend(&pending[..kept]);
     }
     pending.clear();
+}
+
+/// The root file at `file`, `None` when there is none.
+fn read_root(vfs: &dyn Vfs, file: &Path) -> Result<Option<RootFile>, CoreError> {
+    if !vfs.exists(file) {
+        return Ok(None);
+    }
+    let malformed = |detail: String| {
+        CoreError::refused(
+            "malformed-root-file",
+            format!("{}: {detail}. Nothing was written", file.display()),
+        )
+    };
+    let text = String::from_utf8(vfs.read_file(file)?)
+        .map_err(|_| malformed("it is not UTF-8".to_owned()))?;
+    parse_root_file(&text)
+        .map(Some)
+        .map_err(|err| malformed(err.to_string()))
+}
+
+/// The workspace file above the marketplace at `vault_root`, when that is
+/// `<workspace>/marketplaces/<m>/` and the file says `workspace: true`.
+fn workspace_above(vfs: &dyn Vfs, vault_root: &Path) -> Result<Option<RootFile>, CoreError> {
+    let Some(above) = vault_root
+        .parent()
+        .filter(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| name == "marketplaces")
+        })
+        .and_then(Path::parent)
+    else {
+        return Ok(None);
+    };
+    let root = read_root(vfs, &above.join(ROOT_FILE))?;
+    Ok(root.filter(|root| root.workspace))
 }
 
 /// Each `/`-bounded prefix of `rel`, shortest first, `rel` itself last.
@@ -435,10 +566,144 @@ mod tests {
             p.canonical("plugins/rev/docs/d.md"),
             "plugins/rev/docs/d.md"
         );
+    }
+
+    #[test]
+    fn a_component_named_for_a_never_ship_folder_is_mapped_and_ships() {
+        let p = patterns(FolderPatterns {
+            plugins: vec!["packs/*".to_owned()],
+            skills: vec!["notes/*".to_owned()],
+            ..FolderPatterns::default()
+        });
         assert_eq!(
             p.canonical("packs/docs/skills/a.md"),
-            "packs/docs/skills/a.md"
+            "plugins/docs/skills/a.md"
         );
+        assert_eq!(p.canonical("notes/tests/r.md"), "skills/tests/r.md");
+        assert!(!p.never_ships("packs/docs/skills/a.md"));
+        assert!(p.never_ships("packs/docs/docs/a.md"));
+    }
+
+    #[test]
+    fn a_never_ship_folder_is_a_position_and_not_a_name() {
+        let p = Patterns::default();
+        for ships in [
+            "plugins/docs/skills/a.md",
+            "plugins/tests/z.md",
+            "plugins/docs/misplaced/y.md",
+            "plugins/rev/skills/tests/t.md",
+            "marketplaces/fixtures/plugins/docs/skills/tests/tests.md",
+        ] {
+            assert!(!p.never_ships(ships), "{ships}");
+        }
+        for stays in [
+            "docs/a.md",
+            "plugins/rev/docs/x.md",
+            "docs/plugins/q/skills/w.md",
+            "plugins/rev/skills/a/tests/t.md",
+            "plugins/docs/docs/x.md",
+            "skills/a/skills/docs/x.md",
+            "plugins/.git/x.md",
+            "plugins/node_modules/x.md",
+        ] {
+            assert!(p.never_ships(stays), "{stays}");
+        }
+    }
+
+    #[test]
+    fn a_note_inside_a_never_ship_folder_links_within_it_and_nothing_links_in() {
+        let p = Patterns::default();
+        assert!(!p.links_into_never_ship("plugins/rev/docs/a.md", "plugins/rev/docs/b.md"));
+        assert!(p.links_into_never_ship("plugins/rev/skills/a.md", "plugins/rev/docs/b.md"));
+        assert!(p.links_into_never_ship("docs/x/a.md", "docs/x/tests/b.md"));
+        assert!(
+            !p.links_into_never_ship("plugins/rev/skills/a.md", "plugins/docs/skills/guide.md")
+        );
+    }
+
+    #[test]
+    fn only_a_glob_above_the_component_names_a_never_ship_folder() {
+        assert!(names_a_never_ship_folder("docs/*", true));
+        assert!(names_a_never_ship_folder("docs", true));
+        assert!(names_a_never_ship_folder("plugins/rev/docs/*", true));
+        assert!(!names_a_never_ship_folder("packs/docs", true));
+        assert!(names_a_never_ship_folder("plugins/*/docs", false));
+    }
+
+    #[test]
+    fn a_pattern_under_a_marketplace_stays_in_that_marketplace() {
+        let p = patterns(FolderPatterns {
+            plugins: vec!["marketplaces/a/packs/*".to_owned()],
+            skills: vec!["marketplaces/*/guides/*".to_owned()],
+            ..FolderPatterns::default()
+        });
+        assert_eq!(
+            p.canonical("marketplaces/a/packs/rev/skills/s.md"),
+            "marketplaces/a/plugins/rev/skills/s.md"
+        );
+        assert_eq!(
+            p.canonical("marketplaces/b/guides/g.md"),
+            "marketplaces/b/skills/g.md"
+        );
+    }
+
+    #[test]
+    fn a_shorter_claim_of_another_kind_is_a_conflict() {
+        let p = patterns(FolderPatterns {
+            skills: vec!["notes/*".to_owned()],
+            agents: vec!["notes/bots/*".to_owned()],
+            ..FolderPatterns::default()
+        });
+        let warnings = p.warnings(&["notes/bots/b.md".to_owned()], &[]);
+        let conflict = warnings
+            .iter()
+            .find(|warning| warning.reason == "pattern-conflict")
+            .expect("a conflict");
+        assert_eq!(conflict.path, "notes/bots/b.md");
+        assert!(
+            conflict.detail.contains("`skills: notes/*`"),
+            "{conflict:?}"
+        );
+    }
+
+    #[test]
+    fn a_plugin_folder_inside_a_skill_pattern_is_no_conflict() {
+        let p = patterns(FolderPatterns {
+            plugins: vec!["packs/*".to_owned()],
+            skills: vec!["packs/*/guides/*".to_owned()],
+            ..FolderPatterns::default()
+        });
+        let warnings = p.warnings(&["packs/p/guides/g.md".to_owned()], &[]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn an_excluded_folder_merges_no_plugin() {
+        let mut p = patterns(FolderPatterns {
+            plugins: vec!["new/*".to_owned(), "old/*".to_owned()],
+            ..FolderPatterns::default()
+        });
+        let files = [
+            "new/rev/skills/a.md".to_owned(),
+            "old/rev/skills/b.md".to_owned(),
+        ];
+        let merged = |p: &Patterns| {
+            p.warnings(&files, &[])
+                .iter()
+                .any(|warning| warning.reason == "plugin-merged")
+        };
+        assert!(merged(&p));
+        p.exclude = vec!["old".to_owned()];
+        assert!(!merged(&p));
+    }
+
+    #[test]
+    fn excluding_the_output_is_no_unmatched_glob() {
+        let mut p = patterns(FolderPatterns::default());
+        p.exclude = vec!["dist".to_owned(), "dist/**".to_owned()];
+        let output = ["dist/.claude-plugin/packs".to_owned()];
+        assert!(p.warnings(&[], &output).is_empty());
+        assert_eq!(p.warnings(&[], &[]).len(), 2);
     }
 
     #[test]
@@ -481,7 +746,7 @@ mod tests {
             "plugins/rev/skills/y.md",
         ]
         .map(str::to_owned);
-        let warnings = p.warnings(&files);
+        let warnings = p.warnings(&files, &[]);
         let detail = |reason: &str| -> Vec<&str> {
             warnings
                 .iter()

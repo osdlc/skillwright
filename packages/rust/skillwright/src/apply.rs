@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use markdown_corpus::{Corpus, LoadOptions, SplitMode};
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
-use tradecraft_core::vfs::NativeVfs;
+use tradecraft_core::vfs::Vfs;
 
 /// Write or rehearse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,24 +244,34 @@ impl From<markdown_relink::TransformError> for ApplyError {
     }
 }
 
-/// Execute `op` against the vault at `vault_dir`.
-pub fn apply(vault_dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
-    run(vault_dir, op, Mode::Apply)
+/// A vault an op runs on.
+#[derive(Clone, Copy)]
+pub struct Vault<'a> {
+    /// Its folder, which every write lands under.
+    pub dir: &'a Path,
+    /// What relinking reads. It leaves out generated output, so a rename
+    /// neither edits a built copy nor resolves a link against one.
+    pub source: &'a dyn Vfs,
+}
+
+/// Execute `op` against `vault`.
+pub fn apply(vault: Vault<'_>, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+    run(vault, op, Mode::Apply)
 }
 
 /// The same decisions and the same refusals as [`apply`], with nothing
 /// written.
-pub fn preview(vault_dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
-    run(vault_dir, op, Mode::Preview)
+pub fn preview(vault: Vault<'_>, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+    run(vault, op, Mode::Preview)
 }
 
-fn run(vault_dir: &Path, op: &AuthoringOp, mode: Mode) -> Result<Outcome, ApplyError> {
+fn run(vault: Vault<'_>, op: &AuthoringOp, mode: Mode) -> Result<Outcome, ApplyError> {
     match op {
         AuthoringOp::Create {
             path,
             bytes,
             scaffold,
-        } => create(vault_dir, path, bytes, scaffold, mode),
+        } => create(vault.dir, path, bytes, scaffold, mode),
         AuthoringOp::Rename {
             from,
             to,
@@ -273,15 +283,15 @@ fn run(vault_dir: &Path, op: &AuthoringOp, mode: Mode) -> Result<Outcome, ApplyE
             to,
             bundle,
             frontmatter,
-        } => relocate(vault_dir, from, to, *bundle, frontmatter, &[], mode),
+        } => relocate(vault, from, to, *bundle, frontmatter, &[], mode),
         AuthoringOp::ConvertKind {
             from,
             to,
             bundle,
             frontmatter,
             scaffold,
-        } => relocate(vault_dir, from, to, *bundle, frontmatter, scaffold, mode),
-        AuthoringOp::Delete { paths, trash_dir } => delete(vault_dir, paths, trash_dir, mode),
+        } => relocate(vault, from, to, *bundle, frontmatter, scaffold, mode),
+        AuthoringOp::Delete { paths, trash_dir } => delete(vault.dir, paths, trash_dir, mode),
     }
 }
 
@@ -345,7 +355,7 @@ fn scaffold_dirs(
 // ── Rename / Move / ConvertKind ─────────────────────────────────────────────
 
 fn relocate(
-    vault_dir: &Path,
+    vault: Vault<'_>,
     from: &str,
     to: &str,
     bundle: bool,
@@ -353,6 +363,7 @@ fn relocate(
     scaffold: &[String],
     mode: Mode,
 ) -> Result<Outcome, ApplyError> {
+    let vault_dir = vault.dir;
     let from = rel(from)?;
     let to = rel(to)?;
     let dirs = scaffold
@@ -365,7 +376,7 @@ fn relocate(
     check_frontmatter(vault_dir, &from, frontmatter)?;
 
     let mut outcome = Outcome::new(mode);
-    move_note(vault_dir, &from, &to, bundle, mode, &mut outcome)?;
+    move_note(vault, &from, &to, bundle, mode, &mut outcome)?;
     // From here the move has landed — a later failure is reported with what
     // already wrote, not as a bare refusal.
     if let Err(err) = relocate_after_move(vault_dir, &to, frontmatter, &dirs, mode, &mut outcome) {
@@ -395,14 +406,15 @@ fn relocate_after_move(
 /// [`ApplyError::Refused`] or [`ApplyError::Transform`] means nothing was
 /// written.
 fn move_note(
-    vault_dir: &Path,
+    vault: Vault<'_>,
     from: &str,
     to: &str,
     bundle: bool,
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    let (corpus, unreadable) = load_vault(vault_dir, from, to, bundle)?;
+    let vault_dir = vault.dir;
+    let (corpus, unreadable) = load_vault(vault, from, to, bundle)?;
     // Links resolve against every file a build sees, so a rename picks the
     // target a build does. Only notes outside dot-named folders are edited:
     // `.github`, `.claude` or another checkout under `.worktrees` is not the
@@ -411,9 +423,9 @@ fn move_note(
     facts.links.retain(|path, _| !in_dot_folder(path));
     facts.frontmatter.retain(|path, _| !in_dot_folder(path));
     let plan = if bundle {
-        markdown_relink::plan_bundle(&NativeVfs, vault_dir, &facts, from, to)?
+        markdown_relink::plan_bundle(vault.source, vault_dir, &facts, from, to)?
     } else {
-        markdown_relink::plan(&NativeVfs, vault_dir, &facts, from, to)?
+        markdown_relink::plan(vault.source, vault_dir, &facts, from, to)?
     };
     if let Some(conflict) = plan.conflict {
         return Err(ApplyError::Refused(conflict));
@@ -569,11 +581,12 @@ fn record_unreadable(paths: Vec<String>, outcome: &mut Outcome) {
 /// rename edits nothing there anyway. One that holds `from` or `to`, or lies
 /// inside a moved bundle, stops the rename instead, with an error naming it.
 fn load_vault(
-    vault_dir: &Path,
+    vault: Vault<'_>,
     from: &str,
     to: &str,
     bundle: bool,
 ) -> Result<(Corpus, Vec<String>), ApplyError> {
+    let vault_dir = vault.dir;
     let (from, to) = (Path::new(from), Path::new(to));
     // What the move carries: the note, or a bundle's whole folder.
     let moved = if bundle {
@@ -584,7 +597,7 @@ fn load_vault(
     let mut unreadable = Vec::new();
     // A walk that lists and stats only, so finding what cannot be read costs
     // no note reads.
-    for err in tradecraft_core::compile::vault_walk_errors(&NativeVfs, vault_dir) {
+    for err in tradecraft_core::compile::vault_walk_errors(vault.source, vault_dir) {
         let relative = err.path().strip_prefix(vault_dir).unwrap_or(err.path());
         if from.starts_with(relative) || to.starts_with(relative) || relative.starts_with(moved) {
             return Err(ApplyError::Io {
@@ -609,7 +622,7 @@ fn load_vault(
         .with_link_walk(walk.clone())
         .with_frontmatter_walk(walk)
         .with_split(SplitMode::Lenient);
-    Ok((Corpus::load(&NativeVfs, vault_dir, options), unreadable))
+    Ok((Corpus::load(vault.source, vault_dir, options), unreadable))
 }
 
 /// Whether the vault-relative `path` sits under a dot-named folder.
@@ -867,6 +880,27 @@ fn write_note(abs: &Path, contents: &str) -> Result<(), ApplyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tradecraft_core::vfs::NativeVfs;
+
+    fn apply(dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+        super::apply(
+            Vault {
+                dir,
+                source: &NativeVfs,
+            },
+            op,
+        )
+    }
+
+    fn preview(dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+        super::preview(
+            Vault {
+                dir,
+                source: &NativeVfs,
+            },
+            op,
+        )
+    }
     use std::collections::BTreeMap;
     use tradecraft_core::authoring::TRASH_DIR;
     use yaml_splice::Value;
@@ -1577,7 +1611,11 @@ mod tests {
         write(v.path(), "alpha.md", "---\nname: alpha\n---\n");
         write(v.path(), "rewritten.md", "see [[alpha]]\n");
         write(v.path(), "drifted.md", "also [[alpha]]\n");
-        let (corpus, _) = load_vault(v.path(), "alpha.md", "gamma.md", false).unwrap();
+        let source = Vault {
+            dir: v.path(),
+            source: &NativeVfs,
+        };
+        let (corpus, _) = load_vault(source, "alpha.md", "gamma.md", false).unwrap();
         let facts = VaultFacts::from_corpus(&corpus);
         let plan =
             markdown_relink::plan(&NativeVfs, v.path(), &facts, "alpha.md", "gamma.md").unwrap();

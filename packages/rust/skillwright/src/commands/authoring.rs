@@ -20,8 +20,6 @@
 //! Every core refusal string is printed verbatim — never reworded here, and
 //! never edited in the core.
 
-use std::path::Path;
-
 use crate::resolve::ResolvedRun;
 use serde::Serialize;
 use tradecraft_core::authoring::MARKETPLACES_DIR;
@@ -38,7 +36,7 @@ use tradecraft_core::{
 };
 use yaml_splice::Value;
 
-use crate::apply::{self, Applied, ApplyError, Outcome};
+use crate::apply::{self, Applied, ApplyError, Outcome, Vault};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
@@ -230,7 +228,7 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "new marketplace",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_create,
@@ -310,7 +308,7 @@ pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "new plugin",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_create,
@@ -394,7 +392,7 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "new skill",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_create,
@@ -455,7 +453,7 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "rename",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_rename,
@@ -512,7 +510,7 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "move",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_move,
@@ -557,7 +555,7 @@ pub fn run_delete(flags: &DeleteFlags, ctx: &mut CommandContext<'_>) -> i32 {
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "delete",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_delete,
@@ -596,7 +594,7 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
     execute(
         op_result,
         entry,
-        &run.vault,
+        &run,
         "convert",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label,
@@ -631,7 +629,7 @@ fn write_flags(json: bool, dry_run: bool, yes: bool, quiet: bool) -> WriteFlags 
 fn execute(
     op_result: Result<AuthoringOp, String>,
     fallback_path: &str,
-    vault: &Path,
+    run: &ResolvedRun,
     verb: &str,
     flags: &WriteFlags,
     label: &dyn Fn(&Applied) -> Option<String>,
@@ -640,6 +638,11 @@ fn execute(
     let op = match op_result {
         Ok(op) => op,
         Err(reason) => return refuse_row(fallback_path, &reason, flags, ctx),
+    };
+    let source = run.source_vfs(None);
+    let vault = Vault {
+        dir: &run.vault,
+        source: &source,
     };
 
     if flags.dry_run {

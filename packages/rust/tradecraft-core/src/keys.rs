@@ -1,6 +1,6 @@
 //! The closed key table: every frontmatter key skillwright reads, per kind.
 //!
-//! One table drives three things:
+//! One table drives these things:
 //!
 //! * **The publish strip.** A key skillwright owns ([`Owner::Skillwright`])
 //!   is read into the model and never reaches a destination as written.
@@ -49,7 +49,7 @@ pub enum Shape {
     Bool,
     /// A number.
     Number,
-    /// A string, or a `{name, email, url}` mapping.
+    /// A string, or a `{name, email, url}` mapping. Left blank, it is unset.
     Person,
     /// A mapping of string keys to string values.
     StringMap,
@@ -73,7 +73,11 @@ impl Shape {
                 .is_some_and(|items| items.iter().all(Value::is_string)),
             Self::Bool => value.is_boolean(),
             Self::Number => value.is_number(),
-            Self::Person => value.is_string() || value.get("name").is_some_and(Value::is_string),
+            Self::Person => {
+                value.is_null()
+                    || value.is_string()
+                    || value.get("name").is_some_and(Value::is_string)
+            }
             Self::StringMap => value
                 .as_object()
                 .is_some_and(|map| map.values().all(Value::is_string)),
@@ -137,7 +141,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: false,
-        summary: "The name. Defaults to the file or folder name.",
+        summary: "The name. Defaults to the file or folder name. A plugin's must match its folder.",
     },
     KeySpec {
         key: "description",
@@ -241,7 +245,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::Arguments,
         inherits: false,
-        summary: "A typed argument list. Derives `argument-hint`. A list of plain strings is Claude's own `arguments` key.",
+        summary: "A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key.",
     },
     KeySpec {
         key: "allowed-tools",
@@ -249,7 +253,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::StringList,
         inherits: false,
-        summary: "Tools the skill may use without asking.",
+        summary: "Tools the skill may use without asking: a list, or one space-separated string.",
     },
     KeySpec {
         key: "compatibility",

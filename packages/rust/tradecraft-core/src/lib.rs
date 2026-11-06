@@ -131,7 +131,7 @@ pub use frontmatter::{
     ADOPTED_FIELDS, ContainerIdentity, EntityKind, KindHints, KindSource, Provenance, ResolvedKind,
     VaultFrontmatter, resolve_kind,
 };
-pub use harness::manifest::packs_of;
+pub use harness::manifest::{check_packs, packs_of};
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, REMOVED, Shape};
 pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
@@ -145,7 +145,9 @@ pub use settings::{
     AssetSetting, BuildSettings, DestinationSetting, HookSetting, MarketplaceFields, ROOT_FILE,
     RootFile, SettingsError, compose_root_file, parse_root_file,
 };
-pub use source_view::{SourceView, VaultScope, effective_config, source_view};
+pub use source_view::{
+    SourceView, VaultScope, effective_config, effective_configs, source_view, vault_config,
+};
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};
 pub use walk::{built_paths, built_paths_for};

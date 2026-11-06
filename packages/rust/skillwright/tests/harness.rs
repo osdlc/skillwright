@@ -1038,3 +1038,53 @@ fn install_finds_the_plugins_of_a_moved_packs_folder() {
     assert_eq!(result.code, 0, "{}", result.stderr);
     assert!(result.stdout.contains("rev@m"), "{}", result.stdout);
 }
+
+#[test]
+fn install_finds_the_packs_of_one_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = |rel: &str, text: &str| {
+        let path = dir.path().join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    };
+    file("skillwright.md", "---\nname: m\nbuild:\n  out: .\n---\n");
+    file(
+        "marketplaces/a/skillwright.md",
+        "---\nname: a\nclaude: {packs: mva}\n---\n",
+    );
+    file("marketplaces/b/skillwright.md", "---\nname: b\n---\n");
+    file(
+        "marketplaces/a/plugins/p/skills/s.md",
+        "---\ndescription: Use s.\n---\n\nbody\n",
+    );
+    let fake = FakeRunner::new("[]", "[]");
+    let built = run(&["build", "--marketplace", "a", "--yes"], dir.path(), &fake);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+
+    let result = run(
+        &["harness", "install", "claude", "--dry-run"],
+        dir.path(),
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(result.stdout.contains("p@a"), "{}", result.stdout);
+}
+
+#[test]
+fn install_refuses_a_packs_that_leaves_the_output() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: dist\nclaude: {packs: ../../..}\n---\n",
+    )
+    .unwrap();
+    let fake = FakeRunner::new("[]", "[]");
+    let result = run(
+        &["harness", "install", "claude", "--dry-run"],
+        dir.path(),
+        &fake,
+    );
+    assert_ne!(result.code, 0);
+    assert!(result.stderr.contains("unsafe-path"), "{}", result.stderr);
+    assert!(fake.calls().is_empty());
+}
