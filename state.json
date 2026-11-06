@@ -203,9 +203,9 @@
       "line": 73,
       "title": "a marketplace skillwright.md with a description is listed as unreadable from the workspace root",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "cd5dcad0dbbbfe08e851abb52462d667b544bd42"
     },
     {
       "id": "r1-19",
