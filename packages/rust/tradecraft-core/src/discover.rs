@@ -281,7 +281,9 @@ pub(crate) fn unknown_container_block_keys(
             let known = format.manifest_fields.contains(&key.as_str())
                 || format.entry_fields.contains(&key.as_str())
                 || (kind == EntityKind::Marketplace
-                    && format.marketplace_fields.contains(&key.as_str()))
+                    && (format.marketplace_fields.contains(&key.as_str())
+                        || key == crate::harness::manifest::PACKS_KEY))
+                || (harness == "pi" && key == crate::harness::manifest::NAMING_KEY)
                 || members.contains(key);
             if !known {
                 unknown.push(format!("{harness}.{key}"));
@@ -520,7 +522,8 @@ pub(crate) fn discover_in(
 
     // Structure first, over the whole file set: a note's shape depends on what
     // sits beside it, so no single path can be classified on its own.
-    let placed = place(root, &files);
+    let patterns = crate::patterns::Patterns::read(vfs, vault_root);
+    let placed = place(root, &files, &patterns);
 
     let mut discovered = Vec::new();
     let mut skipped = Vec::new();
@@ -531,7 +534,7 @@ pub(crate) fn discover_in(
             // and a note there is not a malformed component however it is
             // shaped. Only inside a marketplace is a declared note at an
             // unrecognised path a mistake worth naming.
-            if under_a_kind_folder(root, entry_path)
+            if under_a_kind_folder(root, &conventional(root, entry_path, &patterns))
                 && let Err(err) = refuse_stray(vfs, root, entry_path, ns)
             {
                 // A stray sits at no recognised shape, so it is a member of
@@ -746,7 +749,17 @@ pub struct FolderPlacement {
 /// It *is* that rule, not a second reading of it: the kind folder above a note
 /// names the note, so `classify` answers this from the path alone.
 pub fn folder_placement(content_root: &Path, entry: &Path) -> FolderPlacement {
-    let Ok(rest) = entry.strip_prefix(content_root) else {
+    folder_placement_with(&crate::patterns::Patterns::default(), content_root, entry)
+}
+
+/// [`folder_placement`], reading the tree through the root file's patterns.
+pub fn folder_placement_with(
+    patterns: &crate::patterns::Patterns,
+    content_root: &Path,
+    entry: &Path,
+) -> FolderPlacement {
+    let path = conventional(content_root, entry, patterns);
+    let Ok(rest) = path.strip_prefix(content_root) else {
         return FolderPlacement::default();
     };
     let parts: Vec<String> = rest
@@ -819,21 +832,38 @@ struct Placement {
 /// folder has the same problem, and it is the rule's weak point: a plugin
 /// with no components yet is shaped exactly like a bare component that
 /// carries resources.
-fn place(root: &Path, files: &[PathBuf]) -> BTreeMap<PathBuf, Placement> {
+fn place(
+    root: &Path,
+    files: &[PathBuf],
+    patterns: &crate::patterns::Patterns,
+) -> BTreeMap<PathBuf, Placement> {
     let mut placed = BTreeMap::new();
     for path in files {
-        let Ok(rest) = path.strip_prefix(root) else {
+        let conventional = conventional(root, path, patterns);
+        let Ok(rest) = conventional.strip_prefix(root) else {
             continue;
         };
         let parts: Vec<String> = rest
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
-        if let Some(placement) = classify(root, &parts) {
+        if let Some(mut placement) = classify(root, &parts) {
+            // The folder it owns is the real one, whatever a pattern calls it.
+            if placement.dir.is_some() {
+                placement.dir = path.parent().map(Path::to_path_buf);
+            }
             placed.insert(path.clone(), placement);
         }
     }
     placed
+}
+
+/// `path` as the conventional path it plays the part of under `root`.
+fn conventional(root: &Path, path: &Path, patterns: &crate::patterns::Patterns) -> PathBuf {
+    path.strip_prefix(root).map_or_else(
+        |_| path.to_path_buf(),
+        |rest| root.join(patterns.canonical(&forward_slashed(rest))),
+    )
 }
 
 /// One path, read as the alternation the tree is.
@@ -983,14 +1013,17 @@ fn owned_resources(
 /// so an excluded file is neither placed nor published.
 fn source_files(vfs: &dyn Vfs, vault_root: &Path, source: &Source) -> Vec<PathBuf> {
     let excluded = crate::walk::excluded_files(vfs, vault_root);
+    let patterns = crate::patterns::Patterns::read(vfs, vault_root);
     source
         .files
         .iter()
         // A path outside the vault (a content root elsewhere) has no
         // vault-relative spelling for the list to match, so it stays.
         .filter(|path| {
-            path.strip_prefix(vault_root)
-                .map_or(true, |relative| !excluded(&forward_slashed(relative)))
+            path.strip_prefix(vault_root).map_or(true, |relative| {
+                let relative = forward_slashed(relative);
+                !excluded(&relative) && !patterns.excluded(&relative)
+            })
         })
         .cloned()
         .collect()

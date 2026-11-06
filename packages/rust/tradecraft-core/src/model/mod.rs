@@ -118,6 +118,10 @@ pub struct Plugin {
     /// at [`crate::export::MarketplaceConfig::launcher_path`]: the
     /// `${CLAUDE_PLUGIN_ROOT}/<launcher>` its skills call.
     pub launcher: Option<String>,
+    /// The harnesses that name this plugin's skills bare, whatever their
+    /// profile says: `pi: {naming: bare}`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bare_on: Vec<String>,
 }
 
 impl Plugin {
@@ -279,6 +283,9 @@ pub struct Call {
     pub skill: SkillId,
     /// That skill's `targets`, which decide whether a harness ships it.
     pub targets: Option<Vec<String>>,
+    /// The harnesses that name the skill bare, whatever their profile says.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bare_on: Vec<String>,
     /// The call as written, for a refusal.
     pub destination: String,
     /// The note the call is in, for a refusal.
@@ -418,6 +425,7 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
             entry_path: site.skill.entry_path.clone(),
         },
         targets: None,
+        bare_on: Vec::new(),
         destination: site.destination.clone(),
         caller: site.caller.clone(),
     }

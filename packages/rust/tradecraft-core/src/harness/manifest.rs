@@ -12,8 +12,9 @@
 
 use serde::Serialize;
 
+use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, PluginOverrides};
-use crate::harness::PluginDialect;
+use crate::harness::{HarnessProfile, PluginDialect};
 
 /// Two-space indentation, stable key order, one trailing newline — the byte
 /// form both manifests share, and the reason `check` can compare bytes.
@@ -47,6 +48,98 @@ fn format_of(harness: &str) -> &'static crate::harness::PluginFormat {
 }
 
 type Block = serde_json::Map<String, serde_json::Value>;
+
+/// The harness-block key moving a harness's packs folder. Read on the
+/// marketplace only.
+pub const PACKS_KEY: &str = "packs";
+
+/// The harness-block key choosing how Pi names a published skill.
+pub const NAMING_KEY: &str = "naming";
+
+/// Where `profile`'s packs land: the marketplace block's `packs`, or the
+/// profile's own folder.
+pub(crate) fn packs_of<'c>(config: &'c MarketplaceConfig, profile: &HarnessProfile) -> &'c str {
+    config
+        .blocks
+        .get(profile.name)
+        .and_then(|block| block.get(PACKS_KEY))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(profile.format().packs)
+}
+
+/// Refuses a `packs` value that is not a relative path of its own: one that
+/// leaves the output, or that lands on another harness's files.
+///
+/// # Errors
+///
+/// `refused: unsafe-path` and `refused: path-collision`.
+pub(crate) fn check_packs(config: &MarketplaceConfig) -> Result<(), CoreError> {
+    let mut seen: Vec<(&str, &str)> = Vec::new();
+    for profile in crate::harness::with_plugin_format() {
+        let value = config
+            .blocks
+            .get(profile.name)
+            .and_then(|block| block.get(PACKS_KEY));
+        if value.is_some_and(|value| !value.is_string()) {
+            return Err(CoreError::refused(
+                "unsafe-path",
+                format!("`{}.{PACKS_KEY}` must be a folder path", profile.name),
+            ));
+        }
+        let packs = packs_of(config, profile);
+        let unsafe_path = packs.is_empty()
+            || packs.starts_with('/')
+            || packs.contains('\\')
+            || packs.split('/').any(|part| matches!(part, "" | "." | ".."));
+        if unsafe_path {
+            return Err(CoreError::refused(
+                "unsafe-path",
+                format!(
+                    "`{}.{PACKS_KEY}` must be a relative path inside the output: `{packs}`",
+                    profile.name
+                ),
+            ));
+        }
+        for (other, taken) in &seen {
+            if packs == *taken
+                || packs.starts_with(&format!("{taken}/"))
+                || taken.starts_with(&format!("{packs}/"))
+            {
+                return Err(CoreError::refused(
+                    "path-collision",
+                    format!(
+                        "`{}` and `{other}` would both write under `{packs}`: each harness needs \
+                         a packs folder of its own",
+                        profile.name
+                    ),
+                ));
+            }
+        }
+        seen.push((profile.name, packs));
+    }
+    Ok(())
+}
+
+/// How `plugin`'s skills are named on Pi: whether its `naming` says bare.
+///
+/// # Errors
+///
+/// `refused: unknown-naming` for a value other than `bare` and `prefixed`.
+pub(crate) fn bare_on_pi(config: &MarketplaceConfig, plugin: &str) -> Result<bool, CoreError> {
+    match plugin_block(config, plugin, "pi").get(NAMING_KEY) {
+        None => Ok(false),
+        Some(value) => match value.as_str() {
+            Some("bare") => Ok(true),
+            Some("prefixed") => Ok(false),
+            _ => Err(CoreError::refused(
+                "unknown-naming",
+                format!(
+                    "`pi.{NAMING_KEY}` of plugin `{plugin}` must be `bare` or `prefixed`, not {value}"
+                ),
+            )),
+        },
+    }
+}
 
 /// One plugin's harness block for `harness`: the marketplace's block, less
 /// the keys that belong to the marketplace manifest's own top level, overlaid

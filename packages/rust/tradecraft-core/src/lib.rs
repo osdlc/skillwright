@@ -84,6 +84,7 @@ pub mod keys;
 pub mod manifest;
 pub mod model;
 pub mod namespace;
+pub mod patterns;
 pub mod projection;
 pub mod publish;
 pub mod scan;

@@ -865,6 +865,8 @@ struct Renderer<'a> {
     entry_path: PathBuf,
     bundle_root: Option<PathBuf>,
     skill_name: &'a str,
+    /// The root file's `build.exclude`.
+    patterns: crate::patterns::Patterns,
     /// Every file in the vault, by vault-relative path, for link
     /// resolution. Built once per compile — the vault is the resolution
     /// universe, and walking it lazily would make "not found" depend on what
@@ -933,6 +935,7 @@ impl<'a> Renderer<'a> {
         destinations.insert("SKILL.md".to_owned(), entry_path.clone());
         Ok(Renderer {
             vfs,
+            patterns: crate::patterns::Patterns::read(vfs, &vault_root),
             vault_root,
             entry_path,
             bundle_root,
@@ -963,7 +966,7 @@ impl<'a> Renderer<'a> {
         };
         for source_path in crate::walk::files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)?
         {
-            if source_path == self.entry_path {
+            if source_path == self.entry_path || self.excluded(&source_path) {
                 continue;
             }
             let relative = source_path
@@ -1615,7 +1618,20 @@ impl<'a> Renderer<'a> {
         // `photo.jpg`); a name with an extension addresses that file.
         let from = self.vault_relative(from_file).unwrap_or_default();
         match self.index.resolve_strict(target, &from) {
-            Ok(hit) => Ok(Some((self.vault_root.join(hit), fragment))),
+            Ok(hit) => {
+                let path = self.vault_root.join(hit);
+                if self.excluded(&path) {
+                    return Err(CoreError::refused(
+                        "excluded-link",
+                        format!(
+                            "{} links to {}, which never ships: {destination}",
+                            self.relative_or_verbatim(from_file),
+                            self.relative_or_verbatim(&path),
+                        ),
+                    ));
+                }
+                Ok(Some((path, fragment)))
+            }
             // Not a refusal. The compile spec and the publish spec
             // both rule that an unresolved link is reported and the rest of
             // the skill publishes; the name is recorded in the manifest's
@@ -1632,6 +1648,24 @@ impl<'a> Renderer<'a> {
                 ),
             )),
         }
+    }
+
+    /// Whether `path` never ships: `build.exclude` holds it, or it sits under
+    /// a bundle folder that never ships.
+    fn excluded(&self, path: &Path) -> bool {
+        let in_bundle = self
+            .bundle_root
+            .as_deref()
+            .and_then(|root| path.strip_prefix(root).ok());
+        in_bundle.is_some_and(|relative| {
+            relative.parent().is_some_and(|folder| {
+                folder.iter().any(|part| {
+                    EXCLUDED_BUNDLE_DIRECTORIES.contains(&part.to_string_lossy().as_ref())
+                })
+            })
+        }) || self
+            .vault_relative(path)
+            .is_ok_and(|relative| self.patterns.excluded(&relative))
     }
 
     /// For messages only: the vault-relative spelling when there is one, the

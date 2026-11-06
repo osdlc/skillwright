@@ -642,7 +642,7 @@ fn publish_onto(
     let runtime_target = runtime_target_for(&request.target);
     // The folder holding the note decides its kind, before the read: the
     // kind says which of the note's keys are skillwright's.
-    let resolved = publish_kind(request.skills_root.as_deref(), &request.skill_path);
+    let resolved = publish_kind(vfs, request.skills_root.as_deref(), &request.skill_path);
     let note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
     // Everything a renderer cannot take is refused here, before the renderer
@@ -1002,10 +1002,17 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
 /// The kind a publish of the note at `skill_path` resolves to: the kind
 /// folder holding it, else a skill. Shared with [`crate::status::status_of`]
 /// so status and publish agree on what a unit is.
-pub(crate) fn publish_kind(skills_root: Option<&Path>, skill_path: &Path) -> ResolvedKind {
+pub(crate) fn publish_kind(
+    vfs: &dyn Vfs,
+    skills_root: Option<&Path>,
+    skill_path: &Path,
+) -> ResolvedKind {
     resolve_kind(KindHints {
         requested: None,
-        folder: skills_root.and_then(|root| crate::discover::folder_kind(root, skill_path)),
+        folder: skills_root.and_then(|root| {
+            let patterns = crate::patterns::Patterns::read(vfs, root);
+            crate::discover::folder_placement_with(&patterns, root, skill_path).kind
+        }),
     })
 }
 

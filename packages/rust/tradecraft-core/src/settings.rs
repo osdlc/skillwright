@@ -137,6 +137,80 @@ pub struct BuildSettings {
     /// Canonical hooks files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<HookSetting>,
+    /// Globs of what never ships, relative to the root file. Experimental.
+    #[serde(
+        default,
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub exclude: Vec<String>,
+    /// Globs that stand in for the conventional folders. Experimental.
+    #[serde(default, skip_serializing_if = "FolderPatterns::is_empty")]
+    pub patterns: FolderPatterns,
+}
+
+/// `build.patterns`: for each conventional folder, the globs that name what
+/// it holds. See [`crate::patterns`].
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FolderPatterns {
+    /// Each match is a plugin folder.
+    #[serde(
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub plugins: Vec<String>,
+    /// Each match is a skill: a note, or a folder holding its entry.
+    #[serde(
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub skills: Vec<String>,
+    /// Each match is an agent.
+    #[serde(
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub agents: Vec<String>,
+    /// Each match is a command.
+    #[serde(
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub commands: Vec<String>,
+    /// Each match is a hook note.
+    #[serde(
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub hooks: Vec<String>,
+    /// Each match is a plugin's assets folder.
+    #[serde(
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub assets: Vec<String>,
+}
+
+impl FolderPatterns {
+    /// Whether no pattern is set.
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+/// A string or a list of strings, as a list.
+fn one_or_many<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(glob) => vec![glob],
+        OneOrMany::Many(globs) => globs,
+    })
 }
 
 /// A parsed root file.
@@ -194,6 +268,8 @@ pub const BUILD_KEYS: &[&str] = &[
     "scan_locations",
     "assets",
     "hooks",
+    "exclude",
+    "patterns",
 ];
 
 /// A YAML value read as `T` through its JSON equivalent, so free-shaped

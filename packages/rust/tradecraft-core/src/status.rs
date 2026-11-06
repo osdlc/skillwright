@@ -314,7 +314,7 @@ fn plugin_version_bump_suggestion(
 
     // The folder decides the kind; the note, read only once the cheap
     // checks pass, decides the version.
-    let kind = publish_kind(request.skills_root.as_deref(), &request.skill_path);
+    let kind = publish_kind(vfs, request.skills_root.as_deref(), &request.skill_path);
     if kind.kind != EntityKind::Plugin {
         return Ok(None);
     }

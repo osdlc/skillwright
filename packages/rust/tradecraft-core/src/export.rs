@@ -120,7 +120,7 @@ use serde::{Deserialize, Serialize};
 use crate::discover::{DiscoveryWarning, name_refusal};
 use crate::error::CoreError;
 use crate::guard::{assert_destination_allowed, assert_destination_allowed_for_vault, within};
-use crate::harness::manifest::overrides_for;
+use crate::harness::manifest::{overrides_for, packs_of};
 use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
 use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
@@ -578,12 +578,14 @@ fn selected_roots(request: &ExportRequest) -> Result<Vec<&'static HarnessProfile
 ///
 /// So a caller can say what a build is about to replace without owning a
 /// second copy of the roots table or of the harness selection.
-pub fn owned_paths(
-    request: &ExportRequest,
-) -> Result<Vec<(&'static str, &'static str)>, CoreError> {
+pub fn owned_paths(request: &ExportRequest) -> Result<Vec<(&'static str, &str)>, CoreError> {
     Ok(selected_roots(request)?
         .into_iter()
-        .flat_map(|spec| spec.owned_paths().into_iter().map(|path| (spec.name, path)))
+        .flat_map(|spec| {
+            spec.owned_paths_at(packs_of(&request.config, spec))
+                .into_iter()
+                .map(|path| (spec.name, path))
+        })
         .collect())
 }
 
@@ -653,7 +655,11 @@ pub fn export_skills(
 
     // Which harnesses this build renders, before anything reads or writes.
     let roots = selected_roots(request)?;
-    let owned: Vec<&'static str> = roots.iter().flat_map(|spec| spec.owned_paths()).collect();
+    crate::harness::manifest::check_packs(&request.config)?;
+    let owned: Vec<&str> = roots
+        .iter()
+        .flat_map(|spec| spec.owned_paths_at(packs_of(&request.config, spec)))
+        .collect();
 
     // The rail, before discovery reads a byte: both sides resolved as far as
     // the filesystem goes, so a symlinked spelling of the vault cannot slip a
@@ -783,7 +789,8 @@ pub fn export_skills(
                      would replace it wholesale. Move it aside, or point `build.out` (or \
                      `--out`) somewhere else. Nothing was written",
                     out_root.display(),
-                    spec.owned_paths().join("` and `"),
+                    spec.owned_paths_at(packs_of(&market.config, spec))
+                        .join("` and `"),
                     spec.name,
                 ),
             ));
@@ -824,7 +831,7 @@ pub fn export_skills(
             .iter()
             .map(|index| (roots[*index], &rendered[*index]))
             .collect();
-        commit(vfs, &out_root, &swapping)?;
+        commit(vfs, &out_root, &swapping, &market.config)?;
     }
     // The build report is the check's comparison under the write verbs: what
     // matched is unchanged, what differed was (just) written.
@@ -904,9 +911,10 @@ fn scan_destination(
     vfs: &dyn Vfs,
     base: &Path,
     spec: &HarnessProfile,
+    packs_dir: &str,
 ) -> Result<DestState, CoreError> {
     let mut state = DestState::default();
-    for owned in spec.owned_paths() {
+    for owned in spec.owned_paths_at(packs_dir) {
         // A link or a file above an owned path is recorded and goes no
         // further: a swap through it would land somewhere else, or fail.
         if let Some((blocker, is_link)) = blocked_above(vfs, base, owned) {
@@ -927,7 +935,7 @@ fn scan_destination(
             walk_destination(vfs, base, &path, &mut state)?;
         }
     }
-    let packs = base.join(spec.format().packs);
+    let packs = base.join(packs_dir);
     if vfs.exists(&packs) {
         let mut entries = vfs.read_dir(&packs)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
@@ -1000,8 +1008,13 @@ struct DestTree<'v> {
 }
 
 impl<'v> DestTree<'v> {
-    fn scan(vfs: &'v dyn Vfs, base: PathBuf, spec: &HarnessProfile) -> Result<Self, CoreError> {
-        let state = scan_destination(vfs, &base, spec)?;
+    fn scan(
+        vfs: &'v dyn Vfs,
+        base: PathBuf,
+        spec: &HarnessProfile,
+        packs: &str,
+    ) -> Result<Self, CoreError> {
+        let state = scan_destination(vfs, &base, spec, packs)?;
         Ok(Self { vfs, base, state })
     }
 
@@ -1164,6 +1177,7 @@ fn describe_root(
     sets: &FileSets,
     config: &MarketplaceConfig,
 ) -> Vec<ExportUnit> {
+    let packs = packs_of(config, spec);
     // A destination plugin directory this root no longer carries. It is one
     // unit, and its files are never reported on their own: the swap removes
     // the directory whole, and a line per file inside it would say the same
@@ -1184,7 +1198,7 @@ fn describe_root(
     let mut slices: BTreeMap<&str, PluginSlice> = BTreeMap::new();
     let mut loose: Vec<&str> = Vec::new();
     for relative in &sets.extra {
-        match spec.split_pack(relative) {
+        match HarnessProfile::split_pack(packs, relative) {
             Some((name, tail)) if admitted.contains_key(name) && !tail.is_empty() => {
                 slices.entry(name).or_default().extra.push(relative);
             }
@@ -1193,7 +1207,7 @@ fn describe_root(
         }
     }
     for relative in &sets.differs {
-        if let Some((name, tail)) = spec.split_pack(relative)
+        if let Some((name, tail)) = HarnessProfile::split_pack(packs, relative)
             && !tail.is_empty()
             && admitted.contains_key(name)
         {
@@ -1208,7 +1222,7 @@ fn describe_root(
     // its own.
     let mut stale_paths: Vec<(String, StaleKind)> = Vec::new();
     for dir in &dest.state.empty_dirs {
-        match spec.split_pack(dir) {
+        match HarnessProfile::split_pack(packs, dir) {
             Some((name, tail)) if admitted.contains_key(name) && !tail.is_empty() => {
                 slices.entry(name).or_default().dirty = true;
             }
@@ -1251,7 +1265,7 @@ fn describe_root(
     for name in &stale_plugins {
         units.push(ExportUnit::Stale {
             root: spec.name.to_owned(),
-            path: format!("{}/{name}", spec.format().packs),
+            path: format!("{packs}/{name}"),
             kind: StaleKind::Plugin,
         });
     }
@@ -1293,7 +1307,7 @@ fn plugin_version_bump(
     let current_version = overrides_for(config, plugin).and_then(|o| o.version.clone())?;
     let manifest_key = format!(
         "{}/{plugin}/{}",
-        spec.format().packs,
+        packs_of(config, spec),
         spec.format().plugin_manifest
     );
     if !rendered.contains_key(&manifest_key) {
@@ -1324,7 +1338,7 @@ fn diff_root(
     rendered: &BTreeMap<String, PreviewWrite>,
     config: &MarketplaceConfig,
 ) -> Result<RootDiff, CoreError> {
-    let dest = DestTree::scan(vfs, out_root.to_path_buf(), spec)?;
+    let dest = DestTree::scan(vfs, out_root.to_path_buf(), spec, packs_of(config, spec))?;
     let sets = dest.compare(rendered);
     Ok(RootDiff {
         equal: root_is_equal(&sets, &dest),
@@ -1337,6 +1351,7 @@ fn commit(
     vfs: &dyn Vfs,
     out_root: &Path,
     swapping: &[(&HarnessProfile, &BTreeMap<String, PreviewWrite>)],
+    config: &MarketplaceConfig,
 ) -> Result<(), CoreError> {
     let stage = out_root.join(STAGE_DIR);
     // A stage left by a crashed run is dead weight; a fresh build owns the
@@ -1360,7 +1375,9 @@ fn commit(
         }
     }
 
-    let entries = swapping.iter().flat_map(|(spec, _)| spec.owned_paths());
+    let entries = swapping
+        .iter()
+        .flat_map(|(spec, _)| spec.owned_paths_at(packs_of(config, spec)));
     let mut swapped: Vec<(PathBuf, PathBuf)> = Vec::new();
     for entry in entries {
         let dest = out_root.join(entry);

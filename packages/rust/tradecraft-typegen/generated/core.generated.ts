@@ -338,6 +338,12 @@ export interface BuildSettings {
 
   /** Canonical hooks files. */
   hooks?: HookSetting[];
+
+  /** Globs of what never ships, relative to the root file. Experimental. */
+  exclude?: string[];
+
+  /** Globs that stand in for the conventional folders. Experimental. */
+  patterns?: FolderPatterns;
 }
 
 /** Where `publish` writes when `--to` is not given. */
@@ -371,6 +377,30 @@ export interface HookSetting {
    * plugin.
    */
   plugin?: string;
+}
+
+/**
+ * `build.patterns`: for each conventional folder, the globs that name what
+ * it holds. See [`crate::patterns`].
+ */
+export interface FolderPatterns {
+  /** Each match is a plugin folder. */
+  plugins?: string[];
+
+  /** Each match is a skill: a note, or a folder holding its entry. */
+  skills?: string[];
+
+  /** Each match is an agent. */
+  agents?: string[];
+
+  /** Each match is a command. */
+  commands?: string[];
+
+  /** Each match is a hook note. */
+  hooks?: string[];
+
+  /** Each match is a plugin's assets folder. */
+  assets?: string[];
 }
 
 /**
@@ -1227,6 +1257,12 @@ export interface Plugin {
    * `${CLAUDE_PLUGIN_ROOT}/<launcher>` its skills call.
    */
   launcher: string | null;
+
+  /**
+   * The harnesses that name this plugin's skills bare, whatever their
+   * profile says: `pi: {naming: bare}`.
+   */
+  bare_on?: string[];
 }
 
 /**
@@ -1488,6 +1524,9 @@ export interface Call {
 
   /** That skill's `targets`, which decide whether a harness ships it. */
   targets: string[] | null;
+
+  /** The harnesses that name the skill bare, whatever their profile says. */
+  bare_on?: string[];
 
   /** The call as written, for a refusal. */
   destination: string;

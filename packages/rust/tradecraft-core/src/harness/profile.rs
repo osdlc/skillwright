@@ -620,18 +620,22 @@ impl HarnessProfile {
     /// repository root: the folders around them, such as `.agents/skills/`,
     /// hold what people author.
     pub fn owned_paths(&self) -> Vec<&'static str> {
-        let format = self.format();
-        std::iter::once(format.packs)
-            .chain(format.marketplace_manifest)
+        self.owned_paths_at(self.format().packs)
+    }
+
+    /// [`Self::owned_paths`] for a build whose packs folder is `packs`.
+    pub fn owned_paths_at<'p>(&self, packs: &'p str) -> Vec<&'p str> {
+        std::iter::once(packs)
+            .chain(self.format().marketplace_manifest)
             .collect()
     }
 
-    /// `packs/<name>/<tail>` for this harness's pack directory: the plugin and
-    /// the rest, `tail` empty for the pack's own directory, `None` for a path
-    /// naming no pack of this harness's.
-    pub fn split_pack<'p>(&self, relative: &'p str) -> Option<(&'p str, &'p str)> {
+    /// `<packs>/<name>/<tail>` for this harness's pack directory: the plugin
+    /// and the rest, `tail` empty for the pack's own directory, `None` for a
+    /// path naming no pack of this harness's.
+    pub fn split_pack<'p>(packs: &str, relative: &'p str) -> Option<(&'p str, &'p str)> {
         let rest = relative
-            .strip_prefix(self.format().packs)?
+            .strip_prefix(packs)?
             .strip_prefix('/')
             .unwrap_or("");
         if rest.is_empty() {

@@ -320,3 +320,215 @@ fn under_a_namespace_the_prefixed_forms_are_ours_and_the_bare_ones_are_not() {
     assert!(skill.contains("claude: theirs"), "{skill}");
     assert!(!skill.contains("sw-claude"), "{skill}");
 }
+
+/// A vault with a root file, and `files` as (path, text) under `/vault`.
+fn root_vault(root_file: &str, files: &[(&str, &str)]) -> MemVfs {
+    let vfs = MemVfs::new();
+    write(&vfs, "/vault/skillwright.md", root_file);
+    for (path, text) in files {
+        write(&vfs, &format!("/vault/{path}"), text);
+    }
+    vfs
+}
+
+/// A build of a vault with no `marketplaces/` folder, named `house`.
+fn build_root(vfs: &dyn Vfs, config: MarketplaceConfig) -> Result<ExportReport, String> {
+    let mut named = request();
+    named.marketplace = None;
+    named.config = MarketplaceConfig {
+        name: Some("house".to_owned()),
+        owner: Some(serde_json::json!("acme")),
+        ..config
+    };
+    export_skills(vfs, &named, &Namespace::bare()).map_err(|err| err.to_string())
+}
+
+#[test]
+fn a_plugin_pattern_builds_a_folder_that_is_not_plugins() {
+    let vfs = root_vault(
+        "---\nname: house\nbuild:\n  patterns:\n    plugins: packs/*\n---\n",
+        &[
+            ("packs/tools/tools.md", &note("tools", "version: 1.2.0\n")),
+            ("packs/tools/skills/review.md", &note("review", "")),
+            ("packs/tools/CHANGELOG.md", "# Changelog\n\n## 1.2.0\n"),
+        ],
+    );
+    build_root(&vfs, request().config).unwrap();
+    assert!(vfs.exists(Path::new(CLAUDE_REVIEW)));
+    assert!(vfs.exists(Path::new("/market/.claude-plugin/packs/tools/CHANGELOG.md")));
+    let manifest = json_at(
+        &vfs,
+        "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
+    );
+    assert_eq!(manifest["version"], "1.2.0");
+}
+
+#[test]
+fn a_skill_pattern_and_an_assets_pattern_map_a_vaults_own_folders() {
+    let vfs = root_vault(
+        "---\nname: house\nbuild:\n  patterns:\n    plugins: packs/*\n    \
+         skills: packs/*/guides/*\n    assets: packs/*/static\n---\n",
+        &[
+            ("packs/tools/guides/review.md", &note("review", "")),
+            ("packs/tools/static/tool.sh", "#!/bin/sh\n"),
+        ],
+    );
+    build_root(&vfs, request().config).unwrap();
+    assert!(vfs.exists(Path::new(CLAUDE_REVIEW)));
+    assert!(vfs.exists(Path::new("/market/.claude-plugin/packs/tools/tool.sh")));
+}
+
+#[test]
+fn an_excluded_note_is_not_a_component() {
+    let vfs = root_vault(
+        "---\nname: house\nbuild:\n  exclude: [\"**/*.draft.md\"]\n---\n",
+        &[
+            ("plugins/tools/skills/review.md", &note("review", "")),
+            ("plugins/tools/skills/next.draft.md", &note("next", "")),
+        ],
+    );
+    build_root(&vfs, request().config).unwrap();
+    assert!(vfs.exists(Path::new(CLAUDE_REVIEW)));
+    assert!(!vfs.exists(Path::new(
+        "/market/.claude-plugin/packs/tools/skills/next/SKILL.md"
+    )));
+}
+
+#[test]
+fn an_excluded_file_in_a_bundle_does_not_ship() {
+    let vfs = root_vault(
+        "---\nname: house\nbuild:\n  exclude: [\"**/scratch\"]\n---\n",
+        &[
+            ("plugins/tools/skills/review/review.md", &note("review", "")),
+            ("plugins/tools/skills/review/scripts/run.sh", "#!/bin/sh\n"),
+            ("plugins/tools/skills/review/scratch/notes.txt", "todo\n"),
+        ],
+    );
+    build_root(&vfs, request().config).unwrap();
+    let pack = "/market/.claude-plugin/packs/tools/skills/review";
+    assert!(vfs.exists(Path::new(&format!("{pack}/scripts/run.sh"))));
+    assert!(!vfs.exists(Path::new(&format!("{pack}/scratch/notes.txt"))));
+}
+
+#[test]
+fn a_body_link_into_an_excluded_folder_is_refused() {
+    let body = "---\nname: review\ndescription: Use review.\n---\n\nSee [[drafts/plan]].\n";
+    let vfs = root_vault(
+        "---\nname: house\nbuild:\n  exclude: [drafts]\n---\n",
+        &[
+            ("plugins/tools/skills/review.md", body),
+            ("drafts/plan.md", "# Plan\n"),
+        ],
+    );
+    let err = build_root(&vfs, request().config).unwrap_err();
+    assert!(err.contains("excluded-link"), "{err}");
+    assert!(err.contains("drafts/plan.md"), "{err}");
+}
+
+#[test]
+fn a_body_link_into_a_bundles_docs_is_refused() {
+    let body = "---\nname: review\ndescription: Use review.\n---\n\nSee [[docs/plan]].\n";
+    let vfs = root_vault(
+        "---\nname: house\n---\n",
+        &[
+            ("plugins/tools/skills/review/review.md", body),
+            ("plugins/tools/skills/review/docs/plan.md", "# Plan\n"),
+        ],
+    );
+    let err = build_root(&vfs, request().config).unwrap_err();
+    assert!(err.contains("excluded-link"), "{err}");
+}
+
+/// Two plugins, each with a `review`-calling or `review` skill.
+fn pi_vault() -> MemVfs {
+    let caller = "---\nname: lead\ndescription: Use lead.\n---\n\nRun /[[review]].\n";
+    root_vault(
+        "---\nname: house\n---\n",
+        &[
+            ("plugins/tools/skills/review.md", &note("review", "")),
+            ("plugins/tools/skills/lead.md", caller),
+        ],
+    )
+}
+
+fn pi_block(key: &str, value: &str) -> MarketplaceConfig {
+    let mut config = request().config;
+    let block = serde_json::Map::from_iter([(key.to_owned(), serde_json::json!(value))]);
+    config.blocks.insert("pi".to_owned(), block);
+    config
+}
+
+#[test]
+fn pi_prefixes_a_skill_with_its_plugin_unless_told_bare() {
+    let vfs = pi_vault();
+    build_root(&vfs, request().config).unwrap();
+    assert!(vfs.exists(Path::new(
+        "/market/.pi/packs/tools/skills/tools-review/SKILL.md"
+    )));
+
+    let vfs = pi_vault();
+    build_root(&vfs, pi_block("naming", "bare")).unwrap();
+    let pack = "/market/.pi/packs/tools/skills";
+    assert!(vfs.exists(Path::new(&format!("{pack}/review/SKILL.md"))));
+    let lead = text_at(&vfs, &format!("{pack}/lead/SKILL.md"));
+    assert!(lead.contains("name: lead"), "{lead}");
+    assert!(lead.contains("/skill:review"), "{lead}");
+    assert!(!lead.contains("tools-review"), "{lead}");
+}
+
+#[test]
+fn a_plugin_can_ask_for_bare_names_alone_and_a_bad_value_is_refused() {
+    let vfs = pi_vault();
+    write(
+        &vfs,
+        "/vault/plugins/tools/tools.md",
+        &note("tools", "pi:\n  naming: bare\n"),
+    );
+    build_root(&vfs, request().config).unwrap();
+    assert!(vfs.exists(Path::new("/market/.pi/packs/tools/skills/review/SKILL.md")));
+
+    let vfs = pi_vault();
+    let err = build_root(&vfs, pi_block("naming", "short")).unwrap_err();
+    assert!(err.contains("unknown-naming"), "{err}");
+}
+
+#[test]
+fn bare_names_that_collide_across_plugins_are_refused() {
+    let vfs = pi_vault();
+    write(
+        &vfs,
+        "/vault/plugins/other/skills/review.md",
+        &note("review", ""),
+    );
+    let err = build_root(&vfs, pi_block("naming", "bare")).unwrap_err();
+    assert!(err.contains("path-collision"), "{err}");
+}
+
+#[test]
+fn a_marketplace_block_moves_a_harnesss_packs_and_its_catalog_follows() {
+    let vfs = pi_vault();
+    let mut config = request().config;
+    config.blocks.insert(
+        "codex".to_owned(),
+        serde_json::Map::from_iter([("packs".to_owned(), serde_json::json!("plugins-out/codex"))]),
+    );
+    build_root(&vfs, config).unwrap();
+    assert!(vfs.exists(Path::new(
+        "/market/plugins-out/codex/tools/skills/review/SKILL.md"
+    )));
+    assert!(!vfs.exists(Path::new(
+        "/market/.agents/packs/tools/skills/review/SKILL.md"
+    )));
+    let catalog = text_at(&vfs, "/market/.agents/plugins/marketplace.json");
+    assert!(catalog.contains("plugins-out/codex/tools"), "{catalog}");
+}
+
+#[test]
+fn a_packs_folder_must_stay_inside_the_output_and_apart_from_the_others() {
+    let vfs = pi_vault();
+    let err = build_root(&vfs, pi_block("packs", "../elsewhere")).unwrap_err();
+    assert!(err.contains("unsafe-path"), "{err}");
+
+    let err = build_root(&vfs, pi_block("packs", ".agents/packs")).unwrap_err();
+    assert!(err.contains("path-collision"), "{err}");
+}

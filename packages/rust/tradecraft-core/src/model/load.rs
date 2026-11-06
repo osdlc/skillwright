@@ -362,6 +362,8 @@ pub fn load(
         }
     }
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
+    apply_naming(&mut plugins, &config)?;
+    crate::harness::manifest::check_packs(&config)?;
 
     Ok(Marketplace {
         name,
@@ -804,16 +806,58 @@ fn resolve_compiled(
 
 /// Gives every call the `targets` of the skill it names.
 fn fill_targets(resolved: &mut Resolved, targets: &BTreeMap<PathBuf, Option<Vec<String>>>) {
-    let bodies =
-        std::iter::once(&mut resolved.body).chain(resolved.resources.iter_mut().filter_map(
-            |resource| match &mut resource.content {
-                ResourceContent::Body { body } => Some(body),
-                ResourceContent::Bytes { .. } => None,
-            },
-        ));
-    for body in bodies {
+    for body in bodies_of(resolved) {
         fill_body_targets(body, targets);
     }
+}
+
+/// A resolved component's body and each resource's.
+fn bodies_of(resolved: &mut Resolved) -> impl Iterator<Item = &mut Body> {
+    std::iter::once(&mut resolved.body).chain(resolved.resources.iter_mut().filter_map(
+        |resource| match &mut resource.content {
+            ResourceContent::Body { body } => Some(body),
+            ResourceContent::Bytes { .. } => None,
+        },
+    ))
+}
+
+/// Marks each plugin `pi: {naming: bare}` covers, and every call to one of
+/// its skills, wherever the call sits.
+fn apply_naming(
+    plugins: &mut BTreeMap<String, Plugin>,
+    config: &MarketplaceConfig,
+) -> Result<(), CoreError> {
+    let mut bare = BTreeSet::new();
+    for name in plugins.keys() {
+        if crate::harness::manifest::bare_on_pi(config, name)? {
+            bare.insert(name.clone());
+        }
+    }
+    if bare.is_empty() {
+        return Ok(());
+    }
+    for plugin in plugins.values_mut() {
+        if bare.contains(&plugin.name) {
+            plugin.bare_on = vec!["pi".to_owned()];
+        }
+        let members = plugin
+            .skills
+            .iter_mut()
+            .chain(&mut plugin.commands)
+            .chain(&mut plugin.hooks);
+        for resolved in members.filter_map(|member| member.resolved.as_mut()) {
+            for body in bodies_of(resolved) {
+                for segment in &mut body.segments {
+                    if let Segment::Call { call } = segment
+                        && call.skill.plugin.as_ref().is_some_and(|p| bare.contains(p))
+                    {
+                        call.bare_on = vec!["pi".to_owned()];
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn fill_body_targets(body: &mut Body, targets: &BTreeMap<PathBuf, Option<Vec<String>>>) {
@@ -1458,16 +1502,22 @@ fn folder_assets(
     vault_root: &Path,
     plugins: &BTreeMap<String, Plugin>,
 ) -> Vec<AssetSpec> {
+    let patterns = crate::patterns::Patterns::read(vfs, vault_root);
     let mut specs = Vec::new();
     for (name, plugin) in plugins {
-        let Some(folder) = plugin
-            .components()
-            .find_map(|member| plugin_folder(&member.discovered.vault_relative_path, name))
-        else {
+        let Some(relative) = plugin.components().find_map(|member| {
+            let path = &member.discovered.vault_relative_path;
+            patterns
+                .plugin_folder(path)
+                .map(str::to_owned)
+                .or_else(|| plugin_folder(path, name))
+        }) else {
             continue;
         };
-        let folder = vault_root.join(folder);
-        let assets = folder.join(ASSETS_DIR);
+        let folder = vault_root.join(&relative);
+        let assets = patterns
+            .assets_folder(vfs, vault_root, &relative)
+            .map_or_else(|| folder.join(ASSETS_DIR), |found| vault_root.join(found));
         if is_directory(vfs, &assets) {
             specs.push(AssetSpec {
                 source: assets,
