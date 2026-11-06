@@ -79,7 +79,7 @@ publishing skills/code-review.md -> /path/to/my-project (claude-code)
 | `list` | List every publishable note in the vault |
 | `adopt` | Bring skills already on disk, or in a repository with `--from-git`, into the vault as notes |
 | `status` | Report each unit's publish state at each configured destination |
-| `bump` | Raise a plugin's `sw-version` by one semver level |
+| `bump` | Raise a plugin's `sw-version` by one semver level, or with `--changed-since` every plugin that changed since a baseline |
 | `new` | Author a new marketplace, plugin or skill note |
 | `rename` | Rename a component, plugin or marketplace, and rewrite every link to it |
 | `move` | Move a component to another plugin or marketplace |
@@ -120,6 +120,7 @@ Each verb's own options:
 | `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--default-plugin <name>`, `--watch` (`build` only) |
 | `list` | `--skills-root <path>`, `--model` (print the loaded marketplace model as JSON) |
 | `status` | `[note]`, `--check` |
+| `bump` | `[plugin]`, `--major`, `--minor`, `--patch`, `--changed-since <ref\|dir>` |
 | `adopt` | `[source...]`, `--from <location>` (repeatable), `--from-git <ref>` (repeatable), `--plugin <name>`, `--into <path>`, `--set-targets <target>` (repeatable), `--only <name>` (repeatable), `--overwrite <path>` (repeatable) |
 | `harness install` / `harness update` | `--plugin <name>` (repeatable), `--scope <user\|project\|local>`, `--path <path>`, `--git-url <url>`, `--git-ref <ref>` |
 | `harness uninstall` | the same, plus `--marketplace` |
@@ -175,6 +176,27 @@ marketplace:
   name: house
   default_plugin: tools
 ```
+
+### Bump
+
+`bump --changed-since <ref|dir>` compares the vault's render with a baseline
+and bumps each plugin whose skills or files differ while its `sw-version`
+has not moved. A directory is read as an already-built marketplace, such as
+the committed output. Anything else is a git ref: it is checked out into a
+temporary worktree, built there with the same project file, and removed
+afterwards. A plugin whose version already moved since the baseline is
+skipped, so a second run bumps nothing.
+
+`bump.patch` picks how the patch number is written:
+
+```yaml
+bump:
+  patch: timestamp # or increment, the default
+```
+
+With `timestamp`, every bump sets the patch to the UTC time as
+`YYYYMMDDHHMMSS` (`1.4.20261105143000`), so each release of a plugin gets a
+new, increasing version without a manual patch count.
 
 ### Hooks
 

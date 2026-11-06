@@ -265,3 +265,172 @@ fn a_version_in_a_nested_block_is_bumped_in_place() {
         "a flat key beside the block is a mixed shape: {after}"
     );
 }
+
+// --- `--changed-since` ------------------------------------------------------
+
+/// A project with two plugins, `widget` (`0.2.1`) and `gadget` (`1.0.0`), one
+/// skill each, building into `market/`.
+fn project(extra_config: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.yaml"),
+        format!(
+            "vault: vault\nmarketplace:\n  name: acme\n  default_plugin: widget\n  out: market\n{extra_config}"
+        ),
+    )
+    .unwrap();
+    for (plugin, version) in [("widget", "0.2.1"), ("gadget", "1.0.0")] {
+        let base = root.join("vault/marketplaces/acme/plugins").join(plugin);
+        fs::create_dir_all(base.join("skills")).unwrap();
+        fs::write(
+            base.join(format!("{plugin}.md")),
+            format!("---\nname: {plugin}\ndescription: The {plugin} plugin.\nsw-version: {version}\n---\n"),
+        )
+        .unwrap();
+        write_skill(root, plugin, "First draft.");
+    }
+    dir
+}
+
+fn write_skill(root: &Path, plugin: &str, body: &str) {
+    fs::write(
+        root.join("vault/marketplaces/acme/plugins")
+            .join(plugin)
+            .join("skills")
+            .join(format!("{plugin}-skill.md")),
+        format!("---\nname: {plugin}-skill\ndescription: Use {plugin}.\n---\n\n{body}\n"),
+    )
+    .unwrap();
+}
+
+fn plugin_note(root: &Path, plugin: &str) -> String {
+    fs::read_to_string(
+        root.join("vault/marketplaces/acme/plugins")
+            .join(plugin)
+            .join(format!("{plugin}.md")),
+    )
+    .unwrap()
+}
+
+fn git(repo: &Path, args: &[&str]) -> String {
+    let mut cmd = typed_git::git();
+    cmd.dir(repo)
+        .args(args)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_AUTHOR_NAME", "T")
+        .env("GIT_AUTHOR_EMAIL", "t@t.invalid")
+        .env("GIT_COMMITTER_NAME", "T")
+        .env("GIT_COMMITTER_EMAIL", "t@t.invalid");
+    cmd.run().unwrap()
+}
+
+#[test]
+fn changed_since_a_built_folder_bumps_only_the_plugin_that_changed() {
+    let dir = project("");
+    let root = dir.path();
+    let built = run(&["build", "--yes"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    write_skill(root, "widget", "Second draft.");
+
+    let dry = run(
+        &["bump", "--changed-since", "market", "--dry-run", "--json"],
+        root,
+    );
+    assert_eq!(dry.code, 0, "{}", dry.stderr);
+    let report: serde_json::Value = serde_json::from_str(&dry.stdout).unwrap();
+    assert_eq!(report["baseline"], "market");
+    let rows = report["plugins"].as_array().unwrap();
+    let row = |name: &str| {
+        rows.iter()
+            .find(|r| r["plugin"] == name)
+            .unwrap_or_else(|| panic!("no {name}: {rows:?}"))
+    };
+    assert_eq!(row("widget")["status"], "dry-run");
+    assert_eq!(row("widget")["current"], "0.2.1");
+    assert_eq!(row("widget")["new"], "0.2.2");
+    assert_eq!(row("gadget")["status"], "unchanged");
+    assert!(plugin_note(root, "widget").contains("sw-version: 0.2.1"));
+
+    let real = run(&["bump", "--changed-since", "market", "--yes"], root);
+    assert_eq!(real.code, 0, "{}", real.stderr);
+    assert!(
+        real.stdout.contains(
+            "marketplaces/acme/plugins/widget/widget.md  written · sw-version 0.2.1 -> 0.2.2"
+        ),
+        "{}",
+        real.stdout
+    );
+    assert!(plugin_note(root, "widget").contains("sw-version: 0.2.2"));
+    assert!(plugin_note(root, "gadget").contains("sw-version: 1.0.0"));
+
+    // The version has now moved since the baseline, so a second run leaves
+    // it alone.
+    let again = run(&["bump", "--changed-since", "market", "--yes"], root);
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert!(
+        again.stdout.contains("widget.md  skipped"),
+        "{}",
+        again.stdout
+    );
+    assert!(plugin_note(root, "widget").contains("sw-version: 0.2.2"));
+}
+
+#[test]
+fn changed_since_a_git_ref_builds_it_in_a_worktree_and_cleans_up() {
+    let dir = project("bump:\n  patch: timestamp\n");
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "--quiet", "-m", "one"]);
+    write_skill(root, "gadget", "Second draft.");
+
+    let result = run(
+        &["bump", "--changed-since", "HEAD", "--yes", "--json"],
+        root,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    let report: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
+    let rows = report["plugins"].as_array().unwrap();
+    let gadget = rows.iter().find(|r| r["plugin"] == "gadget").unwrap();
+    assert_eq!(gadget["status"], "written", "{rows:?}");
+    let new = gadget["new"].as_str().unwrap();
+    let patch = new.strip_prefix("1.0.").unwrap();
+    assert_eq!(patch.len(), 14, "a UTC timestamp patch: {new}");
+    assert!(plugin_note(root, "gadget").contains(&format!("sw-version: {new}")));
+    let widget = rows.iter().find(|r| r["plugin"] == "widget").unwrap();
+    assert_eq!(widget["status"], "unchanged", "{rows:?}");
+
+    // The temporary worktree is gone, and nothing was built into `market/`.
+    let worktrees = git(root, &["worktree", "list", "--porcelain"]);
+    assert_eq!(worktrees.matches("worktree ").count(), 1, "{worktrees}");
+    assert!(!root.join("market").exists());
+}
+
+#[test]
+fn changed_since_a_name_that_is_neither_a_folder_nor_a_ref_is_blocked() {
+    let dir = project("");
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "--quiet", "-m", "one"]);
+
+    let result = run(&["bump", "--changed-since", "no-such-ref", "--yes"], root);
+    assert_eq!(result.code, 2, "{}", result.stderr);
+    assert!(
+        result.stderr.contains("neither a directory nor a commit"),
+        "{}",
+        result.stderr
+    );
+}
+
+#[test]
+fn a_plugin_and_changed_since_together_are_a_usage_error() {
+    let dir = project("");
+    let result = run(
+        &["bump", "widget", "--changed-since", "market", "--yes"],
+        dir.path(),
+    );
+    assert_eq!(result.code, 3, "{}", result.stderr);
+}

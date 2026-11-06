@@ -445,13 +445,19 @@ struct UnpublishArgs {
     globals: Globals,
 }
 
-/// `bump`'s surface: the plugin to raise, and which semver level — mutually
-/// exclusive, `--patch` the default when none is given.
+/// `bump`'s surface: the plugin to raise, or `--changed-since` for every
+/// plugin that changed, and which semver level — mutually exclusive,
+/// `--patch` the default when none is given.
 #[derive(Args, Debug)]
 struct BumpArgs {
     /// The plugin to bump, by its frontmatter `name`.
-    #[arg(value_name = "plugin")]
-    plugin: String,
+    #[arg(value_name = "plugin", required_unless_present = "changed_since")]
+    plugin: Option<String>,
+    /// Bump every plugin whose rendered members differ from this baseline:
+    /// a built marketplace directory, or a git ref built in a temporary
+    /// worktree.
+    #[arg(long, value_name = "ref|dir", conflicts_with = "plugin")]
+    changed_since: Option<String>,
     /// Bump the major version.
     #[arg(long, conflicts_with_all = ["minor", "patch"])]
     major: bool,
@@ -723,6 +729,7 @@ impl BumpArgs {
     fn flags(&self) -> BumpFlags {
         BumpFlags {
             plugin: self.plugin.clone(),
+            changed_since: self.changed_since.clone(),
             level: if self.major {
                 BumpLevel::Major
             } else if self.minor {

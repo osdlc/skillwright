@@ -113,6 +113,30 @@ pub struct SkillwrightConfig {
     /// Canonical hooks files; see `tradecraft_core::HookFileSpec`.
     #[serde(default)]
     pub hooks: Vec<HookFileEntry>,
+    /// How `bump` writes a version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bump: Option<BumpConfig>,
+}
+
+/// The `bump:` block.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct BumpConfig {
+    /// How a bump writes the patch number.
+    #[serde(default)]
+    pub patch: PatchScheme,
+}
+
+/// How `bump` writes the patch number of the version it sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PatchScheme {
+    /// Semver: a patch bump adds one, a minor or major bump resets it to 0.
+    #[default]
+    Increment,
+    /// Every bump sets the patch to the UTC time as `YYYYMMDDHHMMSS`, or to
+    /// one more than the current patch when that is larger.
+    Timestamp,
 }
 
 /// One `hooks:` entry, as written in the project file.
@@ -155,6 +179,7 @@ fn is_blank(config: &SkillwrightConfig) -> bool {
         && config.marketplace.is_blank()
         && config.assets.is_empty()
         && config.hooks.is_empty()
+        && config.bump.is_none()
 }
 
 /// The result of reading the configuration for one run.
@@ -421,7 +446,11 @@ fn resolve_machine_mapping(
 /// Top-level keys whose value is a struct, and whether the field is an
 /// `Option` (so a bare `key:` reads as unset). `serde_json` reads a sequence
 /// into a struct, so without this check `marketplace: []` would load.
-const STRUCT_KEYS: &[(&str, bool)] = &[("declared_folders", true), ("marketplace", false)];
+const STRUCT_KEYS: &[(&str, bool)] = &[
+    ("declared_folders", true),
+    ("marketplace", false),
+    ("bump", true),
+];
 
 /// The key in [`STRUCT_KEYS`] whose value is not a mapping, if any.
 fn non_mapping_struct_key(
@@ -487,6 +516,7 @@ fn annotate_detail(
     check!("marketplace", MarketplaceSettings);
     check!("assets", Vec<AssetEntry>);
     check!("hooks", Vec<HookFileEntry>);
+    check!("bump", BumpConfig);
     if issues.is_empty() {
         base_detail
     } else {
@@ -751,6 +781,11 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
             key: "hooks",
             scope: Scope::Both,
             description: "Canonical hooks files, one per plugin, rendered into each harness's pack with a gap report.",
+        },
+        KeySpec {
+            key: "bump",
+            scope: Scope::Both,
+            description: "How `bump` writes a version: `patch: increment` (the default) or `patch: timestamp`.",
         },
         KeySpec {
             key: "marketplace.name",

@@ -164,6 +164,52 @@ pub(crate) fn marketplace_inputs(
     })
 }
 
+/// The export request a run's project file describes, rendered into
+/// `out_root` in `mode`, for a verb other than `build` and `check` that needs
+/// the marketplace's render: `bump --changed-since`. It takes no flags, so
+/// `marketplace.default_plugin` must be set.
+///
+/// # Errors
+///
+/// A missing `default_plugin` or a setting that will not convert, as the
+/// line to print.
+pub(crate) fn configured_request(
+    run: &ResolvedRun,
+    cwd: &std::path::Path,
+    verb: &str,
+    out_root: PathBuf,
+    mode: ExportMode,
+) -> Result<ExportRequest, String> {
+    let default_plugin = run
+        .config
+        .as_ref()
+        .and_then(|c| c.marketplace.default_plugin.clone())
+        .ok_or_else(|| {
+            let need = Need {
+                config: "marketplace.default_plugin",
+                unless_input: None,
+            };
+            NEEDS.message(&need, &run.config_dir, &[verb])
+        })?;
+    let MarketplaceInputs {
+        config,
+        harnesses,
+        assets,
+        hooks,
+    } = marketplace_inputs(run, default_plugin)?;
+    Ok(ExportRequest {
+        vault_root: run.vault.clone(),
+        skills_root: resolve_skills_root(None, run, cwd),
+        marketplace: None,
+        out_root,
+        mode,
+        config,
+        harnesses,
+        assets,
+        hooks,
+    })
+}
+
 /// Run one export. `verb` decides the mode a plain run uses and what a
 /// drifted report exits with; everything else about the two verbs is
 /// identical.
