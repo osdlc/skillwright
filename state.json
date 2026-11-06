@@ -93,9 +93,9 @@
       "line": 73,
       "title": "new plugin and new skill do not write the conventional folders",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r1-9",
@@ -104,9 +104,9 @@
       "line": 97,
       "title": "plain Markdown links to a never-ship file are not refused",
       "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490032144",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r1-10",
@@ -203,9 +203,9 @@
       "line": 73,
       "title": "a marketplace skillwright.md with a description is listed as unreadable from the workspace root",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r1-19",
@@ -214,9 +214,9 @@
       "line": 73,
       "title": "the no-root-file note does not name init",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797023823",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-1",
@@ -225,9 +225,9 @@
       "line": null,
       "title": "a marketplace note whose name differs from its folder loses its packs on every path that asks effective_config",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-2",
@@ -247,9 +247,9 @@
       "line": 653,
       "title": "convert to marketplace writes the removed note form and the next build fails",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-4",
@@ -269,9 +269,9 @@
       "line": null,
       "title": "list at a workspace root ignores each member's exclude, patterns and namespace",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-6",
@@ -280,9 +280,9 @@
       "line": 124,
       "title": "a malformed workspace file is ignored on member runs that do not build, so an exclusion fails open",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-7",
@@ -291,9 +291,9 @@
       "line": 124,
       "title": "a component at the workspace root is listed as shipping and no build ships it",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-8",
@@ -335,9 +335,9 @@
       "line": 661,
       "title": "the agent-only key rule depends on a URL suffix",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-12",
@@ -357,9 +357,9 @@
       "line": 661,
       "title": "a link into assets/docs is refused as never shipping, and it ships",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-14",
@@ -368,9 +368,9 @@
       "line": 661,
       "title": "build --watch does not see the workspace file",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-15",
@@ -379,9 +379,9 @@
       "line": 661,
       "title": "wasm discovery does not fold the workspace into its config",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r2-16",
@@ -390,9 +390,9 @@
       "line": 661,
       "title": "leftovers from the removed marketplace note form",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "fixed",
+      "status": "open",
       "reason": null,
-      "fixedIn": "c90480485bd93ba1ea808d2c5697827738687922"
+      "fixedIn": null
     },
     {
       "id": "r3-1",
@@ -400,18 +400,18 @@
       "path": "docs/reference/skillwright-md.md",
       "line": 242,
       "title": "stale-output claim is false for out, and a stale packs folder stops the build",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883251",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     },
     {
       "id": "r3-2",
       "round": 3,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/skillwright/README.md",
+      "line": 144,
       "title": "crate README: all three points of consumer item 17 remain, and it says tc- keys are not errors",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5798131165",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -422,10 +422,10 @@
       "path": "packages/rust/tradecraft-core/src/keys.rs",
       "line": 138,
       "title": "refusal should cover sw- only: tc- reverses a recorded decision and serves no current vault",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883262",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     },
     {
       "id": "r3-4",
@@ -433,10 +433,10 @@
       "path": "packages/rust/skillwright/src/commands/publish.rs",
       "line": 270,
       "title": "bare publish overwrites one plugin's skill with another's of the same name",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883268",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     },
     {
       "id": "r3-5",
@@ -444,10 +444,10 @@
       "path": "docs/reference/skillwright-md.md",
       "line": 151,
       "title": "rename claim: the build reports only the ambiguous case, and the verb cannot run in a workspace",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883277",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     },
     {
       "id": "r3-6",
@@ -455,10 +455,10 @@
       "path": "packages/rust/tradecraft-core/src/model/load.rs",
       "line": 1011,
       "title": "the version hint names a refused path when a plugin shares its marketplace's name",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883290",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     },
     {
       "id": "r3-7",
@@ -466,18 +466,18 @@
       "path": "packages/rust/tradecraft-core/src/frontmatter.rs",
       "line": 422,
       "title": "'set build.namespace to keep the prefix' is wrong advice for the moved keys",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883299",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     },
     {
       "id": "r3-8",
       "round": 3,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/skillwright/README.md",
+      "line": 144,
       "title": "publish --all help and module doc still say every plugin note",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5798131165",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -488,10 +488,10 @@
       "path": "packages/rust/tradecraft-core/src/discover.rs",
       "line": 945,
       "title": "old marketplace note is still ignored in silence inside a workspace member",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883311",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     },
     {
       "id": "r3-10",
@@ -499,10 +499,10 @@
       "path": "packages/rust/tradecraft-core/src/keys.rs",
       "line": 287,
       "title": "targets row offers copilot, which publish refuses; harnesses row still lists no values",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883319",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     },
     {
       "id": "r3-11",
@@ -510,10 +510,10 @@
       "path": "plugin/plugins/skillwright/skills/migrate/migrate.md",
       "line": 170,
       "title": "migrate does not list the removed policy.allow_implicit_invocation key",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883326",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     },
     {
       "id": "r3-12",
@@ -521,10 +521,10 @@
       "path": "docs/reference/skillwright-md.md",
       "line": 100,
       "title": "fixtures/ also never ships inside a skill's folder",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/65#discussion_r4490883334",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab21"
     }
   ]
 }
