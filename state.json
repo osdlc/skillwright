@@ -346,9 +346,9 @@
       "line": 661,
       "title": "a non-mapping block metadata on a container is not refused",
       "comment": "https://github.com/osdlc/skillwright/pull/65#pullrequestreview-5797729317",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "93aab210db1425e4be2ff9d665d33b352d24fdb6"
     },
     {
       "id": "r2-13",
