@@ -15,10 +15,10 @@
       "path": "packages/rust/tradecraft-core/src/patterns.rs",
       "line": 73,
       "title": "Moved packs folder is excluded relative to the vault, but it is relative to the output",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932709",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "e8e0d16"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "packages/rust/tradecraft-core/src/compile.rs",
       "line": 938,
       "title": "Moved packs stay in the link index, so a rebuild fails with link-ambiguous",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932715",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-3",
@@ -37,10 +37,10 @@
       "path": "packages/rust/tradecraft-core/src/harness/manifest.rs",
       "line": 103,
       "title": "check_packs does not stop packs overlapping manifests or user folders, which deletes user files",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932721",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-4",
@@ -48,10 +48,10 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 661,
       "title": "The vault rail checks request.config, so packs from a marketplace note bypass it",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932724",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-5",
@@ -59,10 +59,10 @@
       "path": "packages/rust/tradecraft-core/src/patterns.rs",
       "line": 116,
       "title": "A leaf pattern under a conventional plugin folder loses the plugin",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932733",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-6",
@@ -70,10 +70,10 @@
       "path": "packages/rust/tradecraft-core/src/patterns.rs",
       "line": 92,
       "title": "A pattern can ship docs/, tests/ and fixtures/",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932739",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-7",
@@ -81,10 +81,10 @@
       "path": "packages/rust/tradecraft-core/src/compile.rs",
       "line": 1660,
       "title": "The never-ship link check only covers a bundle's own folders",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932744",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-8",
@@ -92,10 +92,10 @@
       "path": "packages/rust/tradecraft-core/src/compile.rs",
       "line": 1622,
       "title": "The excluded-link refusal does not cover Markdown links",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932749",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-9",
@@ -103,10 +103,10 @@
       "path": "packages/rust/tradecraft-core/src/patterns.rs",
       "line": 26,
       "title": "Bad globs are accepted silently",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932751",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-10",
@@ -114,10 +114,10 @@
       "path": "packages/rust/tradecraft-core/src/settings.rs",
       "line": 155,
       "title": "Unknown keys under build.patterns get no warning",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932759",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-11",
@@ -125,10 +125,10 @@
       "path": "packages/rust/tradecraft-core/src/patterns.rs",
       "line": 62,
       "title": "Patterns ignore --config",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932764",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-12",
@@ -136,10 +136,10 @@
       "path": "packages/rust/tradecraft-core/src/publish.rs",
       "line": 1013,
       "title": "publish of a named note ignores build.exclude",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932773",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "e8e0d16"
     },
     {
       "id": "r1-13",
@@ -147,10 +147,10 @@
       "path": "packages/rust/tradecraft-core/src/patterns.rs",
       "line": 115,
       "title": "Two patterns on one file resolve silently by a fixed order",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932779",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-14",
@@ -158,18 +158,18 @@
       "path": "packages/rust/tradecraft-core/src/export.rs",
       "line": 1378,
       "title": "Output at the old packs location is left and not reported",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/64#discussion_r4489932784",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "da251bd"
     },
     {
       "id": "r1-15",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/skillwright/src/commands/harness/mod.rs",
+      "line": 206,
       "title": "harness install ignores a moved packs folder",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/64#pullrequestreview-5796895579",
       "status": "open",
       "reason": null,
       "fixedIn": null
