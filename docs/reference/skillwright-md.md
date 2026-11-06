@@ -151,7 +151,8 @@ nothing in any of them.
 
 `rename` of a marketplace works in a vault that holds `marketplaces/`, not in a
 workspace: at the workspace root it is refused, and inside a member it finds no
-component of that name. It moves the folder and updates the note's `name`.
+component of that name. In a workspace, rename the folder and change `name` in its
+`skillwright.md` by hand. In a vault, the verb moves the folder and updates the note's `name`.
 Links inside the folder move with it. It rewrites nothing else:
 
 - A wikilink or embed from outside that spells the old path still resolves by file
@@ -214,6 +215,10 @@ Agents reach no build on any harness, by design: a pack has no place for them, s
 each one is listed `not carried`. `publish <note>` writes one to a harness with an
 agent layout. A kind a harness cannot carry shows as `n/a` in `status`, and
 `status --check` passes it.
+
+`build` refuses a hand-written call to a known skill with `literal-skill-call`.
+`publish` refuses `/plugin:name` too, but publishing one skill does not check a bare
+`/name`, because that needs a vault scan. `build` is the check for those.
 
 Two skills that would land on one folder, such as `review` in two plugins, stop
 the run with `path-collision`, naming both notes, and nothing is written. Name one

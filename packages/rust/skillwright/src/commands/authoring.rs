@@ -420,6 +420,11 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Err(code) => return code,
     };
     if let Err(code) = refuse_workspace("rename", &run, ctx.err) {
+        let _ = writeln!(
+            ctx.err,
+            "That renames a component inside it. To rename a marketplace, rename its folder and \
+             change `name` in its skillwright.md"
+        );
         return code;
     }
     let ns = run.core_namespace();

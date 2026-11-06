@@ -703,3 +703,15 @@ fn a_moved_out_reports_nothing_and_a_moved_packs_names_the_earlier_build() {
         stopped.text
     );
 }
+
+#[test]
+fn rename_at_a_workspace_root_says_how_to_rename_a_marketplace() {
+    let dir = vault(&[
+        ("skillwright.md", WORKSPACE),
+        ("marketplaces/foo/skillwright.md", &member("foo", "")),
+        ("marketplaces/foo/plugins/p/skills/a.md", SKILL),
+    ]);
+    let ran = sw(&dir.path(), &["rename", "foo", "bar", "--yes"]);
+    assert_eq!(ran.code, 2, "{}", ran.text);
+    assert!(ran.text.contains("rename its folder"), "{}", ran.text);
+}
