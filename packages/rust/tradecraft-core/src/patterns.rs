@@ -52,6 +52,15 @@ pub(crate) fn glob_problem(glob: &str) -> Option<&'static str> {
     None
 }
 
+/// Whether a folder that never ships holds vault-relative `rel`.
+pub(crate) fn in_never_ship_folder(rel: &str) -> bool {
+    rel.rsplit_once('/').is_some_and(|(folders, _)| {
+        folders
+            .split('/')
+            .any(|segment| EXCLUDED_BUNDLE_DIRECTORIES.contains(&segment))
+    })
+}
+
 /// Whether `glob` spells out a folder that never ships.
 pub(crate) fn names_a_never_ship_folder(glob: &str) -> bool {
     glob.split('/')
@@ -59,7 +68,8 @@ pub(crate) fn names_a_never_ship_folder(glob: &str) -> bool {
 }
 
 /// `*` and `?` within one path segment; `**` as a whole segment matches any
-/// number of segments.
+/// number of segments, and at least one at the end of a glob, so `notes/**`
+/// names what `notes/` holds and not the folder.
 pub(crate) fn glob_match(glob: &str, path: &str) -> bool {
     let glob: Vec<&str> = glob.trim_end_matches('/').split('/').collect();
     let path: Vec<&str> = path.split('/').collect();
@@ -69,7 +79,8 @@ pub(crate) fn glob_match(glob: &str, path: &str) -> bool {
 fn segments_match(glob: &[&str], path: &[&str]) -> bool {
     match glob.split_first() {
         None => path.is_empty(),
-        Some((&"**", rest)) => (0..=path.len()).any(|skip| segments_match(rest, &path[skip..])),
+        Some((&"**", rest)) => (usize::from(rest.is_empty())..=path.len())
+            .any(|skip| segments_match(rest, &path[skip..])),
         Some((first, rest)) => path.split_first().is_some_and(|(segment, tail)| {
             segment_match(first.as_bytes(), segment.as_bytes()) && segments_match(rest, tail)
         }),
@@ -190,7 +201,7 @@ impl Patterns {
         // By the first kind's claim on each path, once per path.
         let mut claimed: BTreeMap<&str, Vec<String>> = BTreeMap::new();
         let mut folders: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for file in files {
+        for file in files.iter().filter(|file| !in_never_ship_folder(file)) {
             for prefix in prefixes(file) {
                 let claims: Vec<String> = self
                     .kinds()
@@ -220,7 +231,7 @@ impl Patterns {
             warnings.push(warn(
                 path,
                 "pattern-conflict",
-                format!("{} all claim it; the first one wins", claims.join(" and ")),
+                format!("{} claim it; the first one wins", claims.join(" and ")),
             ));
         }
         for (name, folders) in folders {
@@ -384,12 +395,110 @@ mod tests {
     }
 
     #[test]
-    fn a_deep_glob_does_not_rematch_inside_what_it_matched() {
+    fn a_deep_glob_names_what_the_folder_holds_and_does_not_rematch_inside_it() {
         let p = patterns(FolderPatterns {
             skills: vec!["notes/**".to_owned()],
             ..FolderPatterns::default()
         });
-        assert_eq!(p.canonical("notes/a/a.md"), "skills/notes/a/a.md");
+        assert_eq!(p.canonical("notes/a.md"), "skills/a.md");
+        assert_eq!(p.canonical("notes/a/a.md"), "skills/a/a.md");
+        assert_eq!(p.canonical("notes/a/refs/x.md"), "skills/a/refs/x.md");
+    }
+
+    #[test]
+    fn a_leaf_pattern_under_plugins_keeps_the_note_in_its_plugin() {
+        let p = patterns(FolderPatterns {
+            skills: vec!["plugins/*/guides/*".to_owned()],
+            assets: vec!["plugins/*/static".to_owned()],
+            ..FolderPatterns::default()
+        });
+        assert_eq!(
+            p.canonical("plugins/rev/guides/g.md"),
+            "plugins/rev/skills/g.md"
+        );
+        assert_eq!(
+            p.canonical("plugins/rev/static/bin/tool"),
+            "plugins/rev/assets/bin/tool"
+        );
+    }
+
+    #[test]
+    fn a_folder_that_never_ships_is_not_mapped_whatever_a_pattern_says() {
+        let p = patterns(FolderPatterns {
+            plugins: vec!["docs/*".to_owned(), "packs/*".to_owned()],
+            skills: vec!["tests/*".to_owned(), "plugins/rev/docs/*".to_owned()],
+            ..FolderPatterns::default()
+        });
+        assert_eq!(p.canonical("docs/p/skills/a.md"), "docs/p/skills/a.md");
+        assert_eq!(p.canonical("tests/t.md"), "tests/t.md");
+        assert_eq!(
+            p.canonical("plugins/rev/docs/d.md"),
+            "plugins/rev/docs/d.md"
+        );
+        assert_eq!(
+            p.canonical("packs/docs/skills/a.md"),
+            "packs/docs/skills/a.md"
+        );
+    }
+
+    #[test]
+    fn a_glob_that_cannot_be_read_says_why() {
+        for bad in [
+            "",
+            " ",
+            "/abs/*",
+            "../x/*",
+            "a/../b",
+            "./a",
+            "a//b",
+            "notes/[a",
+            "notes/{a,b}/*",
+            "a**/b",
+            "a\\b",
+            "C:/x",
+        ] {
+            assert!(glob_problem(bad).is_some(), "{bad:?}");
+        }
+        for good in ["notes/*", "**/*.draft.md", "docs/**", "drafts/", "v?.md"] {
+            assert_eq!(glob_problem(good), None, "{good:?}");
+        }
+    }
+
+    #[test]
+    fn warnings_name_a_dead_glob_a_contested_path_and_a_merged_plugin() {
+        let p = Patterns {
+            folders: FolderPatterns {
+                plugins: vec!["packs/*".to_owned()],
+                skills: vec!["notes/*".to_owned()],
+                agents: vec!["notes/*".to_owned(), "none/*".to_owned()],
+                ..FolderPatterns::default()
+            },
+            exclude: vec!["gone/**".to_owned()],
+        };
+        let files = [
+            "notes/a.md",
+            "packs/rev/skills/x.md",
+            "plugins/rev/skills/y.md",
+        ]
+        .map(str::to_owned);
+        let warnings = p.warnings(&files);
+        let detail = |reason: &str| -> Vec<&str> {
+            warnings
+                .iter()
+                .filter(|w| w.reason == reason)
+                .map(|w| w.detail.as_str())
+                .collect()
+        };
+        assert_eq!(detail("unmatched-glob").len(), 2, "{warnings:?}");
+        let [contested] = detail("pattern-conflict")[..] else {
+            panic!("{warnings:?}");
+        };
+        assert!(contested.contains("`skills: notes/*`"), "{contested}");
+        assert!(contested.contains("`agents: notes/*`"), "{contested}");
+        let [merged] = detail("plugin-merged")[..] else {
+            panic!("{warnings:?}");
+        };
+        assert!(merged.contains("packs/rev and plugins/rev"), "{merged}");
     }
 
     #[test]

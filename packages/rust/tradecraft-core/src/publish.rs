@@ -327,6 +327,8 @@ pub enum ReasonToken {
     EmptyPlugin,
     /// The note carries both our nested block and our flat keys.
     MixedFrontmatterShape,
+    /// `build.exclude` holds the note, so it never ships.
+    ExcludedNote,
     /// Not a refusal, and the one token here that names a success: the file
     /// was already byte-identical to our own output, so this run claimed it
     /// into the destination's manifest. The table's refusal set is
@@ -369,6 +371,7 @@ impl ReasonToken {
         Self::MemberUnresolved,
         Self::EmptyPlugin,
         Self::MixedFrontmatterShape,
+        Self::ExcludedNote,
     ];
 
     /// The wire spelling, which prose never varies from.
@@ -391,6 +394,7 @@ impl ReasonToken {
             Self::MemberUnresolved => "member-unresolved",
             Self::EmptyPlugin => "empty-plugin",
             Self::MixedFrontmatterShape => "mixed-frontmatter-shape",
+            Self::ExcludedNote => "excluded-note",
             Self::Claimed => "claimed",
             Self::RedundantOverride => "redundant-override",
             Self::Overwritten => "overwritten",
@@ -625,6 +629,7 @@ pub struct PublishReport {
 ///   name this build does not know. The same name in `targets` never
 ///   reaches here — it is a blocker, so it comes back *inside* the report,
 ///   stamped on every projected file.
+/// * `refused: excluded-note` when `build.exclude` holds the note.
 /// * A destination the note's `targets` excludes is `Ok` with an empty
 ///   report and [`PublishReport::not_published`] set. See the module doc.
 pub fn publish_skill(
@@ -4942,6 +4947,7 @@ mod tests {
                 "member-unresolved",
                 "empty-plugin",
                 "mixed-frontmatter-shape",
+                "excluded-note",
             ]
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));

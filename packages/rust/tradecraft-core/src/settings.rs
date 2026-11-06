@@ -662,6 +662,42 @@ mod tests {
     }
 
     #[test]
+    fn an_unknown_patterns_key_warns_and_a_wrong_shape_is_refused_by_name() {
+        let root = parse_root_file(
+            "---\nbuild:\n  patterns:\n    skill: a/*\n    skills: [docs/*, notes/*]\n---\n",
+        )
+        .unwrap();
+        assert_eq!(root.build.patterns.skills, ["docs/*", "notes/*"]);
+        let said = root.warnings.join("\n");
+        assert!(said.contains("`build.patterns.skill`"), "{said}");
+        assert!(
+            said.contains("`docs/*` names a folder that never ships"),
+            "{said}"
+        );
+
+        for (text, key) in [
+            ("patterns: [notes]", "build.patterns"),
+            ("patterns: notes", "build.patterns"),
+            ("patterns: {skills: 3}", "build.patterns.skills"),
+            ("patterns: {skills: [1]}", "build.patterns.skills"),
+            ("exclude: {a: b}", "build.exclude"),
+        ] {
+            let err = parse_root_file(&format!("---\nbuild:\n  {text}\n---\n")).unwrap_err();
+            assert_eq!(err.key, key, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_bad_glob_is_refused_naming_the_key_and_the_value() {
+        let err = parse_root_file("---\nbuild:\n  exclude: ['ok/*', '../x']\n---\n").unwrap_err();
+        assert_eq!(err.key, "build.exclude");
+        assert!(err.detail.contains("`../x`"), "{err}");
+        let err =
+            parse_root_file("---\nbuild:\n  patterns:\n    agents: '/abs/*'\n---\n").unwrap_err();
+        assert_eq!(err.key, "build.patterns.agents");
+    }
+
+    #[test]
     fn a_member_s_build_value_overrides_the_workspace_key_by_key() {
         let workspace = parse_root_file(
             "---\nworkspace: true\nlicense: MIT\nbuild:\n  harnesses: [claude]\n  \

@@ -3068,3 +3068,67 @@ fn require_descriptions_in_the_root_file_refuses_the_build() {
     );
     assert!(!dir.path().join("out").exists());
 }
+
+// --- a root file named with --config, and a moved packs folder ---------------
+
+fn skill(path: &Path) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "---\ndescription: Use it.\n---\n\nbody\n").unwrap();
+}
+
+#[test]
+fn a_config_file_carries_its_patterns_and_exclusions() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("alt.md"),
+        "---\nname: m\nbuild:\n  out: dist\n  exclude: '**/*.draft.md'\n  patterns:\n    plugins: packs/*\n---\n",
+    )
+    .unwrap();
+    skill(&dir.path().join("packs/a/skills/x.md"));
+    skill(&dir.path().join("packs/a/skills/z.draft.md"));
+    let run = run(&["build", "--yes", "--config", "alt.md"], dir.path());
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let pack = dir.path().join("dist/.claude-plugin/packs/a/skills");
+    assert!(pack.join("x/SKILL.md").is_file());
+    assert!(!pack.join("z-draft").exists());
+    assert!(!pack.join("z.draft").exists());
+}
+
+#[test]
+fn harness_install_follows_a_moved_packs_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: dist\nclaude: {packs: moved/claude}\n---\n",
+    )
+    .unwrap();
+    skill(&dir.path().join("plugins/rev/skills/a.md"));
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    let install = run(&["harness", "install", "claude", "--dry-run"], dir.path());
+    assert_eq!(install.code, 0, "{}", install.stderr);
+    assert!(install.stdout.contains("rev@m"), "{}", install.stdout);
+}
+
+#[test]
+fn list_leaves_out_a_moved_packs_folder_a_marketplace_note_names() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: .\n---\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.path().join("marketplaces/m")).unwrap();
+    std::fs::write(
+        dir.path().join("marketplaces/m/m.md"),
+        "---\nname: m\nclaude: {packs: built}\n---\n",
+    )
+    .unwrap();
+    skill(&dir.path().join("marketplaces/m/plugins/rev/skills/a.md"));
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(dir.path().join("built/rev").is_dir());
+    let list = run(&["list"], dir.path());
+    assert_eq!(list.code, 0, "{}", list.stderr);
+    assert!(!list.stdout.contains("built/"), "{}", list.stdout);
+}

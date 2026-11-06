@@ -2021,7 +2021,7 @@ fn markdown_destinations(markdown: &str) -> Vec<&str> {
     let inline = markdown
         .match_indices("](")
         .map(|(at, _)| (at, at + 2))
-        .filter(|(at, _)| markdown[..*at].chars().next_back() != Some('\\'));
+        .filter(|(at, _)| !markdown[..*at].ends_with('\\'));
     let mut offset = 0;
     let mut definitions = Vec::new();
     for line in markdown.split_inclusive('\n') {

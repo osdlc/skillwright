@@ -359,8 +359,8 @@ pub fn load(
         }
     }
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
-    apply_naming(&mut plugins, &config)?;
-    crate::harness::manifest::check_packs(&config)?;
+    apply_naming(&mut plugins, config)?;
+    crate::harness::manifest::check_packs(config)?;
 
     Ok(Marketplace {
         name,

@@ -939,3 +939,448 @@ fn a_packs_folder_must_stay_inside_the_output_and_apart_from_the_others() {
     let err = build_root(&vfs, pi_block("packs", ".agents/packs")).unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
 }
+
+// --- pack location, once resolved ------------------------------------------
+
+/// [`build_root`] with the output at `out`.
+fn build_to(vfs: &dyn Vfs, out: &str, root_file: &str) -> Result<ExportReport, String> {
+    let mut request = request();
+    request.marketplace = None;
+    request.out_root = PathBuf::from(out);
+    request.config = tradecraft_core::settings::root_file_config(root_file, "house").unwrap();
+    export_skills(vfs, &request, &Namespace::bare()).map_err(|err| err.to_string())
+}
+
+const TOOL_SKILL: (&str, &str) = (
+    "plugins/rev/skills/a.md",
+    "---\ndescription: Use a.\n---\n\nbody\n",
+);
+
+#[test]
+fn a_moved_folder_in_an_output_inside_the_vault_rebuilds() {
+    let root = "---\nname: m\npi: {packs: moved/pi}\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    build_to(&vfs, "/vault/dist", root).unwrap();
+    assert!(vfs.exists(Path::new("/vault/dist/moved/pi/rev/package.json")));
+    build_to(&vfs, "/vault/dist", root).unwrap();
+}
+
+#[test]
+fn a_block_from_the_request_hides_output_the_root_file_does_not_name() {
+    // A workspace's `packs` reaches the build as config, not in the vault's
+    // own root file.
+    let vfs = root_vault("---\nname: m\n---\n", &[TOOL_SKILL]);
+    let root = "---\nname: m\nclaude: {packs: wsp}\n---\n";
+    build_to(&vfs, "/vault", root).unwrap();
+    assert!(vfs.exists(Path::new("/vault/wsp/rev")));
+    build_to(&vfs, "/vault", root).unwrap();
+}
+
+#[test]
+fn a_built_copy_in_a_moved_folder_never_makes_a_link_ambiguous() {
+    let root = "---\nname: m\nclaude: {packs: built/claude}\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            (
+                "plugins/rev/skills/a/a.md",
+                "---\ndescription: Use a.\n---\n\nSee [[guide]].\n",
+            ),
+            ("plugins/rev/skills/a/refs/guide.md", "# Guide\n"),
+        ],
+    );
+    build_to(&vfs, "/vault", root).unwrap();
+    assert!(vfs.exists(Path::new("/vault/built/claude/rev/skills/a/refs/guide.md")));
+    build_to(&vfs, "/vault", root).unwrap();
+}
+
+#[test]
+fn packs_on_a_harness_path_is_refused_and_touches_nothing() {
+    for packs in [
+        ".pi",
+        ".pi/skills",
+        ".claude-plugin",
+        ".claude-plugin/marketplace.json",
+        ".agents/plugins",
+        ".agents",
+        ".cursor",
+        ".Claude-Plugin",
+    ] {
+        for harness in ["pi", "claude"] {
+            let root = format!("---\nname: m\n{harness}: {{packs: '{packs}'}}\n---\n");
+            let vfs = root_vault(&root, &[TOOL_SKILL]);
+            write(&vfs, "/vault/.pi/settings.json", "{}\n");
+            let err = build_to(&vfs, "/vault", &root).unwrap_err();
+            assert!(err.contains("path-collision"), "{packs}: {err}");
+            assert!(
+                err.contains(&format!("`{harness}.packs`")),
+                "{packs}: {err}"
+            );
+            assert!(vfs.exists(Path::new("/vault/.pi/settings.json")), "{packs}");
+        }
+    }
+}
+
+#[test]
+fn a_harness_may_name_its_own_default_folder() {
+    let root = "---\nname: m\nclaude: {packs: .claude-plugin/packs}\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    build_to(&vfs, "/vault", root).unwrap();
+}
+
+#[test]
+fn a_windows_path_in_packs_is_unsafe() {
+    for packs in ["C:/x", "C:\\\\x", "c:x"] {
+        let root = format!("---\nname: m\npi: {{packs: \"{packs}\"}}\n---\n");
+        let vfs = root_vault(&root, &[TOOL_SKILL]);
+        let err = build_to(&vfs, "/market", &root).unwrap_err();
+        assert!(err.contains("unsafe-path"), "{packs}: {err}");
+    }
+}
+
+#[test]
+fn packs_on_a_source_folder_is_refused_when_the_output_overlaps_the_vault() {
+    for packs in [
+        "plugins",
+        "plugins/rev",
+        "skills",
+        "assets",
+        "notes",
+        "notes/x",
+    ] {
+        let root = format!(
+            "---\nname: m\nbuild:\n  patterns:\n    skills: notes/*\nclaude: {{packs: {packs}}}\n---\n"
+        );
+        let vfs = root_vault(&root, &[TOOL_SKILL]);
+        for out in ["/vault", "/vault/dist"] {
+            let err = build_to(&vfs, out, &root).unwrap_err();
+            assert!(err.contains("source folder"), "{packs} at {out}: {err}");
+        }
+        assert!(vfs.exists(Path::new("/vault/plugins/rev/skills/a.md")));
+    }
+    // Clear of the vault, the same name is only a folder.
+    let root = "---\nname: m\nclaude: {packs: plugins}\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    build_to(&vfs, "/market", root).unwrap();
+    assert!(vfs.exists(Path::new("/market/plugins/rev")));
+}
+
+#[test]
+fn a_marketplace_notes_packs_meets_every_rail() {
+    let market = "marketplaces/house/house.md";
+    let skill = "marketplaces/house/plugins/rev/skills/a.md";
+    let body = "---\ndescription: Use a.\n---\n\n<!-- Generated by skillwright from x -->\n";
+    let marked = (skill, body);
+
+    // The note's value is the one the vault rail sees.
+    let vfs = MemVfs::new();
+    write(&vfs, "/top/v/skillwright.md", "---\nname: house\n---\n");
+    write(
+        &vfs,
+        &format!("/top/v/{market}"),
+        "---\nname: house\nclaude: {packs: v}\n---\n",
+    );
+    write(&vfs, &format!("/top/v/{skill}"), body);
+    let mut asked = request();
+    asked.vault_root = PathBuf::from("/top/v");
+    asked.out_root = PathBuf::from("/top");
+    let err = export_skills(&vfs, &asked, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("unsafe-root"), "{err}");
+    assert!(vfs.exists(Path::new("/top/v/skillwright.md")));
+
+    // And it hides the output and meets the harness and source checks.
+    for (packs, refusal) in [(".pi", "path-collision"), ("plugins", "source folder")] {
+        let note = format!("---\nname: house\nclaude: {{packs: {packs}}}\n---\n");
+        let vfs = root_vault("---\nname: house\n---\n", &[marked, (market, &note)]);
+        let err = build_to(&vfs, "/vault", "---\nname: house\n---\n").unwrap_err();
+        assert!(err.contains(refusal), "{packs}: {err}");
+    }
+    let note = "---\nname: house\nclaude: {packs: built}\n---\n";
+    let vfs = root_vault(
+        "---\nname: house\n---\n",
+        &[(skill, "---\ndescription: d\n---\n\nb\n"), (market, note)],
+    );
+    build_to(&vfs, "/vault", "---\nname: house\n---\n").unwrap();
+    assert!(vfs.exists(Path::new("/vault/built/rev")));
+    build_to(&vfs, "/vault", "---\nname: house\n---\n").unwrap();
+}
+
+#[test]
+fn effective_config_holds_a_notes_blocks_and_only_those() {
+    let vfs = vault("claude: {packs: moved}\n", "", "");
+    let scope = tradecraft_core::VaultScope {
+        vault_root: Path::new("/vault"),
+        skills_root: None,
+        marketplace: Some("house"),
+    };
+    let asked = request().config;
+    let config = tradecraft_core::effective_config(&vfs, scope, &asked, &Namespace::bare());
+    let mut request = request();
+    assert_eq!(config.name, None);
+    assert_eq!(config.description, None);
+    request.config = config;
+    let owned = tradecraft_core::owned_paths(&request).unwrap();
+    assert!(owned.contains(&("claude", "moved")), "{owned:?}");
+}
+
+#[test]
+fn a_folder_of_the_users_is_not_taken_over_on_one_marker() {
+    let root = "---\nname: m\npi: {packs: stuff}\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    write(&vfs, "/vault/stuff/mine.txt", "mine\n");
+    write(
+        &vfs,
+        "/vault/stuff/deep/note.md",
+        "<!-- Generated by skillwright from x; do not edit. -->\n",
+    );
+    let err = build_to(&vfs, "/vault", root).unwrap_err();
+    assert!(err.contains("foreign-tree"), "{err}");
+    assert!(vfs.exists(Path::new("/vault/stuff/mine.txt")));
+}
+
+#[test]
+fn a_pack_that_was_dropped_from_a_moved_folder_still_rebuilds() {
+    let root = "---\nname: m\nclaude: {packs: built}\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    write(
+        &vfs,
+        "/vault/plugins/old/skills/b.md",
+        "---\ndescription: Use b.\n---\n\nbody\n",
+    );
+    build_to(&vfs, "/vault", root).unwrap();
+    vfs.remove(Path::new("/vault/plugins/old")).unwrap();
+    build_to(&vfs, "/vault", root).unwrap();
+    assert!(!vfs.exists(Path::new("/vault/built/old")));
+}
+
+#[test]
+fn output_left_at_the_default_folder_is_reported_and_kept() {
+    let root = "---\nname: m\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    build_to(&vfs, "/market", root).unwrap();
+    let moved = "---\nname: m\nclaude: {packs: mv}\n---\n";
+    let report = build_to(&vfs, "/market", moved).unwrap();
+    let stale = report
+        .warnings
+        .iter()
+        .find(|w| w.reason == "stale-output")
+        .unwrap();
+    assert_eq!(stale.path, ".claude-plugin/packs");
+    assert!(vfs.exists(Path::new("/market/.claude-plugin/packs/rev")));
+    assert!(vfs.exists(Path::new("/market/mv/rev")));
+}
+
+#[test]
+fn output_left_by_a_move_inside_the_vault_is_named_as_the_cause() {
+    let first = "---\nname: m\nclaude: {packs: built/claude}\n---\n";
+    let vfs = root_vault(first, &[TOOL_SKILL]);
+    build_to(&vfs, "/vault", first).unwrap();
+    let moved = "---\nname: m\nclaude: {packs: built/other}\n---\n";
+    let err = build_to(&vfs, "/vault", moved).unwrap_err();
+    assert!(err.contains("built/claude/rev/skills/a/SKILL.md"), "{err}");
+    assert!(
+        err.contains("no `packs` setting points at its folder"),
+        "{err}"
+    );
+}
+
+// --- patterns, exclusions and links ----------------------------------------
+
+#[test]
+fn a_skill_pattern_under_plugins_stays_in_its_plugin() {
+    let root = "---\nname: m\nbuild:\n  patterns:\n    skills: plugins/*/guides/*\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            TOOL_SKILL,
+            (
+                "plugins/rev/guides/g.md",
+                "---\ndescription: Use g.\n---\n\nbody\n",
+            ),
+        ],
+    );
+    build_to(&vfs, "/market", root).unwrap();
+    assert!(vfs.exists(Path::new(
+        "/market/.claude-plugin/packs/rev/skills/g/SKILL.md"
+    )));
+    assert!(!vfs.exists(Path::new("/market/.claude-plugin/packs/m")));
+}
+
+#[test]
+fn a_pattern_on_a_folder_that_never_ships_ships_nothing() {
+    let root = "---\nname: m\nbuild:\n  patterns:\n    skills: [docs/*, plugins/rev/docs/*]\n---\n";
+    let note = "---\ndescription: Use it.\n---\n\nbody\n";
+    let vfs = root_vault(
+        root,
+        &[
+            TOOL_SKILL,
+            ("docs/d.md", note),
+            ("plugins/rev/docs/pd.md", note),
+        ],
+    );
+    let warned = parse_root_file(root).unwrap().warnings.join("\n");
+    assert!(warned.contains("`docs/*`"), "{warned}");
+    build_to(&vfs, "/market", root).unwrap();
+    let skills = "/market/.claude-plugin/packs";
+    assert!(vfs.exists(Path::new(&format!("{skills}/rev/skills/a/SKILL.md"))));
+    assert!(!vfs.exists(Path::new(&format!("{skills}/rev/skills/pd"))));
+    assert!(!vfs.exists(Path::new(&format!("{skills}/m"))));
+}
+
+#[test]
+fn every_spelling_of_a_link_to_what_never_ships_is_refused_alike() {
+    let root = "---\nname: m\nbuild:\n  exclude: private\n---\n";
+    let shipped = |body: &str| format!("---\ndescription: Use it.\n---\n\n{body}\n");
+    let bundle = "plugins/rev/skills/a/a.md";
+    let flat = "plugins/rev/skills/flat.md";
+    for (path, body, target) in [
+        (flat, "[[docs/guide]]", "docs/guide.md"),
+        (flat, "![[pg]]", "plugins/rev/docs/pg.md"),
+        (flat, "[x](../../../docs/guide.md)", "docs/guide.md"),
+        (flat, "[x](../docs/pg.md#part)", "plugins/rev/docs/pg.md"),
+        (flat, "[x]: ../docs/pg.md", "plugins/rev/docs/pg.md"),
+        (flat, "[x](../../../private/x.md)", "private/x.md"),
+        (bundle, "[x](docs/in.md)", "plugins/rev/skills/a/docs/in.md"),
+        (bundle, "[[docs/in]]", "plugins/rev/skills/a/docs/in.md"),
+        (bundle, "[x](../../../../private/x.md)", "private/x.md"),
+        (
+            bundle,
+            "![x](docs/in%20a.png)",
+            "plugins/rev/skills/a/docs/in a.png",
+        ),
+    ] {
+        let body = shipped(body);
+        let vfs = root_vault(
+            root,
+            &[
+                (path, &body),
+                ("docs/guide.md", "# Guide\n"),
+                ("plugins/rev/docs/pg.md", "# Page\n"),
+                ("private/x.md", "# Private\n"),
+                ("plugins/rev/skills/a/docs/in.md", "# In\n"),
+                ("plugins/rev/skills/a/docs/in a.png", "png"),
+            ],
+        );
+        let err = build_to(&vfs, "/market", root).unwrap_err();
+        assert!(err.contains("excluded-link"), "{body}: {err}");
+        assert!(err.contains(&format!("links to {target}")), "{body}: {err}");
+    }
+}
+
+#[test]
+fn a_link_that_is_not_one_or_that_ships_is_left_alone() {
+    let root = "---\nname: m\nbuild:\n  exclude: private\n---\n";
+    let body = "---\ndescription: Use it.\n---\n\n`[c](docs/in.md)` <!-- [c](docs/in.md) --> \
+                [web](https://example.com/docs/in.md) [ok](refs/r.md) [gone](docs/nope.md)\n\n\
+                ```\n[c](docs/in.md)\n```\n";
+    let vfs = root_vault(
+        root,
+        &[
+            ("plugins/rev/skills/a/a.md", body),
+            ("plugins/rev/skills/a/refs/r.md", "# R\n"),
+            ("plugins/rev/skills/a/docs/in.md", "# In\n"),
+        ],
+    );
+    build_to(&vfs, "/market", root).unwrap();
+}
+
+#[test]
+fn a_skill_or_plugin_named_for_a_never_ship_folder_links_inside_itself() {
+    let root = "---\nname: m\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            (
+                "plugins/docs/skills/a.md",
+                "---\ndescription: Use a.\n---\n\nSee [[b]].\n",
+            ),
+            (
+                "plugins/docs/skills/b.md",
+                "---\ndescription: Use b.\n---\n\nbody\n",
+            ),
+            (
+                "skills/tests/tests.md",
+                "---\ndescription: Use tests.\n---\n\nSee [[refs/r]].\n",
+            ),
+            ("skills/tests/refs/r.md", "# R\n"),
+        ],
+    );
+    build_to(&vfs, "/market", root).unwrap();
+}
+
+#[test]
+fn a_deep_skill_glob_builds_each_note_under_the_folder() {
+    let root = "---\nname: m\nbuild:\n  patterns:\n    skills: notes/**\n---\n";
+    let note = "---\ndescription: Use it.\n---\n\nbody\n";
+    let vfs = root_vault(root, &[("notes/a.md", note), ("notes/b/b.md", note)]);
+    build_to(&vfs, "/market", root).unwrap();
+    for skill in ["a", "b"] {
+        let built = format!("/market/.claude-plugin/packs/m/skills/{skill}/SKILL.md");
+        assert!(vfs.exists(Path::new(&built)), "{skill}");
+    }
+}
+
+#[test]
+fn a_glob_that_matches_nothing_is_reported_by_the_build() {
+    let root = "---\nname: m\nbuild:\n  exclude: nope/*\n---\n";
+    let vfs = root_vault(root, &[TOOL_SKILL]);
+    let report = build_to(&vfs, "/market", root).unwrap();
+    assert!(
+        report.warnings.iter().any(|w| w.reason == "unmatched-glob"),
+        "{:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn a_malformed_root_file_refuses_a_build_rather_than_lose_its_exclusions() {
+    let vfs = root_vault("---\nbuild:\n  exclude: '../x'\n---\n", &[TOOL_SKILL]);
+    let err = build_to(&vfs, "/market", "---\nname: m\n---\n").unwrap_err();
+    assert!(err.contains("malformed-root-file"), "{err}");
+}
+
+#[test]
+fn naming_an_excluded_note_does_not_publish_it() {
+    let root = "---\nname: m\nbuild:\n  exclude: '**/*.draft.md'\n---\n";
+    let note = "---\ndescription: Use it.\n---\n\nbody\n";
+    let vfs = root_vault(root, &[("plugins/p/skills/hid.draft.md", note)]);
+    let err = publish_skill(
+        &vfs,
+        &PublishRequest {
+            skill_path: PathBuf::from("/vault/plugins/p/skills/hid.draft.md"),
+            destination_root: PathBuf::from("/dest"),
+            target: "claude".to_owned(),
+            mode: PublishMode::Write,
+            skills_root: Some(PathBuf::from("/vault")),
+            config: None,
+            published_at: None,
+            overwrite: Vec::new(),
+        },
+        &Namespace::bare(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("excluded-note"), "{err}");
+    assert!(!vfs.exists(Path::new("/dest")));
+}
+
+#[test]
+fn a_single_note_publish_finds_a_plugin_note_a_pattern_moved() {
+    let root = "---\nname: m\nbuild:\n  patterns:\n    plugins: packs/*\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            (
+                "packs/rev/rev.md",
+                &note("rev", "license: MIT\nclaude:\n  model: opus\n"),
+            ),
+            ("packs/rev/skills/a.md", &note("a", "")),
+        ],
+    );
+    let report = publish(&vfs, "/vault/packs/rev/skills/a.md", "claude");
+    let text = published(&vfs, &report, "SKILL.md");
+    assert!(text.contains("license: MIT"), "{text}");
+    assert!(text.contains("model: opus"), "{text}");
+}

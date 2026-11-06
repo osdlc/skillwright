@@ -569,6 +569,7 @@ pub(crate) fn discover_in(
             // shaped. Only inside a marketplace is a declared note at an
             // unrecognised path a mistake worth naming.
             if under_a_kind_folder(root, &conventional(root, entry_path, &patterns))
+                && !never_ships(root, entry_path)
                 && let Err(err) = refuse_stray(vfs, root, entry_path, ns)
             {
                 // A stray sits at no recognised shape, so it is a member of
@@ -897,6 +898,12 @@ fn place(
         }
     }
     placed
+}
+
+/// Whether a folder that never ships holds `path`: a note there is no stray.
+fn never_ships(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root)
+        .is_ok_and(|rest| crate::patterns::in_never_ship_folder(&forward_slashed(rest)))
 }
 
 /// `path` as the conventional path it plays the part of under `root`.
