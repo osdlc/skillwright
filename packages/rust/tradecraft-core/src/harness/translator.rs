@@ -570,9 +570,13 @@ fn render_call(
         return Ok(rendered);
     }
     let prefix = runtime.skill_call_syntax().prefix;
-    Ok(rendered
-        .strip_prefix(prefix)
-        .map_or(rendered.clone(), str::to_owned))
+    match rendered.strip_prefix(prefix) {
+        Some(name) => Ok(name.to_owned()),
+        None => Err(CoreError::refused(
+            "skill-call-invalid",
+            format!("the {runtime:?} call `{rendered}` does not start with `{prefix}`"),
+        )),
+    }
 }
 
 /// How a harness names a published skill; [`SkillNaming::Bare`] for a row

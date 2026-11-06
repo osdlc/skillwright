@@ -1995,8 +1995,10 @@ mod tests {
             (".claude-plugin", "tools:b"),
             (".agents", "tools:b"),
             (".cursor-plugin", "b"),
+            (".pi", "tools-b"),
         ] {
-            let body = skill_md(&vfs, tree, "a");
+            let skill = if tree == ".pi" { "tools-a" } else { "a" };
+            let body = skill_md(&vfs, tree, skill);
             let want = format!(
                 "Use the b skill (`{named}`) next, see `{named}` and the steps (`{named}`)."
             );
