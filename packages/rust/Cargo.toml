@@ -59,7 +59,7 @@ agent-adapt = "0.19.2"
 config-layers = "0.8.0"
 etag-write = "0.2.4"
 frontmatter-lossless = "1.1.2"
-markdown-contract = { version = "0.4.0", default-features = false }
+markdown-contract = { version = "0.4.1", default-features = false }
 markdown-corpus = "0.2.0"
 markdown-link = "0.8.0"
 markdown-relink = "0.3.0"
