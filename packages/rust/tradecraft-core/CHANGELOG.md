@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.43.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.43.0...tradecraft-core/v0.43.1) - 2026-11-06
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.43.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.42.0...tradecraft-core/v0.43.0) - 2026-11-05
 
 ### Other
