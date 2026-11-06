@@ -57,7 +57,8 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 | ----------------------------- | ------------------------------------------------------------------------------- |
 | `publishSkill(vfs, request)`  | Writes one note to one destination for one target. `mode: 'dry-run'` writes nothing. |
 | `statusOf(vfs, request)`      | One note's state at one destination: `never-published`, `current`, `stale`, `conflict` or `unknown`. |
-| `discoverComponents(vfs, request)` | Scans a vault for publishable notes, and reports the notes it could not read. |
+| `discoverComponents(vfs, request)` | Scans a vault for publishable notes, and reports the notes it could not read. With `out_root`, it leaves out what a build owns there. |
+| `loadMarketplace(vfs, request)` | Loads the vault as a marketplace model and writes nothing. With `out_root`, it leaves out what a build owns there. |
 | `exportSkills(vfs, request)`  | Renders the vault into one marketplace tree per agent. `mode: 'check'` reports drift and writes nothing. |
 | `adoptSkills(vfs, request)`   | Imports published `SKILL.md` bundles into a vault. `mode: 'dry-run'` previews it. |
 | `knownTargets()`              | The target names the core accepts.                                              |

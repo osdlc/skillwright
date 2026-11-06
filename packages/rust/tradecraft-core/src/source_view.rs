@@ -23,7 +23,7 @@ use crate::model::cascade::Cascade;
 use crate::model::load::ASSETS_DIR;
 use crate::namespace::Namespace;
 use crate::patterns::Patterns;
-use crate::settings::ROOT_FILE;
+use crate::settings::{ROOT_FILE, parse_root_file};
 use crate::vfs::{DirEntry, Metadata, Vfs, VfsError, normalize};
 
 /// `inner`, less the hidden paths, with `<vault>/skillwright.md` standing for
@@ -283,6 +283,18 @@ pub(crate) fn check_pack_location(
             .ok()
             .map(crate::skill::forward_slashed)
     })
+}
+
+/// What the root file at `vault_root` configures, for a caller that holds no
+/// configuration of its own. Default when the file is missing or unreadable:
+/// a build says what is wrong with it.
+pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> MarketplaceConfig {
+    vfs.read_file(&vault_root.join(ROOT_FILE))
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|text| parse_root_file(&text).ok())
+        .map(|root| root.to_config(""))
+        .unwrap_or_default()
 }
 
 /// The view of the vault for a run that does not build: `base`, less the
