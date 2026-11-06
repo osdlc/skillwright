@@ -49,6 +49,9 @@ pub struct StatusRequest {
     /// See [`PublishRequest::user_folders`].
     #[serde(default)]
     pub user_folders: bool,
+    /// The root file's config; see [`PublishRequest::config`].
+    #[serde(default)]
+    pub config: Option<crate::export::MarketplaceConfig>,
 }
 
 /// What a unit's publish state is at one destination.
@@ -164,6 +167,7 @@ pub fn status_of(
             target: request.target.clone(),
             mode: PublishMode::DryRun,
             skills_root: request.skills_root.clone(),
+            config: request.config.clone(),
             // A status takes no clock: it never writes, so no entry it
             // produces can reach a manifest, and stamping one would be
             // recording a moment nothing happened at.
@@ -441,6 +445,7 @@ mod tests {
 
     fn ask() -> StatusRequest {
         StatusRequest {
+            config: None,
             skill_path: PathBuf::from("/vault/skills/code-review.md"),
             destination_root: PathBuf::from("/dest"),
             user_folders: false,
@@ -453,6 +458,7 @@ mod tests {
         publish_skill(
             vfs,
             &PublishRequest {
+                config: None,
                 skill_path: PathBuf::from("/vault/skills/code-review.md"),
                 destination_root: PathBuf::from("/dest"),
                 user_folders: false,
@@ -681,6 +687,7 @@ mod tests {
 
     fn plugin_ask() -> StatusRequest {
         StatusRequest {
+            config: None,
             skill_path: PathBuf::from(PLUGIN_NOTE),
             destination_root: PathBuf::from("/dest"),
             user_folders: false,
@@ -693,6 +700,7 @@ mod tests {
         publish_skill(
             vfs,
             &PublishRequest {
+                config: None,
                 skill_path: PathBuf::from(PLUGIN_NOTE),
                 destination_root: PathBuf::from("/dest"),
                 user_folders: false,
@@ -807,6 +815,7 @@ mod tests {
         .unwrap();
         vfs.create_dir_all(Path::new("/dest")).unwrap();
         let request = PublishRequest {
+            config: None,
             skill_path: PathBuf::from(note),
             destination_root: PathBuf::from("/dest"),
             user_folders: false,
@@ -834,6 +843,7 @@ mod tests {
         let status = status_of(
             &vfs,
             &StatusRequest {
+                config: None,
                 skill_path: request.skill_path.clone(),
                 destination_root: request.destination_root.clone(),
                 user_folders: false,

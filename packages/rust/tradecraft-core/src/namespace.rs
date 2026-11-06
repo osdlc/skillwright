@@ -5,7 +5,7 @@
 //! are skillwright's is a closed list per kind ([`crate::keys`]), so the
 //! publish strip and the unknown-key warning read one table. A vault where
 //! those words mean something else sets `build.namespace: sw`, and every
-//! skillwright key moves under that stem: flat `version`, or a nested
+//! skillwright key moves under that stem: flat `sw-version`, or a nested
 //! `sw:` block. Spec keys are never prefixed.
 //!
 //! # One stem, two derived forms
@@ -15,7 +15,7 @@
 //!
 //! | Form | From `sw` | Used by |
 //! |---|---|---|
-//! | flat prefix | `sw-` | every flat key: `sw-kind`, `targets`, … |
+//! | flat prefix | `sw-` | every flat key: `sw-version`, `sw-targets`, … |
 //! | nested block key | `sw` | the nested shape, `sw:` |
 //!
 //! They are derived rather than configured separately on purpose. Two
@@ -229,7 +229,7 @@ impl Namespace {
     }
 
     /// The flat spelling of one of our fields: `key("version")` is
-    /// `version` under `sw`, and `version` when bare.
+    /// `sw-version` under `sw`, and `version` when bare.
     ///
     /// The only way anything in this crate names one of our keys. A literal
     /// `"sw-kind"` written anywhere would be a key that stops being ours the
@@ -238,6 +238,12 @@ impl Namespace {
     /// here, and every key it returns satisfies `is_ours` by construction.
     pub fn key(&self, field: &str) -> String {
         format!("{}{field}", self.prefix)
+    }
+
+    /// The field a flat spelling names: [`Self::key`] undone. `sw-version` is
+    /// `version` under `sw`, and any other key is itself.
+    pub fn field<'k>(&self, key: &'k str) -> &'k str {
+        key.strip_prefix(self.prefix.as_str()).unwrap_or(key)
     }
 
     /// True for any key a prefixed namespace claims, in either shape.

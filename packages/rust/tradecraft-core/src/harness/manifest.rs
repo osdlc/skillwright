@@ -10,10 +10,13 @@
 //! The functions here are the shapes; which harness writes which is its
 //! translator's choice ([`crate::harness::HarnessTranslator`]).
 
+use std::collections::BTreeSet;
+
 use serde::Serialize;
 
 use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, PluginOverrides};
+use crate::frontmatter::EntityKind;
 use crate::harness::{HarnessProfile, PluginDialect};
 
 /// Two-space indentation, stable key order, one trailing newline — the byte
@@ -58,7 +61,7 @@ pub const NAMING_KEY: &str = "naming";
 
 /// Where `profile`'s packs land: the marketplace block's `packs`, or the
 /// profile's own folder.
-pub(crate) fn packs_of<'c>(config: &'c MarketplaceConfig, profile: &HarnessProfile) -> &'c str {
+pub fn packs_of<'c>(config: &'c MarketplaceConfig, profile: &HarnessProfile) -> &'c str {
     config
         .blocks
         .get(profile.name)
@@ -67,8 +70,39 @@ pub(crate) fn packs_of<'c>(config: &'c MarketplaceConfig, profile: &HarnessProfi
         .unwrap_or(profile.format().packs)
 }
 
-/// Refuses a `packs` value that is not a relative path of its own: one that
-/// leaves the output, or that lands on another harness's files.
+/// Whether a folder at `a` and one at `b` are one, or one holds the other.
+/// Letter case is ignored: a host's filesystem may ignore it too.
+pub(crate) fn paths_overlap(a: &str, b: &str) -> bool {
+    a.split('/')
+        .zip(b.split('/'))
+        .all(|(a, b)| a.eq_ignore_ascii_case(b))
+}
+
+/// Every harness's manifest paths and the top folders the profiles name.
+fn harness_paths() -> BTreeSet<&'static str> {
+    let mut paths = BTreeSet::new();
+    for profile in crate::harness::with_plugin_format() {
+        let format = profile.format();
+        paths.extend(format.marketplace_manifest);
+        let declared = [
+            Some(format.packs),
+            format.marketplace_manifest,
+            Some(format.user_skills_dir),
+            Some(format.plugin_manifest),
+        ];
+        paths.extend(
+            declared
+                .into_iter()
+                .flatten()
+                .filter_map(|path| path.split_once('/').map(|(top, _)| top)),
+        );
+    }
+    paths
+}
+
+/// Refuses a `packs` value a build could not own: one that leaves the output,
+/// that lands on a harness's manifests or folders, or that another harness's
+/// `packs` overlaps. A harness's own default is always its own.
 ///
 /// # Errors
 ///
@@ -87,9 +121,10 @@ pub(crate) fn check_packs(config: &MarketplaceConfig) -> Result<(), CoreError> {
             ));
         }
         let packs = packs_of(config, profile);
+        // `:` is a Windows drive (`C:/x`), which every other test here passes.
         let unsafe_path = packs.is_empty()
             || packs.starts_with('/')
-            || packs.contains('\\')
+            || packs.contains(['\\', ':'])
             || packs.split('/').any(|part| matches!(part, "" | "." | ".."));
         if unsafe_path {
             return Err(CoreError::refused(
@@ -100,11 +135,22 @@ pub(crate) fn check_packs(config: &MarketplaceConfig) -> Result<(), CoreError> {
                 ),
             ));
         }
+        if packs != profile.format().packs
+            && let Some(taken) = harness_paths()
+                .into_iter()
+                .find(|path| paths_overlap(packs, path))
+        {
+            return Err(CoreError::refused(
+                "path-collision",
+                format!(
+                    "`{}.{PACKS_KEY}` is `{packs}`, which overlaps `{taken}`: a build replaces its \
+                     packs folder whole, and that path belongs to a harness. Nothing was written",
+                    profile.name
+                ),
+            ));
+        }
         for (other, taken) in &seen {
-            if packs == *taken
-                || packs.starts_with(&format!("{taken}/"))
-                || taken.starts_with(&format!("{packs}/"))
-            {
+            if paths_overlap(packs, taken) {
                 return Err(CoreError::refused(
                     "path-collision",
                     format!(
@@ -116,6 +162,42 @@ pub(crate) fn check_packs(config: &MarketplaceConfig) -> Result<(), CoreError> {
             }
         }
         seen.push((profile.name, packs));
+    }
+    Ok(())
+}
+
+/// [`check_packs`]'s second half, for an output that overlaps the vault:
+/// refuses a moved `packs` on a folder the vault reads notes from. `sources`
+/// are those folders; `located` spells `packs` from the vault's root.
+///
+/// # Errors
+///
+/// `refused: path-collision`.
+pub(crate) fn check_packs_against_sources(
+    config: &MarketplaceConfig,
+    sources: &BTreeSet<String>,
+    located: impl Fn(&str) -> Option<String>,
+) -> Result<(), CoreError> {
+    for profile in crate::harness::with_plugin_format() {
+        let packs = packs_of(config, profile);
+        if packs == profile.format().packs {
+            continue;
+        }
+        let at_vault = located(packs);
+        let spellings = std::iter::once(packs).chain(at_vault.as_deref());
+        for spelling in spellings {
+            if let Some(source) = sources.iter().find(|s| paths_overlap(spelling, s)) {
+                return Err(CoreError::refused(
+                    "path-collision",
+                    format!(
+                        "`{}.{PACKS_KEY}` is `{packs}`, which overlaps the source folder \
+                         `{source}`: the output overlaps the vault, and generated files must not \
+                         mix with notes. Nothing was written",
+                        profile.name
+                    ),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -142,8 +224,9 @@ pub(crate) fn bare_on_pi(config: &MarketplaceConfig, plugin: &str) -> Result<boo
 }
 
 /// One plugin's harness block for `harness`: the marketplace's block, less
-/// the keys that belong to the marketplace manifest's own top level, overlaid
-/// by the plugin note's block key by key.
+/// the keys that belong to the marketplace manifest's own top level and the
+/// keys that say which plugin this is, overlaid by the plugin note's block key
+/// by key.
 pub(crate) fn plugin_block(config: &MarketplaceConfig, plugin: &str, harness: &str) -> Block {
     let top = format_of(harness).marketplace_fields;
     let mut block: Block = config
@@ -151,7 +234,11 @@ pub(crate) fn plugin_block(config: &MarketplaceConfig, plugin: &str, harness: &s
         .get(harness)
         .into_iter()
         .flatten()
-        .filter(|(key, _)| !top.contains(&key.as_str()))
+        .filter(|_| crate::keys::inherits(EntityKind::Plugin, harness))
+        .filter(|(key, _)| {
+            !top.contains(&key.as_str())
+                && !crate::keys::BLOCK_IDENTITY_KEYS.contains(&key.as_str())
+        })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     if let Some(own) = overrides_for(config, plugin).and_then(|o| o.blocks.get(harness)) {
@@ -215,17 +302,26 @@ fn insert_after(map: &mut Block, after: &str, key: &str, value: serde_json::Valu
 /// added after `license` when the dialect's manifest has the field.
 fn add_links(map: &mut Block, config: &MarketplaceConfig, plugin: &str, harness: &str) {
     let fields = format_of(harness).manifest_fields;
-    let own = overrides_for(config, plugin);
     let links = [
         (
             "repository",
-            own.and_then(|o| o.repository.clone())
-                .or_else(|| config.repository.clone()),
+            inherited(
+                config,
+                plugin,
+                "repository",
+                |own| &own.repository,
+                |market| &market.repository,
+            ),
         ),
         (
             "homepage",
-            own.and_then(|o| o.homepage.clone())
-                .or_else(|| config.homepage.clone()),
+            inherited(
+                config,
+                plugin,
+                "homepage",
+                |own| &own.homepage,
+                |market| &market.homepage,
+            ),
         ),
     ];
     let mut after = "license".to_owned();
@@ -295,6 +391,24 @@ pub(crate) fn overrides_for<'a>(
     config.plugins.get(plugin)
 }
 
+/// `plugin`'s value for `key`: its own, then the marketplace's where the key
+/// table says the key inherits. The one reading of a plugin's inherited field.
+pub(crate) fn inherited<T: Clone>(
+    config: &MarketplaceConfig,
+    plugin: &str,
+    key: &str,
+    own: impl Fn(&PluginOverrides) -> &Option<T>,
+    market: impl Fn(&MarketplaceConfig) -> &Option<T>,
+) -> Option<T> {
+    overrides_for(config, plugin)
+        .and_then(|overrides| own(overrides).clone())
+        .or_else(|| {
+            crate::keys::inherits(EntityKind::Plugin, key)
+                .then(|| market(config).clone())
+                .flatten()
+        })
+}
+
 /// The version a plugin ships as when nothing states one.
 pub(crate) const DEFAULT_PLUGIN_VERSION: &str = "0.1.0";
 
@@ -312,6 +426,25 @@ fn plugin_description(config: &MarketplaceConfig, plugin: &str, members: &[&str]
         .unwrap_or_else(|| format!("Skills: {}.", members.join(", ")))
 }
 
+/// The `category` and `tags` a Claude or Cursor marketplace entry carries:
+/// what the plugin note states, with `tags` read from its `keywords`. Neither
+/// has a default here, so a plugin that states none adds nothing to the index.
+#[derive(Serialize)]
+struct EntryListing {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tags: Vec<String>,
+}
+
+fn entry_listing(config: &MarketplaceConfig, plugin: &str) -> EntryListing {
+    let own = overrides_for(config, plugin);
+    EntryListing {
+        category: own.and_then(|o| o.category.clone()),
+        tags: own.and_then(|o| o.keywords.clone()).unwrap_or_default(),
+    }
+}
+
 fn plugin_category(config: &MarketplaceConfig, plugin: &str) -> String {
     overrides_for(config, plugin)
         .and_then(|o| o.category.clone())
@@ -319,22 +452,30 @@ fn plugin_category(config: &MarketplaceConfig, plugin: &str) -> String {
 }
 
 fn plugin_license(config: &MarketplaceConfig, plugin: &str) -> String {
-    overrides_for(config, plugin)
-        .and_then(|o| o.license.clone())
-        .or_else(|| config.license.clone())
-        .unwrap_or_else(|| "UNLICENSED".to_owned())
+    inherited(
+        config,
+        plugin,
+        "license",
+        |own| &own.license,
+        |market| &market.license,
+    )
+    .unwrap_or_else(|| "UNLICENSED".to_owned())
 }
 
 fn plugin_author(config: &MarketplaceConfig, plugin: &str) -> Option<serde_json::Value> {
-    overrides_for(config, plugin)
-        .and_then(|o| o.author.clone())
-        .or_else(|| config.author.clone())
-        .or_else(|| config.owner.clone())
-        .map(normalize_author)
+    inherited(
+        config,
+        plugin,
+        "author",
+        |own| &own.author,
+        |market| &market.author,
+    )
+    .or_else(|| config.owner.clone())
+    .map(normalize_author)
 }
 
 /// Claude's plugin schema requires `author` as `{ name, email? }`, but a
-/// marketplace note may still write `sw-author: <name>` as a bare string.
+/// marketplace note may still write `author: <name>` as a bare string.
 /// A string is promoted to `{ "name": <string> }`; anything else (already an
 /// object, or a type the schema does not expect) passes through unchanged.
 /// The one call site both dialects render through, so both get it.
@@ -535,6 +676,8 @@ pub fn claude_marketplace_manifest(
             source: String,
             description: String,
             version: String,
+            #[serde(flatten)]
+            listing: EntryListing,
         }
         #[derive(Serialize)]
         struct Manifest {
@@ -562,6 +705,7 @@ pub fn claude_marketplace_manifest(
                     source: format!("./{packs}/{plugin}"),
                     description: plugin_description(config, plugin, members),
                     version: plugin_version(config, plugin),
+                    listing: entry_listing(config, plugin),
                 })
                 .collect(),
         };
@@ -593,6 +737,8 @@ pub fn cursor_marketplace_manifest(
         source: String,
         description: String,
         version: String,
+        #[serde(flatten)]
+        listing: EntryListing,
     }
     #[derive(Serialize)]
     struct Metadata {
@@ -629,6 +775,7 @@ pub fn cursor_marketplace_manifest(
                 source: format!("{packs}/{plugin}"),
                 description: plugin_description(config, plugin, members),
                 version: plugin_version(config, plugin),
+                listing: entry_listing(config, plugin),
             })
             .collect(),
     };

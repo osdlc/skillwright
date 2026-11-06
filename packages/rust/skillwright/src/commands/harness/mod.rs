@@ -18,7 +18,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::Value;
-use tradecraft_core::{marketplace_manifest_path, plugin_manifest_path};
+use tradecraft_core::{
+    MarketplaceConfig, marketplace_manifest_path, packs_of, plugin_manifest_path,
+};
 
 use crate::commands::marketplace::configured_out;
 use crate::config::resolve_against_cwd;
@@ -199,11 +201,12 @@ struct InstallDocument<'a> {
     dry_run: bool,
 }
 
-/// The plugins `harness`'s packs folder under `root` holds, by name.
-fn built_plugins(root: &Path, harness: &str) -> Vec<String> {
+/// The plugins `harness`'s packs folder under `root` holds, by name, the
+/// folder being where `config` puts it.
+fn built_plugins(root: &Path, harness: &str, config: &MarketplaceConfig) -> Vec<String> {
     let Some(packs) = tradecraft_core::harness::with_plugin_format()
         .find(|profile| profile.name == harness)
-        .map(|profile| root.join(profile.format().packs))
+        .map(|profile| root.join(packs_of(config, profile)))
     else {
         return Vec::new();
     };
@@ -268,7 +271,7 @@ pub fn run_harness(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandCon
     let plugins: Vec<String> = if !flags.plugins.is_empty() {
         flags.plugins.clone()
     } else {
-        built_plugins(&root, adapter.name)
+        built_plugins(&root, adapter.name, &run.effective_config(None))
     };
     if installs_plugins && plugins.is_empty() {
         return usage_error(

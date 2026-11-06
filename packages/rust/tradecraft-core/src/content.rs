@@ -26,7 +26,7 @@ pub struct SkillContent {
     pub argument_names: Option<Vec<String>>,
     /// What this skill or command's invocation takes.
     ///
-    /// The one field here sourced from our `sw-` namespace rather than from
+    /// The one field here sourced from skillwright's own keys rather than from
     /// the standard's own frontmatter — see
     /// [`crate::frontmatter::VaultFrontmatter::arguments`] for why that is
     /// not the contradiction it looks like. `Vec::new()` by construction
@@ -69,7 +69,7 @@ pub struct SkillContent {
     /// harness blocks, keyed by **canonical** destination name — what one
     /// harness receives that the shared model cannot say.
     ///
-    /// The second field here sourced from our `sw-` namespace, and it is
+    /// The second field here sourced from skillwright's own keys, and it is
     /// here for the same reason [`Self::arguments`] is: a renderer needs it.
     /// `BTreeMap::new()` by construction from
     /// [`crate::vault::read_vault_skill`]; only

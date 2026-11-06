@@ -61,6 +61,16 @@ pub fn built_paths() -> Vec<String> {
     paths
 }
 
+/// [`built_paths`] and each harness's packs folder as `config` places it.
+pub fn built_paths_for(config: &crate::export::MarketplaceConfig) -> Vec<String> {
+    let mut paths = built_paths();
+    paths.extend(
+        crate::harness::with_plugin_format()
+            .map(|profile| format!("{}/", crate::harness::manifest::packs_of(config, profile))),
+    );
+    paths
+}
+
 /// Whether vault-relative `rel` sits under a plugin folder's `assets/`, by
 /// convention or by pattern. Those files are copied as they are, and are not
 /// notes. A vault walk has no hook for a folder found by shape, so each one
@@ -202,6 +212,16 @@ pub(crate) fn vault_files_refusing_symlinks(
     vault::walk(vfs, root, &vault_options(prune, true, true))
         .map(|entries| notes_and_resources(&patterns, entries))
         .map_err(|err| core_error(err, refuse))
+}
+
+/// Every file under `root` a vault walk meets, vault-relative, plugin assets
+/// included, without failing. What a glob can name.
+pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
+    vault::walk(vfs, root, &vault_options(&[], false, false))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| entry.rel)
+        .collect()
 }
 
 /// Every file under the vault folder `root` this walk can read, without

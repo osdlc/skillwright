@@ -34,8 +34,8 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 | `license` | string | skillwright | yes | The pack license, an SPDX expression. Defaults to UNLICENSED. |
 | `repository` | URL | skillwright | yes | The source repository URL, written into every manifest that has the field. |
 | `homepage` | URL | skillwright | yes | The documentation URL, written into every manifest that has the field. |
-| `keywords` | list of strings | skillwright | no | Plugin keywords. |
-| `category` | string | skillwright | no | The plugin's category in a marketplace entry. Defaults to Productivity. |
+| `keywords` | list of strings | skillwright | no | Plugin keywords; also the Claude and Cursor marketplace entry's `tags`. |
+| `category` | string | skillwright | no | The plugin's category in a marketplace entry. Codex defaults it to Productivity. |
 | `display_name` | string | skillwright | no | The human-facing name, Codex's `interface.displayName`. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it. Absent means all; `[]` means none. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |

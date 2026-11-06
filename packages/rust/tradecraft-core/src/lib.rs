@@ -91,6 +91,7 @@ pub mod scan;
 pub mod semver;
 pub mod settings;
 pub mod skill;
+pub mod source_view;
 pub mod status;
 mod text;
 pub mod vault;
@@ -116,8 +117,8 @@ pub use content::{SkillContent, SkillProjection};
 pub use corpus::*;
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION,
-    MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, default_name, discover_components,
-    folder_kind, is_skill_entry,
+    MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON, default_name,
+    discover_components, folder_kind, is_skill_entry,
 };
 pub use error::*;
 pub use export::{
@@ -130,7 +131,9 @@ pub use frontmatter::{
     ADOPTED_FIELDS, ContainerIdentity, EntityKind, KindHints, KindSource, Provenance, ResolvedKind,
     VaultFrontmatter, resolve_kind,
 };
+pub use harness::manifest::packs_of;
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, REMOVED, Shape};
+pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,
@@ -142,6 +145,7 @@ pub use settings::{
     AssetSetting, BuildSettings, DestinationSetting, HookSetting, MarketplaceFields, ROOT_FILE,
     RootFile, SettingsError, compose_root_file, parse_root_file,
 };
+pub use source_view::{SourceView, VaultScope, effective_config, source_view};
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};
-pub use walk::built_paths;
+pub use walk::{built_paths, built_paths_for};

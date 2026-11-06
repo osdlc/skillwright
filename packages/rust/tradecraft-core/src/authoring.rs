@@ -1054,9 +1054,9 @@ pub fn read_field(source: &str, key: &str) -> Result<Option<String>, CoreError> 
         .and_then(|mapping| mapping.get(key).map(|value| value.to_string())))
 }
 
-/// One of our own fields (`version` for `version`, say) read out of
-/// `source`, in either shape a note may write it: the flat `sw-<field>` key
-/// or `<field>` inside the nested `sw:` block.
+/// One of our own fields (`version`, say) read out of `source`, in any shape
+/// a note may write it: bare, the flat `sw-<field>` key, or `<field>` inside
+/// the nested `sw:` block.
 pub fn read_ns_field(
     source: &str,
     ns: &Namespace,
@@ -1079,7 +1079,7 @@ pub fn read_ns_field(
 /// `changes`, in the shape the note already uses.
 ///
 /// A note with a nested `sw:` block gets one edit rewriting that block; any
-/// other note gets flat `sw-<field>` keys. Writing a flat key beside an
+/// other note gets flat keys, prefixed under a namespace. Writing a flat key beside an
 /// existing block would give the note both shapes, which discovery refuses.
 ///
 /// [`FieldEdit`] addresses top-level keys only, so the block is written back
@@ -1126,7 +1126,7 @@ pub fn ns_field_edits(
 }
 
 /// How `field` is spelled in `source`, for a message: `sw.<field>` for a
-/// note with a nested `sw:` block, `sw-<field>` otherwise — the shape
+/// note with a nested `sw:` block, its flat key otherwise — the shape
 /// [`ns_field_edits`] writes in.
 pub fn ns_field_label(source: &str, ns: &Namespace, field: &str) -> Result<String, CoreError> {
     Ok(match nested_block(source, ns)? {

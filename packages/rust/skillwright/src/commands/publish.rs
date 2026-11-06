@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tradecraft_core::{
-    CoreError, EntityKind, KNOWN_TARGETS, NativeVfs, PublishMode, PublishOutcome, PublishReason,
+    CoreError, EntityKind, KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason,
     PublishRequest, PublishStatus, PublishedFile, ReasonToken, SkippedNote, canonical_target,
     discover_components, publish_skill,
 };
@@ -250,8 +250,16 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let mut note_paths: Vec<PathBuf> = Vec::new();
     // Notes the vault scan could not read. Only a whole-vault run has any.
     let mut unreadable: Vec<SkippedNote> = Vec::new();
+    // Each warning once: a report repeats it for every destination, and a
+    // whole-vault scan has already printed it.
+    let mut warned: HashSet<String> = HashSet::new();
     if whole_vault {
-        let scan = match discover_components(&NativeVfs, &run.vault, None, &run.core_namespace()) {
+        let scan = match discover_components(
+            &run.source_vfs(None),
+            &run.vault,
+            None,
+            &run.core_namespace(),
+        ) {
             Ok(scan) => scan,
             // What discovery still refuses is run-level by construction — a
             // duplicate name, a bundle overlap, a symlink, a missing root.
@@ -269,7 +277,9 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             }
         }
         for warning in &scan.warnings {
-            let _ = writeln!(ctx.err, "{}", render_warning_line(warning));
+            let line = render_warning_line(warning);
+            let _ = writeln!(ctx.err, "{line}");
+            warned.insert(line);
         }
         unreadable = scan.skipped;
         if note_paths.is_empty() && unreadable.is_empty() {
@@ -341,6 +351,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
 
     let namespace = run.core_namespace();
+    let root_config = run.root_config();
     let mut attributed: Vec<AttributedFile> = Vec::new();
     let mut excluded: Vec<AttributedExclusion> = Vec::new();
     // Members a pack had no place for, named per destination.
@@ -388,12 +399,19 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 // and the rail protects the whole vault, not just the
                 // note's own folder.
                 skills_root: Some(run.vault.clone()),
+                config: Some(root_config.clone()),
                 published_at: Some(published_at),
                 overwrite: flags.overwrite.clone(),
             };
-            match publish_skill(&NativeVfs, &request, &namespace) {
+            match publish_skill(&run.config_vfs(), &request, &namespace) {
                 Ok(report) => {
                     reported = true;
+                    for warning in &report.warnings {
+                        let line = render_warning_line(warning);
+                        if warned.insert(line.clone()) {
+                            let _ = writeln!(ctx.err, "{line}");
+                        }
+                    }
                     for file in report.files {
                         if !flags.overwrite.is_empty() {
                             projected.insert(file.path.clone());

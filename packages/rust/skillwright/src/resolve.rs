@@ -12,7 +12,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use tradecraft_core::Namespace;
+use tradecraft_core::{MarketplaceConfig, Namespace, NativeVfs, SourceView, VaultScope};
 
 use crate::config::{
     ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, find_root_file, is_convention_vault,
@@ -54,6 +54,57 @@ impl ResolvedRun {
     /// This run's namespace as the core takes it.
     pub fn core_namespace(&self) -> Namespace {
         self.namespace.clone().unwrap_or_default()
+    }
+
+    /// The filesystem as this run reads it: the root file in use answers
+    /// for the vault's, so `--config` reaches everything that reads it.
+    pub fn config_vfs(&self) -> SourceView<'static> {
+        let view = SourceView::over(&NativeVfs);
+        match &self.config_path {
+            Some(file) => view.with_root_file(&self.vault, file),
+            None => view,
+        }
+    }
+
+    /// The vault as a run that does not build reads it: [`Self::config_vfs`]
+    /// less the output at `build.out`.
+    pub fn source_vfs(&self, skills_root: Option<&Path>) -> SourceView<'static> {
+        let out = self
+            .config
+            .build
+            .out
+            .as_ref()
+            .map(|out| resolve_configured_path(out, &self.config_dir));
+        tradecraft_core::source_view(
+            self.config_vfs(),
+            self.scope(skills_root, None),
+            out.as_deref(),
+            &self.config.to_config(&self.folder_name()),
+            &self.core_namespace(),
+        )
+    }
+
+    /// What this run reads, for a marketplace it may name.
+    pub fn scope<'a>(
+        &'a self,
+        skills_root: Option<&'a Path>,
+        marketplace: Option<&'a str>,
+    ) -> VaultScope<'a> {
+        VaultScope {
+            vault_root: &self.vault,
+            skills_root,
+            marketplace,
+        }
+    }
+
+    /// The build config with every source of `packs` resolved.
+    pub fn effective_config(&self, marketplace: Option<&str>) -> MarketplaceConfig {
+        tradecraft_core::effective_config(
+            &self.config_vfs(),
+            self.scope(None, marketplace),
+            &self.config.to_config(&self.folder_name()),
+            &self.core_namespace(),
+        )
     }
 
     /// Whether this run's root file is a workspace's.
@@ -116,10 +167,12 @@ impl ResolvedRun {
 
     /// The marketplace's name: the root file's `name`, else the folder's.
     pub fn marketplace_name(&self) -> String {
-        self.config
-            .to_config(&self.folder_name())
-            .name
-            .unwrap_or_default()
+        self.root_config().name.unwrap_or_default()
+    }
+
+    /// The root file as a config: the top of the cascade.
+    pub fn root_config(&self) -> tradecraft_core::MarketplaceConfig {
+        self.config.to_config(&self.folder_name())
     }
 }
 

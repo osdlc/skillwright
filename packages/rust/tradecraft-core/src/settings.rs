@@ -294,6 +294,25 @@ pub fn compose_root_file(name: &str, out: &str) -> String {
     format!("---\n{yaml}---\n")
 }
 
+/// Refuses an `owner` or `author` that the key table's
+/// [`crate::keys::Shape::Person`] does not accept. Their fields are untyped,
+/// so nothing else would catch `author: 5` before it reached a manifest.
+fn check_person(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsError> {
+    let person = crate::keys::lookup(crate::frontmatter::EntityKind::Marketplace, key)
+        .is_some_and(|spec| spec.shape == crate::keys::Shape::Person);
+    if !person || value.is_null() {
+        return Ok(());
+    }
+    match serde_json::to_value(value) {
+        Ok(json) if crate::keys::Shape::Person.accepts(&json) => Ok(()),
+        _ => Err(SettingsError {
+            key: key.to_owned(),
+            what: "a name or a `{name, email, url}` mapping",
+            detail: format!("{value:?}"),
+        }),
+    }
+}
+
 /// Read a root file's text. A file with no frontmatter is a root file with
 /// every default.
 ///
@@ -336,6 +355,7 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             "workspace" => root.workspace = field(&key, &value, "true or false")?,
             "build" => root.build = build(&value, &mut root.warnings)?,
             known if MARKETPLACE_KEYS.contains(&known) => {
+                check_person(known, &value)?;
                 marketplace.insert(serde_yaml::Value::String(key), value);
             }
             harness if crate::keys::HARNESS_BLOCKS.contains(&harness) => {
@@ -387,7 +407,7 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
         ("homepage", &root.marketplace.homepage),
     ] {
         if let Some(url) = value
-            && !is_url(url)
+            && !crate::keys::is_url(url)
         {
             return Err(SettingsError {
                 key: key.to_owned(),
@@ -397,12 +417,6 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
         }
     }
     Ok(root)
-}
-
-/// `http://` or `https://` with no whitespace.
-fn is_url(value: &str) -> bool {
-    (value.starts_with("https://") || value.starts_with("http://"))
-        && !value.contains(char::is_whitespace)
 }
 
 /// One value read as `T`, its error naming `key`. Null reads as `T`'s default
@@ -439,8 +453,12 @@ fn build(
         }
     };
     let mut kept = serde_yaml::Mapping::new();
+    let mut exclude = Vec::new();
+    let mut patterns = FolderPatterns::default();
     for (key, value) in map {
         match key.as_str() {
+            Some("exclude") => exclude = globs("build.exclude", value)?,
+            Some("patterns") => patterns = folder_patterns(value, warnings)?,
             Some(name) if BUILD_KEYS.contains(&name) => {
                 warn_nested(name, value, warnings);
                 kept.insert(key.clone(), value.clone());
@@ -451,7 +469,90 @@ fn build(
             None => warnings.push("a `build:` key that is not a string is ignored".to_owned()),
         }
     }
-    field("build", &serde_yaml::Value::Mapping(kept), "a build block")
+    let build: BuildSettings = field("build", &serde_yaml::Value::Mapping(kept), "a build block")?;
+    Ok(BuildSettings {
+        exclude,
+        patterns,
+        ..build
+    })
+}
+
+/// `build.patterns`, with unknown keys warned about and dropped.
+fn folder_patterns(
+    value: &serde_yaml::Value,
+    warnings: &mut Vec<String>,
+) -> Result<FolderPatterns, SettingsError> {
+    let map = match value {
+        serde_yaml::Value::Null => return Ok(FolderPatterns::default()),
+        serde_yaml::Value::Mapping(map) => map,
+        _ => {
+            return Err(SettingsError {
+                key: "build.patterns".to_owned(),
+                what: "a mapping",
+                detail: "it holds `plugins`, `skills`, `agents`, `commands`, `hooks` and `assets`"
+                    .to_owned(),
+            });
+        }
+    };
+    let mut patterns = FolderPatterns::default();
+    for (key, value) in map {
+        let Some(name) = key.as_str() else {
+            warnings.push("a `build.patterns` key that is not a string is ignored".to_owned());
+            continue;
+        };
+        let slot = match name {
+            "plugins" => &mut patterns.plugins,
+            "skills" => &mut patterns.skills,
+            "agents" => &mut patterns.agents,
+            "commands" => &mut patterns.commands,
+            "hooks" => &mut patterns.hooks,
+            "assets" => &mut patterns.assets,
+            _ => {
+                warnings.push(format!(
+                    "`build.patterns.{name}` is not a key skillwright reads; it is ignored"
+                ));
+                continue;
+            }
+        };
+        let key = format!("build.patterns.{name}");
+        *slot = globs(&key, value)?;
+        for glob in slot.iter() {
+            if crate::patterns::names_a_never_ship_folder(glob) {
+                warnings.push(format!(
+                    "`{key}` glob `{glob}` names a folder that never ships; it ships nothing"
+                ));
+            }
+        }
+    }
+    Ok(patterns)
+}
+
+/// A glob or a list of globs, each one checked.
+fn globs(key: &str, value: &serde_yaml::Value) -> Result<Vec<String>, SettingsError> {
+    let wrong_shape = || SettingsError {
+        key: key.to_owned(),
+        what: "a glob or a list of globs",
+        detail: format!("{value:?}"),
+    };
+    let globs: Vec<String> = match value {
+        serde_yaml::Value::Null => Vec::new(),
+        serde_yaml::Value::String(glob) => vec![glob.clone()],
+        serde_yaml::Value::Sequence(items) => items
+            .iter()
+            .map(|item| item.as_str().map(str::to_owned).ok_or_else(wrong_shape))
+            .collect::<Result<_, _>>()?,
+        _ => return Err(wrong_shape()),
+    };
+    for glob in &globs {
+        if let Some(problem) = crate::patterns::glob_problem(glob) {
+            return Err(SettingsError {
+                key: key.to_owned(),
+                what: "a valid glob",
+                detail: format!("`{glob}`: {problem}"),
+            });
+        }
+    }
+    Ok(globs)
 }
 
 /// Warn about each unknown key in an entry of a `build:` list. Each entry's
@@ -490,8 +591,8 @@ impl RootFile {
     /// Fill what this file leaves unset from the workspace file above it.
     ///
     /// The marketplace fields every plugin inherits (`author`, `license`,
-    /// `targets`, `repository`, `homepage` and the harness blocks, key by key) inherit
-    /// from the workspace too. So do the `build:` settings that are
+    /// `targets`, `repository`, `homepage` and the harness blocks, key by key)
+    /// inherit from the workspace too. So do the `build:` settings that are
     /// not paths (`harnesses`, `namespace`, `launcher_path`,
     /// `require_descriptions`): a path in the workspace file names a place
     /// relative to the workspace, not to each marketplace.
@@ -597,6 +698,42 @@ mod tests {
     fn a_repository_that_is_not_a_url_is_refused() {
         let err = parse_root_file("---\nname: m\nrepository: not a url\n---\n").unwrap_err();
         assert!(err.to_string().contains("repository"), "{err}");
+    }
+
+    #[test]
+    fn an_unknown_patterns_key_warns_and_a_wrong_shape_is_refused_by_name() {
+        let root = parse_root_file(
+            "---\nbuild:\n  patterns:\n    skill: a/*\n    skills: [docs/*, notes/*]\n---\n",
+        )
+        .unwrap();
+        assert_eq!(root.build.patterns.skills, ["docs/*", "notes/*"]);
+        let said = root.warnings.join("\n");
+        assert!(said.contains("`build.patterns.skill`"), "{said}");
+        assert!(
+            said.contains("`docs/*` names a folder that never ships"),
+            "{said}"
+        );
+
+        for (text, key) in [
+            ("patterns: [notes]", "build.patterns"),
+            ("patterns: notes", "build.patterns"),
+            ("patterns: {skills: 3}", "build.patterns.skills"),
+            ("patterns: {skills: [1]}", "build.patterns.skills"),
+            ("exclude: {a: b}", "build.exclude"),
+        ] {
+            let err = parse_root_file(&format!("---\nbuild:\n  {text}\n---\n")).unwrap_err();
+            assert_eq!(err.key, key, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_bad_glob_is_refused_naming_the_key_and_the_value() {
+        let err = parse_root_file("---\nbuild:\n  exclude: ['ok/*', '../x']\n---\n").unwrap_err();
+        assert_eq!(err.key, "build.exclude");
+        assert!(err.detail.contains("`../x`"), "{err}");
+        let err =
+            parse_root_file("---\nbuild:\n  patterns:\n    agents: '/abs/*'\n---\n").unwrap_err();
+        assert_eq!(err.key, "build.patterns.agents");
     }
 
     #[test]

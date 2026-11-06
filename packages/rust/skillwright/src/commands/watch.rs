@@ -46,7 +46,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use notify::{RecursiveMode, Watcher};
-use tradecraft_core::built_paths;
+use tradecraft_core::built_paths_for;
 
 use crate::commands::marketplace::{ExportFlags, ExportVerb, out_root, run_export};
 use crate::config::resolve_configured_path;
@@ -159,7 +159,9 @@ pub fn run_watch_for(
 
     let mut rebuilds = 0usize;
     loop {
-        match next_batch(&rx, DEBOUNCE, &out) {
+        // Read each time: a rebuild's note edit can move the packs folder.
+        let built = built_paths_for(&run.effective_config(None));
+        match next_batch(&rx, DEBOUNCE, &out, &built) {
             // The sender lives inside the watcher's OS callback; a closed
             // channel means the watcher itself was torn down.
             None => return EXIT_OK,
@@ -199,8 +201,9 @@ fn next_batch(
     rx: &mpsc::Receiver<notify::Result<notify::Event>>,
     debounce: Duration,
     out: &Path,
+    built: &[String],
 ) -> Option<bool> {
-    let is_change = |event: &notify::Event| is_change(event) && !is_build_output(event, out);
+    let is_change = |event: &notify::Event| is_change(event) && !is_build_output(event, out, built);
     let first = rx.recv().ok()?;
     let mut changed = first.as_ref().is_ok_and(is_change);
     let deadline = Instant::now() + debounce;
@@ -225,11 +228,10 @@ fn is_change(event: &notify::Event) -> bool {
     }
 }
 
-/// Whether every path in `event` is something a build writes under `out`.
-/// Only those: with `out` at the vault root, a `build.hooks` source can sit
-/// in a dot folder beside them.
-fn is_build_output(event: &notify::Event, out: &Path) -> bool {
-    let built = built_paths();
+/// Whether every path in `event` is something a build writes under `out`,
+/// `built` being those paths. Only those: with `out` at the vault root, a
+/// `build.hooks` source can sit in a dot folder beside them.
+fn is_build_output(event: &notify::Event, out: &Path, built: &[String]) -> bool {
     !event.paths.is_empty()
         && event.paths.iter().all(|path| {
             path.strip_prefix(out).is_ok_and(|rest| {
@@ -360,15 +362,21 @@ mod tests {
 
         tx.send(event(open)).unwrap();
         tx.send(event(read)).unwrap();
-        assert_eq!(next_batch(&rx, debounce, Path::new("/out")), Some(false));
+        assert_eq!(
+            next_batch(&rx, debounce, Path::new("/out"), &[]),
+            Some(false)
+        );
 
         tx.send(event(open)).unwrap();
         tx.send(event(EventKind::Modify(ModifyKind::Any))).unwrap();
         tx.send(event(read)).unwrap();
-        assert_eq!(next_batch(&rx, debounce, Path::new("/out")), Some(true));
+        assert_eq!(
+            next_batch(&rx, debounce, Path::new("/out"), &[]),
+            Some(true)
+        );
 
         drop(tx);
-        assert_eq!(next_batch(&rx, debounce, Path::new("/out")), None);
+        assert_eq!(next_batch(&rx, debounce, Path::new("/out"), &[]), None);
     }
 
     #[test]
@@ -398,20 +406,43 @@ mod tests {
         let event =
             |path: &str| notify::Event::new(notify::EventKind::Any).add_path(PathBuf::from(path));
         let out = Path::new("/vault");
+        let built = tradecraft_core::built_paths();
         assert!(is_build_output(
             &event("/vault/.claude-plugin/packs/x"),
-            out
+            out,
+            &built
         ));
-        assert!(is_build_output(&event("/vault/.claude-plugin/packs"), out));
-        assert!(is_build_output(&event("/vault/.skillwright-stage/a"), out));
+        assert!(is_build_output(
+            &event("/vault/.claude-plugin/packs"),
+            out,
+            &built
+        ));
+        assert!(is_build_output(
+            &event("/vault/.skillwright-stage/a"),
+            out,
+            &built
+        ));
         assert!(!is_build_output(
             &event("/vault/plugins/p/skills/s.md"),
-            out
+            out,
+            &built
         ));
         // A source in a dot folder beside the output.
-        assert!(!is_build_output(&event("/vault/.claude/hooks.json"), out));
-        assert!(!is_build_output(&event("/vault/.agents/skills/s.md"), out));
-        assert!(!is_build_output(&event("/elsewhere/.pi/x"), out));
+        assert!(!is_build_output(
+            &event("/vault/.claude/hooks.json"),
+            out,
+            &built
+        ));
+        assert!(!is_build_output(
+            &event("/vault/.agents/skills/s.md"),
+            out,
+            &built
+        ));
+        assert!(!is_build_output(&event("/elsewhere/.pi/x"), out, &built));
+        // A moved packs folder, as the run resolves it.
+        assert!(!is_build_output(&event("/vault/moved/x"), out, &built));
+        let moved = ["moved/".to_owned()];
+        assert!(is_build_output(&event("/vault/moved/x"), out, &moved));
     }
 
     #[test]

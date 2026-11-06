@@ -22,14 +22,15 @@
 
 use std::path::Path;
 
+use crate::resolve::ResolvedRun;
 use serde::Serialize;
 use tradecraft_core::authoring::{
     bundle_dir, move_destination, new_note_dir, rename_destination, slug_refusal,
 };
 use tradecraft_core::discover::slugify;
 use tradecraft_core::{
-    AuthoringOp, DiscoveredComponent, EntityKind, FieldEdit, Namespace, NativeVfs, NewNote,
-    Placement, discover_components, plan_convert_kind, plan_create_note, plan_delete_component,
+    AuthoringOp, DiscoveredComponent, EntityKind, FieldEdit, Namespace, NewNote, Placement,
+    discover_components, plan_convert_kind, plan_create_note, plan_delete_component,
     plan_delete_container, plan_move_component, plan_rename_component, plan_rename_marketplace,
     plan_rename_plugin,
 };
@@ -224,7 +225,7 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
         fields: &fields,
         body: "",
     };
-    let op_result = plan_create_note(&NativeVfs, &run.vault, &ns, &note);
+    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
         op_result,
@@ -268,7 +269,7 @@ pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i
         fields: &fields,
         body: "",
     };
-    let op_result = plan_create_note(&NativeVfs, &run.vault, &ns, &note);
+    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
         op_result,
@@ -294,7 +295,7 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, &ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -348,7 +349,7 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
         fields: &fields,
         body: "",
     };
-    let op_result = plan_create_note(&NativeVfs, &run.vault, &ns, &note);
+    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
     let fallback = expected_create_path(placement.as_ref(), &flags.name, true);
     execute(
         op_result,
@@ -377,7 +378,7 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, &ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -388,13 +389,27 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let entry = component.vault_relative_path.as_str();
 
     let op_result = match component.kind {
-        EntityKind::Plugin => {
-            plan_rename_plugin(&NativeVfs, &run.vault, &ns, entry, &flags.new_name)
-        }
-        EntityKind::Marketplace => {
-            plan_rename_marketplace(&NativeVfs, &run.vault, &ns, entry, &flags.new_name)
-        }
-        _ => plan_rename_component(&NativeVfs, &run.vault, &ns, entry, &flags.new_name),
+        EntityKind::Plugin => plan_rename_plugin(
+            &run.source_vfs(None),
+            &run.vault,
+            &ns,
+            entry,
+            &flags.new_name,
+        ),
+        EntityKind::Marketplace => plan_rename_marketplace(
+            &run.source_vfs(None),
+            &run.vault,
+            &ns,
+            entry,
+            &flags.new_name,
+        ),
+        _ => plan_rename_component(
+            &run.source_vfs(None),
+            &run.vault,
+            &ns,
+            entry,
+            &flags.new_name,
+        ),
     };
     let fallback = rename_destination(entry, &slug);
     execute(
@@ -420,7 +435,7 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, &ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -440,7 +455,7 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let plugin = Some(flags.to_plugin.clone());
 
     let op_result = plan_move_component(
-        &NativeVfs,
+        &run.source_vfs(None),
         &run.vault,
         &ns,
         entry,
@@ -477,7 +492,7 @@ pub fn run_delete(flags: &DeleteFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, &ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -488,9 +503,15 @@ pub fn run_delete(flags: &DeleteFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let entry = component.vault_relative_path.as_str();
 
     let op_result = if flags.force && component.kind.holds_components() {
-        plan_delete_container(&NativeVfs, &run.vault, &ns, entry, component.kind)
+        plan_delete_container(
+            &run.source_vfs(None),
+            &run.vault,
+            &ns,
+            entry,
+            component.kind,
+        )
     } else {
-        plan_delete_component(&NativeVfs, &run.vault, &ns, entry)
+        plan_delete_component(&run.source_vfs(None), &run.vault, &ns, entry)
     };
     let fallback = bundle_dir(entry).unwrap_or(entry).to_string();
     execute(
@@ -520,7 +541,7 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, &ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -530,7 +551,7 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
     };
     let entry = component.vault_relative_path.as_str();
 
-    let op_result = plan_convert_kind(&NativeVfs, &run.vault, &ns, entry, to_kind, &[]);
+    let op_result = plan_convert_kind(&run.source_vfs(None), &run.vault, &ns, entry, to_kind, &[]);
     let label = label_convert(to_kind);
     execute(
         op_result,
@@ -885,11 +906,11 @@ fn bad_name(name: &str, what: &str) -> Option<String> {
 /// The vault's current component scan, or the run-level blocker a failed
 /// scan earns — the same wording `bump` uses for the same failure.
 fn scan_components(
-    vault: &Path,
+    run: &ResolvedRun,
     ns: &Namespace,
     ctx: &mut CommandContext<'_>,
 ) -> Result<Vec<DiscoveredComponent>, i32> {
-    match discover_components(&NativeVfs, vault, None, ns) {
+    match discover_components(&run.source_vfs(None), &run.vault, None, ns) {
         Ok(scan) => Ok(scan.components),
         Err(err) => Err(blocked(
             ctx.err,

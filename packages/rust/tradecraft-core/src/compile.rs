@@ -966,7 +966,7 @@ impl<'a> Renderer<'a> {
         };
         for source_path in crate::walk::files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)?
         {
-            if source_path == self.entry_path || self.excluded(&source_path) {
+            if source_path == self.entry_path || self.excluded_by_pattern(&source_path) {
                 continue;
             }
             let relative = source_path
@@ -1100,6 +1100,7 @@ impl<'a> Renderer<'a> {
         output_path: &str,
         stack: &mut Vec<TransclusionHop>,
     ) -> Result<String, CoreError> {
+        self.check_markdown_links(body, source_path)?;
         let mut tokens = scan_wiki_tokens(body, true);
         let escapes = self.check_literal_calls(body, source_path, output_path)?;
         if !escapes.is_empty() {
@@ -1620,16 +1621,7 @@ impl<'a> Renderer<'a> {
         match self.index.resolve_strict(target, &from) {
             Ok(hit) => {
                 let path = self.vault_root.join(hit);
-                if self.excluded(&path) {
-                    return Err(CoreError::refused(
-                        "excluded-link",
-                        format!(
-                            "{} links to {}, which never ships: {destination}",
-                            self.relative_or_verbatim(from_file),
-                            self.relative_or_verbatim(&path),
-                        ),
-                    ));
-                }
+                self.refuse_never_shipped(from_file, &path, destination)?;
                 Ok(Some((path, fragment)))
             }
             // Not a refusal. The compile spec and the publish spec
@@ -1650,22 +1642,60 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// Whether `path` never ships: `build.exclude` holds it, or it sits under
-    /// a bundle folder that never ships.
-    fn excluded(&self, path: &Path) -> bool {
-        let in_bundle = self
-            .bundle_root
-            .as_deref()
-            .and_then(|root| path.strip_prefix(root).ok());
-        in_bundle.is_some_and(|relative| {
-            relative.parent().is_some_and(|folder| {
-                folder.iter().any(|part| {
-                    EXCLUDED_BUNDLE_DIRECTORIES.contains(&part.to_string_lossy().as_ref())
-                })
-            })
-        }) || self
-            .vault_relative(path)
+    /// Refuses a link from `from_file` to a file that never ships, however
+    /// the link is spelled: `build.exclude` holds the file, or a folder that
+    /// never ships sits between the two.
+    fn refuse_never_shipped(
+        &self,
+        from_file: &Path,
+        path: &Path,
+        destination: &str,
+    ) -> Result<(), CoreError> {
+        let above = from_file.parent().unwrap_or(from_file);
+        let shared = above
+            .components()
+            .zip(path.components())
+            .take_while(|(a, b)| a == b)
+            .count();
+        let in_never_ship_folder = path.parent().is_some_and(|folder| {
+            folder
+                .iter()
+                .skip(shared)
+                .any(|part| EXCLUDED_BUNDLE_DIRECTORIES.contains(&part.to_string_lossy().as_ref()))
+        });
+        if in_never_ship_folder || self.excluded_by_pattern(path) {
+            return Err(CoreError::refused(
+                "excluded-link",
+                format!(
+                    "{} links to {}, which never ships: {destination}",
+                    self.relative_or_verbatim(from_file),
+                    self.relative_or_verbatim(path),
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether `build.exclude` holds `path`.
+    fn excluded_by_pattern(&self, path: &Path) -> bool {
+        self.vault_relative(path)
             .is_ok_and(|relative| self.patterns.excluded(&relative))
+    }
+
+    /// [`Self::refuse_never_shipped`] over `body`'s relative Markdown links,
+    /// the spelling the wiki tokens do not cover.
+    fn check_markdown_links(&self, body: &str, source_path: &Path) -> Result<(), CoreError> {
+        let folder = source_path.parent().unwrap_or(source_path);
+        for destination in markdown_destinations(body) {
+            let Some(relative) = local_file(destination) else {
+                continue;
+            };
+            let path = normalize(&folder.join(relative));
+            if self.vfs.exists(&path) {
+                self.refuse_never_shipped(source_path, &path, destination)?;
+            }
+        }
+        Ok(())
     }
 
     /// For messages only: the vault-relative spelling when there is one, the
@@ -1978,6 +2008,58 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
         });
     }
     (tokens, leftovers)
+}
+
+/// The destination of each inline Markdown link and reference definition in
+/// `markdown` that is live: not in code, not in an HTML comment.
+fn markdown_destinations(markdown: &str) -> Vec<&str> {
+    let code = code_regions(markdown);
+    let live = |at: usize| {
+        !code.iter().any(|(from, to)| (*from..*to).contains(&at))
+            && markdown[..at].rfind("<!--") <= markdown[..at].rfind("-->")
+    };
+    let inline = markdown
+        .match_indices("](")
+        .map(|(at, _)| (at, at + 2))
+        .filter(|(at, _)| !markdown[..*at].ends_with('\\'));
+    let mut offset = 0;
+    let mut definitions = Vec::new();
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[')
+            && let Some(close) = trimmed.find("]:")
+        {
+            let at = offset + (line.len() - trimmed.len()) + close;
+            definitions.push((at, at + 2));
+        }
+        offset += line.len();
+    }
+    inline
+        .chain(definitions)
+        .filter(|(at, _)| live(*at))
+        .filter_map(|(_, from)| {
+            let rest = markdown[from..].trim_start_matches([' ', '\t']);
+            match rest.strip_prefix('<') {
+                Some(angled) => angled.split_once('>').map(|(url, _)| url),
+                None => rest
+                    .split([' ', '\t', '\r', '\n', ')'])
+                    .next()
+                    .filter(|url| !url.is_empty()),
+            }
+        })
+        .collect()
+}
+
+/// The file a Markdown link's destination names relative to its note, decoded
+/// and without its fragment or query; `None` for a URL, an absolute path or a
+/// link to a place in the same note.
+fn local_file(destination: &str) -> Option<String> {
+    let path = destination.split(['#', '?']).next().unwrap_or_default();
+    let scheme = path
+        .split_once(':')
+        .is_some_and(|(before, _)| !before.contains('/'));
+    (!path.is_empty() && !path.starts_with('/') && !scheme)
+        .then(|| markdown_link::percent_decode(path))
 }
 
 /// Whether the `[` at byte `at` opens a Markdown link: its brackets balance

@@ -127,7 +127,11 @@ use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plu
 use crate::model::load::{LoadRequest, kind_carried, selected_harnesses, targets_admit};
 use crate::model::{Component, Marketplace, load};
 use crate::namespace::Namespace;
+use crate::patterns::Patterns;
 use crate::skill::forward_slashed;
+use crate::source_view::{
+    SourceView, VaultScope, check_pack_location, effective_config, output_paths,
+};
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
 use crate::vfs::{PreviewWrite, Vfs, normalize};
 
@@ -242,13 +246,13 @@ pub enum ExportMode {
 /// What the *build* says about the marketplace and its plugins — the fallback
 /// under what the vault's own container notes say.
 ///
-/// `resolve_config` folds the two, note over request, field by field: a
+/// [`crate::model::Cascade`] folds the two, note over request, field by field: a
 /// marketplace note is the marketplace, and a build flag is one invocation of
 /// it.
 ///
 /// A member outside every plugin folder belongs to the marketplace's own
 /// plugin, which is named after the marketplace.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MarketplaceConfig {
     /// The name both manifests publish under, **when the vault does not supply
     /// one**. A marketplace note names itself, and that name wins.
@@ -337,12 +341,17 @@ pub struct PluginOverrides {
     pub author: Option<serde_json::Value>,
     /// Default the marketplace `license`, then `UNLICENSED`.
     pub license: Option<String>,
-    /// Default empty.
+    /// Default empty. Also the Claude and Cursor marketplace entry's `tags`.
     pub keywords: Option<Vec<String>>,
-    /// Codex only. Default `Productivity`.
+    /// Codex always writes it, default `Productivity`. Claude and Cursor
+    /// write it on the marketplace entry only when it is set.
     pub category: Option<String>,
     /// Codex only. Default the plugin's name.
     pub display_name: Option<String>,
+    /// Which harnesses the plugin's members go to. Default the marketplace
+    /// `targets`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub targets: Option<Vec<String>>,
     /// Default the marketplace `repository`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
@@ -577,7 +586,9 @@ fn selected_roots(request: &ExportRequest) -> Result<Vec<&'static HarnessProfile
 /// marketplace directory.
 ///
 /// So a caller can say what a build is about to replace without owning a
-/// second copy of the roots table or of the harness selection.
+/// second copy of the roots table or of the harness selection. A caller
+/// resolves `request.config` with [`effective_config`] first, so that a note's
+/// `packs` counts.
 pub fn owned_paths(request: &ExportRequest) -> Result<Vec<(&'static str, &str)>, CoreError> {
     Ok(selected_roots(request)?
         .into_iter()
@@ -641,29 +652,25 @@ fn output_beside_the_notes(
         .any(|part| crate::discover::kind_dir(&part.to_string_lossy()).is_some()))
 }
 
-/// Renders the vault into one marketplace directory, or checks it against what is already there.
-///
-/// A note's block for a harness is applied in that harness's
-/// tree, as a publish to it applies it.
-pub fn export_skills(
+/// The rails on where a build lands, for one resolved `config`. Each one fires
+/// before anything is written.
+fn check_output(
     vfs: &dyn Vfs,
     request: &ExportRequest,
-    ns: &Namespace,
-) -> Result<ExportReport, CoreError> {
+    roots: &[&'static HarnessProfile],
+    config: &MarketplaceConfig,
+    patterns: &Patterns,
+) -> Result<(), CoreError> {
     let vault_root = normalize(&request.vault_root);
     let out_root = normalize(&request.out_root);
-
-    // Which harnesses this build renders, before anything reads or writes.
-    let roots = selected_roots(request)?;
-    crate::harness::manifest::check_packs(&request.config)?;
+    check_pack_location(vfs, &vault_root, &out_root, config, patterns)?;
     let owned: Vec<&str> = roots
         .iter()
-        .flat_map(|spec| spec.owned_paths_at(packs_of(&request.config, spec)))
+        .flat_map(|spec| spec.owned_paths_at(packs_of(config, spec)))
         .collect();
 
-    // The rail, before discovery reads a byte: both sides resolved as far as
-    // the filesystem goes, so a symlinked spelling of the vault cannot slip a
-    // destination inside it.
+    // The rail: both sides resolved as far as the filesystem goes, so a
+    // symlinked spelling of the vault cannot slip a destination inside it.
     //
     // The question is narrow, and it has to be. The case this exists for is a
     // repository root, which legitimately contains its own vault, so an
@@ -717,11 +724,110 @@ pub fn export_skills(
             ));
         }
     }
+    Ok(())
+}
+
+/// `err`, with the cause when the vault holds a file a build wrote: output
+/// left where no `packs` points now reads as source, and fails as a note.
+fn with_stale_output_cause(source: &dyn Vfs, vault_root: &Path, err: CoreError) -> CoreError {
+    let CoreError::Refused(message) = err else {
+        return err;
+    };
+    let built = crate::walk::glob_files(source, vault_root)
+        .into_iter()
+        .find(|file| {
+            file.ends_with(".md")
+                && source
+                    .read_file(&vault_root.join(file))
+                    .is_ok_and(|bytes| contains(&bytes, GENERATED_MARKER))
+        });
+    CoreError::Refused(match built {
+        Some(file) => format!(
+            "{message}. Note: {file} was written by an earlier build, and no `packs` setting \
+             points at its folder now, so it reads as source. If `packs` moved, delete the old \
+             folder"
+        ),
+        None => message,
+    })
+}
+
+/// A warning for each moved harness whose default packs folder under
+/// `out_root` still holds a build. It is no longer owned, so it stays.
+fn stale_output_warnings(
+    vfs: &dyn Vfs,
+    out_root: &Path,
+    roots: &[&'static HarnessProfile],
+    config: &MarketplaceConfig,
+) -> Vec<DiscoveryWarning> {
+    roots
+        .iter()
+        .filter(|spec| packs_of(config, spec) != spec.format().packs)
+        .filter(|spec| {
+            let old = out_root.join(spec.format().packs);
+            vfs.exists(&old)
+                && crate::walk::files(vfs, &old, &[]).is_ok_and(|files| {
+                    files.iter().any(|file| {
+                        vfs.read_file(file)
+                            .is_ok_and(|bytes| contains(&bytes, GENERATED_MARKER))
+                    })
+                })
+        })
+        .map(|spec| DiscoveryWarning {
+            path: spec.format().packs.to_owned(),
+            reason: "stale-output".to_owned(),
+            detail: format!(
+                "`{}` packs moved to `{}`; this folder holds an earlier build, no build owns it \
+                 now, and it is left in place",
+                spec.name,
+                packs_of(config, spec)
+            ),
+        })
+        .collect()
+}
+
+/// Renders the vault into one marketplace directory, or checks it against what is already there.
+///
+/// A note's block for a harness is applied in that harness's
+/// tree, as a publish to it applies it.
+pub fn export_skills(
+    vfs: &dyn Vfs,
+    request: &ExportRequest,
+    ns: &Namespace,
+) -> Result<ExportReport, CoreError> {
+    let vault_root = normalize(&request.vault_root);
+    let out_root = normalize(&request.out_root);
+
+    // Which harnesses this build renders, before anything reads or writes.
+    let roots = selected_roots(request)?;
+    // Every source of `packs` resolved once, and refused before discovery
+    // reads a byte. A malformed root file is refused here too: an exclusion
+    // that cannot be read must not fail open.
+    let patterns = Patterns::load(vfs, &vault_root)?;
+    let scope = VaultScope {
+        vault_root: &vault_root,
+        skills_root: request.skills_root.as_deref(),
+        marketplace: request.marketplace.as_deref(),
+    };
+    let config = effective_config(vfs, scope, &request.config, ns);
+    check_output(vfs, request, &roots, &config, &patterns)?;
 
     // Load once, for every harness this build renders: the vault read, the
     // marketplace chosen and validated, every body resolved. Everything a
-    // build refuses before it renders, it refuses here.
-    let market = load(vfs, &request.load_request(), ns)?;
+    // build refuses before it renders, it refuses here. It reads through a
+    // view without the output, so a build never reads what it wrote.
+    let source = SourceView::over(vfs).hiding(output_paths(vfs, scope, &out_root, &config));
+    let market = load(&source, &request.load_request(), ns)
+        .map_err(|err| with_stale_output_cause(&source, &vault_root, err))?;
+    // The load picked the marketplace itself, and the swap uses what it says.
+    check_output(vfs, request, &roots, &market.config, &patterns)?;
+    let mut warnings = market.warnings.clone();
+    warnings.extend(patterns.warnings(&crate::walk::glob_files(&source, &vault_root)));
+    warnings.extend(stale_output_warnings(
+        vfs,
+        &out_root,
+        &roots,
+        &market.config,
+    ));
 
     // One tree per harness, translated from the one model, at the final
     // destination paths. Both modes read this and nothing else; `build`
@@ -822,7 +928,7 @@ pub fn export_skills(
             checked: market.checked,
             changed,
             units,
-            warnings: market.warnings,
+            warnings,
         });
     }
 
@@ -853,7 +959,7 @@ pub fn export_skills(
         checked: market.checked,
         changed,
         units,
-        warnings: market.warnings,
+        warnings,
     })
 }
 
@@ -1089,6 +1195,37 @@ impl<'v> DestTree<'v> {
                 .files
                 .keys()
                 .all(|relative| rendered.contains_key(relative))
+    }
+
+    /// [`Self::built_here`] for a packs folder the user named, which may be a
+    /// folder of their own. One marker anywhere does not do: everything in it
+    /// must be a pack, each with its plugin manifest and built here by the
+    /// same rule, or a path this render produces.
+    fn packs_built_here(
+        &self,
+        packs: &str,
+        plugin_manifest: &str,
+        rendered: &BTreeMap<String, PreviewWrite>,
+    ) -> bool {
+        let mut by_pack: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for relative in self.state.files.keys() {
+            if !Path::new(relative).starts_with(packs) {
+                continue;
+            }
+            match HarnessProfile::split_pack(packs, relative) {
+                Some((name, tail)) if !tail.is_empty() => {
+                    by_pack.entry(name).or_default().push(relative);
+                }
+                _ if rendered.contains_key(relative) => {}
+                _ => return false,
+            }
+        }
+        by_pack.iter().all(|(name, files)| {
+            let manifest = format!("{packs}/{name}/{plugin_manifest}");
+            files.contains(&manifest.as_str())
+                && (files.iter().any(|file| self.carries_marker(file))
+                    || files.iter().all(|file| rendered.contains_key(*file)))
+        })
     }
 
     /// Does this installed file carry the provenance marker? Read lazily and short-circuited by
@@ -1338,12 +1475,15 @@ fn diff_root(
     rendered: &BTreeMap<String, PreviewWrite>,
     config: &MarketplaceConfig,
 ) -> Result<RootDiff, CoreError> {
-    let dest = DestTree::scan(vfs, out_root.to_path_buf(), spec, packs_of(config, spec))?;
+    let packs = packs_of(config, spec);
+    let dest = DestTree::scan(vfs, out_root.to_path_buf(), spec, packs)?;
     let sets = dest.compare(rendered);
+    let moved = packs != spec.format().packs;
     Ok(RootDiff {
         equal: root_is_equal(&sets, &dest),
         units: describe_root(&dest, spec, admitted, rendered, &sets, config),
-        foreign: !dest.built_here(rendered),
+        foreign: !dest.built_here(rendered)
+            || (moved && !dest.packs_built_here(packs, spec.format().plugin_manifest, rendered)),
     })
 }
 
@@ -3276,7 +3416,7 @@ mod tests {
     // --- Version bump suggestions -----------------------------------------
 
     /// One plugin with its own container note — carrying `version`, which
-    /// [`resolve_config`] folds into `MarketplaceConfig.plugins` — and one
+    /// [`crate::model::Cascade`] folds into `MarketplaceConfig.plugins` — and one
     /// member skill.
     fn vault_with_versioned_plugin() -> MemVfs {
         let vfs = MemVfs::new();
