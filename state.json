@@ -16,9 +16,9 @@
       "line": 61,
       "title": "Load flow is silently wrong for a workspace member",
       "comment": null,
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "ac6a209634702a2a850b89f1e84f03a220729427"
     },
     {
       "id": "r1-2",
