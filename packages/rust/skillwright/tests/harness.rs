@@ -1014,3 +1014,27 @@ fn uninstall_refuses_a_git_ref() {
     assert!(result.stderr.contains("--git-ref"), "{}", result.stderr);
     assert!(fake.calls().is_empty());
 }
+
+#[test]
+fn install_finds_the_plugins_of_a_moved_packs_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: dist\nclaude: {packs: moved/claude}\n---\n",
+    )
+    .unwrap();
+    let note = dir.path().join("plugins/rev/skills/a.md");
+    fs::create_dir_all(note.parent().unwrap()).unwrap();
+    fs::write(note, "---\ndescription: Use a.\n---\n\nbody\n").unwrap();
+    let fake = FakeRunner::new("[]", "[]");
+    let built = run(&["build", "--yes"], dir.path(), &fake);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+
+    let result = run(
+        &["harness", "install", "claude", "--dry-run"],
+        dir.path(),
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(result.stdout.contains("rev@m"), "{}", result.stdout);
+}

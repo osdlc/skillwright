@@ -3095,22 +3095,6 @@ fn a_config_file_carries_its_patterns_and_exclusions() {
 }
 
 #[test]
-fn harness_install_follows_a_moved_packs_folder() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(
-        dir.path().join("skillwright.md"),
-        "---\nname: m\nbuild:\n  out: dist\nclaude: {packs: moved/claude}\n---\n",
-    )
-    .unwrap();
-    skill(&dir.path().join("plugins/rev/skills/a.md"));
-    let built = run(&["build", "--yes"], dir.path());
-    assert_eq!(built.code, 0, "{}", built.stderr);
-    let install = run(&["harness", "install", "claude", "--dry-run"], dir.path());
-    assert_eq!(install.code, 0, "{}", install.stderr);
-    assert!(install.stdout.contains("rev@m"), "{}", install.stdout);
-}
-
-#[test]
 fn list_leaves_out_a_moved_packs_folder_a_marketplace_note_names() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
