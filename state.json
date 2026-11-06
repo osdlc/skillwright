@@ -13,9 +13,9 @@
       "line": 642,
       "title": "Default output beside the root deletes hand-authored files under .agents/ and .pi/ on rebuild",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548: a build now swaps only each harness's packs folder and marketplace manifest, read from `HarnessProfile::owned_paths`, so a hand-added `.agents/skills/mine/SKILL.md` survives a rebuild (regression tests in core and the CLI). The docs say those paths are generated output, replaced on every build. Separately, by owner decision, `--out` or `build.out` is now required, so there is no default output beside the root.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-2",
@@ -24,9 +24,9 @@
       "line": 97,
       "title": "Walk-up skips marketplaces/skillwright/skillwright.md, a workspace member root",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548: `marketplaces` no longer counts as a kind folder in this test, so `marketplaces/skillwright/skillwright.md` is a root file; test added.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-3",
@@ -35,9 +35,9 @@
       "line": 84,
       "title": "Vault walk reads plugins/<p>/assets/ as notes; a described .md there refuses the build",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548: every vault walk now leaves out `plugins/<p>/assets/`, so a described `.md` there is not read as a note; test added.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-4",
@@ -46,9 +46,9 @@
       "line": 800,
       "title": "docs exclusion also drops assets/docs/ from plugin assets",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548: the convention's `assets/` folder now lands whole with no filter, and `build.assets` directories use a new list without `docs`; `docs` stays excluded only for skill bundles.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-5",
@@ -57,9 +57,9 @@
       "line": 223,
       "title": "adopt (and bump, new) run at a workspace root; adopt writes notes no member builds",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548: `adopt`, `bump` and every `new`/authoring verb (rename, move, delete, convert too) now call `refuse_workspace`; the CLI test covers them.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-6",
@@ -68,8 +68,8 @@
       "line": 307,
       "title": "Workspace inherits build keys outside the Decided inherit list",
       "comment": null,
-      "status": "open",
-      "reason": null,
+      "status": "declined",
+      "reason": "Declined: the decided design says the workspace root holds shared defaults and the `build:` settings for its members, and the inherit list governs frontmatter fields moving down notes, not a workspace's `build:` block. A member's own `build:` value already overrides key by key; that now has a test and is documented in the `inherit` doc and the README.",
       "fixedIn": null
     },
     {
@@ -79,9 +79,9 @@
       "line": 191,
       "title": "parse_root_file is not exposed through wasm; spec wants one reader for CLI and wasm",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548: wasm exports `parseRootFile` (text in, `RootFile` out) and `rootFileConfig` (text and folder name in, `MarketplaceConfig` out, with the name default); `RootFile` and `BuildSettings` are in both `core.generated.ts` copies. There was no wasm-side reader of the old file to remove. `rootFileConfig` returns a JS object because the generator cannot spell `MarketplaceConfig` as both request and response.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-8",
@@ -90,9 +90,9 @@
       "line": 1409,
       "title": "CHANGELOG version check is a substring match; 11.0.0 satisfies 1.0.0",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548: the heading check now compares whole tokens, with an optional leading `v`; `## 11.0.0` and `## 1.0.0-rc.1` no longer satisfy `1.0.0`; test added.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-9",
@@ -101,9 +101,9 @@
       "line": 1399,
       "title": "CHANGELOG check skipped for a plugin with no note (default 0.1.0)",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548: a plugin with no stated version is checked at the version it ships, `DEFAULT_PLUGIN_VERSION` (`0.1.0`); test added.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-10",
@@ -112,9 +112,9 @@
       "line": 227,
       "title": "watch ignores every dot folder at the top of out, including build.hooks sources there",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548: `watch` now ignores only what a build writes (`built_paths`: packs, manifests, the stage), so a `build.hooks` source under `.claude/` triggers a rebuild; test added.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-11",
@@ -123,9 +123,9 @@
       "line": 162,
       "title": "Zero-config detection does not walk up; a run from plugins/p/skills says No vault",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Fixed in 2a38548 with the simpler option: the message now says a vault with no `skillwright.md` is found only from its own root. A walk-up could silently pick an unrelated ancestor that holds `skills/`, and a build would then write there.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     },
     {
       "id": "r1-12",
@@ -134,9 +134,9 @@
       "line": null,
       "title": "Stale marketplace.* key names left in messages and docs",
       "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
+      "status": "fixed",
+      "reason": "Replaced the removed marketplace.* names with build.out.",
+      "fixedIn": "2a38548c0a1ad39f7ee64a22feadd0cc8a4620f6"
     }
   ]
 }
