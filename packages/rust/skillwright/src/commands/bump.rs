@@ -126,7 +126,10 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         [] => {
             return usage_error(
                 ctx.err,
-                &format!("no plugin named `{}` in this vault", flags.plugin),
+                &format!(
+                    "no plugin note named `{0}` in this vault. A folder-only plugin has no note to bump: add `plugins/{0}/{0}.md` with a `version`",
+                    flags.plugin
+                ),
             );
         }
         [one] => *one,

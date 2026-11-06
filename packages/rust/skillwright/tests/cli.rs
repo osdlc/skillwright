@@ -356,6 +356,149 @@ fn a_destination_scope_is_read_and_an_unknown_nested_key_only_warns() {
     assert!(!ran.stderr.contains("scope"), "{}", ran.stderr);
 }
 
+// --- new, in the folder shape ------------------------------------------------
+
+#[test]
+fn new_follows_the_folders_of_a_vault_init_wrote() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);
+    let skill = run(
+        &[
+            "new",
+            "skill",
+            "triage",
+            "--description",
+            "Triage.",
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(skill.code, 0, "{}", skill.stderr);
+    assert!(dir.path().join("skills/triage/triage.md").is_file());
+
+    let plugin = run(
+        &[
+            "new",
+            "plugin",
+            "review",
+            "--description",
+            "Review.",
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(plugin.code, 0, "{}", plugin.stderr);
+    assert!(dir.path().join("plugins/review/review.md").is_file());
+
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+}
+
+#[test]
+fn new_refuses_a_marketplace_the_vault_does_not_hold() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);
+    let ran = run(
+        &[
+            "new",
+            "plugin",
+            "review",
+            "--marketplace",
+            "elsewhere",
+            "--description",
+            "Review.",
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(ran.code, 3, "{}", ran.stderr);
+    assert!(!dir.path().join("marketplaces").exists());
+}
+
+#[test]
+fn new_marketplace_writes_a_root_file_a_workspace_builds() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\n---\n",
+    )
+    .unwrap();
+    let ran = run(
+        &[
+            "new",
+            "marketplace",
+            "pub",
+            "--description",
+            "Public.",
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    let file = dir.path().join("marketplaces/pub/skillwright.md");
+    let text = fs::read_to_string(&file).unwrap();
+    assert!(text.contains("name: pub"), "{text}");
+    assert!(!dir.path().join("marketplaces/pub/pub.md").exists());
+
+    fs::write(
+        &file,
+        text.replacen("---\n", "---\nbuild:\n  out: dist\n", 1),
+    )
+    .unwrap();
+    let skills = dir.path().join("marketplaces/pub/skills");
+    fs::create_dir_all(&skills).unwrap();
+    fs::write(skills.join("one.md"), "---\ndescription: One.\n---\nB\n").unwrap();
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+
+    // A marketplace with a description is no false skip from the workspace.
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    assert!(!listed.stderr.contains("skipped"), "{}", listed.stderr);
+    assert!(!listed.stderr.contains("unknown-key"), "{}", listed.stderr);
+}
+
+#[test]
+fn the_old_marketplace_note_form_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let market = dir.path().join("marketplaces/house");
+    fs::create_dir_all(market.join("plugins/p/skills")).unwrap();
+    fs::write(dir.path().join("skillwright.md"), "---\nname: v\n---\n").unwrap();
+    fs::write(
+        market.join("house.md"),
+        "---\nname: house\ndescription: H.\n---\n",
+    )
+    .unwrap();
+    let listed = run(&["list"], dir.path());
+    assert!(
+        listed
+            .stderr
+            .contains("marketplaces/house/house.md  skipped"),
+        "{}",
+        listed.stderr
+    );
+}
+
+#[test]
+fn a_plugin_with_no_note_warns_about_its_version() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);
+    let skills = dir.path().join("plugins/review/skills");
+    fs::create_dir_all(&skills).unwrap();
+    fs::write(skills.join("one.md"), "---\ndescription: One.\n---\nB\n").unwrap();
+    let ran = run(&["build", "--yes"], dir.path());
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    assert!(ran.stderr.contains("missing-version"), "{}", ran.stderr);
+
+    let bumped = run(&["bump", "review", "--yes"], dir.path());
+    assert_eq!(bumped.code, 3, "{}", bumped.stderr);
+    assert!(
+        bumped.stderr.contains("plugins/review/review.md"),
+        "{}",
+        bumped.stderr
+    );
+}
+
 // --- check --fix-adopt-hashes ------------------------------------------------
 
 /// A vault holding one adopted skill, as `adopt` wrote it.
@@ -720,7 +863,6 @@ fn a_workspace_builds_each_marketplace_beside_its_root_file() {
             "--description",
             "Zed.",
         ],
-        &["new", "marketplace", "zed", "--description", "Zed."],
     ] {
         let refused = run(verb, dir.path());
         assert_eq!(refused.code, 2, "{verb:?}: {}", refused.stderr);
@@ -2420,7 +2562,10 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
         .join("core-tools");
     fs::create_dir_all(plugin.join("skills")).unwrap();
     fs::write(
-        vault.join("marketplaces").join("acme").join("acme.md"),
+        vault
+            .join("marketplaces")
+            .join("acme")
+            .join("skillwright.md"),
         "---\nname: acme\ndescription: Acme skills.\n---\n\nOne marketplace.\n",
     )
     .unwrap();
@@ -2490,7 +2635,10 @@ fn a_hook_is_n_a_rather_than_unknown_and_status_check_still_passes() {
     fs::create_dir_all(plugin.join("hooks")).unwrap();
     fs::create_dir_all(&dest).unwrap();
     fs::write(
-        vault.join("marketplaces").join("acme").join("acme.md"),
+        vault
+            .join("marketplaces")
+            .join("acme")
+            .join("skillwright.md"),
         "---\nname: acme\ndescription: Acme skills.\n---\n\nOne marketplace.\n",
     )
     .unwrap();
@@ -3287,7 +3435,7 @@ fn list_leaves_out_a_moved_packs_folder_a_marketplace_note_names() {
     .unwrap();
     std::fs::create_dir_all(dir.path().join("marketplaces/m")).unwrap();
     std::fs::write(
-        dir.path().join("marketplaces/m/m.md"),
+        dir.path().join("marketplaces/m/skillwright.md"),
         "---\nname: m\nclaude: {packs: built}\n---\n",
     )
     .unwrap();

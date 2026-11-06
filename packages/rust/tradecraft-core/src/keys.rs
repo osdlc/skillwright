@@ -101,7 +101,7 @@ pub struct KeySpec {
     /// What its value must be.
     pub shape: Shape,
     /// Whether a note leaving it out takes it from the nearest container that
-    /// sets it: the plugin note, the marketplace note, then `skillwright.md`,
+    /// sets it: the plugin note, then `skillwright.md`,
     /// which holds what the workspace file gave it.
     pub inherits: bool,
     /// One line for the field reference.

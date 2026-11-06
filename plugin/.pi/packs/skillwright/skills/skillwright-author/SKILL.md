@@ -74,9 +74,9 @@ A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-v
 
    | Verb | Does |
    |---|---|
-   | `new marketplace <name> --description <text> [--owner <text>] [--author <text>]` | a marketplace note |
-   | `new plugin <name> --marketplace <name> --description <text>` | a plugin note inside a marketplace |
-   | `new skill <name> --description <text> [--plugin <name>] [--marketplace <name>] [--targets <t>]` | a skill note |
+   | `new marketplace <name> --description <text> [--owner <text>] [--author <text>]` | `marketplaces/<name>/skillwright.md`, for a workspace; add its `build.out` |
+   | `new plugin <name> --description <text> [--marketplace <name>]` | `plugins/<name>/<name>.md` |
+   | `new skill <name> --description <text> [--plugin <name>] [--marketplace <name>] [--targets <t>]` | a skill in `skills/`, or in `plugins/<name>/skills/` with `--plugin` |
    | `rename <entry> <new-name>` | renames a note and rewrites every link to it |
    | `move <entry> --to-plugin <p> [--to-marketplace <m>]` | moves a component to another plugin |
    | `delete <entry> [--force]` | moves a note to the vault's trash; `--force` also trashes a non-empty container's members |

@@ -109,7 +109,8 @@ The tables below use the `sw` stem. A `tc-` vault and a `tradecraft.yaml` move t
    into the note, or drop it. A block a skill inherits cannot set its `name` or `description`, and a
    block's `metadata` merges with the note's own. Blocks and `author`, `license`, `repository`,
    `homepage` and `targets` inherit from the plugin note and `skillwright.md`, so a value repeated on
-   every note can move up once.
+   every note can move up once. On one member, its own block wins over its frontmatter, which wins
+   over an inherited block. A key the member's kind does not accept stays with the container.
 
 7. Fold adoption provenance into one `adopted:` block, or `sw-adopted:` under `build.namespace: sw`,
    leaving every value as it is:

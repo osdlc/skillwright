@@ -42,6 +42,9 @@ There are two ways out of a vault:
 4. Verify with `skillwright check`. It writes nothing and exits 1 on drift, so it suits CI. Fix
    drift by changing the note and building again; a hand edit to a built file is drift.
 
+Changing `build.out` or a `packs` value leaves the old folder behind. A folder outside the vault
+gets no warning, so remove it yourself.
+
 A build replaces only what skillwright owns: each harness's packs folder and the manifests it
 writes. Everything else in those harness folders stays. A pack in a packs folder that the vault
 does not produce is swept as stale, so do not share a packs folder with another tool.

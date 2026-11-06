@@ -275,9 +275,9 @@ enum Verb {
 /// `new`'s three children: which kind of note to author.
 #[derive(Subcommand, Debug)]
 enum NewVerb {
-    /// Author a new marketplace note.
+    /// Write `marketplaces/<name>/skillwright.md`.
     Marketplace(NewMarketplaceArgs),
-    /// Author a new plugin note inside a marketplace.
+    /// Author a new plugin note.
     Plugin(NewPluginArgs),
     /// Author a new skill note.
     Skill(NewSkillArgs),
@@ -493,9 +493,9 @@ struct NewPluginArgs {
     /// The plugin's name; its filename is slugged from it.
     #[arg(value_name = "name")]
     name: String,
-    /// The marketplace this plugin is authored inside.
+    /// The marketplace under `marketplaces/` to author it inside. Absent means this vault's `plugins/`.
     #[arg(long, value_name = "name")]
-    marketplace: String,
+    marketplace: Option<String>,
     /// The plugin's description.
     #[arg(long, value_name = "text")]
     description: String,

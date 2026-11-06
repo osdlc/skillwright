@@ -88,18 +88,19 @@ they always sit under `build.patterns`, not straight under `build:`. Each takes
 one glob or a list. `*` and `?` match within one path segment, and `**` as a whole
 segment matches any number of segments. Globs are relative to this file.
 
-- An invalid glob is refused. A glob that matches nothing gets a warning.
+- An invalid glob is refused. A glob that matches nothing gets a warning from
+  `build` and `check`.
 - A folder that never ships stays out whatever a pattern says, with a warning.
 - Generated output is never read as source.
 
-`exclude` adds to the folders that never ship. It does not apply to a plugin's
-`assets/`. A body link or embed that reaches a never-ship or excluded file is
+`exclude` adds to the folders that never ship, and `publish <note>` refuses a note
+it matches. It does not apply to a plugin's `assets/`. A body link or embed that reaches a never-ship or excluded file is
 refused with the same diagnostic in every link form, so a skill cannot point at a
 file that will not be there.
 
 Patterns are read per marketplace and are not inherited from a workspace. The
 authoring verbs (`new`, `move`, `convert`) always write to the conventional
-folders.
+folders: `new skill` to `skills/`, and `new plugin` to `plugins/`.
 
 ## Several marketplaces
 
@@ -116,7 +117,11 @@ workspace/
 ```
 
 A marketplace's own value wins, key by key. `build.out` is a path, so each
-marketplace sets its own.
+marketplace sets its own, and it resolves against that marketplace's file.
+
+`skillwright new marketplace <name>` at the workspace root writes
+`marketplaces/<name>/skillwright.md`. Add its `build.out` before you build. Other
+authoring verbs run inside a marketplace folder.
 
 ## Where a value comes from
 
@@ -137,7 +142,17 @@ The first of these that has a value wins:
    harness.
 
 Inheritance works the same on every path: `build`, `publish` of one note, and
-`publish` of a whole pack.
+`publish` of a whole pack. Containers are matched by folder, never by `name`.
+
+For one key on a member, the first of these wins:
+
+1. The note's own harness block.
+2. The note's frontmatter.
+3. An inherited harness block, nearest container first.
+4. What skillwright generates.
+
+A key in an inherited block must be one the member's kind accepts. If it is not,
+it stays with the container.
 
 ## Harness blocks
 
@@ -154,6 +169,10 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
 - `<harness>: {packs: <path>}` on the marketplace moves that harness's packs
   folder inside the output. Root catalogs stay where they are. The value that
   takes effect is refused if it overlaps a manifest path, a folder the harness
-  owns, or, when the output overlaps the vault, a source folder.
+  owns or, when the output overlaps the vault, a source folder. It is also refused
+  when it equals the root file.
+  When you change `packs` or `out`, a folder inside the vault that the old value
+  left behind is reported. A folder outside the vault is left in place with no
+  warning, because nothing records it, so remove it yourself.
 - `pi: {naming: bare}` on the marketplace or a plugin publishes Pi skills under
   their bare names. `prefixed` is the default.

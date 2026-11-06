@@ -23,7 +23,8 @@ code and is part of this spec.
 5. With no root file, a folder holding `plugins/` or `skills/` is read with every
    default, and a note suggests adding one.
 6. An outer root file with `workspace: true` holds shared defaults. Each
-   `marketplaces/<m>/skillwright.md` below it is a marketplace.
+   `marketplaces/<m>/skillwright.md` below it is a marketplace. That file is the
+   only form a marketplace's note has.
 
 ## 2. Folders
 
@@ -69,10 +70,12 @@ code and is part of this spec.
 adds to what never ships. See the
 [reference](../reference/skillwright-md.md#patterns).
 
-1. An invalid glob is refused. A glob that matches nothing gets a warning.
+1. An invalid glob is refused. A glob that matches nothing gets a warning from
+   `build` and `check`.
 2. A folder from section 2 that never ships stays out whatever a pattern says,
    with a warning.
-3. `exclude` does not apply to a plugin's `assets/`.
+3. `exclude` does not apply to a plugin's `assets/`. `publish <note>` refuses a
+   note it matches.
 4. A link to a never-ship or excluded file is refused with the same diagnostic in
    every link form.
 
@@ -103,8 +106,14 @@ each one.
 1. Only `author`, `license`, `repository`, `homepage`, `targets` and the harness
    blocks inherit. Harness blocks inherit key by key.
 2. Inheritance applies on every path, including publishing one note or one pack.
-3. A block a component inherits cannot set the component's `name` or
+3. Containers are matched by folder, never by `name`.
+4. A block a component inherits cannot set the component's `name` or
    `description`.
+5. For one key on a member, the order is: the note's own harness block, the note's
+   frontmatter, an inherited block with the nearest container first, generated
+   values.
+6. A key in an inherited block must be one the member's kind accepts. If it is
+   not, it stays with the container.
 
 ## 7. Harness blocks
 
@@ -124,4 +133,7 @@ each one.
 3. Generated output is never read as source.
 4. A marketplace may move a harness's packs folder with `<harness>: {packs: …}`.
    The value that takes effect is refused if it overlaps a manifest path, a folder
-   the harness owns, or, when the output overlaps the vault, a source folder.
+   the harness owns or, when the output overlaps the vault, a source folder, and
+   if it equals the root file.
+5. Moving the output from one folder outside the vault to another leaves the old
+   folder in place with no warning, because nothing records it.

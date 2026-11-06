@@ -6,9 +6,10 @@
 //!
 //! 1. the note's own frontmatter;
 //! 2. its plugin note;
-//! 3. its marketplace note;
-//! 4. the request's config, which is `skillwright.md` with the workspace file
-//!    already folded in ([`crate::settings::RootFile::inherit`]).
+//! 3. the `skillwright.md` of the marketplace folder it sits in, if any;
+//! 4. the request's config, which is the vault's `skillwright.md` with the
+//!    workspace file already folded in
+//!    ([`crate::settings::RootFile::inherit`]).
 //!
 //! Which keys come down is the key table's answer ([`crate::keys::inherits`]).
 //! Names, descriptions and versions never do.

@@ -935,9 +935,11 @@ fn conventional(root: &Path, path: &Path, patterns: &crate::patterns::Patterns) 
 ///
 /// * `<kind>/<name>.md` — a component that travels alone.
 /// * `<kind>/<name>/<name>.md` — a component that owns its directory, and so
-///   carries what is inside it. For a plugin or a marketplace, what is inside
-///   it is the next level down. A skill's entry may also be
-///   `<name>/SKILL.md`, named by its folder.
+///   carries what is inside it. For a plugin, what is inside it is the next
+///   level down. A skill's entry may also be `<name>/SKILL.md`, named by its
+///   folder.
+/// * `marketplaces/<name>/skillwright.md` — a marketplace, with its plugins
+///   beneath it. This is the only form a marketplace has.
 ///
 /// `None` for anything else, which is most of a vault.
 fn classify(root: &Path, parts: &[String]) -> Option<Placement> {
@@ -951,8 +953,12 @@ fn classify(root: &Path, parts: &[String]) -> Option<Placement> {
         let kind = kind_dir(&parts[i])?;
         let name = &parts[i + 1];
 
-        // `<kind>/<name>.md` — the entry travels alone.
+        // `<kind>/<name>.md` — the entry travels alone. A marketplace never
+        // does: its note is the root file in its folder.
         if i + 2 == parts.len() {
+            if kind == EntityKind::Marketplace {
+                return None;
+            }
             return Some(placement(md_stem(name)?.to_owned(), kind, &chain, None));
         }
         // `<kind>/<name>/<name>.md` — the entry owns the directory it is in.
@@ -974,6 +980,9 @@ pub const SKILL_ENTRY: &str = "SKILL.md";
 
 /// Is `file` the entry note of the folder `name`, for a component of `kind`?
 pub(crate) fn is_entry(file: &str, name: &str, kind: EntityKind) -> bool {
+    if kind == EntityKind::Marketplace {
+        return file == crate::settings::ROOT_FILE;
+    }
     md_stem(file) == Some(name) || (kind == EntityKind::Skill && is_skill_entry(file))
 }
 
@@ -1097,6 +1106,16 @@ fn read_source(
         requested: None,
         folder: placement.kind,
     });
+    // A marketplace's note is a root file, whose keys are always bare, and
+    // whose `build:` and `workspace:` are not fields.
+    let bare = Namespace::bare();
+    let ns = if resolved.kind == EntityKind::Marketplace {
+        fields.remove("build");
+        fields.remove("workspace");
+        &bare
+    } else {
+        ns
+    };
     let ours = VaultFrontmatter::take_from(&mut fields, entry_path, ns, resolved.kind)?;
     let unknown_keys = unknown_keys(&ours, resolved.kind);
 
@@ -1219,7 +1238,9 @@ pub(crate) fn container_notes(root: &Path, entry: &Path) -> Vec<PathBuf> {
             break;
         };
         dir = dir.join(folder).join(name);
-        if kind.holds_components() {
+        if kind == EntityKind::Marketplace {
+            notes.push(dir.join(crate::settings::ROOT_FILE));
+        } else if kind.holds_components() {
             notes.push(dir.join(format!("{name}.md")));
         }
     }
@@ -1399,9 +1420,11 @@ pub(crate) fn validate_name(value: &str, what: &str, path: &Path) -> Result<(), 
 /// than raw, because `validate_name` runs on the result: a stem with a
 /// capital or a space would otherwise default straight into a refusal.
 pub fn default_name(path: &Path) -> String {
-    // A `SKILL.md` entry is named by the folder it owns.
+    // A `SKILL.md` entry and a root file are named by the folder they own.
     let named = match path.file_name().and_then(|f| f.to_str()) {
-        Some(file) if is_skill_entry(file) => path.parent().and_then(|p| p.file_name()),
+        Some(file) if is_skill_entry(file) || file == crate::settings::ROOT_FILE => {
+            path.parent().and_then(|p| p.file_name())
+        }
         _ => path.file_stem(),
     };
     slugify(named.and_then(|s| s.to_str()).unwrap_or_default())
@@ -2402,7 +2425,7 @@ mod tests {
         assert_eq!(command.plugin.as_deref(), Some("core"));
 
         // A marketplace's own note belongs to no marketplace — it is one.
-        let market = folder_placement(root, Path::new("/vault/marketplaces/house/house.md"));
+        let market = folder_placement(root, Path::new("/vault/marketplaces/house/skillwright.md"));
         assert_eq!(market.kind, Some(EntityKind::Marketplace));
         assert_eq!(market.marketplace, None);
 

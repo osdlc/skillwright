@@ -996,9 +996,30 @@ fn missing_versions(
     plugins: &BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Vec<DiscoveryWarning> {
-    discovered
+    let noted: Vec<&DiscoveredComponent> = discovered
         .iter()
         .filter(|c| c.kind == EntityKind::Plugin && belongs_to(c, market))
+        .collect();
+    let folder_only = plugins
+        .keys()
+        .filter(|name| !noted.iter().any(|c| c.name == **name))
+        .filter(|name| {
+            config
+                .plugins
+                .get(*name)
+                .and_then(|o| o.version.as_ref())
+                .is_none()
+        })
+        .map(|name| DiscoveryWarning {
+            path: format!("plugins/{name}"),
+            reason: "missing-version".to_owned(),
+            detail: format!(
+                "plugin `{name}` has no note, so it states no version; published as `0.1.0`. \
+                 Add `plugins/{name}/{name}.md` with a `version`"
+            ),
+        });
+    noted
+        .iter()
         .filter(|c| plugins.contains_key(c.name.as_str()))
         .filter(|c| {
             config
@@ -1016,6 +1037,7 @@ fn missing_versions(
                 c.name
             ),
         })
+        .chain(folder_only)
         .collect()
 }
 
