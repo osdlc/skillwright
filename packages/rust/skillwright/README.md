@@ -182,12 +182,22 @@ marketplace:
 `bump --changed-since <ref|dir>` compares the vault's render with a baseline
 and bumps each plugin whose skills or files differ while its `sw-version`
 has not moved. A directory is read as an already-built marketplace, such as
-the committed output. Anything else is a git ref: it is checked out into a
-temporary worktree, built there with the same project file, and removed
-afterwards. A plugin whose version already moved since the baseline is
-skipped, so a second run bumps nothing.
+the committed output; one that holds no plugin manifest for any configured
+harness is refused. Anything else is a git ref: it is checked out into a
+temporary worktree with the repository's hooks off, built there with the
+ref's own copy of the project file and the ref's own vault, and removed
+afterwards. Git LFS files are not fetched, so they compare as pointers. A
+ref whose vault resolves outside its checkout is refused. A run also removes
+the baselines an interrupted earlier run left behind.
 
-`bump.patch` picks how the patch number is written:
+A drifted plugin that is not bumped is `skipped`, with one reason:
+`version-moved` (its version already changed since the baseline, so a second
+run bumps nothing), `not-in-baseline` (the baseline does not hold it) or
+`manifest-only` (only its manifest changed). A plugin whose note has no
+`sw-version` is bumped on any change.
+
+`bump.patch` picks how the patch number is written. Only the project file
+may set `bump:`; a machine file that sets it is refused.
 
 ```yaml
 bump:
@@ -195,8 +205,10 @@ bump:
 ```
 
 With `timestamp`, every bump sets the patch to the UTC time as
-`YYYYMMDDHHMMSS` (`1.4.20261105143000`), so each release of a plugin gets a
-new, increasing version without a manual patch count.
+`YYYYMMDDHHMMSS` (`1.4.20261105143000`), or to one more than the current
+patch when that is larger, so each release of a plugin gets a new,
+increasing version even twice in one second. The patch is a 64-bit number;
+a consumer that stores version parts as 32-bit integers cannot hold it.
 
 ### Hooks
 

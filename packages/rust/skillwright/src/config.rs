@@ -8,7 +8,8 @@
 //! **The machine file** is `<config-home>/skillwright/config.yaml` in the
 //! standalone tier of [`crate::dirs`], never committed, relocated by
 //! `SKILLWRIGHT_MACHINE_CONFIG`. It has the same shape and stands in, per
-//! top-level key, where the project file leaves that key out or empty.
+//! top-level key, where the project file leaves that key out or empty —
+//! except `bump:`, which only the project file may set.
 //! Nested values are not merged. `paths:` merges by name instead, and the
 //! machine file's entry wins when both define a name.
 //!
@@ -42,6 +43,12 @@ pub const TOOL: &str = "skillwright";
 const COMMAND: &str = "skillwright";
 /// The committed project file, looked for from the working directory upward.
 pub const PROJECT_FILE: &str = tradecraft_core::PROJECT_FILE;
+/// Every name a project file may have, tried in this order where a ref's
+/// checkout is searched for one (`bump --changed-since <ref>`).
+pub const PROJECT_FILES: &[&str] = &[PROJECT_FILE];
+/// Top-level keys only the project file may set: they describe the
+/// published marketplace, so a machine file must not change them.
+const PROJECT_ONLY_KEYS: &[&str] = &["bump"];
 /// Env var that relocates the machine file, for tests and one-off runs.
 pub const MACHINE_CONFIG_ENV: &str = "SKILLWRIGHT_MACHINE_CONFIG";
 
@@ -642,6 +649,15 @@ fn load_config_at(
             detail,
         };
     }
+    if let Some(key) = PROJECT_ONLY_KEYS
+        .iter()
+        .find(|key| machine_mapping.contains_key(**key))
+    {
+        return ConfigLoad::Malformed {
+            path: machine_path,
+            detail: format!("`{key}` belongs in the project file only; remove it from this file"),
+        };
+    }
 
     let explicit = config_flag.is_some();
     let found = match config_flag {
@@ -784,7 +800,7 @@ pub static NEEDS: LazyLock<Needs> = LazyLock::new(|| {
         },
         KeySpec {
             key: "bump",
-            scope: Scope::Both,
+            scope: Scope::Project,
             description: "How `bump` writes a version: `patch: increment` (the default) or `patch: timestamp`.",
         },
         KeySpec {
@@ -930,6 +946,28 @@ mod tests {
             resolve_configured_path(&config.hooks[0].from, &dir),
             machine_dir.join("hooks.json")
         );
+    }
+
+    /// `bump:` sets the published version scheme, so a machine file that
+    /// carries it is refused rather than overlaid.
+    #[test]
+    fn a_bump_block_in_the_machine_file_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let machine_path = tmp.path().join("machine").join("config.yaml");
+        std::fs::create_dir_all(machine_path.parent().unwrap()).unwrap();
+        std::fs::write(&machine_path, "bump:\n  patch: timestamp\n").unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join(PROJECT_FILE), "namespace: sw\n").unwrap();
+
+        let ConfigLoad::Malformed { path, detail } =
+            load_config_at(None, &project, machine_path.clone(), &home)
+        else {
+            panic!("expected the machine file to be refused");
+        };
+        assert_eq!(path, machine_path);
+        assert!(detail.contains("project file only"), "{detail}");
     }
 
     /// Only `~` and `~/` name the home directory. `~alice/notes` and

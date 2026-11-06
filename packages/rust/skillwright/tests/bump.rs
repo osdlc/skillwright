@@ -370,10 +370,144 @@ fn changed_since_a_built_folder_bumps_only_the_plugin_that_changed() {
     let again = run(&["bump", "--changed-since", "market", "--yes"], root);
     assert_eq!(again.code, 0, "{}", again.stderr);
     assert!(
-        again.stdout.contains("widget.md  skipped"),
+        again.stdout.contains("widget.md  skipped · version-moved"),
         "{}",
         again.stdout
     );
+    assert!(plugin_note(root, "widget").contains("sw-version: 0.2.2"));
+}
+
+#[test]
+fn each_skip_names_its_own_cause() {
+    let dir = project("");
+    let root = dir.path();
+    let built = run(&["build", "--yes"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    // Moved by hand since the build, and a plugin the build never held.
+    let note = root.join("vault/marketplaces/acme/plugins/widget/widget.md");
+    let text = fs::read_to_string(&note).unwrap();
+    fs::write(&note, text.replace("0.2.1", "0.3.0")).unwrap();
+    write_skill(root, "widget", "Second draft.");
+    let base = root.join("vault/marketplaces/acme/plugins/gizmo");
+    fs::create_dir_all(base.join("skills")).unwrap();
+    fs::write(
+        base.join("gizmo.md"),
+        "---\nname: gizmo\ndescription: The gizmo plugin.\nsw-version: 0.1.0\n---\n",
+    )
+    .unwrap();
+    write_skill(root, "gizmo", "First draft.");
+    // Only the manifest moves: a new description.
+    let note = root.join("vault/marketplaces/acme/plugins/gadget/gadget.md");
+    let text = fs::read_to_string(&note).unwrap();
+    fs::write(
+        &note,
+        text.replace("The gadget plugin.", "The new gadget plugin."),
+    )
+    .unwrap();
+
+    let result = run(
+        &["bump", "--changed-since", "market", "--yes", "--json"],
+        root,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    let report: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
+    let rows = report["plugins"].as_array().unwrap();
+    let reason = |name: &str| {
+        let row = rows.iter().find(|r| r["plugin"] == name).unwrap();
+        assert_eq!(row["status"], "skipped", "{rows:?}");
+        row["reason"].as_str().unwrap().to_owned()
+    };
+    assert_eq!(reason("widget"), "version-moved");
+    assert_eq!(reason("gizmo"), "not-in-baseline");
+    assert_eq!(reason("gadget"), "manifest-only");
+}
+
+#[test]
+fn changed_since_a_folder_with_no_plugin_manifest_is_refused() {
+    let dir = project("");
+    let root = dir.path();
+
+    let result = run(&["bump", "--changed-since", "vault", "--yes"], root);
+    assert_eq!(result.code, 2, "{}", result.stderr);
+    assert!(
+        result.stderr.contains("holds no plugin manifest"),
+        "{}",
+        result.stderr
+    );
+    assert!(plugin_note(root, "widget").contains("sw-version: 0.2.1"));
+}
+
+#[test]
+fn an_unversioned_plugin_is_bumped_once_then_skipped() {
+    let dir = project("");
+    let root = dir.path();
+    let note = root.join("vault/marketplaces/acme/plugins/gadget/gadget.md");
+    let text = fs::read_to_string(&note).unwrap();
+    fs::write(&note, text.replace("sw-version: 1.0.0\n", "")).unwrap();
+    let built = run(&["build", "--yes"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    write_skill(root, "gadget", "Second draft.");
+
+    let status = |result: &Run| {
+        let report: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
+        let rows = report["plugins"].as_array().unwrap().clone();
+        let gadget = rows.iter().find(|r| r["plugin"] == "gadget").unwrap();
+        gadget["status"].as_str().unwrap().to_owned()
+    };
+    let first = run(
+        &["bump", "--changed-since", "market", "--yes", "--json"],
+        root,
+    );
+    assert_eq!(first.code, 0, "{}", first.stderr);
+    assert_eq!(status(&first), "written", "{}", first.stdout);
+    assert!(plugin_note(root, "gadget").contains("sw-version: 0.1.1"));
+
+    let second = run(
+        &["bump", "--changed-since", "market", "--yes", "--json"],
+        root,
+    );
+    assert_eq!(second.code, 0, "{}", second.stderr);
+    assert_eq!(status(&second), "skipped", "{}", second.stdout);
+    assert!(plugin_note(root, "gadget").contains("sw-version: 0.1.1"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_write_is_refused_on_its_row_and_the_others_are_still_reported() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = project("");
+    let root = dir.path();
+    let built = run(&["build", "--yes"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    write_skill(root, "widget", "Second draft.");
+    write_skill(root, "gadget", "Second draft.");
+    // `gadget` sorts first, so its failure comes before `widget`'s write.
+    let gadget = root.join("vault/marketplaces/acme/plugins/gadget");
+    let note = gadget.join("gadget.md");
+    fs::set_permissions(&note, fs::Permissions::from_mode(0o444)).unwrap();
+    fs::set_permissions(&gadget, fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = run(
+        &["bump", "--changed-since", "market", "--yes", "--json"],
+        root,
+    );
+    fs::set_permissions(&gadget, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&note, fs::Permissions::from_mode(0o644)).unwrap();
+
+    assert_eq!(result.code, 1, "{}", result.stderr);
+    let report: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
+    let rows = report["plugins"].as_array().unwrap();
+    let row = |name: &str| rows.iter().find(|r| r["plugin"] == name).unwrap();
+    assert_eq!(row("gadget")["status"], "refused", "{rows:?}");
+    assert!(
+        row("gadget")["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("the write failed"),
+        "{rows:?}"
+    );
+    assert_eq!(row("widget")["status"], "written", "{rows:?}");
     assert!(plugin_note(root, "widget").contains("sw-version: 0.2.2"));
 }
 
@@ -406,6 +540,57 @@ fn changed_since_a_git_ref_builds_it_in_a_worktree_and_cleans_up() {
     let worktrees = git(root, &["worktree", "list", "--porcelain"]);
     assert_eq!(worktrees.matches("worktree ").count(), 1, "{worktrees}");
     assert!(!root.join("market").exists());
+}
+
+/// The number of worktrees `repo` has registered, its own included.
+fn worktree_count(repo: &Path) -> usize {
+    git(repo, &["worktree", "list", "--porcelain"])
+        .matches("worktree ")
+        .count()
+}
+
+#[test]
+fn a_ref_without_a_project_file_is_blocked_and_cleans_up() {
+    let dir = project("");
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    git(root, &["add", "vault"]);
+    git(root, &["commit", "--quiet", "-m", "vault only"]);
+
+    let result = run(&["bump", "--changed-since", "HEAD", "--yes"], root);
+    assert_eq!(result.code, 2, "{}", result.stderr);
+    assert!(
+        result.stderr.contains("holds no project file"),
+        "{}",
+        result.stderr
+    );
+    assert_eq!(worktree_count(root), 1);
+}
+
+#[test]
+fn a_ref_whose_vault_resolves_outside_its_checkout_is_blocked() {
+    let dir = project("");
+    let root = dir.path();
+    let config = root.join("skillwright.yaml");
+    let text = fs::read_to_string(&config).unwrap();
+    let absolute = root.join("vault").display().to_string();
+    fs::write(
+        &config,
+        text.replace("vault: vault", &format!("vault: {absolute}")),
+    )
+    .unwrap();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "--quiet", "-m", "one"]);
+
+    let result = run(&["bump", "--changed-since", "HEAD", "--yes"], root);
+    assert_eq!(result.code, 2, "{}", result.stderr);
+    assert!(
+        result.stderr.contains("outside the checkout"),
+        "{}",
+        result.stderr
+    );
+    assert_eq!(worktree_count(root), 1);
 }
 
 #[test]

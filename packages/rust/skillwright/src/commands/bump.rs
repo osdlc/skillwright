@@ -5,8 +5,8 @@
 //! Two forms. `bump <plugin>` raises one plugin. `bump --changed-since
 //! <ref|dir>` raises every plugin whose rendered members differ from a
 //! baseline and whose version has not moved since: a directory is a built
-//! marketplace as it stands, and anything else is a git ref, built into a
-//! temporary worktree with this run's project file.
+//! marketplace as it stands, and anything else is a git ref, built in a
+//! temporary worktree with the ref's own copy of the project file.
 //!
 //! A version that does not parse as plain `MAJOR.MINOR.PATCH` is refused
 //! rather than guessed at ([`tradecraft_core::next_version`]); an absent
@@ -21,11 +21,12 @@ use serde::Serialize;
 use tradecraft_core::{
     BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportUnit, Namespace, NativeVfs,
     UnitStatus, Vfs, apply_field_edits, discover_components, export_skills, next_version,
-    ns_field_edits, ns_field_label, parse_semver, read_ns_field,
+    ns_field_edits, ns_field_label, packs_path, parse_semver, plugin_manifest_path, read_ns_field,
+    root_trees,
 };
 
 use crate::commands::marketplace::configured_request;
-use crate::config::PatchScheme;
+use crate::config::{PROJECT_FILES, PatchScheme};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
@@ -364,15 +365,85 @@ fn run_one(
 
 /// What the comparison against the baseline says about one plugin.
 #[derive(Debug, Default)]
-struct Verdict {
+struct Verdict<'a> {
     /// Its members differ and its version has not moved, in some root.
     bump: bool,
     /// Anything of it differs, in some root.
     drift: bool,
+    /// The harness roots the render holds it in.
+    roots: Vec<&'a str>,
 }
 
-/// Why a drifted plugin is not bumped.
-const NOT_BUMPED: &str = "its version already moved since the baseline, the baseline does not hold it, or only its manifest changed";
+/// Why a drifted, versioned plugin is not bumped: the `reason` token of a
+/// `skipped` row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Skip {
+    /// Its version already differs from the baseline's.
+    VersionMoved,
+    /// No configured harness root of the baseline holds its manifest.
+    NotInBaseline,
+    /// Its members match; only its manifest differs.
+    ManifestOnly,
+}
+
+impl Skip {
+    fn token(self) -> &'static str {
+        match self {
+            Skip::VersionMoved => "version-moved",
+            Skip::NotInBaseline => "not-in-baseline",
+            Skip::ManifestOnly => "manifest-only",
+        }
+    }
+
+    fn text(self) -> &'static str {
+        match self {
+            Skip::VersionMoved => "its version already moved since the baseline",
+            Skip::NotInBaseline => "the baseline does not hold this plugin",
+            Skip::ManifestOnly => "only its manifest changed",
+        }
+    }
+
+    /// Read the baseline's own manifests of `plugin` in `roots` to tell the
+    /// three causes apart.
+    fn of(baseline: &Path, roots: &[&str], plugin: &str, current: &str) -> Skip {
+        let mut held = false;
+        for root in roots {
+            let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root))
+            else {
+                continue;
+            };
+            let Ok(bytes) = std::fs::read(baseline.join(packs).join(plugin).join(manifest)) else {
+                continue;
+            };
+            held = true;
+            let version = serde_json::from_slice::<serde_json::Value>(&bytes)
+                .ok()
+                .and_then(|doc| doc.get("version")?.as_str().map(str::to_owned));
+            if version.as_deref() != Some(current) {
+                return Skip::VersionMoved;
+            }
+        }
+        if held {
+            Skip::ManifestOnly
+        } else {
+            Skip::NotInBaseline
+        }
+    }
+}
+
+/// Whether `dir` holds a plugin manifest for any of `roots`.
+fn holds_a_plugin_manifest(dir: &Path, roots: &[&str]) -> bool {
+    roots.iter().any(|root| {
+        let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root)) else {
+            return false;
+        };
+        std::fs::read_dir(dir.join(packs)).is_ok_and(|entries| {
+            entries
+                .flatten()
+                .any(|entry| entry.path().join(manifest).is_file())
+        })
+    })
+}
 
 fn run_changed(
     flags: &BumpFlags,
@@ -396,6 +467,32 @@ fn run_changed(
         Ok(request) => request,
         Err(err) => return blocked(ctx.err, &err),
     };
+    let roots: Vec<&str> = match root_trees(&request) {
+        Ok(trees) => trees.into_iter().map(|(root, _)| root).collect(),
+        Err(err) => return blocked(ctx.err, normalize_thrown_reason(&err.to_string())),
+    };
+    if let Baseline::Dir(dir) = &baseline
+        && !holds_a_plugin_manifest(dir, &roots)
+    {
+        let expected: Vec<String> = roots
+            .iter()
+            .filter_map(|root| {
+                Some(format!(
+                    "{}/<plugin>/{}",
+                    packs_path(root)?,
+                    plugin_manifest_path(root)?
+                ))
+            })
+            .collect();
+        return blocked(
+            ctx.err,
+            &format!(
+                "--changed-since `{since}`: {} holds no plugin manifest for any configured harness; a built marketplace holds one at {}",
+                dir.display(),
+                expected.join(" or ")
+            ),
+        );
+    }
     let namespace = run.core_namespace();
     let report = match export_skills(&NativeVfs, &request, &namespace) {
         Ok(report) => report,
@@ -409,11 +506,11 @@ fn run_changed(
             );
         }
     };
-    drop(baseline);
 
     let mut verdicts: BTreeMap<&str, Verdict> = BTreeMap::new();
     for unit in &report.units {
         if let ExportUnit::Plugin {
+            root,
             name,
             status,
             version_bump_suggestion,
@@ -423,6 +520,7 @@ fn run_changed(
             let verdict = verdicts.entry(name.as_str()).or_default();
             verdict.bump |= version_bump_suggestion.is_some();
             verdict.drift |= *status == UnitStatus::Drift;
+            verdict.roots.push(root.as_str());
         }
     }
 
@@ -450,7 +548,10 @@ fn run_changed(
         let row = if !verdict.drift {
             Row::plain(name, &planned, "unchanged", None)
         } else if !changed {
-            Row::plain(name, &planned, "skipped", Some(NOT_BUMPED.to_owned()))
+            let skip = Skip::of(baseline.root(), &verdict.roots, name, &planned.current);
+            let mut row = Row::plain(name, &planned, "skipped", Some(skip.token().to_owned()));
+            row.explain = Some(skip.text());
+            row
         } else if planned.new.is_none() {
             let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
             Row::refused(name, &planned.rel, &planned.current, reason)
@@ -459,6 +560,7 @@ fn run_changed(
         };
         rows.push(row);
     }
+    drop(baseline);
 
     let pending: Vec<&Row> = rows.iter().filter(|r| r.planned.is_some()).collect();
     if !flags.dry_run && !flags.yes && !pending.is_empty() {
@@ -491,8 +593,15 @@ fn run_changed(
         if flags.dry_run {
             row.status = "dry-run";
         } else {
+            // A failed write is reported on its row; the bumps already
+            // written still reach the report.
             if let Err(err) = write_bump(planned, &new, &namespace) {
-                return bump_failed(ctx.err, err);
+                row.status = "refused";
+                row.reason = Some(format!(
+                    "the write failed: {}",
+                    normalize_thrown_reason(&err)
+                ));
+                continue;
             }
             row.status = "written";
         }
@@ -550,6 +659,8 @@ struct Row {
     current: String,
     new: Option<String>,
     reason: Option<String>,
+    /// What `reason` means, for the text line; `None` when `reason` says it.
+    explain: Option<&'static str>,
     /// The bump to make; `None` for a row that bumps nothing.
     planned: Option<Planned>,
 }
@@ -563,6 +674,7 @@ impl Row {
             current: planned.current.clone(),
             new: None,
             reason,
+            explain: None,
             planned: None,
         }
     }
@@ -575,6 +687,7 @@ impl Row {
             current: current.to_owned(),
             new: None,
             reason: Some(reason),
+            explain: None,
             planned: None,
         }
     }
@@ -587,6 +700,7 @@ impl Row {
             current: planned.current.clone(),
             new: None,
             reason: None,
+            explain: None,
             planned: Some(planned),
         }
     }
@@ -603,7 +717,10 @@ impl Row {
                 format!("{label}  written · {key} {} -> {new}", self.current)
             }
             ("dry-run", Some(new), _) => format!("{label}  {} \u{2192} {new}", self.current),
-            (status, _, Some(reason)) => format!("{label}  {status} · {reason}"),
+            (status, _, Some(reason)) => match self.explain {
+                Some(explain) => format!("{label}  {status} · {reason}: {explain}"),
+                None => format!("{label}  {status} · {reason}"),
+            },
             (status, _, None) => format!("{label}  {status}"),
         }
     }
@@ -636,7 +753,7 @@ impl Baseline {
     }
 
     /// A directory that exists is a built baseline; anything else is a git
-    /// ref, built with this run's project file as the ref holds it.
+    /// ref, built with the ref's own copy of the project file.
     fn resolve(
         since: &str,
         flags: &BumpFlags,
@@ -651,12 +768,19 @@ impl Baseline {
     }
 }
 
+/// The folder under the system temp dir that holds every baseline build:
+/// `<id>.lock` beside `<id>/`, the lock held for the run's lifetime.
+const BASELINES_DIR: &str = "skillwright-bump-baselines";
+
 /// A git ref checked out into a temporary worktree and built there.
 struct BuiltRef {
     repo: PathBuf,
     temp: PathBuf,
     checkout: PathBuf,
     out: PathBuf,
+    lock_path: PathBuf,
+    /// Held until drop, so a concurrent run's prune leaves this one alone.
+    _lock: std::fs::File,
 }
 
 impl BuiltRef {
@@ -732,24 +856,53 @@ impl BuiltRef {
             }
         };
 
+        let baselines = std::env::temp_dir().join(BASELINES_DIR);
+        prune_stale_baselines(&baselines, &repo);
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or_default();
-        let temp =
-            std::env::temp_dir().join(format!("skillwright-bump-{}-{stamp}", std::process::id()));
+        let id = format!("{}-{stamp}", std::process::id());
+        if let Err(err) = std::fs::create_dir_all(&baselines) {
+            return fail(ctx, format!("cannot create {}: {err}", baselines.display()));
+        }
+        let lock_path = baselines.join(format!("{id}.lock"));
+        let lock = match std::fs::File::create(&lock_path).and_then(|file| {
+            file.try_lock().map_err(std::io::Error::from)?;
+            Ok(file)
+        }) {
+            Ok(lock) => lock,
+            Err(err) => return fail(ctx, format!("cannot lock {}: {err}", lock_path.display())),
+        };
+        let temp = baselines.join(&id);
         if let Err(err) = std::fs::create_dir_all(&temp) {
+            let _ = std::fs::remove_file(&lock_path);
             return fail(ctx, format!("cannot create {}: {err}", temp.display()));
         }
+        // Canonical, so the vault check below compares like with like (on
+        // macOS the temp dir sits behind the `/var` link).
+        let temp = temp.canonicalize().unwrap_or(temp);
         let built = BuiltRef {
             repo: repo.clone(),
             checkout: temp.join("checkout"),
             out: temp.join("out"),
             temp,
+            lock_path,
+            _lock: lock,
         };
+        // Hooks off and LFS left as pointers: the checkout runs nothing of the
+        // repository's and fetches nothing.
         if let Err(err) = typed_git::git()
             .dir(&repo)
-            .args(&["worktree", "add", "--detach", "--quiet"])
+            .env("GIT_LFS_SKIP_SMUDGE", "1")
+            .args(&[
+                "-c",
+                "core.hooksPath=/dev/null",
+                "worktree",
+                "add",
+                "--detach",
+                "--quiet",
+            ])
             .arg(built.checkout.to_string_lossy())
             .arg(&sha)
             .run()
@@ -757,13 +910,20 @@ impl BuiltRef {
             return fail(ctx, format!("checking it out failed: {err}"));
         }
 
-        let base_config = built.checkout.join(&config_rel);
-        if !base_config.is_file() {
+        let Some(base_config) = ref_project_file(&built.checkout, &config_rel) else {
+            let dir = config_rel.parent().unwrap_or(Path::new(""));
+            let looked: Vec<String> = PROJECT_FILES
+                .iter()
+                .map(|name| dir.join(name).display().to_string())
+                .collect();
             return fail(
                 ctx,
-                format!("{} does not hold {}", since, config_rel.display()),
+                format!(
+                    "{since} holds no project file; looked for {}",
+                    looked.join(", ")
+                ),
             );
-        }
+        };
         let common = CommonFlags {
             vault: vault_rel.map(|rel| built.checkout.join(rel).display().to_string()),
             config: Some(base_config.display().to_string()),
@@ -774,6 +934,22 @@ impl BuiltRef {
             .unwrap_or(&built.checkout)
             .to_path_buf();
         let base_run = resolve_run(&common, &base_cwd, ctx.err)?;
+        // The baseline is the ref's vault, never this checkout's: a vault
+        // that resolves elsewhere (an absolute path, a machine-file `paths:`
+        // entry) would compare the live vault with itself.
+        let base_vault = base_run
+            .vault
+            .canonicalize()
+            .unwrap_or(base_run.vault.clone());
+        if !base_vault.starts_with(&built.checkout) {
+            return fail(
+                ctx,
+                format!(
+                    "its vault resolves to {}, outside the checkout of the ref; a baseline is built only from the ref's own vault",
+                    base_run.vault.display()
+                ),
+            );
+        }
         let request = match configured_request(
             &base_run,
             &base_cwd,
@@ -797,10 +973,66 @@ impl BuiltRef {
     }
 }
 
+/// The ref's project file: the one at this run's path, else the first of
+/// [`PROJECT_FILES`] in that folder.
+fn ref_project_file(checkout: &Path, config_rel: &Path) -> Option<PathBuf> {
+    let dir = config_rel.parent().unwrap_or(Path::new(""));
+    std::iter::once(config_rel.to_path_buf())
+        .chain(PROJECT_FILES.iter().map(|name| dir.join(name)))
+        .map(|rel| checkout.join(rel))
+        .find(|path| path.is_file())
+}
+
+/// Remove the baselines a killed run left behind: each `<id>.lock` no live
+/// run holds, its `<id>/` folder and that folder's worktree registration.
+fn prune_stale_baselines(baselines: &Path, repo: &Path) {
+    let Ok(entries) = std::fs::read_dir(baselines) else {
+        return;
+    };
+    let mut pruned = false;
+    for path in entries.flatten().map(|entry| entry.path()) {
+        if path.extension().is_none_or(|ext| ext != "lock") {
+            continue;
+        }
+        let Ok(file) = std::fs::OpenOptions::new().write(true).open(&path) else {
+            continue;
+        };
+        if file.try_lock().is_err() {
+            continue;
+        }
+        let dir = path.with_extension("");
+        let _ = typed_git::worktree::remove(repo, &dir.join("checkout"));
+        let _ = std::fs::remove_dir_all(&dir);
+        drop(file);
+        let _ = std::fs::remove_file(&path);
+        pruned = true;
+    }
+    if pruned {
+        prune_worktrees(repo);
+    }
+}
+
+/// `git worktree prune`: drop the registration of every worktree whose
+/// folder is gone. Best-effort.
+fn prune_worktrees(repo: &Path) {
+    let _ = typed_git::git()
+        .dir(repo)
+        .args(&["worktree", "prune"])
+        .run();
+}
+
 impl Drop for BuiltRef {
     fn drop(&mut self) {
-        let _ = typed_git::worktree::remove(&self.repo, &self.checkout);
+        let removed = typed_git::worktree::remove(&self.repo, &self.checkout);
         let _ = std::fs::remove_dir_all(&self.temp);
+        if let Err(err) = removed {
+            eprintln!(
+                "skillwright: removing the baseline worktree {} failed ({err}); pruning it instead",
+                self.checkout.display()
+            );
+            prune_worktrees(&self.repo);
+        }
+        let _ = std::fs::remove_file(&self.lock_path);
     }
 }
 
@@ -809,6 +1041,25 @@ mod tests {
     use super::*;
 
     const NOW: u64 = 20_261_105_143_000;
+
+    #[test]
+    fn a_prune_removes_only_the_baselines_no_run_holds() {
+        let tmp = tempfile::tempdir().unwrap();
+        let baselines = tmp.path().join("baselines");
+        for id in ["stale", "live"] {
+            std::fs::create_dir_all(baselines.join(id).join("out")).unwrap();
+        }
+        std::fs::write(baselines.join("stale.lock"), "").unwrap();
+        let live = std::fs::File::create(baselines.join("live.lock")).unwrap();
+        live.try_lock().unwrap();
+
+        prune_stale_baselines(&baselines, tmp.path());
+
+        assert!(!baselines.join("stale").exists());
+        assert!(!baselines.join("stale.lock").exists());
+        assert!(baselines.join("live").exists());
+        assert!(baselines.join("live.lock").exists());
+    }
 
     #[test]
     fn the_increment_scheme_is_plain_semver() {
