@@ -77,12 +77,17 @@ skillwright harness link claude [--plugin <name>]   # symlink built skills into 
 skillwright harness unlink claude                   # remove those links
 ```
 
-- Each built skill folder is linked into the harness's user skill folder: `~/.claude/skills`,
-  `~/.agents/skills` (Codex), `~/.cursor/skills` or `~/.pi/agent/skills`. A rebuild, or
-  `build --watch`, then reaches the harness with no install.
+- The harness is `claude` or `codex`. Each built skill folder is linked into its user skill
+  folder: `~/.claude/skills` or `~/.agents/skills`. A rebuild, or `build --watch`, then reaches
+  the harness with no install.
+- Cursor and Pi are refused: harness-reference does not yet record whether they follow a
+  symlinked skill folder.
+- Cursor and Pi also read `~/.agents/skills`, so `link codex` gives them the Codex builds too. The
+  run prints a warning.
 - Every built plugin is linked unless `--plugin` is given.
 - A real folder, or a link to somewhere else, is never replaced: that skill is refused. Unlink
-  removes only links to the build.
+  removes only links into the build, including links to skills that are no longer built, and works
+  when the build folder is gone.
 - A linked skill loads on its own, so the harness calls it by its bare name, not
   `plugin:skill`.
 

@@ -88,8 +88,8 @@ publishing skills/code-review.md -> /path/to/my-project (claude-code)
 | `harness install <claude\|codex\|cursor\|pi>` | Register the built marketplace with a harness and install its plugins, through the harness's own `plugin` command. On Pi, `pi install` each built pack |
 | `harness update <claude\|codex\|cursor\|pi>` | Install what is missing, then update each plugin whose version changed |
 | `harness uninstall <claude\|codex\|cursor\|pi>` | Remove the marketplace's plugins from a harness, and with `--marketplace` its registration too. On Pi, print the settings entry to remove |
-| `harness link <claude\|codex\|cursor\|pi>` | Dev mode: symlink each built skill into the harness's user skill folder. Never replaces a real folder |
-| `harness unlink <claude\|codex\|cursor\|pi>` | Remove the links `harness link` made, and nothing else |
+| `harness link <claude\|codex>` | Dev mode: symlink each built skill into the harness's user skill folder. Never replaces a real folder. Cursor and Pi are refused until harness-reference records that they follow symlinked skill folders |
+| `harness unlink <claude\|codex>` | Remove the links into the build, including links to skills no longer built, and nothing else |
 | `init` | Declared, and exits `not implemented` |
 | `unpublish` | Declared, and exits `not implemented` |
 

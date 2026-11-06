@@ -50,6 +50,8 @@ pub enum Outcome {
     Removed,
     /// Everything was already in place.
     Exists,
+    /// Nothing to remove: none of the packs was installed.
+    Absent,
 }
 
 impl Outcome {
@@ -60,6 +62,7 @@ impl Outcome {
             Self::Updated => "updated",
             Self::Removed => "removed",
             Self::Exists => "exists",
+            Self::Absent => "not-installed",
         }
     }
 }
@@ -357,16 +360,10 @@ fn run_market(
         .map(|out| resolve_configured_path(out, &run.config_dir));
 
     // Resolved before the name: the name lookup reads this directory's manifest.
-    let root: PathBuf = required!(
-        Need {
-            config: "marketplace.out",
-            unless_input: Some("path"),
-        },
-        match &flags.path {
-            Some(p) => Some(resolve_against_cwd(p, &ctx.cwd)),
-            None => out_root.clone(),
-        }
-    );
+    let root = match built_root(&run, flags, ctx, &argv_verb) {
+        Ok(root) => root,
+        Err(code) => return code,
+    };
 
     let manifest = marketplace_manifest_path(adapter.name).map(|rel| root.join(rel));
     let found = match manifest.as_deref().map(manifest_name).transpose() {
@@ -401,13 +398,7 @@ fn run_market(
         }
     };
 
-    let configured = if !flags.plugins.is_empty() {
-        Some(flags.plugins.clone())
-    } else {
-        settings
-            .and_then(|s| s.default_plugin.clone())
-            .map(|p| vec![p])
-    };
+    let configured = configured_plugins(&run, flags);
     let plugins: Vec<String> = if installs_plugins {
         required!(
             Need {

@@ -14,9 +14,18 @@
 //!   Pi command that removes a package, and this file runs none it does not
 //!   record.
 //!
-//! `--git-url` is refused: Pi installs a git package from its repository
-//! root (`facts/pi/plugins/marketplace.md`), and a built marketplace's packs
-//! sit below that root.
+//! `--git-url` and `--git-ref` are refused: Pi installs a git package from
+//! its repository root (`facts/pi/plugins/marketplace.md`), and a built
+//! marketplace's packs sit below that root.
+//!
+//! Whether a pack is installed is read from the settings file. The facts do
+//! not record the shape of a `packages` entry, nor what a relative entry is
+//! read against (an open question in `facts/pi/plugins/install.md`), and
+//! they do not record the output of `pi list` either. So the check assumes an
+//! entry is a source string, or an object with a `source` or `path`, and
+//! reads a relative one against the project folder `pi install` runs in. If
+//! that is wrong, a pack is never found, and every install or update runs
+//! `pi install` again.
 
 use std::path::{Path, PathBuf};
 
@@ -59,8 +68,9 @@ fn settings_file(scope: Scope, home: &Path, project: &Path) -> PathBuf {
     }
 }
 
-/// The package sources a settings file lists. An entry is a source string,
-/// or an object whose `source` (or `path`) is one; anything else is skipped.
+/// The package sources a settings file lists. An entry is taken to be a
+/// source string, or an object whose `source` (or `path`) is one; anything
+/// else is skipped. See the module notes: this shape is assumed.
 fn listed_packages(file: &Path) -> Result<Vec<String>, String> {
     let Some(doc) = read_json(file)? else {
         return Ok(Vec::new());
@@ -114,11 +124,11 @@ pub fn run_pi(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandContext<
             ),
         );
     }
-    if flags.git_url.is_some() {
+    if flags.git_url.is_some() || flags.git_ref.is_some() {
         return usage_error(
             ctx.err,
             "pi installs a git package from its repository root, and a built marketplace's packs \
-             sit below it; install from the built folder, without --git-url",
+             sit below it; install from the built folder, without --git-url or --git-ref",
         );
     }
     if matches!(verb, HarnessVerb::Uninstall { marketplace: true }) {
@@ -185,7 +195,7 @@ pub fn run_pi(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandContext<
                     ),
                 );
             }
-            (Outcome::Exists, Vec::new())
+            (Outcome::Absent, Vec::new())
         }
         _ if missing.is_empty() => (Outcome::Exists, Vec::new()),
         _ => (
@@ -230,7 +240,11 @@ pub fn run_pi(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandContext<
         }
     } else {
         if report.commands.is_empty() {
-            let _ = writeln!(ctx.out, "{NAME}  unchanged · exists");
+            let state = match report.outcome {
+                Outcome::Absent => "not installed",
+                _ => "exists",
+            };
+            let _ = writeln!(ctx.out, "{NAME}  unchanged · {state}");
         }
         let verb_word = if flags.dry_run { "would run" } else { "ran" };
         for argv in &report.commands {

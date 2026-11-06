@@ -2,14 +2,19 @@
 //!
 //! `link` symlinks each built skill folder of the harness's packs into that
 //! harness's user skill folder, so a `build` (or `build --watch`) reaches the
-//! harness with no install step. `unlink` removes only the links `link` would
-//! make: a link pointing somewhere else, and a real file or folder, are never
-//! touched. `link` refuses to put a symlink where a real folder or another
-//! link already is.
+//! harness with no install step. `unlink` removes only links that point into
+//! the build's packs: a link pointing somewhere else, and a real file or
+//! folder, are never touched. `link` refuses to put a symlink where a real
+//! folder or another link already is.
 //!
-//! The user skill folders, from harness-reference `facts/<harness>/skills/`:
-//! Codex reads `~/.agents/skills`, Cursor `~/.cursor/skills`, and Pi
-//! `~/.pi/agent/skills` (`user-dirs.md`). Claude Code reads `.claude/skills`
+//! Only Claude Code and Codex are linked. harness-reference
+//! `facts/<harness>/skills/discovery-walk.md` records that those two follow a
+//! symlinked skill folder; for Cursor and Pi it is an open question, which
+//! `probes/skill-symlink` would settle.
+//!
+//! The user skill folders: Codex reads `~/.agents/skills`
+//! (`facts/codex/skills/user-dirs.md`), which Cursor and Pi read as well, so
+//! `link codex` warns. Claude Code reads `.claude/skills`
 //! (`project-dirs.md`) under `~/.claude`, the user destination `publish`
 //! already writes to.
 //!
@@ -30,14 +35,27 @@ use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
 use crate::resolve::resolve_run;
 
-/// The user skill folder `harness` reads, under `home`.
-fn user_skills(harness: &str, home: &Path) -> PathBuf {
+/// The user skill folder `harness` reads, under `home`, or why `harness`
+/// is not linked.
+fn user_skills(harness: &str, home: &Path) -> Result<PathBuf, String> {
     match harness {
-        "claude" => home.join(".claude").join("skills"),
-        "codex" => home.join(".agents").join("skills"),
-        "cursor" => home.join(".cursor").join("skills"),
-        _ => home.join(".pi").join("agent").join("skills"),
+        "claude" => Ok(home.join(".claude").join("skills")),
+        "codex" => Ok(home.join(".agents").join("skills")),
+        other => Err(format!(
+            "harness link supports claude and codex only. harness-reference does not record \
+             whether {other} follows a symlinked skill folder (an open question in \
+             facts/{other}/skills/discovery-walk.md; probes/skill-symlink would settle it)"
+        )),
     }
+}
+
+/// What linking into `harness`'s folder also does to other harnesses.
+fn shared_folder_warning(harness: &str) -> Option<&'static str> {
+    (harness == "codex").then_some(
+        "~/.agents/skills is also read by Cursor and Pi (harness-reference \
+         facts/cursor/skills/user-dirs.md, facts/pi/skills/user-dirs.md), so they load these \
+         Codex builds too",
+    )
 }
 
 /// Where `harness`'s packs land under the built root.
@@ -55,7 +73,7 @@ struct LinkRow {
     path: String,
     target: String,
     /// `linked`, `would-link`, `unlinked`, `would-unlink`, `unchanged`,
-    /// `absent` or `refused`.
+    /// `absent`, `refused` or `skipped` (not tried, after an earlier failure).
     status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
@@ -67,6 +85,8 @@ struct LinkDocument<'a> {
     verb: &'a str,
     folder: String,
     links: &'a [LinkRow],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    warnings: &'a [String],
     dry_run: bool,
 }
 
@@ -109,9 +129,46 @@ fn make_link(target: &Path, link: &Path) -> std::io::Result<()> {
     std::os::windows::fs::symlink_dir(target, link)
 }
 
+#[cfg(not(windows))]
+fn remove_link(link: &Path) -> std::io::Result<()> {
+    std::fs::remove_file(link)
+}
+
+#[cfg(windows)]
 fn remove_link(link: &Path) -> std::io::Result<()> {
     // A directory symlink on Windows is removed as a directory.
     std::fs::remove_file(link).or_else(|_| std::fs::remove_dir(link))
+}
+
+/// Removes `link` only if it is still a symlink to `target`, read again
+/// right before the removal. `Ok(false)` when something else is there now.
+fn remove_if_ours(link: &Path, target: &Path) -> Result<bool, String> {
+    match found_at(link, target)? {
+        Found::Ours => remove_link(link)
+            .map(|()| true)
+            .map_err(|e| format!("unlink {} failed: {e}", link.display())),
+        _ => Ok(false),
+    }
+}
+
+/// `path` with its longest existing prefix resolved through symlinks, so it
+/// compares with link targets made from a canonical root even when the rest
+/// of it is gone.
+fn canonical_lossy(path: &Path) -> PathBuf {
+    let mut rest: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut base = path;
+    loop {
+        if let Ok(found) = base.canonicalize() {
+            return rest.iter().rev().fold(found, |acc, part| acc.join(part));
+        }
+        match (base.parent(), base.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name);
+                base = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
 }
 
 /// The built skill folders of `plugins` (every pack when empty), by the
@@ -160,6 +217,41 @@ fn built_skills(
     Ok(skills)
 }
 
+/// Symlinks in `folder` not named in `skip` whose target is under one of
+/// `under`: links an earlier build made for a skill that is no longer
+/// built. Each comes back with its target.
+fn stale_links(
+    folder: &Path,
+    under: &[PathBuf],
+    skip: &BTreeMap<String, Vec<PathBuf>>,
+) -> Result<Vec<(PathBuf, PathBuf)>, String> {
+    let entries = match std::fs::read_dir(folder) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("{} could not be read: {e}", folder.display())),
+    };
+    let mut stale = Vec::new();
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name();
+        if name.to_str().is_some_and(|n| skip.contains_key(n)) {
+            continue;
+        }
+        let link = entry.path();
+        let is_link = std::fs::symlink_metadata(&link).is_ok_and(|m| m.file_type().is_symlink());
+        if !is_link {
+            continue;
+        }
+        let Ok(target) = std::fs::read_link(&link) else {
+            continue;
+        };
+        if under.iter().any(|root| target.starts_with(root)) {
+            stale.push((link, target));
+        }
+    }
+    stale.sort();
+    Ok(stale)
+}
+
 /// Run `harness link|unlink <harness>` and return the exit code.
 pub fn run_link(
     verb: HarnessVerb,
@@ -170,16 +262,20 @@ pub fn run_link(
     let name = harness.name();
     let verb_name = verb.name();
     let argv_verb = ["harness", verb_name, name];
+    let folder = match user_skills(name, &ctx.home) {
+        Ok(folder) => folder,
+        Err(message) => return usage_error(ctx.err, &message),
+    };
     if flags.scope != Scope::User {
         return usage_error(
             ctx.err,
             &format!("{verb_name} writes to the user skill folder only; drop --scope"),
         );
     }
-    if flags.git_url.is_some() {
+    if flags.git_url.is_some() || flags.git_ref.is_some() {
         return usage_error(
             ctx.err,
-            &format!("{verb_name} links the built folder; drop --git-url"),
+            &format!("{verb_name} links the built folder; drop --git-url and --git-ref"),
         );
     }
     let run = match resolve_run(&flags.common, &ctx.cwd, ctx.err) {
@@ -187,22 +283,38 @@ pub fn run_link(
         Err(code) => return code,
     };
     let root = match built_root(&run, flags, ctx, &argv_verb) {
-        Ok(root) => root,
+        Ok(root) => canonical_lossy(&root),
         Err(code) => return code,
     };
-    let root = root.canonicalize().unwrap_or(root);
     let Some(packs) = packs(name) else {
         return blocked(ctx.err, &format!("{name} has no pack layout"));
     };
-    let skills = match built_skills(&root.join(packs), &flags.plugins) {
+    let packs_dir = root.join(packs);
+    let linking = verb == HarnessVerb::Link;
+    let skills = match built_skills(&packs_dir, &flags.plugins) {
         Ok(skills) => skills,
+        // Unlink still removes links into a build that is gone.
+        Err(_) if !linking => BTreeMap::new(),
         Err(message) => return blocked(ctx.err, &message),
     };
-    let folder = user_skills(name, &ctx.home);
+    let warnings: Vec<String> = if linking {
+        shared_folder_warning(name)
+            .map(str::to_string)
+            .into_iter()
+            .collect()
+    } else {
+        Vec::new()
+    };
 
-    let linking = verb == HarnessVerb::Link;
     let mut rows: Vec<LinkRow> = Vec::new();
-    let mut actions: Vec<(PathBuf, PathBuf)> = Vec::new();
+    // Each planned change, by the index of its row.
+    let mut actions: Vec<(usize, PathBuf, PathBuf)> = Vec::new();
+    let planned = |linking: bool| match (linking, flags.dry_run) {
+        (true, true) => "would-link",
+        (true, false) => "linked",
+        (false, true) => "would-unlink",
+        (false, false) => "unlinked",
+    };
     for (skill, targets) in &skills {
         let link = folder.join(skill);
         let target = &targets[0];
@@ -227,13 +339,8 @@ pub fn run_link(
         };
         match (linking, found) {
             (true, Found::Nothing) | (false, Found::Ours) => {
-                row.status = match (linking, flags.dry_run) {
-                    (true, true) => "would-link",
-                    (true, false) => "linked",
-                    (false, true) => "would-unlink",
-                    (false, false) => "unlinked",
-                };
-                actions.push((link, target.clone()));
+                row.status = planned(linking);
+                actions.push((rows.len(), link, target.clone()));
             }
             (true, Found::Ours) => {}
             (false, Found::Nothing) => row.status = "absent",
@@ -253,7 +360,28 @@ pub fn run_link(
         }
         rows.push(row);
     }
+    if !linking {
+        let under: Vec<PathBuf> = if flags.plugins.is_empty() {
+            vec![packs_dir.clone()]
+        } else {
+            flags.plugins.iter().map(|p| packs_dir.join(p)).collect()
+        };
+        let stale = match stale_links(&folder, &under, &skills) {
+            Ok(stale) => stale,
+            Err(message) => return blocked(ctx.err, &message),
+        };
+        for (link, target) in stale {
+            actions.push((rows.len(), link.clone(), target.clone()));
+            rows.push(LinkRow {
+                path: link.display().to_string(),
+                target: target.display().to_string(),
+                status: planned(false),
+                reason: Some("a link into the build to a skill no longer built".into()),
+            });
+        }
+    }
 
+    let mut failure: Option<String> = None;
     if !flags.dry_run && !actions.is_empty() {
         if !flags.yes {
             let mut plan = vec![argv_verb[1..].join(" "), String::new()];
@@ -262,7 +390,9 @@ pub fn run_link(
                     if linking { "link" } else { "unlink" },
                     actions
                         .iter()
-                        .map(|(link, target)| format!("{} -> {}", link.display(), target.display()))
+                        .map(|(_, link, target)| {
+                            format!("{} -> {}", link.display(), target.display())
+                        })
                         .collect(),
                 ),
                 ("in", vec![folder.display().to_string()]),
@@ -278,17 +408,31 @@ pub fn run_link(
                 &format!("{} could not be created: {e}", folder.display()),
             );
         }
-        for (link, target) in &actions {
+        for (row, link, target) in &actions {
+            let row = &mut rows[*row];
+            if failure.is_some() {
+                row.status = "skipped";
+                row.reason = Some("not tried after an earlier failure".into());
+                continue;
+            }
             let done = if linking {
                 make_link(target, link)
+                    .map(|()| true)
+                    .map_err(|e| format!("link {} failed: {e}", link.display()))
             } else {
-                remove_link(link)
+                remove_if_ours(link, target)
             };
-            if let Err(e) = done {
-                return blocked(
-                    ctx.err,
-                    &format!("{verb_name} {} failed: {e}", link.display()),
-                );
+            match done {
+                Ok(true) => {}
+                Ok(false) => {
+                    row.status = "unchanged";
+                    row.reason = Some("changed since it was read; left alone".into());
+                }
+                Err(message) => {
+                    row.status = "refused";
+                    row.reason = Some(message.clone());
+                    failure = Some(message);
+                }
             }
         }
     }
@@ -299,6 +443,7 @@ pub fn run_link(
             verb: verb_name,
             folder: folder.display().to_string(),
             links: &rows,
+            warnings: &warnings,
             dry_run: flags.dry_run,
         };
         match serde_json::to_string_pretty(&document) {
@@ -316,6 +461,9 @@ pub fn run_link(
             let _ = writeln!(ctx.out, "{}  {} · {detail}", row.path, row.status);
         }
     }
+    for warning in &warnings {
+        let _ = writeln!(ctx.err, "warning: {warning}");
+    }
     if !flags.quiet {
         let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
         for row in &rows {
@@ -329,9 +477,56 @@ pub fn run_link(
         };
         let _ = writeln!(ctx.err, "{} skills — {summary}", rows.len());
     }
+    if let Some(message) = failure {
+        return blocked(ctx.err, &message);
+    }
     if rows.iter().any(|r| r.status == "refused") {
         EXIT_REFUSED
     } else {
         EXIT_OK
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unlink_leaves_a_real_folder_that_replaced_the_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let link = dir.path().join("link");
+
+        // A real empty folder where the link was: left alone, not removed.
+        std::fs::create_dir_all(&link).unwrap();
+        assert!(!remove_if_ours(&link, &target).unwrap());
+        assert!(link.is_dir());
+        // Without the Windows fallback, removing a link never removes a folder.
+        assert!(remove_link(&link).is_err());
+        assert!(link.is_dir());
+
+        // A real file: left alone.
+        std::fs::remove_dir(&link).unwrap();
+        std::fs::write(&link, "mine").unwrap();
+        assert!(!remove_if_ours(&link, &target).unwrap());
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "mine");
+
+        // Still a link to the target: removed.
+        std::fs::remove_file(&link).unwrap();
+        make_link(&target, &link).unwrap();
+        assert!(remove_if_ours(&link, &target).unwrap());
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    fn canonical_lossy_resolves_the_part_that_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().canonicalize().unwrap();
+        assert_eq!(
+            canonical_lossy(&dir.path().join("gone/deeper")),
+            real.join("gone/deeper")
+        );
     }
 }

@@ -587,9 +587,10 @@ enum HarnessAction {
     Uninstall(HarnessUninstallArgs),
     /// Dev mode: symlink each built skill into the harness's user skill
     /// folder, so a rebuild reaches the harness with no install. Every pack
-    /// unless `--plugin` is given.
+    /// unless `--plugin` is given. Claude and Codex only.
     Link(HarnessVerbArgs),
-    /// Remove the symlinks `harness link` made. Nothing else is touched.
+    /// Remove the symlinks into the build, including links to skills no
+    /// longer built. Nothing else is touched.
     Unlink(HarnessVerbArgs),
 }
 
