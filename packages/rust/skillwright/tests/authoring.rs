@@ -182,6 +182,66 @@ fn rename_rewrites_an_inbound_link_and_reports_the_rewrite_count() {
     assert!(!vault.join(format!("{DEV_AGENT_SKILLS}/foo")).exists());
 }
 
+/// A built vault whose moved packs folder `built` sits inside it.
+fn built_vault() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "skillwright.md",
+        "---\nname: m\nbuild:\n  out: .\n---\n",
+    );
+    write(
+        dir.path(),
+        "marketplaces/m/m.md",
+        "---\nname: m\nclaude: {packs: built}\n---\n",
+    );
+    write(
+        dir.path(),
+        "marketplaces/m/plugins/rev/skills/a.md",
+        "---\nname: a\ndescription: A skill.\n---\nBody.\n",
+    );
+    write(dir.path(), "notes/linker.md", "See [[a]].\n");
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    dir
+}
+
+#[test]
+fn rename_leaves_generated_output_unedited() {
+    let dir = built_vault();
+    write(dir.path(), "built/rev/copy.md", "See [[a]].\n");
+
+    let result = run(&["rename", "a", "b", "--yes"], dir.path());
+
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(!result.stdout.contains("built/"), "{}", result.stdout);
+    let read = |rel: &str| fs::read_to_string(dir.path().join(rel)).unwrap();
+    assert_eq!(read("notes/linker.md"), "See [[b]].\n");
+    assert_eq!(read("built/rev/copy.md"), "See [[a]].\n");
+}
+
+#[test]
+fn move_leaves_generated_output_unedited() {
+    let dir = built_vault();
+    let skill = "marketplaces/m/plugins/rev/skills/a.md";
+    write(
+        dir.path(),
+        "marketplaces/m/plugins/tools/skills/other.md",
+        "---\ndescription: Other.\n---\nBody.\n",
+    );
+    write(dir.path(), "notes/linker.md", &format!("[a](../{skill})\n"));
+    let copy = format!("[a](../../{skill})\n");
+    write(dir.path(), "built/rev/copy.md", &copy);
+
+    let result = run(&["move", "a", "--to-plugin", "tools", "--yes"], dir.path());
+
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(!result.stdout.contains("built/"), "{}", result.stdout);
+    let read = |rel: &str| fs::read_to_string(dir.path().join(rel)).unwrap();
+    assert!(read("notes/linker.md").contains("plugins/tools/"));
+    assert_eq!(read("built/rev/copy.md"), copy);
+}
+
 #[test]
 fn move_leaves_an_unrelated_link_byte_identical() {
     let (dir, vault) = fixture();
