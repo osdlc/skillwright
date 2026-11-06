@@ -115,8 +115,8 @@ pub use content::{SkillContent, SkillProjection};
 pub use corpus::*;
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION,
-    MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, default_name, discover_components,
-    folder_kind, is_skill_entry,
+    MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON, default_name,
+    discover_components, folder_kind, is_skill_entry,
 };
 pub use error::*;
 pub use export::{
@@ -130,6 +130,7 @@ pub use frontmatter::{
     VaultFrontmatter, resolve_kind,
 };
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, REMOVED, Shape};
+pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,

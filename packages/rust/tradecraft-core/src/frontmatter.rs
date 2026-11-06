@@ -13,7 +13,7 @@
 //! Keys are bare by default, and the key table says which bare keys are
 //! skillwright's for each kind, so `license` is the pack's on a plugin note
 //! and the spec's on a skill. Under a namespace ([`Namespace`]), every key
-//! the prefix claims is skillwright's, in the flat shape (`version`) or
+//! the prefix claims is skillwright's, in the flat shape (`sw-version`) or
 //! the nested one (`sw: {version: …}`); a note carrying both is refused ·
 //! `mixed-frontmatter-shape`. A prefixed key this build does not model is
 //! consumed into [`VaultFrontmatter::unknown_ours`] so it cannot reach a
@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::CoreError;
+use crate::keys::{Owner, Shape};
 use crate::namespace::Namespace;
 
 /// Which publishable unit a note is: what the folder it sits in names.
@@ -283,9 +284,9 @@ pub const ADOPTED_FIELDS: &[&str] = &["source", "format", "hash", "source_hash",
 /// refuse a shape the manifest accepts.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContainerIdentity {
-    /// `owner` — the marketplace's owner, free-shaped.
+    /// `owner` — the marketplace's owner, a name or a mapping.
     pub owner: Option<Value>,
-    /// `author` — the author a plugin publishes under, free-shaped. On a
+    /// `author` — the author a plugin publishes under, a name or a mapping. On a
     /// marketplace note it is the default for every plugin under it.
     pub author: Option<Value>,
     /// `display_name` — the human-facing name where a dialect carries one
@@ -395,16 +396,29 @@ impl VaultFrontmatter {
             }
         }
 
+        check_shapes(&ours, path, ns, kind)?;
+
         let targets = take_string_list(&mut ours, &ns.key("targets"), path)?;
-        let arguments = take_arguments(&mut ours, &ns.key("arguments"), path)?;
+        // A key the table does not list for this kind stays in `ours`, to be
+        // reported as unknown.
+        let reads = |key: &str| crate::keys::is_owned(kind, key);
+        let arguments = if reads("arguments") {
+            take_arguments(&mut ours, &ns.key("arguments"), path)?
+        } else {
+            Vec::new()
+        };
         let mut overrides = Map::new();
-        for harness in crate::keys::HARNESS_BLOCKS {
-            if let Some(block) = take_harness_block(&mut ours, &ns.key(harness), path)? {
+        for harness in crate::keys::HARNESS_BLOCKS.iter().filter(|h| reads(h)) {
+            if let Some(block) = take_harness_block(&mut ours, &ns.key(harness)) {
                 overrides.insert((*harness).to_owned(), Value::Object(block));
             }
         }
         let mut unknown: Vec<String> = Vec::new();
-        let provenance = take_adopted(&mut ours, &ns.key("adopted"), path, &mut unknown)?;
+        let provenance = if reads("adopted") {
+            take_adopted(&mut ours, &ns.key("adopted"), path, &mut unknown)?
+        } else {
+            Provenance::default()
+        };
 
         let identity = if kind.holds_components() {
             ContainerIdentity {
@@ -415,8 +429,8 @@ impl VaultFrontmatter {
                 keywords: take_string_list(&mut ours, &ns.key("keywords"), path)?,
                 category: take_string(&mut ours, &ns.key("category"), path)?,
                 version: take_string(&mut ours, &ns.key("version"), path)?,
-                repository: take_url(&mut ours, &ns.key("repository"), path)?,
-                homepage: take_url(&mut ours, &ns.key("homepage"), path)?,
+                repository: take_string(&mut ours, &ns.key("repository"), path)?,
+                homepage: take_string(&mut ours, &ns.key("homepage"), path)?,
             }
         } else {
             ContainerIdentity::default()
@@ -426,7 +440,7 @@ impl VaultFrontmatter {
         unknown.extend(
             fields
                 .keys()
-                .filter(|key| !crate::keys::is_known(kind, key))
+                .filter(|key| !crate::keys::is_known(kind, key, ns))
                 .cloned(),
         );
         unknown.sort();
@@ -450,7 +464,7 @@ impl VaultFrontmatter {
 /// Under a prefixed namespace, every key the prefix claims moves, and a
 /// nested `sw: {version: 1.0.0}` comes back as `{"sw-version": "1.0.0"}`.
 /// Bare, the key table decides: the keys it lists as skillwright's for `kind`
-/// move. `arguments` holding plain strings stays: that is Claude's own key.
+/// move. `arguments` holding names stays: that is Claude's own key.
 fn claim(
     fields: &mut Map<String, Value>,
     path: &Path,
@@ -461,7 +475,9 @@ fn claim(
         let owned: Vec<String> = fields
             .keys()
             .filter(|key| crate::keys::is_owned(kind, key))
-            .filter(|key| key.as_str() != "arguments" || !is_name_list(&fields[key.as_str()]))
+            .filter(|key| {
+                key.as_str() != "arguments" || !is_claude_arguments(&fields[key.as_str()])
+            })
             .cloned()
             .collect();
         let mut ours = Map::new();
@@ -522,28 +538,87 @@ fn claim(
     }
 }
 
-/// A list whose entries are all strings: Claude's own `arguments` key.
-fn is_name_list(value: &Value) -> bool {
-    matches!(value, Value::Array(items) if items.iter().all(Value::is_string))
+/// Claude's own `arguments` key: a space-separated string, or a list of
+/// strings.
+fn is_claude_arguments(value: &Value) -> bool {
+    match value {
+        Value::String(_) => true,
+        Value::Array(items) => items.iter().all(Value::is_string),
+        _ => false,
+    }
 }
 
-/// Removes a harness block and returns it, refusing anything but a mapping.
-/// `key: null` reads as no block.
-fn take_harness_block(
-    ours: &mut Map<String, Value>,
-    key: &str,
+/// Refuses a key of ours whose value is not the [`crate::keys::Shape`] the
+/// table lists for `kind`. `ours` holds flat spellings, so a prefixed key the
+/// table does not list is left for [`VaultFrontmatter::unknown_ours`].
+fn check_shapes(
+    ours: &Map<String, Value>,
     path: &Path,
-) -> Result<Option<Map<String, Value>>, CoreError> {
-    match ours.remove(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Object(block)) => Ok(Some(block)),
-        Some(other) => Err(CoreError::malformed(
-            path,
-            format!(
-                "`{key}` must be a mapping of that harness's own keys, not {}",
-                type_name(&other)
+    ns: &Namespace,
+    kind: EntityKind,
+) -> Result<(), CoreError> {
+    for (key, value) in ours {
+        if let Some(spec) = crate::keys::lookup(kind, ns.field(key))
+            && spec.owner == Owner::Skillwright
+            && !spec.shape.accepts(value)
+        {
+            return Err(CoreError::malformed(
+                path,
+                shape_refusal(spec.shape, key, value),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// What a value of the wrong shape is told, naming the key as the note
+/// spelled it.
+fn shape_refusal(shape: Shape, key: &str, value: &Value) -> String {
+    let found = type_name(value);
+    match shape {
+        Shape::String => format!(
+            "`{key}` must be a string, not {found}{}",
+            quoting_hint(value)
+        ),
+        Shape::Url => match value.as_str() {
+            Some(text) => format!("`{key}` must be an http or https URL, not `{text}`"),
+            None => format!("`{key}` must be an http or https URL, not {found}"),
+        },
+        Shape::StringList => match value {
+            Value::Array(items) => format!(
+                "`{key}` must be a list of strings; one entry is {}",
+                items
+                    .iter()
+                    .find(|item| !item.is_string())
+                    .map_or("not a string", type_name)
             ),
-        )),
+            _ => format!(
+                "`{key}` must be a list, not {found}. \
+                 An empty list means nowhere; removing the key means everywhere"
+            ),
+        },
+        Shape::Person => {
+            format!("`{key}` must be a name or a `{{name, email, url}}` mapping, not {found}")
+        }
+        Shape::Arguments => format!("`{key}` must be a list of argument objects, not {found}"),
+        Shape::HarnessBlock => {
+            format!("`{key}` must be a mapping of that harness's own keys, not {found}")
+        }
+        Shape::Adopted => format!(
+            "`{key}` must be a mapping of {}, not {found}",
+            ADOPTED_FIELDS.join(", ")
+        ),
+        Shape::Bool | Shape::Number | Shape::StringMap => {
+            format!("`{key}` has the wrong shape: {found}")
+        }
+    }
+}
+
+/// Removes a harness block and returns it. `key: null` reads as no block.
+fn take_harness_block(ours: &mut Map<String, Value>, key: &str) -> Option<Map<String, Value>> {
+    match ours.remove(key) {
+        Some(Value::Object(block)) => Some(block),
+        _ => None,
     }
 }
 
@@ -555,19 +630,8 @@ fn take_adopted(
     path: &Path,
     unknown: &mut Vec<String>,
 ) -> Result<Provenance, CoreError> {
-    let mut block = match ours.remove(key) {
-        None | Some(Value::Null) => return Ok(Provenance::default()),
-        Some(Value::Object(block)) => block,
-        Some(other) => {
-            return Err(CoreError::malformed(
-                path,
-                format!(
-                    "`{key}` must be a mapping of {}, not {}",
-                    ADOPTED_FIELDS.join(", "),
-                    type_name(&other)
-                ),
-            ));
-        }
+    let Some(Value::Object(mut block)) = ours.remove(key) else {
+        return Ok(Provenance::default());
     };
     let field = |name: &str| format!("{key}.{name}");
     let provenance = Provenance {
@@ -589,26 +653,6 @@ fn take_adopted(
 /// The wrong-shape error for one string field of the `adopted` block.
 fn shape(path: &Path, key: &str) -> CoreError {
     CoreError::malformed(path, format!("`{key}` must be a string"))
-}
-
-/// [`take_string`] for a URL: `http://` or `https://` with no whitespace.
-fn take_url(
-    ours: &mut Map<String, Value>,
-    key: &str,
-    path: &Path,
-) -> Result<Option<String>, CoreError> {
-    let Some(value) = take_string(ours, key, path)? else {
-        return Ok(None);
-    };
-    let is_url = (value.starts_with("https://") || value.starts_with("http://"))
-        && !value.contains(char::is_whitespace);
-    if !is_url {
-        return Err(CoreError::malformed(
-            path,
-            format!("`{key}` must be an http or https URL, not `{value}`"),
-        ));
-    }
-    Ok(Some(value))
 }
 
 /// Removes `key` and returns it as a string, refusing any other shape.
@@ -692,13 +736,7 @@ fn take_arguments(
         return Ok(Vec::new());
     };
     let Value::Array(items) = value else {
-        return Err(CoreError::malformed(
-            path,
-            format!(
-                "`{key}` must be a list of argument objects, not {}",
-                type_name(&value)
-            ),
-        ));
+        return Ok(Vec::new());
     };
 
     let mut out = Vec::with_capacity(items.len());
@@ -798,7 +836,7 @@ fn take_arguments(
     Ok(out)
 }
 
-/// `take_string`, scoped to one field of one `sw-arguments` entry, so every
+/// `take_string`, scoped to one field of one `arguments` entry, so every
 /// entry-level string error names the argument it is about.
 fn take_entry_string(
     entry: &mut Map<String, Value>,
@@ -820,7 +858,7 @@ fn take_entry_string(
     }
 }
 
-/// The four rules an `sw-arguments` list must satisfy beyond its shape,
+/// The four rules an `arguments` list must satisfy beyond its shape,
 /// checked in this order so the first violation a caller sees is the first
 /// one in declaration order that is wrong.
 ///

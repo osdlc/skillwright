@@ -2061,6 +2061,7 @@ fn publish(vault: &Path, dest: &Path, note: &str) {
     let report = publish_skill(
         &NativeVfs,
         &PublishRequest {
+            config: None,
             skill_path: vault.join(note),
             destination_root: dest.to_path_buf(),
             target: "claude".to_string(),

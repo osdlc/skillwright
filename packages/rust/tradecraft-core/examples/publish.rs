@@ -17,6 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let request = PublishRequest {
+        config: None,
         skill_path: PathBuf::from("/vault/skills/code-review.md"),
         destination_root: PathBuf::from("/project"),
         target: "claude-code".to_owned(),

@@ -19,7 +19,7 @@
 //! `--json` prints because `--json`'s rows are an existing contract.
 
 use tradecraft_core::model::load::{LoadRequest, load};
-use tradecraft_core::{NativeVfs, discover_components};
+use tradecraft_core::{NativeVfs, discover_components, inherit_targets};
 
 use crate::commands::marketplace::{MarketplaceInputs, marketplace_inputs};
 use crate::ctx::CommandContext;
@@ -59,7 +59,7 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return print_model(&run, skills_root, ctx);
     }
 
-    let scan = match discover_components(
+    let mut scan = match discover_components(
         &NativeVfs,
         &run.vault,
         skills_root.as_deref(),
@@ -74,6 +74,9 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
             return blocked(ctx.err, &format!("the vault scan could not run: {err}"));
         }
     };
+
+    // A roster says where a note goes, so it shows what the note inherits.
+    inherit_targets(&mut scan, &run.root_config());
 
     if flags.json {
         let rows: Vec<_> = scan.components.iter().map(roster_row).collect();

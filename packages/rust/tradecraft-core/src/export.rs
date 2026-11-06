@@ -242,13 +242,13 @@ pub enum ExportMode {
 /// What the *build* says about the marketplace and its plugins — the fallback
 /// under what the vault's own container notes say.
 ///
-/// `resolve_config` folds the two, note over request, field by field: a
+/// [`crate::model::Cascade`] folds the two, note over request, field by field: a
 /// marketplace note is the marketplace, and a build flag is one invocation of
 /// it.
 ///
 /// A member outside every plugin folder belongs to the marketplace's own
 /// plugin, which is named after the marketplace.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MarketplaceConfig {
     /// The name both manifests publish under, **when the vault does not supply
     /// one**. A marketplace note names itself, and that name wins.
@@ -337,12 +337,17 @@ pub struct PluginOverrides {
     pub author: Option<serde_json::Value>,
     /// Default the marketplace `license`, then `UNLICENSED`.
     pub license: Option<String>,
-    /// Default empty.
+    /// Default empty. Also the Claude and Cursor marketplace entry's `tags`.
     pub keywords: Option<Vec<String>>,
-    /// Codex only. Default `Productivity`.
+    /// Codex always writes it, default `Productivity`. Claude and Cursor
+    /// write it on the marketplace entry only when it is set.
     pub category: Option<String>,
     /// Codex only. Default the plugin's name.
     pub display_name: Option<String>,
+    /// Which harnesses the plugin's members go to. Default the marketplace
+    /// `targets`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub targets: Option<Vec<String>>,
     /// Default the marketplace `repository`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
@@ -3259,7 +3264,7 @@ mod tests {
     // --- Version bump suggestions -----------------------------------------
 
     /// One plugin with its own container note — carrying `version`, which
-    /// [`resolve_config`] folds into `MarketplaceConfig.plugins` — and one
+    /// [`crate::model::Cascade`] folds into `MarketplaceConfig.plugins` — and one
     /// member skill.
     fn vault_with_versioned_plugin() -> MemVfs {
         let vfs = MemVfs::new();
