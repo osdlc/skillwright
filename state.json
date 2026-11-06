@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 64,
-  "head": "e3f8b654946267fa25a3b0dc95ab79e42145fc00",
-  "base": "737ff3bb24d29d3c8c89c19042ab1b4182cf8234",
-  "round": 1,
+  "head": "1eb93caea312eb8fbdde432aee1acf247f41d9d3",
+  "base": "4e78f201a83d6cc5fd18f47b9a0c888991e041d2",
+  "round": 2,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-06T07:51:00.809Z"
@@ -170,6 +170,160 @@
       "line": 206,
       "title": "harness install ignores a moved packs folder",
       "comment": "https://github.com/osdlc/skillwright/pull/64#pullrequestreview-5796895579",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/compile.rs",
+      "line": 1660,
+      "title": "excluded-link refuses links to shipped components named docs, tests or fixtures",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/discover.rs",
+      "line": 572,
+      "title": "A misplaced note in a shipped plugin named docs or tests is no longer reported",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 1220,
+      "title": "A .DS_Store in a moved packs folder blocks every build with foreign-tree",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/harness/manifest.rs",
+      "line": 82,
+      "title": "packs under .skillwright-stage builds with exit 0 and then deletes the packs",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-5",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/patterns.rs",
+      "line": 120,
+      "title": "build.exclude and build.patterns in a workspace file are silently ignored",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-6",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/resolve.rs",
+      "line": 80,
+      "title": "Note-level packs is unseen in a vault with several marketplaces",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-7",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/patterns.rs",
+      "line": 292,
+      "title": "A plugin pattern under a marketplace folder drops the marketplace",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-8",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/harness/manifest.rs",
+      "line": 78,
+      "title": "Non-ASCII case and Unicode forms pass the overlap check on macOS",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-9",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/publish.rs",
+      "line": 1069,
+      "title": "publish <note> still ships notes in never-ship folders",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-10",
+      "round": 2,
+      "path": "packages/rust/skillwright/src/commands/harness/mod.rs",
+      "line": 209,
+      "title": "harness install uses packs without any safety check",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-11",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 652,
+      "title": "Output inside a pattern plugin folder passes the rail",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-12",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/patterns.rs",
+      "line": 204,
+      "title": "plugin-merged fires for a folder build.exclude removes",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-13",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/patterns.rs",
+      "line": 133,
+      "title": "An unterminated root file is read as a README and its exclusion fails open",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-14",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/patterns.rs",
+      "line": 163,
+      "title": "A glob that starts with a wildcard gives no source folder",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
