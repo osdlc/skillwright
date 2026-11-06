@@ -1,12 +1,123 @@
 {
   "schema": 1,
   "pr": 59,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "c5f915765f8d324f59fd7e1246183d86d8f261b6",
+  "base": "1d1667e0d212580dfb04bead18378cb0af034221",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-06T06:08:47.902Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 647,
+      "title": "Any existing directory is accepted as a baseline; a wrong one makes every versioned plugin skipped with exit 0",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 776,
+      "title": "Baseline build can read the live vault when the config's vault resolves outside the checkout",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 750,
+      "title": "git worktree add runs repo hooks and LFS, and a kill leaves the worktree registered",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/config.rs",
+      "line": 118,
+      "title": "bump: is honoured from the machine file, so two machines can version the same commit differently",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 760,
+      "title": "Ref baseline looks up the project file by its current path; breaks across the skillwright.md rename",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 494,
+      "title": "A write failure mid-loop exits without reporting the bumps already written",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 802,
+      "title": "Drop discards a worktree remove failure and then deletes the directory, leaving a stale admin entry",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 761,
+      "title": "No test covers cleanup on a failure after the worktree is added",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 449,
+      "title": "No test covers the unversioned-note branch of --changed-since",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/bump.rs",
+      "line": 9,
+      "title": "Docs say the ref is built with this run's project file; the code uses the ref's copy",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
