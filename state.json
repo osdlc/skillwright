@@ -1,12 +1,222 @@
 {
   "schema": 1,
   "pr": 65,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "1ba1e3a08b1138ee6e39df8424ee59736be54b1e",
+  "base": "e3f8b654946267fa25a3b0dc95ab79e42145fc00",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-r65q7x",
     "at": "2026-11-06T07:14:18.218Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "docs/guide/getting-started.md",
+      "line": 104,
+      "title": "publish default writes to a doubled path no harness reads",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "docs/guide/migrating.md",
+      "line": 74,
+      "title": "namespace path: claude: and adopted: are not read under build.namespace",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "docs/guide/migrating.md",
+      "line": 59,
+      "title": "worked example moves the output from the repository root into notes/",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "plugin/plugins/skillwright/skills/migrate/migrate.md",
+      "line": 58,
+      "title": "workspace row leaves build.out in the outer file, so the build exits 4",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "docs/reference/skillwright-md.md",
+      "line": 58,
+      "title": "destinations scope is documented and is refused",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "plugin/plugins/skillwright/skills/migrate/migrate.md",
+      "line": 66,
+      "title": "step 5 renames container keys on skills, which changes the output",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/adopt.rs",
+      "line": 949,
+      "title": "only_renamed reports a pure key rename as edited",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "plugin/plugins/skillwright/skills/author/author.md",
+      "line": 73,
+      "title": "new plugin and new skill do not write the conventional folders",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "docs/reference/skillwright-md.md",
+      "line": 97,
+      "title": "plain Markdown links to a never-ship file are not refused",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/tests/field_reference.rs",
+      "line": 4,
+      "title": "drift test does not run on a PR that only edits fields.md",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/init.rs",
+      "line": 46,
+      "title": "init --out '' writes an empty output folder that builds into the vault",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-12",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/commands/init.rs",
+      "line": 26,
+      "title": "exists check then write follows a dangling symlink",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-13",
+      "round": 1,
+      "path": "docs/reference/skillwright-md.md",
+      "line": 136,
+      "title": "no version warning for a plugin with no note",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-14",
+      "round": 1,
+      "path": "plugin/plugins/skillwright/skills/migrate/migrate.md",
+      "line": 129,
+      "title": "a removed key fails the whole build, not one note",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-15",
+      "round": 1,
+      "path": "docs/reference/fields.md",
+      "line": 12,
+      "title": "description row says a component with no description is not published",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-16",
+      "round": 1,
+      "path": "docs/reference/fields.md",
+      "line": 68,
+      "title": "adopted row omits source_hash and also_at",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-17",
+      "round": 1,
+      "path": "packages/rust/skillwright/src/cli.rs",
+      "line": 243,
+      "title": "check help says it writes nothing",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-18",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "a marketplace skillwright.md with a description is listed as unreadable from the workspace root",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-19",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "the no-root-file note does not name init",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
