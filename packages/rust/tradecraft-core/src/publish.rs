@@ -315,7 +315,7 @@ pub enum ReasonToken {
     PathCollision,
     /// A targets key, or a request, names a target this build does not know.
     UnknownTarget,
-    /// An harness block names a key the receiving harness does not
+    /// A harness block names a key the receiving harness does not
     /// read. Its own token rather than `unknown-target`: the destination is
     /// fine and the key is not, and a reader has to be told which.
     UnknownOverrideKey,
@@ -333,7 +333,7 @@ pub enum ReasonToken {
     /// [`ReasonToken::REFUSALS`]; a `written` or `unchanged` line needs a way
     /// to say this, and it is a reason like any other.
     Claimed,
-    /// Not a refusal either: an harness block key said what the projection
+    /// Not a refusal either: a harness block key said what the projection
     /// already writes, so the file published unchanged and the author has a
     /// key they can delete.
     RedundantOverride,
@@ -694,7 +694,7 @@ fn publish_onto(
         .skills_root
         .as_deref()
         .and_then(|root| crate::discover::folder_placement(root, &request.skill_path).plugin);
-    cascade.apply(&mut note, resolved.kind, plugin.as_deref());
+    cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
 
     // `targets`, decided before anything is projected (see the module
     // doc). An unknown name is handed to `finish`, which stamps it on every
@@ -1736,6 +1736,12 @@ pub fn overrides_for(
                     ns.key(wanted),
                     quoted(&unknown)
                 ),
+            ));
+        }
+        if block.get("metadata").is_some_and(|m| !m.is_object()) {
+            return Err(CoreError::malformed(
+                note_path,
+                format!("`{}.metadata` must be a mapping", ns.key(wanted)),
             ));
         }
     }

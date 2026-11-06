@@ -59,6 +59,7 @@ use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 
+pub(crate) use cascade::member_block_keys;
 pub use cascade::{Cascade, inherit_targets};
 pub use load::{
     ComponentRequest, LoadRequest, load, load_component, load_plugin, read_notes, resolve_body,

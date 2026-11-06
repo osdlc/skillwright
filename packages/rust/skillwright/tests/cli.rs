@@ -486,6 +486,38 @@ fn out_dot_writes_beside_the_vault() {
     assert_eq!(again.code, 0, "{}{}", again.stdout, again.stderr);
 }
 
+// A workspace roster shows what each marketplace's own build uses.
+#[test]
+fn a_workspace_roster_shows_each_marketplaces_targets() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\ntargets: [claude, codex]\n---\n",
+    )
+    .unwrap();
+    let member = dir.path().join("marketplaces/a");
+    fs::create_dir_all(member.join("skills")).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: a\ntargets: [claude]\nbuild:\n  out: .\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        member.join("skills/s.md"),
+        "---\ndescription: A skill.\n---\nBody.\n",
+    )
+    .unwrap();
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    let row = listed
+        .stdout
+        .lines()
+        .find(|line| line.contains("skills/s.md"))
+        .unwrap();
+    assert!(row.contains("claude"), "{row}");
+    assert!(!row.contains("codex"), "{row}");
+}
+
 // A workspace builds each marketplace under `marketplaces/`, each to its own
 // `build.out`, with the workspace's shared fields.
 #[test]
