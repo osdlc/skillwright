@@ -167,8 +167,9 @@ pub(crate) fn check_packs(config: &MarketplaceConfig) -> Result<(), CoreError> {
 }
 
 /// [`check_packs`]'s second half, for an output that overlaps the vault:
-/// refuses a moved `packs` on a folder the vault reads notes from. `sources`
-/// are those folders; `located` spells `packs` from the vault's root.
+/// refuses a moved `packs` that lands on a folder the vault reads notes from.
+/// `sources` are those folders; `located` spells `packs` from the vault's
+/// root, `None` when it lands outside the vault.
 ///
 /// # Errors
 ///
@@ -183,20 +184,18 @@ pub(crate) fn check_packs_against_sources(
         if packs == profile.format().packs {
             continue;
         }
-        let at_vault = located(packs);
-        let spellings = std::iter::once(packs).chain(at_vault.as_deref());
-        for spelling in spellings {
-            if let Some(source) = sources.iter().find(|s| paths_overlap(spelling, s)) {
-                return Err(CoreError::refused(
-                    "path-collision",
-                    format!(
-                        "`{}.{PACKS_KEY}` is `{packs}`, which overlaps the source folder \
-                         `{source}`: the output overlaps the vault, and generated files must not \
-                         mix with notes. Nothing was written",
-                        profile.name
-                    ),
-                ));
-            }
+        let Some(at_vault) = located(packs) else {
+            continue;
+        };
+        if let Some(source) = sources.iter().find(|s| paths_overlap(&at_vault, s)) {
+            return Err(CoreError::refused(
+                "path-collision",
+                format!(
+                    "`{}.{PACKS_KEY}` is `{packs}`, which lands on the source folder `{source}`: \
+                     generated files must not mix with notes. Nothing was written",
+                    profile.name
+                ),
+            ));
         }
     }
     Ok(())

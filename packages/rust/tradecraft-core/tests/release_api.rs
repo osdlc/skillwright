@@ -1039,7 +1039,7 @@ fn a_windows_path_in_packs_is_unsafe() {
 }
 
 #[test]
-fn packs_on_a_source_folder_is_refused_when_the_output_overlaps_the_vault() {
+fn packs_landing_on_a_source_folder_is_refused() {
     for packs in [
         "plugins",
         "plugins/rev",
@@ -1052,17 +1052,31 @@ fn packs_on_a_source_folder_is_refused_when_the_output_overlaps_the_vault() {
             "---\nname: m\nbuild:\n  patterns:\n    skills: notes/*\nclaude: {{packs: {packs}}}\n---\n"
         );
         let vfs = root_vault(&root, &[TOOL_SKILL]);
-        for out in ["/vault", "/vault/dist"] {
-            let err = build_to(&vfs, out, &root).unwrap_err();
-            assert!(err.contains("source folder"), "{packs} at {out}: {err}");
-        }
+        let err = build_to(&vfs, "/vault", &root).unwrap_err();
+        assert!(err.contains("source folder"), "{packs}: {err}");
         assert!(vfs.exists(Path::new("/vault/plugins/rev/skills/a.md")));
     }
-    // Clear of the vault, the same name is only a folder.
-    let root = "---\nname: m\nclaude: {packs: plugins}\n---\n";
+    // Through a nested output too: it is where the folder lands that counts.
+    let root = "---\nname: m\nclaude: {packs: rev/skills}\n---\n";
     let vfs = root_vault(root, &[TOOL_SKILL]);
-    build_to(&vfs, "/market", root).unwrap();
-    assert!(vfs.exists(Path::new("/market/plugins/rev")));
+    let err = build_to(&vfs, "/vault/plugins", root).unwrap_err();
+    assert!(err.contains("refused"), "{err}");
+}
+
+#[test]
+fn packs_named_like_a_source_folder_is_allowed_where_it_lands_clear_of_it() {
+    let root = "---\nname: m\nclaude: {packs: plugins}\n---\n";
+    for out in ["/vault/dist", "/market"] {
+        let vfs = root_vault(root, &[TOOL_SKILL]);
+        build_to(&vfs, out, root).unwrap();
+        assert!(
+            vfs.exists(Path::new(&format!("{out}/plugins/rev"))),
+            "{out}"
+        );
+        assert!(vfs.exists(Path::new("/vault/plugins/rev/skills/a.md")));
+        // A rebuild reads the vault's `plugins/`, not the built one.
+        build_to(&vfs, out, root).unwrap();
+    }
 }
 
 #[test]
@@ -1091,7 +1105,7 @@ fn a_marketplace_notes_packs_meets_every_rail() {
     assert!(vfs.exists(Path::new("/top/v/skillwright.md")));
 
     // And it hides the output and meets the harness and source checks.
-    for (packs, refusal) in [(".pi", "path-collision"), ("plugins", "source folder")] {
+    for (packs, refusal) in [(".pi", "path-collision"), ("marketplaces", "source folder")] {
         let note = format!("---\nname: house\nclaude: {{packs: {packs}}}\n---\n");
         let vfs = root_vault("---\nname: house\n---\n", &[marked, (market, &note)]);
         let err = build_to(&vfs, "/vault", "---\nname: house\n---\n").unwrap_err();
