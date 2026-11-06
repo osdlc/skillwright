@@ -1317,6 +1317,12 @@ export interface Call {
   /** The call as written, for a refusal. */
   destination: string;
 
+  /**
+   * A plain `[[skill]]`: written as the skill's published name, with no
+   * call sigil, rather than as an invocation.
+   */
+  mention: boolean;
+
   /** The note the call is in, for a refusal. */
   caller: string;
 }

@@ -281,6 +281,9 @@ pub struct Call {
     pub targets: Option<Vec<String>>,
     /// The call as written, for a refusal.
     pub destination: String,
+    /// A plain `[[skill]]`: written as the skill's published name, with no
+    /// call sigil, rather than as an invocation.
+    pub mention: bool,
     /// The note the call is in, for a refusal.
     pub caller: String,
 }
@@ -419,6 +422,7 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
         },
         targets: None,
         destination: site.destination.clone(),
+        mention: site.mention,
         caller: site.caller.clone(),
     }
 }
@@ -497,6 +501,7 @@ mod tests {
                     shipped: true,
                 },
                 destination: "a".into(),
+                mention: false,
                 caller: "b.md".into(),
             }],
             links: vec![LinkSite {

@@ -49,6 +49,9 @@ to the harness. The `sw` prefix is the project's `namespace` setting.
 - `/[[skill]]` calls another skill. The build writes each harness's own form, such as
   `/plugin:skill` for Claude Code, `$plugin:skill` for Codex and `/skill:plugin-skill` for Pi.
   Write calls this way, not in one harness's form, so one note works in every harness.
+- `[[skill]]` without the slash names another skill without calling it. The build writes the
+  skill's name as each harness knows it: `plugin:skill` for Claude Code and Codex,
+  `plugin-skill` for Pi and `skill` for Cursor. Nothing of the named skill is copied.
 - To show a call as literal text, put a backslash before its slash. A fenced code block does
   not escape it; the build still resolves the call.
 
