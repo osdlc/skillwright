@@ -1,12 +1,90 @@
 {
   "schema": 1,
   "pr": 66,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "84825bb1fb4f563dc3914403cf8759846c63a510",
+  "base": "0c0aefa154524c500457d8900deb72dd447dd568",
+  "round": 1,
   "claim": {
     "owner": "unknown",
     "at": "2026-11-06T10:47:07.488Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/README.md",
+      "line": 61,
+      "title": "Load flow is silently wrong for a workspace member",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/README.md",
+      "line": 68,
+      "title": "Step 3 gives no source for out_root or namespace",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/authoring.rs",
+      "line": 2280,
+      "title": "Marketplace rename leaves inbound links dangling; test pins only the op shape",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/README.md",
+      "line": 75,
+      "title": "README does not say where apply lives",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/paths.rs",
+      "line": 16,
+      "title": "normalize_join and relative_path are generic helpers exported as 1.0 API",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/paths.rs",
+      "line": 155,
+      "title": "Comment says the hooks gap report names no host path; it can",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/export.rs",
+      "line": 183,
+      "title": "Rust-only doc link reaches the generated TypeScript",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
