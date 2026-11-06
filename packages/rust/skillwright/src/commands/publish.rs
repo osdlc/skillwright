@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tradecraft_core::{
-    CoreError, EntityKind, KNOWN_TARGETS, NativeVfs, PublishMode, PublishOutcome, PublishReason,
+    CoreError, EntityKind, KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason,
     PublishRequest, PublishStatus, PublishedFile, ReasonToken, SkippedNote, canonical_target,
     discover_components, publish_skill,
 };
@@ -245,7 +245,12 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Notes the vault scan could not read. Only a whole-vault run has any.
     let mut unreadable: Vec<SkippedNote> = Vec::new();
     if whole_vault {
-        let scan = match discover_components(&NativeVfs, &run.vault, None, &run.core_namespace()) {
+        let scan = match discover_components(
+            &run.source_vfs(None),
+            &run.vault,
+            None,
+            &run.core_namespace(),
+        ) {
             Ok(scan) => scan,
             // What discovery still refuses is run-level by construction — a
             // duplicate name, a bundle overlap, a symlink, a missing root.
@@ -384,7 +389,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 published_at: Some(published_at),
                 overwrite: flags.overwrite.clone(),
             };
-            match publish_skill(&NativeVfs, &request, &namespace) {
+            match publish_skill(&run.config_vfs(), &request, &namespace) {
                 Ok(report) => {
                     reported = true;
                     for file in report.files {

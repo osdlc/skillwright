@@ -18,8 +18,8 @@
 //! settings, as one JSON document. It is a separate flag rather than what
 //! `--json` prints because `--json`'s rows are an existing contract.
 
+use tradecraft_core::discover_components;
 use tradecraft_core::model::load::{LoadRequest, load};
-use tradecraft_core::{NativeVfs, discover_components};
 
 use crate::commands::marketplace::{MarketplaceInputs, marketplace_inputs};
 use crate::ctx::CommandContext;
@@ -60,7 +60,7 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
 
     let scan = match discover_components(
-        &NativeVfs,
+        &run.source_vfs(skills_root.as_deref()),
         &run.vault,
         skills_root.as_deref(),
         &run.core_namespace(),
@@ -141,7 +141,8 @@ fn print_model(
         assets,
         hooks,
     };
-    let market = match load(&NativeVfs, &request, &run.core_namespace()) {
+    let vfs = run.source_vfs(request.skills_root.as_deref());
+    let market = match load(&vfs, &request, &run.core_namespace()) {
         Ok(market) => market,
         Err(err) => return blocked(ctx.err, &format!("the marketplace would not load: {err}")),
     };

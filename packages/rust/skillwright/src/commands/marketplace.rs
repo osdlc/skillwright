@@ -26,8 +26,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use tradecraft_core::{
-    AssetSpec, ExportMode, ExportRequest, ExportUnit, HookFileSpec, MarketplaceConfig, NativeVfs,
-    export_skills, owned_paths,
+    AssetSpec, ExportMode, ExportRequest, ExportUnit, HookFileSpec, MarketplaceConfig,
+    effective_config, export_skills, owned_paths,
 };
 
 use crate::config::{ROOT_FILE, resolve_against_cwd, resolve_configured_path};
@@ -240,6 +240,13 @@ fn export_one(
         assets,
         hooks,
     } = marketplace_inputs(run);
+    let vfs = run.config_vfs();
+    let marketplace_config = effective_config(
+        &vfs,
+        run.scope(skills_root.as_deref(), marketplace.as_deref()),
+        &marketplace_config,
+        &run.core_namespace(),
+    );
 
     // --- the mode -----------------------------------------------------------
     // `check` never writes; `build --dry-run` renders through the same
@@ -327,7 +334,7 @@ fn export_one(
     }
 
     // --- run ----------------------------------------------------------------
-    let report = match export_skills(&NativeVfs, &request, &run.core_namespace()) {
+    let report = match export_skills(&vfs, &request, &run.core_namespace()) {
         Ok(report) => report,
         // An export has no partial report: its rails fire before anything is
         // staged, and a failed swap rolls back. So a failure means nothing

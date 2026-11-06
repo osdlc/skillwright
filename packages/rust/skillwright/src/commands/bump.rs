@@ -103,7 +103,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
     let namespace = run.core_namespace();
 
-    let scan = match discover_components(&NativeVfs, &run.vault, None, &namespace) {
+    let scan = match discover_components(&run.source_vfs(None), &run.vault, None, &namespace) {
         Ok(scan) => scan,
         Err(err) => {
             let message = err.to_string();

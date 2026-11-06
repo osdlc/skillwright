@@ -642,6 +642,7 @@ fn publish_onto(
     let runtime_target = runtime_target_for(&request.target);
     // The folder holding the note decides its kind, before the read: the
     // kind says which of the note's keys are skillwright's.
+    refuse_excluded(vfs, request)?;
     let resolved = publish_kind(vfs, request.skills_root.as_deref(), &request.skill_path);
     let note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
@@ -997,6 +998,25 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
         replaced_manifest: None,
         redundant_overrides: Vec::new(),
     }
+}
+
+/// Refuses a note `build.exclude` holds, named or not: what never ships from a
+/// build does not ship from a publish either.
+fn refuse_excluded(vfs: &dyn Vfs, request: &PublishRequest) -> Result<(), CoreError> {
+    let Some(root) = request.skills_root.as_deref() else {
+        return Ok(());
+    };
+    let Ok(relative) = request.skill_path.strip_prefix(root) else {
+        return Ok(());
+    };
+    let relative = crate::skill::forward_slashed(relative);
+    if crate::patterns::Patterns::read(vfs, root).excluded(&relative) {
+        return Err(CoreError::refused(
+            "excluded-note",
+            format!("{relative} matches `build.exclude`, so it never ships"),
+        ));
+    }
+    Ok(())
 }
 
 /// The kind a publish of the note at `skill_path` resolves to: the kind

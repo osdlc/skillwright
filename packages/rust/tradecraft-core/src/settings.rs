@@ -423,8 +423,12 @@ fn build(
         }
     };
     let mut kept = serde_yaml::Mapping::new();
+    let mut exclude = Vec::new();
+    let mut patterns = FolderPatterns::default();
     for (key, value) in map {
         match key.as_str() {
+            Some("exclude") => exclude = globs("build.exclude", value)?,
+            Some("patterns") => patterns = folder_patterns(value, warnings)?,
             Some(name) if BUILD_KEYS.contains(&name) => {
                 kept.insert(key.clone(), value.clone());
             }
@@ -434,7 +438,90 @@ fn build(
             None => warnings.push("a `build:` key that is not a string is ignored".to_owned()),
         }
     }
-    field("build", &serde_yaml::Value::Mapping(kept), "a build block")
+    let build: BuildSettings = field("build", &serde_yaml::Value::Mapping(kept), "a build block")?;
+    Ok(BuildSettings {
+        exclude,
+        patterns,
+        ..build
+    })
+}
+
+/// `build.patterns`, with unknown keys warned about and dropped.
+fn folder_patterns(
+    value: &serde_yaml::Value,
+    warnings: &mut Vec<String>,
+) -> Result<FolderPatterns, SettingsError> {
+    let map = match value {
+        serde_yaml::Value::Null => return Ok(FolderPatterns::default()),
+        serde_yaml::Value::Mapping(map) => map,
+        _ => {
+            return Err(SettingsError {
+                key: "build.patterns".to_owned(),
+                what: "a mapping",
+                detail: "it holds `plugins`, `skills`, `agents`, `commands`, `hooks` and `assets`"
+                    .to_owned(),
+            });
+        }
+    };
+    let mut patterns = FolderPatterns::default();
+    for (key, value) in map {
+        let Some(name) = key.as_str() else {
+            warnings.push("a `build.patterns` key that is not a string is ignored".to_owned());
+            continue;
+        };
+        let slot = match name {
+            "plugins" => &mut patterns.plugins,
+            "skills" => &mut patterns.skills,
+            "agents" => &mut patterns.agents,
+            "commands" => &mut patterns.commands,
+            "hooks" => &mut patterns.hooks,
+            "assets" => &mut patterns.assets,
+            _ => {
+                warnings.push(format!(
+                    "`build.patterns.{name}` is not a key skillwright reads; it is ignored"
+                ));
+                continue;
+            }
+        };
+        let key = format!("build.patterns.{name}");
+        *slot = globs(&key, value)?;
+        for glob in slot.iter() {
+            if crate::patterns::names_a_never_ship_folder(glob) {
+                warnings.push(format!(
+                    "`{key}` glob `{glob}` names a folder that never ships; it ships nothing"
+                ));
+            }
+        }
+    }
+    Ok(patterns)
+}
+
+/// A glob or a list of globs, each one checked.
+fn globs(key: &str, value: &serde_yaml::Value) -> Result<Vec<String>, SettingsError> {
+    let wrong_shape = || SettingsError {
+        key: key.to_owned(),
+        what: "a glob or a list of globs",
+        detail: format!("{value:?}"),
+    };
+    let globs: Vec<String> = match value {
+        serde_yaml::Value::Null => Vec::new(),
+        serde_yaml::Value::String(glob) => vec![glob.clone()],
+        serde_yaml::Value::Sequence(items) => items
+            .iter()
+            .map(|item| item.as_str().map(str::to_owned).ok_or_else(wrong_shape))
+            .collect::<Result<_, _>>()?,
+        _ => return Err(wrong_shape()),
+    };
+    for glob in &globs {
+        if let Some(problem) = crate::patterns::glob_problem(glob) {
+            return Err(SettingsError {
+                key: key.to_owned(),
+                what: "a valid glob",
+                detail: format!("`{glob}`: {problem}"),
+            });
+        }
+    }
+    Ok(globs)
 }
 
 /// The build config a root file's text describes: [`parse_root_file`], then

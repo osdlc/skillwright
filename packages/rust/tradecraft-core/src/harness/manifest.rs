@@ -10,6 +10,8 @@
 //! The functions here are the shapes; which harness writes which is its
 //! translator's choice ([`crate::harness::HarnessTranslator`]).
 
+use std::collections::BTreeSet;
+
 use serde::Serialize;
 
 use crate::error::CoreError;
@@ -58,7 +60,7 @@ pub const NAMING_KEY: &str = "naming";
 
 /// Where `profile`'s packs land: the marketplace block's `packs`, or the
 /// profile's own folder.
-pub(crate) fn packs_of<'c>(config: &'c MarketplaceConfig, profile: &HarnessProfile) -> &'c str {
+pub fn packs_of<'c>(config: &'c MarketplaceConfig, profile: &HarnessProfile) -> &'c str {
     config
         .blocks
         .get(profile.name)
@@ -67,8 +69,39 @@ pub(crate) fn packs_of<'c>(config: &'c MarketplaceConfig, profile: &HarnessProfi
         .unwrap_or(profile.format().packs)
 }
 
-/// Refuses a `packs` value that is not a relative path of its own: one that
-/// leaves the output, or that lands on another harness's files.
+/// Whether a folder at `a` and one at `b` are one, or one holds the other.
+/// Letter case is ignored: a host's filesystem may ignore it too.
+pub(crate) fn paths_overlap(a: &str, b: &str) -> bool {
+    a.split('/')
+        .zip(b.split('/'))
+        .all(|(a, b)| a.eq_ignore_ascii_case(b))
+}
+
+/// Every harness's manifest paths and the top folders the profiles name.
+fn harness_paths() -> BTreeSet<&'static str> {
+    let mut paths = BTreeSet::new();
+    for profile in crate::harness::with_plugin_format() {
+        let format = profile.format();
+        paths.extend(format.marketplace_manifest);
+        let declared = [
+            Some(format.packs),
+            format.marketplace_manifest,
+            Some(format.user_skills_dir),
+            Some(format.plugin_manifest),
+        ];
+        paths.extend(
+            declared
+                .into_iter()
+                .flatten()
+                .filter_map(|path| path.split_once('/').map(|(top, _)| top)),
+        );
+    }
+    paths
+}
+
+/// Refuses a `packs` value a build could not own: one that leaves the output,
+/// that lands on a harness's manifests or folders, or that another harness's
+/// `packs` overlaps. A harness's own default is always its own.
 ///
 /// # Errors
 ///
@@ -87,9 +120,10 @@ pub(crate) fn check_packs(config: &MarketplaceConfig) -> Result<(), CoreError> {
             ));
         }
         let packs = packs_of(config, profile);
+        // `:` is a Windows drive (`C:/x`), which every other test here passes.
         let unsafe_path = packs.is_empty()
             || packs.starts_with('/')
-            || packs.contains('\\')
+            || packs.contains(['\\', ':'])
             || packs.split('/').any(|part| matches!(part, "" | "." | ".."));
         if unsafe_path {
             return Err(CoreError::refused(
@@ -100,11 +134,22 @@ pub(crate) fn check_packs(config: &MarketplaceConfig) -> Result<(), CoreError> {
                 ),
             ));
         }
+        if packs != profile.format().packs
+            && let Some(taken) = harness_paths()
+                .into_iter()
+                .find(|path| paths_overlap(packs, path))
+        {
+            return Err(CoreError::refused(
+                "path-collision",
+                format!(
+                    "`{}.{PACKS_KEY}` is `{packs}`, which overlaps `{taken}`: a build replaces its \
+                     packs folder whole, and that path belongs to a harness. Nothing was written",
+                    profile.name
+                ),
+            ));
+        }
         for (other, taken) in &seen {
-            if packs == *taken
-                || packs.starts_with(&format!("{taken}/"))
-                || taken.starts_with(&format!("{packs}/"))
-            {
+            if paths_overlap(packs, taken) {
                 return Err(CoreError::refused(
                     "path-collision",
                     format!(
@@ -116,6 +161,42 @@ pub(crate) fn check_packs(config: &MarketplaceConfig) -> Result<(), CoreError> {
             }
         }
         seen.push((profile.name, packs));
+    }
+    Ok(())
+}
+
+/// [`check_packs`]'s second half, for an output that overlaps the vault:
+/// refuses a moved `packs` on a folder the vault reads notes from. `sources`
+/// are those folders; `located` spells `packs` from the vault's root.
+///
+/// # Errors
+///
+/// `refused: path-collision`.
+pub(crate) fn check_packs_against_sources(
+    config: &MarketplaceConfig,
+    sources: &BTreeSet<String>,
+    located: impl Fn(&str) -> Option<String>,
+) -> Result<(), CoreError> {
+    for profile in crate::harness::with_plugin_format() {
+        let packs = packs_of(config, profile);
+        if packs == profile.format().packs {
+            continue;
+        }
+        let at_vault = located(packs);
+        let spellings = std::iter::once(packs).chain(at_vault.as_deref());
+        for spelling in spellings {
+            if let Some(source) = sources.iter().find(|s| paths_overlap(spelling, s)) {
+                return Err(CoreError::refused(
+                    "path-collision",
+                    format!(
+                        "`{}.{PACKS_KEY}` is `{packs}`, which overlaps the source folder \
+                         `{source}`: the output overlaps the vault, and generated files must not \
+                         mix with notes. Nothing was written",
+                        profile.name
+                    ),
+                ));
+            }
+        }
     }
     Ok(())
 }

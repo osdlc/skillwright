@@ -108,7 +108,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             note_paths.push(note_path);
         }
         None => {
-            match discover_components(&NativeVfs, &run.vault, None, &namespace) {
+            match discover_components(&run.source_vfs(None), &run.vault, None, &namespace) {
                 Ok(scan) => {
                     for component in &scan.components {
                         if kind_has_renderer(component.kind) {
@@ -169,7 +169,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 // something that is not one.
                 skills_root: Some(run.vault.clone()),
             };
-            match status_of(&NativeVfs, &request, &namespace) {
+            match status_of(&run.config_vfs(), &request, &namespace) {
                 Ok(status) => {
                     if let Some(suggestion) = &status.version_bump_suggestion {
                         suggestions.push((

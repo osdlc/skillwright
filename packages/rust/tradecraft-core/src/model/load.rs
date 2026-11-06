@@ -1200,7 +1200,7 @@ fn inherit_targets(discovered: &mut [DiscoveredComponent], root: Option<&[String
 
 /// Lays a note's harness blocks over `slot`, key by key: the note wins where
 /// both set a key.
-fn merge_blocks(
+pub(crate) fn merge_blocks(
     slot: &mut BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
     from: &serde_json::Map<String, serde_json::Value>,
 ) {
