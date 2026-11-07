@@ -999,8 +999,8 @@ fn is_slug(s: &str) -> bool {
 /// scalar by shape.
 pub(crate) fn quoting_hint(value: &Value) -> &'static str {
     if value.is_number() || value.is_boolean() {
-        " — quote it. A serialiser types a bare scalar by its shape, \
-         and a long all-digit hash comes back as a float with the digits gone"
+        " — quote it. YAML reads an unquoted number, `true` or `false` as \
+         that type, not as text"
     } else {
         ""
     }
