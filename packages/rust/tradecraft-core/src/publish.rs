@@ -626,10 +626,9 @@ pub struct PublishReport {
 /// * `refused: no-renderer` when the note's resolved kind is none of
 ///   [`EntityKind::Skill`], [`EntityKind::Command`], [`EntityKind::Agent`]
 ///   and [`EntityKind::Plugin`]. Nothing is read past, projected, or written.
-/// * `refused: unknown-override-key` when a harness block for this
-///   destination names a key its harness does not read — for the note, and
-///   for every skill and command member of a pack. An agent reads no keys,
-///   so any non-empty block for this destination refuses.
+/// * `refused: unknown-override-key` when an agent, which reads no harness
+///   block, has a non-empty block for this destination. A skill's or
+///   command's key its harness does not read is dropped, and discovery warns.
 /// * `refused: unknown-target` when a harness block is keyed by a
 ///   name this build does not know. The same name in `targets` never
 ///   reaches here — it is a blocker, so it comes back *inside* the report,
@@ -836,9 +835,8 @@ fn publish_onto(
     // The load, between the read and the render, exactly where the
     // marketplace build runs it, so one note produces the same bytes on both
     // paths: embeds expanded, links and calls resolved, `arguments` and
-    // harness blocks carried. Folded and checked before anything renders: an
-    // unknown destination name or a key this harness does not read refuses
-    // there, with no file built.
+    // harness blocks carried. Folded before anything renders: an unknown
+    // destination name refuses there, with no file built.
     let component = load_component(
         vfs,
         &ComponentRequest {
@@ -1742,22 +1740,16 @@ pub fn publishes_to(
 /// — the same rule `targets` follows, and for the same reason: the
 /// destination a typo hurts is never the one in front of you.
 ///
-/// **Only the named target's keys are checked.** A key legal for `claude` and
-/// unknown to `codex` is the ordinary case and the whole point of the key, so
-/// checking every block at every destination would refuse every well-formed
-/// note. The consequence is honest and worth stating: a bad `codex` key
-/// surfaces the first time something publishes to `codex`.
-///
-/// A target the matrix has no declaration for at all refuses every one of its
-/// keys rather than passing them through. An unmapped harness receiving
-/// unchecked keys is the one outcome this validation exists to prevent.
+/// **Each block keeps only the keys its harness reads.** The rest are
+/// dropped; discovery warns about them, and they are never refused. A target
+/// the matrix has no declaration for keeps no keys, so an unmapped harness
+/// never receives unchecked ones.
 ///
 /// # Errors
 ///
 /// * `refused: unknown-target` — a block is keyed by a name outside
 ///   [`canonical_target`].
-/// * `refused: unknown-override-key` — the named target's block carries a key
-///   its harness does not read. The message names both.
+/// * `malformed` — the named target's `metadata` is not a mapping.
 pub fn overrides_for(
     note: &VaultFrontmatter,
     note_path: &Path,
@@ -1789,32 +1781,21 @@ pub fn overrides_for(
     }
 
     let wanted = canonical_target(target).unwrap_or(target);
-    if let Some(block) = folded.get(wanted) {
-        let accepted = accepted_override_keys(wanted);
-        let unknown: Vec<&str> = block
-            .keys()
-            .map(String::as_str)
-            .filter(|k| !accepted.contains(*k))
-            .collect();
-        if !unknown.is_empty() {
-            return Err(CoreError::refused(
-                "unknown-override-key",
-                format!(
-                    "{}: `{}` names {}, which `{wanted}` does not read. \
-                     A harness block is written in that harness's own key names, and this \
-                     build's capability matrix lists none of these for it",
-                    note_path.display(),
-                    ns.key(wanted),
-                    quoted(&unknown)
-                ),
-            ));
-        }
-        if block.get("metadata").is_some_and(|m| !m.is_object()) {
-            return Err(CoreError::malformed(
-                note_path,
-                format!("`{}.metadata` must be a mapping", ns.key(wanted)),
-            ));
-        }
+    // A key a harness does not read warns at discovery and is dropped here,
+    // never refused.
+    for (canonical, block) in &mut folded {
+        let accepted = accepted_override_keys(canonical);
+        block.retain(|key, _| accepted.contains(key));
+    }
+    if folded
+        .get(wanted)
+        .and_then(|block| block.get("metadata"))
+        .is_some_and(|m| !m.is_object())
+    {
+        return Err(CoreError::malformed(
+            note_path,
+            format!("`{}.metadata` must be a mapping", ns.key(wanted)),
+        ));
     }
     Ok(folded)
 }
@@ -4937,31 +4918,19 @@ mod tests {
     }
 
     #[test]
-    fn an_override_key_the_harness_does_not_read_is_refused_by_name() {
-        // AC-3. Codex's dialect omits `argument-hint`, so the harness never
-        // reads the key and the matrix does not list it — the refusal names
-        // both the destination and the key.
+    fn an_override_key_the_harness_does_not_read_is_dropped() {
+        // Codex's dialect omits `argument-hint`, so the key never reaches the
+        // file; discovery warns about it.
         let vfs = vault_with_overrides("sw-codex:\n  argument-hint: <path>\n");
-        let err = publish_skill(&vfs, &request("/dest", "codex"), &sw()).unwrap_err();
-        let message = err.to_string();
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
-        assert!(
-            message.starts_with("refused: unknown-override-key: "),
-            "{message}"
-        );
-        assert!(message.contains("codex"), "{message}");
-        assert!(message.contains("argument-hint"), "{message}");
-        // Nothing rendered, so nothing was written.
-        assert!(snapshot(&vfs, Path::new("/dest")).is_empty());
+        publish_skill(&vfs, &request("/dest", "codex"), &sw()).unwrap();
+        let text = published_skill_md(&vfs, "/dest/.agents/skills/code-review/SKILL.md");
+        assert!(!text.contains("argument-hint"), "{text}");
     }
 
     #[test]
-    fn a_destination_with_no_declaration_refuses_every_override_key() {
-        // The decision inside the check: an unmapped harness receives no
-        // unchecked keys. `cursor` is a destination this build maps to no
-        // runtime, so it has no roster and admits nothing. Asked of the
-        // validator directly, because a publish to `cursor` stops one gate
-        // earlier — there is no renderer to reach.
+    fn a_destination_with_no_declaration_drops_every_override_key() {
+        // An unmapped harness receives no unchecked keys: its block is
+        // emptied, at every destination.
         let note = VaultFrontmatter {
             overrides: serde_json::json!({"cursor": {"anything": 1}})
                 .as_object()
@@ -4969,14 +4938,14 @@ mod tests {
                 .clone(),
             ..VaultFrontmatter::default()
         };
-        let err = overrides_for(&note, Path::new("/vault/a.md"), "cursor", &sw()).unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("unknown-override-key"), "{message}");
-        assert!(message.contains("anything"), "{message}");
-
-        // The same block is untouched at a destination it does not name.
-        let folded = overrides_for(&note, Path::new("/vault/a.md"), "claude", &sw()).unwrap();
-        assert!(folded.contains_key("cursor"));
+        for target in ["cursor", "claude"] {
+            let folded = overrides_for(&note, Path::new("/vault/a.md"), target, &sw()).unwrap();
+            assert!(
+                folded
+                    .get("cursor")
+                    .is_none_or(|b| !b.contains_key("anything"))
+            );
+        }
     }
 
     #[test]
@@ -6093,19 +6062,16 @@ mod tests {
     }
 
     #[test]
-    fn a_pack_members_unknown_override_key_is_refused_as_it_is_standalone() {
+    fn a_pack_members_unknown_override_key_is_dropped_as_it_is_standalone() {
         let block = "sw-claude:\n  notARealKey: x\n";
         let vfs = commit_helper_with_overrides(block);
-        let standalone = publish_skill(&vfs, &commit_helper_request("claude"), &sw())
-            .unwrap_err()
-            .to_string();
-        assert!(standalone.contains("unknown-override-key"), "{standalone}");
-
-        let pack = publish_skill(&vfs, &plugin_request("claude"), &sw())
-            .unwrap_err()
-            .to_string();
-        assert!(pack.contains("unknown-override-key"), "{pack}");
-        assert!(pack.contains("notARealKey"), "{pack}");
+        publish_skill(&vfs, &commit_helper_request("claude"), &sw()).unwrap();
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+        let published = text_at(
+            &vfs,
+            "/dest/.claude/skills/git-tools/skills/commit-helper/SKILL.md",
+        );
+        assert!(!published.contains("notARealKey"), "{published}");
     }
 
     /// [`vault_with_plugin_and_command`] with `block` added to `ship`'s frontmatter.
@@ -6121,17 +6087,11 @@ mod tests {
     }
 
     #[test]
-    fn a_pack_command_members_unknown_override_key_is_refused() {
+    fn a_pack_command_members_unknown_override_key_is_dropped() {
         let vfs = ship_with_overrides("sw-claude:\n  notARealKey: x\n");
-
-        let err = publish_skill(&vfs, &plugin_request("claude"), &sw())
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("unknown-override-key"), "{err}");
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
     }
 
-    // A plugin folder holding its own manifest — an imported plugin, say —
-    // must not be written twice over the one the pack renders.
     #[test]
     fn a_containers_own_manifest_does_not_collide_with_the_rendered_one() {
         let vfs = vault_with_plugin();

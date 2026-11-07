@@ -84,7 +84,7 @@ an output folder: `--out <path>`, or `build.out` in `skillwright.md`.
 | `status` | Report each unit's publish state at each configured destination |
 | `bump` | Raise a plugin's `version` by one semver level, or with `--changed-since` every plugin that changed since a baseline |
 | `new` | Author a new marketplace, plugin or skill note |
-| `rename` | Rename a component, plugin or marketplace, and rewrite every link to it |
+| `rename` | Rename a component, plugin or marketplace, and rewrite the links to it. A link to a marketplace's `skillwright.md` itself is not rewritten |
 | `move` | Move a component to another plugin or marketplace |
 | `delete` | Move a component's note to the vault's trash |
 | `convert` | Change a note's kind and move it into that kind's folder |

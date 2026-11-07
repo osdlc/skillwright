@@ -134,7 +134,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 
 ## Harness blocks
 
-A block holds fields only that harness reads. These are the keys each block accepts, by the kind of note it sits on. Any other key gets a warning on a container and is refused on a component.
+A block holds fields only that harness reads. These are the keys each block accepts, by the kind of note it sits on. Any other key gets a warning and is left out of what that harness gets.
 
 ### `claude:`
 

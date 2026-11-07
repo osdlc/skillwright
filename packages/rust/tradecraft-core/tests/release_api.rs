@@ -763,7 +763,8 @@ fn a_blank_author_is_unset_in_a_note_as_in_the_root_file() {
         &vfs,
         "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
     );
-    assert_eq!(manifest["author"]["name"], "acme");
+    // Unset everywhere, and `owner` is not inherited, so there is none.
+    assert!(manifest.get("author").is_none(), "{manifest}");
     assert!(parse_root_file("---\nowner:\nauthor:\n---\n").is_ok());
 }
 

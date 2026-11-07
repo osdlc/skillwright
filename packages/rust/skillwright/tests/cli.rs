@@ -3727,3 +3727,155 @@ fn the_bump_advisory_runs_in_a_vault_of_several_marketplaces() {
             .contains("version: 1.0.0")
     );
 }
+
+/// `skillwright.md` directly in a kind folder is a reserved name: refused by
+/// name, never read as the root file or as a skill named after its folder.
+#[test]
+fn a_flat_skillwright_md_note_is_refused_as_a_reserved_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: home\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    for folder in ["skills", "plugins/p/skills"] {
+        fs::create_dir_all(root.join(folder)).unwrap();
+        fs::write(
+            root.join(folder).join("skillwright.md"),
+            "---\ndescription: Flat skill named skillwright.\n---\n\nX.\n",
+        )
+        .unwrap();
+    }
+    fs::write(
+        root.join("skills/ok.md"),
+        "---\ndescription: Ok.\n---\n\nY.\n",
+    )
+    .unwrap();
+
+    for cwd in [
+        root.to_path_buf(),
+        root.join("skills"),
+        root.join("plugins/p/skills"),
+    ] {
+        let list = run(&["list"], &cwd);
+        assert!(list.stdout.contains("skills/ok.md"), "{}", list.stdout);
+        assert!(!list.stdout.contains("Flat skill"), "{}", list.stdout);
+        let skipped = list.stderr.matches("skipped · reserved-name").count();
+        assert_eq!(skipped, 2, "{}", list.stderr);
+        let build = run(&["build", "--yes"], &cwd);
+        assert_ne!(build.code, 0, "{}", build.stderr);
+        assert!(build.stderr.contains("reserved-name"), "{}", build.stderr);
+        assert!(
+            !build.stderr.contains("No output folder"),
+            "{}",
+            build.stderr
+        );
+    }
+    assert!(
+        !root
+            .join("dist/.claude-plugin/packs/home/skills/skills")
+            .exists()
+    );
+}
+
+/// An unknown key in a skill's harness block warns and is left out; a known
+/// key with a wrong value is still refused.
+#[test]
+fn an_unknown_key_in_a_skills_harness_block_warns() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: home\nversion: 1.0.0\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("skills")).unwrap();
+    let skill = root.join("skills/a.md");
+    fs::write(
+        &skill,
+        "---\ndescription: d\nclaude:\n  frob: 1\n---\n\nX.\n",
+    )
+    .unwrap();
+
+    let build = run(&["build", "--yes"], root);
+    assert_eq!(build.code, 0, "{}", build.stderr);
+    assert!(build.stderr.contains("`claude.frob`"), "{}", build.stderr);
+    let text =
+        fs::read_to_string(root.join("dist/.claude-plugin/packs/home/skills/a/SKILL.md")).unwrap();
+    assert!(!text.contains("frob"), "{text}");
+
+    fs::write(
+        &skill,
+        "---\ndescription: d\nclaude:\n  metadata: 1\n---\n\nX.\n",
+    )
+    .unwrap();
+    let wrong = run(&["build", "--yes"], root);
+    assert_ne!(wrong.code, 0, "{}", wrong.stderr);
+}
+
+/// `list` names a duplicate's plugin rightly, spells its notes as its rows
+/// are, and warns once per note.
+#[test]
+fn list_names_each_duplicate_once_with_workspace_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("skillwright.md"), "---\nworkspace: true\n---\n").unwrap();
+    let member = root.join("marketplaces/barn");
+    fs::create_dir_all(member.join("skills")).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: barn\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    for file in ["a", "b", "c"] {
+        fs::write(
+            member.join(format!("skills/{file}.md")),
+            "---\nname: dup\ndescription: D.\n---\n\nX.\n",
+        )
+        .unwrap();
+    }
+
+    let list = run(&["list"], root);
+    assert_eq!(list.code, 2, "{}{}", list.stdout, list.stderr);
+    let all = format!("{}{}", list.stdout, list.stderr);
+    assert!(!all.contains("in no plugin"), "{all}");
+    assert!(all.contains("the marketplace's own plugin"), "{all}");
+    let named = "marketplaces/barn/skills/a.md, marketplaces/barn/skills/b.md, \
+                 marketplaces/barn/skills/c.md";
+    assert!(all.contains(named), "{all}");
+    for file in ["a", "b", "c"] {
+        let warned = all
+            .lines()
+            .filter(|l| l.starts_with(&format!("marketplaces/barn/skills/{file}.md  warning")))
+            .count();
+        assert_eq!(warned, 1, "{file}: {all}");
+    }
+}
+
+/// `owner` is not inherited: a plugin with no `author` gets the marketplace's
+/// `author`, never its `owner`.
+#[test]
+fn a_plugin_author_never_falls_back_to_the_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: home\nversion: 1.0.0\nowner: {name: Own}\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("skills")).unwrap();
+    fs::write(
+        root.join("skills/a.md"),
+        "---\ndescription: A.\n---\n\nX.\n",
+    )
+    .unwrap();
+    let build = run(&["build", "--yes"], root);
+    assert_eq!(build.code, 0, "{}", build.stderr);
+    let manifest =
+        fs::read_to_string(root.join("dist/.claude-plugin/packs/home/.claude-plugin/plugin.json"))
+            .unwrap();
+    assert!(!manifest.contains("Own"), "{manifest}");
+    let market = fs::read_to_string(root.join("dist/.claude-plugin/marketplace.json")).unwrap();
+    assert!(market.contains("Own"), "{market}");
+}

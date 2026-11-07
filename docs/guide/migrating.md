@@ -24,6 +24,7 @@ file is the only copy of the procedure and its key tables.
 | A default output folder | `build.out` or `--out`, required to build |
 | `marketplace.shim_target` | `build.launcher_path` |
 | `bump:` | `build.bump:`. A top-level `bump:` in `skillwright.md` is refused |
+| `owner` fills each plugin's `author` when `author` is unset | No fallback. Set `author` to keep a plugin author |
 | A `scripts/<name>` shim in each skill | No shim: calls to `${CLAUDE_PLUGIN_ROOT}/<launcher>` become paths relative to the skill on Codex, Cursor and Pi |
 
 The last row changes many built files in a vault with a launcher. The `migrate`
@@ -61,6 +62,7 @@ The same vault after:
 ---
 name: house
 owner: acme
+author: acme          # owner no longer fills it
 build:
   out: ..               # relative to this file: still the repository root
 ---

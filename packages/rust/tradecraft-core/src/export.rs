@@ -282,7 +282,7 @@ pub struct MarketplaceConfig {
     /// `claude_marketplace_manifest` and `cursor_marketplace_manifest`.
     #[serde(default)]
     pub description: Option<String>,
-    /// Default plugin author; falls back to `owner` when absent.
+    /// Default plugin author, inherited by every plugin. `owner` is not.
     #[serde(default)]
     pub author: Option<serde_json::Value>,
     /// Default plugin license, as an SPDX identifier. A distribution is
@@ -2661,7 +2661,7 @@ mod tests {
     }
 
     #[test]
-    fn a_build_refuses_an_override_key_the_harness_does_not_read() {
+    fn a_build_drops_an_override_key_the_harness_does_not_read_with_a_warning() {
         let vfs = example_vault();
         write(
             &vfs,
@@ -2669,9 +2669,20 @@ mod tests {
             "---\nname: review-guide\ndescription: Use review-guide.\nsw-codex:\n  \
              argument-hint: x\n---\n\n# review-guide\n",
         );
-        let err = export_refusal(&vfs);
-        assert!(err.contains("unknown-override-key"), "{err}");
-        assert!(paths_under(&vfs, Path::new("/market")).is_empty());
+        let report = export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.reason == "unknown-key" && w.detail.contains("codex.argument-hint")),
+            "{:?}",
+            report.warnings
+        );
+        let text = text_at(
+            &vfs,
+            "/market/.agents/packs/tools/skills/review-guide/SKILL.md",
+        );
+        assert!(!text.contains("argument-hint"), "{text}");
     }
 
     #[test]
@@ -3408,7 +3419,7 @@ mod tests {
     }
 
     #[test]
-    fn config_overrides_and_the_author_fallback_reach_the_manifests() {
+    fn config_overrides_reach_the_manifests_and_the_owner_is_not_an_author() {
         let vfs = example_vault();
         let mut request = request(ExportMode::Build);
         request.config.owner = Some(json!({ "name": "Kelly" }));
@@ -3439,10 +3450,9 @@ mod tests {
         );
         assert!(plugin.contains("\"license\": \"MIT\""), "{plugin}");
         assert!(plugin.contains("\"git\""), "{plugin}");
-        // No author, no plugin-level author override — the owner steps in,
-        // already an object and passed through.
-        assert!(plugin.contains("\"author\": {"), "{plugin}");
-        assert!(plugin.contains("\"name\": \"Kelly\""), "{plugin}");
+        // No author anywhere: `owner` is not inherited, so none is written.
+        assert!(!plugin.contains("\"author\""), "{plugin}");
+        assert!(!plugin.contains("Kelly"), "{plugin}");
 
         let codex = text_at(
             &vfs,

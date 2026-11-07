@@ -176,9 +176,8 @@ The first of these that has a value wins:
 4. Patterns in `skillwright.md`, for structure only.
 5. The folder convention: the name from the file or folder, the kind from the
    kind folder, the plugin from `plugins/<p>/`.
-6. The environment. The editor comes from `$VISUAL` or `$EDITOR`, and `publish`
-   and `adopt` default to each harness's user skill folder. Nothing here changes
-   what a build emits.
+6. The environment. `publish` and `adopt` default to each harness's user skill
+   folder. Nothing here changes what a build emits.
 7. Built-in defaults: `version` 0.1.0 with a warning, `license` UNLICENSED,
    every harness. Only the plugin of a root `skills/` folder takes `version`
    from this file, so its warning asks for it here. A `plugins/<marketplace>/`
@@ -262,10 +261,12 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
   Nothing records an old `out` or `packs`, so a move leaves the old folder in
   place. What happens next depends on the folder, and the fix is always to delete
   it:
-  - `out: dist` to `out: dist2` reports nothing.
+  - `out: dist` to `out: dist2` reports nothing when the old folder holds only
+    default packs folders. One that holds a moved `packs` folder inside the vault
+    reads as source, as below.
   - A harness's default packs folder under `out`, after `packs` moved away from it,
     gets a `stale-output` warning.
-  - A `packs` folder with no leading dot, inside the vault, reads as source. After
+  - A moved `packs` folder inside the vault reads as source, dot-named or not. After
     `packs: alt` moves, `build` and `check` stop on `dist/alt`, and the message says
     an earlier build wrote the file.
   - A folder outside the vault gets no warning.

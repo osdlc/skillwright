@@ -153,8 +153,7 @@ pub(crate) fn selected_harnesses(
 ///   `unknown-asset-plugin` — an asset that cannot land where it says.
 /// * `refused: unknown-hooks-plugin` / `duplicate-hooks-file` and what
 ///   [`crate::hooks_file::parse_hooks_file`] refuses.
-/// * `refused: unknown-target` / `unknown-override-key` — a harness block one
-///   of the requested harnesses cannot take.
+/// * `refused: unknown-target` — a harness block named for no known harness.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
 pub fn load(
     vfs: &dyn Vfs,
@@ -423,8 +422,7 @@ pub struct ComponentRequest<'a> {
 ///
 /// # Errors
 ///
-/// `refused: unknown-target` / `unknown-override-key` from the note's
-/// harness blocks, and what [`resolve_body`] refuses.
+/// `refused: unknown-target` from the note's harness blocks, and what [`resolve_body`] refuses.
 pub fn load_component(
     vfs: &dyn Vfs,
     request: &ComponentRequest<'_>,

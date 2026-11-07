@@ -57,7 +57,7 @@ A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-v
 
 - `[[note]]` links to another note or a file beside the skill. The build rewrites it as a plain
   markdown link, and copies the files a skill folder holds.
-- `\/[[skill]]` calls another skill. The build writes each harness's own form, such as
+- A `/` right before `[[skill]]` calls another skill. The build writes each harness's own form, such as
   `/plugin:skill` for Claude Code, `$plugin:skill` for Codex and `/skill:plugin-skill` for Pi.
   Write calls this way, not in one harness's form, so one note works in every harness.
 - `[[skill]]` without the slash names another skill without calling it. The build writes the
@@ -78,7 +78,7 @@ A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-v
    | `new marketplace <name> --description <text> [--owner <text>] [--author <text>]` | `marketplaces/<name>/skillwright.md`, for a workspace; add its `build.out` |
    | `new plugin <name> --description <text> [--marketplace <name>]` | `plugins/<name>/<name>.md` |
    | `new skill <name> --description <text> [--plugin <name>] [--marketplace <name>] [--targets <t>]` | a skill in `skills/`, or in `plugins/<name>/skills/` with `--plugin` |
-   | `rename <entry> <new-name>` | renames a note and rewrites every link to it |
+   | `rename <entry> <new-name>` | renames a note and rewrites the links to it; a link to a marketplace's `skillwright.md` itself stays as written |
    | `move <entry> --to-plugin <p> [--to-marketplace <m>]` | moves a component to another plugin |
    | `delete <entry> [--force]` | moves a note to the vault's trash; `--force` also trashes a non-empty container's members |
    | `convert <entry> --kind <kind>` | changes a note's kind and moves it into that kind's folder |

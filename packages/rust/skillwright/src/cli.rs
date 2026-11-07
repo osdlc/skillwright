@@ -260,7 +260,8 @@ enum Verb {
         #[command(subcommand)]
         what: NewVerb,
     },
-    /// Rename a component, plugin, or marketplace, rewriting every inbound link.
+    /// Rename a component, plugin, or marketplace, rewriting inbound links. For a
+    /// marketplace, a link to its `skillwright.md` itself is left as written.
     Rename(RenameArgs),
     /// Move a component to a new plugin, and marketplace when named.
     Move(MoveArgs),

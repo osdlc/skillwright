@@ -51,6 +51,7 @@ generator and regenerate.
    | `vault: <path>` | none: the file sits in that folder |
    | `namespace: <stem>` | `build.namespace`, or remove it for bare keys |
    | `marketplace.name`, `.display_name`, `.owner`, `.author`, `.license` | the same key at the top level |
+   | `marketplace.owner` with no `.author` | `owner`, plus `author` set to the same value, because `owner` no longer fills a plugin's author |
    | `marketplace.out`, `.harnesses`, `.require_descriptions` | the same key under `build:` |
    | `bump:` | `build.bump:`, with the same `patch` value. A top-level `bump:` is refused |
    | `marketplace.shim_target` | `build.launcher_path`, with the same value. If the key was absent and the vault relied on the old default, set `build.launcher_path: cli/sdlc`, because there is no default now |
@@ -94,12 +95,21 @@ generator and regenerate.
 5. Rename the keys. The migration must not change what ships, and the rule depends on the kind of
    note.
 
-   On a plugin note or the marketplace:
+   On a plugin note:
 
    | Old | New |
    |---|---|
-   | `sw-version`, `sw-author`, `sw-owner`, `sw-license`, `sw-keywords`, `sw-category`, `sw-targets` | the same word, bare |
+   | `sw-version`, `sw-author`, `sw-license`, `sw-keywords`, `sw-category`, `sw-targets` | the same word, bare |
    | `sw-display-name` | `display_name` |
+   | `sw: {version: …}` | the same keys at the top level |
+
+   On the marketplace, now `skillwright.md`:
+
+   | Old | New |
+   |---|---|
+   | `sw-version`, `sw-author`, `sw-owner`, `sw-license`, `sw-targets` | the same word, bare |
+   | `sw-display-name` | `display_name` |
+   | `sw-keywords`, `sw-category` | move them to each plugin note; `skillwright.md` does not read them |
    | `sw: {version: …}` | the same keys at the top level |
 
    On a skill, agent or command:
@@ -183,8 +193,8 @@ generator and regenerate.
 
 11. Replace hand-written skill calls. A body that spells a call to a known skill, such as `/name`,
     `/plugin:name` or `$plugin:name`, is right for one harness only, and `build` refuses it
-    `literal-skill-call`. Write `/[[name]]`, and each harness gets its own spelling. Put `\` before a
-    call meant literally. Publishing one skill does not check a bare `/name`, so run `build`.
+    `literal-skill-call`. Write a `/` right before `[[name]]`, and each harness gets its own
+    spelling. Put `\` before the `/` of a call meant literally. Publishing one skill does not check a bare `/name`, so run `build`.
 
 12. Verify. If `skillwright.md` moved and you run from another folder, add `--config <path>` to each
     command:
@@ -223,7 +233,7 @@ generator and regenerate.
       skill's folder on Codex, Cursor and Pi. In a vault with a launcher this can touch most built
       files.
     - Unknown keys under `metadata:` keep their YAML type, as step 5 says.
-    - A `/[[name]]` call renders in backticks, in a heading too.
+    - A call, a `/` right before `[[name]]`, renders in backticks, in a heading too.
     - Plugin overrides, which now reach that plugin's manifest.
 
     Anything else is a change to explain to the user before merging.

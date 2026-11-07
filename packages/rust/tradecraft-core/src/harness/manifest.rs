@@ -532,7 +532,6 @@ fn plugin_author(config: &MarketplaceConfig, plugin: &str) -> Option<serde_json:
         |own| &own.author,
         |market| &market.author,
     )
-    .or_else(|| config.owner.clone())
     .map(normalize_author)
 }
 

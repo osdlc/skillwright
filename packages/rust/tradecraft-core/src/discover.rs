@@ -239,8 +239,12 @@ impl DiscoveredComponent {
 /// What happens to one unknown key, as a warning says it. A key the namespace
 /// claims and a field of the `adopted` block are consumed on the read.
 fn unknown_key_fate(kind: EntityKind, key: &str, ns: &Namespace) -> &'static str {
+    let in_a_block = key
+        .split_once('.')
+        .is_some_and(|(block, _)| crate::publish::canonical_target(block).is_some());
     match kind {
         EntityKind::Plugin | EntityKind::Marketplace | EntityKind::Hook => "ignored",
+        _ if in_a_block => "ignored",
         _ if ns.is_ours(key) || key.starts_with(&format!("{}.", ns.key("adopted"))) => "dropped",
         EntityKind::Skill => "published under `metadata:`",
         EntityKind::Command => "carried as written",
@@ -325,6 +329,26 @@ pub(crate) fn unknown_keys(frontmatter: &VaultFrontmatter, kind: EntityKind) -> 
     let mut unknown = frontmatter.unknown.clone();
     if kind.holds_components() {
         unknown.extend(unknown_container_block_keys(&frontmatter.overrides, kind));
+    } else if matches!(kind, EntityKind::Skill | EntityKind::Command) {
+        unknown.extend(unknown_component_block_keys(&frontmatter.overrides));
+    }
+    unknown
+}
+
+/// The keys in a skill's or command's harness blocks that harness does not
+/// read, as `<harness>.<key>`. They warn, and the build drops them.
+fn unknown_component_block_keys(blocks: &Map<String, Value>) -> Vec<String> {
+    let mut unknown = Vec::new();
+    for (declared, block) in blocks {
+        let Some(canonical) = crate::publish::canonical_target(declared) else {
+            continue;
+        };
+        let accepted = crate::publish::accepted_override_keys(canonical);
+        for key in block.as_object().into_iter().flat_map(|b| b.keys()) {
+            if !accepted.contains(key) {
+                unknown.push(format!("{declared}.{key}"));
+            }
+        }
     }
     unknown
 }
@@ -685,6 +709,16 @@ fn discover_with(
             }
             continue;
         };
+        if placement.dir.is_none() && crate::paths::is_flat_root_file_name(entry_path) {
+            let err = CoreError::refused(
+                RESERVED_NAME_REASON,
+                "`skillwright.md` is reserved for the root file and marketplace notes. For a \
+                 skill named `skillwright`, move it to `skillwright/skillwright.md` or \
+                 `skillwright/SKILL.md` in the same folder",
+            );
+            skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+            continue;
+        }
         match read_source(vfs, vault_root, entry_path, placement, &placed, &files, ns) {
             Ok(Some(component)) => {
                 // An empty description is a container note that names and
@@ -751,7 +785,7 @@ fn discover_with(
     // and two plugins may each hold a `review`. What still cannot happen is
     // two components publishing onto one directory, which is exactly this key.
     type PublishKey<'a> = (Option<&'a str>, Option<&'a str>, EntityKind, &'a str);
-    let mut by_key: BTreeMap<PublishKey, &DiscoveredComponent> = BTreeMap::new();
+    let mut by_key: BTreeMap<PublishKey, Vec<&DiscoveredComponent>> = BTreeMap::new();
     for component in &discovered {
         let key = (
             component.marketplace.as_deref(),
@@ -759,28 +793,30 @@ fn discover_with(
             component.kind,
             component.name.as_str(),
         );
-        if let Some(first) = by_key.get(&key) {
-            let detail = format!(
-                "duplicate {} name `{}` in {}: {}, {} — two components cannot publish onto \
-                 one directory",
-                component.kind.as_str(),
-                component.name,
-                component
-                    .plugin
-                    .as_deref()
-                    .map_or_else(|| "no plugin".to_owned(), |p| format!("plugin `{p}`")),
-                first.vault_relative_path,
-                component.vault_relative_path
-            );
-            if !roster {
-                return Err(CoreError::refused("path-collision", detail));
-            }
-            for path in [&first.vault_relative_path, &component.vault_relative_path] {
-                warnings.push(collision_warning(path, &detail));
-            }
-            continue;
+        by_key.entry(key).or_default().push(component);
+    }
+    // Every note of a duplicate gets one warning, naming all of them.
+    for ((_, plugin, kind, name), group) in by_key.iter().filter(|(_, g)| g.len() > 1) {
+        let paths: Vec<&str> = group
+            .iter()
+            .map(|c| c.vault_relative_path.as_str())
+            .collect();
+        let detail = format!(
+            "duplicate {} name `{name}` in {}: {} — two components cannot publish onto one \
+             directory",
+            kind.as_str(),
+            plugin.map_or_else(
+                || "the marketplace's own plugin".to_owned(),
+                |p| format!("plugin `{p}`")
+            ),
+            paths.join(", ")
+        );
+        if !roster {
+            return Err(CoreError::refused("path-collision", detail));
         }
-        by_key.insert(key, component);
+        for path in paths {
+            warnings.push(collision_warning(path, &detail));
+        }
     }
     for outer in &discovered {
         // A container's directory holds the level below it by design, so that
@@ -1198,6 +1234,9 @@ fn classify(root: &Path, parts: &[String]) -> Option<Placement> {
     }
     None
 }
+
+/// The `reason` of a note named `skillwright.md` directly in a kind folder.
+pub const RESERVED_NAME_REASON: &str = "reserved-name";
 
 /// The entry file a skill may use in place of `<name>.md`, named by its folder.
 pub const SKILL_ENTRY: &str = "SKILL.md";

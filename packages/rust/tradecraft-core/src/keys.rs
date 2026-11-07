@@ -576,8 +576,8 @@ pub fn field_reference() -> String {
     out.push_str(
         "\n## Harness blocks\n\n\
          A block holds fields only that harness reads. These are the keys each block \
-         accepts, by the kind of note it sits on. Any other key gets a warning on a \
-         container and is refused on a component.\n",
+         accepts, by the kind of note it sits on. Any other key gets a warning and is \
+         left out of what that harness gets.\n",
     );
     for harness in HARNESS_BLOCKS {
         let Some(profile) = crate::harness::profile_named(harness) else {

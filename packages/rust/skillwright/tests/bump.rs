@@ -946,6 +946,11 @@ fn marketplace_picks_a_workspace_member_for_a_bump() {
 
     let bare = run(&["bump", "p", "--yes"], root);
     assert_ne!(bare.code, 0, "{}", bare.stderr);
+    assert!(
+        bare.stderr.contains("--marketplace <name>"),
+        "{}",
+        bare.stderr
+    );
     let one = run(&["bump", "p", "--marketplace", "one", "--yes"], root);
     assert_eq!(one.code, 0, "{}", one.stderr);
     let text = fs::read_to_string(&note).unwrap();
@@ -1046,4 +1051,42 @@ fn changed_since_a_ref_refuses_packs_on_a_harness_path_as_build_does() {
         result.stderr
     );
     assert_eq!(worktree_count(root), 1);
+}
+
+#[test]
+fn a_nested_marketplace_never_takes_the_root_files_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: home\nversion: 9.0.0\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    let barn = root.join("marketplaces/barn");
+    fs::create_dir_all(barn.join("skills")).unwrap();
+    fs::write(
+        barn.join("skillwright.md"),
+        "---\ndescription: Barn.\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        barn.join("skills/two.md"),
+        "---\ndescription: Two.\n---\n\nTwo.\n",
+    )
+    .unwrap();
+
+    let built = run(&["build", "--marketplace", "barn", "--yes"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(built.stderr.contains("missing-version"), "{}", built.stderr);
+    assert_eq!(built_version(root, "barn"), "0.1.0");
+
+    let bumped = run(&["bump", "barn", "--marketplace", "barn", "--yes"], root);
+    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
+    assert_eq!(
+        run(&["build", "--marketplace", "barn", "--yes"], root).code,
+        0
+    );
+    assert_eq!(built_version(root, "barn"), "0.1.1");
+    let outer = fs::read_to_string(root.join("skillwright.md")).unwrap();
+    assert!(outer.contains("version: 9.0.0"), "{outer}");
 }

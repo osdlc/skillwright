@@ -69,6 +69,11 @@
 //! one note bare and another under `sw` must be able to, in one process.
 //! `Namespace::default()` is bare.
 
+/// The README's code blocks, compiled and run as doctests so they cannot drift.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;
+
 pub mod adopt;
 pub mod authoring;
 pub mod compile;

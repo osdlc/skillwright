@@ -32,7 +32,7 @@ use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::normalize_thrown_reason;
-use crate::resolve::{CommonFlags, ResolvedRun, refuse_workspace, resolve_run, workspace_runs};
+use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, workspace_runs};
 
 /// The resolved flags of `skillwright bump`.
 pub struct BumpFlags {
@@ -250,9 +250,14 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
     // At a workspace root `--marketplace` picks the member, a vault of its own.
     let Some(only) = flags.marketplace.as_deref() else {
-        return refuse_workspace("bump", &run, ctx.err)
-            .err()
-            .unwrap_or(EXIT_OK);
+        return blocked(
+            ctx.err,
+            &format!(
+                "bump acts on one marketplace, and {} is a workspace. Pass --marketplace \
+                 <name>, or run it from inside marketplaces/<name>/",
+                run.vault.display()
+            ),
+        );
     };
     match workspace_runs(&run, &flags.common, Some(only), ctx.err) {
         Ok(members) => members

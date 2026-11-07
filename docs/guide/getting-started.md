@@ -67,6 +67,17 @@ Read each open issue and label it low, medium or high.
 `description` is what opts a note in. `name` defaults to the file's name. Every
 other key is optional; see the [field reference](../reference/fields.md).
 
+Give the plugin a version in `plugins/review/review.md`. A harness compares
+versions to decide whether an installed plugin is out of date, so a plugin with
+none is published as `0.1.0` with a `missing-version` warning:
+
+```markdown
+---
+description: Review helpers.
+version: 0.1.0
+---
+```
+
 Fields you want on every plugin can go in `skillwright.md`, and each plugin and
 skill inherits them:
 

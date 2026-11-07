@@ -111,6 +111,11 @@ impl Cascade {
         if config.name.is_none() {
             config.name = market.map(str::to_owned);
         }
+        // `version` is not inherited: a marketplace folder's version is its
+        // own note's, never the root file's above it.
+        if market.is_some_and(|m| marketplaces_in(containers).contains(m)) {
+            config.version = note.and_then(|n| n.identity.version.clone());
+        }
 
         // Each plugin note fills its own override block. A block the request
         // already spelled is left alone only field by field: a vault naming its

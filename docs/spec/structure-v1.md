@@ -16,7 +16,10 @@ code and is part of this spec.
 1. The vault is the folder holding `skillwright.md`.
 2. skillwright finds the file by walking up from the working directory. A
    `skillwright.md` at `<kind>/skillwright/skillwright.md` is the note of a
-   component named `skillwright`, and the walk goes past it.
+   component named `skillwright`, and the walk goes past it. A `skillwright.md`
+   directly in a kind folder, such as `skills/skillwright.md`, is a reserved name:
+   it is refused `reserved-name`, and the walk goes past it to the vault's root
+   file.
 3. The frontmatter's top-level keys are the marketplace's fields. `build:` holds
    tool settings. The body is not read.
 4. It is the only configuration file. There is no machine file.
@@ -140,8 +143,9 @@ each one.
 ## 7. Harness blocks
 
 1. `claude:`, `codex:`, `cursor:` and `pi:` hold fields only that harness reads.
-2. A block is checked against the keys that harness accepts. An unknown key is
-   refused on a component and warned about on a container.
+2. A block is checked against the keys that harness accepts. An unknown key
+   warns and is left out of what that harness gets, on a component and on a
+   container. A known key with a wrong value is refused.
 3. A block is merged over what skillwright generates, and `metadata` merges with
    the note's own.
 4. A block is emitted only for its harness.

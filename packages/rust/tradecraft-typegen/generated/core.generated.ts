@@ -162,7 +162,7 @@ export interface MarketplaceConfig {
    */
   description?: string;
 
-  /** Default plugin author; falls back to `owner` when absent. */
+  /** Default plugin author, inherited by every plugin. `owner` is not. */
   author?: unknown;
 
   /**
@@ -446,10 +446,7 @@ export interface MarketplaceFields {
    */
   owner?: unknown;
 
-  /**
-   * Default plugin author; falls back to `owner`. Inherited by every
-   * plugin.
-   */
+  /** Default plugin author, inherited by every plugin. `owner` is not. */
   author?: unknown;
 
   /**

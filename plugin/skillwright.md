@@ -1,6 +1,7 @@
 ---
 name: osdlc
 owner: osdlc
+author: osdlc
 license: MIT OR Apache-2.0
 build:
   out: .

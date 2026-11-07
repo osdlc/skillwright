@@ -90,7 +90,14 @@ pub fn find_root_file(vfs: &dyn Vfs, start: &Path) -> Option<PathBuf> {
     while let Some(here) = dir {
         let candidate = here.join(ROOT_FILE);
         let is_file = vfs.exists(&candidate) && !vfs.metadata(&candidate).is_ok_and(|m| m.is_dir);
-        if is_file && !is_component_note(&candidate) {
+        // A flat `<kind>/skillwright.md` inside a vault is a refused note,
+        // not a root file; the vault's root file is further up.
+        let note_inside = is_flat_root_file_name(&candidate)
+            && here
+                .parent()
+                .and_then(|up| find_root_file(vfs, up))
+                .is_some();
+        if is_file && !is_component_note(&candidate) && !note_inside {
             return Some(candidate);
         }
         dir = here.parent();
@@ -114,6 +121,17 @@ fn is_component_note(path: &Path) -> bool {
             name != "marketplaces" && KIND_DIRS.iter().any(|(dir, _)| *dir == name)
         });
     named && in_kind
+}
+
+/// Whether `path` is a `skillwright.md` directly inside a kind folder, such as
+/// `skills/skillwright.md`. That name is reserved, so discovery refuses it.
+pub(crate) fn is_flat_root_file_name(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == ROOT_FILE)
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| KIND_DIRS.iter().any(|(dir, _)| *dir == name))
 }
 
 /// The workspace root file above the marketplace whose root is `dir`, when

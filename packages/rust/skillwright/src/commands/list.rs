@@ -192,7 +192,22 @@ fn read_members(
             skipped.path = format!("{prefix}{}", skipped.path);
             scan.skipped.push(skipped);
         }
+        // A collision names its notes in its text too; spell them from the
+        // workspace root, as the rows are.
+        let collided: Vec<String> = inner
+            .warnings
+            .iter()
+            .filter(|w| w.reason == "path-collision")
+            .map(|w| w.path.clone())
+            .collect();
         for mut warning in inner.warnings {
+            if warning.reason == "path-collision" {
+                for path in &collided {
+                    warning.detail = warning
+                        .detail
+                        .replace(&format!(" {path}"), &format!(" {prefix}{path}"));
+                }
+            }
             warning.path = format!("{prefix}{}", warning.path);
             scan.warnings.push(warning);
         }

@@ -35,6 +35,7 @@ vfs.write_file(
 )?;
 
 let request = PublishRequest {
+    config: None,
     skill_path: PathBuf::from("/vault/skills/code-review.md"),
     destination_root: PathBuf::from("/project"),
     user_folders: false,

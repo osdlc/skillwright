@@ -40,8 +40,7 @@ pub struct MarketplaceFields {
     /// `{name, email, url}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<serde_json::Value>,
-    /// Default plugin author; falls back to `owner`. Inherited by every
-    /// plugin.
+    /// Default plugin author, inherited by every plugin. `owner` is not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<serde_json::Value>,
     /// Default plugin license, as an SPDX identifier. Inherited by every
