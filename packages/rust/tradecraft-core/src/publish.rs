@@ -1785,7 +1785,11 @@ pub fn overrides_for(
     // never refused.
     for (canonical, block) in &mut folded {
         let accepted = accepted_override_keys(canonical);
-        block.retain(|key, _| accepted.contains(key));
+        // Not `Map::retain`: the serde_json floor predates it.
+        *block = std::mem::take(block)
+            .into_iter()
+            .filter(|(key, _)| accepted.contains(key))
+            .collect();
     }
     if folded
         .get(wanted)
