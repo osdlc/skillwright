@@ -103,8 +103,9 @@ segment matches any number of segments. Globs are relative to this file.
   ships as a file of that skill, with or without a `description`.
 - A plugin's `assets/` ships whatever its folders are called, and a link into it
   is allowed.
-- Output under the current `out` and `packs` is never read as source. A folder an
-  earlier build left elsewhere can be: see `packs` below.
+- Output under the current `out` and `packs` is never read as source, also when
+  `--out` or `bump --changed-since` builds somewhere else. A folder an earlier
+  build left elsewhere can be: see `packs` below.
 
 `exclude` adds to the folders that never ship, and `publish <note>` refuses a note
 it matches. It does not apply to a plugin's `assets/`. A body link or embed that reaches a never-ship or excluded file is

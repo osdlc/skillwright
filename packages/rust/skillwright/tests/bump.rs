@@ -825,6 +825,76 @@ fn a_ref_from_before_a_packs_move_still_finds_the_change() {
     );
 }
 
+fn copy_dir(from: &Path, to: &Path) {
+    for entry in fs::read_dir(from).unwrap().flatten() {
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            fs::create_dir_all(&target).unwrap();
+            copy_dir(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+/// A built `project` whose Pi packs sit in a plain folder inside `out`, which
+/// only `build.out` marks as output.
+fn built_with_moved_packs() -> tempfile::TempDir {
+    let dir = project("  harnesses: [claude, pi]\n");
+    let root = dir.path();
+    let config = fs::read_to_string(root.join("skillwright.md")).unwrap();
+    fs::write(
+        root.join("skillwright.md"),
+        config.replace("name: acme\n", "name: acme\npi: {packs: pi-packs}\n"),
+    )
+    .unwrap();
+    let built = run(&["build", "--yes"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(root.join("market/pi-packs/widget").is_dir());
+    dir
+}
+
+#[test]
+fn changed_since_another_folder_does_not_read_the_moved_packs_in_out() {
+    let dir = built_with_moved_packs();
+    let root = dir.path();
+    let baseline = tempfile::tempdir().unwrap();
+    copy_dir(&root.join("market"), baseline.path());
+    write_skill(root, "widget", "Second draft.");
+
+    let since = baseline.path().display().to_string();
+    let result = run(&["bump", "--changed-since", &since, "--yes"], root);
+    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
+    assert!(plugin_note(root, "widget").contains("version: 0.2.2"));
+    assert!(plugin_note(root, "gadget").contains("version: 1.0.0"));
+}
+
+#[test]
+fn changed_since_a_ref_with_out_committed_does_not_read_its_moved_packs() {
+    let dir = built_with_moved_packs();
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "--quiet", "-m", "one"]);
+    write_skill(root, "widget", "Second draft.");
+
+    let result = run(&["bump", "--changed-since", "HEAD", "--yes"], root);
+    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
+    assert!(plugin_note(root, "widget").contains("version: 0.2.2"));
+    assert!(plugin_note(root, "gadget").contains("version: 1.0.0"));
+}
+
+#[test]
+fn build_into_another_folder_does_not_read_the_moved_packs_in_out() {
+    let dir = built_with_moved_packs();
+    let root = dir.path();
+    let other = tempfile::tempdir().unwrap();
+    let out = other.path().display().to_string();
+    let result = run(&["build", "--out", &out, "--yes"], root);
+    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
+    assert!(other.path().join("pi-packs/widget").is_dir());
+}
+
 /// A vault of two marketplaces, each with a plugin `p`, building to `dist`.
 fn two_marketplaces(root: &Path) {
     fs::write(
