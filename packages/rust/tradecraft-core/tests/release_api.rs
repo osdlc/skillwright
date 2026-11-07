@@ -2112,3 +2112,42 @@ fn several_marketplaces_each_hide_their_own_moved_folder() {
     assert!(!view.exists(Path::new("/vault/mva/p/skills/s/SKILL.md")));
     assert!(!view.exists(Path::new("/vault/mvb/p/.claude-plugin/plugin.json")));
 }
+
+/// `load_marketplace` on a member named after a kind folder loads that
+/// member, not the workspace above it, and `export_skills` builds it.
+#[test]
+fn load_marketplace_loads_a_member_named_after_a_kind_folder() {
+    for name in ["skills", "agents", "plugins", "skillwright"] {
+        let vfs = MemVfs::new();
+        write(&vfs, "/w/skillwright.md", "---\nworkspace: true\n---\n");
+        let member = format!("/w/marketplaces/{name}");
+        write(
+            &vfs,
+            &format!("{member}/skillwright.md"),
+            &format!("---\nname: {name}\nbuild:\n  out: dist\n---\n"),
+        );
+        write(
+            &vfs,
+            &format!("{member}/plugins/p/skills/a.md"),
+            "---\ndescription: A.\n---\n\nX.\n",
+        );
+        let loaded =
+            tradecraft_core::load_marketplace(&vfs, Path::new(&member), Path::new("/home"))
+                .unwrap()
+                .unwrap();
+        assert_eq!(loaded.dir, PathBuf::from(&member), "{name}");
+        assert!(!loaded.root.workspace, "{name}");
+        let mut req = request();
+        req.vault_root = loaded.dir.clone();
+        req.out_root = loaded.out_root.clone().unwrap();
+        req.config = loaded.inputs.config.clone();
+        req.marketplace = Some(name.to_owned());
+        export_skills(&vfs, &req, &loaded.namespace).unwrap();
+        assert!(
+            vfs.exists(&PathBuf::from(format!(
+                "{member}/dist/.claude-plugin/marketplace.json"
+            ))),
+            "{name}"
+        );
+    }
+}

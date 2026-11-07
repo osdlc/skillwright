@@ -3879,3 +3879,140 @@ fn a_plugin_author_never_falls_back_to_the_owner() {
     let market = fs::read_to_string(root.join("dist/.claude-plugin/marketplace.json")).unwrap();
     assert!(market.contains("Own"), "{market}");
 }
+
+/// A workspace member named after a kind folder, or `skillwright`, is a
+/// marketplace: run from inside it, every verb acts on that member alone.
+#[test]
+fn a_member_named_after_a_kind_folder_is_its_own_marketplace() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("skillwright.md"), "---\nworkspace: true\n---\n").unwrap();
+    let names = [
+        "skills",
+        "agents",
+        "commands",
+        "hooks",
+        "plugins",
+        "marketplaces",
+        "skillwright",
+    ];
+    for name in names.iter().chain(&["barn"]) {
+        let member = root.join("marketplaces").join(name);
+        fs::create_dir_all(member.join("plugins/p/skills")).unwrap();
+        fs::write(
+            member.join("skillwright.md"),
+            format!("---\nname: {name}\nbuild:\n  out: dist\n---\n"),
+        )
+        .unwrap();
+        fs::write(
+            member.join("plugins/p/p.md"),
+            "---\ndescription: P.\nversion: 1.0.0\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            member.join("plugins/p/skills/a.md"),
+            format!("---\ndescription: A in {name}.\n---\n\nX.\n"),
+        )
+        .unwrap();
+    }
+
+    for name in names {
+        let member = root.join("marketplaces").join(name);
+        for cwd in [member.clone(), member.join("plugins/p/skills")] {
+            let list = run(&["list"], &cwd);
+            assert_eq!(list.code, 0, "{name}: {}{}", list.stdout, list.stderr);
+            assert!(
+                list.stdout.contains("plugins/p/skills/a.md"),
+                "{name}: {}",
+                list.stdout
+            );
+            assert!(!list.stdout.contains("barn"), "{name}: {}", list.stdout);
+        }
+        let build = run(&["build", "--yes"], &member);
+        assert_eq!(build.code, 0, "{name}: {}", build.stderr);
+        assert!(
+            member.join("dist/.claude-plugin/marketplace.json").exists(),
+            "{name}: {}",
+            build.stderr
+        );
+        assert!(!root.join("marketplaces/barn/dist").exists(), "{name}");
+        let bump = run(&["bump", "p", "--yes"], &member);
+        assert_eq!(bump.code, 0, "{name}: {}", bump.stderr);
+        let note = fs::read_to_string(member.join("plugins/p/p.md")).unwrap();
+        assert!(note.contains("version: 1.0.1"), "{name}: {note}");
+    }
+
+    // A flat `skillwright.md` inside the `skills` member is still reserved,
+    // and running from its folder still finds the member.
+    let inner = root.join("marketplaces/skills/skills");
+    fs::create_dir_all(&inner).unwrap();
+    fs::write(
+        inner.join("skillwright.md"),
+        "---\ndescription: Flat.\n---\n\nY.\n",
+    )
+    .unwrap();
+    let list = run(&["list"], &inner);
+    assert!(
+        list.stdout.contains("plugins/p/skills/a.md"),
+        "{}",
+        list.stdout
+    );
+    assert!(!list.stdout.contains("barn"), "{}", list.stdout);
+    assert_eq!(
+        list.stderr.matches("skipped · reserved-name").count(),
+        1,
+        "{}",
+        list.stderr
+    );
+}
+
+/// In a vault that is not a workspace, `marketplaces/skills/skillwright.md` is
+/// a marketplace's note, not a reserved name. A flat `skillwright.md` inside
+/// that marketplace's `skills/` still is.
+#[test]
+fn a_nested_marketplace_named_after_a_kind_folder_is_not_reserved() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: home\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    let market = root.join("marketplaces/skills");
+    fs::create_dir_all(market.join("skills")).unwrap();
+    fs::write(market.join("skillwright.md"), "---\nname: skills\n---\n").unwrap();
+    fs::write(
+        market.join("skills/a.md"),
+        "---\ndescription: A.\n---\n\nX.\n",
+    )
+    .unwrap();
+
+    let list = run(&["list"], root);
+    assert!(!list.stderr.contains("reserved-name"), "{}", list.stderr);
+    assert!(
+        list.stdout.contains("marketplaces/skills/skills/a.md"),
+        "{}",
+        list.stdout
+    );
+    let build = run(&["build", "--marketplace", "skills", "--yes"], root);
+    assert_eq!(build.code, 0, "{}", build.stderr);
+
+    fs::write(
+        market.join("skills/skillwright.md"),
+        "---\ndescription: Flat.\n---\n\nY.\n",
+    )
+    .unwrap();
+    let list = run(&["list"], root);
+    assert_eq!(
+        list.stderr.matches("skipped · reserved-name").count(),
+        1,
+        "{}",
+        list.stderr
+    );
+    assert!(
+        list.stderr
+            .contains("marketplaces/skills/skills/skillwright.md"),
+        "{}",
+        list.stderr
+    );
+}

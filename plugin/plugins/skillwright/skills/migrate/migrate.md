@@ -104,8 +104,9 @@ generator and regenerate.
    | Old | New |
    |---|---|
    | `sw-version`, `sw-author`, `sw-owner`, `sw-license`, `sw-targets` | the same word, bare |
+   | `sw-owner` with no `sw-author` | `owner`, and add `author` with the same value. The old build used `owner` as every plugin's `author`, and the new one does not. Every plugin inherits `author` from `skillwright.md`, so set it there, unless only some plugins should get it: then set it on those plugin notes |
    | `sw-display-name` | `display_name` |
-   | `sw-keywords`, `sw-category` | move them to each plugin note; `skillwright.md` does not read them |
+   | `sw-keywords`, `sw-category` | delete the key. They shipped nothing from the marketplace, and `skillwright.md` does not read them. Copying them to plugin notes adds new output, so it is not part of the migration: tell the user, and leave it to them |
    | `sw: {version: …}` | the same keys at the top level |
 
    On a skill, agent or command:

@@ -96,7 +96,8 @@ pub fn find_root_file(vfs: &dyn Vfs, start: &Path) -> Option<PathBuf> {
             && here
                 .parent()
                 .and_then(|up| find_root_file(vfs, up))
-                .is_some();
+                .and_then(|above| above.parent().map(Path::to_path_buf))
+                .is_some_and(|vault| is_reserved_note(&vault, &candidate));
         if is_file && !is_component_note(&candidate) && !note_inside {
             return Some(candidate);
         }
@@ -123,8 +124,22 @@ fn is_component_note(path: &Path) -> bool {
     named && in_kind
 }
 
-/// Whether `path` is a `skillwright.md` directly inside a kind folder, such as
-/// `skills/skillwright.md`. That name is reserved, so discovery refuses it.
+/// Whether `path`, under the vault at `vault`, is a reserved note: a
+/// `skillwright.md` directly inside a kind folder, such as
+/// `skills/skillwright.md`. `marketplaces/<m>/skillwright.md` is never one,
+/// even when `<m>` is a kind folder's name: that is a marketplace's own file.
+fn is_reserved_note(vault: &Path, path: &Path) -> bool {
+    let relative = path.strip_prefix(vault).unwrap_or(path);
+    let parts: Vec<_> = relative.components().collect();
+    let marketplace_file = parts.len() == 3
+        && parts[0].as_os_str() == WORKSPACE_DIR
+        && parts[2].as_os_str() == ROOT_FILE;
+    is_flat_root_file_name(path) && !marketplace_file
+}
+
+/// Whether `path` is a `skillwright.md` directly inside a folder named after a
+/// kind folder. Discovery refuses it unless it is a marketplace's file, which
+/// discovery places as one before it gets here.
 pub(crate) fn is_flat_root_file_name(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == ROOT_FILE)
         && path

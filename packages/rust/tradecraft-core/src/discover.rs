@@ -1038,10 +1038,12 @@ fn old_marketplace_note(rel: &str) -> Option<&str> {
 
 /// The marketplace folder of the old note form as a workspace member scans
 /// it: `<m>.md` at the member's own root. A note with no keys is the author's.
+/// A member named `skillwright` has its root file there instead.
 fn old_member_note<'a>(vfs: &dyn Vfs, root: &'a Path, path: &Path) -> Option<&'a str> {
     let market = root.file_name()?.to_str()?;
     let file = path.strip_prefix(root).ok()?.to_str()?;
-    (md_stem(file) == Some(market)
+    (file != "skillwright.md"
+        && md_stem(file) == Some(market)
         && has_frontmatter_keys(vfs, path)
         && matches!(crate::patterns::workspace_above(vfs, root), Ok(Some(_))))
     .then_some(market)
