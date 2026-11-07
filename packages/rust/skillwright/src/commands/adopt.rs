@@ -53,7 +53,7 @@ use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked, not_implemen
 use crate::git_source::{fetch_git_source, parse_git_source};
 use crate::prompt::{confirm_write, plan_flow};
 use crate::report::{normalize_thrown_reason, render_adopt_tally, render_adopted_line};
-use crate::resolve::{CommonFlags, resolve_run, resolve_skills_root};
+use crate::resolve::{CommonFlags, refuse_workspace, resolve_run, resolve_skills_root};
 
 /// What `--as` exits 2 with.
 const STUB_AS: &str = "`--as <name>` renames one source on the way in. The core derives the adopted name itself — the source frontmatter's `name` slugified, or the source directory's basename — and `AdoptRequest` carries no override, so honouring the flag would mean naming a skill here instead of leaving that to the core.";
@@ -71,7 +71,7 @@ pub struct AdoptFlags {
     pub from_git: Vec<String>,
     /// The plugin group adopted skills are stamped with.
     pub plugin: Option<String>,
-    /// Repeatable. What lands in `sw-targets`.
+    /// Repeatable. What lands in `targets`.
     pub set_targets: Vec<String>,
     /// Repeatable. Adopt only these skills, by name or source-relative path.
     pub only: Vec<String>,
@@ -158,6 +158,9 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("adopt", &run, ctx.err) {
+        return code;
+    }
 
     // --- sources --------------------------------------------------------
     // Positional paths and `--from` are one list, resolved against the
@@ -218,21 +221,29 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let sources: Vec<ResolvedSource> = if asked_for_a_source {
         named.into_iter().chain(fetched).collect()
     } else {
-        run.config
-            .as_ref()
-            .map(|c| c.scan_locations.as_slice())
-            .unwrap_or_default()
-            .iter()
-            .map(|s| ResolvedSource {
-                path: resolve_configured_path(s, &run.config_dir),
-                label: None,
-            })
-            .collect()
+        // `build.scan_locations`, else each harness's user skill folder that
+        // exists: a folder that is not there holds nothing to adopt.
+        let configured = &run.config.build.scan_locations;
+        if configured.is_empty() {
+            run.user_skill_folders()
+                .into_iter()
+                .filter(|(dir, _)| dir.is_dir())
+                .map(|(path, _)| ResolvedSource { path, label: None })
+                .collect()
+        } else {
+            configured
+                .iter()
+                .map(|s| ResolvedSource {
+                    path: resolve_configured_path(s, &run.config_dir),
+                    label: None,
+                })
+                .collect()
+        }
     };
     if sources.is_empty() && fetch_failed.is_empty() {
         return usage_error(
             ctx.err,
-            "adopt needs a source: pass a path (or --from <location> / --from-git <ref>), or register scan locations in the configuration",
+            "adopt needs a source: pass a path (or --from <location> / --from-git <ref>), or set `build.scan_locations` in skillwright.md",
         );
     }
     // `--only` names skills WITHIN a source, and the core refuses a name
@@ -251,7 +262,7 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // be what a build scans. A source that is not there is left to the
     // core, which answers `corpus root not found` — checking it here would
     // be a second, stricter spelling of that refusal.
-    let skills_root = resolve_skills_root(flags.into.as_deref(), &run, &ctx.cwd);
+    let skills_root = resolve_skills_root(flags.into.as_deref(), &ctx.cwd);
 
     // --- confirmation -----------------------------------------------------
     // Adoption writes notes into the vault, so it confirms like a publish.
@@ -301,20 +312,15 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
             let _ = writeln!(ctx.err, "adopting {shown} -> {}", run.vault.display());
         }
 
-        let request = AdoptRequest {
-            source: source.path.clone(),
-            vault_root: run.vault.clone(),
-            skills_root: skills_root.clone(),
-            plugin: flags.plugin.clone(),
-            source_label: source.label.clone(),
-            format: None,
-            also_scan: Vec::new(),
-            targets: (!flags.set_targets.is_empty()).then_some(flags.set_targets.clone()),
-            skills: (!flags.only.is_empty()).then_some(flags.only.clone()),
-            overwrite: flags.overwrite.clone(),
-            mode: AdoptMode::Write,
-            adopted_at: adopted_at.clone(),
-        };
+        let mut request =
+            AdoptRequest::new(source.path.clone(), run.vault.clone(), adopted_at.clone());
+        request.skills_root = skills_root.clone();
+        request.plugin = flags.plugin.clone();
+        request.source_label = source.label.clone();
+        request.targets = (!flags.set_targets.is_empty()).then_some(flags.set_targets.clone());
+        request.skills = (!flags.only.is_empty()).then_some(flags.only.clone());
+        request.overwrite = flags.overwrite.clone();
+        request.mode = AdoptMode::Write;
 
         match adopt_skills(vfs, &request, &namespace) {
             Ok(report) => {

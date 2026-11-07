@@ -80,12 +80,12 @@
 //! first file, so a skill whose third resource escapes leaves the first two
 //! unwritten.
 //!
-//! # `sw-targets` narrows publication, and it is not a per-file outcome
+//! # `targets` narrows publication, and it is not a per-file outcome
 //!
 //! The publish spec gives the key three readings, and
 //! two of them stop a publish:
 //!
-//! | `sw-targets` | This destination |
+//! | `targets` | This destination |
 //! |---|---|
 //! | absent | published — every destination, the ordinary vault |
 //! | present, naming it | published |
@@ -140,7 +140,7 @@
 //! branch inside the writer: it runs `publish_onto`, the ordinary path,
 //! against a [`crate::vfs::PreviewVfs`] wrapped around the caller's own
 //! filesystem. Reads fall through to the real tree; writes land in memory. The
-//! rail, the kind check, `sw-targets`, [`PublishReport::not_published`], the
+//! rail, the kind check, `targets`, [`PublishReport::not_published`], the
 //! projection and the byte-and-execute-bit comparison are the same
 //! instructions in both modes, over different bytes.
 //!
@@ -176,7 +176,9 @@ use std::collections::BTreeMap;
 
 use crate::compile::Closure;
 use crate::content::SkillProjection;
+use crate::discover::{DiscoveryWarning, unknown_key_warning, unknown_keys};
 use crate::error::CoreError;
+use crate::export::MarketplaceConfig;
 use crate::frontmatter::{
     EntityKind, KindHints, KindSource, ResolvedKind, VaultFrontmatter, resolve_kind,
 };
@@ -188,14 +190,16 @@ use crate::manifest::{
     DestinationManifest, MANIFEST_RELATIVE_PATH, ManifestEntry, ManifestState, manifest_path,
     read_manifest, write_manifest,
 };
+use crate::model::Cascade;
 use crate::model::load::{ComponentRequest, load_component, load_plugin};
 use crate::namespace::Namespace;
 use crate::projection::{ProjectedFile, RedundantOverride, file_hash};
-use crate::vault::read_vault_skill;
+use crate::vault::read_vault_note;
 use crate::vfs::{PreviewVfs, Vfs};
 
 /// One publish: this note, to this destination, for this target.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PublishRequest {
     /// Absolute path to the vault note. Not a directory — a skill is a note.
     pub skill_path: PathBuf,
@@ -216,15 +220,16 @@ pub struct PublishRequest {
     /// this tree: passing `/vault/skills` here would shrink protection to
     /// that subtree and make the real vault root a publishable ancestor.
     ///
-    /// Absent means "no structural layer" — the note's own `sw-kind`, or the
-    /// default, decides, and the rail falls back to the note's own directory
-    /// with the wider ancestor refusal. A caller that has the vault root
-    /// should pass it: a command sitting in `commands/` and
-    /// declaring no `sw-kind` is a skill to a gate that only reads
-    /// frontmatter, and publishing it writes a `SKILL.md` for something that
-    /// is not a skill.
+    /// Absent means "no structural layer": the default decides, and the rail
+    /// falls back to the note's own directory with the wider ancestor
+    /// refusal. A caller that has the vault root should pass it: without it,
+    /// a command sitting in `commands/` publishes as a `SKILL.md`.
     #[serde(default)]
     pub skills_root: Option<PathBuf>,
+    /// The root file's config, the top of the cascade: what a note and its
+    /// containers leave out comes from here. Absent means no root file.
+    #[serde(default)]
+    pub config: Option<MarketplaceConfig>,
     /// When this run happened, RFC 3339, from the caller's clock.
     ///
     /// This crate reads no clock — the same rule [`crate::adopt::AdoptRequest`]
@@ -242,6 +247,33 @@ pub struct PublishRequest {
     /// at once would make the decision invisible at the moment it is taken.
     #[serde(default)]
     pub overwrite: Vec<String>,
+    /// `destination_root` is the home directory, and files land in the
+    /// harness's user folders rather than its project folders. The two differ
+    /// for Pi, whose user skills are `.pi/agent/skills`.
+    #[serde(default)]
+    pub user_folders: bool,
+}
+
+impl PublishRequest {
+    /// A request to write `skill_path` to `destination_root` for `target`.
+    /// Every other field starts empty; set it after.
+    pub fn new(
+        skill_path: impl Into<PathBuf>,
+        destination_root: impl Into<PathBuf>,
+        target: impl Into<String>,
+    ) -> Self {
+        Self {
+            skill_path: skill_path.into(),
+            destination_root: destination_root.into(),
+            target: target.into(),
+            mode: PublishMode::default(),
+            skills_root: None,
+            config: None,
+            published_at: None,
+            overwrite: Vec::new(),
+            user_folders: false,
+        }
+    }
 }
 
 /// Whether a publish writes, or only reports what it would write.
@@ -266,6 +298,7 @@ pub enum PublishMode {
 /// What happened to one file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum PublishStatus {
     /// Bytes or the execute bit changed on disk — or would have, under
     /// [`PublishMode::DryRun`].
@@ -274,6 +307,17 @@ pub enum PublishStatus {
     Unchanged,
     /// A rail said no. Nothing was written, here or anywhere in this publish.
     Refused,
+}
+
+impl PublishStatus {
+    /// The wire token, as serialized. Exhaustive here, so a new variant needs its word.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Written => "written",
+            Self::Unchanged => "unchanged",
+            Self::Refused => "refused",
+        }
+    }
 }
 
 /// The closed set of reasons a report line can carry — the publish spec's
@@ -285,6 +329,7 @@ pub enum PublishStatus {
 /// table it reproduces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum ReasonToken {
     /// The destination's copy moved since we published it.
     Conflict,
@@ -311,7 +356,7 @@ pub enum ReasonToken {
     PathCollision,
     /// A targets key, or a request, names a target this build does not know.
     UnknownTarget,
-    /// An `sw-overrides` block names a key the receiving harness does not
+    /// A harness block names a key the receiving harness does not
     /// read. Its own token rather than `unknown-target`: the destination is
     /// fine and the key is not, and a reader has to be told which.
     UnknownOverrideKey,
@@ -323,13 +368,15 @@ pub enum ReasonToken {
     EmptyPlugin,
     /// The note carries both our nested block and our flat keys.
     MixedFrontmatterShape,
+    /// `build.exclude` or a folder that never ships holds the note.
+    ExcludedNote,
     /// Not a refusal, and the one token here that names a success: the file
     /// was already byte-identical to our own output, so this run claimed it
     /// into the destination's manifest. The table's refusal set is
     /// [`ReasonToken::REFUSALS`]; a `written` or `unchanged` line needs a way
     /// to say this, and it is a reason like any other.
     Claimed,
-    /// Not a refusal either: an `sw-overrides` key said what the projection
+    /// Not a refusal either: a harness block key said what the projection
     /// already writes, so the file published unchanged and the author has a
     /// key they can delete.
     RedundantOverride,
@@ -365,6 +412,7 @@ impl ReasonToken {
         Self::MemberUnresolved,
         Self::EmptyPlugin,
         Self::MixedFrontmatterShape,
+        Self::ExcludedNote,
     ];
 
     /// The wire spelling, which prose never varies from.
@@ -387,6 +435,7 @@ impl ReasonToken {
             Self::MemberUnresolved => "member-unresolved",
             Self::EmptyPlugin => "empty-plugin",
             Self::MixedFrontmatterShape => "mixed-frontmatter-shape",
+            Self::ExcludedNote => "excluded-note",
             Self::Claimed => "claimed",
             Self::RedundantOverride => "redundant-override",
             Self::Overwritten => "overwritten",
@@ -486,6 +535,7 @@ impl std::fmt::Display for PublishReason {
 /// the kebab-case rename below, and no consumer re-words it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum PublishOutcome {
     /// Nothing was at this path and the manifest records nothing here. The
     /// first write of this file to this destination.
@@ -517,8 +567,26 @@ pub enum PublishOutcome {
     Manifest,
 }
 
+impl PublishOutcome {
+    /// The wire token, as serialized. Exhaustive here, so a new variant needs its word.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FirstWrite => "first-write",
+            Self::Rewrite => "rewrite",
+            Self::Claimed => "claimed",
+            Self::Overwritten => "overwritten",
+            Self::Unchanged => "unchanged",
+            Self::Conflict => "conflict",
+            Self::Foreign => "foreign",
+            Self::Blocked => "blocked",
+            Self::Manifest => "manifest",
+        }
+    }
+}
+
 /// One line of a [`PublishReport`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PublishedFile {
     /// Destination-root-relative, forward-slashed.
     pub path: String,
@@ -533,13 +601,26 @@ pub struct PublishedFile {
     pub reason: Option<PublishReason>,
 }
 
+impl PublishedFile {
+    /// A line for the file at `path`, with no reason. Set `reason` after.
+    pub fn new(path: impl Into<String>, status: PublishStatus, outcome: PublishOutcome) -> Self {
+        Self {
+            path: path.into(),
+            status,
+            outcome,
+            reason: None,
+        }
+    }
+}
+
 /// Every file the publish considered, in path order. A refused publish still
 /// reports all of them — a silent skip is how a destination rots unnoticed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PublishReport {
     /// Every file considered, in path order.
     pub files: Vec<PublishedFile>,
-    /// Why there are no files: set exactly when `sw-targets` excluded this
+    /// Why there are no files: set exactly when `targets` excluded this
     /// destination, and `None` on every other report.
     ///
     /// Prose, not one of the publish spec's reason tokens. Those
@@ -570,7 +651,7 @@ pub struct PublishReport {
     /// report but a pack's, and omitted from the wire when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replaced_manifest: Option<String>,
-    /// `sw-overrides` keys this destination's render already wrote, each as
+    /// harness block keys this destination's render already wrote, each as
     /// its own reason line.
     ///
     /// A diagnostic that travels with the report and never blocks a write:
@@ -578,6 +659,11 @@ pub struct PublishReport {
     /// Empty on every ordinary report, and omitted from the wire when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub redundant_overrides: Vec<PublishReason>,
+    /// The unknown keys of the note, and of a pack's members: what the read
+    /// left out or carried, which a publish has no other way to report. The
+    /// same warning a scan gives. Omitted from the wire when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<DiscoveryWarning>,
 }
 
 /// Reads the note, projects it, and writes the result under
@@ -596,8 +682,8 @@ pub struct PublishReport {
 ///
 /// # One namespace, both halves of the strip
 ///
-/// `ns` is this vault's frontmatter namespace ([`Namespace::default`] is the
-/// documented `sw`), and it is handed to *both* the read and the emit below —
+/// `ns` is this vault's frontmatter namespace ([`Namespace::default`] is
+/// bare), and it is handed to *both* the read and the emit below —
 /// one parameter, not two: the read decides which keys never become
 /// `annotations`, the emit decides which `annotations` never reach disk, and
 /// the two answering differently is how a configured vault publishes its own
@@ -608,15 +694,16 @@ pub struct PublishReport {
 /// * `refused: no-renderer` when the note's resolved kind is none of
 ///   [`EntityKind::Skill`], [`EntityKind::Command`], [`EntityKind::Agent`]
 ///   and [`EntityKind::Plugin`]. Nothing is read past, projected, or written.
-/// * `refused: unknown-override-key` when a `sw-overrides` block for this
-///   destination names a key its harness does not read — for the note, and
-///   for every skill and command member of a pack. An agent reads no keys,
-///   so any non-empty block for this destination refuses.
-/// * `refused: unknown-target` when a `sw-overrides` block is keyed by a
-///   name this build does not know. The same name in `sw-targets` never
+/// * `refused: unknown-override-key` when an agent, which reads no harness
+///   block, has a non-empty block for this destination. A skill's or
+///   command's key its harness does not read is dropped, and discovery warns.
+/// * `refused: unknown-target` when a harness block is keyed by a
+///   name this build does not know. The same name in `targets` never
 ///   reaches here — it is a blocker, so it comes back *inside* the report,
 ///   stamped on every projected file.
-/// * A destination the note's `sw-targets` excludes is `Ok` with an empty
+/// * `refused: excluded-note` when `build.exclude` or a folder that never ships
+///   holds the note.
+/// * A destination the note's `targets` excludes is `Ok` with an empty
 ///   report and [`PublishReport::not_published`] set. See the module doc.
 pub fn publish_skill(
     vfs: &dyn Vfs,
@@ -643,20 +730,12 @@ fn publish_onto(
     ns: &Namespace,
 ) -> Result<PublishReport, CoreError> {
     let runtime_target = runtime_target_for(&request.target);
-    let note = read_vault_skill(vfs, &request.skill_path, ns)?;
+    // The folder holding the note decides its kind, before the read: the
+    // kind says which of the note's keys are skillwright's.
+    refuse_excluded(vfs, request)?;
+    let resolved = publish_kind(vfs, request.skills_root.as_deref(), &request.skill_path);
+    let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
-    // Before the renderer, not after: a kind this path cannot publish must not
-    // reach the one renderer it has.
-    //
-    // RESOLVED, not declared. The folders are a deciding layer, so a note that
-    // says nothing about its kind is not thereby a skill — it is whatever the
-    // folder holding it named. Routed through `resolve_kind` rather than
-    // compared here so precedence stays in the one place that owns it.
-    let resolved = publish_kind(
-        note.frontmatter.declared_kind,
-        request.skills_root.as_deref(),
-        &request.skill_path,
-    );
     // Everything a renderer cannot take is refused here, before the renderer
     // builds the wrong file.
     if !kind_has_renderer(resolved.kind) {
@@ -665,17 +744,49 @@ fn publish_onto(
             resolved.kind,
             resolved.source,
             &request.target,
-            ns,
         ));
     }
 
-    // `sw-targets`, decided before anything is projected (see the module
+    // The note's own unknown keys, before the cascade adds anything to it.
+    let root_relative = request.skills_root.as_deref().map_or_else(
+        || vault_relative(Path::new(""), &request.skill_path),
+        |root| vault_relative(root, &request.skill_path),
+    );
+    let own_warning = unknown_key_warning(
+        &root_relative,
+        resolved.kind,
+        &unknown_keys(&note.frontmatter, resolved.kind),
+        ns,
+    );
+
+    // What the note inherits, before `targets` is asked: the same answer a
+    // build reaches.
+    let requested = request.config.clone().unwrap_or_default();
+    let cascade = Cascade::above(
+        vfs,
+        request.skills_root.as_deref(),
+        &request.skill_path,
+        &requested,
+        ns,
+    )?;
+    let plugin = request.skills_root.as_deref().and_then(|root| {
+        let patterns = crate::patterns::Patterns::read(vfs, root);
+        crate::discover::folder_placement_with(&patterns, root, &request.skill_path).plugin
+    });
+    cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
+
+    // `targets`, decided before anything is projected (see the module
     // doc). An unknown name is handed to `finish`, which stamps it on every
     // projected file.
     let unknown_target =
         match publishes_to(&note.frontmatter, &request.skill_path, &request.target, ns) {
             Ok(true) => None,
-            Ok(false) => return Ok(not_published(&note.frontmatter, &request.target, ns)),
+            Ok(false) => {
+                return Ok(PublishReport {
+                    warnings: own_warning.into_iter().collect(),
+                    ..not_published(&note.frontmatter, &request.target, ns)
+                });
+            }
             Err(CoreError::Refused(message)) => Some(PublishReason::from_refusal(
                 &message,
                 ReasonToken::UnknownTarget,
@@ -723,15 +834,10 @@ fn publish_onto(
             vfs,
             compile_root,
             &note.projection.content.name,
-            &note.frontmatter.identity,
+            &cascade,
             translator.profile(),
             ns,
         )?;
-        // The manifest's description is the plugin note's own, as the build
-        // fills it.
-        if let Some(overrides) = pack.config.plugins.get_mut(&pack.plugin.name) {
-            overrides.description = Some(note.projection.content.description.clone());
-        }
         // A manifest of the folder's own at the path the pack's is rendered to
         // (an imported plugin carries one) is left behind: the rendered one
         // replaces it. When its bytes differ it is named in
@@ -787,15 +893,18 @@ fn publish_onto(
             &pack.not_carried,
             replaced_manifest.as_deref(),
             &redundant_reasons(&tree.redundant_overrides),
-        );
+        )
+        .map(|report| PublishReport {
+            warnings: pack.warnings.clone(),
+            ..report
+        });
     }
 
     // The load, between the read and the render, exactly where the
     // marketplace build runs it, so one note produces the same bytes on both
-    // paths: embeds expanded, links and calls resolved, `sw-arguments` and
-    // `sw-overrides` carried. Folded and checked before anything renders: an
-    // unknown destination name or a key this harness does not read refuses
-    // there, with no file built.
+    // paths: embeds expanded, links and calls resolved, `arguments` and
+    // harness blocks carried. Folded before anything renders: an unknown
+    // destination name refuses there, with no file built.
     let component = load_component(
         vfs,
         &ComponentRequest {
@@ -807,6 +916,7 @@ fn publish_onto(
             target: &request.target,
         },
         &note,
+        &cascade,
         ns,
     )?;
     if resolved.kind == EntityKind::Agent {
@@ -863,9 +973,13 @@ fn publish_onto(
         None,
         &redundant,
     )
+    .map(|report| PublishReport {
+        warnings: own_warning.into_iter().collect(),
+        ..report
+    })
 }
 
-/// The render's redundant `sw-overrides` keys as report lines.
+/// The render's redundant harness block keys as report lines.
 fn redundant_reasons(diagnostics: &[RedundantOverride]) -> Vec<PublishReason> {
     diagnostics
         .iter()
@@ -873,7 +987,7 @@ fn redundant_reasons(diagnostics: &[RedundantOverride]) -> Vec<PublishReason> {
         .collect()
 }
 
-/// Refuses an agent's non-empty `sw-overrides` block for this destination.
+/// Refuses an agent's non-empty harness block for this destination.
 /// An agent's renderer has no place for an override, so accepting the block
 /// would tell the author it reached the destination when it did not.
 fn refuse_agent_overrides(
@@ -889,19 +1003,35 @@ fn refuse_agent_overrides(
     Err(CoreError::refused(
         "unknown-override-key",
         format!(
-            "{}: `{}.{canonical}` names {}, but an agent takes no overrides: \
+            "{}: `{}` names {}, but an agent takes no harness block: \
              its renderer has no place for them",
             note_path.display(),
-            ns.key("overrides"),
+            ns.key(canonical),
             quoted(&keys)
         ),
     ))
 }
 
-/// The half every kind shares: the rail, the `sw-targets` blocker, the
+/// A project-relative path as it lands under the home directory: the
+/// harness's project folder swapped for its user folder.
+fn user_folder_path(canonical: &str, relative: &str) -> String {
+    let format = crate::harness::profile_named(canonical).and_then(|p| p.plugin.as_ref());
+    let bases = format.and_then(|format| {
+        Some((
+            format.skills_dir.strip_suffix("skills")?,
+            format.user_skills_dir.strip_suffix("skills")?,
+        ))
+    });
+    match bases.and_then(|(project, user)| Some((relative.strip_prefix(project)?, user))) {
+        Some((rest, user)) => format!("{user}{rest}"),
+        None => relative.to_owned(),
+    }
+}
+
+/// The half every kind shares: the rail, the `targets` blocker, the
 /// manifest, and the write.
 ///
-/// `unknown_target` is the blocker `publish_onto` found in `sw-targets`, if
+/// `unknown_target` is the blocker `publish_onto` found in `targets`, if
 /// any. It is stamped on every file after the rail runs. An excluded
 /// destination never reaches here.
 ///
@@ -923,6 +1053,16 @@ fn finish(
     replaced_manifest: Option<&str>,
     redundant_overrides: &[PublishReason],
 ) -> Result<PublishReport, CoreError> {
+    let mut files = files;
+    let mut relocated_entry = entry_output.map(str::to_owned);
+    if request.user_folders {
+        for file in &mut files {
+            file.relative_path = user_folder_path(canonical, &file.relative_path);
+        }
+        relocated_entry = relocated_entry.map(|path| user_folder_path(canonical, &path));
+    }
+    let entry_output = relocated_entry.as_deref();
+
     // The rail, before any byte is written.
     let rail = match request.skills_root.as_deref() {
         // The vault root is known and this host can see links, so the rail
@@ -959,7 +1099,7 @@ fn finish(
         Err(other) => return Err(other),
     }
 
-    // A `sw-targets` name we do not know is a blocker: every projected file,
+    // A `targets` name we do not know is a blocker: every projected file,
     // one reason.
     if let Some(reason) = unknown_target {
         return Ok(refuse_all(&files, reason));
@@ -993,6 +1133,7 @@ fn finish(
     // report rather than an inherited accident.
     reported.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(PublishReport {
+        warnings: Vec::new(),
         files: reported,
         not_published: None,
         not_carried: not_carried.to_vec(),
@@ -1001,7 +1142,7 @@ fn finish(
     })
 }
 
-/// The report for a destination `sw-targets` excludes: no files, and why.
+/// The report for a destination `targets` excludes: no files, and why.
 fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -> PublishReport {
     PublishReport {
         files: Vec::new(),
@@ -1009,24 +1150,51 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
         not_carried: Vec::new(),
         replaced_manifest: None,
         redundant_overrides: Vec::new(),
+        warnings: Vec::new(),
     }
 }
 
-/// The kind a publish of the note at `skill_path` resolves to: its declared
-/// `sw-kind` ranked against the folder holding it. Shared with
-/// [`crate::status::status_of`] so status and publish agree on what a unit is.
+/// Refuses a note `build.exclude` or a folder that never ships holds, named or
+/// not: what never ships from a build does not ship from a publish either.
+fn refuse_excluded(vfs: &dyn Vfs, request: &PublishRequest) -> Result<(), CoreError> {
+    let Some(root) = request.skills_root.as_deref() else {
+        return Ok(());
+    };
+    let Ok(relative) = request.skill_path.strip_prefix(root) else {
+        return Ok(());
+    };
+    let relative = crate::skill::forward_slashed(relative);
+    let patterns = crate::patterns::Patterns::read(vfs, root);
+    if patterns.excluded(&relative) {
+        return Err(CoreError::refused(
+            "excluded-note",
+            format!("{relative} matches `build.exclude`, so it never ships"),
+        ));
+    }
+    if patterns.never_ships(&relative) {
+        return Err(CoreError::refused(
+            "excluded-note",
+            format!("{relative} is in a folder that never ships"),
+        ));
+    }
+    Ok(())
+}
+
+/// The kind a publish of the note at `skill_path` resolves to: the kind
+/// folder holding it, else a skill. Shared with [`crate::status::status_of`]
+/// so status and publish agree on what a unit is.
 pub(crate) fn publish_kind(
-    declared: Option<EntityKind>,
+    vfs: &dyn Vfs,
     skills_root: Option<&Path>,
     skill_path: &Path,
 ) -> ResolvedKind {
-    resolve_kind(
-        declared,
-        KindHints {
-            requested: None,
-            folder: skills_root.and_then(|root| crate::discover::folder_kind(root, skill_path)),
-        },
-    )
+    resolve_kind(KindHints {
+        requested: None,
+        folder: skills_root.and_then(|root| {
+            let patterns = crate::patterns::Patterns::read(vfs, root);
+            crate::discover::folder_placement_with(&patterns, root, skill_path).kind
+        }),
+    })
 }
 
 /// Whether a publish to a destination has any projection for this kind.
@@ -1063,13 +1231,9 @@ fn no_renderer_for(
     kind: EntityKind,
     source: KindSource,
     target: &str,
-    ns: &Namespace,
 ) -> CoreError {
-    // Name the layer that actually decided, not the key. Quoting
-    // `sw-kind: command` at a note whose frontmatter never mentions `sw-kind`
-    // sends its author to look for a line that is not there.
+    // Name the layer that actually decided.
     let because = match source {
-        KindSource::Frontmatter => format!("`{}: {}`", ns.key("kind"), kind.as_str()),
         KindSource::Directory => format!("the folder holding it names it a {}", kind.as_str()),
         KindSource::Override => format!("it was published as a {}", kind.as_str()),
         KindSource::Default => format!("it is a {}", kind.as_str()),
@@ -1557,6 +1721,7 @@ fn refuse_all(files: &[ProjectedFile], reason: &PublishReason) -> PublishReport 
         .collect();
     reported.sort_by(|a, b| a.path.cmp(&b.path));
     PublishReport {
+        warnings: Vec::new(),
         files: reported,
         not_published: None,
         not_carried: Vec::new(),
@@ -1567,7 +1732,7 @@ fn refuse_all(files: &[ProjectedFile], reason: &PublishReason) -> PublishReport 
 
 /// Does this note publish to `target`?
 ///
-/// `sw-targets`' three readings as one predicate — absent is every
+/// `targets`' three readings as one predicate — absent is every
 /// destination, an empty list is none of them, a populated list is exactly the
 /// ones it names. [`publish_skill`]
 /// asks this itself; it is public so a preflight plan can show the same answer
@@ -1630,7 +1795,7 @@ pub fn publishes_to(
         .any(|name| canonical_target(name).is_some_and(|known| known == wanted)))
 }
 
-/// `sw-overrides`, folded onto canonical destination names and checked
+/// harness blocks, folded onto canonical destination names and checked
 /// against the harness that will receive each block.
 ///
 /// The seam [`publishes_to`] is: a frontmatter reader types the key and this
@@ -1640,47 +1805,40 @@ pub fn publishes_to(
 /// # Two checks, at two scopes
 ///
 /// **Every target name is folded, whichever destination is being published**
-/// — the same rule `sw-targets` follows, and for the same reason: the
+/// — the same rule `targets` follows, and for the same reason: the
 /// destination a typo hurts is never the one in front of you.
 ///
-/// **Only the named target's keys are checked.** A key legal for `claude` and
-/// unknown to `codex` is the ordinary case and the whole point of the key, so
-/// checking every block at every destination would refuse every well-formed
-/// note. The consequence is honest and worth stating: a bad `codex` key
-/// surfaces the first time something publishes to `codex`.
-///
-/// A target the matrix has no declaration for at all refuses every one of its
-/// keys rather than passing them through. An unmapped harness receiving
-/// unchecked keys is the one outcome this validation exists to prevent.
+/// **Each block keeps only the keys its harness reads.** The rest are
+/// dropped; discovery warns about them, and they are never refused. A target
+/// the matrix has no declaration for keeps no keys, so an unmapped harness
+/// never receives unchecked ones.
 ///
 /// # Errors
 ///
 /// * `refused: unknown-target` — a block is keyed by a name outside
 ///   [`canonical_target`].
-/// * `refused: unknown-override-key` — the named target's block carries a key
-///   its harness does not read. The message names both.
+/// * `malformed` — the named target's `metadata` is not a mapping.
 pub fn overrides_for(
     note: &VaultFrontmatter,
     note_path: &Path,
     target: &str,
     ns: &Namespace,
 ) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
-    let key = ns.key("overrides");
     let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
     for (declared, block) in &note.overrides {
         let Some(canonical) = canonical_target(declared) else {
             return Err(CoreError::refused(
                 "unknown-target",
                 format!(
-                    "{}: `{key}` names `{declared}`, which this build does not know \
+                    "{}: a harness block names `{declared}`, which this build does not know \
                      (known: {}). An unrecognised name is never read as \"every destination\"",
                     note_path.display(),
                     KNOWN_TARGETS.join(", ")
                 ),
             ));
         };
-        // `take_override_blocks` refused anything else, so this cannot lose a
-        // block the author wrote.
+        // `VaultFrontmatter::take_from` refused anything else, so this cannot
+        // lose a block the author wrote.
         let block = block.as_object().cloned().unwrap_or_default();
         // Two spellings of one destination merge rather than one winning
         // silently, which is the same equivalence `publishes_to` grants.
@@ -1691,30 +1849,30 @@ pub fn overrides_for(
     }
 
     let wanted = canonical_target(target).unwrap_or(target);
-    if let Some(block) = folded.get(wanted) {
-        let accepted = accepted_override_keys(wanted);
-        let unknown: Vec<&str> = block
-            .keys()
-            .map(String::as_str)
-            .filter(|k| !accepted.contains(*k))
+    // A key a harness does not read warns at discovery and is dropped here,
+    // never refused.
+    for (canonical, block) in &mut folded {
+        let accepted = accepted_override_keys(canonical);
+        // Not `Map::retain`: the serde_json floor predates it.
+        *block = std::mem::take(block)
+            .into_iter()
+            .filter(|(key, _)| accepted.contains(key))
             .collect();
-        if !unknown.is_empty() {
-            return Err(CoreError::refused(
-                "unknown-override-key",
-                format!(
-                    "{}: `{key}.{wanted}` names {}, which `{wanted}` does not read. \
-                     An override is written in that harness's own key names, and this \
-                     build's capability matrix lists none of these for it",
-                    note_path.display(),
-                    quoted(&unknown)
-                ),
-            ));
-        }
+    }
+    if folded
+        .get(wanted)
+        .and_then(|block| block.get("metadata"))
+        .is_some_and(|m| !m.is_object())
+    {
+        return Err(CoreError::malformed(
+            note_path,
+            format!("`{}.metadata` must be a mapping", ns.key(wanted)),
+        ));
     }
     Ok(folded)
 }
 
-/// What one `sw-overrides` key is, at the destination it was written for.
+/// What one harness block key is, at the destination it was written for.
 ///
 /// The read-side vocabulary for the same three answers [`overrides_for`] and
 /// the renderer produce between them: a surface showing a note's blocks needs
@@ -1790,11 +1948,7 @@ pub fn override_states(
     let mut out = Vec::new();
     for (declared, block) in &note.overrides {
         let canonical = canonical_target(declared).unwrap_or(declared.as_str());
-        let accepted = if kind == EntityKind::Agent {
-            std::collections::BTreeSet::new()
-        } else {
-            accepted_override_keys(canonical)
-        };
+        let accepted = accepted_keys(kind, canonical);
         let block = block.as_object().cloned().unwrap_or_default();
 
         // One render, per block. A destination with no renderer of its own
@@ -1847,6 +2001,18 @@ pub fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<Str
         .unwrap_or_default()
 }
 
+/// [`accepted_override_keys`] for a note of `kind`: an agent takes none.
+pub(crate) fn accepted_keys(
+    kind: EntityKind,
+    canonical: &str,
+) -> std::collections::BTreeSet<String> {
+    if kind == EntityKind::Agent {
+        std::collections::BTreeSet::new()
+    } else {
+        accepted_override_keys(canonical)
+    }
+}
+
 /// The runtime whose declaration answers for one canonical destination,
 /// from the harness profile.
 ///
@@ -1858,7 +2024,7 @@ pub(crate) fn runtime_id_for_canonical(canonical: &str) -> Option<agent_adapt::R
     profile_named(canonical).map(|p| p.declaration)
 }
 
-/// Every name `sw-targets` and [`PublishRequest::target`] accept, sorted — the
+/// Every name `targets` and [`PublishRequest::target`] accept, sorted — the
 /// list a refusal prints so the fix is on screen.
 ///
 /// the publish spec's four destinations plus the runtime spellings
@@ -1990,7 +2156,7 @@ mod tests {
     /// that configures nothing — except the two tests at the end that are
     /// about configuring it.
     fn sw() -> Namespace {
-        Namespace::default()
+        Namespace::sw()
     }
 
     /// A vault holding `skills/code-review/code-review.md` plus two peers, one
@@ -2026,8 +2192,10 @@ mod tests {
 
     fn request(destination_root: &str, target: &str) -> PublishRequest {
         PublishRequest {
+            config: None,
             skill_path: PathBuf::from("/vault/skills/code-review/code-review.md"),
             destination_root: PathBuf::from(destination_root),
+            user_folders: false,
             target: target.to_owned(),
             mode: PublishMode::Write,
             // These fixtures sit at `<root>/skills/<name>.md`, a shape the
@@ -2220,15 +2388,14 @@ mod tests {
          name: code-review\n\
          description: reviews code\n\
          license: MIT\n\
-         sw-kind: skill\n\
          sw-targets:\n  - claude\n  - portable\n\
-         sw-plugin: marketplace-group\n\
-         sw-source: /src/code-review\n\
-         sw-format: claude\n\
-         sw-source-hash: \"3f9ab21c\"\n\
-         sw-adopted-hash: \"b17ce004\"\n\
-         sw-adopted-at: \"2026-08-11T09:00:00Z\"\n\
-         sw-also-at:\n  - /elsewhere/code-review\n\
+         sw-adopted:\n\
+        \x20 source: /src/code-review\n\
+        \x20 format: claude\n\
+        \x20 source_hash: \"3f9ab21c\"\n\
+        \x20 hash: \"b17ce004\"\n\
+        \x20 at: \"2026-08-11T09:00:00Z\"\n\
+        \x20 also_at:\n    - /elsewhere/code-review\n\
          sw-not-modeled-yet: whatever\n\
          ---\nReview the diff.\n";
 
@@ -2238,11 +2405,8 @@ mod tests {
          description: reviews code\n\
          license: MIT\n\
          sw:\n\
-        \x20 kind: skill\n\
         \x20 targets:\n    - claude\n\
-        \x20 plugin: marketplace-group\n\
-        \x20 source: /src/code-review\n\
-        \x20 source-hash: \"3f9ab21c\"\n\
+        \x20 adopted:\n      source: /src/code-review\n      source_hash: \"3f9ab21c\"\n\
         \x20 not-modeled-yet: whatever\n\
          ---\nReview the diff.\n";
 
@@ -2278,16 +2442,8 @@ mod tests {
             // The strip is the prefix, wholesale — including the key this
             // build does not model, and including the block itself.
             for ours in [
-                "sw-kind",
                 "sw-targets",
-                "sw-plugin",
-                "marketplace-group",
-                "sw-source",
-                "sw-format",
-                "sw-source-hash",
-                "sw-adopted-hash",
-                "sw-adopted-at",
-                "sw-also-at",
+                "sw-adopted",
                 "sw-not-modeled-yet",
                 "not-modeled-yet",
                 "3f9ab21c",
@@ -2328,7 +2484,7 @@ mod tests {
     /// never becomes an annotation and the emit decides what never reaches
     /// disk, and only the bytes on disk show that both used the same answer.
     /// A publish that read under `x` and stripped under `sw` would fail this
-    /// twice over — every `x-` key of the author's published, and an `sw-kind`
+    /// twice over: every `x-` key of the author's published, and an `sw-kind`
     /// that was never ours deleted.
     #[test]
     fn a_configured_namespace_is_stripped_and_the_default_prefix_is_left_alone() {
@@ -2338,12 +2494,10 @@ mod tests {
             "---\n\
              description: reviews code\n\
              license: MIT\n\
-             x-kind: skill\n\
-             x-targets:\n  - claude\n\
-             x-source: /src/code-review\n\
-             x-source-hash: \"3f9ab21c\"\n\
-             x-not-modeled-yet: whatever\n\
              sw-kind: somebody-elses-key\n\
+             x-targets:\n  - claude\n\
+             x-adopted:\n  source: /src/code-review\n  source_hash: \"3f9ab21c\"\n\
+             x-not-modeled-yet: whatever\n\
              ---\nReview the diff.\n"
                 .as_bytes(),
         )
@@ -2359,10 +2513,8 @@ mod tests {
         .unwrap();
 
         for ours in [
-            "x-kind",
             "x-targets",
-            "x-source",
-            "x-source-hash",
+            "x-adopted",
             "x-not-modeled-yet",
             "3f9ab21c",
             "/src/code-review",
@@ -2372,8 +2524,8 @@ mod tests {
                 "`{ours}` reached the destination:\n{text}"
             );
         }
-        // `sw-` is nobody's namespace in this vault. It is an annotation, and
-        // an annotation is carried verbatim.
+        // `sw-` is nobody's namespace in this vault: the key is the author's,
+        // and it travels under `metadata`.
         assert!(text.contains("sw-kind"), "{text}");
         assert!(text.contains("somebody-elses-key"), "{text}");
         assert!(text.contains("license: MIT"), "{text}");
@@ -2381,7 +2533,7 @@ mod tests {
     }
 
     /// `x-targets: [claude]` narrows a configured vault's publish the same way
-    /// `sw-targets` narrows the default one — and the refusal names the key
+    /// `targets` narrows the default one — and the refusal names the key
     /// the note actually carries.
     #[test]
     fn a_configured_namespace_narrows_and_refuses_under_its_own_key() {
@@ -2657,14 +2809,14 @@ mod tests {
             b"print()\n",
         )
         .unwrap();
-        PublishRequest {
-            skill_path: vault.join("skills/code-review/code-review.md"),
-            destination_root: tmp.join("dest"),
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: None,
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value = PublishRequest::new(
+                vault.join("skills/code-review/code-review.md"),
+                tmp.join("dest"),
+                "claude",
+            );
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 
@@ -2822,14 +2974,15 @@ mod tests {
             NOTE.as_bytes(),
         )
         .unwrap();
-        let asked = PublishRequest {
-            skill_path: PathBuf::from("/home/.claude/skills/code-review/code-review.md"),
-            destination_root: PathBuf::from("/home"),
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/home/.claude")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        let asked = {
+            let mut value = PublishRequest::new(
+                "/home/.claude/skills/code-review/code-review.md",
+                "/home",
+                "claude",
+            );
+            value.skills_root = Some(PathBuf::from("/home/.claude"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         };
         let report = publish_skill(&vfs, &asked, &sw()).unwrap();
         assert!(
@@ -2890,14 +3043,16 @@ mod tests {
         std::os::unix::fs::symlink(vault.join("claude-config"), home.join(".claude")).unwrap();
 
         for mode in [PublishMode::Write, PublishMode::DryRun] {
-            let request = PublishRequest {
-                skill_path: vault.join("skills/code-review/code-review.md"),
-                destination_root: home.clone(),
-                target: "claude".to_owned(),
-                mode,
-                skills_root: Some(vault.clone()),
-                published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-                overwrite: Vec::new(),
+            let request = {
+                let mut value = PublishRequest::new(
+                    vault.join("skills/code-review/code-review.md"),
+                    home.clone(),
+                    "claude",
+                );
+                value.mode = mode;
+                value.skills_root = Some(vault.clone());
+                value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+                value
             };
             let report = publish_skill(&NativeVfs, &request, &sw()).unwrap();
             assert!(
@@ -2924,14 +3079,15 @@ mod tests {
         // The same geometry with a real directory in place of the link
         // publishes — what was refused was the routing, not the layout.
         std::fs::remove_file(home.join(".claude")).unwrap();
-        let request = PublishRequest {
-            skill_path: vault.join("skills/code-review/code-review.md"),
-            destination_root: home.clone(),
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(vault.clone()),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        let request = {
+            let mut value = PublishRequest::new(
+                vault.join("skills/code-review/code-review.md"),
+                home.clone(),
+                "claude",
+            );
+            value.skills_root = Some(vault.clone());
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         };
         let report = publish_skill(&NativeVfs, &request, &sw()).unwrap();
         assert!(
@@ -2975,14 +3131,15 @@ mod tests {
             return;
         }
 
-        let request = PublishRequest {
-            skill_path: vault.join("library/code-review/code-review.md"),
-            destination_root: home.clone(),
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(vault.clone()),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        let request = {
+            let mut value = PublishRequest::new(
+                vault.join("library/code-review/code-review.md"),
+                home.clone(),
+                "claude",
+            );
+            value.skills_root = Some(vault.clone());
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         };
         let report = publish_skill(&NativeVfs, &request, &sw()).unwrap();
         assert!(
@@ -2999,7 +3156,7 @@ mod tests {
         );
     }
 
-    // --- `sw-targets` ------------------------------------------------------
+    // --- `targets` ------------------------------------------------------
 
     /// A note declaring `sw-targets: <yaml>`, or none at all for `None`.
     fn note_targeting(yaml: Option<&str>) -> String {
@@ -3011,7 +3168,7 @@ mod tests {
         }
     }
 
-    /// A vault whose note carries the given `sw-targets`.
+    /// A vault whose note carries the given `targets`.
     fn vault_targeting(yaml: Option<&str>) -> MemVfs {
         let vfs = vault_with_peers();
         vfs.write_file(
@@ -3212,16 +3369,16 @@ mod tests {
     // block, in a test asserting what reaches a destination.
     const AGENT_NOTE: &str = concat!(
         "---\nname: senior-reviewer\ndescription: Reviews like a staff engineer.\n",
-        "allowed-tools:\n  - Read\n  - Grep\nmodel: opus\nsw-kind: agent\n---\n\n",
+        "allowed-tools:\n  - Read\n  - Grep\nmodel: opus\n---\n\n",
         "You are a senior reviewer. Be specific.\n"
     );
 
     /// A vault holding one agent note and nothing that travels with it.
     fn vault_with_agent() -> MemVfs {
         let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
+        vfs.create_dir_all(Path::new("/vault/agents")).unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/senior-reviewer.md"),
+            Path::new("/vault/agents/senior-reviewer.md"),
             AGENT_NOTE.as_bytes(),
         )
         .unwrap();
@@ -3230,14 +3387,12 @@ mod tests {
     }
 
     fn agent_request() -> PublishRequest {
-        PublishRequest {
-            skill_path: PathBuf::from("/vault/skills/senior-reviewer.md"),
-            destination_root: PathBuf::from("/dest"),
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value =
+                PublishRequest::new("/vault/agents/senior-reviewer.md", "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 
@@ -3294,8 +3449,8 @@ mod tests {
         )
         .unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/senior-reviewer.md"),
-            b"---\nname: senior-reviewer\ndescription: d\nsw-kind: agent\n---\n\n![[tone]]\n",
+            Path::new("/vault/agents/senior-reviewer.md"),
+            b"---\nname: senior-reviewer\ndescription: d\n---\n\n![[tone]]\n",
         )
         .unwrap();
 
@@ -3311,22 +3466,22 @@ mod tests {
     #[test]
     fn an_agent_note_carrying_peers_is_refused_rather_than_losing_them() {
         let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/vault/skills/senior-reviewer/scripts"))
+        vfs.create_dir_all(Path::new("/vault/agents/senior-reviewer/scripts"))
             .unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/senior-reviewer/senior-reviewer.md"),
+            Path::new("/vault/agents/senior-reviewer/senior-reviewer.md"),
             AGENT_NOTE.as_bytes(),
         )
         .unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/senior-reviewer/scripts/check.py"),
+            Path::new("/vault/agents/senior-reviewer/scripts/check.py"),
             b"print()\n",
         )
         .unwrap();
         vfs.create_dir_all(Path::new("/dest")).unwrap();
 
         let mut request = agent_request();
-        request.skill_path = PathBuf::from("/vault/skills/senior-reviewer/senior-reviewer.md");
+        request.skill_path = PathBuf::from("/vault/agents/senior-reviewer/senior-reviewer.md");
         let err = publish_skill(&vfs, &request, &sw()).unwrap_err();
 
         let message = err.to_string();
@@ -3346,7 +3501,7 @@ mod tests {
         let entry = manifest
             .get(".claude/agents/senior-reviewer.md")
             .expect("the agent is recorded");
-        assert_eq!(entry.source_note, "skills/senior-reviewer.md");
+        assert_eq!(entry.source_note, "agents/senior-reviewer.md");
         assert!(!entry.source_hash.is_empty());
 
         // And a second publish is a no-op, as it is for a skill.
@@ -3385,28 +3540,28 @@ mod tests {
 
     const COMMAND_NOTE: &str = concat!(
         "---\nname: ship\ndescription: Cuts a release.\n",
-        "argument-hint: <version>\nallowed-tools:\n  - Read\nsw-kind: command\n---\n\n",
+        "argument-hint: <version>\nallowed-tools:\n  - Read\n---\n\n",
         "Cut the release for $ARGUMENTS.\n"
     );
 
     fn vault_with_command() -> MemVfs {
         let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
-        vfs.write_file(Path::new("/vault/skills/ship.md"), COMMAND_NOTE.as_bytes())
-            .unwrap();
+        vfs.create_dir_all(Path::new("/vault/commands")).unwrap();
+        vfs.write_file(
+            Path::new("/vault/commands/ship.md"),
+            COMMAND_NOTE.as_bytes(),
+        )
+        .unwrap();
         vfs.create_dir_all(Path::new("/dest")).unwrap();
         vfs
     }
 
     fn command_request(target: &str) -> PublishRequest {
-        PublishRequest {
-            skill_path: PathBuf::from("/vault/skills/ship.md"),
-            destination_root: PathBuf::from("/dest"),
-            target: target.to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value = PublishRequest::new("/vault/commands/ship.md", "/dest", target);
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 
@@ -3439,7 +3594,7 @@ mod tests {
     }
 
     const COMMAND_WITH_ARGUMENTS_NOTE: &str = concat!(
-        "---\nname: ship\ndescription: Cuts a release.\nsw-kind: command\n",
+        "---\nname: ship\ndescription: Cuts a release.\n",
         "sw-arguments:\n  - name: version\n    description: The version to cut.\n    required: true\n",
         "  - name: channel\n    values: [stable, beta]\n    default: stable\n",
         "---\n\nCut the release.\n"
@@ -3447,9 +3602,9 @@ mod tests {
 
     fn vault_with_command_arguments() -> MemVfs {
         let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
+        vfs.create_dir_all(Path::new("/vault/commands")).unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/ship.md"),
+            Path::new("/vault/commands/ship.md"),
             COMMAND_WITH_ARGUMENTS_NOTE.as_bytes(),
         )
         .unwrap();
@@ -3489,7 +3644,7 @@ mod tests {
 
         // The vault note itself is untouched — the hint and the section are
         // derived at publish time, never written back.
-        let source = text_at(&vfs, "/vault/skills/ship.md");
+        let source = text_at(&vfs, "/vault/commands/ship.md");
         assert_eq!(source, COMMAND_WITH_ARGUMENTS_NOTE);
     }
 
@@ -3497,11 +3652,11 @@ mod tests {
     #[test]
     fn a_hand_written_hint_is_never_overridden_by_a_derived_one() {
         let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
+        vfs.create_dir_all(Path::new("/vault/commands")).unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/ship.md"),
+            Path::new("/vault/commands/ship.md"),
             concat!(
-                "---\nname: ship\ndescription: Cuts a release.\nsw-kind: command\n",
+                "---\nname: ship\ndescription: Cuts a release.\n",
                 "argument-hint: <handwritten>\n",
                 "sw-arguments:\n  - name: version\n",
                 "---\n\nCut the release.\n"
@@ -3527,11 +3682,11 @@ mod tests {
     #[test]
     fn a_hand_written_arguments_list_is_never_overridden_by_a_derived_one() {
         let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
+        vfs.create_dir_all(Path::new("/vault/commands")).unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/ship.md"),
+            Path::new("/vault/commands/ship.md"),
             concat!(
-                "---\nname: ship\ndescription: Cuts a release.\nsw-kind: command\n",
+                "---\nname: ship\ndescription: Cuts a release.\n",
                 "arguments: [handwritten]\n",
                 "sw-arguments:\n  - name: version\n",
                 "---\n\nCut the release.\n"
@@ -3576,14 +3731,11 @@ mod tests {
         .unwrap();
         vfs.create_dir_all(Path::new("/dest")).unwrap();
 
-        let request = PublishRequest {
-            skill_path: PathBuf::from("/vault/skills/review.md"),
-            destination_root: PathBuf::from("/dest"),
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        let request = {
+            let mut value = PublishRequest::new("/vault/skills/review.md", "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         };
         publish_skill(&vfs, &request, &sw()).unwrap();
 
@@ -3666,12 +3818,12 @@ mod tests {
     #[test]
     fn opencode_keeps_only_description_and_model() {
         let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
+        vfs.create_dir_all(Path::new("/vault/commands")).unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/ship.md"),
+            Path::new("/vault/commands/ship.md"),
             concat!(
                 "---\nname: ship\ndescription: Cuts a release.\nmodel: anthropic/claude\n",
-                "argument-hint: <version>\nallowed-tools:\n  - Read\nsw-kind: command\n---\n\n",
+                "argument-hint: <version>\nallowed-tools:\n  - Read\n---\n\n",
                 "Cut the release for $ARGUMENTS.\n"
             )
             .as_bytes(),
@@ -3712,11 +3864,11 @@ mod tests {
     #[test]
     fn sw_targets_narrows_a_command_the_same_way_it_narrows_a_skill() {
         let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
+        vfs.create_dir_all(Path::new("/vault/commands")).unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/ship.md"),
+            Path::new("/vault/commands/ship.md"),
             concat!(
-                "---\nname: ship\ndescription: Cuts a release.\nsw-kind: command\n",
+                "---\nname: ship\ndescription: Cuts a release.\n",
                 "sw-targets: [copilot]\n---\n\nCut the release.\n"
             )
             .as_bytes(),
@@ -3738,22 +3890,22 @@ mod tests {
     #[test]
     fn a_command_note_carrying_peers_is_refused_rather_than_losing_them() {
         let vfs = MemVfs::new();
-        vfs.create_dir_all(Path::new("/vault/skills/ship/scripts"))
+        vfs.create_dir_all(Path::new("/vault/commands/ship/scripts"))
             .unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/ship/ship.md"),
+            Path::new("/vault/commands/ship/ship.md"),
             COMMAND_NOTE.as_bytes(),
         )
         .unwrap();
         vfs.write_file(
-            Path::new("/vault/skills/ship/scripts/tag.sh"),
+            Path::new("/vault/commands/ship/scripts/tag.sh"),
             b"#!/bin/sh\n",
         )
         .unwrap();
         vfs.create_dir_all(Path::new("/dest")).unwrap();
 
         let mut request = command_request("claude");
-        request.skill_path = PathBuf::from("/vault/skills/ship/ship.md");
+        request.skill_path = PathBuf::from("/vault/commands/ship/ship.md");
         let err = publish_skill(&vfs, &request, &sw()).unwrap_err();
 
         let message = err.to_string();
@@ -3761,8 +3913,7 @@ mod tests {
         assert!(message.contains("scripts/tag.sh"), "{message}");
     }
 
-    // A command in a `commands/` folder needs no `sw-kind`, and is tracked
-    // like anything else.
+    // A command in a plugin's `commands/` folder is tracked like anything else.
     #[test]
     fn a_note_in_a_commands_folder_publishes_and_is_tracked() {
         let vfs = MemVfs::new();
@@ -3799,7 +3950,7 @@ mod tests {
             .unwrap();
         vfs.write_file(
             Path::new(&format!("{base}/git-tools.md")),
-            b"---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\nsw-version: 2.1.0\nsw-license: MIT\n---\n\nThe pack.\n",
+            b"---\nname: git-tools\ndescription: Git helpers.\nsw-version: 2.1.0\nsw-license: MIT\n---\n\nThe pack.\n",
         )
         .unwrap();
         vfs.write_file(
@@ -3817,14 +3968,15 @@ mod tests {
     }
 
     fn plugin_request(target: &str) -> PublishRequest {
-        PublishRequest {
-            skill_path: PathBuf::from("/vault/marketplaces/house/plugins/git-tools/git-tools.md"),
-            destination_root: PathBuf::from("/dest"),
-            target: target.to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value = PublishRequest::new(
+                "/vault/marketplaces/house/plugins/git-tools/git-tools.md",
+                "/dest",
+                target,
+            );
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 
@@ -3948,29 +4100,7 @@ mod tests {
         assert!(message.contains("skills/draft.md"), "{message}");
     }
 
-    // The same rule over a member that named this pack from outside its
-    // folder. `sw-plugin` decides membership for a readable note, so it has
-    // to decide it for one the scan could not read too — otherwise the pack
-    // ships without a member and says nothing.
-    #[test]
-    fn an_unreadable_member_from_outside_the_folder_stops_its_pack() {
-        let vfs = vault_with_plugin();
-        vfs.create_dir_all(Path::new("/vault/marketplaces/house/skills"))
-            .unwrap();
-        vfs.write_file(
-            Path::new("/vault/marketplaces/house/skills/draft.md"),
-            b"---\nname: Not A Legal Name\ndescription: A draft.\nsw-plugin: git-tools\n---\n\nHalf written.\n",
-        )
-        .unwrap();
-
-        let err = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap_err();
-
-        let message = err.to_string();
-        assert!(message.contains("unreadable-note"), "{message}");
-        assert!(message.contains("skills/draft.md"), "{message}");
-    }
-
-    // A member's own `sw-targets` narrows it, and a pack does not override
+    // A member's own `targets` narrows it, and a pack does not override
     // that: `rebase-guide` lists claude only, so codex gets the other member
     // and no mention of it.
     #[test]
@@ -4399,7 +4529,7 @@ mod tests {
             .unwrap();
         vfs.write_file(
             Path::new(&format!("{base}/git-tools.md")),
-            b"---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\n---\n\nThe pack.\n",
+            b"---\nname: git-tools\ndescription: Git helpers.\n---\n\nThe pack.\n",
         )
         .unwrap();
         vfs.write_file(
@@ -4636,14 +4766,11 @@ mod tests {
     }
 
     fn linked_request() -> PublishRequest {
-        PublishRequest {
-            skill_path: PathBuf::from("/vault/skills/code-review.md"),
-            destination_root: PathBuf::from("/dest"),
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value = PublishRequest::new("/vault/skills/code-review.md", "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 
@@ -4762,68 +4889,7 @@ mod tests {
         );
     }
 
-    // --- `sw-kind` ---------------------------------------------------------
-
-    /// The same note, declared a plugin.
-    const PLUGIN_NOTE: &str = "---\n\
-         description: the review pack\n\
-         sw-kind: plugin\n\
-         ---\nIt holds ![[code-review]].\n";
-
-    #[test]
-    fn a_plugin_note_is_never_published_as_a_skill() {
-        // A plugin never publishes through the skill layout — and this
-        // fixture's plugin has no members, so it refuses `empty-plugin` rather
-        // than writing anything at all.
-        for target in ["claude", "codex", "portable"] {
-            let vfs = vault_with_peers();
-            vfs.write_file(
-                Path::new("/vault/skills/code-review/code-review.md"),
-                PLUGIN_NOTE.as_bytes(),
-            )
-            .unwrap();
-            vfs.create_dir_all(Path::new("/dest")).unwrap();
-
-            let err = publish_skill(&vfs, &request("/dest", target), &sw()).unwrap_err();
-            let message = err.to_string();
-
-            assert!(matches!(err, CoreError::Refused(_)), "{message}");
-            // `portable` has no plugin layout and says so; the other two have
-            // one and this plugin has nothing to put in it.
-            let expected = if target == "portable" {
-                "no-renderer"
-            } else {
-                "empty-plugin"
-            };
-            assert!(message.contains(expected), "{target}: {message}");
-
-            // And no `SKILL.md` — not written, not even rendered.
-            assert!(
-                snapshot(&vfs, Path::new("/dest")).is_empty(),
-                "{target}: a plugin note left files behind"
-            );
-        }
-    }
-
-    #[test]
-    fn a_note_that_declares_itself_a_skill_still_publishes() {
-        // The gate is on the resolved kind, so the explicit spelling and the
-        // absent key must reach the same place — `sw-kind: skill` is what a
-        // vault writes once one note in it is a plugin.
-        let vfs = vault_with_peers();
-        vfs.write_file(
-            Path::new("/vault/skills/code-review/code-review.md"),
-            b"---\ndescription: reviews code\nsw-kind: skill\n---\nReview the diff.\n",
-        )
-        .unwrap();
-        vfs.create_dir_all(Path::new("/dest")).unwrap();
-
-        let report = publish_skill(&vfs, &request("/dest", "claude"), &sw()).unwrap();
-        assert_eq!(statuses(&report).len(), 3, "{report:?}");
-        assert!(vfs.exists(Path::new("/dest/.claude/skills/code-review/SKILL.md")));
-    }
-
-    // --- `sw-overrides` ----------------------------------------------------
+    // --- harness blocks --------------------------------------------------
 
     /// A vault whose one note carries a per-destination override block.
     fn vault_with_overrides(block: &str) -> MemVfs {
@@ -4850,7 +4916,7 @@ mod tests {
     fn an_override_reaches_the_target_it_names_and_no_other() {
         // AC-1. `permissionMode` is Claude Code's own key and no canonical
         // field maps onto it, which is the whole reason the block exists.
-        let block = "sw-overrides:\n  claude:\n    permissionMode: plan\n";
+        let block = "sw-claude:\n  permissionMode: plan\n";
         let vfs = vault_with_overrides(block);
         publish_skill(&vfs, &request("/dest", "claude"), &sw()).unwrap();
         let claude = published_skill_md(&vfs, "/dest/.claude/skills/code-review/SKILL.md");
@@ -4874,26 +4940,11 @@ mod tests {
         // keyed by the runtime rather than the destination would hand
         // `portable` the `codex` block. The block is keyed by the destination
         // it names, and `portable` is not that destination.
-        let block = "sw-overrides:\n  codex:\n    policy.allow_implicit_invocation: true\n";
+        let block = "sw-codex:\n  compatibility: codex only\n";
         let vfs = vault_with_overrides(block);
         publish_skill(&vfs, &request("/dest", "portable"), &sw()).unwrap();
         let portable = published_skill_md(&vfs, "/dest/.agents/skills/code-review/SKILL.md");
-        assert!(
-            !portable.contains("policy.allow_implicit_invocation"),
-            "{portable}"
-        );
-    }
-
-    #[test]
-    fn a_portable_override_reaches_the_portable_publish() {
-        // The destination's own block does reach it: `license` is a key the
-        // portable dialect writes from no model field, so the override is the
-        // only way to set it, and publishing to `portable` lands it.
-        let block = "sw-overrides:\n  portable:\n    license: MIT\n";
-        let vfs = vault_with_overrides(block);
-        publish_skill(&vfs, &request("/dest", "portable"), &sw()).unwrap();
-        let portable = published_skill_md(&vfs, "/dest/.agents/skills/code-review/SKILL.md");
-        assert!(portable.contains("license: MIT"), "{portable}");
+        assert!(!portable.contains("codex only"), "{portable}");
     }
 
     #[test]
@@ -4901,7 +4952,7 @@ mod tests {
         // AC-2. The emit-side namespace strip covers a modelled `sw-` key the
         // same way it covers an unmodelled one — there is no field on
         // `SkillContent::annotations` for it to leak through.
-        let block = "sw-overrides:\n  claude:\n    permissionMode: plan\n";
+        let block = "sw-claude:\n  permissionMode: plan\n";
         for (target, path) in [
             ("claude", "/dest/.claude/skills/code-review/SKILL.md"),
             ("portable", "/dest/.agents/skills/code-review/SKILL.md"),
@@ -4914,31 +4965,19 @@ mod tests {
     }
 
     #[test]
-    fn an_override_key_the_harness_does_not_read_is_refused_by_name() {
-        // AC-3. Codex's dialect omits `argument-hint`, so the harness never
-        // reads the key and the matrix does not list it — the refusal names
-        // both the destination and the key.
-        let vfs = vault_with_overrides("sw-overrides:\n  codex:\n    argument-hint: <path>\n");
-        let err = publish_skill(&vfs, &request("/dest", "codex"), &sw()).unwrap_err();
-        let message = err.to_string();
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
-        assert!(
-            message.starts_with("refused: unknown-override-key: "),
-            "{message}"
-        );
-        assert!(message.contains("codex"), "{message}");
-        assert!(message.contains("argument-hint"), "{message}");
-        // Nothing rendered, so nothing was written.
-        assert!(snapshot(&vfs, Path::new("/dest")).is_empty());
+    fn an_override_key_the_harness_does_not_read_is_dropped() {
+        // Codex's dialect omits `argument-hint`, so the key never reaches the
+        // file; discovery warns about it.
+        let vfs = vault_with_overrides("sw-codex:\n  argument-hint: <path>\n");
+        publish_skill(&vfs, &request("/dest", "codex"), &sw()).unwrap();
+        let text = published_skill_md(&vfs, "/dest/.agents/skills/code-review/SKILL.md");
+        assert!(!text.contains("argument-hint"), "{text}");
     }
 
     #[test]
-    fn a_destination_with_no_declaration_refuses_every_override_key() {
-        // The decision inside the check: an unmapped harness receives no
-        // unchecked keys. `cursor` is a destination this build maps to no
-        // runtime, so it has no roster and admits nothing. Asked of the
-        // validator directly, because a publish to `cursor` stops one gate
-        // earlier — there is no renderer to reach.
+    fn a_destination_with_no_declaration_drops_every_override_key() {
+        // An unmapped harness receives no unchecked keys: its block is
+        // emptied, at every destination.
         let note = VaultFrontmatter {
             overrides: serde_json::json!({"cursor": {"anything": 1}})
                 .as_object()
@@ -4946,35 +4985,21 @@ mod tests {
                 .clone(),
             ..VaultFrontmatter::default()
         };
-        let err = overrides_for(&note, Path::new("/vault/a.md"), "cursor", &sw()).unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("unknown-override-key"), "{message}");
-        assert!(message.contains("anything"), "{message}");
-
-        // The same block is untouched at a destination it does not name.
-        let folded = overrides_for(&note, Path::new("/vault/a.md"), "claude", &sw()).unwrap();
-        assert!(folded.contains_key("cursor"));
-    }
-
-    #[test]
-    fn an_override_target_outside_the_roster_is_the_unknown_target_refusal() {
-        // AC-4, and the same blocker scope `sw-targets` has: the typo is
-        // refused whichever destination is being published to.
-        let vfs = vault_with_overrides("sw-overrides:\n  claud:\n    permissionMode: plan\n");
-        let err = publish_skill(&vfs, &request("/dest", "claude"), &sw()).unwrap_err();
-        let message = err.to_string();
-        assert!(
-            message.starts_with("refused: unknown-target: "),
-            "{message}"
-        );
-        assert!(message.contains("claud"), "{message}");
+        for target in ["cursor", "claude"] {
+            let folded = overrides_for(&note, Path::new("/vault/a.md"), target, &sw()).unwrap();
+            assert!(
+                folded
+                    .get("cursor")
+                    .is_none_or(|b| !b.contains_key("anything"))
+            );
+        }
     }
 
     #[test]
     fn a_redundant_override_is_a_diagnostic_and_still_publishes() {
         // AC-5. `allowed-tools` is what the projection already writes from
         // the note's own `allowed-tools`, so the key changes nothing.
-        let vfs = vault_with_overrides("sw-overrides:\n  claude:\n    allowed-tools: Read Grep\n");
+        let vfs = vault_with_overrides("sw-claude:\n  allowed-tools: Read Grep\n");
         let report = publish_skill(&vfs, &request("/dest", "claude"), &sw()).unwrap();
         assert_eq!(report.redundant_overrides.len(), 1, "{report:?}");
         let reason = &report.redundant_overrides[0];
@@ -4987,20 +5012,6 @@ mod tests {
         let text = published_skill_md(&vfs, "/dest/.claude/skills/code-review/SKILL.md");
         assert!(text.contains("allowed-tools: Read Grep"), "{text}");
         assert_eq!(text.matches("allowed-tools").count(), 1, "{text}");
-    }
-
-    #[test]
-    fn two_spellings_of_one_destination_merge_into_its_block() {
-        // The same equivalence `publishes_to` grants: `claude-code` and
-        // `claude` are one destination, so their keys are one block rather
-        // than one silently winning.
-        let vfs = vault_with_overrides(
-            "sw-overrides:\n  claude:\n    permissionMode: plan\n  claude-code:\n    context: fork\n",
-        );
-        publish_skill(&vfs, &request("/dest", "claude"), &sw()).unwrap();
-        let text = published_skill_md(&vfs, "/dest/.claude/skills/code-review/SKILL.md");
-        assert!(text.contains("permissionMode: plan"), "{text}");
-        assert!(text.contains("context: fork"), "{text}");
     }
 
     // The closed set itself, pinned against the publish spec's
@@ -5029,6 +5040,7 @@ mod tests {
                 "member-unresolved",
                 "empty-plugin",
                 "mixed-frontmatter-shape",
+                "excluded-note",
             ]
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));
@@ -5176,6 +5188,7 @@ mod tests {
     fn the_wire_forms_are_lowercase() {
         // Hosts read this report as JSON; pin the wire form.
         let report = PublishReport {
+            warnings: Vec::new(),
             files: vec![PublishedFile {
                 path: "a/SKILL.md".into(),
                 status: PublishStatus::Unchanged,
@@ -5199,6 +5212,7 @@ mod tests {
         assert!(back.not_published.is_none());
 
         let excluded = PublishReport {
+            warnings: Vec::new(),
             files: vec![],
             not_published: Some("`sw-targets` does not name `codex`".into()),
             not_carried: Vec::new(),
@@ -5531,23 +5545,29 @@ mod tests {
         // or the kind check before a projection exists. A dry run must raise
         // them too, under the same token: a preview that swallowed one would
         // promise a publish that cannot happen.
-        for (token, note) in [
-            ("empty-plugin", PLUGIN_NOTE),
+        for (token, path, note) in [
+            (
+                "empty-plugin",
+                "/vault/plugins/code-review/code-review.md",
+                "---\ndescription: the review pack\n---\nIt holds nothing.\n",
+            ),
             (
                 "mixed-frontmatter-shape",
-                "---\ndescription: reviews code\nsw-kind: skill\nsw:\n  targets:\n    - claude\n---\nReview the diff.\n",
+                "/vault/skills/code-review/code-review.md",
+                "---\ndescription: reviews code\nsw-targets:\n  - claude\nsw:\n  license: MIT\n---\nReview the diff.\n",
             ),
         ] {
             let vfs = vault_with_peers();
-            vfs.write_file(
-                Path::new("/vault/skills/code-review/code-review.md"),
-                note.as_bytes(),
-            )
-            .unwrap();
+            vfs.create_dir_all(Path::new("/vault/plugins/code-review"))
+                .unwrap();
+            vfs.write_file(Path::new(path), note.as_bytes()).unwrap();
             vfs.create_dir_all(Path::new("/dest")).unwrap();
             let before = everything(&vfs);
 
-            let planned = publish_skill(&vfs, &dry("/dest", "claude"), &sw()).unwrap_err();
+            let mut plan = dry("/dest", "claude");
+            plan.skill_path = PathBuf::from(path);
+            plan.skills_root = Some(PathBuf::from("/vault"));
+            let planned = publish_skill(&vfs, &plan, &sw()).unwrap_err();
             let message = planned.to_string();
 
             assert!(matches!(planned, CoreError::Refused(_)), "{message}");
@@ -5555,7 +5575,10 @@ mod tests {
             assert_eq!(everything(&vfs), before, "{token}");
 
             // And the same sentence, word for word, from a real run.
-            let performed = publish_skill(&vfs, &request("/dest", "claude"), &sw()).unwrap_err();
+            let mut real = request("/dest", "claude");
+            real.skill_path = PathBuf::from(path);
+            real.skills_root = Some(PathBuf::from("/vault"));
+            let performed = publish_skill(&vfs, &real, &sw()).unwrap_err();
             assert_eq!(message, performed.to_string(), "{token}");
         }
     }
@@ -5666,20 +5689,6 @@ mod tests {
                 "claude",
             ),
             (
-                "a plugin note",
-                Box::new(|| {
-                    let vfs = vault_with_peers();
-                    vfs.write_file(
-                        Path::new("/vault/skills/code-review/code-review.md"),
-                        PLUGIN_NOTE.as_bytes(),
-                    )
-                    .unwrap();
-                    vfs
-                }),
-                "/dest",
-                "claude",
-            ),
-            (
                 "a target with no renderer",
                 Box::new(vault_with_peers),
                 "/dest",
@@ -5691,7 +5700,7 @@ mod tests {
                     let vfs = vault_with_peers();
                     vfs.write_file(
                         Path::new("/vault/skills/code-review/code-review.md"),
-                        b"---\ndescription: reviews code\nsw-kind: skill\nsw:\n  targets:\n    - claude\n---\nReview the diff.\n",
+                        b"---\ndescription: reviews code\nsw:\n  targets:\n    - claude\n---\nReview the diff.\n",
                     )
                     .unwrap();
                     vfs
@@ -5837,7 +5846,7 @@ mod tests {
         );
 
         // A mode this build does not know is a deserialization failure, not a
-        // silent write — the same reading `sw-targets` gives an unknown name.
+        // silent write — the same reading `targets` gives an unknown name.
         assert!(
             serde_json::from_str::<PublishRequest>(
                 r#"{"skill_path":"/v/a.md","destination_root":"/dest","target":"claude","mode":"maybe"}"#,
@@ -5983,7 +5992,7 @@ mod tests {
         );
     }
 
-    // --- `sw-targets` is decided before the projection ----------------------
+    // --- `targets` is decided before the projection ----------------------
 
     // A refusal that depends on the destination cannot fire at a destination
     // the note excludes: the note was never a candidate there.
@@ -6021,7 +6030,7 @@ mod tests {
         let vfs = vault_with_plugin();
         vfs.write_file(
             Path::new("/vault/marketplaces/house/plugins/git-tools/git-tools.md"),
-            b"---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\nsw-targets: [claude]\n---\n\nThe pack.\n",
+            b"---\nname: git-tools\ndescription: Git helpers.\nsw-targets: [claude]\n---\n\nThe pack.\n",
         )
         .unwrap();
         for target in ["opencode", "amp"] {
@@ -6089,8 +6098,7 @@ mod tests {
 
     #[test]
     fn a_pack_members_override_reaches_the_pack() {
-        let vfs =
-            commit_helper_with_overrides("sw-overrides:\n  claude:\n    permissionMode: plan\n");
+        let vfs = commit_helper_with_overrides("sw-claude:\n  permissionMode: plan\n");
         publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
 
         let published = text_at(
@@ -6101,19 +6109,16 @@ mod tests {
     }
 
     #[test]
-    fn a_pack_members_unknown_override_key_is_refused_as_it_is_standalone() {
-        let block = "sw-overrides:\n  claude:\n    notARealKey: x\n";
+    fn a_pack_members_unknown_override_key_is_dropped_as_it_is_standalone() {
+        let block = "sw-claude:\n  notARealKey: x\n";
         let vfs = commit_helper_with_overrides(block);
-        let standalone = publish_skill(&vfs, &commit_helper_request("claude"), &sw())
-            .unwrap_err()
-            .to_string();
-        assert!(standalone.contains("unknown-override-key"), "{standalone}");
-
-        let pack = publish_skill(&vfs, &plugin_request("claude"), &sw())
-            .unwrap_err()
-            .to_string();
-        assert!(pack.contains("unknown-override-key"), "{pack}");
-        assert!(pack.contains("notARealKey"), "{pack}");
+        publish_skill(&vfs, &commit_helper_request("claude"), &sw()).unwrap();
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+        let published = text_at(
+            &vfs,
+            "/dest/.claude/skills/git-tools/skills/commit-helper/SKILL.md",
+        );
+        assert!(!published.contains("notARealKey"), "{published}");
     }
 
     /// [`vault_with_plugin_and_command`] with `block` added to `ship`'s frontmatter.
@@ -6129,17 +6134,11 @@ mod tests {
     }
 
     #[test]
-    fn a_pack_command_members_unknown_override_key_is_refused() {
-        let vfs = ship_with_overrides("sw-overrides:\n  claude:\n    notARealKey: x\n");
-
-        let err = publish_skill(&vfs, &plugin_request("claude"), &sw())
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("unknown-override-key"), "{err}");
+    fn a_pack_command_members_unknown_override_key_is_dropped() {
+        let vfs = ship_with_overrides("sw-claude:\n  notARealKey: x\n");
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
     }
 
-    // A plugin folder holding its own manifest — an imported plugin, say —
-    // must not be written twice over the one the pack renders.
     #[test]
     fn a_containers_own_manifest_does_not_collide_with_the_rendered_one() {
         let vfs = vault_with_plugin();
@@ -6209,7 +6208,7 @@ mod tests {
     #[test]
     fn a_pack_members_redundant_override_is_reported() {
         let vfs = commit_helper_with_overrides(
-            "allowed-tools:\n  - Read\n  - Grep\nsw-overrides:\n  claude:\n    allowed-tools: Read Grep\n",
+            "allowed-tools:\n  - Read\n  - Grep\nsw-claude:\n  allowed-tools: Read Grep\n",
         );
         let report = publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
 
@@ -6229,7 +6228,7 @@ mod tests {
 
     #[test]
     fn a_pack_command_members_override_reaches_the_pack() {
-        let vfs = ship_with_overrides("sw-overrides:\n  claude:\n    model: haiku\n");
+        let vfs = ship_with_overrides("sw-claude:\n  model: haiku\n");
         publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
 
         let published = text_at(&vfs, "/dest/.claude/skills/git-tools/commands/ship.md");
@@ -6242,9 +6241,9 @@ mod tests {
     fn agent_with(block: &str) -> MemVfs {
         let vfs = vault_with_agent();
         vfs.write_file(
-            Path::new("/vault/skills/senior-reviewer.md"),
+            Path::new("/vault/agents/senior-reviewer.md"),
             AGENT_NOTE
-                .replace("sw-kind: agent\n", &format!("sw-kind: agent\n{block}"))
+                .replacen("---\n", &format!("---\n{block}"), 1)
                 .as_bytes(),
         )
         .unwrap();
@@ -6255,10 +6254,7 @@ mod tests {
     // empty block names nothing to drop.
     #[test]
     fn an_agent_with_no_override_for_the_target_still_publishes() {
-        for block in [
-            "sw-overrides:\n  codex:\n    model: o3\n",
-            "sw-overrides:\n  claude: {}\n",
-        ] {
+        for block in ["sw-codex:\n  model: o3\n", "sw-claude: {}\n"] {
             let vfs = agent_with(block);
             let report = publish_skill(&vfs, &agent_request(), &sw()).unwrap();
             assert!(
@@ -6278,9 +6274,13 @@ mod tests {
     // The read side answers as publish does: an agent's keys are refused.
     #[test]
     fn override_states_refuses_every_key_of_an_agent() {
-        let vfs = agent_with("sw-overrides:\n  claude:\n    permissionMode: plan\n");
-        let note =
-            read_vault_skill(&vfs, Path::new("/vault/skills/senior-reviewer.md"), &sw()).unwrap();
+        let vfs = agent_with("sw-claude:\n  permissionMode: plan\n");
+        let note = crate::vault::read_vault_skill(
+            &vfs,
+            Path::new("/vault/agents/senior-reviewer.md"),
+            &sw(),
+        )
+        .unwrap();
 
         let agent = override_states(
             &note.frontmatter,
@@ -6305,7 +6305,7 @@ mod tests {
     // block would tell the author it reached the destination when it did not.
     #[test]
     fn an_agents_override_block_for_the_target_is_refused_rather_than_dropped() {
-        let vfs = agent_with("sw-overrides:\n  claude:\n    permissionMode: plan\n");
+        let vfs = agent_with("sw-claude:\n  permissionMode: plan\n");
 
         let err = publish_skill(&vfs, &agent_request(), &sw())
             .unwrap_err()

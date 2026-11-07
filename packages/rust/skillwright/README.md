@@ -61,10 +61,13 @@ Publish the note into a Claude Code project:
 ```console
 $ skillwright publish skills/code-review.md --vault my-vault --to my-project --target claude-code --yes
 publishing skills/code-review.md -> /path/to/my-project (claude-code)
-.skillwright/manifest.json  written
 .claude/skills/code-review/SKILL.md  written · first-write
+.skillwright/manifest.json  written
 2 written
 ```
+
+`--to` needs `--target`, and the folder must sit outside the vault. `build` needs
+an output folder: `--out <path>`, or `build.out` in `skillwright.md`.
 
 `--dry-run` shows the plan and writes nothing. `skillwright --help` and
 `skillwright <verb> --help` list every verb and option.
@@ -79,9 +82,9 @@ publishing skills/code-review.md -> /path/to/my-project (claude-code)
 | `list` | List every publishable note in the vault |
 | `adopt` | Bring skills already on disk, or in a repository with `--from-git`, into the vault as notes |
 | `status` | Report each unit's publish state at each configured destination |
-| `bump` | Raise a plugin's `sw-version` by one semver level, or with `--changed-since` every plugin that changed since a baseline |
+| `bump` | Raise a plugin's `version` by one semver level, or with `--changed-since` every plugin that changed since a baseline |
 | `new` | Author a new marketplace, plugin or skill note |
-| `rename` | Rename a component, plugin or marketplace, and rewrite every link to it |
+| `rename` | Rename a component, plugin or marketplace, and rewrite the links to it. A link to a marketplace's `skillwright.md` itself is not rewritten |
 | `move` | Move a component to another plugin or marketplace |
 | `delete` | Move a component's note to the vault's trash |
 | `convert` | Change a note's kind and move it into that kind's folder |
@@ -90,25 +93,27 @@ publishing skills/code-review.md -> /path/to/my-project (claude-code)
 | `harness uninstall <claude\|codex\|cursor\|pi>` | Remove the marketplace's plugins from a harness, and with `--marketplace` its registration too. On Pi, print the settings entry to remove |
 | `harness link <claude\|codex>` | Dev mode: symlink each built skill into the harness's user skill folder. Never replaces a real folder. Cursor and Pi are refused until harness-reference records that they follow symlinked skill folders |
 | `harness unlink <claude\|codex>` | Remove the links into the build, including links to skills no longer built, and nothing else |
-| `init` | Declared, and exits `not implemented` |
+| `init` | Write a `skillwright.md` in the current folder, with the marketplace's name and `build.out` |
 | `unpublish` | Declared, and exits `not implemented` |
 
-`build` and `check` are one path in two modes. The `harness` verbs change
-nothing when run a second time.
+`build` and `check` are one path in two modes. `check --fix-adopt-hashes` does
+not check: it refreshes the adopt hash of each note whose only change is the key
+rename, and needs no output folder. The `harness` verbs change nothing when run
+a second time.
 
 stdout carries the report and nothing else. Progress, tallies, prompts and
 error messages go to stderr. `--json` prints the report as one JSON document.
 
 ## Options
 
-Every verb accepts these after the verb name, for example
-`skillwright build --vault ~/notes`:
+Every verb but `init` accepts these after the verb name, for example
+`skillwright build --vault ~/notes --out dist`:
 
 | Option | Does |
 |---|---|
-| `--vault <path>` | The vault root, overriding the configuration |
-| `--config <path>` | Read this project file instead of the nearest one above the working directory |
-| `--namespace <stem>` | The frontmatter namespace stem, the `sw` of `sw-kind` |
+| `--vault <path>` | The vault root: the folder holding `skillwright.md` |
+| `--config <path>` | Read this root file instead of the nearest `skillwright.md` at or above the working directory |
+| `--namespace <stem>` | The frontmatter namespace stem, the `sw` of `sw-version`. Bare keys are the default |
 | `--json` | Print the report on stdout as one JSON document |
 | `--quiet` | Drop progress and the tally from stderr |
 | `--dry-run` | Show the plan; write nothing (verbs that write) |
@@ -119,10 +124,11 @@ Each verb's own options:
 | Verb | Its own options |
 |---|---|
 | `publish` | `[note...]`, `--to <root>` (repeatable), `--target <target>`, `--all`, `--overwrite <path>` (repeatable) |
-| `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--default-plugin <name>`, `--watch` (`build` only) |
+| `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--watch` (`build` only), `--fix-adopt-hashes` (`check` only) |
+| `init` | `--out <path>`, `--name <name>` |
 | `list` | `--skills-root <path>`, `--model` (print the loaded marketplace model as JSON) |
 | `status` | `[note]`, `--check` |
-| `bump` | `[plugin]`, `--major`, `--minor`, `--patch`, `--changed-since <ref\|dir>` |
+| `bump` | `[plugin]`, `--major`, `--minor`, `--patch`, `--changed-since <ref\|dir>`, `--marketplace <name>` |
 | `adopt` | `[source...]`, `--from <location>` (repeatable), `--from-git <ref>` (repeatable), `--plugin <name>`, `--into <path>`, `--set-targets <target>` (repeatable), `--only <name>` (repeatable), `--overwrite <path>` (repeatable) |
 | `harness install` / `harness update` | `--plugin <name>` (repeatable), `--scope <user\|project\|local>`, `--path <path>`, `--git-url <url>`, `--git-ref <ref>` |
 | `harness uninstall` | the same, plus `--marketplace` |
@@ -139,72 +145,117 @@ Each verb's own options:
 | 1 | The run completed and something was refused, or `check` found drift |
 | 2 | A run-level blocker. Nothing was attempted |
 | 3 | Usage error |
-| 4 | No configuration, and none supplied |
+| 4 | No vault: no `skillwright.md` and no convention folder, and none supplied. Also `build` or `check` with no output folder |
 | 130 | Interrupted |
 
 ## Configuration
 
-Two files, both optional. A flag overrides the project file, which overrides
-the machine file, except for `paths:` (below). `skillwright` never writes
-either one.
+The only configuration file is `skillwright.md`, the root file. The folder
+holding it is the vault. It is committed, and found by walking up from the
+working directory, the way git finds a repository, or named with `--config`.
+`skillwright` writes only its `version`, with `bump <marketplace>`.
 
-- **The project file** is `skillwright.yaml`. It is committed, and found by
-  walking up from the working directory, or named with `--config`. It holds
-  the vault path, the frontmatter namespace, the destinations and the
-  `marketplace:` block.
-- **The machine file** is `<config-home>/skillwright/config.yaml`, set by
-  `SKILLWRIGHT_MACHINE_CONFIG` when that is set. It has the same shape. It
-  supplies a whole top-level key when the project file leaves that key out
-  or empty. Nested values are not merged: a project `marketplace:` block
-  replaces the machine one entirely.
+Its frontmatter's top-level keys are the marketplace's fields. Settings for
+how `skillwright` runs sit under `build:`. The body is ignored.
 
-`paths:` is the exception. Names from both files merge, and when both define
-the same name the machine file's value wins.
-
-`<config-home>` comes from [`tiered-dirs`](https://crates.io/crates/tiered-dirs): for example
-`~/Library/Application Support` on macOS and `~/.config` on Linux.
-`SKILLWRIGHT_ROOT` and the other `SKILLWRIGHT_*` variables move it.
-
-Relative paths in a config file resolve against that file's directory,
-including relative entries under `paths:` in the machine file. A flag's path
-resolves against the working directory.
-
-```yaml
-vault: notes
-namespace: sw
-destinations:
-  - root: ~/code/my-project
-    target: claude-code
-marketplace:
-  name: house
-  default_plugin: tools
+```markdown
+---
+name: house
+description: Skills for the house projects.
+owner: acme
+license: MIT
+build:
+  out: dist             # required, here or as --out; `.` builds beside this file
+  harnesses: [claude, codex]
+  destinations:
+    - root: ~/code/my-project
+      target: claude-code
+---
 ```
+
+The `build:` keys are `out`, `harnesses`, `namespace`, `launcher_path`, `bump`,
+`require_descriptions`, `destinations`, `scan_locations`, `assets`, `hooks`,
+`exclude` and `patterns`. An unknown key is a warning, not an error. See the
+[`skillwright.md` reference](../../../docs/reference/skillwright-md.md), and the
+[field reference](../../../docs/reference/fields.md) for every frontmatter key.
+
+The vault follows a folder convention:
+
+- `plugins/<p>/` is a plugin, and `plugins/<p>/<p>.md` is its optional note.
+- `skills/`, `agents/`, `commands/` and `hooks/` are kind folders.
+- A root `skills/` folder is a plugin named after the marketplace.
+- `plugins/<p>/assets/` is copied as it is to the plugin's root, and
+  `plugins/<p>/CHANGELOG.md` into every pack.
+- `docs/` never ships.
+
+The marketplace's name defaults to the vault folder's name. A folder holding
+`plugins/` or `skills/` builds with no root file at all.
+
+A root file with `workspace: true` holds shared defaults (`author`,
+`license` and every `build:` key but `out`) for every
+`marketplaces/<m>/skillwright.md` below it. A marketplace's own value wins,
+key by key: set `build.namespace` in a marketplace and the rest of the
+workspace's `build:` keys still apply. `build.out` is a path, so each
+marketplace sets its own. `build` and `check` there run over each marketplace;
+`--marketplace <name>` picks one.
+
+`build` and `check` need an output folder: `--out`, or `build.out`. There is no
+default, so nothing builds into the vault unless you ask. `out: .` builds beside
+the root file, which makes the repository installable as a marketplace.
+
+Each harness's packs folder and marketplace manifest (`.agents/packs/`,
+`.agents/plugins/marketplace.json`, and so on) are generated output, replaced
+on every build, so do not edit them. A build leaves everything else in those
+harness folders alone, such as your own `.agents/skills/`.
+
+With no `build.destinations`, `publish` and `status` use each harness's user
+skill folder, such as `~/.claude/skills`. With no `build.scan_locations`,
+`adopt` reads the same folders.
+
+Relative paths in the root file resolve against its folder. A flag's path
+resolves against the working directory. A flag overrides the root file.
 
 ### Bump
 
 `bump --changed-since <ref|dir>` compares the vault's render with a baseline
-and bumps each plugin whose skills or files differ while its `sw-version`
+and bumps each plugin whose skills or files differ while its `version`
 has not moved. A directory is read as an already-built marketplace, such as
 the committed output; one that holds no plugin manifest for any configured
 harness is refused. Anything else is a git ref: it is checked out into a
 temporary worktree with the repository's hooks off, built there with the
-ref's own copy of the project file and the ref's own vault, and removed
-afterwards. Git LFS files are not fetched, so they compare as pointers. A
-ref whose vault resolves outside its checkout is refused. A run also removes
-the baselines an interrupted earlier run left behind.
+ref's own copy of the root file and the ref's own vault, and removed
+afterwards. Its packs are moved to where the current root file keeps them, so a
+`packs` setting changed since the ref still compares each plugin with itself. Git LFS files are not fetched, so they compare as pointers. A ref
+that holds no `skillwright.md` is refused: compare against a built folder
+instead. A run also removes the baselines an interrupted earlier run left behind.
 
 A drifted plugin that is not bumped is `skipped`, with one reason:
 `version-moved` (its version already changed since the baseline, so a second
 run bumps nothing), `not-in-baseline` (the baseline does not hold it) or
 `manifest-only` (only its manifest changed). A plugin whose note has no
-`sw-version` is bumped on any change.
+`version` is bumped on any change. A changed plugin with no note is refused,
+unless it is the marketplace's own plugin described below.
 
-`bump.patch` picks how the patch number is written. Only the project file
-may set `bump:`; a machine file that sets it is refused.
+A plugin's version has one source, which the manifest, the warnings, `check`'s
+advice and `bump` all read:
+
+- The marketplace's own plugin, named after the marketplace and with no folder
+  of its own (a root `skills/`, say), takes the `version` of the marketplace's
+  `skillwright.md`. `bump <marketplace>` edits that key.
+- Every other plugin takes its note's `version`, else `0.1.0`, with a warning.
+  This holds for a `plugins/<marketplace>/` folder too, note or not: the root
+  file's `version` is never its own.
+
+In a vault or workspace holding several marketplaces, `--marketplace <name>`
+picks the one to work in, as it does for `build`. Without it, a plugin name two
+marketplaces share is a usage error, and at a workspace root `bump` is refused.
+
+`build.bump.patch` picks how the patch number is written:
 
 ```yaml
-bump:
-  patch: timestamp # or increment, the default
+build:
+  bump:
+    patch: timestamp # or increment, the default
 ```
 
 With `timestamp`, every bump sets the patch to the UTC time as
@@ -215,12 +266,13 @@ a consumer that stores version parts as 32-bit integers cannot hold it.
 
 ### Hooks
 
-`hooks:` names one hooks file per plugin:
+`build.hooks` names one hooks file per plugin:
 
 ```yaml
-hooks:
-  - from: plugin/hooks.json   # relative to this file
-    plugin: tools             # absent means marketplace.default_plugin
+build:
+  hooks:
+    - from: plugin/hooks.json   # relative to skillwright.md
+      plugin: tools             # absent means the marketplace's own plugin
 ```
 
 The file is a Claude Code `hooks.json`, with event names from Claude Code's
@@ -243,14 +295,12 @@ or hand-edited report as drift.
 
 ### Launcher
 
-`marketplace.launcher_path` names a launcher script the plugin ships as an
-asset, relative to the plugin's root:
+`build.launcher_path` names a launcher script the plugin ships as an
+asset, relative to the plugin's root. With the script at
+`plugins/<p>/assets/bin/tool`:
 
 ```yaml
-assets:
-  - from: scripts/tool
-    to: bin/tool
-marketplace:
+build:
   launcher_path: bin/tool
 ```
 
@@ -280,12 +330,13 @@ Each release is listed in the [changelog](CHANGELOG.md).
 
 This crate was published as `tradecraft` up to 0.3.7. skillwright is in
 alpha and does not read the old names, so a project that used them must be
-renamed by hand: the project file, manifest folder, frontmatter keys,
-environment variables and machine file all take the `skillwright` and `sw`
-spellings. Old `tc-` keys are not errors: they publish as ordinary keys, and a
-note with `tc-kind: plugin` reads as a skill.
+renamed by hand: the configuration, manifest folder and environment variables
+take the `skillwright` spellings, and frontmatter keys are bare by default. Old
+`tc-` keys are unknown keys: each one warns and ships under `metadata:`, and a note
+with `tc-kind: plugin` reads as a skill. See the
+[migration guide](https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md).
 
-`publish` applies a note's `sw-overrides`; `build` and `check` do not.
+A note's harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`) apply to `publish`, `build` and `check`.
 
 ## License
 

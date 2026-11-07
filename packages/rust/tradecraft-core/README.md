@@ -24,7 +24,7 @@ Every function that reads or writes files takes a `&dyn Vfs` first.
 run works.
 
 ```rust
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tradecraft_core::{MemVfs, Namespace, PublishMode, PublishRequest, Vfs, publish_skill};
 
 let vfs = MemVfs::new();
@@ -34,15 +34,10 @@ vfs.write_file(
     b"---\ndescription: Reviews the current diff.\n---\nReview the diff.\n",
 )?;
 
-let request = PublishRequest {
-    skill_path: PathBuf::from("/vault/skills/code-review.md"),
-    destination_root: PathBuf::from("/project"),
-    target: "claude-code".to_owned(),
-    mode: PublishMode::Write,
-    skills_root: None,
-    published_at: None,
-    overwrite: Vec::new(),
-};
+// The note, the destination and the target are required. The other fields
+// start empty; set any of them on the value.
+let mut request = PublishRequest::new("/vault/skills/code-review.md", "/project", "claude-code");
+request.mode = PublishMode::Write;
 let report = publish_skill(&vfs, &request, &Namespace::default())?;
 // .skillwright/manifest.json, .claude/skills/code-review/SKILL.md
 assert_eq!(report.files.len(), 2);
@@ -51,6 +46,72 @@ assert_eq!(report.files.len(), 2);
 
 `examples/publish.rs` is the same code as a program:
 `cargo run -p tradecraft-core --example publish`.
+
+## Load a vault and build it
+
+The CLI does the same steps.
+
+1. `load_marketplace(&vfs, start, home)` finds the nearest `skillwright.md` at
+   or above `start`, folds in the workspace above it when the file is a
+   member (`marketplaces/<m>/skillwright.md`), and checks `build.namespace`.
+   It returns a `LoadedMarketplace`: the vault folder `dir`, the merged
+   `RootFile`, the `namespace`, `out_root` (`build.out` resolved with `~`
+   expanded), and `inputs`, the config, harnesses, assets and hooks. `home`
+   is the home directory; the library reads no environment. `Ok(None)` means
+   no root file. A root file with `workspace: true` builds nothing itself;
+   load each member by passing its folder as `start`.
+2. `export_skills(&vfs, &request, &loaded.namespace)` builds, or checks, the
+   marketplace. Build the request from the result with
+   `ExportRequest::new(loaded.dir, out_root, inputs.config)`, then set
+   `harnesses`, `assets` and `hooks` from `inputs`. Leave out `inputs` and a
+   build gets no assets and no hooks. `out_root` is an `Option`, because
+   `build.out` is optional in the root file: when it is `None`, pass an
+   output folder of your own, or refuse the build as the CLI does.
+
+```rust
+use std::path::Path;
+use tradecraft_core::{CoreError, ExportRequest, MemVfs, Vfs, export_skills, load_marketplace};
+
+let vfs = MemVfs::new();
+vfs.create_dir_all(Path::new("/vault/skills"))?;
+vfs.write_file(
+    Path::new("/vault/skillwright.md"),
+    b"---\nname: house\nbuild:\n  out: dist\n---\n",
+)?;
+vfs.write_file(
+    Path::new("/vault/skills/review.md"),
+    b"---\ndescription: Reviews the current diff.\n---\nReview the diff.\n",
+)?;
+
+let loaded = load_marketplace(&vfs, Path::new("/vault"), Path::new("/home"))?
+    .ok_or_else(|| CoreError::Refused("no skillwright.md".to_owned()))?;
+let out_root = loaded
+    .out_root
+    .clone()
+    .ok_or_else(|| CoreError::Refused("set build.out in skillwright.md".to_owned()))?;
+let inputs = loaded.inputs;
+let mut request = ExportRequest::new(loaded.dir, out_root, inputs.config);
+request.harnesses = inputs.harnesses;
+request.assets = inputs.assets;
+request.hooks = inputs.hooks;
+let report = export_skills(&vfs, &request, &loaded.namespace)?;
+assert!(report.changed);
+# Ok::<(), CoreError>(())
+```
+
+The steps inside are public if a host needs them apart: `find_root_file`,
+`workspace_above`, `RootFile::inherit`, `marketplace_inputs` and
+`resolve_path` for any other path read from the file.
+
+To rename or delete a marketplace folder, plan it with
+`plan_rename_marketplace` or `plan_delete_container(…, EntityKind::Marketplace)`,
+passing the entry `marketplaces/<m>/skillwright.md`. The returned
+`AuthoringOp` moves or trashes the whole folder. The library only plans.
+Apply the op with `skillwright::apply::{apply, Vault}` from the `skillwright`
+crate, which also relinks notes outside the folder that link into it; that
+crate pulls in the CLI's dependencies. A path written in the root file, and a
+link that names `skillwright.md` itself, are not rewritten. The CLI's `rename`
+refuses to run at a workspace root.
 
 ## What it covers
 
@@ -62,15 +123,17 @@ assert_eq!(report.files.len(), 2);
 | `projection` | Render one skill into one tool's files, through `agent-adapt` |
 | `publish` | Write a note onto a destination, idempotently, or report what a write would do |
 | `export` | Build the vault into one marketplace tree per tool, or check the tree for drift |
+| `paths` | Load the root file with its workspace and resolve it into a build's inputs |
 | `status` | Report a note's publish state at a destination |
 | `adopt` | Import published `SKILL.md` bundles as vault notes |
 | `authoring` | Plan a new, renamed, moved, deleted or converted note |
 | `guard` | Refuse any write into a source root or the vault |
 | `vfs` | The filesystem seam |
 
-Frontmatter keys under the `sw-` prefix (`sw-kind`, `sw-targets`,
-`sw-version` and so on) belong to this library and are stripped on publish.
-`Namespace` sets the prefix; `Namespace::default()` is `sw`.
+The `keys` module lists the frontmatter keys this library owns, per kind.
+They are stripped on publish, and an unknown key on a skill travels under
+`metadata:`. Keys are bare by default. `Namespace::new("sw")` restores the
+prefixed forms, flat (`sw-version`) or nested (`sw:`).
 
 ## Runtime names
 
@@ -78,16 +141,24 @@ Some names the library writes are fixed:
 
 - `.skillwright/manifest.json`, the record of what a publish wrote at a
   destination;
-- `.skillwright-stage`, the folder a build stages a new tree in before it
+- `.skillwright-stage`, the folder a build stages its output in before it
   swaps it into place;
 - the `<!-- Generated by skillwright from … -->` marker on generated files;
-- `skillwright.yaml`, the project file name the `settings` module reads.
+- `skillwright.md`, the root file the `settings` module parses.
+
+## Generated output
+
+Each harness's packs folder and marketplace manifest are generated output,
+replaced on every build. `HarnessProfile::owned_paths` names them, for example
+`.agents/packs/` and `.agents/plugins/marketplace.json`. A build leaves
+everything else in `.agents/`, `.pi/`, `.claude-plugin/` and `.cursor-plugin/`
+alone.
 
 ## Launcher path
 
 A plugin may ship a launcher script as an asset and name it in
-`MarketplaceConfig::launcher_path` (`marketplace.launcher_path` in
-`skillwright.yaml`), for example `bin/tool`. A skill body calls it as
+`MarketplaceConfig::launcher_path` (`build.launcher_path` in
+`skillwright.md`), for example `bin/tool`. A skill body calls it as
 `${CLAUDE_PLUGIN_ROOT}/bin/tool`. The Claude Code tree keeps that call, since
 Claude Code expands the variable. The Codex, Cursor and Pi trees get the
 launcher's path relative to the skill's folder instead, such as
@@ -105,6 +176,33 @@ The library does no I/O except through `Vfs`, so it runs under
 
 The crate is 0.x. A minor version may break the API, and each break is listed
 in the [CHANGELOG](CHANGELOG.md).
+
+Most public types are `#[non_exhaustive]`, so a new field or variant is not a
+breaking change:
+
+- The request types (`PublishRequest`, `StatusRequest`, `ExportRequest`,
+  `LoadRequest`, `AdoptRequest`, `ComponentRequest`, `VaultScope`,
+  `AssetSpec`, `HookFileSpec`, `NewNote`, `CompileSource`). Build one with
+  its `new` constructor, which takes the required inputs, and set the other
+  fields on the value.
+- The config and settings types (`MarketplaceConfig`, `PluginOverrides`,
+  `RootFile`, `BuildSettings`, `MarketplaceFields`, `Placement`). Build one
+  with `Default::default()` and set its fields.
+- The output types (`ExportReport`, `PublishReport`, `PublishedFile`,
+  `DiscoveryReport`, `DiscoveredComponent`, `DiscoveryWarning`,
+  `SkippedNote`, `AdoptReport`, `AdoptedSkill`, `PublishUnitStatus`). Read
+  them by field. `DiscoveryWarning::new` and `PublishedFile::new` build a line
+  for a host's own report.
+- The enums (`CoreError`, `AuthoringOp`, `ExportUnit`, `UnitStatus`,
+  `StaleKind`, `PublishStatus`, `PublishOutcome`, `PublishState`,
+  `AdoptStatus`, `ReasonToken`). A `match` on one needs a `_` arm. The
+  status enums have `as_str`, the word they serialize as.
+  `CoreError::variant_name` names an error's variant, and
+  `CoreError::reason_token` gives the reason token a host reports for it.
+
+`LinkIndex` (for `CompileSource::links`) and `FieldValue` (for
+`FieldEdit::set`) are re-exported, so a consumer needs no `markdown-link` or
+`yaml-splice` dependency of its own.
 
 ## Platforms
 

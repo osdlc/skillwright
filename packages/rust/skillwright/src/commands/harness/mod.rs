@@ -10,9 +10,9 @@
 //!
 //! Nothing here names a marketplace or a plugin. The marketplace name comes
 //! from the harness root's own `marketplace.json`, since that manifest is
-//! what the harness checks the registration against. `marketplace.name`,
-//! else `marketplace.out`'s final path component, is the fallback for a root
-//! not built yet. Plugins come from `--plugin` or `marketplace.default_plugin`.
+//! what the harness checks the registration against. The root file's
+//! `name`, else its folder's name, is the fallback for a root not built yet.
+//! Plugins come from `--plugin`, else every pack the harness's tree holds.
 
 pub mod adapter;
 pub mod cli_runner;
@@ -23,16 +23,16 @@ pub mod reconcile;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use config_layers::needs::Need;
 use serde::Serialize;
 use serde_json::Value;
-use tradecraft_core::{marketplace_manifest_path, plugin_manifest_path};
+use tradecraft_core::{MarketplaceConfig, marketplace_manifest_path, plugin_manifest_path};
 
-use crate::config::{NEEDS, resolve_against_cwd, resolve_configured_path};
+use crate::commands::marketplace::configured_out;
+use crate::config::resolve_against_cwd;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
-use crate::resolve::{CommonFlags, ResolvedRun, resolve_run};
+use crate::resolve::{CommonFlags, ResolvedRun, refuse_workspace, resolve_run};
 
 use adapter::{HarnessAdapter, MarketSource, Scope, Want, str_at};
 use reconcile::{
@@ -199,9 +199,9 @@ pub struct HarnessFlags {
     pub harness: Harness,
     /// The scope to register and install at.
     pub scope: Scope,
-    /// Plugins to act on. Empty means `marketplace.default_plugin`.
+    /// Plugins to act on. Empty means every pack the built tree holds.
     pub plugins: Vec<String>,
-    /// The built marketplace directory. Overrides `marketplace.out`.
+    /// The built marketplace directory. Overrides `build.out`.
     pub path: Option<String>,
     /// Register the marketplace from this git URL instead of the directory.
     pub git_url: Option<String>,
@@ -234,6 +234,49 @@ struct InstallDocument<'a> {
     dry_run: bool,
 }
 
+/// The plugins `packs` holds, by name.
+fn pack_names(packs: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(packs) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// The plugins `harness`'s packs folder under `root` holds, by name, the
+/// folder being where `config` puts it.
+fn built_plugins(root: &Path, harness: &str, config: &MarketplaceConfig) -> Vec<String> {
+    tradecraft_core::packs_path(config, harness)
+        .map(|packs| pack_names(&root.join(packs)))
+        .unwrap_or_default()
+}
+
+/// Where `harness`'s packs sit under `root`: the `packs` of whichever of the
+/// run's marketplaces built there.
+///
+/// # Errors
+///
+/// A `packs` value a build could not own, as the line to print.
+pub(crate) fn packs_dir(run: &ResolvedRun, root: &Path, harness: &str) -> Result<PathBuf, String> {
+    let configs = run.effective_configs(None);
+    let mut dirs = Vec::new();
+    for config in &configs {
+        tradecraft_core::check_packs(config).map_err(|err| err.to_string())?;
+        if let Some(packs) = tradecraft_core::packs_path(config, harness) {
+            dirs.push(root.join(packs));
+        }
+    }
+    let built = dirs.iter().position(|dir| dir.is_dir()).unwrap_or(0);
+    dirs.into_iter()
+        .nth(built)
+        .ok_or_else(|| format!("{harness} has no pack layout"))
+}
+
 /// Run `harness <verb> <harness>` and return the exit code.
 pub fn run_harness(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandContext<'_>) -> i32 {
     match (verb, flags.harness) {
@@ -245,42 +288,20 @@ pub fn run_harness(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandCon
     }
 }
 
-/// The built marketplace directory: `--path`, else `marketplace.out`.
+/// The built marketplace directory: `--path`, else `build.out`.
 ///
 /// # Errors
 ///
-/// The exit code of the usage error printed when neither is set.
+/// The exit code, having said so, when neither names a folder.
 pub(crate) fn built_root(
     run: &ResolvedRun,
     flags: &HarnessFlags,
     ctx: &mut CommandContext<'_>,
-    argv_verb: &[&str],
 ) -> Result<PathBuf, i32> {
-    if let Some(path) = &flags.path {
-        return Ok(resolve_against_cwd(path, &ctx.cwd));
+    match &flags.path {
+        Some(path) => Ok(resolve_against_cwd(path, &ctx.cwd)),
+        None => configured_out(run, ctx.err),
     }
-    run.config
-        .as_ref()
-        .and_then(|c| c.marketplace.out.as_deref())
-        .map(|out| resolve_configured_path(out, &run.config_dir))
-        .ok_or_else(|| {
-            let need = Need {
-                config: "marketplace.out",
-                unless_input: Some("path"),
-            };
-            usage_error(ctx.err, &NEEDS.message(&need, &run.config_dir, argv_verb))
-        })
-}
-
-/// `--plugin`, else `marketplace.default_plugin`, else `None`.
-pub(crate) fn configured_plugins(run: &ResolvedRun, flags: &HarnessFlags) -> Option<Vec<String>> {
-    if !flags.plugins.is_empty() {
-        return Some(flags.plugins.clone());
-    }
-    run.config
-        .as_ref()
-        .and_then(|c| c.marketplace.default_plugin.clone())
-        .map(|p| vec![p])
 }
 
 /// Asks to approve a plan of commands, unless `--yes` was given.
@@ -327,40 +348,13 @@ fn run_market(
         Ok(run) => run,
         Err(code) => return code,
     };
-    let settings = run.config.as_ref().map(|c| &c.marketplace);
-    let project = run
-        .config
-        .as_ref()
-        .and_then(|c| serde_json::to_value(c).ok());
-
-    let input_set = |key: &str| match key {
-        "path" => flags.path.is_some(),
-        "plugin" => !flags.plugins.is_empty(),
-        _ => false,
-    };
     let verb_name = verb.name();
     let argv_verb = ["harness", verb_name, adapter.name];
-    macro_rules! required {
-        ($need:expr, $value:expr) => {{
-            let need = $need;
-            match $value {
-                Some(value) if NEEDS.met(&need, project.as_ref(), None, &input_set) => value,
-                _ => {
-                    return usage_error(
-                        ctx.err,
-                        &NEEDS.message(&need, &run.config_dir, &argv_verb),
-                    );
-                }
-            }
-        }};
+    if let Err(code) = refuse_workspace(&argv_verb.join(" "), &run, ctx.err) {
+        return code;
     }
 
-    let out_root: Option<PathBuf> = settings
-        .and_then(|s| s.out.as_deref())
-        .map(|out| resolve_configured_path(out, &run.config_dir));
-
-    // Resolved before the name: the name lookup reads this directory's manifest.
-    let root = match built_root(&run, flags, ctx, &argv_verb) {
+    let root = match built_root(&run, flags, ctx) {
         Ok(root) => root,
         Err(code) => return code,
     };
@@ -370,46 +364,40 @@ fn run_market(
         Ok(found) => found.flatten(),
         Err(message) => return blocked(ctx.err, &message),
     };
-    let configured_name = settings
-        .and_then(|s| s.name.clone())
-        .filter(|name| !name.is_empty());
-    let market_name = match found.or(configured_name) {
-        Some(name) => name,
-        None => {
-            let derived_from = required!(
-                Need {
-                    config: "marketplace.out",
-                    unless_input: None,
-                },
-                out_root
-            );
-            match derived_from.file_name().and_then(|f| f.to_str()) {
-                Some(name) => name.to_string(),
-                None => {
-                    return blocked(
-                        ctx.err,
-                        &format!(
-                            "marketplace.out has no final path component to derive a marketplace name from: {}",
-                            derived_from.display()
-                        ),
-                    );
-                }
-            }
+    // The manifest names the marketplace built here. Failing that, any of them.
+    let folder = found
+        .as_deref()
+        .and_then(|name| run.marketplace_folder(name));
+    let configs = run.effective_configs(folder.as_deref().or(found.as_deref()));
+    for config in &configs {
+        if let Err(err) = tradecraft_core::check_packs(config) {
+            return blocked(ctx.err, &err.to_string());
         }
-    };
+    }
+    let market_name = found.unwrap_or_else(|| run.marketplace_name());
 
-    let configured = configured_plugins(&run, flags);
-    let plugins: Vec<String> = if installs_plugins {
-        required!(
-            Need {
-                config: "marketplace.default_plugin",
-                unless_input: Some("plugin"),
-            },
-            configured
-        )
+    // `--plugin`, else every plugin this harness's tree holds a pack for.
+    let plugins: Vec<String> = if !flags.plugins.is_empty() {
+        flags.plugins.clone()
     } else {
-        configured.unwrap_or_default()
+        let mut names: Vec<String> = configs
+            .iter()
+            .flat_map(|config| built_plugins(&root, adapter.name, config))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
     };
+    if installs_plugins && plugins.is_empty() {
+        return usage_error(
+            ctx.err,
+            &format!(
+                "no built plugins under {} for {}; run `skillwright build` first, or pass --plugin",
+                root.display(),
+                adapter.name
+            ),
+        );
+    }
 
     let versions = match verb {
         HarnessVerb::Update => match wanted_versions(&root, adapter.name, &plugins) {

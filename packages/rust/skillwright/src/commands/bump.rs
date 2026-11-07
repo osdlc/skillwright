@@ -1,4 +1,4 @@
-//! `skillwright bump` — raise a plugin's `sw-version` by a semver level,
+//! `skillwright bump` — raise a plugin's `version` by a semver level,
 //! rewriting only that frontmatter key (or, for a note that uses the nested
 //! `sw:` block, only that block). Contract: the CLI spec's `bump` section.
 //!
@@ -6,32 +6,33 @@
 //! <ref|dir>` raises every plugin whose rendered members differ from a
 //! baseline and whose version has not moved since: a directory is a built
 //! marketplace as it stands, and anything else is a git ref, built in a
-//! temporary worktree with the ref's own copy of the project file.
+//! temporary worktree with the ref's own copy of the root file.
 //!
 //! A version that does not parse as plain `MAJOR.MINOR.PATCH` is refused
 //! rather than guessed at ([`tradecraft_core::next_version`]); an absent
-//! `sw-version` starts from the core's own default, `0.1.0` — so a note that
-//! has never carried the key is bumped, not refused. The project file's
-//! `bump.patch` picks how the patch number is written ([`PatchScheme`]).
+//! `version` starts from the core's own default, `0.1.0` — so a note that
+//! has never carried the key is bumped, not refused. The root file's
+//! `build.bump.patch` picks how the patch number is written ([`PatchScheme`]).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use tradecraft_core::harness::with_plugin_format;
 use tradecraft_core::{
-    BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportUnit, Namespace, NativeVfs,
-    UnitStatus, Vfs, apply_field_edits, discover_components, export_skills, next_version,
-    ns_field_edits, ns_field_label, packs_path, parse_semver, plugin_manifest_path, read_ns_field,
-    root_trees,
+    BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit,
+    MarketplaceConfig, Namespace, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs,
+    apply_field_edits, check_packs, discover_components, export_skills, in_plugin_folder,
+    next_version, ns_field_edits, ns_field_label, owned_paths, packs_path, parse_semver,
+    plugin_folder_in, plugin_manifest_path, read_ns_field,
 };
 
 use crate::commands::marketplace::configured_request;
-use crate::config::{PROJECT_FILES, PatchScheme};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::normalize_thrown_reason;
-use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, resolve_skills_root};
+use crate::resolve::{CommonFlags, ResolvedRun, resolve_run, workspace_runs};
 
 /// The resolved flags of `skillwright bump`.
 pub struct BumpFlags {
@@ -41,6 +42,8 @@ pub struct BumpFlags {
     /// `--changed-since`: bump every plugin that changed since this git ref
     /// or built directory.
     pub changed_since: Option<String>,
+    /// `--marketplace`: the marketplace to work in.
+    pub marketplace: Option<String>,
     /// How much of the version to bump.
     pub level: BumpLevel,
     /// The global `--vault`, `--config` and `--namespace` flags.
@@ -178,44 +181,55 @@ struct Planned {
     versioned: bool,
     /// `None`: the current version is not plain semver.
     new: Option<String>,
+    /// How this note spells its keys.
+    namespace: Namespace,
+}
+
+/// A note that holds a plugin's version.
+struct VersionNote {
+    path: PathBuf,
+    rel: String,
+    namespace: Namespace,
 }
 
 fn plan_bump(
-    component: &DiscoveredComponent,
-    namespace: &Namespace,
+    note: VersionNote,
     level: BumpLevel,
     scheme: PatchScheme,
     now: u64,
 ) -> Result<Planned, String> {
-    let bytes = NativeVfs
-        .read_file(&component.entry_path)
-        .map_err(|e| e.to_string())?;
-    let source = String::from_utf8(bytes)
-        .map_err(|e| format!("{} is not valid UTF-8: {e}", component.vault_relative_path))?;
-    // Either shape the note writes it in: flat `sw-version`, or `version`
+    let VersionNote {
+        path,
+        rel,
+        namespace,
+    } = note;
+    let bytes = NativeVfs.read_file(&path).map_err(|e| e.to_string())?;
+    let source = String::from_utf8(bytes).map_err(|e| format!("{rel} is not valid UTF-8: {e}"))?;
+    // Either shape the note writes it in: flat `version`, or `version`
     // inside a nested `sw:` block. Messages name the key as the note spells it.
-    let key = ns_field_label(&source, namespace, "version").map_err(|e| e.to_string())?;
-    let found = read_ns_field(&source, namespace, "version").map_err(|e| e.to_string())?;
+    let key = ns_field_label(&source, &namespace, "version").map_err(|e| e.to_string())?;
+    let found = read_ns_field(&source, &namespace, "version").map_err(|e| e.to_string())?;
     let versioned = found.is_some();
     // No version key in either shape is not a refusal — the core's stated
     // default is what a bump starts from.
     let current = found.unwrap_or_else(|| "0.1.0".to_string());
     let new = bumped_version(&current, level, scheme, now);
     Ok(Planned {
-        rel: component.vault_relative_path.clone(),
-        entry_path: component.entry_path.clone(),
+        rel,
+        entry_path: path,
         source,
         key,
         current,
         versioned,
         new,
+        namespace,
     })
 }
 
-fn write_bump(planned: &Planned, new: &str, namespace: &Namespace) -> Result<(), String> {
+fn write_bump(planned: &Planned, new: &str) -> Result<(), String> {
     let edited = ns_field_edits(
         &planned.source,
-        namespace,
+        &planned.namespace,
         &[("version", Some(yaml_splice::Value::Str(new.to_owned())))],
     )
     .and_then(|edits| apply_field_edits(&planned.source, &edits))
@@ -231,11 +245,50 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
-    let namespace = run.core_namespace();
-    let skills_root = resolve_skills_root(None, &run, &ctx.cwd);
+    if !run.is_workspace() {
+        return bump_in(flags, ctx, &run, flags.marketplace.as_deref());
+    }
+    // At a workspace root `--marketplace` picks the member, a vault of its own.
+    let Some(only) = flags.marketplace.as_deref() else {
+        return blocked(
+            ctx.err,
+            &format!(
+                "bump acts on one marketplace, and {} is a workspace. Pass --marketplace \
+                 <name>, or run it from inside marketplaces/<name>/",
+                run.vault.display()
+            ),
+        );
+    };
+    match workspace_runs(&run, &flags.common, Some(only), ctx.err) {
+        Ok(members) => members
+            .first()
+            .map_or(EXIT_OK, |member| bump_in(flags, ctx, member, None)),
+        Err(code) => code,
+    }
+}
 
-    let scan = match discover_components(&NativeVfs, &run.vault, skills_root.as_deref(), &namespace)
-    {
+/// The marketplace folders a scan holds: each marketplace note's, and each
+/// component's under `marketplaces/`, as the build counts them.
+pub(crate) fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
+    components
+        .iter()
+        .filter_map(|c| match c.kind {
+            EntityKind::Marketplace => Some(c.folder()),
+            _ => c.marketplace.as_deref(),
+        })
+        .collect()
+}
+
+/// `bump` in one vault, narrowed to the marketplace folder `market`.
+fn bump_in(
+    flags: &BumpFlags,
+    ctx: &mut CommandContext<'_>,
+    run: &ResolvedRun,
+    market: Option<&str>,
+) -> i32 {
+    let namespace = run.core_namespace();
+
+    let mut scan = match discover_components(&run.source_vfs(None), &run.vault, None, &namespace) {
         Ok(scan) => scan,
         Err(err) => {
             let message = err.to_string();
@@ -248,21 +301,37 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
             );
         }
     };
+    if let Some(market) = market {
+        let markets: Vec<&str> = marketplaces_in(&scan.components).into_iter().collect();
+        // As `build` takes it: a vault with no marketplaces has no set to
+        // pick from, so the name selects everything.
+        if !markets.is_empty() && !markets.contains(&market) {
+            return usage_error(
+                ctx.err,
+                &format!(
+                    "no marketplace `{market}` in this vault: it holds {}",
+                    markets.join(", ")
+                ),
+            );
+        }
+        scan.components.retain(|c| {
+            c.marketplace.as_deref().is_none_or(|m| m == market)
+                && (c.kind != EntityKind::Marketplace || c.folder() == market)
+        });
+    }
     let scheme = run
         .config
+        .build
+        .bump
         .as_ref()
-        .and_then(|c| c.bump.as_ref())
-        .map(|b| b.patch)
+        .map(|bump| bump.patch)
         .unwrap_or_default();
-    let plugins: Vec<&DiscoveredComponent> = scan
-        .components
-        .iter()
-        .filter(|c| c.kind == EntityKind::Plugin)
-        .collect();
 
     match (&flags.plugin, &flags.changed_since) {
-        (Some(plugin), None) => run_one(flags, ctx, &plugins, plugin, &namespace, scheme),
-        (None, Some(since)) => run_changed(flags, ctx, &run, &plugins, since, scheme),
+        (Some(plugin), None) => run_one(flags, ctx, run, &scan.components, plugin, scheme),
+        (None, Some(since)) => {
+            run_changed(flags, ctx, run, market, &scan.components, since, scheme)
+        }
         _ => usage_error(
             ctx.err,
             "bump takes a plugin name or --changed-since, and not both",
@@ -270,30 +339,86 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
 }
 
+/// The plugin notes named `name`.
+fn plugin_notes<'a>(
+    components: &'a [DiscoveredComponent],
+    name: &str,
+) -> Vec<&'a DiscoveredComponent> {
+    components
+        .iter()
+        .filter(|c| c.kind == EntityKind::Plugin && c.name == name)
+        .collect()
+}
+
+/// The note holding the version of the marketplace's own plugin: `name` is the
+/// marketplace's and no folder holds such a plugin. It is a `skillwright.md`,
+/// so its keys are bare under any namespace.
+fn marketplace_note(
+    run: &ResolvedRun,
+    components: &[DiscoveredComponent],
+    name: &str,
+) -> Option<VersionNote> {
+    if components.iter().any(|c| in_plugin_folder(c, name)) {
+        return None;
+    }
+    let own = components
+        .iter()
+        .find(|c| c.kind == EntityKind::Marketplace && c.name == name);
+    let (path, rel) = match own {
+        Some(note) => (note.entry_path.clone(), note.vault_relative_path.clone()),
+        None if run.root_config().name.as_deref() == Some(name) => {
+            let file = run.config_path.as_ref()?;
+            let rel = crate::config::relative_path(&run.vault, file)
+                .to_string_lossy()
+                .replace('\\', "/");
+            (file.clone(), rel)
+        }
+        None => return None,
+    };
+    Some(VersionNote {
+        path,
+        rel,
+        namespace: Namespace::bare(),
+    })
+}
+
+/// The version note of the plugin note `component`.
+fn plugin_version_note(component: &DiscoveredComponent, run: &ResolvedRun) -> VersionNote {
+    VersionNote {
+        path: component.entry_path.clone(),
+        rel: component.vault_relative_path.clone(),
+        namespace: run.core_namespace(),
+    }
+}
+
 fn run_one(
     flags: &BumpFlags,
     ctx: &mut CommandContext<'_>,
-    plugins: &[&DiscoveredComponent],
+    run: &ResolvedRun,
+    components: &[DiscoveredComponent],
     plugin: &str,
-    namespace: &Namespace,
     scheme: PatchScheme,
 ) -> i32 {
-    let matches: Vec<&DiscoveredComponent> = plugins
-        .iter()
-        .copied()
-        .filter(|c| c.name == plugin)
-        .collect();
-    let component = match matches.as_slice() {
-        [] => {
-            return usage_error(
-                ctx.err,
-                &format!("no plugin named `{plugin}` in this vault"),
-            );
-        }
-        [one] => *one,
+    let matches = plugin_notes(components, plugin);
+    let note = match matches.as_slice() {
+        [] => match marketplace_note(run, components, plugin) {
+            Some(note) => note,
+            None => {
+                let folder = components
+                    .iter()
+                    .filter(|c| c.plugin.as_deref() == Some(plugin))
+                    .find_map(|c| plugin_folder_in(&c.vault_relative_path, plugin))
+                    .unwrap_or_else(|| format!("plugins/{plugin}"));
+                return usage_error(
+                    ctx.err,
+                    &format!(
+                        "no plugin note named `{plugin}` in this vault. A folder-only plugin has no note to bump: add `{folder}/{plugin}.md` with a `version`"
+                    ),
+                );
+            }
+        },
+        [one] => plugin_version_note(one, run),
         many => {
-            // This verb has no `--marketplace` flag to disambiguate with (a
-            // known gap), so a name two marketplaces share is a usage error.
             let paths: Vec<&str> = many
                 .iter()
                 .map(|c| c.vault_relative_path.as_str())
@@ -301,14 +426,14 @@ fn run_one(
             return usage_error(
                 ctx.err,
                 &format!(
-                    "`{plugin}` names more than one plugin: {} — disambiguate by removing all but one from the vault",
+                    "`{plugin}` names more than one plugin: {} — name one with --marketplace",
                     paths.join(", ")
                 ),
             );
         }
     };
 
-    let planned = match plan_bump(component, namespace, flags.level, scheme, utc_now_stamp()) {
+    let planned = match plan_bump(note, flags.level, scheme, utc_now_stamp()) {
         Ok(planned) => planned,
         Err(err) => return bump_failed(ctx.err, err),
     };
@@ -349,7 +474,7 @@ fn run_one(
         }
     }
 
-    if let Err(err) = write_bump(&planned, new, namespace) {
+    if let Err(err) = write_bump(&planned, new) {
         return bump_failed(ctx.err, err);
     }
 
@@ -405,10 +530,17 @@ impl Skip {
 
     /// Read the baseline's own manifests of `plugin` in `roots` to tell the
     /// three causes apart.
-    fn of(baseline: &Path, roots: &[&str], plugin: &str, current: &str) -> Skip {
+    fn of(
+        baseline: &Path,
+        config: &MarketplaceConfig,
+        roots: &[&str],
+        plugin: &str,
+        current: &str,
+    ) -> Skip {
         let mut held = false;
         for root in roots {
-            let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root))
+            let (Some(packs), Some(manifest)) =
+                (packs_path(config, root), plugin_manifest_path(root))
             else {
                 continue;
             };
@@ -432,9 +564,10 @@ impl Skip {
 }
 
 /// Whether `dir` holds a plugin manifest for any of `roots`.
-fn holds_a_plugin_manifest(dir: &Path, roots: &[&str]) -> bool {
+fn holds_a_plugin_manifest(dir: &Path, config: &MarketplaceConfig, roots: &[&str]) -> bool {
     roots.iter().any(|root| {
-        let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root)) else {
+        let (Some(packs), Some(manifest)) = (packs_path(config, root), plugin_manifest_path(root))
+        else {
             return false;
         };
         std::fs::read_dir(dir.join(packs)).is_ok_and(|entries| {
@@ -449,37 +582,47 @@ fn run_changed(
     flags: &BumpFlags,
     ctx: &mut CommandContext<'_>,
     run: &ResolvedRun,
-    plugins: &[&DiscoveredComponent],
+    market: Option<&str>,
+    components: &[DiscoveredComponent],
     since: &str,
     scheme: PatchScheme,
 ) -> i32 {
-    let baseline = match Baseline::resolve(since, flags, run, ctx) {
+    // The build's own `packs` check, before a ref is built and its packs are
+    // moved to where this config keeps them.
+    let config = configured_request(run, market, run.vault.clone(), ExportMode::Check).config;
+    if let Err(err) = check_packs(&config) {
+        return blocked(
+            ctx.err,
+            &format!(
+                "--changed-since `{since}`: {}",
+                normalize_thrown_reason(&err.to_string())
+            ),
+        );
+    }
+    let baseline = match Baseline::resolve(since, flags, run, market, ctx) {
         Ok(baseline) => baseline,
         Err(code) => return code,
     };
-    let request = match configured_request(
+    let request = configured_request(
         run,
-        &ctx.cwd,
-        "bump --changed-since",
+        market,
         baseline.root().to_path_buf(),
         ExportMode::Check,
-    ) {
-        Ok(request) => request,
-        Err(err) => return blocked(ctx.err, &err),
-    };
-    let roots: Vec<&str> = match root_trees(&request) {
-        Ok(trees) => trees.into_iter().map(|(root, _)| root).collect(),
+    );
+    let mut roots: Vec<&str> = match owned_paths(&request) {
+        Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
         Err(err) => return blocked(ctx.err, normalize_thrown_reason(&err.to_string())),
     };
+    roots.dedup();
     if let Baseline::Dir(dir) = &baseline
-        && !holds_a_plugin_manifest(dir, &roots)
+        && !holds_a_plugin_manifest(dir, &request.config, &roots)
     {
         let expected: Vec<String> = roots
             .iter()
             .filter_map(|root| {
                 Some(format!(
                     "{}/<plugin>/{}",
-                    packs_path(root)?,
+                    packs_path(&request.config, root)?,
                     plugin_manifest_path(root)?
                 ))
             })
@@ -494,7 +637,7 @@ fn run_changed(
         );
     }
     let namespace = run.core_namespace();
-    let report = match export_skills(&NativeVfs, &request, &namespace) {
+    let report = match export_skills(&run.config_vfs(), &request, &namespace) {
         Ok(report) => report,
         Err(err) => {
             return blocked(
@@ -527,18 +670,30 @@ fn run_changed(
     let now = utc_now_stamp();
     let mut rows: Vec<Row> = Vec::new();
     for (name, verdict) in verdicts {
-        let matches: Vec<&DiscoveredComponent> =
-            plugins.iter().copied().filter(|c| c.name == name).collect();
-        let [component] = matches.as_slice() else {
-            rows.push(Row::refused(
-                name,
-                "",
-                "",
-                format!("`{name}` names more than one plugin in this vault"),
-            ));
+        let note = match plugin_notes(components, name).as_slice() {
+            [one] => Some(plugin_version_note(one, run)),
+            [] => marketplace_note(run, components, name),
+            _ => {
+                rows.push(Row::refused(
+                    name,
+                    "",
+                    "",
+                    format!("`{name}` names more than one plugin in this vault"),
+                ));
+                continue;
+            }
+        };
+        let Some(note) = note else {
+            let reason = format!("`{name}` has no note to bump; add one with a `version`");
+            let mut row = Row::refused(name, "", "", reason);
+            if !verdict.drift {
+                row.status = "unchanged";
+                row.reason = None;
+            }
+            rows.push(row);
             continue;
         };
-        let planned = match plan_bump(component, &namespace, flags.level, scheme, now) {
+        let planned = match plan_bump(note, flags.level, scheme, now) {
             Ok(planned) => planned,
             Err(err) => return bump_failed(ctx.err, err),
         };
@@ -548,7 +703,13 @@ fn run_changed(
         let row = if !verdict.drift {
             Row::plain(name, &planned, "unchanged", None)
         } else if !changed {
-            let skip = Skip::of(baseline.root(), &verdict.roots, name, &planned.current);
+            let skip = Skip::of(
+                baseline.root(),
+                &request.config,
+                &verdict.roots,
+                name,
+                &planned.current,
+            );
             let mut row = Row::plain(name, &planned, "skipped", Some(skip.token().to_owned()));
             row.explain = Some(skip.text());
             row
@@ -595,7 +756,7 @@ fn run_changed(
         } else {
             // A failed write is reported on its row; the bumps already
             // written still reach the report.
-            if let Err(err) = write_bump(planned, &new, &namespace) {
+            if let Err(err) = write_bump(planned, &new) {
                 row.status = "refused";
                 row.reason = Some(format!(
                     "the write failed: {}",
@@ -753,24 +914,31 @@ impl Baseline {
     }
 
     /// A directory that exists is a built baseline; anything else is a git
-    /// ref, built with the ref's own copy of the project file.
+    /// ref, built with the ref's own copy of the root file.
     fn resolve(
         since: &str,
         flags: &BumpFlags,
         run: &ResolvedRun,
+        market: Option<&str>,
         ctx: &mut CommandContext<'_>,
     ) -> Result<Baseline, i32> {
         let as_dir = crate::config::resolve_against_cwd(since, &ctx.cwd);
         if as_dir.is_dir() {
             return Ok(Baseline::Dir(as_dir));
         }
-        BuiltRef::build(since, flags, run, ctx).map(Baseline::Built)
+        BuiltRef::build(since, flags, run, market, ctx).map(Baseline::Built)
     }
 }
 
 /// The folder under the system temp dir that holds every baseline build:
 /// `<id>.lock` beside `<id>/`, the lock held for the run's lifetime.
 const BASELINES_DIR: &str = "skillwright-bump-baselines";
+
+/// The file in [`BASELINES_DIR`] locked while a run prunes and claims.
+const GUARD_FILE: &str = "guard";
+
+/// Keeps two claims in one process and one clock tick apart.
+static NEXT_CLAIM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// A git ref checked out into a temporary worktree and built there.
 struct BuiltRef {
@@ -788,6 +956,7 @@ impl BuiltRef {
         since: &str,
         flags: &BumpFlags,
         run: &ResolvedRun,
+        market: Option<&str>,
         ctx: &mut CommandContext<'_>,
     ) -> Result<BuiltRef, i32> {
         let fail = |ctx: &mut CommandContext<'_>, why: String| {
@@ -799,8 +968,7 @@ impl BuiltRef {
         let Some(config_path) = run.config_path.as_ref() else {
             return fail(
                 ctx,
-                "is not a directory, and a git ref needs a project file to build it with"
-                    .to_owned(),
+                "is not a directory, and a git ref needs a root file to build it with".to_owned(),
             );
         };
         let config_path = config_path.canonicalize().unwrap_or(config_path.clone());
@@ -857,30 +1025,16 @@ impl BuiltRef {
         };
 
         let baselines = std::env::temp_dir().join(BASELINES_DIR);
-        prune_stale_baselines(&baselines, &repo);
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default();
-        let id = format!("{}-{stamp}", std::process::id());
-        if let Err(err) = std::fs::create_dir_all(&baselines) {
-            return fail(ctx, format!("cannot create {}: {err}", baselines.display()));
-        }
-        let lock_path = baselines.join(format!("{id}.lock"));
-        let lock = match std::fs::File::create(&lock_path).and_then(|file| {
-            file.try_lock().map_err(std::io::Error::from)?;
-            Ok(file)
-        }) {
-            Ok(lock) => lock,
-            Err(err) => return fail(ctx, format!("cannot lock {}: {err}", lock_path.display())),
+        let (id, lock_path, lock) = match claim_baseline(&baselines, &repo) {
+            Ok(claimed) => claimed,
+            Err(why) => return fail(ctx, why),
         };
         let temp = baselines.join(&id);
         if let Err(err) = std::fs::create_dir_all(&temp) {
             let _ = std::fs::remove_file(&lock_path);
             return fail(ctx, format!("cannot create {}: {err}", temp.display()));
         }
-        // Canonical, so the vault check below compares like with like (on
-        // macOS the temp dir sits behind the `/var` link).
+        // Canonical: on macOS the temp dir sits behind the `/var` link.
         let temp = temp.canonicalize().unwrap_or(temp);
         let built = BuiltRef {
             repo: repo.clone(),
@@ -910,17 +1064,13 @@ impl BuiltRef {
             return fail(ctx, format!("checking it out failed: {err}"));
         }
 
-        let Some(base_config) = ref_project_file(&built.checkout, &config_rel) else {
-            let dir = config_rel.parent().unwrap_or(Path::new(""));
-            let looked: Vec<String> = PROJECT_FILES
-                .iter()
-                .map(|name| dir.join(name).display().to_string())
-                .collect();
+        let Some(base_config) = ref_root_file(&built.checkout, &config_rel) else {
             return fail(
                 ctx,
                 format!(
-                    "{since} holds no project file; looked for {}",
-                    looked.join(", ")
+                    "{since} holds no {} here, so it cannot be built. A ref from before \
+                     {ROOT_FILE} cannot be a baseline: compare against a built folder instead",
+                    config_rel.display()
                 ),
             );
         };
@@ -934,33 +1084,10 @@ impl BuiltRef {
             .unwrap_or(&built.checkout)
             .to_path_buf();
         let base_run = resolve_run(&common, &base_cwd, ctx.err)?;
-        // The baseline is the ref's vault, never this checkout's: a vault
-        // that resolves elsewhere (an absolute path, a machine-file `paths:`
-        // entry) would compare the live vault with itself.
-        let base_vault = base_run
-            .vault
-            .canonicalize()
-            .unwrap_or(base_run.vault.clone());
-        if !base_vault.starts_with(&built.checkout) {
-            return fail(
-                ctx,
-                format!(
-                    "its vault resolves to {}, outside the checkout of the ref; a baseline is built only from the ref's own vault",
-                    base_run.vault.display()
-                ),
-            );
-        }
-        let request = match configured_request(
-            &base_run,
-            &base_cwd,
-            "bump --changed-since",
-            built.out.clone(),
-            ExportMode::Build,
-        ) {
-            Ok(request) => request,
-            Err(err) => return fail(ctx, err),
-        };
-        if let Err(err) = export_skills(&NativeVfs, &request, &base_run.core_namespace()) {
+        let request = configured_request(&base_run, market, built.out.clone(), ExportMode::Build);
+        if let Err(err) =
+            export_skills(&base_run.config_vfs(), &request, &base_run.core_namespace())
+        {
             return fail(
                 ctx,
                 format!(
@@ -969,16 +1096,85 @@ impl BuiltRef {
                 ),
             );
         }
+        let current = configured_request(run, market, built.out.clone(), ExportMode::Check);
+        if let Err(err) = align_packs(&built.out, &request, &current) {
+            return fail(ctx, format!("moving its packs failed: {err}"));
+        }
         Ok(built)
     }
 }
 
-/// The ref's project file: the one at this run's path, else the first of
-/// [`PROJECT_FILES`] in that folder.
-fn ref_project_file(checkout: &Path, config_rel: &Path) -> Option<PathBuf> {
+/// Moves each harness's packs in a baseline built by `base` to where `current`
+/// keeps them, so a `packs` setting that changed since the ref still compares
+/// each plugin with itself.
+fn align_packs(out: &Path, base: &ExportRequest, current: &ExportRequest) -> std::io::Result<()> {
+    let side = out.join(".moving");
+    let moved: Vec<(&str, &str, PathBuf)> = with_plugin_format()
+        .filter_map(|spec| {
+            let from = packs_path(&base.config, spec.name)?;
+            let to = packs_path(&current.config, spec.name)?;
+            (from != to && out.join(from).is_dir()).then(|| (from, to, side.join(spec.name)))
+        })
+        .collect();
+    // Through a side folder: one harness's new folder can be another's old one.
+    for (from, _, aside) in &moved {
+        std::fs::create_dir_all(&side)?;
+        std::fs::rename(out.join(from), aside)?;
+    }
+    for (_, to, aside) in &moved {
+        let target = out.join(to);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::rename(aside, target)?;
+    }
+    if !moved.is_empty() {
+        std::fs::remove_dir(&side)?;
+    }
+    Ok(())
+}
+
+/// Claims a baseline under `baselines`: an `<id>.lock`, created and locked.
+/// [`GUARD_FILE`] is held across the prune and the claim, so one run's prune
+/// never takes a lock another run has created and not yet locked.
+///
+/// # Errors
+///
+/// What failed, as the line to print.
+fn claim_baseline(
+    baselines: &Path,
+    repo: &Path,
+) -> Result<(String, PathBuf, std::fs::File), String> {
+    std::fs::create_dir_all(baselines)
+        .map_err(|err| format!("cannot create {}: {err}", baselines.display()))?;
+    let guard_path = baselines.join(GUARD_FILE);
+    let guard = std::fs::File::create(&guard_path)
+        .and_then(|file| file.lock().map(|()| file))
+        .map_err(|err| format!("cannot lock {}: {err}", guard_path.display()))?;
+    prune_stale_baselines(baselines, repo);
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let claim = NEXT_CLAIM.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let id = format!("{}-{stamp}-{claim}", std::process::id());
+    let lock_path = baselines.join(format!("{id}.lock"));
+    let lock = std::fs::File::create(&lock_path)
+        .and_then(|file| {
+            file.try_lock().map_err(std::io::Error::from)?;
+            Ok(file)
+        })
+        .map_err(|err| format!("cannot lock {}: {err}", lock_path.display()))?;
+    drop(guard);
+    Ok((id, lock_path, lock))
+}
+
+/// The ref's root file: the one at this run's path, else [`ROOT_FILE`] in
+/// that folder.
+fn ref_root_file(checkout: &Path, config_rel: &Path) -> Option<PathBuf> {
     let dir = config_rel.parent().unwrap_or(Path::new(""));
-    std::iter::once(config_rel.to_path_buf())
-        .chain(PROJECT_FILES.iter().map(|name| dir.join(name)))
+    [config_rel.to_path_buf(), dir.join(ROOT_FILE)]
+        .into_iter()
         .map(|rel| checkout.join(rel))
         .find(|path| path.is_file())
 }
@@ -1039,6 +1235,33 @@ impl Drop for BuiltRef {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One run's prune never takes the lock of a claim in progress.
+    #[test]
+    fn concurrent_claims_never_fail_on_each_others_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let baselines = dir.path().join("baselines");
+        let failures: usize = std::thread::scope(|scope| {
+            let runs: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        (0..200)
+                            .filter(|_| match claim_baseline(&baselines, dir.path()) {
+                                Ok((_, path, lock)) => {
+                                    let _ = std::fs::remove_file(path);
+                                    drop(lock);
+                                    false
+                                }
+                                Err(_) => true,
+                            })
+                            .count()
+                    })
+                })
+                .collect();
+            runs.into_iter().map(|run| run.join().unwrap()).sum()
+        });
+        assert_eq!(failures, 0);
+    }
 
     const NOW: u64 = 20_261_105_143_000;
 

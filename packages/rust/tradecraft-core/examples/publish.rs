@@ -2,7 +2,7 @@
 //!
 //! Run with `cargo run -p tradecraft-core --example publish`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tradecraft_core::{MemVfs, Namespace, PublishMode, PublishRequest, Vfs, publish_skill};
 
@@ -16,15 +16,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         b"---\ndescription: Reviews the current diff.\n---\nReview the diff.\n",
     )?;
 
-    let request = PublishRequest {
-        skill_path: PathBuf::from("/vault/skills/code-review.md"),
-        destination_root: PathBuf::from("/project"),
-        target: "claude-code".to_owned(),
-        mode: PublishMode::Write,
-        skills_root: None,
-        published_at: None,
-        overwrite: Vec::new(),
-    };
+    let mut request =
+        PublishRequest::new("/vault/skills/code-review.md", "/project", "claude-code");
+    request.mode = PublishMode::Write;
     let report = publish_skill(&vfs, &request, &Namespace::default())?;
     for file in &report.files {
         println!("{}  {:?}", file.path, file.status);

@@ -59,7 +59,7 @@ pub struct GitSource {
 pub struct ResolvedGitSource {
     /// The directory the core reads — the checkout, plus the subpath.
     pub source: PathBuf,
-    /// What every adopted note's `sw-source` records: `<url>[/<subpath>]@<sha>`,
+    /// What every adopted note's `adopted.source` records: `<url>[/<subpath>]@<sha>`,
     /// with the subpath in its [`path_guard::lexical::validate_relative`] form.
     pub stamped: String,
 }

@@ -19,8 +19,8 @@ test('publish a skill note, then see that it is current', () => {
     mkdirSync(folder, { recursive: true })
     const note = path.join(folder, 'review.md')
     writeFileSync(
-      path.join(vault, 'marketplaces/house/house.md'),
-      '---\nname: house\ndescription: The house marketplace.\nsw-owner: acme\n---\n',
+      path.join(vault, 'marketplaces/house/skillwright.md'),
+      '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
     )
     writeFileSync(note, '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n')
 

@@ -29,7 +29,6 @@
 
 use std::path::{Path, PathBuf};
 
-use config_layers::needs::Need;
 use serde::Serialize;
 use serde_json::Value;
 use tradecraft_core::harness::profile;
@@ -38,10 +37,10 @@ use super::adapter::{Scope, same_source, str_at};
 use super::cli_runner::Argv;
 use super::reconcile::{Execution, ReconcileError, execute};
 use super::{HarnessFlags, HarnessVerb, Outcome, approve_commands, built_root, read_json};
-use crate::config::{NEEDS, resolve_against_cwd};
+use crate::config::resolve_against_cwd;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked, usage_error};
-use crate::resolve::resolve_run;
+use crate::resolve::{refuse_workspace, resolve_run};
 
 /// The CLI target name.
 pub const NAME: &str = profile::PI.name;
@@ -142,23 +141,32 @@ pub fn run_pi(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandContext<
         Ok(run) => run,
         Err(code) => return code,
     };
-    let root = match built_root(&run, flags, ctx, &argv_verb) {
+    if let Err(code) = refuse_workspace(&argv_verb.join(" "), &run, ctx.err) {
+        return code;
+    }
+    let root = match built_root(&run, flags, ctx) {
         Ok(root) => root,
         Err(code) => return code,
     };
-    let Some(plugins) = super::configured_plugins(&run, flags) else {
-        let need = Need {
-            config: "marketplace.default_plugin",
-            unless_input: Some("plugin"),
-        };
-        return usage_error(ctx.err, &NEEDS.message(&need, &run.config_dir, &argv_verb));
+    let packs_dir = match super::packs_dir(&run, &root, NAME) {
+        Ok(dir) => dir,
+        Err(message) => return blocked(ctx.err, &message),
     };
-    let packs_dir = root.join(
-        profile::PI
-            .plugin
-            .as_ref()
-            .map_or(".pi/packs", |format| format.packs),
-    );
+    // `--plugin`, else every pack the build holds.
+    let plugins = if flags.plugins.is_empty() {
+        super::pack_names(&packs_dir)
+    } else {
+        flags.plugins.clone()
+    };
+    if plugins.is_empty() {
+        return usage_error(
+            ctx.err,
+            &format!(
+                "no built plugins under {}; run `skillwright build` first, or pass --plugin",
+                packs_dir.display()
+            ),
+        );
+    }
     let packs: Vec<PathBuf> = plugins.iter().map(|p| packs_dir.join(p)).collect();
     if !matches!(verb, HarnessVerb::Uninstall { .. })
         && let Some(missing) = packs.iter().find(|pack| !pack.is_dir())

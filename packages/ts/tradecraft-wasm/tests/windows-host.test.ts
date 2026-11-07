@@ -41,8 +41,8 @@ function vaultAt(vault: string, disk: (p: string) => string = (p) => onDisk(root
   const skill = path.join(disk(vault), 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(skill, { recursive: true })
   writeFileSync(
-    path.join(disk(vault), 'marketplaces/house/house.md'),
-    '---\nname: house\ndescription: The house marketplace.\nsw-owner: acme\n---\n',
+    path.join(disk(vault), 'marketplaces/house/skillwright.md'),
+    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
   writeFileSync(
     path.join(skill, 'review.md'),
@@ -65,7 +65,7 @@ function build(vault: string, out: string) {
     vault_root: core(vault),
     out_root: core(out),
     mode: 'build',
-    config: { default_plugin: 'core' },
+    config: { name: 'core' },
   })
 }
 
@@ -98,7 +98,7 @@ describe('a Windows host', () => {
   test('compares whole components: a sibling named like the vault is not inside it', () => {
     vaultAt('C:\\vault')
     expect(build('C:\\vault', 'C:\\vault-bee').changed).toBe(true)
-    expect(() => build('C:\\vault', 'C:\\vault\\out')).toThrow(/inside the vault/)
+    expect(() => build('C:\\vault', 'C:\\vault\\plugins\\out')).toThrow(/inside the vault/)
   })
 
   test('works on a UNC share, and on a mapped drive that resolves to one', () => {

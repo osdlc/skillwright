@@ -40,7 +40,7 @@ pub struct HarnessProfile {
     pub name: &'static str,
     /// The harness's product name, for messages.
     pub label: &'static str,
-    /// Every name `sw-targets`, `sw-overrides` and a publish's target accept
+    /// Every name `targets`, harness blocks and a publish's target accept
     /// for this harness, the canonical one first.
     pub spellings: &'static [&'static str],
     /// The `agent-adapt` runtime a note renders through for this destination.
@@ -62,6 +62,12 @@ pub struct PluginFormat {
     /// The project directory the runtime's projection puts a skill under,
     /// and so where a pack published to a destination lands.
     pub skills_dir: &'static str,
+    /// The folder under the home directory the harness loads a user's own
+    /// skills from. `publish` writes there and `adopt` reads from there when
+    /// no destination or source is named. Recorded in harness-reference as
+    /// each harness's `skills/user-dirs` fact (Claude Code's in
+    /// `skills/live-reload`); where a harness reads several, the first.
+    pub user_skills_dir: &'static str,
     /// The pack manifest, relative to a pack's own directory, in this
     /// harness's dialect.
     pub plugin_manifest: &'static str,
@@ -71,12 +77,8 @@ pub struct PluginFormat {
     /// for a harness with no marketplace (Pi), whose packs install by path.
     pub marketplace_manifest: Option<&'static str>,
     /// Where this harness's packs land, relative to the marketplace
-    /// directory. Inside the harness's own tree, so two harnesses publishing
-    /// the same pack never render to one path.
-    ///
-    /// Must begin with the same component as `marketplace_manifest`, where
-    /// there is one: that component is the whole of what this harness owns
-    /// on disk ([`HarnessProfile::tree`]).
+    /// directory. Distinct per harness, so two harnesses publishing the same
+    /// pack never render to one path.
     pub packs: &'static str,
     /// Which shape the manifests take.
     pub dialect: PluginDialect,
@@ -95,7 +97,190 @@ pub struct PluginFormat {
     /// Whether the pack carries a hooks file at
     /// [`crate::publish::PLUGIN_HOOKS_PATH`].
     pub carries_hooks: bool,
+    /// The keys this harness reads in a pack manifest. A container note's
+    /// harness block may set these, and the build merges them over what it
+    /// generates. Recorded in harness-reference as each harness's
+    /// `plugins/manifest-fields` fact.
+    pub manifest_fields: &'static [&'static str],
+    /// The keys this harness reads at the top of its marketplace manifest,
+    /// from its `plugins/marketplace-fields` fact. Empty with no marketplace.
+    pub marketplace_fields: &'static [&'static str],
+    /// The keys this harness reads in one marketplace entry, from the same
+    /// fact.
+    pub entry_fields: &'static [&'static str],
 }
+
+/// Claude Code's `plugin.json` keys, from its `plugins/manifest-fields` fact.
+const CLAUDE_MANIFEST_FIELDS: &[&str] = &[
+    "$schema",
+    "name",
+    "displayName",
+    "version",
+    "description",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "metadata",
+    "icon",
+    "documentationUrl",
+    "supportUrl",
+    "privacyPolicyUrl",
+    "termsOfServiceUrl",
+    "defaultEnabled",
+    "dependencies",
+    "settings",
+    "userConfig",
+    "types",
+    "channels",
+    "skills",
+    "commands",
+    "agents",
+    "hooks",
+    "mcpServers",
+    "lspServers",
+    "outputStyles",
+    "workflows",
+    "experimental",
+    "themes",
+    "monitors",
+];
+/// Claude Code's `marketplace.json` top-level keys.
+const CLAUDE_MARKETPLACE_FIELDS: &[&str] = &[
+    "$schema",
+    "name",
+    "owner",
+    "plugins",
+    "description",
+    "version",
+    "metadata",
+    "forceRemoveDeletedPlugins",
+    "allowCrossMarketplaceDependenciesOn",
+    "renames",
+];
+/// Claude Code's marketplace entry keys: its own, plus every `plugin.json`
+/// key but the directory listing fields.
+const CLAUDE_ENTRY_FIELDS: &[&str] = &[
+    "name",
+    "source",
+    "description",
+    "version",
+    "category",
+    "tags",
+    "strict",
+    "relevance",
+    "dependencies",
+    "defaultEnabled",
+    "displayName",
+    "metadata",
+    "headers",
+    "headersHelper",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "settings",
+    "userConfig",
+    "types",
+    "channels",
+    "skills",
+    "commands",
+    "agents",
+    "hooks",
+    "mcpServers",
+    "lspServers",
+    "outputStyles",
+    "workflows",
+    "experimental",
+    "themes",
+    "monitors",
+];
+/// The keys Codex reads in `.codex-plugin/plugin.json`, plus the `author` and
+/// `license` every pack manifest carries.
+const CODEX_MANIFEST_FIELDS: &[&str] = &[
+    "name",
+    "version",
+    "description",
+    "author",
+    "license",
+    "keywords",
+    "skills",
+    "commands",
+    "mcpServers",
+    "apps",
+    "hooks",
+    "interface",
+    "extensions",
+];
+/// Codex's marketplace top-level keys.
+const CODEX_MARKETPLACE_FIELDS: &[&str] = &["name", "interface", "plugins"];
+/// Codex's marketplace entry keys.
+const CODEX_ENTRY_FIELDS: &[&str] = &["name", "source", "policy", "category"];
+/// Cursor's `plugin.json` keys, the docs' and the schema's.
+const CURSOR_MANIFEST_FIELDS: &[&str] = &[
+    "name",
+    "description",
+    "version",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "logo",
+    "rules",
+    "agents",
+    "skills",
+    "commands",
+    "hooks",
+    "mcpServers",
+    "variables",
+    "displayName",
+    "minClientVersions",
+    "publisher",
+    "category",
+    "tags",
+];
+/// Cursor's marketplace top-level keys.
+const CURSOR_MARKETPLACE_FIELDS: &[&str] = &["name", "owner", "plugins", "metadata"];
+/// Cursor's marketplace entry keys.
+const CURSOR_ENTRY_FIELDS: &[&str] = &[
+    "name",
+    "source",
+    "description",
+    "version",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "logo",
+    "category",
+    "tags",
+    "skills",
+    "rules",
+    "agents",
+    "commands",
+    "hooks",
+    "mcpServers",
+    "variables",
+];
+/// The `package.json` keys a Pi package uses: npm's standard fields and the
+/// `pi` block.
+const PI_MANIFEST_FIELDS: &[&str] = &[
+    "name",
+    "version",
+    "description",
+    "author",
+    "license",
+    "keywords",
+    "repository",
+    "homepage",
+    "dependencies",
+    "peerDependencies",
+    "pi",
+];
 
 /// What `skillwright harness` needs to know about a harness's own CLI that
 /// is a fact rather than an argv builder. The builders stay in the CLI crate,
@@ -192,6 +377,7 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
     declaration: RuntimeId::ClaudeCode,
     plugin: Some(PluginFormat {
         skills_dir: ".claude/skills",
+        user_skills_dir: ".claude/skills",
         plugin_manifest: ".claude-plugin/plugin.json",
         marketplace_manifest: Some(".claude-plugin/marketplace.json"),
         packs: ".claude-plugin/packs",
@@ -207,6 +393,9 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
         hooks_manifest_entry: None,
         carries_commands: true,
         carries_hooks: true,
+        manifest_fields: CLAUDE_MANIFEST_FIELDS,
+        marketplace_fields: CLAUDE_MARKETPLACE_FIELDS,
+        entry_fields: CLAUDE_ENTRY_FIELDS,
     }),
     install: Some(InstallCli {
         scopes: &["user", "project", "local"],
@@ -224,6 +413,7 @@ pub const CODEX: HarnessProfile = HarnessProfile {
     declaration: RuntimeId::CodexCli,
     plugin: Some(PluginFormat {
         skills_dir: ".agents/skills",
+        user_skills_dir: ".agents/skills",
         plugin_manifest: ".codex-plugin/plugin.json",
         marketplace_manifest: Some(".agents/plugins/marketplace.json"),
         packs: ".agents/packs",
@@ -242,6 +432,9 @@ pub const CODEX: HarnessProfile = HarnessProfile {
         hooks_manifest_entry: None,
         carries_commands: false,
         carries_hooks: true,
+        manifest_fields: CODEX_MANIFEST_FIELDS,
+        marketplace_fields: CODEX_MARKETPLACE_FIELDS,
+        entry_fields: CODEX_ENTRY_FIELDS,
     }),
     install: Some(InstallCli {
         scopes: &["user"],
@@ -259,6 +452,7 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
     declaration: RuntimeId::Cursor,
     plugin: Some(PluginFormat {
         skills_dir: ".cursor/skills",
+        user_skills_dir: ".cursor/skills",
         plugin_manifest: ".cursor-plugin/plugin.json",
         marketplace_manifest: Some(".cursor-plugin/marketplace.json"),
         packs: ".cursor-plugin/packs",
@@ -277,6 +471,9 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         hooks_manifest_entry: Some("./hooks/hooks.json"),
         carries_commands: false,
         carries_hooks: true,
+        manifest_fields: CURSOR_MANIFEST_FIELDS,
+        marketplace_fields: CURSOR_MARKETPLACE_FIELDS,
+        entry_fields: CURSOR_ENTRY_FIELDS,
     }),
     install: Some(InstallCli {
         scopes: &["user"],
@@ -294,6 +491,7 @@ pub const PI: HarnessProfile = HarnessProfile {
     declaration: RuntimeId::Pi,
     plugin: Some(PluginFormat {
         skills_dir: ".pi/skills",
+        user_skills_dir: ".pi/agent/skills",
         plugin_manifest: "package.json",
         marketplace_manifest: None,
         packs: ".pi/packs",
@@ -306,6 +504,9 @@ pub const PI: HarnessProfile = HarnessProfile {
         // Pi takes lifecycle events as TypeScript extensions and has no
         // hooks file.
         carries_hooks: false,
+        manifest_fields: PI_MANIFEST_FIELDS,
+        marketplace_fields: &[],
+        entry_fields: &[],
     }),
     // `pi install <path>` records a package in the user's settings, or with
     // `-l` the project's. Pi has no marketplace, so packs install by path.
@@ -416,23 +617,31 @@ impl HarnessProfile {
             .expect("only a harness with a plugin format is asked for one")
     }
 
-    /// The one top-level entry this harness owns in a marketplace directory.
+    /// The paths this harness owns in a marketplace directory: its packs
+    /// folder and its marketplace manifest.
     ///
-    /// Everything it renders — its marketplace manifest, its packs — lives
-    /// under this single name, and nothing else in the directory is read,
-    /// compared or replaced. That is what lets every harness share one
-    /// directory, and what lets that directory be a repository root.
-    pub fn tree(&self) -> &'static str {
-        let format = self.format();
-        first_component(format.marketplace_manifest.unwrap_or(format.packs))
+    /// Everything it renders lands at one of these, and nothing else in the
+    /// directory is read, compared or replaced. That is what lets every
+    /// harness share one directory, and what lets that directory be a
+    /// repository root: the folders around them, such as `.agents/skills/`,
+    /// hold what people author.
+    pub fn owned_paths(&self) -> Vec<&'static str> {
+        self.owned_paths_at(self.format().packs)
     }
 
-    /// `packs/<name>/<tail>` for this harness's pack directory: the plugin and
-    /// the rest, `tail` empty for the pack's own directory, `None` for a path
-    /// naming no pack of this harness's.
-    pub fn split_pack<'p>(&self, relative: &'p str) -> Option<(&'p str, &'p str)> {
+    /// [`Self::owned_paths`] for a build whose packs folder is `packs`.
+    pub fn owned_paths_at<'p>(&self, packs: &'p str) -> Vec<&'p str> {
+        std::iter::once(packs)
+            .chain(self.format().marketplace_manifest)
+            .collect()
+    }
+
+    /// `<packs>/<name>/<tail>` for this harness's pack directory: the plugin
+    /// and the rest, `tail` empty for the pack's own directory, `None` for a
+    /// path naming no pack of this harness's.
+    pub fn split_pack<'p>(packs: &str, relative: &'p str) -> Option<(&'p str, &'p str)> {
         let rest = relative
-            .strip_prefix(self.format().packs)?
+            .strip_prefix(packs)?
             .strip_prefix('/')
             .unwrap_or("");
         if rest.is_empty() {
@@ -444,20 +653,34 @@ impl HarnessProfile {
         })
     }
 
-    /// The keys this harness reads in an `sw-overrides` block, from its
-    /// runtime's own capability declaration.
+    /// The keys this harness reads in a harness block, from its
+    /// runtime's own capability declaration, less those no harness fact backs.
     pub fn accepted_override_keys(&self) -> std::collections::BTreeSet<String> {
         agent_adapt::runtimes::declaration_for(self.declaration)
             .overrides
             .into_keys()
+            .filter(|key| !UNREAD_OVERRIDES.contains(&key.as_str()))
             .collect()
+    }
+
+    /// The override keys this harness reads on a subagent and nowhere else.
+    pub fn agent_override_keys(&self) -> std::collections::BTreeSet<String> {
+        let keys: &[&str] = if self.declaration == RuntimeId::ClaudeCode {
+            CLAUDE_AGENT_ONLY_OVERRIDES
+        } else {
+            &[]
+        };
+        keys.iter().map(|key| (*key).to_owned()).collect()
     }
 }
 
-/// The first path component of a relative path, or the whole of it.
-fn first_component(relative: &str) -> &str {
-    relative.split('/').next().unwrap_or(relative)
-}
+/// Claude's override keys that only a subagent reads. `agent_adapt` declares
+/// them with every other key, and a test holds this list to that declaration.
+const CLAUDE_AGENT_ONLY_OVERRIDES: &[&str] = &["permissionMode"];
+
+/// Declared override keys that no harness fact shows being read in a
+/// `SKILL.md`.
+const UNREAD_OVERRIDES: &[&str] = &["policy.allow_implicit_invocation"];
 
 /// The row a name answers to, by any of its spellings.
 pub fn profile_for(name: &str) -> Option<&'static HarnessProfile> {
@@ -478,6 +701,31 @@ pub fn with_plugin_format() -> impl Iterator<Item = &'static HarnessProfile> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn the_agent_only_keys_are_keys_the_harness_declares() {
+        let claude = profile_for("claude").unwrap();
+        let declared: std::collections::BTreeSet<String> =
+            agent_adapt::runtimes::declaration_for(claude.declaration)
+                .overrides
+                .into_keys()
+                .collect();
+        let agent_only = claude.agent_override_keys();
+        assert_eq!(agent_only.len(), CLAUDE_AGENT_ONLY_OVERRIDES.len());
+        assert!(agent_only.is_subset(&declared), "{agent_only:?}");
+        assert!(
+            profile_for("codex")
+                .unwrap()
+                .agent_override_keys()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_key_no_fact_backs_is_not_accepted() {
+        let codex = profile_for("codex").unwrap();
+        assert!(!codex.accepted_override_keys().contains(UNREAD_OVERRIDES[0]));
+    }
 
     #[test]
     fn every_known_target_spelling_has_exactly_one_row() {
@@ -515,21 +763,6 @@ mod tests {
             PROFILES[..4].iter().all(|p| p.plugin.is_some()),
             "a spelling row sits among the plugin rows"
         );
-    }
-
-    #[test]
-    fn a_tree_is_the_first_component_of_both_paths() {
-        for profile in with_plugin_format() {
-            let format = profile.format();
-            assert!(
-                format.packs.starts_with(&format!("{}/", profile.tree())),
-                "{}",
-                profile.name
-            );
-            if let Some(manifest) = format.marketplace_manifest {
-                assert!(manifest.starts_with(&format!("{}/", profile.tree())));
-            }
-        }
     }
 
     #[test]

@@ -42,14 +42,15 @@ use tradecraft_core::{
     NativeVfs, PublishStatus, SkippedNote, discover_components, read_vault_skill,
 };
 
-use crate::config::{normalize_join, relative_path, resolve_configured_path};
+use crate::commands::bump::marketplaces_in;
+use crate::config::{normalize_join, relative_path};
 use crate::ctx::CommandContext;
-use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked, usage_error};
+use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked};
 use crate::report::{
     AttributedState, Attribution, RowState, has_drift, normalize_thrown_reason, render_state_line,
     render_state_tally,
 };
-use crate::resolve::{CommonFlags, RunNotes, refuse_separate_skills_root, resolve_run};
+use crate::resolve::{CommonFlags, RunDestination, refuse_workspace, resolve_run};
 
 /// The resolved flags of `skillwright status`.
 pub struct StatusFlags {
@@ -83,27 +84,12 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Err(code) => return code,
     };
     let namespace = run.core_namespace();
+    let root_config = run.root_config();
 
-    let Some(configured) = run
-        .config
-        .as_ref()
-        .map(|c| c.destinations.as_slice())
-        .filter(|destinations| !destinations.is_empty())
-    else {
-        return usage_error(
-            ctx.err,
-            "no destinations configured; there is nothing to report a state against",
-        );
-    };
-    let destinations: Vec<(PathBuf, String)> = configured
-        .iter()
-        .map(|d| {
-            (
-                resolve_configured_path(&d.root, &run.config_dir),
-                d.target.clone(),
-            )
-        })
-        .collect();
+    if let Err(code) = refuse_workspace("status", &run, ctx.err) {
+        return code;
+    }
+    let destinations = run.destinations();
 
     // --- the units ----------------------------------------------------------
     // A named note is taken as given; without one the vault scan supplies the
@@ -121,19 +107,10 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             if !note_path.exists() {
                 return blocked(ctx.err, &format!("note not found: {}", note_path.display()));
             }
-            if let Err(code) = refuse_separate_skills_root(
-                "status",
-                &run,
-                &ctx.cwd,
-                RunNotes::Named(std::slice::from_ref(&note_path)),
-                ctx.err,
-            ) {
-                return code;
-            }
             note_paths.push(note_path);
         }
         None => {
-            match discover_components(&NativeVfs, &run.vault, None, &namespace) {
+            match discover_components(&run.source_vfs(None), &run.vault, None, &namespace) {
                 Ok(scan) => {
                     for component in &scan.components {
                         if kind_has_renderer(component.kind) {
@@ -144,15 +121,6 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                                 component.kind.as_str().to_string(),
                             ));
                         }
-                    }
-                    if let Err(code) = refuse_separate_skills_root(
-                        "status",
-                        &run,
-                        &ctx.cwd,
-                        RunNotes::Skipped(&scan.skipped),
-                        ctx.err,
-                    ) {
-                        return code;
                     }
                     unreadable = scan.skipped;
                 }
@@ -176,14 +144,19 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
 
     // --- the rows -----------------------------------------------------------
     let mut rows: Vec<AttributedState> = Vec::new();
-    // A plugin whose members drifted with its own `sw-version` unmoved since,
+    // A plugin whose members drifted with its own `version` unmoved since,
     // one entry per (skill, destination) row that carries the suggestion —
     // printed after the report as a stderr advisory, never folded into
     // `AttributedState` itself, which `--json` serializes and must not grow a
     // field for this.
     let mut suggestions: Vec<(String, PathBuf, VersionBumpSuggestion)> = Vec::new();
     'outer: for note_path in &note_paths {
-        for (root, target) in &destinations {
+        for RunDestination {
+            root,
+            target,
+            user_folders,
+        } in &destinations
+        {
             if ctx.is_interrupted() {
                 break 'outer;
             }
@@ -193,17 +166,15 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 destination: root.display().to_string(),
                 target: target.clone(),
             };
-            let request = StatusRequest {
-                skill_path: note_path.clone(),
-                destination_root: root.clone(),
-                target: target.clone(),
-                // The vault root, so the kind gate has its structural layer: a
-                // note in `agents/` declaring no kind is not a skill, and
-                // reporting on it as one would state a skill's status for
-                // something that is not one.
-                skills_root: Some(run.vault.clone()),
-            };
-            match status_of(&NativeVfs, &request, &namespace) {
+            let mut request = StatusRequest::new(note_path.clone(), root.clone(), target.clone());
+            request.user_folders = *user_folders;
+            // The vault root, so the kind gate has its structural layer: a
+            // note in `agents/` declaring no kind is not a skill, and
+            // reporting on it as one would state a skill's status for
+            // something that is not one.
+            request.skills_root = Some(run.vault.clone());
+            request.config = Some(root_config.clone());
+            match status_of(&run.config_vfs(), &request, &namespace) {
                 Ok(status) => {
                     if let Some(suggestion) = &status.version_bump_suggestion {
                         suggestions.push((
@@ -238,10 +209,17 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 }
                 Err(err) => {
                     let message = err.to_string();
+                    let reason = normalize_thrown_reason(&message).to_string();
+                    // A kind this harness cannot carry is not a stale file.
+                    let state = if reason.contains("no-renderer") {
+                        RowState::NotApplicable
+                    } else {
+                        RowState::State(PublishState::Unknown)
+                    };
                     rows.push(AttributedState {
                         attribution,
-                        state: Some(RowState::State(PublishState::Unknown)),
-                        reason: Some(normalize_thrown_reason(&message).to_string()),
+                        state: Some(state),
+                        reason: Some(reason),
                         published_at: None,
                         files: Vec::new(),
                     });
@@ -253,7 +231,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Named after the rows the core answered, so the table reads publishable
     // units first and the notes nobody publishes at the end.
     for (path, kind) in &unpublishable {
-        for (root, target) in &destinations {
+        for RunDestination { root, target, .. } in &destinations {
             rows.push(AttributedState {
                 attribution: Attribution {
                     skill: path.clone(),
@@ -313,7 +291,19 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Stderr, never stdout: this fact isn't modeled in `AttributedState` or
     // `StatusDocument` at all, and adding it would change `status --json`'s
     // shape.
-    if !flags.json {
+    if !flags.json && !suggestions.is_empty() {
+        // In a vault of several marketplaces, `bump` needs the one named.
+        let scan = discover_components(&run.source_vfs(None), &run.vault, None, &namespace)
+            .map(|scan| scan.components)
+            .unwrap_or_default();
+        let several = marketplaces_in(&scan).len() > 1;
+        let scope = |note_path: &Path| {
+            scan.iter()
+                .find(|c| several && c.entry_path == note_path)
+                .and_then(|c| c.marketplace.as_deref())
+                .map(|m| format!(" --marketplace {m}"))
+                .unwrap_or_default()
+        };
         for (skill, note_path, suggestion) in &suggestions {
             // `bump` matches the frontmatter `name`, which may differ from the
             // filename.
@@ -322,8 +312,10 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             };
             let _ = writeln!(
                 ctx.err,
-                "advisory: {skill} sw-version {} unmoved since members changed — `skillwright bump {}` is available",
-                suggestion.current_version, note.projection.content.name
+                "advisory: {skill} version {} unmoved since members changed — `skillwright bump {}{}` is available",
+                suggestion.current_version,
+                note.projection.content.name,
+                scope(note_path)
             );
         }
     }

@@ -89,6 +89,7 @@ use crate::vfs::{Vfs, normalize};
 /// ship with the skill. Paths are absolute; `entry_path` and `bundle_root`
 /// must lie under `vault_root`.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct CompileSource<'a> {
     /// The root every link resolves against and every `…/vault/<relative>`
     /// output path is derived from.
@@ -111,6 +112,21 @@ pub struct CompileSource<'a> {
     /// `None` walks `vault_root` for them, leaving out tooling folders
     /// (`.obsidian`, `.trash`, `node_modules`).
     pub links: Option<&'a LinkIndex>,
+}
+
+impl<'a> CompileSource<'a> {
+    /// Compile the note at `entry_path`, named `skill_name`, against
+    /// `vault_root`. No bundle, call context or link index; set them after.
+    pub fn new(vault_root: &'a Path, entry_path: &'a Path, skill_name: &'a str) -> Self {
+        Self {
+            vault_root,
+            entry_path,
+            bundle_root: None,
+            skill_name,
+            calls: None,
+            links: None,
+        }
+    }
 }
 
 /// One skill a call can name: its entry note and who publishes it.
@@ -789,16 +805,31 @@ pub(crate) const EXCLUDED_VAULT_DIRECTORIES: &[&str] =
 /// gets — a vendored `node_modules` under such a tree is exactly as
 /// unwanted as one under a skill bundle.
 ///
-/// `tests`/`fixtures` are a fixed convention rather than a project-file
+/// `docs`/`tests`/`fixtures` are a fixed convention rather than a root-file
 /// setting: every skill gets this for free, with nothing to declare and
 /// nothing to forget to declare. Fixture markdown is often literal
 /// `[[decision-note]]`-shaped test data, not real Obsidian links; swept as an
 /// ordinary bundle resource, it reads as a broken link and fails
-/// `unresolved-syntax` on a vault that has nothing wrong with it. The rest
+/// `unresolved-syntax` on a vault that has nothing wrong with it. A `docs`
+/// folder holds writing about the skill for its authors, not for the agent
+/// that loads it. The rest
 /// mirror [`EXCLUDED_VAULT_DIRECTORIES`] above: no
 /// bundle or asset tree should ship a `.git`, `.obsidian`, `.trash` or
 /// vendored `node_modules` either.
 pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
+    "docs",
+    "tests",
+    "fixtures",
+    ".git",
+    ".obsidian",
+    ".trash",
+    "node_modules",
+];
+
+/// [`EXCLUDED_BUNDLE_DIRECTORIES`] for a `build.assets` directory, without
+/// `docs`: a shared tree of reference docs is what such an asset is for. The
+/// folder convention's `assets/` excludes nothing.
+pub(crate) const EXCLUDED_ASSET_DIRECTORIES: &[&str] = &[
     "tests",
     "fixtures",
     ".git",
@@ -854,6 +885,8 @@ struct Renderer<'a> {
     entry_path: PathBuf,
     bundle_root: Option<PathBuf>,
     skill_name: &'a str,
+    /// The root file's `build.exclude`.
+    patterns: crate::patterns::Patterns,
     /// Every file in the vault, by vault-relative path, for link
     /// resolution. Built once per compile — the vault is the resolution
     /// universe, and walking it lazily would make "not found" depend on what
@@ -922,6 +955,7 @@ impl<'a> Renderer<'a> {
         destinations.insert("SKILL.md".to_owned(), entry_path.clone());
         Ok(Renderer {
             vfs,
+            patterns: crate::patterns::Patterns::read(vfs, &vault_root),
             vault_root,
             entry_path,
             bundle_root,
@@ -952,7 +986,7 @@ impl<'a> Renderer<'a> {
         };
         for source_path in crate::walk::files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)?
         {
-            if source_path == self.entry_path {
+            if source_path == self.entry_path || self.excluded_by_pattern(&source_path) {
                 continue;
             }
             let relative = source_path
@@ -1086,6 +1120,7 @@ impl<'a> Renderer<'a> {
         output_path: &str,
         stack: &mut Vec<TransclusionHop>,
     ) -> Result<String, CoreError> {
+        self.check_markdown_links(body, source_path)?;
         let mut tokens = scan_wiki_tokens(body, true);
         let escapes = self.check_literal_calls(body, source_path, output_path)?;
         if !escapes.is_empty() {
@@ -1601,7 +1636,11 @@ impl<'a> Renderer<'a> {
         // `photo.jpg`); a name with an extension addresses that file.
         let from = self.vault_relative(from_file).unwrap_or_default();
         match self.index.resolve_strict(target, &from) {
-            Ok(hit) => Ok(Some((self.vault_root.join(hit), fragment))),
+            Ok(hit) => {
+                let path = self.vault_root.join(hit);
+                self.refuse_never_shipped(from_file, &path, destination)?;
+                Ok(Some((path, fragment)))
+            }
             // Not a refusal. The compile spec and the publish spec
             // both rule that an unresolved link is reported and the rest of
             // the skill publishes; the name is recorded in the manifest's
@@ -1618,6 +1657,54 @@ impl<'a> Renderer<'a> {
                 ),
             )),
         }
+    }
+
+    /// Refuses a link from `from_file` to a file that never ships, however
+    /// the link is spelled: `build.exclude` holds the file, or it is in a
+    /// folder that never ships and the linking note is not.
+    fn refuse_never_shipped(
+        &self,
+        from_file: &Path,
+        path: &Path,
+        destination: &str,
+    ) -> Result<(), CoreError> {
+        let into_never_ship = match (self.vault_relative(from_file), self.vault_relative(path)) {
+            (Ok(from), Ok(to)) => self.patterns.links_into_never_ship(&from, &to),
+            _ => false,
+        };
+        if into_never_ship || self.excluded_by_pattern(path) {
+            return Err(CoreError::refused(
+                "excluded-link",
+                format!(
+                    "{} links to {}, which never ships: {destination}",
+                    self.relative_or_verbatim(from_file),
+                    self.relative_or_verbatim(path),
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether `build.exclude` holds `path`.
+    fn excluded_by_pattern(&self, path: &Path) -> bool {
+        self.vault_relative(path)
+            .is_ok_and(|relative| self.patterns.excluded(&relative))
+    }
+
+    /// [`Self::refuse_never_shipped`] over `body`'s relative Markdown links,
+    /// the spelling the wiki tokens do not cover.
+    fn check_markdown_links(&self, body: &str, source_path: &Path) -> Result<(), CoreError> {
+        let folder = source_path.parent().unwrap_or(source_path);
+        for destination in markdown_destinations(body) {
+            let Some(relative) = local_file(destination) else {
+                continue;
+            };
+            let path = normalize(&folder.join(relative));
+            if self.vfs.exists(&path) {
+                self.refuse_never_shipped(source_path, &path, destination)?;
+            }
+        }
+        Ok(())
     }
 
     /// For messages only: the vault-relative spelling when there is one, the
@@ -1930,6 +2017,58 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
         });
     }
     (tokens, leftovers)
+}
+
+/// The destination of each inline Markdown link and reference definition in
+/// `markdown` that is live: not in code, not in an HTML comment.
+fn markdown_destinations(markdown: &str) -> Vec<&str> {
+    let code = code_regions(markdown);
+    let live = |at: usize| {
+        !code.iter().any(|(from, to)| (*from..*to).contains(&at))
+            && markdown[..at].rfind("<!--") <= markdown[..at].rfind("-->")
+    };
+    let inline = markdown
+        .match_indices("](")
+        .map(|(at, _)| (at, at + 2))
+        .filter(|(at, _)| !markdown[..*at].ends_with('\\'));
+    let mut offset = 0;
+    let mut definitions = Vec::new();
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[')
+            && let Some(close) = trimmed.find("]:")
+        {
+            let at = offset + (line.len() - trimmed.len()) + close;
+            definitions.push((at, at + 2));
+        }
+        offset += line.len();
+    }
+    inline
+        .chain(definitions)
+        .filter(|(at, _)| live(*at))
+        .filter_map(|(_, from)| {
+            let rest = markdown[from..].trim_start_matches([' ', '\t']);
+            match rest.strip_prefix('<') {
+                Some(angled) => angled.split_once('>').map(|(url, _)| url),
+                None => rest
+                    .split([' ', '\t', '\r', '\n', ')'])
+                    .next()
+                    .filter(|url| !url.is_empty()),
+            }
+        })
+        .collect()
+}
+
+/// The file a Markdown link's destination names relative to its note, decoded
+/// and without its fragment or query; `None` for a URL, an absolute path or a
+/// link to a place in the same note.
+fn local_file(destination: &str) -> Option<String> {
+    let path = destination.split(['#', '?']).next().unwrap_or_default();
+    let scheme = path
+        .split_once(':')
+        .is_some_and(|(before, _)| !before.contains('/'));
+    (!path.is_empty() && !path.starts_with('/') && !scheme)
+        .then(|| markdown_link::percent_decode(path))
 }
 
 /// Whether the `[` at byte `at` opens a Markdown link: its brackets balance
@@ -2322,13 +2461,14 @@ mod tests {
     }
 
     fn source<'a>(bundle_root: Option<&'a Path>) -> CompileSource<'a> {
-        CompileSource {
-            vault_root: Path::new("/vault"),
-            entry_path: Path::new("/vault/plugins/demo/demo.md"),
-            bundle_root,
-            skill_name: "demo",
-            calls: None,
-            links: None,
+        {
+            let mut value = CompileSource::new(
+                Path::new("/vault"),
+                Path::new("/vault/plugins/demo/demo.md"),
+                "demo",
+            );
+            value.bundle_root = bundle_root;
+            value
         }
     }
 
@@ -2634,13 +2774,10 @@ mod tests {
 
         let raw = read_utf8(&vfs, &entry).unwrap();
         let (_, body) = split_frontmatter(&raw);
-        let compile_source = CompileSource {
-            vault_root: &root,
-            entry_path: &entry,
-            bundle_root: Some(&bundle),
-            skill_name: "workflow-checklist",
-            calls: None,
-            links: None,
+        let compile_source = {
+            let mut value = CompileSource::new(&root, &entry, "workflow-checklist");
+            value.bundle_root = Some(&bundle);
+            value
         };
         let compiled = compile_note(&vfs, &compile_source, body).unwrap();
 
@@ -2686,13 +2823,10 @@ mod tests {
             (&inside_entry, Some(&aliased_bundle)),
         ];
         for (entry, bundle) in cases {
-            let compile_source = CompileSource {
-                vault_root: &vault,
-                entry_path: entry,
-                bundle_root: bundle,
-                skill_name: "demo",
-                calls: None,
-                links: None,
+            let compile_source = {
+                let mut value = CompileSource::new(&vault, entry, "demo");
+                value.bundle_root = bundle;
+                value
             };
             let err = compile_note(&vfs, &compile_source, "# Demo\n").unwrap_err();
             // The early check names the root it refused; a later failure in
@@ -2706,13 +2840,10 @@ mod tests {
         }
 
         // The same tree, spelled inside the vault, compiles.
-        let compile_source = CompileSource {
-            vault_root: &vault,
-            entry_path: &inside_entry,
-            bundle_root: Some(&inside_bundle),
-            skill_name: "demo",
-            calls: None,
-            links: None,
+        let compile_source = {
+            let mut value = CompileSource::new(&vault, &inside_entry, "demo");
+            value.bundle_root = Some(&inside_bundle);
+            value
         };
         compile_note(&vfs, &compile_source, "# Demo\n").unwrap();
     }
@@ -3077,16 +3208,18 @@ mod tests {
         vfs.set_executable(Path::new("/vault/skills/demo/scripts/run.sh"), true)
             .unwrap();
 
-        let ns = Namespace::default();
+        let ns = Namespace::sw();
         let mut note = read_vault_skill(&vfs, Path::new("/vault/skills/demo.md"), &ns).unwrap();
-        let compile_source = CompileSource {
-            vault_root: Path::new("/vault"),
-            entry_path: Path::new("/vault/skills/demo.md"),
+        let name = note.projection.content.name.clone();
+        let compile_source = {
+            let mut value = CompileSource::new(
+                Path::new("/vault"),
+                Path::new("/vault/skills/demo.md"),
+                &name,
+            );
             // The vault-canonical peer folder is this note's bundle root.
-            bundle_root: Some(Path::new("/vault/skills/demo")),
-            skill_name: &note.projection.content.name.clone(),
-            calls: None,
-            links: None,
+            value.bundle_root = Some(Path::new("/vault/skills/demo"));
+            value
         };
         compile_projection(&vfs, &compile_source, &mut note.projection).unwrap();
 

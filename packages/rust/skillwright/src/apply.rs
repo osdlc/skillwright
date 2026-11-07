@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use markdown_corpus::{Corpus, LoadOptions, SplitMode};
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
-use tradecraft_core::vfs::NativeVfs;
+use tradecraft_core::vfs::{PreviewVfs, Vfs};
 
 /// Write or rehearse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +33,7 @@ impl Mode {
 
 /// Everything an op did, or would do.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct Outcome {
     /// True when nothing was written.
     pub preview: bool,
@@ -58,6 +59,7 @@ impl Outcome {
 
 /// One reportable fact, against the vault-relative path it is about.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AppliedEntry {
     /// The vault-relative path.
     pub path: String,
@@ -69,6 +71,7 @@ pub struct AppliedEntry {
 /// needs; [`Applied::outcome`] and [`Applied::reason`] are the printable
 /// reduction of them, not a second source of truth.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Applied {
     /// A note written where none existed.
     Created,
@@ -150,6 +153,7 @@ impl Applied {
 /// same op fails after an earlier step already wrote — it carries what
 /// landed alongside the failure that stopped the rest.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ApplyError {
     /// A path was not vault-relative, or escaped the vault.
     Path {
@@ -244,61 +248,62 @@ impl From<markdown_relink::TransformError> for ApplyError {
     }
 }
 
-/// Execute `op` against the vault at `vault_dir`.
-pub fn apply(vault_dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
-    run(vault_dir, op, Mode::Apply)
+/// A vault an op runs on.
+#[derive(Clone, Copy)]
+#[non_exhaustive]
+pub struct Vault<'a> {
+    /// Its folder, which every write lands under.
+    pub dir: &'a Path,
+    /// What relinking reads. It leaves out generated output, so a rename
+    /// neither edits a built copy nor resolves a link against one.
+    pub source: &'a dyn Vfs,
+}
+
+impl<'a> Vault<'a> {
+    /// The vault in `dir`, relinked by reading `source`.
+    pub fn new(dir: &'a Path, source: &'a dyn Vfs) -> Self {
+        Self { dir, source }
+    }
+}
+
+/// Execute `op` against `vault`.
+pub fn apply(vault: Vault<'_>, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+    run(vault, op, Mode::Apply)
 }
 
 /// The same decisions and the same refusals as [`apply`], with nothing
 /// written.
-pub fn preview(vault_dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
-    run(vault_dir, op, Mode::Preview)
+pub fn preview(vault: Vault<'_>, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+    run(vault, op, Mode::Preview)
 }
 
-fn run(vault_dir: &Path, op: &AuthoringOp, mode: Mode) -> Result<Outcome, ApplyError> {
+fn run(vault: Vault<'_>, op: &AuthoringOp, mode: Mode) -> Result<Outcome, ApplyError> {
     match op {
         AuthoringOp::Create {
             path,
             bytes,
             scaffold,
-        } => create(vault_dir, path, bytes, scaffold, mode),
+        } => create(vault.dir, path, bytes, scaffold, mode),
         AuthoringOp::Rename {
             from,
             to,
             bundle,
             frontmatter,
+        } => relocate(vault, from, to, *bundle, frontmatter, &[], mode),
+        AuthoringOp::Move { from, to, bundle } => {
+            relocate(vault, from, to, *bundle, &[], &[], mode)
         }
-        | AuthoringOp::Move {
-            from,
-            to,
-            bundle,
-            frontmatter,
-        } => relocate(vault_dir, from, to, *bundle, frontmatter, &[], mode),
         AuthoringOp::ConvertKind {
             from,
             to,
             bundle,
             frontmatter,
             scaffold,
-        } => relocate(vault_dir, from, to, *bundle, frontmatter, scaffold, mode),
-        AuthoringOp::Delete { paths, trash_dir } => delete(vault_dir, paths, trash_dir, mode),
-        AuthoringOp::RenamePlugin {
-            from,
-            to,
-            dir_from,
-            dir_to,
-            frontmatter,
-            members,
-        } => rename_plugin(
-            vault_dir,
-            from,
-            to,
-            dir_from,
-            dir_to,
-            frontmatter,
-            members,
-            mode,
-        ),
+        } => relocate(vault, from, to, *bundle, frontmatter, scaffold, mode),
+        AuthoringOp::Delete { paths, trash_dir } => delete(vault.dir, paths, trash_dir, mode),
+        other => Err(ApplyError::Refused(format!(
+            "this build of skillwright cannot apply {other:?}"
+        ))),
     }
 }
 
@@ -362,7 +367,7 @@ fn scaffold_dirs(
 // ── Rename / Move / ConvertKind ─────────────────────────────────────────────
 
 fn relocate(
-    vault_dir: &Path,
+    vault: Vault<'_>,
     from: &str,
     to: &str,
     bundle: bool,
@@ -370,6 +375,7 @@ fn relocate(
     scaffold: &[String],
     mode: Mode,
 ) -> Result<Outcome, ApplyError> {
+    let vault_dir = vault.dir;
     let from = rel(from)?;
     let to = rel(to)?;
     let dirs = scaffold
@@ -382,7 +388,7 @@ fn relocate(
     check_frontmatter(vault_dir, &from, frontmatter)?;
 
     let mut outcome = Outcome::new(mode);
-    move_note(vault_dir, &from, &to, bundle, mode, &mut outcome)?;
+    move_note(vault, &from, &to, bundle, mode, &mut outcome)?;
     // From here the move has landed — a later failure is reported with what
     // already wrote, not as a bare refusal.
     if let Err(err) = relocate_after_move(vault_dir, &to, frontmatter, &dirs, mode, &mut outcome) {
@@ -412,14 +418,43 @@ fn relocate_after_move(
 /// [`ApplyError::Refused`] or [`ApplyError::Transform`] means nothing was
 /// written.
 fn move_note(
-    vault_dir: &Path,
+    vault: Vault<'_>,
     from: &str,
     to: &str,
     bundle: bool,
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    let (corpus, unreadable) = load_vault(vault_dir, from, to, bundle)?;
+    let root_file = |path: &str| path.rsplit('/').next() == Some(tradecraft_core::ROOT_FILE);
+    // `<dir>/skillwright.md` is a marketplace's entry, unless `<dir>` is named
+    // `skillwright`: then it is also an ordinary `<dir>/<dir>.md` bundle entry.
+    let marketplace_entry = |path: &str| {
+        root_file(path)
+            && path
+                .rsplit('/')
+                .nth(1)
+                .is_none_or(|dir| dir != tradecraft_core::ROOT_FILE.trim_end_matches(".md"))
+    };
+    if bundle && root_file(from) && root_file(to) {
+        return move_marketplace(vault, from, to, mode, outcome);
+    }
+    if bundle && (marketplace_entry(from) || marketplace_entry(to)) {
+        return move_folder(vault.dir, from, to, mode, outcome);
+    }
+    relink_move(vault, from, to, bundle, mode, outcome)
+}
+
+/// [`move_note`] once the entry is known to be one the relinker can name.
+fn relink_move(
+    vault: Vault<'_>,
+    from: &str,
+    to: &str,
+    bundle: bool,
+    mode: Mode,
+    outcome: &mut Outcome,
+) -> Result<(), ApplyError> {
+    let vault_dir = vault.dir;
+    let (corpus, unreadable) = load_vault(vault, from, to, bundle)?;
     // Links resolve against every file a build sees, so a rename picks the
     // target a build does. Only notes outside dot-named folders are edited:
     // `.github`, `.claude` or another checkout under `.worktrees` is not the
@@ -428,9 +463,9 @@ fn move_note(
     facts.links.retain(|path, _| !in_dot_folder(path));
     facts.frontmatter.retain(|path, _| !in_dot_folder(path));
     let plan = if bundle {
-        markdown_relink::plan_bundle(&NativeVfs, vault_dir, &facts, from, to)?
+        markdown_relink::plan_bundle(vault.source, vault_dir, &facts, from, to)?
     } else {
-        markdown_relink::plan(&NativeVfs, vault_dir, &facts, from, to)?
+        markdown_relink::plan(vault.source, vault_dir, &facts, from, to)?
     };
     if let Some(conflict) = plan.conflict {
         return Err(ApplyError::Refused(conflict));
@@ -451,6 +486,172 @@ fn move_note(
         record_planned(&plan, outcome);
     }
     record_unreadable(unreadable, outcome);
+    Ok(())
+}
+
+/// Moves a marketplace folder, rewriting links into it from outside.
+///
+/// The relinker names a bundle by `<dir>/<dir>.md`, and a marketplace's entry
+/// is `skillwright.md`. So the entry takes the folder's name for the move and
+/// gets its own back after, and the relinker plans and executes the move as a
+/// bundle. A preview does the same and puts the name back. A path in the root
+/// file, and a link that names `skillwright.md` itself, stay as written.
+fn move_marketplace(
+    vault: Vault<'_>,
+    from: &str,
+    to: &str,
+    mode: Mode,
+    outcome: &mut Outcome,
+) -> Result<(), ApplyError> {
+    let leaf = |path: &str| -> Option<String> {
+        let (dir, _) = path.rsplit_once('/')?;
+        Some(format!("{dir}/{}.md", dir.rsplit('/').next()?))
+    };
+    let (Some(temp_from), Some(temp_to)) = (leaf(from), leaf(to)) else {
+        return move_folder(vault.dir, from, to, mode, outcome);
+    };
+    let (root_from, root_to) = (resolve(vault.dir, from)?, resolve(vault.dir, to)?);
+    let (abs_from, abs_to) = (
+        resolve(vault.dir, &temp_from)?,
+        resolve(vault.dir, &temp_to)?,
+    );
+    // Every refusal that needs no rename comes first, in both modes, so a
+    // refused move touches nothing. The target folder must be new: whatever
+    // `<m>.md` it holds is then the move's own.
+    let new_dir = root_to.parent().map(Path::to_path_buf).unwrap_or_default();
+    if new_dir.exists() {
+        let to_dir = to.rsplit_once('/').map_or(to, |(dir, _)| dir);
+        return Err(ApplyError::Refused(format!("{to_dir} already exists")));
+    }
+    if abs_from != root_from && abs_from.exists() {
+        return Err(ApplyError::Refused(format!(
+            "{temp_from} already exists, and the move needs that name free"
+        )));
+    }
+    if mode.writes()
+        && let Some(parent) = new_dir.parent()
+        && parent.metadata().is_ok_and(|m| m.permissions().readonly())
+    {
+        return Err(ApplyError::Refused(format!(
+            "{} is read-only, so the folder cannot move",
+            parent.display()
+        )));
+    }
+    let before = outcome.entries.len();
+    let moved = if mode.writes() {
+        if abs_from != root_from {
+            std::fs::rename(&root_from, &abs_from).map_err(|source| ApplyError::Io {
+                what: format!("preparing {from}"),
+                source,
+            })?;
+        }
+        let moved = relink_move(vault, &temp_from, &temp_to, true, mode, outcome);
+        let restored = restore_entry(&root_from, &abs_from, &new_dir, &root_to, &abs_to);
+        match (moved, restored) {
+            (Err(err), _) | (Ok(()), Err(err)) => Err(err),
+            (Ok(()), Ok(())) => Ok(()),
+        }
+    } else {
+        // A preview renames in memory, over the same view, and writes nothing.
+        let overlay = PreviewVfs::over(vault.source);
+        if abs_from != root_from {
+            overlay
+                .rename(&root_from, &abs_from)
+                .map_err(|e| ApplyError::Refused(e.to_string()))?;
+        }
+        let view = Vault {
+            dir: vault.dir,
+            source: &overlay,
+        };
+        relink_move(view, &temp_from, &temp_to, true, mode, outcome)
+    };
+    for entry in &mut outcome.entries[before..] {
+        if entry.path == temp_to {
+            entry.path = to.to_owned();
+        }
+        if let Applied::Renamed { from: old } = &mut entry.applied
+            && *old == temp_from
+        {
+            *old = from.to_owned();
+        }
+    }
+    moved
+}
+
+/// Give the marketplace entry its `skillwright.md` name back, wherever the
+/// folder ended up. The two ends are independent: the source folder gets its
+/// entry back when the move did not happen, and the new folder, which the move
+/// created, when it did. A partly failed move leaves the entry under the
+/// source's `<m>.md` name inside the new folder, so that name is tried too.
+fn restore_entry(
+    root_from: &Path,
+    abs_from: &Path,
+    new_dir: &Path,
+    root_to: &Path,
+    abs_to: &Path,
+) -> Result<(), ApplyError> {
+    let rename = |from: &Path, to: &Path| {
+        std::fs::rename(from, to).map_err(|source| ApplyError::Io {
+            what: format!("restoring {}", to.display()),
+            source,
+        })
+    };
+    let mut result = Ok(());
+    if abs_from != root_from && abs_from.exists() && !root_from.exists() {
+        result = rename(abs_from, root_from);
+    }
+    if abs_to != root_to && new_dir.exists() && !root_to.exists() {
+        let kept = abs_from.file_name().map(|name| new_dir.join(name));
+        for candidate in std::iter::once(abs_to.to_path_buf()).chain(kept) {
+            if candidate.exists() {
+                let renamed = rename(&candidate, root_to);
+                result = result.and(renamed);
+                break;
+            }
+        }
+    }
+    result
+}
+
+/// Moves a folder whose entry note the relinker cannot name: a marketplace's
+/// `skillwright.md` is not `<dir>/<dir>.md`. Links inside it move with it. A
+/// link into it from outside and a path in the root file stay as written.
+fn move_folder(
+    vault_dir: &Path,
+    from: &str,
+    to: &str,
+    mode: Mode,
+    outcome: &mut Outcome,
+) -> Result<(), ApplyError> {
+    let (old, new) = (resolve(vault_dir, from)?, resolve(vault_dir, to)?);
+    let (Some(old_dir), Some(new_dir)) = (old.parent(), new.parent()) else {
+        return Err(ApplyError::Refused(format!("{from} has no folder to move")));
+    };
+    if new_dir.exists() {
+        return Err(ApplyError::Refused(format!(
+            "{} already exists",
+            new_dir.display()
+        )));
+    }
+    if mode.writes() {
+        let io = |source| ApplyError::Io {
+            what: format!("moving {from} to {to}"),
+            source,
+        };
+        if let Some(parent) = new_dir.parent() {
+            std::fs::create_dir_all(parent).map_err(io)?;
+        }
+        std::fs::rename(old_dir, new_dir).map_err(io)?;
+        if let Some(leaf) = old.file_name() {
+            std::fs::rename(new_dir.join(leaf), &new).map_err(io)?;
+        }
+    }
+    outcome.push(
+        to,
+        Applied::Renamed {
+            from: from.to_owned(),
+        },
+    );
     Ok(())
 }
 
@@ -586,11 +787,12 @@ fn record_unreadable(paths: Vec<String>, outcome: &mut Outcome) {
 /// rename edits nothing there anyway. One that holds `from` or `to`, or lies
 /// inside a moved bundle, stops the rename instead, with an error naming it.
 fn load_vault(
-    vault_dir: &Path,
+    vault: Vault<'_>,
     from: &str,
     to: &str,
     bundle: bool,
 ) -> Result<(Corpus, Vec<String>), ApplyError> {
+    let vault_dir = vault.dir;
     let (from, to) = (Path::new(from), Path::new(to));
     // What the move carries: the note, or a bundle's whole folder.
     let moved = if bundle {
@@ -601,7 +803,7 @@ fn load_vault(
     let mut unreadable = Vec::new();
     // A walk that lists and stats only, so finding what cannot be read costs
     // no note reads.
-    for err in tradecraft_core::compile::vault_walk_errors(&NativeVfs, vault_dir) {
+    for err in tradecraft_core::compile::vault_walk_errors(vault.source, vault_dir) {
         let relative = err.path().strip_prefix(vault_dir).unwrap_or(err.path());
         if from.starts_with(relative) || to.starts_with(relative) || relative.starts_with(moved) {
             return Err(ApplyError::Io {
@@ -626,7 +828,7 @@ fn load_vault(
         .with_link_walk(walk.clone())
         .with_frontmatter_walk(walk)
         .with_split(SplitMode::Lenient);
-    Ok((Corpus::load(&NativeVfs, vault_dir, options), unreadable))
+    Ok((Corpus::load(vault.source, vault_dir, options), unreadable))
 }
 
 /// Whether the vault-relative `path` sits under a dot-named folder.
@@ -767,94 +969,6 @@ fn trash_one(from: &str, to: &str, from_abs: &Path, to_abs: &Path) -> Result<(),
     })
 }
 
-// ── RenamePlugin ────────────────────────────────────────────────────────────
-
-#[allow(clippy::too_many_arguments)]
-fn rename_plugin(
-    vault_dir: &Path,
-    from: &str,
-    to: &str,
-    dir_from: &str,
-    dir_to: &str,
-    frontmatter: &[FieldEdit],
-    members: &[(String, Vec<FieldEdit>)],
-    mode: Mode,
-) -> Result<Outcome, ApplyError> {
-    let from = rel(from)?;
-    let to = rel(to)?;
-    let dir_from = rel(dir_from)?;
-    let dir_to = rel(dir_to)?;
-    // Every member is checked up front, so a bad one refuses before the
-    // folder moves — nothing here writes yet.
-    let rebased_members = members
-        .iter()
-        .map(|(member, edits)| {
-            let member = rel(member)?;
-            if member == from || member == dir_to || member.starts_with(&format!("{dir_to}/")) {
-                return Err(ApplyError::Refused(format!(
-                    "member {member} is the plugin note or lies under {dir_to}"
-                )));
-            }
-            if !resolve(vault_dir, &member)?.is_file() {
-                return Err(ApplyError::Refused(format!(
-                    "member {member} is not a file in the vault"
-                )));
-            }
-            // Try the splice where the member sits, so YAML it refuses stops
-            // the run before the folder moves.
-            check_frontmatter(vault_dir, &member, edits)?;
-            let rebased = match rebase(&member, &dir_from, &dir_to) {
-                Some(rebased) => rebased?,
-                None => member,
-            };
-            Ok::<_, ApplyError>((rebased, edits.clone()))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    check_frontmatter(vault_dir, &from, frontmatter)?;
-
-    let mut outcome = Outcome::new(mode);
-    // A plugin's entry note is a bundle entry (`<dir>/<dir>.md`), so the
-    // folder and every member inside it ride along on the bundle move; a
-    // member outside it is edited in place.
-    move_note(vault_dir, &from, &to, true, mode, &mut outcome)?;
-    // From here the move has landed — a later failure is reported with what
-    // already wrote, not as a bare refusal.
-    if let Err(err) = rename_plugin_after_move(
-        vault_dir,
-        &to,
-        frontmatter,
-        &rebased_members,
-        mode,
-        &mut outcome,
-    ) {
-        return Err(ApplyError::after_write(mode, outcome, err));
-    }
-    Ok(outcome)
-}
-
-fn rename_plugin_after_move(
-    vault_dir: &Path,
-    to: &str,
-    frontmatter: &[FieldEdit],
-    rebased_members: &[(String, Vec<FieldEdit>)],
-    mode: Mode,
-    outcome: &mut Outcome,
-) -> Result<(), ApplyError> {
-    edit_frontmatter(vault_dir, to, frontmatter, mode, outcome)?;
-    for (rebased, edits) in rebased_members {
-        edit_frontmatter(vault_dir, rebased, edits, mode, outcome)?;
-    }
-    Ok(())
-}
-
-/// A member's path in the new tree, or `None` for a member outside
-/// `dir_from`, which does not move. Members are keyed on the old tree, which
-/// no longer exists once the folder has moved.
-fn rebase(path: &str, dir_from: &str, dir_to: &str) -> Option<Result<String, ApplyError>> {
-    let tail = path.strip_prefix(&format!("{dir_from}/"))?;
-    Some(rel(&format!("{dir_to}/{tail}")))
-}
-
 // ── Shared ──────────────────────────────────────────────────────────────────
 
 /// Read the note at `path` and splice `edits` into it, without writing.
@@ -972,6 +1086,15 @@ fn write_note(abs: &Path, contents: &str) -> Result<(), ApplyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tradecraft_core::vfs::NativeVfs;
+
+    fn apply(dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+        super::apply(Vault::new(dir, &NativeVfs), op)
+    }
+
+    fn preview(dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+        super::preview(Vault::new(dir, &NativeVfs), op)
+    }
     use std::collections::BTreeMap;
     use tradecraft_core::authoring::TRASH_DIR;
     use yaml_splice::Value;
@@ -1271,14 +1394,7 @@ mod tests {
         let entry = v.path().join("notes/a.md");
         let built = tradecraft_core::compile::compile_note(
             &NativeVfs,
-            &tradecraft_core::compile::CompileSource {
-                vault_root: v.path(),
-                entry_path: &entry,
-                bundle_root: None,
-                skill_name: "a",
-                calls: None,
-                links: None,
-            },
+            &tradecraft_core::compile::CompileSource::new(v.path(), &entry, "a"),
             "see [[Guide]]\n",
         )
         .unwrap_err()
@@ -1297,6 +1413,230 @@ mod tests {
     }
 
     #[test]
+    fn a_marketplace_rename_moves_the_folder_and_relinks_notes_outside_it() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        write(
+            v.path(),
+            "marketplaces/m1/plugins/review/skills/triage.md",
+            "---\nname: triage\ndescription: d\n---\nbody\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "see [t](marketplaces/m1/plugins/review/skills/triage.md)\n",
+        );
+        let op = AuthoringOp::Rename {
+            from: "marketplaces/m1/skillwright.md".to_owned(),
+            to: "marketplaces/m2/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let before = tree(v.path());
+        preview(v.path(), &op).unwrap();
+        assert_eq!(tree(v.path()), before, "a preview writes nothing");
+
+        let outcome = apply(v.path(), &op).unwrap();
+        assert!(v.path().join("marketplaces/m2/skillwright.md").is_file());
+        assert!(!v.path().join("marketplaces/m1").exists());
+        assert!(!v.path().join("marketplaces/m2/m2.md").exists());
+        assert_eq!(
+            read(v.path(), "notes.md"),
+            "see [t](marketplaces/m2/plugins/review/skills/triage.md)\n"
+        );
+        assert!(outcome.entries.iter().all(|e| !e.path.ends_with("m2.md")));
+        assert!(outcome.entries.iter().any(|e| matches!(
+            &e.applied,
+            Applied::Renamed { from } if from == "marketplaces/m1/skillwright.md"
+        ) && e.path == "marketplaces/m2/skillwright.md"));
+    }
+
+    /// A refused marketplace rename, real or preview, leaves every file as it
+    /// was, including a user's `m2/m2.md` and the source's `m1/m1.md`.
+    #[test]
+    fn a_refused_marketplace_rename_changes_nothing() {
+        for (setup, reason) in [
+            ("marketplaces/m2/m2.md", "already exists"),
+            ("marketplaces/m1/m1.md", "needs that name free"),
+        ] {
+            let v = vault();
+            write(
+                v.path(),
+                "marketplaces/m1/skillwright.md",
+                "---\nname: m1\n---\n",
+            );
+            write(
+                v.path(),
+                "marketplaces/m1/plugins/p/skills/a.md",
+                "---\nname: a\n---\n",
+            );
+            write(
+                v.path(),
+                "notes.md",
+                "[a](marketplaces/m1/plugins/p/skills/a.md)\n",
+            );
+            write(v.path(), setup, "USER\n");
+            let op = AuthoringOp::Rename {
+                from: "marketplaces/m1/skillwright.md".to_owned(),
+                to: "marketplaces/m2/skillwright.md".to_owned(),
+                bundle: true,
+                frontmatter: vec![],
+            };
+            let before = tree(v.path());
+            let err = preview(v.path(), &op).unwrap_err();
+            assert!(err.to_string().contains(reason), "{err}");
+            assert_eq!(tree(v.path()), before, "preview, {setup}");
+            let err = apply(v.path(), &op).unwrap_err();
+            assert!(err.to_string().contains(reason), "{err}");
+            assert_eq!(tree(v.path()), before, "apply, {setup}");
+        }
+    }
+
+    #[test]
+    fn a_marketplace_rename_preview_counts_the_links_it_would_rewrite() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        write(
+            v.path(),
+            "marketplaces/m1/plugins/p/skills/a.md",
+            "---\nname: a\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[a](marketplaces/m1/plugins/p/skills/a.md)\n",
+        );
+        let op = AuthoringOp::Rename {
+            from: "marketplaces/m1/skillwright.md".to_owned(),
+            to: "marketplaces/m2/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let before = tree(v.path());
+        let outcome = preview(v.path(), &op).unwrap();
+        assert_eq!(tree(v.path()), before);
+        assert!(outcome.entries.iter().any(|e| e.path == "notes.md"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_marketplace_rename_into_a_read_only_folder_rewrites_no_links() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        write(
+            v.path(),
+            "marketplaces/m1/plugins/p/skills/a.md",
+            "---\nname: a\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[a](marketplaces/m1/plugins/p/skills/a.md)\n",
+        );
+        let op = AuthoringOp::Rename {
+            from: "marketplaces/m1/skillwright.md".to_owned(),
+            to: "marketplaces/m2/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let before = tree(v.path());
+        if !lock_writes(&v.path().join("marketplaces")) {
+            return;
+        }
+        let err = apply(v.path(), &op).unwrap_err();
+        unlock_writes(&v.path().join("marketplaces"));
+        assert!(err.to_string().contains("read-only"), "{err}");
+        assert_eq!(tree(v.path()), before);
+    }
+
+    /// A marketplace folder named `skillwright` is renamed like any other:
+    /// the temporary entry name is its own, and links into it are rewritten.
+    #[test]
+    fn a_marketplace_named_skillwright_renames_and_relinks() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/skillwright/skillwright.md",
+            "---\nname: skillwright\n---\n",
+        );
+        write(
+            v.path(),
+            "marketplaces/skillwright/plugins/p/skills/a.md",
+            "---\nname: a\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[a](marketplaces/skillwright/plugins/p/skills/a.md)\n",
+        );
+        let op = AuthoringOp::Rename {
+            from: "marketplaces/skillwright/skillwright.md".to_owned(),
+            to: "marketplaces/shop/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let before = tree(v.path());
+        preview(v.path(), &op).unwrap();
+        assert_eq!(tree(v.path()), before);
+        apply(v.path(), &op).unwrap();
+        assert!(v.path().join("marketplaces/shop/skillwright.md").is_file());
+        assert!(!v.path().join("marketplaces/skillwright").exists());
+        assert_eq!(
+            read(v.path(), "notes.md"),
+            "[a](marketplaces/shop/plugins/p/skills/a.md)\n"
+        );
+    }
+
+    /// A bundled component named `skillwright` is an ordinary `<dir>/<dir>.md`
+    /// bundle: converting it previews and applies, with links rewritten.
+    #[test]
+    fn a_converted_bundle_named_skillwright_does_not_recurse() {
+        let v = vault();
+        write(
+            v.path(),
+            "skills/skillwright/skillwright.md",
+            "---\nname: skillwright\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[s](skills/skillwright/skillwright.md)\n",
+        );
+        let op = AuthoringOp::ConvertKind {
+            from: "skills/skillwright/skillwright.md".to_owned(),
+            to: "commands/skillwright/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+            scaffold: vec![],
+        };
+        let before = tree(v.path());
+        preview(v.path(), &op).unwrap();
+        assert_eq!(tree(v.path()), before);
+        apply(v.path(), &op).unwrap();
+        assert!(
+            v.path()
+                .join("commands/skillwright/skillwright.md")
+                .is_file()
+        );
+        assert_eq!(
+            read(v.path(), "notes.md"),
+            "[s](commands/skillwright/skillwright.md)\n"
+        );
+    }
+
+    #[test]
     fn move_relocates_the_note() {
         let v = vault();
         write(v.path(), "inbox/a.md", "---\nname: a\n---\n\nbody\n");
@@ -1306,7 +1646,6 @@ mod tests {
             from: "inbox/a.md".to_owned(),
             to: "archive/a.md".to_owned(),
             bundle: false,
-            frontmatter: vec![],
         };
         apply(v.path(), &op).unwrap();
 
@@ -1376,215 +1715,6 @@ mod tests {
                 ("notes/Gamma.md", "field-set"),
             ]
         );
-    }
-
-    #[test]
-    fn rename_plugin_moves_the_folder_and_rekeys_its_members() {
-        let v = vault();
-        write(
-            v.path(),
-            "plugins/tools/tools.md",
-            "---\nname: tools\n---\n\nplugin\n",
-        );
-        write(
-            v.path(),
-            "plugins/tools/skills/keyed.md",
-            "---\nname: keyed\nsw-plugin: tools\n---\n\nmember\n",
-        );
-
-        let op = AuthoringOp::RenamePlugin {
-            from: "plugins/tools/tools.md".to_owned(),
-            to: "plugins/gear/gear.md".to_owned(),
-            dir_from: "plugins/tools".to_owned(),
-            dir_to: "plugins/gear".to_owned(),
-            frontmatter: vec![FieldEdit::set("name", Value::Str("gear".to_owned()))],
-            members: vec![(
-                "plugins/tools/skills/keyed.md".to_owned(),
-                vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
-            )],
-        };
-        apply(v.path(), &op).unwrap();
-
-        assert!(!v.path().join("plugins/tools").exists());
-        assert!(read(v.path(), "plugins/gear/gear.md").contains("name: gear"));
-        assert!(read(v.path(), "plugins/gear/skills/keyed.md").contains("sw-plugin: gear"));
-    }
-
-    /// A vault holding only the `tools` plugin note.
-    fn tools_plugin() -> tempfile::TempDir {
-        let v = vault();
-        write(
-            v.path(),
-            "plugins/tools/tools.md",
-            "---\nname: tools\n---\n\nplugin\n",
-        );
-        v
-    }
-
-    /// Rename `tools` to `gear`, rekeying the one `member`.
-    fn rename_tools_to_gear(member: &str) -> AuthoringOp {
-        AuthoringOp::RenamePlugin {
-            from: "plugins/tools/tools.md".to_owned(),
-            to: "plugins/gear/gear.md".to_owned(),
-            dir_from: "plugins/tools".to_owned(),
-            dir_to: "plugins/gear".to_owned(),
-            frontmatter: vec![],
-            members: vec![(
-                member.to_owned(),
-                vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
-            )],
-        }
-    }
-
-    #[test]
-    fn rename_plugin_edits_a_member_outside_dir_from_where_it_sits() {
-        let v = tools_plugin();
-        write(
-            v.path(),
-            "skills/stray.md",
-            "---\nname: stray\nsw-plugin: tools\n---\n\nmember\n",
-        );
-
-        apply(v.path(), &rename_tools_to_gear("skills/stray.md")).unwrap();
-
-        assert!(v.path().join("plugins/gear/gear.md").exists());
-        assert!(read(v.path(), "skills/stray.md").contains("sw-plugin: gear"));
-    }
-
-    #[test]
-    fn rename_plugin_refuses_a_bad_member_path_without_moving_anything() {
-        let v = tools_plugin();
-
-        let err = apply(v.path(), &rename_tools_to_gear("../outside.md")).unwrap_err();
-
-        assert!(matches!(err, ApplyError::Path { .. }), "{err:?}");
-        assert!(v.path().join("plugins/tools/tools.md").exists());
-        assert!(!v.path().join("plugins/gear").exists());
-    }
-
-    #[test]
-    fn rename_plugin_refuses_a_missing_or_misplaced_member_without_moving_anything() {
-        for member in [
-            "skills/missing.md",
-            "plugins/tools/skills/missing.md",
-            "skills",
-            "plugins/tools/tools.md",
-            "plugins/gear/gear.md",
-        ] {
-            let v = tools_plugin();
-            write(v.path(), "skills/other.md", "---\nname: other\n---\n");
-
-            let err = apply(v.path(), &rename_tools_to_gear(member)).unwrap_err();
-
-            assert!(matches!(err, ApplyError::Refused(_)), "{member}: {err:?}");
-            assert!(v.path().join("plugins/tools/tools.md").exists(), "{member}");
-            assert!(!v.path().join("plugins/gear").exists(), "{member}");
-        }
-    }
-
-    /// If a member's frontmatter edit fails once the bundle has already
-    /// moved, the failure carries the [`Outcome`] that already landed rather
-    /// than discarding it behind a bare refusal. The YAML splice is checked
-    /// before the move, so the failure here is a write: the member sits in a
-    /// read-only directory.
-    #[cfg(unix)]
-    #[test]
-    fn rename_plugin_reports_the_move_when_a_members_edit_fails_after_it() {
-        let v = tools_plugin();
-        write(
-            v.path(),
-            "plugins/tools/skills/member.md",
-            "---\nname: member\nsw-plugin: tools\n---\n\nmember\n",
-        );
-        let locked = v.path().join("plugins/tools/skills");
-        if !lock_writes(&locked) {
-            return;
-        }
-
-        let err = apply(
-            v.path(),
-            &rename_tools_to_gear("plugins/tools/skills/member.md"),
-        )
-        .unwrap_err();
-        unlock_writes(&v.path().join("plugins/gear/skills"));
-
-        let ApplyError::Partial { outcome, .. } = err else {
-            panic!("expected a partial outcome, got {err:?}");
-        };
-        assert!(!v.path().join("plugins/tools").exists());
-        assert!(v.path().join("plugins/gear/gear.md").exists());
-        assert_eq!(
-            outcomes(&outcome),
-            vec![
-                ("plugins/gear/gear.md", "renamed"),
-                ("plugins/gear/skills/member.md", "moved"),
-            ]
-        );
-    }
-
-    /// A preview of a plugin rename lists the move and every edit, and
-    /// writes nothing.
-    #[test]
-    fn rename_plugin_preview_lists_the_edits_and_writes_nothing() {
-        let v = vault();
-        write(
-            v.path(),
-            "plugins/tools/tools.md",
-            "---\nname: tools\n---\n\nplugin\n",
-        );
-        write(
-            v.path(),
-            "plugins/tools/skills/keyed.md",
-            "---\nname: keyed\nsw-plugin: tools\n---\n\nmember\n",
-        );
-        let before = tree(v.path());
-
-        let mut op = rename_tools_to_gear("plugins/tools/skills/keyed.md");
-        if let AuthoringOp::RenamePlugin { frontmatter, .. } = &mut op {
-            frontmatter.push(FieldEdit::set("name", Value::Str("gear".to_owned())));
-        }
-        let outcome = preview(v.path(), &op).unwrap();
-
-        assert_eq!(tree(v.path()), before);
-        let rows = outcomes(&outcome);
-        assert!(
-            rows.contains(&("plugins/gear/gear.md", "renamed")),
-            "{rows:?}"
-        );
-        assert!(
-            rows.contains(&("plugins/gear/gear.md", "field-set")),
-            "{rows:?}"
-        );
-        assert!(
-            rows.contains(&("plugins/gear/skills/keyed.md", "field-set")),
-            "{rows:?}"
-        );
-    }
-
-    /// A member whose YAML the splice refuses is refused before the folder
-    /// moves, by the preview and the real run alike.
-    #[test]
-    fn rename_plugin_refuses_a_member_frontmatter_edit_before_moving() {
-        let v = vault();
-        write(
-            v.path(),
-            "plugins/tools/tools.md",
-            "---\nname: tools\n---\n\nplugin\n",
-        );
-        write(
-            v.path(),
-            "plugins/tools/skills/broken.md",
-            "---\nsw-plugin: tools\nsw-plugin: again\n---\n\nmember\n",
-        );
-        let before = tree(v.path());
-
-        let op = rename_tools_to_gear("plugins/tools/skills/broken.md");
-        let err = preview(v.path(), &op).unwrap_err();
-        assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
-        let err = apply(v.path(), &op).unwrap_err();
-        assert!(matches!(err, ApplyError::Frontmatter { .. }), "{err:?}");
-
-        assert_eq!(tree(v.path()), before);
     }
 
     /// A frontmatter splice the note's YAML refuses is refused before the
@@ -1869,7 +1999,6 @@ mod tests {
             from: "locked/alpha.md".to_owned(),
             to: "moved/gamma.md".to_owned(),
             bundle: false,
-            frontmatter: vec![],
         };
         let err = apply(v.path(), &op).unwrap_err();
         unlock_writes(&v.path().join("locked"));
@@ -1891,7 +2020,8 @@ mod tests {
         write(v.path(), "alpha.md", "---\nname: alpha\n---\n");
         write(v.path(), "rewritten.md", "see [[alpha]]\n");
         write(v.path(), "drifted.md", "also [[alpha]]\n");
-        let (corpus, _) = load_vault(v.path(), "alpha.md", "gamma.md", false).unwrap();
+        let source = Vault::new(v.path(), &NativeVfs);
+        let (corpus, _) = load_vault(source, "alpha.md", "gamma.md", false).unwrap();
         let facts = VaultFacts::from_corpus(&corpus);
         let plan =
             markdown_relink::plan(&NativeVfs, v.path(), &facts, "alpha.md", "gamma.md").unwrap();

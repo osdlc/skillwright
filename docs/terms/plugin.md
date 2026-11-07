@@ -2,11 +2,11 @@
 
 Status: current.
 
-A group of skills, commands and hooks that installs as one unit. A component's plugin comes from its folder, overruled by `sw-plugin`.
+A group of skills, commands and hooks that installs as one unit. A component's plugin comes from its folder.
 
 ## In code
 
-`sw-plugin`; `PluginGroup` in `export.rs`.
+`PluginGroup` in `export.rs`.
 
 ## Not to be confused with
 

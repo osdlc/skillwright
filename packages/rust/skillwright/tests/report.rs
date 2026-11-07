@@ -216,29 +216,30 @@ mod normalize_thrown_reason_tests {
 
 mod roster_row_tests {
     use skillwright::report::roster_row;
-    use std::path::PathBuf;
+    use tradecraft_core::DiscoveredComponent;
     use tradecraft_core::frontmatter::ContainerIdentity;
-    use tradecraft_core::{DiscoveredComponent, EntityKind, KindSource};
 
+    /// A row built by hand: the type is `#[non_exhaustive]`, so a consumer
+    /// outside the crate reads one from its JSON.
     fn component() -> DiscoveredComponent {
-        DiscoveredComponent {
-            name: "code-review".to_string(),
-            description: "reviews code".to_string(),
-            description_filled: false,
-            kind: EntityKind::Skill,
-            kind_source: KindSource::Frontmatter,
-            folder_kind: Some(EntityKind::Command),
-            targets: Some(vec!["claude-code".to_string()]),
-            plugin: Some("tools".to_string()),
-            folder_plugin: None,
-            marketplace: None,
-            entry_path: PathBuf::from("/vault/commands/code-review/code-review.md"),
-            bundle_root: None,
-            resources: Vec::new(),
-            vault_relative_path: "commands/code-review/code-review.md".to_string(),
-            hook: None,
-            identity: ContainerIdentity::default(),
-        }
+        serde_json::from_value(serde_json::json!({
+            "name": "code-review",
+            "description": "reviews code",
+            "description_filled": false,
+            "kind": "skill",
+            "kind_source": "directory",
+            "folder_kind": "command",
+            "targets": ["claude-code"],
+            "plugin": "tools",
+            "marketplace": null,
+            "entry_path": "/vault/commands/code-review/code-review.md",
+            "bundle_root": null,
+            "resources": [],
+            "vault_relative_path": "commands/code-review/code-review.md",
+            "hook": null,
+            "identity": serde_json::to_value(ContainerIdentity::default()).unwrap(),
+        }))
+        .unwrap()
     }
 
     #[test]

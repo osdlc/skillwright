@@ -26,14 +26,13 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tradecraft_core::harness::profile;
 
 use super::adapter::Scope;
-use super::{Harness, HarnessFlags, HarnessVerb, built_root};
+use super::{Harness, HarnessFlags, HarnessVerb, built_root, packs_dir};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
-use crate::resolve::resolve_run;
+use crate::resolve::{refuse_workspace, resolve_run};
 
 /// The user skill folder `harness` reads, under `home`, or why `harness`
 /// is not linked.
@@ -56,15 +55,6 @@ fn shared_folder_warning(harness: &str) -> Option<&'static str> {
          facts/cursor/skills/user-dirs.md, facts/pi/skills/user-dirs.md), so they load these \
          Codex builds too",
     )
-}
-
-/// Where `harness`'s packs land under the built root.
-fn packs(harness: &str) -> Option<&'static str> {
-    profile::PROFILES
-        .iter()
-        .find(|p| p.name == harness)
-        .and_then(|p| p.plugin.as_ref())
-        .map(|format| format.packs)
 }
 
 /// One planned link and what was found where it goes.
@@ -171,12 +161,19 @@ fn canonical_lossy(path: &Path) -> PathBuf {
     }
 }
 
-/// The built skill folders of `plugins` (every pack when empty), by the
-/// folder name each one links as.
-fn built_skills(
-    packs_dir: &Path,
-    plugins: &[String],
-) -> Result<BTreeMap<String, Vec<PathBuf>>, String> {
+/// What a walk of the packs found.
+#[derive(Default)]
+struct BuiltSkills {
+    /// The built skill folders, by the folder name each one links as.
+    skills: BTreeMap<String, Vec<PathBuf>>,
+    /// Built packs with no skills, such as a commands-only plugin.
+    no_skills: Vec<String>,
+}
+
+/// The built skills of `plugins`, or of every pack when empty. A pack with no
+/// `skills/` is valid, so a walk of every pack skips it; a plugin the caller
+/// named is an error.
+fn built_skills(packs_dir: &Path, plugins: &[String]) -> Result<BuiltSkills, String> {
     let names: Vec<String> = if plugins.is_empty() {
         let entries = std::fs::read_dir(packs_dir).map_err(|e| {
             format!(
@@ -194,9 +191,17 @@ fn built_skills(
     } else {
         plugins.to_vec()
     };
-    let mut skills: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+    let mut built = BuiltSkills::default();
     for plugin in names {
-        let dir = packs_dir.join(&plugin).join("skills");
+        let pack = packs_dir.join(&plugin);
+        let dir = pack.join("skills");
+        if pack.is_dir() && !dir.exists() {
+            if plugins.is_empty() {
+                built.no_skills.push(plugin);
+                continue;
+            }
+            return Err(format!("`{plugin}` has no skills to link"));
+        }
         let entries = std::fs::read_dir(&dir).map_err(|e| {
             format!(
                 "{} could not be read ({e}); run `skillwright build` first",
@@ -211,10 +216,10 @@ fn built_skills(
             let Some(name) = entry.file_name().to_str().map(str::to_string) else {
                 continue;
             };
-            skills.entry(name).or_default().push(path);
+            built.skills.entry(name).or_default().push(path);
         }
     }
-    Ok(skills)
+    Ok(built)
 }
 
 /// Symlinks in `folder` not named in `skip` whose target is under one of
@@ -282,22 +287,25 @@ pub fn run_link(
         Ok(run) => run,
         Err(code) => return code,
     };
-    let root = match built_root(&run, flags, ctx, &argv_verb) {
+    if let Err(code) = refuse_workspace(&argv_verb.join(" "), &run, ctx.err) {
+        return code;
+    }
+    let root = match built_root(&run, flags, ctx) {
         Ok(root) => canonical_lossy(&root),
         Err(code) => return code,
     };
-    let Some(packs) = packs(name) else {
-        return blocked(ctx.err, &format!("{name} has no pack layout"));
-    };
-    let packs_dir = root.join(packs);
-    let linking = verb == HarnessVerb::Link;
-    let skills = match built_skills(&packs_dir, &flags.plugins) {
-        Ok(skills) => skills,
-        // Unlink still removes links into a build that is gone.
-        Err(_) if !linking => BTreeMap::new(),
+    let packs_dir = match packs_dir(&run, &root, name) {
+        Ok(dir) => dir,
         Err(message) => return blocked(ctx.err, &message),
     };
-    let warnings: Vec<String> = if linking {
+    let linking = verb == HarnessVerb::Link;
+    let BuiltSkills { skills, no_skills } = match built_skills(&packs_dir, &flags.plugins) {
+        Ok(built) => built,
+        // Unlink still removes links into a build that is gone.
+        Err(_) if !linking => BuiltSkills::default(),
+        Err(message) => return blocked(ctx.err, &message),
+    };
+    let mut warnings: Vec<String> = if linking {
         shared_folder_warning(name)
             .map(str::to_string)
             .into_iter()
@@ -305,6 +313,13 @@ pub fn run_link(
     } else {
         Vec::new()
     };
+    if linking {
+        warnings.extend(
+            no_skills
+                .iter()
+                .map(|pack| format!("skipped `{pack}`: its pack has no skills to link")),
+        );
+    }
 
     let mut rows: Vec<LinkRow> = Vec::new();
     // Each planned change, by the index of its row.

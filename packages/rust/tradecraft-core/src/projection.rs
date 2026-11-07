@@ -6,7 +6,7 @@
 //! emission are its contract. This module maps the store
 //! snapshot into `agent_adapt::Skill` and hashes what comes back.
 //!
-//! # The `sw-` strip, again
+//! # The strip, again
 //!
 //! The namespace spec put the strip in two places, and
 //! this is the second. [`crate::vault::read_vault_skill`] lifts our namespace
@@ -24,10 +24,10 @@
 //! reference validator rejects it as an unknown top-level key.
 //!
 //! **The same predicate means the same [`crate::Namespace`]**, which is why
-//! [`project_skill`] takes one rather than assuming `sw-`. A vault configured
-//! to `x-` and emitted under `sw-` would publish every `x-` key its author
-//! wrote, and strip an `sw-` annotation that was never ours to touch — the
-//! strip failing in both directions at once.
+//! [`project_skill`] takes one rather than assuming a prefix. A vault
+//! configured to `x-` and emitted under `sw-` would publish every `x-` key its
+//! author wrote, and strip an `sw-` annotation that was never ours to touch —
+//! the strip failing in both directions at once.
 
 use agent_adapt::RuntimeId;
 use sha2::{Digest, Sha256};
@@ -68,7 +68,7 @@ pub fn project_skill(
     project_skill_reporting(snapshot, targets, ns, None).map(|(files, _)| files)
 }
 
-/// One `sw-overrides` key that changed nothing at the destination it was
+/// One harness block key that changed nothing at the destination it was
 /// written for.
 ///
 /// A diagnostic, never a refusal: the note publishes exactly as it would
@@ -98,7 +98,7 @@ impl std::fmt::Display for RedundantOverride {
 /// Two entry points rather than one because the diagnostic is not a file and
 /// most callers want files. Whichever is called, the render happens once.
 ///
-/// `overrides_target` is the canonical destination whose `sw-overrides` block
+/// `overrides_target` is the canonical destination whose harness block
 /// this render applies — the publish path's own destination, not the runtime
 /// target, which several destinations share. `None` renders no override block.
 ///
@@ -242,7 +242,7 @@ pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError>
 /// The peer of [`project_skill`], and deliberately a separate entry point
 /// rather than a branch inside it: the two produce different files at
 /// different paths from different halves of the same note, and a caller
-/// holding an `sw-kind: agent` note has already decided which it wants.
+/// holding an agent note has already decided which it wants.
 ///
 /// A runtime with no agent layout is refused by name rather than skipped.
 /// [`agent_adapt::runtimes::agent_renderer_for`] is `None` for Antigravity,
@@ -337,14 +337,14 @@ pub fn project_agent(
 /// `no-renderer`. [`crate::publish`] maps `portable` to `codex-cli` first, so a
 /// `portable` command is written in Codex's command layout.
 ///
-/// `overrides_target` is the canonical destination whose `sw-overrides` block
+/// `overrides_target` is the canonical destination whose harness block
 /// this render applies, or `None` for a snapshot that carries none.
 ///
 /// A key the command has no field for (`disable-model-invocation`,
 /// `user-invocable`, `context`, a foreign key) is written into its
 /// frontmatter as the author spelled it, unless the target's
 /// [`agent_adapt::FrontmatterDialect::omit_fields`] leaves it out. The
-/// `sw-overrides` block merges over those.
+/// harness block merges over those.
 pub fn project_command(
     snapshot: &SkillProjection,
     targets: &[String],
@@ -436,7 +436,7 @@ pub fn project_plugin_hooks(
 /// rather than silently preferring one: both were typed on purpose, and
 /// picking a winner is how the other one disappears.
 ///
-/// `overrides_target` is the canonical destination whose `sw-overrides` block
+/// `overrides_target` is the canonical destination whose harness block
 /// this render applies, or `None` for a snapshot that carries none.
 ///
 /// # Errors
@@ -628,7 +628,7 @@ fn hook_type_name(value: &serde_json::Value) -> &'static str {
 /// skips the renderer's omit list, so a key `id`'s dialect omits is dropped
 /// here, the same answer the override roster gives for it. A foreign key has
 /// no roster entry and passes, as on the skill path. The author's own
-/// `sw-overrides.<target>` block, already checked by [`crate::publish`],
+/// harness block, already checked by [`crate::publish`],
 /// merges over them.
 ///
 /// # Errors
@@ -952,21 +952,11 @@ fn to_adapt_skill(
     skill.allowed_tools = content.allowed_tools.clone();
     skill.license = content.license.clone();
     skill.compatibility = content.compatibility.clone();
-    skill.metadata = content.metadata.clone();
     skill.model_override = content.model_override.clone();
     skill.context_mode = content.context_mode.clone();
     skill.user_invocable = content.user_invocable;
     skill.disable_model_invocation = content.disable_model_invocation;
     skill.tags = content.tags.clone();
-    // Our namespace never travels — see the module doc. Wholesale by
-    // prefix, with no allow-list of known keys to keep in step, which is
-    // the point of having a prefix at all.
-    skill.annotations = content
-        .annotations
-        .iter()
-        .filter(|(key, _)| !ns.is_ours(key))
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
     skill.resources = snapshot
         .resources
         .iter()
@@ -983,7 +973,48 @@ fn to_adapt_skill(
         .and_then(|dest| content.overrides.get(dest))
         .cloned()
         .unwrap_or_default();
+    // Through the override, not `Skill::annotations`: the renderer writes
+    // annotations as JSON strings, and a nested value must stay YAML. A
+    // harness block's `metadata` merges over the note's own, key by key.
+    let mut metadata = skill_metadata(content, ns);
+    if let Some(serde_json::Value::Object(block)) = skill.overrides.get("metadata") {
+        metadata.extend(block.clone());
+    }
+    if !metadata.is_empty() {
+        skill
+            .overrides
+            .insert("metadata".to_owned(), serde_json::Value::Object(metadata));
+    }
     skill
+}
+
+/// A skill's `metadata:` block: its unknown keys, as YAML, with the note's
+/// own `metadata` over them. skillwright's own keys never travel, whichever
+/// route they arrived by.
+pub(crate) fn skill_metadata(
+    content: &crate::content::SkillContent,
+    ns: &Namespace,
+) -> serde_json::Map<String, serde_json::Value> {
+    let ours = |key: &str| {
+        ns.is_ours(key)
+            || (ns.is_bare() && crate::keys::is_owned(crate::frontmatter::EntityKind::Skill, key))
+    };
+    let mut metadata = serde_json::Map::new();
+    for (key, value) in content.annotations.iter().filter(|(key, _)| !ours(key)) {
+        // A nested `metadata:` map is carried as an annotation of that name.
+        match (key.as_str(), value) {
+            ("metadata", serde_json::Value::Object(nested)) => {
+                metadata.extend(nested.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
+            _ => {
+                metadata.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    for (key, value) in &content.metadata {
+        metadata.insert(key.clone(), value.clone().into());
+    }
+    metadata
 }
 
 fn forward_slashed(path: &std::path::Path) -> String {
@@ -1001,7 +1032,7 @@ mod tests {
     /// The default namespace — the strip every test below emits under, except
     /// the one that configures a different one.
     fn sw() -> Namespace {
-        Namespace::default()
+        Namespace::sw()
     }
 
     fn content(name: &str) -> SkillContent {

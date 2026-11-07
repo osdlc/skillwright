@@ -5,9 +5,8 @@ mod common;
 
 use std::cell::RefCell;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use common::with_machine_env;
 use skillwright::cli::run_with;
 use skillwright::commands::harness::cli_runner::{RunResult, Runner};
 use skillwright::ctx::CommandContext;
@@ -72,19 +71,34 @@ impl Runner for FakeRunner {
 const CLAUDE_MARKETS: &str = "claude plugin marketplace list --json";
 const CLAUDE_PLUGINS: &str = "claude plugin list --json";
 
+/// The packs folder of each harness `harness` drives, relative to the built
+/// marketplace.
+const PACKS: [&str; 4] = [
+    ".claude-plugin/packs",
+    ".agents/packs",
+    ".cursor-plugin/packs",
+    ".pi/packs",
+];
+
+/// A built `tools` pack under `root` for each harness, so `harness` finds
+/// the plugin to install without `--plugin`.
+fn write_packs(root: &Path) {
+    for packs in PACKS {
+        fs::create_dir_all(root.join(packs).join("tools")).unwrap();
+    }
+}
+
 /// A project whose built marketplace at `published/acme` carries a manifest
-/// for each harness root, all naming it `acme`. Returns that root.
+/// for each harness root, all naming it `acme`, and a `tools` pack. Returns
+/// that root.
 fn write_project(dir: &Path) -> String {
-    fs::create_dir_all(dir.join("vault")).unwrap();
     fs::write(
-        dir.join("skillwright.yaml"),
-        "vault: vault\n\
-         marketplace:\n  \
-         out: published/acme\n  \
-         default_plugin: tools\n",
+        dir.join("skillwright.md"),
+        "---\nbuild:\n  out: published/acme\n---\n",
     )
     .unwrap();
     let root = dir.join("published/acme");
+    write_packs(&root);
     for manifest in [
         ".claude-plugin/marketplace.json",
         ".agents/plugins/marketplace.json",
@@ -107,10 +121,10 @@ fn run(argv: &[&str], cwd: &Path, runner: &dyn Runner) -> Run {
     let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
-    let code = with_machine_env(Some(&cwd.join("no-machine-config.yaml")), || {
+    let code = {
         let mut ctx = CommandContext::new(cwd, &mut out, &mut err).with_runner(runner);
         run_with(&owned, &mut ctx)
-    });
+    };
     Run {
         code,
         stdout: String::from_utf8(out).unwrap(),
@@ -490,21 +504,17 @@ fn a_failing_list_command_blocks_with_its_stderr() {
     assert_eq!(fake.calls(), vec![CLAUDE_MARKETS]);
 }
 
-/// No manifest at the target root: `marketplace.name` names the
+/// No manifest at the target root: the root file's `name` names the
 /// marketplace, so it is what the plugin id carries.
 #[test]
 fn a_configured_marketplace_name_is_the_fallback_for_an_unbuilt_root() {
     let dir = tempfile::tempdir().unwrap();
-    fs::create_dir_all(dir.path().join("vault")).unwrap();
     fs::write(
-        dir.path().join("skillwright.yaml"),
-        "vault: vault\n\
-         marketplace:\n  \
-         out: published/acme\n  \
-         name: configured\n  \
-         default_plugin: tools\n",
+        dir.path().join("skillwright.md"),
+        "---\nname: configured\nbuild:\n  out: published/acme\n---\n",
     )
     .unwrap();
+    write_packs(&dir.path().join("published/acme"));
     let fake = FakeRunner::new("[]", "[]");
 
     let result = run(
@@ -1006,6 +1016,79 @@ fn uninstall_refuses_a_git_ref() {
     assert!(fake.calls().is_empty());
 }
 
+#[test]
+fn install_finds_the_plugins_of_a_moved_packs_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: dist\nclaude: {packs: moved/claude}\n---\n",
+    )
+    .unwrap();
+    let note = dir.path().join("plugins/rev/skills/a.md");
+    fs::create_dir_all(note.parent().unwrap()).unwrap();
+    fs::write(note, "---\ndescription: Use a.\n---\n\nbody\n").unwrap();
+    let fake = FakeRunner::new("[]", "[]");
+    let built = run(&["build", "--yes"], dir.path(), &fake);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+
+    let result = run(
+        &["harness", "install", "claude", "--dry-run"],
+        dir.path(),
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(result.stdout.contains("rev@m"), "{}", result.stdout);
+}
+
+#[test]
+fn install_finds_the_packs_of_one_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = |rel: &str, text: &str| {
+        let path = dir.path().join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    };
+    file("skillwright.md", "---\nname: m\nbuild:\n  out: .\n---\n");
+    file(
+        "marketplaces/a/skillwright.md",
+        "---\nname: a\nclaude: {packs: mva}\n---\n",
+    );
+    file("marketplaces/b/skillwright.md", "---\nname: b\n---\n");
+    file(
+        "marketplaces/a/plugins/p/skills/s.md",
+        "---\ndescription: Use s.\n---\n\nbody\n",
+    );
+    let fake = FakeRunner::new("[]", "[]");
+    let built = run(&["build", "--marketplace", "a", "--yes"], dir.path(), &fake);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+
+    let result = run(
+        &["harness", "install", "claude", "--dry-run"],
+        dir.path(),
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(result.stdout.contains("p@a"), "{}", result.stdout);
+}
+
+#[test]
+fn install_refuses_a_packs_that_leaves_the_output() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: dist\nclaude: {packs: ../../..}\n---\n",
+    )
+    .unwrap();
+    let fake = FakeRunner::new("[]", "[]");
+    let result = run(
+        &["harness", "install", "claude", "--dry-run"],
+        dir.path(),
+        &fake,
+    );
+    assert_ne!(result.code, 0);
+    assert!(result.stderr.contains("unsafe-path"), "{}", result.stderr);
+    assert!(fake.calls().is_empty());
+}
 // --- pi ---------------------------------------------------------------------
 
 /// `run`, with `home` standing in for the user's home directory.
@@ -1013,12 +1096,11 @@ fn run_home(argv: &[&str], cwd: &Path, home: &Path, runner: &dyn Runner) -> Run 
     let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
-    let code = with_machine_env(Some(&cwd.join("no-machine-config.yaml")), || {
-        let mut ctx = CommandContext::new(cwd, &mut out, &mut err)
-            .with_runner(runner)
-            .with_home(home);
-        run_with(&owned, &mut ctx)
-    });
+    let mut ctx = CommandContext::new(cwd, &mut out, &mut err)
+        .with_runner(runner)
+        .with_home(home);
+    let code = run_with(&owned, &mut ctx);
+    drop(ctx);
     Run {
         code,
         stdout: String::from_utf8(out).unwrap(),
@@ -1478,4 +1560,187 @@ fn link_and_pi_refuse_a_git_ref() {
         assert!(result.stderr.contains("--git-ref"), "{}", result.stderr);
         assert!(fake.calls().is_empty());
     }
+}
+
+/// A project building into `out` with Claude's and Pi's packs moved.
+fn write_moved_project(dir: &Path) -> PathBuf {
+    fs::write(
+        dir.join("skillwright.md"),
+        "---\nname: m\nclaude: {packs: mc}\npi: {packs: mp}\nbuild:\n  out: out\n---\n",
+    )
+    .unwrap();
+    let root = dir.join("out");
+    fs::create_dir_all(&root).unwrap();
+    root.canonicalize().unwrap()
+}
+
+#[test]
+fn link_reads_a_moved_packs_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_moved_project(dir.path());
+    let home = dir.path().join("home");
+    write_built_skill(&root, "mc", "tools", "a");
+    let fake = FakeRunner::new("", "");
+    let result = run_home(
+        &["harness", "link", "claude", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    let link = fs::read_link(home.join(".claude/skills/a")).unwrap();
+    assert!(link.starts_with(root.join("mc")), "{}", link.display());
+}
+
+#[test]
+fn pi_installs_every_built_pack_of_a_moved_packs_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_moved_project(dir.path());
+    let home = dir.path().join("home");
+    fs::create_dir_all(root.join("mp/one")).unwrap();
+    fs::create_dir_all(root.join("mp/two")).unwrap();
+    let fake = FakeRunner::new("", "");
+    let result = run_home(
+        &["harness", "install", "pi", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    let calls = fake.calls().join("\n");
+    assert!(calls.contains("mp/one"), "{calls}");
+    assert!(calls.contains("mp/two"), "{calls}");
+}
+
+#[test]
+fn pi_with_nothing_built_says_to_build() {
+    let dir = tempfile::tempdir().unwrap();
+    write_moved_project(dir.path());
+    let fake = FakeRunner::new("", "");
+    let result = run_home(
+        &["harness", "install", "pi", "--yes"],
+        dir.path(),
+        &dir.path().join("home"),
+        &fake,
+    );
+    assert_eq!(result.code, EXIT_USAGE, "{}", result.stderr);
+    assert!(
+        result.stderr.contains("skillwright build"),
+        "{}",
+        result.stderr
+    );
+    assert!(fake.calls().is_empty());
+}
+
+#[test]
+fn link_and_pi_need_an_output_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("skillwright.md"), "---\nname: m\n---\n").unwrap();
+    let home = dir.path().join("home");
+    for argv in [
+        &["harness", "link", "claude", "--yes"][..],
+        &["harness", "install", "pi", "--yes"][..],
+    ] {
+        let fake = FakeRunner::new("", "");
+        let result = run_home(argv, dir.path(), &home, &fake);
+        assert_ne!(result.code, 0, "{argv:?}");
+        assert!(result.stderr.contains("build.out"), "{}", result.stderr);
+        assert!(fake.calls().is_empty());
+    }
+}
+
+#[test]
+fn link_and_pi_are_refused_at_a_workspace_root() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\n---\n",
+    )
+    .unwrap();
+    let home = dir.path().join("home");
+    for argv in [
+        &["harness", "link", "claude", "--yes"][..],
+        &["harness", "unlink", "claude", "--yes"][..],
+        &["harness", "install", "pi", "--yes"][..],
+    ] {
+        let fake = FakeRunner::new("", "");
+        let result = run_home(argv, dir.path(), &home, &fake);
+        assert_eq!(result.code, EXIT_BLOCKED, "{argv:?}: {}", result.stderr);
+        assert!(
+            result.stderr.contains("is a workspace"),
+            "{}",
+            result.stderr
+        );
+        assert!(fake.calls().is_empty());
+    }
+}
+
+#[test]
+fn link_works_in_a_workspace_member() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\n---\n",
+    )
+    .unwrap();
+    let member = dir.path().join("marketplaces/one");
+    fs::create_dir_all(&member).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: one\nbuild:\n  out: built\n---\n",
+    )
+    .unwrap();
+    let root = member.join("built");
+    fs::create_dir_all(&root).unwrap();
+    write_built_skill(
+        &root.canonicalize().unwrap(),
+        ".claude-plugin/packs",
+        "tools",
+        "a",
+    );
+    let home = dir.path().join("home");
+    let fake = FakeRunner::new("", "");
+    let result = run_home(
+        &["harness", "link", "claude", "--yes"],
+        &member,
+        &home,
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(fs::read_link(home.join(".claude/skills/a")).is_ok());
+}
+
+#[test]
+fn a_pack_with_no_skills_does_not_stop_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_project(dir.path());
+    let root = Path::new(&root);
+    let home = dir.path().join("home");
+    write_built_skill(root, ".claude-plugin/packs", "tools", "a");
+    fs::create_dir_all(root.join(".claude-plugin/packs/cmd/commands")).unwrap();
+    let fake = FakeRunner::new("", "");
+
+    let result = run_home(
+        &["harness", "link", "claude", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(fs::symlink_metadata(home.join(".claude/skills/a")).is_ok());
+    assert!(result.stderr.contains("skipped `cmd`"), "{}", result.stderr);
+
+    let argv = ["harness", "link", "claude", "--plugin", "cmd", "--yes"];
+    let named = run_home(&argv, dir.path(), &home, &fake);
+    assert_ne!(named.code, 0, "{}", named.stderr);
+    assert!(
+        named.stderr.contains("`cmd` has no skills"),
+        "{}",
+        named.stderr
+    );
+    assert!(
+        !named.stderr.contains("skillwright build"),
+        "{}",
+        named.stderr
+    );
 }

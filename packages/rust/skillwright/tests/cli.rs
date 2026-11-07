@@ -3,21 +3,15 @@
 //! Every case drives [`skillwright::cli::run_with`] in-process, with the
 //! working directory on the context rather than the process — so these run in
 //! parallel without changing the process's directory.
-//!
-//! `SKILLWRIGHT_MACHINE_CONFIG` is still process-wide, so every run
-//! relocates it under [`common::with_machine_env`].
 
 mod common;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use common::with_machine_env;
 use skillwright::cli::run_with;
 use skillwright::ctx::CommandContext;
-use tradecraft_core::{
-    Namespace, NativeVfs, PublishMode, PublishRequest, PublishStatus, publish_skill,
-};
+use tradecraft_core::{Namespace, NativeVfs, PublishRequest, PublishStatus, publish_skill};
 
 struct Run {
     code: i32,
@@ -25,16 +19,14 @@ struct Run {
     stderr: String,
 }
 
-/// One invocation, with the machine config relocated into `cwd` so the
-/// developer's real one never leaks into a run.
+/// One invocation in `cwd`.
 fn run(argv: &[&str], cwd: &Path) -> Run {
     let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
-    let code = with_machine_env(Some(&cwd.join("no-machine-config.yaml")), || {
-        let mut ctx = CommandContext::new(cwd, &mut out, &mut err);
-        run_with(&owned, &mut ctx)
-    });
+    let mut ctx = CommandContext::new(cwd, &mut out, &mut err);
+    let code = run_with(&owned, &mut ctx);
+    drop(ctx);
     Run {
         code,
         stdout: String::from_utf8(out).unwrap(),
@@ -79,6 +71,17 @@ fn donor_vault() -> String {
         .unwrap()
         .display()
         .to_string()
+}
+
+/// The built binary, run as a child process with the environment under the
+/// test's control: the in-process [`run`] shares the process's `$HOME`.
+fn run_binary(argv: &[&str], cwd: &Path, env: &[(&str, &str)]) -> std::process::Output {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_skillwright"));
+    cmd.args(argv).current_dir(cwd);
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+    cmd.output().unwrap()
 }
 
 // --- the usage line ----------------------------------------------------------
@@ -151,7 +154,7 @@ fn the_root_help_names_every_global_flag_and_the_three_nouns() {
     // The same sentence the verb prints for it, not a second wording.
     assert!(
         run.stdout
-            .contains("Vault root. Overrides the configuration for this run.")
+            .contains("Vault root: the folder holding `skillwright.md`.")
     );
     // The two a read-only verb does not declare are marked as such.
     assert!(run.stdout.contains("Only on a verb that writes."));
@@ -179,16 +182,15 @@ fn a_write_only_global_is_not_a_flag_on_a_verb_that_writes_nothing() {
 #[test]
 fn a_verb_that_writes_declares_all_seven() {
     let (dir, vault) = fixture();
-    // Not a real build: `--dry-run` and `--yes` parse, and the run stops at
-    // the needs check for `marketplace.out`, which is exit 3 with a message
-    // naming the setting — not clap's "unexpected argument".
+    // `--dry-run` and `--yes` parse, and the dry run writes nothing — not
+    // clap's "unexpected argument".
     let run = run(
         &[
             "build",
             "--vault",
             &vault_str(&vault),
-            "--default-plugin",
-            "tools",
+            "--out",
+            &vault_str(&vault),
             "--dry-run",
             "--yes",
             "--quiet",
@@ -196,8 +198,8 @@ fn a_verb_that_writes_declares_all_seven() {
         ],
         dir.path(),
     );
-    assert_eq!(run.code, 3);
-    assert!(run.stderr.contains("marketplace.out"), "{}", run.stderr);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert!(!vault.join(".claude-plugin").exists());
     assert!(
         !run.stderr.contains("unexpected argument"),
         "{}",
@@ -206,20 +208,6 @@ fn a_verb_that_writes_declares_all_seven() {
 }
 
 // --- the not-implemented verbs -----------------------------------------------
-
-#[test]
-fn init_has_a_real_argv_surface_and_exits_2() {
-    let dir = tempfile::tempdir().unwrap();
-    let run = run(&["init"], dir.path());
-    assert_eq!(run.code, 2);
-    assert_eq!(run.stdout, "");
-    assert!(
-        run.stderr.starts_with("not implemented: init\n"),
-        "{}",
-        run.stderr
-    );
-    assert!(run.stderr.contains("tradecraft-core has neither"));
-}
 
 #[test]
 fn unpublish_with_its_note_exits_2() {
@@ -245,25 +233,430 @@ fn unpublish_without_its_required_note_is_a_usage_error() {
 #[test]
 fn a_stub_verbs_help_says_it_is_not_implemented_and_names_the_exit() {
     let dir = tempfile::tempdir().unwrap();
-    for verb in ["init", "unpublish"] {
-        let helped = run(&[verb, "--help"], dir.path());
-        assert_eq!(helped.code, 0);
-        assert!(helped.stdout.contains(&format!("not implemented: {verb}")));
-        assert!(helped.stdout.contains("exits 2"));
-        // The marker is the same sentence the exit prints. `init` takes no
-        // positional, so running it with one is a clap error and never
-        // reaches the exit.
-        let argv: Vec<&str> = if verb == "init" {
-            vec![verb]
-        } else {
-            vec![verb, "note.md"]
-        };
-        let ran = run(&argv, dir.path());
-        assert_eq!(ran.code, 2, "{}", ran.stderr);
-        let sentence = ran.stderr.lines().nth(1).unwrap();
-        assert!(!sentence.is_empty());
-        assert!(helped.stdout.contains(sentence), "{}", helped.stdout);
+    let helped = run(&["unpublish", "--help"], dir.path());
+    assert_eq!(helped.code, 0);
+    assert!(helped.stdout.contains("not implemented: unpublish"));
+    assert!(helped.stdout.contains("exits 2"));
+    // The marker is the same sentence the exit prints.
+    let ran = run(&["unpublish", "note.md"], dir.path());
+    assert_eq!(ran.code, 2, "{}", ran.stderr);
+    let sentence = ran.stderr.lines().nth(1).unwrap();
+    assert!(!sentence.is_empty());
+    assert!(helped.stdout.contains(sentence), "{}", helped.stdout);
+}
+
+// --- init --------------------------------------------------------------------
+
+#[test]
+fn init_writes_the_name_and_the_output_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("My Skills");
+    std::fs::create_dir(&folder).unwrap();
+    let ran = run(&["init", "--out", "dist"], &folder);
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    let root = tradecraft_core::parse_root_file(
+        &std::fs::read_to_string(folder.join("skillwright.md")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(root.build.out.as_deref(), Some("dist"));
+    assert_eq!(root.marketplace.name.as_deref(), Some("my-skills"));
+}
+
+#[test]
+fn init_takes_a_name_and_refuses_a_bad_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let bad = run(
+        &["init", "--out", "dist", "--name", "Not A Slug"],
+        dir.path(),
+    );
+    assert_eq!(bad.code, 3, "{}", bad.stderr);
+    assert!(!dir.path().join("skillwright.md").exists());
+
+    let good = run(&["init", "--out", "dist", "--name", "tools"], dir.path());
+    assert_eq!(good.code, 0, "{}", good.stderr);
+    let text = std::fs::read_to_string(dir.path().join("skillwright.md")).unwrap();
+    assert!(text.contains("name: tools"), "{text}");
+}
+
+#[test]
+fn init_needs_out_off_a_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    let ran = run(&["init"], dir.path());
+    assert_eq!(ran.code, 3, "{}", ran.stderr);
+    assert!(ran.stderr.contains("--out"), "{}", ran.stderr);
+    assert!(!dir.path().join("skillwright.md").exists());
+}
+
+#[test]
+fn init_refuses_an_existing_root_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("skillwright.md"), "---\nname: kept\n---\n").unwrap();
+    let ran = run(&["init", "--out", "dist"], dir.path());
+    assert_eq!(ran.code, 1, "{}", ran.stderr);
+    assert!(ran.stderr.contains("already exists"), "{}", ran.stderr);
+    let text = std::fs::read_to_string(dir.path().join("skillwright.md")).unwrap();
+    assert!(text.contains("kept"));
+}
+
+#[test]
+fn init_refuses_a_blank_out() {
+    let dir = tempfile::tempdir().unwrap();
+    for out in ["", "  "] {
+        let ran = run(&["init", "--out", out], dir.path());
+        assert_eq!(ran.code, 3, "{}", ran.stderr);
     }
+    assert!(!dir.path().join("skillwright.md").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn init_does_not_write_through_a_dangling_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("elsewhere.md");
+    std::os::unix::fs::symlink(&target, dir.path().join("skillwright.md")).unwrap();
+    let ran = run(&["init", "--out", "dist"], dir.path());
+    assert_eq!(ran.code, 1, "{}", ran.stderr);
+    assert!(!target.exists());
+}
+
+#[test]
+fn a_vault_init_wrote_builds() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);
+    let skill = dir.path().join("skills/one");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("one.md"),
+        "---\nname: one\ndescription: The first skill.\n---\nBody.\n",
+    )
+    .unwrap();
+    let ran = run(&["build", "--yes"], dir.path());
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    assert!(dir.path().join("dist").is_dir());
+}
+
+#[test]
+fn a_destination_scope_is_read_and_an_unknown_nested_key_only_warns() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: v\nbuild:\n  out: dist\n  destinations:\n    - root: dest\n      target: claude-code\n      scope: project\n      flavour: mild\n---\n",
+    )
+    .unwrap();
+    std::fs::create_dir(dir.path().join("skills")).unwrap();
+    let ran = run(&["list"], dir.path());
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    assert!(
+        ran.stderr.contains("destinations[].flavour"),
+        "{}",
+        ran.stderr
+    );
+    assert!(!ran.stderr.contains("scope"), "{}", ran.stderr);
+}
+
+// --- new, in the folder shape ------------------------------------------------
+
+#[test]
+fn new_follows_the_folders_of_a_vault_init_wrote() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);
+    let skill = run(
+        &[
+            "new",
+            "skill",
+            "triage",
+            "--description",
+            "Triage.",
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(skill.code, 0, "{}", skill.stderr);
+    assert!(dir.path().join("skills/triage/triage.md").is_file());
+
+    let plugin = run(
+        &[
+            "new",
+            "plugin",
+            "review",
+            "--description",
+            "Review.",
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(plugin.code, 0, "{}", plugin.stderr);
+    assert!(dir.path().join("plugins/review/review.md").is_file());
+
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+}
+
+#[test]
+fn new_refuses_a_marketplace_the_vault_does_not_hold() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);
+    let ran = run(
+        &[
+            "new",
+            "plugin",
+            "review",
+            "--marketplace",
+            "elsewhere",
+            "--description",
+            "Review.",
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(ran.code, 3, "{}", ran.stderr);
+    assert!(!dir.path().join("marketplaces").exists());
+}
+
+#[test]
+fn new_marketplace_writes_a_root_file_a_workspace_builds() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\n---\n",
+    )
+    .unwrap();
+    let ran = run(
+        &[
+            "new",
+            "marketplace",
+            "pub",
+            "--description",
+            "Public.",
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    let file = dir.path().join("marketplaces/pub/skillwright.md");
+    let text = fs::read_to_string(&file).unwrap();
+    assert!(text.contains("name: pub"), "{text}");
+    assert!(!dir.path().join("marketplaces/pub/pub.md").exists());
+
+    fs::write(
+        &file,
+        text.replacen("---\n", "---\nbuild:\n  out: dist\n", 1),
+    )
+    .unwrap();
+    let skills = dir.path().join("marketplaces/pub/skills");
+    fs::create_dir_all(&skills).unwrap();
+    fs::write(skills.join("one.md"), "---\ndescription: One.\n---\nB\n").unwrap();
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+
+    // A marketplace with a description is no false skip from the workspace.
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    assert!(!listed.stderr.contains("skipped"), "{}", listed.stderr);
+    assert!(!listed.stderr.contains("unknown-key"), "{}", listed.stderr);
+}
+
+#[test]
+fn the_old_marketplace_note_form_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let market = dir.path().join("marketplaces/house");
+    fs::create_dir_all(market.join("plugins/p/skills")).unwrap();
+    fs::write(dir.path().join("skillwright.md"), "---\nname: v\n---\n").unwrap();
+    fs::write(
+        market.join("house.md"),
+        "---\nname: house\ndescription: H.\n---\n",
+    )
+    .unwrap();
+    let listed = run(&["list"], dir.path());
+    assert!(
+        listed
+            .stderr
+            .contains("marketplaces/house/house.md  skipped"),
+        "{}",
+        listed.stderr
+    );
+}
+
+#[test]
+fn the_marketplaces_own_plugin_is_bumped_in_the_root_file() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: home\nversion: 1.0.0\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("skills")).unwrap();
+    fs::write(
+        dir.path().join("skills/one.md"),
+        "---\ndescription: One.\n---\nB\n",
+    )
+    .unwrap();
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(
+        !built.stderr.contains("missing-version"),
+        "{}",
+        built.stderr
+    );
+    let bumped = run(&["bump", "home", "--yes"], dir.path());
+    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
+    let root = fs::read_to_string(dir.path().join("skillwright.md")).unwrap();
+    assert!(root.contains("version: 1.0.1"), "{root}");
+}
+
+#[test]
+fn list_shows_the_roster_around_a_path_collision() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: home\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    for (rel, text) in [
+        ("skills/a.md", "---\nname: dup\ndescription: A.\n---\n"),
+        ("skills/b.md", "---\nname: dup\ndescription: B.\n---\n"),
+        ("skills/c.md", "---\nname: other\ndescription: C.\n---\n"),
+    ] {
+        fs::write(dir.path().join(rel), text).unwrap_or_else(|_| {
+            fs::create_dir_all(dir.path().join("skills")).unwrap();
+            fs::write(dir.path().join(rel), text).unwrap();
+        });
+    }
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 2, "{}", listed.stderr);
+    let lines: Vec<&str> = listed.stdout.lines().collect();
+    assert_eq!(lines.len(), 3, "{}", listed.stdout);
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|l| l.ends_with("[path-collision]"))
+            .count(),
+        2
+    );
+    assert!(listed.stdout.contains("skills/c.md"), "{}", listed.stdout);
+    assert!(
+        listed.stderr.contains("duplicate skill name `dup`"),
+        "{}",
+        listed.stderr
+    );
+    let built = run(&["build", "--yes"], dir.path());
+    assert_ne!(built.code, 0);
+}
+
+#[test]
+fn a_plugin_with_no_note_warns_about_its_version() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(run(&["init", "--out", "dist"], dir.path()).code, 0);
+    let skills = dir.path().join("plugins/review/skills");
+    fs::create_dir_all(&skills).unwrap();
+    fs::write(skills.join("one.md"), "---\ndescription: One.\n---\nB\n").unwrap();
+    let ran = run(&["build", "--yes"], dir.path());
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    assert!(ran.stderr.contains("missing-version"), "{}", ran.stderr);
+
+    let bumped = run(&["bump", "review", "--yes"], dir.path());
+    assert_eq!(bumped.code, 3, "{}", bumped.stderr);
+    assert!(
+        bumped.stderr.contains("plugins/review/review.md"),
+        "{}",
+        bumped.stderr
+    );
+}
+
+// --- check --fix-adopt-hashes ------------------------------------------------
+
+/// A vault holding one adopted skill, as `adopt` wrote it.
+fn adopted_vault() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source/demo");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("SKILL.md"),
+        "---\nname: demo\ndescription: A demo.\narguments:\n  - path\n---\nBody.\n",
+    )
+    .unwrap();
+    let vault = dir.path().join("vault");
+    std::fs::create_dir_all(&vault).unwrap();
+    std::fs::write(
+        vault.join("skillwright.md"),
+        "---\nname: v\nbuild:\n  out: dist\n  namespace: sw\n---\n",
+    )
+    .unwrap();
+    let source = source.to_string_lossy().into_owned();
+    let ran = run(&["adopt", &source, "--yes"], &vault);
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    (dir, vault)
+}
+
+/// Rewrite a prefixed note and its vault to bare keys, as `migrate` does.
+fn rename_to_bare(vault: &std::path::Path, note: &std::path::Path) {
+    let text = std::fs::read_to_string(note).unwrap();
+    std::fs::write(note, text.replace("sw-", "")).unwrap();
+    std::fs::write(
+        vault.join("skillwright.md"),
+        "---\nname: v\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn fix_adopt_hashes_refreshes_a_note_whose_only_change_is_the_rename() {
+    let (_dir, vault) = adopted_vault();
+    let note = vault.join("plugins/adopted/skills/demo/demo.md");
+    rename_to_bare(&vault, &note);
+    let before = std::fs::read_to_string(&note).unwrap();
+
+    let dry = run(&["check", "--fix-adopt-hashes", "--dry-run"], &vault);
+    assert_eq!(dry.code, 0, "{}", dry.stderr);
+    assert!(dry.stdout.contains("would refresh"), "{}", dry.stdout);
+    assert_eq!(std::fs::read_to_string(&note).unwrap(), before);
+
+    let fixed = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
+    assert_eq!(fixed.code, 0, "{}", fixed.stderr);
+    assert!(fixed.stdout.contains("refreshed"), "{}", fixed.stdout);
+    assert_ne!(std::fs::read_to_string(&note).unwrap(), before);
+
+    let again = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert_eq!(again.stdout, "no adopt hash to refresh\n");
+}
+
+#[test]
+fn fix_adopt_hashes_treats_a_key_the_rename_brings_into_the_hash_as_a_rename() {
+    let (_dir, vault) = adopted_vault();
+    let note = vault.join("plugins/adopted/skills/demo/demo.md");
+    let text = std::fs::read_to_string(&note).unwrap();
+    let text = text.replacen("---\n", "---\nsw-license: MIT\nsw-version: 2.0.0\n", 1);
+    std::fs::write(&note, text).unwrap();
+    rename_to_bare(&vault, &note);
+
+    let ran = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
+    assert_eq!(ran.code, 0, "{}{}", ran.stdout, ran.stderr);
+    assert!(ran.stdout.contains("refreshed"), "{}", ran.stdout);
+}
+
+#[test]
+fn fix_adopt_hashes_leaves_a_real_edit_alone() {
+    let (_dir, vault) = adopted_vault();
+    let note = vault.join("plugins/adopted/skills/demo/demo.md");
+    rename_to_bare(&vault, &note);
+    let edited = std::fs::read_to_string(&note).unwrap() + "A new line.\n";
+    std::fs::write(&note, &edited).unwrap();
+
+    let ran = run(&["check", "--fix-adopt-hashes", "--yes"], &vault);
+    assert_eq!(ran.code, 1, "{}", ran.stderr);
+    assert!(ran.stdout.contains("edited, left alone"), "{}", ran.stdout);
+    assert_eq!(std::fs::read_to_string(&note).unwrap(), edited);
+}
+
+#[test]
+fn fix_adopt_hashes_asks_for_yes_off_a_terminal() {
+    let (_dir, vault) = adopted_vault();
+    let note = vault.join("plugins/adopted/skills/demo/demo.md");
+    rename_to_bare(&vault, &note);
+    let ran = run(&["check", "--fix-adopt-hashes"], &vault);
+    assert_eq!(ran.code, 3, "{}", ran.stderr);
+    assert!(ran.stderr.contains("--yes"), "{}", ran.stderr);
 }
 
 #[test]
@@ -345,20 +738,13 @@ fn list_json_carries_the_same_rows_the_table_does() {
 }
 
 // `--model` prints the marketplace model `build` translates, from the same
-// project settings, and leaves `--json`'s rows as they were.
+// root file, and leaves `--json`'s rows as they were.
 #[test]
 fn list_model_prints_the_loaded_marketplace() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(
-        dir.path().join("skillwright.yaml"),
-        format!(
-            "vault: {}\nmarketplace:\n  default_plugin: tools\n  out: market\n",
-            donor_vault()
-        ),
-    )
-    .unwrap();
-
-    let run = run(&["list", "--model", "--quiet"], dir.path());
+    let run = run(
+        &["list", "--model", "--quiet", "--vault", &donor_vault()],
+        Path::new(&donor_vault()),
+    );
     assert_eq!(run.code, 0, "{}", run.stderr);
 
     let model: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
@@ -371,40 +757,32 @@ fn list_model_prints_the_loaded_marketplace() {
         "{}",
         run.stdout
     );
-    // Nothing was built.
-    assert!(!dir.path().join("market").exists());
 }
 
-// Without a default plugin there is no marketplace to load, and the message
-// says where to set one.
+// Members outside `plugins/` load into the plugin named after the
+// marketplace, which is the root folder's name when nothing names it.
 #[test]
-fn list_model_without_a_default_plugin_is_a_usage_error() {
+fn list_model_puts_loose_skills_in_a_plugin_named_after_the_marketplace() {
     let (dir, vault) = fixture();
-    let run = run(
-        &["list", "--model", "--vault", &vault_str(&vault)],
-        dir.path(),
-    );
-    assert_eq!(run.code, 3, "{}", run.stderr);
-    assert!(run.stderr.contains("default_plugin"), "{}", run.stderr);
+    let run = run(&["list", "--model", "--quiet"], &vault);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let model: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(model["plugins"]["vault"]["name"], "vault", "{}", run.stdout);
+    drop(dir);
 }
 
 #[test]
-fn list_with_no_configuration_and_no_vault_is_exit_4_naming_both_files() {
+fn list_with_no_root_file_and_no_convention_folder_is_exit_4() {
     let dir = tempfile::tempdir().unwrap();
     let run = run(&["list"], dir.path());
     assert_eq!(run.code, 4);
-    assert!(run.stderr.contains("skillwright.yaml"), "{}", run.stderr);
-    assert!(
-        run.stderr.contains("no-machine-config.yaml"),
-        "{}",
-        run.stderr
-    );
+    assert!(run.stderr.contains("skillwright.md"), "{}", run.stderr);
 }
 
 #[test]
 fn list_with_a_config_that_names_no_file_is_exit_4() {
     let dir = tempfile::tempdir().unwrap();
-    let missing = dir.path().join("nothing-here.yaml");
+    let missing = dir.path().join("nothing-here.md");
     let run = run(
         &["list", "--config", &missing.display().to_string()],
         dir.path(),
@@ -426,104 +804,166 @@ fn list_over_a_vault_that_is_not_there_is_exit_2() {
     assert!(run.stderr.contains("vault not found"), "{}", run.stderr);
 }
 
-/// The built binary, run as a child process with the base-directory
-/// variables under the test's control. The in-process [`run`] cannot reach
-/// this path: its machine-file override skips the directory lookup.
-fn run_binary(argv: &[&str], cwd: &Path, env: &[(&str, &str)]) -> std::process::Output {
-    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_skillwright"));
-    cmd.args(argv).current_dir(cwd);
-    cmd.env_remove(skillwright::config::MACHINE_CONFIG_ENV);
-    for (key, value) in env {
-        cmd.env(key, value);
-    }
-    cmd.output().unwrap()
-}
-
 #[test]
-fn an_explicit_machine_file_needs_no_base_directories() {
-    let (dir, vault) = fixture();
-    let machine = dir.path().join("machine.yaml");
-    let out = run_binary(
-        &["list", "--vault", &vault_str(&vault)],
-        dir.path(),
-        &[
-            (skillwright::dirs::ENV_VARS.config, "rel"),
-            (
-                skillwright::config::MACHINE_CONFIG_ENV,
-                machine.to_str().unwrap(),
-            ),
-        ],
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(0), "{stderr}");
-    assert!(!stderr.contains("panicked"), "{stderr}");
-}
-
-#[test]
-fn base_directories_that_cannot_resolve_are_a_run_level_blocker_not_a_panic() {
-    let (dir, vault) = fixture();
-    let out = run_binary(
-        &["list", "--vault", &vault_str(&vault)],
-        dir.path(),
-        &[(skillwright::dirs::ENV_VARS.config, "rel")],
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(2), "{stderr}");
-    assert!(!stderr.contains("panicked"), "{stderr}");
-    assert!(stderr.contains("must be an absolute path"), "{stderr}");
-}
-
-/// A blank `SKILLWRIGHT_MACHINE_CONFIG` counts as unset, the rule
-/// config-layers' `MachineConfigFile::path` applies. `try_machine_config_path`
-/// copies that rule; this pins the copy, so a drift between the two shows up.
-#[test]
-fn a_blank_machine_config_env_falls_back_to_the_base_directories() {
-    let (dir, vault) = fixture();
-    let out = run_binary(
-        &["list", "--vault", &vault_str(&vault)],
-        dir.path(),
-        &[
-            (skillwright::dirs::ENV_VARS.config, "rel"),
-            (skillwright::config::MACHINE_CONFIG_ENV, "  "),
-        ],
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(2), "{stderr}");
-    assert!(!stderr.contains("panicked"), "{stderr}");
-    assert!(
-        stderr.contains("cannot locate the machine configuration file"),
-        "{stderr}"
-    );
-}
-
-#[test]
-fn a_project_file_above_the_working_directory_supplies_the_vault() {
-    let (dir, _vault) = fixture();
-    fs::write(dir.path().join("skillwright.yaml"), "vault: ./vault\n").unwrap();
-    let run = run(&["list"], dir.path());
-    assert_eq!(run.code, 0);
+fn a_root_file_above_the_working_directory_marks_the_vault() {
+    let (_dir, vault) = fixture();
+    fs::write(vault.join("skillwright.md"), "---\nname: house\n---\n").unwrap();
+    let run = run(&["list"], &vault.join("skills"));
+    assert_eq!(run.code, 0, "{}", run.stderr);
     assert!(run.stdout.contains("code-review"));
+    assert_eq!(run.stderr.matches("note:").count(), 0, "{}", run.stderr);
 }
 
 #[test]
-fn a_missing_default_plugin_is_a_usage_error_that_says_where_to_set_it() {
-    let (dir, _vault) = fixture();
-    fs::write(dir.path().join("skillwright.yaml"), "vault: ./vault\n").unwrap();
-    let out = dir.path().join("market").display().to_string();
-    let run = run(&["check", "--out", &out], dir.path());
-    assert_eq!(run.code, 3);
+fn an_unknown_root_file_key_is_a_warning_and_the_run_goes_on() {
+    let (_dir, vault) = fixture();
+    fs::write(
+        vault.join("skillwright.md"),
+        "---\nname: house\nflavour: mint\n---\n",
+    )
+    .unwrap();
+    let run = run(&["list"], &vault);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert!(run.stderr.contains("warning:"), "{}", run.stderr);
+    assert!(run.stderr.contains("`flavour`"), "{}", run.stderr);
+}
+
+#[test]
+fn a_malformed_root_file_is_a_run_level_blocker() {
+    let (_dir, vault) = fixture();
+    fs::write(
+        vault.join("skillwright.md"),
+        "---\nbuild:\n  harnesses: claude\n---\n",
+    )
+    .unwrap();
+    let run = run(&["list"], &vault);
+    assert_eq!(run.code, 2, "{}", run.stderr);
     assert!(
-        run.stderr.contains("marketplace.default_plugin"),
+        run.stderr.contains("configuration malformed"),
         "{}",
         run.stderr
     );
-    assert!(run.stderr.contains("--default-plugin"), "{}", run.stderr);
+}
+
+// There is no default output: nothing builds into a vault unless asked.
+#[test]
+fn build_and_check_with_no_output_folder_refuse_and_say_to_set_one() {
+    let (_dir, vault) = fixture();
+    for argv in [&["build", "--yes"][..], &["check"]] {
+        let refused = run(argv, &vault);
+        assert_eq!(refused.code, 4, "{}", refused.stderr);
+        assert!(refused.stderr.contains("--out"), "{}", refused.stderr);
+        assert!(refused.stderr.contains("build.out"), "{}", refused.stderr);
+    }
+    assert!(!vault.join(".claude-plugin").exists());
+}
+
+// `out: .` builds beside the root file.
+#[test]
+fn out_dot_writes_beside_the_vault() {
+    let (_dir, vault) = fixture();
+    fs::write(vault.join("skillwright.md"), "---\nbuild:\n  out: .\n---\n").unwrap();
+    let built = run(&["build", "--yes", "--quiet"], &vault);
+    assert_eq!(built.code, 0, "{}", built.stderr);
     assert!(
-        run.stderr
-            .contains(&dir.path().join("skillwright.yaml").display().to_string()),
-        "{}",
-        run.stderr
+        vault
+            .join(".claude-plugin/packs/vault/skills/code-review/SKILL.md")
+            .is_file()
     );
+    // The output is not read back as notes.
+    let again = run(&["check", "--quiet"], &vault);
+    assert_eq!(again.code, 0, "{}{}", again.stdout, again.stderr);
+}
+
+// A workspace roster shows what each marketplace's own build uses.
+#[test]
+fn a_workspace_roster_shows_each_marketplaces_targets() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\ntargets: [claude, codex]\n---\n",
+    )
+    .unwrap();
+    let member = dir.path().join("marketplaces/a");
+    fs::create_dir_all(member.join("skills")).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: a\ntargets: [claude]\nbuild:\n  out: .\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        member.join("skills/s.md"),
+        "---\ndescription: A skill.\n---\nBody.\n",
+    )
+    .unwrap();
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    let row = listed
+        .stdout
+        .lines()
+        .find(|line| line.contains("skills/s.md"))
+        .unwrap();
+    assert!(row.contains("claude"), "{row}");
+    assert!(!row.contains("codex"), "{row}");
+}
+
+// A workspace builds each marketplace under `marketplaces/`, each to its own
+// `build.out`, with the workspace's shared fields.
+#[test]
+fn a_workspace_builds_each_marketplace_beside_its_root_file() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\nlicense: MIT\n---\n",
+    )
+    .unwrap();
+    for name in ["one", "two"] {
+        let member = dir.path().join("marketplaces").join(name);
+        fs::create_dir_all(member.join("skills")).unwrap();
+        fs::write(
+            member.join("skillwright.md"),
+            format!("---\nname: {name}\nbuild:\n  out: .\n---\n"),
+        )
+        .unwrap();
+        fs::write(
+            member.join("skills").join(format!("{name}-skill.md")),
+            format!("---\ndescription: The {name} skill.\n---\nBody.\n"),
+        )
+        .unwrap();
+    }
+    let built = run(&["build", "--yes", "--quiet"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    for name in ["one", "two"] {
+        let manifest = dir
+            .path()
+            .join("marketplaces")
+            .join(name)
+            .join(".claude-plugin/packs")
+            .join(name)
+            .join(".claude-plugin/plugin.json");
+        let text = fs::read_to_string(&manifest).unwrap();
+        assert!(text.contains("\"license\": \"MIT\""), "{text}");
+    }
+    // A verb that acts on a single marketplace refuses at the workspace.
+    for verb in [
+        &["publish", "--dry-run"][..],
+        &["adopt", "src", "--yes"],
+        &["bump", "tools", "--patch"],
+        &["new", "skill", "zed", "--description", "Zed."],
+        &[
+            "new",
+            "plugin",
+            "zed",
+            "--marketplace",
+            "alpha",
+            "--description",
+            "Zed.",
+        ],
+    ] {
+        let refused = run(verb, dir.path());
+        assert_eq!(refused.code, 2, "{verb:?}: {}", refused.stderr);
+        assert!(refused.stderr.contains("workspace"), "{}", refused.stderr);
+    }
 }
 
 #[test]
@@ -537,8 +977,6 @@ fn a_build_off_a_tty_without_yes_is_a_usage_error_not_a_silent_write() {
             &vault_str(&vault),
             "--out",
             &market.display().to_string(),
-            "--default-plugin",
-            "tools",
         ],
         dir.path(),
     );
@@ -558,8 +996,6 @@ fn dry_run_on_check_says_it_is_redundant_rather_than_silently_doing_nothing() {
             &donor_vault(),
             "--out",
             &market.display().to_string(),
-            "--default-plugin",
-            "tools",
             "--dry-run",
         ],
         dir.path(),
@@ -586,8 +1022,6 @@ fn a_build_renders_the_roots_and_a_check_then_agrees_with_it() {
             donor_vault(),
             "--out".to_string(),
             market.display().to_string(),
-            "--default-plugin".to_string(),
-            "tools".to_string(),
         ]
     };
     let mut build: Vec<String> = args("build");
@@ -632,16 +1066,7 @@ fn a_note_the_vault_excludes_is_not_built() {
     let market = dir.path().join("market");
     let market_arg = market.display().to_string();
     let vault = excluded_vault();
-    let argv = [
-        "build",
-        "--vault",
-        &vault,
-        "--out",
-        &market_arg,
-        "--default-plugin",
-        "tools",
-        "--yes",
-    ];
+    let argv = ["build", "--vault", &vault, "--out", &market_arg, "--yes"];
     let built = run(&argv, dir.path());
     assert_eq!(built.code, 0, "{}", built.stderr);
     assert!(
@@ -688,28 +1113,26 @@ fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
-/// The project file's marketplace-wide license reaches a pack manifest.
-///
-/// The parse into `MarketplaceSettings` and the core's resolution off
-/// `MarketplaceConfig` are each covered on their own side; the one
-/// assignment bridging them is covered only here.
-/// The donor vault declares no license anywhere, so the project file is the
-/// only thing that can put one in the manifest.
+/// The root file's `license` reaches every pack manifest: no note declares
+/// one, so the root file is the only thing that can put it there.
 #[test]
-fn the_project_files_marketplace_license_reaches_the_pack_manifest() {
+fn the_root_files_license_reaches_the_pack_manifest() {
     let dir = tempfile::tempdir().unwrap();
-    let market = dir.path().join("market");
+    let skills = dir.path().join("plugins/tools/skills");
+    fs::create_dir_all(&skills).unwrap();
     fs::write(
-        dir.path().join("skillwright.yaml"),
-        format!(
-            "vault: {}\nmarketplace:\n  default_plugin: tools\n  out: {}\n  license: MIT\n",
-            donor_vault(),
-            market.display()
-        ),
+        skills.join("review.md"),
+        "---\ndescription: Reviews code.\n---\nReview.\n",
     )
     .unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: house\nlicense: MIT\nbuild:\n  out: market\n---\n",
+    )
+    .unwrap();
+    let market = dir.path().join("market");
 
-    let run = run(&["build", "--yes"], dir.path());
+    let run = run(&["build", "--yes"], &skills);
     assert_eq!(run.code, 0, "{}", run.stderr);
 
     let manifest =
@@ -722,36 +1145,39 @@ fn the_project_files_marketplace_license_reaches_the_pack_manifest() {
 
 // --- status ------------------------------------------------------------------
 
+/// With no `build.destinations`, status reads each harness's user skill
+/// folder under `$HOME`. Run as a child process so `$HOME` is the test's.
 #[test]
-fn status_with_no_destinations_configured_is_a_usage_error() {
+fn status_with_no_destinations_reads_each_harness_s_user_skill_folder() {
     let (dir, vault) = fixture();
-    let config = dir.path().join("status-config.yaml");
-    fs::write(
-        &config,
-        format!("vault: {}\ndestinations: []\n", vault.display()),
-    )
-    .unwrap();
-    let run = run(
-        &["status", "--config", &config.display().to_string()],
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let out = run_binary(
+        &["status", "--vault", &vault_str(&vault), "--json", "--quiet"],
         dir.path(),
+        &[("HOME", home.to_str().unwrap())],
     );
-    assert_eq!(run.code, 3);
-    assert_eq!(
-        run.stderr,
-        "usage error: no destinations configured; there is nothing to report a state against\n"
-    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    let document: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let targets: Vec<&str> = document["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["target"].as_str().unwrap())
+        .collect();
+    assert_eq!(targets, ["claude", "codex", "cursor", "pi"], "{document}");
 }
 
-/// A config naming the vault and one destination.
+/// A root file in the vault naming one destination. Returns its path.
 fn status_config(dir: &Path, vault: &Path) -> String {
     let dest = dir.join("dest");
     fs::create_dir_all(&dest).unwrap();
-    let config = dir.join("status-config.yaml");
+    let config = vault.join("skillwright.md");
     fs::write(
         &config,
         format!(
-            "vault: {}\ndestinations:\n  - root: {}\n    target: claude\n",
-            vault.display(),
+            "---\nbuild:\n  destinations:\n    - root: {}\n      target: claude\n---\n",
             dest.display()
         ),
     )
@@ -847,8 +1273,6 @@ fn market_run(verb: &str, market: &Path, extra: &[&str], cwd: &Path) -> Run {
             donor_vault(),
             "--out".to_string(),
             market.display().to_string(),
-            "--default-plugin".to_string(),
-            "tools".to_string(),
         ],
         extra,
         cwd,
@@ -865,8 +1289,7 @@ fn check_market(market: &Path, extra: &[&str], cwd: &Path) -> Run {
     market_run("check", market, extra, cwd)
 }
 
-/// The top-level tree one harness owns in the marketplace directory. The
-/// whole of what a build of that harness reads, compares or replaces.
+/// The top-level folder one harness writes under in the marketplace directory.
 fn tree_of(harness: &str) -> &'static str {
     match harness {
         "claude" => ".claude-plugin",
@@ -961,9 +1384,29 @@ fn a_plugin_the_vault_no_longer_produces_is_drift_for_check_and_gone_after_build
     assert!(ghost.exists(), "check wrote something");
 
     assert_eq!(build_market(&market, &[], dir.path()).code, 0);
-    // The swap unit is the whole harness tree, so what the render did not
-    // produce goes with it.
+    // The packs folder is generated output: what the render did not produce
+    // goes with the swap.
     assert!(!ghost.exists());
+}
+
+#[test]
+fn a_rebuild_keeps_what_was_authored_beside_the_packs() {
+    let dir = tempfile::tempdir().unwrap();
+    let market = dir.path().join("market");
+    assert_eq!(build_market(&market, &[], dir.path()).code, 0);
+
+    let mine = market.join(".agents/skills/mine/SKILL.md");
+    fs::create_dir_all(mine.parent().unwrap()).unwrap();
+    fs::write(&mine, "by hand\n").unwrap();
+    fs::write(skill_md(&market, "codex"), "hand-edited\n").unwrap();
+
+    assert_eq!(build_market(&market, &[], dir.path()).code, 0);
+    assert_eq!(fs::read_to_string(&mine).unwrap(), "by hand\n");
+    assert!(
+        !fs::read_to_string(skill_md(&market, "codex"))
+            .unwrap()
+            .contains("hand-edited")
+    );
 }
 
 #[test]
@@ -1015,7 +1458,7 @@ fn json_emits_the_cores_own_report_mode_and_all() {
 }
 
 #[test]
-fn an_output_root_inside_the_vault_is_refused_before_anything_is_staged() {
+fn an_output_root_inside_the_vault_s_structure_is_refused_before_anything_is_staged() {
     let dir = tempfile::tempdir().unwrap();
     // Against a COPY of the fixture, so a regression in the rail cannot write
     // into the committed vault this suite reads.
@@ -1023,7 +1466,8 @@ fn an_output_root_inside_the_vault_is_refused_before_anything_is_staged() {
     copy_tree(Path::new(&donor_vault()), &copied);
     let before = tree(&copied);
 
-    let inside = copied.join("market").display().to_string();
+    // Inside a marketplace folder, where a `.claude-plugin/` can be authored.
+    let inside = copied.join("marketplaces/house").display().to_string();
     let run = run(
         &[
             "build",
@@ -1031,8 +1475,6 @@ fn an_output_root_inside_the_vault_is_refused_before_anything_is_staged() {
             &copied.display().to_string(),
             "--out",
             &inside,
-            "--default-plugin",
-            "tools",
             "--yes",
         ],
         dir.path(),
@@ -1064,8 +1506,6 @@ fn a_vault_with_nothing_publishable_is_a_blocker_not_an_empty_success() {
             &market.display().to_string(),
             "--marketplace",
             "demo",
-            "--default-plugin",
-            "tools",
             "--yes",
         ],
         dir.path(),
@@ -1103,17 +1543,18 @@ fn check_never_asks_it_writes_nothing_so_there_is_nothing_to_confirm() {
 }
 
 #[test]
-fn the_configurations_marketplace_block_supplies_all_three_with_no_flags() {
+fn the_root_file_supplies_the_name_and_the_output_with_no_flags() {
     let dir = tempfile::tempdir().unwrap();
-    let config = dir.path().join("market-config.yaml");
+    let vault = dir.path().join("vault");
+    let skills = vault.join("plugins/tools/skills");
+    fs::create_dir_all(&skills).unwrap();
     fs::write(
-        &config,
-        format!(
-            "vault: {}\ndestinations: []\nmarketplace:\n  name: demo\n  default_plugin: tools\n  out: market\n",
-            donor_vault()
-        ),
+        skills.join("review.md"),
+        "---\ndescription: Reviews code.\n---\nReview.\n",
     )
     .unwrap();
+    let config = vault.join("skillwright.md");
+    fs::write(&config, "---\nname: demo\nbuild:\n  out: market\n---\n").unwrap();
 
     let run = run(
         &["build", "--config", &config.display().to_string(), "--yes"],
@@ -1125,15 +1566,11 @@ fn the_configurations_marketplace_block_supplies_all_three_with_no_flags() {
         "{}",
         run.stdout
     );
-    // `out` is relative, so it resolved against the config file's own
-    // directory rather than the process's working directory.
-    assert!(
-        dir.path()
-            .join("market")
-            .join(".claude-plugin")
-            .join("marketplace.json")
-            .exists()
-    );
+    // `out` is relative, so it resolved against the root file's own folder
+    // rather than the process's working directory.
+    let manifest = vault.join("market/.claude-plugin/marketplace.json");
+    let text = fs::read_to_string(manifest).unwrap();
+    assert!(text.contains(r#""name": "demo""#), "{text}");
 }
 
 // --- adopt --------------------------------------------------
@@ -1227,14 +1664,14 @@ fn adopt_imports_the_bundle_rewrites_links_and_stamps_provenance_exit_0() {
 
     let note = fs::read_to_string(adopted_note(&vault, "adopted")).unwrap();
     assert!(note.contains("name: code-review"));
-    assert!(note.contains("sw-plugin: adopted"));
-    // Five of the provenance keys. `sw-also-at` is the sixth and is absent
+    // Five of the provenance keys. `adopted.also_at` is the sixth and is absent
     // here on purpose: nothing was cross-referenced.
-    assert!(note.contains("sw-source:"));
-    assert!(note.contains("sw-format:"));
-    assert!(note.contains("sw-source-hash:"));
-    assert!(note.contains("sw-adopted-hash:"));
-    assert!(note.contains("sw-adopted-at:"));
+    assert!(note.contains("adopted:\n"));
+    assert!(note.contains("  source:"));
+    assert!(note.contains("  format:"));
+    assert!(note.contains("  source_hash:"));
+    assert!(note.contains("  hash:"));
+    assert!(note.contains("  at:"));
     // A relative markdown link became a wikilink.
     assert!(note.contains("[[references/checklist|the review checklist]]"));
     assert!(!note.contains("](references/checklist.md)"));
@@ -1276,8 +1713,6 @@ fn what_it_adopted_it_can_build_the_round_trip_closes() {
             &market.display().to_string(),
             "--marketplace",
             "demo",
-            "--default-plugin",
-            "tools",
             "--yes",
         ],
         dir.path(),
@@ -1435,8 +1870,7 @@ fn plugin_groups_the_adoption_and_set_targets_narrows_what_it_will_publish_to() 
     assert_eq!(result.code, 0, "{}", result.stderr);
 
     let note = fs::read_to_string(adopted_note(&vault, "reviewing")).unwrap();
-    assert!(note.contains("sw-plugin: reviewing"));
-    assert!(note.contains("sw-targets"));
+    assert!(note.contains("targets"));
     assert!(note.contains("claude"));
 }
 
@@ -1525,9 +1959,80 @@ fn namespace_decides_how_the_provenance_is_spelled() {
     assert_eq!(result.code, 0, "{}", result.stderr);
 
     let note = fs::read_to_string(adopted_note(&vault, "adopted")).unwrap();
-    assert!(note.contains("x-source:"));
-    assert!(note.contains("x-plugin: adopted"));
-    assert!(!note.contains("sw-source:"));
+    assert!(note.contains("x-adopted:\n"));
+    assert!(!note.contains("\nadopted:"));
+}
+
+#[test]
+fn a_bare_key_in_a_namespaced_vault_warns_with_its_spelling() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: v\nbuild:\n  namespace: sw\n---\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("skills")).unwrap();
+    fs::write(
+        dir.path().join("skills/s.md"),
+        "---\nname: s\ndescription: D.\nadopted: {from: x}\nclaude: {model: opus}\n---\nBody.\n",
+    )
+    .unwrap();
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    for spelling in ["`adopted` is `sw-adopted`", "`claude` is `sw-claude`"] {
+        assert!(listed.stderr.contains(spelling), "{}", listed.stderr);
+    }
+}
+
+#[test]
+fn a_member_reads_an_inherited_asset_from_its_own_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\nbuild:\n  assets:\n    - {from: NOTICE, to: NOTICE, plugin: p}\n---\n",
+    )
+    .unwrap();
+    let member = dir.path().join("marketplaces/m");
+    fs::create_dir_all(member.join("plugins/p/skills")).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: built\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        member.join("plugins/p/p.md"),
+        "---\nname: p\ndescription: P.\nversion: 1.0.0\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        member.join("plugins/p/skills/s.md"),
+        "---\nname: s\ndescription: D.\n---\nBody.\n",
+    )
+    .unwrap();
+    fs::write(member.join("NOTICE"), "member\n").unwrap();
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    let copied: Vec<_> = walkdir_files(&member.join("built"))
+        .into_iter()
+        .filter(|path| path.ends_with("NOTICE"))
+        .collect();
+    assert!(!copied.is_empty());
+    for path in copied {
+        assert_eq!(fs::read_to_string(path).unwrap(), "member\n");
+    }
+}
+
+fn walkdir_files(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir).unwrap().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(walkdir_files(&path));
+        } else {
+            found.push(path);
+        }
+    }
+    found
 }
 
 #[test]
@@ -1668,50 +2173,44 @@ fn only_across_several_sources_is_a_usage_error_not_a_run_of_spurious_failures()
 }
 
 #[test]
-fn with_no_source_and_no_scan_locations_it_is_a_usage_error_exit_3() {
+fn with_no_source_and_no_user_skill_folders_it_is_a_usage_error_exit_3() {
     let (dir, vault) = fixture();
-    let result = run(
+    // An empty `$HOME`: no harness's user skill folder exists to adopt from.
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let out = run_binary(
         &["adopt", "--vault", &vault_str(&vault), "--yes"],
         dir.path(),
+        &[("HOME", home.to_str().unwrap())],
     );
-    assert_eq!(result.code, 3);
-    assert!(
-        result.stderr.contains("scan locations"),
-        "{}",
-        result.stderr
-    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(3), "{stderr}");
+    assert!(stderr.contains("build.scan_locations"), "{stderr}");
 }
 
 #[test]
-fn a_configured_skills_root_is_where_adopt_writes_and_where_build_looks() {
+fn a_skills_root_flag_is_where_adopt_writes_and_where_build_looks() {
     let (dir, vault) = fixture();
     let source = adopt_source(dir.path());
     // The agreement `AdoptRequest.skills_root`'s doc requires: the adoption
     // and the scan must name the same tree. Two resolvers with two answers
     // would put adopted notes somewhere `build` never looks, and nothing
     // would report it — so one run proves both ends.
-    let config_path = dir.path().join("rooted.yaml");
-    fs::write(
-        &config_path,
-        format!(
-            "vault: {}\ndestinations: []\nmarketplace:\n  name: demo\n  default_plugin: tools\n  out: market\n  skills_root: vault/library\n",
-            vault_str(&vault)
-        ),
-    )
-    .unwrap();
-
+    let library = vault.join("library").display().to_string();
     let adopted = run(
         &[
             "adopt",
             &source.display().to_string(),
-            "--config",
-            &config_path.display().to_string(),
+            "--vault",
+            &vault_str(&vault),
+            "--into",
+            &library,
             "--yes",
         ],
         dir.path(),
     );
     assert_eq!(adopted.code, 0, "{}", adopted.stderr);
-    // `plugins/` under the configured root, not assumed of it.
+    // `plugins/` under the named root, not assumed of it.
     assert!(
         vault
             .join("library")
@@ -1722,14 +2221,18 @@ fn a_configured_skills_root_is_where_adopt_writes_and_where_build_looks() {
             .join("code-review.md")
             .exists()
     );
-    // Not the default root, which nothing configured here.
+    // Not the default root.
     assert!(!vault.join("plugins").exists());
 
     let built = run(
         &[
             "build",
-            "--config",
-            &config_path.display().to_string(),
+            "--vault",
+            &vault_str(&vault),
+            "--skills-root",
+            &library,
+            "--out",
+            &dir.path().join("market").display().to_string(),
             "--yes",
         ],
         dir.path(),
@@ -1746,12 +2249,11 @@ fn a_configured_skills_root_is_where_adopt_writes_and_where_build_looks() {
 fn the_configured_scan_locations_are_the_default_source() {
     let (dir, vault) = fixture();
     let source = adopt_source(dir.path());
-    let config_path = dir.path().join("scan-config.yaml");
+    let config_path = vault.join("skillwright.md");
     fs::write(
         &config_path,
         format!(
-            "vault: {}\ndestinations: []\nscan_locations:\n  - {}\n",
-            vault_str(&vault),
+            "---\nbuild:\n  scan_locations:\n    - {}\n---\n",
             source.display()
         ),
     )
@@ -1803,7 +2305,7 @@ fn from_git_stamps_the_repository_and_the_commit_never_the_checkout_path() {
         );
 
         let note = fs::read_to_string(adopted_note(&vault, "adopted")).unwrap();
-        assert!(note.contains("sw-source:"));
+        assert!(note.contains("  source:"));
         // The repository and the commit, which still name the same bytes
         // after the cache is purged — not the checkout directory, which does
         // not.
@@ -1898,12 +2400,12 @@ fn widen_vault(vault: &Path) {
     fs::create_dir_all(vault.join("commands").join("tidy")).unwrap();
     fs::write(
         vault.join("commands").join("tidy").join("tidy.md"),
-        "---\nname: tidy\ndescription: tidies up\nsw-kind: skill\nsw-targets: []\n---\nTidy.\n",
+        "---\nname: tidy\ndescription: tidies up\ntargets: []\n---\nTidy.\n",
     )
     .unwrap();
     fs::write(
         vault.join("skills").join("code-review").join("code-review.md"),
-        "---\nname: code-review\ndescription: reviews code\nsw-targets: [claude-code, codex]\n---\nReview the diff.\n",
+        "---\nname: code-review\ndescription: reviews code\ntargets: [claude-code, codex]\n---\nReview the diff.\n",
     )
     .unwrap();
 }
@@ -1947,13 +2449,14 @@ fn the_three_readings_of_a_targets_key_each_render_differently() {
 
 // --- the configurable frontmatter namespace ----------------------------------
 
-/// A config naming the vault and, optionally, a namespace stem.
-fn namespace_config(dir: &Path, vault: &Path, stem: Option<&str>) -> String {
-    let path = dir.join("namespace-config.yaml");
-    let mut yaml = format!("vault: {}\n", vault.display());
+/// A root file in the vault with, optionally, a namespace stem.
+fn namespace_config(_dir: &Path, vault: &Path, stem: Option<&str>) -> String {
+    let path = vault.join("skillwright.md");
+    let mut yaml = "---\n".to_owned();
     if let Some(stem) = stem {
-        yaml.push_str(&format!("namespace: {stem}\n"));
+        yaml.push_str(&format!("build:\n  namespace: {stem}\n"));
     }
+    yaml.push_str("---\n");
     fs::write(&path, yaml).unwrap();
     path.display().to_string()
 }
@@ -1965,9 +2468,8 @@ fn an_invalid_stem_in_the_config_is_a_run_level_blocker_at_load() {
 
     let run = run(&["list", "--config", &config], dir.path());
 
-    // A malformed config file is exit 2: nothing attempted, the report empty,
-    // stderr naming the reason. Not exit 4 — that one means "no
-    // configuration, run `skillwright init`".
+    // A malformed root file is exit 2: nothing attempted, the report empty,
+    // stderr naming the reason. Not exit 4 — that one means "no vault here".
     assert_eq!(run.code, 2, "{}", run.stderr);
     assert_eq!(run.stdout, "");
     // The offending stem, and the core's own reason for refusing it.
@@ -2017,7 +2519,7 @@ fn namespace_works_with_no_config_file_at_all() {
     fs::create_dir_all(vault.join("commands").join("tidy")).unwrap();
     fs::write(
         vault.join("commands").join("tidy").join("tidy.md"),
-        "---\nname: tidy\ndescription: tidies up\nv-kind: skill\n---\nTidy.\n",
+        "---\nname: tidy\ndescription: tidies up\nv-targets: []\n---\nTidy.\n",
     )
     .unwrap();
 
@@ -2033,13 +2535,8 @@ fn namespace_works_with_no_config_file_at_all() {
         dir.path(),
     );
     assert_eq!(run.code, 0, "{}", run.stderr);
-    // The declared kind won over the folder's guess, which only happens if
-    // `v-kind` was read as ours.
-    assert!(
-        run.stdout.contains("skill (folder: command)"),
-        "{}",
-        run.stdout
-    );
+    // `nowhere` only happens if `v-targets` was read as ours.
+    assert!(run.stdout.contains("nowhere"), "{}", run.stdout);
 }
 
 // --- status: the states a published destination can be in --------------------
@@ -2055,14 +2552,11 @@ fn dest_of(dir: &Path) -> PathBuf {
 fn publish(vault: &Path, dest: &Path, note: &str) {
     let report = publish_skill(
         &NativeVfs,
-        &PublishRequest {
-            skill_path: vault.join(note),
-            destination_root: dest.to_path_buf(),
-            target: "claude".to_string(),
-            mode: PublishMode::Write,
-            skills_root: Some(vault.to_path_buf()),
-            published_at: Some("2026-01-01T00:00:00Z".to_string()),
-            overwrite: Vec::new(),
+        &{
+            let mut value = PublishRequest::new(vault.join(note), dest.to_path_buf(), "claude");
+            value.skills_root = Some(vault.to_path_buf());
+            value.published_at = Some("2026-01-01T00:00:00Z".to_string());
+            value
         },
         &Namespace::default(),
     )
@@ -2173,7 +2667,7 @@ fn a_destination_the_notes_sw_targets_excludes_reads_as_not_published() {
     let config = status_config(dir.path(), &vault);
     fs::write(
         vault.join("skills").join("code-review").join("code-review.md"),
-        "---\nname: code-review\ndescription: reviews code\nsw-targets:\n  - codex\n---\nReview the diff.\n",
+        "---\nname: code-review\ndescription: reviews code\ntargets:\n  - codex\n---\nReview the diff.\n",
     )
     .unwrap();
 
@@ -2228,30 +2722,43 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
         .join("marketplaces")
         .join("acme")
         .join("plugins")
-        .join("core");
+        .join("core-tools");
     fs::create_dir_all(plugin.join("skills")).unwrap();
     fs::write(
-        vault.join("marketplaces").join("acme").join("acme.md"),
+        vault
+            .join("marketplaces")
+            .join("acme")
+            .join("skillwright.md"),
         "---\nname: acme\ndescription: Acme skills.\n---\n\nOne marketplace.\n",
     )
     .unwrap();
     fs::write(
-        plugin.join("core.md"),
-        "---\nname: core-tools\ndescription: The core tools.\nsw-version: 1.0.0\n---\n\nThe plugin.\n",
+        plugin.join("core-tools.md"),
+        "---\nname: core-tools\ndescription: The core tools.\nversion: 1.0.0\n---\n\nThe plugin.\n",
     )
     .unwrap();
     let member = plugin.join("skills").join("review.md");
     fs::write(
         &member,
-        "---\nname: review\ndescription: Reviews a diff.\nsw-plugin: core-tools\n---\n\nRead the diff.\n",
+        "---\nname: review\ndescription: Reviews a diff.\n---\n\nRead the diff.\n",
     )
     .unwrap();
     let config = status_config(dir.path(), &vault);
-    let published = run(&["publish", "--config", &config, "--yes"], dir.path());
+    let pack = plugin.join("core-tools.md");
+    let published = run(
+        &[
+            "publish",
+            pack.to_str().unwrap(),
+            "--config",
+            &config,
+            "--yes",
+        ],
+        dir.path(),
+    );
     assert_eq!(published.code, 0, "{}", published.stderr);
     fs::write(
         &member,
-        "---\nname: review\ndescription: Reviews a diff.\nsw-plugin: core-tools\n---\n\nRead the whole diff.\n",
+        "---\nname: review\ndescription: Reviews a diff.\n---\n\nRead the whole diff.\n",
     )
     .unwrap();
 
@@ -2267,7 +2774,7 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
     let one = run(
         &[
             "status",
-            "marketplaces/acme/plugins/core/core.md",
+            "marketplaces/acme/plugins/core-tools/core-tools.md",
             "--config",
             &config,
         ],
@@ -2287,131 +2794,6 @@ fn the_bump_advisory_names_the_plugin_bump_will_find() {
     assert_eq!(bump.code, 0, "{}", bump.stderr);
 }
 
-/// Publish and status hand the core the vault as the content root, so a
-/// configured skills root elsewhere is refused once, by name, rather than
-/// half-honoured.
-#[test]
-fn publish_and_status_refuse_a_skills_root_apart_from_the_vault() {
-    let dir = tempfile::tempdir().unwrap();
-    let vault = dir.path().join("vault");
-    let plugin = vault.join("library").join("plugins").join("tools");
-    fs::create_dir_all(&plugin).unwrap();
-    fs::write(
-        plugin.join("tools.md"),
-        "---\nname: tools\ndescription: The tools.\n---\n\nThe plugin.\n",
-    )
-    .unwrap();
-    let dest = dir.path().join("dest");
-    fs::create_dir_all(&dest).unwrap();
-    let config = dir.path().join("config.yaml");
-    fs::write(
-        &config,
-        format!(
-            "vault: {}\ndestinations:\n  - root: {}\n    target: claude\nmarketplace:\n  skills_root: vault/library\n",
-            vault.display(),
-            dest.display()
-        ),
-    )
-    .unwrap();
-    let config = config.display().to_string();
-
-    for argv in [
-        vec!["publish", "--config", &config, "--yes"],
-        vec!["publish", "--config", &config, "--dry-run"],
-        vec!["status", "--config", &config],
-        vec![
-            "status",
-            "--config",
-            &config,
-            "library/plugins/tools/tools.md",
-        ],
-    ] {
-        let out = run(&argv, dir.path());
-        assert_eq!(out.code, 2, "{argv:?}: {}", out.stderr);
-        assert!(
-            out.stderr.contains("marketplace.skills_root") && out.stderr.contains("not support"),
-            "{argv:?}: {}",
-            out.stderr
-        );
-        assert_eq!(out.stdout, "", "{argv:?}");
-    }
-    assert_eq!(fs::read_dir(&dest).unwrap().count(), 0, "publish wrote");
-}
-
-/// A vault holding one skill under `skills/`, a destination, and a config file
-/// carrying `extra` — the setup the skills-root guard must let through.
-fn skills_root_fixture(extra: &str) -> (tempfile::TempDir, String) {
-    let dir = tempfile::tempdir().unwrap();
-    let vault = dir.path().join("vault");
-    fs::create_dir_all(vault.join("skills")).unwrap();
-    fs::write(
-        vault.join("skills").join("review.md"),
-        "---\nname: review\ndescription: Reviews code.\n---\n\nReview the diff.\n",
-    )
-    .unwrap();
-    let dest = dir.path().join("dest");
-    fs::create_dir_all(&dest).unwrap();
-    let config = dir.path().join("config.yaml");
-    fs::write(
-        &config,
-        format!(
-            "vault: {}\ndestinations:\n  - root: {}\n    target: claude\n{extra}",
-            vault.display(),
-            dest.display()
-        ),
-    )
-    .unwrap();
-    let config = config.display().to_string();
-    (dir, config)
-}
-
-fn assert_publish_and_status_pass(dir: &Path, config: &str) {
-    for argv in [
-        vec!["publish", "--config", config, "--dry-run"],
-        vec!["status", "--config", config],
-        vec!["status", "--config", config, "skills/review.md"],
-    ] {
-        let out = run(&argv, dir);
-        assert_eq!(out.code, 0, "{argv:?}: {}", out.stderr);
-        assert!(
-            !out.stderr.contains("not support"),
-            "{argv:?}: {}",
-            out.stderr
-        );
-    }
-}
-
-/// A skills root inside the vault whose notes the vault scan reads publishes
-/// as it did before the guard.
-#[test]
-fn publish_and_status_accept_a_declared_skills_folder_the_vault_scan_reads() {
-    let (dir, config) = skills_root_fixture("declared_folders:\n  skills: skills\n");
-    let out = run(&["publish", "--config", &config, "--dry-run"], dir.path());
-    assert_eq!(out.code, 0, "{}", out.stderr);
-    assert!(
-        out.stdout.contains("review/SKILL.md") || out.stderr.contains("review/SKILL.md"),
-        "stdout: {}\nstderr: {}",
-        out.stdout,
-        out.stderr
-    );
-    assert_publish_and_status_pass(dir.path(), &config);
-}
-
-/// `marketplace.skills_root` naming the vault itself passes the guard, both
-/// spelled directly and reached through a symlink.
-#[test]
-fn publish_and_status_accept_a_skills_root_that_is_the_vault() {
-    let (dir, config) = skills_root_fixture("marketplace:\n  skills_root: vault\n");
-    assert_publish_and_status_pass(dir.path(), &config);
-
-    #[cfg(unix)]
-    {
-        let (dir, config) = skills_root_fixture("marketplace:\n  skills_root: link\n");
-        std::os::unix::fs::symlink(dir.path().join("vault"), dir.path().join("link")).unwrap();
-        assert_publish_and_status_pass(dir.path(), &config);
-    }
-}
-
 #[test]
 fn a_hook_is_n_a_rather_than_unknown_and_status_check_still_passes() {
     let dir = tempfile::tempdir().unwrap();
@@ -2426,13 +2808,16 @@ fn a_hook_is_n_a_rather_than_unknown_and_status_check_still_passes() {
     fs::create_dir_all(plugin.join("hooks")).unwrap();
     fs::create_dir_all(&dest).unwrap();
     fs::write(
-        vault.join("marketplaces").join("acme").join("acme.md"),
+        vault
+            .join("marketplaces")
+            .join("acme")
+            .join("skillwright.md"),
         "---\nname: acme\ndescription: Acme skills.\n---\n\nOne marketplace.\n",
     )
     .unwrap();
     fs::write(
         plugin.join("review.md"),
-        "---\nname: review\ndescription: Skills for reviewing a change.\nsw-version: 1.0.0\n---\n\nThe review plugin.\n",
+        "---\nname: review\ndescription: Skills for reviewing a change.\nversion: 1.0.0\n---\n\nThe review plugin.\n",
     )
     .unwrap();
     fs::write(
@@ -2445,12 +2830,11 @@ fn a_hook_is_n_a_rather_than_unknown_and_status_check_still_passes() {
         "---\nname: lint-on-write\ndescription: Runs the linter after a write.\nevent: PostToolUse\nmatcher: Edit|Write\ntimeout: 5000\n---\n\njust lint\n",
     )
     .unwrap();
-    let config = dir.path().join("hook-config.yaml");
+    let config = vault.join("skillwright.md");
     fs::write(
         &config,
         format!(
-            "vault: {}\ndestinations:\n  - root: {}\n    target: claude-code\n",
-            vault.display(),
+            "---\nbuild:\n  destinations:\n    - root: {}\n      target: claude-code\n---\n",
             dest.display()
         ),
     )
@@ -2539,7 +2923,7 @@ fn a_named_note_collapses_dot_segments_the_way_resolve_path_does() {
 #[test]
 fn a_config_naming_a_directory_is_unreadable_not_missing() {
     let dir = tempfile::tempdir().unwrap();
-    let as_dir = dir.path().join("skillwright.yaml");
+    let as_dir = dir.path().join("skillwright.md");
     fs::create_dir_all(&as_dir).unwrap();
     // Existence, not "is a file": the path is there, so the failure is the
     // read, and that is a blocker (2) rather than "--config names a file that
@@ -3038,15 +3422,18 @@ fn a_run_that_projected_nothing_blames_the_flag_for_nothing() {
     // with no member this destination admits reaches the loop with a known
     // target and throws `empty-plugin` there, which is the shape this test
     // needs.
+    let pack = vault.join("plugins").join("review-pack");
+    fs::create_dir_all(&pack).unwrap();
     fs::write(
-        vault.join("skills").join("code-review").join("code-review.md"),
-        "---\nname: code-review\ndescription: the review pack\nsw-kind: plugin\n---\nReview the diff.\n",
+        pack.join("review-pack.md"),
+        "---\nname: review-pack\ndescription: the review pack\n---\nReview the diff.\n",
     )
     .unwrap();
 
-    let run = publish_real(
-        &vault,
-        &dest,
+    let mut argv = publish_argv(&vault, &dest, "--yes");
+    argv[1] = "plugins/review-pack/review-pack.md".to_string();
+    let run = run_argv(
+        argv,
         &["--overwrite", ".claude/skills/typo/SKILL.md"],
         dir.path(),
     );
@@ -3074,7 +3461,7 @@ fn a_packs_replaced_manifest_is_named_as_replaced_not_as_not_carried() {
     fs::create_dir_all(base.join(".claude-plugin")).unwrap();
     fs::write(
         base.join("git-tools.md"),
-        "---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\n---\nThe pack.\n",
+        "---\nname: git-tools\ndescription: Git helpers.\n---\nThe pack.\n",
     )
     .unwrap();
     fs::write(
@@ -3129,11 +3516,11 @@ fn a_packs_replaced_manifest_is_named_as_replaced_not_as_not_carried() {
 
 // --- a note with a `name` and no `description` ----------------------------------
 
-/// A vault holding one name-only skill, and a project file naming it — with
+/// A vault holding one name-only skill and a root file — with
 /// `require_descriptions` when `strict`.
 fn name_only_project(strict: bool) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
-    let skill = dir.path().join("vault").join("skills").join("quiet");
+    let skill = dir.path().join("skills").join("quiet");
     fs::create_dir_all(&skill).unwrap();
     fs::write(skill.join("quiet.md"), "---\nname: quiet\n---\nBody.\n").unwrap();
     let strict = if strict {
@@ -3142,10 +3529,8 @@ fn name_only_project(strict: bool) -> tempfile::TempDir {
         ""
     };
     fs::write(
-        dir.path().join("skillwright.yaml"),
-        format!(
-            "vault: vault\nmarketplace:\n  name: demo\n  default_plugin: tools\n  out: out\n{strict}"
-        ),
+        dir.path().join("skillwright.md"),
+        format!("---\nname: demo\nbuild:\n  out: out\n{strict}---\n"),
     )
     .unwrap();
     dir
@@ -3175,7 +3560,7 @@ fn a_missing_description_warns_on_stderr_even_under_quiet() {
 }
 
 #[test]
-fn require_descriptions_in_the_project_file_refuses_the_build() {
+fn require_descriptions_in_the_root_file_refuses_the_build() {
     let dir = name_only_project(true);
     let build = run(&["build", "--yes"], dir.path());
     assert_eq!(build.code, 2, "{}", build.stderr);
@@ -3186,4 +3571,441 @@ fn require_descriptions_in_the_project_file_refuses_the_build() {
         build.stderr
     );
     assert!(!dir.path().join("out").exists());
+}
+
+// --- a root file named with --config, and a moved packs folder ---------------
+
+fn skill(path: &Path) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "---\ndescription: Use it.\n---\n\nbody\n").unwrap();
+}
+
+#[test]
+fn a_config_file_carries_its_patterns_and_exclusions() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("alt.md"),
+        "---\nname: m\nbuild:\n  out: dist\n  exclude: '**/*.draft.md'\n  patterns:\n    plugins: packs/*\n---\n",
+    )
+    .unwrap();
+    skill(&dir.path().join("packs/a/skills/x.md"));
+    skill(&dir.path().join("packs/a/skills/z.draft.md"));
+    let run = run(&["build", "--yes", "--config", "alt.md"], dir.path());
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let pack = dir.path().join("dist/.claude-plugin/packs/a/skills");
+    assert!(pack.join("x/SKILL.md").is_file());
+    assert!(!pack.join("z-draft").exists());
+    assert!(!pack.join("z.draft").exists());
+}
+
+#[test]
+fn list_leaves_out_the_moved_folder_of_one_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: .\n---\n",
+    )
+    .unwrap();
+    for (name, note) in [
+        ("a", "---\nname: a\nclaude: {packs: mva}\n---\n"),
+        ("b", "---\nname: b\n---\n"),
+    ] {
+        std::fs::create_dir_all(dir.path().join("marketplaces").join(name)).unwrap();
+        std::fs::write(
+            dir.path()
+                .join(format!("marketplaces/{name}/skillwright.md")),
+            note,
+        )
+        .unwrap();
+    }
+    skill(&dir.path().join("marketplaces/a/plugins/p/skills/s.md"));
+    let built = run(&["build", "--marketplace", "a", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(dir.path().join("mva/p").is_dir());
+    let list = run(&["list"], dir.path());
+    assert_eq!(list.code, 0, "{}", list.stderr);
+    assert!(!list.stdout.contains("mva/"), "{}", list.stdout);
+}
+
+#[test]
+fn list_leaves_out_a_moved_packs_folder_a_marketplace_note_names() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: m\nbuild:\n  out: .\n---\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.path().join("marketplaces/m")).unwrap();
+    std::fs::write(
+        dir.path().join("marketplaces/m/skillwright.md"),
+        "---\nname: m\nclaude: {packs: built}\n---\n",
+    )
+    .unwrap();
+    skill(&dir.path().join("marketplaces/m/plugins/rev/skills/a.md"));
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(dir.path().join("built/rev").is_dir());
+    let list = run(&["list"], dir.path());
+    assert_eq!(list.code, 0, "{}", list.stderr);
+    assert!(!list.stdout.contains("built/"), "{}", list.stdout);
+}
+
+/// In a vault of several marketplaces that share a plugin name, the advised
+/// `bump` has to name the marketplace, or it is ambiguous.
+#[test]
+fn the_bump_advisory_runs_in_a_vault_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    for market in ["one", "two"] {
+        let base = vault.join("marketplaces").join(market);
+        fs::create_dir_all(base.join("plugins/core-tools/skills")).unwrap();
+        fs::write(
+            base.join("skillwright.md"),
+            format!("---\nname: {market}\ndescription: M.\n---\n"),
+        )
+        .unwrap();
+        fs::write(
+            base.join("plugins/core-tools/core-tools.md"),
+            "---\nname: core-tools\ndescription: The core tools.\nversion: 1.0.0\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            base.join("plugins/core-tools/skills/review.md"),
+            "---\nname: review\ndescription: Reviews a diff.\n---\n\nRead the diff.\n",
+        )
+        .unwrap();
+    }
+    let config = status_config(dir.path(), &vault);
+    let pack = vault.join("marketplaces/two/plugins/core-tools/core-tools.md");
+    let published = run(
+        &[
+            "publish",
+            pack.to_str().unwrap(),
+            "--config",
+            &config,
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(published.code, 0, "{}", published.stderr);
+    fs::write(
+        vault.join("marketplaces/two/plugins/core-tools/skills/review.md"),
+        "---\nname: review\ndescription: Reviews a diff.\n---\n\nRead the whole diff.\n",
+    )
+    .unwrap();
+
+    let note = "marketplaces/two/plugins/core-tools/core-tools.md";
+    let status = run(&["status", note, "--config", &config], dir.path());
+    assert_eq!(status.code, 0, "{}", status.stderr);
+    let advised = status
+        .stderr
+        .lines()
+        .find_map(|line| {
+            line.split('`')
+                .nth(1)
+                .filter(|c| c.starts_with("skillwright bump"))
+        })
+        .unwrap_or_else(|| panic!("no bump advice: {}", status.stderr))
+        .to_owned();
+    let mut argv: Vec<&str> = advised.split(' ').skip(1).collect();
+    argv.extend(["--config", &config, "--yes"]);
+    let bumped = run(&argv, dir.path());
+    assert_eq!(bumped.code, 0, "{advised}: {}", bumped.stderr);
+    let text = fs::read_to_string(&pack).unwrap();
+    assert!(text.contains("version: 1.0.1"), "{text}");
+    let other = vault.join("marketplaces/one/plugins/core-tools/core-tools.md");
+    assert!(
+        fs::read_to_string(other)
+            .unwrap()
+            .contains("version: 1.0.0")
+    );
+}
+
+/// `skillwright.md` directly in a kind folder is a reserved name: refused by
+/// name, never read as the root file or as a skill named after its folder.
+#[test]
+fn a_flat_skillwright_md_note_is_refused_as_a_reserved_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: home\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    for folder in ["skills", "plugins/p/skills"] {
+        fs::create_dir_all(root.join(folder)).unwrap();
+        fs::write(
+            root.join(folder).join("skillwright.md"),
+            "---\ndescription: Flat skill named skillwright.\n---\n\nX.\n",
+        )
+        .unwrap();
+    }
+    fs::write(
+        root.join("skills/ok.md"),
+        "---\ndescription: Ok.\n---\n\nY.\n",
+    )
+    .unwrap();
+
+    for cwd in [
+        root.to_path_buf(),
+        root.join("skills"),
+        root.join("plugins/p/skills"),
+    ] {
+        let list = run(&["list"], &cwd);
+        assert!(list.stdout.contains("skills/ok.md"), "{}", list.stdout);
+        assert!(!list.stdout.contains("Flat skill"), "{}", list.stdout);
+        let skipped = list.stderr.matches("skipped · reserved-name").count();
+        assert_eq!(skipped, 2, "{}", list.stderr);
+        let build = run(&["build", "--yes"], &cwd);
+        assert_ne!(build.code, 0, "{}", build.stderr);
+        assert!(build.stderr.contains("reserved-name"), "{}", build.stderr);
+        assert!(
+            !build.stderr.contains("No output folder"),
+            "{}",
+            build.stderr
+        );
+    }
+    assert!(
+        !root
+            .join("dist/.claude-plugin/packs/home/skills/skills")
+            .exists()
+    );
+}
+
+/// An unknown key in a skill's harness block warns and is left out; a known
+/// key with a wrong value is still refused.
+#[test]
+fn an_unknown_key_in_a_skills_harness_block_warns() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: home\nversion: 1.0.0\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("skills")).unwrap();
+    let skill = root.join("skills/a.md");
+    fs::write(
+        &skill,
+        "---\ndescription: d\nclaude:\n  frob: 1\n---\n\nX.\n",
+    )
+    .unwrap();
+
+    let build = run(&["build", "--yes"], root);
+    assert_eq!(build.code, 0, "{}", build.stderr);
+    assert!(build.stderr.contains("`claude.frob`"), "{}", build.stderr);
+    let text =
+        fs::read_to_string(root.join("dist/.claude-plugin/packs/home/skills/a/SKILL.md")).unwrap();
+    assert!(!text.contains("frob"), "{text}");
+
+    fs::write(
+        &skill,
+        "---\ndescription: d\nclaude:\n  metadata: 1\n---\n\nX.\n",
+    )
+    .unwrap();
+    let wrong = run(&["build", "--yes"], root);
+    assert_ne!(wrong.code, 0, "{}", wrong.stderr);
+}
+
+/// `list` names a duplicate's plugin rightly, spells its notes as its rows
+/// are, and warns once per note.
+#[test]
+fn list_names_each_duplicate_once_with_workspace_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("skillwright.md"), "---\nworkspace: true\n---\n").unwrap();
+    let member = root.join("marketplaces/barn");
+    fs::create_dir_all(member.join("skills")).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: barn\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    for file in ["a", "b", "c"] {
+        fs::write(
+            member.join(format!("skills/{file}.md")),
+            "---\nname: dup\ndescription: D.\n---\n\nX.\n",
+        )
+        .unwrap();
+    }
+
+    let list = run(&["list"], root);
+    assert_eq!(list.code, 2, "{}{}", list.stdout, list.stderr);
+    let all = format!("{}{}", list.stdout, list.stderr);
+    assert!(!all.contains("in no plugin"), "{all}");
+    assert!(all.contains("the marketplace's own plugin"), "{all}");
+    let named = "marketplaces/barn/skills/a.md, marketplaces/barn/skills/b.md, \
+                 marketplaces/barn/skills/c.md";
+    assert!(all.contains(named), "{all}");
+    for file in ["a", "b", "c"] {
+        let warned = all
+            .lines()
+            .filter(|l| l.starts_with(&format!("marketplaces/barn/skills/{file}.md  warning")))
+            .count();
+        assert_eq!(warned, 1, "{file}: {all}");
+    }
+}
+
+/// `owner` is not inherited: a plugin with no `author` gets the marketplace's
+/// `author`, never its `owner`.
+#[test]
+fn a_plugin_author_never_falls_back_to_the_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: home\nversion: 1.0.0\nowner: {name: Own}\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("skills")).unwrap();
+    fs::write(
+        root.join("skills/a.md"),
+        "---\ndescription: A.\n---\n\nX.\n",
+    )
+    .unwrap();
+    let build = run(&["build", "--yes"], root);
+    assert_eq!(build.code, 0, "{}", build.stderr);
+    let manifest =
+        fs::read_to_string(root.join("dist/.claude-plugin/packs/home/.claude-plugin/plugin.json"))
+            .unwrap();
+    assert!(!manifest.contains("Own"), "{manifest}");
+    let market = fs::read_to_string(root.join("dist/.claude-plugin/marketplace.json")).unwrap();
+    assert!(market.contains("Own"), "{market}");
+}
+
+/// A workspace member named after a kind folder, or `skillwright`, is a
+/// marketplace: run from inside it, every verb acts on that member alone.
+#[test]
+fn a_member_named_after_a_kind_folder_is_its_own_marketplace() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("skillwright.md"), "---\nworkspace: true\n---\n").unwrap();
+    let names = [
+        "skills",
+        "agents",
+        "commands",
+        "hooks",
+        "plugins",
+        "marketplaces",
+        "skillwright",
+    ];
+    for name in names.iter().chain(&["barn"]) {
+        let member = root.join("marketplaces").join(name);
+        fs::create_dir_all(member.join("plugins/p/skills")).unwrap();
+        fs::write(
+            member.join("skillwright.md"),
+            format!("---\nname: {name}\nbuild:\n  out: dist\n---\n"),
+        )
+        .unwrap();
+        fs::write(
+            member.join("plugins/p/p.md"),
+            "---\ndescription: P.\nversion: 1.0.0\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            member.join("plugins/p/skills/a.md"),
+            format!("---\ndescription: A in {name}.\n---\n\nX.\n"),
+        )
+        .unwrap();
+    }
+
+    for name in names {
+        let member = root.join("marketplaces").join(name);
+        for cwd in [member.clone(), member.join("plugins/p/skills")] {
+            let list = run(&["list"], &cwd);
+            assert_eq!(list.code, 0, "{name}: {}{}", list.stdout, list.stderr);
+            assert!(
+                list.stdout.contains("plugins/p/skills/a.md"),
+                "{name}: {}",
+                list.stdout
+            );
+            assert!(!list.stdout.contains("barn"), "{name}: {}", list.stdout);
+        }
+        let build = run(&["build", "--yes"], &member);
+        assert_eq!(build.code, 0, "{name}: {}", build.stderr);
+        assert!(
+            member.join("dist/.claude-plugin/marketplace.json").exists(),
+            "{name}: {}",
+            build.stderr
+        );
+        assert!(!root.join("marketplaces/barn/dist").exists(), "{name}");
+        let bump = run(&["bump", "p", "--yes"], &member);
+        assert_eq!(bump.code, 0, "{name}: {}", bump.stderr);
+        let note = fs::read_to_string(member.join("plugins/p/p.md")).unwrap();
+        assert!(note.contains("version: 1.0.1"), "{name}: {note}");
+    }
+
+    // A flat `skillwright.md` inside the `skills` member is still reserved,
+    // and running from its folder still finds the member.
+    let inner = root.join("marketplaces/skills/skills");
+    fs::create_dir_all(&inner).unwrap();
+    fs::write(
+        inner.join("skillwright.md"),
+        "---\ndescription: Flat.\n---\n\nY.\n",
+    )
+    .unwrap();
+    let list = run(&["list"], &inner);
+    assert!(
+        list.stdout.contains("plugins/p/skills/a.md"),
+        "{}",
+        list.stdout
+    );
+    assert!(!list.stdout.contains("barn"), "{}", list.stdout);
+    assert_eq!(
+        list.stderr.matches("skipped · reserved-name").count(),
+        1,
+        "{}",
+        list.stderr
+    );
+}
+
+/// In a vault that is not a workspace, `marketplaces/skills/skillwright.md` is
+/// a marketplace's note, not a reserved name. A flat `skillwright.md` inside
+/// that marketplace's `skills/` still is.
+#[test]
+fn a_nested_marketplace_named_after_a_kind_folder_is_not_reserved() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: home\nbuild:\n  out: dist\n---\n",
+    )
+    .unwrap();
+    let market = root.join("marketplaces/skills");
+    fs::create_dir_all(market.join("skills")).unwrap();
+    fs::write(market.join("skillwright.md"), "---\nname: skills\n---\n").unwrap();
+    fs::write(
+        market.join("skills/a.md"),
+        "---\ndescription: A.\n---\n\nX.\n",
+    )
+    .unwrap();
+
+    let list = run(&["list"], root);
+    assert!(!list.stderr.contains("reserved-name"), "{}", list.stderr);
+    assert!(
+        list.stdout.contains("marketplaces/skills/skills/a.md"),
+        "{}",
+        list.stdout
+    );
+    let build = run(&["build", "--marketplace", "skills", "--yes"], root);
+    assert_eq!(build.code, 0, "{}", build.stderr);
+
+    fs::write(
+        market.join("skills/skillwright.md"),
+        "---\ndescription: Flat.\n---\n\nY.\n",
+    )
+    .unwrap();
+    let list = run(&["list"], root);
+    assert_eq!(
+        list.stderr.matches("skipped · reserved-name").count(),
+        1,
+        "{}",
+        list.stderr
+    );
+    assert!(
+        list.stderr
+            .contains("marketplaces/skills/skills/skillwright.md"),
+        "{}",
+        list.stderr
+    );
 }

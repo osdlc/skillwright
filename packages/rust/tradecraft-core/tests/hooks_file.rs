@@ -4,8 +4,7 @@
 //! `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --test hooks_file`
 //! rewrites the expected files from the current output.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tradecraft_core::{
     ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig, MemVfs, Namespace, Vfs,
@@ -36,39 +35,24 @@ fn vault(hooks: &str) -> MemVfs {
     write(
         &vfs,
         "/vault/plugins/core/skills/review.md",
-        "---\nname: review\ndescription: Use review.\nsw-plugin: core\n---\n\n# review\n",
+        "---\nname: review\ndescription: Use review.\n---\n\n# review\n",
     );
     write(&vfs, "/project/plugin/hooks.json", hooks);
     vfs
 }
 
 fn request(mode: ExportMode) -> ExportRequest {
-    ExportRequest {
-        vault_root: PathBuf::from("/vault"),
-        skills_root: None,
-        marketplace: None,
-        out_root: PathBuf::from("/market"),
-        harnesses: BTreeSet::new(),
-        mode,
-        config: MarketplaceConfig {
-            name: Some("demo".to_owned()),
-            display_name: None,
-            owner: None,
-            description: None,
-            author: None,
-            license: None,
-            default_plugin: "core".to_owned(),
-            plugins: BTreeMap::new(),
-            require_descriptions: false,
-            launcher_path: None,
-        },
-        assets: Vec::new(),
-        hooks: vec![HookFileSpec {
-            source: PathBuf::from("/project/plugin/hooks.json"),
-            from: "plugin/hooks.json".to_owned(),
-            plugin: None,
-        }],
-    }
+    let mut config = MarketplaceConfig::default();
+    // Members outside `plugins/` land in the plugin named after the
+    // marketplace.
+    config.name = Some("core".to_owned());
+    let mut request = ExportRequest::new("/vault", "/market", config);
+    request.mode = mode;
+    request.hooks = vec![HookFileSpec::new(
+        "/project/plugin/hooks.json",
+        "plugin/hooks.json",
+    )];
+    request
 }
 
 fn canonical() -> String {
@@ -77,7 +61,7 @@ fn canonical() -> String {
 
 fn built() -> MemVfs {
     let vfs = vault(&canonical());
-    export_skills(&vfs, &request(ExportMode::Build), &Namespace::default()).unwrap();
+    export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw()).unwrap();
     vfs
 }
 
@@ -145,7 +129,7 @@ fn each_pack_names_its_own_plugin_root_and_fills_the_placeholders() {
 #[test]
 fn an_unknown_placeholder_fails_the_build() {
     let vfs = vault(r#"{"hooks": {"Stop": [{"hooks": [{"command": "x {{foo}}"}]}]}}"#);
-    let err = export_skills(&vfs, &request(ExportMode::Build), &Namespace::default())
+    let err = export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw())
         .unwrap_err()
         .to_string();
     assert!(err.contains("plugin/hooks.json"), "{err}");
@@ -240,7 +224,7 @@ fn an_uncarried_event_is_left_out_and_reported() {
 fn a_shape_cursor_cannot_hold_is_left_out_of_cursor_only() {
     let vfs =
         vault(r#"{"hooks": {"Stop": [{"hooks": [{"command": "just stop", "async": true}]}]}}"#);
-    export_skills(&vfs, &request(ExportMode::Build), &Namespace::default()).unwrap();
+    export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw()).unwrap();
     assert!(text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[0].1)).contains("just stop"));
     let cursor = PACKS[2].1;
     assert!(!vfs.exists(Path::new(&format!("{cursor}/hooks/hooks.json"))));
@@ -257,7 +241,7 @@ fn a_shape_cursor_cannot_hold_is_left_out_of_cursor_only() {
 #[test]
 fn an_event_only_codex_carries_means_no_delivery_elsewhere() {
     let vfs = vault(r#"{"hooks": {"Interrupt": [{"hooks": [{"command": "x"}]}]}}"#);
-    export_skills(&vfs, &request(ExportMode::Build), &Namespace::default()).unwrap();
+    export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw()).unwrap();
     let report: serde_json::Value = serde_json::from_str(&text_at(
         &vfs,
         &format!("{}/hooks/gap-report.json", PACKS[0].1),
@@ -279,14 +263,14 @@ fn a_hand_edited_gap_report_is_drift() {
     let path = format!("{}/hooks/gap-report.json", PACKS[2].1);
     let edited = text_at(&vfs, &path).replace("\"plugin\"", "\"none\"");
     write(&vfs, &path, &edited);
-    let report = export_skills(&vfs, &request(ExportMode::Check), &Namespace::default()).unwrap();
+    let report = export_skills(&vfs, &request(ExportMode::Check), &Namespace::sw()).unwrap();
     assert!(report.changed, "the edit is reported as drift");
 }
 
 #[test]
 fn an_unknown_event_fails_the_build() {
     let vfs = vault(r#"{"hooks": {"OnBoot": [{"hooks": [{"command": "x"}]}]}}"#);
-    let err = export_skills(&vfs, &request(ExportMode::Build), &Namespace::default())
+    let err = export_skills(&vfs, &request(ExportMode::Build), &Namespace::sw())
         .unwrap_err()
         .to_string();
     assert!(err.contains("plugin/hooks.json"), "{err}");
@@ -299,7 +283,7 @@ fn two_hooks_files_for_one_plugin_are_refused() {
     let vfs = vault(&canonical());
     let mut request = request(ExportMode::Build);
     request.hooks.push(request.hooks[0].clone());
-    let err = export_skills(&vfs, &request, &Namespace::default())
+    let err = export_skills(&vfs, &request, &Namespace::sw())
         .unwrap_err()
         .to_string();
     assert!(err.contains("duplicate-hooks-file"), "{err}");
@@ -310,7 +294,7 @@ fn a_hooks_file_for_a_plugin_the_build_does_not_hold_is_refused() {
     let vfs = vault(&canonical());
     let mut request = request(ExportMode::Build);
     request.hooks[0].plugin = Some("ghost".to_owned());
-    let err = export_skills(&vfs, &request, &Namespace::default())
+    let err = export_skills(&vfs, &request, &Namespace::sw())
         .unwrap_err()
         .to_string();
     assert!(err.contains("unknown-hooks-plugin"), "{err}");

@@ -76,8 +76,8 @@ function repoWithVault(name: string): { repo: string; vault: string } {
   const skill = path.join(vault, 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(skill, { recursive: true })
   writeFileSync(
-    path.join(vault, 'marketplaces/house/house.md'),
-    '---\nname: house\ndescription: The house marketplace.\nsw-owner: acme\n---\n',
+    path.join(vault, 'marketplaces/house/skillwright.md'),
+    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
   writeFileSync(
     path.join(skill, 'review.md'),
@@ -91,7 +91,7 @@ function build(vfs: Vfs, repo: string, vault: string) {
     vault_root: vault,
     out_root: repo,
     mode: 'build',
-    config: { default_plugin: 'core' },
+    config: { name: 'core' },
   })
 }
 

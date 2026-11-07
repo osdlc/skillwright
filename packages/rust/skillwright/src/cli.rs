@@ -9,10 +9,11 @@
 //! `adopt` ([`crate::commands::adopt`]), `publish`
 //! ([`crate::commands::publish`]), `harness install|update|uninstall`
 //! ([`crate::commands::harness`]) and `new`, `rename`, `move`, `delete`,
-//! `convert` ([`crate::commands::authoring`]). `init` and `unpublish` have a
-//! real argv surface but exit honestly `not implemented` rather than fake a
-//! result — see `WAITS_ON_CORE`. Their `--help` says so too, from the
-//! same sentence the exit prints.
+//! `convert` ([`crate::commands::authoring`]) and `init`
+//! ([`crate::commands::init`]). `unpublish` has a real argv surface but exits
+//! honestly `not implemented` rather than fake a result — see
+//! `WAITS_ON_CORE`. Its `--help` says so too, from the same sentence the exit
+//! prints.
 //!
 //! Global flags (`--vault --config --namespace --json --dry-run --yes
 //! --quiet`) are declared on each subcommand rather than once on the root —
@@ -40,8 +41,9 @@ use crate::commands::authoring::{
 use crate::commands::bump::{BumpFlags, run_bump};
 use crate::commands::harness::adapter::{CLAUDE, CODEX, CURSOR, Scope};
 use crate::commands::harness::{Harness, HarnessFlags, HarnessVerb, run_harness};
+use crate::commands::init::{InitFlags, run_init};
 use crate::commands::list::{ListFlags, run_list};
-use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export};
+use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export, run_fix_adopt_hashes};
 use crate::commands::publish::{PublishFlags, run_publish};
 use crate::commands::status::{StatusFlags, run_status};
 use crate::commands::watch::run_watch;
@@ -73,16 +75,10 @@ const VERBS: [&str; 9] = [
 ///
 /// What remains waits on a capability the core does not have — a wizard, a
 /// removal path — rather than on a binding nobody wrote.
-const WAITS_ON_CORE: [(&str, &str); 2] = [
-    (
-        "init",
-        "needs the wizard's vault-detection and prompt flow, plus a config-writing capability. tradecraft-core has neither, and this package never writes configuration.",
-    ),
-    (
-        "unpublish",
-        "needs removal logic: PublishStatus is written/unchanged/refused with no `removed`, and nothing in tradecraft-core deletes a published file.",
-    ),
-];
+const WAITS_ON_CORE: [(&str, &str); 1] = [(
+    "unpublish",
+    "needs removal logic: PublishStatus is written/unchanged/refused with no `removed`, and nothing in tradecraft-core deletes a published file.",
+)];
 
 fn waits_on(verb: &str) -> &'static str {
     WAITS_ON_CORE
@@ -115,19 +111,19 @@ struct ReadOnlyGlobals {
     #[arg(
         long,
         value_name = "path",
-        help = "Vault root. Overrides the configuration for this run."
+        help = "Vault root: the folder holding `skillwright.md`. Overrides the walk up from the working directory for this run."
     )]
     vault: Option<String>,
     #[arg(
         long,
         value_name = "path",
-        help = "Read this project file instead of the nearest `skillwright.yaml` above the working directory."
+        help = "Read this root file instead of the nearest `skillwright.md` at or above the working directory."
     )]
     config: Option<String>,
     #[arg(
         long,
         value_name = "stem",
-        help = "Frontmatter namespace stem — the `sw` of `sw-kind`. Overrides the configuration for this run."
+        help = "Frontmatter namespace stem, such as `sw` for `sw-version`. Overrides `build.namespace` for this run."
     )]
     namespace: Option<String>,
     #[arg(long, help = "Emit the report on stdout as one JSON document.")]
@@ -244,13 +240,12 @@ enum Verb {
     Publish(PublishArgs),
     /// Render the vault into its standalone marketplaces and swap them into place.
     Build(BuildArgs),
-    /// Report the marketplace's drift against the vault. Writes nothing; exits 1 on drift.
-    Check(ExportArgs),
+    /// Report the marketplace's drift against the vault and exit 1 on drift. Writes nothing unless `--fix-adopt-hashes` is given.
+    Check(CheckArgs),
     /// List every publishable note in the vault. Writes nothing.
     List(ListArgs),
-    /// Set up a vault: config, folders, an example skill, destinations.
-    #[command(before_help = stub_help("init"))]
-    Init(StubArgs),
+    /// Write a `skillwright.md` in the current folder.
+    Init(InitArgs),
     /// Bring skills already on disk into the vault as notes.
     Adopt(AdoptArgs),
     /// Report each skill's state at each destination.
@@ -258,14 +253,15 @@ enum Verb {
     /// Remove a note's files from a destination.
     #[command(before_help = stub_help("unpublish"))]
     Unpublish(UnpublishArgs),
-    /// Raise a plugin's `sw-version` by one semver level: `--major`, `--minor`, or `--patch` (default).
+    /// Raise a plugin's `version` by one semver level: `--major`, `--minor`, or `--patch` (default).
     Bump(BumpArgs),
     /// Author a new marketplace, plugin, or skill note.
     New {
         #[command(subcommand)]
         what: NewVerb,
     },
-    /// Rename a component, plugin, or marketplace, rewriting every inbound link.
+    /// Rename a component, plugin, or marketplace, rewriting inbound links. For a
+    /// marketplace, a link to its `skillwright.md` itself is left as written.
     Rename(RenameArgs),
     /// Move a component to a new plugin, and marketplace when named.
     Move(MoveArgs),
@@ -280,9 +276,9 @@ enum Verb {
 /// `new`'s three children: which kind of note to author.
 #[derive(Subcommand, Debug)]
 enum NewVerb {
-    /// Author a new marketplace note.
+    /// Write `marketplaces/<name>/skillwright.md`.
     Marketplace(NewMarketplaceArgs),
-    /// Author a new plugin note inside a marketplace.
+    /// Author a new plugin note.
     Plugin(NewPluginArgs),
     /// Author a new skill note.
     Skill(NewSkillArgs),
@@ -300,7 +296,7 @@ struct PublishArgs {
     /// Narrow to one target across the destinations selected.
     #[arg(long, value_name = "target")]
     target: Option<String>,
-    /// Every publishable unit in the vault — every skill note and every plugin note. The default when no note is named.
+    /// Every skill note in the vault, each once. The default when no note is named. A plugin's pack, an agent or a command publishes when its note is named.
     #[arg(long)]
     all: bool,
     /// Repeatable. Resolves exactly one conflicted file, by its destination-relative path — the spelling the refusal printed, not an absolute one.
@@ -314,20 +310,27 @@ struct PublishArgs {
 /// one render, compared once, two things to do with the comparison.
 #[derive(Args, Debug)]
 struct ExportArgs {
-    /// Where the marketplace roots land. Overrides `marketplace.out`.
+    /// Where the marketplace roots land. Overrides `build.out`. One of the two is required.
     #[arg(long, value_name = "path")]
     out: Option<String>,
-    /// The skills root to scan. Overrides the configured one.
+    /// The skills root to scan. Defaults to the vault root.
     #[arg(long, value_name = "path")]
     skills_root: Option<String>,
-    /// Which of the vault's marketplaces to build. Refused if the vault holds marketplaces and none has this name; a vault with none builds under it. The marketplace note's own name, or else a configured `marketplace.name`, is what gets published.
+    /// In a workspace, the one marketplace under `marketplaces/<name>/` to build. Refused when there is none.
     #[arg(long, value_name = "name")]
     marketplace: Option<String>,
-    /// The plugin a note with no `sw-plugin` belongs to. Overrides `marketplace.default_plugin`.
-    #[arg(long, value_name = "name")]
-    default_plugin: Option<String>,
     #[command(flatten)]
     globals: Globals,
+}
+
+/// `check`'s own args, layered over the shared [`ExportArgs`].
+#[derive(Args, Debug)]
+struct CheckArgs {
+    #[command(flatten)]
+    export: ExportArgs,
+    /// Refresh the adopt hash of each note whose only change is the key rename, instead of checking. Needs no output folder.
+    #[arg(long)]
+    fix_adopt_hashes: bool,
 }
 
 /// `build`'s own args, layered over the shared [`ExportArgs`]: everything
@@ -413,19 +416,19 @@ struct AdoptArgs {
     globals: Globals,
 }
 
-/// A stubbed verb whose only flags are the globals.
-///
-/// Parsed and then dropped: the argv surface exists so the invocation is
-/// accepted and refused honestly, and nothing reads a value until the verb
-/// is implemented.
-#[allow(dead_code)]
+/// `init`'s flags. It reads no configuration, so it takes none of the globals.
 #[derive(Args, Debug)]
-struct StubArgs {
-    #[command(flatten)]
-    globals: Globals,
+struct InitArgs {
+    /// Where `build` and `check` write. Asked for on a terminal, required otherwise.
+    #[arg(long, value_name = "path")]
+    out: Option<String>,
+    /// The marketplace name. Defaults to the folder's name.
+    #[arg(long, value_name = "name")]
+    name: Option<String>,
 }
 
-/// `unpublish`'s surface, parsed and then dropped — see [`StubArgs`].
+/// `unpublish`'s surface, parsed and then dropped: the argv exists so the
+/// invocation is accepted and refused honestly.
 #[allow(dead_code)]
 #[derive(Args, Debug)]
 struct UnpublishArgs {
@@ -458,6 +461,9 @@ struct BumpArgs {
     /// worktree.
     #[arg(long, value_name = "ref|dir", conflicts_with = "plugin")]
     changed_since: Option<String>,
+    /// The marketplace to work in, when the vault or workspace holds several.
+    #[arg(long, value_name = "name")]
+    marketplace: Option<String>,
     /// Bump the major version.
     #[arg(long, conflicts_with_all = ["minor", "patch"])]
     major: bool,
@@ -497,9 +503,9 @@ struct NewPluginArgs {
     /// The plugin's name; its filename is slugged from it.
     #[arg(value_name = "name")]
     name: String,
-    /// The marketplace this plugin is authored inside.
+    /// The marketplace under `marketplaces/` to author it inside. Absent means this vault's `plugins/`.
     #[arg(long, value_name = "name")]
-    marketplace: String,
+    marketplace: Option<String>,
     /// The plugin's description.
     #[arg(long, value_name = "text")]
     description: String,
@@ -652,14 +658,14 @@ struct HarnessUninstallTargetArgs {
 /// harness's configuration, so it takes the full set, not [`ReadOnlyGlobals`].
 #[derive(Args, Debug)]
 struct HarnessTargetArgs {
-    /// A plugin from the marketplace. Repeatable. Defaults to
-    /// `marketplace.default_plugin`.
+    /// A plugin from the marketplace. Repeatable. Defaults to every plugin
+    /// the built tree holds.
     #[arg(long = "plugin", value_name = "name")]
     plugin: Vec<String>,
     /// Where the harness records the install.
     #[arg(long, value_enum, default_value_t = Scope::User)]
     scope: Scope,
-    /// The built marketplace directory. Overrides `marketplace.out`.
+    /// The built marketplace directory. Overrides `build.out`.
     #[arg(long, value_name = "path")]
     path: Option<String>,
     /// Register the marketplace from this git URL instead of the directory.
@@ -726,7 +732,6 @@ impl ExportArgs {
             out: self.out.clone(),
             skills_root: self.skills_root.clone(),
             marketplace: self.marketplace.clone(),
-            default_plugin: self.default_plugin.clone(),
             common: self.globals.read_only.common(),
             json: self.globals.read_only.json,
             dry_run: self.globals.dry_run,
@@ -741,6 +746,7 @@ impl BumpArgs {
         BumpFlags {
             plugin: self.plugin.clone(),
             changed_since: self.changed_since.clone(),
+            marketplace: self.marketplace.clone(),
             level: if self.major {
                 BumpLevel::Major
             } else if self.minor {
@@ -913,7 +919,10 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
         Verb::Publish(args) => run_publish(&args.flags(), ctx),
         Verb::Build(args) if args.watch => run_watch(&args.export.flags(), ctx),
         Verb::Build(args) => run_export(ExportVerb::Build, &args.export.flags(), ctx),
-        Verb::Check(args) => run_export(ExportVerb::Check, &args.flags(), ctx),
+        Verb::Check(args) if args.fix_adopt_hashes => {
+            run_fix_adopt_hashes(&args.export.flags(), ctx)
+        }
+        Verb::Check(args) => run_export(ExportVerb::Check, &args.export.flags(), ctx),
         Verb::List(args) => run_list(
             &ListFlags {
                 skills_root: args.skills_root.clone(),
@@ -934,7 +943,13 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
             },
             ctx,
         ),
-        Verb::Init(_) => not_implemented(ctx.err, "init", waits_on("init")),
+        Verb::Init(args) => run_init(
+            &InitFlags {
+                out: args.out.clone(),
+                name: args.name.clone(),
+            },
+            ctx,
+        ),
         Verb::Adopt(args) => run_adopt(&args.flags(), ctx),
         Verb::Unpublish(_) => not_implemented(ctx.err, "unpublish", waits_on("unpublish")),
         Verb::Bump(args) => run_bump(&args.flags(), ctx),
