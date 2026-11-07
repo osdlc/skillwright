@@ -1817,7 +1817,8 @@ pub fn publishes_to(
 ///
 /// * `refused: unknown-target` — a block is keyed by a name outside
 ///   [`canonical_target`].
-/// * `malformed` — the named target's `metadata` is not a mapping.
+/// * `malformed` — a key the named target reads holds the wrong kind of
+///   value, such as `metadata` that is not a mapping.
 pub fn overrides_for(
     note: &VaultFrontmatter,
     note_path: &Path,
@@ -1859,15 +1860,21 @@ pub fn overrides_for(
             .filter(|(key, _)| accepted.contains(key))
             .collect();
     }
-    if folded
-        .get(wanted)
-        .and_then(|block| block.get("metadata"))
-        .is_some_and(|m| !m.is_object())
-    {
-        return Err(CoreError::malformed(
-            note_path,
-            format!("`{}.metadata` must be a mapping", ns.key(wanted)),
-        ));
+    // A key the harness reads with the wrong kind of value is refused.
+    for (key, value) in folded.get(wanted).into_iter().flatten() {
+        if let Some(ty) = crate::harness::field_types::component_type(key)
+            && !ty.accepts(value)
+        {
+            return Err(CoreError::malformed(
+                note_path,
+                format!(
+                    "`{}.{key}` must be {}, not {}",
+                    ns.key(wanted),
+                    ty.label(),
+                    crate::harness::field_types::found(value)
+                ),
+            ));
+        }
     }
     Ok(folded)
 }

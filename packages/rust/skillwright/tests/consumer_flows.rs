@@ -503,6 +503,61 @@ fn block_metadata_on_a_container_must_be_a_mapping() {
 }
 
 #[test]
+fn a_known_block_key_with_a_wrong_value_is_refused() {
+    let skill = |block: &str| format!("---\ndescription: S.\n{block}\n---\nBody.\n");
+    let plugin = |block: &str| format!("---\ndescription: P.\nversion: 1.0.0\n{block}\n---\n");
+    let cases = [
+        (
+            PLUGIN.to_owned(),
+            skill("claude: {allowed-tools: 5}"),
+            "`claude.allowed-tools` must be a string or a list of strings, not a number",
+        ),
+        (
+            PLUGIN.to_owned(),
+            skill("claude: {model: [1]}"),
+            "`claude.model` must be a string, not a list",
+        ),
+        (
+            plugin("codex: {policy: 5}"),
+            SKILL.to_owned(),
+            "`codex.policy` of plugin `p` must be a mapping, not a number",
+        ),
+        (
+            plugin("claude: {model: [1]}"),
+            SKILL.to_owned(),
+            "`claude.model` of plugin `p` must be a string, not a list",
+        ),
+    ];
+    for (plugin, skill, said) in &cases {
+        let dir = vault(&[
+            ("skillwright.md", ROOT),
+            ("plugins/p/p.md", plugin),
+            ("plugins/p/skills/s.md", skill),
+        ]);
+        for verb in [&["check"][..], &["build", "--yes"][..]] {
+            let ran = sw(&dir.path(), verb);
+            assert_eq!(ran.code, 2, "{verb:?}: {}", ran.text);
+            assert!(ran.text.contains(said), "{verb:?}: {}", ran.text);
+        }
+        assert!(!dir.path().join("dist").exists());
+    }
+}
+
+#[test]
+fn a_known_block_key_with_a_right_value_ships() {
+    let skill = "---\ndescription: S.\nclaude: {allowed-tools: Read Grep, model: opus}\n---\nB.\n";
+    let plugin =
+        "---\ndescription: P.\nversion: 1.0.0\ncodex: {policy: {installation: AVAILABLE}}\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", plugin),
+        ("plugins/p/skills/s.md", skill),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+}
+
+#[test]
 fn a_link_into_a_plugin_s_assets_ships() {
     let linking = "---\ndescription: D.\n---\nSee [guide](../assets/docs/guide.md).\n";
     let dir = vault(&[
@@ -606,7 +661,8 @@ fn publish_of_a_plugin_note_refuses_block_metadata_that_is_not_a_mapping() {
     );
     assert_ne!(ran.code, 0, "{}", ran.text);
     assert!(
-        ran.text.contains("`claude.metadata` must be a mapping"),
+        ran.text
+            .contains("`claude.metadata` of plugin `p` must be a mapping"),
         "{}",
         ran.text
     );

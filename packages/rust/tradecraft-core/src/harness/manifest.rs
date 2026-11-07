@@ -141,20 +141,37 @@ fn harness_paths() -> BTreeSet<&'static str> {
     paths
 }
 
-/// Refuses a block `metadata` on a container that is not a mapping.
+/// Refuses a key in a container's block whose value is not the kind that
+/// harness reads, such as a `metadata` that is not a mapping. A key with no
+/// known type is not checked here.
 ///
 /// # Errors
 ///
 /// `refused: malformed-block`.
-pub(crate) fn check_block_metadata(config: &MarketplaceConfig) -> Result<(), CoreError> {
-    let plugins = config.plugins.values().map(|plugin| &plugin.blocks);
-    for blocks in std::iter::once(&config.blocks).chain(plugins) {
+pub(crate) fn check_block_values(config: &MarketplaceConfig) -> Result<(), CoreError> {
+    let market = match &config.name {
+        Some(name) => format!("marketplace `{name}`"),
+        None => "the marketplace".to_owned(),
+    };
+    let plugins = config
+        .plugins
+        .iter()
+        .map(|(name, plugin)| (format!("plugin `{name}`"), &plugin.blocks));
+    for (owner, blocks) in std::iter::once((market, &config.blocks)).chain(plugins) {
         for (harness, block) in blocks {
-            if block.get("metadata").is_some_and(|m| !m.is_object()) {
-                return Err(CoreError::refused(
-                    "malformed-block",
-                    format!("`{harness}.metadata` must be a mapping"),
-                ));
+            for (key, value) in block {
+                if let Some(ty) = crate::harness::field_types::container_type(harness, key)
+                    && !ty.accepts(value)
+                {
+                    return Err(CoreError::refused(
+                        "malformed-block",
+                        format!(
+                            "`{harness}.{key}` of {owner} must be {}, not {}",
+                            ty.label(),
+                            crate::harness::field_types::found(value)
+                        ),
+                    ));
+                }
             }
         }
     }

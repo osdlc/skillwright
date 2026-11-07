@@ -6,6 +6,7 @@
 //! shared work from the row. [`manifest`] holds the manifest shapes the
 //! translators choose between.
 
+pub(crate) mod field_types;
 pub mod manifest;
 pub mod profile;
 pub mod translator;
