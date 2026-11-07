@@ -14,7 +14,7 @@
 //! has never carried the key is bumped, not refused. The root file's
 //! `build.bump.patch` picks how the patch number is written ([`PatchScheme`]).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -262,6 +262,18 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
 }
 
+/// The marketplace folders a scan holds: each marketplace note's, and each
+/// component's under `marketplaces/`, as the build counts them.
+pub(crate) fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
+    components
+        .iter()
+        .filter_map(|c| match c.kind {
+            EntityKind::Marketplace => Some(c.folder()),
+            _ => c.marketplace.as_deref(),
+        })
+        .collect()
+}
+
 /// `bump` in one vault, narrowed to the marketplace folder `market`.
 fn bump_in(
     flags: &BumpFlags,
@@ -285,12 +297,7 @@ fn bump_in(
         }
     };
     if let Some(market) = market {
-        let markets: Vec<&str> = scan
-            .components
-            .iter()
-            .filter(|c| c.kind == EntityKind::Marketplace)
-            .map(DiscoveredComponent::folder)
-            .collect();
+        let markets: Vec<&str> = marketplaces_in(&scan.components).into_iter().collect();
         // As `build` takes it: a vault with no marketplaces has no set to
         // pick from, so the name selects everything.
         if !markets.is_empty() && !markets.contains(&market) {

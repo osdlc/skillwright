@@ -42,6 +42,7 @@ use tradecraft_core::{
     NativeVfs, PublishStatus, SkippedNote, discover_components, read_vault_skill,
 };
 
+use crate::commands::bump::marketplaces_in;
 use crate::config::{normalize_join, relative_path};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked};
@@ -294,7 +295,19 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Stderr, never stdout: this fact isn't modeled in `AttributedState` or
     // `StatusDocument` at all, and adding it would change `status --json`'s
     // shape.
-    if !flags.json {
+    if !flags.json && !suggestions.is_empty() {
+        // In a vault of several marketplaces, `bump` needs the one named.
+        let scan = discover_components(&run.source_vfs(None), &run.vault, None, &namespace)
+            .map(|scan| scan.components)
+            .unwrap_or_default();
+        let several = marketplaces_in(&scan).len() > 1;
+        let scope = |note_path: &Path| {
+            scan.iter()
+                .find(|c| several && c.entry_path == note_path)
+                .and_then(|c| c.marketplace.as_deref())
+                .map(|m| format!(" --marketplace {m}"))
+                .unwrap_or_default()
+        };
         for (skill, note_path, suggestion) in &suggestions {
             // `bump` matches the frontmatter `name`, which may differ from the
             // filename.
@@ -303,8 +316,10 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             };
             let _ = writeln!(
                 ctx.err,
-                "advisory: {skill} version {} unmoved since members changed — `skillwright bump {}` is available",
-                suggestion.current_version, note.projection.content.name
+                "advisory: {skill} version {} unmoved since members changed — `skillwright bump {}{}` is available",
+                suggestion.current_version,
+                note.projection.content.name,
+                scope(note_path)
             );
         }
     }

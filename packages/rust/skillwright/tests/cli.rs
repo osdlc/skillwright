@@ -3656,3 +3656,74 @@ fn list_leaves_out_a_moved_packs_folder_a_marketplace_note_names() {
     assert_eq!(list.code, 0, "{}", list.stderr);
     assert!(!list.stdout.contains("built/"), "{}", list.stdout);
 }
+
+/// In a vault of several marketplaces that share a plugin name, the advised
+/// `bump` has to name the marketplace, or it is ambiguous.
+#[test]
+fn the_bump_advisory_runs_in_a_vault_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    for market in ["one", "two"] {
+        let base = vault.join("marketplaces").join(market);
+        fs::create_dir_all(base.join("plugins/core-tools/skills")).unwrap();
+        fs::write(
+            base.join("skillwright.md"),
+            format!("---\nname: {market}\ndescription: M.\n---\n"),
+        )
+        .unwrap();
+        fs::write(
+            base.join("plugins/core-tools/core-tools.md"),
+            "---\nname: core-tools\ndescription: The core tools.\nversion: 1.0.0\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            base.join("plugins/core-tools/skills/review.md"),
+            "---\nname: review\ndescription: Reviews a diff.\n---\n\nRead the diff.\n",
+        )
+        .unwrap();
+    }
+    let config = status_config(dir.path(), &vault);
+    let pack = vault.join("marketplaces/two/plugins/core-tools/core-tools.md");
+    let published = run(
+        &[
+            "publish",
+            pack.to_str().unwrap(),
+            "--config",
+            &config,
+            "--yes",
+        ],
+        dir.path(),
+    );
+    assert_eq!(published.code, 0, "{}", published.stderr);
+    fs::write(
+        vault.join("marketplaces/two/plugins/core-tools/skills/review.md"),
+        "---\nname: review\ndescription: Reviews a diff.\n---\n\nRead the whole diff.\n",
+    )
+    .unwrap();
+
+    let note = "marketplaces/two/plugins/core-tools/core-tools.md";
+    let status = run(&["status", note, "--config", &config], dir.path());
+    assert_eq!(status.code, 0, "{}", status.stderr);
+    let advised = status
+        .stderr
+        .lines()
+        .find_map(|line| {
+            line.split('`')
+                .nth(1)
+                .filter(|c| c.starts_with("skillwright bump"))
+        })
+        .unwrap_or_else(|| panic!("no bump advice: {}", status.stderr))
+        .to_owned();
+    let mut argv: Vec<&str> = advised.split(' ').skip(1).collect();
+    argv.extend(["--config", &config, "--yes"]);
+    let bumped = run(&argv, dir.path());
+    assert_eq!(bumped.code, 0, "{advised}: {}", bumped.stderr);
+    let text = fs::read_to_string(&pack).unwrap();
+    assert!(text.contains("version: 1.0.1"), "{text}");
+    let other = vault.join("marketplaces/one/plugins/core-tools/core-tools.md");
+    assert!(
+        fs::read_to_string(other)
+            .unwrap()
+            .contains("version: 1.0.0")
+    );
+}
