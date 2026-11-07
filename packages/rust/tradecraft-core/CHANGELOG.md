@@ -7,11 +7,73 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.43.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.43.0...tradecraft-core/v0.43.1) - 2026-11-06
+## [0.44.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.43.0...tradecraft-core/v0.44.0) - 2026-11-07
 
-### Other
+This release carries the core of skillwright's new vault structure. For the vault side, see the [migration guide](https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md). For the library side, see [Load a vault and build it](https://github.com/osdlc/skillwright/blob/main/packages/rust/tradecraft-core/README.md#load-a-vault-and-build-it) and [Stability](https://github.com/osdlc/skillwright/blob/main/packages/rust/tradecraft-core/README.md#stability).
 
-- update Cargo.toml dependencies
+### Breaking
+
+Behaviour:
+
+- `Namespace::default()` is bare, so frontmatter keys are `version`, not `sw-version`. Pass `Namespace::sw()` to read the prefixed forms. `Namespace::DEFAULT_STEM` is removed. A `sw-<key>` spelling of a key the core owns is refused as `removed-key` on a bare vault.
+- `kind`, `plugin`, `sw-kind` and `sw-plugin` are refused: the folder decides both. `sw-overrides` is replaced by `claude:`, `codex:`, `cursor:` and `pi:` blocks, which `export_skills` now applies too. Only those four harnesses have blocks.
+- A note's `author`, `license`, `repository`, `homepage`, `targets` and harness blocks inherit from the nearest container on every path, so a publish can stop writing to a harness its containers exclude. A plugin's `author` no longer falls back to `owner`.
+- `marketplaces/<m>/skillwright.md` is the only marketplace note. A plugin note whose `name` differs from its folder is refused, and a `skillwright.md` directly in a kind folder is refused as a reserved name.
+- A link or embed into a folder that never ships is refused as `excluded-link`.
+- A plain `[[skill]]` renders as the skill's name, not a call. Write `/[[skill]]` for a call. The `implicit-skill-call` warning is gone.
+- Codex, Cursor and Pi call a launcher by its path relative to the skill, and the per-skill shim is no longer written. With no `launcher_path` the rewrite is off.
+- Manifests drop `version` from Claude's marketplace entry and `author.url` and `owner.url` from Cursor's.
+
+Types you build:
+
+- These types are `#[non_exhaustive]`, so a struct literal no longer compiles outside the crate. Call `new` with the required inputs and set other fields on the value: `PublishRequest`, `StatusRequest`, `ExportRequest`, `LoadRequest`, `AdoptRequest`, `ComponentRequest`, `CompileSource`, `NewNote`, `AssetSpec`, `HookFileSpec`.
+- Build these from `Default` and set their fields: `MarketplaceConfig`, `PluginOverrides`, `Placement`.
+- Output types can no longer be built or destructured exhaustively: `ExportReport`, `PublishReport`, `PublishedFile`, `DiscoveryReport`, `DiscoveredComponent`, `DiscoveryWarning`, `SkippedNote`, `AdoptReport`, `AdoptedSkill`. Read them by field. `DiscoveryWarning::new` and `PublishedFile::new` build a line for a host's own report.
+- A `match` on these enums needs a `_` arm: `CoreError`, `AuthoringOp`, `ExportUnit`, `UnitStatus`, `StaleKind`, `PublishStatus`, `PublishOutcome`, `PublishState`, `AdoptStatus`, `ReasonToken`, `StemProblem`.
+- `Plugin`, `Call`, `CallSite`, `Pack`, `Closure`, `ContainerIdentity`, `VaultFrontmatter` and `PluginFormat` gain fields, so a struct literal of one needs them.
+
+Removed or renamed:
+
+- `MarketplaceConfig::shim_target` is now `launcher_path: Option<String>`, and `MarketplaceConfig::default_plugin` is removed. `Plugin.shim_target` is now `launcher`.
+- `Segment::CliInvocation` is now `Segment::LauncherCall`, and `CliInvocation::SkillRelativeShim` is now `SkillRelativePath`. `DEFAULT_SHIM_TARGET` and `SHIM_RELATIVE_PATH` are removed.
+- `status::UnitStatus` is now `PublishUnitStatus`, with no alias.
+- `MarketplaceSettings`, `ProjectMarketplace`, `parse_project_marketplace` and `settings::PROJECT_FILE` are removed. Read a root file with `parse_root_file`, or load everything with `load_marketplace`.
+- `export::root_trees` and `HarnessProfile::tree` are replaced by `owned_paths`.
+- `authoring::DEFAULT_PLUGIN`, `AuthoringOp::RenamePlugin` and the `frontmatter` field of `AuthoringOp::Move` are removed. A plugin rename is an ordinary `Rename`.
+- `KindSource::Frontmatter`, `StemProblem::Empty`, `VaultFrontmatter::kind`, `VaultFrontmatter`'s `declared_kind` and `plugin` fields, and `DiscoveredComponent::folder_plugin` are removed.
+
+Changed signatures:
+
+- `resolve_kind(hints)`, `load_component` takes a cascade and namespace, and `VaultFrontmatter::take_from` takes the kind.
+- `HarnessProfile::split_pack(packs, relative)` is an associated function. `HarnessTranslator::published_name` takes the plugin, and `render_body` takes the skill's folder.
+- `Closure::hash` no longer takes an owner, which is now the `owner` field. `override_states` takes the kind.
+
+The wasm wrapper over this crate, `@osdlc/tradecraft-wasm`, is now `"private": true` and is no longer set up to publish, so 0.2.0 stays its last npm version. In the source, `UnitStatus` is `PublishUnitStatus`, and a bad namespace throws `InvalidNamespaceError`.
+
+### Added
+
+- `load_marketplace(&vfs, start, home)` finds the root file, folds in a workspace above it, and returns the merged settings and build inputs in one call. Its pieces are public: `find_root_file`, `workspace_above`, `marketplace_inputs`, `parse_root_file` and `root_file_config`.
+- The `keys` module holds one key table per kind, and `keys::field_reference()` generates the [field reference](https://github.com/osdlc/skillwright/blob/main/docs/reference/fields.md).
+- `SourceView`, `source_view` and `VaultScope` read the vault as a run does, hiding generated output. `effective_config`, `effective_configs`, `vault_config`, `check_packs`, `packs_of` and `built_paths_for` are also new.
+- The `patterns` module reads `build.patterns` and `build.exclude`, which are experimental.
+- `RootFile` and `BuildSettings` are the types of a parsed `skillwright.md`. `MarketplaceConfig` and `PluginOverrides` gain `targets`, `repository`, `homepage` and `blocks`.
+- `ReasonToken` gains `ExcludedNote`. The status enums gain `as_str`, and `CoreError` gains `variant_name` and `reason_token`.
+- `StatusRequest`, `status_of`, `PublishState`, `PublishUnitStatus`, `LinkIndex` and `FieldValue` are re-exported at the crate root.
+- Plain `[[skill]]` mentions are recorded with a `mention` flag on `Call` and `CallSite`.
+
+### Fixed
+
+- A configured plugin or marketplace description is kept, and it satisfies `require_descriptions`.
+- Plugin-prefixed skill names that meet across plugins are refused as `path-collision`.
+- A vault or asset source inside a tree the build replaces is refused as `unsafe-root`, and a build replaces only the paths it owns.
+- A rendered path that switches between file and directory rebuilds cleanly.
+- Source hashes use the note a file was rendered from as owner, so a resource's own frontmatter edit is seen.
+- An unresolved embed with a size alias shows the target name, and a stray `[[` no longer takes in the lines after it.
+- Code mentions link relative to the linking file.
+- Authoring plans read bundle shape the way discovery does and match `.MD` the same as `.md`.
+- A hook timeout too large for milliseconds is refused, and version bumps no longer overflow.
+- A `SKILL.md` at the scan root opens, a skill named `test`, `build` or `dist` is listed, and a blank skill name falls back to the folder name.
+- The version-bump advice is given only for plugins.
 
 ## [0.43.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.42.0...tradecraft-core/v0.43.0) - 2026-11-05
 
