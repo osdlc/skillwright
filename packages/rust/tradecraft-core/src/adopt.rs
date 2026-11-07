@@ -1256,7 +1256,10 @@ fn take_trimmed(
         }
         Some(other) => Err(CoreError::malformed(
             path,
-            format!("`{key}` must be a string, not {}", json_type_name(&other)),
+            format!(
+                "`{key}` must be a string, not {}",
+                crate::frontmatter::type_name(&other)
+            ),
         )),
     }
 }
@@ -1983,17 +1986,6 @@ fn looks_like_filename(candidate: &str) -> bool {
             let extension = &candidate[at + 1..];
             !extension.is_empty() && extension.bytes().all(|b| b.is_ascii_alphanumeric())
         }
-    }
-}
-
-fn json_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "nothing",
-        Value::Bool(_) => "a boolean",
-        Value::Number(_) => "a number",
-        Value::String(_) => "a string",
-        Value::Array(_) => "a list",
-        Value::Object(_) => "a mapping",
     }
 }
 

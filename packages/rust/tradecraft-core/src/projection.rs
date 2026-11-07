@@ -559,7 +559,7 @@ fn hook_string(
             "malformed-hook",
             format!(
                 "hook `{name}`: `{key}` must be a string, not {}",
-                hook_type_name(other)
+                crate::frontmatter::type_name(other)
             ),
         )),
     }
@@ -580,7 +580,7 @@ fn hook_bool(
             "malformed-hook",
             format!(
                 "hook `{name}`: `{key}` must be true or false, not {}",
-                hook_type_name(other)
+                crate::frontmatter::type_name(other)
             ),
         )),
     }
@@ -599,20 +599,9 @@ fn hook_int(
             "malformed-hook",
             format!(
                 "hook `{name}`: `{key}` must be a whole number of milliseconds, not {}",
-                hook_type_name(other)
+                crate::frontmatter::type_name(other)
             ),
         )),
-    }
-}
-
-fn hook_type_name(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Null => "nothing",
-        serde_json::Value::Bool(_) => "a boolean",
-        serde_json::Value::Number(_) => "a number",
-        serde_json::Value::String(_) => "a string",
-        serde_json::Value::Array(_) => "a list",
-        serde_json::Value::Object(_) => "a mapping",
     }
 }
 
