@@ -434,14 +434,16 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
                         key.clone(),
                         serde_json::Value::Object(block.clone()),
                     )]);
-                    for unknown in crate::discover::unknown_container_block_keys(
+                    let unknown = crate::discover::unknown_container_block_keys(
                         &known,
                         crate::frontmatter::EntityKind::Marketplace,
-                    ) {
+                    );
+                    for unknown in &unknown {
                         root.warnings.push(format!(
                             "`{unknown}` reaches no file that harness reads; it is ignored"
                         ));
                     }
+                    let block = crate::harness::field_types::without_unset(&key, block, &unknown);
                     root.marketplace.blocks.insert(key, block);
                 }
             }

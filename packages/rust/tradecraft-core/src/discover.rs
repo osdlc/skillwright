@@ -280,7 +280,7 @@ pub(crate) fn unknown_key_warning(
             .collect::<Vec<_>>()
             .join("; ")
     };
-    let mut hint = if ns.is_bare() {
+    let hint = if ns.is_bare() {
         String::new()
     } else {
         let respelled: Vec<String> = unknown
@@ -303,11 +303,6 @@ pub(crate) fn unknown_key_warning(
             ns.key("<key>")
         )
     };
-    // The one spec key that lands here: it is listed, but the value is not one
-    // a harness reads.
-    if unknown.iter().any(|key| key == "allowed-tools") {
-        hint.push_str(". `allowed-tools` takes a list, or a space-separated string");
-    }
     let subject = if unknown.len() == 1 {
         "is not a key"
     } else {
@@ -328,12 +323,90 @@ pub(crate) fn unknown_key_warning(
 /// included.
 pub(crate) fn unknown_keys(frontmatter: &VaultFrontmatter, kind: EntityKind) -> Vec<String> {
     let mut unknown = frontmatter.unknown.clone();
-    if kind.holds_components() {
-        unknown.extend(unknown_container_block_keys(&frontmatter.overrides, kind));
-    } else if matches!(kind, EntityKind::Skill | EntityKind::Command) {
-        unknown.extend(unknown_component_block_keys(&frontmatter.overrides));
-    }
+    unknown.extend(unknown_block_keys(&frontmatter.overrides, kind));
     unknown
+}
+
+/// The keys in a note's harness blocks that no harness file reads, as
+/// `<harness>.<key>`. None on an agent or a hook, whose blocks are refused or
+/// ignored whole.
+pub(crate) fn unknown_block_keys(blocks: &Map<String, Value>, kind: EntityKind) -> Vec<String> {
+    if kind.holds_components() {
+        unknown_container_block_keys(blocks, kind)
+    } else if matches!(kind, EntityKind::Skill | EntityKind::Command) {
+        unknown_component_block_keys(blocks)
+    } else {
+        Vec::new()
+    }
+}
+
+/// Refuses a value of the wrong kind in the root file's own blocks, before
+/// any workspace file's are folded in. A file that does not parse passes:
+/// the run that reads its settings reports that.
+///
+/// # Errors
+///
+/// `refused: malformed`.
+fn check_root_blocks(vfs: &dyn Vfs, vault_root: &Path) -> Result<(), CoreError> {
+    let Some(root) = vfs
+        .read_file(&vault_root.join(crate::settings::ROOT_FILE))
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|text| crate::settings::parse_root_file(&text).ok())
+    else {
+        return Ok(());
+    };
+    if root.workspace {
+        let blocks = root
+            .marketplace
+            .blocks
+            .iter()
+            .map(|(harness, block)| (harness.clone(), Value::Object(block.clone())))
+            .collect();
+        return crate::harness::manifest::check_container_blocks(
+            "the workspace file",
+            EntityKind::Marketplace,
+            &blocks,
+        );
+    }
+    let folder = vault_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    crate::harness::manifest::check_block_values(&root.to_config(folder))
+}
+
+/// Refuses a value of the wrong kind on a component note: a bare spec key, a
+/// key in a skill's or command's block, or a key in a container's block. The
+/// checks a build makes when it reads and loads the note.
+///
+/// # Errors
+///
+/// `refused: malformed`.
+fn check_values(
+    fields: &mut Map<String, Value>,
+    ours: &VaultFrontmatter,
+    path: &Path,
+    kind: EntityKind,
+    folder: &str,
+    ns: &Namespace,
+) -> Result<(), CoreError> {
+    crate::vault::check_spec_kinds(fields, path, kind)?;
+    match kind {
+        EntityKind::Skill | EntityKind::Command => {
+            crate::publish::overrides_for(ours, path, kind, ns)?;
+        }
+        EntityKind::Plugin | EntityKind::Marketplace => {
+            let name = match kind {
+                EntityKind::Plugin => Some(folder),
+                _ => fields.get("name").and_then(Value::as_str),
+            };
+            let owner = crate::harness::manifest::container_owner(kind, name);
+            crate::harness::manifest::check_container_blocks(&owner, kind, &ours.overrides)?;
+        }
+        EntityKind::Agent | EntityKind::Hook => {}
+    }
+    Ok(())
 }
 
 /// The keys in a skill's or command's harness blocks that harness does not
@@ -497,7 +570,7 @@ pub struct SkippedNote {
     /// is `unreadable-note`, the vocabulary's entry for "this note does not
     /// parse".
     pub reason: String,
-    /// The sentence naming what is wrong, as the error stated it.
+    /// The sentence naming what is wrong, after the reason token.
     pub detail: String,
     /// The plugin folder holding this note.
     ///
@@ -509,24 +582,15 @@ pub struct SkippedNote {
 
 impl SkippedNote {
     fn new(vault_root: &Path, entry_path: &Path, plugin: Option<String>, err: &CoreError) -> Self {
-        let detail = err.to_string();
-        // `CoreError::refused` puts the token first, `<token>: <prose>`. Every
-        // other error is a content problem with no token of its own.
-        // Some rails carry prose alone, so the prefix only counts as a token
-        // when it is shaped like one.
-        let reason = match err {
-            CoreError::Refused(message) => message
-                .split_once(": ")
-                .map(|(token, _)| token)
-                .filter(|token| {
-                    !token.is_empty()
-                        && token
-                            .bytes()
-                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-                })
-                .unwrap_or("unreadable-note")
-                .to_owned(),
-            _ => "unreadable-note".to_owned(),
+        // `CoreError::refused` puts the token first, `<token>: <prose>`, and the
+        // token is the reason, said once. Every other error is a content
+        // problem with no token of its own.
+        let (reason, detail) = match err {
+            CoreError::Refused(message) => match CoreError::split_refusal(message) {
+                Some((token, prose)) => (token.to_owned(), prose.to_owned()),
+                None => ("unreadable-note".to_owned(), err.to_string()),
+            },
+            _ => ("unreadable-note".to_owned(), err.to_string()),
         };
         Self {
             path: entry_path
@@ -536,6 +600,16 @@ impl SkippedNote {
             reason,
             detail,
             plugin,
+        }
+    }
+
+    /// The reason and the detail as one sentence, for a report that lists
+    /// skipped notes under a single token of its own.
+    pub fn sentence(&self) -> String {
+        if self.reason == "unreadable-note" {
+            self.detail.clone()
+        } else {
+            format!("{}: {}", self.reason, self.detail)
         }
     }
 }
@@ -686,6 +760,13 @@ fn discover_with(
     let mut discovered = Vec::new();
     let mut skipped = Vec::new();
     let mut warnings = Vec::new();
+    // The root file is configuration, not a scanned note, but a build checks
+    // its blocks too, so the scan does. Only the file's own blocks: what a
+    // member inherits is reported once, at the workspace file that holds it.
+    if let Err(err) = check_root_blocks(vfs, vault_root) {
+        let root_file = vault_root.join(crate::settings::ROOT_FILE);
+        skipped.push(SkippedNote::new(vault_root, &root_file, None, &err));
+    }
     for entry_path in &files {
         let Some(placement) = placed.get(entry_path) else {
             // Outside every marketplace this is simply the author's own vault,
@@ -1409,6 +1490,15 @@ fn read_source(
     let ours = VaultFrontmatter::take_from(&mut fields, entry_path, ns, resolved.kind)?;
     let unknown_keys = unknown_keys(&ours, resolved.kind);
 
+    // An opt-in key of the wrong kind still declares a component: refuse it
+    // as a build would, not pass the note by as an ordinary one.
+    if ["name", "description"].iter().any(|key| {
+        fields
+            .get(*key)
+            .is_some_and(|v| !v.is_null() && !v.is_string())
+    }) {
+        crate::vault::check_spec_kinds(&mut fields, entry_path, resolved.kind)?;
+    }
     let name = trimmed_string(&fields, "name");
     let description = trimmed_string(&fields, "description");
     let (name, description, description_filled) = match (name, description) {
@@ -1436,6 +1526,17 @@ fn read_source(
         // A `name` alone still opts in. The caller reports the filler.
         (Some(name), None) => (name, MISSING_DESCRIPTION.to_owned(), true),
     };
+
+    // The value checks a build makes on this note, so the scan, and `list`,
+    // refuse what a build refuses.
+    check_values(
+        &mut fields,
+        &ours,
+        entry_path,
+        resolved.kind,
+        &placement.name,
+        ns,
+    )?;
 
     validate_name(&name, "component name", entry_path)?;
     // A plugin is known by its folder in every manifest and every call, so a

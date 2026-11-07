@@ -394,7 +394,7 @@ export interface PublishReason {
  * all read the same token, so it may not be free text that drifts from the
  * table it reproduces.
  */
-export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "excluded-note" | "claimed" | "redundant-override" | "overwritten";
+export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "excluded-note" | "malformed" | "claimed" | "redundant-override" | "overwritten";
 
 /** One note the scan admitted, with what it filled in. */
 export interface DiscoveryWarning {
@@ -920,7 +920,7 @@ export interface SkippedNote {
    */
   reason: string;
 
-  /** The sentence naming what is wrong, as the error stated it. */
+  /** The sentence naming what is wrong, after the reason token. */
   detail: string;
 
   /**

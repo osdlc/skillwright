@@ -7,8 +7,10 @@
 //! * **Validation.** A key outside the table for a note's kind is unknown,
 //!   and gets a warning. Only a removed key or, with no namespace, an old
 //!   prefixed spelling ([`legacy_key`]) is refused. A key of ours with the wrong
-//!   [`Shape`] is refused when the note is read; [`Owner::Spec`] keys keep
-//!   their own readers in [`crate::vault`], so their shape is documentation.
+//!   [`Shape`] is refused when the note is read. An [`Owner::Spec`] key on a
+//!   skill, agent or command is refused by [`crate::vault`] when its value is
+//!   the wrong kind, by the check a harness block applies to the same key. On
+//!   other kinds a spec key's shape is documentation.
 //! * **The cascade.** [`KeySpec::inherits`] decides which keys come down from
 //!   a container; [`crate::model::cascade`] reads it through [`inherits`].
 //! * **The field reference** the docs publish, generated from [`KEYS`].
@@ -312,7 +314,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::StringList,
         inherits: false,
-        summary: "Tools the skill may use without asking: a list, or one space-separated string.",
+        summary: "Tools the skill may use without asking: a list, or one string separated by spaces or commas.",
     },
     KeySpec {
         key: "compatibility",
@@ -546,7 +548,19 @@ pub fn field_reference() -> String {
          run `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --test field_reference` \
          from `packages/rust`.\n\n\
          The kind of a note comes from its folder. A key not listed for a kind gets a \
-         warning and is never refused. Owner `skillwright` means the key is read into \
+         warning and is never refused. A key owned by skillwright whose value is the \
+         wrong kind is refused, naming the key. So is a spec key on a skill, agent or \
+         command: it takes its Value, except where its Meaning or a harness's docs show \
+         another form: `allowed-tools` and `tools` also take one string, an agent's \
+         `tools` also takes OpenCode's mapping of tool name to `true` or `false`, \
+         which a Claude Code target refuses, \
+         `argument-hint` also takes a list of strings (an unquoted `[issue-number]` \
+         reads as that text), `arguments` takes a string or any list, and `metadata` \
+         takes any mapping. Quote a hint with more than one bracket group, such as \
+         `\"[file] [format]\"`: unquoted, it is not valid YAML. A boolean also reads \
+         `yes`, `no`, `on`, `off`, `1` and `0` in any case, quoted or not, as Claude \
+         Code's docs say, and every harness gets `true` or `false`. A spec key set to \
+         nothing is unset and is dropped. Owner `skillwright` means the key is read into \
          the model and stripped at publish, and takes the prefix under \
          `build.namespace`. Owner `spec` means the key belongs to the Agent Skills \
          spec or a harness, and is never prefixed. An inherited key comes from the \
@@ -577,7 +591,13 @@ pub fn field_reference() -> String {
         "\n## Harness blocks\n\n\
          A block holds fields only that harness reads. These are the keys each block \
          accepts, by the kind of note it sits on. Any other key gets a warning and is \
-         left out of what that harness gets.\n",
+         left out of what that harness gets, whatever it holds. A listed key whose \
+         value is the wrong kind is refused, in every block, whichever harnesses a \
+         build selects. A component's keys take the type they take written bare, as \
+         above. A container's keys take the type that harness's manifest and \
+         marketplace facts give; a key the facts give no type for is not checked. A \
+         listed key set to nothing is unset and is dropped, in any block, as it is \
+         written bare. It does not clear a value the note inherits.\n",
     );
     for harness in HARNESS_BLOCKS {
         let Some(profile) = crate::harness::profile_named(harness) else {

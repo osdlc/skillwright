@@ -780,7 +780,7 @@ fn block_metadata_that_is_not_a_mapping_is_refused() {
 }
 
 #[test]
-fn allowed_tools_reads_the_specs_string_and_warns_on_a_comma() {
+fn allowed_tools_reads_the_specs_string_and_claude_s_comma_form() {
     let vfs = vault("", "", "allowed-tools: Read Bash(git status)\n");
     let report = build(&vfs);
     let skill = text_at(&vfs, CLAUDE_REVIEW);
@@ -799,10 +799,14 @@ fn allowed_tools_reads_the_specs_string_and_warns_on_a_comma() {
 
     let vfs = vault("", "", "allowed-tools: Read, Grep\n");
     let report = build(&vfs);
+    let skill = text_at(&vfs, CLAUDE_REVIEW);
+    assert!(skill.contains("allowed-tools: Read Grep"), "{skill}");
+    assert!(!skill.contains("metadata:"), "{skill}");
     assert!(
-        report.warnings.iter().any(|w| w
-            .detail
-            .contains("takes a list, or a space-separated string")),
+        !report
+            .warnings
+            .iter()
+            .any(|w| w.reason == UNKNOWN_KEY_REASON),
         "{:?}",
         report.warnings
     );

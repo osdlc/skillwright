@@ -141,19 +141,67 @@ fn harness_paths() -> BTreeSet<&'static str> {
     paths
 }
 
-/// Refuses a block `metadata` on a container that is not a mapping.
+/// Refuses a key in a container's block whose value is not the kind that
+/// harness reads, such as a `metadata` that is not a mapping. Only the keys
+/// this kind of container accepts are checked: any other key warns as
+/// `unknown-key` and is left out, whatever it holds. A key with no known type
+/// is not checked either.
 ///
 /// # Errors
 ///
-/// `refused: malformed-block`.
-pub(crate) fn check_block_metadata(config: &MarketplaceConfig) -> Result<(), CoreError> {
-    let plugins = config.plugins.values().map(|plugin| &plugin.blocks);
-    for blocks in std::iter::once(&config.blocks).chain(plugins) {
-        for (harness, block) in blocks {
-            if block.get("metadata").is_some_and(|m| !m.is_object()) {
+/// `refused: malformed`.
+pub(crate) fn check_block_values(config: &MarketplaceConfig) -> Result<(), CoreError> {
+    let market = container_owner(EntityKind::Marketplace, config.name.as_deref());
+    let plugins = config.plugins.iter().map(|(name, plugin)| {
+        (
+            container_owner(EntityKind::Plugin, Some(name)),
+            EntityKind::Plugin,
+            &plugin.blocks,
+        )
+    });
+    let containers = std::iter::once((market, EntityKind::Marketplace, &config.blocks));
+    for (owner, kind, blocks) in containers.chain(plugins) {
+        let as_map = blocks
+            .iter()
+            .map(|(harness, block)| (harness.clone(), serde_json::Value::Object(block.clone())))
+            .collect();
+        check_container_blocks(&owner, kind, &as_map)?;
+    }
+    Ok(())
+}
+
+/// How a refusal names a container: `plugin `p``, `marketplace `m``, or
+/// `the marketplace` when it has no name.
+pub(crate) fn container_owner(kind: EntityKind, name: Option<&str>) -> String {
+    match (kind, name.filter(|name| !name.is_empty())) {
+        (EntityKind::Plugin, Some(name)) => format!("plugin `{name}`"),
+        (EntityKind::Plugin, None) => "the plugin".to_owned(),
+        (_, Some(name)) => format!("marketplace `{name}`"),
+        (_, None) => "the marketplace".to_owned(),
+    }
+}
+
+/// [`check_block_values`] for one container's blocks, keyed by harness.
+/// `owner` names the container in the refusal: `plugin `p``.
+///
+/// # Errors
+///
+/// `refused: malformed`.
+pub(crate) fn check_container_blocks(
+    owner: &str,
+    kind: EntityKind,
+    blocks: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), CoreError> {
+    let unknown = crate::discover::unknown_container_block_keys(blocks, kind);
+    for (harness, block) in blocks {
+        for (key, value) in block.as_object().into_iter().flatten() {
+            if let Some(ty) = crate::harness::field_types::container_type(harness, key)
+                && !unknown.contains(&format!("{harness}.{key}"))
+                && !ty.accepts(value)
+            {
                 return Err(CoreError::refused(
-                    "malformed-block",
-                    format!("`{harness}.metadata` must be a mapping"),
+                    "malformed",
+                    format!("`{harness}.{key}` of {owner} {}", ty.refusal(value)),
                 ));
             }
         }

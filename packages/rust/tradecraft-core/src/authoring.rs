@@ -706,7 +706,7 @@ fn scan_scratch(vfs: &MemVfs, abs: &Path, rel_path: &str, ns: &Namespace) -> Scr
                     .is_some_and(|k| k != EntityKind::Skill) =>
             {
                 match found.skipped.first() {
-                    Some(skipped) => ScratchVerdict::Refused(skipped.detail.clone()),
+                    Some(skipped) => ScratchVerdict::Refused(skipped.sentence()),
                     None => ScratchVerdict::Skipped,
                 }
             }

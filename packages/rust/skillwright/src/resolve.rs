@@ -72,19 +72,38 @@ impl ResolvedRun {
     /// The vault as a run that does not build reads it: [`Self::config_vfs`]
     /// less the output at `build.out`.
     pub fn source_vfs(&self, skills_root: Option<&Path>) -> SourceView<'static> {
-        let out = self
-            .config
-            .build
-            .out
-            .as_ref()
-            .map(|out| resolve_configured_path(out, &self.config_dir));
         tradecraft_core::source_view(
             self.config_vfs(),
             self.scope(skills_root, None),
-            out.as_deref(),
+            self.configured_out().as_deref(),
             &self.config.to_config(&self.folder_name()),
             &self.core_namespace(),
         )
+    }
+
+    /// The vault as an export into `out_root` reads it. When `build.out` is
+    /// another folder, its output is hidden, so a build or comparison
+    /// elsewhere never reads it as source.
+    ///
+    /// When `build.out` is `out_root`, nothing is hidden here. The export
+    /// reads its own output through this view, to find it, compare against it
+    /// and replace it, and hides it from the scan itself. Hiding it here too
+    /// makes the export lose track of its last build.
+    pub fn export_vfs(&self, skills_root: Option<&Path>, out_root: &Path) -> SourceView<'static> {
+        let resolved = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        match self.configured_out() {
+            Some(out) if resolved(&out) != resolved(out_root) => self.source_vfs(skills_root),
+            _ => self.config_vfs(),
+        }
+    }
+
+    /// `build.out`, resolved against the root file's folder.
+    fn configured_out(&self) -> Option<PathBuf> {
+        self.config
+            .build
+            .out
+            .as_ref()
+            .map(|out| resolve_configured_path(out, &self.config_dir))
     }
 
     /// What this run reads, for a marketplace it may name.

@@ -103,8 +103,9 @@ segment matches any number of segments. Globs are relative to this file.
   ships as a file of that skill, with or without a `description`.
 - A plugin's `assets/` ships whatever its folders are called, and a link into it
   is allowed.
-- Output under the current `out` and `packs` is never read as source. A folder an
-  earlier build left elsewhere can be: see `packs` below.
+- Output under the current `out` and `packs` is never read as source, also when
+  `--out` or `bump --changed-since` builds somewhere else. A folder an earlier
+  build left elsewhere can be: see `packs` below.
 
 `exclude` adds to the folders that never ship, and `publish <note>` refuses a note
 it matches. It does not apply to a plugin's `assets/`. A body link or embed that reaches a never-ship or excluded file is
@@ -219,6 +220,9 @@ each one is listed `not carried`. `publish <note>` writes one to a harness with 
 agent layout. A kind a harness cannot carry shows as `n/a` in `status`, and
 `status --check` passes it.
 
+An agent note is still read by every build. One whose keys hold the wrong kind of
+value stops `build` and `check`, as any note the scan refuses does.
+
 `build` refuses a hand-written call to a known skill with `literal-skill-call`.
 `publish` refuses `/plugin:name` too, but publishing one skill does not check a bare
 `/name`, because that needs a vault scan. `build` is the check for those.
@@ -248,6 +252,22 @@ a skill Claude's `allowed-tools` patterns. Each block is checked against the key
 that harness accepts, merged over what skillwright generates, and emitted only
 for that harness. The accepted keys are [in the field reference](fields.md#harness-blocks).
 
+- A key the block accepts must hold the kind of value that harness documents. A
+  component's keys take the type they take written bare, as the
+  [field reference](fields.md) says. A container's keys take the type in
+  harness-reference's manifest and marketplace facts. A wrong kind is refused,
+  naming the block, the key and the kind, such as
+  `` `codex.policy` of plugin `p` must be a mapping, not a number ``. The code is
+  `malformed`. `build` and `check` stop, `list` shows the note as skipped, and
+  `publish` refuses it. A bad block in the root file is refused naming the
+  marketplace, or the workspace file, not each note that inherits it. Every block is checked, whichever harnesses
+  `build.harnesses` selects. An agent's blocks are not checked: an agent takes no
+  harness block, and `publish` refuses one for the target being published as
+  `unknown-override-key`. A key the block does not accept only warns, whatever it
+  holds. A key with no documented type is not checked.
+- A key in a block set to nothing means "no value here". It is dropped, as it is
+  written bare, and it does not clear a value the note inherits from its plugin or
+  marketplace. A key the block does not read still warns `unknown-key`.
 - `metadata` in a block merges with the note's `metadata` rather than replacing
   it.
 - A block a component inherits cannot set that component's `name` or

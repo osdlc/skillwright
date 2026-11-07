@@ -30,7 +30,8 @@ use crate::compile::{
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION_REASON,
-    NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON, UNKNOWN_KEY_REASON, discover_in, load_source,
+    NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON, SkippedNote, UNKNOWN_KEY_REASON, discover_in,
+    load_source,
 };
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
@@ -171,6 +172,8 @@ pub(crate) fn selected_harnesses(
 /// * `refused: unknown-hooks-plugin` / `duplicate-hooks-file` and what
 ///   [`crate::hooks_file::parse_hooks_file`] refuses.
 /// * `refused: unknown-target` — a harness block named for no known harness.
+/// * `refused: malformed` — a container block key holding the wrong
+///   kind of value.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
 pub fn load(
     vfs: &dyn Vfs,
@@ -182,16 +185,31 @@ pub fn load(
 
     // Pass 1.
     let (scan, links) = read_notes(vfs, &vault_root, request.skills_root.as_deref(), ns)?;
-    if !scan.skipped.is_empty() {
-        let notes: Vec<String> = scan
-            .skipped
+    // The root file's own entry is configuration, not a note, and
+    // `check_block_values` below refuses it naming the marketplace.
+    let skipped: Vec<&SkippedNote> = scan
+        .skipped
+        .iter()
+        .filter(|note| note.path != crate::settings::ROOT_FILE)
+        .collect();
+    if !skipped.is_empty() {
+        let (token, which) = skipped_wording(skipped.iter().copied());
+        // A note's own reason is said only when it differs from the token.
+        let notes: Vec<String> = skipped
             .iter()
-            .map(|note| format!("{} ({})", note.path, note.detail))
+            .map(|note| {
+                let said = if note.reason == token {
+                    note.detail.clone()
+                } else {
+                    note.sentence()
+                };
+                format!("{} ({said})", note.path)
+            })
             .collect();
         return Err(CoreError::refused(
-            "unreadable-note",
+            token,
             format!(
-                "the vault holds {} note(s) this scan could not read, and a marketplace built \
+                "the vault holds {} note(s) {which}, and a marketplace built \
                  without them would sweep away what they publish: {}. Nothing was written",
                 notes.len(),
                 notes.join("; ")
@@ -204,6 +222,8 @@ pub fn load(
     // say it holds nothing publishable rather than that it is not there.
     let market = resolve_marketplace(&discovered, request.marketplace.as_deref())?;
     let mut cascade = Cascade::over(&discovered, market.as_deref(), &request.config);
+    // Before members inherit a block, so a wrong value names its container.
+    crate::harness::manifest::check_block_values(&cascade.config)?;
     cascade.resolve_targets(&mut discovered);
     let belonging: Vec<&DiscoveredComponent> = discovered
         .iter()
@@ -354,13 +374,7 @@ pub fn load(
             let mut note =
                 read_vault_note(vfs, &component.discovered.entry_path, ns, component.kind)?;
             cascade.apply(&mut note, component.kind, Some(&plugin_name), ns);
-            let admitting: Vec<&HarnessProfile> = roots
-                .iter()
-                .copied()
-                .filter(|root| admits(&component.discovered, root))
-                .collect();
-            component.extensions =
-                extensions(&note.frontmatter, &component.discovered, &admitting, ns)?;
+            component.extensions = extensions(&note.frontmatter, &component.discovered, ns)?;
             let (resolved, content) = match component.kind {
                 // A hook's body is a script or a prompt inside a JSON string:
                 // an embed expanded into it would rewrite what runs, so it is
@@ -397,7 +411,6 @@ pub fn load(
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
     apply_naming(&mut plugins, config)?;
     crate::harness::manifest::check_packs(config)?;
-    crate::harness::manifest::check_block_metadata(config)?;
 
     Ok(Marketplace {
         name,
@@ -470,8 +483,7 @@ pub fn load_component(
     cascade: &Cascade,
     ns: &Namespace,
 ) -> Result<Component, CoreError> {
-    let blocks =
-        crate::publish::overrides_for(&note.frontmatter, request.path, request.target, ns)?;
+    let blocks = crate::publish::overrides_for(&note.frontmatter, request.path, request.kind, ns)?;
     let targets: OnceCell<BTreeMap<PathBuf, Option<Vec<String>>>> = OnceCell::new();
     let build = || -> Result<SkillIndex, CoreError> {
         let (mut scan, _) = read_notes(vfs, request.root, None, ns)?;
@@ -540,7 +552,8 @@ pub struct Pack {
 /// * `refused: unreadable-note` — a member the scan could not read. A pack
 ///   must not install a subset silently.
 /// * `refused: empty-plugin` — nothing this destination admits.
-/// * `refused: malformed-block` — a block `metadata` that is not a mapping.
+/// * `refused: malformed` — a container block key holding the wrong
+///   kind of value, such as a `metadata` that is not a mapping.
 /// * What [`resolve_body`] refuses for any member.
 pub fn load_plugin(
     vfs: &dyn Vfs,
@@ -550,7 +563,7 @@ pub fn load_plugin(
     profile: &'static HarnessProfile,
     ns: &Namespace,
 ) -> Result<Pack, CoreError> {
-    crate::harness::manifest::check_block_metadata(&cascade.config)?;
+    crate::harness::manifest::check_block_values(&cascade.config)?;
     let canonical = profile.name;
     let carries_commands = profile.format().carries_commands;
     let (mut scan, links) = read_notes(vfs, vault_root, None, ns)?;
@@ -558,20 +571,21 @@ pub fn load_plugin(
     // A note elsewhere in the vault that does not parse is not this pack's
     // problem, and a shared vault always holds one. A note this pack holds
     // is.
-    let blocked: Vec<&str> = scan
+    let blocked: Vec<&SkippedNote> = scan
         .skipped
         .iter()
         .filter(|note| note.plugin.as_deref() == Some(plugin_name))
-        .map(|note| note.path.as_str())
         .collect();
     if !blocked.is_empty() {
+        let (token, which) = skipped_wording(blocked.iter().copied());
+        let paths: Vec<&str> = blocked.iter().map(|note| note.path.as_str()).collect();
         return Err(CoreError::refused(
-            "unreadable-note",
+            token,
             format!(
-                "`{plugin_name}` holds {} note(s) this scan could not read: {} — a pack must \
+                "`{plugin_name}` holds {} note(s) {which}: {} — a pack must \
                  not install a subset silently",
                 blocked.len(),
-                blocked.join(", ")
+                paths.join(", ")
             ),
         ));
     }
@@ -624,7 +638,7 @@ pub fn load_plugin(
     for member in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
         let mut note = read_vault_note(vfs, &member.discovered.entry_path, ns, member.kind)?;
         cascade.apply(&mut note, member.kind, Some(plugin_name), ns);
-        member.extensions = extensions(&note.frontmatter, &member.discovered, &[profile], ns)?;
+        member.extensions = extensions(&note.frontmatter, &member.discovered, ns)?;
         let (resolved, content) = resolve_body(
             vfs,
             vault_root,
@@ -991,24 +1005,39 @@ pub(crate) fn vault_relative(vault_root: &Path, path: &Path) -> String {
         })
 }
 
-/// A note's harness blocks, folded onto canonical names and checked for each
-/// of `harnesses` (D-ISOU).
+/// The token and the words for notes the scan skipped: `malformed` when each
+/// one parsed but holds a value of the wrong kind, else `unreadable-note`.
+fn skipped_wording<'a>(
+    notes: impl IntoIterator<Item = &'a SkippedNote>,
+) -> (&'static str, &'static str) {
+    let (mut wrong_kind, mut other) = (false, false);
+    for note in notes {
+        if note.reason == "malformed" {
+            wrong_kind = true;
+        } else {
+            other = true;
+        }
+    }
+    match (wrong_kind, other) {
+        (true, false) => ("malformed", "with a value of the wrong kind"),
+        (true, true) => ("unreadable-note", "this scan could not read or refused"),
+        _ => ("unreadable-note", "this scan could not read"),
+    }
+}
+
+/// A note's harness blocks, folded onto canonical names, each checked against
+/// its own harness (D-ISOU).
 ///
 /// # Errors
 ///
-/// What [`crate::publish::overrides_for`] refuses, for the first harness
-/// that refuses.
+/// What [`crate::publish::overrides_for`] refuses.
 fn extensions(
     frontmatter: &VaultFrontmatter,
     component: &DiscoveredComponent,
-    harnesses: &[&HarnessProfile],
     ns: &Namespace,
 ) -> Result<Extensions, CoreError> {
-    let mut blocks = BTreeMap::new();
-    for harness in harnesses {
-        blocks =
-            crate::publish::overrides_for(frontmatter, &component.entry_path, harness.name, ns)?;
-    }
+    let blocks =
+        crate::publish::overrides_for(frontmatter, &component.entry_path, component.kind, ns)?;
     Ok(Extensions { blocks })
 }
 

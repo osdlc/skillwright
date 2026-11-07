@@ -370,6 +370,9 @@ pub enum ReasonToken {
     MixedFrontmatterShape,
     /// `build.exclude` or a folder that never ships holds the note.
     ExcludedNote,
+    /// A note or root file that parsed holds a value of the wrong kind or
+    /// shape for a key it sets, bare or in a harness block.
+    Malformed,
     /// Not a refusal, and the one token here that names a success: the file
     /// was already byte-identical to our own output, so this run claimed it
     /// into the destination's manifest. The table's refusal set is
@@ -413,6 +416,7 @@ impl ReasonToken {
         Self::EmptyPlugin,
         Self::MixedFrontmatterShape,
         Self::ExcludedNote,
+        Self::Malformed,
     ];
 
     /// The wire spelling, which prose never varies from.
@@ -436,6 +440,7 @@ impl ReasonToken {
             Self::EmptyPlugin => "empty-plugin",
             Self::MixedFrontmatterShape => "mixed-frontmatter-shape",
             Self::ExcludedNote => "excluded-note",
+            Self::Malformed => "malformed",
             Self::Claimed => "claimed",
             Self::RedundantOverride => "redundant-override",
             Self::Overwritten => "overwritten",
@@ -503,7 +508,7 @@ impl PublishReason {
     /// what kind of refusal it just made, so no refusal reaches a report as
     /// bare prose.
     pub fn from_refusal(message: &str, fallback: ReasonToken) -> Self {
-        match message.split_once(": ") {
+        match CoreError::split_refusal(message) {
             Some((token, detail)) => match ReasonToken::parse(token) {
                 Some(token) => Self::new(token, detail),
                 None => Self::new(fallback, message),
@@ -769,6 +774,9 @@ fn publish_onto(
         &requested,
         ns,
     )?;
+    // The containers' own blocks first, as a build checks them, so a bad
+    // value names the container that holds it, not this note.
+    crate::harness::manifest::check_block_values(&cascade.config)?;
     let plugin = request.skills_root.as_deref().and_then(|root| {
         let patterns = crate::patterns::Patterns::read(vfs, root);
         crate::discover::folder_placement_with(&patterns, root, &request.skill_path).plugin
@@ -1795,33 +1803,34 @@ pub fn publishes_to(
         .any(|name| canonical_target(name).is_some_and(|known| known == wanted)))
 }
 
-/// harness blocks, folded onto canonical destination names and checked
-/// against the harness that will receive each block.
+/// A note's harness blocks, folded onto canonical destination names and
+/// checked against the harness that will receive each block. Every block is
+/// folded and checked, whichever destinations are being published: the
+/// destination a mistake hurts is never the one in front of you. A
+/// container's blocks follow the same rule.
 ///
 /// The seam [`publishes_to`] is: a frontmatter reader types the key and this
 /// function decides what it means, because deciding needs the destination
 /// roster and the capability matrix and a reader should hold neither.
 ///
-/// # Two checks, at two scopes
-///
-/// **Every target name is folded, whichever destination is being published**
-/// — the same rule `targets` follows, and for the same reason: the
-/// destination a typo hurts is never the one in front of you.
-///
 /// **Each block keeps only the keys its harness reads.** The rest are
 /// dropped; discovery warns about them, and they are never refused. A target
 /// the matrix has no declaration for keeps no keys, so an unmapped harness
-/// never receives unchecked ones.
+/// never receives unchecked ones. A kept key with the wrong kind of value is
+/// refused.
 ///
 /// # Errors
 ///
 /// * `refused: unknown-target` — a block is keyed by a name outside
 ///   [`canonical_target`].
-/// * `malformed` — the named target's `metadata` is not a mapping.
+/// * `refused: malformed` — a key a block's harness reads holds the wrong
+///   kind of value, such as `metadata` that is not a mapping. Not when
+///   `kind` is an agent: an agent's blocks never ship, and publish refuses a
+///   block for the target being published as `unknown-override-key`.
 pub fn overrides_for(
     note: &VaultFrontmatter,
     note_path: &Path,
-    target: &str,
+    kind: EntityKind,
     ns: &Namespace,
 ) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
     let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
@@ -1848,26 +1857,37 @@ pub fn overrides_for(
             .extend(block);
     }
 
-    let wanted = canonical_target(target).unwrap_or(target);
     // A key a harness does not read warns at discovery and is dropped here,
-    // never refused.
+    // never refused. A key it reads takes the form every harness reads: a
+    // flag such as `yes` becomes a real boolean, a list hint its text.
     for (canonical, block) in &mut folded {
         let accepted = accepted_override_keys(canonical);
         // Not `Map::retain`: the serde_json floor predates it.
         *block = std::mem::take(block)
             .into_iter()
             .filter(|(key, _)| accepted.contains(key))
+            .map(|(key, value)| {
+                let value = crate::harness::field_types::normalized(EntityKind::Skill, &key, value);
+                (key, value)
+            })
             .collect();
     }
-    if folded
-        .get(wanted)
-        .and_then(|block| block.get("metadata"))
-        .is_some_and(|m| !m.is_object())
-    {
-        return Err(CoreError::malformed(
-            note_path,
-            format!("`{}.metadata` must be a mapping", ns.key(wanted)),
-        ));
+    // A key a harness reads with the wrong kind of value is refused, in
+    // every block that can ship.
+    if kind == EntityKind::Agent {
+        return Ok(folded);
+    }
+    for (canonical, block) in &folded {
+        for (key, value) in block {
+            if let Some(ty) = crate::harness::field_types::component_type(EntityKind::Skill, key)
+                && !ty.accepts(value)
+            {
+                return Err(CoreError::wrong_kind(
+                    note_path,
+                    format!("`{}.{key}` {}", ns.key(canonical), ty.refusal(value)),
+                ));
+            }
+        }
     }
     Ok(folded)
 }
@@ -4985,14 +5005,13 @@ mod tests {
                 .clone(),
             ..VaultFrontmatter::default()
         };
-        for target in ["cursor", "claude"] {
-            let folded = overrides_for(&note, Path::new("/vault/a.md"), target, &sw()).unwrap();
-            assert!(
-                folded
-                    .get("cursor")
-                    .is_none_or(|b| !b.contains_key("anything"))
-            );
-        }
+        let folded =
+            overrides_for(&note, Path::new("/vault/a.md"), EntityKind::Skill, &sw()).unwrap();
+        assert!(
+            folded
+                .get("cursor")
+                .is_none_or(|b| !b.contains_key("anything"))
+        );
     }
 
     #[test]
@@ -5041,6 +5060,7 @@ mod tests {
                 "empty-plugin",
                 "mixed-frontmatter-shape",
                 "excluded-note",
+                "malformed",
             ]
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));

@@ -225,7 +225,7 @@ harness is refused. Anything else is a git ref: it is checked out into a
 temporary worktree with the repository's hooks off, built there with the
 ref's own copy of the root file and the ref's own vault, and removed
 afterwards. Its packs are moved to where the current root file keeps them, so a
-`packs` setting changed since the ref still compares each plugin with itself. Git LFS files are not fetched, so they compare as pointers. A ref
+`packs` setting changed since the ref still compares each plugin with itself. Neither build reads its own `build.out` as source, so a committed output or a moved packs folder inside it is not taken for notes. Git LFS files are not fetched, so they compare as pointers. A ref
 that holds no `skillwright.md` is refused: compare against a built folder
 instead. A run also removes the baselines an interrupted earlier run left behind.
 
