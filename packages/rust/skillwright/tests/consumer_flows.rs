@@ -543,18 +543,120 @@ fn a_known_block_key_with_a_wrong_value_is_refused() {
     }
 }
 
+/// The text of the built file under `dist` whose path ends with `tail`.
+fn built(dir: &Fixture, tail: &str) -> String {
+    let file = files_under(&dir.path().join("dist"))
+        .into_iter()
+        .find(|path| path.to_string_lossy().ends_with(tail))
+        .unwrap_or_else(|| panic!("no built {tail}"));
+    std::fs::read_to_string(file).unwrap()
+}
+
 #[test]
 fn a_known_block_key_with_a_right_value_ships() {
-    let skill = "---\ndescription: S.\nclaude: {allowed-tools: Read Grep, model: opus}\n---\nB.\n";
-    let plugin =
-        "---\ndescription: P.\nversion: 1.0.0\ncodex: {policy: {installation: AVAILABLE}}\n---\n";
+    let root = "---\nname: v\nclaude: {model: opus}\ncodex: {interface: {displayName: Vee}}\n\
+                pi: {naming: bare}\nbuild:\n  out: dist\n---\n";
+    let skill = "---\ndescription: S.\nclaude:\n  allowed-tools: [Read, Grep]\n  \
+                 argument-hint: [issue-number]\n  metadata: {team: {lead: Ada}}\n---\nB.\n";
+    let plugin = "---\ndescription: P.\nversion: 1.0.0\n\
+                  codex: {policy: {installation: AVAILABLE}, interface: {displayName: Pea}}\n---\n";
     let dir = vault(&[
-        ("skillwright.md", ROOT),
+        ("skillwright.md", root),
         ("plugins/p/p.md", plugin),
         ("plugins/p/skills/s.md", skill),
     ]);
-    let built = sw(&dir.path(), &["build", "--yes"]);
-    assert_eq!(built.code, 0, "{}", built.text);
+    let ran = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+
+    let claude = built(&dir, ".claude-plugin/packs/p/skills/s/SKILL.md");
+    for line in [
+        "allowed-tools:",
+        "- Read",
+        "argument-hint:",
+        "- issue-number",
+        "model: opus",
+        "lead: Ada",
+    ] {
+        assert!(claude.contains(line), "{line}: {claude}");
+    }
+    let marketplace = built(&dir, ".agents/plugins/marketplace.json");
+    assert!(
+        marketplace.contains("\"displayName\": \"Vee\""),
+        "{marketplace}"
+    );
+    assert!(
+        marketplace.contains("\"installation\": \"AVAILABLE\""),
+        "{marketplace}"
+    );
+    let manifest = built(&dir, "p/.codex-plugin/plugin.json");
+    assert!(manifest.contains("\"displayName\": \"Pea\""), "{manifest}");
+    assert!(
+        files_under(&dir.path().join("dist"))
+            .iter()
+            .any(|path| path.ends_with("p/skills/s/SKILL.md")
+                && path.to_string_lossy().contains(".pi")),
+        "pi skill is bare"
+    );
+}
+
+#[test]
+fn a_block_key_the_container_does_not_read_warns_whatever_it_holds() {
+    for block in [
+        "claude: {owner: Ada}",
+        "codex: {plugins: 5}",
+        "claude: {forceRemoveDeletedPlugins: yes}",
+    ] {
+        let plugin = format!("---\ndescription: P.\nversion: 1.0.0\n{block}\n---\n");
+        let dir = vault(&[
+            ("skillwright.md", ROOT),
+            ("plugins/p/p.md", &plugin),
+            ("plugins/p/skills/s.md", SKILL),
+        ]);
+        let ran = sw(&dir.path(), &["build", "--yes"]);
+        assert_eq!(ran.code, 0, "{block}: {}", ran.text);
+        assert!(ran.text.contains("unknown-key"), "{block}: {}", ran.text);
+        assert!(
+            !ran.text.contains("malformed-block"),
+            "{block}: {}",
+            ran.text
+        );
+    }
+}
+
+#[test]
+fn a_bare_spec_key_takes_the_check_its_block_does() {
+    let skill = |line: &str| format!("---\ndescription: S.\n{line}\n---\nB.\n");
+    for (line, said) in [
+        ("model: [1]", "`model` must be a string, not a list"),
+        (
+            "allowed-tools: 5",
+            "`allowed-tools` must be a string or a list of strings, not a number",
+        ),
+    ] {
+        let dir = vault(&[
+            ("skillwright.md", ROOT),
+            ("plugins/p/p.md", PLUGIN),
+            ("plugins/p/skills/s.md", &skill(line)),
+        ]);
+        let ran = sw(&dir.path(), &["build", "--yes"]);
+        assert_eq!(ran.code, 2, "{line}: {}", ran.text);
+        assert!(ran.text.contains(said), "{line}: {}", ran.text);
+    }
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", PLUGIN),
+        (
+            "plugins/p/skills/s.md",
+            &skill("argument-hint: [issue-number]"),
+        ),
+    ]);
+    let ran = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+    let claude = built(&dir, ".claude-plugin/packs/p/skills/s/SKILL.md");
+    assert!(
+        claude.contains("argument-hint: \"[issue-number]\""),
+        "{claude}"
+    );
 }
 
 #[test]

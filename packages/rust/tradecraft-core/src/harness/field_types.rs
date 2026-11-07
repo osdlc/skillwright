@@ -1,4 +1,5 @@
-//! The value each harness-block key must have.
+//! The kind of value each harness-block key, and each bare spec key on a
+//! component, must have.
 //!
 //! A container's keys take the type harness-reference records for them in
 //! each harness's `plugins/manifest-fields` and `plugins/marketplace-fields`
@@ -6,7 +7,9 @@
 //! observations, a value any of them accepts passes. A key the facts give as
 //! dotted subfields only (`policy.installation`) is a mapping.
 //!
-//! A component's keys take the shape [`crate::keys::KEYS`] lists for a skill.
+//! A component's keys take the shape [`crate::keys::KEYS`] lists for its
+//! kind, widened where the table's own summary or the harness docs show
+//! another form. The same type checks a key written bare and in a block.
 //! A key with neither has no type here and is not checked. A test names each
 //! container key the facts leave untyped.
 
@@ -20,6 +23,7 @@ use crate::keys::Shape;
 enum Json {
     String,
     Bool,
+    Number,
     Object,
     /// A list of anything.
     List,
@@ -31,10 +35,11 @@ enum Json {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FieldType(&'static [Json]);
 
-use Json::{Bool, List, Object, String as Str, StringList};
+use Json::{Bool, List, Number, Object, String as Str, StringList};
 
 const STRING: FieldType = FieldType(&[Str]);
 const BOOL: FieldType = FieldType(&[Bool]);
+const NUMBER: FieldType = FieldType(&[Number]);
 const OBJECT: FieldType = FieldType(&[Object]);
 const LIST: FieldType = FieldType(&[List]);
 const STRINGS: FieldType = FieldType(&[StringList]);
@@ -51,6 +56,7 @@ impl FieldType {
         self.0.iter().any(|kind| match kind {
             Str => value.is_string(),
             Bool => value.is_boolean(),
+            Number => value.is_number(),
             Object => value.is_object(),
             List => value.is_array(),
             StringList => value
@@ -67,6 +73,7 @@ impl FieldType {
             .map(|kind| match kind {
                 Str => "a string",
                 Bool => "a boolean",
+                Number => "a number",
                 Object => "a mapping",
                 List => "a list",
                 StringList => "a list of strings",
@@ -220,19 +227,26 @@ fn facts(harness: &str) -> &'static [(&'static str, FieldType)] {
     }
 }
 
-/// The type of `key` in a skill's or command's `harness` block, from the key
-/// table. `None` for a key the table does not list.
-pub(crate) fn component_type(key: &str) -> Option<FieldType> {
-    let spec = crate::keys::lookup(EntityKind::Skill, key)?;
+/// The type of `key` on a note of `kind`, bare or in a harness block, from
+/// the key table. `None` for a key the table does not list for `kind`.
+pub(crate) fn component_type(kind: EntityKind, key: &str) -> Option<FieldType> {
+    let spec = crate::keys::lookup(kind, key)?;
     Some(match (key, spec.shape) {
         // The table's summary: a list, or one space-separated string.
         ("allowed-tools", _) => STRING_OR_STRINGS,
+        // Claude's subagent docs write the list as one string: `Read, Grep`.
+        ("tools", _) => STRING_OR_STRINGS,
+        // Claude's skills docs give `[issue-number]` as the example, which
+        // YAML reads as a list when it is not quoted.
+        ("argument-hint", _) => STRING_OR_STRINGS,
         // A typed list, or Claude's own list of names or one string.
         ("arguments", _) => STRING_OR_LIST,
-        // A nested key skillwright ships under `metadata` keeps its own shape.
+        // `metadata` takes any mapping. Its values are not checked, because
+        // skillwright ships unknown keys there with whatever value they hold.
         (_, Shape::StringMap) => OBJECT,
         (_, Shape::String) => STRING,
         (_, Shape::Bool) => BOOL,
+        (_, Shape::Number) => NUMBER,
         (_, Shape::StringList) => STRINGS,
         _ => return None,
     })
@@ -248,7 +262,7 @@ pub(crate) fn container_type(harness: &str, key: &str) -> Option<FieldType> {
         .or_else(|| {
             crate::model::member_block_keys(EntityKind::Skill, harness)
                 .contains(key)
-                .then(|| component_type(key))
+                .then(|| component_type(EntityKind::Skill, key))
                 .flatten()
         })
 }
@@ -294,9 +308,12 @@ mod tests {
 
     #[test]
     fn the_known_keys_take_their_table_or_fact_type() {
-        assert_eq!(component_type("model"), Some(STRING));
-        assert_eq!(component_type("allowed-tools"), Some(STRING_OR_STRINGS));
-        assert_eq!(component_type("permissionMode"), None);
+        assert_eq!(component_type(EntityKind::Skill, "model"), Some(STRING));
+        assert_eq!(
+            component_type(EntityKind::Skill, "allowed-tools"),
+            Some(STRING_OR_STRINGS)
+        );
+        assert_eq!(component_type(EntityKind::Skill, "permissionMode"), None);
         assert_eq!(container_type("codex", "policy"), Some(OBJECT));
         assert_eq!(container_type("claude", "model"), Some(STRING));
         assert_eq!(container_type("pi", "author"), None);

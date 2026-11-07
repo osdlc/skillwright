@@ -1862,7 +1862,7 @@ pub fn overrides_for(
     }
     // A key the harness reads with the wrong kind of value is refused.
     for (key, value) in folded.get(wanted).into_iter().flatten() {
-        if let Some(ty) = crate::harness::field_types::component_type(key)
+        if let Some(ty) = crate::harness::field_types::component_type(EntityKind::Skill, key)
             && !ty.accepts(value)
         {
             return Err(CoreError::malformed(

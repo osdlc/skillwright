@@ -35,11 +35,13 @@
 //!   `tags` field. `agent-adapt`'s skill renderer emits no `tags:` key, so
 //!   lifting it out of the frontmatter would delete it from every published
 //!   `SKILL.md`. Left in `annotations` it survives the round trip.
-//! * **A modeled key whose value is the wrong shape stays put.** `name: [a]`
-//!   does not become an empty name and a dropped key; it falls back to the
-//!   default and the note's own bytes travel on. The model bends to the note.
-//!   `metadata:` holding a nested map is that rule's live case: the Agent Skills spec
-//!   types it `dict[str, str]`, so a nested one is carried whole and the
+//! * **A spec key holding the wrong kind of value is refused.** `name: [a]` or
+//!   `user-invocable: yes-please` stops the read, naming the key, by the same
+//!   check a harness block applies to that key. A value of the right kind the
+//!   model still cannot type stays put and travels on: `allowed-tools: Read,
+//!   Grep` is a string with a comma no harness fact reads, so it is carried and
+//!   warns. `metadata:` holding a nested map is the live case: the Agent Skills
+//!   spec types it `dict[str, str]`, so a nested one is carried whole and the
 //!   renderer folds it in with the other keys it cannot type.
 //!
 //! Key spellings are the standard's: `allowed-tools`, `argument-hint`,
@@ -135,6 +137,7 @@ pub fn read_vault_note(
     // Ours, out of the map before anything else looks at it. What survives
     // this line is the note's own frontmatter and nothing of ours.
     let ours = VaultFrontmatter::take_from(&mut fields, skill_path, ns, kind)?;
+    check_spec_kinds(&fields, skill_path, kind)?;
 
     let name = take_string(&mut fields, "name").filter(|n| !n.trim().is_empty());
     // A `name` alone opts in, as it does for the scan, which reports the
@@ -158,7 +161,7 @@ pub fn read_vault_note(
     let content = SkillContent {
         name: name.unwrap_or_else(|| crate::discover::default_name(skill_path)),
         description,
-        argument_hint: take_string(&mut fields, "argument-hint"),
+        argument_hint: take_hint(&mut fields),
         // Claude Code's own key, hand-written. Empty and absent both read as
         // `None` — see `SkillContent::argument_names`'s own doc for why that
         // simplification is fine here where it is not for `targets`: an
@@ -327,6 +330,62 @@ pub(crate) fn frontmatter_map(
         Value::Null => Ok(Map::new()),
         _ => Err(CoreError::malformed(path, "frontmatter is not a mapping")),
     }
+}
+
+/// Refuses a spec key on a skill, agent or command whose value is not the kind
+/// [`crate::harness::field_types::component_type`] gives it, the check a
+/// harness block applies to the same key. `null` reads as unset and passes.
+///
+/// # Errors
+///
+/// `malformed`, naming the key and the kind it must be.
+fn check_spec_kinds(
+    fields: &Map<String, Value>,
+    path: &Path,
+    kind: EntityKind,
+) -> Result<(), CoreError> {
+    if !matches!(
+        kind,
+        EntityKind::Skill | EntityKind::Agent | EntityKind::Command
+    ) {
+        return Ok(());
+    }
+    for (key, value) in fields {
+        let spec_owned = crate::keys::lookup(kind, key)
+            .is_some_and(|spec| spec.owner == crate::keys::Owner::Spec);
+        if !spec_owned || value.is_null() {
+            continue;
+        }
+        if let Some(ty) = crate::harness::field_types::component_type(kind, key)
+            && !ty.accepts(value)
+        {
+            return Err(CoreError::malformed(
+                path,
+                format!(
+                    "`{key}` must be {}, not {}",
+                    ty.label(),
+                    crate::harness::field_types::found(value)
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `argument-hint`, as the hint text. A list of strings is the unquoted
+/// `[issue-number]` form Claude's docs show, and reads back as that text.
+fn take_hint(fields: &mut Map<String, Value>) -> Option<String> {
+    if let Some(Value::Array(items)) = fields.get("argument-hint")
+        && let Some(words) = items
+            .iter()
+            .map(Value::as_str)
+            .collect::<Option<Vec<&str>>>()
+    {
+        let hint = format!("[{}]", words.join(", "));
+        fields.remove("argument-hint");
+        return Some(hint);
+    }
+    take_string(fields, "argument-hint")
 }
 
 /// Removes `key` and returns it as a string — but only when it *is* a string.
@@ -750,10 +809,10 @@ mod tests {
     }
 
     #[test]
-    fn a_wrong_shaped_modeled_key_is_carried_rather_than_swallowed() {
+    fn a_value_the_model_cannot_type_is_carried_rather_than_swallowed() {
         let (vfs, path) = vault(
             "odd",
-            "---\ndescription: d\nallowed-tools: Read, Grep\nuser-invocable: yes-please\n---\nb\n",
+            "---\ndescription: d\nallowed-tools: Read, Grep\n---\nb\n",
         );
         let content = read_vault_skill(&vfs, &path, &sw())
             .unwrap()
@@ -761,15 +820,45 @@ mod tests {
             .content;
 
         assert!(content.allowed_tools.is_empty());
-        assert!(content.user_invocable, "falls back to the default");
         assert_eq!(
             content.annotations["allowed-tools"],
             serde_json::json!("Read, Grep")
         );
-        assert_eq!(
-            content.annotations["user-invocable"],
-            serde_json::json!("yes-please")
+    }
+
+    #[test]
+    fn a_spec_key_of_the_wrong_kind_is_refused_naming_it() {
+        for (line, said) in [
+            (
+                "user-invocable: yes-please",
+                "`user-invocable` must be a boolean, not a string",
+            ),
+            ("model: [1]", "`model` must be a string, not a list"),
+            (
+                "allowed-tools: 5",
+                "`allowed-tools` must be a string or a list of strings",
+            ),
+        ] {
+            let (vfs, path) = vault("odd", &format!("---\ndescription: d\n{line}\n---\nb\n"));
+            let err = read_vault_skill(&vfs, &path, &sw())
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(said), "{line}: {err}");
+        }
+    }
+
+    #[test]
+    fn an_unquoted_bracket_hint_reads_as_its_text() {
+        let (vfs, path) = vault(
+            "odd",
+            "---\ndescription: d\nargument-hint: [issue-number]\n---\nb\n",
         );
+        let content = read_vault_skill(&vfs, &path, &sw())
+            .unwrap()
+            .projection
+            .content;
+        assert_eq!(content.argument_hint.as_deref(), Some("[issue-number]"));
+        assert!(!content.annotations.contains_key("argument-hint"));
     }
 
     /// The folder a note owns is the one holding it, and the note itself is
