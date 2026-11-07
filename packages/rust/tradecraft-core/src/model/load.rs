@@ -358,13 +358,7 @@ pub fn load(
             let mut note =
                 read_vault_note(vfs, &component.discovered.entry_path, ns, component.kind)?;
             cascade.apply(&mut note, component.kind, Some(&plugin_name), ns);
-            let admitting: Vec<&HarnessProfile> = roots
-                .iter()
-                .copied()
-                .filter(|root| admits(&component.discovered, root))
-                .collect();
-            component.extensions =
-                extensions(&note.frontmatter, &component.discovered, &admitting, ns)?;
+            component.extensions = extensions(&note.frontmatter, &component.discovered, ns)?;
             let (resolved, content) = match component.kind {
                 // A hook's body is a script or a prompt inside a JSON string:
                 // an embed expanded into it would rewrite what runs, so it is
@@ -473,8 +467,7 @@ pub fn load_component(
     cascade: &Cascade,
     ns: &Namespace,
 ) -> Result<Component, CoreError> {
-    let blocks =
-        crate::publish::overrides_for(&note.frontmatter, request.path, request.target, ns)?;
+    let blocks = crate::publish::overrides_for(&note.frontmatter, request.path, ns)?;
     let targets: OnceCell<BTreeMap<PathBuf, Option<Vec<String>>>> = OnceCell::new();
     let build = || -> Result<SkillIndex, CoreError> {
         let (mut scan, _) = read_notes(vfs, request.root, None, ns)?;
@@ -628,7 +621,7 @@ pub fn load_plugin(
     for member in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
         let mut note = read_vault_note(vfs, &member.discovered.entry_path, ns, member.kind)?;
         cascade.apply(&mut note, member.kind, Some(plugin_name), ns);
-        member.extensions = extensions(&note.frontmatter, &member.discovered, &[profile], ns)?;
+        member.extensions = extensions(&note.frontmatter, &member.discovered, ns)?;
         let (resolved, content) = resolve_body(
             vfs,
             vault_root,
@@ -995,24 +988,18 @@ pub(crate) fn vault_relative(vault_root: &Path, path: &Path) -> String {
         })
 }
 
-/// A note's harness blocks, folded onto canonical names and checked for each
-/// of `harnesses` (D-ISOU).
+/// A note's harness blocks, folded onto canonical names, each checked against
+/// its own harness (D-ISOU).
 ///
 /// # Errors
 ///
-/// What [`crate::publish::overrides_for`] refuses, for the first harness
-/// that refuses.
+/// What [`crate::publish::overrides_for`] refuses.
 fn extensions(
     frontmatter: &VaultFrontmatter,
     component: &DiscoveredComponent,
-    harnesses: &[&HarnessProfile],
     ns: &Namespace,
 ) -> Result<Extensions, CoreError> {
-    let mut blocks = BTreeMap::new();
-    for harness in harnesses {
-        blocks =
-            crate::publish::overrides_for(frontmatter, &component.entry_path, harness.name, ns)?;
-    }
+    let blocks = crate::publish::overrides_for(frontmatter, &component.entry_path, ns)?;
     Ok(Extensions { blocks })
 }
 

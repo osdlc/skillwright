@@ -430,6 +430,7 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
                 let block: Option<serde_json::Map<String, serde_json::Value>> =
                     field(&key, &value, "a mapping of that harness's own keys")?;
                 if let Some(block) = block {
+                    let block = crate::harness::field_types::without_unset(block);
                     let known = serde_json::Map::from_iter([(
                         key.clone(),
                         serde_json::Value::Object(block.clone()),

@@ -573,12 +573,10 @@ fn claim(
 /// Claude's own `arguments` key: a space-separated string, or a list of
 /// strings.
 /// Whether a key left in the note's own fields is one the read takes as
-/// written. `arguments` holding names is Claude's key under any namespace. An
-/// `allowed-tools` value no harness reads is listed, and still warns.
+/// written. `arguments` holding names is Claude's key under any namespace.
 fn reads_as_written(kind: EntityKind, key: &str, value: &Value, ns: &Namespace) -> bool {
     match key {
         "arguments" if is_claude_arguments(value) => crate::keys::lookup(kind, key).is_some(),
-        "allowed-tools" if crate::vault::tool_list(value).is_none() && !value.is_null() => false,
         _ => crate::keys::is_known(kind, key, ns),
     }
 }
@@ -657,10 +655,11 @@ fn shape_refusal(shape: Shape, key: &str, value: &Value) -> String {
     }
 }
 
-/// Removes a harness block and returns it. `key: null` reads as no block.
+/// Removes a harness block and returns it. `key: null` reads as no block,
+/// and a key in the block set to nothing is dropped.
 fn take_harness_block(ours: &mut Map<String, Value>, key: &str) -> Option<Map<String, Value>> {
     match ours.remove(key) {
-        Some(Value::Object(block)) => Some(block),
+        Some(Value::Object(block)) => Some(crate::harness::field_types::without_unset(block)),
         _ => None,
     }
 }
@@ -1006,7 +1005,8 @@ pub(crate) fn quoting_hint(value: &Value) -> &'static str {
     }
 }
 
-fn type_name(value: &Value) -> &'static str {
+/// What a value is, for a refusal: `a number`, `a list`, `nothing`.
+pub(crate) fn type_name(value: &Value) -> &'static str {
     match value {
         Value::Null => "nothing",
         Value::Bool(_) => "a boolean",

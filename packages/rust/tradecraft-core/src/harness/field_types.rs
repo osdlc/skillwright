@@ -23,9 +23,9 @@ use crate::keys::Shape;
 enum Json {
     String,
     Bool,
-    /// A boolean, or one of the words and numbers Claude Code's skills docs
-    /// say its boolean fields read: `yes`, `no`, `on`, `off`, `true`,
-    /// `false` in any case, and `1` and `0`.
+    /// A boolean, or one of the words Claude Code's skills docs say its
+    /// boolean fields read: `yes`, `no`, `on`, `off`, `true`, `false`, `1`
+    /// and `0`, in any case. `1` and `0` may be numbers or quoted.
     Flag,
     Number,
     Object,
@@ -52,11 +52,12 @@ const STRING_OR_OBJECT: FieldType = FieldType(&[Str, Object]);
 const STRING_OR_STRINGS: FieldType = FieldType(&[Str, StringList]);
 const STRING_OR_LIST: FieldType = FieldType(&[Str, List]);
 const STRING_OBJECT_OR_LIST: FieldType = FieldType(&[Str, Object, List]);
-const PATHS_OR_OBJECT: FieldType = FieldType(&[Str, StringList, Object]);
+const STRINGS_OR_OBJECT: FieldType = FieldType(&[Str, StringList, Object]);
 
 impl FieldType {
-    /// Whether `value` is one of the kinds. `null` never is: a key set to
-    /// nothing ships as `null`, which no fact allows.
+    /// Whether `value` is one of the kinds. `null` never is: no fact allows
+    /// it. A key set to nothing in a note is dropped before this check, by
+    /// [`without_unset`] in a block and by the vault reader when bare.
     pub(crate) fn accepts(self, value: &Value) -> bool {
         self.0.iter().any(|kind| match kind {
             Str => value.is_string(),
@@ -99,7 +100,11 @@ impl FieldType {
         } else {
             ""
         };
-        format!("must be {}, not {}{hint}", self.label(), found(value))
+        format!(
+            "must be {}, not {}{hint}",
+            self.label(),
+            crate::frontmatter::type_name(value)
+        )
     }
 }
 
@@ -113,8 +118,8 @@ pub(crate) fn flag(value: &Value) -> Option<bool> {
             _ => None,
         },
         Value::String(word) => match word.to_ascii_lowercase().as_str() {
-            "true" | "yes" | "on" => Some(true),
-            "false" | "no" | "off" => Some(false),
+            "true" | "yes" | "on" | "1" => Some(true),
+            "false" | "no" | "off" | "0" => Some(false),
             _ => None,
         },
         _ => None,
@@ -148,16 +153,16 @@ pub(crate) fn normalized(kind: EntityKind, key: &str, value: Value) -> Value {
     value
 }
 
-/// What a value is, for a refusal: `a number`, `a list`.
-pub(crate) fn found(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "nothing",
-        Value::Bool(_) => "a boolean",
-        Value::Number(_) => "a number",
-        Value::String(_) => "a string",
-        Value::Array(_) => "a list",
-        Value::Object(_) => "a mapping",
-    }
+/// `block` less its keys set to nothing. Such a key is unset, as it is
+/// written bare, so it is dropped rather than shipped as `null`.
+pub(crate) fn without_unset(
+    block: serde_json::Map<String, Value>,
+) -> serde_json::Map<String, Value> {
+    // Not `Map::retain`: the serde_json floor predates it.
+    block
+        .into_iter()
+        .filter(|(_, value)| !value.is_null())
+        .collect()
 }
 
 /// Claude Code's `plugin.json`, marketplace entry and marketplace keys.
@@ -186,7 +191,7 @@ const CLAUDE: &[(&str, FieldType)] = &[
     ("types", STRING),
     ("channels", LIST),
     ("skills", STRING_OR_STRINGS),
-    ("commands", PATHS_OR_OBJECT),
+    ("commands", STRINGS_OR_OBJECT),
     ("agents", STRING_OR_STRINGS),
     ("hooks", STRING_OBJECT_OR_LIST),
     ("mcpServers", STRING_OBJECT_OR_LIST),
@@ -300,6 +305,10 @@ pub(crate) fn component_type(kind: EntityKind, key: &str) -> Option<FieldType> {
         // The table's summary: a list, or one string separated by spaces or
         // commas.
         ("allowed-tools", _) => STRING_OR_STRINGS,
+        // OpenCode's agent `tools` is a mapping of tool name to `true` or
+        // `false` (its agents docs, "Tools (deprecated)"). Claude Code reads
+        // only the list, and `project_agent` refuses a mapping for it.
+        ("tools", _) if kind == EntityKind::Agent => STRINGS_OR_OBJECT,
         // Claude's subagent docs write the list as one string: `Read, Grep`.
         ("tools", _) => STRING_OR_STRINGS,
         // Claude's skills docs give `[issue-number]` as the example, which
@@ -371,6 +380,9 @@ mod tests {
         assert!(!STRINGS.accepts(&json!([1])));
         assert!(!OBJECT.accepts(&json!(5)));
         assert!(!STRING.accepts(&Value::Null));
+        assert_eq!(flag(&json!("0")), Some(false));
+        assert_eq!(flag(&json!("ON")), Some(true));
+        assert_eq!(flag(&json!(2)), None);
         assert_eq!(STRING_OR_OBJECT.label(), "a string or a mapping");
     }
 
@@ -382,6 +394,14 @@ mod tests {
             Some(STRING_OR_STRINGS)
         );
         assert_eq!(component_type(EntityKind::Skill, "permissionMode"), None);
+        assert_eq!(
+            component_type(EntityKind::Agent, "tools"),
+            Some(STRINGS_OR_OBJECT)
+        );
+        assert_eq!(
+            component_type(EntityKind::Skill, "tools"),
+            Some(STRING_OR_STRINGS)
+        );
         assert_eq!(container_type("codex", "policy"), Some(OBJECT));
         assert_eq!(container_type("claude", "model"), Some(STRING));
         assert_eq!(container_type("pi", "author"), None);

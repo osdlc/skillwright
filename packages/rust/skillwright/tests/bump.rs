@@ -895,6 +895,19 @@ fn build_into_another_folder_does_not_read_the_moved_packs_in_out() {
     assert!(other.path().join("pi-packs/widget").is_dir());
 }
 
+#[test]
+fn check_against_another_folder_does_not_read_the_moved_packs_in_out() {
+    let dir = built_with_moved_packs();
+    let root = dir.path();
+    let other = tempfile::tempdir().unwrap();
+    let out = other.path().display().to_string();
+    let result = run(&["check", "--out", &out], root);
+    // Drift against an empty folder, not a refusal of the packs in `out`.
+    assert_eq!(result.code, 1, "{}{}", result.stdout, result.stderr);
+    let said = format!("{}{}", result.stdout, result.stderr);
+    assert!(!said.contains("unreadable-note"), "{said}");
+}
+
 /// A vault of two marketplaces, each with a plugin `p`, building to `dist`.
 fn two_marketplaces(root: &Path) {
     fs::write(

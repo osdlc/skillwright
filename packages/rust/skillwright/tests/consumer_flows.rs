@@ -660,6 +660,120 @@ fn a_bare_spec_key_takes_the_check_its_block_does() {
 }
 
 #[test]
+fn a_key_set_to_nothing_is_dropped_bare_and_in_a_block() {
+    let plugin = "---\ndescription: P.\nversion: 1.0.0\nclaude:\n  homepage:\n---\n";
+    let skill = "---\ndescription: S.\nmodel:\nclaude:\n  model:\n---\nB.\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", plugin),
+        ("plugins/p/skills/s.md", skill),
+    ]);
+    let ran = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+    let claude = built(&dir, ".claude-plugin/packs/p/skills/s/SKILL.md");
+    assert!(!claude.contains("model"), "{claude}");
+    let manifest = built(&dir, ".claude-plugin/packs/p/.claude-plugin/plugin.json");
+    assert!(!manifest.contains("homepage"), "{manifest}");
+}
+
+#[test]
+fn a_word_flag_ships_as_a_boolean_to_every_harness() {
+    let skill = "---\ndescription: S.\nuser-invocable: \"0\"\ncursor:\n  \
+                 disable-model-invocation: yes\n---\nB.\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", PLUGIN),
+        ("plugins/p/skills/s.md", skill),
+    ]);
+    let ran = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+    let cursor = built(&dir, ".cursor-plugin/packs/p/skills/s/SKILL.md");
+    assert!(
+        cursor.contains("disable-model-invocation: true"),
+        "{cursor}"
+    );
+    let claude = built(&dir, ".claude-plugin/packs/p/skills/s/SKILL.md");
+    assert!(claude.contains("user-invocable: false"), "{claude}");
+}
+
+#[test]
+fn every_block_is_checked_whichever_harnesses_the_build_selects() {
+    let root = "---\nname: v\nbuild:\n  out: dist\n  harnesses: [claude]\n---\n";
+    let skill = "---\ndescription: S.\ncodex: {allowed-tools: 5}\n---\nB.\n";
+    let plugin = "---\ndescription: P.\nversion: 1.0.0\ncodex: {policy: 5}\n---\n";
+    for (plugin, skill, said) in [
+        (PLUGIN, skill, "`codex.allowed-tools` must be a string"),
+        (
+            plugin,
+            SKILL,
+            "`codex.policy` of plugin `p` must be a mapping",
+        ),
+    ] {
+        let dir = vault(&[
+            ("skillwright.md", root),
+            ("plugins/p/p.md", plugin),
+            ("plugins/p/skills/s.md", skill),
+        ]);
+        let ran = sw(&dir.path(), &["build", "--yes"]);
+        assert_eq!(ran.code, 2, "{said}: {}", ran.text);
+        assert!(ran.text.contains(said), "{said}: {}", ran.text);
+    }
+}
+
+#[test]
+fn list_refuses_a_spec_key_of_the_wrong_kind_as_a_build_does() {
+    let skill = "---\ndescription: S.\nallowed-tools: 5\n---\nB.\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", PLUGIN),
+        ("plugins/p/skills/s.md", skill),
+    ]);
+    let ran = sw(&dir.path(), &["list"]);
+    assert!(
+        ran.text
+            .contains("`allowed-tools` must be a string or a list of strings"),
+        "{}",
+        ran.text
+    );
+    assert!(!ran.text.contains("unknown-key"), "{}", ran.text);
+}
+
+#[test]
+fn an_agent_s_tools_take_opencode_s_mapping() {
+    let agent = "---\ndescription: A.\ntools:\n  write: false\n  bash: true\n---\nB.\n";
+    let dir = vault(&[("skillwright.md", ROOT), ("plugins/p/agents/x.md", agent)]);
+    let publish = |target: &str| {
+        let dest = dir.home().join(target);
+        let to = dest.to_str().unwrap().to_owned();
+        let note = "plugins/p/agents/x.md";
+        sw(
+            &dir.path(),
+            &["publish", note, "--target", target, "--to", &to, "--yes"],
+        )
+    };
+    let opencode = publish("opencode");
+    assert_eq!(opencode.code, 0, "{}", opencode.text);
+    let written =
+        std::fs::read_to_string(dir.home().join("opencode/.opencode/agents/x.md")).unwrap();
+    assert!(written.contains("write: false"), "{written}");
+    // Claude Code reads only a list, so the mapping is refused for it alone.
+    let claude = publish("claude");
+    assert_ne!(claude.code, 0, "{}", claude.text);
+    assert!(claude.text.contains("malformed-tools"), "{}", claude.text);
+
+    let agent = "---\ndescription: A.\ntemperature: \"0.2\"\n---\nB.\n";
+    std::fs::write(dir.path().join("plugins/p/agents/x.md"), agent).unwrap();
+    let ran = publish("opencode");
+    assert_ne!(ran.code, 0, "{}", ran.text);
+    assert!(
+        ran.text
+            .contains("`temperature` must be a number, not a string"),
+        "{}",
+        ran.text
+    );
+}
+
+#[test]
 fn a_link_into_a_plugin_s_assets_ships() {
     let linking = "---\ndescription: D.\n---\nSee [guide](../assets/docs/guide.md).\n";
     let dir = vault(&[

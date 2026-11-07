@@ -344,7 +344,7 @@ pub(crate) fn frontmatter_map(
 /// # Errors
 ///
 /// `malformed`, naming the key and the kind it must be.
-fn check_spec_kinds(
+pub(crate) fn check_spec_kinds(
     fields: &mut Map<String, Value>,
     path: &Path,
     kind: EntityKind,
@@ -849,6 +849,26 @@ mod tests {
         assert!(!content.user_invocable);
         assert!(content.disable_model_invocation);
         assert!(content.annotations.is_empty(), "{:?}", content.annotations);
+    }
+
+    #[test]
+    fn a_quoted_one_or_zero_reads_as_a_boolean() {
+        let (vfs, path) = vault(
+            "odd",
+            "---
+description: d
+user-invocable: \"0\"
+disable-model-invocation: '1'
+---
+b
+",
+        );
+        let content = read_vault_skill(&vfs, &path, &sw())
+            .unwrap()
+            .projection
+            .content;
+        assert!(!content.user_invocable);
+        assert!(content.disable_model_invocation);
     }
 
     #[test]

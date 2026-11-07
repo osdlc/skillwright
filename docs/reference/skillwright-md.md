@@ -254,9 +254,11 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
   [field reference](fields.md) says. A container's keys take the type in
   harness-reference's manifest and marketplace facts. A wrong kind is refused,
   naming the block, the key and the kind, such as
-  `` `codex.policy` of plugin `p` must be a mapping, not a number ``. A key the
-  block does not accept only warns, whatever it holds. A key with no documented
-  type is not checked.
+  `` `codex.policy` of plugin `p` must be a mapping, not a number ``. Every block
+  is checked, whichever harnesses `build.harnesses` selects. A key
+  the block does not accept only warns, whatever it holds. A key with no
+  documented type is not checked.
+- A key in a block set to nothing is unset and is dropped, as it is written bare.
 - `metadata` in a block merges with the note's `metadata` rather than replacing
   it.
 - A block a component inherits cannot set that component's `name` or

@@ -1795,34 +1795,31 @@ pub fn publishes_to(
         .any(|name| canonical_target(name).is_some_and(|known| known == wanted)))
 }
 
-/// harness blocks, folded onto canonical destination names and checked
-/// against the harness that will receive each block.
+/// A note's harness blocks, folded onto canonical destination names and
+/// checked against the harness that will receive each block. Every block is
+/// folded and checked, whichever destinations are being published: the
+/// destination a mistake hurts is never the one in front of you. A
+/// container's blocks follow the same rule.
 ///
 /// The seam [`publishes_to`] is: a frontmatter reader types the key and this
 /// function decides what it means, because deciding needs the destination
 /// roster and the capability matrix and a reader should hold neither.
 ///
-/// # Two checks, at two scopes
-///
-/// **Every target name is folded, whichever destination is being published**
-/// — the same rule `targets` follows, and for the same reason: the
-/// destination a typo hurts is never the one in front of you.
-///
 /// **Each block keeps only the keys its harness reads.** The rest are
 /// dropped; discovery warns about them, and they are never refused. A target
 /// the matrix has no declaration for keeps no keys, so an unmapped harness
-/// never receives unchecked ones.
+/// never receives unchecked ones. A kept key with the wrong kind of value is
+/// refused.
 ///
 /// # Errors
 ///
 /// * `refused: unknown-target` — a block is keyed by a name outside
 ///   [`canonical_target`].
-/// * `malformed` — a key the named target reads holds the wrong kind of
+/// * `malformed` — a key a block's harness reads holds the wrong kind of
 ///   value, such as `metadata` that is not a mapping.
 pub fn overrides_for(
     note: &VaultFrontmatter,
     note_path: &Path,
-    target: &str,
     ns: &Namespace,
 ) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
     let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
@@ -1849,7 +1846,6 @@ pub fn overrides_for(
             .extend(block);
     }
 
-    let wanted = canonical_target(target).unwrap_or(target);
     // A key a harness does not read warns at discovery and is dropped here,
     // never refused. A key it reads takes the form every harness reads: a
     // flag such as `yes` becomes a real boolean, a list hint its text.
@@ -1865,15 +1861,18 @@ pub fn overrides_for(
             })
             .collect();
     }
-    // A key the harness reads with the wrong kind of value is refused.
-    for (key, value) in folded.get(wanted).into_iter().flatten() {
-        if let Some(ty) = crate::harness::field_types::component_type(EntityKind::Skill, key)
-            && !ty.accepts(value)
-        {
-            return Err(CoreError::malformed(
-                note_path,
-                format!("`{}.{key}` {}", ns.key(wanted), ty.refusal(value)),
-            ));
+    // A key a harness reads with the wrong kind of value is refused, in
+    // every block.
+    for (canonical, block) in &folded {
+        for (key, value) in block {
+            if let Some(ty) = crate::harness::field_types::component_type(EntityKind::Skill, key)
+                && !ty.accepts(value)
+            {
+                return Err(CoreError::malformed(
+                    note_path,
+                    format!("`{}.{key}` {}", ns.key(canonical), ty.refusal(value)),
+                ));
+            }
         }
     }
     Ok(folded)
@@ -4992,14 +4991,12 @@ mod tests {
                 .clone(),
             ..VaultFrontmatter::default()
         };
-        for target in ["cursor", "claude"] {
-            let folded = overrides_for(&note, Path::new("/vault/a.md"), target, &sw()).unwrap();
-            assert!(
-                folded
-                    .get("cursor")
-                    .is_none_or(|b| !b.contains_key("anything"))
-            );
-        }
+        let folded = overrides_for(&note, Path::new("/vault/a.md"), &sw()).unwrap();
+        assert!(
+            folded
+                .get("cursor")
+                .is_none_or(|b| !b.contains_key("anything"))
+        );
     }
 
     #[test]
