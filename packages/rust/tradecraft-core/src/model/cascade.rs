@@ -6,9 +6,10 @@
 //!
 //! 1. the note's own frontmatter;
 //! 2. its plugin note;
-//! 3. its marketplace note;
-//! 4. the request's config, which is `skillwright.md` with the workspace file
-//!    already folded in ([`crate::settings::RootFile::inherit`]).
+//! 3. the `skillwright.md` of the marketplace folder it sits in, if any;
+//! 4. the request's config, which is the vault's `skillwright.md` with the
+//!    workspace file already folded in
+//!    ([`crate::settings::RootFile::inherit`]).
 //!
 //! Which keys come down is the key table's answer ([`crate::keys::inherits`]).
 //! Names, descriptions and versions never do.
@@ -39,7 +40,7 @@
 //! A block key that reaches no file warns.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
@@ -171,11 +172,12 @@ impl Cascade {
         let patterns = crate::patterns::Patterns::read(vfs, root);
         let mut paths = crate::discover::container_notes_with(&patterns, root, note_path);
         let placed = crate::discover::folder_placement_with(&patterns, root, note_path).marketplace;
-        let market = placed.or_else(|| {
-            let (name, note) = crate::discover::only_marketplace(vfs, root)?;
-            paths.push(note);
-            Some(name)
-        });
+        let market = match placed {
+            Some(market) => Some(market),
+            None => only_marketplace(vfs, root, ns)?.inspect(|name| {
+                paths.push(marketplace_note(root, name));
+            }),
+        };
         let mut containers = Vec::new();
         for path in paths {
             containers.extend(read_container(vfs, root, &path, ns)?);
@@ -328,6 +330,41 @@ pub(crate) fn member_block_keys(kind: EntityKind, harness: &str) -> BTreeSet<Str
         });
     }
     keys
+}
+
+/// The path of the note of the marketplace in `folder`.
+fn marketplace_note(root: &Path, folder: &str) -> PathBuf {
+    root.join("marketplaces")
+        .join(folder)
+        .join(crate::settings::ROOT_FILE)
+}
+
+/// The vault's one marketplace, or `None` when it holds none or several. Counted
+/// by scanning `marketplaces/` as a build does, so the two cannot disagree.
+///
+/// # Errors
+///
+/// What a build's scan of that folder refuses.
+fn only_marketplace(
+    vfs: &dyn crate::vfs::Vfs,
+    root: &Path,
+    ns: &Namespace,
+) -> Result<Option<String>, CoreError> {
+    let folder = root.join("marketplaces");
+    if !vfs.exists(&folder) {
+        return Ok(None);
+    }
+    let files = crate::discover::load_source(vfs, root, Some(&folder))?.files;
+    let source = crate::discover::Source {
+        root: root.to_path_buf(),
+        files,
+    };
+    let scan = crate::discover::discover_in(vfs, root, &source, ns)?;
+    let present = marketplaces_in(&scan.components);
+    Ok(match present.len() {
+        1 => present.first().map(|name| (*name).to_owned()),
+        _ => None,
+    })
 }
 
 /// The marketplaces a scan holds, by folder. A marketplace's own note counts:

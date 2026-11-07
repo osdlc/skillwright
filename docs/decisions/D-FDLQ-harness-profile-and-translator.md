@@ -1,7 +1,8 @@
 # D-FDLQ: Each harness is a profile and a translator
 
 Accepted 2026-11-04. [Review](../parley/discuss-architecture.json). Part of
-[D-COMG](D-COMG-marketplace-model-and-translators.md).
+[D-COMG](D-COMG-marketplace-model-and-translators.md). Amended by
+[D-WNTQ](D-WNTQ-harness-profile-values-from-config.md).
 
 ## Decision
 

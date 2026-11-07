@@ -143,7 +143,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::compile::{basename, extension_of_target};
-use crate::discover::{slugify, validate_name};
+use crate::discover::{discover_components, slugify, validate_name};
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::guard::{assert_destination_allowed, resolve_write_path, within};
@@ -685,9 +685,6 @@ fn classify_existing(
     // shape is checked as well as the presence, because a hand-mangled digest
     // is otherwise indistinguishable from a note somebody edited — and those
     // two have different outcomes.
-    fn digest(recorded: Option<&str>) -> Option<&str> {
-        recorded.filter(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()))
-    }
     let (Some(recorded_source_hash), Some(recorded_adopted_hash)) = (
         digest(provenance.source_hash.as_deref()),
         digest(provenance.adopted_hash.as_deref()),
@@ -724,6 +721,11 @@ fn classify_existing(
             )),
         },
     )
+}
+
+/// A recorded hash, when it has the shape of one.
+fn digest(recorded: Option<&str>) -> Option<&str> {
+    recorded.filter(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 /// A repository label without its trailing `@<commit>` — seven or more hex
@@ -800,13 +802,26 @@ fn adopted_note_hash(
     ns: &Namespace,
     about: &Path,
 ) -> Result<String, CoreError> {
+    note_hash_keeping(entry_rel, note_text, peers, ns, about, &[])
+}
+
+/// [`adopted_note_hash`] with the keys in `flipped` treated the other way
+/// round: left in if they are ours, left out if they are not.
+fn note_hash_keeping(
+    entry_rel: &str,
+    note_text: &str,
+    peers: &[(String, Vec<u8>, bool)],
+    ns: &Namespace,
+    about: &Path,
+    flipped: &[&str],
+) -> Result<String, CoreError> {
     use serde_yaml::{Mapping, Value as Yaml};
 
     let (frontmatter, body) = split_frontmatter(note_text);
     let fields = frontmatter_map(frontmatter, about)?;
     let mut map = Mapping::new();
     for (key, value) in &fields {
-        if is_ours(ns, key) {
+        if is_ours(ns, key) != flipped.contains(&key.as_str()) {
             continue;
         }
         let value = serde_yaml::to_value(value).map_err(|e| {
@@ -834,6 +849,135 @@ fn adopted_note_hash(
         executable: false,
     });
     Ok(content_hash(&files))
+}
+
+// --- Refreshing the hash after a key rename ---------------------------------
+
+/// The most keys a rename can have moved for [`fix_adopt_hashes`] to try every
+/// subset of them.
+const MAX_RENAMED_KEYS: usize = 12;
+
+/// Keys a rename brings into the hash: `sw-license` on a skill sat outside it,
+/// and bare `license` sits inside it.
+const RENAMED_IN: &[&str] = &[
+    "license",
+    "version",
+    "author",
+    "owner",
+    "keywords",
+    "category",
+    "display_name",
+];
+
+/// What [`fix_adopt_hashes`] found on one adopted note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
+pub enum AdoptHashStatus {
+    /// The only change was the key rename, and the recorded hash was replaced.
+    Refreshed,
+    /// The note's content changed. Its hash was left alone.
+    Edited,
+}
+
+/// One adopted note whose recorded hash does not match it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AdoptHashFix {
+    /// The note, relative to the vault root.
+    pub note: String,
+    /// What was found.
+    pub status: AdoptHashStatus,
+}
+
+/// Refresh `adopted.hash` on every adopted skill whose only change is the key
+/// rename from prefixed to bare frontmatter.
+///
+/// A key such as `arguments` was foreign on a prefixed note, so its hash
+/// covered it. On a bare note the key is skillwright's and the hash leaves it
+/// out. `sw-license` goes the other way: outside the hash as written, inside
+/// it as `license`. Either way the rename alone reads as an edit. A note
+/// qualifies when its hash, with some of those keys moved back, equals the
+/// recorded one. Any other mismatch is a real edit, and is reported and left
+/// alone.
+///
+/// # Errors
+///
+/// What [`discover_components`] refuses, and a note that cannot be written.
+pub fn fix_adopt_hashes(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    content_root: Option<&Path>,
+    ns: &Namespace,
+    mode: AdoptMode,
+) -> Result<Vec<AdoptHashFix>, CoreError> {
+    let scan = discover_components(vfs, vault_root, content_root, ns)?;
+    let mut fixes = Vec::new();
+    for component in &scan.components {
+        if component.kind != EntityKind::Skill {
+            continue;
+        }
+        let path = &component.entry_path;
+        let note = read_vault_skill(vfs, path, ns)?;
+        let Some(recorded) = digest(note.frontmatter.provenance.adopted_hash.as_deref()) else {
+            continue;
+        };
+        let raw = read_utf8(vfs, path)?;
+        let entry_rel = format!("{}.md", component.name);
+        let peers = &note.projection.resources;
+        let current = adopted_note_hash(&entry_rel, &raw, peers, ns, path)?;
+        if recorded == current {
+            continue;
+        }
+        let status = if only_renamed(&entry_rel, &raw, peers, ns, path, recorded)? {
+            if mode == AdoptMode::Write {
+                let refreshed = raw.replacen(recorded, &current, 1);
+                vfs.write_file(path, refreshed.as_bytes())?;
+            }
+            AdoptHashStatus::Refreshed
+        } else {
+            AdoptHashStatus::Edited
+        };
+        fixes.push(AdoptHashFix {
+            note: component.vault_relative_path.clone(),
+            status,
+        });
+    }
+    Ok(fixes)
+}
+
+/// Whether moving some keys back across the hash reproduces `recorded`.
+fn only_renamed(
+    entry_rel: &str,
+    raw: &str,
+    peers: &[(String, Vec<u8>, bool)],
+    ns: &Namespace,
+    about: &Path,
+    recorded: &str,
+) -> Result<bool, CoreError> {
+    let (frontmatter, _) = split_frontmatter(raw);
+    let fields = frontmatter_map(frontmatter, about)?;
+    let moved: Vec<&str> = fields
+        .keys()
+        .map(String::as_str)
+        .filter(|key| {
+            (is_ours(ns, key) && *key != "adopted") || (ns.is_bare() && RENAMED_IN.contains(key))
+        })
+        .collect();
+    if moved.len() > MAX_RENAMED_KEYS {
+        return Ok(false);
+    }
+    for subset in 1..1_usize << moved.len() {
+        let flipped: Vec<&str> = moved
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| subset >> index & 1 == 1)
+            .map(|(_, key)| *key)
+            .collect();
+        if note_hash_keeping(entry_rel, raw, peers, ns, about, &flipped)? == recorded {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 // --- Planning ---------------------------------------------------------------

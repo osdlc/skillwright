@@ -19,7 +19,7 @@ function fixture(): { plugin: string; target: string } {
   write(
     plugin,
     'vault/plugins/skillwright/skillwright.md',
-    '---\nname: skillwright\nsw-version: 1.2.3\n---\nbody\n',
+    '---\nname: skillwright\nversion: 1.2.3\n---\nbody\n',
   )
   for (const { root, manifest } of HARNESSES) {
     write(plugin, `${root}/packs/skillwright/new.txt`, 'new')
@@ -43,7 +43,7 @@ function fixture(): { plugin: string; target: string } {
   return { plugin, target }
 }
 
-test('pluginVersion reads sw-version from the plugin note', () => {
+test('pluginVersion reads version from the plugin note', () => {
   assert.equal(pluginVersion(fixture().plugin), '1.2.3')
 })
 

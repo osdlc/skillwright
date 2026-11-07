@@ -22,10 +22,12 @@
 
 use crate::resolve::ResolvedRun;
 use serde::Serialize;
+use tradecraft_core::authoring::MARKETPLACES_DIR;
 use tradecraft_core::authoring::{
     bundle_dir, move_destination, new_note_dir, rename_destination, slug_refusal,
 };
 use tradecraft_core::discover::slugify;
+use tradecraft_core::settings::ROOT_FILE;
 use tradecraft_core::{
     AuthoringOp, DiscoveredComponent, EntityKind, FieldEdit, Namespace, NewNote, Placement,
     discover_components, plan_convert_kind, plan_create_note, plan_delete_component,
@@ -35,6 +37,7 @@ use tradecraft_core::{
 use yaml_splice::Value;
 
 use crate::apply::{self, Applied, ApplyError, Outcome, Vault};
+use crate::config::workspace_above;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
@@ -70,8 +73,9 @@ pub struct NewMarketplaceFlags {
 pub struct NewPluginFlags {
     /// The name of the new note.
     pub name: String,
-    /// The marketplace the plugin goes into.
-    pub marketplace: String,
+    /// The marketplace under `marketplaces/` it goes into. Absent means this
+    /// vault's `plugins/`.
+    pub marketplace: Option<String>,
     /// The description written into the new note.
     pub description: Option<String>,
     /// The global `--vault`, `--config` and `--namespace` flags.
@@ -195,8 +199,11 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
         Ok(run) => run,
         Err(code) => return code,
     };
-    if let Err(code) = refuse_workspace("new marketplace", &run, ctx.err) {
-        return code;
+    if workspace_above(&run.vault).is_some() {
+        return usage_error(
+            ctx.err,
+            "a marketplace holds no marketplaces: run `new marketplace` at the workspace root",
+        );
     }
     let ns = run.core_namespace();
 
@@ -236,6 +243,38 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
     )
 }
 
+/// The `--marketplace` of a `new`, as a folder under `marketplaces/`. This
+/// vault's own name means no folder at all. Any other name must be a
+/// marketplace that exists, or the note would start a second one by accident.
+fn held_marketplace(
+    named: Option<&str>,
+    run: &ResolvedRun,
+    ctx: &mut CommandContext<'_>,
+) -> Result<Option<String>, i32> {
+    let Some(name) = named else {
+        return Ok(None);
+    };
+    if name == run.marketplace_name() {
+        return Ok(None);
+    }
+    if run
+        .vault
+        .join(MARKETPLACES_DIR)
+        .join(name)
+        .join(ROOT_FILE)
+        .is_file()
+    {
+        return Ok(Some(name.to_owned()));
+    }
+    Err(usage_error(
+        ctx.err,
+        &format!(
+            "no marketplace `{name}` here: this vault is `{}`, and it holds no {MARKETPLACES_DIR}/{name}/{ROOT_FILE}. Leave out --marketplace, or run `new marketplace {name}` first",
+            run.marketplace_name()
+        ),
+    ))
+}
+
 /// Run `skillwright new plugin` and return the exit code.
 pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i32 {
     if let Some(reason) = bad_name(&flags.name, "plugin name") {
@@ -250,8 +289,12 @@ pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i
     }
     let ns = run.core_namespace();
 
+    let marketplace = match held_marketplace(flags.marketplace.as_deref(), &run, ctx) {
+        Ok(marketplace) => marketplace,
+        Err(code) => return code,
+    };
     let placement = Placement {
-        marketplace: Some(flags.marketplace.clone()),
+        marketplace,
         plugin: None,
         kind: Some(EntityKind::Plugin.as_str().to_string()),
         folder: None,
@@ -304,7 +347,11 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
     // `plugins/dev-agent/skills` outside every marketplace. Only inferred
     // when the plugin resolves to exactly one component; anything else falls
     // through to the placement as given.
-    let marketplace = flags.marketplace.clone().or_else(|| {
+    let named = match held_marketplace(flags.marketplace.as_deref(), &run, ctx) {
+        Ok(marketplace) => marketplace,
+        Err(code) => return code,
+    };
+    let marketplace = named.or_else(|| {
         flags.plugin.as_deref().and_then(|plugin| {
             let matches: Vec<&DiscoveredComponent> = components
                 .iter()
@@ -317,9 +364,9 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
         })
     });
 
-    // No placement at all is the one shape `new_note_dir` treats specially —
-    // the vault's own default marketplace and plugin. Naming either level
-    // switches to an explicit placement, passed through as given.
+    // No placement at all is the one shape `new_note_dir` treats specially:
+    // the vault's own `skills/`, a plugin named after the marketplace. Naming
+    // either level switches to an explicit placement, passed through as given.
     let placement = if marketplace.is_none() && flags.plugin.is_none() {
         None
     } else {
@@ -373,6 +420,11 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Err(code) => return code,
     };
     if let Err(code) = refuse_workspace("rename", &run, ctx.err) {
+        let _ = writeln!(
+            ctx.err,
+            "That renames a component inside it. To rename a marketplace, rename its folder and \
+             change `name` in its skillwright.md"
+        );
         return code;
     }
     let ns = run.core_namespace();
@@ -956,11 +1008,14 @@ fn expected_create_path(placement: Option<&Placement>, name: &str, bundled: bool
     let Ok(dir) = new_note_dir(placement) else {
         return slug;
     };
-    let is_container = placement
+    let kind = placement
         .and_then(|p| p.kind.as_deref())
-        .and_then(|k| k.trim().parse::<EntityKind>().ok())
-        .is_some_and(EntityKind::holds_components);
-    if bundled || is_container {
+        .and_then(|k| k.trim().parse::<EntityKind>().ok());
+    let is_marketplace = kind == Some(EntityKind::Marketplace);
+    let is_container = kind.is_some_and(EntityKind::holds_components);
+    if is_marketplace {
+        format!("{dir}/{slug}/{ROOT_FILE}")
+    } else if bundled || is_container {
         format!("{dir}/{slug}/{slug}.md")
     } else {
         format!("{dir}/{slug}.md")

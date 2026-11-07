@@ -69,17 +69,18 @@ pub struct MarketplaceFields {
 
 /// Where `publish` writes when `--to` is not given.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct DestinationSetting {
     /// The destination root directory, relative to the root file.
     pub root: String,
     /// The target rendered into the root.
     pub target: String,
+    /// `project` or `user`. Informational: nothing reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 /// One `build.assets` entry: a file or folder copied into a plugin's root.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AssetSetting {
     /// The source file or folder, relative to the root file.
     pub from: String,
@@ -92,7 +93,6 @@ pub struct AssetSetting {
 
 /// One `build.hooks` entry: a Claude Code `hooks.json` rendered per harness.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct HookSetting {
     /// The file, relative to the root file.
     pub from: String,
@@ -119,6 +119,9 @@ pub struct BuildSettings {
     /// [`MarketplaceConfig::launcher_path`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launcher_path: Option<String>,
+    /// How `bump` writes a version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bump: Option<BumpSettings>,
     /// Refuse a note with a `name` and no `description` instead of
     /// publishing a filler.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -230,6 +233,26 @@ fn one_or_many<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<
     })
 }
 
+/// `build.bump`: how `bump` writes a version.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct BumpSettings {
+    /// How a bump writes the patch number.
+    #[serde(default)]
+    pub patch: PatchScheme,
+}
+
+/// How `bump` writes the patch number of the version it sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PatchScheme {
+    /// Semver: a patch bump adds one, a minor or major bump resets it to 0.
+    #[default]
+    Increment,
+    /// Every bump sets the patch to the UTC time as `YYYYMMDDHHMMSS`, or to
+    /// one more than the current patch when that is larger.
+    Timestamp,
+}
+
 /// A parsed root file.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct RootFile {
@@ -280,6 +303,7 @@ pub const BUILD_KEYS: &[&str] = &[
     "harnesses",
     "namespace",
     "launcher_path",
+    "bump",
     "require_descriptions",
     "destinations",
     "scan_locations",
@@ -293,6 +317,22 @@ pub const BUILD_KEYS: &[&str] = &[
 /// fields come out as the JSON a manifest carries.
 fn from_yaml<T: DeserializeOwned>(value: &serde_yaml::Value) -> Result<T, serde_json::Error> {
     serde_json::to_value(value).and_then(serde_json::from_value)
+}
+
+/// A new root file naming the marketplace and its output folder, the file
+/// `skillwright init` writes.
+#[must_use]
+pub fn compose_root_file(name: &str, out: &str) -> String {
+    use serde_yaml::{Mapping, Value};
+
+    let string = |value: &str| Value::String(value.to_owned());
+    let mut build = Mapping::new();
+    build.insert(string("out"), string(out));
+    let mut map = Mapping::new();
+    map.insert(string("name"), string(name));
+    map.insert(string("build"), Value::Mapping(build));
+    let yaml = serde_yaml::to_string(&map).expect("a mapping of strings serializes");
+    format!("---\n{yaml}---\n")
 }
 
 /// Refuses an `owner` or `author` that the key table's
@@ -369,6 +409,17 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
         match key.as_str() {
             "workspace" => root.workspace = field(&key, &value, "true or false")?,
             "build" => root.build = build(&value, &mut root.warnings)?,
+            // Ignored, a run would write the wrong version with no error.
+            "bump" => {
+                return Err(SettingsError {
+                    key: "bump".to_owned(),
+                    what: "read at the top level",
+                    detail: format!(
+                        "it is `build.bump` now. See {}",
+                        crate::keys::MIGRATING_GUIDE
+                    ),
+                });
+            }
             known if MARKETPLACE_KEYS.contains(&known) => {
                 check_person(known, &value)?;
                 marketplace.insert(serde_yaml::Value::String(key), value);
@@ -474,7 +525,19 @@ fn build(
         match key.as_str() {
             Some("exclude") => exclude = globs("build.exclude", value)?,
             Some("patterns") => patterns = folder_patterns(value, warnings)?,
+            // Ignored, it would ship the launcher calls unrewritten.
+            Some("shim_target") => {
+                return Err(SettingsError {
+                    key: "build.shim_target".to_owned(),
+                    what: "read any more",
+                    detail: format!(
+                        "it is `build.launcher_path` now. See {}",
+                        crate::keys::MIGRATING_GUIDE
+                    ),
+                });
+            }
             Some(name) if BUILD_KEYS.contains(&name) => {
+                warn_nested(name, value, warnings);
                 kept.insert(key.clone(), value.clone());
             }
             Some(name) => warnings.push(format!(
@@ -482,6 +545,12 @@ fn build(
             )),
             None => warnings.push("a `build:` key that is not a string is ignored".to_owned()),
         }
+    }
+    // Key by key first, so a wrong value is named by its own key.
+    for (key, value) in &kept {
+        let one: serde_yaml::Mapping = [(key.clone(), value.clone())].into_iter().collect();
+        let name = format!("build.{}", key.as_str().unwrap_or_default());
+        field::<BuildSettings>(&name, &serde_yaml::Value::Mapping(one), "valid")?;
     }
     let build: BuildSettings = field("build", &serde_yaml::Value::Mapping(kept), "a build block")?;
     Ok(BuildSettings {
@@ -569,6 +638,39 @@ fn globs(key: &str, value: &serde_yaml::Value) -> Result<Vec<String>, SettingsEr
     Ok(globs)
 }
 
+/// Warn about each unknown key in an entry of a `build:` list. Each entry's
+/// struct ignores them when it is read.
+fn warn_nested(list: &str, value: &serde_yaml::Value, warnings: &mut Vec<String>) {
+    if list == "bump" {
+        let keys = value.as_mapping().into_iter().flat_map(|map| map.keys());
+        for key in keys.filter_map(serde_yaml::Value::as_str) {
+            if key != "patch" {
+                warnings.push(format!(
+                    "`build.bump.{key}` is not a key skillwright reads; it is ignored"
+                ));
+            }
+        }
+        return;
+    }
+    let known: &[&str] = match list {
+        "destinations" => &["root", "target", "scope"],
+        "assets" => &["from", "to", "plugin"],
+        "hooks" => &["from", "plugin"],
+        _ => return,
+    };
+    let entries = value.as_sequence().map_or(&[][..], Vec::as_slice);
+    let keys = entries
+        .iter()
+        .filter_map(serde_yaml::Value::as_mapping)
+        .flat_map(|entry| entry.keys())
+        .filter_map(serde_yaml::Value::as_str);
+    for key in keys.filter(|key| !known.contains(key)) {
+        warnings.push(format!(
+            "`build.{list}[].{key}` is not a key skillwright reads; it is ignored"
+        ));
+    }
+}
+
 /// The build config a root file's text describes: [`parse_root_file`], then
 /// [`RootFile::to_config`], for a host that wants the config and not the file.
 ///
@@ -585,9 +687,10 @@ impl RootFile {
     /// The marketplace fields every plugin inherits (`author`, `license`,
     /// `targets`, `repository`, `homepage` and the harness blocks, key by key)
     /// inherit from the workspace too. So do `harnesses`, `namespace`,
-    /// `launcher_path`, `require_descriptions`, `exclude` and each key of
-    /// `patterns`, whose globs read from each marketplace's own folder. An
-    /// exclusion must not fail open. `out` is each marketplace's own.
+    /// `launcher_path`, `bump`, `require_descriptions`, `destinations`,
+    /// `scan_locations`, `assets`, `hooks`, `exclude` and each key of
+    /// `patterns`. Their paths and globs read from each marketplace's own
+    /// folder. An exclusion must not fail open. `out` is each marketplace's own.
     ///
     /// Key by key: a value this file sets wins, and every other key still
     /// comes from the workspace. The workspace root holds shared defaults and
@@ -629,8 +732,23 @@ impl RootFile {
         if build.launcher_path.is_none() {
             build.launcher_path.clone_from(&shared.launcher_path);
         }
+        if build.bump.is_none() {
+            build.bump.clone_from(&shared.bump);
+        }
         if build.require_descriptions.is_none() {
             build.require_descriptions = shared.require_descriptions;
+        }
+        if build.destinations.is_empty() {
+            build.destinations.clone_from(&shared.destinations);
+        }
+        if build.scan_locations.is_empty() {
+            build.scan_locations.clone_from(&shared.scan_locations);
+        }
+        if build.assets.is_empty() {
+            build.assets.clone_from(&shared.assets);
+        }
+        if build.hooks.is_empty() {
+            build.hooks.clone_from(&shared.hooks);
         }
         if build.exclude.is_empty() {
             build.exclude.clone_from(&shared.exclude);
@@ -752,7 +870,7 @@ mod tests {
         assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
         assert_eq!(member.build.launcher_path.as_deref(), Some("bin/ws"));
         assert_eq!(member.marketplace.license.as_deref(), Some("MIT"));
-        // A path names a place relative to the workspace, so it does not.
+        // The output is each member's own.
         assert_eq!(member.build.out, None);
     }
 
@@ -819,9 +937,57 @@ mod tests {
     }
 
     #[test]
+    fn build_bump_picks_the_patch_scheme() {
+        let root = parse_root_file("---\nbuild:\n  bump:\n    patch: timestamp\n---\n").unwrap();
+        assert_eq!(root.build.bump.unwrap().patch, PatchScheme::Timestamp);
+    }
+
+    #[test]
+    fn an_unknown_key_under_build_bump_warns() {
+        let root = parse_root_file("---\nbuild:\n  bump:\n    patch: timestamp\n    tag: x\n---\n")
+            .unwrap();
+        assert_eq!(root.build.bump.unwrap().patch, PatchScheme::Timestamp);
+        assert!(
+            root.warnings.iter().any(|w| w.contains("`build.bump.tag`")),
+            "{:?}",
+            root.warnings
+        );
+    }
+
+    #[test]
+    fn a_wrong_build_bump_is_named() {
+        let err = parse_root_file("---\nbuild:\n  bump:\n    patch: weekly\n---\n").unwrap_err();
+        assert_eq!(err.key, "build.bump");
+    }
+
+    #[test]
+    fn a_top_level_bump_is_refused_naming_its_new_key() {
+        let err = parse_root_file("---\nbump:\n  patch: timestamp\n---\n").unwrap_err();
+        assert_eq!(err.key, "bump");
+        assert!(err.detail.contains("build.bump"), "{err}");
+    }
+
+    #[test]
+    fn a_marketplace_inherits_build_bump_from_its_workspace() {
+        let workspace =
+            parse_root_file("---\nworkspace: true\nbuild:\n  bump:\n    patch: timestamp\n---\n")
+                .unwrap();
+        let mut member = parse_root_file("---\nname: one\n---\n").unwrap();
+        member.inherit(&workspace);
+        assert_eq!(member.build.bump.unwrap().patch, PatchScheme::Timestamp);
+    }
+
+    #[test]
+    fn a_leftover_shim_target_is_refused_naming_its_new_key() {
+        let err = parse_root_file("---\nbuild:\n  shim_target: bin/tool\n---\n").unwrap_err();
+        assert_eq!(err.key, "build.shim_target");
+        assert!(err.detail.contains("build.launcher_path"), "{err}");
+    }
+
+    #[test]
     fn a_known_key_of_the_wrong_shape_is_named() {
         let err = parse_root_file("---\nbuild:\n  harnesses: claude\n---\n").unwrap_err();
-        assert_eq!(err.key, "build");
+        assert_eq!(err.key, "build.harnesses");
         assert!(err.detail.contains("sequence"), "{err}");
         let err = parse_root_file("---\nworkspace: maybe\n---\n").unwrap_err();
         assert_eq!(err.key, "workspace");
@@ -857,6 +1023,22 @@ mod tests {
         assert_eq!(member.build.exclude, ["**/*.draft.md"]);
         assert_eq!(member.build.patterns.skills, ["mine/*"]);
         assert_eq!(member.build.patterns.plugins, ["packs/*"]);
+    }
+
+    #[test]
+    fn a_marketplace_inherits_its_build_lists_key_by_key() {
+        let workspace = parse_root_file(
+            "---\nworkspace: true\nbuild:\n  destinations:\n    - {root: d, target: claude}\n  \
+             scan_locations: [shared]\n  assets:\n    - {from: a, to: b}\n  hooks:\n    \
+             - {from: h.json}\n---\n",
+        )
+        .unwrap();
+        let mut member = parse_root_file("---\nbuild:\n  scan_locations: [mine]\n---\n").unwrap();
+        member.inherit(&workspace);
+        assert_eq!(member.build.destinations, workspace.build.destinations);
+        assert_eq!(member.build.scan_locations, ["mine"]);
+        assert_eq!(member.build.assets, workspace.build.assets);
+        assert_eq!(member.build.hooks, workspace.build.hooks);
     }
 
     #[test]

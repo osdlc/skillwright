@@ -2,7 +2,7 @@
 
 Status: current.
 
-A harness's name as written in `sw-targets` or `--target`. Several spellings fold to one (`claude`, `claude-code`).
+A harness's name as written in `targets` or `--target`. Several spellings fold to one (`claude`, `claude-code`).
 
 ## In code
 

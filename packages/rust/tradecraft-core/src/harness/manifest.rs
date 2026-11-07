@@ -141,6 +141,26 @@ fn harness_paths() -> BTreeSet<&'static str> {
     paths
 }
 
+/// Refuses a block `metadata` on a container that is not a mapping.
+///
+/// # Errors
+///
+/// `refused: malformed-block`.
+pub(crate) fn check_block_metadata(config: &MarketplaceConfig) -> Result<(), CoreError> {
+    let plugins = config.plugins.values().map(|plugin| &plugin.blocks);
+    for blocks in std::iter::once(&config.blocks).chain(plugins) {
+        for (harness, block) in blocks {
+            if block.get("metadata").is_some_and(|m| !m.is_object()) {
+                return Err(CoreError::refused(
+                    "malformed-block",
+                    format!("`{harness}.metadata` must be a mapping"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Refuses a `packs` value a build could not own: one that leaves the output,
 /// that lands on a harness's manifests or folders, or that another harness's
 /// `packs` overlaps. A harness's own default is always its own.
@@ -452,6 +472,8 @@ pub(crate) fn inherited<T: Clone>(
 /// The version a plugin ships as when nothing states one.
 pub(crate) const DEFAULT_PLUGIN_VERSION: &str = "0.1.0";
 
+/// The plugin's own `version`. The load gives the marketplace's own plugin the
+/// marketplace's, so this is the one answer for every plugin.
 pub(crate) fn plugin_version(config: &MarketplaceConfig, plugin: &str) -> String {
     overrides_for(config, plugin)
         .and_then(|o| o.version.clone())
@@ -526,6 +548,15 @@ fn normalize_author(author: serde_json::Value) -> serde_json::Value {
     }
 }
 
+/// A person as Cursor reads one: its docs and schema list `name` and `email`,
+/// and the schema closes the object.
+fn without_url(mut person: serde_json::Value) -> serde_json::Value {
+    if let Some(fields) = person.as_object_mut() {
+        fields.remove("url");
+    }
+    person
+}
+
 /// One plugin's pack manifest, `members` its skills' names.
 ///
 /// One function for every layout a pack is written in — a built marketplace
@@ -574,7 +605,10 @@ pub fn render_plugin_manifest(
         name: plugin.to_owned(),
         version: plugin_version(config, plugin),
         description: plugin_description(config, plugin, members),
-        author: plugin_author(config, plugin),
+        author: plugin_author(config, plugin).map(|author| match dialect {
+            PluginDialect::Cursor => without_url(author),
+            _ => author,
+        }),
         license: plugin_license(config, plugin),
         keywords: overrides_for(config, plugin)
             .and_then(|o| o.keywords.clone())
@@ -688,8 +722,9 @@ pub fn codex_marketplace_manifest(
 }
 
 /// Claude's index: a **required** owner object, an optional top-level
-/// description, and an entry carrying the description and version the pack
-/// manifest also holds.
+/// description, and an entry carrying the description. The version stays in
+/// `plugin.json` alone: with both, that one wins and `claude plugin validate`
+/// warns.
 ///
 /// `owner` is marked required and typed as an object — `name` required,
 /// `email` and `url` optional — and a bare string is rejected outright
@@ -715,7 +750,6 @@ pub fn claude_marketplace_manifest(
             name: String,
             source: String,
             description: String,
-            version: String,
             #[serde(flatten)]
             listing: EntryListing,
         }
@@ -744,7 +778,6 @@ pub fn claude_marketplace_manifest(
                     name: (*plugin).to_owned(),
                     source: format!("./{packs}/{plugin}"),
                     description: plugin_description(config, plugin, members),
-                    version: plugin_version(config, plugin),
                     listing: entry_listing(config, plugin),
                 })
                 .collect(),
@@ -803,6 +836,7 @@ pub fn cursor_marketplace_manifest(
             .owner
             .clone()
             .map(normalize_author)
+            .map(without_url)
             .unwrap_or_else(|| serde_json::json!({ "name": name })),
         metadata: (config.description.is_some() || config.version.is_some()).then(|| Metadata {
             description: config.description.clone(),

@@ -846,7 +846,7 @@ mod tests {
         let skill = "---\ndescription: Use it.\n---\nBody.\n";
         file("/vault/skillwright.md", "---\nname: m\n---\n");
         file(
-            "/vault/marketplaces/m/m.md",
+            "/vault/marketplaces/m/skillwright.md",
             "---\nname: m\nclaude: {packs: built}\n---\n",
         );
         file("/vault/marketplaces/m/plugins/rev/skills/a.md", skill);

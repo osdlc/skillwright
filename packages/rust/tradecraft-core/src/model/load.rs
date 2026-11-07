@@ -30,7 +30,7 @@ use crate::compile::{
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION_REASON,
-    UNKNOWN_KEY_REASON, discover_in, load_source,
+    NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON, UNKNOWN_KEY_REASON, discover_in, load_source,
 };
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
@@ -187,7 +187,7 @@ pub fn load(
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing publishable rather than that it is not there.
     let market = resolve_marketplace(&discovered, request.marketplace.as_deref())?;
-    let cascade = Cascade::over(&discovered, market.as_deref(), &request.config);
+    let mut cascade = Cascade::over(&discovered, market.as_deref(), &request.config);
     cascade.resolve_targets(&mut discovered);
     let belonging: Vec<&DiscoveredComponent> = discovered
         .iter()
@@ -201,10 +201,20 @@ pub fn load(
         .filter(|c| c.kind != EntityKind::Marketplace || market.as_deref() == Some(c.folder()))
         .map(|c| c.vault_relative_path.as_str())
         .collect();
+    // A never-ship note is no component, so only its path says whose it is.
+    let another_marketplace = |path: &str| {
+        path.strip_prefix("marketplaces/")
+            .and_then(|rest| rest.split('/').next())
+            .is_some_and(|folder| market.as_deref() != Some(folder))
+    };
     let mut warnings: Vec<DiscoveryWarning> = scan
         .warnings
         .into_iter()
-        .filter(|w| ours.contains(w.path.as_str()))
+        .filter(|w| {
+            ours.contains(w.path.as_str())
+                || ([NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON].contains(&w.reason.as_str())
+                    && !another_marketplace(&w.path))
+        })
         .collect();
     // Named, never dropped: a pack has a place for skills, commands and hooks
     // and for nothing else, and a build that quietly omitted an agent would
@@ -246,7 +256,6 @@ pub fn load(
         ));
     }
     let name = marketplace_name(&cascade.config, market.as_deref())?;
-    let config = &cascade.config;
     // A silent note the config describes ships that value, so it is not
     // missing one.
     warnings.retain(|w| {
@@ -269,9 +278,20 @@ pub fn load(
         ));
     }
     let mut plugins = group_by_plugin(&skills, &commands, &hooks, &name)?;
+    // The marketplace's own plugin has no folder, so its note is the
+    // marketplace's and it ships the marketplace's version.
+    if plugins.contains_key(&name)
+        && !has_folder(&discovered, market.as_deref(), &name)
+        && let Some(version) = cascade.config.version.clone()
+    {
+        let own = cascade.config.plugins.entry(name.clone()).or_default();
+        own.version.get_or_insert(version);
+    }
+    let config = &cascade.config;
     warnings.extend(missing_versions(
         &discovered,
         market.as_deref(),
+        &name,
         &plugins,
         config,
     ));
@@ -361,6 +381,7 @@ pub fn load(
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
     apply_naming(&mut plugins, config)?;
     crate::harness::manifest::check_packs(config)?;
+    crate::harness::manifest::check_block_metadata(config)?;
 
     Ok(Marketplace {
         name,
@@ -481,6 +502,7 @@ pub struct Pack {
 /// * `refused: unreadable-note` — a member the scan could not read. A pack
 ///   must not install a subset silently.
 /// * `refused: empty-plugin` — nothing this destination admits.
+/// * `refused: malformed-block` — a block `metadata` that is not a mapping.
 /// * What [`resolve_body`] refuses for any member.
 pub fn load_plugin(
     vfs: &dyn Vfs,
@@ -490,6 +512,7 @@ pub fn load_plugin(
     profile: &'static HarnessProfile,
     ns: &Namespace,
 ) -> Result<Pack, CoreError> {
+    crate::harness::manifest::check_block_metadata(&cascade.config)?;
     let canonical = profile.name;
     let carries_commands = profile.format().carries_commands;
     let (mut scan, links) = read_notes(vfs, vault_root, None, ns)?;
@@ -730,7 +753,7 @@ fn recording_context<'a>(
 }
 
 /// The renderer a recording compile never calls.
-fn no_render(_: &IndexedSkill) -> Result<String, CoreError> {
+fn no_render(_: &IndexedSkill, _: bool) -> Result<String, CoreError> {
     Ok(String::new())
 }
 
@@ -986,19 +1009,76 @@ pub(crate) fn targets_name(targets: Option<&[String]>, canonical: &str) -> bool 
     }
 }
 
-/// A plugin this build publishes from its own note, with no version from the
+/// The folder a plugin's members sit in, as a scan spells it.
+fn members_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name: &str) -> String {
+    discovered
+        .iter()
+        .filter(|c| c.plugin.as_deref() == Some(name) && belongs_to(c, market))
+        .find_map(|c| crate::discover::plugin_folder_in(&c.vault_relative_path, name))
+        .unwrap_or_else(|| format!("plugins/{name}"))
+}
+
+/// Whether a component of `market` sits in a folder of the plugin `name`.
+fn has_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name: &str) -> bool {
+    discovered
+        .iter()
+        .any(|c| belongs_to(c, market) && crate::discover::in_plugin_folder(c, name))
+}
+
+/// The plugins this build publishes with no version from the
 /// note or the config. It ships as [`DEFAULT_PLUGIN_VERSION`], and a harness compares versions
 /// to decide whether an installed pack is out of date — so a pack that never
 /// states one never looks updated.
 fn missing_versions(
     discovered: &[DiscoveredComponent],
     market: Option<&str>,
+    own_plugin: &str,
     plugins: &BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Vec<DiscoveryWarning> {
-    discovered
+    let noted: Vec<&DiscoveredComponent> = discovered
         .iter()
         .filter(|c| c.kind == EntityKind::Plugin && belongs_to(c, market))
+        .collect();
+    let implicit = |name: &str| name == own_plugin && !has_folder(discovered, market, name);
+    let folder_only = plugins
+        .keys()
+        .filter(|name| !noted.iter().any(|c| c.folder() == name.as_str()))
+        .filter(|name| {
+            config
+                .plugins
+                .get(*name)
+                .and_then(|o| o.version.as_ref())
+                .is_none()
+        })
+        .map(|name| {
+            if implicit(name) {
+                let file = match market {
+                    Some(m) => format!("marketplaces/{m}/{}", crate::settings::ROOT_FILE),
+                    None => crate::settings::ROOT_FILE.to_owned(),
+                };
+                return DiscoveryWarning {
+                    detail: format!(
+                        "plugin `{name}` is the marketplace's own, so it takes its version from \
+                         the root file, and `{file}` states none; published as `0.1.0`. Set \
+                         `version` there"
+                    ),
+                    path: file,
+                    reason: "missing-version".to_owned(),
+                };
+            }
+            let folder = members_folder(discovered, market, name);
+            DiscoveryWarning {
+                detail: format!(
+                    "plugin `{name}` has no note, so it states no version; published as `0.1.0`. \
+                     Add `{folder}/{name}.md` with a `version`"
+                ),
+                path: folder,
+                reason: "missing-version".to_owned(),
+            }
+        });
+    noted
+        .iter()
         .filter(|c| plugins.contains_key(c.folder()))
         .filter(|c| {
             config
@@ -1016,6 +1096,7 @@ fn missing_versions(
                 c.name
             ),
         })
+        .chain(folder_only)
         .collect()
 }
 
@@ -1038,7 +1119,7 @@ fn marketplace_name(config: &MarketplaceConfig, market: Option<&str>) -> Result<
             match market {
                 Some(name) => format!(
                     "marketplace `{name}` has no note naming it and the build supplied no name \
-                     either — add a `{name}/{name}.md` carrying `name:`, or configure one"
+                     either — add a `marketplaces/{name}/skillwright.md` carrying `name:`, or configure one"
                 ),
                 None => "this vault holds no marketplace to name one, and the build supplied no \
                          name — configure one, or give the vault a `marketplaces/<name>/` holding \

@@ -32,7 +32,7 @@ try {
   const folder = join(vault, 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(folder, { recursive: true })
   writeFileSync(
-    join(vault, 'marketplaces/house/house.md'),
+    join(vault, 'marketplaces/house/skillwright.md'),
     '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
   const note = join(folder, 'review.md')

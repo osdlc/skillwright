@@ -22,6 +22,7 @@
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
 //! | [`harness`] | Each harness as a profile row (data) and a translator (code) |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
+//! | [`paths`] | Load the root file with its workspace folded in ([`load_marketplace`]), or its pieces |
 //! | [`adopt`] | Published SKILL.md bundles imported as vault notes |
 //! | [`authoring`] | Where a note goes, what it collides with, what it says |
 //! | [`guard`] | The rails that keep a publish out of a source root |
@@ -84,6 +85,7 @@ pub mod keys;
 pub mod manifest;
 pub mod model;
 pub mod namespace;
+pub mod paths;
 pub mod patterns;
 pub mod projection;
 pub mod publish;
@@ -99,8 +101,8 @@ pub mod vfs;
 mod walk;
 
 pub use adopt::{
-    AdoptMode, AdoptReport, AdoptRequest, AdoptStatus, AdoptedSkill, DEFAULT_ADOPTED_PLUGIN,
-    adopt_skills, rewrite_to_wikilinks,
+    AdoptHashFix, AdoptHashStatus, AdoptMode, AdoptReport, AdoptRequest, AdoptStatus, AdoptedSkill,
+    DEFAULT_ADOPTED_PLUGIN, adopt_skills, fix_adopt_hashes, rewrite_to_wikilinks,
 };
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
 pub use authoring::{
@@ -118,13 +120,14 @@ pub use corpus::*;
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION,
     MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON, default_name,
-    discover_components, folder_kind, is_skill_entry,
+    discover_components, discover_roster, folder_kind, in_plugin_folder, is_skill_entry,
+    plugin_folder_in,
 };
 pub use error::*;
 pub use export::{
     AssetSpec, ExportMode, ExportReport, ExportRequest, ExportUnit, HookFileSpec,
     MarketplaceConfig, PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_skills,
-    marketplace_manifest_path, owned_paths, plugin_manifest_path, published_skill_name,
+    marketplace_manifest_path, owned_paths, packs_path, plugin_manifest_path, published_skill_name,
     rendered_skill_call,
 };
 pub use frontmatter::{
@@ -135,6 +138,10 @@ pub use harness::manifest::{check_packs, packs_of};
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, REMOVED, Shape};
 pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
+pub use paths::{
+    LoadedMarketplace, MarketplaceInputs, WORKSPACE_DIR, find_root_file, load_marketplace,
+    marketplace_inputs, resolve_path, workspace_above,
+};
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,
     PublishStatus, PublishedFile, ReasonToken, canonical_target, canonical_targets, publish_skill,
@@ -142,11 +149,12 @@ pub use publish::{
 };
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
-    AssetSetting, BuildSettings, DestinationSetting, HookSetting, MarketplaceFields, ROOT_FILE,
-    RootFile, SettingsError, parse_root_file,
+    AssetSetting, BuildSettings, BumpSettings, DestinationSetting, HookSetting, MarketplaceFields,
+    PatchScheme, ROOT_FILE, RootFile, SettingsError, compose_root_file, parse_root_file,
 };
 pub use source_view::{
-    SourceView, VaultScope, effective_config, effective_configs, source_view, vault_config,
+    SourceView, VaultScope, effective_config, effective_configs, marketplace_folder, source_view,
+    vault_config,
 };
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};

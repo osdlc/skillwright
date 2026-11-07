@@ -92,6 +92,13 @@ export interface PublishRequest {
   overwrite?: string[];
 
   /**
+   * `destination_root` is the home directory, and files land in the
+   * harness's user folders rather than its project folders. The two differ
+   * for Pi, whose user skills are `.pi/agent/skills`.
+   */
+  user_folders?: boolean;
+
+  /**
    * The vault's frontmatter namespace, as a stem, such as `sw`, or whatever the
    * host configured. Absent means [`Namespace::default`].
    */
@@ -493,6 +500,9 @@ export interface BuildSettings {
    */
   launcher_path?: string;
 
+  /** How `bump` writes a version. */
+  bump?: BumpSettings;
+
   /**
    * Refuse a note with a `name` and no `description` instead of
    * publishing a filler.
@@ -524,6 +534,15 @@ export interface BuildSettings {
   patterns?: FolderPatterns;
 }
 
+/** `build.bump`: how `bump` writes a version. */
+export interface BumpSettings {
+  /** How a bump writes the patch number. */
+  patch: PatchScheme;
+}
+
+/** How `bump` writes the patch number of the version it sets. */
+export type PatchScheme = "increment" | "timestamp";
+
 /** Where `publish` writes when `--to` is not given. */
 export interface DestinationSetting {
   /** The destination root directory, relative to the root file. */
@@ -531,6 +550,9 @@ export interface DestinationSetting {
 
   /** The target rendered into the root. */
   target: string;
+
+  /** `project` or `user`. Informational: nothing reads it. */
+  scope?: string;
 }
 
 /** One `build.assets` entry: a file or folder copied into a plugin's root. */
@@ -977,8 +999,8 @@ export interface ExportRequest {
    * Paths are absolute, resolved by the caller: this core never reads an
    * ambient root file, so it has nothing to resolve a relative asset
    * path against (see the crate doc's wasm-boundary note on
-   * [`MarketplaceConfig`]). The CLI resolves `build.assets` entries against the
-   * root file's own directory before building this request.
+   * [`MarketplaceConfig`]). The Rust helper `marketplace_inputs` resolves
+   * `build.assets` entries against the root file's own directory.
    */
   assets?: AssetSpec[];
 
@@ -1410,9 +1432,9 @@ export interface SkillContent {
   compatibility: string | null;
 
   /**
-   * The Agent Skills spec's `metadata:` — a string-to-string map. Only the entries the
-   * note wrote under that key; the unmodeled top-level keys in
-   * [`Self::annotations`] join them in one block at render time.
+   * The Agent Skills spec's `metadata:`. Only the entries the note wrote under that key;
+   * the unmodeled top-level keys in [`Self::annotations`] join them in one block at render
+   * time, as YAML, so an unquoted `true` publishes as a boolean.
    */
   metadata: Record<string, string>;
 
@@ -1572,6 +1594,12 @@ export interface Call {
 
   /** The call as written, for a refusal. */
   destination: string;
+
+  /**
+   * A plain `[[skill]]`: written as the skill's published name, with no
+   * call sigil, rather than as an invocation.
+   */
+  mention: boolean;
 
   /** The note the call is in, for a refusal. */
   caller: string;
@@ -1807,6 +1835,9 @@ export interface StatusRequest {
 
   /** Root of the vault, when the caller knows it. */
   skills_root?: string;
+
+  /** See [`PublishRequest::user_folders`]. */
+  user_folders?: boolean;
 
   /** The root file's config; see [`PublishRequest::config`]. */
   config?: MarketplaceConfig;

@@ -550,7 +550,8 @@ pub fn write_component(
 }
 
 /// A call at `canonical`, written in `runtime`'s syntax, a skill of a plugin
-/// named by `naming`.
+/// named by `naming`. A mention is the skill's name as that harness
+/// qualifies it, with no call sigil.
 fn render_call(
     call: &Call,
     canonical: &str,
@@ -561,11 +562,22 @@ fn render_call(
     let Some(runtime) = runtime else {
         return Ok(call.skill.name.clone());
     };
-    match &call.skill.plugin {
+    let rendered = match &call.skill.plugin {
         Some(plugin) => {
-            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)
+            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)?
         }
-        None => crate::export::checked_skill_call(runtime, None, &call.skill.name),
+        None => crate::export::checked_skill_call(runtime, None, &call.skill.name)?,
+    };
+    if !call.mention {
+        return Ok(rendered);
+    }
+    let prefix = runtime.skill_call_syntax().prefix;
+    match rendered.strip_prefix(prefix) {
+        Some(name) => Ok(name.to_owned()),
+        None => Err(CoreError::refused(
+            "skill-call-invalid",
+            format!("the {runtime:?} call `{rendered}` does not start with `{prefix}`"),
+        )),
     }
 }
 

@@ -192,7 +192,7 @@ fn built_vault() -> tempfile::TempDir {
     );
     write(
         dir.path(),
-        "marketplaces/m/m.md",
+        "marketplaces/m/skillwright.md",
         "---\nname: m\nclaude: {packs: built}\n---\n",
     );
     write(
@@ -473,10 +473,10 @@ fn new_marketplace_writes_the_note_and_its_plugins_scaffold() {
     assert_eq!(result.code, 0, "{}", result.stderr);
     assert_eq!(
         result.stdout,
-        "marketplaces/acme/acme.md  written \u{b7} first-write\n\
+        "marketplaces/acme/skillwright.md  written \u{b7} first-write\n\
          marketplaces/acme/plugins  written \u{b7} scaffold\n"
     );
-    let note = fs::read_to_string(vault.join("marketplaces/acme/acme.md")).unwrap();
+    let note = fs::read_to_string(vault.join("marketplaces/acme/skillwright.md")).unwrap();
     assert_eq!(
         note,
         "---\nname: acme\ndescription: Acme's own marketplace.\n---\n"
