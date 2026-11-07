@@ -951,3 +951,99 @@ fn marketplace_picks_a_workspace_member_for_a_bump() {
     let text = fs::read_to_string(&note).unwrap();
     assert!(text.contains("version: 1.0.1"), "{text}");
 }
+
+#[test]
+fn check_advises_a_bump_that_runs_in_a_vault_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    two_marketplaces(root);
+    assert_eq!(
+        run(&["build", "--marketplace", "two", "--yes"], root).code,
+        0
+    );
+    fs::write(
+        root.join("marketplaces/two/plugins/p/skills/a.md"),
+        "---\ndescription: A.\n---\n\nTwo.\n",
+    )
+    .unwrap();
+
+    let check = run(&["check", "--marketplace", "two"], root);
+    let advised = check
+        .stderr
+        .lines()
+        .find_map(|line| {
+            line.split('`')
+                .nth(1)
+                .filter(|c| c.starts_with("skillwright bump"))
+        })
+        .unwrap_or_else(|| panic!("no bump advice: {}", check.stderr))
+        .to_owned();
+    assert_eq!(advised, "skillwright bump p --marketplace two");
+    let mut argv: Vec<&str> = advised.split(' ').skip(1).collect();
+    argv.push("--yes");
+    let bumped = run(&argv, root);
+    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
+    assert!(market_note(root, "two").contains("version: 1.0.1"));
+    assert!(market_note(root, "one").contains("version: 1.0.0"));
+}
+
+#[test]
+fn check_at_a_workspace_root_advises_a_bump_that_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("skillwright.md"), "---\nworkspace: true\n---\n").unwrap();
+    let member = root.join("marketplaces/one");
+    fs::create_dir_all(member.join("plugins/p/skills")).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: one\nbuild:\n  out: built\n---\n",
+    )
+    .unwrap();
+    let note = member.join("plugins/p/p.md");
+    fs::write(&note, "---\ndescription: P.\nversion: 1.0.0\n---\n").unwrap();
+    let skill = member.join("plugins/p/skills/a.md");
+    fs::write(&skill, "---\ndescription: A.\n---\n\nOne.\n").unwrap();
+    assert_eq!(run(&["build", "--yes"], root).code, 0);
+    fs::write(&skill, "---\ndescription: A.\n---\n\nTwo.\n").unwrap();
+
+    let check = run(&["check"], root);
+    assert!(
+        check
+            .stderr
+            .contains("`skillwright bump p --marketplace one`"),
+        "{}",
+        check.stderr
+    );
+    let bumped = run(&["bump", "p", "--marketplace", "one", "--yes"], root);
+    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
+}
+
+#[test]
+fn changed_since_a_ref_refuses_packs_on_a_harness_path_as_build_does() {
+    let dir = project("  harnesses: [claude]\n");
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "--quiet", "-m", "one"]);
+    fs::write(
+        root.join("skillwright.md"),
+        "---\nname: acme\nclaude: {packs: .claude-plugin}\nbuild:\n  out: market\n  harnesses: [claude]\n---\n",
+    )
+    .unwrap();
+
+    let build = run(&["build", "--yes"], root);
+    assert!(build.stderr.contains("path-collision"), "{}", build.stderr);
+    let result = run(&["bump", "--changed-since", "HEAD", "--yes"], root);
+    assert_eq!(result.code, build.code, "{}", result.stderr);
+    assert!(
+        result.stderr.contains("path-collision"),
+        "{}",
+        result.stderr
+    );
+    assert!(
+        !result.stderr.contains("moving its packs"),
+        "{}",
+        result.stderr
+    );
+    assert_eq!(worktree_count(root), 1);
+}

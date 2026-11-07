@@ -179,9 +179,10 @@ The first of these that has a value wins:
 6. The environment. The editor comes from `$VISUAL` or `$EDITOR`, and `publish`
    and `adopt` default to each harness's user skill folder. Nothing here changes
    what a build emits.
-7. Built-in defaults: `version` 0.1.0 with a warning (for the plugin named
-   after the marketplace, the warning asks for `version` in this file), `license` UNLICENSED, every
-   harness.
+7. Built-in defaults: `version` 0.1.0 with a warning, `license` UNLICENSED,
+   every harness. Only the plugin of a root `skills/` folder takes `version`
+   from this file, so its warning asks for it here. A `plugins/<marketplace>/`
+   plugin takes its own note's `version`.
 
 Inheritance works the same on every path: `build`, `publish` of one note, and
 `publish` of a whole pack. Containers are matched by folder, never by `name`.

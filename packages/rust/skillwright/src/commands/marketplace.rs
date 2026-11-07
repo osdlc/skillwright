@@ -233,7 +233,8 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
         Err(code) => return code,
     };
     if !run.is_workspace() {
-        return export_one(verb, flags, &run, flags.marketplace.clone(), ctx);
+        let advise = flags.marketplace.clone();
+        return export_one(verb, flags, &run, flags.marketplace.clone(), advise, ctx);
     }
     if flags.out.is_some() {
         return usage_error(
@@ -253,7 +254,12 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
         if !flags.quiet {
             let _ = writeln!(ctx.err, "marketplace {}:", member.vault.display());
         }
-        let code = export_one(verb, flags, member, None, ctx);
+        // At the workspace root, `bump` needs the member named.
+        let advise = member
+            .vault
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        let code = export_one(verb, flags, member, None, advise, ctx);
         if exit == EXIT_OK {
             exit = code;
         }
@@ -300,12 +306,14 @@ pub(crate) fn configured_out(
     }
 }
 
-/// [`run_export`] over one marketplace's run.
+/// [`run_export`] over one marketplace's run. `advise` is the
+/// `--marketplace` a `bump` advised by `check` needs.
 fn export_one(
     verb: ExportVerb,
     flags: &ExportFlags,
     run: &ResolvedRun,
     marketplace: Option<String>,
+    advise: Option<String>,
     ctx: &mut CommandContext<'_>,
 ) -> i32 {
     // `--marketplace` outside a workspace is the core's selector: which of
@@ -483,6 +491,9 @@ fn export_one(
     // `version_bump_suggestion` field), and stdout has to read identically
     // whether or not this advisory exists.
     if verb == ExportVerb::Check && !flags.json {
+        let scope = advise
+            .map(|name| format!(" --marketplace {name}"))
+            .unwrap_or_default();
         for unit in &report.units {
             if let ExportUnit::Plugin {
                 root,
@@ -493,7 +504,7 @@ fn export_one(
             {
                 let _ = writeln!(
                     ctx.err,
-                    "advisory: {root}/{name} version {} unmoved since members changed — `skillwright bump {name}` is available",
+                    "advisory: {root}/{name} version {} unmoved since members changed — `skillwright bump {name}{scope}` is available",
                     vbs.current_version
                 );
             }

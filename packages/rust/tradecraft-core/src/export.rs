@@ -3097,8 +3097,8 @@ mod tests {
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     }
 
-    /// The plugin named after the marketplace has no note: its version is the
-    /// root file's. It warns only when the root file states none, and says so.
+    /// The marketplace's own plugin, a root `skills/` with no folder, has no
+    /// note: its version is the root file's. It warns only when the root file states none, and says so.
     #[test]
     fn the_marketplaces_own_plugin_takes_its_version_from_the_root_file() {
         let vfs = MemVfs::new();

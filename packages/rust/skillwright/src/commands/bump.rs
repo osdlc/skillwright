@@ -22,9 +22,9 @@ use tradecraft_core::harness::with_plugin_format;
 use tradecraft_core::{
     BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit,
     MarketplaceConfig, Namespace, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs,
-    apply_field_edits, discover_components, export_skills, in_plugin_folder, next_version,
-    ns_field_edits, ns_field_label, owned_paths, packs_path, parse_semver, plugin_folder_in,
-    plugin_manifest_path, read_ns_field,
+    apply_field_edits, check_packs, discover_components, export_skills, in_plugin_folder,
+    next_version, ns_field_edits, ns_field_label, owned_paths, packs_path, parse_semver,
+    plugin_folder_in, plugin_manifest_path, read_ns_field,
 };
 
 use crate::commands::marketplace::configured_request;
@@ -575,6 +575,18 @@ fn run_changed(
     since: &str,
     scheme: PatchScheme,
 ) -> i32 {
+    // The build's own `packs` check, before a ref is built and its packs are
+    // moved to where this config keeps them.
+    let config = configured_request(run, market, run.vault.clone(), ExportMode::Check).config;
+    if let Err(err) = check_packs(&config) {
+        return blocked(
+            ctx.err,
+            &format!(
+                "--changed-since `{since}`: {}",
+                normalize_thrown_reason(&err.to_string())
+            ),
+        );
+    }
     let baseline = match Baseline::resolve(since, flags, run, market, ctx) {
         Ok(baseline) => baseline,
         Err(code) => return code,

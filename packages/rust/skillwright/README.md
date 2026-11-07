@@ -233,8 +233,8 @@ A drifted plugin that is not bumped is `skipped`, with one reason:
 `version-moved` (its version already changed since the baseline, so a second
 run bumps nothing), `not-in-baseline` (the baseline does not hold it) or
 `manifest-only` (only its manifest changed). A plugin whose note has no
-`version` is bumped on any change. Any other plugin with no note is refused if
-it changed.
+`version` is bumped on any change. A changed plugin with no note is refused,
+unless it is the marketplace's own plugin described below.
 
 A plugin's version has one source, which the manifest, the warnings, `check`'s
 advice and `bump` all read:
