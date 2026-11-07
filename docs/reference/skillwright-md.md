@@ -220,6 +220,9 @@ each one is listed `not carried`. `publish <note>` writes one to a harness with 
 agent layout. A kind a harness cannot carry shows as `n/a` in `status`, and
 `status --check` passes it.
 
+An agent note is still read by every build. One whose keys hold the wrong kind of
+value stops `build` and `check`, as any note the scan refuses does.
+
 `build` refuses a hand-written call to a known skill with `literal-skill-call`.
 `publish` refuses `/plugin:name` too, but publishing one skill does not check a bare
 `/name`, because that needs a vault scan. `build` is the check for those.
@@ -254,11 +257,17 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
   [field reference](fields.md) says. A container's keys take the type in
   harness-reference's manifest and marketplace facts. A wrong kind is refused,
   naming the block, the key and the kind, such as
-  `` `codex.policy` of plugin `p` must be a mapping, not a number ``. Every block
-  is checked, whichever harnesses `build.harnesses` selects. A key
-  the block does not accept only warns, whatever it holds. A key with no
-  documented type is not checked.
-- A key in a block set to nothing is unset and is dropped, as it is written bare.
+  `` `codex.policy` of plugin `p` must be a mapping, not a number ``. The code is
+  `malformed` on a skill or command and `malformed-block` on a plugin or
+  marketplace. `build` and `check` stop, `list` shows the note as skipped, and
+  `publish` refuses it. Every block is checked, whichever harnesses
+  `build.harnesses` selects. An agent's blocks are not checked: an agent takes no
+  harness block, and `publish` refuses one for the target being published as
+  `unknown-override-key`. A key the block does not accept only warns, whatever it
+  holds. A key with no documented type is not checked.
+- A key in a block set to nothing means "no value here". It is dropped, as it is
+  written bare, and it does not clear a value the note inherits from its plugin or
+  marketplace. A key the block does not read still warns `unknown-key`.
 - `metadata` in a block merges with the note's `metadata` rather than replacing
   it.
 - A block a component inherits cannot set that component's `name` or
