@@ -7,6 +7,33 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.6.0...skillwright/v0.7.0) - 2026-11-07
+
+This release refuses some vaults that 0.6.0 built. To find what needs fixing, run `skillwright list`: it shows each refused note as `skipped · malformed: …`, naming the key and the kind of value it must hold. The [field reference](https://github.com/osdlc/skillwright/blob/skillwright/v0.7.0/docs/reference/fields.md) gives each key's type.
+
+### Breaking
+
+- A value of the wrong kind is refused with the code `malformed`. `build` and `check` stop and write nothing, `list` shows the note as skipped, and `publish` refuses it. Fix the value. If YAML read a number, `true` or `false` that you meant as text, quote it. These are refused where 0.6.0 built or published them:
+  - A key a harness reads in a `claude:`, `codex:`, `cursor:` or `pi:` block, such as `claude: {allowed-tools: 5}` on a skill or `codex: {policy: 5}` on a plugin. 0.6.0 checked only `metadata`, and on a skill only in the block for the harness being built. Every block is now checked, also a block for a harness that `build.harnesses` leaves out. A key the block does not read still only warns `unknown-key`.
+  - A spec key on a skill, agent or command, such as `model: [1]`, `name: 2048`, `compatibility: [claude-code]` or `allowed-tools: 5`. 0.6.0 carried it under `metadata:`.
+  - `description: 2048`, `description: [a, b]` or `name: 5`. With a `name`, 0.6.0 published the note with "No description provided." and a `missing-description` warning. Without one, it skipped the note with a `no-component-keys` warning.
+  - An agent's `tools` that is not a string, a list of strings or OpenCode's mapping of tool name to `true` or `false`, and a `temperature` that is not a number, such as `temperature: "0.2"`. 0.6.0 published these to OpenCode. Such an agent now also stops `build` and `check`, although a build does not carry agents.
+- A key set to nothing, such as `model:` with no value, is dropped. 0.6.0 shipped it as `null`: under `metadata:` when written bare, and in the skill or manifest when written in a block. It no longer clears a value the note inherits: a skill's `claude: {model: }` under a plugin's `claude: {model: opus}` now ships `model: opus`. To change an inherited value, set the value you want, or remove it from the container.
+- Some refusals have a new code. A script that reads the code must look for `malformed`:
+  - A skillwright key of the wrong shape, such as `targets: 5`, was `unreadable-note` from `build`, `check` and `list`, and `io` from `publish`.
+  - A plugin's or marketplace's block `metadata` that is not a mapping was `malformed-block`.
+  - A skill's block `metadata` that is not a mapping was `io` from `publish`.
+
+### Fixed
+
+- `allowed-tools: Read, Grep` is read as two tools, as Claude Code's docs allow. 0.6.0 warned `unknown-key` and carried it under `metadata:`.
+- `user-invocable` and `disable-model-invocation` also read `yes`, `no`, `on`, `off`, `1` and `0`, in any case and quoted or not, and ship as `true` or `false`. 0.6.0 carried these words under `metadata:`, so `user-invocable: no` left the skill invocable.
+- An unquoted `argument-hint: [issue-number]`, which YAML reads as a list, ships as the hint `"[issue-number]"`, bare or in a `claude:` block. 0.6.0 carried it under `metadata:` as a list.
+- `list` skips every note a build refuses, including a bad block value on a plugin and a bad block in the root file. A bad block in a workspace file is one row, naming the workspace file.
+- A bad block in the root file or a plugin note is blamed on that marketplace or plugin, by `build`, by `publish <note>` and by `status`. 0.6.0 published a member skill under a bad container block.
+- A skipped note's code is printed once: `skipped · malformed: …`, not `skipped · removed-key: refused: removed-key: …`.
+- `build` and `check` with an `--out` other than `build.out`, and `bump --changed-since` against a folder or a git ref, no longer read the output inside `build.out` as notes. A packs folder moved inside `build.out`, such as `pi: {packs: pi-packs}`, was refused as `unreadable-note`.
+
 ## [0.6.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.5.1...skillwright/v0.6.0) - 2026-11-07
 
 This release changes how a vault is configured and laid out, and most vaults stop building until they move. Start with the [migration guide](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/guide/migrating.md). Its steps are in [`migrate.md`](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/plugin/plugins/skillwright/skills/migrate/migrate.md), which an agent can read and follow.

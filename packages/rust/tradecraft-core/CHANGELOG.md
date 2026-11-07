@@ -7,6 +7,34 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.45.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.44.0...tradecraft-core/v0.45.0) - 2026-11-07
+
+### Breaking
+
+Behaviour:
+
+- A value of the wrong kind is refused as `refused: malformed: <path>: <what>`, naming the key and the kind it must be. This covers a spec key on a skill, agent or command, a key a harness reads in any harness block of a skill, command, plugin or marketplace, and a skillwright key of the wrong shape. 0.44.0 checked only a block's `metadata`, and a skill's block only for the target being built. It carried a bad spec key under `metadata:`. The vault reader, `load`, `load_plugin`, `export_skills` and `publish_skill` all refuse. Every block that can ship is checked, whichever harnesses are selected. An agent's blocks are not checked, because they never ship.
+- The vault scan makes the same checks, so such a note is a `SkippedNote` with reason `malformed`. The root file's own blocks are checked too, and a bad one is a `SkippedNote` for `skillwright.md`. A note whose only opt-in key is the wrong kind, such as `description: 2048`, is refused, not passed by as an ordinary note.
+- An agent's `tools` must be a string, a list of strings or OpenCode's mapping of tool name to `true` or `false`, and `temperature` must be a number.
+- A key set to nothing is dropped, bare or in any harness block, including a container's. 0.44.0 carried it as `null`. It does not clear a value the note inherits from a container. A block key no harness reads is kept, so it still warns `unknown-key`.
+- Errors that 0.44.0 gave other forms now use `malformed`. A wrong-shape skillwright key was `CoreError::Io` (`reading <path>: …`) and is now `CoreError::Refused`. A container block `metadata` that is not a mapping was `refused: malformed-block`. A `match` on these must look for the new form.
+
+API:
+
+- `publish::overrides_for` takes the note's `EntityKind` in place of a target name. It folds and checks every block, and returns them all.
+- `SkippedNote::detail` is the prose after the reason token, no longer the whole error. Use `SkippedNote::sentence` for the token and the prose together.
+
+### Added
+
+- `ReasonToken::Malformed` (`malformed`), and `CoreError::wrong_kind(path, message)`, which refuses with it.
+- `SkippedNote::sentence`.
+
+### Fixed
+
+- The vault reader reads Claude Code's lenient forms, bare and in blocks, and turns each into the plain form every harness reads: an `allowed-tools` string separated by commas, a boolean written `yes`, `no`, `on`, `off`, `1` or `0` in any case and quoted or not, and an unquoted `argument-hint: [issue-number]`, which YAML reads as a list.
+- `load`, `load_plugin` and `publish_skill` check the root config's and plugin notes' blocks before a member inherits them, so a refusal names the container. `publish_skill` did not check them before.
+- The error from `load` for skipped notes uses `malformed`, not `unreadable-note`, when each skipped note holds a value of the wrong kind, and says so in its text.
+
 ## [0.44.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.43.0...tradecraft-core/v0.44.0) - 2026-11-07
 
 This release carries the core of skillwright's new vault structure. For the vault side, see the [migration guide](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/docs/guide/migrating.md). For the library side, see [Load a vault and build it](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/packages/rust/tradecraft-core/README.md#load-a-vault-and-build-it) and [Stability](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/packages/rust/tradecraft-core/README.md#stability).
