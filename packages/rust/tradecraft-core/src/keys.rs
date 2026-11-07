@@ -596,8 +596,8 @@ pub fn field_reference() -> String {
          build selects. A component's keys take the type they take written bare, as \
          above. A container's keys take the type that harness's manifest and \
          marketplace facts give; a key the facts give no type for is not checked. A \
-         key set to nothing is unset and is dropped, in any block, as it is written \
-         bare.\n",
+         listed key set to nothing is unset and is dropped, in any block, as it is \
+         written bare. It does not clear a value the note inherits.\n",
     );
     for harness in HARNESS_BLOCKS {
         let Some(profile) = crate::harness::profile_named(harness) else {

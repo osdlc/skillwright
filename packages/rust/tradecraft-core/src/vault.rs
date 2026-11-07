@@ -343,7 +343,7 @@ pub(crate) fn frontmatter_map(
 ///
 /// # Errors
 ///
-/// `malformed`, naming the key and the kind it must be.
+/// `refused: malformed`, naming the key and the kind it must be.
 pub(crate) fn check_spec_kinds(
     fields: &mut Map<String, Value>,
     path: &Path,
@@ -373,7 +373,7 @@ pub(crate) fn check_spec_kinds(
         if let Some(ty) = crate::harness::field_types::component_type(kind, key)
             && !ty.accepts(value)
         {
-            return Err(CoreError::malformed(
+            return Err(CoreError::wrong_kind(
                 path,
                 format!("`{key}` {}", ty.refusal(value)),
             ));

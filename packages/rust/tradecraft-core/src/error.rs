@@ -88,9 +88,9 @@ impl CoreError {
         }
     }
 
-    /// The closed-set reason token a host reports for this error when its
-    /// message carries none. Exhaustive like [`Self::variant_name`], so a new
-    /// variant needs a token before it compiles.
+    /// The closed-set reason token a host reports for this error: a refusal's
+    /// own token, else one per variant. Exhaustive like [`Self::variant_name`],
+    /// so a new variant needs a token before it compiles.
     pub fn reason_token(&self) -> crate::publish::ReasonToken {
         use crate::publish::ReasonToken;
         match self {
@@ -100,7 +100,11 @@ impl CoreError {
             CoreError::SkillNotFound(_) => ReasonToken::Io,
             CoreError::Io { .. } => ReasonToken::Io,
             CoreError::SwapFailed(_) => ReasonToken::Io,
-            CoreError::Refused(_) => ReasonToken::Io,
+            // `refused` leads with the token. A message with none is `io`.
+            CoreError::Refused(message) => message
+                .split_once(": ")
+                .and_then(|(token, _)| ReasonToken::parse(token))
+                .unwrap_or(ReasonToken::Io),
             CoreError::Conflict(_) => ReasonToken::Conflict,
         }
     }
@@ -126,6 +130,16 @@ impl CoreError {
         Self::io(
             path,
             std::io::Error::new(std::io::ErrorKind::InvalidData, message.into()),
+        )
+    }
+
+    /// A note that parsed holds a value of the wrong kind:
+    /// `refused: malformed: <path>: <message>`. Not [`Self::malformed`],
+    /// whose `reading <path>` says the file could not be read.
+    pub fn wrong_kind(path: impl AsRef<Path>, message: impl Into<String>) -> Self {
+        Self::refused(
+            "malformed",
+            format!("{}: {}", path.as_ref().display(), message.into()),
         )
     }
 
@@ -172,6 +186,16 @@ mod tests {
                 .to_string(),
             "refused: mixed-frontmatter-shape: /vault/a.md: keep one shape"
         );
+    }
+
+    #[test]
+    fn a_wrong_kind_carries_the_malformed_token() {
+        let err = CoreError::wrong_kind("/vault/a.md", "`model` must be a string, not a list");
+        assert_eq!(
+            err.to_string(),
+            "refused: malformed: /vault/a.md: `model` must be a string, not a list"
+        );
+        assert_eq!(err.reason_token(), crate::publish::ReasonToken::Malformed);
     }
 
     #[test]

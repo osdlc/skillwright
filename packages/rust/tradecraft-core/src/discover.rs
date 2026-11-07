@@ -323,12 +323,58 @@ pub(crate) fn unknown_key_warning(
 /// included.
 pub(crate) fn unknown_keys(frontmatter: &VaultFrontmatter, kind: EntityKind) -> Vec<String> {
     let mut unknown = frontmatter.unknown.clone();
-    if kind.holds_components() {
-        unknown.extend(unknown_container_block_keys(&frontmatter.overrides, kind));
-    } else if matches!(kind, EntityKind::Skill | EntityKind::Command) {
-        unknown.extend(unknown_component_block_keys(&frontmatter.overrides));
-    }
+    unknown.extend(unknown_block_keys(&frontmatter.overrides, kind));
     unknown
+}
+
+/// The keys in a note's harness blocks that no harness file reads, as
+/// `<harness>.<key>`. None on an agent or a hook, whose blocks are refused or
+/// ignored whole.
+pub(crate) fn unknown_block_keys(blocks: &Map<String, Value>, kind: EntityKind) -> Vec<String> {
+    if kind.holds_components() {
+        unknown_container_block_keys(blocks, kind)
+    } else if matches!(kind, EntityKind::Skill | EntityKind::Command) {
+        unknown_component_block_keys(blocks)
+    } else {
+        Vec::new()
+    }
+}
+
+/// Refuses a value of the wrong kind on a component note: a bare spec key, a
+/// key in a skill's or command's block, or a key in a container's block. The
+/// checks a build makes when it reads and loads the note.
+///
+/// # Errors
+///
+/// `refused: malformed`, or `refused: malformed-block` for a container.
+fn check_values(
+    fields: &mut Map<String, Value>,
+    ours: &VaultFrontmatter,
+    path: &Path,
+    kind: EntityKind,
+    folder: &str,
+    ns: &Namespace,
+) -> Result<(), CoreError> {
+    crate::vault::check_spec_kinds(fields, path, kind)?;
+    match kind {
+        EntityKind::Skill | EntityKind::Command => {
+            crate::publish::overrides_for(ours, path, kind, ns)?;
+        }
+        EntityKind::Plugin => crate::harness::manifest::check_container_blocks(
+            &format!("plugin `{folder}`"),
+            kind,
+            &ours.overrides,
+        )?,
+        EntityKind::Marketplace => {
+            let owner = match fields.get("name").and_then(Value::as_str) {
+                Some(name) => format!("marketplace `{name}`"),
+                None => "the marketplace".to_owned(),
+            };
+            crate::harness::manifest::check_container_blocks(&owner, kind, &ours.overrides)?;
+        }
+        EntityKind::Agent | EntityKind::Hook => {}
+    }
+    Ok(())
 }
 
 /// The keys in a skill's or command's harness blocks that harness does not
@@ -681,6 +727,13 @@ fn discover_with(
     let mut discovered = Vec::new();
     let mut skipped = Vec::new();
     let mut warnings = Vec::new();
+    // The root file is configuration, not a scanned note, but a build checks
+    // its blocks too, so the scan does.
+    let config = crate::source_view::vault_config(vfs, vault_root);
+    if let Err(err) = crate::harness::manifest::check_block_values(&config) {
+        let root_file = vault_root.join(crate::settings::ROOT_FILE);
+        skipped.push(SkippedNote::new(vault_root, &root_file, None, &err));
+    }
     for entry_path in &files {
         let Some(placement) = placed.get(entry_path) else {
             // Outside every marketplace this is simply the author's own vault,
@@ -1402,8 +1455,6 @@ fn read_source(
         ns
     };
     let ours = VaultFrontmatter::take_from(&mut fields, entry_path, ns, resolved.kind)?;
-    // The check a build's read makes, so a listing refuses what a build would.
-    crate::vault::check_spec_kinds(&mut fields, entry_path, resolved.kind)?;
     let unknown_keys = unknown_keys(&ours, resolved.kind);
 
     let name = trimmed_string(&fields, "name");
@@ -1433,6 +1484,17 @@ fn read_source(
         // A `name` alone still opts in. The caller reports the filler.
         (Some(name), None) => (name, MISSING_DESCRIPTION.to_owned(), true),
     };
+
+    // The value checks a build makes on this note, so the scan, and `list`,
+    // refuse what a build refuses.
+    check_values(
+        &mut fields,
+        &ours,
+        entry_path,
+        resolved.kind,
+        &placement.name,
+        ns,
+    )?;
 
     validate_name(&name, "component name", entry_path)?;
     // A plugin is known by its folder in every manifest and every call, so a

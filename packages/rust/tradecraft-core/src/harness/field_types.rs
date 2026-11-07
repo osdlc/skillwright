@@ -153,15 +153,18 @@ pub(crate) fn normalized(kind: EntityKind, key: &str, value: Value) -> Value {
     value
 }
 
-/// `block` less its keys set to nothing. Such a key is unset, as it is
-/// written bare, so it is dropped rather than shipped as `null`.
+/// `harness`'s `block` less the keys it reads that are set to nothing. Such a
+/// key is unset, as it is written bare, so it is dropped rather than shipped
+/// as `null`. A key in `unknown`, as `<harness>.<key>`, stays, so it warns.
 pub(crate) fn without_unset(
+    harness: &str,
     block: serde_json::Map<String, Value>,
+    unknown: &[String],
 ) -> serde_json::Map<String, Value> {
     // Not `Map::retain`: the serde_json floor predates it.
     block
         .into_iter()
-        .filter(|(_, value)| !value.is_null())
+        .filter(|(key, value)| !value.is_null() || unknown.contains(&format!("{harness}.{key}")))
         .collect()
 }
 

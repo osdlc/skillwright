@@ -444,6 +444,18 @@ impl VaultFrontmatter {
                 overrides.insert((*harness).to_owned(), Value::Object(block));
             }
         }
+        // A key a block reads set to nothing is unset and dropped. One it does
+        // not read stays, so it still warns.
+        let unknown_in_blocks = crate::discover::unknown_block_keys(&overrides, kind);
+        for (harness, block) in &mut overrides {
+            if let Value::Object(block) = block {
+                *block = crate::harness::field_types::without_unset(
+                    harness,
+                    std::mem::take(block),
+                    &unknown_in_blocks,
+                );
+            }
+        }
         let mut unknown: Vec<String> = Vec::new();
         let provenance = if reads("adopted") {
             take_adopted(&mut ours, &ns.key("adopted"), path, &mut unknown)?
@@ -560,7 +572,7 @@ fn claim(
             .into_iter()
             .map(|(key, value)| (ns.key(&key), value))
             .collect()),
-        other => Err(CoreError::malformed(
+        other => Err(CoreError::wrong_kind(
             path,
             format!(
                 "`{block_key}:` must be a mapping of our fields, not {}",
@@ -570,8 +582,6 @@ fn claim(
     }
 }
 
-/// Claude's own `arguments` key: a space-separated string, or a list of
-/// strings.
 /// Whether a key left in the note's own fields is one the read takes as
 /// written. `arguments` holding names is Claude's key under any namespace.
 fn reads_as_written(kind: EntityKind, key: &str, value: &Value, ns: &Namespace) -> bool {
@@ -581,6 +591,8 @@ fn reads_as_written(kind: EntityKind, key: &str, value: &Value, ns: &Namespace) 
     }
 }
 
+/// Claude's own `arguments` key: a space-separated string, or a list of
+/// strings.
 fn is_claude_arguments(value: &Value) -> bool {
     match value {
         Value::String(_) => true,
@@ -603,7 +615,7 @@ fn check_shapes(
             && spec.owner == Owner::Skillwright
             && !spec.shape.accepts(value)
         {
-            return Err(CoreError::malformed(
+            return Err(CoreError::wrong_kind(
                 path,
                 shape_refusal(spec.shape, key, value),
             ));
@@ -655,11 +667,10 @@ fn shape_refusal(shape: Shape, key: &str, value: &Value) -> String {
     }
 }
 
-/// Removes a harness block and returns it. `key: null` reads as no block,
-/// and a key in the block set to nothing is dropped.
+/// Removes a harness block and returns it. `key: null` reads as no block.
 fn take_harness_block(ours: &mut Map<String, Value>, key: &str) -> Option<Map<String, Value>> {
     match ours.remove(key) {
-        Some(Value::Object(block)) => Some(crate::harness::field_types::without_unset(block)),
+        Some(Value::Object(block)) => Some(block),
         _ => None,
     }
 }
@@ -694,7 +705,7 @@ fn take_adopted(
 
 /// The wrong-shape error for one string field of the `adopted` block.
 fn shape(path: &Path, key: &str) -> CoreError {
-    CoreError::malformed(path, format!("`{key}` must be a string"))
+    CoreError::wrong_kind(path, format!("`{key}` must be a string"))
 }
 
 /// Removes `key` and returns it as a string, refusing any other shape.
@@ -706,7 +717,7 @@ fn take_string(
     match ours.remove(key) {
         None => Ok(None),
         Some(Value::String(value)) => Ok(Some(value)),
-        Some(other) => Err(CoreError::malformed(
+        Some(other) => Err(CoreError::wrong_kind(
             path,
             format!(
                 "`{key}` must be a string, not {}{}",
@@ -735,7 +746,7 @@ fn take_string_list(
                 match item {
                     Value::String(s) => out.push(s),
                     other => {
-                        return Err(CoreError::malformed(
+                        return Err(CoreError::wrong_kind(
                             path,
                             format!(
                                 "`{key}` must be a list of strings; one entry is {}",
@@ -747,7 +758,7 @@ fn take_string_list(
             }
             Ok(Some(out))
         }
-        other => Err(CoreError::malformed(
+        other => Err(CoreError::wrong_kind(
             path,
             format!(
                 "`{key}` must be a list, not {}. \
@@ -761,7 +772,7 @@ fn take_string_list(
 /// Removes `key` and returns it as a validated list of [`Argument`]s.
 ///
 /// Absent means no arguments — an ordinary note. Every other outcome is
-/// either [`CoreError::malformed`] for a wrong *shape* (not a list, an entry
+/// either [`CoreError::wrong_kind`] for a wrong *shape* (not a list, an entry
 /// not a mapping, a field not the type it must be) or `refused` ·
 /// `invalid-arguments` for a value that is the right shape and still cannot
 /// be an argument list — see [`validate_arguments`] for those four rules.
@@ -784,7 +795,7 @@ fn take_arguments(
     let mut out = Vec::with_capacity(items.len());
     for item in items {
         let Value::Object(mut entry) = item else {
-            return Err(CoreError::malformed(
+            return Err(CoreError::wrong_kind(
                 path,
                 format!("`{key}` entries must be mappings, not {}", type_name(&item)),
             ));
@@ -793,7 +804,7 @@ fn take_arguments(
         let name = match entry.remove("name") {
             Some(Value::String(s)) => s,
             Some(other) => {
-                return Err(CoreError::malformed(
+                return Err(CoreError::wrong_kind(
                     path,
                     format!(
                         "`{key}` entry `name` must be a string, not {}",
@@ -802,7 +813,7 @@ fn take_arguments(
                 ));
             }
             None => {
-                return Err(CoreError::malformed(
+                return Err(CoreError::wrong_kind(
                     path,
                     format!("a `{key}` entry is missing `name`"),
                 ));
@@ -813,7 +824,7 @@ fn take_arguments(
             None => false,
             Some(Value::Bool(b)) => b,
             Some(other) => {
-                return Err(CoreError::malformed(
+                return Err(CoreError::wrong_kind(
                     path,
                     format!(
                         "`{key}` entry `{name}`'s `required` must be a boolean, not {}",
@@ -830,7 +841,7 @@ fn take_arguments(
                     match item {
                         Value::String(s) => strings.push(s),
                         other => {
-                            return Err(CoreError::malformed(
+                            return Err(CoreError::wrong_kind(
                                 path,
                                 format!(
                                     "`{key}` entry `{name}`'s `values` must be a list of \
@@ -844,7 +855,7 @@ fn take_arguments(
                 Some(strings)
             }
             Some(other) => {
-                return Err(CoreError::malformed(
+                return Err(CoreError::wrong_kind(
                     path,
                     format!(
                         "`{key}` entry `{name}`'s `values` must be a list, not {}",
@@ -856,7 +867,7 @@ fn take_arguments(
         let default = take_entry_string(&mut entry, key, &name, "default", path)?;
 
         if let Some(unexpected) = entry.keys().next() {
-            return Err(CoreError::malformed(
+            return Err(CoreError::wrong_kind(
                 path,
                 format!(
                     "`{key}` entry `{name}` carries `{unexpected}`, which is not one of \
@@ -890,7 +901,7 @@ fn take_entry_string(
     match entry.remove(field) {
         None => Ok(None),
         Some(Value::String(s)) => Ok(Some(s)),
-        Some(other) => Err(CoreError::malformed(
+        Some(other) => Err(CoreError::wrong_kind(
             path,
             format!(
                 "`{key}` entry `{arg_name}`'s `{field}` must be a string, not {}",

@@ -168,18 +168,33 @@ pub(crate) fn check_block_values(config: &MarketplaceConfig) -> Result<(), CoreE
             .iter()
             .map(|(harness, block)| (harness.clone(), serde_json::Value::Object(block.clone())))
             .collect();
-        let unknown = crate::discover::unknown_container_block_keys(&as_map, kind);
-        for (harness, block) in blocks {
-            for (key, value) in block {
-                if let Some(ty) = crate::harness::field_types::container_type(harness, key)
-                    && !unknown.contains(&format!("{harness}.{key}"))
-                    && !ty.accepts(value)
-                {
-                    return Err(CoreError::refused(
-                        "malformed-block",
-                        format!("`{harness}.{key}` of {owner} {}", ty.refusal(value)),
-                    ));
-                }
+        check_container_blocks(&owner, kind, &as_map)?;
+    }
+    Ok(())
+}
+
+/// [`check_block_values`] for one container's blocks, keyed by harness.
+/// `owner` names the container in the refusal: `plugin `p``.
+///
+/// # Errors
+///
+/// `refused: malformed-block`.
+pub(crate) fn check_container_blocks(
+    owner: &str,
+    kind: EntityKind,
+    blocks: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), CoreError> {
+    let unknown = crate::discover::unknown_container_block_keys(blocks, kind);
+    for (harness, block) in blocks {
+        for (key, value) in block.as_object().into_iter().flatten() {
+            if let Some(ty) = crate::harness::field_types::container_type(harness, key)
+                && !unknown.contains(&format!("{harness}.{key}"))
+                && !ty.accepts(value)
+            {
+                return Err(CoreError::refused(
+                    "malformed-block",
+                    format!("`{harness}.{key}` of {owner} {}", ty.refusal(value)),
+                ));
             }
         }
     }

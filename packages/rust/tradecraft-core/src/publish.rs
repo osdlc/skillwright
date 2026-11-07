@@ -370,6 +370,9 @@ pub enum ReasonToken {
     MixedFrontmatterShape,
     /// `build.exclude` or a folder that never ships holds the note.
     ExcludedNote,
+    /// A note that parsed holds a value of the wrong kind for a key it sets,
+    /// bare or in a harness block.
+    Malformed,
     /// Not a refusal, and the one token here that names a success: the file
     /// was already byte-identical to our own output, so this run claimed it
     /// into the destination's manifest. The table's refusal set is
@@ -413,6 +416,7 @@ impl ReasonToken {
         Self::EmptyPlugin,
         Self::MixedFrontmatterShape,
         Self::ExcludedNote,
+        Self::Malformed,
     ];
 
     /// The wire spelling, which prose never varies from.
@@ -436,6 +440,7 @@ impl ReasonToken {
             Self::EmptyPlugin => "empty-plugin",
             Self::MixedFrontmatterShape => "mixed-frontmatter-shape",
             Self::ExcludedNote => "excluded-note",
+            Self::Malformed => "malformed",
             Self::Claimed => "claimed",
             Self::RedundantOverride => "redundant-override",
             Self::Overwritten => "overwritten",
@@ -1815,11 +1820,14 @@ pub fn publishes_to(
 ///
 /// * `refused: unknown-target` — a block is keyed by a name outside
 ///   [`canonical_target`].
-/// * `malformed` — a key a block's harness reads holds the wrong kind of
-///   value, such as `metadata` that is not a mapping.
+/// * `refused: malformed` — a key a block's harness reads holds the wrong
+///   kind of value, such as `metadata` that is not a mapping. Not on an
+///   agent, of `kind`: its blocks never ship, and publish refuses a block
+///   for the target being published as `unknown-override-key`.
 pub fn overrides_for(
     note: &VaultFrontmatter,
     note_path: &Path,
+    kind: EntityKind,
     ns: &Namespace,
 ) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
     let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
@@ -1862,13 +1870,16 @@ pub fn overrides_for(
             .collect();
     }
     // A key a harness reads with the wrong kind of value is refused, in
-    // every block.
+    // every block that can ship.
+    if kind == EntityKind::Agent {
+        return Ok(folded);
+    }
     for (canonical, block) in &folded {
         for (key, value) in block {
             if let Some(ty) = crate::harness::field_types::component_type(EntityKind::Skill, key)
                 && !ty.accepts(value)
             {
-                return Err(CoreError::malformed(
+                return Err(CoreError::wrong_kind(
                     note_path,
                     format!("`{}.{key}` {}", ns.key(canonical), ty.refusal(value)),
                 ));
@@ -4991,7 +5002,8 @@ mod tests {
                 .clone(),
             ..VaultFrontmatter::default()
         };
-        let folded = overrides_for(&note, Path::new("/vault/a.md"), &sw()).unwrap();
+        let folded =
+            overrides_for(&note, Path::new("/vault/a.md"), EntityKind::Skill, &sw()).unwrap();
         assert!(
             folded
                 .get("cursor")
@@ -5045,6 +5057,7 @@ mod tests {
                 "empty-plugin",
                 "mixed-frontmatter-shape",
                 "excluded-note",
+                "malformed",
             ]
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));

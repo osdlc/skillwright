@@ -134,7 +134,7 @@ The kind of a note comes from its folder. A key not listed for a kind gets a war
 
 ## Harness blocks
 
-A block holds fields only that harness reads. These are the keys each block accepts, by the kind of note it sits on. Any other key gets a warning and is left out of what that harness gets, whatever it holds. A listed key whose value is the wrong kind is refused, in every block, whichever harnesses a build selects. A component's keys take the type they take written bare, as above. A container's keys take the type that harness's manifest and marketplace facts give; a key the facts give no type for is not checked. A key set to nothing is unset and is dropped, in any block, as it is written bare.
+A block holds fields only that harness reads. These are the keys each block accepts, by the kind of note it sits on. Any other key gets a warning and is left out of what that harness gets, whatever it holds. A listed key whose value is the wrong kind is refused, in every block, whichever harnesses a build selects. A component's keys take the type they take written bare, as above. A container's keys take the type that harness's manifest and marketplace facts give; a key the facts give no type for is not checked. A listed key set to nothing is unset and is dropped, in any block, as it is written bare. It does not clear a value the note inherits.
 
 ### `claude:`
 
