@@ -9,19 +9,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.44.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.43.0...tradecraft-core/v0.44.0) - 2026-11-07
 
-This release carries the core of skillwright's new vault structure. For the vault side, see the [migration guide](https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md). For the library side, see [Load a vault and build it](https://github.com/osdlc/skillwright/blob/main/packages/rust/tradecraft-core/README.md#load-a-vault-and-build-it) and [Stability](https://github.com/osdlc/skillwright/blob/main/packages/rust/tradecraft-core/README.md#stability).
+This release carries the core of skillwright's new vault structure. For the vault side, see the [migration guide](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/docs/guide/migrating.md). For the library side, see [Load a vault and build it](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/packages/rust/tradecraft-core/README.md#load-a-vault-and-build-it) and [Stability](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/packages/rust/tradecraft-core/README.md#stability).
 
 ### Breaking
 
 Behaviour:
 
 - `Namespace::default()` is bare, so frontmatter keys are `version`, not `sw-version`. Pass `Namespace::sw()` to read the prefixed forms. `Namespace::DEFAULT_STEM` is removed. A `sw-<key>` spelling of a key the core owns is refused as `removed-key` on a bare vault.
+- `Namespace::new` refuses a stem that claims a key a renderer reads, such as `model`, `context` or `user` (from `user-invocable`), with `StemProblem::ClaimsPublishedKey`. `Namespace::PUBLISHED_KEYS` lists those keys.
+- `project_agent` refuses an agent that sets both `tools` and `allowed-tools` (`conflicting-keys`), and a `tools` that names no tool (`malformed-tools`). For Claude Code it also refuses a `tools` that is not a list or a string of names (`malformed-tools`).
 - `kind`, `plugin`, `sw-kind` and `sw-plugin` are refused: the folder decides both. `sw-overrides` is replaced by `claude:`, `codex:`, `cursor:` and `pi:` blocks, which `export_skills` now applies too. Only those four harnesses have blocks.
 - A note's `author`, `license`, `repository`, `homepage`, `targets` and harness blocks inherit from the nearest container on every path, so a publish can stop writing to a harness its containers exclude. A plugin's `author` no longer falls back to `owner`.
 - `marketplaces/<m>/skillwright.md` is the only marketplace note. A plugin note whose `name` differs from its folder is refused, and a `skillwright.md` directly in a kind folder is refused as a reserved name.
 - A link or embed into a folder that never ships is refused as `excluded-link`.
 - A plain `[[skill]]` renders as the skill's name, not a call. Write `/[[skill]]` for a call. The `implicit-skill-call` warning is gone.
-- Codex, Cursor and Pi call a launcher by its path relative to the skill, and the per-skill shim is no longer written. With no `launcher_path` the rewrite is off.
+- Codex, Cursor and Pi call a launcher by its path relative to the skill, and the per-skill shim is no longer written. The rewrite happens only when the plugin ships an asset at `launcher_path`. With no `launcher_path` the rewrite is off.
 - Manifests drop `version` from Claude's marketplace entry and `author.url` and `owner.url` from Cursor's.
 
 Types you build:
@@ -53,7 +55,7 @@ The wasm wrapper over this crate, `@osdlc/tradecraft-wasm`, is now `"private": t
 ### Added
 
 - `load_marketplace(&vfs, start, home)` finds the root file, folds in a workspace above it, and returns the merged settings and build inputs in one call. Its pieces are public: `find_root_file`, `workspace_above`, `marketplace_inputs`, `parse_root_file` and `root_file_config`.
-- The `keys` module holds one key table per kind, and `keys::field_reference()` generates the [field reference](https://github.com/osdlc/skillwright/blob/main/docs/reference/fields.md).
+- The `keys` module holds one key table per kind, and `keys::field_reference()` generates the [field reference](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/docs/reference/fields.md).
 - `SourceView`, `source_view` and `VaultScope` read the vault as a run does, hiding generated output. `effective_config`, `effective_configs`, `vault_config`, `check_packs`, `packs_of` and `built_paths_for` are also new.
 - The `patterns` module reads `build.patterns` and `build.exclude`, which are experimental.
 - `RootFile` and `BuildSettings` are the types of a parsed `skillwright.md`. `MarketplaceConfig` and `PluginOverrides` gain `targets`, `repository`, `homepage` and `blocks`.
@@ -63,6 +65,10 @@ The wasm wrapper over this crate, `@osdlc/tradecraft-wasm`, is now `"private": t
 
 ### Fixed
 
+- An agent's `tools` and a numeric `temperature` reach the published agent, and its other keys are carried. `tools` was dropped, so a Claude Code agent could use every tool.
+- A command's `disable-model-invocation`, `user-invocable`, `context` and foreign keys are carried.
+- `adopt` keeps a link to a folder as written, handles escaped brackets in link labels, keeps the bundle path in wikilinks, and refuses a bundle resource named `<name>.md` as `path-collision`.
+- `[[v1.2 notes]]` resolves to `v1.2 notes.md`.
 - A configured plugin or marketplace description is kept, and it satisfies `require_descriptions`.
 - Plugin-prefixed skill names that meet across plugins are refused as `path-collision`.
 - A vault or asset source inside a tree the build replaces is refused as `unsafe-root`, and a build replaces only the paths it owns.

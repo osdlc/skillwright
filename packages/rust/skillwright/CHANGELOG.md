@@ -9,13 +9,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.6.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.5.1...skillwright/v0.6.0) - 2026-11-07
 
-This release changes how a vault is configured and laid out, and most vaults stop building until they move. Start with the [migration guide](https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md). The `migrate` skill in the bundled plugin runs it.
+This release changes how a vault is configured and laid out, and most vaults stop building until they move. Start with the [migration guide](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/guide/migrating.md). Its steps are in [`migrate.md`](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/plugin/plugins/skillwright/skills/migrate/migrate.md), which an agent can read and follow.
 
 ### Breaking
 
 Configuration:
 
-- `skillwright.yaml`, `tradecraft.yaml`, the machine config file and its `SKILLWRIGHT_MACHINE_CONFIG` variable are no longer read. A leftover `skillwright.yaml` or `tradecraft.yaml` gets a note saying so. Move the settings to one `skillwright.md` in the vault folder; `skillwright init` writes one. See the [`skillwright.md` reference](https://github.com/osdlc/skillwright/blob/main/docs/reference/skillwright-md.md).
+- `skillwright.yaml`, `tradecraft.yaml`, the machine config file and its `SKILLWRIGHT_MACHINE_CONFIG` variable are no longer read. A leftover `skillwright.yaml` or `tradecraft.yaml` gets a note saying so. Move the settings to one `skillwright.md` in the vault folder; `skillwright init` writes one. See the [`skillwright.md` reference](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/reference/skillwright-md.md).
 - `build`, `check` and `build --watch` need `--out` or `build.out`. There is no default output folder. `out: .` builds beside `skillwright.md`, and `out` is relative to that file. The `harness` verbs find the build through `--path` or `build.out` the same way.
 - `default_plugin` and `--default-plugin` are removed. A note outside every plugin folder belongs to the marketplace's own plugin, named after the marketplace.
 - A top-level `bump:` is refused. Move it to `build.bump`.
@@ -23,10 +23,10 @@ Configuration:
 
 Notes and folders:
 
-- Frontmatter keys are bare by default: `version`, not `sw-version`. A `sw-<key>` spelling of a key skillwright owns is refused as `removed-key`. To keep the prefix, set `build.namespace: sw`; see [Keeping the prefix](https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md#keeping-the-prefix). Keys in `skillwright.md` are always bare.
-- `kind`, `plugin`, `sw-kind` and `sw-plugin` are refused. The folder decides both: move the note under `plugins/<p>/` and `skills/`, `agents/`, `commands/` or `hooks/`. See the [structure spec](https://github.com/osdlc/skillwright/blob/main/docs/spec/structure-v1.md).
+- Frontmatter keys are bare by default: `version`, not `sw-version`. A `sw-<key>` spelling of a key skillwright owns is refused as `removed-key`. To keep the prefix, set `build.namespace: sw`; see [Keeping the prefix](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/guide/migrating.md#keeping-the-prefix). Keys in `skillwright.md` are always bare.
+- `kind`, `plugin`, `sw-kind` and `sw-plugin` are refused. The folder decides both: move the note under `plugins/<p>/` and `skills/`, `agents/`, `commands/` or `hooks/`. See the [structure spec](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/spec/structure-v1.md).
 - `sw-overrides` is replaced by top-level `claude:`, `codex:`, `cursor:` and `pi:` blocks. They now apply to `build` and `check` as well as `publish`, so built output can change. The other targets (`portable`, `copilot`, `opencode`) have no block, so overrides for them have no replacement. An unknown key in a block warns and is left out. `policy.allow_implicit_invocation` is not accepted under `codex:`.
-- `marketplaces/<m>/<m>.md` is no longer read. Move it to `marketplaces/<m>/skillwright.md` with bare keys. Such a marketplace takes its `version` from its own note only, never from a root file above it.
+- `marketplaces/<m>/<m>.md` is refused. Move it to `marketplaces/<m>/skillwright.md` with bare keys. Such a marketplace takes its `version` from its own note only, never from a root file above it.
 - A plugin note whose `name` differs from its folder is refused. Rename one of them.
 - A `skillwright.md` directly in a kind folder, such as `skills/skillwright.md`, is refused as a reserved name. Move it to `skills/skillwright/skillwright.md`.
 - A plugin or marketplace note with neither `name` nor `description` is now read instead of being dropped.
@@ -34,12 +34,13 @@ Notes and folders:
 - A plugin's `author` no longer falls back to `owner`. Set `author` in `skillwright.md` or on the plugin note to keep it in the manifests.
 - A link or embed into a folder that never ships, such as a bundle's `docs/`, `tests/` or `fixtures/`, is refused as `excluded-link`. A note with a `description` in such a folder warns `never-ships`, and `publish` refuses it.
 - Unknown keys warn as `unknown-key`. On a skill they ship under `metadata:` as YAML, and on a container or in `skillwright.md` they are ignored. This includes `allowed-tools: Read, Grep`: the comma form is not read as the key, so use a list or the space-separated form.
+- An agent that sets both `tools` and `allowed-tools` is refused as `conflicting-keys`. A `tools` that names no tool is refused as `malformed-tools`. So is a `tools` that is not a list or a string of names, when the agent publishes to Claude Code.
 - `check --fix-adopt-hashes` is needed after moving an adopted note to the new keys. Adopt provenance now sits in one `adopted:` block, and `adopt` no longer writes `kind` or `plugin`.
 
 Rendered output:
 
 - A plain `[[skill]]` in a skill or command body now renders as the skill's name, not a call. Write `/[[skill]]` where you want a call. The `implicit-skill-call` warning is gone.
-- Codex, Cursor and Pi skills call a plugin's launcher by its path relative to the skill, such as `../../bin/tool`. Builds no longer write a `scripts/sdlc` shim into each skill, and there is no `sdlc` `PATH` fallback. Set `build.launcher_path`, and expect many built files to change.
+- Codex, Cursor and Pi skills call a plugin's launcher by its path relative to the skill, such as `../../bin/tool`. This happens only when the plugin ships the launcher as an asset at `build.launcher_path`, for example under `plugins/<p>/assets/`; otherwise the call is left as written, with no warning. Builds no longer write a `scripts/sdlc` shim into each skill, and there is no `sdlc` `PATH` fallback. Set `build.launcher_path`, and expect many built files to change.
 - Claude's marketplace entry no longer holds `version`, and Cursor's manifests no longer hold `author.url` or `owner.url`.
 - `author`, `license`, `repository`, `homepage`, `targets` and harness blocks inherit from the nearest container. A skill can gain the inherited license, and a single-note or pack `publish` can stop writing to a harness its containers exclude.
 
@@ -53,7 +54,7 @@ Library:
 - `apply::apply` and `apply::preview` take an `apply::Vault`, built with `Vault::new(dir, source)`, in place of the vault path.
 - `Applied`, `ApplyError`, `Outcome` and `AppliedEntry` in `apply` are `#[non_exhaustive]`. A `match` needs a `_` arm, and the structs are read by field.
 - `apply` is the supported library API. The other modules (`cli`, `commands`, `config`, `ctx`, `dirs`, `exit`, `git_source`, `prompt`, `report`, `resolve`) are `#[doc(hidden)]` and may change in any release.
-- Removed: `config::load_config`, `SkillwrightConfig`, `ConfigLoad`, `machine_config_path`, `MACHINE_CONFIG_ENV`, `PROJECT_FILE`, `report::render_kind` and the `test-support` feature. Path helpers moved to `tradecraft_core::paths`.
+- Removed from `config`: `load_config`, `SkillwrightConfig`, `ConfigLoad`, `DestinationConfig`, `AssetEntry`, `DeclaredFolders`, `HookFileEntry`, `MarketplaceSettings`, `machine_config_path`, `MACHINE_CONFIG_ENV`, `PROJECT_FILE`, `TOOL` and `NEEDS`. Also removed: `report::render_kind` and the `test-support` feature. The path helpers `normalize_join` and `relative_path` moved to `tradecraft_core::paths`.
 
 The bundled `skillwright` plugin moved too: its note carries `version`, and its `migrate`, `setup`, `author` and `publish` skills describe the new structure.
 
@@ -63,17 +64,24 @@ The bundled `skillwright` plugin moved too: its note carries `version`, and its 
 - `check --fix-adopt-hashes` refreshes the adopt hash of a note whose only change is the key rename. A note that really changed is reported and left alone.
 - Folder convention: `plugins/<p>/` is a plugin and a root `skills/` is the marketplace's own plugin. `plugins/<p>/assets/` is copied to the plugin's root.
 - `plugins/<p>/CHANGELOG.md` ships in every pack, and `check` warns when it has no heading for the plugin's `version`.
-- Workspaces: a root file with `workspace: true` holds shared defaults for every `marketplaces/<m>/skillwright.md`. Each member inherits every `build:` key but `out`. `build` and `check` run over each member, and `--marketplace` picks one.
+- Workspaces: a root file with `workspace: true` sits above `marketplaces/<m>/skillwright.md` files. Each member inherits every `build:` key but `out`, and `author`, `license`, `targets`, `repository`, `homepage` and the harness blocks. It does not inherit `owner`. `build` and `check` run over each member, and `--marketplace` picks one.
 - `repository` and `homepage` reach every manifest with the field, and `version` is read on `skillwright.md`.
-- `bump --changed-since <ref|dir>` bumps every plugin whose output differs from a git ref or a built folder. `bump --marketplace <name>` picks one marketplace. `build.bump.patch: timestamp` sets the patch to the UTC time. See [Bump](https://github.com/osdlc/skillwright/blob/main/packages/rust/skillwright/README.md#bump).
+- `bump --changed-since <ref|dir>` bumps every plugin whose output differs from a git ref or a built folder. `bump --marketplace <name>` picks one marketplace. `build.bump.patch: timestamp` sets the patch to the UTC time. See [Bump](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/packages/rust/skillwright/README.md#bump).
 - `harness install`, `update` and `uninstall` support Pi. `harness link` and `unlink` symlink built skills into Claude Code's or Codex's user folder for a dev loop.
 - `<harness>: {packs: <path>}` moves a harness's packs folder. A folder left behind by a move gets a `stale-output` warning.
 - `pi: {naming: bare}` drops the plugin prefix from Pi skill names.
-- Experimental: `build.patterns` and `build.exclude` describe a layout that differs from the convention. See [Patterns](https://github.com/osdlc/skillwright/blob/main/docs/reference/skillwright-md.md#patterns).
-- Docs: a [getting-started guide](https://github.com/osdlc/skillwright/blob/main/docs/guide/getting-started.md), the structure spec, and a [field reference](https://github.com/osdlc/skillwright/blob/main/docs/reference/fields.md).
+- Experimental: `build.patterns` and `build.exclude` describe a layout that differs from the convention. See [Patterns](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/reference/skillwright-md.md#patterns).
+- Docs: a [getting-started guide](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/guide/getting-started.md), the structure spec, and a [field reference](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/reference/fields.md).
 
 ### Fixed
 
+- An agent's `tools` reaches Claude Code. It was dropped, so the published agent could use every tool.
+- A command's `disable-model-invocation`, `user-invocable` and `context` are carried to the built command.
+- `list` shows the roster with colliding rows flagged and exits 2, instead of failing.
+- A marketplace rename rewrites links into it from outside, and a refused rename touches no file.
+- A bundle or marketplace folder named `skillwright` moves and relinks.
+- `adopt` keeps a link to a folder as written, handles escaped brackets in link labels, and keeps the bundle path in wikilinks, so two skills that share a resource name compile.
+- `[[v1.2 notes]]` resolves to `v1.2 notes.md`.
 - A build keeps a configured plugin or marketplace description, instead of replacing it with "No description provided.".
 - Plugin-prefixed skill names that meet across plugins are refused as `path-collision`, not silently overwritten.
 - A vault or asset source inside a tree the build replaces is refused as `unsafe-root`. A build replaces only the paths it owns in each harness folder.
