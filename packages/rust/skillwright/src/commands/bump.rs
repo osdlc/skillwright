@@ -637,7 +637,8 @@ fn run_changed(
         );
     }
     let namespace = run.core_namespace();
-    let report = match export_skills(&run.config_vfs(), &request, &namespace) {
+    let vfs = run.export_vfs(None, baseline.root());
+    let report = match export_skills(&vfs, &request, &namespace) {
         Ok(report) => report,
         Err(err) => {
             return blocked(
@@ -1085,9 +1086,9 @@ impl BuiltRef {
             .to_path_buf();
         let base_run = resolve_run(&common, &base_cwd, ctx.err)?;
         let request = configured_request(&base_run, market, built.out.clone(), ExportMode::Build);
-        if let Err(err) =
-            export_skills(&base_run.config_vfs(), &request, &base_run.core_namespace())
-        {
+        // The ref's own `build.out` may be committed, and is output, not source.
+        let vfs = base_run.export_vfs(None, &built.out);
+        if let Err(err) = export_skills(&vfs, &request, &base_run.core_namespace()) {
             return fail(
                 ctx,
                 format!(

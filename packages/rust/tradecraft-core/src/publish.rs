@@ -1817,7 +1817,8 @@ pub fn publishes_to(
 ///
 /// * `refused: unknown-target` — a block is keyed by a name outside
 ///   [`canonical_target`].
-/// * `malformed` — the named target's `metadata` is not a mapping.
+/// * `malformed` — a key the named target reads holds the wrong kind of
+///   value, such as `metadata` that is not a mapping.
 pub fn overrides_for(
     note: &VaultFrontmatter,
     note_path: &Path,
@@ -1850,24 +1851,30 @@ pub fn overrides_for(
 
     let wanted = canonical_target(target).unwrap_or(target);
     // A key a harness does not read warns at discovery and is dropped here,
-    // never refused.
+    // never refused. A key it reads takes the form every harness reads: a
+    // flag such as `yes` becomes a real boolean, a list hint its text.
     for (canonical, block) in &mut folded {
         let accepted = accepted_override_keys(canonical);
         // Not `Map::retain`: the serde_json floor predates it.
         *block = std::mem::take(block)
             .into_iter()
             .filter(|(key, _)| accepted.contains(key))
+            .map(|(key, value)| {
+                let value = crate::harness::field_types::normalized(EntityKind::Skill, &key, value);
+                (key, value)
+            })
             .collect();
     }
-    if folded
-        .get(wanted)
-        .and_then(|block| block.get("metadata"))
-        .is_some_and(|m| !m.is_object())
-    {
-        return Err(CoreError::malformed(
-            note_path,
-            format!("`{}.metadata` must be a mapping", ns.key(wanted)),
-        ));
+    // A key the harness reads with the wrong kind of value is refused.
+    for (key, value) in folded.get(wanted).into_iter().flatten() {
+        if let Some(ty) = crate::harness::field_types::component_type(EntityKind::Skill, key)
+            && !ty.accepts(value)
+        {
+            return Err(CoreError::malformed(
+                note_path,
+                format!("`{}.{key}` {}", ns.key(wanted), ty.refusal(value)),
+            ));
+        }
     }
     Ok(folded)
 }

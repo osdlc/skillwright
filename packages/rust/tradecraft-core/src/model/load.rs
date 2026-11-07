@@ -171,6 +171,8 @@ pub(crate) fn selected_harnesses(
 /// * `refused: unknown-hooks-plugin` / `duplicate-hooks-file` and what
 ///   [`crate::hooks_file::parse_hooks_file`] refuses.
 /// * `refused: unknown-target` — a harness block named for no known harness.
+/// * `refused: malformed-block` — a container block key holding the wrong
+///   kind of value.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
 pub fn load(
     vfs: &dyn Vfs,
@@ -204,6 +206,8 @@ pub fn load(
     // say it holds nothing publishable rather than that it is not there.
     let market = resolve_marketplace(&discovered, request.marketplace.as_deref())?;
     let mut cascade = Cascade::over(&discovered, market.as_deref(), &request.config);
+    // Before members inherit a block, so a wrong value names its container.
+    crate::harness::manifest::check_block_values(&cascade.config)?;
     cascade.resolve_targets(&mut discovered);
     let belonging: Vec<&DiscoveredComponent> = discovered
         .iter()
@@ -397,7 +401,6 @@ pub fn load(
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
     apply_naming(&mut plugins, config)?;
     crate::harness::manifest::check_packs(config)?;
-    crate::harness::manifest::check_block_metadata(config)?;
 
     Ok(Marketplace {
         name,
@@ -540,7 +543,8 @@ pub struct Pack {
 /// * `refused: unreadable-note` — a member the scan could not read. A pack
 ///   must not install a subset silently.
 /// * `refused: empty-plugin` — nothing this destination admits.
-/// * `refused: malformed-block` — a block `metadata` that is not a mapping.
+/// * `refused: malformed-block` — a container block key holding the wrong
+///   kind of value, such as a `metadata` that is not a mapping.
 /// * What [`resolve_body`] refuses for any member.
 pub fn load_plugin(
     vfs: &dyn Vfs,
@@ -550,7 +554,7 @@ pub fn load_plugin(
     profile: &'static HarnessProfile,
     ns: &Namespace,
 ) -> Result<Pack, CoreError> {
-    crate::harness::manifest::check_block_metadata(&cascade.config)?;
+    crate::harness::manifest::check_block_values(&cascade.config)?;
     let canonical = profile.name;
     let carries_commands = profile.format().carries_commands;
     let (mut scan, links) = read_notes(vfs, vault_root, None, ns)?;

@@ -141,20 +141,45 @@ fn harness_paths() -> BTreeSet<&'static str> {
     paths
 }
 
-/// Refuses a block `metadata` on a container that is not a mapping.
+/// Refuses a key in a container's block whose value is not the kind that
+/// harness reads, such as a `metadata` that is not a mapping. Only the keys
+/// this kind of container accepts are checked: any other key warns as
+/// `unknown-key` and is left out, whatever it holds. A key with no known type
+/// is not checked either.
 ///
 /// # Errors
 ///
 /// `refused: malformed-block`.
-pub(crate) fn check_block_metadata(config: &MarketplaceConfig) -> Result<(), CoreError> {
-    let plugins = config.plugins.values().map(|plugin| &plugin.blocks);
-    for blocks in std::iter::once(&config.blocks).chain(plugins) {
+pub(crate) fn check_block_values(config: &MarketplaceConfig) -> Result<(), CoreError> {
+    let market = match &config.name {
+        Some(name) => format!("marketplace `{name}`"),
+        None => "the marketplace".to_owned(),
+    };
+    let plugins = config.plugins.iter().map(|(name, plugin)| {
+        (
+            format!("plugin `{name}`"),
+            EntityKind::Plugin,
+            &plugin.blocks,
+        )
+    });
+    let containers = std::iter::once((market, EntityKind::Marketplace, &config.blocks));
+    for (owner, kind, blocks) in containers.chain(plugins) {
+        let as_map = blocks
+            .iter()
+            .map(|(harness, block)| (harness.clone(), serde_json::Value::Object(block.clone())))
+            .collect();
+        let unknown = crate::discover::unknown_container_block_keys(&as_map, kind);
         for (harness, block) in blocks {
-            if block.get("metadata").is_some_and(|m| !m.is_object()) {
-                return Err(CoreError::refused(
-                    "malformed-block",
-                    format!("`{harness}.metadata` must be a mapping"),
-                ));
+            for (key, value) in block {
+                if let Some(ty) = crate::harness::field_types::container_type(harness, key)
+                    && !unknown.contains(&format!("{harness}.{key}"))
+                    && !ty.accepts(value)
+                {
+                    return Err(CoreError::refused(
+                        "malformed-block",
+                        format!("`{harness}.{key}` of {owner} {}", ty.refusal(value)),
+                    ));
+                }
             }
         }
     }

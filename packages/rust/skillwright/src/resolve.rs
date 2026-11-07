@@ -87,6 +87,23 @@ impl ResolvedRun {
         )
     }
 
+    /// The vault as an export into `out_root` reads it. The export hides its
+    /// own output; when `build.out` is another folder, its output is hidden
+    /// too, so a build or comparison elsewhere never reads it as source.
+    pub fn export_vfs(&self, skills_root: Option<&Path>, out_root: &Path) -> SourceView<'static> {
+        let configured = self
+            .config
+            .build
+            .out
+            .as_ref()
+            .map(|out| resolve_configured_path(out, &self.config_dir));
+        let resolved = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        match configured {
+            Some(out) if resolved(&out) != resolved(out_root) => self.source_vfs(skills_root),
+            _ => self.config_vfs(),
+        }
+    }
+
     /// What this run reads, for a marketplace it may name.
     pub fn scope<'a>(
         &'a self,

@@ -103,8 +103,9 @@ segment matches any number of segments. Globs are relative to this file.
   ships as a file of that skill, with or without a `description`.
 - A plugin's `assets/` ships whatever its folders are called, and a link into it
   is allowed.
-- Output under the current `out` and `packs` is never read as source. A folder an
-  earlier build left elsewhere can be: see `packs` below.
+- Output under the current `out` and `packs` is never read as source, also when
+  `--out` or `bump --changed-since` builds somewhere else. A folder an earlier
+  build left elsewhere can be: see `packs` below.
 
 `exclude` adds to the folders that never ship, and `publish <note>` refuses a note
 it matches. It does not apply to a plugin's `assets/`. A body link or embed that reaches a never-ship or excluded file is
@@ -248,6 +249,14 @@ a skill Claude's `allowed-tools` patterns. Each block is checked against the key
 that harness accepts, merged over what skillwright generates, and emitted only
 for that harness. The accepted keys are [in the field reference](fields.md#harness-blocks).
 
+- A key the block accepts must hold the kind of value that harness documents. A
+  component's keys take the type they take written bare, as the
+  [field reference](fields.md) says. A container's keys take the type in
+  harness-reference's manifest and marketplace facts. A wrong kind is refused,
+  naming the block, the key and the kind, such as
+  `` `codex.policy` of plugin `p` must be a mapping, not a number ``. A key the
+  block does not accept only warns, whatever it holds. A key with no documented
+  type is not checked.
 - `metadata` in a block merges with the note's `metadata` rather than replacing
   it.
 - A block a component inherits cannot set that component's `name` or
