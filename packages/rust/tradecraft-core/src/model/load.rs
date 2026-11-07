@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use markdown_link::LinkIndex;
 use serde::{Deserialize, Serialize};
 
+use super::cascade::{Cascade, belongs_to, marketplaces_in};
 use super::{
     Asset, Body, Component, Extensions, HooksFile, Marketplace, Plugin, Resolved, Resource,
     ResourceContent, Segment, pack_kind, segments,
@@ -29,17 +30,17 @@ use crate::compile::{
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION_REASON,
-    discover_in, load_source,
+    NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON, UNKNOWN_KEY_REASON, discover_in, load_source,
 };
 use crate::error::CoreError;
-use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig, PluginOverrides};
+use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::manifest::DEFAULT_PLUGIN_VERSION;
 use crate::harness::{HarnessProfile, with_plugin_format};
 use crate::namespace::Namespace;
 use crate::projection::parse_runtime_target;
 use crate::publish::{PLUGIN_HOOKS_PATH, canonical_target, refuse_carried_peers};
-use crate::vault::{VaultNote, read_vault_skill};
+use crate::vault::{VaultNote, read_vault_note};
 use crate::vfs::{Vfs, normalize};
 
 /// What a marketplace load reads: this vault, this marketplace of it, for
@@ -152,8 +153,8 @@ pub(crate) fn selected_harnesses(
 ///   `unknown-asset-plugin` — an asset that cannot land where it says.
 /// * `refused: unknown-hooks-plugin` / `duplicate-hooks-file` and what
 ///   [`crate::hooks_file::parse_hooks_file`] refuses.
-/// * `refused: unknown-target` / `unknown-override-key` — an `sw-overrides`
-///   block one of the requested harnesses cannot take.
+/// * `refused: unknown-target` / `unknown-override-key` — a harness block one
+///   of the requested harnesses cannot take.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
 pub fn load(
     vfs: &dyn Vfs,
@@ -181,11 +182,13 @@ pub fn load(
             ),
         ));
     }
-    let discovered = scan.components;
+    let mut discovered = scan.components;
     // Which marketplaces the vault holds is read from every kind, not from the
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing publishable rather than that it is not there.
     let market = resolve_marketplace(&discovered, request.marketplace.as_deref())?;
+    let mut cascade = Cascade::over(&discovered, market.as_deref(), &request.config);
+    cascade.resolve_targets(&mut discovered);
     let belonging: Vec<&DiscoveredComponent> = discovered
         .iter()
         .filter(|component| belongs_to(component, market.as_deref()))
@@ -195,13 +198,23 @@ pub fn load(
     // no marketplace of its own, so `belongs_to` admits every one of them.
     let ours: BTreeSet<&str> = belonging
         .iter()
-        .filter(|c| c.kind != EntityKind::Marketplace || market.as_deref() == Some(c.name.as_str()))
+        .filter(|c| c.kind != EntityKind::Marketplace || market.as_deref() == Some(c.folder()))
         .map(|c| c.vault_relative_path.as_str())
         .collect();
+    // A never-ship note is no component, so only its path says whose it is.
+    let another_marketplace = |path: &str| {
+        path.strip_prefix("marketplaces/")
+            .and_then(|rest| rest.split('/').next())
+            .is_some_and(|folder| market.as_deref() != Some(folder))
+    };
     let mut warnings: Vec<DiscoveryWarning> = scan
         .warnings
         .into_iter()
-        .filter(|w| ours.contains(w.path.as_str()))
+        .filter(|w| {
+            ours.contains(w.path.as_str())
+                || ([NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON].contains(&w.reason.as_str())
+                    && !another_marketplace(&w.path))
+        })
         .collect();
     // Named, never dropped: a pack has a place for skills, commands and hooks
     // and for nothing else, and a build that quietly omitted an agent would
@@ -242,12 +255,11 @@ pub fn load(
             },
         ));
     }
-    let (name, config, configured) =
-        resolve_config(&discovered, market.as_deref(), &request.config)?;
+    let name = marketplace_name(&cascade.config, market.as_deref())?;
     // A silent note the config describes ships that value, so it is not
     // missing one.
     warnings.retain(|w| {
-        w.reason != MISSING_DESCRIPTION_REASON || !configured.contains(w.path.as_str())
+        w.reason != MISSING_DESCRIPTION_REASON || !cascade.configured.contains(w.path.as_str())
     });
     let undescribed: Vec<&str> = warnings
         .iter()
@@ -266,26 +278,32 @@ pub fn load(
         ));
     }
     let mut plugins = group_by_plugin(&skills, &commands, &hooks, &name)?;
+    // The marketplace's own plugin has no folder, so its note is the
+    // marketplace's and it ships the marketplace's version.
+    if plugins.contains_key(&name)
+        && !has_folder(&discovered, market.as_deref(), &name)
+        && let Some(version) = cascade.config.version.clone()
+    {
+        let own = cascade.config.plugins.entry(name.clone()).or_default();
+        own.version.get_or_insert(version);
+    }
+    let config = &cascade.config;
     warnings.extend(missing_versions(
         &discovered,
         market.as_deref(),
+        &name,
         &plugins,
-        &config,
+        config,
     ));
     let folder_assets = folder_assets(vfs, &vault_root, &plugins);
-    warnings.extend(changelog_warnings(
-        vfs,
-        &vault_root,
-        &folder_assets,
-        &config,
-    ));
+    warnings.extend(changelog_warnings(vfs, &vault_root, &folder_assets, config));
     load_assets(
         vfs,
         &folder_assets,
         &request.assets,
         &roots,
         &mut plugins,
-        &config,
+        config,
         &name,
     )?;
     load_hook_files(vfs, &request.hooks, &mut plugins, &name)?;
@@ -307,6 +325,7 @@ pub fn load(
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for plugin in plugins.values_mut() {
         let launcher = plugin.launcher.clone();
+        let plugin_name = plugin.name.clone();
         for component in plugin
             .skills
             .iter_mut()
@@ -316,7 +335,9 @@ pub fn load(
             if !roots.iter().any(|root| admits(&component.discovered, root)) {
                 continue;
             }
-            let note = read_vault_skill(vfs, &component.discovered.entry_path, ns)?;
+            let mut note =
+                read_vault_note(vfs, &component.discovered.entry_path, ns, component.kind)?;
+            cascade.apply(&mut note, component.kind, Some(&plugin_name), ns);
             let admitting: Vec<&HarnessProfile> = roots
                 .iter()
                 .copied()
@@ -358,11 +379,14 @@ pub fn load(
         }
     }
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
+    apply_naming(&mut plugins, config)?;
+    crate::harness::manifest::check_packs(config)?;
+    crate::harness::manifest::check_block_metadata(config)?;
 
     Ok(Marketplace {
         name,
         folder: market,
-        config,
+        config: cascade.config,
         plugins,
         uncarried,
         warnings,
@@ -392,25 +416,28 @@ pub struct ComponentRequest<'a> {
 /// Loads one note published on its own: no plugin, so a call to another
 /// skill is that skill's bare name.
 ///
-/// The skills a call may name come from a scan of `request.root`, built only
-/// when the body has a call or a link to check. A scan that fails blocks only
-/// a call: a plain link then stays a link.
+/// `note` has had [`Cascade::apply`] run over it already: the caller needs its
+/// `targets` before it gets here. The skills a call may name come from a scan
+/// of `request.root`, built only when the body has a call or a link to check.
+/// A scan that fails blocks only a call: a plain link then stays a link.
 ///
 /// # Errors
 ///
 /// `refused: unknown-target` / `unknown-override-key` from the note's
-/// `sw-overrides`, and what [`resolve_body`] refuses.
+/// harness blocks, and what [`resolve_body`] refuses.
 pub fn load_component(
     vfs: &dyn Vfs,
     request: &ComponentRequest<'_>,
     note: &VaultNote,
+    cascade: &Cascade,
     ns: &Namespace,
 ) -> Result<Component, CoreError> {
     let blocks =
         crate::publish::overrides_for(&note.frontmatter, request.path, request.target, ns)?;
     let targets: OnceCell<BTreeMap<PathBuf, Option<Vec<String>>>> = OnceCell::new();
     let build = || -> Result<SkillIndex, CoreError> {
-        let (scan, _) = read_notes(vfs, request.root, None, ns)?;
+        let (mut scan, _) = read_notes(vfs, request.root, None, ns)?;
+        cascade.resolve_targets(&mut scan.components);
         let built = skill_index(scan.components.iter().map(|c| (c, None)), None);
         let _ = targets.set(built.targets);
         Ok(built.skills)
@@ -452,20 +479,22 @@ pub struct Pack {
     /// The plugin, holding only the members this destination admits and
     /// carries, with the container's own files as its assets.
     pub plugin: Plugin,
-    /// The pack manifest's fields: the plugin note's own frontmatter, and no
-    /// marketplace above it.
+    /// The pack manifest's fields: the plugin note's own frontmatter over what
+    /// it inherits. No marketplace manifest is rendered from it.
     pub config: MarketplaceConfig,
     /// Members this destination admits and its pack has no place for, by
     /// vault path.
     pub not_carried: Vec<String>,
+    /// The unknown-key warnings of the plugin note and its members.
+    pub warnings: Vec<DiscoveryWarning>,
 }
 
 /// Loads one plugin as a pack for `profile`.
 ///
 /// The members come from the vault scan rather than from the note's body,
-/// which is the same rule a build follows: a component's plugin is decided by
-/// the folder holding it and overruled by `sw-plugin`. A member narrowed away
-/// by its own `sw-targets` is absent from the pack, exactly as it is absent
+/// which is the same rule a build follows: the folder holding a component
+/// decides its plugin. A member narrowed away
+/// by its own `targets` is absent from the pack, exactly as it is absent
 /// from a built tree.
 ///
 /// # Errors
@@ -473,22 +502,24 @@ pub struct Pack {
 /// * `refused: unreadable-note` — a member the scan could not read. A pack
 ///   must not install a subset silently.
 /// * `refused: empty-plugin` — nothing this destination admits.
+/// * `refused: malformed-block` — a block `metadata` that is not a mapping.
 /// * What [`resolve_body`] refuses for any member.
 pub fn load_plugin(
     vfs: &dyn Vfs,
     vault_root: &Path,
     plugin_name: &str,
-    identity: &ContainerIdentity,
+    cascade: &Cascade,
     profile: &'static HarnessProfile,
     ns: &Namespace,
 ) -> Result<Pack, CoreError> {
+    crate::harness::manifest::check_block_metadata(&cascade.config)?;
     let canonical = profile.name;
     let carries_commands = profile.format().carries_commands;
-    let (scan, links) = read_notes(vfs, vault_root, None, ns)?;
+    let (mut scan, links) = read_notes(vfs, vault_root, None, ns)?;
+    cascade.resolve_targets(&mut scan.components);
     // A note elsewhere in the vault that does not parse is not this pack's
     // problem, and a shared vault always holds one. A note this pack holds
-    // is. Membership is the note's own `sw-plugin` first and its folder
-    // second, the ranking a readable member follows.
+    // is.
     let blocked: Vec<&str> = scan
         .skipped
         .iter()
@@ -535,7 +566,8 @@ pub fn load_plugin(
             "empty-plugin",
             format!(
                 "`{plugin_name}` has no member this destination admits — every member is either \
-                 absent or narrowed away by its own `sw-targets`"
+                 absent or narrowed away by `{}`",
+                ns.key("targets")
             ),
         ));
     }
@@ -552,7 +584,8 @@ pub fn load_plugin(
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for member in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
-        let note = read_vault_skill(vfs, &member.discovered.entry_path, ns)?;
+        let mut note = read_vault_note(vfs, &member.discovered.entry_path, ns, member.kind)?;
+        cascade.apply(&mut note, member.kind, Some(plugin_name), ns);
         member.extensions = extensions(&note.frontmatter, &member.discovered, &[profile], ns)?;
         let (resolved, content) = resolve_body(
             vfs,
@@ -575,7 +608,7 @@ pub fn load_plugin(
     if let Some(note) = scan
         .components
         .iter()
-        .find(|c| c.kind == EntityKind::Plugin && c.name == plugin_name)
+        .find(|c| c.kind == EntityKind::Plugin && c.folder() == plugin_name)
     {
         let source_note = note.vault_relative_path.clone();
         for relative in note.resources.iter().filter(|r| is_container_own(r)) {
@@ -596,28 +629,35 @@ pub fn load_plugin(
         }
     }
 
+    let mine: BTreeSet<&str> = scan
+        .components
+        .iter()
+        .filter(|c| {
+            c.plugin.as_deref() == Some(plugin_name)
+                || (c.kind == EntityKind::Plugin && c.folder() == plugin_name)
+        })
+        .map(|c| c.vault_relative_path.as_str())
+        .collect();
+    let warnings = scan
+        .warnings
+        .iter()
+        .filter(|w| w.reason == UNKNOWN_KEY_REASON && mine.contains(w.path.as_str()))
+        .cloned()
+        .collect();
+
     let config = MarketplaceConfig {
-        // A per-destination publish has no marketplace above it, so the
-        // marketplace-level fallbacks are absent and the plugin note's own
-        // frontmatter is the only source of identity there is.
+        // A pack renders its own manifest and no marketplace's, and it ships
+        // no launcher asset, so no call is rewritten.
         name: None,
-        display_name: None,
-        owner: None,
-        description: None,
-        author: identity.author.clone(),
-        license: None,
-        plugins: [(plugin_name.to_owned(), overrides_from(identity))]
-            .into_iter()
-            .collect(),
         require_descriptions: false,
-        // A pack published to a destination ships no launcher asset, so no
-        // call is rewritten.
         launcher_path: None,
+        ..cascade.config.clone()
     };
     Ok(Pack {
         plugin,
         config,
         not_carried,
+        warnings,
     })
 }
 
@@ -660,7 +700,7 @@ pub fn resolve_body(
     Ok((resolved, content))
 }
 
-/// The skills a call may name, each one's `sw-targets`, and the vault's link
+/// The skills a call may name, each one's `targets`, and the vault's link
 /// index when pass 1 built it.
 #[derive(Debug, Clone, Default)]
 pub struct Index {
@@ -713,7 +753,7 @@ fn recording_context<'a>(
 }
 
 /// The renderer a recording compile never calls.
-fn no_render(_: &IndexedSkill) -> Result<String, CoreError> {
+fn no_render(_: &IndexedSkill, _: bool) -> Result<String, CoreError> {
     Ok(String::new())
 }
 
@@ -794,18 +834,60 @@ fn resolve_compiled(
     ))
 }
 
-/// Gives every call the `sw-targets` of the skill it names.
+/// Gives every call the `targets` of the skill it names.
 fn fill_targets(resolved: &mut Resolved, targets: &BTreeMap<PathBuf, Option<Vec<String>>>) {
-    let bodies =
-        std::iter::once(&mut resolved.body).chain(resolved.resources.iter_mut().filter_map(
-            |resource| match &mut resource.content {
-                ResourceContent::Body { body } => Some(body),
-                ResourceContent::Bytes { .. } => None,
-            },
-        ));
-    for body in bodies {
+    for body in bodies_of(resolved) {
         fill_body_targets(body, targets);
     }
+}
+
+/// A resolved component's body and each resource's.
+fn bodies_of(resolved: &mut Resolved) -> impl Iterator<Item = &mut Body> {
+    std::iter::once(&mut resolved.body).chain(resolved.resources.iter_mut().filter_map(
+        |resource| match &mut resource.content {
+            ResourceContent::Body { body } => Some(body),
+            ResourceContent::Bytes { .. } => None,
+        },
+    ))
+}
+
+/// Marks each plugin `pi: {naming: bare}` covers, and every call to one of
+/// its skills, wherever the call sits.
+fn apply_naming(
+    plugins: &mut BTreeMap<String, Plugin>,
+    config: &MarketplaceConfig,
+) -> Result<(), CoreError> {
+    let mut bare = BTreeSet::new();
+    for name in plugins.keys() {
+        if crate::harness::manifest::bare_on_pi(config, name)? {
+            bare.insert(name.clone());
+        }
+    }
+    if bare.is_empty() {
+        return Ok(());
+    }
+    for plugin in plugins.values_mut() {
+        if bare.contains(&plugin.name) {
+            plugin.bare_on = vec!["pi".to_owned()];
+        }
+        let members = plugin
+            .skills
+            .iter_mut()
+            .chain(&mut plugin.commands)
+            .chain(&mut plugin.hooks);
+        for resolved in members.filter_map(|member| member.resolved.as_mut()) {
+            for body in bodies_of(resolved) {
+                for segment in &mut body.segments {
+                    if let Segment::Call { call } = segment
+                        && call.skill.plugin.as_ref().is_some_and(|p| bare.contains(p))
+                    {
+                        call.bare_on = vec!["pi".to_owned()];
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn fill_body_targets(body: &mut Body, targets: &BTreeMap<PathBuf, Option<Vec<String>>>) {
@@ -845,7 +927,6 @@ fn standalone(request: &ComponentRequest<'_>, note: &VaultNote) -> DiscoveredCom
         folder_kind: None,
         targets: note.frontmatter.targets.clone(),
         plugin: None,
-        folder_plugin: None,
         marketplace: None,
         entry_path: request.path.to_path_buf(),
         bundle_root: request.bundle_root.map(Path::to_path_buf),
@@ -853,6 +934,8 @@ fn standalone(request: &ComponentRequest<'_>, note: &VaultNote) -> DiscoveredCom
         vault_relative_path: vault_relative(request.root, request.path),
         hook: None,
         identity: ContainerIdentity::default(),
+        blocks: note.frontmatter.overrides.clone(),
+        unknown_keys: note.frontmatter.unknown.clone(),
     }
 }
 
@@ -870,7 +953,7 @@ pub(crate) fn vault_relative(vault_root: &Path, path: &Path) -> String {
         })
 }
 
-/// A note's `sw-overrides`, folded onto canonical names and checked for each
+/// A note's harness blocks, folded onto canonical names and checked for each
 /// of `harnesses` (D-ISOU).
 ///
 /// # Errors
@@ -894,7 +977,7 @@ fn extensions(
 // --- What the build used to decide before it rendered ------------------------
 
 /// Does this member publish to this harness? Two gates: the harness's pack
-/// has a place for the member's kind, and its `sw-targets` names the harness.
+/// has a place for the member's kind, and its `targets` names the harness.
 pub(crate) fn admits(component: &DiscoveredComponent, spec: &HarnessProfile) -> bool {
     kind_carried(component, spec) && targets_admit(component, spec.name)
 }
@@ -909,7 +992,7 @@ pub(crate) fn kind_carried(component: &DiscoveredComponent, spec: &HarnessProfil
     }
 }
 
-/// Gate 2 of [`admits`]: whether the member's `sw-targets` names this
+/// Gate 2 of [`admits`]: whether the member's `targets` names this
 /// destination. Absent is every destination, empty is none — matched on the
 /// destination a name resolves to, so `claude-code` admits `claude`.
 pub(crate) fn targets_admit(component: &DiscoveredComponent, canonical: &str) -> bool {
@@ -926,24 +1009,81 @@ pub(crate) fn targets_name(targets: Option<&[String]>, canonical: &str) -> bool 
     }
 }
 
-/// A plugin this build publishes from its own note, with no version from the
+/// The folder a plugin's members sit in, as a scan spells it.
+fn members_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name: &str) -> String {
+    discovered
+        .iter()
+        .filter(|c| c.plugin.as_deref() == Some(name) && belongs_to(c, market))
+        .find_map(|c| crate::discover::plugin_folder_in(&c.vault_relative_path, name))
+        .unwrap_or_else(|| format!("plugins/{name}"))
+}
+
+/// Whether a component of `market` sits in a folder of the plugin `name`.
+fn has_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name: &str) -> bool {
+    discovered
+        .iter()
+        .any(|c| belongs_to(c, market) && crate::discover::in_plugin_folder(c, name))
+}
+
+/// The plugins this build publishes with no version from the
 /// note or the config. It ships as [`DEFAULT_PLUGIN_VERSION`], and a harness compares versions
 /// to decide whether an installed pack is out of date — so a pack that never
 /// states one never looks updated.
 fn missing_versions(
     discovered: &[DiscoveredComponent],
     market: Option<&str>,
+    own_plugin: &str,
     plugins: &BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Vec<DiscoveryWarning> {
-    discovered
+    let noted: Vec<&DiscoveredComponent> = discovered
         .iter()
         .filter(|c| c.kind == EntityKind::Plugin && belongs_to(c, market))
-        .filter(|c| plugins.contains_key(c.name.as_str()))
+        .collect();
+    let implicit = |name: &str| name == own_plugin && !has_folder(discovered, market, name);
+    let folder_only = plugins
+        .keys()
+        .filter(|name| !noted.iter().any(|c| c.folder() == name.as_str()))
+        .filter(|name| {
+            config
+                .plugins
+                .get(*name)
+                .and_then(|o| o.version.as_ref())
+                .is_none()
+        })
+        .map(|name| {
+            if implicit(name) {
+                let file = match market {
+                    Some(m) => format!("marketplaces/{m}/{}", crate::settings::ROOT_FILE),
+                    None => crate::settings::ROOT_FILE.to_owned(),
+                };
+                return DiscoveryWarning {
+                    detail: format!(
+                        "plugin `{name}` is the marketplace's own, so it takes its version from \
+                         the root file, and `{file}` states none; published as `0.1.0`. Set \
+                         `version` there"
+                    ),
+                    path: file,
+                    reason: "missing-version".to_owned(),
+                };
+            }
+            let folder = members_folder(discovered, market, name);
+            DiscoveryWarning {
+                detail: format!(
+                    "plugin `{name}` has no note, so it states no version; published as `0.1.0`. \
+                     Add `{folder}/{name}.md` with a `version`"
+                ),
+                path: folder,
+                reason: "missing-version".to_owned(),
+            }
+        });
+    noted
+        .iter()
+        .filter(|c| plugins.contains_key(c.folder()))
         .filter(|c| {
             config
                 .plugins
-                .get(&c.name)
+                .get(c.folder())
                 .and_then(|o| o.version.as_ref())
                 .is_none()
         })
@@ -951,139 +1091,43 @@ fn missing_versions(
             path: c.vault_relative_path.clone(),
             reason: "missing-version".to_owned(),
             detail: format!(
-                "plugin `{}` states no version; published as `0.1.0`. Set `sw-version` on \
+                "plugin `{}` states no version; published as `0.1.0`. Set `version` on \
                  its note so a harness can tell an update from what it has",
                 c.name
             ),
         })
+        .chain(folder_only)
         .collect()
 }
 
-/// The manifest fields this build renders under, read from the vault first and
-/// the request second.
+/// The name this build renders under: the marketplace note's, the request's,
+/// or the marketplace folder's, which [`Cascade::over`] settled.
 ///
-/// # Why the note outranks the request
-///
-/// A marketplace note *is* the marketplace: its name, its owner, who authors
-/// the packs under it — a fact about the vault, versioned with it and visible
-/// in Obsidian. [`MarketplaceConfig`] stays required for what no note can
-/// answer. A vault holding no marketplace directory at all is legal
-/// ([`resolve_marketplace`] returns `None` for it); the request is the whole
-/// identity there.
+/// A marketplace note *is* the marketplace, so it outranks the request. A vault
+/// holding no marketplace directory at all is legal ([`resolve_marketplace`]
+/// returns `None` for it); the request is the whole identity there.
 ///
 /// # Errors
 ///
-/// `refused: unnamed-marketplace` — neither a marketplace note nor the request
-/// supplies a name.
-///
-/// The set returned holds the vault-relative paths of the silent notes whose
-/// description the request supplied.
-fn resolve_config(
-    discovered: &[DiscoveredComponent],
-    market: Option<&str>,
-    requested: &MarketplaceConfig,
-) -> Result<(String, MarketplaceConfig, BTreeSet<String>), CoreError> {
-    let mut config = requested.clone();
-    let mut configured = BTreeSet::new();
-
-    // A marketplace's own note is the one component that belongs to no
-    // marketplace while naming one — see `DiscoveredComponent::marketplace`.
-    let note = market.and_then(|name| {
-        discovered
-            .iter()
-            .find(|c| c.kind == EntityKind::Marketplace && c.name == name)
-    });
-    if let Some(note) = note {
-        config.name = Some(note.name.clone());
-        // The note's `description` is the Agent Skills spec field every component carries,
-        // not an `sw-` key — the same rule the plugin loop below follows. A
-        // marketplace describes itself where a skill describes itself.
-        if take_description(&mut config.description, note) {
-            configured.insert(note.vault_relative_path.clone());
-        }
-        take(&mut config.display_name, note.identity.display_name.clone());
-        take(&mut config.owner, note.identity.owner.clone());
-        take(&mut config.author, note.identity.author.clone());
-        take(&mut config.license, note.identity.license.clone());
-    }
-    // Failing a note, the marketplace's own name is what it is called: the
-    // folder named the level, and a distribution named `house` on disk should
-    // not need a second place to say so.
-    if config.name.is_none() {
-        config.name = market.map(str::to_owned);
-    }
-    // The one thing nothing supplied. Everything else in this type has a
-    // documented default; a name does not, because there is nothing sensible to
-    // call a distribution its author never named.
-    if config.name.is_none() {
-        return Err(CoreError::refused(
+/// `refused: unnamed-marketplace` — nothing supplies a name. Everything else
+/// in the config has a documented default; a name does not, because there is
+/// nothing sensible to call a distribution its author never named.
+fn marketplace_name(config: &MarketplaceConfig, market: Option<&str>) -> Result<String, CoreError> {
+    config.name.clone().ok_or_else(|| {
+        CoreError::refused(
             "unnamed-marketplace",
             match market {
                 Some(name) => format!(
                     "marketplace `{name}` has no note naming it and the build supplied no name \
-                     either — add a `{name}/{name}.md` carrying `name:`, or configure one"
+                     either — add a `marketplaces/{name}/skillwright.md` carrying `name:`, or configure one"
                 ),
                 None => "this vault holds no marketplace to name one, and the build supplied no \
                          name — configure one, or give the vault a `marketplaces/<name>/` holding \
                          its own note"
                     .to_owned(),
             },
-        ));
-    }
-
-    // Each plugin note fills its own override block. A block the request
-    // already spelled is left alone only field by field: a vault naming its
-    // pack's license and a request naming its version must produce a manifest
-    // carrying both, not whichever side spoke last.
-    for note in discovered
-        .iter()
-        .filter(|c| c.kind == EntityKind::Plugin)
-        .filter(|c| belongs_to(c, market))
-    {
-        let overrides = config.plugins.entry(note.name.clone()).or_default();
-        // The note's `description` is the Agent Skills spec field every component carries,
-        // not an `sw-` key: a plugin note describes its pack in the same place
-        // a skill note describes itself.
-        if take_description(&mut overrides.description, note) {
-            configured.insert(note.vault_relative_path.clone());
-        }
-        take(&mut overrides.version, note.identity.version.clone());
-        take(&mut overrides.author, note.identity.author.clone());
-        take(&mut overrides.license, note.identity.license.clone());
-        take(&mut overrides.keywords, note.identity.keywords.clone());
-        take(&mut overrides.category, note.identity.category.clone());
-        take(
-            &mut overrides.display_name,
-            note.identity.display_name.clone(),
-        );
-    }
-
-    // Settled, so nothing below has to hold an `Option` it has already proved
-    // is `Some`. The name and the rest travel together from here.
-    let name = config.name.clone().unwrap_or_default();
-    Ok((name, config, configured))
-}
-
-/// Writes `from` into `slot` when the note supplied it, leaving a request-only
-/// value in place. The vault outranks the request where both spoke; where the
-/// vault is silent the request is all there is.
-fn take<T>(slot: &mut Option<T>, from: Option<T>) {
-    if let Some(value) = from {
-        *slot = Some(value);
-    }
-}
-
-/// [`take`] for a note's `description`. A note with none carries discovery's
-/// [`crate::discover::MISSING_DESCRIPTION`] filler, which is the vault being
-/// silent: it yields to the request's value and stands in only where the
-/// request is silent too. Returns whether the request's value stood in for
-/// the filler.
-fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) -> bool {
-    if !note.description_filled || slot.is_none() {
-        *slot = Some(note.description.clone());
-        return false;
-    }
-    true
+        )
+    })
 }
 
 /// Which marketplace this build renders, given what the vault holds.
@@ -1101,10 +1145,7 @@ fn resolve_marketplace(
     discovered: &[DiscoveredComponent],
     requested: Option<&str>,
 ) -> Result<Option<String>, CoreError> {
-    let present: BTreeSet<&str> = discovered
-        .iter()
-        .filter_map(|component| component.marketplace.as_deref())
-        .collect();
+    let present = marketplaces_in(discovered);
     match requested {
         Some(name) => {
             if present.contains(name) {
@@ -1137,20 +1178,6 @@ fn resolve_marketplace(
                 ),
             )),
         },
-    }
-}
-
-/// Does this component render into the marketplace being built?
-///
-/// Its own do. So does everything promoted above every marketplace: a
-/// component at the vault level belongs to none of them and is shared by all
-/// of them — the promotion rule read from the far end — so it renders into
-/// each marketplace that is built, rather than into none.
-fn belongs_to(component: &DiscoveredComponent, market: Option<&str>) -> bool {
-    match (component.marketplace.as_deref(), market) {
-        (None, _) => true,
-        (Some(own), Some(market)) => own == market,
-        (Some(_), None) => false,
     }
 }
 
@@ -1191,7 +1218,7 @@ fn group_by_plugin(
 ) -> Result<BTreeMap<String, Plugin>, CoreError> {
     let all = || skills.iter().chain(commands).chain(hooks);
     if let Some(loose) = all().find(|m| m.plugin.is_none())
-        && let Some(folder) = all().find(|m| m.folder_plugin.as_deref() == Some(own_plugin))
+        && let Some(folder) = all().find(|m| m.plugin.as_deref() == Some(own_plugin))
     {
         return Err(CoreError::refused(
             "own-plugin-clash",
@@ -1352,16 +1379,22 @@ fn folder_assets(
     vault_root: &Path,
     plugins: &BTreeMap<String, Plugin>,
 ) -> Vec<AssetSpec> {
+    let patterns = crate::patterns::Patterns::read(vfs, vault_root);
     let mut specs = Vec::new();
     for (name, plugin) in plugins {
-        let Some(folder) = plugin
-            .components()
-            .find_map(|member| plugin_folder(&member.discovered.vault_relative_path, name))
-        else {
+        let Some(relative) = plugin.components().find_map(|member| {
+            let path = &member.discovered.vault_relative_path;
+            patterns
+                .plugin_folder(path)
+                .map(str::to_owned)
+                .or_else(|| plugin_folder(path, name))
+        }) else {
             continue;
         };
-        let folder = vault_root.join(folder);
-        let assets = folder.join(ASSETS_DIR);
+        let folder = vault_root.join(&relative);
+        let assets = patterns
+            .assets_folder(vfs, vault_root, &relative)
+            .map_or_else(|| folder.join(ASSETS_DIR), |found| vault_root.join(found));
         if is_directory(vfs, &assets) {
             specs.push(AssetSpec {
                 source: assets,
@@ -1608,20 +1641,6 @@ fn is_container_own(relative: &str) -> bool {
     !KIND_DIRS.iter().any(|(dir, _)| *dir == first)
 }
 
-/// The plugin note's own frontmatter as the build's override shape, so the two
-/// paths read identity from one place.
-fn overrides_from(identity: &ContainerIdentity) -> PluginOverrides {
-    PluginOverrides {
-        version: identity.version.clone(),
-        description: None,
-        author: identity.author.clone(),
-        license: identity.license.clone(),
-        keywords: identity.keywords.clone(),
-        category: identity.category.clone(),
-        display_name: identity.display_name.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1648,8 +1667,7 @@ mod tests {
     #[test]
     fn pass_one_hands_on_a_link_index_of_its_walk_of_the_vault() {
         let vfs = vault();
-        let (_, links) =
-            read_notes(&vfs, Path::new("/vault"), None, &Namespace::default()).unwrap();
+        let (_, links) = read_notes(&vfs, Path::new("/vault"), None, &Namespace::sw()).unwrap();
         assert_eq!(links.resolve("Notes/elsewhere"), Some("Notes/elsewhere.md"));
     }
 
@@ -1662,7 +1680,7 @@ mod tests {
             &vfs,
             Path::new("/vault"),
             Some(Path::new("/vault/src")),
-            &Namespace::default(),
+            &Namespace::sw(),
         )
         .unwrap();
         assert_eq!(report.components.len(), 1);

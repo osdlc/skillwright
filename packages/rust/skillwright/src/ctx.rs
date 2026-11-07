@@ -1,6 +1,6 @@
 //! What a command is given instead of reaching for the process: a working
-//! directory, two streams, a way to ask whether the user has interrupted, and
-//! a runner for external commands.
+//! directory, two streams, a way to ask whether the user has interrupted, a
+//! runner for external commands, and the home directory.
 //!
 //! Every verb takes one, so every verb is testable by calling it — the tests
 //! in this crate drive [`crate::cli::run_with`] in-process rather than
@@ -36,6 +36,9 @@ pub struct CommandContext<'a> {
     interrupted: Box<dyn Fn() -> bool + 'a>,
     /// Spawns the external commands a verb runs.
     pub runner: &'a dyn Runner,
+    /// The user's home directory, where harnesses keep their user settings
+    /// and skill folders.
+    pub home: PathBuf,
 }
 
 impl<'a> CommandContext<'a> {
@@ -47,6 +50,7 @@ impl<'a> CommandContext<'a> {
             err,
             interrupted: Box::new(|| false),
             runner: &ProcessRunner,
+            home: crate::config::home_dir(),
         }
     }
 
@@ -60,6 +64,12 @@ impl<'a> CommandContext<'a> {
     /// Replace the process runner, e.g. with a scripted fake in tests.
     pub fn with_runner(mut self, runner: &'a dyn Runner) -> Self {
         self.runner = runner;
+        self
+    }
+
+    /// Replace the home directory, e.g. with a temp folder in tests.
+    pub fn with_home(mut self, home: impl AsRef<Path>) -> Self {
+        self.home = home.as_ref().to_path_buf();
         self
     }
 

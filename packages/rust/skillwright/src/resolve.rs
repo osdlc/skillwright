@@ -12,12 +12,15 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use tradecraft_core::Namespace;
+use tradecraft_core::{
+    DiscoveryWarning, MarketplaceConfig, Namespace, NativeVfs, SourceView, VaultScope,
+    discover_components,
+};
 
 use crate::config::{
-    ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, find_root_file, is_convention_vault,
-    print_warnings, read_root_file, resolve_against_cwd, resolve_configured_path, user_skills_dir,
-    workspace_above, workspace_members,
+    ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, is_convention_vault, print_warnings,
+    read_root_file, resolve_against_cwd, resolve_configured_path, user_skills_dir, workspace_above,
+    workspace_members,
 };
 use crate::exit::{blocked, no_config};
 
@@ -56,6 +59,78 @@ impl ResolvedRun {
         self.namespace.clone().unwrap_or_default()
     }
 
+    /// The filesystem as this run reads it: the root file in use answers
+    /// for the vault's, so `--config` reaches everything that reads it.
+    pub fn config_vfs(&self) -> SourceView<'static> {
+        let view = SourceView::over(&NativeVfs);
+        match &self.config_path {
+            Some(file) => view.with_root_file(&self.vault, file),
+            None => view,
+        }
+    }
+
+    /// The vault as a run that does not build reads it: [`Self::config_vfs`]
+    /// less the output at `build.out`.
+    pub fn source_vfs(&self, skills_root: Option<&Path>) -> SourceView<'static> {
+        let out = self
+            .config
+            .build
+            .out
+            .as_ref()
+            .map(|out| resolve_configured_path(out, &self.config_dir));
+        tradecraft_core::source_view(
+            self.config_vfs(),
+            self.scope(skills_root, None),
+            out.as_deref(),
+            &self.config.to_config(&self.folder_name()),
+            &self.core_namespace(),
+        )
+    }
+
+    /// What this run reads, for a marketplace it may name.
+    pub fn scope<'a>(
+        &'a self,
+        skills_root: Option<&'a Path>,
+        marketplace: Option<&'a str>,
+    ) -> VaultScope<'a> {
+        VaultScope {
+            vault_root: &self.vault,
+            skills_root,
+            marketplace,
+        }
+    }
+
+    /// The build config with every source of `packs` resolved.
+    pub fn effective_config(&self, marketplace: Option<&str>) -> MarketplaceConfig {
+        tradecraft_core::effective_config(
+            &self.config_vfs(),
+            self.scope(None, marketplace),
+            &self.config.to_config(&self.folder_name()),
+            &self.core_namespace(),
+        )
+    }
+
+    /// The build config of each marketplace `marketplace` allows, every one
+    /// when it names none, for a verb that does not build one.
+    pub fn effective_configs(&self, marketplace: Option<&str>) -> Vec<MarketplaceConfig> {
+        tradecraft_core::effective_configs(
+            &self.config_vfs(),
+            self.scope(None, marketplace),
+            &self.config.to_config(&self.folder_name()),
+            &self.core_namespace(),
+        )
+    }
+
+    /// The folder of the marketplace published as `name`.
+    pub fn marketplace_folder(&self, name: &str) -> Option<String> {
+        tradecraft_core::marketplace_folder(
+            &self.config_vfs(),
+            self.scope(None, None),
+            name,
+            &self.core_namespace(),
+        )
+    }
+
     /// Whether this run's root file is a workspace's.
     pub fn is_workspace(&self) -> bool {
         self.config.workspace
@@ -73,26 +148,29 @@ impl ResolvedRun {
     }
 
     /// Where `publish` and `status` look when no `--to` is given:
-    /// `build.destinations`, else each harness's user skill folder for the
+    /// `build.destinations`, else each harness's user folders, for the
     /// harnesses this vault builds for.
-    pub fn destinations(&self) -> Vec<(PathBuf, String)> {
+    pub fn destinations(&self) -> Vec<RunDestination> {
         if !self.config.build.destinations.is_empty() {
             return self
                 .config
                 .build
                 .destinations
                 .iter()
-                .map(|d| {
-                    (
-                        resolve_configured_path(&d.root, &self.config_dir),
-                        d.target.clone(),
-                    )
+                .map(|d| RunDestination {
+                    root: resolve_configured_path(&d.root, &self.config_dir),
+                    target: d.target.clone(),
+                    user_folders: false,
                 })
                 .collect();
         }
         self.user_skill_folders()
             .into_iter()
-            .map(|(dir, name)| (dir, name.to_owned()))
+            .map(|(_, name)| RunDestination {
+                root: user_skills_dir(""),
+                target: name.to_owned(),
+                user_folders: true,
+            })
             .collect()
     }
 
@@ -113,10 +191,36 @@ impl ResolvedRun {
 
     /// The marketplace's name: the root file's `name`, else the folder's.
     pub fn marketplace_name(&self) -> String {
-        self.config
-            .to_config(&self.folder_name())
-            .name
-            .unwrap_or_default()
+        self.root_config().name.unwrap_or_default()
+    }
+
+    /// The root file as a config: the top of the cascade.
+    pub fn root_config(&self) -> tradecraft_core::MarketplaceConfig {
+        self.config.to_config(&self.folder_name())
+    }
+}
+
+/// One place `publish` and `status` write to or read from.
+#[derive(Debug, Clone)]
+pub struct RunDestination {
+    /// The destination root.
+    pub root: PathBuf,
+    /// The harness.
+    pub target: String,
+    /// The root is the home directory, and the harness's user folders apply.
+    pub user_folders: bool,
+}
+
+/// Says so when `dir` holds a configuration file from before `skillwright.md`.
+fn note_old_config(dir: &Path, err: &mut dyn Write) {
+    for old in ["skillwright.yaml", "tradecraft.yaml"] {
+        if dir.join(old).is_file() {
+            let _ = writeln!(
+                err,
+                "note: `{old}` is no longer read. Move its settings to `{ROOT_FILE}`: see \
+                 docs/guide/migrating.md, or run the `migrate` skill"
+            );
+        }
     }
 }
 
@@ -156,17 +260,18 @@ pub fn resolve_run(
         let file = dir.join(ROOT_FILE);
         let file = file.is_file().then_some(file);
         (dir, file)
-    } else if let Some(file) = find_root_file(cwd) {
+    } else if let Some(file) = tradecraft_core::find_root_file(&tradecraft_core::NativeVfs, cwd) {
         let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
         (dir, Some(file))
     } else if is_convention_vault(cwd) {
         let _ = writeln!(
             err,
-            "note: no {ROOT_FILE} at or above {}; reading it with every default. Add a {ROOT_FILE} to name the marketplace and set its fields.",
+            "note: no {ROOT_FILE} at or above {}; reading it with every default. Run `skillwright init --out <path>` to add a {ROOT_FILE}.",
             cwd.display()
         );
         (cwd.to_path_buf(), None)
     } else {
+        note_old_config(cwd, err);
         return Err(no_config(
             err,
             &format!(
@@ -177,6 +282,7 @@ pub fn resolve_run(
         ));
     };
 
+    note_old_config(&vault, err);
     let mut config = match &file {
         Some(path) => load_root(path, err)?,
         None => RootFile::default(),
@@ -310,6 +416,45 @@ pub fn refuse_workspace(verb: &str, run: &ResolvedRun, err: &mut dyn Write) -> R
     ))
 }
 
+/// What a workspace file holds that no build acts on: a `build.out`, and
+/// components at its root, since each marketplace is a vault of its own.
+pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
+    let mut warnings = Vec::new();
+    if run.config.build.out.is_some() {
+        warnings.push(DiscoveryWarning {
+            path: ROOT_FILE.to_owned(),
+            reason: "workspace-out".to_owned(),
+            detail: "`build.out` on a workspace file is not read: each marketplace sets its own"
+                .to_owned(),
+        });
+    }
+    let scan = discover_components(
+        &run.source_vfs(None),
+        &run.vault,
+        None,
+        &run.core_namespace(),
+    );
+    let folders: std::collections::BTreeSet<String> = scan
+        .iter()
+        .flat_map(|scan| &scan.components)
+        .filter(|c| !c.vault_relative_path.starts_with("marketplaces/"))
+        .filter_map(|c| c.vault_relative_path.split('/').next())
+        .map(|folder| format!("`{folder}/`"))
+        .collect();
+    if !folders.is_empty() {
+        let named: Vec<String> = folders.into_iter().collect();
+        warnings.push(DiscoveryWarning {
+            path: ROOT_FILE.to_owned(),
+            reason: "outside-marketplaces".to_owned(),
+            detail: format!(
+                "{} at a workspace root builds nowhere: move it under `marketplaces/<m>/`",
+                named.join(", ")
+            ),
+        });
+    }
+    warnings
+}
+
 /// The skills root a `--skills-root` or `adopt --into` flag names, resolved
 /// against the working directory. `None` means the vault root.
 pub fn resolve_skills_root(flag: Option<&str>, cwd: &Path) -> Option<PathBuf> {
@@ -320,6 +465,70 @@ pub fn resolve_skills_root(flag: Option<&str>, cwd: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use crate::exit::{EXIT_BLOCKED, EXIT_NO_CONFIG};
+
+    /// `load_marketplace` is the library's copy of what `resolve_run` does for
+    /// a CLI run. They must give one answer, or a consumer builds something
+    /// other than `skillwright build` does.
+    #[test]
+    fn load_marketplace_agrees_with_resolve_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |rel: &str, text: &str| {
+            let path = tmp.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write(
+            "plain/skillwright.md",
+            "---\nname: plain\nbuild:\n  out: dist\n  namespace: sw\n  harnesses: [codex]\n  assets:\n    - {from: scripts/run.sh, to: bin/run.sh}\n  hooks:\n    - {from: hooks.json}\n---\n",
+        );
+        write("plain/plugins/p/skills/a.md", "---\nname: a\n---\n");
+        write(
+            "ws/skillwright.md",
+            "---\nworkspace: true\nbuild:\n  harnesses: [claude]\n  namespace: sw\n  assets:\n    - {from: shared/run.sh, to: bin/run.sh}\n---\n",
+        );
+        write(
+            "ws/marketplaces/m1/skillwright.md",
+            "---\nname: m1\nbuild:\n  out: dist\n---\n",
+        );
+        write(
+            "ws/marketplaces/m1/plugins/p/skills/a.md",
+            "---\nname: a\n---\n",
+        );
+        let home = crate::config::home_dir();
+
+        for start in [
+            "plain/plugins/p/skills",
+            "ws/marketplaces/m1/plugins/p/skills",
+        ] {
+            let cwd = tmp.path().join(start);
+            let mut err: Vec<u8> = Vec::new();
+            let run = resolve_run(&CommonFlags::default(), &cwd, &mut err).unwrap();
+            let loaded = tradecraft_core::load_marketplace(&NativeVfs, &cwd, &home)
+                .unwrap()
+                .unwrap();
+            let inputs = crate::commands::marketplace::marketplace_inputs(&run);
+
+            assert_eq!(loaded.dir, run.vault, "{start}");
+            assert_eq!(Some(&loaded.root_file), run.config_path.as_ref(), "{start}");
+            assert_eq!(loaded.root, run.config, "{start}");
+            assert_eq!(loaded.namespace, run.core_namespace(), "{start}");
+            let out = run
+                .config
+                .build
+                .out
+                .as_deref()
+                .map(|out| resolve_configured_path(out, &run.config_dir));
+            assert_eq!(loaded.out_root, out, "{start}");
+            assert_eq!(
+                serde_json::to_value(&loaded.inputs.config).unwrap(),
+                serde_json::to_value(&inputs.config).unwrap(),
+                "{start}"
+            );
+            assert_eq!(loaded.inputs.harnesses, inputs.harnesses, "{start}");
+            assert_eq!(loaded.inputs.assets, inputs.assets, "{start}");
+            assert_eq!(loaded.inputs.hooks, inputs.hooks, "{start}");
+        }
+    }
 
     #[test]
     fn a_folder_with_no_root_file_and_no_convention_folder_is_no_vault() {

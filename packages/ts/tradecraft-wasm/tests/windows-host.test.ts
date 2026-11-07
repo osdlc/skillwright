@@ -41,8 +41,8 @@ function vaultAt(vault: string, disk: (p: string) => string = (p) => onDisk(root
   const skill = path.join(disk(vault), 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(skill, { recursive: true })
   writeFileSync(
-    path.join(disk(vault), 'marketplaces/house/house.md'),
-    '---\nname: house\ndescription: The house marketplace.\nsw-owner: acme\n---\n',
+    path.join(disk(vault), 'marketplaces/house/skillwright.md'),
+    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
   writeFileSync(
     path.join(skill, 'review.md'),

@@ -1168,6 +1168,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+ "unicode-normalization",
  "vfs-seam",
  "vfs-walk",
  "yaml-splice",

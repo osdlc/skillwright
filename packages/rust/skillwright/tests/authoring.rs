@@ -129,14 +129,10 @@ fn new_skill_writes_the_note_at_its_derived_path() {
         format!("{path}  written \u{b7} first-write\n")
     );
 
-    // Divergence from the spec transcript: `--plugin dev-agent` places the
-    // note under the plugin's own folder, but the core does not mirror an
-    // `sw-plugin` key into the frontmatter on create — a skill's plugin is
-    // read off its folder alone, and `run_new_skill` never adds the key.
+    // `--plugin dev-agent` places the note under the plugin's own folder.
     // Only `name` (slugged) and the typed `description` land.
     let note = fs::read_to_string(vault.join(&path)).unwrap();
     assert_eq!(note, "---\nname: foo\ndescription: First skill.\n---\n");
-    assert!(!note.contains("sw-plugin"));
 }
 
 #[test]
@@ -186,6 +182,66 @@ fn rename_rewrites_an_inbound_link_and_reports_the_rewrite_count() {
     assert!(!vault.join(format!("{DEV_AGENT_SKILLS}/foo")).exists());
 }
 
+/// A built vault whose moved packs folder `built` sits inside it.
+fn built_vault() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "skillwright.md",
+        "---\nname: m\nbuild:\n  out: .\n---\n",
+    );
+    write(
+        dir.path(),
+        "marketplaces/m/skillwright.md",
+        "---\nname: m\nclaude: {packs: built}\n---\n",
+    );
+    write(
+        dir.path(),
+        "marketplaces/m/plugins/rev/skills/a.md",
+        "---\nname: a\ndescription: A skill.\n---\nBody.\n",
+    );
+    write(dir.path(), "notes/linker.md", "See [[a]].\n");
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    dir
+}
+
+#[test]
+fn rename_leaves_generated_output_unedited() {
+    let dir = built_vault();
+    write(dir.path(), "built/rev/copy.md", "See [[a]].\n");
+
+    let result = run(&["rename", "a", "b", "--yes"], dir.path());
+
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(!result.stdout.contains("built/"), "{}", result.stdout);
+    let read = |rel: &str| fs::read_to_string(dir.path().join(rel)).unwrap();
+    assert_eq!(read("notes/linker.md"), "See [[b]].\n");
+    assert_eq!(read("built/rev/copy.md"), "See [[a]].\n");
+}
+
+#[test]
+fn move_leaves_generated_output_unedited() {
+    let dir = built_vault();
+    let skill = "marketplaces/m/plugins/rev/skills/a.md";
+    write(
+        dir.path(),
+        "marketplaces/m/plugins/tools/skills/other.md",
+        "---\ndescription: Other.\n---\nBody.\n",
+    );
+    write(dir.path(), "notes/linker.md", &format!("[a](../{skill})\n"));
+    let copy = format!("[a](../../{skill})\n");
+    write(dir.path(), "built/rev/copy.md", &copy);
+
+    let result = run(&["move", "a", "--to-plugin", "tools", "--yes"], dir.path());
+
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(!result.stdout.contains("built/"), "{}", result.stdout);
+    let read = |rel: &str| fs::read_to_string(dir.path().join(rel)).unwrap();
+    assert!(read("notes/linker.md").contains("plugins/tools/"));
+    assert_eq!(read("built/rev/copy.md"), copy);
+}
+
 #[test]
 fn move_leaves_an_unrelated_link_byte_identical() {
     let (dir, vault) = fixture();
@@ -210,7 +266,7 @@ fn move_leaves_an_unrelated_link_byte_identical() {
     assert_eq!(
         result.stdout,
         "marketplaces/studio/plugins/tools/skills/dev-update-docs/dev-update-docs.md  \
-         written \u{b7} moved, sw-plugin removed\n"
+         written \u{b7} moved\n"
     );
     let after = fs::read(&unrelated).unwrap();
     assert_eq!(before, after, "an unrelated note's bytes must not change");
@@ -417,10 +473,10 @@ fn new_marketplace_writes_the_note_and_its_plugins_scaffold() {
     assert_eq!(result.code, 0, "{}", result.stderr);
     assert_eq!(
         result.stdout,
-        "marketplaces/acme/acme.md  written \u{b7} first-write\n\
+        "marketplaces/acme/skillwright.md  written \u{b7} first-write\n\
          marketplaces/acme/plugins  written \u{b7} scaffold\n"
     );
-    let note = fs::read_to_string(vault.join("marketplaces/acme/acme.md")).unwrap();
+    let note = fs::read_to_string(vault.join("marketplaces/acme/skillwright.md")).unwrap();
     assert_eq!(
         note,
         "---\nname: acme\ndescription: Acme's own marketplace.\n---\n"
@@ -529,42 +585,4 @@ fn list_and_check_stay_clean_after_a_forced_delete() {
     let checked = run(&["check", "--vault", &vault_s, "--out", &out], dir.path());
     assert_eq!(checked.code, 0, "{}", checked.stdout);
     assert!(!checked.stdout.contains("skipped"), "{}", checked.stdout);
-}
-
-/// A note outside a plugin's folder that joins it through `sw-plugin` is a
-/// member too: a rename rewrites it at its own path, and does not refuse
-/// because the note sits outside the folder that moves.
-#[test]
-fn rename_plugin_rekeys_a_member_outside_its_folder_in_place() {
-    let dir = tempfile::tempdir().unwrap();
-    let vault = dir.path().join("vault");
-    let note = |name: &str, extra: &str| {
-        format!("---\nname: {name}\ndescription: Use this to test {name}.\n{extra}---\n\nbody\n")
-    };
-    write(&vault, "marketplaces/m/plugins/p/p.md", &note("p", ""));
-    write(
-        &vault,
-        "marketplaces/m/plugins/p/skills/inside.md",
-        &note("inside", ""),
-    );
-    write(
-        &vault,
-        "marketplaces/m/skills/out.md",
-        &note("out", "sw-plugin: p\n"),
-    );
-
-    let result = run(
-        &["rename", "p", "q", "--yes", "--vault", &vault_str(&vault)],
-        dir.path(),
-    );
-
-    assert_eq!(result.code, 0, "{}\n{}", result.stdout, result.stderr);
-    assert!(vault.join("marketplaces/m/plugins/q/q.md").is_file());
-    assert!(
-        vault
-            .join("marketplaces/m/plugins/q/skills/inside.md")
-            .is_file()
-    );
-    let out = fs::read_to_string(vault.join("marketplaces/m/skills/out.md")).unwrap();
-    assert!(out.contains("sw-plugin: q"), "{out}");
 }

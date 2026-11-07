@@ -61,10 +61,22 @@ pub fn built_paths() -> Vec<String> {
     paths
 }
 
-/// Whether vault-relative `rel` sits under a plugin folder's `assets/`. Those
-/// files are copied as they are, and are not notes. A vault walk has no hook
-/// for a folder found by shape, so each one filters its entries by this.
-fn in_plugin_assets(rel: &str) -> bool {
+/// [`built_paths`] and each harness's packs folder as `config` places it.
+pub fn built_paths_for(config: &crate::export::MarketplaceConfig) -> Vec<String> {
+    let mut paths = built_paths();
+    paths.extend(
+        crate::harness::with_plugin_format()
+            .map(|profile| format!("{}/", crate::harness::manifest::packs_of(config, profile))),
+    );
+    paths
+}
+
+/// Whether vault-relative `rel` sits under a plugin folder's `assets/`, by
+/// convention or by pattern. Those files are copied as they are, and are not
+/// notes. A vault walk has no hook for a folder found by shape, so each one
+/// filters its entries by this.
+fn in_plugin_assets(patterns: &crate::patterns::Patterns, rel: &str) -> bool {
+    let rel = patterns.canonical(rel);
     let parts: Vec<&str> = rel.split('/').collect();
     parts[..parts.len() - 1]
         .windows(3)
@@ -164,10 +176,13 @@ pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> V
 }
 
 /// The paths of a vault walk's `entries`, plugin assets left out.
-fn notes_and_resources(entries: Vec<vault::Entry>) -> Vec<PathBuf> {
+fn notes_and_resources(
+    patterns: &crate::patterns::Patterns,
+    entries: Vec<vault::Entry>,
+) -> Vec<PathBuf> {
     entries
         .into_iter()
-        .filter(|entry| !in_plugin_assets(&entry.rel))
+        .filter(|entry| !in_plugin_assets(patterns, &entry.rel))
         .map(|entry| entry.abs)
         .collect()
 }
@@ -179,8 +194,9 @@ pub(crate) fn vault_files(
     root: &Path,
     prune: &[&str],
 ) -> Result<Vec<PathBuf>, CoreError> {
+    let patterns = crate::patterns::Patterns::read(vfs, root);
     vault::walk(vfs, root, &vault_walk(prune))
-        .map(notes_and_resources)
+        .map(|entries| notes_and_resources(&patterns, entries))
         .map_err(|err| core_error(err, not_refused))
 }
 
@@ -192,16 +208,28 @@ pub(crate) fn vault_files_refusing_symlinks(
     prune: &[&str],
     refuse: impl Fn(&Path) -> CoreError,
 ) -> Result<Vec<PathBuf>, CoreError> {
+    let patterns = crate::patterns::Patterns::read(vfs, root);
     vault::walk(vfs, root, &vault_options(prune, true, true))
-        .map(notes_and_resources)
+        .map(|entries| notes_and_resources(&patterns, entries))
         .map_err(|err| core_error(err, refuse))
+}
+
+/// Every file under `root` a vault walk meets, vault-relative, plugin assets
+/// included, without failing. What a glob can name.
+pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
+    vault::walk(vfs, root, &vault_options(&[], false, false))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| entry.rel)
+        .collect()
 }
 
 /// Every file under the vault folder `root` this walk can read, without
 /// failing: a folder that cannot be listed is skipped.
 pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path) -> Vec<vault::Entry> {
     let mut entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
-    entries.retain(|entry| !in_plugin_assets(&entry.rel));
+    let patterns = crate::patterns::Patterns::read(vfs, root);
+    entries.retain(|entry| !in_plugin_assets(&patterns, &entry.rel));
     entries
 }
 

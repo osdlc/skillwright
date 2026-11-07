@@ -3,7 +3,7 @@
 //!
 //! `build` and `publish` used to be two pipelines that each read and
 //! compiled a note: `build` once per harness, `publish` once per
-//! destination. They drifted — `build` ignored `sw-overrides`, and `publish`
+//! destination. They drifted — `build` ignored harness blocks, and `publish`
 //! wrote packs for two harnesses of four. Here the vault is read into one
 //! object graph, marketplace → plugins → skills, commands, hooks and assets,
 //! and each harness's [`crate::harness::HarnessTranslator`] writes that graph
@@ -44,6 +44,7 @@
 //! the model keeps the expanded text and records what it consumed in the
 //! node's closures rather than as a segment.
 
+pub mod cascade;
 pub mod load;
 
 use std::collections::BTreeMap;
@@ -58,6 +59,8 @@ use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 
+pub(crate) use cascade::member_block_keys;
+pub use cascade::{Cascade, inherit_targets};
 pub use load::{
     ComponentRequest, LoadRequest, load, load_component, load_plugin, read_notes, resolve_body,
 };
@@ -118,6 +121,10 @@ pub struct Plugin {
     /// at [`crate::export::MarketplaceConfig::launcher_path`]: the
     /// `${CLAUDE_PLUGIN_ROOT}/<launcher>` its skills call.
     pub launcher: Option<String>,
+    /// The harnesses that name this plugin's skills bare, whatever their
+    /// profile says: `pi: {naming: bare}`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bare_on: Vec<String>,
 }
 
 impl Plugin {
@@ -137,7 +144,7 @@ pub struct Component {
     pub name: String,
     /// The note, vault-relative.
     pub path: String,
-    /// Its `sw-targets`, as written. `None` publishes everywhere.
+    /// Its `targets`, as written. `None` publishes everywhere.
     pub targets: Option<Vec<String>>,
     /// Its harness-only fields, by harness.
     pub extensions: Extensions,
@@ -277,10 +284,16 @@ impl ResolvedRef {
 pub struct Call {
     /// The skill it names.
     pub skill: SkillId,
-    /// That skill's `sw-targets`, which decide whether a harness ships it.
+    /// That skill's `targets`, which decide whether a harness ships it.
     pub targets: Option<Vec<String>>,
+    /// The harnesses that name the skill bare, whatever their profile says.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bare_on: Vec<String>,
     /// The call as written, for a refusal.
     pub destination: String,
+    /// A plain `[[skill]]`: written as the skill's published name, with no
+    /// call sigil, rather than as an invocation.
+    pub mention: bool,
     /// The note the call is in, for a refusal.
     pub caller: String,
 }
@@ -330,7 +343,7 @@ impl SkillId {
     }
 }
 
-/// A node's harness-only fields: `sw-overrides`, folded onto canonical
+/// A node's harness-only fields: harness blocks, folded onto canonical
 /// harness names (D-ISOU).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Extensions {
@@ -418,7 +431,9 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
             entry_path: site.skill.entry_path.clone(),
         },
         targets: None,
+        bare_on: Vec::new(),
         destination: site.destination.clone(),
+        mention: site.mention,
         caller: site.caller.clone(),
     }
 }
@@ -497,6 +512,7 @@ mod tests {
                     shipped: true,
                 },
                 destination: "a".into(),
+                mention: false,
                 caller: "b.md".into(),
             }],
             links: vec![LinkSite {

@@ -271,14 +271,15 @@ impl<'a> SkillSource<'a> {
 pub struct CallContext<'a> {
     /// Where the skills a body may name come from.
     pub skills: SkillSource<'a>,
-    /// The call token this target writes for a skill, without backticks.
-    pub render: &'a dyn Fn(&IndexedSkill) -> Result<String, CoreError>,
+    /// What this target writes for a skill, without backticks: its call, or
+    /// with `true` its name (see [`CallSite::mention`]).
+    pub render: &'a dyn Fn(&IndexedSkill, bool) -> Result<String, CoreError>,
     /// The destination's name, for a refusal about what it does not ship.
     pub target: &'a str,
     /// The body is a skill's or a command's, where a plain `[[x]]` to a skill
-    /// is a call too.
+    /// names the skill rather than copying it.
     pub implicit: bool,
-    /// `implicit-skill-call` warnings, deduplicated.
+    /// What the compile warned about, deduplicated.
     pub warnings: RefCell<Vec<DiscoveryWarning>>,
     /// A compile done once for every harness: each call and each link is
     /// written as a mark and its site recorded here, for a translator to
@@ -306,6 +307,9 @@ pub struct CallSite {
     pub skill: IndexedSkill,
     /// The call's target as the author wrote it, fragment and all.
     pub destination: String,
+    /// A plain `[[skill]]`: written as the skill's published name, not as an
+    /// invocation.
+    pub mention: bool,
     /// The note the call is in, as a refusal names it.
     pub caller: String,
 }
@@ -638,7 +642,7 @@ pub struct RelatedSplit {
     /// since a non-markdown embed is rewritten as a link too. Never the entry
     /// itself, which a self-reference resolves to.
     pub links: Vec<String>,
-    /// Notes this note calls. With a [`CallContext`] these are skills; without
+    /// Notes this note calls or names. With a [`CallContext`] these are skills; without
     /// one, whatever note each `/[[…]]` resolved to by path. A call copies
     /// nothing, so a called note is never also in [`Self::links`] for that
     /// call.
@@ -865,6 +869,8 @@ struct Renderer<'a> {
     entry_path: PathBuf,
     bundle_root: Option<PathBuf>,
     skill_name: &'a str,
+    /// The root file's `build.exclude`.
+    patterns: crate::patterns::Patterns,
     /// Every file in the vault, by vault-relative path, for link
     /// resolution. Built once per compile — the vault is the resolution
     /// universe, and walking it lazily would make "not found" depend on what
@@ -933,6 +939,7 @@ impl<'a> Renderer<'a> {
         destinations.insert("SKILL.md".to_owned(), entry_path.clone());
         Ok(Renderer {
             vfs,
+            patterns: crate::patterns::Patterns::read(vfs, &vault_root),
             vault_root,
             entry_path,
             bundle_root,
@@ -963,7 +970,7 @@ impl<'a> Renderer<'a> {
         };
         for source_path in crate::walk::files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)?
         {
-            if source_path == self.entry_path {
+            if source_path == self.entry_path || self.excluded_by_pattern(&source_path) {
                 continue;
             }
             let relative = source_path
@@ -1097,6 +1104,7 @@ impl<'a> Renderer<'a> {
         output_path: &str,
         stack: &mut Vec<TransclusionHop>,
     ) -> Result<String, CoreError> {
+        self.check_markdown_links(body, source_path)?;
         let mut tokens = scan_wiki_tokens(body, true);
         let escapes = self.check_literal_calls(body, source_path, output_path)?;
         if !escapes.is_empty() {
@@ -1165,7 +1173,7 @@ impl<'a> Renderer<'a> {
             TokenKind::Link | TokenKind::Embed => {}
         }
         if token.kind == TokenKind::Link
-            && let Some(call) = self.implicit_call(token, source_path, output_path)?
+            && let Some(call) = self.skill_mention(token, source_path, output_path)?
         {
             return Ok(call);
         }
@@ -1348,15 +1356,18 @@ impl<'a> Renderer<'a> {
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
         self.record_call(skill, output_path);
-        render_or_mark(context, skill, token.destination, caller)
+        render_or_mark(context, skill, token.destination, caller, false)
     }
 
     /// A plain `[[x]]` in a skill or command body that names another skill
-    /// is a call: copying one skill into another is never what was meant.
-    /// `None` leaves the token to the link path, as does a name several
-    /// skills share, or an index that cannot be built: the reading is a
-    /// heuristic, so a fault elsewhere in the vault must not block a link.
-    fn implicit_call(
+    /// is written as that skill's published name: copying one skill into
+    /// another is never what was meant, and `/[[x]]` is the call. `None`
+    /// leaves the token to the link path, as does a name several skills
+    /// share, or an index that cannot be built: the reading is a heuristic,
+    /// so a fault elsewhere in the vault must not block a link. An author's
+    /// `|alias` stays as the words and the name follows in parentheses; a
+    /// `#fragment` is checked and then ignored.
+    fn skill_mention(
         &mut self,
         token: &WikiToken<'_>,
         source_path: &Path,
@@ -1384,19 +1395,13 @@ impl<'a> Renderer<'a> {
         let caller = self.relative_or_verbatim(source_path);
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
-        context.warn(
-            caller.clone(),
-            "implicit-skill-call",
-            format!(
-                "`[[{}]]` names skill `{}`, so it renders as a call; write `/[[{}]]` to say so",
-                token.destination,
-                skill.call_id(),
-                token.destination
-            ),
-        );
         self.record_call(skill, output_path);
-        let call = render_or_mark(context, skill, token.destination, caller)?;
-        Ok(Some(format_call(&call, false)))
+        let name = render_or_mark(context, skill, token.destination, caller, true)?;
+        let name = format_call(&name, false);
+        Ok(Some(match text_alias(token.alias.as_deref()) {
+            Some(alias) => format!("{alias} ({name})"),
+            None => name,
+        }))
     }
 
     /// A call to a skill the destination does not carry would name a command
@@ -1615,7 +1620,11 @@ impl<'a> Renderer<'a> {
         // `photo.jpg`); a name with an extension addresses that file.
         let from = self.vault_relative(from_file).unwrap_or_default();
         match self.index.resolve_strict(target, &from) {
-            Ok(hit) => Ok(Some((self.vault_root.join(hit), fragment))),
+            Ok(hit) => {
+                let path = self.vault_root.join(hit);
+                self.refuse_never_shipped(from_file, &path, destination)?;
+                Ok(Some((path, fragment)))
+            }
             // Not a refusal. The compile spec and the publish spec
             // both rule that an unresolved link is reported and the rest of
             // the skill publishes; the name is recorded in the manifest's
@@ -1632,6 +1641,54 @@ impl<'a> Renderer<'a> {
                 ),
             )),
         }
+    }
+
+    /// Refuses a link from `from_file` to a file that never ships, however
+    /// the link is spelled: `build.exclude` holds the file, or it is in a
+    /// folder that never ships and the linking note is not.
+    fn refuse_never_shipped(
+        &self,
+        from_file: &Path,
+        path: &Path,
+        destination: &str,
+    ) -> Result<(), CoreError> {
+        let into_never_ship = match (self.vault_relative(from_file), self.vault_relative(path)) {
+            (Ok(from), Ok(to)) => self.patterns.links_into_never_ship(&from, &to),
+            _ => false,
+        };
+        if into_never_ship || self.excluded_by_pattern(path) {
+            return Err(CoreError::refused(
+                "excluded-link",
+                format!(
+                    "{} links to {}, which never ships: {destination}",
+                    self.relative_or_verbatim(from_file),
+                    self.relative_or_verbatim(path),
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether `build.exclude` holds `path`.
+    fn excluded_by_pattern(&self, path: &Path) -> bool {
+        self.vault_relative(path)
+            .is_ok_and(|relative| self.patterns.excluded(&relative))
+    }
+
+    /// [`Self::refuse_never_shipped`] over `body`'s relative Markdown links,
+    /// the spelling the wiki tokens do not cover.
+    fn check_markdown_links(&self, body: &str, source_path: &Path) -> Result<(), CoreError> {
+        let folder = source_path.parent().unwrap_or(source_path);
+        for destination in markdown_destinations(body) {
+            let Some(relative) = local_file(destination) else {
+                continue;
+            };
+            let path = normalize(&folder.join(relative));
+            if self.vfs.exists(&path) {
+                self.refuse_never_shipped(source_path, &path, destination)?;
+            }
+        }
+        Ok(())
     }
 
     /// For messages only: the vault-relative spelling when there is one, the
@@ -1946,6 +2003,58 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
     (tokens, leftovers)
 }
 
+/// The destination of each inline Markdown link and reference definition in
+/// `markdown` that is live: not in code, not in an HTML comment.
+fn markdown_destinations(markdown: &str) -> Vec<&str> {
+    let code = code_regions(markdown);
+    let live = |at: usize| {
+        !code.iter().any(|(from, to)| (*from..*to).contains(&at))
+            && markdown[..at].rfind("<!--") <= markdown[..at].rfind("-->")
+    };
+    let inline = markdown
+        .match_indices("](")
+        .map(|(at, _)| (at, at + 2))
+        .filter(|(at, _)| !markdown[..*at].ends_with('\\'));
+    let mut offset = 0;
+    let mut definitions = Vec::new();
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[')
+            && let Some(close) = trimmed.find("]:")
+        {
+            let at = offset + (line.len() - trimmed.len()) + close;
+            definitions.push((at, at + 2));
+        }
+        offset += line.len();
+    }
+    inline
+        .chain(definitions)
+        .filter(|(at, _)| live(*at))
+        .filter_map(|(_, from)| {
+            let rest = markdown[from..].trim_start_matches([' ', '\t']);
+            match rest.strip_prefix('<') {
+                Some(angled) => angled.split_once('>').map(|(url, _)| url),
+                None => rest
+                    .split([' ', '\t', '\r', '\n', ')'])
+                    .next()
+                    .filter(|url| !url.is_empty()),
+            }
+        })
+        .collect()
+}
+
+/// The file a Markdown link's destination names relative to its note, decoded
+/// and without its fragment or query; `None` for a URL, an absolute path or a
+/// link to a place in the same note.
+fn local_file(destination: &str) -> Option<String> {
+    let path = destination.split(['#', '?']).next().unwrap_or_default();
+    let scheme = path
+        .split_once(':')
+        .is_some_and(|(before, _)| !before.contains('/'));
+    (!path.is_empty() && !path.starts_with('/') && !scheme)
+        .then(|| markdown_link::percent_decode(path))
+}
+
 /// Whether the `[` at byte `at` opens a Markdown link: its brackets balance
 /// before a blank line, and the closing `]` is followed by `(` (inline) or
 /// `[` (reference). A `\`-escaped bracket does not count.
@@ -2143,27 +2252,30 @@ fn code_token(
     ))
 }
 
-/// A call as written into output: bare in code, in backticks in prose.
-/// A call's invocation: `render`'s, or in a recording compile the mark
-/// standing in for it.
+/// A call's invocation, or with `mention` the skill's name: `render`'s, or
+/// in a recording compile the mark standing in for it.
 fn render_or_mark(
     context: &CallContext<'_>,
     skill: &IndexedSkill,
     destination: &str,
     caller: String,
+    mention: bool,
 ) -> Result<String, CoreError> {
     let Some(record) = context.record else {
-        return (context.render)(skill);
+        return (context.render)(skill, mention);
     };
     let mut record = record.borrow_mut();
     record.calls.push(CallSite {
         skill: skill.clone(),
         destination: destination.to_owned(),
+        mention,
         caller,
     });
     Ok(mark('c', record.calls.len() - 1))
 }
 
+/// A call or skill name as written into output: bare in code, in backticks
+/// in prose.
 fn format_call(call: &str, in_code: bool) -> String {
     if in_code {
         call.to_owned()
@@ -3088,7 +3200,7 @@ mod tests {
         vfs.set_executable(Path::new("/vault/skills/demo/scripts/run.sh"), true)
             .unwrap();
 
-        let ns = Namespace::default();
+        let ns = Namespace::sw();
         let mut note = read_vault_skill(&vfs, Path::new("/vault/skills/demo.md"), &ns).unwrap();
         let compile_source = CompileSource {
             vault_root: Path::new("/vault"),
@@ -3518,7 +3630,10 @@ mod tests {
         skills: SkillSource<'_>,
         body: &str,
     ) -> Result<(CompiledNote, Vec<DiscoveryWarning>), CoreError> {
-        let render = |skill: &IndexedSkill| Ok(format!("/{}", skill.call_id()));
+        let render = |skill: &IndexedSkill, mention: bool| {
+            let sigil = if mention { "" } else { "/" };
+            Ok(format!("{sigil}{}", skill.call_id()))
+        };
         let calls = CallContext {
             skills,
             render: &render,
@@ -3970,7 +4085,7 @@ mod tests {
         let vfs = demo_vault();
         write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
         let skills = call_index("called");
-        let render = |skill: &IndexedSkill| Ok(skill.name.clone());
+        let render = |skill: &IndexedSkill, _| Ok(skill.name.clone());
         let calls = CallContext {
             skills: SkillSource::ready(&skills),
             render: &render,

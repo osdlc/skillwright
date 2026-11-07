@@ -57,6 +57,17 @@ pub fn confirm(question: &str, err: &mut dyn Write) -> bool {
     answer == "y" || answer == "yes"
 }
 
+/// `question ` on `err`, and the trimmed line read from stdin. `None` for an
+/// empty answer.
+pub fn ask(question: &str, err: &mut dyn Write) -> Option<String> {
+    let _ = write!(err, "{question} ");
+    let _ = err.flush();
+    let mut answer = String::new();
+    std::io::stdin().lock().read_line(&mut answer).ok()?;
+    let answer = answer.trim();
+    (!answer.is_empty()).then(|| answer.to_owned())
+}
+
 /// The whole gate, for a verb that is about to write: print the plan, ask,
 /// and turn "no" or "not a terminal" into the exit code the CLI spec gives each.
 ///
