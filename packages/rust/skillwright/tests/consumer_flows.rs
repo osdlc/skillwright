@@ -615,11 +615,7 @@ fn a_block_key_the_container_does_not_read_warns_whatever_it_holds() {
         let ran = sw(&dir.path(), &["build", "--yes"]);
         assert_eq!(ran.code, 0, "{block}: {}", ran.text);
         assert!(ran.text.contains("unknown-key"), "{block}: {}", ran.text);
-        assert!(
-            !ran.text.contains("malformed-block"),
-            "{block}: {}",
-            ran.text
-        );
+        assert!(!ran.text.contains("must be"), "{block}: {}", ran.text);
     }
 }
 
@@ -738,7 +734,7 @@ fn list_skips_a_note_with_a_wrong_kind_that_a_build_refuses() {
         (
             plugin,
             SKILL.to_owned(),
-            "plugins/p/p.md  skipped · malformed-block: ",
+            "plugins/p/p.md  skipped · malformed: ",
         ),
     ] {
         let dir = vault(&[
@@ -774,8 +770,7 @@ fn list_skips_a_root_file_whose_block_holds_a_wrong_kind() {
     let list = sw(&dir.path(), &["list"]);
     assert_eq!(list.code, 0, "{}", list.text);
     assert!(
-        list.text
-            .contains("skillwright.md  skipped · malformed-block: "),
+        list.text.contains("skillwright.md  skipped · malformed: "),
         "{}",
         list.text
     );
@@ -784,7 +779,7 @@ fn list_skips_a_root_file_whose_block_holds_a_wrong_kind() {
     assert!(
         built
             .text
-            .contains("malformed-block: `claude.model` of marketplace `v` must be a string"),
+            .contains("malformed: `claude.model` of marketplace `v` must be a string"),
         "{}",
         built.text
     );
@@ -794,21 +789,7 @@ fn list_skips_a_root_file_whose_block_holds_a_wrong_kind() {
 fn publish_reports_a_wrong_kind_as_malformed_in_json() {
     let skill = "---\ndescription: S.\nmodel: [1]\n---\nB.\n";
     let dir = vault(&[("skillwright.md", ROOT), ("plugins/p/skills/s.md", skill)]);
-    let dest = dir.home().join("dest");
-    let to = dest.to_str().unwrap();
-    let ran = sw(
-        &dir.path(),
-        &[
-            "publish",
-            "plugins/p/skills/s.md",
-            "--target",
-            "claude",
-            "--to",
-            to,
-            "--json",
-            "--yes",
-        ],
-    );
+    let ran = publish_json(&dir, "plugins/p/skills/s.md");
     assert_ne!(ran.code, 0, "{}", ran.text);
     assert!(
         ran.text.contains("\"token\": \"malformed\""),
@@ -820,6 +801,223 @@ fn publish_reports_a_wrong_kind_as_malformed_in_json() {
         "{}",
         ran.text
     );
+}
+
+/// `publish <note> --target claude --json` into the fixture's home.
+fn publish_json(dir: &Fixture, note: &str) -> Ran {
+    let dest = dir.home().join("dest");
+    sw(
+        &dir.path(),
+        &[
+            "publish",
+            note,
+            "--target",
+            "claude",
+            "--to",
+            dest.to_str().unwrap(),
+            "--json",
+            "--yes",
+        ],
+    )
+}
+
+#[test]
+fn an_opt_in_key_of_the_wrong_kind_alone_is_refused() {
+    for (line, said) in [
+        (
+            "description: 2048",
+            "`description` must be a string, not a number",
+        ),
+        (
+            "description: [a, b]",
+            "`description` must be a string, not a list",
+        ),
+        ("name: 5", "`name` must be a string, not a number"),
+    ] {
+        let skill = format!("---\n{line}\n---\nB.\n");
+        let dir = vault(&[
+            ("skillwright.md", ROOT),
+            ("plugins/p/p.md", PLUGIN),
+            ("plugins/p/skills/s.md", &skill),
+        ]);
+        let list = sw(&dir.path(), &["list"]);
+        assert!(
+            list.text
+                .contains("plugins/p/skills/s.md  skipped · malformed: "),
+            "{line}: {}",
+            list.text
+        );
+        assert!(list.text.contains(said), "{line}: {}", list.text);
+        assert!(!list.text.contains("no-component-keys"), "{}", list.text);
+        let built = sw(&dir.path(), &["build", "--yes"]);
+        assert_eq!(built.code, 2, "{line}: {}", built.text);
+        assert!(built.text.contains(said), "{line}: {}", built.text);
+        let ran = publish_json(&dir, "plugins/p/skills/s.md");
+        assert_ne!(ran.code, 0, "{line}: {}", ran.text);
+        assert!(
+            ran.text.contains("\"token\": \"malformed\""),
+            "{line}: {}",
+            ran.text
+        );
+    }
+}
+
+#[test]
+fn a_build_names_each_reason_when_the_skipped_notes_differ() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", PLUGIN),
+        (
+            "plugins/p/skills/a.md",
+            "---\ndescription: S.\nmodel: [1]\n---\nB.\n",
+        ),
+        (
+            "plugins/p/skills/b.md",
+            "---\ndescription: [unclosed\n---\nB.\n",
+        ),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 2, "{}", built.text);
+    assert!(
+        built.text.contains(
+            "unreadable-note: the vault holds 2 note(s) this scan could not read or refused"
+        ),
+        "{}",
+        built.text
+    );
+    assert!(
+        built.text.contains("plugins/p/skills/a.md (malformed: "),
+        "{}",
+        built.text
+    );
+}
+
+#[test]
+fn a_plugin_publish_refuses_a_member_with_a_wrong_kind() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", PLUGIN),
+        (
+            "plugins/p/skills/s.md",
+            "---\ndescription: S.\nmodel: [1]\n---\nB.\n",
+        ),
+    ]);
+    let ran = publish_json(&dir, "plugins/p/p.md");
+    assert_ne!(ran.code, 0, "{}", ran.text);
+    assert!(
+        ran.text.contains("\"token\": \"malformed\""),
+        "{}",
+        ran.text
+    );
+    assert!(
+        ran.text
+            .contains("`p` holds 1 note(s) with a value of the wrong kind"),
+        "{}",
+        ran.text
+    );
+}
+
+#[test]
+fn targets_of_the_wrong_kind_is_malformed() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", PLUGIN),
+        (
+            "plugins/p/skills/s.md",
+            "---\ndescription: S.\ntargets: 5\n---\nB.\n",
+        ),
+    ]);
+    let list = sw(&dir.path(), &["list"]);
+    assert!(
+        list.text
+            .contains("plugins/p/skills/s.md  skipped · malformed: "),
+        "{}",
+        list.text
+    );
+    let ran = publish_json(&dir, "plugins/p/skills/s.md");
+    assert_ne!(ran.code, 0, "{}", ran.text);
+    assert!(
+        ran.text.contains("\"token\": \"malformed\""),
+        "{}",
+        ran.text
+    );
+}
+
+#[test]
+fn publish_reports_a_plugin_block_as_malformed_in_json() {
+    let plugin = "---\ndescription: P.\nversion: 1.0.0\ncodex: {policy: 5}\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", plugin),
+        ("plugins/p/skills/s.md", SKILL),
+    ]);
+    for note in ["plugins/p/p.md", "plugins/p/skills/s.md"] {
+        let ran = publish_json(&dir, note);
+        assert_ne!(ran.code, 0, "{note}: {}", ran.text);
+        assert!(
+            ran.text.contains("\"token\": \"malformed\""),
+            "{note}: {}",
+            ran.text
+        );
+        assert!(
+            ran.text
+                .contains("`codex.policy` of plugin `p` must be a mapping"),
+            "{note}: {}",
+            ran.text
+        );
+    }
+}
+
+#[test]
+fn a_bad_root_block_is_blamed_on_the_marketplace_in_publish_and_status() {
+    let root = "---\nname: v\nclaude: {model: [1]}\nbuild:\n  out: dist\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", root),
+        ("plugins/p/p.md", PLUGIN),
+        ("plugins/p/skills/s.md", SKILL),
+    ]);
+    let said = "malformed: `claude.model` of marketplace `v` must be a string";
+    let ran = publish_json(&dir, "plugins/p/skills/s.md");
+    assert_ne!(ran.code, 0, "{}", ran.text);
+    assert!(
+        ran.text.contains("`claude.model` of marketplace `v`"),
+        "{}",
+        ran.text
+    );
+    assert!(!ran.text.contains("s.md: `claude.model`"), "{}", ran.text);
+    let status = sw(&dir.path(), &["status"]);
+    assert!(status.text.contains(said), "{}", status.text);
+    assert!(
+        !status.text.contains("s.md: `claude.model`"),
+        "{}",
+        status.text
+    );
+}
+
+#[test]
+fn a_bad_workspace_block_is_listed_once_naming_the_workspace_file() {
+    let workspace = "---\nworkspace: true\nclaude: {model: [1]}\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", workspace),
+        ("marketplaces/one/skillwright.md", "---\nname: one\n---\n"),
+        ("marketplaces/one/plugins/p/skills/s.md", SKILL),
+        ("marketplaces/two/skillwright.md", "---\nname: two\n---\n"),
+        ("marketplaces/two/plugins/q/skills/s.md", SKILL),
+    ]);
+    let list = sw(&dir.path(), &["list"]);
+    assert_eq!(
+        list.text.matches("skipped · malformed").count(),
+        1,
+        "{}",
+        list.text
+    );
+    assert!(
+        list.text
+            .contains("skillwright.md  skipped · malformed: `claude.model` of the workspace file"),
+        "{}",
+        list.text
+    );
+    assert!(!list.text.contains("marketplace ``"), "{}", list.text);
 }
 
 #[test]

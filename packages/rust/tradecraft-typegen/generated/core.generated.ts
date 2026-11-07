@@ -920,7 +920,7 @@ export interface SkippedNote {
    */
   reason: string;
 
-  /** The sentence naming what is wrong, as the error stated it. */
+  /** The sentence naming what is wrong, after the reason token. */
   detail: string;
 
   /**

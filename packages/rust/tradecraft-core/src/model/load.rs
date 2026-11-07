@@ -172,7 +172,7 @@ pub(crate) fn selected_harnesses(
 /// * `refused: unknown-hooks-plugin` / `duplicate-hooks-file` and what
 ///   [`crate::hooks_file::parse_hooks_file`] refuses.
 /// * `refused: unknown-target` — a harness block named for no known harness.
-/// * `refused: malformed-block` — a container block key holding the wrong
+/// * `refused: malformed` — a container block key holding the wrong
 ///   kind of value.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
 pub fn load(
@@ -193,11 +193,19 @@ pub fn load(
         .filter(|note| note.path != crate::settings::ROOT_FILE)
         .collect();
     if !skipped.is_empty() {
+        let (token, which) = skipped_wording(skipped.iter().copied());
+        // A note's own reason is said only when it differs from the token.
         let notes: Vec<String> = skipped
             .iter()
-            .map(|note| format!("{} ({})", note.path, note.detail))
+            .map(|note| {
+                let said = if note.reason == token {
+                    note.detail.clone()
+                } else {
+                    note.sentence()
+                };
+                format!("{} ({said})", note.path)
+            })
             .collect();
-        let (token, which) = skipped_wording(skipped.iter().copied());
         return Err(CoreError::refused(
             token,
             format!(
@@ -544,7 +552,7 @@ pub struct Pack {
 /// * `refused: unreadable-note` — a member the scan could not read. A pack
 ///   must not install a subset silently.
 /// * `refused: empty-plugin` — nothing this destination admits.
-/// * `refused: malformed-block` — a container block key holding the wrong
+/// * `refused: malformed` — a container block key holding the wrong
 ///   kind of value, such as a `metadata` that is not a mapping.
 /// * What [`resolve_body`] refuses for any member.
 pub fn load_plugin(
@@ -1004,7 +1012,7 @@ fn skipped_wording<'a>(
 ) -> (&'static str, &'static str) {
     let (mut wrong_kind, mut other) = (false, false);
     for note in notes {
-        if matches!(note.reason.as_str(), "malformed" | "malformed-block") {
+        if note.reason == "malformed" {
             wrong_kind = true;
         } else {
             other = true;

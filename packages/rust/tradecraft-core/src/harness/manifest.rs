@@ -149,15 +149,12 @@ fn harness_paths() -> BTreeSet<&'static str> {
 ///
 /// # Errors
 ///
-/// `refused: malformed-block`.
+/// `refused: malformed`.
 pub(crate) fn check_block_values(config: &MarketplaceConfig) -> Result<(), CoreError> {
-    let market = match &config.name {
-        Some(name) => format!("marketplace `{name}`"),
-        None => "the marketplace".to_owned(),
-    };
+    let market = container_owner(EntityKind::Marketplace, config.name.as_deref());
     let plugins = config.plugins.iter().map(|(name, plugin)| {
         (
-            format!("plugin `{name}`"),
+            container_owner(EntityKind::Plugin, Some(name)),
             EntityKind::Plugin,
             &plugin.blocks,
         )
@@ -173,12 +170,23 @@ pub(crate) fn check_block_values(config: &MarketplaceConfig) -> Result<(), CoreE
     Ok(())
 }
 
+/// How a refusal names a container: `plugin `p``, `marketplace `m``, or
+/// `the marketplace` when it has no name.
+pub(crate) fn container_owner(kind: EntityKind, name: Option<&str>) -> String {
+    match (kind, name.filter(|name| !name.is_empty())) {
+        (EntityKind::Plugin, Some(name)) => format!("plugin `{name}`"),
+        (EntityKind::Plugin, None) => "the plugin".to_owned(),
+        (_, Some(name)) => format!("marketplace `{name}`"),
+        (_, None) => "the marketplace".to_owned(),
+    }
+}
+
 /// [`check_block_values`] for one container's blocks, keyed by harness.
 /// `owner` names the container in the refusal: `plugin `p``.
 ///
 /// # Errors
 ///
-/// `refused: malformed-block`.
+/// `refused: malformed`.
 pub(crate) fn check_container_blocks(
     owner: &str,
     kind: EntityKind,
@@ -192,7 +200,7 @@ pub(crate) fn check_container_blocks(
                 && !ty.accepts(value)
             {
                 return Err(CoreError::refused(
-                    "malformed-block",
+                    "malformed",
                     format!("`{harness}.{key}` of {owner} {}", ty.refusal(value)),
                 ));
             }

@@ -370,8 +370,8 @@ pub enum ReasonToken {
     MixedFrontmatterShape,
     /// `build.exclude` or a folder that never ships holds the note.
     ExcludedNote,
-    /// A note that parsed holds a value of the wrong kind for a key it sets,
-    /// bare or in a harness block.
+    /// A note or root file that parsed holds a value of the wrong kind or
+    /// shape for a key it sets, bare or in a harness block.
     Malformed,
     /// Not a refusal, and the one token here that names a success: the file
     /// was already byte-identical to our own output, so this run claimed it
@@ -508,7 +508,7 @@ impl PublishReason {
     /// what kind of refusal it just made, so no refusal reaches a report as
     /// bare prose.
     pub fn from_refusal(message: &str, fallback: ReasonToken) -> Self {
-        match message.split_once(": ") {
+        match CoreError::split_refusal(message) {
             Some((token, detail)) => match ReasonToken::parse(token) {
                 Some(token) => Self::new(token, detail),
                 None => Self::new(fallback, message),
@@ -774,6 +774,9 @@ fn publish_onto(
         &requested,
         ns,
     )?;
+    // The containers' own blocks first, as a build checks them, so a bad
+    // value names the container that holds it, not this note.
+    crate::harness::manifest::check_block_values(&cascade.config)?;
     let plugin = request.skills_root.as_deref().and_then(|root| {
         let patterns = crate::patterns::Patterns::read(vfs, root);
         crate::discover::folder_placement_with(&patterns, root, &request.skill_path).plugin
@@ -1821,9 +1824,9 @@ pub fn publishes_to(
 /// * `refused: unknown-target` — a block is keyed by a name outside
 ///   [`canonical_target`].
 /// * `refused: malformed` — a key a block's harness reads holds the wrong
-///   kind of value, such as `metadata` that is not a mapping. Not on an
-///   agent, of `kind`: its blocks never ship, and publish refuses a block
-///   for the target being published as `unknown-override-key`.
+///   kind of value, such as `metadata` that is not a mapping. Not when
+///   `kind` is an agent: an agent's blocks never ship, and publish refuses a
+///   block for the target being published as `unknown-override-key`.
 pub fn overrides_for(
     note: &VaultFrontmatter,
     note_path: &Path,

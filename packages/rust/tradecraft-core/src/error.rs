@@ -88,9 +88,9 @@ impl CoreError {
         }
     }
 
-    /// The closed-set reason token a host reports for this error: a refusal's
-    /// own token, else one per variant. Exhaustive like [`Self::variant_name`],
-    /// so a new variant needs a token before it compiles.
+    /// The closed-set reason token a host reports for this error when its
+    /// message carries none. Exhaustive like [`Self::variant_name`], so a new
+    /// variant needs a token before it compiles.
     pub fn reason_token(&self) -> crate::publish::ReasonToken {
         use crate::publish::ReasonToken;
         match self {
@@ -100,11 +100,7 @@ impl CoreError {
             CoreError::SkillNotFound(_) => ReasonToken::Io,
             CoreError::Io { .. } => ReasonToken::Io,
             CoreError::SwapFailed(_) => ReasonToken::Io,
-            // `refused` leads with the token. A message with none is `io`.
-            CoreError::Refused(message) => message
-                .split_once(": ")
-                .and_then(|(token, _)| ReasonToken::parse(token))
-                .unwrap_or(ReasonToken::Io),
+            CoreError::Refused(_) => ReasonToken::Io,
             CoreError::Conflict(_) => ReasonToken::Conflict,
         }
     }
@@ -119,7 +115,8 @@ impl CoreError {
     }
 
     /// A *content* problem in a file we read: frontmatter that will not parse,
-    /// a value the wrong shape, bytes that are not UTF-8.
+    /// or bytes that are not UTF-8. A value of the wrong kind or shape in a
+    /// note that parsed is [`Self::wrong_kind`].
     ///
     /// [`CoreError::Io`] rather than a variant of its own, because it is the
     /// one variant that already carries a path and its `Display` — `reading
@@ -141,6 +138,18 @@ impl CoreError {
             "malformed",
             format!("{}: {}", path.as_ref().display(), message.into()),
         )
+    }
+
+    /// A refusal message split into the token it leads with and the prose
+    /// after it, or `None` when it leads with nothing shaped like a token:
+    /// some rails carry prose alone.
+    pub(crate) fn split_refusal(message: &str) -> Option<(&str, &str)> {
+        message.split_once(": ").filter(|(token, _)| {
+            !token.is_empty()
+                && token
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
     }
 
     /// A refusal prefixed with one of the publish spec's
@@ -195,7 +204,14 @@ mod tests {
             err.to_string(),
             "refused: malformed: /vault/a.md: `model` must be a string, not a list"
         );
-        assert_eq!(err.reason_token(), crate::publish::ReasonToken::Malformed);
+        assert_eq!(
+            crate::publish::PublishReason::from_refusal(
+                err.to_string().strip_prefix("refused: ").unwrap(),
+                crate::publish::ReasonToken::Io,
+            )
+            .token,
+            crate::publish::ReasonToken::Malformed
+        );
     }
 
     #[test]
