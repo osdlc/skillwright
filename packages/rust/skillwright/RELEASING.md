@@ -39,7 +39,11 @@ flowchart TD
 1. **Release PR.** On every push to main, `release-pr` opens or updates a
    pull request that bumps each changed crate's version and changelog. The
    `osdlc-release` GitHub App opens it, so its checks run.
-2. **Merge.** The owner merges the release PR once its checks pass.
+2. **Merge.** The owner merges the release PR once its checks pass. Approve
+   its release (step 4) before merging anything else. release-plz does not
+   raise a version that is already ahead of crates.io, so changes merged first
+   would publish under that version. Do not approve a pending run for an
+   older commit. The next push cancels it.
 3. **Plan.** `plan` compares each crate's version with crates.io. If nothing
    is new it stops. Otherwise it picks one credential for the run:
    - `token` when a crate has never been published (its first release);
@@ -254,6 +258,7 @@ trusted once, so the tap and trust commands come before `brew install`.
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| No release PR opens after more changes merged, and `release-pr` logs "Only changelog will be updated" | A merged version is still unpublished, so release-plz keeps that version for the later changes | Do not approve the older pending run. Raise the version and changelog by hand in a PR, then merge it and approve its release before anything else merges |
 | `plan` refuses the run | A first release and a trusted release are both pending | Release one first; hold the other |
 | `release` waits forever | The `crates-io` approval was not given | Approve it in the Actions tab |
 | `npm` fails with `404 Not Found - PUT` | The package or its trusted publisher does not exist | Stage the package (see [First release on npm](release/README.md#first-release-on-npm)), then re-run failed jobs |
