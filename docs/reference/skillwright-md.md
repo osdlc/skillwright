@@ -248,6 +248,12 @@ a skill Claude's `allowed-tools` patterns. Each block is checked against the key
 that harness accepts, merged over what skillwright generates, and emitted only
 for that harness. The accepted keys are [in the field reference](fields.md#harness-blocks).
 
+- A key the block's harness reads must hold the kind of value that harness
+  documents: a component's keys take the field reference's type, and a
+  container's take the type in harness-reference's manifest and marketplace
+  facts. A wrong kind is refused, naming the block, the key and the kind, such
+  as `` `codex.policy` of plugin `p` must be a mapping, not a number ``. A key
+  with no documented type is not checked.
 - `metadata` in a block merges with the note's `metadata` rather than replacing
   it.
 - A block a component inherits cannot set that component's `name` or
