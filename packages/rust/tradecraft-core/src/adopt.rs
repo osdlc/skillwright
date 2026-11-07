@@ -284,6 +284,7 @@ pub enum AdoptMode {
 /// What happened to one skill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum AdoptStatus {
     /// The skill's notes landed in the vault — or would have, under
     /// [`AdoptMode::DryRun`].
@@ -299,6 +300,18 @@ pub enum AdoptStatus {
     /// hand-authored, the two sides diverged, or the folder holds content
     /// adoption did not write.
     Refused,
+}
+
+impl AdoptStatus {
+    /// The wire token, as serialized. Exhaustive here, so a new variant needs its word.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Adopted => "adopted",
+            Self::Updated => "updated",
+            Self::Unchanged => "unchanged",
+            Self::Refused => "refused",
+        }
+    }
 }
 
 /// One line of an [`AdoptReport`].

@@ -207,12 +207,8 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
     }
     let ns = run.core_namespace();
 
-    let placement = Placement {
-        marketplace: None,
-        plugin: None,
-        kind: Some(EntityKind::Marketplace.as_str().to_string()),
-        folder: None,
-    };
+    let mut placement = Placement::default();
+    placement.kind = Some(EntityKind::Marketplace.as_str().to_string());
     let mut fields = Vec::new();
     if let Some(d) = &flags.description {
         fields.push(FieldEdit::set("description", Value::Str(d.clone())));
@@ -223,7 +219,8 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
     if let Some(a) = &flags.author {
         fields.push(FieldEdit::set(ns.key("author"), Value::Str(a.clone())));
     }
-    let mut note = NewNote::new(&flags.name, &fields, "");
+    let mut note = NewNote::new(&flags.name);
+    note.fields = &fields;
     note.placement = Some(&placement);
     note.bundled = true;
     let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
@@ -289,17 +286,15 @@ pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i
         Ok(marketplace) => marketplace,
         Err(code) => return code,
     };
-    let placement = Placement {
-        marketplace,
-        plugin: None,
-        kind: Some(EntityKind::Plugin.as_str().to_string()),
-        folder: None,
-    };
+    let mut placement = Placement::default();
+    placement.marketplace = marketplace;
+    placement.kind = Some(EntityKind::Plugin.as_str().to_string());
     let mut fields = Vec::new();
     if let Some(d) = &flags.description {
         fields.push(FieldEdit::set("description", Value::Str(d.clone())));
     }
-    let mut note = NewNote::new(&flags.name, &fields, "");
+    let mut note = NewNote::new(&flags.name);
+    note.fields = &fields;
     note.placement = Some(&placement);
     note.bundled = true;
     let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
@@ -362,12 +357,11 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
     let placement = if marketplace.is_none() && flags.plugin.is_none() {
         None
     } else {
-        Some(Placement {
-            marketplace,
-            plugin: flags.plugin.clone(),
-            kind: Some(EntityKind::Skill.as_str().to_string()),
-            folder: None,
-        })
+        let mut placement = Placement::default();
+        placement.marketplace = marketplace;
+        placement.plugin = flags.plugin.clone();
+        placement.kind = Some(EntityKind::Skill.as_str().to_string());
+        Some(placement)
     };
     let mut fields = Vec::new();
     if let Some(d) = &flags.description {
@@ -379,7 +373,8 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
             Value::Seq(flags.targets.iter().cloned().map(Value::Str).collect()),
         ));
     }
-    let mut note = NewNote::new(&flags.name, &fields, "");
+    let mut note = NewNote::new(&flags.name);
+    note.fields = &fields;
     note.placement = placement.as_ref();
     note.bundled = true;
     let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);

@@ -134,6 +134,7 @@ use crate::vfs::Vfs;
 // because it can hold a float. Nothing keys a map or a set on a whole
 // component — uniqueness is keyed on `(marketplace, plugin, kind, name)`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DiscoveredComponent {
     /// The frontmatter `name`, already validated against the Agent Skills spec.
     pub name: String,
@@ -455,6 +456,7 @@ pub const MISSING_DESCRIPTION_REASON: &str = "missing-description";
 
 /// One note the scan admitted, with what it filled in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DiscoveryWarning {
     /// Vault-relative and forward-slashed, as [`SkippedNote::path`].
     pub path: String,
@@ -463,6 +465,22 @@ pub struct DiscoveryWarning {
     pub reason: String,
     /// Extra detail for a person to read.
     pub detail: String,
+}
+
+impl DiscoveryWarning {
+    /// A warning about the note at `path`, with its `reason` token and the
+    /// `detail` a person reads.
+    pub fn new(
+        path: impl Into<String>,
+        reason: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            path: path.into(),
+            reason: reason.into(),
+            detail: detail.into(),
+        }
+    }
 }
 
 /// One note the scan could not read, and why.

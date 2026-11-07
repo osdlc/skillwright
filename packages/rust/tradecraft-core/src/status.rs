@@ -84,6 +84,7 @@ impl StatusRequest {
 /// here would make them look like conditions a publish could fix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum PublishState {
     /// The manifest records nothing for this unit here.
     NeverPublished,

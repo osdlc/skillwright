@@ -64,7 +64,40 @@ The CLI does the same steps.
    marketplace. Build the request from the result with
    `ExportRequest::new(loaded.dir, out_root, inputs.config)`, then set
    `harnesses`, `assets` and `hooks` from `inputs`. Leave out `inputs` and a
-   build gets no assets and no hooks.
+   build gets no assets and no hooks. `out_root` is an `Option`, because
+   `build.out` is optional in the root file: when it is `None`, pass an
+   output folder of your own, or refuse the build as the CLI does.
+
+```rust
+use std::path::Path;
+use tradecraft_core::{CoreError, ExportRequest, MemVfs, Vfs, export_skills, load_marketplace};
+
+let vfs = MemVfs::new();
+vfs.create_dir_all(Path::new("/vault/skills"))?;
+vfs.write_file(
+    Path::new("/vault/skillwright.md"),
+    b"---\nname: house\nbuild:\n  out: dist\n---\n",
+)?;
+vfs.write_file(
+    Path::new("/vault/skills/review.md"),
+    b"---\ndescription: Reviews the current diff.\n---\nReview the diff.\n",
+)?;
+
+let loaded = load_marketplace(&vfs, Path::new("/vault"), Path::new("/home"))?
+    .ok_or_else(|| CoreError::Refused("no skillwright.md".to_owned()))?;
+let out_root = loaded
+    .out_root
+    .clone()
+    .ok_or_else(|| CoreError::Refused("set build.out in skillwright.md".to_owned()))?;
+let inputs = loaded.inputs;
+let mut request = ExportRequest::new(loaded.dir, out_root, inputs.config);
+request.harnesses = inputs.harnesses;
+request.assets = inputs.assets;
+request.hooks = inputs.hooks;
+let report = export_skills(&vfs, &request, &loaded.namespace)?;
+assert!(report.changed);
+# Ok::<(), CoreError>(())
+```
 
 The steps inside are public if a host needs them apart: `find_root_file`,
 `workspace_above`, `RootFile::inherit`, `marketplace_inputs` and
@@ -144,14 +177,29 @@ The library does no I/O except through `Vfs`, so it runs under
 The crate is 0.x. A minor version may break the API, and each break is listed
 in the [CHANGELOG](CHANGELOG.md).
 
-The request types (`PublishRequest`, `StatusRequest`, `ExportRequest`,
-`LoadRequest`, `AdoptRequest`, `ComponentRequest`, `VaultScope`, `AssetSpec`,
-`HookFileSpec`, `NewNote` and `CompileSource`) and the config types
-(`MarketplaceConfig`, `PluginOverrides`) are `#[non_exhaustive]`, so a new
-field is not a breaking change. Build a request with its `new` constructor,
-which takes the required inputs, and set the other fields on the value. Build a
-config with `Default::default()` and set its fields. `ReasonToken` is
-`#[non_exhaustive]` too, so a `match` on it needs a `_` arm.
+Most public types are `#[non_exhaustive]`, so a new field or variant is not a
+breaking change:
+
+- The request types (`PublishRequest`, `StatusRequest`, `ExportRequest`,
+  `LoadRequest`, `AdoptRequest`, `ComponentRequest`, `VaultScope`,
+  `AssetSpec`, `HookFileSpec`, `NewNote`, `CompileSource`). Build one with
+  its `new` constructor, which takes the required inputs, and set the other
+  fields on the value.
+- The config and settings types (`MarketplaceConfig`, `PluginOverrides`,
+  `RootFile`, `BuildSettings`, `MarketplaceFields`, `Placement`). Build one
+  with `Default::default()` and set its fields.
+- The output types (`ExportReport`, `PublishReport`, `DiscoveredComponent`,
+  `DiscoveryWarning`). Read them by field. `DiscoveryWarning::new` builds a
+  warning for a host's own report.
+- The enums (`CoreError`, `AuthoringOp`, `ExportUnit`, `UnitStatus`,
+  `StaleKind`, `PublishStatus`, `PublishOutcome`, `PublishState`,
+  `AdoptStatus`, `ReasonToken`). A `match` on one needs a `_` arm. The
+  status enums have `as_str`, the word they serialize as, and
+  `CoreError::variant_name` names an error's variant.
+
+`LinkIndex` (for `CompileSource::links`) and `FieldValue` (for
+`FieldEdit::set`) are re-exported, so a consumer needs no `markdown-link` or
+`yaml-splice` dependency of its own.
 
 ## Platforms
 

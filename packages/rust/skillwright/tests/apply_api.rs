@@ -3,7 +3,7 @@
 
 use std::fs;
 
-use skillwright::apply::{self, Vault};
+use skillwright::apply::{self, Applied, ApplyError, Vault};
 use tradecraft_core::{Namespace, NativeVfs, NewNote, plan_create_note};
 
 #[test]
@@ -13,7 +13,8 @@ fn a_vault_from_new_previews_and_applies_a_planned_create() {
     fs::write(root.join("skillwright.md"), "---\nname: home\n---\n").unwrap();
     fs::create_dir_all(root.join("skills")).unwrap();
 
-    let note = NewNote::new("lint", &[], "\n# Lint\n");
+    let mut note = NewNote::new("lint");
+    note.body = "\n# Lint\n";
     let op = plan_create_note(&NativeVfs, root, &Namespace::bare(), &note).unwrap();
     let vault = Vault::new(root, &NativeVfs);
 
@@ -24,4 +25,19 @@ fn a_vault_from_new_previews_and_applies_a_planned_create() {
     let applied = apply::apply(vault, &op).unwrap();
     assert!(!applied.preview);
     assert!(root.join("skills/lint.md").exists());
+    for entry in &applied.entries {
+        let word = match &entry.applied {
+            Applied::Created => "created",
+            Applied::Scaffolded => "scaffolded",
+            _ => "other",
+        };
+        assert_eq!(word, "created", "{}", entry.path);
+    }
+
+    let again = apply::apply(vault, &op).unwrap_err();
+    let why = match &again {
+        ApplyError::Refused(why) => why.as_str(),
+        _ => "",
+    };
+    assert!(!why.is_empty(), "{again:?}");
 }

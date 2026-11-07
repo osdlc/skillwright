@@ -298,6 +298,7 @@ pub enum PublishMode {
 /// What happened to one file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum PublishStatus {
     /// Bytes or the execute bit changed on disk — or would have, under
     /// [`PublishMode::DryRun`].
@@ -306,6 +307,17 @@ pub enum PublishStatus {
     Unchanged,
     /// A rail said no. Nothing was written, here or anywhere in this publish.
     Refused,
+}
+
+impl PublishStatus {
+    /// The wire token, as serialized. Exhaustive here, so a new variant needs its word.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Written => "written",
+            Self::Unchanged => "unchanged",
+            Self::Refused => "refused",
+        }
+    }
 }
 
 /// The closed set of reasons a report line can carry — the publish spec's
@@ -523,6 +535,7 @@ impl std::fmt::Display for PublishReason {
 /// the kebab-case rename below, and no consumer re-words it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum PublishOutcome {
     /// Nothing was at this path and the manifest records nothing here. The
     /// first write of this file to this destination.
@@ -554,6 +567,23 @@ pub enum PublishOutcome {
     Manifest,
 }
 
+impl PublishOutcome {
+    /// The wire token, as serialized. Exhaustive here, so a new variant needs its word.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FirstWrite => "first-write",
+            Self::Rewrite => "rewrite",
+            Self::Claimed => "claimed",
+            Self::Overwritten => "overwritten",
+            Self::Unchanged => "unchanged",
+            Self::Conflict => "conflict",
+            Self::Foreign => "foreign",
+            Self::Blocked => "blocked",
+            Self::Manifest => "manifest",
+        }
+    }
+}
+
 /// One line of a [`PublishReport`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublishedFile {
@@ -573,6 +603,7 @@ pub struct PublishedFile {
 /// Every file the publish considered, in path order. A refused publish still
 /// reports all of them — a silent skip is how a destination rots unnoticed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PublishReport {
     /// Every file considered, in path order.
     pub files: Vec<PublishedFile>,

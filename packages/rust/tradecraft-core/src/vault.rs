@@ -90,8 +90,8 @@ pub struct VaultNote {
 
 /// Reads the note at `skill_path` and its peer resources.
 ///
-/// `ns` is the vault's frontmatter namespace — [`Namespace::default`] is the
-/// documented `sw`. Whatever is passed here must also be passed to the emit
+/// `ns` is the vault's frontmatter namespace; [`Namespace::default`] is
+/// bare. Whatever is passed here must also be passed to the emit
 /// side ([`crate::projection::project_skill`]), because these two are the
 /// halves of one strip: a key this read did not claim is a key that publishes.
 /// [`crate::publish::publish_skill`] takes one namespace and hands the same

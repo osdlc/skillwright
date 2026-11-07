@@ -141,6 +141,9 @@ pub use frontmatter::{
 };
 pub use harness::manifest::{check_packs, packs_of};
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, REMOVED, Shape};
+/// The vault's file index, for [`CompileSource::links`]: re-exported so a
+/// consumer needs no `markdown-link` dependency of its own.
+pub use markdown_link::LinkIndex;
 pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use paths::{
@@ -161,6 +164,10 @@ pub use source_view::{
     SourceView, VaultScope, effective_config, effective_configs, marketplace_folder, source_view,
     vault_config,
 };
+pub use status::{PublishState, PublishUnitStatus, StatusRequest, status_of};
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};
 pub use walk::{built_paths, built_paths_for};
+/// The value of a frontmatter field, for [`FieldEdit::set`]: re-exported so a
+/// consumer needs no `yaml-splice` dependency of its own.
+pub use yaml_splice::Value as FieldValue;

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 /// Something went wrong locating or reading a skill corpus.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CoreError {
     /// A content root (or an adopt source) does not exist. Returned before
     /// anything is read.
@@ -71,6 +72,22 @@ impl From<crate::vfs::VfsError> for CoreError {
 }
 
 impl CoreError {
+    /// The variant's name, such as `"Refused"`. The wasm binding sets it as
+    /// the thrown `Error`'s `.name`. The match is exhaustive on purpose: a new
+    /// variant fails to compile here until it is given a name.
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            CoreError::RootNotFound(_) => "RootNotFound",
+            CoreError::PathEscapesRoot(_) => "PathEscapesRoot",
+            CoreError::SkillNotFound(_) => "SkillNotFound",
+            CoreError::Io { .. } => "Io",
+            CoreError::Refused(_) => "Refused",
+            CoreError::Conflict(_) => "Conflict",
+            CoreError::Projection(_) => "Projection",
+            CoreError::SwapFailed(_) => "SwapFailed",
+        }
+    }
+
     /// Attach a path to an [`std::io::Error`]. Threading the path through
     /// every `?` is the whole reason this helper exists.
     pub fn io(path: impl AsRef<Path>, source: std::io::Error) -> Self {

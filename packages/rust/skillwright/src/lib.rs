@@ -12,6 +12,10 @@
 //! CLI's own and may change in any release; they are public only so the
 //! binary and this crate's tests can reach them, and are hidden from these
 //! docs.
+//!
+//! Its types are `#[non_exhaustive]`: build an [`apply::Vault`] with
+//! `Vault::new`, read an [`apply::Outcome`] by field, and give a `match` on
+//! [`apply::Applied`] or [`apply::ApplyError`] a `_` arm.
 
 pub mod apply;
 #[doc(hidden)]

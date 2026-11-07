@@ -622,7 +622,7 @@ fn report_json<T: Serialize>(what: &str, report: &T) -> Result<String, JsValue> 
 
 fn core_error_to_js(e: &CoreError) -> JsValue {
     let err = js_sys::Error::new(&e.to_string());
-    err.set_name(variant_name(e));
+    err.set_name(e.variant_name());
     err.into()
 }
 
@@ -644,22 +644,6 @@ fn invalid_stem_to_js(e: &InvalidStem) -> JsValue {
 /// is not any `CoreError` variant and claiming one would be a lie.
 fn throwable(message: &str) -> JsValue {
     js_sys::Error::new(message).into()
-}
-
-/// The variant name, as `.name` on the thrown `Error`. Exhaustive on purpose:
-/// a new `CoreError` variant should fail to compile here rather than silently
-/// inherit a neighbour's name.
-fn variant_name(e: &CoreError) -> &'static str {
-    match e {
-        CoreError::RootNotFound(_) => "RootNotFound",
-        CoreError::PathEscapesRoot(_) => "PathEscapesRoot",
-        CoreError::SkillNotFound(_) => "SkillNotFound",
-        CoreError::Io { .. } => "Io",
-        CoreError::Refused(_) => "Refused",
-        CoreError::Conflict(_) => "Conflict",
-        CoreError::Projection(_) => "Projection",
-        CoreError::SwapFailed(_) => "SwapFailed",
-    }
 }
 
 /// The wire, and only the wire.

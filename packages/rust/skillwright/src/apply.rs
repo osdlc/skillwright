@@ -33,6 +33,7 @@ impl Mode {
 
 /// Everything an op did, or would do.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct Outcome {
     /// True when nothing was written.
     pub preview: bool,
@@ -69,6 +70,7 @@ pub struct AppliedEntry {
 /// needs; [`Applied::outcome`] and [`Applied::reason`] are the printable
 /// reduction of them, not a second source of truth.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Applied {
     /// A note written where none existed.
     Created,
@@ -298,6 +300,9 @@ fn run(vault: Vault<'_>, op: &AuthoringOp, mode: Mode) -> Result<Outcome, ApplyE
             scaffold,
         } => relocate(vault, from, to, *bundle, frontmatter, scaffold, mode),
         AuthoringOp::Delete { paths, trash_dir } => delete(vault.dir, paths, trash_dir, mode),
+        other => Err(ApplyError::Refused(format!(
+            "this build of skillwright cannot apply {other:?}"
+        ))),
     }
 }
 

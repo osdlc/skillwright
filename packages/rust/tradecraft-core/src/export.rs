@@ -418,6 +418,7 @@ pub struct PluginOverrides {
 
 /// What one export did, or would do — per plugin, per root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ExportReport {
     /// The mode the report describes, so `ok`/`drift` and
     /// `written`/`unchanged` read against the right verb.
@@ -440,6 +441,7 @@ pub struct ExportReport {
 /// One comparable unit of the marketplace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "unit", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum ExportUnit {
     /// One plugin directory in one root — its manifest and its skills.
     Plugin {
@@ -514,6 +516,7 @@ pub enum ExportUnit {
 /// coincidence of layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum StaleKind {
     /// A plugin directory this root no longer carries — one unit for the
     /// whole tree, never a unit per file inside it.
@@ -524,10 +527,22 @@ pub enum StaleKind {
     EmptyDir,
 }
 
+impl StaleKind {
+    /// The wire token, as serialized. Exhaustive here, so a new variant needs its word.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Plugin => "plugin",
+            Self::File => "file",
+            Self::EmptyDir => "empty-dir",
+        }
+    }
+}
+
 /// One unit's outcome. `check` speaks `ok`/`drift`; `build` speaks
 /// `written`/`unchanged` — the same comparison, two verbs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum UnitStatus {
     /// The unit matches what is installed (`check`).
     Ok,
@@ -537,6 +552,18 @@ pub enum UnitStatus {
     Written,
     /// The unit was already up to date (`build`).
     Unchanged,
+}
+
+impl UnitStatus {
+    /// The wire token, as serialized. Exhaustive here, so a new variant needs its word.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Drift => "drift",
+            Self::Written => "written",
+            Self::Unchanged => "unchanged",
+        }
+    }
 }
 
 /// The name a skill publishes under: its directory, its frontmatter `name`,

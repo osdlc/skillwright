@@ -38,6 +38,7 @@ use crate::vfs::{MemVfs, Vfs};
 /// The neutral shape of a host's own placement wire type: the levels a path
 /// is derived from, and nothing a transport cares about.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Placement {
     /// The marketplace folder, when named.
     pub marketplace: Option<String>,
@@ -86,6 +87,7 @@ impl FieldEdit {
 /// entry or a CAS token: those are the host's, and a plan that carried them
 /// could not be computed in a browser.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum AuthoringOp {
     /// Write `bytes` at `path`, then make each `scaffold` directory.
     Create {
@@ -1196,15 +1198,15 @@ pub struct NewNote<'a> {
 }
 
 impl<'a> NewNote<'a> {
-    /// A note called `name` with `fields` and `body`, at the default
-    /// placement and not bundled. Set the other fields after.
-    pub fn new(name: &'a str, fields: &'a [FieldEdit], body: &'a str) -> Self {
+    /// A note called `name`, at the default placement, not bundled, with no
+    /// fields and an empty body. Set the other fields after.
+    pub fn new(name: &'a str) -> Self {
         Self {
             placement: None,
             name,
             bundled: false,
-            fields,
-            body,
+            fields: &[],
+            body: "",
         }
     }
 }
@@ -1832,7 +1834,9 @@ mod tests {
         let p = placement("house", "tools", "skill");
         let edits = fields("ignored");
         let op = plan_create_note(&vfs, vault(), &sw(), &{
-            let mut value = NewNote::new("Code Review", &edits, "\n# Body\n");
+            let mut value = NewNote::new("Code Review");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
             value.placement = Some(&p);
             value
         })
@@ -1859,7 +1863,9 @@ mod tests {
         let p = placement("house", "tools", "skill");
         let edits = fields("deploy");
         let AuthoringOp::Create { path, .. } = plan_create_note(&vfs, vault(), &sw(), &{
-            let mut value = NewNote::new("deploy", &edits, "\n# Body\n");
+            let mut value = NewNote::new("deploy");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
             value.placement = Some(&p);
             value.bundled = true;
             value
@@ -1884,7 +1890,9 @@ mod tests {
         };
         let edits = fields("extras");
         let AuthoringOp::Create { path, scaffold, .. } = plan_create_note(&vfs, vault(), &sw(), &{
-            let mut value = NewNote::new("extras", &edits, "\n# Body\n");
+            let mut value = NewNote::new("extras");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
             value.placement = Some(&p);
             value
         })
@@ -1909,7 +1917,9 @@ mod tests {
         let p = placement("house", "tools", "skill");
         let edits = fields("review");
         let refusal = plan_create_note(&vfs, vault(), &sw(), &{
-            let mut value = NewNote::new("review", &edits, "\n# Body\n");
+            let mut value = NewNote::new("review");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
             value.placement = Some(&p);
             value.bundled = true;
             value
@@ -1930,7 +1940,9 @@ mod tests {
             FieldEdit::set("description", Value::Str("d".repeat(1025))),
         ];
         let refusal = plan_create_note(&vfs, vault(), &sw(), &{
-            let mut value = NewNote::new("audit", &edits, "\n# Body\n");
+            let mut value = NewNote::new("audit");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
             value.placement = Some(&p);
             value
         })

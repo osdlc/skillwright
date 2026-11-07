@@ -26,6 +26,7 @@ pub const ROOT_FILE: &str = "skillwright.md";
 
 /// The marketplace's own fields: the root file's top-level keys.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct MarketplaceFields {
     /// The marketplace's name. Absent means the root folder's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -103,6 +104,7 @@ pub struct HookSetting {
 
 /// The `build:` block: how skillwright runs, never what lands in a manifest.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct BuildSettings {
     /// Where the harness trees are written, relative to the root file.
     /// Required, here or as `--out`: there is no default.
@@ -254,6 +256,7 @@ pub enum PatchScheme {
 
 /// A parsed root file.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct RootFile {
     /// The marketplace's own fields.
     #[serde(default)]

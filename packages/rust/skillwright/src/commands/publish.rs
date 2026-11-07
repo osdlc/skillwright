@@ -177,6 +177,7 @@ fn thrown_reason(err: &CoreError) -> PublishReason {
         CoreError::SwapFailed(_) => ReasonToken::Io,
         CoreError::Refused(_) => ReasonToken::Io,
         CoreError::Conflict(_) => ReasonToken::Conflict,
+        _ => ReasonToken::Io,
     };
     let message = err.to_string();
     PublishReason::from_refusal(normalize_thrown_reason(&message), fallback)

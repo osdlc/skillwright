@@ -420,12 +420,11 @@ pub fn refuse_workspace(verb: &str, run: &ResolvedRun, err: &mut dyn Write) -> R
 pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
     let mut warnings = Vec::new();
     if run.config.build.out.is_some() {
-        warnings.push(DiscoveryWarning {
-            path: ROOT_FILE.to_owned(),
-            reason: "workspace-out".to_owned(),
-            detail: "`build.out` on a workspace file is not read: each marketplace sets its own"
-                .to_owned(),
-        });
+        warnings.push(DiscoveryWarning::new(
+            ROOT_FILE,
+            "workspace-out",
+            "`build.out` on a workspace file is not read: each marketplace sets its own",
+        ));
     }
     let scan = discover_components(
         &run.source_vfs(None),
@@ -442,14 +441,14 @@ pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
         .collect();
     if !folders.is_empty() {
         let named: Vec<String> = folders.into_iter().collect();
-        warnings.push(DiscoveryWarning {
-            path: ROOT_FILE.to_owned(),
-            reason: "outside-marketplaces".to_owned(),
-            detail: format!(
+        warnings.push(DiscoveryWarning::new(
+            ROOT_FILE,
+            "outside-marketplaces",
+            format!(
                 "{} at a workspace root builds nowhere: move it under `marketplaces/<m>/`",
                 named.join(", ")
             ),
-        });
+        ));
     }
     warnings
 }

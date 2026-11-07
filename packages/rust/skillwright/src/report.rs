@@ -123,15 +123,12 @@ fn spelled_outcome(outcome: PublishOutcome) -> Option<&'static str> {
         | PublishOutcome::Foreign
         | PublishOutcome::Blocked
         | PublishOutcome::Manifest => None,
+        _ => None,
     }
 }
 
 fn publish_status_str(status: PublishStatus) -> &'static str {
-    match status {
-        PublishStatus::Written => "written",
-        PublishStatus::Unchanged => "unchanged",
-        PublishStatus::Refused => "refused",
-    }
+    status.as_str()
 }
 
 /// `path  status[ · outcome][ · reason]` — one line, no truncation.
@@ -184,6 +181,8 @@ pub fn render_tally(files: &[PublishedFile], excluded: usize) -> String {
             PublishStatus::Written => written += 1,
             PublishStatus::Unchanged => unchanged += 1,
             PublishStatus::Refused => refused += 1,
+            // A status this build does not know yet is still on its line.
+            _ => {}
         }
     }
 
@@ -248,12 +247,7 @@ pub fn normalize_thrown_reason(message: &str) -> &str {
 // --- the marketplace ---------------------------------------------------------
 
 fn unit_status_str(status: UnitStatus) -> &'static str {
-    match status {
-        UnitStatus::Written => "written",
-        UnitStatus::Unchanged => "unchanged",
-        UnitStatus::Drift => "drift",
-        UnitStatus::Ok => "ok",
-    }
+    status.as_str()
 }
 
 /// One export unit as `path  status` — the same `path  outcome` column order
@@ -297,6 +291,7 @@ pub fn render_unit_line(unit: &ExportUnit, mode: ExportMode) -> String {
                 StaleKind::Plugin => "stale plugin",
                 StaleKind::File => "stale file",
                 StaleKind::EmptyDir => "stale empty directory",
+                _ => "stale",
             };
             format!("{path}  {word} · {what}")
         }
@@ -308,6 +303,8 @@ pub fn render_unit_line(unit: &ExportUnit, mode: ExportMode) -> String {
             Some(root) => format!("{path}  not carried · {kind} on {root}"),
             None => format!("{path}  not carried · {kind}"),
         },
+        // A unit this build does not know yet: its JSON is the honest line.
+        other => serde_json::to_string(other).unwrap_or_default(),
     }
 }
 
@@ -354,7 +351,9 @@ pub fn render_export_tally(units: &[ExportUnit]) -> String {
                 UnitStatus::Unchanged => unchanged += 1,
                 UnitStatus::Drift => drift += 1,
                 UnitStatus::Ok => ok += 1,
+                _ => {}
             },
+            _ => {}
         }
     }
     let mut parts = Vec::new();
@@ -503,12 +502,7 @@ pub fn render_roster_tally(components: &[DiscoveredComponent]) -> String {
 // --- adoption ----------------------------------------------------------------
 
 fn adopt_status_str(status: AdoptStatus) -> &'static str {
-    match status {
-        AdoptStatus::Adopted => "adopted",
-        AdoptStatus::Updated => "updated",
-        AdoptStatus::Unchanged => "unchanged",
-        AdoptStatus::Refused => "refused",
-    }
+    status.as_str()
 }
 
 /// `path  status[ · reason]` for one adopted skill, where the path is where
@@ -541,6 +535,7 @@ pub fn render_adopt_tally(skills: &[AdoptedSkill]) -> String {
             AdoptStatus::Updated => updated += 1,
             AdoptStatus::Unchanged => unchanged += 1,
             AdoptStatus::Refused => refused += 1,
+            _ => {}
         }
     }
     let mut parts = Vec::new();
@@ -615,6 +610,7 @@ pub fn render_state_tally(rows: &[AttributedState]) -> String {
                 PublishState::Unknown => unknown += 1,
                 PublishState::NeverPublished => never_published += 1,
                 PublishState::Current => current += 1,
+                _ => {}
             },
         }
     }
