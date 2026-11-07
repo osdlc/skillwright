@@ -7,6 +7,26 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.45.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.44.0...tradecraft-core/v0.45.0) - 2026-11-07
+
+### Fixed
+
+- refuse a wrong-kind opt-in key and blame a bad block on its container
+- report a value of the wrong kind as malformed, and check blocks in the scan
+- [**breaking**] check every harness block alike, drop keys set to nothing, read OpenCode's agent tools
+- say plainly why a scalar must be quoted
+- read Claude Code's lenient spec-key forms, bare and in blocks
+- check only accepted container keys, and type bare spec keys as blocks do
+- refuse a known harness-block key with the wrong kind of value
+
+### Other
+
+- use one helper to name a value's kind
+- note the comma form of allowed-tools in its type comment
+- restore the published 0.6.0 and 0.44.0 changelog sections
+- update the 0.6.0 changelogs for the lenient spec-key forms
+- record wrong-kind block values and typed bare keys in the 0.6.0 changelogs
+
 ## [0.44.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.43.0...tradecraft-core/v0.44.0) - 2026-11-07
 
 This release carries the core of skillwright's new vault structure. For the vault side, see the [migration guide](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/docs/guide/migrating.md). For the library side, see [Load a vault and build it](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/packages/rust/tradecraft-core/README.md#load-a-vault-and-build-it) and [Stability](https://github.com/osdlc/skillwright/blob/tradecraft-core/v0.44.0/packages/rust/tradecraft-core/README.md#stability).

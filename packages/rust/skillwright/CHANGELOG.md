@@ -7,6 +7,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.6.0...skillwright/v0.7.0) - 2026-11-07
+
+### Fixed
+
+- refuse a wrong-kind opt-in key and blame a bad block on its container
+- report a value of the wrong kind as malformed, and check blocks in the scan
+- [**breaking**] check every harness block alike, drop keys set to nothing, read OpenCode's agent tools
+- read Claude Code's lenient spec-key forms, bare and in blocks
+- check only accepted container keys, and type bare spec keys as blocks do
+- keep build.out's output out of the sources of a build elsewhere
+- refuse a known harness-block key with the wrong kind of value
+
+### Other
+
+- restore the published 0.6.0 and 0.44.0 changelog sections
+- update the 0.6.0 changelogs for the lenient spec-key forms
+- record wrong-kind block values and typed bare keys in the 0.6.0 changelogs
+
 ## [0.6.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.5.1...skillwright/v0.6.0) - 2026-11-07
 
 This release changes how a vault is configured and laid out, and most vaults stop building until they move. Start with the [migration guide](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/guide/migrating.md). Its steps are in [`migrate.md`](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/plugin/plugins/skillwright/skills/migrate/migrate.md), which an agent can read and follow.
