@@ -59,6 +59,7 @@ impl Outcome {
 
 /// One reportable fact, against the vault-relative path it is about.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AppliedEntry {
     /// The vault-relative path.
     pub path: String,

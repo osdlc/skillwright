@@ -120,6 +120,7 @@ impl PublishState {
 /// four-word status: two public types with one name cannot both cross the
 /// wasm boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PublishUnitStatus {
     /// Whether the destination is current.
     pub state: PublishState,

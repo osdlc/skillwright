@@ -586,6 +586,7 @@ impl PublishOutcome {
 
 /// One line of a [`PublishReport`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PublishedFile {
     /// Destination-root-relative, forward-slashed.
     pub path: String,
@@ -598,6 +599,18 @@ pub struct PublishedFile {
     /// Why, when there is a why: every refusal carries one, and so does a file
     /// claimed into the manifest because its bytes were already ours.
     pub reason: Option<PublishReason>,
+}
+
+impl PublishedFile {
+    /// A line for the file at `path`, with no reason. Set `reason` after.
+    pub fn new(path: impl Into<String>, status: PublishStatus, outcome: PublishOutcome) -> Self {
+        Self {
+            path: path.into(),
+            status,
+            outcome,
+            reason: None,
+        }
+    }
 }
 
 /// Every file the publish considered, in path order. A refused publish still

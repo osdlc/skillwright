@@ -88,6 +88,23 @@ impl CoreError {
         }
     }
 
+    /// The closed-set reason token a host reports for this error when its
+    /// message carries none. Exhaustive like [`Self::variant_name`], so a new
+    /// variant needs a token before it compiles.
+    pub fn reason_token(&self) -> crate::publish::ReasonToken {
+        use crate::publish::ReasonToken;
+        match self {
+            CoreError::Projection(_) => ReasonToken::NoRenderer,
+            CoreError::PathEscapesRoot(_) => ReasonToken::UnsafePath,
+            CoreError::RootNotFound(_) => ReasonToken::Io,
+            CoreError::SkillNotFound(_) => ReasonToken::Io,
+            CoreError::Io { .. } => ReasonToken::Io,
+            CoreError::SwapFailed(_) => ReasonToken::Io,
+            CoreError::Refused(_) => ReasonToken::Io,
+            CoreError::Conflict(_) => ReasonToken::Conflict,
+        }
+    }
+
     /// Attach a path to an [`std::io::Error`]. Threading the path through
     /// every `?` is the whole reason this helper exists.
     pub fn io(path: impl AsRef<Path>, source: std::io::Error) -> Self {

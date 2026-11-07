@@ -436,6 +436,7 @@ pub struct DiscoveredHook {
 /// runs. Every caller reads both: the components are the roster, and
 /// [`Self::skipped`] is the part of the vault this answer does not cover.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DiscoveryReport {
     /// Every publishable note, sorted by name.
     pub components: Vec<DiscoveredComponent>,
@@ -485,6 +486,7 @@ impl DiscoveryWarning {
 
 /// One note the scan could not read, and why.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct SkippedNote {
     /// The note's path relative to the vault root, forward-slashed — the same
     /// spelling every other report prints.

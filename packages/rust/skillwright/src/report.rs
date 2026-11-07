@@ -172,30 +172,29 @@ pub fn render_exclusion(exclusion: &AttributedExclusion) -> String {
 /// a fourth outcome. It only changes the empty case, where "nothing to
 /// report" would otherwise be the sole thing a user saw for a run that had a
 /// specific, nameable reason for reporting nothing.
-pub fn render_tally(files: &[PublishedFile], excluded: usize) -> String {
-    let mut written = 0usize;
-    let mut unchanged = 0usize;
-    let mut refused = 0usize;
-    for f in files {
-        match f.status {
-            PublishStatus::Written => written += 1,
-            PublishStatus::Unchanged => unchanged += 1,
-            PublishStatus::Refused => refused += 1,
-            // A status this build does not know yet is still on its line.
-            _ => {}
+/// `N word` for each word in `words`, counted: the `order` words first, as
+/// listed, then any other word in the order it first appears. A status the
+/// core adds later is counted under its own word rather than dropped.
+fn tally_words<'a>(order: &[&str], words: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut counts: Vec<(&str, usize)> = order.iter().map(|word| (*word, 0)).collect();
+    for word in words {
+        match counts.iter_mut().find(|(known, _)| *known == word) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((word, 1)),
         }
     }
+    counts
+        .into_iter()
+        .filter(|(_, count)| *count > 0)
+        .map(|(word, count)| format!("{count} {word}"))
+        .collect()
+}
 
-    let mut parts = Vec::new();
-    if written > 0 {
-        parts.push(format!("{written} written"));
-    }
-    if unchanged > 0 {
-        parts.push(format!("{unchanged} unchanged"));
-    }
-    if refused > 0 {
-        parts.push(format!("{refused} refused"));
-    }
+pub fn render_tally(files: &[PublishedFile], excluded: usize) -> String {
+    let parts = tally_words(
+        &["written", "unchanged", "refused"],
+        files.iter().map(|f| f.status.as_str()),
+    );
     if !parts.is_empty() {
         return parts.join(", ");
     }
@@ -335,45 +334,30 @@ pub fn count_checked_units(units: &[ExportUnit]) -> usize {
 /// report's status tokens, and listing either beside them would read as a
 /// further outcome.
 pub fn render_export_tally(units: &[ExportUnit]) -> String {
-    let mut written = 0usize;
-    let mut unchanged = 0usize;
-    let mut drift = 0usize;
-    let mut ok = 0usize;
+    let mut statuses = Vec::new();
     let mut stale = 0usize;
     let mut not_carried = 0usize;
+    let mut other = 0usize;
     for unit in units {
         match unit {
             ExportUnit::Stale { .. } => stale += 1,
             ExportUnit::NotCarried { .. } => not_carried += 1,
-            ExportUnit::Plugin { status, .. } | ExportUnit::Manifest { status, .. } => match status
-            {
-                UnitStatus::Written => written += 1,
-                UnitStatus::Unchanged => unchanged += 1,
-                UnitStatus::Drift => drift += 1,
-                UnitStatus::Ok => ok += 1,
-                _ => {}
-            },
-            _ => {}
+            ExportUnit::Plugin { status, .. } | ExportUnit::Manifest { status, .. } => {
+                statuses.push(status.as_str());
+            }
+            // A kind of unit this build does not know yet.
+            _ => other += 1,
         }
     }
-    let mut parts = Vec::new();
-    if written > 0 {
-        parts.push(format!("{written} written"));
-    }
-    if unchanged > 0 {
-        parts.push(format!("{unchanged} unchanged"));
-    }
-    if drift > 0 {
-        parts.push(format!("{drift} drift"));
-    }
-    if ok > 0 {
-        parts.push(format!("{ok} ok"));
-    }
+    let mut parts = tally_words(&["written", "unchanged", "drift", "ok"], statuses);
     if stale > 0 {
         parts.push(format!("{stale} stale"));
     }
     if not_carried > 0 {
         parts.push(format!("{not_carried} not carried"));
+    }
+    if other > 0 {
+        parts.push(format!("{other} other"));
     }
     if parts.is_empty() {
         "nothing to report".to_string()
@@ -521,36 +505,13 @@ pub fn render_adopted_line(skill: &AdoptedSkill) -> String {
 
 /// `2 adopted, 1 unchanged, 1 refused` — the stderr tally for an adoption.
 ///
-/// Counted by status rather than by subtracting from the total, and the
-/// order is written out so a status the core adds next is dropped from the
-/// tally rather than mislabelled.
+/// Counted by status rather than by subtracting from the total. A status the
+/// core adds next is counted under its own word, after these.
 pub fn render_adopt_tally(skills: &[AdoptedSkill]) -> String {
-    let mut adopted = 0usize;
-    let mut updated = 0usize;
-    let mut unchanged = 0usize;
-    let mut refused = 0usize;
-    for skill in skills {
-        match skill.status {
-            AdoptStatus::Adopted => adopted += 1,
-            AdoptStatus::Updated => updated += 1,
-            AdoptStatus::Unchanged => unchanged += 1,
-            AdoptStatus::Refused => refused += 1,
-            _ => {}
-        }
-    }
-    let mut parts = Vec::new();
-    if adopted > 0 {
-        parts.push(format!("{adopted} adopted"));
-    }
-    if updated > 0 {
-        parts.push(format!("{updated} updated"));
-    }
-    if unchanged > 0 {
-        parts.push(format!("{unchanged} unchanged"));
-    }
-    if refused > 0 {
-        parts.push(format!("{refused} refused"));
-    }
+    let parts = tally_words(
+        &["adopted", "updated", "unchanged", "refused"],
+        skills.iter().map(|skill| skill.status.as_str()),
+    );
     if parts.is_empty() {
         "nothing to report".to_string()
     } else {
@@ -593,43 +554,20 @@ pub fn render_state_line(row: &AttributedState) -> String {
 /// Worst first, so the line leads with what a reader has to do something
 /// about.
 pub fn render_state_tally(rows: &[AttributedState]) -> String {
-    let mut conflict = 0usize;
-    let mut stale = 0usize;
-    let mut unknown = 0usize;
-    let mut never_published = 0usize;
-    let mut current = 0usize;
+    let mut states = Vec::new();
     let mut not_applicable = 0usize;
     let mut excluded = 0usize;
     for row in rows {
         match &row.state {
             None => excluded += 1,
             Some(RowState::NotApplicable) => not_applicable += 1,
-            Some(RowState::State(state)) => match state {
-                PublishState::Conflict => conflict += 1,
-                PublishState::Stale => stale += 1,
-                PublishState::Unknown => unknown += 1,
-                PublishState::NeverPublished => never_published += 1,
-                PublishState::Current => current += 1,
-                _ => {}
-            },
+            Some(RowState::State(state)) => states.push(state.as_str()),
         }
     }
-    let mut parts = Vec::new();
-    if conflict > 0 {
-        parts.push(format!("{conflict} conflict"));
-    }
-    if stale > 0 {
-        parts.push(format!("{stale} stale"));
-    }
-    if unknown > 0 {
-        parts.push(format!("{unknown} unknown"));
-    }
-    if never_published > 0 {
-        parts.push(format!("{never_published} never-published"));
-    }
-    if current > 0 {
-        parts.push(format!("{current} current"));
-    }
+    let mut parts = tally_words(
+        &["conflict", "stale", "unknown", "never-published", "current"],
+        states,
+    );
     if not_applicable > 0 {
         parts.push(format!("{not_applicable} {NOT_APPLICABLE}"));
     }
@@ -664,4 +602,23 @@ pub fn has_drift(rows: &[AttributedState]) -> bool {
         Some(RowState::State(state)) => check_fails_on(state),
         _ => false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tally_words;
+
+    #[test]
+    fn a_word_outside_the_order_is_counted_after_it() {
+        let parts = tally_words(
+            &["written", "unchanged", "refused"],
+            ["refused", "held", "written", "held", "written"],
+        );
+        assert_eq!(parts, ["2 written", "1 refused", "2 held"]);
+    }
+
+    #[test]
+    fn a_word_with_no_count_is_left_out() {
+        assert!(tally_words(&["written"], []).is_empty());
+    }
 }

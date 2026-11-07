@@ -188,14 +188,17 @@ breaking change:
 - The config and settings types (`MarketplaceConfig`, `PluginOverrides`,
   `RootFile`, `BuildSettings`, `MarketplaceFields`, `Placement`). Build one
   with `Default::default()` and set its fields.
-- The output types (`ExportReport`, `PublishReport`, `DiscoveredComponent`,
-  `DiscoveryWarning`). Read them by field. `DiscoveryWarning::new` builds a
-  warning for a host's own report.
+- The output types (`ExportReport`, `PublishReport`, `PublishedFile`,
+  `DiscoveryReport`, `DiscoveredComponent`, `DiscoveryWarning`,
+  `SkippedNote`, `AdoptReport`, `AdoptedSkill`, `PublishUnitStatus`). Read
+  them by field. `DiscoveryWarning::new` and `PublishedFile::new` build a line
+  for a host's own report.
 - The enums (`CoreError`, `AuthoringOp`, `ExportUnit`, `UnitStatus`,
   `StaleKind`, `PublishStatus`, `PublishOutcome`, `PublishState`,
   `AdoptStatus`, `ReasonToken`). A `match` on one needs a `_` arm. The
-  status enums have `as_str`, the word they serialize as, and
-  `CoreError::variant_name` names an error's variant.
+  status enums have `as_str`, the word they serialize as.
+  `CoreError::variant_name` names an error's variant, and
+  `CoreError::reason_token` gives the reason token a host reports for it.
 
 `LinkIndex` (for `CompileSource::links`) and `FieldValue` (for
 `FieldEdit::set`) are re-exported, so a consumer needs no `markdown-link` or

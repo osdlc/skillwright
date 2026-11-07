@@ -161,26 +161,15 @@ fn skill_collision(skills: &[DiscoveredComponent], destinations: &[Destination])
     })
 }
 
-/// Which closed-set token a thrown [`CoreError`] becomes, by variant.
+/// Which closed-set token a thrown [`CoreError`] becomes.
 ///
 /// A throw means the request failed before a file list existed, so the CLI
 /// still owes one refused line with a closed-set token. `from_refusal` reads
-/// the token out of the message; this table is the fallback for a message
-/// that carries none.
+/// the token out of the message; [`CoreError::reason_token`] is the fallback
+/// for a message that carries none.
 fn thrown_reason(err: &CoreError) -> PublishReason {
-    let fallback = match err {
-        CoreError::Projection(_) => ReasonToken::NoRenderer,
-        CoreError::PathEscapesRoot(_) => ReasonToken::UnsafePath,
-        CoreError::RootNotFound(_) => ReasonToken::Io,
-        CoreError::SkillNotFound(_) => ReasonToken::Io,
-        CoreError::Io { .. } => ReasonToken::Io,
-        CoreError::SwapFailed(_) => ReasonToken::Io,
-        CoreError::Refused(_) => ReasonToken::Io,
-        CoreError::Conflict(_) => ReasonToken::Conflict,
-        _ => ReasonToken::Io,
-    };
     let message = err.to_string();
-    PublishReason::from_refusal(normalize_thrown_reason(&message), fallback)
+    PublishReason::from_refusal(normalize_thrown_reason(&message), err.reason_token())
 }
 
 /// One `(skill, destination, target)` line's [`Attribution`], read off a
@@ -527,13 +516,14 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                     // `blocked` is the outcome for a rail that stopped the
                     // whole request: no file was classified, so none of the
                     // per-file outcomes applies.
+                    let mut file = PublishedFile::new(
+                        skill_label.clone(),
+                        PublishStatus::Refused,
+                        PublishOutcome::Blocked,
+                    );
+                    file.reason = Some(reason);
                     attributed.push(AttributedFile {
-                        file: PublishedFile {
-                            path: skill_label.clone(),
-                            status: PublishStatus::Refused,
-                            outcome: PublishOutcome::Blocked,
-                            reason: Some(reason),
-                        },
+                        file,
                         skill: skill_label.clone(),
                         destination: dest.root.display().to_string(),
                         target: dest.target.clone(),

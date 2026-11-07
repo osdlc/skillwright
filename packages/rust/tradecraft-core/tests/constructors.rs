@@ -11,8 +11,8 @@ use tradecraft_core::{
     CoreError, DiscoveryWarning, EntityKind, ExportMode, ExportRequest, ExportUnit, FieldEdit,
     FieldValue, HookFileSpec, LinkIndex, MarketplaceConfig, MarketplaceFields, MemVfs, Namespace,
     NewNote, Placement, PluginOverrides, PublishMode, PublishOutcome, PublishRequest, PublishState,
-    PublishStatus, ReasonToken, RootFile, StaleKind, StatusRequest, UnitStatus, VaultScope, Vfs,
-    discover_components, export_skills, plan_create_note, publish_skill,
+    PublishStatus, PublishedFile, ReasonToken, RootFile, StaleKind, StatusRequest, UnitStatus,
+    VaultScope, Vfs, discover_components, export_skills, plan_create_note, publish_skill,
 };
 
 #[test]
@@ -284,4 +284,44 @@ fn a_core_error_names_its_variant_and_matches_with_a_wildcard() {
         _ => "",
     };
     assert_eq!(refused, "no");
+}
+
+#[test]
+fn a_core_error_names_its_fallback_reason_token() {
+    assert_eq!(
+        CoreError::Projection("x".to_owned()).reason_token(),
+        ReasonToken::NoRenderer
+    );
+    assert_eq!(
+        CoreError::Conflict("x".to_owned()).reason_token(),
+        ReasonToken::Conflict
+    );
+    assert_eq!(
+        CoreError::Refused("x".to_owned()).reason_token(),
+        ReasonToken::Io
+    );
+}
+
+#[test]
+fn a_published_file_line_builds_from_new_and_a_skipped_note_reads_by_field() {
+    let mut file = PublishedFile::new("a", PublishStatus::Refused, PublishOutcome::Blocked);
+    assert!(file.reason.is_none());
+    file.path = "skills/a".to_owned();
+    assert_eq!(file.status.as_str(), "refused");
+
+    let vfs = MemVfs::new();
+    vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
+    vfs.write_file(
+        Path::new("/vault/skills/skillwright.md"),
+        b"---\ndescription: X.\n---\n",
+    )
+    .unwrap();
+    let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    assert!(scan.components.is_empty());
+    assert_eq!(scan.skipped[0].path, "skills/skillwright.md");
+    assert!(
+        scan.skipped[0].reason.contains("reserved-name"),
+        "{}",
+        scan.skipped[0].reason
+    );
 }

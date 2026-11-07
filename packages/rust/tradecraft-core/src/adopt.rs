@@ -316,6 +316,7 @@ impl AdoptStatus {
 
 /// One line of an [`AdoptReport`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AdoptedSkill {
     /// The adopted name: the source frontmatter's `name` slugified, or the
     /// source directory's basename where the frontmatter is silent.
@@ -342,6 +343,7 @@ pub struct AdoptedSkill {
 /// still a line — a silent skip is how an import quietly loses half its
 /// skills.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AdoptReport {
     /// One entry per skill considered, sorted by name.
     pub skills: Vec<AdoptedSkill>,
