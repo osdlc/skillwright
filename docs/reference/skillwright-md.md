@@ -258,9 +258,9 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
   harness-reference's manifest and marketplace facts. A wrong kind is refused,
   naming the block, the key and the kind, such as
   `` `codex.policy` of plugin `p` must be a mapping, not a number ``. The code is
-  `malformed` on a skill or command and `malformed-block` on a plugin or
-  marketplace. `build` and `check` stop, `list` shows the note as skipped, and
-  `publish` refuses it. Every block is checked, whichever harnesses
+  `malformed`. `build` and `check` stop, `list` shows the note as skipped, and
+  `publish` refuses it. A bad block in the root file is refused naming the
+  marketplace, or the workspace file, not each note that inherits it. Every block is checked, whichever harnesses
   `build.harnesses` selects. An agent's blocks are not checked: an agent takes no
   harness block, and `publish` refuses one for the target being published as
   `unknown-override-key`. A key the block does not accept only warns, whatever it
