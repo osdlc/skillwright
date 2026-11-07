@@ -18,11 +18,10 @@ Behaviour:
 - `Namespace::default()` is bare, so frontmatter keys are `version`, not `sw-version`. Pass `Namespace::sw()` to read the prefixed forms. `Namespace::DEFAULT_STEM` is removed. A `sw-<key>` spelling of a key the core owns is refused as `removed-key` on a bare vault.
 - `Namespace::new` refuses a stem that claims a key a renderer reads, such as `model`, `context` or `user` (from `user-invocable`), with `StemProblem::ClaimsPublishedKey`. `Namespace::PUBLISHED_KEYS` lists those keys.
 - `project_agent` refuses an agent that sets both `tools` and `allowed-tools` (`conflicting-keys`), and a `tools` that names no tool (`malformed-tools`). For Claude Code it also refuses a `tools` that is not a list or a string of names (`malformed-tools`).
-- `kind`, `plugin`, `sw-kind` and `sw-plugin` are refused: the folder decides both. `sw-overrides` is replaced by `claude:`, `codex:`, `cursor:` and `pi:` blocks, which `export_skills` now applies too. Only those four harnesses have blocks. A key a block reads with the wrong kind of value is refused (`malformed` on a component, `malformed-block` on a container).
+- `kind`, `plugin`, `sw-kind` and `sw-plugin` are refused: the folder decides both. `sw-overrides` is replaced by `claude:`, `codex:`, `cursor:` and `pi:` blocks, which `export_skills` now applies too. Only those four harnesses have blocks.
 - A note's `author`, `license`, `repository`, `homepage`, `targets` and harness blocks inherit from the nearest container on every path, so a publish can stop writing to a harness its containers exclude. A plugin's `author` no longer falls back to `owner`.
 - `marketplaces/<m>/skillwright.md` is the only marketplace note. A plugin note whose `name` differs from its folder is refused, and a `skillwright.md` directly in a kind folder is refused as a reserved name.
 - A link or embed into a folder that never ships is refused as `excluded-link`.
-- A spec key on a skill, agent or command holding the wrong kind of value is refused as `malformed`, naming the key, where it used to be carried under `metadata:`.
 - A plain `[[skill]]` renders as the skill's name, not a call. Write `/[[skill]]` for a call. The `implicit-skill-call` warning is gone.
 - Codex, Cursor and Pi call a launcher by its path relative to the skill, and the per-skill shim is no longer written. The rewrite happens only when the plugin ships an asset at `launcher_path`. With no `launcher_path` the rewrite is off.
 - Manifests drop `version` from Claude's marketplace entry and `author.url` and `owner.url` from Cursor's.
@@ -66,7 +65,6 @@ The wasm wrapper over this crate, `@osdlc/tradecraft-wasm`, is now `"private": t
 
 ### Fixed
 
-- The vault reader reads Claude Code's lenient forms: an `allowed-tools` string separated by commas, a boolean written `yes`, `no`, `on`, `off`, `1` or `0`, and an unquoted `[issue-number]` `argument-hint`. Each reaches the model, and so every harness, in its plain form. A spec key set to nothing is dropped rather than carried under `metadata:`.
 - An agent's `tools` and a numeric `temperature` reach the published agent, and its other keys are carried. `tools` was dropped, so a Claude Code agent could use every tool.
 - A command's `disable-model-invocation`, `user-invocable`, `context` and foreign keys are carried.
 - `adopt` keeps a link to a folder as written, handles escaped brackets in link labels, keeps the bundle path in wikilinks, and refuses a bundle resource named `<name>.md` as `path-collision`.

@@ -25,16 +25,15 @@ Notes and folders:
 
 - Frontmatter keys are bare by default: `version`, not `sw-version`. A `sw-<key>` spelling of a key skillwright owns is refused as `removed-key`. To keep the prefix, set `build.namespace: sw`; see [Keeping the prefix](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/guide/migrating.md#keeping-the-prefix). Keys in `skillwright.md` are always bare.
 - `kind`, `plugin`, `sw-kind` and `sw-plugin` are refused. The folder decides both: move the note under `plugins/<p>/` and `skills/`, `agents/`, `commands/` or `hooks/`. See the [structure spec](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/spec/structure-v1.md).
-- `sw-overrides` is replaced by top-level `claude:`, `codex:`, `cursor:` and `pi:` blocks. They now apply to `build` and `check` as well as `publish`, so built output can change. The other targets (`portable`, `copilot`, `opencode`) have no block, so overrides for them have no replacement. An unknown key in a block warns and is left out. A key the block reads with the wrong kind of value is refused, naming the block, the key and the kind: `malformed` on a skill or command, `malformed-block` on a plugin or marketplace. `policy.allow_implicit_invocation` is not accepted under `codex:`.
+- `sw-overrides` is replaced by top-level `claude:`, `codex:`, `cursor:` and `pi:` blocks. They now apply to `build` and `check` as well as `publish`, so built output can change. The other targets (`portable`, `copilot`, `opencode`) have no block, so overrides for them have no replacement. An unknown key in a block warns and is left out. `policy.allow_implicit_invocation` is not accepted under `codex:`.
 - `marketplaces/<m>/<m>.md` is refused. Move it to `marketplaces/<m>/skillwright.md` with bare keys. Such a marketplace takes its `version` from its own note only, never from a root file above it.
 - A plugin note whose `name` differs from its folder is refused. Rename one of them.
-- A spec key on a skill, agent or command holding the wrong kind of value is refused as `malformed`, naming the key. Before, it shipped under `metadata:`. Examples are `model: [1]`, `name: 2048` and `allowed-tools: 5`. Each key takes the type in the [field reference](https://github.com/osdlc/skillwright/blob/skillwright/v0.6.0/docs/reference/fields.md).
 - A `skillwright.md` directly in a kind folder, such as `skills/skillwright.md`, is refused as a reserved name. Move it to `skills/skillwright/skillwright.md`.
 - A plugin or marketplace note with neither `name` nor `description` is now read instead of being dropped.
 - An `author` or `owner` that is neither a name nor a mapping with a `name` is refused.
 - A plugin's `author` no longer falls back to `owner`. Set `author` in `skillwright.md` or on the plugin note to keep it in the manifests.
 - A link or embed into a folder that never ships, such as a bundle's `docs/`, `tests/` or `fixtures/`, is refused as `excluded-link`. A note with a `description` in such a folder warns `never-ships`, and `publish` refuses it.
-- Unknown keys warn as `unknown-key`. On a skill they ship under `metadata:` as YAML, and on a container or in `skillwright.md` they are ignored. `allowed-tools: Read, Grep` is not one of them: it is read as two tools, as Claude Code's docs say.
+- Unknown keys warn as `unknown-key`. On a skill they ship under `metadata:` as YAML, and on a container or in `skillwright.md` they are ignored. This includes `allowed-tools: Read, Grep`: the comma form is not read as the key, so use a list or the space-separated form.
 - An agent that sets both `tools` and `allowed-tools` is refused as `conflicting-keys`. A `tools` that names no tool is refused as `malformed-tools`. So is a `tools` that is not a list or a string of names, when the agent publishes to Claude Code.
 - `check --fix-adopt-hashes` is needed after moving an adopted note to the new keys. Adopt provenance now sits in one `adopted:` block, and `adopt` no longer writes `kind` or `plugin`.
 
@@ -76,9 +75,6 @@ The bundled `skillwright` plugin moved too: its note carries `version`, and its 
 
 ### Fixed
 
-- A skill's or command's `user-invocable` and `disable-model-invocation` read `yes`, `no`, `on`, `off`, `1` and `0` in any case, as Claude Code's docs say, and every harness gets `true` or `false`. Before, such a value shipped under `metadata:`, so `user-invocable: no` left the skill invocable.
-- An unquoted `argument-hint: [issue-number]`, which YAML reads as a list, ships as the hint `"[issue-number]"`, bare or in a `claude:` block.
-- A spec key set to nothing is dropped. Before, it shipped as `null` under `metadata:`.
 - An agent's `tools` reaches Claude Code. It was dropped, so the published agent could use every tool.
 - A command's `disable-model-invocation`, `user-invocable` and `context` are carried to the built command.
 - `list` shows the roster with colliding rows flagged and exits 2, instead of failing.
