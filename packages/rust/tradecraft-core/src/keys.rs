@@ -5,7 +5,8 @@
 //! * **The publish strip.** A key skillwright owns ([`Owner::Skillwright`])
 //!   is read into the model and never reaches a destination as written.
 //! * **Validation.** A key outside the table for a note's kind is unknown,
-//!   and gets a warning. It is never refused. A key of ours with the wrong
+//!   and gets a warning. Only a removed key or, with no namespace, an old
+//!   prefixed spelling ([`legacy_key`]) is refused. A key of ours with the wrong
 //!   [`Shape`] is refused when the note is read; [`Owner::Spec`] keys keep
 //!   their own readers in [`crate::vault`], so their shape is documentation.
 //! * **The cascade.** [`KeySpec::inherits`] decides which keys come down from
@@ -57,7 +58,7 @@ pub enum Shape {
     Arguments,
     /// A mapping of one harness's own keys.
     HarnessBlock,
-    /// The `{source, format, hash, at}` block adoption writes.
+    /// The `{source, format, source_hash, hash, at, also_at}` block adoption writes.
     Adopted,
 }
 
@@ -105,7 +106,7 @@ pub struct KeySpec {
     /// What its value must be.
     pub shape: Shape,
     /// Whether a note leaving it out takes it from the nearest container that
-    /// sets it: the plugin note, the marketplace note, then `skillwright.md`,
+    /// sets it: the plugin note, then `skillwright.md`,
     /// which holds what the workspace file gave it.
     pub inherits: bool,
     /// One line for the field reference.
@@ -133,6 +134,64 @@ pub const BLOCK_IDENTITY_KEYS: &[&str] =
 /// note sits in decides its kind and its plugin.
 pub const REMOVED: &[&str] = &["kind", "plugin"];
 
+/// The stems a vault used before keys were bare.
+const LEGACY_STEMS: &[&str] = &["sw"];
+
+/// The guide a refusal of an old spelling points to.
+pub const MIGRATING_GUIDE: &str =
+    "https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md";
+
+/// Old prefixed keys whose new home is not the same word, bare, and the fix
+/// for each. `build.namespace` does not help these.
+const LEGACY_MOVED: &[(&str, &str)] = &[
+    ("kind", "delete it and move the note into the right folder"),
+    (
+        "plugin",
+        "delete it and move the note into the right folder",
+    ),
+    (
+        "overrides",
+        "move each entry to a block named for the harness",
+    ),
+    ("source", "move it to `adopted.source`"),
+    ("format", "move it to `adopted.format`"),
+    ("source-hash", "move it to `adopted.source_hash`"),
+    ("adopted-hash", "move it to `adopted.hash`"),
+    ("adopted-at", "move it to `adopted.at`"),
+    ("also-at", "move it to `adopted.also_at`"),
+];
+
+/// The fix for `key`, when it is an old prefixed spelling of a key skillwright
+/// owns. A `sw-` key that matches nothing is not one.
+pub fn legacy_key(key: &str) -> Option<String> {
+    let (stem, rest) = key.split_once('-')?;
+    let stem = LEGACY_STEMS.iter().find(|known| **known == stem)?;
+    if let Some((_, fix)) = LEGACY_MOVED.iter().find(|(old, _)| *old == rest) {
+        return Some((*fix).to_owned());
+    }
+    let bare = rest.replace('-', "_");
+    is_skillwright_key(&bare)
+        .then(|| format!("rename it `{bare}`, or set `build.namespace: {stem}` to keep the prefix"))
+}
+
+/// The fix for the first old prefixed key in a nested `sw:` block, when `key`
+/// is a stem and `value` a mapping holding one.
+pub fn legacy_block(key: &str, value: &Value) -> Option<String> {
+    if !LEGACY_STEMS.contains(&key) {
+        return None;
+    }
+    value
+        .as_object()?
+        .keys()
+        .find_map(|field| legacy_key(&format!("{key}-{field}")))
+}
+
+/// Whether any kind's row owns `key`.
+pub fn is_skillwright_key(key: &str) -> bool {
+    KEYS.iter()
+        .any(|spec| spec.key == key && spec.owner == Owner::Skillwright)
+}
+
 /// Every key skillwright reads, in the order the field reference lists them.
 pub const KEYS: &[KeySpec] = &[
     KeySpec {
@@ -149,7 +208,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: false,
-        summary: "What it does. A component with no description is not published.",
+        summary: "What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published.",
     },
     KeySpec {
         key: "version",
@@ -237,7 +296,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::StringList,
         inherits: true,
-        summary: "Which harnesses get it. Absent means all; `[]` means none.",
+        summary: "Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused.",
     },
     KeySpec {
         key: "arguments",
@@ -445,9 +504,117 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::Adopted,
         inherits: false,
-        summary: "Where adoption read the note from: `{source, format, hash, at}`. Written by `adopt`.",
+        summary: "Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`.",
     },
 ];
+
+/// The heading and order of each kind in the field reference.
+const REFERENCE_KINDS: &[(EntityKind, &str)] = &[
+    (Marketplace, "Marketplace"),
+    (Plugin, "Plugin"),
+    (Skill, "Skill"),
+    (Agent, "Agent"),
+    (Command, "Command"),
+    (Hook, "Hook"),
+];
+
+impl Shape {
+    /// The shape as the field reference words it.
+    const fn label(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Url => "URL",
+            Self::StringList => "list of strings",
+            Self::Bool => "boolean",
+            Self::Number => "number",
+            Self::Person => "string or `{name, email, url}`",
+            Self::StringMap => "map of strings",
+            Self::Arguments => "list of arguments",
+            Self::HarnessBlock => "harness block",
+            Self::Adopted => "adopted block",
+        }
+    }
+}
+
+/// The per-kind field reference, in Markdown. `docs/reference/fields.md` is
+/// this text, and a test holds the two together.
+#[must_use]
+pub fn field_reference() -> String {
+    let mut out = String::from(
+        "# Field reference\n\n\
+         Generated from the key table in `tradecraft-core`. Do not edit this file: \
+         run `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --test field_reference` \
+         from `packages/rust`.\n\n\
+         The kind of a note comes from its folder. A key not listed for a kind gets a \
+         warning and is never refused. Owner `skillwright` means the key is read into \
+         the model and stripped at publish, and takes the prefix under \
+         `build.namespace`. Owner `spec` means the key belongs to the Agent Skills \
+         spec or a harness, and is never prefixed. An inherited key comes from the \
+         nearest container that sets it: the plugin note, then `skillwright.md`, \
+         then the workspace.\n",
+    );
+    for (kind, heading) in REFERENCE_KINDS {
+        out.push_str(&format!(
+            "\n## {heading}\n\n\
+             | Key | Value | Owner | Inherited | Meaning |\n\
+             |---|---|---|---|---|\n"
+        ));
+        for spec in KEYS.iter().filter(|spec| spec.kinds.contains(kind)) {
+            let owner = match spec.owner {
+                Owner::Spec => "spec",
+                Owner::Skillwright => "skillwright",
+            };
+            let inherited = if spec.inherits { "yes" } else { "no" };
+            out.push_str(&format!(
+                "| `{}` | {} | {owner} | {inherited} | {} |\n",
+                spec.key,
+                spec.shape.label(),
+                spec.summary
+            ));
+        }
+    }
+    out.push_str(
+        "\n## Harness blocks\n\n\
+         A block holds fields only that harness reads. These are the keys each block \
+         accepts, by the kind of note it sits on. Any other key gets a warning on a \
+         container and is refused on a component.\n",
+    );
+    for harness in HARNESS_BLOCKS {
+        let Some(profile) = crate::harness::profile_named(harness) else {
+            continue;
+        };
+        out.push_str(&format!("\n### `{harness}:`\n\n"));
+        let list = |keys: &[&str]| {
+            let mut keys = keys.to_vec();
+            keys.sort_unstable();
+            keys.dedup();
+            let keys: Vec<String> = keys.iter().map(|key| format!("`{key}`")).collect();
+            if keys.is_empty() {
+                "none".to_owned()
+            } else {
+                keys.join(", ")
+            }
+        };
+        let component = profile.accepted_override_keys();
+        let component: Vec<&str> = component.iter().map(String::as_str).collect();
+        out.push_str(&format!("- Component: {}\n", list(&component)));
+        let Some(format) = profile.plugin.as_ref() else {
+            continue;
+        };
+        let mut plugin = component.clone();
+        plugin.extend(format.manifest_fields);
+        plugin.extend(format.entry_fields);
+        if *harness == "pi" {
+            plugin.push(crate::harness::manifest::NAMING_KEY);
+        }
+        out.push_str(&format!("- Plugin: {}\n", list(&plugin)));
+        let mut marketplace = plugin.clone();
+        marketplace.extend(format.marketplace_fields);
+        marketplace.push(crate::harness::manifest::PACKS_KEY);
+        out.push_str(&format!("- Marketplace: {}\n", list(&marketplace)));
+    }
+    out
+}
 
 /// The table's entry for `key` on a note of `kind`, if it lists one.
 pub fn lookup(kind: EntityKind, key: &str) -> Option<&'static KeySpec> {

@@ -246,6 +246,11 @@ pub struct PublishRequest {
     /// at once would make the decision invisible at the moment it is taken.
     #[serde(default)]
     pub overwrite: Vec<String>,
+    /// `destination_root` is the home directory, and files land in the
+    /// harness's user folders rather than its project folders. The two differ
+    /// for Pi, whose user skills are `.pi/agent/skills`.
+    #[serde(default)]
+    pub user_folders: bool,
 }
 
 /// Whether a publish writes, or only reports what it would write.
@@ -327,6 +332,8 @@ pub enum ReasonToken {
     EmptyPlugin,
     /// The note carries both our nested block and our flat keys.
     MixedFrontmatterShape,
+    /// `build.exclude` or a folder that never ships holds the note.
+    ExcludedNote,
     /// Not a refusal, and the one token here that names a success: the file
     /// was already byte-identical to our own output, so this run claimed it
     /// into the destination's manifest. The table's refusal set is
@@ -369,6 +376,7 @@ impl ReasonToken {
         Self::MemberUnresolved,
         Self::EmptyPlugin,
         Self::MixedFrontmatterShape,
+        Self::ExcludedNote,
     ];
 
     /// The wire spelling, which prose never varies from.
@@ -391,6 +399,7 @@ impl ReasonToken {
             Self::MemberUnresolved => "member-unresolved",
             Self::EmptyPlugin => "empty-plugin",
             Self::MixedFrontmatterShape => "mixed-frontmatter-shape",
+            Self::ExcludedNote => "excluded-note",
             Self::Claimed => "claimed",
             Self::RedundantOverride => "redundant-override",
             Self::Overwritten => "overwritten",
@@ -625,6 +634,8 @@ pub struct PublishReport {
 ///   name this build does not know. The same name in `targets` never
 ///   reaches here — it is a blocker, so it comes back *inside* the report,
 ///   stamped on every projected file.
+/// * `refused: excluded-note` when `build.exclude` or a folder that never ships
+///   holds the note.
 /// * A destination the note's `targets` excludes is `Ok` with an empty
 ///   report and [`PublishReport::not_published`] set. See the module doc.
 pub fn publish_skill(
@@ -654,7 +665,8 @@ fn publish_onto(
     let runtime_target = runtime_target_for(&request.target);
     // The folder holding the note decides its kind, before the read: the
     // kind says which of the note's keys are skillwright's.
-    let resolved = publish_kind(request.skills_root.as_deref(), &request.skill_path);
+    refuse_excluded(vfs, request)?;
+    let resolved = publish_kind(vfs, request.skills_root.as_deref(), &request.skill_path);
     let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
     // Everything a renderer cannot take is refused here, before the renderer
@@ -690,10 +702,10 @@ fn publish_onto(
         &requested,
         ns,
     )?;
-    let plugin = request
-        .skills_root
-        .as_deref()
-        .and_then(|root| crate::discover::folder_placement(root, &request.skill_path).plugin);
+    let plugin = request.skills_root.as_deref().and_then(|root| {
+        let patterns = crate::patterns::Patterns::read(vfs, root);
+        crate::discover::folder_placement_with(&patterns, root, &request.skill_path).plugin
+    });
     cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
 
     // `targets`, decided before anything is projected (see the module
@@ -934,6 +946,22 @@ fn refuse_agent_overrides(
     ))
 }
 
+/// A project-relative path as it lands under the home directory: the
+/// harness's project folder swapped for its user folder.
+fn user_folder_path(canonical: &str, relative: &str) -> String {
+    let format = crate::harness::profile_named(canonical).and_then(|p| p.plugin.as_ref());
+    let bases = format.and_then(|format| {
+        Some((
+            format.skills_dir.strip_suffix("skills")?,
+            format.user_skills_dir.strip_suffix("skills")?,
+        ))
+    });
+    match bases.and_then(|(project, user)| Some((relative.strip_prefix(project)?, user))) {
+        Some((rest, user)) => format!("{user}{rest}"),
+        None => relative.to_owned(),
+    }
+}
+
 /// The half every kind shares: the rail, the `targets` blocker, the
 /// manifest, and the write.
 ///
@@ -959,6 +987,16 @@ fn finish(
     replaced_manifest: Option<&str>,
     redundant_overrides: &[PublishReason],
 ) -> Result<PublishReport, CoreError> {
+    let mut files = files;
+    let mut relocated_entry = entry_output.map(str::to_owned);
+    if request.user_folders {
+        for file in &mut files {
+            file.relative_path = user_folder_path(canonical, &file.relative_path);
+        }
+        relocated_entry = relocated_entry.map(|path| user_folder_path(canonical, &path));
+    }
+    let entry_output = relocated_entry.as_deref();
+
     // The rail, before any byte is written.
     let rail = match request.skills_root.as_deref() {
         // The vault root is known and this host can see links, so the rail
@@ -1050,13 +1088,46 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
     }
 }
 
+/// Refuses a note `build.exclude` or a folder that never ships holds, named or
+/// not: what never ships from a build does not ship from a publish either.
+fn refuse_excluded(vfs: &dyn Vfs, request: &PublishRequest) -> Result<(), CoreError> {
+    let Some(root) = request.skills_root.as_deref() else {
+        return Ok(());
+    };
+    let Ok(relative) = request.skill_path.strip_prefix(root) else {
+        return Ok(());
+    };
+    let relative = crate::skill::forward_slashed(relative);
+    let patterns = crate::patterns::Patterns::read(vfs, root);
+    if patterns.excluded(&relative) {
+        return Err(CoreError::refused(
+            "excluded-note",
+            format!("{relative} matches `build.exclude`, so it never ships"),
+        ));
+    }
+    if patterns.never_ships(&relative) {
+        return Err(CoreError::refused(
+            "excluded-note",
+            format!("{relative} is in a folder that never ships"),
+        ));
+    }
+    Ok(())
+}
+
 /// The kind a publish of the note at `skill_path` resolves to: the kind
 /// folder holding it, else a skill. Shared with [`crate::status::status_of`]
 /// so status and publish agree on what a unit is.
-pub(crate) fn publish_kind(skills_root: Option<&Path>, skill_path: &Path) -> ResolvedKind {
+pub(crate) fn publish_kind(
+    vfs: &dyn Vfs,
+    skills_root: Option<&Path>,
+    skill_path: &Path,
+) -> ResolvedKind {
     resolve_kind(KindHints {
         requested: None,
-        folder: skills_root.and_then(|root| crate::discover::folder_kind(root, skill_path)),
+        folder: skills_root.and_then(|root| {
+            let patterns = crate::patterns::Patterns::read(vfs, root);
+            crate::discover::folder_placement_with(&patterns, root, skill_path).kind
+        }),
     })
 }
 
@@ -2071,6 +2142,7 @@ mod tests {
             config: None,
             skill_path: PathBuf::from("/vault/skills/code-review/code-review.md"),
             destination_root: PathBuf::from(destination_root),
+            user_folders: false,
             target: target.to_owned(),
             mode: PublishMode::Write,
             // These fixtures sit at `<root>/skills/<name>.md`, a shape the
@@ -2688,6 +2760,7 @@ mod tests {
             config: None,
             skill_path: vault.join("skills/code-review/code-review.md"),
             destination_root: tmp.join("dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: None,
@@ -2854,6 +2927,7 @@ mod tests {
             config: None,
             skill_path: PathBuf::from("/home/.claude/skills/code-review/code-review.md"),
             destination_root: PathBuf::from("/home"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/home/.claude")),
@@ -2923,6 +2997,7 @@ mod tests {
                 config: None,
                 skill_path: vault.join("skills/code-review/code-review.md"),
                 destination_root: home.clone(),
+                user_folders: false,
                 target: "claude".to_owned(),
                 mode,
                 skills_root: Some(vault.clone()),
@@ -2958,6 +3033,7 @@ mod tests {
             config: None,
             skill_path: vault.join("skills/code-review/code-review.md"),
             destination_root: home.clone(),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(vault.clone()),
@@ -3010,6 +3086,7 @@ mod tests {
             config: None,
             skill_path: vault.join("library/code-review/code-review.md"),
             destination_root: home.clone(),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(vault.clone()),
@@ -3266,6 +3343,7 @@ mod tests {
             config: None,
             skill_path: PathBuf::from("/vault/agents/senior-reviewer.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -3439,6 +3517,7 @@ mod tests {
             config: None,
             skill_path: PathBuf::from("/vault/commands/ship.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: target.to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -3617,6 +3696,7 @@ mod tests {
             config: None,
             skill_path: PathBuf::from("/vault/skills/review.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -3858,6 +3938,7 @@ mod tests {
             config: None,
             skill_path: PathBuf::from("/vault/marketplaces/house/plugins/git-tools/git-tools.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: target.to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -4088,6 +4169,30 @@ mod tests {
     }
 
     #[test]
+    fn a_standalone_mention_names_the_skill_bare_and_is_recorded() {
+        let vfs = vault_with_commit_body("See [[rebase-guide]].\n");
+        publish_skill(&vfs, &commit_helper_request("claude"), &sw()).unwrap();
+
+        let body = text_at(&vfs, "/dest/.claude/skills/commit-helper/SKILL.md");
+        assert!(body.contains("See `rebase-guide`."), "{body}");
+        let manifest = manifest_of(&vfs, "/dest");
+        let entry = manifest
+            .get(".claude/skills/commit-helper/SKILL.md")
+            .expect("the skill is recorded");
+        assert_eq!(entry.calls, vec!["rebase-guide".to_owned()]);
+    }
+
+    #[test]
+    fn a_pack_mention_names_the_skill_under_its_plugin() {
+        let vfs = vault_with_commit_body("See [[rebase-guide]].\n");
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+
+        let path = ".claude/skills/git-tools/skills/commit-helper/SKILL.md";
+        let body = text_at(&vfs, &format!("/dest/{path}"));
+        assert!(body.contains("See `git-tools:rebase-guide`."), "{body}");
+    }
+
+    #[test]
     fn a_pack_call_names_the_skill_under_its_plugin() {
         let vfs = vault_with_commit_body("Then run /[[rebase-guide]].\n");
         publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
@@ -4138,7 +4243,7 @@ mod tests {
         with_dup(&vfs);
         publish_skill(&vfs, &commit_helper_request("claude"), &sw()).unwrap();
 
-        // A plain link is read as a call only when the index can be built.
+        // A plain link is read as a mention only when the index can be built.
         let vfs = vault_with_commit_body("See [[rebase-guide]]. Also [[nowhere]].\n");
         with_dup(&vfs);
         publish_skill(&vfs, &commit_helper_request("claude"), &sw()).unwrap();
@@ -4632,6 +4737,7 @@ mod tests {
             config: None,
             skill_path: PathBuf::from("/vault/skills/code-review.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
@@ -4806,14 +4912,11 @@ mod tests {
         // keyed by the runtime rather than the destination would hand
         // `portable` the `codex` block. The block is keyed by the destination
         // it names, and `portable` is not that destination.
-        let block = "sw-codex:\n  policy.allow_implicit_invocation: true\n";
+        let block = "sw-codex:\n  compatibility: codex only\n";
         let vfs = vault_with_overrides(block);
         publish_skill(&vfs, &request("/dest", "portable"), &sw()).unwrap();
         let portable = published_skill_md(&vfs, "/dest/.agents/skills/code-review/SKILL.md");
-        assert!(
-            !portable.contains("policy.allow_implicit_invocation"),
-            "{portable}"
-        );
+        assert!(!portable.contains("codex only"), "{portable}");
     }
 
     #[test]
@@ -4921,6 +5024,7 @@ mod tests {
                 "member-unresolved",
                 "empty-plugin",
                 "mixed-frontmatter-shape",
+                "excluded-note",
             ]
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));

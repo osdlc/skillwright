@@ -1,6 +1,6 @@
 ---
 name: skillwright-publish
-description: "Publish and build a skillwright vault into the formats of Claude Code, Codex, Cursor and Pi: `publish` notes into a project or home directory, `build` plugin marketplaces, `check` and `status` for drift, and `harness install`, `update` and `uninstall` to register a built marketplace with a harness. Use when asked to publish or ship skills, build the marketplace, find out why a published skill differs from its note, fix a drift failure, or install the plugins into Claude Code, Codex or Cursor."
+description: "Publish and build a skillwright vault into the formats of Claude Code, Codex, Cursor and Pi: `publish` notes into a project or home directory, `build` plugin marketplaces, `check` and `status` for drift, and `harness install`, `update` and `uninstall` to register a built marketplace with a harness, and `harness link` to symlink built skills into a harness for a fast edit loop. Use when asked to publish or ship skills, build the marketplace, find out why a published skill differs from its note, fix a drift failure, or install the plugins into Claude Code, Codex, Cursor or Pi."
 license: MIT OR Apache-2.0
 ---
 
@@ -17,7 +17,7 @@ There are two ways out of a vault:
 - `publish` writes notes into destinations: a project or home folder a harness reads, such as
   `.claude/skills/<name>/SKILL.md`. It records what it wrote in `.skillwright/manifest.json` at
   each destination.
-- `build` renders the whole vault into plugin marketplaces under `marketplace.out`:
+- `build` renders the whole vault into plugin marketplaces under the output folder:
   `.claude-plugin/` (Claude Code), `.agents/` (Codex), `.cursor-plugin/` (Cursor) and `.pi/`
   (Pi), each with its packs and marketplace manifest. Pi has no marketplace manifest; a Pi pack
   installs by path.
@@ -25,9 +25,13 @@ There are two ways out of a vault:
 ## Publish to a destination
 
 1. Run `skillwright publish --dry-run` to see the plan. With no note named, it publishes every
-   unit (`--all`). Name notes by vault-relative path to narrow it. `--to <root>` (repeatable)
-   picks destinations other than the configured ones; `--target <target>` narrows to one harness,
-   such as `claude-code`, `codex`, `cursor` or `pi`.
+   skill on its own (`--all`), and writes no plugin manifests. Two skills that would land on one
+   folder, such as `review` in two plugins, stop the run with `path-collision`, naming both notes:
+   publish one by naming its note, or rename one. Name a note by vault-relative path to
+   publish that note, or a plugin note to publish its whole pack. `--to <root>` (repeatable) picks
+   destinations other than the configured ones, and needs `--target <target>`. `--target` alone
+   narrows to one harness, such as `claude-code`, `codex`, `cursor` or `pi`. A destination inside
+   the vault is refused `unsafe-root`.
 2. Run it again with `--yes`.
 3. If a file is refused because it was edited at the destination, decide which copy wins. To keep
    the note's version, run again with `--overwrite <path>`, using the path exactly as the refusal
@@ -37,34 +41,68 @@ There are two ways out of a vault:
 
 ## Build a marketplace
 
-1. Run `skillwright build --dry-run`, then `skillwright build --yes`. `--out <path>` overrides
-   `marketplace.out`. `--watch` rebuilds on every save until interrupted.
-2. Read the warnings. A plugin with no `sw-version` is published as `0.1.0`; set the key.
-3. Verify with `skillwright check`. It writes nothing and exits 1 on drift, so it suits CI. Fix
+1. `build` and `check` need an output folder: `--out <path>`, or `build.out` in `skillwright.md`.
+   There is no default. `out: .` builds beside `skillwright.md`, which makes the repository
+   installable as a marketplace.
+2. Run `skillwright build --dry-run`, then `skillwright build --yes`. `--watch` rebuilds on every
+   save until interrupted. In a workspace, `--marketplace <name>` picks one marketplace.
+3. Read the warnings. A plugin with no `version` is published as `0.1.0`; set the key. Only the plugin of a root `skills/` folder takes `version` from `skillwright.md`, so set it there. A `plugins/<marketplace>/` plugin takes its own note's `version`.
+4. Verify with `skillwright check`. It writes nothing and exits 1 on drift, so it suits CI. Fix
    drift by changing the note and building again; a hand edit to a built file is drift.
 
-`build` owns everything under each harness root it writes. A plugin directory there that the
-vault does not produce is swept as stale. Do not build into a tree that holds another tool's
-plugins.
+Changing `build.out` or a `packs` value leaves the old folder behind, and nothing records it. Delete
+the old folder. A moved `out` reports nothing. A harness's default packs folder gets a `stale-output`
+warning. A non-default `packs` folder inside the vault reads as source, so `build` and `check` stop,
+and the message says an earlier build wrote the file.
+
+A build replaces only what skillwright owns: each harness's packs folder and the manifests it
+writes. Everything else in those harness folders stays. A pack in a packs folder that the vault
+does not produce is swept as stale, so do not share a packs folder with another tool.
 
 ## Install into a harness
 
 Register the built marketplace with a harness and install its plugins:
 
 ```sh
-skillwright harness install claude [--plugin <name>] [--scope user|project|local]
-skillwright harness update claude    # installs what is missing, updates changed versions
-skillwright harness uninstall claude [--marketplace]
+skillwright harness install claude --yes [--plugin <name>] [--scope user|project|local]
+skillwright harness update claude --yes    # installs what is missing, updates changed versions
+skillwright harness uninstall claude --yes [--marketplace]
 ```
 
-- The harness is `claude`, `codex` or `cursor`. Each verb runs that harness's own `plugin`
-  command (`claude plugin`, `codex plugin`, `cursor-agent plugin`), which must be on `PATH`.
-- `--plugin` is repeatable and defaults to `marketplace.default_plugin`.
+- The harness is `claude`, `codex`, `cursor` or `pi`. `--yes` is needed when not running
+  interactively. Each verb runs that harness's own command (`claude plugin`, `codex plugin`,
+  `cursor-agent plugin`, `pi install`), which must be on `PATH`.
+- `--plugin` is repeatable and defaults to every plugin the built tree holds.
 - Codex and Cursor support user scope only. Cursor needs `--git-url <url>` for install and update.
 - `--path <path>` names the built marketplace folder; `--git-url <url>` and `--git-ref <ref>`
   register it from git instead.
 - `--marketplace` on uninstall also removes the registration.
 - Running a harness verb a second time changes nothing.
+- Pi has no marketplace. Install runs `pi install <pack>` for each plugin's built pack, with
+  `-l` for `--scope project`. Pi reads a local pack in place, so update only installs what is
+  missing. Pi has no recorded remove command: uninstall prints which entry to delete from Pi's
+  `settings.json`.
+
+## Link for a fast edit loop
+
+```sh
+skillwright harness link claude [--plugin <name>]   # symlink built skills into ~/.claude/skills
+skillwright harness unlink claude                   # remove those links
+```
+
+- The harness is `claude` or `codex`. Each built skill folder is linked into its user skill
+  folder: `~/.claude/skills` or `~/.agents/skills`. A rebuild, or `build --watch`, then reaches
+  the harness with no install.
+- Cursor and Pi are refused: harness-reference does not yet record whether they follow a
+  symlinked skill folder.
+- Cursor and Pi also read `~/.agents/skills`, so `link codex` gives them the Codex builds too. The
+  run prints a warning.
+- Every built plugin is linked unless `--plugin` is given.
+- A real folder, or a link to somewhere else, is never replaced: that skill is refused. Unlink
+  removes only links into the build, including links to skills that are no longer built, and works
+  when the build folder is gone.
+- A linked skill loads on its own, so the harness calls it by its bare name, not
+  `plugin:skill`.
 
 ## Exit codes
 
@@ -74,7 +112,7 @@ skillwright harness uninstall claude [--marketplace]
 | 1 | done, but something was refused, or `check` found drift |
 | 2 | a run-level blocker; nothing was attempted |
 | 3 | usage error |
-| 4 | no configuration found |
+| 4 | no vault found, or `build` or `check` has no output folder |
 | 130 | interrupted, such as Ctrl-C ending `build --watch` |
 
 The report is on stdout; progress and errors are on stderr. `--json` prints the report as one

@@ -20,6 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config: None,
         skill_path: PathBuf::from("/vault/skills/code-review.md"),
         destination_root: PathBuf::from("/project"),
+        user_folders: false,
         target: "claude-code".to_owned(),
         mode: PublishMode::Write,
         skills_root: None,

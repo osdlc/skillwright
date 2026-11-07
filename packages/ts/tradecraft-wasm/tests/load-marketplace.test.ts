@@ -17,7 +17,7 @@ test('loadMarketplace returns the model with calls resolved', () => {
     mkdirSync(path.join(skills, 'review'), { recursive: true })
     mkdirSync(path.join(skills, 'lint'), { recursive: true })
     writeFileSync(
-      path.join(vault, 'marketplaces/house/house.md'),
+      path.join(vault, 'marketplaces/house/skillwright.md'),
       '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
     )
     writeFileSync(

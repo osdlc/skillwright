@@ -10,6 +10,7 @@ pub mod adopt;
 pub mod authoring;
 pub mod bump;
 pub mod harness;
+pub mod init;
 pub mod list;
 pub mod marketplace;
 pub mod publish;

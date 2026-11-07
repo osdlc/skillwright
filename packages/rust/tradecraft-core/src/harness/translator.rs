@@ -30,6 +30,7 @@ use std::path::Path;
 
 use agent_adapt::RuntimeId;
 
+use super::manifest::packs_of;
 use super::manifest::{
     claude_marketplace_manifest, codex_marketplace_manifest, cursor_marketplace_manifest,
     pi_package_manifest, render_plugin_manifest,
@@ -157,8 +158,9 @@ pub trait HarnessTranslator: Sync {
     ///
     /// `refused: published-name-invalid` — a prefixed name the Agent Skills
     /// spec does not admit.
-    fn published_name(&self, plugin: &str, skill: &str) -> Result<String, CoreError> {
-        crate::export::published_skill_name(naming(self.profile()), plugin, skill)
+    fn published_name(&self, plugin: &Plugin, skill: &str) -> Result<String, CoreError> {
+        let naming = naming(self.profile(), &plugin.bare_on);
+        crate::export::published_skill_name(naming, &plugin.name, skill)
     }
 
     /// A call, as this harness invokes the skill it names.
@@ -173,7 +175,7 @@ pub trait HarnessTranslator: Sync {
             call,
             profile.name,
             Some(profile.declaration),
-            naming(profile),
+            naming(profile, &call.bare_on),
         )
     }
 
@@ -259,7 +261,7 @@ pub trait HarnessTranslator: Sync {
             let Some(skills) = self.write_pack(
                 plugin,
                 &market.config,
-                &format!("{}/{name}", format.packs),
+                &format!("{}/{name}", packs_of(&market.config, self.profile())),
                 Layout::Marketplace,
                 ns,
                 &mut tree,
@@ -387,11 +389,11 @@ pub trait HarnessTranslator: Sync {
     ) -> Result<(), CoreError> {
         let profile = self.profile();
         let format = self.format();
-        let published = self.published_name(&plugin.name, &skill.name)?;
+        let published = self.published_name(plugin, &skill.name)?;
         let skill_dir = format!("skills/{published}");
         let mut projection = projection_of(skill, |body| self.render_body(body, Some(&skill_dir)))?;
         projection.content.name = published.clone();
-        if format.naming == SkillNaming::PluginPrefixed {
+        if naming(profile, &plugin.bare_on) == SkillNaming::PluginPrefixed {
             projection.content.body =
                 rewrite_sibling_paths(&projection.content.body, &plugin.name, siblings);
         }
@@ -548,7 +550,8 @@ pub fn write_component(
 }
 
 /// A call at `canonical`, written in `runtime`'s syntax, a skill of a plugin
-/// named by `naming`.
+/// named by `naming`. A mention is the skill's name as that harness
+/// qualifies it, with no call sigil.
 fn render_call(
     call: &Call,
     canonical: &str,
@@ -559,17 +562,32 @@ fn render_call(
     let Some(runtime) = runtime else {
         return Ok(call.skill.name.clone());
     };
-    match &call.skill.plugin {
+    let rendered = match &call.skill.plugin {
         Some(plugin) => {
-            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)
+            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)?
         }
-        None => crate::export::checked_skill_call(runtime, None, &call.skill.name),
+        None => crate::export::checked_skill_call(runtime, None, &call.skill.name)?,
+    };
+    if !call.mention {
+        return Ok(rendered);
+    }
+    let prefix = runtime.skill_call_syntax().prefix;
+    match rendered.strip_prefix(prefix) {
+        Some(name) => Ok(name.to_owned()),
+        None => Err(CoreError::refused(
+            "skill-call-invalid",
+            format!("the {runtime:?} call `{rendered}` does not start with `{prefix}`"),
+        )),
     }
 }
 
-/// How a harness names a published skill; [`SkillNaming::Bare`] for a row
-/// with no plugin format, where no skill has a plugin.
-fn naming(profile: &HarnessProfile) -> SkillNaming {
+/// How a harness names a published skill of a plugin that says it is bare on
+/// the harnesses in `bare_on`; [`SkillNaming::Bare`] for a row with no plugin
+/// format, where no skill has a plugin.
+fn naming<S: AsRef<str>>(profile: &HarnessProfile, bare_on: &[S]) -> SkillNaming {
+    if bare_on.iter().any(|name| name.as_ref() == profile.name) {
+        return SkillNaming::Bare;
+    }
     profile
         .plugin
         .as_ref()
@@ -638,16 +656,15 @@ fn refuse_prefixed_collisions<T: HarnessTranslator + ?Sized>(
         return Ok(());
     }
     let mut published: BTreeMap<String, &Component> = BTreeMap::new();
-    for (plugin, group) in &market.plugins {
+    for group in market.plugins.values() {
         for skill in group.skills.iter().filter(|c| translator.admits(c)) {
-            let name = translator.published_name(plugin, &skill.name)?;
+            let name = translator.published_name(group, &skill.name)?;
             if let Some(first) = published.insert(name.clone(), skill) {
                 return Err(CoreError::refused(
                     "path-collision",
                     format!(
-                        "`{}` and `{}` both publish as skill `{name}` on the {} root, which \
-                         prefixes each skill with its plugin — two skills cannot publish under \
-                         one name",
+                        "`{}` and `{}` both publish as skill `{name}` on the {} root, which has \
+                         no plugin namespace: two skills cannot publish under one name",
                         first.path,
                         skill.path,
                         translator.profile().name
@@ -825,7 +842,7 @@ impl HarnessTranslator for Claude {
     ) -> Option<String> {
         Some(claude_marketplace_manifest(
             listed,
-            self.format().packs,
+            packs_of(config, self.profile()),
             name,
             config,
         ))
@@ -849,7 +866,7 @@ impl HarnessTranslator for Codex {
     ) -> Option<String> {
         Some(codex_marketplace_manifest(
             listed,
-            self.format().packs,
+            packs_of(config, self.profile()),
             name,
             config,
         ))
@@ -873,7 +890,7 @@ impl HarnessTranslator for Cursor {
     ) -> Option<String> {
         Some(cursor_marketplace_manifest(
             listed,
-            self.format().packs,
+            packs_of(config, self.profile()),
             name,
             config,
         ))

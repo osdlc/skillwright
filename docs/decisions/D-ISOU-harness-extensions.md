@@ -1,7 +1,8 @@
 # D-ISOU: Harness-only fields are a validated map per harness
 
 Accepted 2026-11-04. [Review](../parley/discuss-architecture.json). Part of
-[D-COMG](D-COMG-marketplace-model-and-translators.md).
+[D-COMG](D-COMG-marketplace-model-and-translators.md). Superseded by
+[D-HJCZ](D-HJCZ-harness-blocks.md).
 
 ## Decision
 

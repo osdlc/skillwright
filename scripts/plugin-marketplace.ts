@@ -3,7 +3,7 @@
 //   node scripts/plugin-marketplace.ts version [--plugin plugin]
 //   node scripts/plugin-marketplace.ts sync <marketplace-checkout> [--plugin plugin]
 //
-// `version` prints the plugin's `sw-version`. `sync` changes only what belongs
+// `version` prints the plugin's `version`. `sync` changes only what belongs
 // to this plugin: for each harness, the `packs/skillwright` folder is replaced,
 // and the `skillwright` entry in the harness's marketplace manifest is added or
 // replaced. Every other file and every other plugin's entry stays as it is.
@@ -24,15 +24,15 @@ export const HARNESSES: readonly { root: string; manifest: string | null }[] = [
 
 type Manifest = { plugins: { name: string }[] } & Record<string, unknown>
 
-/** The `sw-version` of the plugin note in the vault. */
+/** The `version` of the plugin note in the vault. */
 export function pluginVersion(pluginDir: string): string {
   const note = readFileSync(
     join(pluginDir, `vault/plugins/${PLUGIN_NAME}/${PLUGIN_NAME}.md`),
     'utf8',
   )
   const front = /^---\n([\s\S]*?)\n---/.exec(note)?.[1] ?? ''
-  const version = /^sw-version:\s*(\S+)\s*$/m.exec(front)?.[1]
-  if (version === undefined) throw new Error('the plugin note has no sw-version')
+  const version = /^version:\s*(\S+)\s*$/m.exec(front)?.[1]
+  if (version === undefined) throw new Error('the plugin note has no version')
   return version
 }
 

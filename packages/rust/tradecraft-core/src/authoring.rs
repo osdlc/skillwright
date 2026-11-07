@@ -28,6 +28,7 @@ use crate::discover::{
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::namespace::Namespace;
+use crate::settings::ROOT_FILE;
 use crate::vault::read_vault_skill;
 use crate::vfs::{MemVfs, Vfs};
 
@@ -107,7 +108,8 @@ pub enum AuthoringOp {
         /// Frontmatter edits to apply to the note at `to`.
         frontmatter: Vec<FieldEdit>,
     },
-    /// The same move, to a placement rather than to a name.
+    /// The same move, to a placement rather than to a name. The folder names
+    /// the plugin, so no frontmatter changes.
     Move {
         /// Current vault-relative path.
         from: String,
@@ -115,8 +117,6 @@ pub enum AuthoringOp {
         to: String,
         /// Whether the note's whole bundle folder moves.
         bundle: bool,
-        /// Frontmatter edits to apply to the note at `to`.
-        frontmatter: Vec<FieldEdit>,
     },
     /// Trash every path, into `trash_dir`.
     Delete {
@@ -144,22 +144,11 @@ pub enum AuthoringOp {
 /// The vault-relative folder a delete moves its paths into.
 pub const TRASH_DIR: &str = ".trash";
 
-/// The plugin a new note's default folder is named for.
-pub const DEFAULT_PLUGIN: &str = "core";
-
-/// The vault-relative directory discovery scans —
-/// [`discover_components`] with `skills_root: None`, spelled out.
+/// The vault-relative folder that holds plugins.
 pub const SKILLS_ROOT: &str = "plugins";
 
 /// The folder marketplaces are looked for in, under the content root.
 pub const MARKETPLACES_DIR: &str = "marketplaces";
-
-/// Where a newly authored skill lands when the request does not say.
-///
-/// A component's marketplace and plugin are decided by the folders holding it,
-/// and [`derive_create`] derives the path rather than taking one — so a create
-/// with no placement has to pick, and it picks the defaults.
-const DEFAULT_MARKETPLACE: &str = "default";
 
 /// Frontmatter keys no conversion removes: both are the note's identity, and
 /// every kind carries them.
@@ -201,9 +190,7 @@ fn named(value: &Option<String>) -> Option<&str> {
 /// `container_dir`, which names the folder the note itself makes.
 pub fn new_note_dir(placement: Option<&Placement>) -> Result<String, String> {
     let Some(placement) = placement else {
-        return Ok(format!(
-            "{MARKETPLACES_DIR}/{DEFAULT_MARKETPLACE}/{SKILLS_ROOT}/{DEFAULT_PLUGIN}/skills"
-        ));
+        return Ok("skills".to_owned());
     };
     let segment = |level: &str, name: Option<&str>| -> Result<Option<String>, String> {
         match name.map(str::trim) {
@@ -331,15 +318,13 @@ fn container_dir(
             Ok(MARKETPLACES_DIR.to_owned())
         }
         EntityKind::Plugin => {
-            let market =
-                segment("marketplace", placement.marketplace.as_deref())?.ok_or_else(|| {
-                    "a plugin is authored inside a marketplace, so the placement has to name one"
-                        .to_owned()
-                })?;
             if segment("plugin", placement.plugin.as_deref())?.is_some() {
                 return Err(PLUGIN_NESTED.to_owned());
             }
-            Ok(format!("{MARKETPLACES_DIR}/{market}/{SKILLS_ROOT}"))
+            match segment("marketplace", placement.marketplace.as_deref())? {
+                Some(market) => Ok(format!("{MARKETPLACES_DIR}/{market}/{SKILLS_ROOT}")),
+                None => Ok(SKILLS_ROOT.to_owned()),
+            }
         }
         other => Err(format!("{} holds no components", other.as_str())),
     }
@@ -384,7 +369,10 @@ pub fn derive_create(
     // A container note names its folder, so it is bundled whatever the request
     // said: `marketplaces/house.md` is a note the reader would find as a loose
     // component rather than as a marketplace.
-    let path = if bundled || placement_kind(placement).is_some_and(EntityKind::holds_components) {
+    let kind = placement_kind(placement);
+    let path = if kind == Some(EntityKind::Marketplace) {
+        format!("{dir}/{slug}/{ROOT_FILE}")
+    } else if bundled || kind.is_some_and(EntityKind::holds_components) {
         format!("{dir}/{slug}/{slug}.md")
     } else {
         format!("{dir}/{slug}.md")
@@ -419,7 +407,9 @@ pub fn bundle_dir(entry: &str) -> Option<&str> {
 /// take its folder's name or discovery cannot read it back.
 fn bundle_entry_file(entry: &str, name: &str, to_kind: EntityKind) -> String {
     let file = entry.rsplit('/').next().unwrap_or(entry);
-    if to_kind == EntityKind::Skill && crate::discover::is_skill_entry(file) {
+    if to_kind == EntityKind::Marketplace {
+        ROOT_FILE.to_owned()
+    } else if to_kind == EntityKind::Skill && crate::discover::is_skill_entry(file) {
         file.to_owned()
     } else {
         format!("{name}.md")
@@ -450,7 +440,13 @@ pub fn rename_destination(entry: &str, slug: &str) -> String {
     match bundle_dir(entry) {
         Some(dir) => {
             // A rename keeps the kind, and only a skill has a `SKILL.md`.
-            let file = bundle_entry_file(entry, slug, EntityKind::Skill);
+            let market = dir.rsplit_once('/').map(|(parent, _)| parent) == Some(MARKETPLACES_DIR);
+            let kind = if market {
+                EntityKind::Marketplace
+            } else {
+                EntityKind::Skill
+            };
+            let file = bundle_entry_file(entry, slug, kind);
             match dir.rsplit_once('/') {
                 Some((parent, _)) => format!("{parent}/{slug}/{file}"),
                 None => format!("{slug}/{file}"),
@@ -633,9 +629,9 @@ fn convert_placement(
 /// kind-directory sibling of [`move_destination`], which it delegates to for
 /// every leaf kind.
 ///
-/// The one shape a move never produces: a container is authored as its own
-/// folder's note (`<name>/<name>.md`) whatever shape the note has now, so a
-/// lone file converting to `plugin` or `marketplace` gains a folder.
+/// The one shape a move never produces: a container is authored in a folder
+/// of its own whatever shape the note has now, so a lone file gains a folder:
+/// `<name>/<name>.md` for a plugin, `<name>/skillwright.md` for a marketplace.
 pub fn convert_kind_destination(
     entry: &str,
     to_kind: EntityKind,
@@ -652,7 +648,10 @@ pub fn convert_kind_destination(
         folder: None,
     }))?;
     let name = component_slug(entry);
-    Ok(format!("{dir}/{name}/{name}.md"))
+    Ok(format!(
+        "{dir}/{name}/{}",
+        bundle_entry_file(entry, name, to_kind)
+    ))
 }
 
 /// The member folders a container of `kind` holds, read off [`KIND_DIRS`] so
@@ -1277,12 +1276,10 @@ pub fn plan_move_component(
     ) {
         return Err(refusal);
     }
-    let frontmatter = Vec::new();
     Ok(AuthoringOp::Move {
         from: entry.to_owned(),
         to,
         bundle: bundle_dir(entry).is_some(),
-        frontmatter,
     })
 }
 
@@ -1713,11 +1710,8 @@ mod tests {
     // ── Placement and naming ────────────────────────────────────────────────
 
     #[test]
-    fn a_create_with_no_placement_lands_on_the_defaults() {
-        assert_eq!(
-            new_note_dir(None).unwrap(),
-            "marketplaces/default/plugins/core/skills"
-        );
+    fn a_create_with_no_placement_lands_in_the_vaults_skills_folder() {
+        assert_eq!(new_note_dir(None).unwrap(), "skills");
     }
 
     #[test]
@@ -2085,9 +2079,9 @@ mod tests {
     }
 
     #[test]
-    fn a_move_of_an_unkeyed_note_edits_no_frontmatter() {
+    fn a_move_names_the_new_path_and_nothing_else() {
         let vfs = one_plugin();
-        let AuthoringOp::Move { frontmatter, .. } = plan_move_component(
+        let AuthoringOp::Move { from, to, bundle } = plan_move_component(
             &vfs,
             vault(),
             &sw(),
@@ -2098,7 +2092,9 @@ mod tests {
         .unwrap() else {
             panic!("expected a move");
         };
-        assert!(frontmatter.is_empty());
+        assert_eq!(from, "marketplaces/house/plugins/tools/skills/review.md");
+        assert_eq!(to, "marketplaces/house/plugins/extras/skills/review.md");
+        assert!(!bundle);
     }
 
     #[test]
@@ -2276,6 +2272,32 @@ mod tests {
             .unwrap_err(),
             "`marketplaces/house/plugins/tools/tools.md` is not a marketplace's own entry note"
         );
+    }
+
+    /// A marketplace's entry note is `marketplaces/<m>/skillwright.md`, and a
+    /// rename or delete of it works on the whole folder.
+    #[test]
+    fn a_marketplace_folder_renames_and_deletes_through_its_root_file() {
+        let vfs = one_plugin();
+        write(
+            &vfs,
+            "marketplaces/house/skillwright.md",
+            &note("house", ""),
+        );
+        let entry = "marketplaces/house/skillwright.md";
+        let AuthoringOp::Rename { to, bundle, .. } =
+            plan_rename_marketplace(&vfs, vault(), &sw(), entry, "shop").unwrap()
+        else {
+            panic!("expected a rename");
+        };
+        assert_eq!(to, "marketplaces/shop/skillwright.md");
+        assert!(bundle);
+        let AuthoringOp::Delete { paths, .. } =
+            plan_delete_container(&vfs, vault(), &sw(), entry, EntityKind::Marketplace).unwrap()
+        else {
+            panic!("expected a delete");
+        };
+        assert_eq!(paths, vec!["marketplaces/house"]);
     }
 
     // ── Convert ─────────────────────────────────────────────────────────────

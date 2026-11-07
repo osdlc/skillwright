@@ -92,6 +92,13 @@ export interface PublishRequest {
   overwrite?: string[];
 
   /**
+   * `destination_root` is the home directory, and files land in the
+   * harness's user folders rather than its project folders. The two differ
+   * for Pi, whose user skills are `.pi/agent/skills`.
+   */
+  user_folders?: boolean;
+
+  /**
    * The vault's frontmatter namespace, as a stem, such as `sw`, or whatever the
    * host configured. Absent means [`Namespace::default`].
    */
@@ -387,7 +394,7 @@ export interface PublishReason {
  * all read the same token, so it may not be free text that drifts from the
  * table it reproduces.
  */
-export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "claimed" | "redundant-override" | "overwritten";
+export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "excluded-note" | "claimed" | "redundant-override" | "overwritten";
 
 /** One note the scan admitted, with what it filled in. */
 export interface DiscoveryWarning {
@@ -493,6 +500,9 @@ export interface BuildSettings {
    */
   launcher_path?: string;
 
+  /** How `bump` writes a version. */
+  bump?: BumpSettings;
+
   /**
    * Refuse a note with a `name` and no `description` instead of
    * publishing a filler.
@@ -516,7 +526,22 @@ export interface BuildSettings {
 
   /** Canonical hooks files. */
   hooks?: HookSetting[];
+
+  /** Globs of what never ships, relative to the root file. Experimental. */
+  exclude?: string[];
+
+  /** Globs that stand in for the conventional folders. Experimental. */
+  patterns?: FolderPatterns;
 }
+
+/** `build.bump`: how `bump` writes a version. */
+export interface BumpSettings {
+  /** How a bump writes the patch number. */
+  patch: PatchScheme;
+}
+
+/** How `bump` writes the patch number of the version it sets. */
+export type PatchScheme = "increment" | "timestamp";
 
 /** Where `publish` writes when `--to` is not given. */
 export interface DestinationSetting {
@@ -525,6 +550,9 @@ export interface DestinationSetting {
 
   /** The target rendered into the root. */
   target: string;
+
+  /** `project` or `user`. Informational: nothing reads it. */
+  scope?: string;
 }
 
 /** One `build.assets` entry: a file or folder copied into a plugin's root. */
@@ -552,6 +580,30 @@ export interface HookSetting {
 }
 
 /**
+ * `build.patterns`: for each conventional folder, the globs that name what
+ * it holds. See [`crate::patterns`].
+ */
+export interface FolderPatterns {
+  /** Each match is a plugin folder. */
+  plugins?: string[];
+
+  /** Each match is a skill: a note, or a folder holding its entry. */
+  skills?: string[];
+
+  /** Each match is an agent. */
+  agents?: string[];
+
+  /** Each match is a command. */
+  commands?: string[];
+
+  /** Each match is a hook note. */
+  hooks?: string[];
+
+  /** Each match is a plugin's assets folder. */
+  assets?: string[];
+}
+
+/**
  * What crosses as `request_json` for [`discover_components`].
  *
  * The one wire shape in this crate that does not `flatten` a core struct,
@@ -569,6 +621,18 @@ export interface DiscoverRequest {
    * core reads it.
    */
   skills_root?: string;
+
+  /**
+   * Absolute path to the folder a build writes to. The scan leaves out what
+   * a build owns there. Absent means nothing is left out.
+   */
+  out_root?: string;
+
+  /**
+   * Says where the packs folders are, under what the vault's own notes say.
+   * Absent means the vault's root file.
+   */
+  config?: MarketplaceConfig;
 
   /**
    * The vault's frontmatter namespace, as a stem. Absent means
@@ -935,8 +999,8 @@ export interface ExportRequest {
    * Paths are absolute, resolved by the caller: this core never reads an
    * ambient root file, so it has nothing to resolve a relative asset
    * path against (see the crate doc's wasm-boundary note on
-   * [`MarketplaceConfig`]). The CLI resolves `build.assets` entries against the
-   * root file's own directory before building this request.
+   * [`MarketplaceConfig`]). The Rust helper `marketplace_inputs` resolves
+   * `build.assets` entries against the root file's own directory.
    */
   assets?: AssetSpec[];
 
@@ -1195,6 +1259,12 @@ export interface LoadRequest {
   hooks?: HookFileSpec[];
 
   /**
+   * Absolute path to the folder a build writes to. The load leaves out what
+   * a build owns there. Absent means nothing is left out.
+   */
+  out_root?: string;
+
+  /**
    * The vault's frontmatter namespace, as a stem. Absent means
    * [`Namespace::default`].
    */
@@ -1251,6 +1321,12 @@ export interface Plugin {
    * `${CLAUDE_PLUGIN_ROOT}/<launcher>` its skills call.
    */
   launcher: string | null;
+
+  /**
+   * The harnesses that name this plugin's skills bare, whatever their
+   * profile says: `pi: {naming: bare}`.
+   */
+  bare_on?: string[];
 }
 
 /**
@@ -1356,9 +1432,9 @@ export interface SkillContent {
   compatibility: string | null;
 
   /**
-   * The Agent Skills spec's `metadata:` — a string-to-string map. Only the entries the
-   * note wrote under that key; the unmodeled top-level keys in
-   * [`Self::annotations`] join them in one block at render time.
+   * The Agent Skills spec's `metadata:`. Only the entries the note wrote under that key;
+   * the unmodeled top-level keys in [`Self::annotations`] join them in one block at render
+   * time, as YAML, so an unquoted `true` publishes as a boolean.
    */
   metadata: Record<string, string>;
 
@@ -1513,8 +1589,17 @@ export interface Call {
   /** That skill's `targets`, which decide whether a harness ships it. */
   targets: string[] | null;
 
+  /** The harnesses that name the skill bare, whatever their profile says. */
+  bare_on?: string[];
+
   /** The call as written, for a refusal. */
   destination: string;
+
+  /**
+   * A plain `[[skill]]`: written as the skill's published name, with no
+   * call sigil, rather than as an invocation.
+   */
+  mention: boolean;
 
   /** The note the call is in, for a refusal. */
   caller: string;
@@ -1750,6 +1835,9 @@ export interface StatusRequest {
 
   /** Root of the vault, when the caller knows it. */
   skills_root?: string;
+
+  /** See [`PublishRequest::user_folders`]. */
+  user_folders?: boolean;
 
   /** The root file's config; see [`PublishRequest::config`]. */
   config?: MarketplaceConfig;
