@@ -472,16 +472,11 @@ pub(crate) fn inherited<T: Clone>(
 /// The version a plugin ships as when nothing states one.
 pub(crate) const DEFAULT_PLUGIN_VERSION: &str = "0.1.0";
 
-/// The plugin's own `version`; for the plugin named after the marketplace,
-/// which has no note of its own, the root file's.
+/// The plugin's own `version`. The load gives the marketplace's own plugin the
+/// marketplace's, so this is the one answer for every plugin.
 pub(crate) fn plugin_version(config: &MarketplaceConfig, plugin: &str) -> String {
     overrides_for(config, plugin)
         .and_then(|o| o.version.clone())
-        .or_else(|| {
-            (config.name.as_deref() == Some(plugin))
-                .then(|| config.version.clone())
-                .flatten()
-        })
         .unwrap_or_else(|| DEFAULT_PLUGIN_VERSION.to_owned())
 }
 

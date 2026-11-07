@@ -12,4 +12,4 @@ osdlc's shared crates call it a [corpus](https://github.com/osdlc/osdlc/blob/mai
 
 ## Not to be confused with
 
-A [destination](destination.md), which skillwright writes to. skillwright never writes into the vault except through authoring verbs and [adopt](adopt.md).
+A [destination](destination.md), which skillwright writes to. skillwright never writes into the vault except through authoring verbs, `bump` and [adopt](adopt.md).

@@ -128,7 +128,7 @@ Each verb's own options:
 | `init` | `--out <path>`, `--name <name>` |
 | `list` | `--skills-root <path>`, `--model` (print the loaded marketplace model as JSON) |
 | `status` | `[note]`, `--check` |
-| `bump` | `[plugin]`, `--major`, `--minor`, `--patch`, `--changed-since <ref\|dir>` |
+| `bump` | `[plugin]`, `--major`, `--minor`, `--patch`, `--changed-since <ref\|dir>`, `--marketplace <name>` |
 | `adopt` | `[source...]`, `--from <location>` (repeatable), `--from-git <ref>` (repeatable), `--plugin <name>`, `--into <path>`, `--set-targets <target>` (repeatable), `--only <name>` (repeatable), `--overwrite <path>` (repeatable) |
 | `harness install` / `harness update` | `--plugin <name>` (repeatable), `--scope <user\|project\|local>`, `--path <path>`, `--git-url <url>`, `--git-ref <ref>` |
 | `harness uninstall` | the same, plus `--marketplace` |
@@ -153,7 +153,7 @@ Each verb's own options:
 The only configuration file is `skillwright.md`, the root file. The folder
 holding it is the vault. It is committed, and found by walking up from the
 working directory, the way git finds a repository, or named with `--config`.
-`skillwright` never writes it.
+`skillwright` writes only its `version`, with `bump <marketplace>`.
 
 Its frontmatter's top-level keys are the marketplace's fields. Settings for
 how `skillwright` runs sit under `build:`. The body is ignored.
@@ -224,7 +224,8 @@ the committed output; one that holds no plugin manifest for any configured
 harness is refused. Anything else is a git ref: it is checked out into a
 temporary worktree with the repository's hooks off, built there with the
 ref's own copy of the root file and the ref's own vault, and removed
-afterwards. Git LFS files are not fetched, so they compare as pointers. A ref
+afterwards. Its packs are moved to where the current root file keeps them, so a
+`packs` setting changed since the ref still compares each plugin with itself. Git LFS files are not fetched, so they compare as pointers. A ref
 that holds no `skillwright.md` is refused: compare against a built folder
 instead. A run also removes the baselines an interrupted earlier run left behind.
 
@@ -232,9 +233,22 @@ A drifted plugin that is not bumped is `skipped`, with one reason:
 `version-moved` (its version already changed since the baseline, so a second
 run bumps nothing), `not-in-baseline` (the baseline does not hold it) or
 `manifest-only` (only its manifest changed). A plugin whose note has no
-`version` is bumped on any change. A plugin named after the marketplace with no
-folder of its own bumps the root file's `version`. Any other plugin with no note
-is refused if it changed.
+`version` is bumped on any change. Any other plugin with no note is refused if
+it changed.
+
+A plugin's version has one source, which the manifest, the warnings, `check`'s
+advice and `bump` all read:
+
+- The marketplace's own plugin, named after the marketplace and with no folder
+  of its own (a root `skills/`, say), takes the `version` of the marketplace's
+  `skillwright.md`. `bump <marketplace>` edits that key.
+- Every other plugin takes its note's `version`, else `0.1.0`, with a warning.
+  This holds for a `plugins/<marketplace>/` folder too, note or not: the root
+  file's `version` is never its own.
+
+In a vault or workspace holding several marketplaces, `--marketplace <name>`
+picks the one to work in, as it does for `build`. Without it, a plugin name two
+marketplaces share is a usage error, and at a workspace root `bump` is refused.
 
 `build.bump.patch` picks how the patch number is written:
 

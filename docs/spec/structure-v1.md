@@ -57,7 +57,8 @@ code and is part of this spec.
 3. A root `skills/`, `agents/`, `commands/` or `hooks/` folder belongs to a plugin
    named after the marketplace. That plugin has no note of its own: its note is
    `skillwright.md`, so it takes `version` from there. `bump <marketplace>`
-   edits that key.
+   edits that key. A `plugins/<marketplace>/` folder is an ordinary plugin: its
+   version is its own note's, else `0.1.0`, never the root file's.
 4. `assets/bin/tool` ships as `bin/tool`.
 5. `check` warns when a plugin's `version` has no entry in its `CHANGELOG.md`.
 6. These never ship: `docs/`, `tests/`, `fixtures/`, `.git`, `.obsidian`, `.trash`

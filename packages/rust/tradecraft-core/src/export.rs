@@ -1474,13 +1474,7 @@ fn plugin_version_bump(
     slice: Option<&PluginSlice<'_>>,
     config: &MarketplaceConfig,
 ) -> Option<VersionBumpSuggestion> {
-    // The plugin named after the marketplace has no note of its own to carry one.
-    let own = (config.name.as_deref() == Some(plugin))
-        .then(|| config.version.clone())
-        .flatten();
-    let current_version = overrides_for(config, plugin)
-        .and_then(|o| o.version.clone())
-        .or(own)?;
+    let current_version = overrides_for(config, plugin).and_then(|o| o.version.clone())?;
     let manifest_key = format!(
         "{}/{plugin}/{}",
         packs_of(config, spec),

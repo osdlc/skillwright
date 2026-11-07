@@ -460,6 +460,9 @@ struct BumpArgs {
     /// worktree.
     #[arg(long, value_name = "ref|dir", conflicts_with = "plugin")]
     changed_since: Option<String>,
+    /// The marketplace to work in, when the vault or workspace holds several.
+    #[arg(long, value_name = "name")]
+    marketplace: Option<String>,
     /// Bump the major version.
     #[arg(long, conflicts_with_all = ["minor", "patch"])]
     major: bool,
@@ -742,6 +745,7 @@ impl BumpArgs {
         BumpFlags {
             plugin: self.plugin.clone(),
             changed_since: self.changed_since.clone(),
+            marketplace: self.marketplace.clone(),
             level: if self.major {
                 BumpLevel::Major
             } else if self.minor {

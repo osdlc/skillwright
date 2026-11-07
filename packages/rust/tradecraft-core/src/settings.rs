@@ -235,7 +235,6 @@ fn one_or_many<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<
 
 /// `build.bump`: how `bump` writes a version.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct BumpSettings {
     /// How a bump writes the patch number.
     #[serde(default)]
@@ -642,6 +641,17 @@ fn globs(key: &str, value: &serde_yaml::Value) -> Result<Vec<String>, SettingsEr
 /// Warn about each unknown key in an entry of a `build:` list. Each entry's
 /// struct ignores them when it is read.
 fn warn_nested(list: &str, value: &serde_yaml::Value, warnings: &mut Vec<String>) {
+    if list == "bump" {
+        let keys = value.as_mapping().into_iter().flat_map(|map| map.keys());
+        for key in keys.filter_map(serde_yaml::Value::as_str) {
+            if key != "patch" {
+                warnings.push(format!(
+                    "`build.bump.{key}` is not a key skillwright reads; it is ignored"
+                ));
+            }
+        }
+        return;
+    }
     let known: &[&str] = match list {
         "destinations" => &["root", "target", "scope"],
         "assets" => &["from", "to", "plugin"],
@@ -930,6 +940,18 @@ mod tests {
     fn build_bump_picks_the_patch_scheme() {
         let root = parse_root_file("---\nbuild:\n  bump:\n    patch: timestamp\n---\n").unwrap();
         assert_eq!(root.build.bump.unwrap().patch, PatchScheme::Timestamp);
+    }
+
+    #[test]
+    fn an_unknown_key_under_build_bump_warns() {
+        let root = parse_root_file("---\nbuild:\n  bump:\n    patch: timestamp\n    tag: x\n---\n")
+            .unwrap();
+        assert_eq!(root.build.bump.unwrap().patch, PatchScheme::Timestamp);
+        assert!(
+            root.warnings.iter().any(|w| w.contains("`build.bump.tag`")),
+            "{:?}",
+            root.warnings
+        );
     }
 
     #[test]

@@ -187,7 +187,7 @@ pub fn load(
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing publishable rather than that it is not there.
     let market = resolve_marketplace(&discovered, request.marketplace.as_deref())?;
-    let cascade = Cascade::over(&discovered, market.as_deref(), &request.config);
+    let mut cascade = Cascade::over(&discovered, market.as_deref(), &request.config);
     cascade.resolve_targets(&mut discovered);
     let belonging: Vec<&DiscoveredComponent> = discovered
         .iter()
@@ -256,7 +256,6 @@ pub fn load(
         ));
     }
     let name = marketplace_name(&cascade.config, market.as_deref())?;
-    let config = &cascade.config;
     // A silent note the config describes ships that value, so it is not
     // missing one.
     warnings.retain(|w| {
@@ -279,6 +278,16 @@ pub fn load(
         ));
     }
     let mut plugins = group_by_plugin(&skills, &commands, &hooks, &name)?;
+    // The marketplace's own plugin has no folder, so its note is the
+    // marketplace's and it ships the marketplace's version.
+    if plugins.contains_key(&name)
+        && !has_folder(&discovered, market.as_deref(), &name)
+        && let Some(version) = cascade.config.version.clone()
+    {
+        let own = cascade.config.plugins.entry(name.clone()).or_default();
+        own.version.get_or_insert(version);
+    }
+    let config = &cascade.config;
     warnings.extend(missing_versions(
         &discovered,
         market.as_deref(),
@@ -1000,10 +1009,6 @@ pub(crate) fn targets_name(targets: Option<&[String]>, canonical: &str) -> bool 
     }
 }
 
-/// A plugin this build publishes from its own note, with no version from the
-/// note or the config. It ships as [`DEFAULT_PLUGIN_VERSION`], and a harness compares versions
-/// to decide whether an installed pack is out of date — so a pack that never
-/// states one never looks updated.
 /// The folder a plugin's members sit in, as a scan spells it.
 fn members_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name: &str) -> String {
     discovered
@@ -1013,6 +1018,17 @@ fn members_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name
         .unwrap_or_else(|| format!("plugins/{name}"))
 }
 
+/// Whether a component of `market` sits in a folder of the plugin `name`.
+fn has_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name: &str) -> bool {
+    discovered
+        .iter()
+        .any(|c| belongs_to(c, market) && crate::discover::in_plugin_folder(c, name))
+}
+
+/// The plugins this build publishes with no version from the
+/// note or the config. It ships as [`DEFAULT_PLUGIN_VERSION`], and a harness compares versions
+/// to decide whether an installed pack is out of date — so a pack that never
+/// states one never looks updated.
 fn missing_versions(
     discovered: &[DiscoveredComponent],
     market: Option<&str>,
@@ -1024,14 +1040,7 @@ fn missing_versions(
         .iter()
         .filter(|c| c.kind == EntityKind::Plugin && belongs_to(c, market))
         .collect();
-    let implicit = |name: &str| {
-        name == own_plugin
-            && !discovered.iter().any(|c| {
-                c.plugin.as_deref() == Some(name)
-                    && belongs_to(c, market)
-                    && crate::discover::plugin_folder_in(&c.vault_relative_path, name).is_some()
-            })
-    };
+    let implicit = |name: &str| name == own_plugin && !has_folder(discovered, market, name);
     let folder_only = plugins
         .keys()
         .filter(|name| !noted.iter().any(|c| c.folder() == name.as_str()))
@@ -1042,9 +1051,6 @@ fn missing_versions(
                 .and_then(|o| o.version.as_ref())
                 .is_none()
         })
-        // The plugin named after the marketplace has no note: its note is the
-        // marketplace's, so its version is the root file's.
-        .filter(|name| !implicit(name) || config.version.is_none())
         .map(|name| {
             if implicit(name) {
                 let file = match market {

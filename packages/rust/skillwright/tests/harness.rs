@@ -1709,3 +1709,38 @@ fn link_works_in_a_workspace_member() {
     assert_eq!(result.code, 0, "{}", result.stderr);
     assert!(fs::read_link(home.join(".claude/skills/a")).is_ok());
 }
+
+#[test]
+fn a_pack_with_no_skills_does_not_stop_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = write_project(dir.path());
+    let root = Path::new(&root);
+    let home = dir.path().join("home");
+    write_built_skill(root, ".claude-plugin/packs", "tools", "a");
+    fs::create_dir_all(root.join(".claude-plugin/packs/cmd/commands")).unwrap();
+    let fake = FakeRunner::new("", "");
+
+    let result = run_home(
+        &["harness", "link", "claude", "--yes"],
+        dir.path(),
+        &home,
+        &fake,
+    );
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(fs::symlink_metadata(home.join(".claude/skills/a")).is_ok());
+    assert!(result.stderr.contains("skipped `cmd`"), "{}", result.stderr);
+
+    let argv = ["harness", "link", "claude", "--plugin", "cmd", "--yes"];
+    let named = run_home(&argv, dir.path(), &home, &fake);
+    assert_ne!(named.code, 0, "{}", named.stderr);
+    assert!(
+        named.stderr.contains("`cmd` has no skills"),
+        "{}",
+        named.stderr
+    );
+    assert!(
+        !named.stderr.contains("skillwright build"),
+        "{}",
+        named.stderr
+    );
+}

@@ -8,8 +8,9 @@ file, and `--vault` names the folder.
 - Top-level keys are the marketplace's fields.
 - `build:` holds settings for how skillwright runs.
 - The body is ignored, so it can serve as the marketplace's README.
-- skillwright never writes this file after `init` creates it. `bump` and the
-  authoring verbs edit notes, not settings.
+- After `init` creates this file, skillwright writes only its `version`, with
+  `bump <marketplace>`. Its keys are never prefixed, so that key is `version`
+  under any `build.namespace`. The authoring verbs edit notes, not settings.
 - An unknown key gets a warning and is never refused.
 
 ```markdown
@@ -54,7 +55,7 @@ are also defaults for every plugin and component below. See
 | `harnesses` | list | Which harnesses to build: `claude`, `codex`, `cursor`, `pi`. Absent means all of them. The long spellings `targets` takes, `claude-code` and `codex-cli`, are refused here. |
 | `namespace` | stem | Restores prefixed keys: `sw` reads `sw-version` or a `sw:` block. Absent means bare keys. |
 | `launcher_path` | path | The plugin's launcher, relative to the plugin's root. |
-| `bump` | `{patch}` | How `bump` writes a version. `patch` is `increment`, the default, or `timestamp`, which sets the patch to the UTC time as `YYYYMMDDHHMMSS`, or to one more than the current patch when that is larger. A top-level `bump:` is refused. |
+| `bump` | `{patch}` | How `bump` writes a version. `patch` is `increment`, the default, or `timestamp`, which sets the patch to the UTC time as `YYYYMMDDHHMMSS`, or to one more than the current patch when that is larger. An unknown key under it gets a warning; a wrong `patch` value and a top-level `bump:` are refused. |
 | `require_descriptions` | boolean | Refuse a note with a `name` and no `description`, instead of publishing a filler. |
 | `destinations` | list of `{root, target, scope}` | Where `publish` writes when `--to` is not given. Empty means each harness's user skill folder, such as `~/.claude/skills`. `scope` is `project` or `user`, and is informational. |
 | `scan_locations` | list of paths | Folders a bare `adopt` reads. Empty means each harness's user skill folder. |

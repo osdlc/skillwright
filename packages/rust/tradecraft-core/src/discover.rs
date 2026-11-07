@@ -226,7 +226,7 @@ impl DiscoveredComponent {
     /// The folder a container is known by: a plugin's entry note is named for
     /// it, and a marketplace's sits in it as the root file. A marketplace note's
     /// `name` is only what it publishes under.
-    pub(crate) fn folder(&self) -> &str {
+    pub fn folder(&self) -> &str {
         let named = if self.kind == EntityKind::Marketplace {
             self.entry_path.parent().and_then(Path::file_name)
         } else {
@@ -1031,6 +1031,13 @@ pub fn plugin_folder_in(path: &str, name: &str) -> Option<String> {
         .map_or(0, |(market, _)| "marketplaces/".len() + market.len());
     let at = start + path[start..].find(&format!("/{name}/"))?;
     Some(path[..at + 1 + name.len()].to_owned())
+}
+
+/// Whether `component` sits in a folder of the plugin `name`. A plugin with no
+/// such component is the marketplace's own, whose note is the marketplace's.
+pub fn in_plugin_folder(component: &DiscoveredComponent, name: &str) -> bool {
+    component.plugin.as_deref() == Some(name)
+        || (component.kind == EntityKind::Plugin && component.folder() == name)
 }
 
 /// Whether the note at `path` has a frontmatter block holding any key.

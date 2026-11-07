@@ -190,6 +190,7 @@ fn fix_hashes_of(flags: &ExportFlags, run: &ResolvedRun, ctx: &mut CommandContex
 /// marketplace's render: `bump --changed-since`.
 pub(crate) fn configured_request(
     run: &ResolvedRun,
+    marketplace: Option<&str>,
     out_root: PathBuf,
     mode: ExportMode,
 ) -> ExportRequest {
@@ -202,14 +203,14 @@ pub(crate) fn configured_request(
     } = marketplace_inputs(run);
     let config = effective_config(
         &run.config_vfs(),
-        run.scope(None, None),
+        run.scope(None, marketplace),
         &config,
         &run.core_namespace(),
     );
     ExportRequest {
         vault_root: run.vault.clone(),
         skills_root: None,
-        marketplace: None,
+        marketplace: marketplace.map(str::to_owned),
         out_root,
         mode,
         config,
