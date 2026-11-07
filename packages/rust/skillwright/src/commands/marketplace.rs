@@ -207,17 +207,13 @@ pub(crate) fn configured_request(
         &config,
         &run.core_namespace(),
     );
-    ExportRequest {
-        vault_root: run.vault.clone(),
-        skills_root: None,
-        marketplace: marketplace.map(str::to_owned),
-        out_root,
-        mode,
-        config,
-        harnesses,
-        assets,
-        hooks,
-    }
+    let mut request = ExportRequest::new(run.vault.clone(), out_root, config);
+    request.marketplace = marketplace.map(str::to_owned);
+    request.mode = mode;
+    request.harnesses = harnesses;
+    request.assets = assets;
+    request.hooks = hooks;
+    request
 }
 
 /// Run one export. `verb` decides the mode a plain run uses and what a
@@ -348,21 +344,17 @@ fn export_one(
     // module doc). So the only run that reaches `ExportMode::Build` is a
     // plain `build`.
     let writes = verb == ExportVerb::Build && !flags.dry_run;
-    let request = ExportRequest {
-        vault_root: run.vault.clone(),
-        skills_root,
-        marketplace,
-        out_root: out_root.clone(),
-        mode: if writes {
-            ExportMode::Build
-        } else {
-            ExportMode::Check
-        },
-        config: marketplace_config,
-        harnesses,
-        assets,
-        hooks,
+    let mut request = ExportRequest::new(run.vault.clone(), out_root.clone(), marketplace_config);
+    request.skills_root = skills_root;
+    request.marketplace = marketplace;
+    request.mode = if writes {
+        ExportMode::Build
+    } else {
+        ExportMode::Check
     };
+    request.harnesses = harnesses;
+    request.assets = assets;
+    request.hooks = hooks;
 
     // --- confirmation -------------------------------------------------------
     // A build replaces each harness's owned paths at the output path, so it

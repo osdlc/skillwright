@@ -139,6 +139,7 @@ impl Vfs for SourceView<'_> {
 
 /// What a run says about which marketplace it reads.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct VaultScope<'a> {
     /// The vault's root.
     pub vault_root: &'a Path,
@@ -146,6 +147,18 @@ pub struct VaultScope<'a> {
     pub skills_root: Option<&'a Path>,
     /// Which marketplace, when the run names one.
     pub marketplace: Option<&'a str>,
+}
+
+impl<'a> VaultScope<'a> {
+    /// The vault at `vault_root`, its own skills source, no marketplace
+    /// named. Set the other fields after.
+    pub fn new(vault_root: &'a Path) -> Self {
+        Self {
+            vault_root,
+            skills_root: None,
+            marketplace: None,
+        }
+    }
 }
 
 /// `config` with the harness blocks the cascade gives the marketplace: every

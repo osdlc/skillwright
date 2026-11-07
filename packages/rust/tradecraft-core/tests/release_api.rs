@@ -1,13 +1,12 @@
 //! The frontmatter surface end to end: bare keys, unknown keys, harness
 //! blocks, links and inheritance, read from the bytes a build writes.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    ExportMode, ExportReport, ExportRequest, MarketplaceConfig, MemVfs, Namespace, PublishMode,
-    PublishReport, PublishRequest, UNKNOWN_KEY_REASON, Vfs, discover_components, export_skills,
-    inherit_targets, parse_root_file, publish_skill,
+    ExportReport, ExportRequest, MarketplaceConfig, MemVfs, Namespace, PublishReport,
+    PublishRequest, UNKNOWN_KEY_REASON, Vfs, discover_components, export_skills, inherit_targets,
+    parse_root_file, publish_skill,
 };
 
 const MARKET: &str = "/vault/marketplaces/house/skillwright.md";
@@ -53,32 +52,9 @@ fn vault(market: &str, tools: &str, review: &str) -> MemVfs {
 }
 
 fn request() -> ExportRequest {
-    ExportRequest {
-        vault_root: PathBuf::from("/vault"),
-        skills_root: None,
-        marketplace: Some("house".to_owned()),
-        out_root: PathBuf::from("/market"),
-        harnesses: BTreeSet::new(),
-        mode: ExportMode::Build,
-        config: MarketplaceConfig {
-            name: None,
-            display_name: None,
-            owner: None,
-            description: None,
-            author: None,
-            license: None,
-            version: None,
-            targets: None,
-            repository: None,
-            homepage: None,
-            blocks: Default::default(),
-            plugins: BTreeMap::new(),
-            require_descriptions: false,
-            launcher_path: None,
-        },
-        assets: Vec::new(),
-        hooks: Vec::new(),
-    }
+    let mut request = ExportRequest::new("/vault", "/market", MarketplaceConfig::default());
+    request.marketplace = Some("house".to_owned());
+    request
 }
 
 fn build(vfs: &dyn Vfs) -> ExportReport {
@@ -334,16 +310,11 @@ fn publish_as(
 ) -> PublishReport {
     publish_skill(
         vfs,
-        &PublishRequest {
-            skill_path: PathBuf::from(path),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: target.to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            config,
-            published_at: None,
-            overwrite: Vec::new(),
+        &{
+            let mut value = PublishRequest::new(path, "/dest", target);
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.config = config;
+            value
         },
         ns,
     )
@@ -1069,16 +1040,10 @@ fn an_empty_plugin_names_targets_in_the_vaults_spelling() {
     vfs.remove(Path::new(REVIEW)).unwrap();
     let err = publish_skill(
         &vfs,
-        &PublishRequest {
-            skill_path: PathBuf::from(TOOLS),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            config: None,
-            published_at: None,
-            overwrite: Vec::new(),
+        &{
+            let mut value = PublishRequest::new(TOOLS, "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value
         },
         &Namespace::default(),
     )
@@ -1119,11 +1084,9 @@ fn root_vault(root_file: &str, files: &[(&str, &str)]) -> MemVfs {
 fn build_root(vfs: &dyn Vfs, config: MarketplaceConfig) -> Result<ExportReport, String> {
     let mut named = request();
     named.marketplace = None;
-    named.config = MarketplaceConfig {
-        name: Some("house".to_owned()),
-        owner: Some(serde_json::json!("acme")),
-        ..config
-    };
+    named.config = config;
+    named.config.name = Some("house".to_owned());
+    named.config.owner = Some(serde_json::json!("acme"));
     export_skills(vfs, &named, &Namespace::bare()).map_err(|err| err.to_string())
 }
 
@@ -1501,10 +1464,10 @@ fn a_marketplace_notes_packs_meets_every_rail() {
 #[test]
 fn effective_config_holds_a_notes_blocks_and_only_those() {
     let vfs = vault("claude: {packs: moved}\n", "", "");
-    let scope = tradecraft_core::VaultScope {
-        vault_root: Path::new("/vault"),
-        skills_root: None,
-        marketplace: Some("house"),
+    let scope = {
+        let mut value = tradecraft_core::VaultScope::new(Path::new("/vault"));
+        value.marketplace = Some("house");
+        value
     };
     let asked = request().config;
     let config = tradecraft_core::effective_config(&vfs, scope, &asked, &Namespace::bare());
@@ -1739,16 +1702,11 @@ fn naming_an_excluded_note_does_not_publish_it() {
     let vfs = root_vault(root, &[("plugins/p/skills/hid.draft.md", note)]);
     let err = publish_skill(
         &vfs,
-        &PublishRequest {
-            skill_path: PathBuf::from("/vault/plugins/p/skills/hid.draft.md"),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            config: None,
-            published_at: None,
-            overwrite: Vec::new(),
+        &{
+            let mut value =
+                PublishRequest::new("/vault/plugins/p/skills/hid.draft.md", "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value
         },
         &Namespace::bare(),
     )
@@ -2028,16 +1986,10 @@ fn a_named_publish_of_a_note_in_a_never_ship_folder_is_refused() {
         ],
     );
     for note in ["/vault/docs/y.md", "/vault/plugins/rev/docs/x.md"] {
-        let request = PublishRequest {
-            skill_path: PathBuf::from(note),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: "claude-code".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            config: None,
-            published_at: None,
-            overwrite: Vec::new(),
+        let request = {
+            let mut value = PublishRequest::new(note, "/dest", "claude-code");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value
         };
         let err = publish_skill(&vfs, &request, &Namespace::default()).unwrap_err();
         assert!(err.to_string().contains("excluded-note"), "{note}: {err}");
@@ -2064,11 +2016,7 @@ fn an_unterminated_root_file_refuses_a_build() {
 }
 
 fn view_of<'v>(vfs: &'v dyn Vfs, config: &MarketplaceConfig) -> tradecraft_core::SourceView<'v> {
-    let scope = tradecraft_core::VaultScope {
-        vault_root: Path::new("/vault"),
-        skills_root: None,
-        marketplace: None,
-    };
+    let scope = tradecraft_core::VaultScope::new(Path::new("/vault"));
     tradecraft_core::source_view(
         tradecraft_core::SourceView::over(vfs),
         scope,

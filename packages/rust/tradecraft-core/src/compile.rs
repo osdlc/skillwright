@@ -89,6 +89,7 @@ use crate::vfs::{Vfs, normalize};
 /// ship with the skill. Paths are absolute; `entry_path` and `bundle_root`
 /// must lie under `vault_root`.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct CompileSource<'a> {
     /// The root every link resolves against and every `…/vault/<relative>`
     /// output path is derived from.
@@ -111,6 +112,21 @@ pub struct CompileSource<'a> {
     /// `None` walks `vault_root` for them, leaving out tooling folders
     /// (`.obsidian`, `.trash`, `node_modules`).
     pub links: Option<&'a LinkIndex>,
+}
+
+impl<'a> CompileSource<'a> {
+    /// Compile the note at `entry_path`, named `skill_name`, against
+    /// `vault_root`. No bundle, call context or link index; set them after.
+    pub fn new(vault_root: &'a Path, entry_path: &'a Path, skill_name: &'a str) -> Self {
+        Self {
+            vault_root,
+            entry_path,
+            bundle_root: None,
+            skill_name,
+            calls: None,
+            links: None,
+        }
+    }
 }
 
 /// One skill a call can name: its entry note and who publishes it.
@@ -2445,13 +2461,14 @@ mod tests {
     }
 
     fn source<'a>(bundle_root: Option<&'a Path>) -> CompileSource<'a> {
-        CompileSource {
-            vault_root: Path::new("/vault"),
-            entry_path: Path::new("/vault/plugins/demo/demo.md"),
-            bundle_root,
-            skill_name: "demo",
-            calls: None,
-            links: None,
+        {
+            let mut value = CompileSource::new(
+                Path::new("/vault"),
+                Path::new("/vault/plugins/demo/demo.md"),
+                "demo",
+            );
+            value.bundle_root = bundle_root;
+            value
         }
     }
 
@@ -2757,13 +2774,10 @@ mod tests {
 
         let raw = read_utf8(&vfs, &entry).unwrap();
         let (_, body) = split_frontmatter(&raw);
-        let compile_source = CompileSource {
-            vault_root: &root,
-            entry_path: &entry,
-            bundle_root: Some(&bundle),
-            skill_name: "workflow-checklist",
-            calls: None,
-            links: None,
+        let compile_source = {
+            let mut value = CompileSource::new(&root, &entry, "workflow-checklist");
+            value.bundle_root = Some(&bundle);
+            value
         };
         let compiled = compile_note(&vfs, &compile_source, body).unwrap();
 
@@ -2809,13 +2823,10 @@ mod tests {
             (&inside_entry, Some(&aliased_bundle)),
         ];
         for (entry, bundle) in cases {
-            let compile_source = CompileSource {
-                vault_root: &vault,
-                entry_path: entry,
-                bundle_root: bundle,
-                skill_name: "demo",
-                calls: None,
-                links: None,
+            let compile_source = {
+                let mut value = CompileSource::new(&vault, entry, "demo");
+                value.bundle_root = bundle;
+                value
             };
             let err = compile_note(&vfs, &compile_source, "# Demo\n").unwrap_err();
             // The early check names the root it refused; a later failure in
@@ -2829,13 +2840,10 @@ mod tests {
         }
 
         // The same tree, spelled inside the vault, compiles.
-        let compile_source = CompileSource {
-            vault_root: &vault,
-            entry_path: &inside_entry,
-            bundle_root: Some(&inside_bundle),
-            skill_name: "demo",
-            calls: None,
-            links: None,
+        let compile_source = {
+            let mut value = CompileSource::new(&vault, &inside_entry, "demo");
+            value.bundle_root = Some(&inside_bundle);
+            value
         };
         compile_note(&vfs, &compile_source, "# Demo\n").unwrap();
     }
@@ -3202,14 +3210,16 @@ mod tests {
 
         let ns = Namespace::sw();
         let mut note = read_vault_skill(&vfs, Path::new("/vault/skills/demo.md"), &ns).unwrap();
-        let compile_source = CompileSource {
-            vault_root: Path::new("/vault"),
-            entry_path: Path::new("/vault/skills/demo.md"),
+        let name = note.projection.content.name.clone();
+        let compile_source = {
+            let mut value = CompileSource::new(
+                Path::new("/vault"),
+                Path::new("/vault/skills/demo.md"),
+                &name,
+            );
             // The vault-canonical peer folder is this note's bundle root.
-            bundle_root: Some(Path::new("/vault/skills/demo")),
-            skill_name: &note.projection.content.name.clone(),
-            calls: None,
-            links: None,
+            value.bundle_root = Some(Path::new("/vault/skills/demo"));
+            value
         };
         compile_projection(&vfs, &compile_source, &mut note.projection).unwrap();
 

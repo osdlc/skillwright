@@ -36,6 +36,7 @@ use crate::vfs::Vfs;
 
 /// One question: this unit, at this destination, for this target.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct StatusRequest {
     /// Path of the skill's note.
     pub skill_path: PathBuf,
@@ -52,6 +53,25 @@ pub struct StatusRequest {
     /// The root file's config; see [`PublishRequest::config`].
     #[serde(default)]
     pub config: Option<crate::export::MarketplaceConfig>,
+}
+
+impl StatusRequest {
+    /// A question about `skill_path` at `destination_root` for `target`.
+    /// Every other field starts empty; set it after.
+    pub fn new(
+        skill_path: impl Into<PathBuf>,
+        destination_root: impl Into<PathBuf>,
+        target: impl Into<String>,
+    ) -> Self {
+        Self {
+            skill_path: skill_path.into(),
+            destination_root: destination_root.into(),
+            target: target.into(),
+            skills_root: None,
+            user_folders: false,
+            config: None,
+        }
+    }
 }
 
 /// What a unit's publish state is at one destination.
@@ -444,29 +464,22 @@ mod tests {
     }
 
     fn ask() -> StatusRequest {
-        StatusRequest {
-            config: None,
-            skill_path: PathBuf::from("/vault/skills/code-review.md"),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            skills_root: Some(PathBuf::from("/vault")),
+        {
+            let mut value = StatusRequest::new("/vault/skills/code-review.md", "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value
         }
     }
 
     fn publish(vfs: &MemVfs) {
         publish_skill(
             vfs,
-            &PublishRequest {
-                config: None,
-                skill_path: PathBuf::from("/vault/skills/code-review.md"),
-                destination_root: PathBuf::from("/dest"),
-                user_folders: false,
-                target: "claude".to_owned(),
-                mode: PublishMode::Write,
-                skills_root: Some(PathBuf::from("/vault")),
-                published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-                overwrite: Vec::new(),
+            &{
+                let mut value =
+                    PublishRequest::new("/vault/skills/code-review.md", "/dest", "claude");
+                value.skills_root = Some(PathBuf::from("/vault"));
+                value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+                value
             },
             &Namespace::sw(),
         )
@@ -686,29 +699,21 @@ mod tests {
     const PLUGIN_NOTE: &str = "/vault/marketplaces/house/plugins/git-tools/git-tools.md";
 
     fn plugin_ask() -> StatusRequest {
-        StatusRequest {
-            config: None,
-            skill_path: PathBuf::from(PLUGIN_NOTE),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            skills_root: Some(PathBuf::from("/vault")),
+        {
+            let mut value = StatusRequest::new(PLUGIN_NOTE, "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value
         }
     }
 
     fn publish_plugin(vfs: &MemVfs) {
         publish_skill(
             vfs,
-            &PublishRequest {
-                config: None,
-                skill_path: PathBuf::from(PLUGIN_NOTE),
-                destination_root: PathBuf::from("/dest"),
-                user_folders: false,
-                target: "claude".to_owned(),
-                mode: PublishMode::Write,
-                skills_root: Some(PathBuf::from("/vault")),
-                published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-                overwrite: Vec::new(),
+            &{
+                let mut value = PublishRequest::new(PLUGIN_NOTE, "/dest", "claude");
+                value.skills_root = Some(PathBuf::from("/vault"));
+                value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+                value
             },
             &Namespace::sw(),
         )
@@ -814,16 +819,11 @@ mod tests {
         )
         .unwrap();
         vfs.create_dir_all(Path::new("/dest")).unwrap();
-        let request = PublishRequest {
-            config: None,
-            skill_path: PathBuf::from(note),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        let request = {
+            let mut value = PublishRequest::new(note, "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         };
         let first = publish_skill(&vfs, &request, &Namespace::sw()).unwrap();
         assert!(
@@ -842,13 +842,14 @@ mod tests {
 
         let status = status_of(
             &vfs,
-            &StatusRequest {
-                config: None,
-                skill_path: request.skill_path.clone(),
-                destination_root: request.destination_root.clone(),
-                user_folders: false,
-                target: request.target.clone(),
-                skills_root: request.skills_root.clone(),
+            &{
+                let mut value = StatusRequest::new(
+                    request.skill_path.clone(),
+                    request.destination_root.clone(),
+                    request.target.clone(),
+                );
+                value.skills_root = request.skills_root.clone();
+                value
             },
             &Namespace::sw(),
         )

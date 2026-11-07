@@ -24,7 +24,7 @@ Every function that reads or writes files takes a `&dyn Vfs` first.
 run works.
 
 ```rust
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tradecraft_core::{MemVfs, Namespace, PublishMode, PublishRequest, Vfs, publish_skill};
 
 let vfs = MemVfs::new();
@@ -34,17 +34,10 @@ vfs.write_file(
     b"---\ndescription: Reviews the current diff.\n---\nReview the diff.\n",
 )?;
 
-let request = PublishRequest {
-    config: None,
-    skill_path: PathBuf::from("/vault/skills/code-review.md"),
-    destination_root: PathBuf::from("/project"),
-    user_folders: false,
-    target: "claude-code".to_owned(),
-    mode: PublishMode::Write,
-    skills_root: None,
-    published_at: None,
-    overwrite: Vec::new(),
-};
+// The note, the destination and the target are required. The other fields
+// start empty; set any of them on the value.
+let mut request = PublishRequest::new("/vault/skills/code-review.md", "/project", "claude-code");
+request.mode = PublishMode::Write;
 let report = publish_skill(&vfs, &request, &Namespace::default())?;
 // .skillwright/manifest.json, .claude/skills/code-review/SKILL.md
 assert_eq!(report.files.len(), 2);
@@ -68,10 +61,10 @@ The CLI does the same steps.
    no root file. A root file with `workspace: true` builds nothing itself;
    load each member by passing its folder as `start`.
 2. `export_skills(&vfs, &request, &loaded.namespace)` builds, or checks, the
-   marketplace. Fill the `ExportRequest` from the result: `vault_root` from
-   `dir`, `out_root` from `out_root`, and `config`, `harnesses`, `assets` and
-   `hooks` from `inputs`. Leave out `inputs` and a build gets no assets and
-   no hooks.
+   marketplace. Build the request from the result with
+   `ExportRequest::new(loaded.dir, out_root, inputs.config)`, then set
+   `harnesses`, `assets` and `hooks` from `inputs`. Leave out `inputs` and a
+   build gets no assets and no hooks.
 
 The steps inside are public if a host needs them apart: `find_root_file`,
 `workspace_above`, `RootFile::inherit`, `marketplace_inputs` and
@@ -150,6 +143,15 @@ The library does no I/O except through `Vfs`, so it runs under
 
 The crate is 0.x. A minor version may break the API, and each break is listed
 in the [CHANGELOG](CHANGELOG.md).
+
+The request types (`PublishRequest`, `StatusRequest`, `ExportRequest`,
+`LoadRequest`, `AdoptRequest`, `ComponentRequest`, `VaultScope`, `AssetSpec`,
+`HookFileSpec`, `NewNote` and `CompileSource`) and the config types
+(`MarketplaceConfig`, `PluginOverrides`) are `#[non_exhaustive]`, so a new
+field is not a breaking change. Build a request with its `new` constructor,
+which takes the required inputs, and set the other fields on the value. Build a
+config with `Default::default()` and set its fields. `ReasonToken` is
+`#[non_exhaustive]` too, so a `match` on it needs a `_` arm.
 
 ## Platforms
 

@@ -1179,6 +1179,7 @@ pub fn apply_field_edits(source: &str, edits: &[FieldEdit]) -> Result<String, Co
 /// The note a create is asked for: where it goes, what it is called, and
 /// what it says.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct NewNote<'a> {
     /// Where the author put it, or `None` for the default placement.
     pub placement: Option<&'a Placement>,
@@ -1192,6 +1193,20 @@ pub struct NewNote<'a> {
     pub fields: &'a [FieldEdit],
     /// Everything below the frontmatter block.
     pub body: &'a str,
+}
+
+impl<'a> NewNote<'a> {
+    /// A note called `name` with `fields` and `body`, at the default
+    /// placement and not bundled. Set the other fields after.
+    pub fn new(name: &'a str, fields: &'a [FieldEdit], body: &'a str) -> Self {
+        Self {
+            placement: None,
+            name,
+            bundled: false,
+            fields,
+            body,
+        }
+    }
 }
 
 /// Write a new note: its derived path, its composed bytes, and the member
@@ -1815,18 +1830,12 @@ mod tests {
     fn a_create_derives_its_path_from_the_slugged_name() {
         let vfs = one_plugin();
         let p = placement("house", "tools", "skill");
-        let op = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "Code Review",
-                bundled: false,
-                fields: &fields("ignored"),
-                body: "\n# Body\n",
-            },
-        )
+        let edits = fields("ignored");
+        let op = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("Code Review", &edits, "\n# Body\n");
+            value.placement = Some(&p);
+            value
+        })
         .unwrap();
         let AuthoringOp::Create {
             path,
@@ -1848,18 +1857,13 @@ mod tests {
     fn a_bundled_create_gets_a_folder_of_its_own() {
         let vfs = one_plugin();
         let p = placement("house", "tools", "skill");
-        let AuthoringOp::Create { path, .. } = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "deploy",
-                bundled: true,
-                fields: &fields("deploy"),
-                body: "\n# Body\n",
-            },
-        )
+        let edits = fields("deploy");
+        let AuthoringOp::Create { path, .. } = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("deploy", &edits, "\n# Body\n");
+            value.placement = Some(&p);
+            value.bundled = true;
+            value
+        })
         .unwrap() else {
             panic!("expected a create");
         };
@@ -1878,18 +1882,12 @@ mod tests {
             kind: Some("plugin".to_owned()),
             folder: None,
         };
-        let AuthoringOp::Create { path, scaffold, .. } = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "extras",
-                bundled: false,
-                fields: &fields("extras"),
-                body: "\n# Body\n",
-            },
-        )
+        let edits = fields("extras");
+        let AuthoringOp::Create { path, scaffold, .. } = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("extras", &edits, "\n# Body\n");
+            value.placement = Some(&p);
+            value
+        })
         .unwrap() else {
             panic!("expected a create");
         };
@@ -1909,18 +1907,13 @@ mod tests {
     fn a_create_onto_an_occupied_publish_key_is_refused() {
         let vfs = one_plugin();
         let p = placement("house", "tools", "skill");
-        let refusal = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "review",
-                bundled: true,
-                fields: &fields("review"),
-                body: "\n# Body\n",
-            },
-        )
+        let edits = fields("review");
+        let refusal = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("review", &edits, "\n# Body\n");
+            value.placement = Some(&p);
+            value.bundled = true;
+            value
+        })
         .unwrap_err();
         assert!(
             refusal.contains("two components cannot publish onto one marketplace directory"),
@@ -1932,21 +1925,15 @@ mod tests {
     fn a_create_the_scan_would_refuse_is_refused_here() {
         let vfs = one_plugin();
         let p = placement("house", "tools", "skill");
-        let refusal = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "audit",
-                bundled: false,
-                fields: &[
-                    FieldEdit::set("name", Value::Str("audit".to_owned())),
-                    FieldEdit::set("description", Value::Str("d".repeat(1025))),
-                ],
-                body: "\n# Body\n",
-            },
-        )
+        let edits = [
+            FieldEdit::set("name", Value::Str("audit".to_owned())),
+            FieldEdit::set("description", Value::Str("d".repeat(1025))),
+        ];
+        let refusal = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("audit", &edits, "\n# Body\n");
+            value.placement = Some(&p);
+            value
+        })
         .unwrap_err();
         assert!(
             refusal.contains("not one the vault's scan would list"),

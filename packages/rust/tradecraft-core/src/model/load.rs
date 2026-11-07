@@ -46,6 +46,7 @@ use crate::vfs::{Vfs, normalize};
 /// What a marketplace load reads: this vault, this marketplace of it, for
 /// these harnesses, under this configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct LoadRequest {
     /// Absolute path to the vault.
     pub vault_root: PathBuf,
@@ -69,6 +70,22 @@ pub struct LoadRequest {
     /// Canonical hooks files.
     #[serde(default)]
     pub hooks: Vec<HookFileSpec>,
+}
+
+impl LoadRequest {
+    /// A load of the vault at `vault_root` under `config`. Every other field
+    /// starts empty; set it after.
+    pub fn new(vault_root: impl Into<PathBuf>, config: MarketplaceConfig) -> Self {
+        Self {
+            vault_root: vault_root.into(),
+            skills_root: None,
+            marketplace: None,
+            harnesses: BTreeSet::new(),
+            config,
+            assets: Vec::new(),
+            hooks: Vec::new(),
+        }
+    }
 }
 
 /// Pass 1: every note in the vault, read into a node — its frontmatter, kind,
@@ -397,6 +414,7 @@ pub fn load(
 /// What a single-note load is for: this note, against this tree, for this
 /// destination.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ComponentRequest<'a> {
     /// Absolute path to the note.
     pub path: &'a Path,
@@ -410,6 +428,28 @@ pub struct ComponentRequest<'a> {
     pub canonical: &'a str,
     /// The name the destination was requested by, for a refusal.
     pub target: &'a str,
+}
+
+impl<'a> ComponentRequest<'a> {
+    /// Load the note at `path`, of `kind`, against `root`, for the
+    /// destination `canonical` requested as `target`. It has no bundle; set
+    /// `bundle_root` after for one.
+    pub fn new(
+        path: &'a Path,
+        root: &'a Path,
+        kind: EntityKind,
+        canonical: &'a str,
+        target: &'a str,
+    ) -> Self {
+        Self {
+            path,
+            root,
+            bundle_root: None,
+            kind,
+            canonical,
+            target,
+        }
+    }
 }
 
 /// Loads one note published on its own: no plugin, so a call to another

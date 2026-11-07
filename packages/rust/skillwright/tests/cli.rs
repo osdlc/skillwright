@@ -11,9 +11,7 @@ use std::path::{Path, PathBuf};
 
 use skillwright::cli::run_with;
 use skillwright::ctx::CommandContext;
-use tradecraft_core::{
-    Namespace, NativeVfs, PublishMode, PublishRequest, PublishStatus, publish_skill,
-};
+use tradecraft_core::{Namespace, NativeVfs, PublishRequest, PublishStatus, publish_skill};
 
 struct Run {
     code: i32,
@@ -2554,16 +2552,11 @@ fn dest_of(dir: &Path) -> PathBuf {
 fn publish(vault: &Path, dest: &Path, note: &str) {
     let report = publish_skill(
         &NativeVfs,
-        &PublishRequest {
-            config: None,
-            skill_path: vault.join(note),
-            destination_root: dest.to_path_buf(),
-            user_folders: false,
-            target: "claude".to_string(),
-            mode: PublishMode::Write,
-            skills_root: Some(vault.to_path_buf()),
-            published_at: Some("2026-01-01T00:00:00Z".to_string()),
-            overwrite: Vec::new(),
+        &{
+            let mut value = PublishRequest::new(vault.join(note), dest.to_path_buf(), "claude");
+            value.skills_root = Some(vault.to_path_buf());
+            value.published_at = Some("2026-01-01T00:00:00Z".to_string());
+            value
         },
         &Namespace::default(),
     )

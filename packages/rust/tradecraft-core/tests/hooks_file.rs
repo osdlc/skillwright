@@ -4,8 +4,7 @@
 //! `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --test hooks_file`
 //! rewrites the expected files from the current output.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tradecraft_core::{
     ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig, MemVfs, Namespace, Vfs,
@@ -43,38 +42,17 @@ fn vault(hooks: &str) -> MemVfs {
 }
 
 fn request(mode: ExportMode) -> ExportRequest {
-    ExportRequest {
-        vault_root: PathBuf::from("/vault"),
-        skills_root: None,
-        marketplace: None,
-        out_root: PathBuf::from("/market"),
-        harnesses: BTreeSet::new(),
-        mode,
-        config: MarketplaceConfig {
-            // Members outside `plugins/` land in the plugin named after the
-            // marketplace.
-            name: Some("core".to_owned()),
-            display_name: None,
-            owner: None,
-            description: None,
-            author: None,
-            license: None,
-            version: None,
-            targets: None,
-            repository: None,
-            homepage: None,
-            blocks: Default::default(),
-            plugins: BTreeMap::new(),
-            require_descriptions: false,
-            launcher_path: None,
-        },
-        assets: Vec::new(),
-        hooks: vec![HookFileSpec {
-            source: PathBuf::from("/project/plugin/hooks.json"),
-            from: "plugin/hooks.json".to_owned(),
-            plugin: None,
-        }],
-    }
+    let mut config = MarketplaceConfig::default();
+    // Members outside `plugins/` land in the plugin named after the
+    // marketplace.
+    config.name = Some("core".to_owned());
+    let mut request = ExportRequest::new("/vault", "/market", config);
+    request.mode = mode;
+    request.hooks = vec![HookFileSpec::new(
+        "/project/plugin/hooks.json",
+        "plugin/hooks.json",
+    )];
+    request
 }
 
 fn canonical() -> String {

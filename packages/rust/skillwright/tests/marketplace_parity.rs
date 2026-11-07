@@ -15,13 +15,12 @@
 
 mod common;
 
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use skillwright::cli::run_with;
 use skillwright::ctx::CommandContext;
-use tradecraft_core::{ExportMode, ExportRequest, Namespace, NativeVfs, RootFile, export_skills};
+use tradecraft_core::{ExportRequest, Namespace, NativeVfs, RootFile, export_skills};
 
 fn fixture_vault() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -93,18 +92,14 @@ fn the_cli_and_a_host_request_render_identical_trees() {
 
     export_skills(
         &NativeVfs,
-        &ExportRequest {
-            vault_root: vault.clone(),
-            skills_root: None,
-            marketplace: Some("acme".to_string()),
-            out_root: host_out.clone(),
-            mode: ExportMode::Build,
+        &{
             // The vault has no root file, so the CLI reads it with every
             // default; the host asks the core for the same defaults.
-            config: RootFile::default().to_config(&vault.file_name().unwrap().to_string_lossy()),
-            harnesses: BTreeSet::new(),
-            assets: Vec::new(),
-            hooks: Vec::new(),
+            let config =
+                RootFile::default().to_config(&vault.file_name().unwrap().to_string_lossy());
+            let mut request = ExportRequest::new(vault.clone(), host_out.clone(), config);
+            request.marketplace = Some("acme".to_string());
+            request
         },
         &Namespace::default(),
     )

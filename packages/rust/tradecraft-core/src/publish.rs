@@ -199,6 +199,7 @@ use crate::vfs::{PreviewVfs, Vfs};
 
 /// One publish: this note, to this destination, for this target.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PublishRequest {
     /// Absolute path to the vault note. Not a directory — a skill is a note.
     pub skill_path: PathBuf,
@@ -253,6 +254,28 @@ pub struct PublishRequest {
     pub user_folders: bool,
 }
 
+impl PublishRequest {
+    /// A request to write `skill_path` to `destination_root` for `target`.
+    /// Every other field starts empty; set it after.
+    pub fn new(
+        skill_path: impl Into<PathBuf>,
+        destination_root: impl Into<PathBuf>,
+        target: impl Into<String>,
+    ) -> Self {
+        Self {
+            skill_path: skill_path.into(),
+            destination_root: destination_root.into(),
+            target: target.into(),
+            mode: PublishMode::default(),
+            skills_root: None,
+            config: None,
+            published_at: None,
+            overwrite: Vec::new(),
+            user_folders: false,
+        }
+    }
+}
+
 /// Whether a publish writes, or only reports what it would write.
 ///
 /// A field on the request, so there is one publish path. It is also how
@@ -294,6 +317,7 @@ pub enum PublishStatus {
 /// table it reproduces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum ReasonToken {
     /// The destination's copy moved since we published it.
     Conflict,
@@ -2741,16 +2765,14 @@ mod tests {
             b"print()\n",
         )
         .unwrap();
-        PublishRequest {
-            config: None,
-            skill_path: vault.join("skills/code-review/code-review.md"),
-            destination_root: tmp.join("dest"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: None,
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value = PublishRequest::new(
+                vault.join("skills/code-review/code-review.md"),
+                tmp.join("dest"),
+                "claude",
+            );
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 
@@ -2908,16 +2930,15 @@ mod tests {
             NOTE.as_bytes(),
         )
         .unwrap();
-        let asked = PublishRequest {
-            config: None,
-            skill_path: PathBuf::from("/home/.claude/skills/code-review/code-review.md"),
-            destination_root: PathBuf::from("/home"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/home/.claude")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        let asked = {
+            let mut value = PublishRequest::new(
+                "/home/.claude/skills/code-review/code-review.md",
+                "/home",
+                "claude",
+            );
+            value.skills_root = Some(PathBuf::from("/home/.claude"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         };
         let report = publish_skill(&vfs, &asked, &sw()).unwrap();
         assert!(
@@ -2978,16 +2999,16 @@ mod tests {
         std::os::unix::fs::symlink(vault.join("claude-config"), home.join(".claude")).unwrap();
 
         for mode in [PublishMode::Write, PublishMode::DryRun] {
-            let request = PublishRequest {
-                config: None,
-                skill_path: vault.join("skills/code-review/code-review.md"),
-                destination_root: home.clone(),
-                user_folders: false,
-                target: "claude".to_owned(),
-                mode,
-                skills_root: Some(vault.clone()),
-                published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-                overwrite: Vec::new(),
+            let request = {
+                let mut value = PublishRequest::new(
+                    vault.join("skills/code-review/code-review.md"),
+                    home.clone(),
+                    "claude",
+                );
+                value.mode = mode;
+                value.skills_root = Some(vault.clone());
+                value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+                value
             };
             let report = publish_skill(&NativeVfs, &request, &sw()).unwrap();
             assert!(
@@ -3014,16 +3035,15 @@ mod tests {
         // The same geometry with a real directory in place of the link
         // publishes — what was refused was the routing, not the layout.
         std::fs::remove_file(home.join(".claude")).unwrap();
-        let request = PublishRequest {
-            config: None,
-            skill_path: vault.join("skills/code-review/code-review.md"),
-            destination_root: home.clone(),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(vault.clone()),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        let request = {
+            let mut value = PublishRequest::new(
+                vault.join("skills/code-review/code-review.md"),
+                home.clone(),
+                "claude",
+            );
+            value.skills_root = Some(vault.clone());
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         };
         let report = publish_skill(&NativeVfs, &request, &sw()).unwrap();
         assert!(
@@ -3067,16 +3087,15 @@ mod tests {
             return;
         }
 
-        let request = PublishRequest {
-            config: None,
-            skill_path: vault.join("library/code-review/code-review.md"),
-            destination_root: home.clone(),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(vault.clone()),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        let request = {
+            let mut value = PublishRequest::new(
+                vault.join("library/code-review/code-review.md"),
+                home.clone(),
+                "claude",
+            );
+            value.skills_root = Some(vault.clone());
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         };
         let report = publish_skill(&NativeVfs, &request, &sw()).unwrap();
         assert!(
@@ -3324,16 +3343,12 @@ mod tests {
     }
 
     fn agent_request() -> PublishRequest {
-        PublishRequest {
-            config: None,
-            skill_path: PathBuf::from("/vault/agents/senior-reviewer.md"),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value =
+                PublishRequest::new("/vault/agents/senior-reviewer.md", "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 
@@ -3498,16 +3513,11 @@ mod tests {
     }
 
     fn command_request(target: &str) -> PublishRequest {
-        PublishRequest {
-            config: None,
-            skill_path: PathBuf::from("/vault/commands/ship.md"),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: target.to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value = PublishRequest::new("/vault/commands/ship.md", "/dest", target);
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 
@@ -3677,16 +3687,11 @@ mod tests {
         .unwrap();
         vfs.create_dir_all(Path::new("/dest")).unwrap();
 
-        let request = PublishRequest {
-            config: None,
-            skill_path: PathBuf::from("/vault/skills/review.md"),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        let request = {
+            let mut value = PublishRequest::new("/vault/skills/review.md", "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         };
         publish_skill(&vfs, &request, &sw()).unwrap();
 
@@ -3919,16 +3924,15 @@ mod tests {
     }
 
     fn plugin_request(target: &str) -> PublishRequest {
-        PublishRequest {
-            config: None,
-            skill_path: PathBuf::from("/vault/marketplaces/house/plugins/git-tools/git-tools.md"),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: target.to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value = PublishRequest::new(
+                "/vault/marketplaces/house/plugins/git-tools/git-tools.md",
+                "/dest",
+                target,
+            );
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 
@@ -4718,16 +4722,11 @@ mod tests {
     }
 
     fn linked_request() -> PublishRequest {
-        PublishRequest {
-            config: None,
-            skill_path: PathBuf::from("/vault/skills/code-review.md"),
-            destination_root: PathBuf::from("/dest"),
-            user_folders: false,
-            target: "claude".to_owned(),
-            mode: PublishMode::Write,
-            skills_root: Some(PathBuf::from("/vault")),
-            published_at: Some("2026-08-29T10:00:00Z".to_owned()),
-            overwrite: Vec::new(),
+        {
+            let mut value = PublishRequest::new("/vault/skills/code-review.md", "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            value.published_at = Some("2026-08-29T10:00:00Z".to_owned());
+            value
         }
     }
 

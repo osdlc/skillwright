@@ -237,15 +237,11 @@ fn print_model(
         hooks,
         ..
     } = marketplace_inputs(run);
-    let request = LoadRequest {
-        vault_root: run.vault.clone(),
-        skills_root,
-        marketplace: None,
-        harnesses,
-        config,
-        assets,
-        hooks,
-    };
+    let mut request = LoadRequest::new(run.vault.clone(), config);
+    request.skills_root = skills_root;
+    request.harnesses = harnesses;
+    request.assets = assets;
+    request.hooks = hooks;
     let vfs = run.source_vfs(request.skills_root.as_deref());
     let market = match load(&vfs, &request, &run.core_namespace()) {
         Ok(market) => market,

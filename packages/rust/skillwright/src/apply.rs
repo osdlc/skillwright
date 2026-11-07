@@ -150,6 +150,7 @@ impl Applied {
 /// same op fails after an earlier step already wrote — it carries what
 /// landed alongside the failure that stopped the rest.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ApplyError {
     /// A path was not vault-relative, or escaped the vault.
     Path {
@@ -246,12 +247,20 @@ impl From<markdown_relink::TransformError> for ApplyError {
 
 /// A vault an op runs on.
 #[derive(Clone, Copy)]
+#[non_exhaustive]
 pub struct Vault<'a> {
     /// Its folder, which every write lands under.
     pub dir: &'a Path,
     /// What relinking reads. It leaves out generated output, so a rename
     /// neither edits a built copy nor resolves a link against one.
     pub source: &'a dyn Vfs,
+}
+
+impl<'a> Vault<'a> {
+    /// The vault in `dir`, relinked by reading `source`.
+    pub fn new(dir: &'a Path, source: &'a dyn Vfs) -> Self {
+        Self { dir, source }
+    }
 }
 
 /// Execute `op` against `vault`.
@@ -1074,23 +1083,11 @@ mod tests {
     use tradecraft_core::vfs::NativeVfs;
 
     fn apply(dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
-        super::apply(
-            Vault {
-                dir,
-                source: &NativeVfs,
-            },
-            op,
-        )
+        super::apply(Vault::new(dir, &NativeVfs), op)
     }
 
     fn preview(dir: &Path, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
-        super::preview(
-            Vault {
-                dir,
-                source: &NativeVfs,
-            },
-            op,
-        )
+        super::preview(Vault::new(dir, &NativeVfs), op)
     }
     use std::collections::BTreeMap;
     use tradecraft_core::authoring::TRASH_DIR;
@@ -1391,14 +1388,7 @@ mod tests {
         let entry = v.path().join("notes/a.md");
         let built = tradecraft_core::compile::compile_note(
             &NativeVfs,
-            &tradecraft_core::compile::CompileSource {
-                vault_root: v.path(),
-                entry_path: &entry,
-                bundle_root: None,
-                skill_name: "a",
-                calls: None,
-                links: None,
-            },
+            &tradecraft_core::compile::CompileSource::new(v.path(), &entry, "a"),
             "see [[Guide]]\n",
         )
         .unwrap_err()
@@ -2024,10 +2014,7 @@ mod tests {
         write(v.path(), "alpha.md", "---\nname: alpha\n---\n");
         write(v.path(), "rewritten.md", "see [[alpha]]\n");
         write(v.path(), "drifted.md", "also [[alpha]]\n");
-        let source = Vault {
-            dir: v.path(),
-            source: &NativeVfs,
-        };
+        let source = Vault::new(v.path(), &NativeVfs);
         let (corpus, _) = load_vault(source, "alpha.md", "gamma.md", false).unwrap();
         let facts = VaultFacts::from_corpus(&corpus);
         let plan =

@@ -312,20 +312,15 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
             let _ = writeln!(ctx.err, "adopting {shown} -> {}", run.vault.display());
         }
 
-        let request = AdoptRequest {
-            source: source.path.clone(),
-            vault_root: run.vault.clone(),
-            skills_root: skills_root.clone(),
-            plugin: flags.plugin.clone(),
-            source_label: source.label.clone(),
-            format: None,
-            also_scan: Vec::new(),
-            targets: (!flags.set_targets.is_empty()).then_some(flags.set_targets.clone()),
-            skills: (!flags.only.is_empty()).then_some(flags.only.clone()),
-            overwrite: flags.overwrite.clone(),
-            mode: AdoptMode::Write,
-            adopted_at: adopted_at.clone(),
-        };
+        let mut request =
+            AdoptRequest::new(source.path.clone(), run.vault.clone(), adopted_at.clone());
+        request.skills_root = skills_root.clone();
+        request.plugin = flags.plugin.clone();
+        request.source_label = source.label.clone();
+        request.targets = (!flags.set_targets.is_empty()).then_some(flags.set_targets.clone());
+        request.skills = (!flags.only.is_empty()).then_some(flags.only.clone());
+        request.overwrite = flags.overwrite.clone();
+        request.mode = AdoptMode::Write;
 
         match adopt_skills(vfs, &request, &namespace) {
             Ok(report) => {

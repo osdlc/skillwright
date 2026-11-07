@@ -93,11 +93,10 @@ impl ResolvedRun {
         skills_root: Option<&'a Path>,
         marketplace: Option<&'a str>,
     ) -> VaultScope<'a> {
-        VaultScope {
-            vault_root: &self.vault,
-            skills_root,
-            marketplace,
-        }
+        let mut scope = VaultScope::new(&self.vault);
+        scope.skills_root = skills_root;
+        scope.marketplace = marketplace;
+        scope
     }
 
     /// The build config with every source of `packs` resolved.

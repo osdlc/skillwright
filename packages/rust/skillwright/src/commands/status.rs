@@ -166,18 +166,14 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 destination: root.display().to_string(),
                 target: target.clone(),
             };
-            let request = StatusRequest {
-                skill_path: note_path.clone(),
-                destination_root: root.clone(),
-                target: target.clone(),
-                user_folders: *user_folders,
-                // The vault root, so the kind gate has its structural layer: a
-                // note in `agents/` declaring no kind is not a skill, and
-                // reporting on it as one would state a skill's status for
-                // something that is not one.
-                skills_root: Some(run.vault.clone()),
-                config: Some(root_config.clone()),
-            };
+            let mut request = StatusRequest::new(note_path.clone(), root.clone(), target.clone());
+            request.user_folders = *user_folders;
+            // The vault root, so the kind gate has its structural layer: a
+            // note in `agents/` declaring no kind is not a skill, and
+            // reporting on it as one would state a skill's status for
+            // something that is not one.
+            request.skills_root = Some(run.vault.clone());
+            request.config = Some(root_config.clone());
             match status_of(&run.config_vfs(), &request, &namespace) {
                 Ok(status) => {
                     if let Some(suggestion) = &status.version_bump_suggestion {

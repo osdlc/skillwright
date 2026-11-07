@@ -438,24 +438,21 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             // file was published.
             let published_at =
                 chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-            let request = PublishRequest {
-                skill_path: note_path.clone(),
-                destination_root: dest.root.clone(),
-                target: dest.target.clone(),
-                user_folders: dest.user_folders,
-                mode: if flags.dry_run {
-                    PublishMode::DryRun
-                } else {
-                    PublishMode::Write
-                },
-                // The vault root, so the kind gate has its structural layer
-                // and the rail protects the whole vault, not just the
-                // note's own folder.
-                skills_root: Some(run.vault.clone()),
-                config: Some(root_config.clone()),
-                published_at: Some(published_at),
-                overwrite: flags.overwrite.clone(),
+            let mut request =
+                PublishRequest::new(note_path.clone(), dest.root.clone(), dest.target.clone());
+            request.user_folders = dest.user_folders;
+            request.mode = if flags.dry_run {
+                PublishMode::DryRun
+            } else {
+                PublishMode::Write
             };
+            // The vault root, so the kind gate has its structural layer and
+            // the rail protects the whole vault, not just the note's own
+            // folder.
+            request.skills_root = Some(run.vault.clone());
+            request.config = Some(root_config.clone());
+            request.published_at = Some(published_at);
+            request.overwrite = flags.overwrite.clone();
             match publish_skill(&run.config_vfs(), &request, &namespace) {
                 Ok(report) => {
                     reported = true;

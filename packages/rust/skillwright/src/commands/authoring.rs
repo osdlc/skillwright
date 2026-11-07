@@ -223,13 +223,9 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
     if let Some(a) = &flags.author {
         fields.push(FieldEdit::set(ns.key("author"), Value::Str(a.clone())));
     }
-    let note = NewNote {
-        placement: Some(&placement),
-        name: &flags.name,
-        bundled: true,
-        fields: &fields,
-        body: "",
-    };
+    let mut note = NewNote::new(&flags.name, &fields, "");
+    note.placement = Some(&placement);
+    note.bundled = true;
     let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
@@ -303,13 +299,9 @@ pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i
     if let Some(d) = &flags.description {
         fields.push(FieldEdit::set("description", Value::Str(d.clone())));
     }
-    let note = NewNote {
-        placement: Some(&placement),
-        name: &flags.name,
-        bundled: true,
-        fields: &fields,
-        body: "",
-    };
+    let mut note = NewNote::new(&flags.name, &fields, "");
+    note.placement = Some(&placement);
+    note.bundled = true;
     let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
@@ -387,13 +379,9 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
             Value::Seq(flags.targets.iter().cloned().map(Value::Str).collect()),
         ));
     }
-    let note = NewNote {
-        placement: placement.as_ref(),
-        name: &flags.name,
-        bundled: true,
-        fields: &fields,
-        body: "",
-    };
+    let mut note = NewNote::new(&flags.name, &fields, "");
+    note.placement = placement.as_ref();
+    note.bundled = true;
     let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
     let fallback = expected_create_path(placement.as_ref(), &flags.name, true);
     execute(
@@ -652,10 +640,7 @@ fn execute(
         Err(reason) => return refuse_row(fallback_path, &reason, flags, ctx),
     };
     let source = run.source_vfs(None);
-    let vault = Vault {
-        dir: &run.vault,
-        source: &source,
-    };
+    let vault = Vault::new(&run.vault, &source);
 
     if flags.dry_run {
         return match apply::preview(vault, &op) {

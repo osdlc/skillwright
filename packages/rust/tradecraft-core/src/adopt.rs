@@ -160,6 +160,7 @@ pub const DEFAULT_ADOPTED_PLUGIN: &str = "adopted";
 
 /// One adoption: this source, into this vault.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AdoptRequest {
     /// Absolute path to what is being adopted: a skill directory (holds a
     /// `SKILL.md`), a plugin directory (holds `skills/`), or a directory of
@@ -237,6 +238,31 @@ pub struct AdoptRequest {
     /// The timestamp stamped as `adopted.at`, supplied by the caller —
     /// the layer that has a clock. See the module doc.
     pub adopted_at: String,
+}
+
+impl AdoptRequest {
+    /// Adopt `source` into the vault at `vault_root`, stamped `adopted_at`.
+    /// Every other field starts empty, and the mode writes; set them after.
+    pub fn new(
+        source: impl Into<PathBuf>,
+        vault_root: impl Into<PathBuf>,
+        adopted_at: impl Into<String>,
+    ) -> Self {
+        Self {
+            source: source.into(),
+            vault_root: vault_root.into(),
+            skills_root: None,
+            plugin: None,
+            source_label: None,
+            format: None,
+            also_scan: Vec::new(),
+            targets: None,
+            skills: None,
+            overwrite: Vec::new(),
+            mode: AdoptMode::default(),
+            adopted_at: adopted_at.into(),
+        }
+    }
 }
 
 /// Whether an adoption writes, or only reports what it would write.
@@ -2041,19 +2067,11 @@ mod tests {
     /// The test request: `/src` (a plugin-dir shape), plugin `demos`, both
     /// targets.
     fn request() -> AdoptRequest {
-        AdoptRequest {
-            source: PathBuf::from("/src"),
-            vault_root: PathBuf::from("/vault"),
-            skills_root: None,
-            plugin: Some("demos".to_owned()),
-            source_label: None,
-            format: None,
-            also_scan: Vec::new(),
-            targets: Some(vec!["codex".to_owned(), "claude".to_owned()]),
-            skills: None,
-            overwrite: Vec::new(),
-            mode: AdoptMode::Write,
-            adopted_at: "2026-08-22T12:00:00Z".to_owned(),
+        {
+            let mut value = AdoptRequest::new("/src", "/vault", "2026-08-22T12:00:00Z");
+            value.plugin = Some("demos".to_owned());
+            value.targets = Some(vec!["codex".to_owned(), "claude".to_owned()]);
+            value
         }
     }
 
@@ -2281,13 +2299,11 @@ mod tests {
         let note = read_vault_skill(&vfs, &skill.entry_path, &sw()).unwrap();
         let compiled = compile_note(
             &vfs,
-            &CompileSource {
-                vault_root: Path::new("/vault"),
-                entry_path: &skill.entry_path,
-                bundle_root: skill.bundle_root.as_deref(),
-                skill_name: &skill.name,
-                calls: None,
-                links: None,
+            &{
+                let mut value =
+                    CompileSource::new(Path::new("/vault"), &skill.entry_path, &skill.name);
+                value.bundle_root = skill.bundle_root.as_deref();
+                value
             },
             &note.projection.content.body,
         )
@@ -3647,13 +3663,10 @@ mod tests {
         let note = read_vault_skill(vfs, &entry, &sw()).unwrap();
         compile_note(
             vfs,
-            &CompileSource {
-                vault_root: Path::new("/vault"),
-                entry_path: &entry,
-                bundle_root: bundled.then_some(bundle.as_path()),
-                skill_name: name,
-                calls: None,
-                links: None,
+            &{
+                let mut value = CompileSource::new(Path::new("/vault"), &entry, name);
+                value.bundle_root = bundled.then_some(bundle.as_path());
+                value
             },
             &note.projection.content.body,
         )
@@ -3798,14 +3811,7 @@ mod tests {
         write(&vfs, "/vault/demo/x.md", "# X\n");
         let compiled = compile_note(
             &vfs,
-            &CompileSource {
-                vault_root: Path::new("/vault"),
-                entry_path: Path::new("/vault/demo/me.md"),
-                bundle_root: None,
-                skill_name: "me",
-                calls: None,
-                links: None,
-            },
+            &CompileSource::new(Path::new("/vault"), Path::new("/vault/demo/me.md"), "me"),
             &adopted,
         )
         .unwrap();

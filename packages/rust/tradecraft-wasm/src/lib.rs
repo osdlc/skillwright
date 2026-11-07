@@ -323,11 +323,8 @@ fn discovery_view<'v>(
         .config
         .clone()
         .unwrap_or_else(|| vault_config(vfs, &wire.vault_root));
-    let scope = VaultScope {
-        vault_root: &wire.vault_root,
-        skills_root: wire.skills_root.as_deref(),
-        marketplace: None,
-    };
+    let mut scope = VaultScope::new(&wire.vault_root);
+    scope.skills_root = wire.skills_root.as_deref();
     source_view(
         SourceView::over(vfs),
         scope,
@@ -450,11 +447,9 @@ struct WireLoadRequest {
 /// The vault as `wire` asks to load it.
 fn load_view<'v>(vfs: &'v dyn Vfs, wire: &WireLoadRequest, ns: &Namespace) -> SourceView<'v> {
     let request = &wire.request;
-    let scope = VaultScope {
-        vault_root: &request.vault_root,
-        skills_root: request.skills_root.as_deref(),
-        marketplace: request.marketplace.as_deref(),
-    };
+    let mut scope = VaultScope::new(&request.vault_root);
+    scope.skills_root = request.skills_root.as_deref();
+    scope.marketplace = request.marketplace.as_deref();
     source_view(
         SourceView::over(vfs),
         scope,

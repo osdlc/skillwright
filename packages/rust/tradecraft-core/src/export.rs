@@ -137,6 +137,7 @@ use crate::vfs::{PreviewWrite, Vfs, normalize};
 
 /// One marketplace export: this vault, onto this output root, in this mode.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ExportRequest {
     /// Absolute path to the vault. Discovery, compilation, and the provenance
     /// markers all resolve against it.
@@ -153,11 +154,10 @@ pub struct ExportRequest {
     /// The marketplace directory: one directory holding one marketplace,
     /// which every harness this build renders reads from.
     ///
-    /// Each harness owns exactly one top-level entry under it — its own tree
-    /// (`HarnessProfile::tree`) — and nothing else here is read, compared or
-    /// replaced. So this may be a directory holding other things, including
-    /// a repository's own root, which is what lets a repository be its own
-    /// marketplace.
+    /// Each harness owns exactly one top-level entry under it, its own tree,
+    /// and nothing else here is read, compared or replaced. So this may be a
+    /// directory holding other things, including a repository's own root,
+    /// which is what lets a repository be its own marketplace.
     pub out_root: PathBuf,
     /// Which harnesses to render, by name. Empty means every harness this
     /// build supports.
@@ -189,10 +189,34 @@ pub struct ExportRequest {
     pub hooks: Vec<HookFileSpec>,
 }
 
+impl ExportRequest {
+    /// A build of the vault at `vault_root` into `out_root`, under `config`.
+    /// Every other field starts empty, and the mode is a build; set them
+    /// after.
+    pub fn new(
+        vault_root: impl Into<PathBuf>,
+        out_root: impl Into<PathBuf>,
+        config: MarketplaceConfig,
+    ) -> Self {
+        Self {
+            vault_root: vault_root.into(),
+            skills_root: None,
+            marketplace: None,
+            out_root: out_root.into(),
+            harnesses: BTreeSet::new(),
+            mode: ExportMode::default(),
+            config,
+            assets: Vec::new(),
+            hooks: Vec::new(),
+        }
+    }
+}
+
 /// One canonical hooks file a build renders into a plugin's packs. At most
 /// one per plugin; its gap report goes in every pack. See
 /// [`crate::hooks_file`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct HookFileSpec {
     /// Absolute host path to the file, resolved by the caller the way an
     /// [`AssetSpec::source`] is.
@@ -208,6 +232,18 @@ pub struct HookFileSpec {
     pub plugin: Option<String>,
 }
 
+impl HookFileSpec {
+    /// The hooks file at `source`, named `from` in reports, for the
+    /// marketplace's own plugin. Set `plugin` after for another one.
+    pub fn new(source: impl Into<PathBuf>, from: impl Into<String>) -> Self {
+        Self {
+            source: source.into(),
+            from: from.into(),
+            plugin: None,
+        }
+    }
+}
+
 /// One file, or one directory tree, an export copies verbatim into a built
 /// plugin's own root, rather than rendering it from a vault note.
 ///
@@ -217,6 +253,7 @@ pub struct HookFileSpec {
 /// motivating file case, and shared reference docs the skills read
 /// (`conventions/`) the motivating directory case.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AssetSpec {
     /// Absolute host path to the source file or directory. A directory
     /// lands as its whole tree, under the same fixed `tests`/`fixtures`
@@ -230,6 +267,18 @@ pub struct AssetSpec {
     /// marketplace's own plugin, named after the marketplace.
     #[serde(default)]
     pub plugin: Option<String>,
+}
+
+impl AssetSpec {
+    /// Copy `source` to `dest` in the marketplace's own plugin. Set `plugin`
+    /// after for another one.
+    pub fn new(source: impl Into<PathBuf>, dest: impl Into<String>) -> Self {
+        Self {
+            source: source.into(),
+            dest: dest.into(),
+            plugin: None,
+        }
+    }
 }
 
 /// Whether an export writes the marketplace, or only reports its drift.
@@ -253,6 +302,7 @@ pub enum ExportMode {
 /// A member outside every plugin folder belongs to the marketplace's own
 /// plugin, which is named after the marketplace.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct MarketplaceConfig {
     /// The name both manifests publish under, **when the vault does not supply
     /// one**. A marketplace note names itself, and that name wins.
@@ -332,12 +382,13 @@ pub struct MarketplaceConfig {
 /// default, so an empty override block means the defaults wholesale.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct PluginOverrides {
     /// Default `0.1.0`.
     pub version: Option<String>,
     /// Default `Skills: <names>.` over the root's own member list.
     pub description: Option<String>,
-    /// Default the marketplace `author`, then `owner`.
+    /// Default the marketplace `author`.
     pub author: Option<serde_json::Value>,
     /// Default the marketplace `license`, then `UNLICENSED`.
     pub license: Option<String>,
@@ -1764,10 +1815,10 @@ mod tests {
     }
 
     fn launcher_asset() -> AssetSpec {
-        AssetSpec {
-            source: PathBuf::from("/host/bin/tool"),
-            dest: LAUNCHER.to_owned(),
-            plugin: Some("tools".to_owned()),
+        {
+            let mut value = AssetSpec::new("/host/bin/tool", LAUNCHER);
+            value.plugin = Some("tools".to_owned());
+            value
         }
     }
 
@@ -1791,16 +1842,10 @@ mod tests {
     }
 
     fn request(mode: ExportMode) -> ExportRequest {
-        ExportRequest {
-            vault_root: PathBuf::from("/vault"),
-            skills_root: None,
-            marketplace: None,
-            out_root: PathBuf::from("/market"),
-            harnesses: BTreeSet::new(),
-            mode,
-            config: config(),
-            assets: Vec::new(),
-            hooks: Vec::new(),
+        {
+            let mut value = ExportRequest::new("/vault", "/market", config());
+            value.mode = mode;
+            value
         }
     }
 
@@ -2251,10 +2296,10 @@ mod tests {
             dest: "./bin/tool".to_owned(),
             ..launcher_asset()
         };
-        let directory = AssetSpec {
-            source: PathBuf::from("/host/bin"),
-            dest: "bin".to_owned(),
-            plugin: Some("tools".to_owned()),
+        let directory = {
+            let mut value = AssetSpec::new("/host/bin", "bin");
+            value.plugin = Some("tools".to_owned());
+            value
         };
         for asset in [file, directory] {
             let vfs = example_vault();
@@ -2292,15 +2337,15 @@ mod tests {
     /// `check` must report it rather than fail.
     #[test]
     fn a_rendered_path_that_switches_between_file_and_directory_rebuilds() {
-        let file = AssetSpec {
-            source: PathBuf::from("/src/docs"),
-            dest: "docs".to_owned(),
-            plugin: Some("tools".to_owned()),
+        let file = {
+            let mut value = AssetSpec::new("/src/docs", "docs");
+            value.plugin = Some("tools".to_owned());
+            value
         };
-        let directory = AssetSpec {
-            source: PathBuf::from("/src2/docs"),
-            dest: "docs".to_owned(),
-            plugin: Some("tools".to_owned()),
+        let directory = {
+            let mut value = AssetSpec::new("/src2/docs", "docs");
+            value.plugin = Some("tools".to_owned());
+            value
         };
         // Each case carries the path the second build lands and its bytes.
         for (first, second, landed, bytes) in [
@@ -2748,10 +2793,10 @@ mod tests {
         write(&vfs, "/host/conventions/nested/fixtures/f.md", "fixture\n");
 
         let mut request = request(ExportMode::Build);
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/conventions"),
-            dest: "conventions".to_owned(),
-            plugin: Some("tools".to_owned()),
+        request.assets = vec![{
+            let mut value = AssetSpec::new("/host/conventions", "conventions");
+            value.plugin = Some("tools".to_owned());
+            value
         }];
         export_skills(&vfs, &request, &sw()).unwrap();
 
@@ -2784,10 +2829,10 @@ mod tests {
         write(&vfs, "/host/bin/tool", "launcher\n");
 
         let mut request = request(ExportMode::Build);
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/bin/tool"),
-            dest: "../../escaped".to_owned(),
-            plugin: Some("tools".to_owned()),
+        request.assets = vec![{
+            let mut value = AssetSpec::new("/host/bin/tool", "../../escaped");
+            value.plugin = Some("tools".to_owned());
+            value
         }];
         let err = export_skills(&vfs, &request, &sw())
             .unwrap_err()
@@ -2802,10 +2847,10 @@ mod tests {
         write(&vfs, "/host/bin/tool", "launcher\n");
 
         let mut request = request(ExportMode::Build);
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/bin/tool"),
-            dest: "/etc/escaped".to_owned(),
-            plugin: Some("tools".to_owned()),
+        request.assets = vec![{
+            let mut value = AssetSpec::new("/host/bin/tool", "/etc/escaped");
+            value.plugin = Some("tools".to_owned());
+            value
         }];
         let err = export_skills(&vfs, &request, &sw())
             .unwrap_err()
@@ -2825,10 +2870,10 @@ mod tests {
             ("/host/tree", "."),
         ] {
             let mut request = request(ExportMode::Build);
-            request.assets = vec![AssetSpec {
-                source: PathBuf::from(source),
-                dest: dest.to_owned(),
-                plugin: Some("tools".to_owned()),
+            request.assets = vec![{
+                let mut value = AssetSpec::new(source, dest);
+                value.plugin = Some("tools".to_owned());
+                value
             }];
             let err = export_skills(&vfs, &request, &sw())
                 .unwrap_err()
@@ -2845,10 +2890,10 @@ mod tests {
         write(&vfs, "/host/bin/tool", "launcher\n");
 
         let mut request = request(ExportMode::Build);
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/bin/tool"),
-            dest: LAUNCHER.to_owned(),
-            plugin: Some("nonexistent".to_owned()),
+        request.assets = vec![{
+            let mut value = AssetSpec::new("/host/bin/tool", LAUNCHER);
+            value.plugin = Some("nonexistent".to_owned());
+            value
         }];
         let err = export_skills(&vfs, &request, &sw())
             .unwrap_err()
@@ -2862,10 +2907,10 @@ mod tests {
         let vfs = example_vault();
         write(&vfs, "/host/bin/tool", "v1\n");
         let mut request = request(ExportMode::Build);
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from("/host/bin/tool"),
-            dest: LAUNCHER.to_owned(),
-            plugin: Some("tools".to_owned()),
+        request.assets = vec![{
+            let mut value = AssetSpec::new("/host/bin/tool", LAUNCHER);
+            value.plugin = Some("tools".to_owned());
+            value
         }];
         export_skills(&vfs, &request, &sw()).unwrap();
 
@@ -4215,10 +4260,10 @@ mod tests {
 
         let source = "/repo/.claude-plugin/packs/launcher";
         write(&vfs, source, "#!/bin/sh\n");
-        request.assets = vec![AssetSpec {
-            source: PathBuf::from(source),
-            dest: "bin/tool".to_owned(),
-            plugin: Some("tools".to_owned()),
+        request.assets = vec![{
+            let mut value = AssetSpec::new(source, "bin/tool");
+            value.plugin = Some("tools".to_owned());
+            value
         }];
         let message = export_skills(&vfs, &request, &sw())
             .unwrap_err()
@@ -5621,17 +5666,7 @@ mod tests {
         let fixture =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/agent-skills-vault");
         let dir = tempfile::tempdir().unwrap();
-        let request = ExportRequest {
-            vault_root: fixture,
-            skills_root: None,
-            marketplace: None,
-            out_root: dir.path().join("market"),
-            harnesses: BTreeSet::new(),
-            mode: ExportMode::Build,
-            config: config(),
-            assets: Vec::new(),
-            hooks: Vec::new(),
-        };
+        let request = ExportRequest::new(fixture, dir.path().join("market"), config());
 
         let report = export_skills(&NativeVfs, &request, &sw()).unwrap();
         assert_eq!(report.checked, 1);

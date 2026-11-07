@@ -228,7 +228,7 @@ export interface PluginOverrides {
   /** Default `Skills: <names>.` over the root's own member list. */
   description?: string;
 
-  /** Default the marketplace `author`, then `owner`. */
+  /** Default the marketplace `author`. */
   author?: unknown;
 
   /** Default the marketplace `license`, then `UNLICENSED`. */
@@ -961,11 +961,10 @@ export interface ExportRequest {
    * The marketplace directory: one directory holding one marketplace,
    * which every harness this build renders reads from.
    *
-   * Each harness owns exactly one top-level entry under it — its own tree
-   * (`HarnessProfile::tree`) — and nothing else here is read, compared or
-   * replaced. So this may be a directory holding other things, including
-   * a repository's own root, which is what lets a repository be its own
-   * marketplace.
+   * Each harness owns exactly one top-level entry under it, its own tree,
+   * and nothing else here is read, compared or replaced. So this may be a
+   * directory holding other things, including a repository's own root,
+   * which is what lets a repository be its own marketplace.
    */
   out_root: string;
 
