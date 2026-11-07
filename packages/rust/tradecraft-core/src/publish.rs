@@ -1851,13 +1851,18 @@ pub fn overrides_for(
 
     let wanted = canonical_target(target).unwrap_or(target);
     // A key a harness does not read warns at discovery and is dropped here,
-    // never refused.
+    // never refused. A key it reads takes the form every harness reads: a
+    // flag such as `yes` becomes a real boolean, a list hint its text.
     for (canonical, block) in &mut folded {
         let accepted = accepted_override_keys(canonical);
         // Not `Map::retain`: the serde_json floor predates it.
         *block = std::mem::take(block)
             .into_iter()
             .filter(|(key, _)| accepted.contains(key))
+            .map(|(key, value)| {
+                let value = crate::harness::field_types::normalized(EntityKind::Skill, &key, value);
+                (key, value)
+            })
             .collect();
     }
     // A key the harness reads with the wrong kind of value is refused.
@@ -1867,12 +1872,7 @@ pub fn overrides_for(
         {
             return Err(CoreError::malformed(
                 note_path,
-                format!(
-                    "`{}.{key}` must be {}, not {}",
-                    ns.key(wanted),
-                    ty.label(),
-                    crate::harness::field_types::found(value)
-                ),
+                format!("`{}.{key}` {}", ns.key(wanted), ty.refusal(value)),
             ));
         }
     }

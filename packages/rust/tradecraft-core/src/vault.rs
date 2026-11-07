@@ -38,11 +38,15 @@
 //! * **A spec key holding the wrong kind of value is refused.** `name: [a]` or
 //!   `user-invocable: yes-please` stops the read, naming the key, by the same
 //!   check a harness block applies to that key. A value of the right kind the
-//!   model still cannot type stays put and travels on: `allowed-tools: Read,
-//!   Grep` is a string with a comma no harness fact reads, so it is carried and
-//!   warns. `metadata:` holding a nested map is the live case: the Agent Skills
-//!   spec types it `dict[str, str]`, so a nested one is carried whole and the
-//!   renderer folds it in with the other keys it cannot type.
+//!   model still cannot type stays put and travels on. `metadata:` holding a
+//!   nested map is the live case: the Agent Skills spec types it
+//!   `dict[str, str]`, so a nested one is carried whole and the renderer folds
+//!   it in with the other keys it cannot type. A spec key set to nothing is
+//!   unset, and is dropped rather than carried.
+//! * **Claude Code's lenient forms are read.** `allowed-tools: Read, Grep` is
+//!   two tools, as Claude Code's skills docs say. A boolean field also reads
+//!   `yes`, `no`, `on`, `off`, `1` and `0`, and becomes a real boolean, so a
+//!   harness that reads only `true` and `false` gets one.
 //!
 //! Key spellings are the standard's: `allowed-tools`, `argument-hint`,
 //! `arguments`, `disable-model-invocation`, `license`, `compatibility`,
@@ -137,7 +141,7 @@ pub fn read_vault_note(
     // Ours, out of the map before anything else looks at it. What survives
     // this line is the note's own frontmatter and nothing of ours.
     let ours = VaultFrontmatter::take_from(&mut fields, skill_path, ns, kind)?;
-    check_spec_kinds(&fields, skill_path, kind)?;
+    check_spec_kinds(&mut fields, skill_path, kind)?;
 
     let name = take_string(&mut fields, "name").filter(|n| !n.trim().is_empty());
     // A `name` alone opts in, as it does for the scan, which reports the
@@ -334,13 +338,14 @@ pub(crate) fn frontmatter_map(
 
 /// Refuses a spec key on a skill, agent or command whose value is not the kind
 /// [`crate::harness::field_types::component_type`] gives it, the check a
-/// harness block applies to the same key. `null` reads as unset and passes.
+/// harness block applies to the same key. A spec key set to nothing is unset,
+/// so it is removed rather than carried.
 ///
 /// # Errors
 ///
 /// `malformed`, naming the key and the kind it must be.
 fn check_spec_kinds(
-    fields: &Map<String, Value>,
+    fields: &mut Map<String, Value>,
     path: &Path,
     kind: EntityKind,
 ) -> Result<(), CoreError> {
@@ -350,10 +355,19 @@ fn check_spec_kinds(
     ) {
         return Ok(());
     }
-    for (key, value) in fields {
-        let spec_owned = crate::keys::lookup(kind, key)
-            .is_some_and(|spec| spec.owner == crate::keys::Owner::Spec);
-        if !spec_owned || value.is_null() {
+    let spec_owned = |key: &str| {
+        crate::keys::lookup(kind, key).is_some_and(|spec| spec.owner == crate::keys::Owner::Spec)
+    };
+    let unset: Vec<String> = fields
+        .iter()
+        .filter(|(key, value)| value.is_null() && spec_owned(key))
+        .map(|(key, _)| key.clone())
+        .collect();
+    for key in unset {
+        fields.remove(&key);
+    }
+    for (key, value) in fields.iter() {
+        if !spec_owned(key) {
             continue;
         }
         if let Some(ty) = crate::harness::field_types::component_type(kind, key)
@@ -361,11 +375,7 @@ fn check_spec_kinds(
         {
             return Err(CoreError::malformed(
                 path,
-                format!(
-                    "`{key}` must be {}, not {}",
-                    ty.label(),
-                    crate::harness::field_types::found(value)
-                ),
+                format!("`{key}` {}", ty.refusal(value)),
             ));
         }
     }
@@ -375,13 +385,10 @@ fn check_spec_kinds(
 /// `argument-hint`, as the hint text. A list of strings is the unquoted
 /// `[issue-number]` form Claude's docs show, and reads back as that text.
 fn take_hint(fields: &mut Map<String, Value>) -> Option<String> {
-    if let Some(Value::Array(items)) = fields.get("argument-hint")
-        && let Some(words) = items
-            .iter()
-            .map(Value::as_str)
-            .collect::<Option<Vec<&str>>>()
+    if let Some(hint) = fields
+        .get("argument-hint")
+        .and_then(crate::harness::field_types::hint_text)
     {
-        let hint = format!("[{}]", words.join(", "));
         fields.remove("argument-hint");
         return Some(hint);
     }
@@ -399,12 +406,14 @@ fn take_string(fields: &mut Map<String, Value>, key: &str) -> Option<String> {
         .and_then(|v| v.as_str().map(str::to_owned))
 }
 
+/// Removes `key` and returns it as a boolean, in any form
+/// [`crate::harness::field_types::flag`] reads.
 fn take_bool(fields: &mut Map<String, Value>, key: &str) -> Option<bool> {
-    let matches = fields.get(key).is_some_and(Value::is_boolean);
-    matches
-        .then(|| fields.remove(key))
-        .flatten()
-        .and_then(|v| v.as_bool())
+    let yes = fields
+        .get(key)
+        .and_then(crate::harness::field_types::flag)?;
+    fields.remove(key);
+    Some(yes)
 }
 
 /// A string-to-string map, all-or-nothing for the same reason
@@ -447,10 +456,10 @@ fn take_tools(fields: &mut Map<String, Value>) -> Vec<String> {
     tools.unwrap_or_default()
 }
 
-/// The tools an `allowed-tools` value names: a list of strings, or the Agent
-/// Skills spec's space-separated string. A space inside parentheses belongs to
-/// the tool, as in `Bash(git status)`. `None` for anything else, a comma
-/// between tools included: no harness fact says one is read.
+/// The tools an `allowed-tools` value names: a list of strings, or one string
+/// of tools separated by spaces (the Agent Skills spec's form) or commas (which
+/// Claude Code's skills docs also accept). A space or comma inside parentheses
+/// belongs to the tool, as in `Bash(git status)`. `None` for anything else.
 pub(crate) fn tool_list(value: &Value) -> Option<Vec<String>> {
     let tools = match value {
         Value::String(tools) => tools,
@@ -465,8 +474,7 @@ pub(crate) fn tool_list(value: &Value) -> Option<Vec<String>> {
     let (mut list, mut tool, mut depth) = (Vec::new(), String::new(), 0usize);
     for c in tools.chars() {
         match c {
-            ',' if depth == 0 => return None,
-            c if c.is_whitespace() && depth == 0 => {
+            c if (c == ',' || c.is_whitespace()) && depth == 0 => {
                 if !tool.is_empty() {
                     list.push(std::mem::take(&mut tool));
                 }
@@ -812,18 +820,46 @@ mod tests {
     fn a_value_the_model_cannot_type_is_carried_rather_than_swallowed() {
         let (vfs, path) = vault(
             "odd",
-            "---\ndescription: d\nallowed-tools: Read, Grep\n---\nb\n",
+            "---\ndescription: d\nmetadata: {team: {lead: Ada}}\n---\nb\n",
         );
         let content = read_vault_skill(&vfs, &path, &sw())
             .unwrap()
             .projection
             .content;
 
-        assert!(content.allowed_tools.is_empty());
+        assert!(content.metadata.is_empty());
         assert_eq!(
-            content.annotations["allowed-tools"],
-            serde_json::json!("Read, Grep")
+            content.annotations["metadata"],
+            serde_json::json!({"team": {"lead": "Ada"}})
         );
+    }
+
+    #[test]
+    fn claude_code_s_lenient_forms_are_read() {
+        let (vfs, path) = vault(
+            "odd",
+            "---\ndescription: d\nallowed-tools: Read, Grep Bash(git log, x)\n\
+             user-invocable: NO\ndisable-model-invocation: 1\n---\nb\n",
+        );
+        let content = read_vault_skill(&vfs, &path, &sw())
+            .unwrap()
+            .projection
+            .content;
+        assert_eq!(content.allowed_tools, ["Read", "Grep", "Bash(git log, x)"]);
+        assert!(!content.user_invocable);
+        assert!(content.disable_model_invocation);
+        assert!(content.annotations.is_empty(), "{:?}", content.annotations);
+    }
+
+    #[test]
+    fn a_spec_key_set_to_nothing_is_dropped() {
+        let (vfs, path) = vault("odd", "---\ndescription: d\nmodel:\nlicense:\n---\nb\n");
+        let content = read_vault_skill(&vfs, &path, &sw())
+            .unwrap()
+            .projection
+            .content;
+        assert!(content.model_override.is_none());
+        assert!(content.annotations.is_empty(), "{:?}", content.annotations);
     }
 
     #[test]
@@ -831,7 +867,11 @@ mod tests {
         for (line, said) in [
             (
                 "user-invocable: yes-please",
-                "`user-invocable` must be a boolean, not a string",
+                "`user-invocable` must be a boolean, not a string; write `true` or `false`",
+            ),
+            (
+                "name: 2048",
+                "`name` must be a string, not a number — quote it",
             ),
             ("model: [1]", "`model` must be a string, not a list"),
             (

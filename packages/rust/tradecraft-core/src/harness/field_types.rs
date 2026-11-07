@@ -23,6 +23,10 @@ use crate::keys::Shape;
 enum Json {
     String,
     Bool,
+    /// A boolean, or one of the words and numbers Claude Code's skills docs
+    /// say its boolean fields read: `yes`, `no`, `on`, `off`, `true`,
+    /// `false` in any case, and `1` and `0`.
+    Flag,
     Number,
     Object,
     /// A list of anything.
@@ -35,11 +39,12 @@ enum Json {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FieldType(&'static [Json]);
 
-use Json::{Bool, List, Number, Object, String as Str, StringList};
+use Json::{Bool, Flag, List, Number, Object, String as Str, StringList};
 
 const STRING: FieldType = FieldType(&[Str]);
 const BOOL: FieldType = FieldType(&[Bool]);
 const NUMBER: FieldType = FieldType(&[Number]);
+const FLAG: FieldType = FieldType(&[Flag]);
 const OBJECT: FieldType = FieldType(&[Object]);
 const LIST: FieldType = FieldType(&[List]);
 const STRINGS: FieldType = FieldType(&[StringList]);
@@ -56,6 +61,7 @@ impl FieldType {
         self.0.iter().any(|kind| match kind {
             Str => value.is_string(),
             Bool => value.is_boolean(),
+            Flag => flag(value).is_some(),
             Number => value.is_number(),
             Object => value.is_object(),
             List => value.is_array(),
@@ -73,6 +79,7 @@ impl FieldType {
             .map(|kind| match kind {
                 Str => "a string",
                 Bool => "a boolean",
+                Flag => "a boolean",
                 Number => "a number",
                 Object => "a mapping",
                 List => "a list",
@@ -81,6 +88,64 @@ impl FieldType {
             .collect();
         words.join(" or ")
     }
+
+    /// What a refusal says after `` `key` ``: the kinds this takes and what
+    /// `value` is, with a hint where one helps.
+    pub(crate) fn refusal(self, value: &Value) -> String {
+        let hint = if self.0.contains(&Flag) {
+            "; write `true` or `false`"
+        } else if self.0.contains(&Str) && (value.is_number() || value.is_boolean()) {
+            crate::frontmatter::quoting_hint(value)
+        } else {
+            ""
+        };
+        format!("must be {}, not {}{hint}", self.label(), found(value))
+    }
+}
+
+/// The boolean `value` spells, in any form [`Json::Flag`] reads.
+pub(crate) fn flag(value: &Value) -> Option<bool> {
+    match value {
+        Value::Bool(yes) => Some(*yes),
+        Value::Number(n) => match n.as_u64() {
+            Some(1) => Some(true),
+            Some(0) => Some(false),
+            _ => None,
+        },
+        Value::String(word) => match word.to_ascii_lowercase().as_str() {
+            "true" | "yes" | "on" => Some(true),
+            "false" | "no" | "off" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// An `argument-hint` list as its hint text: an unquoted `[issue-number]`,
+/// which YAML reads as a list, is the text `[issue-number]`.
+pub(crate) fn hint_text(value: &Value) -> Option<String> {
+    let words = value
+        .as_array()?
+        .iter()
+        .map(Value::as_str)
+        .collect::<Option<Vec<&str>>>()?;
+    Some(format!("[{}]", words.join(", ")))
+}
+
+/// `value` of a component's `key` in the form every harness reads: a flag as
+/// a real boolean, a list `argument-hint` as its text. Anything else as is.
+pub(crate) fn normalized(kind: EntityKind, key: &str, value: Value) -> Value {
+    if component_type(kind, key) == Some(FLAG)
+        && let Some(yes) = flag(&value)
+    {
+        return Value::Bool(yes);
+    }
+    if key == "argument-hint"
+        && let Some(text) = hint_text(&value)
+    {
+        return Value::String(text);
+    }
+    value
 }
 
 /// What a value is, for a refusal: `a number`, `a list`.
@@ -245,7 +310,9 @@ pub(crate) fn component_type(kind: EntityKind, key: &str) -> Option<FieldType> {
         // skillwright ships unknown keys there with whatever value they hold.
         (_, Shape::StringMap) => OBJECT,
         (_, Shape::String) => STRING,
-        (_, Shape::Bool) => BOOL,
+        // Claude Code's skills docs: boolean fields also read yes/no, on/off
+        // and 1/0. [`normalized`] turns each into a real boolean.
+        (_, Shape::Bool) => FLAG,
         (_, Shape::Number) => NUMBER,
         (_, Shape::StringList) => STRINGS,
         _ => return None,

@@ -997,7 +997,7 @@ fn is_slug(s: &str) -> bool {
 /// Says the quoting rule at the one moment it is actionable: a value we wanted
 /// as a string arrived as a number or a boolean because YAML types a bare
 /// scalar by shape.
-fn quoting_hint(value: &Value) -> &'static str {
+pub(crate) fn quoting_hint(value: &Value) -> &'static str {
     if value.is_number() || value.is_boolean() {
         " — quote it. A serialiser types a bare scalar by its shape, \
          and a long all-digit hash comes back as a float with the digits gone"

@@ -557,7 +557,7 @@ fn a_known_block_key_with_a_right_value_ships() {
     let root = "---\nname: v\nclaude: {model: opus}\ncodex: {interface: {displayName: Vee}}\n\
                 pi: {naming: bare}\nbuild:\n  out: dist\n---\n";
     let skill = "---\ndescription: S.\nclaude:\n  allowed-tools: [Read, Grep]\n  \
-                 argument-hint: [issue-number]\n  metadata: {team: {lead: Ada}}\n---\nB.\n";
+                 argument-hint: [issue-number]\n  user-invocable: off\n  metadata: {team: {lead: Ada}}\n---\nB.\n";
     let plugin = "---\ndescription: P.\nversion: 1.0.0\n\
                   codex: {policy: {installation: AVAILABLE}, interface: {displayName: Pea}}\n---\n";
     let dir = vault(&[
@@ -572,8 +572,8 @@ fn a_known_block_key_with_a_right_value_ships() {
     for line in [
         "allowed-tools:",
         "- Read",
-        "argument-hint:",
-        "- issue-number",
+        "argument-hint: \"[issue-number]\"",
+        "user-invocable: false",
         "model: opus",
         "lead: Ada",
     ] {

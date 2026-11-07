@@ -177,11 +177,7 @@ pub(crate) fn check_block_values(config: &MarketplaceConfig) -> Result<(), CoreE
                 {
                     return Err(CoreError::refused(
                         "malformed-block",
-                        format!(
-                            "`{harness}.{key}` of {owner} must be {}, not {}",
-                            ty.label(),
-                            crate::harness::field_types::found(value)
-                        ),
+                        format!("`{harness}.{key}` of {owner} {}", ty.refusal(value)),
                     ));
                 }
             }

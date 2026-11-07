@@ -314,7 +314,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::StringList,
         inherits: false,
-        summary: "Tools the skill may use without asking: a list, or one space-separated string.",
+        summary: "Tools the skill may use without asking: a list, or one string separated by spaces or commas.",
     },
     KeySpec {
         key: "compatibility",
@@ -554,7 +554,9 @@ pub fn field_reference() -> String {
          another form: `allowed-tools` and `tools` also take one string, \
          `argument-hint` also takes a list of strings (an unquoted `[issue-number]` \
          reads as that text), `arguments` takes a string or any list, and `metadata` \
-         takes any mapping. A spec key set to nothing reads as unset. Owner `skillwright` means the key is read into \
+         takes any mapping. A boolean also reads `yes`, `no`, `on`, `off`, `1` and `0` \
+         in any case, as Claude Code's docs say, and every harness gets `true` or \
+         `false`. A spec key set to nothing is unset and is dropped. Owner `skillwright` means the key is read into \
          the model and stripped at publish, and takes the prefix under \
          `build.namespace`. Owner `spec` means the key belongs to the Agent Skills \
          spec or a harness, and is never prefixed. An inherited key comes from the \

@@ -306,7 +306,9 @@ pub(crate) fn unknown_key_warning(
     // The one spec key that lands here: it is listed, but the value is not one
     // a harness reads.
     if unknown.iter().any(|key| key == "allowed-tools") {
-        hint.push_str(". `allowed-tools` takes a list, or a space-separated string");
+        hint.push_str(
+            ". `allowed-tools` takes a list, or one string separated by spaces or commas",
+        );
     }
     let subject = if unknown.len() == 1 {
         "is not a key"
