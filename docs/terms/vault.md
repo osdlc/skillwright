@@ -8,8 +8,8 @@ osdlc's shared crates call it a [corpus](https://github.com/osdlc/osdlc/blob/mai
 
 ## In code
 
-`--vault`, `vault:` in `skillwright.yaml`; read by `tradecraft-core/src/vault.rs`.
+`--vault`, or the folder holding `skillwright.md`; read by `tradecraft-core/src/vault.rs`.
 
 ## Not to be confused with
 
-A [destination](destination.md), which skillwright writes to. skillwright never writes into the vault except through authoring verbs and [adopt](adopt.md).
+A [destination](destination.md), which skillwright writes to. skillwright never writes into the vault except through authoring verbs, `bump` and [adopt](adopt.md).

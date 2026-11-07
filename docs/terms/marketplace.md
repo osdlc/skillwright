@@ -6,7 +6,7 @@ A named set of [plugin](plugin.md)s that harnesses install from. Built by `build
 
 ## In code
 
-`marketplace:` block in `skillwright.yaml`; `MarketplaceConfig` in `export.rs`.
+The top-level keys of `skillwright.md`; `MarketplaceConfig` in `export.rs`.
 
 ## Not to be confused with
 

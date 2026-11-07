@@ -30,10 +30,8 @@
 //! `marketplaces/<m>/plugins/<p>/skills/<s>.md` is the full shape. A note
 //! that is not under a kind folder is a resource or the author's own writing.
 //!
-//! This is layer 3 of the kind decision's four: a note's own `sw-kind`
-//! outranks whatever the folder said. Every component reports which layer
-//! answered, so a note that overruled its folder is visible as having done
-//! so.
+//! The folder is the answer: no frontmatter key names a note's kind or its
+//! plugin. Every component reports which layer answered.
 //!
 //! # What *declared* means
 //!
@@ -47,7 +45,10 @@
 //! `name` without `description` also opts in: the note is admitted with
 //! [`MISSING_DESCRIPTION`] and named in [`DiscoveryReport::warnings`].
 //! Defaulting the description for a note with neither key would make every
-//! note in the tree a component. A note that declares a description but sits
+//! note in the tree a component. A container's own note (`<p>/<p>.md`) is the
+//! exception: the folder already makes the container, the note is optional,
+//! and it is read whatever keys it holds, with an empty description and no
+//! warning. A note that declares a description but sits
 //! at no shape is refused, and told where a component can live — dropping it
 //! silently is the failure this reader exists to avoid.
 //!
@@ -77,17 +78,11 @@
 //!   onto one.
 //!
 //! * **Targets validate against [`KNOWN_TARGETS`]** — the names this
-//!   build publishes to — and the key is `sw-targets` read through
+//!   build publishes to — and the key is `targets` read through
 //!   [`VaultFrontmatter`], not a bare `skill-targets`. With that key comes the
 //!   core's contract: absent means every destination, an empty list means
 //!   nowhere, and a scalar is refused rather than comma-split — the shape rules
 //!   [`crate::frontmatter`] already enforces on every read.
-//! * **An unknown `sw-kind` is refused.** That is [`crate::frontmatter`]'s rule
-//!   arriving with the reader: a typo that quietly unpublished a note is the
-//!   outcome the closed kind vocabulary exists to prevent.
-//! * **An empty or wrong-shaped `sw-plugin` is refused.** An absent key and a
-//!   present-but-wrong key must not share an outcome; delete the key to mean
-//!   the default.
 //! * **[`slugify`] folds ASCII only**, with no NFKD normalisation: `Café.md`
 //!   cannot carry `name: cafe`, and the fix is to name the file in the name's
 //!   own alphabet. Unicode normalisation tables are a dependency this crate
@@ -122,6 +117,7 @@ use crate::error::CoreError;
 use crate::frontmatter::{
     ContainerIdentity, EntityKind, KindHints, KindSource, VaultFrontmatter, resolve_kind,
 };
+use crate::model::member_block_keys;
 use crate::namespace::Namespace;
 use crate::publish::KNOWN_TARGETS;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
@@ -130,10 +126,10 @@ use crate::vfs::Vfs;
 
 /// One component, as discovery hands it to the verbs.
 ///
-/// `targets` keeps the three-outcome `sw-targets` reading instead of being
+/// `targets` keeps the three-outcome `targets` reading instead of being
 /// expanded to an explicit all-targets list, so the layer that knows what
 /// "every destination" means today is the one that decides it.
-// No `Eq`: `identity` carries free-shaped JSON for the two manifest fields
+// No `Eq`: `identity` carries JSON for the two manifest fields
 // whose dialects allow an object, and `serde_json::Value` is only `PartialEq`
 // because it can hold a float. Nothing keys a map or a set on a whole
 // component — uniqueness is keyed on `(marketplace, plugin, kind, name)`.
@@ -142,9 +138,10 @@ pub struct DiscoveredComponent {
     /// The frontmatter `name`, already validated against the Agent Skills spec.
     pub name: String,
     /// The frontmatter `description`, ≤1024 characters, or
-    /// [`MISSING_DESCRIPTION`] when the note wrote none.
+    /// [`MISSING_DESCRIPTION`] when the note wrote none. Empty on a container
+    /// note with neither `name` nor `description`.
     pub description: String,
-    /// `description` is [`MISSING_DESCRIPTION`], not the note's own.
+    /// `description` is not the note's own.
     #[serde(default)]
     pub description_filled: bool,
     /// What this component is, resolved across the layers that can decide it.
@@ -160,29 +157,23 @@ pub struct DiscoveredComponent {
     /// tell "the folder and the note agree" from "the note overruled the
     /// folder".
     pub folder_kind: Option<EntityKind>,
-    /// `sw-targets` exactly as [`VaultFrontmatter::targets`] read it, every
+    /// `targets` exactly as [`VaultFrontmatter::targets`] read it, every
     /// name checked against [`KNOWN_TARGETS`]. `None` is absent — every
     /// destination; `Some(vec![])` is nowhere.
     pub targets: Option<Vec<String>>,
     /// The plugin holding this component. `None` is a bare component, sitting
     /// at the root and belonging to no plugin.
     ///
-    /// The containing folder decides it and `sw-plugin` overrules it. Where a
-    /// marketplace needs every skill under *some* plugin directory,
-    /// [`crate::export`] supplies the configured default — that is a
-    /// publication concern, not a fact about the vault.
+    /// The containing folder decides it. Where a marketplace needs every
+    /// skill under *some* plugin directory, [`crate::export`] supplies the
+    /// plugin named after the marketplace: a publication concern, not a fact
+    /// about the vault.
     pub plugin: Option<String>,
-    /// The plugin the folder put it in, before `sw-plugin` was read.
-    pub folder_plugin: Option<String>,
     /// The marketplace this belongs to — the directory holding the `plugins/`
-    /// folder it sits under. `None` only for a marketplace's own note.
+    /// folder it sits under. `None` for a marketplace's own note, and for a
+    /// component with no marketplace folder above it.
     ///
-    /// Structural, with no frontmatter counterpart. `sw-kind` and `sw-plugin`
-    /// exist because a note may reasonably disagree with where it sits about
-    /// *what* it is or *which pack* it joins; disagreeing about which
-    /// distribution it ships in is a move, not an annotation, and a key that
-    /// let a note claim another marketplace would let it claim one whose
-    /// directory does not exist.
+    /// Structural, with no frontmatter counterpart.
     pub marketplace: Option<String>,
     /// Absolute path of the entry note.
     pub entry_path: PathBuf,
@@ -220,7 +211,173 @@ pub struct DiscoveredComponent {
     /// pass that reads a container note at all — [`crate::export`] renders
     /// from what discovery hands it and never opens a file of its own.
     pub identity: ContainerIdentity,
+    /// The note's harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`),
+    /// keyed by harness. A container's are merged over the manifests it
+    /// generates and inherited by its members.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub blocks: Map<String, Value>,
+    /// Keys the key table does not list for this kind, sorted. The scan
+    /// warns about each.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unknown_keys: Vec<String>,
 }
+
+impl DiscoveredComponent {
+    /// The folder a container is known by: a plugin's entry note is named for
+    /// it, and a marketplace's sits in it as the root file. A marketplace note's
+    /// `name` is only what it publishes under.
+    pub fn folder(&self) -> &str {
+        let named = if self.kind == EntityKind::Marketplace {
+            self.entry_path.parent().and_then(Path::file_name)
+        } else {
+            self.entry_path.file_stem()
+        };
+        named.and_then(|name| name.to_str()).unwrap_or_default()
+    }
+}
+
+/// What happens to one unknown key, as a warning says it. A key the namespace
+/// claims and a field of the `adopted` block are consumed on the read.
+fn unknown_key_fate(kind: EntityKind, key: &str, ns: &Namespace) -> &'static str {
+    match kind {
+        EntityKind::Plugin | EntityKind::Marketplace | EntityKind::Hook => "ignored",
+        _ if ns.is_ours(key) || key.starts_with(&format!("{}.", ns.key("adopted"))) => "dropped",
+        EntityKind::Skill => "published under `metadata:`",
+        EntityKind::Command => "carried as written",
+        EntityKind::Agent => "carried as written when the agent publishes on its own",
+    }
+}
+
+/// The warning for a note's unknown keys, or `None` when it has none.
+pub(crate) fn unknown_key_warning(
+    path: &str,
+    kind: EntityKind,
+    unknown: &[String],
+    ns: &Namespace,
+) -> Option<DiscoveryWarning> {
+    if unknown.is_empty() {
+        return None;
+    }
+    let keys = quoted(&unknown.iter().map(String::as_str).collect::<Vec<_>>());
+    let mut fates: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for key in unknown {
+        fates
+            .entry(unknown_key_fate(kind, key, ns))
+            .or_default()
+            .push(key);
+    }
+    let fate = if fates.len() == 1 {
+        fates.into_keys().collect::<String>()
+    } else {
+        fates
+            .iter()
+            .map(|(fate, keys)| format!("{} {fate}", quoted(keys)))
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    let mut hint = if ns.is_bare() {
+        String::new()
+    } else {
+        let respelled: Vec<String> = unknown
+            .iter()
+            .filter_map(|key| {
+                let field = ns.field(key).replace('-', "_");
+                let bare = key == "adopted" || crate::harness::profile_named(key).is_some();
+                let hyphen = field != ns.field(key) && crate::keys::is_skillwright_key(&field);
+                (bare || hyphen).then(|| format!("`{key}` is `{}`", ns.key(&field)))
+            })
+            .collect();
+        let examples = if respelled.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", respelled.join(", "))
+        };
+        format!(
+            ". Under namespace `{}`, skillwright's keys are spelled `{}`{examples}",
+            ns.stem(),
+            ns.key("<key>")
+        )
+    };
+    // The one spec key that lands here: it is listed, but the value is not one
+    // a harness reads.
+    if unknown.iter().any(|key| key == "allowed-tools") {
+        hint.push_str(". `allowed-tools` takes a list, or a space-separated string");
+    }
+    let subject = if unknown.len() == 1 {
+        "is not a key"
+    } else {
+        "are not keys"
+    };
+    let article = if kind == EntityKind::Agent { "an" } else { "a" };
+    Some(DiscoveryWarning {
+        path: path.to_owned(),
+        reason: UNKNOWN_KEY_REASON.to_owned(),
+        detail: format!(
+            "{keys} {subject} skillwright reads on {article} {}; {fate}{hint}",
+            kind.as_str()
+        ),
+    })
+}
+
+/// A note's unknown keys, the keys in a container's blocks that nothing reads
+/// included.
+pub(crate) fn unknown_keys(frontmatter: &VaultFrontmatter, kind: EntityKind) -> Vec<String> {
+    let mut unknown = frontmatter.unknown.clone();
+    if kind.holds_components() {
+        unknown.extend(unknown_container_block_keys(&frontmatter.overrides, kind));
+    }
+    unknown
+}
+
+/// The keys in a container note's harness blocks that no file the block
+/// reaches reads, as `<harness>.<key>`. A plugin's block reaches its pack
+/// manifest, its marketplace entry and, for a key neither reads, its members.
+/// A marketplace's reaches its marketplace manifest, and the rest passes down
+/// to its plugins unless it says which plugin this is.
+pub(crate) fn unknown_container_block_keys(
+    blocks: &Map<String, Value>,
+    kind: EntityKind,
+) -> Vec<String> {
+    let mut unknown = Vec::new();
+    for (harness, block) in blocks {
+        let Some(profile) = crate::harness::profile_named(harness) else {
+            continue;
+        };
+        let Some(format) = profile.plugin.as_ref() else {
+            continue;
+        };
+        let members = member_block_keys(EntityKind::Skill, harness);
+        for key in block.as_object().into_iter().flat_map(|b| b.keys()) {
+            let name = key.as_str();
+            let on_a_plugin = format.manifest_fields.contains(&name)
+                || format.entry_fields.contains(&name)
+                || (harness == "pi" && key == crate::harness::manifest::NAMING_KEY)
+                || members.contains(key);
+            let known = if kind == EntityKind::Marketplace {
+                format.marketplace_fields.contains(&name)
+                    || key == crate::harness::manifest::PACKS_KEY
+                    || (on_a_plugin && !crate::keys::BLOCK_IDENTITY_KEYS.contains(&name))
+            } else {
+                on_a_plugin
+            };
+            if !known {
+                unknown.push(format!("{harness}.{key}"));
+            }
+        }
+    }
+    unknown
+}
+
+/// The warning reason for a note that declares a description where it cannot
+/// ship.
+pub const NEVER_SHIPS_REASON: &str = "never-ships";
+
+/// The reason a note under a kind folder that declares no component is named:
+/// a typo in `description` must not make a note vanish.
+pub const NO_COMPONENT_KEYS_REASON: &str = "no-component-keys";
+
+/// The warning reason for a key the key table does not list.
+pub const UNKNOWN_KEY_REASON: &str = "unknown-key";
 
 /// What a hook note routes on and what it runs, summarised for a listing.
 ///
@@ -266,7 +423,7 @@ pub struct DiscoveryReport {
 
 /// The description a component gets when its note names itself but writes no
 /// `description`. [`DiscoveryReport::warnings`] names every note it stands in
-/// for; `marketplace.require_descriptions` refuses the build instead.
+/// for; `build.require_descriptions` refuses the build instead.
 pub const MISSING_DESCRIPTION: &str = "No description provided.";
 
 /// The warning reason naming a note published with [`MISSING_DESCRIPTION`].
@@ -298,15 +455,11 @@ pub struct SkippedNote {
     pub reason: String,
     /// The sentence naming what is wrong, as the error stated it.
     pub detail: String,
-    /// The pack this note would have joined: its own `sw-plugin` where the
-    /// read got far enough to see that key, else the plugin folder holding
-    /// it.
+    /// The plugin folder holding this note.
     ///
-    /// A pack publish checks its own members against this. The publish spec forbids
-    /// installing a subset silently, and a member declaring `sw-plugin` from
-    /// outside the pack's folder is still a member — so the declared key is
-    /// consulted first and the folder is the floor beneath it. `None` where
-    /// neither answers: the note joins no pack, and no pack is blocked.
+    /// A pack publish checks its own members against this: the publish spec
+    /// forbids installing a subset silently. `None` where no plugin folder
+    /// holds it: the note joins no pack, and no pack is blocked.
     pub plugin: Option<String>,
 }
 
@@ -347,8 +500,8 @@ impl SkippedNote {
 /// publishable note, sorted by name.
 ///
 /// `ns` is the vault's frontmatter namespace, the same value every other
-/// reader takes — a note whose `sw-targets` this scan validated must be the
-/// note whose `sw-targets` the publish reads, or the two disagree about where
+/// reader takes — a note whose `targets` this scan validated must be the
+/// note whose `targets` the publish reads, or the two disagree about where
 /// it goes.
 ///
 /// The content root must lie inside the vault. A root outside it has no
@@ -358,7 +511,7 @@ impl SkippedNote {
 /// # A bad note stops itself, not the scan
 ///
 /// Everything wrong with *one* note — an illegal name, an over-long
-/// description, an `sw-targets` this build does
+/// description, a `targets` this build does
 /// not know, a declared note at no recognised shape, frontmatter that will
 /// not parse — lands in [`DiscoveryReport::skipped`] and the walk carries on.
 /// One person's half-written draft must not block everybody else's publish.
@@ -385,6 +538,25 @@ pub fn discover_components(
 ) -> Result<DiscoveryReport, CoreError> {
     let source = load_source(vfs, vault_root, content_root)?;
     discover_in(vfs, vault_root, &source, ns)
+}
+
+/// [`discover_components`] for a roster: a duplicate name or a bundle overlap
+/// is not an error. Every component stays, and each note involved gets a
+/// `path-collision` entry in [`DiscoveryReport::warnings`] naming the other
+/// party. A host that builds from the result must refuse on those warnings;
+/// [`discover_components`] does it for every build.
+///
+/// # Errors
+///
+/// As [`discover_components`], less `path-collision`.
+pub fn discover_roster(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    content_root: Option<&Path>,
+    ns: &Namespace,
+) -> Result<DiscoveryReport, CoreError> {
+    let source = load_source(vfs, vault_root, content_root)?;
+    discover_with(vfs, vault_root, &source, ns, true)
 }
 
 /// The skills source at `content_root` (the vault root when `None`): its
@@ -447,12 +619,25 @@ pub(crate) fn discover_in(
     source: &Source,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
+    discover_with(vfs, vault_root, source, ns, false)
+}
+
+/// [`discover_in`], with `roster` turning each path collision into warnings
+/// instead of a refusal.
+fn discover_with(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    source: &Source,
+    ns: &Namespace,
+    roster: bool,
+) -> Result<DiscoveryReport, CoreError> {
     let root = &source.root;
     let files = source_files(vfs, vault_root, source);
 
     // Structure first, over the whole file set: a note's shape depends on what
     // sits beside it, so no single path can be classified on its own.
-    let placed = place(root, &files);
+    let patterns = crate::patterns::Patterns::read(vfs, vault_root);
+    let placed = place(root, &files, &patterns);
 
     let mut discovered = Vec::new();
     let mut skipped = Vec::new();
@@ -463,18 +648,48 @@ pub(crate) fn discover_in(
             // and a note there is not a malformed component however it is
             // shaped. Only inside a marketplace is a declared note at an
             // unrecognised path a mistake worth naming.
-            if under_a_kind_folder(root, entry_path)
-                && let Err(err) = refuse_stray(vfs, root, entry_path, ns)
-            {
-                // A stray sits at no recognised shape, so it is a member of
-                // nothing and blocks no pack.
+            if let Some(market) = old_member_note(vfs, root, entry_path) {
+                let err = old_note_refusal(entry_path, market);
                 skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+                continue;
+            }
+            let reads_as = conventional(root, entry_path, &patterns);
+            if under_a_kind_folder(root, &reads_as) {
+                let relative = |path: &Path| {
+                    path.strip_prefix(root)
+                        .map(forward_slashed)
+                        .unwrap_or_else(|_| path.display().to_string())
+                };
+                if let Some(market) = old_marketplace_note(&relative(entry_path)) {
+                    let err = old_note_refusal(entry_path, market);
+                    skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+                } else if patterns.never_ships(&relative(entry_path))
+                    || patterns.in_a_named_never_ship_folder(&relative(entry_path))
+                {
+                    if declares_description(vfs, entry_path, ns).unwrap_or(false) {
+                        warnings.push(DiscoveryWarning {
+                            path: relative(entry_path),
+                            reason: NEVER_SHIPS_REASON.to_owned(),
+                            detail: "this note declares a description and will not be published, \
+                                     because a folder that never ships holds it"
+                                .to_owned(),
+                        });
+                    }
+                } else if in_a_skill_folder(entry_path, &placed, root) {
+                    // A file of that skill: it ships with it, whatever it declares.
+                } else if let Err(err) = refuse_stray(vfs, root, entry_path, &reads_as, ns) {
+                    // A stray sits at no recognised shape, so it is a member
+                    // of nothing and blocks no pack.
+                    skipped.push(SkippedNote::new(vault_root, entry_path, None, &err));
+                }
             }
             continue;
         };
         match read_source(vfs, vault_root, entry_path, placement, &placed, &files, ns) {
             Ok(Some(component)) => {
-                if component.description_filled {
+                // An empty description is a container note that names and
+                // describes nothing, which is valid: it is not a filler.
+                if component.description_filled && !component.description.is_empty() {
                     // Only these two kinds can take a configured description.
                     let unless =
                         if matches!(component.kind, EntityKind::Plugin | EntityKind::Marketplace) {
@@ -492,16 +707,36 @@ pub(crate) fn discover_in(
                         ),
                     });
                 }
+                if let Some(warning) = unknown_key_warning(
+                    &component.vault_relative_path,
+                    component.kind,
+                    &component.unknown_keys,
+                    ns,
+                ) {
+                    warnings.push(warning);
+                }
                 discovered.push(component);
             }
-            Ok(None) => {}
+            Ok(None) => {
+                if placement.kind.is_some_and(|kind| !kind.holds_components())
+                    && has_frontmatter_keys(vfs, entry_path)
+                {
+                    warnings.push(DiscoveryWarning {
+                        path: entry_path
+                            .strip_prefix(root)
+                            .map(forward_slashed)
+                            .unwrap_or_else(|_| entry_path.display().to_string()),
+                        reason: NO_COMPONENT_KEYS_REASON.to_owned(),
+                        detail: "this note has frontmatter but no `name` or `description`, so \
+                                 it is not a component and will not ship"
+                            .to_owned(),
+                    });
+                }
+            }
             Err(err) => {
-                // Where the note said which pack it belongs to, that answer
-                // decides — a member declaring `sw-plugin` from outside the
-                // pack's folder is still a member, and a pack that shipped
-                // without it would be a silent subset.
-                let plugin =
-                    declared_plugin(vfs, entry_path, ns).or_else(|| placement.plugin.clone());
+                // The folder names the pack, so a pack never ships without
+                // a member it could not read.
+                let plugin = placement.plugin.clone();
                 skipped.push(SkippedNote::new(vault_root, entry_path, plugin, &err));
             }
         }
@@ -525,21 +760,25 @@ pub(crate) fn discover_in(
             component.name.as_str(),
         );
         if let Some(first) = by_key.get(&key) {
-            return Err(CoreError::refused(
-                "path-collision",
-                format!(
-                    "duplicate {} name `{}` in {}: {}, {} — two components cannot publish onto \
-                     one directory",
-                    component.kind.as_str(),
-                    component.name,
-                    component
-                        .plugin
-                        .as_deref()
-                        .map_or_else(|| "no plugin".to_owned(), |p| format!("plugin `{p}`")),
-                    first.vault_relative_path,
-                    component.vault_relative_path
-                ),
-            ));
+            let detail = format!(
+                "duplicate {} name `{}` in {}: {}, {} — two components cannot publish onto \
+                 one directory",
+                component.kind.as_str(),
+                component.name,
+                component
+                    .plugin
+                    .as_deref()
+                    .map_or_else(|| "no plugin".to_owned(), |p| format!("plugin `{p}`")),
+                first.vault_relative_path,
+                component.vault_relative_path
+            );
+            if !roster {
+                return Err(CoreError::refused("path-collision", detail));
+            }
+            for path in [&first.vault_relative_path, &component.vault_relative_path] {
+                warnings.push(collision_warning(path, &detail));
+            }
+            continue;
         }
         by_key.insert(key, component);
     }
@@ -556,21 +795,31 @@ pub(crate) fn discover_in(
         };
         for inner in &discovered {
             if inner.entry_path != outer.entry_path && inner.entry_path.starts_with(bundle) {
-                return Err(CoreError::refused(
-                    "path-collision",
-                    format!(
-                        "component bundles cannot overlap: {} contains {} — everything under a \
-                         bundle ships with it, so an inner component would publish twice",
-                        outer.vault_relative_path, inner.vault_relative_path
-                    ),
-                ));
+                let detail = format!(
+                    "component bundles cannot overlap: {} contains {} — everything under a \
+                     bundle ships with it, so an inner component would publish twice",
+                    outer.vault_relative_path, inner.vault_relative_path
+                );
+                if !roster {
+                    return Err(CoreError::refused("path-collision", detail));
+                }
+                for path in [&outer.vault_relative_path, &inner.vault_relative_path] {
+                    warnings.push(collision_warning(path, &detail));
+                }
             }
         }
     }
 
-    // Keys are unique by the check above, so this order is total.
+    warnings.sort_by(|a, b| a.path.cmp(&b.path));
+    // Keys are unique by the check above, so this order is total (a roster
+    // keeps colliding keys, and then sorts by path too).
     discovered.sort_by(|a, b| {
-        (&a.name, a.kind.as_str(), &a.plugin).cmp(&(&b.name, b.kind.as_str(), &b.plugin))
+        (&a.name, a.kind.as_str(), &a.plugin, &a.vault_relative_path).cmp(&(
+            &b.name,
+            b.kind.as_str(),
+            &b.plugin,
+            &b.vault_relative_path,
+        ))
     });
     // `skipped` and `warnings` are already in path order: `walk` sorts every
     // directory before it descends, and nothing has reordered the file list
@@ -580,6 +829,15 @@ pub(crate) fn discover_in(
         skipped,
         warnings,
     })
+}
+
+/// The warning a roster carries for one note in a path collision.
+fn collision_warning(path: &str, detail: &str) -> DiscoveryWarning {
+    DiscoveryWarning {
+        path: path.to_owned(),
+        reason: "path-collision".to_owned(),
+        detail: detail.to_owned(),
+    }
 }
 
 /// A note at no recognised shape, which declares itself a component anyway.
@@ -594,22 +852,10 @@ fn refuse_stray(
     vfs: &dyn Vfs,
     skills_root: &Path,
     entry_path: &Path,
+    reads_as: &Path,
     ns: &Namespace,
 ) -> Result<(), CoreError> {
-    let markdown = entry_path
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("md"));
-    if !markdown {
-        return Ok(());
-    }
-    let source = read_utf8(vfs, entry_path)?;
-    let (frontmatter, _body) = split_frontmatter(&source);
-    let mut fields = frontmatter_map(frontmatter, entry_path)?;
-    // Drained for its refusals — an unknown `sw-kind` on a stray note is still
-    // a typo worth naming, and it names itself better than the shape does.
-    VaultFrontmatter::take_from(&mut fields, entry_path, ns)?;
-
-    if trimmed_string(&fields, "description").is_none() {
+    if !declares_description(vfs, entry_path, ns)? {
         return Ok(());
     }
 
@@ -618,10 +864,19 @@ fn refuse_stray(
         .strip_prefix(skills_root)
         .map(forward_slashed)
         .unwrap_or_else(|_| entry_path.display().to_string());
+    let conventional = reads_as
+        .strip_prefix(skills_root)
+        .map(forward_slashed)
+        .unwrap_or_else(|_| reads_as.display().to_string());
+    let pattern = if conventional == relative {
+        String::new()
+    } else {
+        format!(" (`build.patterns` reads it as `{conventional}`)")
+    };
     Err(CoreError::malformed(
         entry_path,
         format!(
-            "`{relative}` declares a `description` but sits where no component can \
+            "`{relative}`{pattern} declares a `description` but sits where no component can \
              be read. A component is `<name>.md` or `<name>/<name>.md` directly inside a kind \
              folder (`{}`), and a skill may use `<name>/SKILL.md`. A kind folder sits at the \
              root or inside whatever the folder above it holds — \
@@ -652,18 +907,17 @@ pub const KIND_DIRS: &[(&str, EntityKind)] = &[
 /// What the folders say about one note, without scanning the whole vault.
 ///
 /// Every field is `None` where structure said nothing, and none of them is a
-/// default: this is the *structural* half of the answer, which a caller ranks
-/// against the note's own frontmatter ([`crate::frontmatter::resolve_kind`]
-/// for the kind, `sw-plugin` over [`Self::plugin`] for the pack).
+/// default. A caller resolves the kind through
+/// [`crate::frontmatter::resolve_kind`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FolderPlacement {
-    /// The kind folder above the note. `None` means none is, so the note's own
-    /// `sw-kind` — or the default — decides. Never a claim that it is a skill.
+    /// The kind folder above the note. `None` means none is, so the default
+    /// decides. Never a claim that it is a skill.
     pub kind: Option<EntityKind>,
     /// The marketplace whose tree this sits in. `None` for a component
     /// promoted above every marketplace, and for a marketplace's own note.
     pub marketplace: Option<String>,
-    /// The plugin directory holding it, before `sw-plugin` is read.
+    /// The plugin directory holding it.
     pub plugin: Option<String>,
 }
 
@@ -679,7 +933,17 @@ pub struct FolderPlacement {
 /// It *is* that rule, not a second reading of it: the kind folder above a note
 /// names the note, so `classify` answers this from the path alone.
 pub fn folder_placement(content_root: &Path, entry: &Path) -> FolderPlacement {
-    let Ok(rest) = entry.strip_prefix(content_root) else {
+    folder_placement_with(&crate::patterns::Patterns::default(), content_root, entry)
+}
+
+/// [`folder_placement`], reading the tree through the root file's patterns.
+pub fn folder_placement_with(
+    patterns: &crate::patterns::Patterns,
+    content_root: &Path,
+    entry: &Path,
+) -> FolderPlacement {
+    let path = conventional(content_root, entry, patterns);
+    let Ok(rest) = path.strip_prefix(content_root) else {
         return FolderPlacement::default();
     };
     let parts: Vec<String> = rest
@@ -716,6 +980,91 @@ pub(crate) fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
     })
 }
 
+/// Whether `path` sits in the folder of a skill whose entry note is placed.
+fn in_a_skill_folder(path: &Path, placed: &BTreeMap<PathBuf, Placement>, root: &Path) -> bool {
+    placed.iter().any(|(entry, placement)| {
+        let bundled = entry
+            .strip_prefix(root)
+            .is_ok_and(|rel| is_bundle_entry(&forward_slashed(rel)).unwrap_or(false));
+        placement.kind == Some(EntityKind::Skill)
+            && bundled
+            && entry
+                .parent()
+                .is_some_and(|folder| path.starts_with(folder))
+    })
+}
+
+/// The marketplace folder of the old note form `marketplaces/<m>/<m>.md`.
+fn old_marketplace_note(rel: &str) -> Option<&str> {
+    let (market, file) = rel.strip_prefix("marketplaces/")?.split_once('/')?;
+    (md_stem(file) == Some(market)).then_some(market)
+}
+
+/// The marketplace folder of the old note form as a workspace member scans
+/// it: `<m>.md` at the member's own root. A note with no keys is the author's.
+fn old_member_note<'a>(vfs: &dyn Vfs, root: &'a Path, path: &Path) -> Option<&'a str> {
+    let market = root.file_name()?.to_str()?;
+    let file = path.strip_prefix(root).ok()?.to_str()?;
+    (md_stem(file) == Some(market)
+        && has_frontmatter_keys(vfs, path)
+        && matches!(crate::patterns::workspace_above(vfs, root), Ok(Some(_))))
+    .then_some(market)
+}
+
+/// The refusal of a marketplace note in the old form.
+fn old_note_refusal(path: &Path, market: &str) -> CoreError {
+    CoreError::malformed(
+        path,
+        format!(
+            "a marketplace's note is `marketplaces/{market}/skillwright.md` now: move this file \
+             there"
+        ),
+    )
+}
+
+/// The folder of the plugin `name` in a vault-relative `path`, as a scan
+/// spells it. A marketplace of the same name is skipped first.
+pub fn plugin_folder_in(path: &str, name: &str) -> Option<String> {
+    let start = path
+        .strip_prefix("marketplaces/")
+        .and_then(|rest| rest.split_once('/'))
+        .map_or(0, |(market, _)| "marketplaces/".len() + market.len());
+    let at = start + path[start..].find(&format!("/{name}/"))?;
+    Some(path[..at + 1 + name.len()].to_owned())
+}
+
+/// Whether `component` sits in a folder of the plugin `name`. A plugin with no
+/// such component is the marketplace's own, whose note is the marketplace's.
+pub fn in_plugin_folder(component: &DiscoveredComponent, name: &str) -> bool {
+    component.plugin.as_deref() == Some(name)
+        || (component.kind == EntityKind::Plugin && component.folder() == name)
+}
+
+/// Whether the note at `path` has a frontmatter block holding any key.
+fn has_frontmatter_keys(vfs: &dyn Vfs, path: &Path) -> bool {
+    read_utf8(vfs, path).is_ok_and(|source| {
+        let (frontmatter, _body) = split_frontmatter(&source);
+        frontmatter_map(frontmatter, path).is_ok_and(|fields| !fields.is_empty())
+    })
+}
+
+/// Whether the note at `path` is Markdown and declares a `description`.
+fn declares_description(vfs: &dyn Vfs, path: &Path, ns: &Namespace) -> Result<bool, CoreError> {
+    let markdown = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+    if !markdown {
+        return Ok(false);
+    }
+    let source = read_utf8(vfs, path)?;
+    let (frontmatter, _body) = split_frontmatter(&source);
+    let mut fields = frontmatter_map(frontmatter, path)?;
+    // Drained for its refusals: a removed key on a stray note is still worth
+    // naming, and it names itself better than the shape does.
+    VaultFrontmatter::take_from(&mut fields, path, ns, EntityKind::Skill)?;
+    Ok(trimmed_string(&fields, "description").is_some())
+}
+
 /// The kind a folder name declares, or `None` for any other folder.
 pub(crate) fn kind_dir(name: &str) -> Option<EntityKind> {
     KIND_DIRS
@@ -736,6 +1085,9 @@ struct Placement {
     plugin: Option<String>,
     /// The directory this component owns, or `None` for a lone file.
     dir: Option<PathBuf>,
+    /// Whether a container can sit here: at the vault root, or a plugin at a
+    /// marketplace's root. A note deeper down only has a container's shape.
+    container_level: bool,
 }
 
 /// Reads the paths as components, using structure alone.
@@ -748,26 +1100,42 @@ struct Placement {
 /// # The rule cannot name a bare component's kind
 ///
 /// Nothing sits above `<name>.md` at the root to say what it is, so
-/// [`Placement::kind`] is `None` and the note's own `sw-kind` — or the
-/// default — decides. A directory at the root holding files but no kind
+/// [`Placement::kind`] is `None` and the default decides. A directory at the root holding files but no kind
 /// folder has the same problem, and it is the rule's weak point: a plugin
 /// with no components yet is shaped exactly like a bare component that
 /// carries resources.
-fn place(root: &Path, files: &[PathBuf]) -> BTreeMap<PathBuf, Placement> {
+fn place(
+    root: &Path,
+    files: &[PathBuf],
+    patterns: &crate::patterns::Patterns,
+) -> BTreeMap<PathBuf, Placement> {
     let mut placed = BTreeMap::new();
     for path in files {
-        let Ok(rest) = path.strip_prefix(root) else {
+        let conventional = conventional(root, path, patterns);
+        let Ok(rest) = conventional.strip_prefix(root) else {
             continue;
         };
         let parts: Vec<String> = rest
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
-        if let Some(placement) = classify(root, &parts) {
+        if let Some(mut placement) = classify(root, &parts) {
+            // The folder it owns is the real one, whatever a pattern calls it.
+            if placement.dir.is_some() {
+                placement.dir = path.parent().map(Path::to_path_buf);
+            }
             placed.insert(path.clone(), placement);
         }
     }
     placed
+}
+
+/// `path` as the conventional path it plays the part of under `root`.
+fn conventional(root: &Path, path: &Path, patterns: &crate::patterns::Patterns) -> PathBuf {
+    path.strip_prefix(root).map_or_else(
+        |_| path.to_path_buf(),
+        |rest| root.join(patterns.canonical(&forward_slashed(rest))),
+    )
 }
 
 /// One path, read as the alternation the tree is.
@@ -791,9 +1159,11 @@ fn place(root: &Path, files: &[PathBuf]) -> BTreeMap<PathBuf, Placement> {
 ///
 /// * `<kind>/<name>.md` — a component that travels alone.
 /// * `<kind>/<name>/<name>.md` — a component that owns its directory, and so
-///   carries what is inside it. For a plugin or a marketplace, what is inside
-///   it is the next level down. A skill's entry may also be
-///   `<name>/SKILL.md`, named by its folder.
+///   carries what is inside it. For a plugin, what is inside it is the next
+///   level down. A skill's entry may also be `<name>/SKILL.md`, named by its
+///   folder.
+/// * `marketplaces/<name>/skillwright.md` — a marketplace, with its plugins
+///   beneath it. This is the only form a marketplace has.
 ///
 /// `None` for anything else, which is most of a vault.
 fn classify(root: &Path, parts: &[String]) -> Option<Placement> {
@@ -807,8 +1177,12 @@ fn classify(root: &Path, parts: &[String]) -> Option<Placement> {
         let kind = kind_dir(&parts[i])?;
         let name = &parts[i + 1];
 
-        // `<kind>/<name>.md` — the entry travels alone.
+        // `<kind>/<name>.md` — the entry travels alone. A marketplace never
+        // does: its note is the root file in its folder.
         if i + 2 == parts.len() {
+            if kind == EntityKind::Marketplace {
+                return None;
+            }
             return Some(placement(md_stem(name)?.to_owned(), kind, &chain, None));
         }
         // `<kind>/<name>/<name>.md` — the entry owns the directory it is in.
@@ -830,6 +1204,9 @@ pub const SKILL_ENTRY: &str = "SKILL.md";
 
 /// Is `file` the entry note of the folder `name`, for a component of `kind`?
 pub(crate) fn is_entry(file: &str, name: &str, kind: EntityKind) -> bool {
+    if kind == EntityKind::Marketplace {
+        return file == crate::settings::ROOT_FILE;
+    }
     md_stem(file) == Some(name) || (kind == EntityKind::Skill && is_skill_entry(file))
 }
 
@@ -880,6 +1257,11 @@ fn placement(
         marketplace: nearest(EntityKind::Marketplace),
         plugin: nearest(EntityKind::Plugin),
         dir,
+        container_level: match chain {
+            [] => true,
+            [(EntityKind::Marketplace, _)] => kind == EntityKind::Plugin,
+            _ => false,
+        },
     }
 }
 
@@ -917,14 +1299,17 @@ fn owned_resources(
 /// so an excluded file is neither placed nor published.
 fn source_files(vfs: &dyn Vfs, vault_root: &Path, source: &Source) -> Vec<PathBuf> {
     let excluded = crate::walk::excluded_files(vfs, vault_root);
+    let patterns = crate::patterns::Patterns::read(vfs, vault_root);
     source
         .files
         .iter()
         // A path outside the vault (a content root elsewhere) has no
         // vault-relative spelling for the list to match, so it stays.
         .filter(|path| {
-            path.strip_prefix(vault_root)
-                .map_or(true, |relative| !excluded(&forward_slashed(relative)))
+            path.strip_prefix(vault_root).map_or(true, |relative| {
+                let relative = forward_slashed(relative);
+                !excluded(&relative) && !patterns.excluded(&relative)
+            })
         })
         .cloned()
         .collect()
@@ -944,19 +1329,24 @@ fn read_source(
     let source = read_utf8(vfs, entry_path)?;
     let (frontmatter, body) = split_frontmatter(&source);
     let mut fields = frontmatter_map(frontmatter, entry_path)?;
-    let ours = VaultFrontmatter::take_from(&mut fields, entry_path, ns)?;
-
-    // Structure is layer 3, the note is layer 2, and `resolve_kind` owns the
-    // ranking. Feeding it hints rather than deciding here is what keeps one
-    // precedence in the codebase: a second surface working it out again is a
-    // second surface getting it subtly different.
-    let resolved = resolve_kind(
-        ours.declared_kind,
-        KindHints {
-            requested: None,
-            folder: placement.kind,
-        },
-    );
+    // The folder decides the kind, through the one ranking `resolve_kind`
+    // holds.
+    let resolved = resolve_kind(KindHints {
+        requested: None,
+        folder: placement.kind,
+    });
+    // A marketplace's note is a root file, whose keys are always bare, and
+    // whose `build:` and `workspace:` are not fields.
+    let bare = Namespace::bare();
+    let ns = if resolved.kind == EntityKind::Marketplace {
+        fields.remove("build");
+        fields.remove("workspace");
+        &bare
+    } else {
+        ns
+    };
+    let ours = VaultFrontmatter::take_from(&mut fields, entry_path, ns, resolved.kind)?;
+    let unknown_keys = unknown_keys(&ours, resolved.kind);
 
     let name = trimmed_string(&fields, "name");
     let description = trimmed_string(&fields, "description");
@@ -970,6 +1360,15 @@ fn read_source(
             description,
             false,
         ),
+        // A container's own note is optional and holds whichever of its keys
+        // it needs: the folder names it, and it need not describe itself.
+        (None, None)
+            if resolved.kind.holds_components()
+                && placement.dir.is_some()
+                && placement.container_level =>
+        {
+            (default_name(entry_path), String::new(), true)
+        }
         // Neither: an ordinary note sharing the tree. The common case, and
         // the silence that lets bundle resources live beside their entry.
         (None, None) => return Ok(None),
@@ -978,6 +1377,21 @@ fn read_source(
     };
 
     validate_name(&name, "component name", entry_path)?;
+    // A plugin is known by its folder in every manifest and every call, so a
+    // `name` that differs could not take effect.
+    if resolved.kind == EntityKind::Plugin
+        && placement.container_level
+        && trimmed_string(&fields, "name").is_some_and(|declared| declared != placement.name)
+    {
+        return Err(CoreError::malformed(
+            entry_path,
+            format!(
+                "`name: {name}` differs from its folder `{}`. A plugin publishes under its \
+                 folder: remove `name`, or rename the folder",
+                placement.name
+            ),
+        ));
+    }
     if let Some(refusal) = description_refusal(&description) {
         return Err(CoreError::malformed(entry_path, refusal));
     }
@@ -999,14 +1413,10 @@ fn read_source(
         .map(|dir| owned_resources(files, placed, dir))
         .unwrap_or_default();
 
-    // The folder puts a component in its plugin and `sw-plugin` overrules it —
-    // the same ranking the kind follows, for the same reason: a note that says
-    // where it belongs is never overruled by where it sits.
-    let folder_plugin = placement.plugin.clone();
-    let plugin = ours.plugin.clone().or_else(|| folder_plugin.clone());
-    // Whichever side supplied it, the plugin becomes a marketplace directory
-    // name, so a bad one fails here — on the note that carries it, rather than
-    // at the far end of a publish.
+    // The folder puts a component in its plugin. The plugin becomes a
+    // marketplace directory name, so a bad one fails here, on the note,
+    // rather than at the far end of a publish.
+    let plugin = placement.plugin.clone();
     if let Some(plugin) = plugin.as_deref() {
         validate_name(plugin, "plugin name", entry_path)?;
     }
@@ -1045,7 +1455,6 @@ fn read_source(
         folder_kind: placement.kind,
         targets: ours.targets,
         plugin,
-        folder_plugin,
         marketplace: placement.marketplace.clone(),
         entry_path: entry_path.to_path_buf(),
         bundle_root,
@@ -1053,7 +1462,93 @@ fn read_source(
         vault_relative_path,
         identity: ours.identity,
         hook: (resolved.kind == EntityKind::Hook).then(|| read_hook(&fields, body)),
+        unknown_keys,
+        blocks: ours.overrides,
     }))
+}
+
+/// The notes of the containers `entry` sits in, outermost first, as the paths
+/// they would have: `plugins/p/skills/s.md` passes through `plugins/p/p.md`. A
+/// container's own note is listed as its own container.
+pub(crate) fn container_notes(root: &Path, entry: &Path) -> Vec<PathBuf> {
+    let Ok(rest) = entry.strip_prefix(root) else {
+        return Vec::new();
+    };
+    let parts: Vec<String> = rest
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    let mut notes = Vec::new();
+    let mut dir = root.to_path_buf();
+    for level in parts.windows(2).step_by(2) {
+        let [folder, name] = level else { continue };
+        let Some(kind) = kind_dir(folder) else {
+            break;
+        };
+        dir = dir.join(folder).join(name);
+        if kind == EntityKind::Marketplace {
+            notes.push(dir.join(crate::settings::ROOT_FILE));
+        } else if kind.holds_components() {
+            notes.push(dir.join(format!("{name}.md")));
+        }
+    }
+    notes
+}
+
+/// [`container_notes`] through the root file's patterns: the path of a plugin
+/// note is the plugin's real folder, whatever a pattern calls it.
+pub(crate) fn container_notes_with(
+    patterns: &crate::patterns::Patterns,
+    root: &Path,
+    entry: &Path,
+) -> Vec<PathBuf> {
+    let Ok(rest) = entry.strip_prefix(root) else {
+        return Vec::new();
+    };
+    let relative = forward_slashed(rest);
+    let folder = patterns.plugin_folder(&relative);
+    container_notes(root, &conventional(root, entry, patterns))
+        .into_iter()
+        .map(|note| {
+            let in_plugins = note
+                .parent()
+                .and_then(Path::parent)
+                .is_some_and(|above| above.ends_with("plugins"));
+            match (folder, note.file_name()) {
+                (Some(folder), Some(name)) if in_plugins => root.join(folder).join(name),
+                _ => note,
+            }
+        })
+        .collect()
+}
+
+/// Reads one container's note the way a scan reads it. `None` when it does not
+/// exist: a container's note is optional.
+pub(crate) fn read_container(
+    vfs: &dyn Vfs,
+    root: &Path,
+    entry: &Path,
+    ns: &Namespace,
+) -> Result<Option<DiscoveredComponent>, CoreError> {
+    if !vfs.exists(entry) {
+        return Ok(None);
+    }
+    let patterns = crate::patterns::Patterns::read(vfs, root);
+    let conventional = conventional(root, entry, &patterns);
+    let Ok(rest) = conventional.strip_prefix(root) else {
+        return Ok(None);
+    };
+    let parts: Vec<String> = rest
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    let Some(mut placement) = classify(root, &parts) else {
+        return Ok(None);
+    };
+    if placement.dir.is_some() {
+        placement.dir = entry.parent().map(Path::to_path_buf);
+    }
+    read_source(vfs, root, entry, &placement, &BTreeMap::new(), &[], ns)
 }
 
 /// One hook note's routing and payload off its own frontmatter and body.
@@ -1164,22 +1659,6 @@ pub(crate) fn validate_name(value: &str, what: &str, path: &Path) -> Result<(), 
     }
 }
 
-/// The pack a note names for itself, read tolerantly: the `sw-plugin` key
-/// alone, and `None` for anything that will not parse that far.
-///
-/// The scan needs this on the failure path, where [`read_source`] gave up
-/// before it could say where the note belongs. A pack must not install a
-/// subset silently, so a member the scan could not read has to be
-/// attributable to its pack even when it sits outside that pack's folder.
-fn declared_plugin(vfs: &dyn Vfs, entry_path: &Path, ns: &Namespace) -> Option<String> {
-    let source = read_utf8(vfs, entry_path).ok()?;
-    let (frontmatter, _body) = split_frontmatter(&source);
-    let mut fields = frontmatter_map(frontmatter, entry_path).ok()?;
-    VaultFrontmatter::take_from(&mut fields, entry_path, ns)
-        .ok()?
-        .plugin
-}
-
 /// The name a note publishes under when its frontmatter declares none: the
 /// filename, slugified — or for a `SKILL.md`, its folder's name.
 ///
@@ -1189,9 +1668,11 @@ fn declared_plugin(vfs: &dyn Vfs, entry_path: &Path, ns: &Namespace) -> Option<S
 /// than raw, because `validate_name` runs on the result: a stem with a
 /// capital or a space would otherwise default straight into a refusal.
 pub fn default_name(path: &Path) -> String {
-    // A `SKILL.md` entry is named by the folder it owns.
+    // A `SKILL.md` entry and a root file are named by the folder they own.
     let named = match path.file_name().and_then(|f| f.to_str()) {
-        Some(file) if is_skill_entry(file) => path.parent().and_then(|p| p.file_name()),
+        Some(file) if is_skill_entry(file) || file == crate::settings::ROOT_FILE => {
+            path.parent().and_then(|p| p.file_name())
+        }
         _ => path.file_stem(),
     };
     slugify(named.and_then(|s| s.to_str()).unwrap_or_default())
@@ -1241,7 +1722,7 @@ mod tests {
     use crate::vfs::NativeVfs;
 
     fn sw() -> Namespace {
-        Namespace::default()
+        Namespace::sw()
     }
 
     /// An empty vault holding one marketplace directory and nothing else.
@@ -1258,9 +1739,9 @@ mod tests {
         vfs.write_file(&path, content.as_bytes()).unwrap();
     }
 
-    /// Source frontmatter using the `sw-targets` and `sw-plugin` keys. An empty
+    /// Source frontmatter using the `targets` key. An empty
     /// target list here means "omit the key".
-    fn source(name: &str, targets: &[&str], plugin: Option<&str>) -> String {
+    fn source(name: &str, targets: &[&str]) -> String {
         let mut out =
             format!("---\nname: {name}\ndescription: Use this skill to test {name} exports.\n");
         if !targets.is_empty() {
@@ -1268,9 +1749,6 @@ mod tests {
             for target in targets {
                 out.push_str(&format!("  - {target}\n"));
             }
-        }
-        if let Some(plugin) = plugin {
-            out.push_str(&format!("sw-plugin: {plugin}\n"));
         }
         out.push_str("---\n\n# Body\n");
         out
@@ -1355,7 +1833,7 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/tools/skills/review.md",
-            &source("review", &[], None),
+            &source("review", &[]),
         );
 
         assert!(discover(&vfs).unwrap()[0].hook.is_none());
@@ -1415,45 +1893,6 @@ mod tests {
     }
 
     #[test]
-    fn a_note_at_the_root_is_bare_unless_its_frontmatter_names_a_plugin() {
-        // No folder above a root note says anything, so membership is the
-        // note's to declare or to leave empty. Nothing is defaulted here: a
-        // marketplace needs every skill under some plugin directory, and
-        // `export` is where that default belongs.
-        let vfs = vault();
-        write(
-            &vfs,
-            "marketplaces/house/skills/foo.md",
-            &source("foo", &["codex", "claude"], Some("alpha")),
-        );
-        write(
-            &vfs,
-            "marketplaces/house/skills/bar.md",
-            &source("bar", &["codex"], Some("beta")),
-        );
-        write(
-            &vfs,
-            "marketplaces/house/skills/baz.md",
-            &source("baz", &[], None),
-        );
-
-        let found = discover(&vfs).unwrap();
-        let plugins: Vec<(&str, Option<&str>)> = found
-            .iter()
-            .map(|s| (s.name.as_str(), s.plugin.as_deref()))
-            .collect();
-        assert_eq!(
-            plugins,
-            vec![("bar", Some("beta")), ("baz", None), ("foo", Some("alpha"))]
-        );
-        assert!(found.iter().all(|s| s.bundle_root.is_none()));
-        assert!(found.iter().all(|s| s.folder_plugin.is_none()));
-        // Absent `sw-targets` stays absent — every destination, decided by
-        // the caller that knows what "every" means, not expanded here.
-        assert_eq!(found[1].targets, None);
-    }
-
-    #[test]
     fn a_note_the_vault_excludes_is_not_discovered() {
         // Obsidian's "Excluded files": a folder prefix and a regex. Neither
         // note is placed, so neither is published; the list hides nothing
@@ -1467,17 +1906,17 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/skills/kept.md",
-            &source("kept", &[], None),
+            &source("kept", &[]),
         );
         write(
             &vfs,
             "marketplaces/house/skills/drafts/draft.md",
-            &source("draft", &[], None),
+            &source("draft", &[]),
         );
         write(
             &vfs,
             "marketplaces/house/skills/wip.md",
-            &source("wip", &[], None),
+            &source("wip", &[]),
         );
 
         let names: Vec<String> = discover(&vfs)
@@ -1495,26 +1934,22 @@ mod tests {
     fn a_kind_folder_means_the_same_thing_at_every_level_it_sits_at() {
         let vfs = vault();
         // Shared by everything: outside any marketplace.
-        write(
-            &vfs,
-            "skills/house-style.md",
-            &source("house-style", &[], None),
-        );
+        write(&vfs, "skills/house-style.md", &source("house-style", &[]));
         // Shared by one marketplace's plugins.
         write(
             &vfs,
             "marketplaces/acme/skills/tone.md",
-            &source("tone", &[], None),
+            &source("tone", &[]),
         );
         // Used by one plugin.
         write(
             &vfs,
             "marketplaces/acme/plugins/core/skills/review.md",
-            &source("review", &[], None),
+            &source("review", &[]),
         );
         // A peer directory: no kind folder anywhere in its path, so the notes
         // in it are the author's own and are neither scanned nor refused.
-        write(&vfs, "references/notes.md", &source("notes", &[], None));
+        write(&vfs, "references/notes.md", &source("notes", &[]));
 
         let found = discover(&vfs).unwrap();
         let rows: Vec<(&str, Option<&str>, Option<&str>)> = found
@@ -1546,7 +1981,7 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/core/core.md",
-            &source("core", &[], None),
+            &source("core", &[]),
         );
         write(
             &vfs,
@@ -1557,7 +1992,7 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/core/skills/code-review/code-review.md",
-            &source("code-review", &[], None),
+            &source("code-review", &[]),
         );
         write(
             &vfs,
@@ -1568,13 +2003,13 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/core/skills/release-notes.md",
-            &source("release-notes", &["claude"], None),
+            &source("release-notes", &["claude"]),
         );
         // A kind this build cannot publish, named by its folder alone.
         write(
             &vfs,
             "marketplaces/house/plugins/core/commands/review.md",
-            &source("review", &[], None),
+            &source("review", &[]),
         );
         // A skill PROMOTED to the marketplace: shared by every plugin under
         // it, and belonging to none of them. The same `skills/` folder,
@@ -1582,7 +2017,7 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/skills/spike-notes.md",
-            &source("spike-notes", &[], None),
+            &source("spike-notes", &[]),
         );
 
         let found = discover(&vfs).unwrap();
@@ -1635,15 +2070,14 @@ mod tests {
         assert_eq!(by("code-review").resources, vec!["check.py".to_owned()]);
         assert!(by("release-notes").resources.is_empty());
     }
-    /// The kind folder above a note names it, at whatever level it sits, and
-    /// `sw-kind` still outranks the folder.
+    /// The kind folder above a note names it, at whatever level it sits.
     #[test]
-    fn the_kind_folder_above_a_note_names_it_and_the_note_may_overrule() {
+    fn the_kind_folder_above_a_note_names_it() {
         let vfs = vault();
         write(
             &vfs,
             "marketplaces/house/plugins/onboarding/onboarding.md",
-            &source("onboarding", &[], None),
+            &source("onboarding", &[]),
         );
         let found = discover(&vfs).unwrap();
         assert_eq!(
@@ -1654,27 +2088,9 @@ mod tests {
         assert_eq!(found[0].folder_kind, Some(EntityKind::Plugin));
         assert_eq!(found[0].kind_source, KindSource::Directory);
         assert_eq!(found[0].marketplace.as_deref(), Some("house"));
-
-        // The same file, overruled by its own frontmatter. It did not move.
-        let vfs = vault();
-        write(
-            &vfs,
-            "marketplaces/house/plugins/onboarding/onboarding.md",
-            "---\nname: onboarding\ndescription: d\nsw-kind: skill\n---\nb\n",
-        );
-        let found = discover(&vfs).unwrap();
-        assert_eq!(found[0].kind, EntityKind::Skill);
-        assert_eq!(found[0].kind_source, KindSource::Frontmatter);
-        assert_eq!(
-            found[0].folder_kind,
-            Some(EntityKind::Plugin),
-            "the folder it overruled is still reported"
-        );
     }
 
-    /// AC-1 and AC-2: `hooks/` names what it holds, so a hook note needs no
-    /// `sw-kind`; a note that declares one anyway is read the same way, and
-    /// says which layer answered.
+    /// `hooks/` names what it holds, and the note says which layer answered.
     #[test]
     fn a_hooks_folder_names_a_hook_and_the_note_need_not() {
         let vfs = vault();
@@ -1695,66 +2111,12 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/core/hooks/lint-on-write.md",
-            "---\nname: lint-on-write\ndescription: d\nsw-kind: hook\nevent: PreToolUse\n---\njust lint\n",
+            "---\nname: lint-on-write\ndescription: d\nevent: PreToolUse\n---\njust lint\n",
         );
         let found = discover(&vfs).unwrap();
         let hook = found.iter().find(|c| c.name == "lint-on-write").unwrap();
         assert_eq!(hook.kind, EntityKind::Hook);
-        assert_eq!(hook.kind_source, KindSource::Frontmatter);
-    }
-
-    /// A hook promoted out of any `hooks/` folder still declares itself —
-    /// AC-1's other half, where nothing above the note names it.
-    #[test]
-    fn a_note_declaring_sw_kind_hook_anywhere_is_a_hook() {
-        let vfs = vault();
-        write(
-            &vfs,
-            "marketplaces/house/plugins/core/skills/odd-hook.md",
-            "---\nname: odd-hook\ndescription: d\nsw-kind: hook\nevent: Stop\n---\njust go\n",
-        );
-        let found = discover(&vfs).unwrap();
-        let hook = found.iter().find(|c| c.name == "odd-hook").unwrap();
-        assert_eq!(hook.kind, EntityKind::Hook);
-        assert_eq!(hook.kind_source, KindSource::Frontmatter);
-        assert_eq!(hook.folder_kind, Some(EntityKind::Skill));
-    }
-
-    /// Frontmatter outranks the folder — the condition the kind decision put
-    /// on turning the directory layer on at all.
-    #[test]
-    fn a_note_overrules_the_folder_it_sits_in_and_says_it_did() {
-        let vfs = vault();
-        write(
-            &vfs,
-            "marketplaces/house/plugins/alpha/alpha.md",
-            &source("alpha", &[], None),
-        );
-        write(
-            &vfs,
-            "marketplaces/house/plugins/alpha/skills/checklist.md",
-            "---\nname: checklist\ndescription: d\nsw-plugin: core\n---\nb\n",
-        );
-        // A command folder holding a note that says it is a skill.
-        write(
-            &vfs,
-            "marketplaces/house/plugins/alpha/commands/oddity.md",
-            "---\nname: oddity\ndescription: d\nsw-kind: skill\n---\nb\n",
-        );
-
-        let found = discover(&vfs).unwrap();
-        let checklist = found.iter().find(|c| c.name == "checklist").unwrap();
-        assert_eq!(checklist.plugin.as_deref(), Some("core"), "the note wins");
-        assert_eq!(
-            checklist.folder_plugin.as_deref(),
-            Some("alpha"),
-            "and the folder it overruled is still reported"
-        );
-
-        let oddity = found.iter().find(|c| c.name == "oddity").unwrap();
-        assert_eq!(oddity.kind, EntityKind::Skill);
-        assert_eq!(oddity.kind_source, KindSource::Frontmatter);
-        assert_eq!(oddity.folder_kind, Some(EntityKind::Command));
+        assert_eq!(hook.kind_source, KindSource::Directory);
     }
 
     /// A note that declares itself but sits where no shape can read it is
@@ -1765,19 +2127,18 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/core/core.md",
-            &source("core", &[], None),
+            &source("core", &[]),
         );
         write(
             &vfs,
             "marketplaces/house/plugins/core/skills/a/a.md",
-            &source("a", &[], None),
+            &source("a", &[]),
         );
-        // Two levels below a kind folder, under a directory that is not its
-        // own name.
+        // Inside a plugin, in a folder that is no kind folder.
         write(
             &vfs,
-            "marketplaces/house/plugins/core/skills/a/extra/stray.md",
-            &source("stray", &[], None),
+            "marketplaces/house/plugins/core/extra/stray.md",
+            &source("stray", &[]),
         );
 
         let err = discover(&vfs).unwrap_err().to_string();
@@ -1792,12 +2153,12 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/core/core.md",
-            &source("core", &[], None),
+            &source("core", &[]),
         );
         write(
             &vfs,
             "marketplaces/house/plugins/core/skills/a/a.md",
-            &source("a", &[], None),
+            &source("a", &[]),
         );
         write(
             &vfs,
@@ -1819,11 +2180,11 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/core/skills/a/a.md",
-            &source("a", &[], None),
+            &source("a", &[]),
         );
         write(
             &vfs,
-            "marketplaces/house/plugins/core/skills/a/extra/stray.md",
+            "marketplaces/house/plugins/core/extra/stray.md",
             "---\ndescription: half a draft\n---\nb\n",
         );
 
@@ -1849,24 +2210,6 @@ mod tests {
         write(&vfs, "marketplaces/house/plugins/tool.sh", "#!/bin/sh\n");
 
         assert!(discover(&vfs).unwrap().is_empty());
-    }
-
-    #[test]
-    fn an_unknown_kind_is_refused_not_silently_skipped() {
-        // The frontmatter contract refuses a `kind` it does not know, and
-        // discovery inherits the reader — a typo must not quietly unpublish.
-        let vfs = vault();
-        write(
-            &vfs,
-            "marketplaces/house/skills/typo.md",
-            "---\nname: typo\ndescription: d\nsw-kind: skil\n---\nb\n",
-        );
-        let err = discover(&vfs).unwrap_err().to_string();
-        assert!(err.contains("unknown-kind"), "{err}");
-        assert!(
-            err.contains("/vault/marketplaces/house/skills/typo.md"),
-            "{err}"
-        );
     }
 
     #[test]
@@ -2057,12 +2400,12 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/skills/good-one.md",
-            &source("good-one", &[], None),
+            &source("good-one", &[]),
         );
         write(
             &vfs,
             "marketplaces/house/skills/good-two.md",
-            &source("good-two", &[], None),
+            &source("good-two", &[]),
         );
         write(
             &vfs,
@@ -2098,26 +2441,11 @@ mod tests {
 
     #[test]
     fn a_skipped_note_reports_the_pack_it_belongs_to() {
-        // The folder is the floor.
         let vfs = vault();
         write(
             &vfs,
             "marketplaces/house/plugins/tools/skills/draft.md",
             "---\nname: Not A Legal Name\ndescription: d\n---\nb\n",
-        );
-
-        let report = scan(&vfs).unwrap();
-
-        assert_eq!(report.skipped[0].plugin.as_deref(), Some("tools"));
-
-        // The note's own `sw-plugin` outranks it, and reaches a pack whose
-        // folder does not hold the note at all. Without this a pack ships a
-        // silent subset over a member nobody can read.
-        let vfs = vault();
-        write(
-            &vfs,
-            "marketplaces/house/skills/draft.md",
-            "---\nname: Not A Legal Name\ndescription: d\nsw-plugin: tools\n---\nb\n",
         );
 
         let report = scan(&vfs).unwrap();
@@ -2134,12 +2462,12 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/tools/skills/foo.md",
-            &source("foo", &[], None),
+            &source("foo", &[]),
         );
         write(
             &vfs,
             "marketplaces/house/plugins/tools/skills/foo/foo.md",
-            &source("foo", &[], None),
+            &source("foo", &[]),
         );
 
         let err = discover(&vfs).unwrap_err().to_string();
@@ -2161,12 +2489,12 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/outer/outer.md",
-            &source("outer", &[], None),
+            &source("outer", &[]),
         );
         write(
             &vfs,
             "marketplaces/house/plugins/outer/inner/inner.md",
-            &source("inner", &[], None),
+            &source("inner", &[]),
         );
 
         let err = discover(&vfs).unwrap_err().to_string();
@@ -2182,8 +2510,8 @@ mod tests {
     #[test]
     fn an_entry_shape_outside_a_kind_folder_is_not_a_component() {
         let vfs = vault();
-        write(&vfs, "notes/notes.md", &source("notes", &[], None));
-        write(&vfs, "drafts/idea/SKILL.md", &source("idea", &[], None));
+        write(&vfs, "notes/notes.md", &source("notes", &[]));
+        write(&vfs, "drafts/idea/SKILL.md", &source("idea", &[]));
         let report = scan(&vfs).unwrap();
         assert!(report.components.is_empty(), "{:?}", report.components);
         assert!(report.skipped.is_empty(), "{:?}", report.skipped);
@@ -2201,7 +2529,7 @@ mod tests {
         );
         write(&vfs, "skills/code-review/check.py", "#!/x\n");
         // Only a skill takes `SKILL.md`: a plugin's entry is `<name>/<name>.md`.
-        write(&vfs, "plugins/tools/SKILL.md", &source("tools", &[], None));
+        write(&vfs, "plugins/tools/SKILL.md", &source("tools", &[]));
 
         let report = scan(&vfs).unwrap();
         let rows: Vec<(&str, EntityKind)> = report
@@ -2223,7 +2551,7 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/skills/wide.md",
-            &source("wide", &["antigravity", "portable", "amp"], None),
+            &source("wide", &["antigravity", "portable", "amp"]),
         );
         assert_eq!(
             discover(&vfs).unwrap()[0].targets,
@@ -2238,7 +2566,7 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/skills/typo.md",
-            &source("typo", &["emacs"], None),
+            &source("typo", &["emacs"]),
         );
         let err = discover(&vfs).unwrap_err().to_string();
         assert!(err.contains("unknown-target"), "{err}");
@@ -2254,12 +2582,12 @@ mod tests {
     #[test]
     fn targets_keep_the_cores_three_outcomes() {
         // Absent means every destination and empty means nowhere — the core's
-        // `sw-targets` contract. A scalar is refused, never comma-split.
+        // `targets` contract. A scalar is refused, never comma-split.
         let vfs = vault();
         write(
             &vfs,
             "marketplaces/house/skills/keen.md",
-            &source("keen", &[], None),
+            &source("keen", &[]),
         );
         write(
             &vfs,
@@ -2281,19 +2609,7 @@ mod tests {
     }
 
     #[test]
-    fn the_plugin_name_is_validated_wherever_it_came_from() {
-        // From the note...
-        let vfs = vault();
-        write(
-            &vfs,
-            "marketplaces/house/skills/x.md",
-            "---\nname: x\ndescription: d\nsw-plugin: Bad Name\n---\nb\n",
-        );
-        let err = discover(&vfs).unwrap_err().to_string();
-        assert!(err.contains("plugin name"), "{err}");
-        assert!(err.contains("Bad Name"), "{err}");
-
-        // ...and from the folder, the other place it comes from.
+    fn the_plugin_name_the_folder_gives_is_validated() {
         // A directory name that cannot be a marketplace directory fails on the
         // first component under it, not at the far end of a publish.
         // No plugin note here: its own `name` would fail the component rule
@@ -2303,24 +2619,11 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/Bad Name/skills/y.md",
-            &source("y", &[], None),
+            &source("y", &[]),
         );
         let err = discover(&vfs).unwrap_err().to_string();
         assert!(err.contains("plugin name"), "{err}");
         assert!(err.contains("Bad Name"), "{err}");
-    }
-
-    #[test]
-    fn an_empty_plugin_key_is_refused_not_read_as_the_default() {
-        // Absent and present-but-wrong must not share an outcome: delete the
-        // key to mean the default.
-        let vfs = vault();
-        write(
-            &vfs,
-            "marketplaces/house/skills/x.md",
-            "---\nname: x\ndescription: d\nsw-plugin: \"\"\n---\nb\n",
-        );
-        assert!(discover(&vfs).is_err());
     }
 
     #[test]
@@ -2329,17 +2632,17 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/skills/zulu.md",
-            &source("zulu", &[], None),
+            &source("zulu", &[]),
         );
         write(
             &vfs,
             "marketplaces/house/plugins/alpha/alpha.md",
-            &source("alpha", &[], None),
+            &source("alpha", &[]),
         );
         write(
             &vfs,
             "marketplaces/house/skills/mike.md",
-            &source("mike", &[], None),
+            &source("mike", &[]),
         );
 
         let names: Vec<String> = discover(&vfs)
@@ -2369,7 +2672,7 @@ mod tests {
         assert_eq!(command.plugin.as_deref(), Some("core"));
 
         // A marketplace's own note belongs to no marketplace — it is one.
-        let market = folder_placement(root, Path::new("/vault/marketplaces/house/house.md"));
+        let market = folder_placement(root, Path::new("/vault/marketplaces/house/skillwright.md"));
         assert_eq!(market.kind, Some(EntityKind::Marketplace));
         assert_eq!(market.marketplace, None);
 
@@ -2397,11 +2700,11 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/skills/demo.md",
-            &source("demo", &[], None),
+            &source("demo", &[]),
         );
         // A peer directory: it holds no kind folder, so nothing in it is
         // scanned or refused. This is where shared notes live.
-        write(&vfs, "elsewhere/hidden.md", &source("hidden", &[], None));
+        write(&vfs, "elsewhere/hidden.md", &source("hidden", &[]));
 
         let found = discover(&vfs).unwrap();
         assert_eq!(found.len(), 1);
@@ -2412,11 +2715,7 @@ mod tests {
         // The same rule with the top two levels absent: a vault whose root
         // holds `plugins/` is one unnamed marketplace.
         let bare = MemVfs::new();
-        write(
-            &bare,
-            "plugins/core/skills/demo.md",
-            &source("demo", &[], None),
-        );
+        write(&bare, "plugins/core/skills/demo.md", &source("demo", &[]));
         let found = discover(&bare).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].marketplace, None);
@@ -2427,7 +2726,7 @@ mod tests {
         write(
             &vfs,
             "elsewhere/plugins/hidden/skills/note.md",
-            &source("note", &[], None),
+            &source("note", &[]),
         );
         let found = discover_components(
             &vfs,
@@ -2468,7 +2767,7 @@ mod tests {
         .unwrap();
 
         // Sound before any link arrives.
-        let found = discover_components(&NativeVfs, dir.path(), None, &Namespace::default())
+        let found = discover_components(&NativeVfs, dir.path(), None, &Namespace::sw())
             .unwrap()
             .components;
         assert_eq!(found.len(), 1);
@@ -2477,7 +2776,7 @@ mod tests {
         let outside = dir.path().join("outside");
         std::fs::create_dir_all(&outside).unwrap();
         std::os::unix::fs::symlink(&outside, plugins.join("linked")).unwrap();
-        let err = discover_components(&NativeVfs, dir.path(), None, &Namespace::default())
+        let err = discover_components(&NativeVfs, dir.path(), None, &Namespace::sw())
             .unwrap_err()
             .to_string();
         assert!(err.contains("unsafe-path"), "{err}");
@@ -2488,7 +2787,7 @@ mod tests {
         std::fs::write(dir.path().join("real.md"), "outside the source\n").unwrap();
         std::os::unix::fs::symlink(dir.path().join("real.md"), plugins.join("demo/stray.md"))
             .unwrap();
-        let err = discover_components(&NativeVfs, dir.path(), None, &Namespace::default())
+        let err = discover_components(&NativeVfs, dir.path(), None, &Namespace::sw())
             .unwrap_err()
             .to_string();
         assert!(err.contains("unsafe-path"), "{err}");
@@ -2504,7 +2803,7 @@ mod tests {
         write(
             &vfs,
             ".trash/marketplaces/house/plugins/review/skills/old/old.md",
-            &source("old", &[], None),
+            &source("old", &[]),
         );
 
         let found = discover(&vfs).unwrap();
@@ -2518,18 +2817,18 @@ mod tests {
     #[test]
     fn tooling_folders_are_never_walked_and_dot_files_are() {
         let vfs = vault();
-        write(&vfs, "plugins/demo/demo.md", &source("demo", &[], None));
+        write(&vfs, "plugins/demo/demo.md", &source("demo", &[]));
         write(&vfs, "plugins/demo/.env.example", "KEY=\n");
         write(&vfs, "plugins/demo/node_modules/pkg/index.js", "x\n");
         write(
             &vfs,
             "plugins/demo/node_modules/skills/vendored.md",
-            &source("vendored", &[], None),
+            &source("vendored", &[]),
         );
         write(
             &vfs,
             ".obsidian/plugins/tool/skills/tool.md",
-            &source("tool", &[], None),
+            &source("tool", &[]),
         );
 
         let found = discover(&vfs).unwrap();
@@ -2555,7 +2854,7 @@ mod tests {
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
         // Root lists any folder, so there is nothing to test.
         let listable = std::fs::read_dir(&locked).is_ok();
-        let result = discover_components(&NativeVfs, dir.path(), None, &Namespace::default());
+        let result = discover_components(&NativeVfs, dir.path(), None, &Namespace::sw());
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
         if listable {
             return;

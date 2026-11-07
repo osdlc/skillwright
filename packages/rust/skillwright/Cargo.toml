@@ -40,11 +40,10 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tradecraft-core = { workspace = true }
-config-layers = { workspace = true }
 typed-git = { workspace = true }
-# The cache and config directories.
+# The `--from-git` cache directory.
 tiered-dirs = { workspace = true }
-# `bump` sets `sw-version` with `FieldEdit::set`, whose value is a
+# `bump` sets `version` with `FieldEdit::set`, whose value is a
 # `yaml_splice::Value`.
 yaml-splice = { workspace = true }
 # The authoring executor: `apply` turns a core `AuthoringOp` into writes, with
@@ -58,15 +57,8 @@ etag-write = { workspace = true }
 # `build --watch`'s vault watcher.
 notify = { workspace = true }
 
-[features]
-# Turns on `config::replace_machine_config_override` for this crate's own
-# integration tests. Not part of the API.
-test-support = []
-
 [dev-dependencies]
 tempfile = { workspace = true }
-# The crate itself with `test-support`, for the integration tests.
-skillwright = { path = ".", features = ["test-support"] }
 
 [lints]
 workspace = true

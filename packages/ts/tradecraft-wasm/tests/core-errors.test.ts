@@ -81,7 +81,7 @@ describe('a bad namespace on a JSON export', () => {
           vault_root: tmp,
           out_root: path.join(tmp, 'out'),
           mode: 'check',
-          config: { default_plugin: 'core' },
+          config: { name: 'core' },
           namespace,
         }),
     ],

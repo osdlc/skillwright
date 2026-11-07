@@ -4,7 +4,7 @@
 #
 # 1. builds plugin/ with the skillwright CLI from the tagged source and stops
 #    if the build differs from what is committed;
-# 2. stops unless X.Y.Z equals `sw-version` in the plugin's vault note;
+# 2. stops unless X.Y.Z equals `version` in the plugin's vault note;
 # 3. opens a pull request on osdlc/marketplace that replaces only the
 #    skillwright pack in each harness root and the skillwright entry in each
 #    marketplace manifest (scripts/plugin-marketplace.ts). Every other plugin
@@ -89,7 +89,7 @@ jobs:
 
       - name: Build the plugin
         working-directory: packages/rust
-        run: cargo run --locked -p skillwright -- build --yes --config ../../plugin/skillwright.yaml
+        run: cargo run --locked -p skillwright -- build --yes --config ../../plugin/skillwright.md
 
       - name: The build matches what is committed
         run: |
@@ -106,7 +106,7 @@ jobs:
           set -euo pipefail
           version="$(node scripts/plugin-marketplace.ts version)"
           if [ "$TAG" != "plugin/v$version" ]; then
-            echo "::error::$TAG does not match sw-version $version in the plugin note."
+            echo "::error::$TAG does not match version $version in the plugin note."
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"

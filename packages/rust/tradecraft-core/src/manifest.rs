@@ -81,7 +81,7 @@ pub struct ManifestEntry {
     /// one of these later is a change the closure hash alone cannot see.
     #[serde(default)]
     pub unresolved: Vec<String>,
-    /// Skills this file calls, as `plugin:name`, sorted. Omitted when empty,
+    /// Skills this file calls or names, as `plugin:name`, sorted. Omitted when empty,
     /// so a manifest with no calls reads as it always did.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub calls: Vec<String>,

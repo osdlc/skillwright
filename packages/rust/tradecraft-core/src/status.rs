@@ -31,7 +31,7 @@ use crate::publish::{
     PublishMode, PublishOutcome, PublishRequest, PublishStatus, PublishedFile, publish_kind,
     publish_skill,
 };
-use crate::vault::read_vault_skill;
+use crate::vault::read_vault_note;
 use crate::vfs::Vfs;
 
 /// One question: this unit, at this destination, for this target.
@@ -46,6 +46,12 @@ pub struct StatusRequest {
     #[serde(default)]
     /// Root of the vault, when the caller knows it.
     pub skills_root: Option<PathBuf>,
+    /// See [`PublishRequest::user_folders`].
+    #[serde(default)]
+    pub user_folders: bool,
+    /// The root file's config; see [`PublishRequest::config`].
+    #[serde(default)]
+    pub config: Option<crate::export::MarketplaceConfig>,
 }
 
 /// What a unit's publish state is at one destination.
@@ -53,7 +59,7 @@ pub struct StatusRequest {
 /// The closed set the status spec specifies, and the same five words on every
 /// surface. Two things that also need a cell in a grid are deliberately not
 /// members: a destination whose target has no renderer, and a destination this
-/// note's `sw-targets` excludes. Neither is a *manifest* state — one is
+/// note's `targets` excludes. Neither is a *manifest* state — one is
 /// incapability and the other is deliberate exclusion — and folding them in
 /// here would make them look like conditions a publish could fix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,18 +115,18 @@ pub struct PublishUnitStatus {
     pub contributing_notes: Vec<String>,
     /// Recorded contributors that are no longer in the vault.
     pub missing_notes: Vec<String>,
-    /// Set when `sw-targets` excludes this destination — the `n/a` cell, which
+    /// Set when `targets` excludes this destination — the `n/a` cell, which
     /// is not a state.
     pub not_published: Option<String>,
     /// A plugin whose members drifted since it was last published here, with
-    /// its own `sw-version` unmoved since. `None` for every non-plugin unit,
+    /// its own `version` unmoved since. `None` for every non-plugin unit,
     /// and for a plugin that does not meet the rule — see
     /// [`VersionBumpSuggestion`].
     pub version_bump_suggestion: Option<VersionBumpSuggestion>,
 }
 
 /// A plugin whose members changed since it was last published here, with its
-/// own `sw-version` unmoved since — the callout
+/// own `version` unmoved since — the callout
 /// [`PublishUnitStatus::version_bump_suggestion`] carries so a publish screen can
 /// offer a one-click bump.
 ///
@@ -132,12 +138,12 @@ pub struct PublishUnitStatus {
 ///
 /// The manifest records no version of its own (that would be a schema
 /// bump). A plugin's pack manifest
-/// (`plugin.json`) is written with whatever `sw-version` was current at
+/// (`plugin.json`) is written with whatever `version` was current at
 /// publish time, so the installed file's own `"version"` field IS that
 /// record, read back rather than tracked twice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VersionBumpSuggestion {
-    /// The note's current `sw-version`.
+    /// The note's current `version`.
     pub current_version: String,
     /// The `version` the installed pack manifest carries. Equal to
     /// `current_version` by construction — a suggestion exists exactly
@@ -161,6 +167,7 @@ pub fn status_of(
             target: request.target.clone(),
             mode: PublishMode::DryRun,
             skills_root: request.skills_root.clone(),
+            config: request.config.clone(),
             // A status takes no clock: it never writes, so no entry it
             // produces can reach a manifest, and stamping one would be
             // recording a moment nothing happened at.
@@ -168,6 +175,7 @@ pub fn status_of(
             // A status acknowledges nothing. Overwriting is a decision taken
             // at a publish, by a person who has seen this.
             overwrite: Vec::new(),
+            user_folders: request.user_folders,
         },
         ns,
     )?;
@@ -294,7 +302,7 @@ pub fn status_of(
 ///   own (a description, an author, a keyword) without any member having
 ///   moved, and that is not this rule — only a member file among `ours`
 ///   reading [`PublishStatus::Written`] counts;
-/// * `sw-version` is absent, or has already moved since the installed pack
+/// * `version` is absent, or has already moved since the installed pack
 ///   manifest was written.
 fn plugin_version_bump_suggestion(
     vfs: &dyn Vfs,
@@ -312,17 +320,13 @@ fn plugin_version_bump_suggestion(
         return Ok(None);
     }
 
-    // Read only once the cheap checks pass: the note decides both the kind
-    // and the version.
-    let note = read_vault_skill(vfs, &request.skill_path, ns)?;
-    let kind = publish_kind(
-        note.frontmatter.declared_kind,
-        request.skills_root.as_deref(),
-        &request.skill_path,
-    );
+    // The folder decides the kind; the note, read only once the cheap
+    // checks pass, decides the version.
+    let kind = publish_kind(vfs, request.skills_root.as_deref(), &request.skill_path);
     if kind.kind != EntityKind::Plugin {
         return Ok(None);
     }
+    let note = read_vault_note(vfs, &request.skill_path, ns, kind.kind)?;
     let Some(current_version) = note.frontmatter.identity.version else {
         return Ok(None);
     };
@@ -441,8 +445,10 @@ mod tests {
 
     fn ask() -> StatusRequest {
         StatusRequest {
+            config: None,
             skill_path: PathBuf::from("/vault/skills/code-review.md"),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             skills_root: Some(PathBuf::from("/vault")),
         }
@@ -452,21 +458,23 @@ mod tests {
         publish_skill(
             vfs,
             &PublishRequest {
+                config: None,
                 skill_path: PathBuf::from("/vault/skills/code-review.md"),
                 destination_root: PathBuf::from("/dest"),
+                user_folders: false,
                 target: "claude".to_owned(),
                 mode: PublishMode::Write,
                 skills_root: Some(PathBuf::from("/vault")),
                 published_at: Some("2026-08-29T10:00:00Z".to_owned()),
                 overwrite: Vec::new(),
             },
-            &Namespace::default(),
+            &Namespace::sw(),
         )
         .unwrap();
     }
 
     fn state_of(vfs: &MemVfs) -> PublishUnitStatus {
-        status_of(vfs, &ask(), &Namespace::default()).unwrap()
+        status_of(vfs, &ask(), &Namespace::sw()).unwrap()
     }
 
     #[test]
@@ -624,7 +632,7 @@ mod tests {
         // careless implementation would create directories.
         let mut fresh = ask();
         fresh.destination_root = PathBuf::from("/untouched");
-        status_of(&vfs, &fresh, &Namespace::default()).unwrap();
+        status_of(&vfs, &fresh, &Namespace::sw()).unwrap();
         state_of(&vfs);
 
         assert!(!vfs.exists(Path::new("/untouched/.claude")));
@@ -636,7 +644,7 @@ mod tests {
         );
     }
 
-    // `sw-targets` excluding a destination is not a publish state — nothing is
+    // `targets` excluding a destination is not a publish state — nothing is
     // wrong and nothing would be fixed by publishing.
     #[test]
     fn a_destination_the_note_excludes_reports_itself_separately() {
@@ -663,7 +671,7 @@ mod tests {
             .unwrap();
         vfs.write_file(
             Path::new(&format!("{base}/git-tools.md")),
-            b"---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\nsw-version: 2.1.0\n---\n\nThe pack.\n",
+            b"---\nname: git-tools\ndescription: Git helpers.\nsw-version: 2.1.0\n---\n\nThe pack.\n",
         )
         .unwrap();
         vfs.write_file(
@@ -679,8 +687,10 @@ mod tests {
 
     fn plugin_ask() -> StatusRequest {
         StatusRequest {
+            config: None,
             skill_path: PathBuf::from(PLUGIN_NOTE),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             skills_root: Some(PathBuf::from("/vault")),
         }
@@ -690,25 +700,27 @@ mod tests {
         publish_skill(
             vfs,
             &PublishRequest {
+                config: None,
                 skill_path: PathBuf::from(PLUGIN_NOTE),
                 destination_root: PathBuf::from("/dest"),
+                user_folders: false,
                 target: "claude".to_owned(),
                 mode: PublishMode::Write,
                 skills_root: Some(PathBuf::from("/vault")),
                 published_at: Some("2026-08-29T10:00:00Z".to_owned()),
                 overwrite: Vec::new(),
             },
-            &Namespace::default(),
+            &Namespace::sw(),
         )
         .unwrap();
     }
 
     fn plugin_state_of(vfs: &MemVfs) -> PublishUnitStatus {
-        status_of(vfs, &plugin_ask(), &Namespace::default()).unwrap()
+        status_of(vfs, &plugin_ask(), &Namespace::sw()).unwrap()
     }
 
     // The case the callout exists for: a member changed and nothing moved
-    // `sw-version` to say so.
+    // `version` to say so.
     #[test]
     fn a_changed_member_with_an_unmoved_version_suggests_a_bump() {
         let vfs = vault_with_plugin();
@@ -745,7 +757,7 @@ mod tests {
         .unwrap();
         vfs.write_file(
             Path::new(PLUGIN_NOTE),
-            b"---\nname: git-tools\ndescription: Git helpers.\nsw-kind: plugin\nsw-version: 2.2.0\n---\n\nThe pack.\n",
+            b"---\nname: git-tools\ndescription: Git helpers.\nsw-version: 2.2.0\n---\n\nThe pack.\n",
         )
         .unwrap();
 
@@ -803,15 +815,17 @@ mod tests {
         .unwrap();
         vfs.create_dir_all(Path::new("/dest")).unwrap();
         let request = PublishRequest {
+            config: None,
             skill_path: PathBuf::from(note),
             destination_root: PathBuf::from("/dest"),
+            user_folders: false,
             target: "claude".to_owned(),
             mode: PublishMode::Write,
             skills_root: Some(PathBuf::from("/vault")),
             published_at: Some("2026-08-29T10:00:00Z".to_owned()),
             overwrite: Vec::new(),
         };
-        let first = publish_skill(&vfs, &request, &Namespace::default()).unwrap();
+        let first = publish_skill(&vfs, &request, &Namespace::sw()).unwrap();
         assert!(
             first
                 .files
@@ -829,12 +843,14 @@ mod tests {
         let status = status_of(
             &vfs,
             &StatusRequest {
+                config: None,
                 skill_path: request.skill_path.clone(),
                 destination_root: request.destination_root.clone(),
+                user_folders: false,
                 target: request.target.clone(),
                 skills_root: request.skills_root.clone(),
             },
-            &Namespace::default(),
+            &Namespace::sw(),
         )
         .unwrap();
         assert_eq!(status.state, PublishState::Stale);
