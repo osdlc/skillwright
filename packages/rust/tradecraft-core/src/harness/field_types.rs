@@ -297,7 +297,8 @@ fn facts(harness: &str) -> &'static [(&'static str, FieldType)] {
 pub(crate) fn component_type(kind: EntityKind, key: &str) -> Option<FieldType> {
     let spec = crate::keys::lookup(kind, key)?;
     Some(match (key, spec.shape) {
-        // The table's summary: a list, or one space-separated string.
+        // The table's summary: a list, or one string separated by spaces or
+        // commas.
         ("allowed-tools", _) => STRING_OR_STRINGS,
         // Claude's subagent docs write the list as one string: `Read, Grep`.
         ("tools", _) => STRING_OR_STRINGS,
