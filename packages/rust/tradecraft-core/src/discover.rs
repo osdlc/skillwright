@@ -288,7 +288,10 @@ pub(crate) fn unknown_key_warning(
             .filter_map(|key| {
                 let field = ns.field(key).replace('-', "_");
                 let bare = key == "adopted" || crate::harness::profile_named(key).is_some();
-                let hyphen = field != ns.field(key) && crate::keys::is_skillwright_key(&field);
+                let hyphen = field != ns.field(key)
+                    && EntityKind::ALL
+                        .iter()
+                        .any(|kind| crate::keys::is_owned(*kind, &field));
                 (bare || hyphen).then(|| format!("`{key}` is `{}`", ns.key(&field)))
             })
             .collect();

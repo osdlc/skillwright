@@ -88,6 +88,15 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
+    /// Every kind, in declaration order.
+    pub const ALL: [EntityKind; 6] = [
+        Self::Skill,
+        Self::Plugin,
+        Self::Command,
+        Self::Agent,
+        Self::Hook,
+        Self::Marketplace,
+    ];
     /// Every spelling [`EntityKind::from_str`] accepts, in the order a refusal
     /// lists them.
     pub const KNOWN: &'static [&'static str] =

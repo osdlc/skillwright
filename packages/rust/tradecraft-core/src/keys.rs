@@ -130,12 +130,6 @@ pub const HARNESS_BLOCKS: &[&str] = &["claude", "codex", "cursor", "pi"];
 pub const BLOCK_IDENTITY_KEYS: &[&str] =
     &["name", "description", "version", "displayName", "source"];
 
-/// Whether any kind's row owns `key`.
-pub fn is_skillwright_key(key: &str) -> bool {
-    KEYS.iter()
-        .any(|spec| spec.key == key && spec.owner == Owner::Skillwright)
-}
-
 /// Every key skillwright reads, in the order the field reference lists them.
 pub const KEYS: &[KeySpec] = &[
     KeySpec {

@@ -355,17 +355,9 @@ pub(crate) fn member_block_keys(kind: EntityKind, harness: &str) -> &'static BTr
         OnceLock::new();
     static NONE: BTreeSet<String> = BTreeSet::new();
     let table = TABLE.get_or_init(|| {
-        let kinds = [
-            EntityKind::Skill,
-            EntityKind::Plugin,
-            EntityKind::Command,
-            EntityKind::Agent,
-            EntityKind::Hook,
-            EntityKind::Marketplace,
-        ];
         crate::harness::with_plugin_format()
             .map(|profile| {
-                let by_kind = kinds
+                let by_kind = EntityKind::ALL
                     .into_iter()
                     .map(|kind| (kind, compute_member_block_keys(kind, profile.name)))
                     .collect();
