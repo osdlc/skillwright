@@ -184,6 +184,12 @@ impl Patterns {
         Ok(own)
     }
 
+    /// Whether any key holds a glob. With none, [`Self::warnings_with`] has
+    /// nothing to say, so a caller need not walk the vault for it.
+    pub(crate) fn has_globs(&self) -> bool {
+        self.globs().next().is_some()
+    }
+
     /// Every glob, whichever key holds it.
     fn globs(&self) -> impl Iterator<Item = &str> {
         self.kinds()
@@ -241,12 +247,26 @@ impl Patterns {
     /// the vault: not source, but a fair thing for `build.exclude` to name.
     /// `siblings` are the other marketplaces' files: a glob a workspace shares
     /// need only match in one of them.
+    #[cfg(test)]
     pub(crate) fn warnings(
         &self,
         files: &[String],
         output: &[String],
         siblings: &[String],
     ) -> Vec<DiscoveryWarning> {
+        self.warnings_with(files, output, || siblings.to_vec())
+    }
+
+    /// [`Self::warnings`] with the other marketplaces' files read only when a
+    /// shared glob matches nothing here, and then once.
+    pub(crate) fn warnings_with(
+        &self,
+        files: &[String],
+        output: &[String],
+        siblings: impl FnOnce() -> Vec<String>,
+    ) -> Vec<DiscoveryWarning> {
+        let mut siblings = Some(siblings);
+        let mut sibling_files: Option<Vec<String>> = None;
         let warn = |path: &str, reason: &str, detail: String| DiscoveryWarning {
             path: path.to_owned(),
             reason: reason.to_owned(),
@@ -269,8 +289,16 @@ impl Patterns {
             .chain(self.exclude.iter().map(|g| ("build.exclude".to_owned(), g)));
         for (key, glob) in keyed {
             let names_output = key == "build.exclude" && matches_some(output, glob);
-            let shared = self.inherited.contains(glob) && matches_some(siblings, glob);
-            if !names_output && !shared && !matches_some(files, glob) {
+            if names_output || matches_some(files, glob) {
+                continue;
+            }
+            let shared = self.inherited.contains(glob)
+                && matches_some(
+                    sibling_files
+                        .get_or_insert_with(|| siblings.take().map_or_else(Vec::new, |f| f())),
+                    glob,
+                );
+            if !shared {
                 warnings.push(warn(
                     ROOT_FILE,
                     "unmatched-glob",

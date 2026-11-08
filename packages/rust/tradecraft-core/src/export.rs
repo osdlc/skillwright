@@ -926,11 +926,16 @@ pub fn export_skills(
         .filter_map(|path| path.strip_prefix(&vault_root).ok())
         .map(crate::skill::forward_slashed)
         .collect();
-    warnings.extend(patterns.warnings(
-        &crate::walk::glob_files(&source, &vault_root),
-        &output,
-        &patterns.sibling_files(vfs, &vault_root),
-    ));
+    // Only a glob has anything to warn about, so with none the vault is not
+    // walked again; the other marketplaces are walked only for a shared glob
+    // that matches nothing here.
+    if patterns.has_globs() {
+        warnings.extend(patterns.warnings_with(
+            &crate::walk::glob_files(&source, &vault_root),
+            &output,
+            || patterns.sibling_files(vfs, &vault_root),
+        ));
+    }
     warnings.extend(stale_output_warnings(
         vfs,
         &out_root,
