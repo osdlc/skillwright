@@ -28,7 +28,7 @@ This release refuses some vaults that 0.6.0 built. To find what needs fixing, ru
 
 - `allowed-tools: Read, Grep` is read as two tools, as Claude Code's docs allow. 0.6.0 warned `unknown-key` and carried it under `metadata:`.
 - `user-invocable` and `disable-model-invocation` also read `yes`, `no`, `on`, `off`, `1` and `0`, in any case and quoted or not, and ship as `true` or `false`. 0.6.0 carried these words under `metadata:` when bare, so `user-invocable: no` left the skill invocable.
-- An unquoted `argument-hint: [issue-number]`, which YAML reads as a list, ships as the hint `"[issue-number]"`, bare or in a `claude:` block. 0.6.0 carried it as a list: under `metadata:` when bare, and as the hint itself in a block.
+- An unquoted `argument-hint: [issue-number]`, which YAML reads as a list, ships as the hint `"[issue-number]"`, bare or in a `claude:` block. 0.6.0 carried it as a list: under `metadata:` when bare, and as a top-level `argument-hint` list in a block.
 - `list` skips every note a build refuses, including a bad block value on a plugin and a bad block in the root file. A bad block in a workspace file is one row, naming the workspace file.
 - A bad block in the root file or a plugin note is blamed on that marketplace or plugin, by `build`, by `publish <note>` and by `status`. 0.6.0 published a member skill under a bad container block.
 - A skipped note's code is printed once: `skipped · malformed: …`, not `skipped · removed-key: refused: removed-key: …`.
