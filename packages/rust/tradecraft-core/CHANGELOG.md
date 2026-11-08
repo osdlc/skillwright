@@ -7,16 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.46.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.45.0...tradecraft-core/v0.46.0) - 2026-11-08
-
 ### Breaking
 
 Behaviour:
 
-- The `removed-key` refusal is gone. `VaultFrontmatter::take_from` no longer refuses `kind`, `plugin`, their prefixed spellings, or, with no namespace, an `sw-` spelling or `sw:` block of a skillwright key. Each is an ordinary unknown key and warns `unknown-key`.
-- `parse_root_file` no longer refuses a top-level `bump` or `build.shim_target`. Each is an ordinary unknown key: it warns and is ignored.
-- The vault scan no longer gives a `marketplaces/<m>/<m>.md` note its own refusal pointing to `marketplaces/<m>/skillwright.md`. It is read like any other file at that path: skipped as a stray note if it declares a `description`, otherwise ignored.
-- An adopted skill's carried `kind` or `plugin` key stays in its frontmatter instead of moving under `metadata:`.
 - `publish_skill`, `status_of`, `Cascade::above`, `discover_components`, `discover_roster`, `load` and `load_plugin` refuse with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes: its frontmatter is not a YAML mapping, or its `workspace`, `build`, `build.exclude` or `build.patterns` has the wrong shape. They read such a file as excluding nothing before, so a note `build.exclude` excludes was published and listed. A bad value in any other key, such as `repository: example`, does not refuse them; the verbs that read that value, such as a build, still do. `export_skills` already refused. `source_view` hides nothing for such a file and leaves the refusal to the scan or build that reads through it.
 - `load_marketplace` refuses a root file or workspace file it cannot read, whether its frontmatter is not YAML or a key holds a bad value, as `refused: malformed-root-file`, not `refused: root-file`. A build already used `malformed-root-file` for the same file, so one bad file now has one token.
 
@@ -24,7 +18,6 @@ API:
 
 - `vault_config` returns `Result<MarketplaceConfig, CoreError>`. It refuses with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes, as the scan it configures does. It ignored such a workspace file before, so a member silently lost the workspace's namespace, targets, blocks and exclusions. A bad value in another key still gives the default config, or leaves the workspace file out, as before: a build says what is wrong with it. The wasm `discoverComponents` throws when the vault's root file or workspace file cannot say what it excludes.
 - Removed `Patterns::read`, which read a malformed root file as empty. Use `Patterns::load`, which refuses it.
-- Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 
 ### Added
 
@@ -37,6 +30,21 @@ API:
 - `container_members` and so `plan_delete_component` leave a plugin's `assets/` files out of its members. They were counted, so deleting a plugin whose folder held only assets was refused.
 - A scan of a skills root below the vault, as in `discover_components` with a `content_root`, reads the vault's root file for its patterns. It read a `skillwright.md` at the skills root as if it were the root file, and refused if that file did not parse.
 - `publish_skill` and `Cascade::above` of a note outside `marketplaces/` no longer refuse on a duplicate name inside a marketplace: they scan `marketplaces/` to count the marketplaces as a build does, and a duplicate is a warning there. A symlink or a folder that cannot be listed under `marketplaces/` still refuses them, as it refuses a build, because without the count the note cannot know which `targets` apply.
+
+## [0.46.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.45.0...tradecraft-core/v0.46.0) - 2026-11-08
+
+### Breaking
+
+Behaviour:
+
+- The `removed-key` refusal is gone. `VaultFrontmatter::take_from` no longer refuses `kind`, `plugin`, their prefixed spellings, or, with no namespace, an `sw-` spelling or `sw:` block of a skillwright key. Each is an ordinary unknown key and warns `unknown-key`.
+- `parse_root_file` no longer refuses a top-level `bump` or `build.shim_target`. Each is an ordinary unknown key: it warns and is ignored.
+- The vault scan no longer gives a `marketplaces/<m>/<m>.md` note its own refusal pointing to `marketplaces/<m>/skillwright.md`. It is read like any other file at that path: skipped as a stray note if it declares a `description`, otherwise ignored.
+- An adopted skill's carried `kind` or `plugin` key stays in its frontmatter instead of moving under `metadata:`.
+
+API:
+
+- Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 
 ## [0.45.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.44.0...tradecraft-core/v0.45.0) - 2026-11-07
 
