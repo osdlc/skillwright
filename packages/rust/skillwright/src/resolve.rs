@@ -13,8 +13,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    DiscoveredComponent, DiscoveryWarning, MarketplaceConfig, Namespace, NativeVfs, SourceView,
-    VaultScope, discover_components,
+    DiscoveryWarning, MarketplaceConfig, Namespace, NativeVfs, SourceView, VaultScope,
+    discover_components,
 };
 
 use crate::config::{
@@ -423,22 +423,6 @@ pub fn refuse_workspace(verb: &str, run: &ResolvedRun, err: &mut dyn Write) -> R
 /// What a workspace file holds that no build acts on: a `build.out`, and
 /// components at its root, since each marketplace is a vault of its own.
 pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
-    let scan = discover_components(
-        &run.source_vfs(None),
-        &run.vault,
-        None,
-        &run.core_namespace(),
-    );
-    let components = scan.map(|scan| scan.components).unwrap_or_default();
-    workspace_warnings_over(run, &components)
-}
-
-/// [`workspace_warnings`] over a scan of the workspace the caller already
-/// holds. A scan that refused the workspace holds no components.
-pub fn workspace_warnings_over(
-    run: &ResolvedRun,
-    components: &[DiscoveredComponent],
-) -> Vec<DiscoveryWarning> {
     let mut warnings = Vec::new();
     if run.config.build.out.is_some() {
         warnings.push(DiscoveryWarning::new(
@@ -447,9 +431,17 @@ pub fn workspace_warnings_over(
             "`build.out` on a workspace file is not read: each marketplace sets its own",
         ));
     }
-    let folders: std::collections::BTreeSet<String> = components
+    let scan = discover_components(
+        &run.source_vfs(None),
+        &run.vault,
+        None,
+        &run.core_namespace(),
+    );
+    let in_marketplaces = format!("{WORKSPACE_DIR}/");
+    let folders: std::collections::BTreeSet<String> = scan
         .iter()
-        .filter(|c| !c.vault_relative_path.starts_with("marketplaces/"))
+        .flat_map(|scan| &scan.components)
+        .filter(|c| !c.vault_relative_path.starts_with(&in_marketplaces))
         .filter_map(|c| c.vault_relative_path.split('/').next())
         .map(|folder| format!("`{folder}/`"))
         .collect();
