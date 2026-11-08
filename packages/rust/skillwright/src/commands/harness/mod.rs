@@ -27,7 +27,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tradecraft_core::{MarketplaceConfig, marketplace_manifest_path, plugin_manifest_path};
 
-use crate::commands::marketplace::configured_out;
+use crate::commands::marketplace::required_out;
 use crate::config::resolve_against_cwd;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked, usage_error};
@@ -300,7 +300,7 @@ pub(crate) fn built_root(
 ) -> Result<PathBuf, i32> {
     match &flags.path {
         Some(path) => Ok(resolve_against_cwd(path, &ctx.cwd)),
-        None => configured_out(run, ctx.err),
+        None => required_out(run, ctx.err),
     }
 }
 
@@ -423,7 +423,7 @@ fn run_market(
     let mut approve = |commands: &[Vec<String>]| approve_commands(flags, &argv_verb, commands, err);
     let exec = Execution {
         runner: ctx.runner,
-        cwd: &run.config_dir,
+        cwd: &run.vault,
         dry_run: flags.dry_run,
         approve: &mut approve,
     };

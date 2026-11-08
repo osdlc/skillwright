@@ -41,6 +41,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
@@ -211,11 +212,10 @@ impl Cascade {
                     .map(|targets| (c.folder().to_owned(), targets))
             })
             .collect();
+        // `targets` inherits on every kind (the key table), so only a
+        // marketplace's own note and a note that sets it are left alone.
         for note in components.iter_mut() {
-            if note.kind == EntityKind::Marketplace
-                || note.targets.is_some()
-                || !keys::inherits(note.kind, "targets")
-            {
+            if note.kind == EntityKind::Marketplace || note.targets.is_some() {
                 continue;
             }
             let plugin = note
@@ -243,7 +243,7 @@ impl Cascade {
         ns: &Namespace,
     ) {
         let plugin = plugin.unwrap_or_default();
-        if note.frontmatter.targets.is_none() && keys::inherits(kind, "targets") {
+        if note.frontmatter.targets.is_none() {
             note.frontmatter.targets = inherited(
                 &self.config,
                 plugin,
@@ -280,7 +280,7 @@ impl Cascade {
                 }
                 let block = note
                     .frontmatter
-                    .overrides
+                    .blocks
                     .entry((*harness).to_owned())
                     .or_insert_with(|| Value::Object(Map::new()));
                 let Some(block) = block.as_object_mut() else {
@@ -323,23 +323,50 @@ fn merge_metadata(block: &mut Map<String, Value>, inherited: Value, own: &Map<St
 /// The keys of `harness`'s block a note of `kind` takes from a container: the
 /// keys its kind accepts, less those a container's own manifests read and
 /// those the harness reads on a subagent alone.
-pub(crate) fn member_block_keys(kind: EntityKind, harness: &str) -> BTreeSet<String> {
-    let mut keys = accepted_keys(kind, harness);
-    if let Some(profile) = crate::harness::profile_named(harness) {
-        let format = profile.format();
-        let agent_only = profile.agent_override_keys();
-        keys.retain(|key| {
-            !agent_only.contains(key)
-                && !format.manifest_fields.contains(&key.as_str())
-                && !format.entry_fields.contains(&key.as_str())
-        });
-    }
+///
+/// Read from a table built once for every kind and every harness with a
+/// plugin format; any other name takes no key.
+pub(crate) fn member_block_keys(kind: EntityKind, harness: &str) -> &'static BTreeSet<String> {
+    static TABLE: OnceLock<BTreeMap<&'static str, BTreeMap<EntityKind, BTreeSet<String>>>> =
+        OnceLock::new();
+    static NONE: BTreeSet<String> = BTreeSet::new();
+    let table = TABLE.get_or_init(|| {
+        crate::harness::with_plugin_format()
+            .map(|profile| {
+                let by_kind = EntityKind::ALL
+                    .into_iter()
+                    .map(|kind| (kind, compute_member_block_keys(kind, profile)))
+                    .collect();
+                (profile.name, by_kind)
+            })
+            .collect()
+    });
+    table
+        .get(harness)
+        .and_then(|by_kind| by_kind.get(&kind))
+        .unwrap_or(&NONE)
+}
+
+/// [`member_block_keys`] worked out for one harness with a plugin format,
+/// for the table.
+fn compute_member_block_keys(
+    kind: EntityKind,
+    profile: &crate::harness::HarnessProfile,
+) -> BTreeSet<String> {
+    let format = profile.format();
+    let agent_only = profile.agent_override_keys();
+    let mut keys = accepted_keys(kind, profile.name);
+    keys.retain(|key| {
+        !agent_only.contains(key)
+            && !format.manifest_fields.contains(&key.as_str())
+            && !format.entry_fields.contains(&key.as_str())
+    });
     keys
 }
 
 /// The path of the note of the marketplace in `folder`.
 fn marketplace_note(root: &Path, folder: &str) -> PathBuf {
-    root.join("marketplaces")
+    root.join(crate::paths::WORKSPACE_DIR)
         .join(folder)
         .join(crate::settings::ROOT_FILE)
 }
@@ -355,7 +382,7 @@ fn only_marketplace(
     root: &Path,
     ns: &Namespace,
 ) -> Result<Option<String>, CoreError> {
-    let folder = root.join("marketplaces");
+    let folder = root.join(crate::paths::WORKSPACE_DIR);
     if !vfs.exists(&folder) {
         return Ok(None);
     }
@@ -365,16 +392,12 @@ fn only_marketplace(
         files,
     };
     let scan = crate::discover::discover_in(vfs, root, &source, ns)?;
-    let present = marketplaces_in(&scan.components);
-    Ok(match present.len() {
-        1 => present.first().map(|name| (*name).to_owned()),
-        _ => None,
-    })
+    Ok(sole_marketplace(&marketplaces_in(&scan.components)))
 }
 
 /// The marketplaces a scan holds, by folder. A marketplace's own note counts:
 /// a marketplace need not hold a member of its own.
-pub(super) fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
+pub fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
     components
         .iter()
         .filter_map(|c| match c.kind {
@@ -384,15 +407,19 @@ pub(super) fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&s
         .collect()
 }
 
+/// The one marketplace of `present`, or `None` when it holds none or several.
+pub(super) fn sole_marketplace(present: &BTreeSet<&str>) -> Option<String> {
+    match present.len() {
+        1 => present.first().map(|name| (*name).to_owned()),
+        _ => None,
+    }
+}
+
 /// Gives every component of a scan what its containers say about `targets`,
 /// for a caller reporting on the vault with no build to run. `requested` is
 /// the root file's config.
 pub fn inherit_targets(report: &mut DiscoveryReport, requested: &MarketplaceConfig) {
-    let present = marketplaces_in(&report.components);
-    let market = match present.len() {
-        1 => present.first().map(|name| (*name).to_owned()),
-        _ => None,
-    };
+    let market = sole_marketplace(&marketplaces_in(&report.components));
     Cascade::over(&report.components, market.as_deref(), requested)
         .resolve_targets(&mut report.components);
 }
@@ -448,4 +475,31 @@ fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) -> bo
         return false;
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A harness with no plugin format has no container block to take keys
+    /// from, so it gives a member none, whatever its kind.
+    #[test]
+    fn a_harness_with_no_plugin_format_gives_a_member_no_block_keys() {
+        let without: Vec<&str> = crate::harness::PROFILES
+            .iter()
+            .filter(|profile| profile.plugin.is_none())
+            .map(|profile| profile.name)
+            .collect();
+        assert!(!without.is_empty());
+        for harness in without {
+            for kind in EntityKind::ALL {
+                assert!(
+                    member_block_keys(kind, harness).is_empty(),
+                    "{harness} {kind:?}"
+                );
+            }
+        }
+        assert!(member_block_keys(EntityKind::Skill, "no-such-harness").is_empty());
+        assert!(!member_block_keys(EntityKind::Skill, "claude").is_empty());
+    }
 }

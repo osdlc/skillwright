@@ -2226,7 +2226,6 @@ mod tests {
         // empty: "not scanned" and "scanned, found nowhere else" are
         // different facts.
         assert_eq!(provenance.also_at, None);
-        assert!(note.frontmatter.unknown_ours.is_empty());
     }
 
     /// `adopted.format`'s three sources, in the order [`detect_format`] asks.

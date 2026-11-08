@@ -22,7 +22,7 @@
 
 use crate::resolve::ResolvedRun;
 use serde::Serialize;
-use tradecraft_core::authoring::MARKETPLACES_DIR;
+use tradecraft_core::WORKSPACE_DIR;
 use tradecraft_core::authoring::{
     bundle_dir, move_destination, new_note_dir, rename_destination, slug_refusal,
 };
@@ -223,7 +223,7 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
     note.fields = &fields;
     note.placement = Some(&placement);
     note.bundled = true;
-    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
+    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
         op_result,
@@ -252,7 +252,7 @@ fn held_marketplace(
     }
     if run
         .vault
-        .join(MARKETPLACES_DIR)
+        .join(WORKSPACE_DIR)
         .join(name)
         .join(ROOT_FILE)
         .is_file()
@@ -262,7 +262,7 @@ fn held_marketplace(
     Err(usage_error(
         ctx.err,
         &format!(
-            "no marketplace `{name}` here: this vault is `{}`, and it holds no {MARKETPLACES_DIR}/{name}/{ROOT_FILE}. Leave out --marketplace, or run `new marketplace {name}` first",
+            "no marketplace `{name}` here: this vault is `{}`, and it holds no {WORKSPACE_DIR}/{name}/{ROOT_FILE}. Leave out --marketplace, or run `new marketplace {name}` first",
             run.marketplace_name()
         ),
     ))
@@ -297,7 +297,7 @@ pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i
     note.fields = &fields;
     note.placement = Some(&placement);
     note.bundled = true;
-    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
+    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
         op_result,
@@ -323,7 +323,7 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -377,7 +377,7 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
     note.fields = &fields;
     note.placement = placement.as_ref();
     note.bundled = true;
-    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, &ns, &note);
+    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, ns, &note);
     let fallback = expected_create_path(placement.as_ref(), &flags.name, true);
     execute(
         op_result,
@@ -411,7 +411,7 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -425,21 +425,21 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
         EntityKind::Plugin => plan_rename_plugin(
             &run.source_vfs(None),
             &run.vault,
-            &ns,
+            ns,
             entry,
             &flags.new_name,
         ),
         EntityKind::Marketplace => plan_rename_marketplace(
             &run.source_vfs(None),
             &run.vault,
-            &ns,
+            ns,
             entry,
             &flags.new_name,
         ),
         _ => plan_rename_component(
             &run.source_vfs(None),
             &run.vault,
-            &ns,
+            ns,
             entry,
             &flags.new_name,
         ),
@@ -468,7 +468,7 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -490,7 +490,7 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let op_result = plan_move_component(
         &run.source_vfs(None),
         &run.vault,
-        &ns,
+        ns,
         entry,
         marketplace.as_deref(),
         plugin.as_deref(),
@@ -525,7 +525,7 @@ pub fn run_delete(flags: &DeleteFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -536,15 +536,9 @@ pub fn run_delete(flags: &DeleteFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let entry = component.vault_relative_path.as_str();
 
     let op_result = if flags.force && component.kind.holds_components() {
-        plan_delete_container(
-            &run.source_vfs(None),
-            &run.vault,
-            &ns,
-            entry,
-            component.kind,
-        )
+        plan_delete_container(&run.source_vfs(None), &run.vault, ns, entry, component.kind)
     } else {
-        plan_delete_component(&run.source_vfs(None), &run.vault, &ns, entry)
+        plan_delete_component(&run.source_vfs(None), &run.vault, ns, entry)
     };
     let fallback = bundle_dir(entry).unwrap_or(entry).to_string();
     execute(
@@ -574,7 +568,7 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
         return code;
     }
     let ns = run.core_namespace();
-    let components = match scan_components(&run, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -584,7 +578,7 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
     };
     let entry = component.vault_relative_path.as_str();
 
-    let op_result = plan_convert_kind(&run.source_vfs(None), &run.vault, &ns, entry, to_kind, &[]);
+    let op_result = plan_convert_kind(&run.source_vfs(None), &run.vault, ns, entry, to_kind, &[]);
     let label = label_convert(to_kind);
     execute(
         op_result,

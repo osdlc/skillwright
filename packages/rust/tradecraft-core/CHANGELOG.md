@@ -7,6 +7,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+API:
+
+- `VaultFrontmatter::overrides` is renamed `blocks`, the name `DiscoveredComponent`, `MarketplaceConfig` and `MarketplaceFields` use for the same harness blocks. `PluginOverrides` keeps its name. The serialized form changes too: a serialized `VaultFrontmatter` or `VaultNote` has a `blocks` key where it had `overrides`, and no `unknown_ours` key.
+- Removed `authoring::MARKETPLACES_DIR`. Use `WORKSPACE_DIR` (`paths::WORKSPACE_DIR`), which holds the same `marketplaces`.
+- Removed `keys::is_skillwright_key`. Ask `keys::is_owned` for each of `EntityKind::ALL` instead.
+- Removed `VaultFrontmatter::unknown_ours`. Nothing read it. A prefixed key this build does not model is still consumed, and `VaultFrontmatter::unknown` still lists it.
+
+### Added
+
+- `EntityKind::ALL`: every kind.
+- `model::marketplaces_in`: the marketplace folders a scan holds. The CLI's `bump` and `status` use it in place of their own copy.
+
 ## [0.46.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.45.0...tradecraft-core/v0.46.0) - 2026-11-08
 
 ### Breaking

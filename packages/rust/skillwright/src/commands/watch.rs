@@ -49,7 +49,6 @@ use notify::{RecursiveMode, Watcher};
 use tradecraft_core::built_paths_for;
 
 use crate::commands::marketplace::{ExportFlags, ExportVerb, out_root, run_export};
-use crate::config::resolve_configured_path;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked};
 use crate::resolve::{refuse_workspace, resolve_run};
@@ -267,7 +266,7 @@ fn watch_targets(run: &crate::resolve::ResolvedRun) -> Vec<(PathBuf, RecursiveMo
         .map(|a| &a.from)
         .chain(build.hooks.iter().map(|h| &h.from));
     for from in sources {
-        let source = resolve_configured_path(from, &run.config_dir);
+        let source = run.configured_path(from);
         let (path, mode) = if source.is_dir() {
             (source, RecursiveMode::Recursive)
         } else {
@@ -474,12 +473,12 @@ mod tests {
         let run = ResolvedRun {
             config: {
                 let mut config = RootFile::default();
-                config.build.assets = vec![asset("conventions"), asset("bin/tool")];
+                // The root file sits in the vault, so its paths resolve there.
+                config.build.assets = vec![asset("../conventions"), asset("../bin/tool")];
                 config
             },
-            config_dir: root.path().to_path_buf(),
             config_path: None,
-            namespace: None,
+            namespace: tradecraft_core::Namespace::default(),
             vault: vault.clone(),
         };
 
@@ -507,9 +506,8 @@ mod tests {
         .unwrap();
         let run = ResolvedRun {
             config: RootFile::default(),
-            config_dir: vault.clone(),
             config_path: None,
-            namespace: None,
+            namespace: tradecraft_core::Namespace::default(),
             vault,
         };
         assert!(

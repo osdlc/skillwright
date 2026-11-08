@@ -19,8 +19,7 @@ use tradecraft_core::{
 
 use crate::config::{
     ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, is_convention_vault, print_warnings,
-    read_root_file, resolve_against_cwd, resolve_configured_path, user_skills_dir, workspace_above,
-    workspace_members,
+    read_root_file, resolve_against_cwd, user_skills_dir, workspace_above, workspace_members,
 };
 use crate::exit::{blocked, no_config};
 
@@ -41,22 +40,20 @@ pub struct ResolvedRun {
     /// The root file, with a workspace's shared defaults folded in. Every
     /// default when the vault has no root file.
     pub config: RootFile,
-    /// The folder relative paths inside the root file resolve against: the
-    /// vault.
-    pub config_dir: PathBuf,
     /// The root file that was read, or `None` when the vault has none.
     pub config_path: Option<PathBuf>,
     /// The frontmatter namespace for this run, validated at [`resolve_run`].
-    /// Absent means the core's `sw`.
-    pub namespace: Option<Namespace>,
-    /// The vault root: the folder holding the root file.
+    /// Bare when neither `--namespace` nor `build.namespace` sets one.
+    pub namespace: Namespace,
+    /// The vault root: the folder holding the root file. Relative paths
+    /// inside the root file resolve against it.
     pub vault: PathBuf,
 }
 
 impl ResolvedRun {
     /// This run's namespace as the core takes it.
-    pub fn core_namespace(&self) -> Namespace {
-        self.namespace.clone().unwrap_or_default()
+    pub fn core_namespace(&self) -> &Namespace {
+        &self.namespace
     }
 
     /// The filesystem as this run reads it: the root file in use answers
@@ -76,8 +73,8 @@ impl ResolvedRun {
             self.config_vfs(),
             self.scope(skills_root, None),
             self.configured_out().as_deref(),
-            &self.config.to_config(&self.folder_name()),
-            &self.core_namespace(),
+            &self.root_config(),
+            self.core_namespace(),
         )
     }
 
@@ -98,12 +95,17 @@ impl ResolvedRun {
     }
 
     /// `build.out`, resolved against the root file's folder.
-    fn configured_out(&self) -> Option<PathBuf> {
+    pub fn configured_out(&self) -> Option<PathBuf> {
         self.config
             .build
             .out
             .as_ref()
-            .map(|out| resolve_configured_path(out, &self.config_dir))
+            .map(|out| self.configured_path(out))
+    }
+
+    /// A path the root file names, resolved against the root file's folder.
+    pub fn configured_path(&self, path: &str) -> PathBuf {
+        resolve_against_cwd(path, &self.vault)
     }
 
     /// What this run reads, for a marketplace it may name.
@@ -123,8 +125,8 @@ impl ResolvedRun {
         tradecraft_core::effective_config(
             &self.config_vfs(),
             self.scope(None, marketplace),
-            &self.config.to_config(&self.folder_name()),
-            &self.core_namespace(),
+            &self.root_config(),
+            self.core_namespace(),
         )
     }
 
@@ -134,8 +136,8 @@ impl ResolvedRun {
         tradecraft_core::effective_configs(
             &self.config_vfs(),
             self.scope(None, marketplace),
-            &self.config.to_config(&self.folder_name()),
-            &self.core_namespace(),
+            &self.root_config(),
+            self.core_namespace(),
         )
     }
 
@@ -145,7 +147,7 @@ impl ResolvedRun {
             &self.config_vfs(),
             self.scope(None, None),
             name,
-            &self.core_namespace(),
+            self.core_namespace(),
         )
     }
 
@@ -176,7 +178,7 @@ impl ResolvedRun {
                 .destinations
                 .iter()
                 .map(|d| RunDestination {
-                    root: resolve_configured_path(&d.root, &self.config_dir),
+                    root: self.configured_path(&d.root),
                     target: d.target.clone(),
                     user_folders: false,
                 })
@@ -303,10 +305,10 @@ pub fn resolve_run(
         .namespace
         .clone()
         .or_else(|| config.build.namespace.clone());
-    let mut namespace: Option<Namespace> = None;
+    let mut namespace = Namespace::default();
     if let Some(stem) = &stem {
         match Namespace::new(stem) {
-            Ok(valid) => namespace = Some(valid),
+            Ok(valid) => namespace = valid,
             Err(invalid) => {
                 // The core's message, verbatim — it already names the stem and
                 // the reason — plus the one thing the core cannot know: where
@@ -331,7 +333,6 @@ pub fn resolve_run(
 
     Ok(ResolvedRun {
         config,
-        config_dir: vault.clone(),
         config_path: file,
         namespace,
         vault,
@@ -434,12 +435,13 @@ pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
         &run.source_vfs(None),
         &run.vault,
         None,
-        &run.core_namespace(),
+        run.core_namespace(),
     );
+    let in_marketplaces = format!("{WORKSPACE_DIR}/");
     let folders: std::collections::BTreeSet<String> = scan
         .iter()
         .flat_map(|scan| &scan.components)
-        .filter(|c| !c.vault_relative_path.starts_with("marketplaces/"))
+        .filter(|c| !c.vault_relative_path.starts_with(&in_marketplaces))
         .filter_map(|c| c.vault_relative_path.split('/').next())
         .map(|folder| format!("`{folder}/`"))
         .collect();
@@ -513,13 +515,13 @@ mod tests {
             assert_eq!(loaded.dir, run.vault, "{start}");
             assert_eq!(Some(&loaded.root_file), run.config_path.as_ref(), "{start}");
             assert_eq!(loaded.root, run.config, "{start}");
-            assert_eq!(loaded.namespace, run.core_namespace(), "{start}");
+            assert_eq!(&loaded.namespace, run.core_namespace(), "{start}");
             let out = run
                 .config
                 .build
                 .out
                 .as_deref()
-                .map(|out| resolve_configured_path(out, &run.config_dir));
+                .map(|out| resolve_against_cwd(out, &run.vault));
             assert_eq!(loaded.out_root, out, "{start}");
             assert_eq!(
                 serde_json::to_value(&loaded.inputs.config).unwrap(),
