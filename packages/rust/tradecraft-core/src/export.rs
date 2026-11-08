@@ -1896,7 +1896,7 @@ mod tests {
 
     /// Every file under `root`: relative path, bytes, execute bit — sorted.
     fn files_under(vfs: &dyn Vfs, root: &Path) -> Vec<(String, Vec<u8>, bool)> {
-        let mut out: Vec<_> = crate::walk::readable_files(vfs, root)
+        let mut out: Vec<_> = crate::walk::readable_files(vfs, root, &[])
             .into_iter()
             .map(|entry| {
                 (

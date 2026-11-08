@@ -153,11 +153,10 @@ pub struct Patterns {
     folders: FolderPatterns,
     /// This root file's own `build.exclude`, read from the vault root.
     exclude: Vec<String>,
-    /// The workspace file's `build.exclude`, read from the workspace folder.
-    workspace_exclude: Vec<String>,
-    /// The vault root from the workspace folder, `marketplaces/<m>`, when a
-    /// workspace holds this marketplace.
-    member_path: String,
+    /// The workspace file's `build.exclude`, read from the workspace folder,
+    /// and the vault root from that folder, `marketplaces/<m>`. `None` when
+    /// no workspace holds this marketplace or it excludes nothing.
+    workspace_exclude: Option<(String, Vec<String>)>,
     /// The folder-pattern globs a workspace file gave this marketplace.
     inherited: BTreeSet<String>,
 }
@@ -178,30 +177,30 @@ impl Patterns {
     pub fn load(vfs: &dyn Vfs, vault_root: &Path) -> Result<Self, CoreError> {
         let mut root =
             read_root(vfs, &vault_root.join(ROOT_FILE), RootRead::Layout)?.unwrap_or_default();
-        let written = root.build.patterns.clone();
-        let mut workspace_exclude = Vec::new();
-        let mut member_path = String::new();
+        let written: BTreeSet<String> = root.build.patterns.globs().cloned().collect();
+        let mut workspace_exclude = None;
         if !root.workspace
             && let Some(shared) = read_workspace_above(vfs, vault_root, RootRead::Layout)?
         {
             root.inherit(&shared);
-            workspace_exclude = shared.build.exclude;
-            let name = vault_root.file_name().unwrap_or_default().to_string_lossy();
-            member_path = format!("{WORKSPACE_DIR}/{name}");
+            if !shared.build.exclude.is_empty() {
+                let name = vault_root.file_name().unwrap_or_default().to_string_lossy();
+                workspace_exclude = Some((format!("{WORKSPACE_DIR}/{name}"), shared.build.exclude));
+            }
         }
-        let mut own = Self {
+        let inherited = root
+            .build
+            .patterns
+            .globs()
+            .filter(|glob| !written.contains(*glob))
+            .cloned()
+            .collect();
+        Ok(Self {
             folders: root.build.patterns,
             exclude: root.build.exclude,
             workspace_exclude,
-            member_path,
-            inherited: BTreeSet::new(),
-        };
-        let written: BTreeSet<&String> = Self::folder_globs(&written).collect();
-        own.inherited = Self::folder_globs(&own.folders)
-            .filter(|glob| !written.contains(glob))
-            .cloned()
-            .collect();
-        Ok(own)
+            inherited,
+        })
     }
 
     /// The patterns of the vault at `vault_root`, paired with it, or `None`
@@ -219,18 +218,12 @@ impl Patterns {
             .transpose()
     }
 
-    /// Every glob of `folders`, whichever key holds it.
-    fn folder_globs(folders: &FolderPatterns) -> impl Iterator<Item = &String> {
-        Self::kinds_of(folders)
-            .into_iter()
-            .flat_map(|(_, globs)| globs)
-    }
-
     /// Every glob this file checks, whichever key holds it: the folder
     /// patterns and this file's own exclusions. A workspace's exclusions are
     /// checked once, at the workspace ([`workspace_exclude_warnings`]).
     fn globs(&self) -> impl Iterator<Item = &str> {
-        Self::folder_globs(&self.folders)
+        self.folders
+            .globs()
             .chain(&self.exclude)
             .map(String::as_str)
     }
@@ -252,18 +245,7 @@ impl Patterns {
 
     /// Each folder-pattern key with its globs, in the order a path is claimed.
     fn kinds(&self) -> [(&'static str, &[String]); 6] {
-        Self::kinds_of(&self.folders)
-    }
-
-    fn kinds_of(folders: &FolderPatterns) -> [(&'static str, &[String]); 6] {
-        [
-            ("assets", &folders.assets),
-            ("skills", &folders.skills),
-            ("agents", &folders.agents),
-            ("commands", &folders.commands),
-            ("hooks", &folders.hooks),
-            ("plugins", &folders.plugins),
-        ]
+        self.folders.kinds()
     }
 
     /// The folder each pattern reads from: its glob up to the first wildcard.
@@ -296,8 +278,8 @@ impl Patterns {
     /// vault-relative: a glob that matches nothing, a path two kinds claim,
     /// and one plugin read from two folders. `output` is what a build owns in
     /// the vault: not source, but a fair thing for `build.exclude` to name.
-    /// `siblings` are the other marketplaces' files: a glob a workspace shares
-    /// need only match in one of them.
+    /// `siblings` are the other marketplaces' files: a `build.patterns` glob a
+    /// workspace shares need only match in one of them.
     ///
     /// Both lists are read only when there is something to check. With no
     /// glob there is nothing to say, so neither is read; `siblings` is read
@@ -314,16 +296,6 @@ impl Patterns {
         let files = files();
         let files = files.as_slice();
         let mut sibling_files: Option<Vec<String>> = None;
-        let warn = |path: &str, reason: &str, detail: String| DiscoveryWarning {
-            path: path.to_owned(),
-            reason: reason.to_owned(),
-            detail,
-        };
-        let matches_some = |files: &[String], glob: &str| {
-            files
-                .iter()
-                .any(|file| prefixes(file).any(|prefix| glob_match(glob, prefix)))
-        };
         let mut warnings = Vec::new();
         let keyed = self
             .kinds()
@@ -335,18 +307,15 @@ impl Patterns {
             })
             .chain(self.exclude.iter().map(|g| ("build.exclude".to_owned(), g)));
         for (key, glob) in keyed {
-            let names_output = key == "build.exclude" && matches_some(output, glob);
-            if names_output || matches_some(files, glob) {
+            let excludes = key == "build.exclude";
+            if (excludes && matches_some(output, glob)) || matches_some(files, glob) {
                 continue;
             }
-            let shared = self.inherited.contains(glob)
+            let shared = !excludes
+                && self.inherited.contains(glob)
                 && matches_some(sibling_files.get_or_insert_with(&siblings), glob);
             if !shared {
-                warnings.push(warn(
-                    ROOT_FILE,
-                    "unmatched-glob",
-                    format!("`{key}` glob `{glob}` matches no file"),
-                ));
+                warnings.push(unmatched(&key, glob, ""));
             }
         }
 
@@ -401,7 +370,7 @@ impl Patterns {
             }
         }
         for (path, claims) in claimed {
-            warnings.push(warn(
+            warnings.push(DiscoveryWarning::new(
                 path,
                 "pattern-conflict",
                 format!("{} claim it; the first one wins", claims.join(" and ")),
@@ -411,7 +380,7 @@ impl Patterns {
             if folders.len() > 1 {
                 let name = conventional.rsplit('/').next().unwrap_or(&conventional);
                 let named: Vec<String> = folders.into_iter().collect();
-                warnings.push(warn(
+                warnings.push(DiscoveryWarning::new(
                     &named[0],
                     "plugin-merged",
                     format!(
@@ -428,11 +397,10 @@ impl Patterns {
     /// file's globs from the vault root, or a workspace's from its folder.
     pub fn excluded(&self, rel: &str) -> bool {
         matches_any(&self.exclude, rel)
-            || (!self.workspace_exclude.is_empty()
-                && matches_any(
-                    &self.workspace_exclude,
-                    &format!("{}/{rel}", self.member_path),
-                ))
+            || self
+                .workspace_exclude
+                .as_ref()
+                .is_some_and(|(member, globs)| matches_any(globs, &format!("{member}/{rel}")))
     }
 
     /// Whether a folder that never ships holds `rel`.
@@ -563,36 +531,47 @@ fn matches_any(globs: &[String], rel: &str) -> bool {
     !globs.is_empty() && prefixes(rel).any(|prefix| globs.iter().any(|g| glob_match(g, prefix)))
 }
 
-/// What is worth saying about the `build.exclude` of the workspace file at
-/// `workspace_root`: a glob that matches nothing anywhere under the workspace
-/// folder, members included. Said once, of the workspace file, since each
-/// member's build checks only its own globs. Nothing when the file is not a
-/// workspace's or cannot be read: a member's build refuses that one.
-pub fn workspace_exclude_warnings(vfs: &dyn Vfs, workspace_root: &Path) -> Vec<DiscoveryWarning> {
-    let globs = match read_root(vfs, &workspace_root.join(ROOT_FILE), RootRead::Layout) {
-        Ok(Some(root)) if root.workspace => root.build.exclude,
-        _ => return Vec::new(),
-    };
+/// Whether `glob` matches one of `files`, or a folder holding one.
+fn matches_some(files: &[String], glob: &str) -> bool {
+    files
+        .iter()
+        .any(|file| prefixes(file).any(|prefix| glob_match(glob, prefix)))
+}
+
+/// The `unmatched-glob` warning for `key`'s `glob`, of this folder's root file.
+fn unmatched(key: &str, glob: &str, under: &str) -> DiscoveryWarning {
+    DiscoveryWarning::new(
+        ROOT_FILE,
+        "unmatched-glob",
+        format!("`{key}` glob `{glob}` matches no file{under}"),
+    )
+}
+
+/// What is worth saying about `globs`, the `build.exclude` of the workspace
+/// file at `workspace_root`: a glob that matches nothing anywhere under the
+/// workspace folder, members included. Said once, of the workspace file,
+/// since each member's build checks only its own globs.
+pub fn workspace_exclude_warnings(
+    vfs: &dyn Vfs,
+    workspace_root: &Path,
+    globs: &[String],
+) -> Vec<DiscoveryWarning> {
     if globs.is_empty() {
         return Vec::new();
     }
-    // A plain walk: what a build wrote counts too, as it does for a member.
-    let files: Vec<String> = crate::walk::readable_files(vfs, workspace_root)
-        .into_iter()
-        .map(|entry| entry.rel)
-        .collect();
+    // A plain walk, so what a build wrote counts, as it does for a member.
+    let files: Vec<String> = crate::walk::readable_files(
+        vfs,
+        workspace_root,
+        crate::compile::EXCLUDED_VAULT_DIRECTORIES,
+    )
+    .into_iter()
+    .map(|entry| entry.rel)
+    .collect();
     globs
         .iter()
-        .filter(|glob| {
-            !files
-                .iter()
-                .any(|file| prefixes(file).any(|prefix| glob_match(glob, prefix)))
-        })
-        .map(|glob| DiscoveryWarning {
-            path: ROOT_FILE.to_owned(),
-            reason: "unmatched-glob".to_owned(),
-            detail: format!("`build.exclude` glob `{glob}` matches no file under the workspace"),
-        })
+        .filter(|glob| !matches_some(&files, glob))
+        .map(|glob| unmatched("build.exclude", glob, " under the workspace"))
         .collect()
 }
 
@@ -982,7 +961,16 @@ mod tests {
         vfs.insert("/ws/marketplaces/one/skillwright.md", "---\n---\n")
             .unwrap();
         vfs.insert("/ws/marketplaces/one/skills/a.md", "x").unwrap();
-        let warnings = workspace_exclude_warnings(&vfs, Path::new("/ws"));
+        let globs = crate::paths::read_workspace_above(
+            &vfs,
+            Path::new("/ws/marketplaces/one"),
+            RootRead::Layout,
+        )
+        .unwrap()
+        .unwrap()
+        .build
+        .exclude;
+        let warnings = workspace_exclude_warnings(&vfs, Path::new("/ws"), &globs);
         let [warning] = &warnings[..] else {
             panic!("{warnings:?}");
         };

@@ -2245,7 +2245,7 @@ mod tests {
     /// Every file under `root`, with bytes and execute bit — the thing an
     /// "and mutates nothing" assertion has to compare.
     fn snapshot(vfs: &dyn Vfs, root: &Path) -> Vec<(String, Vec<u8>, bool)> {
-        let mut out: Vec<_> = crate::walk::readable_files(vfs, root)
+        let mut out: Vec<_> = crate::walk::readable_files(vfs, root, &[])
             .into_iter()
             .map(|entry| {
                 (

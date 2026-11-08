@@ -141,7 +141,9 @@ pub struct BuildSettings {
     /// Canonical hooks files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<HookSetting>,
-    /// Globs of what never ships, relative to the root file. Experimental.
+    /// Globs of what never ships, relative to the root file. Only this
+    /// file's own: a workspace's globs are not inherited into this list, but
+    /// added to it, read from the workspace folder. Experimental.
     #[serde(
         default,
         deserialize_with = "one_or_many",
@@ -200,6 +202,23 @@ impl FolderPatterns {
     /// Whether no pattern is set.
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
+    }
+
+    /// Each key with its globs, in the order a path is claimed.
+    pub(crate) fn kinds(&self) -> [(&'static str, &[String]); 6] {
+        [
+            ("assets", &self.assets),
+            ("skills", &self.skills),
+            ("agents", &self.agents),
+            ("commands", &self.commands),
+            ("hooks", &self.hooks),
+            ("plugins", &self.plugins),
+        ]
+    }
+
+    /// Every glob, whichever key holds it.
+    pub(crate) fn globs(&self) -> impl Iterator<Item = &String> {
+        self.kinds().into_iter().flat_map(|(_, globs)| globs)
     }
 
     /// Fill each key this leaves unset from `shared`.
@@ -711,8 +730,8 @@ impl RootFile {
     /// `launcher_path`, `bump`, `require_descriptions`, `destinations`,
     /// `scan_locations`, `assets`, `hooks` and each key of `patterns`. Their
     /// paths and globs read from each marketplace's own folder. `out` is each
-    /// marketplace's own, and so is `exclude`: a workspace's exclusions add to
-    /// a member's, read from the workspace folder
+    /// marketplace's own. `exclude` is not inherited: a workspace's globs add
+    /// to a member's, read from the workspace folder
     /// ([`crate::patterns::Patterns::load`]).
     ///
     /// Key by key: a value this file sets wins, and every other key still

@@ -151,9 +151,14 @@ pub(crate) fn files_refusing_symlinks(
 }
 
 /// Every file under `root` this walk can read, without failing, a plain walk:
-/// a folder that cannot be listed is skipped.
-pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path) -> Vec<vfs_walk::Entry> {
-    vfs_walk::walk(vfs, root, &plain_options(&[], Symlinks::List, Errors::Skip)).unwrap_or_default()
+/// a folder that cannot be listed is skipped, and so is each of `prune`.
+pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Vec<vfs_walk::Entry> {
+    vfs_walk::walk(
+        vfs,
+        root,
+        &plain_options(prune, Symlinks::List, Errors::Skip),
+    )
+    .unwrap_or_default()
 }
 
 /// The options of [`vault_files`]'s walk.
