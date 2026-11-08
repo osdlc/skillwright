@@ -229,11 +229,10 @@ impl Cascade {
                     .map(|targets| (c.folder().to_owned(), targets))
             })
             .collect();
+        // `targets` inherits on every kind (the key table), so only a
+        // marketplace's own note and a note that sets it are left alone.
         for note in components.iter_mut() {
-            if note.kind == EntityKind::Marketplace
-                || note.targets.is_some()
-                || !keys::inherits(note.kind, "targets")
-            {
+            if note.kind == EntityKind::Marketplace || note.targets.is_some() {
                 continue;
             }
             let plugin = note
@@ -261,7 +260,7 @@ impl Cascade {
         ns: &Namespace,
     ) {
         let plugin = plugin.unwrap_or_default();
-        if note.frontmatter.targets.is_none() && keys::inherits(kind, "targets") {
+        if note.frontmatter.targets.is_none() {
             note.frontmatter.targets = inherited(
                 &self.config,
                 plugin,
