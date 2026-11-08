@@ -1436,7 +1436,11 @@ fn source_files(
         .filter(|path| {
             path.strip_prefix(vault_root).map_or(true, |relative| {
                 let relative = forward_slashed(relative);
-                !excluded(&relative) && !patterns.excluded(&relative)
+                // The vault's own root file is configuration, never a note,
+                // whatever a pattern matches.
+                relative != crate::settings::ROOT_FILE
+                    && !excluded(&relative)
+                    && !patterns.excluded(&relative)
             })
         })
         .cloned()

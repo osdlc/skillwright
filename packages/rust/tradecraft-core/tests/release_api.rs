@@ -2336,3 +2336,24 @@ fn a_marketplaces_folder_a_build_refuses_has_no_one_marketplace() {
         assert_eq!(cascade.config.name, None, "{case}");
     }
 }
+
+/// A pattern that matches every file at the vault root does not make the
+/// vault's own root file a note: it is configuration, whatever the patterns
+/// say.
+#[test]
+fn a_pattern_never_places_the_vaults_root_file() {
+    let root = "---\nname: v\nbuild:\n  patterns:\n    skills: '*'\n---\n";
+    let vfs = root_vault(root, &[("top.md", USE_IT)]);
+    let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    let paths: Vec<&str> = scan
+        .components
+        .iter()
+        .map(|c| c.vault_relative_path.as_str())
+        .collect();
+    assert_eq!(paths, vec!["top.md"]);
+    assert!(
+        scan.warnings.iter().all(|w| w.path != "skillwright.md"),
+        "{:?}",
+        scan.warnings
+    );
+}
