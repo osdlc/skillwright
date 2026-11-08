@@ -550,7 +550,9 @@ fn move_marketplace(
             })?;
         }
         let moved = relink_move(vault, &temp_from, &temp_to, true, mode, outcome);
-        let restored = restore_entry(&root_from, &abs_from, &new_dir, &root_to, &abs_to);
+        let restored = restore_entry(
+            vault.dir, &root_from, &abs_from, &new_dir, &root_to, &abs_to,
+        );
         (moved, restored)
     } else {
         // A preview renames in memory, over the same view, and writes nothing.
@@ -569,33 +571,15 @@ fn move_marketplace(
             Ok(()),
         )
     };
-    // Where the entry is now, by its own name, when `restore_entry` put it
-    // back: `execute_move` may have named it at `<to_dir>/<m>.md`, the
-    // source's temporary name inside the new folder.
-    let landed = landed(&temp_from, &temp_to);
-    let restored_at = [(&root_to, to), (&root_from, from)]
-        .into_iter()
-        .find(|(path, _)| path.is_file())
-        .map(|(_, now)| now);
-    // The rows, and a partial failure's own copy of them, name the entry by
-    // its own name, not the temporary one.
-    let own_names = |entries: &mut [AppliedEntry]| {
-        for entry in entries {
-            if entry.path == temp_to {
-                entry.path = to.to_owned();
-            } else if entry.path == temp_from {
-                entry.path = from.to_owned();
-            } else if let Some(now) = restored_at
-                && entry.path == landed
-            {
-                entry.path = now.to_owned();
-            }
-            if let Applied::Renamed { from: old } = &mut entry.applied
-                && *old == temp_from
-            {
-                *old = from.to_owned();
-            }
-        }
+    let names = OwnNames {
+        from,
+        temp_from: &temp_from,
+        temp_to: &temp_to,
+        landed: landed(&temp_from, &temp_to),
+        now: [(&root_to, to), (&root_from, from)]
+            .into_iter()
+            .find(|(path, _)| path.is_file())
+            .map(|(_, now)| now),
     };
     // Once, on whichever outcome the caller reads: a partial failure's own,
     // or this one.
@@ -605,16 +589,65 @@ fn move_marketplace(
             mut source,
         }) => {
             if let Some(entries) = outcome.entries.get_mut(before..) {
-                own_names(entries);
+                names.rows(entries);
             }
-            if let (ApplyError::Refused(message), Some(now)) = (source.as_mut(), restored_at) {
-                *message = replace_path(message, &landed, now);
-            }
+            names.error(&mut source);
             Err(ApplyError::Partial { outcome, source })
         }
         other => {
-            own_names(&mut outcome.entries[before..]);
+            names.rows(&mut outcome.entries[before..]);
             other
+        }
+    }
+}
+
+/// The temporary names a marketplace move gives its entry, and what each
+/// stands for once the move is over.
+struct OwnNames<'a> {
+    from: &'a str,
+    /// `<m>.md` in the source folder.
+    temp_from: &'a str,
+    /// `<m>.md` in the target folder.
+    temp_to: &'a str,
+    /// The source's `<m>.md` in the target folder, where the entry is when
+    /// the folder moved and its own rename did not.
+    landed: String,
+    /// The entry's own name where it is now, `None` when `restore_entry`
+    /// could not put it back: then the temporary paths are true.
+    now: Option<&'a str>,
+}
+
+impl OwnNames<'_> {
+    /// Names each row's path by the entry's own name. A rename's source is
+    /// always the entry's own name, which is what the user moved.
+    fn rows(&self, entries: &mut [AppliedEntry]) {
+        for entry in entries {
+            if let Some(now) = self.now {
+                if entry.path == self.temp_from {
+                    entry.path = self.from.to_owned();
+                } else if entry.path == self.temp_to || entry.path == self.landed {
+                    entry.path = now.to_owned();
+                }
+            }
+            if let Applied::Renamed { from: old } = &mut entry.applied
+                && *old == self.temp_from
+            {
+                *old = self.from.to_owned();
+            }
+        }
+    }
+
+    /// Names the entry where it is now in `err`'s message, where that names
+    /// the landed temporary path.
+    fn error(&self, err: &mut ApplyError) {
+        let Some(now) = self.now else {
+            return;
+        };
+        match err {
+            ApplyError::Refused(message) | ApplyError::Io { what: message, .. } => {
+                *message = replace_path(message, &self.landed, now);
+            }
+            _ => {}
         }
     }
 }
@@ -692,18 +725,26 @@ fn replace_path(message: &str, old: &str, new: &str) -> String {
 /// created, when it did. A partly failed move leaves the entry under the
 /// source's `<m>.md` name inside the new folder, so that name is tried too.
 fn restore_entry(
+    vault_dir: &Path,
     root_from: &Path,
     abs_from: &Path,
     new_dir: &Path,
     root_to: &Path,
     abs_to: &Path,
 ) -> Result<(), ApplyError> {
+    // Vault-relative, as every other path in a report.
+    let shown = |path: &Path| {
+        path.strip_prefix(vault_dir)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
     let rename = |from: &Path, to: &Path| {
         std::fs::rename(from, to).map_err(|source| ApplyError::Io {
             what: format!(
                 "restoring {}, so the entry is still at {}",
-                to.display(),
-                from.display()
+                shown(to),
+                shown(from)
             ),
             source,
         })
@@ -1843,6 +1884,90 @@ mod tests {
         };
         assert!(source.to_string().contains("bare"), "{source}");
         assert!(matches!(settle(Ok(()), Ok(()), &landed), Ok(())));
+    }
+
+    /// The rows and the error say where the entry is: under its own name
+    /// once it is put back, and under the temporary one while it is not.
+    #[test]
+    fn own_names_follow_where_the_entry_is() {
+        let rows = || {
+            let mut outcome = Outcome::new(Mode::Apply);
+            outcome.push(
+                "m2/m2.md",
+                Applied::Renamed {
+                    from: "m1/m1.md".to_owned(),
+                },
+            );
+            outcome.push(
+                "m1/m1.md",
+                Applied::Skipped {
+                    reason: "entry_rename_failed".to_owned(),
+                },
+            );
+            outcome.entries
+        };
+        let names = |now| OwnNames {
+            from: "m1/skillwright.md",
+            temp_from: "m1/m1.md",
+            temp_to: "m2/m2.md",
+            landed: "m2/m1.md".to_owned(),
+            now,
+        };
+        let paths = |entries: &[AppliedEntry]| -> Vec<String> {
+            entries.iter().map(|e| e.path.clone()).collect()
+        };
+
+        let mut entries = rows();
+        names(Some("m2/skillwright.md")).rows(&mut entries);
+        assert_eq!(
+            paths(&entries),
+            vec!["m2/skillwright.md", "m1/skillwright.md"]
+        );
+
+        let mut entries = rows();
+        names(None).rows(&mut entries);
+        assert_eq!(paths(&entries), vec!["m2/m2.md", "m1/m1.md"]);
+        assert!(matches!(
+            &entries[0].applied,
+            Applied::Renamed { from } if from == "m1/skillwright.md"
+        ));
+
+        let mut err = ApplyError::Io {
+            what: "the entry note is now at m2/m1.md; then restoring".to_owned(),
+            source: std::io::Error::other("denied"),
+        };
+        names(Some("m2/skillwright.md")).error(&mut err);
+        assert!(
+            err.to_string().contains("now at m2/skillwright.md;"),
+            "{err}"
+        );
+    }
+
+    /// A failed restore names its paths from the vault root.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_restore_names_vault_relative_paths() {
+        let v = vault();
+        write(v.path(), "marketplaces/m1/m1.md", "---\nname: m1\n---\n");
+        let m1 = v.path().join("marketplaces/m1");
+        if !lock_writes(&m1) {
+            return;
+        }
+        let err = restore_entry(
+            v.path(),
+            &m1.join("skillwright.md"),
+            &m1.join("m1.md"),
+            &v.path().join("marketplaces/m2"),
+            &v.path().join("marketplaces/m2/skillwright.md"),
+            &v.path().join("marketplaces/m2/m2.md"),
+        );
+        unlock_writes(&m1);
+        let message = err.unwrap_err().to_string();
+        assert!(
+            message.contains("restoring marketplaces/m1/skillwright.md"),
+            "{message}"
+        );
+        assert!(!message.contains(&*v.path().to_string_lossy()), "{message}");
     }
 
     #[test]
