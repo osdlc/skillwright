@@ -15,9 +15,10 @@ Behaviour:
 
 - A value of the wrong kind is refused as `refused: malformed: <path>: <what>`, naming the key and the kind it must be. This covers a spec key on a skill, agent or command, a key a harness reads in any harness block of a skill, command, plugin or marketplace, and a skillwright key of the wrong shape. 0.44.0 checked only a block's `metadata`, and a skill's block only for the target being built. It carried a bad spec key under `metadata:`. The vault reader, `load`, `load_plugin`, `export_skills` and `publish_skill` all refuse. Every block that can ship is checked, whichever harnesses are selected. An agent's blocks are not checked, because they never ship.
 - The vault scan makes the same checks, so such a note is a `SkippedNote` with reason `malformed`. The root file's own blocks are checked too, and a bad one is a `SkippedNote` for `skillwright.md`. A note whose only opt-in key is the wrong kind, such as `description: 2048`, is refused, not passed by as an ordinary note.
-- An agent's `tools` must be a string, a list of strings or OpenCode's mapping of tool name to `true` or `false`, and `temperature` must be a number.
-- A key set to nothing is dropped, bare or in any harness block, including a container's. 0.44.0 carried it as `null`. It does not clear a value the note inherits from a container. A block key no harness reads is kept, so it still warns `unknown-key`.
-- Errors that 0.44.0 gave other forms now use `malformed`. A wrong-shape skillwright key was `CoreError::Io` (`reading <path>: …`) and is now `CoreError::Refused`. A container block `metadata` that is not a mapping was `refused: malformed-block`. A `match` on these must look for the new form.
+- An agent's `tools` must be a string, a list of strings or a mapping of tool names, and `temperature` must be a number.
+- A spec key or a block key set to nothing is dropped, bare or in any harness block, including a container's. 0.44.0 carried it as `null`. It does not clear a value the note inherits from a container. A key set to nothing that no harness reads still warns `unknown-key`.
+- Errors that 0.44.0 gave other forms now use `malformed`. A wrong-shape skillwright key was `CoreError::Io` (`reading <path>: …`) and is now `CoreError::Refused`. A container block `metadata` that is not a mapping was `refused: malformed-block`, and a skill's or command's block `metadata` that is not a mapping was `CoreError::Io`. A `match` on these must look for the new form.
+- `load` and `load_plugin` fail with `refused: malformed`, not `unreadable-note`, when every skipped note holds a value of the wrong kind, and say so in the text.
 
 API:
 
@@ -33,7 +34,6 @@ API:
 
 - The vault reader reads Claude Code's lenient forms, bare and in blocks, and turns each into the plain form every harness reads: an `allowed-tools` string separated by commas, a boolean written `yes`, `no`, `on`, `off`, `1` or `0` in any case and quoted or not, and an unquoted `argument-hint: [issue-number]`, which YAML reads as a list.
 - `load`, `load_plugin` and `publish_skill` check the root config's and plugin notes' blocks before a member inherits them, so a refusal names the container. `publish_skill` did not check them before.
-- The error from `load` for skipped notes uses `malformed`, not `unreadable-note`, when each skipped note holds a value of the wrong kind, and says so in its text.
 
 ## [0.44.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.43.0...tradecraft-core/v0.44.0) - 2026-11-07
 
