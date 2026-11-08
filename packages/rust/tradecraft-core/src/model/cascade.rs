@@ -474,3 +474,26 @@ fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) -> bo
     }
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A harness with no plugin format has no container block to take keys
+    /// from, so it gives a member none, whatever its kind.
+    #[test]
+    fn a_harness_with_no_plugin_format_gives_a_member_no_block_keys() {
+        for harness in ["amp", "antigravity", "copilot", "opencode", "portable"] {
+            let profile = crate::harness::profile_named(harness).unwrap();
+            assert!(profile.plugin.is_none(), "{harness}");
+            for kind in EntityKind::ALL {
+                assert!(
+                    member_block_keys(kind, harness).is_empty(),
+                    "{harness} {kind:?}"
+                );
+            }
+        }
+        assert!(member_block_keys(EntityKind::Skill, "no-such-harness").is_empty());
+        assert!(!member_block_keys(EntityKind::Skill, "claude").is_empty());
+    }
+}

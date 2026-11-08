@@ -1018,6 +1018,32 @@ fn refuse(token: &str, path: &Path, message: impl fmt::Display) -> CoreError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `EntityKind::ALL` names every kind. The match has no wildcard, so a new
+    /// kind fails to compile here until it is added to the list.
+    #[test]
+    fn all_names_every_kind() {
+        fn listed(kind: EntityKind) -> bool {
+            match kind {
+                EntityKind::Skill
+                | EntityKind::Plugin
+                | EntityKind::Command
+                | EntityKind::Agent
+                | EntityKind::Hook
+                | EntityKind::Marketplace => EntityKind::ALL.contains(&kind),
+            }
+        }
+        for kind in [
+            EntityKind::Skill,
+            EntityKind::Plugin,
+            EntityKind::Command,
+            EntityKind::Agent,
+            EntityKind::Hook,
+            EntityKind::Marketplace,
+        ] {
+            assert!(listed(kind), "{kind:?}");
+        }
+    }
     use serde_json::json;
 
     const NOTE: &str = "/vault/skills/code-review.md";
