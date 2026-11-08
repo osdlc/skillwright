@@ -137,25 +137,25 @@
       "id": "entities",
       "type": "schema",
       "dialect": "markdown-db",
-      "title": "Entities and how they link (VA-Spec names in each purpose)",
+      "title": "Entities: the reusable framework and harness-reference's domain (VA-Spec names in each purpose)",
       "groups": [
         {
-          "id": "g-built",
-          "title": "Built in #74",
+          "id": "g-framework",
+          "title": "Framework (reusable for any domain)",
           "tables": [
-            "harnesses",
+            "claims",
+            "evidence_lines",
+            "evidence",
             "references",
-            "evidence"
+            "experiments"
           ]
         },
         {
-          "id": "g-planned",
-          "title": "Planned",
+          "id": "g-domain",
+          "title": "Domain: harness-reference",
           "tables": [
-            "subjects",
-            "claims",
-            "evidence_lines",
-            "experiments"
+            "harnesses",
+            "subjects"
           ]
         }
       ],
@@ -301,11 +301,11 @@
               }
             },
             {
-              "id": "evidence.harness",
-              "name": "harness",
+              "id": "evidence.focus",
+              "name": "focus",
               "type": "link",
               "nullable": false,
-              "purpose": "VA-Spec: focus.",
+              "purpose": "What the evidence is about: a record of the corpus's domain type (here a harness). Named `harness` in #74 today. VA-Spec: focus.",
               "references": {
                 "table": "harnesses",
                 "column": "id"
@@ -384,13 +384,14 @@
               }
             },
             {
-              "id": "experiments.harnesses",
-              "name": "harnesses",
+              "id": "experiments.focus",
+              "name": "focus",
               "type": "link[]",
               "references": {
                 "table": "harnesses",
                 "column": "id"
-              }
+              },
+              "purpose": "The domain records its runs cover (here harnesses)."
             },
             {
               "id": "experiments.maturity",
@@ -458,11 +459,11 @@
               "purpose": "`claims/Claude Code/skills/project-dirs`"
             },
             {
-              "id": "claims.harness",
-              "name": "harness",
+              "id": "claims.subject_entity",
+              "name": "subject_entity",
               "type": "link",
               "nullable": false,
-              "purpose": "Proposition subject.",
+              "purpose": "Proposition subject: a record of the domain type (here a harness).",
               "references": {
                 "table": "harnesses",
                 "column": "id"
@@ -473,7 +474,7 @@
               "name": "subject",
               "type": "link",
               "nullable": false,
-              "purpose": "Proposition predicate.",
+              "purpose": "Proposition predicate: a record of the domain's question vocabulary (here a harness-reference subject).",
               "references": {
                 "table": "subjects",
                 "column": "id"
