@@ -986,7 +986,7 @@ fn standalone(request: &ComponentRequest<'_>, note: &VaultNote) -> DiscoveredCom
         vault_relative_path: vault_relative(request.root, request.path),
         hook: None,
         identity: ContainerIdentity::default(),
-        blocks: note.frontmatter.overrides.clone(),
+        blocks: note.frontmatter.blocks.clone(),
         unknown_keys: note.frontmatter.unknown.clone(),
     }
 }

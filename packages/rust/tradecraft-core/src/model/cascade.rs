@@ -305,7 +305,7 @@ impl Cascade {
                 let (key, value) = (key.clone(), value.clone());
                 let block = note
                     .frontmatter
-                    .overrides
+                    .blocks
                     .entry((*harness).to_owned())
                     .or_insert_with(|| Value::Object(Map::new()));
                 let Some(block) = block.as_object_mut() else {

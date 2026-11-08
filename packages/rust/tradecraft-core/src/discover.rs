@@ -323,7 +323,7 @@ pub(crate) fn unknown_key_warning(
 /// included.
 pub(crate) fn unknown_keys(frontmatter: &VaultFrontmatter, kind: EntityKind) -> Vec<String> {
     let mut unknown = frontmatter.unknown.clone();
-    unknown.extend(unknown_block_keys(&frontmatter.overrides, kind));
+    unknown.extend(unknown_block_keys(&frontmatter.blocks, kind));
     unknown
 }
 
@@ -402,7 +402,7 @@ fn check_values(
                 _ => fields.get("name").and_then(Value::as_str),
             };
             let owner = crate::harness::manifest::container_owner(kind, name);
-            crate::harness::manifest::check_container_blocks(&owner, kind, &ours.overrides)?;
+            crate::harness::manifest::check_container_blocks(&owner, kind, &ours.blocks)?;
         }
         EntityKind::Agent | EntityKind::Hook => {}
     }
@@ -1596,7 +1596,7 @@ fn read_source(
         identity: ours.identity,
         hook: (resolved.kind == EntityKind::Hook).then(|| read_hook(&fields, body)),
         unknown_keys,
-        blocks: ours.overrides,
+        blocks: ours.blocks,
     }))
 }
 

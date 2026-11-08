@@ -348,7 +348,7 @@ pub struct VaultFrontmatter {
     /// Read and shape-checked here; validated against the harness's key list
     /// by [`crate::publish::overrides_for`] for a component, and by the
     /// manifest writer for a container.
-    pub overrides: Map<String, Value>,
+    pub blocks: Map<String, Value>,
     /// Every key on the note that the key table does not list for its kind,
     /// sorted. Each gets a warning. On a skill they publish under
     /// `metadata:`; on a container they are ignored.
@@ -455,7 +455,7 @@ impl VaultFrontmatter {
             arguments,
             provenance,
             identity,
-            overrides,
+            blocks: overrides,
             unknown,
             own_keys,
         })
@@ -1059,7 +1059,7 @@ mod tests {
             EntityKind::Skill,
             json!({"description": "d", "claude": {"effort": "high"}}),
         );
-        assert_eq!(ours.overrides["claude"]["effort"], "high");
+        assert_eq!(ours.blocks["claude"]["effort"], "high");
         assert!(!rest.contains_key("claude"));
         assert!(ours.unknown.is_empty(), "{:?}", ours.unknown);
     }
