@@ -20,8 +20,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Moving `marketplaces/skillwright/skillwright.md` treats it as a marketplace's entry, like `marketplaces/<m>/skillwright.md` for any other name. It was moved as a `skillwright` component bundle. Only `<kind>/skillwright/skillwright.md` is a component's note.
-- Moving or renaming the vault's own `skillwright.md` is refused, and nothing is written. It failed with a file error.
+- A move treats `marketplaces/<m>/skillwright.md` as a marketplace's entry for every `<m>`, `skillwright` included, and every other `<dir>/skillwright.md` as an ordinary bundle, such as `tools/skillwright/skillwright.md` or `skills/group/skillwright/skillwright.md`. It decided by the folder's name, so `marketplaces/skillwright/skillwright.md` moved as a bundle, and a bundle named `skillwright` outside a kind folder moved as a marketplace, with its links left as written.
+- Moving or renaming the vault's own `skillwright.md`, or moving a note onto it, is refused, and nothing is written. Moving it failed with a file error, and moving a plain note onto it replaced the vault's config file.
 - A marketplace rename that half-lands names the entry `skillwright.md` in its report and error, not the temporary `<m>.md` name the move used. Putting the entry's name back no longer renames a folder of yours that holds `<m>.md`.
 - When a marketplace folder moves and its entry's rename then fails, the error says the folder moved and where the entry now is. It reported a bare file error, which means nothing was written.
 

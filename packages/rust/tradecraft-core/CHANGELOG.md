@@ -27,7 +27,7 @@ API:
 ### Added
 
 - `ReasonToken::MalformedRootFile` (`malformed-root-file`), the token of a refusal for a root file or workspace file that cannot be read. It is in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`.
-- `is_component_note(path)`: whether a `skillwright.md` is `<kind>/skillwright/skillwright.md`, a component's note, rather than a root file. A host that moves notes uses it to tell a marketplace's entry from a component's.
+- `is_marketplace_entry(path)`: whether a vault-relative path is a marketplace's entry note, exactly `marketplaces/<m>/skillwright.md`. A host that moves notes uses it to tell a marketplace's entry from a bundle named `skillwright`.
 
 ### Fixed
 

@@ -108,10 +108,8 @@ pub fn find_root_file(vfs: &dyn Vfs, start: &Path) -> Option<PathBuf> {
 
 /// Whether `path` is `<kind>/skillwright/skillwright.md`, a component note
 /// and not a root file. `marketplaces/skillwright/skillwright.md` is not one:
-/// that is the root file of a workspace member named `skillwright`. Any other
-/// `skillwright.md` is a root file, such as a marketplace's entry. `path` may
-/// be vault-relative.
-pub fn is_component_note(path: &Path) -> bool {
+/// that is the root file of a workspace member named `skillwright`.
+fn is_component_note(path: &Path) -> bool {
     let folder = path.parent();
     let named = folder
         .and_then(Path::file_name)
@@ -132,11 +130,16 @@ pub fn is_component_note(path: &Path) -> bool {
 /// even when `<m>` is a kind folder's name: that is a marketplace's own file.
 fn is_reserved_note(vault: &Path, path: &Path) -> bool {
     let relative = path.strip_prefix(vault).unwrap_or(path);
-    let parts: Vec<_> = relative.components().collect();
-    let marketplace_file = parts.len() == 3
-        && parts[0].as_os_str() == WORKSPACE_DIR
-        && parts[2].as_os_str() == ROOT_FILE;
-    is_flat_root_file_name(path) && !marketplace_file
+    is_flat_root_file_name(path) && !is_marketplace_entry(relative)
+}
+
+/// Whether the vault-relative `path` is a marketplace's entry note,
+/// `marketplaces/<m>/skillwright.md`: directly inside a folder of the
+/// workspace folder, whatever `<m>` is called. No other `skillwright.md`
+/// below the vault root is one.
+pub fn is_marketplace_entry(path: &Path) -> bool {
+    let parts: Vec<_> = path.components().collect();
+    parts.len() == 3 && parts[0].as_os_str() == WORKSPACE_DIR && parts[2].as_os_str() == ROOT_FILE
 }
 
 /// Whether `path` is a `skillwright.md` directly inside a folder named after a

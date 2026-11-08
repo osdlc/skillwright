@@ -427,21 +427,22 @@ fn move_note(
 ) -> Result<(), ApplyError> {
     let root_file = |path: &str| path.rsplit('/').next() == Some(tradecraft_core::ROOT_FILE);
     // The vault's own root file is no folder's entry: moving it would move
-    // the vault.
-    if from == tradecraft_core::ROOT_FILE {
-        return Err(ApplyError::Refused(format!(
-            "{from} is the vault's root file, so it cannot move"
-        )));
+    // the vault, and moving a note onto it would replace the vault's config.
+    for (path, what) in [(from, "move"), (to, "be replaced")] {
+        if path == tradecraft_core::ROOT_FILE {
+            return Err(ApplyError::Refused(format!(
+                "{path} is the vault's root file, so it cannot {what}"
+            )));
+        }
     }
-    // `<dir>/skillwright.md` is a marketplace's entry, as the core reads it,
-    // unless it is `<kind>/skillwright/skillwright.md`: then it is an ordinary
-    // `<dir>/<dir>.md` component bundle entry.
-    let marketplace_entry =
-        |path: &str| root_file(path) && !tradecraft_core::is_component_note(Path::new(path));
-    if bundle && root_file(from) && root_file(to) {
-        return move_marketplace(vault, from, to, mode, outcome);
-    }
+    // A marketplace's entry is exactly `marketplaces/<m>/skillwright.md`. Any
+    // other `<dir>/skillwright.md`, such as a bundle named `skillwright`, is an
+    // ordinary `<dir>/<dir>.md` bundle entry the relinker moves.
+    let marketplace_entry = |path: &str| tradecraft_core::is_marketplace_entry(Path::new(path));
     if bundle && (marketplace_entry(from) || marketplace_entry(to)) {
+        if root_file(from) && root_file(to) {
+            return move_marketplace(vault, from, to, mode, outcome);
+        }
         return move_folder(vault.dir, from, to, mode, outcome);
     }
     relink_move(vault, from, to, bundle, mode, outcome)
@@ -1757,6 +1758,56 @@ mod tests {
             outcomes(&outcome),
             vec![("marketplaces/shop/skillwright.md", "renamed")]
         );
+    }
+
+    /// A bundle named `skillwright` anywhere but directly under
+    /// `marketplaces/` is an ordinary `<dir>/<dir>.md` bundle: it moves with
+    /// its links rewritten.
+    #[test]
+    fn a_bundle_named_skillwright_outside_marketplaces_is_relinked() {
+        for (from, to) in [
+            (
+                "skills/group/skillwright/skillwright.md",
+                "skills/group/sw/sw.md",
+            ),
+            ("tools/skillwright/skillwright.md", "tools/sw/sw.md"),
+        ] {
+            let v = vault();
+            write(v.path(), from, "---\nname: skillwright\n---\n");
+            write(v.path(), "notes.md", &format!("[s]({from})\n"));
+            let op = AuthoringOp::Move {
+                from: from.to_owned(),
+                to: to.to_owned(),
+                bundle: true,
+            };
+            let outcome = apply(v.path(), &op).unwrap();
+            assert!(v.path().join(to).is_file(), "{from}");
+            assert_eq!(read(v.path(), "notes.md"), format!("[s]({to})\n"), "{from}");
+            assert!(
+                outcomes(&outcome).contains(&("notes.md", "relinked")),
+                "{from}: {outcome:?}"
+            );
+        }
+    }
+
+    /// Nothing moves onto the vault's root file either.
+    #[test]
+    fn moving_onto_the_vaults_root_file_is_refused() {
+        for (from, bundle) in [("notes/a.md", false), ("skills/a/a.md", true)] {
+            let v = vault();
+            write(v.path(), from, "---\nname: a\n---\n");
+            let op = AuthoringOp::Move {
+                from: from.to_owned(),
+                to: "skillwright.md".to_owned(),
+                bundle,
+            };
+            let before = tree(v.path());
+            let err = preview(v.path(), &op).unwrap_err();
+            assert!(err.to_string().contains("root file"), "{from}: {err}");
+            let err = apply(v.path(), &op).unwrap_err();
+            assert!(err.to_string().contains("root file"), "{from}: {err}");
+            assert_eq!(tree(v.path()), before, "{from}");
+        }
     }
 
     /// The vault's own root file is not a folder's entry: moving it is

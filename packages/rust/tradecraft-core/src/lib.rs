@@ -147,7 +147,7 @@ pub use markdown_link::LinkIndex;
 pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use paths::{
-    LoadedMarketplace, MarketplaceInputs, WORKSPACE_DIR, find_root_file, is_component_note,
+    LoadedMarketplace, MarketplaceInputs, WORKSPACE_DIR, find_root_file, is_marketplace_entry,
     load_marketplace, marketplace_inputs, resolve_path, workspace_above,
 };
 pub use publish::{
