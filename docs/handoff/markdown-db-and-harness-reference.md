@@ -37,7 +37,7 @@ Run `pnpm run validate:beta` from `harness-reference/`, or `pnpm exec markdown-d
 | `references` | 52 | One per web page, in publisher folders (`references/Anthropic/…`) |
 | `evidence` | 5 | One observation of a page: kind, reference, harness, observed date, optional version, locator and excerpt |
 
-Beta has no subjects or facts yet. Alpha holds 16 harnesses, 62 subjects, 541 facts and 556
+Beta has no subjects or facts yet. Alpha holds 16 harnesses, 65 subjects, 589 facts and 633
 observations; code still reads alpha.
 
 ## Code that reads the data
@@ -65,7 +65,7 @@ observations; code still reads alpha.
 3. [ ] **A loader** so code reads validated records without parsing Markdown (markdown-db item 2).
    Then cite beta from `detect-harness`.
 4. [ ] Move the remaining alpha facts, then retire alpha.
-5. [ ] Experiments: alpha's `probes/` become level-2 experiments whose runs write `kind: run`
+5. [ ] Experiments: `harness-reference/probes/` become level-2 experiments whose runs write `kind: run`
    evidence (needs markdown-db item 4).
 
 ## Next for markdown-db, in order
@@ -124,7 +124,7 @@ Evidence is the primitive the other levels build on.
 |---|---|---|
 | 0 Reference | the page: a locator | `references` |
 | 1 Evidence | one look at a page: when, which version, the excerpt | `evidence` |
-| 2 Experiment | a folder with a procedure, fixtures and safety notes; each run writes level-1 evidence | not yet (alpha `probes/`) |
+| 2 Experiment | a folder with a procedure, fixtures and safety notes; each run writes level-1 evidence | not yet (`harness-reference/probes/`) |
 | 3 Synthesis | a narrative citing many records | not yet (alpha `sources/`) |
 
 Rules taken from the survey, where both passes agreed:
@@ -137,15 +137,16 @@ Rules taken from the survey, where both passes agreed:
 - A negative claim ("does not read AGENTS.md") needs a run with a positive control.
 - The date we looked (`observed`) is kept apart from the source's own date.
 - Excerpts are `{exact, prefix, suffix}` (W3C text-quote selector), so a re-check can report
-  present / moved / gone. Source code is pinned to a commit, never `blob/main`.
+  present / moved / gone. Source code is pinned to a commit, never `blob/main`; the Claude Code and Copilot license
+  references are pinned, and Grok Build's still points at `blob/main`.
 - Evidence records are append-only; a correction or a later contradicting run is a new record.
-- A type ships with a writer (the dev repo's D-ORMG rule). `capture` is the first.
+- A type ships with a writer and a reader (the dev repo's D-ORMG rule). `capture` is the first writer.
 
 Kinds and their writers:
 
 | Kind | Writer |
 |---|---|
-| `docs`, `changelog`, `source`, `issue`, `third-party` | `capture`: fetch the URL, check the excerpt is there, store it with the date |
+| `docs`, `changelog`, `source`, `issue`, `third-party` | `capture`: fetch the URL (a GitHub `blob/` URL as the raw file, a repository URL as its README source), check the excerpt is there, store it with the date |
 | `help-text` | `capture` with a command instead of a URL (not built) |
 | `run` | an experiment (not built) |
 | `inferred` | a person or agent by hand, citing what it infers from |
