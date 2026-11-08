@@ -6,33 +6,12 @@
 
 mod common;
 
+use common::{Run, git, run, vault_str};
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use skillwright::cli::run_with;
-use skillwright::ctx::CommandContext;
 use tradecraft_core::{Namespace, NativeVfs, PublishRequest, PublishStatus, publish_skill};
-
-struct Run {
-    code: i32,
-    stdout: String,
-    stderr: String,
-}
-
-/// One invocation in `cwd`.
-fn run(argv: &[&str], cwd: &Path) -> Run {
-    let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
-    let mut out: Vec<u8> = Vec::new();
-    let mut err: Vec<u8> = Vec::new();
-    let mut ctx = CommandContext::new(cwd, &mut out, &mut err);
-    let code = run_with(&owned, &mut ctx);
-    drop(ctx);
-    Run {
-        code,
-        stdout: String::from_utf8(out).unwrap(),
-        stderr: String::from_utf8(err).unwrap(),
-    }
-}
 
 /// [`run`] over a fixed argv plus whatever a case adds — the shape every
 /// per-verb closure below shares.
@@ -56,10 +35,6 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
     .unwrap();
     fs::write(skill.join("references").join("style.md"), "# Style\n").unwrap();
     (dir, vault)
-}
-
-fn vault_str(vault: &Path) -> String {
-    vault.display().to_string()
 }
 
 /// The core's own fixture vault, read read-only: it holds a marketplace
@@ -1541,21 +1516,9 @@ fn commit_git_fixture(repo: &Path) -> String {
         "---\nname: code-review\ndescription: reviews code\n---\nReview the diff.\n",
     )
     .unwrap();
-    let run_git = |args: &[&str]| {
-        let mut cmd = typed_git::git();
-        cmd.dir(repo)
-            .args(args)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_AUTHOR_NAME", "T")
-            .env("GIT_AUTHOR_EMAIL", "t@t.invalid")
-            .env("GIT_COMMITTER_NAME", "T")
-            .env("GIT_COMMITTER_EMAIL", "t@t.invalid");
-        cmd.run().unwrap()
-    };
-    run_git(&["init", "--initial-branch", "main"]);
-    run_git(&["add", "."]);
-    run_git(&["commit", "-m", "one"]);
+    git(repo, &["init", "--initial-branch", "main"]);
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-m", "one"]);
     typed_git::query::head_sha(repo).unwrap()
 }
 

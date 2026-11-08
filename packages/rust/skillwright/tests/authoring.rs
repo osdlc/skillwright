@@ -8,38 +8,12 @@
 
 mod common;
 
+use common::{run, vault_str};
+
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-
-use skillwright::cli::run_with;
-use skillwright::ctx::CommandContext;
-
-struct Run {
-    code: i32,
-    stdout: String,
-    stderr: String,
-}
-
-/// One invocation in `cwd`.
-fn run(argv: &[&str], cwd: &Path) -> Run {
-    let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
-    let mut out: Vec<u8> = Vec::new();
-    let mut err: Vec<u8> = Vec::new();
-    let mut ctx = CommandContext::new(cwd, &mut out, &mut err);
-    let code = run_with(&owned, &mut ctx);
-    drop(ctx);
-    Run {
-        code,
-        stdout: String::from_utf8(out).unwrap(),
-        stderr: String::from_utf8(err).unwrap(),
-    }
-}
-
-fn vault_str(vault: &Path) -> String {
-    vault.display().to_string()
-}
 
 fn write(dir: &Path, rel: &str, body: &str) {
     let abs = dir.join(rel);

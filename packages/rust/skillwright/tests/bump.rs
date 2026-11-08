@@ -4,36 +4,10 @@
 
 mod common;
 
+use common::{Run, git, run, vault_str};
+
 use std::fs;
 use std::path::{Path, PathBuf};
-
-use skillwright::cli::run_with;
-use skillwright::ctx::CommandContext;
-
-struct Run {
-    code: i32,
-    stdout: String,
-    stderr: String,
-}
-
-/// One invocation in `cwd`.
-fn run(argv: &[&str], cwd: &Path) -> Run {
-    let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
-    let mut out: Vec<u8> = Vec::new();
-    let mut err: Vec<u8> = Vec::new();
-    let mut ctx = CommandContext::new(cwd, &mut out, &mut err);
-    let code = run_with(&owned, &mut ctx);
-    drop(ctx);
-    Run {
-        code,
-        stdout: String::from_utf8(out).unwrap(),
-        stderr: String::from_utf8(err).unwrap(),
-    }
-}
-
-fn vault_str(vault: &Path) -> String {
-    vault.display().to_string()
-}
 
 /// One plugin note, discoverable by structure alone —
 /// `marketplaces/<mkt>/plugins/<plugin>/<plugin>.md` — the shape
@@ -309,19 +283,6 @@ fn plugin_note(root: &Path, plugin: &str) -> String {
             .join(format!("{plugin}.md")),
     )
     .unwrap()
-}
-
-fn git(repo: &Path, args: &[&str]) -> String {
-    let mut cmd = typed_git::git();
-    cmd.dir(repo)
-        .args(args)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_AUTHOR_NAME", "T")
-        .env("GIT_AUTHOR_EMAIL", "t@t.invalid")
-        .env("GIT_COMMITTER_NAME", "T")
-        .env("GIT_COMMITTER_EMAIL", "t@t.invalid");
-    cmd.run().unwrap()
 }
 
 #[test]

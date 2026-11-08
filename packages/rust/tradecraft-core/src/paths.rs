@@ -334,9 +334,7 @@ mod tests {
     use crate::vfs::MemVfs;
 
     fn put(vfs: &MemVfs, path: &str) {
-        let path = Path::new(path);
-        vfs.create_dir_all(path.parent().unwrap()).unwrap();
-        vfs.write_file(path, b"---\n---\n").unwrap();
+        vfs.insert(path, "---\n---\n").unwrap();
     }
 
     #[test]
