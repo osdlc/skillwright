@@ -539,7 +539,7 @@ pub(crate) fn workspace_above(
         .filter(|folder| {
             folder
                 .file_name()
-                .is_some_and(|name| name == "marketplaces")
+                .is_some_and(|name| name == crate::paths::WORKSPACE_DIR)
         })
         .and_then(Path::parent)
     else {

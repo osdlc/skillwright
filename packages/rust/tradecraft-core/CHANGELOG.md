@@ -20,6 +20,7 @@ API:
 
 - Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 - `VaultFrontmatter::overrides` is renamed `blocks`, the name `DiscoveredComponent`, `MarketplaceConfig` and `MarketplaceFields` use for the same harness blocks. `PluginOverrides` keeps its name.
+- Removed `authoring::MARKETPLACES_DIR`. Use `WORKSPACE_DIR` (`paths::WORKSPACE_DIR`), which holds the same `marketplaces`.
 - Removed `keys::is_skillwright_key`. Ask `keys::is_owned` for each of `EntityKind::ALL` instead.
 - Removed `VaultFrontmatter::unknown_ours`. Nothing read it. A prefixed key this build does not model is still consumed, and `VaultFrontmatter::unknown` still lists it.
 

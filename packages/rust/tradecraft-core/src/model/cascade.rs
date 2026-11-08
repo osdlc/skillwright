@@ -388,7 +388,7 @@ fn compute_member_block_keys(kind: EntityKind, harness: &str) -> BTreeSet<String
 
 /// The path of the note of the marketplace in `folder`.
 fn marketplace_note(root: &Path, folder: &str) -> PathBuf {
-    root.join("marketplaces")
+    root.join(crate::paths::WORKSPACE_DIR)
         .join(folder)
         .join(crate::settings::ROOT_FILE)
 }
@@ -404,7 +404,7 @@ fn only_marketplace(
     root: &Path,
     ns: &Namespace,
 ) -> Result<Option<String>, CoreError> {
-    let folder = root.join("marketplaces");
+    let folder = root.join(crate::paths::WORKSPACE_DIR);
     if !vfs.exists(&folder) {
         return Ok(None);
     }

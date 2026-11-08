@@ -232,7 +232,7 @@ fn marketplace_notes(
     ns: &Namespace,
 ) -> Vec<DiscoveredComponent> {
     let root = normalize(scope.skills_root.unwrap_or(scope.vault_root));
-    let folder = root.join("marketplaces");
+    let folder = root.join(crate::paths::WORKSPACE_DIR);
     let mut files = Vec::new();
     for entry in vfs.read_dir(&folder).unwrap_or_default() {
         let note = folder.join(&entry.name).join(ROOT_FILE);

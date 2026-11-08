@@ -22,7 +22,7 @@
 
 use crate::resolve::ResolvedRun;
 use serde::Serialize;
-use tradecraft_core::authoring::MARKETPLACES_DIR;
+use tradecraft_core::WORKSPACE_DIR;
 use tradecraft_core::authoring::{
     bundle_dir, move_destination, new_note_dir, rename_destination, slug_refusal,
 };
@@ -252,7 +252,7 @@ fn held_marketplace(
     }
     if run
         .vault
-        .join(MARKETPLACES_DIR)
+        .join(WORKSPACE_DIR)
         .join(name)
         .join(ROOT_FILE)
         .is_file()
@@ -262,7 +262,7 @@ fn held_marketplace(
     Err(usage_error(
         ctx.err,
         &format!(
-            "no marketplace `{name}` here: this vault is `{}`, and it holds no {MARKETPLACES_DIR}/{name}/{ROOT_FILE}. Leave out --marketplace, or run `new marketplace {name}` first",
+            "no marketplace `{name}` here: this vault is `{}`, and it holds no {WORKSPACE_DIR}/{name}/{ROOT_FILE}. Leave out --marketplace, or run `new marketplace {name}` first",
             run.marketplace_name()
         ),
     ))

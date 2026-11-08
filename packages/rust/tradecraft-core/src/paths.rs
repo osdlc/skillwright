@@ -118,9 +118,7 @@ fn is_component_note(path: &Path) -> bool {
         .and_then(Path::parent)
         .and_then(Path::file_name)
         .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            name != "marketplaces" && KIND_DIRS.iter().any(|(dir, _)| *dir == name)
-        });
+        .is_some_and(|name| name != WORKSPACE_DIR && KIND_DIRS.iter().any(|(dir, _)| *dir == name));
     named && in_kind
 }
 
