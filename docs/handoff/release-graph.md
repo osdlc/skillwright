@@ -13,15 +13,20 @@ flowchart TD
   classDef done fill:#d4edda,stroke:#2f855a,color:#222
 
   subgraph A["A · Release markdown-db from osdlc"]
-    A1["Port package and standard to osdlc/osdlc: dist build, 0.1.0, release wiring"]
-    A2["Run lib-publish-ready audit on the osdlc copy"]
-    A3["Fix audit gaps and blockers"]
-    A4["Review: comment @claude review on the osdlc PR"]
-    A5["Merge the osdlc PR"]
-    A6["Publish @osdlc/markdown-db 0.1.0 to npm"]
+    A1["Port package and standard to osdlc/osdlc: dist build, 0.1.0, release wiring (osdlc #725)"]
+    A1b["Move the standard and example corpora into a spec package, packages/spec/markdown-db"]
+    A2["lib-publish-ready audit on the osdlc copy"]
+    A4["@claude review on osdlc #725"]
+    A3["Fix audit and review findings, with the spec package move"]
+    A5["Merge osdlc #725"]
+    A6["Stage and publish @osdlc/markdown-db 0.1.0 to npm"]
     A7["skillwright depends on the npm package and deletes its copy"]
     A8["Add @osdlc/markdown-db to the dev repo's LIBRARIES.md"]
-    A1 --> A2 --> A3 --> A4 --> A5 --> A6 --> A7
+    A9["When mature: break markdown-db out of osdlc into its own repo"]
+    A1 --> A2 --> A3
+    A1 --> A4 --> A3
+    A1b --> A3
+    A3 --> A5 --> A6 --> A7
     A6 --> A8
   end
 
@@ -38,13 +43,14 @@ flowchart TD
     C1["Claims profile: a second standard with VA-Spec JSON Schemas"]
     CG1["G-1 shared schemas across corpora"]
     C2["Nested x-ref"]
-    C3["Folder records"]
+    C3["Folder records (decided: add now)"]
     C4["x-warn"]
     C5["Loader API and JSON build target"]
     CG2["G-2 links into non-record data: ledgers, CSV rows"]
     CG3["G-3 rules across records: value matches predicate schema, evidence floors"]
     CG4["G-4 append-only records and file hashes"]
     C6["Move capture into the profile package"]
+    C7["A second implementation, for example Rust, running the spec cases"]
     CG1 --> C1
     C2 --> C1
     C1 --> C6
@@ -57,6 +63,9 @@ flowchart TD
   A5 --> CG2
   A5 --> CG3
   A5 --> CG4
+  A5 --> C7
+  C1 --> A9
+  C7 --> A9
 
   subgraph D["D · harness-reference on the claims profile"]
     D1["Subjects and statements types in beta"]
@@ -88,24 +97,26 @@ flowchart TD
 
   subgraph H["H · Housekeeping"]
     H1["Auto-delete of head branches: on in all 9 osdlc repos"]
-    H2["osdlc/osdlc#635: markdown-link finds every relative link"]
+    H2["osdlc/osdlc#635: markdown-link finds every relative link (open fix: osdlc #651)"]
     H3["skillwright#42: markdown-contract checks record bodies"]
     H4["Validator: do not check links inside quoted excerpts"]
   end
   A5 --> H4
   A5 --> H3
 
-  class A1 doing
+  class A1 done
+  class A2,A4 doing
   class B1,A5,A6,B4 owner
   class H1 done
-  class A2,A3,A4,A7,A8,B2,B3,C1,CG1,C2,C3,C4,C5,CG2,CG3,CG4,C6,D1,D2,D3,D4,D5,D6,E1,E2,E3,H2,H3,H4 todo
+  class A1b,A3,A7,A8,A9,C7,B2,B3,C1,CG1,C2,C3,C4,C5,CG2,CG3,CG4,C6,D1,D2,D3,D4,D5,D6,E1,E2,E3,H2,H3,H4 todo
 ```
 
 Colours: green is done, blue is in progress, orange is an owner step, grey is not started.
 
 ## The shortest path to "usable elsewhere"
 
-A1 → A2 → A3 → A4 → A5 → A6. After A6 any project can `npm install @osdlc/markdown-db` and run
+A1 (done) → the audit and `@claude review` (running) → A3, which also does the spec package move
+(A1b) → A5 → A6. After A6 any project can `npm install @osdlc/markdown-db` and run
 `markdown-db validate`. Nothing in B to E blocks it.
 
 ## The shortest path to "code reads beta"
