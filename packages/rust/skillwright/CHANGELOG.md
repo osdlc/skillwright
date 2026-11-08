@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.7.0...skillwright/v0.8.0) - 2026-11-08
+
 ### Breaking
 
 - skillwright no longer checks for the pre-1.0 vault shape. Old keys and files are treated like any other key or file it does not know:
