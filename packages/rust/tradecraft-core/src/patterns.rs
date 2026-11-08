@@ -236,12 +236,7 @@ impl Patterns {
             .collect()
     }
 
-    /// What is worth saying about these patterns over the vault's `files`,
-    /// vault-relative: a glob that matches nothing, a path two kinds claim,
-    /// and one plugin read from two folders. `output` is what a build owns in
-    /// the vault: not source, but a fair thing for `build.exclude` to name.
-    /// `siblings` are the other marketplaces' files: a glob a workspace shares
-    /// need only match in one of them.
+    /// [`Self::warnings_with`] over lists already in hand, for the tests.
     #[cfg(test)]
     pub(crate) fn warnings(
         &self,
@@ -252,9 +247,15 @@ impl Patterns {
         self.warnings_with(|| files.to_vec(), output, || siblings.to_vec())
     }
 
-    /// [`Self::warnings`] with the vault's files and the other marketplaces'
-    /// read only when there is something to check. With no glob there is
-    /// nothing to say, so neither is read; the other marketplaces are read
+    /// What is worth saying about these patterns over the vault's `files`,
+    /// vault-relative: a glob that matches nothing, a path two kinds claim,
+    /// and one plugin read from two folders. `output` is what a build owns in
+    /// the vault: not source, but a fair thing for `build.exclude` to name.
+    /// `siblings` are the other marketplaces' files: a glob a workspace shares
+    /// need only match in one of them.
+    ///
+    /// Both lists are read only when there is something to check. With no
+    /// glob there is nothing to say, so neither is read; `siblings` is read
     /// only when a shared glob matches nothing here, and then once.
     pub(crate) fn warnings_with(
         &self,
