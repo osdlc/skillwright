@@ -8,28 +8,28 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 - **Value** is the kind of value the key takes. Some keys take more forms; see [Other accepted forms](#other-accepted-forms).
 - **Owner** says who the key belongs to:
-  - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace` set, the key takes the prefix, such as `sw-version`.
+  - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace: sw`, the key is written `sw-version`, or inside an `sw:` block. Keys in `skillwright.md` always stay bare.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written and never prefixed.
-- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`, then the workspace.
+- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`, then the workspace's `skillwright.md`.
 
 ## What is checked
 
-- A key the table does not list for that kind gets a warning. It is never refused.
+- A key the table does not list for that kind gets a warning. The exceptions are removed keys, which are refused: `kind`, `plugin`, and `sw-` spellings when no `build.namespace` is set.
 - A listed key with the wrong kind of value is refused, and the message names the key. This applies to every `skillwright` key, and to every `spec` key on a skill, agent or command.
-- A `spec` key with no value, such as `model:`, is dropped.
+- A `spec` key with no value, such as `model:`, is dropped. It does not clear a value the note inherits.
 
 ## Other accepted forms
 
-Some `spec` keys take more forms than the Value column shows, because a harness's docs use them:
+Some keys take more forms than the Value column shows, because a harness's docs use them:
 
 | Key | Also takes |
 |---|---|
-| `allowed-tools`, `tools` | One string: `Read Grep` or `Read, Grep`. |
-| an agent's `tools` | A mapping of tool names, as OpenCode writes it. A Claude Code target refuses it. |
+| `allowed-tools` | One string of names separated by spaces or commas: `Read Grep` or `Read, Grep`. |
+| an agent's `tools` | One string of names separated by commas: `Read, Grep`. Or a mapping of tool names, as OpenCode writes it, which a Claude Code target refuses. |
 | `argument-hint` | A list of strings. An unquoted `[issue-number]` reads as the text `[issue-number]`. |
 | `arguments` | A string, or any list. |
 | `metadata` | Any mapping. |
-| any boolean | `yes`, `no`, `on`, `off`, `1` or `0`, in any case, quoted or not. Every harness receives `true` or `false`. |
+| `user-invocable`, `disable-model-invocation` | `yes`, `no`, `on`, `off`, `1` or `0`, in any case, quoted or not. A harness that gets the key receives `true` or `false`. |
 
 Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unquoted, it is not valid YAML.
 
@@ -163,7 +163,13 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 
 ## Harness blocks
 
-A block holds fields only that harness reads. These are the keys each block accepts, by the kind of note it sits on. Any other key gets a warning and is left out of what that harness gets, whatever it holds. A listed key whose value is the wrong kind is refused, in every block, whichever harnesses a build selects. A component's keys take the type they take written bare, as above. A container's keys take the type that harness's manifest and marketplace facts give; a key the facts give no type for is not checked. A listed key set to nothing is unset and is dropped, in any block, as it is written bare. It does not clear a value the note inherits.
+A block such as `claude:` holds fields that only that harness reads. The lists below give the keys each block accepts, by the kind of note it sits on.
+
+- Any other key gets a warning and is left out of that harness's output.
+- A listed key with the wrong kind of value is refused. Every block is checked, even for a harness the build leaves out.
+- On a skill, agent or command, a key takes the same type it takes written bare.
+- On a plugin or marketplace, a key takes the type that harness's manifest docs give. A key with no documented type is not checked.
+- A key with no value is dropped. It does not clear a value the note inherits.
 
 ### `claude:`
 
