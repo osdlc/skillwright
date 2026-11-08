@@ -14,11 +14,11 @@ flowchart TD
 
   subgraph A["A · Release markdown-db from osdlc"]
     A1["Port package and standard to osdlc/osdlc: dist build, 0.1.0, release wiring (osdlc #725)"]
-    A1b["Move the standard and example corpora into a spec package, packages/spec/markdown-db"]
-    A2["lib-publish-ready audit on the osdlc copy"]
-    A4["@claude review on osdlc #725"]
-    A3["Fix audit and review findings, with the spec package move"]
-    A5["Merge osdlc #725"]
+    A1b["Move the standard and example corpora to packages/conformance/markdown-db (SPEC.md + cases)"]
+    A2["lib-publish-ready audit: 0 blockers, 10 gaps"]
+    A4["@claude review on osdlc #725: no blockers, 5 points"]
+    A3["Fix audit and review findings, with the spec move; re-review"]
+    A5["Sign off the name, merge osdlc #725"]
     A6["Stage and publish @osdlc/markdown-db 0.1.0 to npm"]
     A7["skillwright depends on the npm package and deletes its copy"]
     A8["Add @osdlc/markdown-db to the dev repo's LIBRARIES.md"]
@@ -104,19 +104,19 @@ flowchart TD
   A5 --> H4
   A5 --> H3
 
-  class A1 done
-  class A2,A4 doing
+  class A1,A2,A4 done
+  class A1b,A3 doing
   class B1,A5,A6,B4 owner
   class H1 done
-  class A1b,A3,A7,A8,A9,C7,B2,B3,C1,CG1,C2,C3,C4,C5,CG2,CG3,CG4,C6,D1,D2,D3,D4,D5,D6,E1,E2,E3,H2,H3,H4 todo
+  class A7,A8,A9,C7,B2,B3,C1,CG1,C2,C3,C4,C5,CG2,CG3,CG4,C6,D1,D2,D3,D4,D5,D6,E1,E2,E3,H2,H3,H4 todo
 ```
 
 Colours: green is done, blue is in progress, orange is an owner step, grey is not started.
 
 ## The shortest path to "usable elsewhere"
 
-A1 (done) → the audit and `@claude review` (running) → A3, which also does the spec package move
-(A1b) → A5 → A6. After A6 any project can `npm install @osdlc/markdown-db` and run
+A1, the audit and `@claude review` (done) → A3, which also does the spec move (A1b; running)
+→ A5 → A6. After A6 any project can `npm install @osdlc/markdown-db` and run
 `markdown-db validate`. Nothing in B to E blocks it.
 
 ## The shortest path to "code reads beta"
