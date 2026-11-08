@@ -2276,3 +2276,63 @@ fn a_skills_root_is_walked_with_the_vaults_patterns() {
         "{scan:?}"
     );
 }
+
+/// A marketplaces folder a build would refuse to read does not have one
+/// marketplace for a vault-level note to inherit from: the publish goes on,
+/// on the root file alone.
+#[cfg(unix)]
+#[test]
+fn a_marketplaces_folder_a_build_refuses_has_no_one_marketplace() {
+    use std::os::unix::fs::PermissionsExt;
+    for case in ["symlink", "unlistable"] {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path().join("vault");
+        let put = |rel: &str, text: &str| {
+            let path = vault.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        put(
+            "marketplaces/m/skillwright.md",
+            &note("m", "license: ISC\ntargets:\n  - claude\n"),
+        );
+        put("skills/loose.md", &note("loose", ""));
+        let locked = vault.join("marketplaces/n");
+        match case {
+            "symlink" => {
+                std::fs::write(dir.path().join("outside.md"), "Plain.\n").unwrap();
+                std::os::unix::fs::symlink(
+                    dir.path().join("outside.md"),
+                    vault.join("marketplaces/m/link.md"),
+                )
+                .unwrap();
+            }
+            _ => {
+                put("marketplaces/n/skills/x.md", &note("x", ""));
+                std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+                if std::fs::read_dir(&locked).is_ok() {
+                    // Running as root: nothing is unlistable.
+                    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
+                        .unwrap();
+                    continue;
+                }
+            }
+        }
+        // The cascade a publish of the note takes. (A publish itself also
+        // walks the whole vault for its links, which refuses an unlistable
+        // folder on its own account.)
+        let cascade = tradecraft_core::model::Cascade::above(
+            &tradecraft_core::NativeVfs,
+            Some(&vault),
+            &vault.join("skills/loose.md"),
+            &MarketplaceConfig::default(),
+            &Namespace::default(),
+        );
+        if case == "unlistable" {
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let cascade = cascade.unwrap_or_else(|err| panic!("{case}: {err}"));
+        assert_eq!(cascade.config.license, None, "{case}");
+        assert_eq!(cascade.config.name, None, "{case}");
+    }
+}

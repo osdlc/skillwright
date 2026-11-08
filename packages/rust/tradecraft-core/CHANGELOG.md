@@ -32,7 +32,7 @@ API:
 ### Fixed
 
 - A scan of a skills root below the vault, as in `discover_components` with a `content_root`, reads the vault's root file for its patterns. It read a `skillwright.md` at the skills root as if it were the root file, and refused if that file did not parse.
-- `publish_skill` of a note outside `marketplaces/` no longer refuses on a problem inside a marketplace, such as a duplicate name or a symlink. It still scans `marketplaces/` to count the marketplaces as a build does, but that scan lists a symlinked file, skips a folder it cannot list and reports a duplicate as a warning.
+- `publish_skill` of a note outside `marketplaces/` no longer refuses on a problem inside a marketplace. It still scans `marketplaces/` to count the marketplaces as a build does. A duplicate name there is a warning. A symlink or a folder it cannot list, which a build refuses, means the count is not one, so the note inherits from no marketplace.
 
 ## [0.45.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.44.0...tradecraft-core/v0.45.0) - 2026-11-07
 
