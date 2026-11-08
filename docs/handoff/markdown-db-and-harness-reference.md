@@ -1,6 +1,7 @@
 # Handoff: markdown-db and harness-reference
 
-The full context for the next session. It is meant to be split later into issues, standard edits
+The full context for the next session. The order of the remaining work is drawn in
+[release-graph.md](release-graph.md). It is meant to be split later into issues, standard edits
 and package docs; until then it is the one place that holds it.
 
 ## The goal
