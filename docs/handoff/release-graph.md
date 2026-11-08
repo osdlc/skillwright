@@ -10,6 +10,7 @@ flowchart TD
   classDef owner fill:#fde7c8,stroke:#b8741a,color:#222
   classDef doing fill:#d6e9fb,stroke:#2b6cb0,color:#222
   classDef todo fill:#f4f4f4,stroke:#888,color:#222
+  classDef done fill:#d4edda,stroke:#2f855a,color:#222
 
   subgraph A["A · Release markdown-db from osdlc"]
     A1["Port package and standard to osdlc/osdlc: dist build, 0.1.0, release wiring"]
@@ -86,7 +87,7 @@ flowchart TD
   C1 --> E3
 
   subgraph H["H · Housekeeping"]
-    H1["Turn on auto-delete of head branches in osdlc/skillwright"]
+    H1["Auto-delete of head branches: on in all 9 osdlc repos"]
     H2["osdlc/osdlc#635: markdown-link finds every relative link"]
     H3["skillwright#42: markdown-contract checks record bodies"]
     H4["Validator: do not check links inside quoted excerpts"]
@@ -95,11 +96,12 @@ flowchart TD
   A5 --> H3
 
   class A1 doing
-  class B1,A5,A6,B4,H1 owner
+  class B1,A5,A6,B4 owner
+  class H1 done
   class A2,A3,A4,A7,A8,B2,B3,C1,CG1,C2,C3,C4,C5,CG2,CG3,CG4,C6,D1,D2,D3,D4,D5,D6,E1,E2,E3,H2,H3,H4 todo
 ```
 
-Colours: blue is in progress, orange is an owner step, grey is not started.
+Colours: green is done, blue is in progress, orange is an owner step, grey is not started.
 
 ## The shortest path to "usable elsewhere"
 

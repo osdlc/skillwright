@@ -180,9 +180,9 @@ recommended option; all are open:
 - **Stacked PRs merged into dead branches.** Twice a PR stacked on another merged into the base
   PR's branch after that branch had already merged, so its work never reached `main` and needed a
   carry PR ([#37](https://github.com/osdlc/skillwright/pull/37),
-  [#38](https://github.com/osdlc/skillwright/pull/38)). The repo setting "Automatically delete head
-  branches" is off; turning it on makes GitHub retarget stacked PRs. Until then, retarget a stacked
-  PR to `main` before merging it.
+  [#38](https://github.com/osdlc/skillwright/pull/38)). "Automatically delete head branches" is
+  now on in every osdlc repo, so GitHub deletes a merged PR's branch and retargets any PR stacked on
+  it to `main`.
 - **Uncommitted work in a worktree can be removed by a cleanup.** Commit and push early, even WIP.
 - **The release PR's wasm conflicts resolve themselves**: the release workflow rebuilds its branch
   from `main` and commits a fresh wasm on each push to `main`.
