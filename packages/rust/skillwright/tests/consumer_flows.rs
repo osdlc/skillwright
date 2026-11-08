@@ -1,5 +1,5 @@
-//! What a user meets following the docs, run through the binary: leftovers of
-//! the old shape, workspaces, and the verbs that must agree with a build.
+//! What a user meets following the docs, run through the binary: unknown
+//! keys, workspaces, and the verbs that must agree with a build.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -74,54 +74,14 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn an_old_prefixed_key_on_a_bare_vault_is_refused_naming_its_new_home() {
-    for (key, home) in [
-        ("sw-version: 1.0.0", "`version`"),
-        ("sw-targets: [claude]", "`targets`"),
-        ("sw-source: x", "`adopted.source`"),
-        ("sw-display-name: X", "`display_name`"),
-        ("sw:\n  version: 1.0.0", "`version`"),
-    ] {
-        let note = format!("---\ndescription: D.\n{key}\n---\nBody.\n");
-        let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", &note)]);
-        let built = sw(&dir.path(), &["build", "--yes"]);
-        assert_ne!(built.code, 0, "{key}: {}", built.text);
-        for said in [home, "`metadata:`", "docs/guide/migrating.md"] {
-            assert!(built.text.contains(said), "{key}: {}", built.text);
-        }
-        let moved = key.starts_with("sw-source");
-        assert_eq!(
-            built.text.contains("build.namespace"),
-            !moved,
-            "{}",
-            built.text
-        );
-        let listed = sw(&dir.path(), &["list"]);
-        assert!(listed.text.contains("removed-key"), "{}", listed.text);
-    }
-}
-
-#[test]
-fn a_prefixed_key_that_matches_nothing_stays_a_warning() {
-    for key in ["sw-nonsense: 1", "tc-license: MIT"] {
+fn a_prefixed_key_on_a_bare_vault_is_an_unknown_key() {
+    for key in ["sw-version: 1.0.0", "tc-license: MIT"] {
         let note = format!("---\ndescription: D.\n{key}\n---\nBody.\n");
         let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", &note)]);
         let built = sw(&dir.path(), &["build", "--yes"]);
         assert_eq!(built.code, 0, "{}", built.text);
         assert!(built.text.contains("unknown-key"), "{}", built.text);
     }
-}
-
-#[test]
-fn fix_adopt_hashes_says_when_there_is_nothing_to_do() {
-    let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", SKILL)]);
-    let ran = sw(&dir.path(), &["check", "--fix-adopt-hashes", "--yes"]);
-    assert_eq!(ran.code, 0, "{}", ran.text);
-    assert!(
-        ran.text.contains("no adopt hash to refresh"),
-        "{}",
-        ran.text
-    );
 }
 
 #[test]
@@ -142,20 +102,6 @@ fn a_namespace_keeps_the_prefix_and_names_the_right_spelling() {
         "{}",
         built.text
     );
-}
-
-#[test]
-fn a_leftover_old_config_says_it_is_no_longer_read() {
-    for old in ["skillwright.yaml", "tradecraft.yaml"] {
-        let alone = vault(&[(old, "vault: .\n")]);
-        let ran = sw(&alone.path(), &["list"]);
-        let beside = vault(&[(old, "vault: .\n"), ("skillwright.md", ROOT)]);
-        let listed = sw(&beside.path(), &["list"]);
-        for text in [ran.text, listed.text] {
-            assert!(text.contains("no longer read"), "{text}");
-            assert!(text.contains("docs/guide/migrating.md"), "{text}");
-        }
-    }
 }
 
 #[test]
@@ -443,22 +389,6 @@ fn a_malformed_workspace_file_refuses_every_verb_in_a_member() {
         assert!(ran.text.contains("skillwright.md"), "{}", ran.text);
     }
     assert!(!dir.home().join(".claude/skills/secret").exists());
-}
-
-#[test]
-fn the_old_marketplace_note_names_the_new_path() {
-    let dir = vault(&[
-        ("skillwright.md", ROOT),
-        ("marketplaces/m/m.md", "---\nlicense: GPL-3.0\n---\n"),
-        ("marketplaces/m/plugins/p/skills/s.md", SKILL),
-    ]);
-    let built = sw(&dir.path(), &["build", "--yes"]);
-    assert_ne!(built.code, 0, "{}", built.text);
-    assert!(
-        built.text.contains("marketplaces/m/skillwright.md"),
-        "{}",
-        built.text
-    );
 }
 
 #[test]
@@ -1269,34 +1199,6 @@ fn a_hint_for_a_plugin_named_like_its_marketplace_gives_the_plugin_folder() {
         "{}",
         built.text
     );
-}
-
-#[test]
-fn a_leftover_old_note_in_a_workspace_member_is_refused() {
-    let dir = vault(&[
-        ("skillwright.md", WORKSPACE),
-        ("marketplaces/foo/skillwright.md", &member("foo", "")),
-        ("marketplaces/foo/foo.md", "---\nlicense: GPL-3.0\n---\n"),
-        ("marketplaces/foo/plugins/p/skills/a.md", SKILL),
-    ]);
-    let built = sw(&dir.path(), &["build", "--yes"]);
-    assert_eq!(built.code, 2, "{}", built.text);
-    assert!(
-        built.text.contains("marketplaces/foo/skillwright.md"),
-        "{}",
-        built.text
-    );
-}
-
-#[test]
-fn an_old_spelling_of_a_moved_key_is_not_told_to_set_a_namespace() {
-    let note = "---\ndescription: D.\nsw-adopted-hash: abc\n---\nBody.\n";
-    let dir = vault(&[("skillwright.md", ROOT), ("skills/s.md", note)]);
-    let built = sw(&dir.path(), &["build", "--yes"]);
-    assert_eq!(built.code, 2, "{}", built.text);
-    assert!(built.text.contains("`adopted.hash`"), "{}", built.text);
-    assert!(built.text.contains("`metadata:`"), "{}", built.text);
-    assert!(!built.text.contains("build.namespace"), "{}", built.text);
 }
 
 #[test]

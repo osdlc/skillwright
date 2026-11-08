@@ -7,6 +7,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+Behaviour:
+
+- The `removed-key` refusal is gone. `VaultFrontmatter::take_from` no longer refuses `kind`, `plugin`, their prefixed spellings, or, with no namespace, an `sw-` spelling or `sw:` block of a skillwright key. Each is an ordinary unknown key and warns `unknown-key`.
+- `parse_root_file` no longer refuses a top-level `bump` or `build.shim_target`. Each warns as an unknown key and is ignored.
+- The vault scan no longer refuses a `marketplaces/<m>/<m>.md` note in the old marketplace form.
+- An adopted skill's carried `kind` or `plugin` key stays in its frontmatter instead of moving under `metadata:`.
+
+API:
+
+- Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
+
 ## [0.45.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.44.0...tradecraft-core/v0.45.0) - 2026-11-07
 
 ### Breaking

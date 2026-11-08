@@ -96,10 +96,8 @@ an output folder: `--out <path>`, or `build.out` in `skillwright.md`.
 | `init` | Write a `skillwright.md` in the current folder, with the marketplace's name and `build.out` |
 | `unpublish` | Declared, and exits `not implemented` |
 
-`build` and `check` are one path in two modes. `check --fix-adopt-hashes` does
-not check: it refreshes the adopt hash of each note whose only change is the key
-rename, and needs no output folder. The `harness` verbs change nothing when run
-a second time.
+`build` and `check` are one path in two modes. The `harness` verbs change
+nothing when run a second time.
 
 stdout carries the report and nothing else. Progress, tallies, prompts and
 error messages go to stderr. `--json` prints the report as one JSON document.
@@ -124,7 +122,7 @@ Each verb's own options:
 | Verb | Its own options |
 |---|---|
 | `publish` | `[note...]`, `--to <root>` (repeatable), `--target <target>`, `--all`, `--overwrite <path>` (repeatable) |
-| `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--watch` (`build` only), `--fix-adopt-hashes` (`check` only) |
+| `build` / `check` | `--out <path>`, `--skills-root <path>`, `--marketplace <name>`, `--watch` (`build` only) |
 | `init` | `--out <path>`, `--name <name>` |
 | `list` | `--skills-root <path>`, `--model` (print the loaded marketplace model as JSON) |
 | `status` | `[note]`, `--check` |
@@ -328,13 +326,7 @@ refuses to run it until you allow it in System Settings, Privacy & Security.
 
 Each release is listed in the [changelog](CHANGELOG.md).
 
-This crate was published as `tradecraft` up to 0.3.7. skillwright is in
-alpha and does not read the old names, so a project that used them must be
-renamed by hand: the configuration, manifest folder and environment variables
-take the `skillwright` spellings, and frontmatter keys are bare by default. Old
-`tc-` keys are unknown keys: each one warns and ships under `metadata:`, and a note
-with `tc-kind: plugin` reads as a skill. See the
-[migration guide](https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md).
+This crate was published as `tradecraft` up to 0.3.7.
 
 A note's harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`) apply to `publish`, `build` and `check`.
 

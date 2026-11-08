@@ -43,7 +43,7 @@ use crate::commands::harness::adapter::{CLAUDE, CODEX, CURSOR, Scope};
 use crate::commands::harness::{Harness, HarnessFlags, HarnessVerb, run_harness};
 use crate::commands::init::{InitFlags, run_init};
 use crate::commands::list::{ListFlags, run_list};
-use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export, run_fix_adopt_hashes};
+use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export};
 use crate::commands::publish::{PublishFlags, run_publish};
 use crate::commands::status::{StatusFlags, run_status};
 use crate::commands::watch::run_watch;
@@ -240,7 +240,7 @@ enum Verb {
     Publish(PublishArgs),
     /// Render the vault into its standalone marketplaces and swap them into place.
     Build(BuildArgs),
-    /// Report the marketplace's drift against the vault and exit 1 on drift. Writes nothing unless `--fix-adopt-hashes` is given.
+    /// Report the marketplace's drift against the vault and exit 1 on drift. Writes nothing.
     Check(CheckArgs),
     /// List every publishable note in the vault. Writes nothing.
     List(ListArgs),
@@ -328,9 +328,6 @@ struct ExportArgs {
 struct CheckArgs {
     #[command(flatten)]
     export: ExportArgs,
-    /// Refresh the adopt hash of each note whose only change is the key rename, instead of checking. Needs no output folder.
-    #[arg(long)]
-    fix_adopt_hashes: bool,
 }
 
 /// `build`'s own args, layered over the shared [`ExportArgs`]: everything
@@ -919,9 +916,6 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
         Verb::Publish(args) => run_publish(&args.flags(), ctx),
         Verb::Build(args) if args.watch => run_watch(&args.export.flags(), ctx),
         Verb::Build(args) => run_export(ExportVerb::Build, &args.export.flags(), ctx),
-        Verb::Check(args) if args.fix_adopt_hashes => {
-            run_fix_adopt_hashes(&args.export.flags(), ctx)
-        }
         Verb::Check(args) => run_export(ExportVerb::Check, &args.export.flags(), ctx),
         Verb::List(args) => run_list(
             &ListFlags {

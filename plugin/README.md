@@ -5,7 +5,6 @@ The `skillwright` agent plugin. Its skills teach a coding agent to use the skill
 - `setup` installs the CLI and writes a `skillwright.md`.
 - `author` writes skills, plugins and marketplaces as markdown notes in a vault.
 - `publish` builds and publishes them to Claude Code, Codex, Cursor and Pi.
-- `migrate` moves a vault to the `skillwright.md` structure and bare frontmatter keys.
 
 The plugin ships in the `osdlc` marketplace as `skillwright@osdlc`.
 
