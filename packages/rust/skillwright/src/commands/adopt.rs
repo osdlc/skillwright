@@ -47,7 +47,7 @@ use tradecraft_core::{
     AdoptMode, AdoptRequest, AdoptStatus, AdoptedSkill, NativeVfs, PreviewVfs, Vfs, adopt_skills,
 };
 
-use crate::config::{resolve_against_cwd, resolve_configured_path};
+use crate::config::resolve_against_cwd;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked, not_implemented, usage_error};
 use crate::git_source::{fetch_git_source, parse_git_source};
@@ -234,7 +234,7 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
             configured
                 .iter()
                 .map(|s| ResolvedSource {
-                    path: resolve_configured_path(s, &run.config_dir),
+                    path: run.configured_path(s),
                     label: None,
                 })
                 .collect()

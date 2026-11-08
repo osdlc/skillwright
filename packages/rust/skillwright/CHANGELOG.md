@@ -17,6 +17,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
   - `adopt` keeps a source skill's `kind` or `plugin` key at the top level instead of moving it under `metadata:`. It now warns `unknown-key` on build.
 - `check --fix-adopt-hashes` is removed. It only refreshed adopt hashes after the move from prefixed to bare keys.
 - The plugin's `migrate` skill and the migration guide are removed.
+- Library API: `ResolvedRun::config_dir` is removed; it always equalled `vault`. `ResolvedRun::namespace` is a `Namespace`, bare by default, not an `Option`. `config::resolve_configured_path` is removed; use `config::resolve_against_cwd`, or `ResolvedRun::configured_path` for a path the root file names. `ResolvedRun::configured_out` is public.
 
 ## [0.7.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.6.0...skillwright/v0.7.0) - 2026-11-07
 

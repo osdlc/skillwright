@@ -180,14 +180,14 @@ pub fn run_pi(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandContext<
         );
     }
 
-    let settings = settings_file(flags.scope, &ctx.home, &run.config_dir);
+    let settings = settings_file(flags.scope, &ctx.home, &run.vault);
     let listed = match listed_packages(&settings) {
         Ok(listed) => listed,
         Err(message) => return blocked(ctx.err, &message),
     };
     let (installed, missing): (Vec<&PathBuf>, Vec<&PathBuf>) = packs
         .iter()
-        .partition(|pack| names_pack(&listed, pack, &run.config_dir));
+        .partition(|pack| names_pack(&listed, pack, &run.vault));
 
     let (outcome, commands) = match verb {
         HarnessVerb::Uninstall { .. } => {
@@ -219,7 +219,7 @@ pub fn run_pi(verb: HarnessVerb, flags: &HarnessFlags, ctx: &mut CommandContext<
     let mut approve = |commands: &[Vec<String>]| approve_commands(flags, &argv_verb, commands, err);
     let exec = Execution {
         runner: ctx.runner,
-        cwd: &run.config_dir,
+        cwd: &run.vault,
         dry_run: flags.dry_run,
         approve: &mut approve,
     };
