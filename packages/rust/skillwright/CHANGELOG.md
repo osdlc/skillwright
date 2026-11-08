@@ -18,6 +18,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `check --fix-adopt-hashes` is removed. It only refreshed adopt hashes after the move from prefixed to bare keys.
 - The plugin's `migrate` skill and the migration guide are removed.
 
+### Fixed
+
+- Moving `marketplaces/skillwright/skillwright.md` treats it as a marketplace's entry, like `marketplaces/<m>/skillwright.md` for any other name. It was moved as a `skillwright` component bundle. Only `<kind>/skillwright/skillwright.md` is a component's note.
+- Moving or renaming the vault's own `skillwright.md` is refused, and nothing is written. It failed with a file error.
+
 ## [0.7.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.6.0...skillwright/v0.7.0) - 2026-11-07
 
 This release refuses some vaults that 0.6.0 built. To find what needs fixing, run `skillwright list`: it shows each refused note as `skipped · malformed: …`, naming the key and the kind of value it must hold. The [field reference](https://github.com/osdlc/skillwright/blob/skillwright/v0.7.0/docs/reference/fields.md) gives each key's type.

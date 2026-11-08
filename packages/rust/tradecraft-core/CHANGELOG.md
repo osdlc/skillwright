@@ -24,6 +24,10 @@ API:
 - Removed `Patterns::read`, which read a malformed root file as empty. Use `Patterns::load`, which refuses it.
 - Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 
+### Added
+
+- `is_component_note(path)`: whether a `skillwright.md` is `<kind>/skillwright/skillwright.md`, a component's note, rather than a root file. A host that moves notes uses it to tell a marketplace's entry from a component's.
+
 ### Fixed
 
 - `publish_skill` of a note outside `marketplaces/` no longer refuses on a problem inside a marketplace, such as a duplicate name or a symlink. It still scans `marketplaces/` to count the marketplaces as a build does, but that scan lists a symlinked file, skips a folder it cannot list and reports a duplicate as a warning.

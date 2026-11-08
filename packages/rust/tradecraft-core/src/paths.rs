@@ -108,8 +108,10 @@ pub fn find_root_file(vfs: &dyn Vfs, start: &Path) -> Option<PathBuf> {
 
 /// Whether `path` is `<kind>/skillwright/skillwright.md`, a component note
 /// and not a root file. `marketplaces/skillwright/skillwright.md` is not one:
-/// that is the root file of a workspace member named `skillwright`.
-fn is_component_note(path: &Path) -> bool {
+/// that is the root file of a workspace member named `skillwright`. Any other
+/// `skillwright.md` is a root file, such as a marketplace's entry. `path` may
+/// be vault-relative.
+pub fn is_component_note(path: &Path) -> bool {
     let folder = path.parent();
     let named = folder
         .and_then(Path::file_name)

@@ -426,15 +426,18 @@ fn move_note(
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
     let root_file = |path: &str| path.rsplit('/').next() == Some(tradecraft_core::ROOT_FILE);
-    // `<dir>/skillwright.md` is a marketplace's entry, unless `<dir>` is named
-    // `skillwright`: then it is also an ordinary `<dir>/<dir>.md` bundle entry.
-    let marketplace_entry = |path: &str| {
-        root_file(path)
-            && path
-                .rsplit('/')
-                .nth(1)
-                .is_none_or(|dir| dir != tradecraft_core::ROOT_FILE.trim_end_matches(".md"))
-    };
+    // The vault's own root file is no folder's entry: moving it would move
+    // the vault.
+    if from == tradecraft_core::ROOT_FILE {
+        return Err(ApplyError::Refused(format!(
+            "{from} is the vault's root file, so it cannot move"
+        )));
+    }
+    // `<dir>/skillwright.md` is a marketplace's entry, as the core reads it,
+    // unless it is `<kind>/skillwright/skillwright.md`: then it is an ordinary
+    // `<dir>/<dir>.md` component bundle entry.
+    let marketplace_entry =
+        |path: &str| root_file(path) && !tradecraft_core::is_component_note(Path::new(path));
     if bundle && root_file(from) && root_file(to) {
         return move_marketplace(vault, from, to, mode, outcome);
     }
@@ -1597,6 +1600,69 @@ mod tests {
             read(v.path(), "notes.md"),
             "[a](marketplaces/shop/plugins/p/skills/a.md)\n"
         );
+    }
+
+    /// A marketplace's `skillwright.md` is its entry whatever the folder is
+    /// called, as the core reads it: a member named `skillwright` moves the
+    /// same way as one named `m1`.
+    #[test]
+    fn a_marketplace_entry_moves_alike_whatever_its_folder_is_called() {
+        for name in ["m1", "skillwright"] {
+            let v = vault();
+            let entry = format!("marketplaces/{name}/skillwright.md");
+            write(v.path(), &entry, "---\nname: m\n---\n");
+            write(
+                v.path(),
+                &format!("marketplaces/{name}/plugins/p/skills/a.md"),
+                "---\nname: a\n---\n",
+            );
+            write(
+                v.path(),
+                "notes.md",
+                &format!("[a](marketplaces/{name}/plugins/p/skills/a.md)\n"),
+            );
+            let op = AuthoringOp::Move {
+                from: entry.clone(),
+                to: "marketplaces/shop/shop.md".to_owned(),
+                bundle: true,
+            };
+            let outcome = apply(v.path(), &op).unwrap();
+            assert_eq!(
+                outcomes(&outcome),
+                vec![("marketplaces/shop/shop.md", "renamed")],
+                "{name}"
+            );
+            assert!(
+                v.path().join("marketplaces/shop/shop.md").is_file(),
+                "{name}"
+            );
+        }
+    }
+
+    /// The vault's own root file is not a folder's entry: moving it is
+    /// refused, and nothing changes.
+    #[test]
+    fn moving_the_vaults_root_file_is_refused() {
+        for (to, bundle) in [
+            ("x/skillwright.md", true),
+            ("x/x.md", true),
+            ("x.md", false),
+        ] {
+            let v = vault();
+            write(v.path(), "skillwright.md", "---\nname: v\n---\n");
+            write(v.path(), "skills/a.md", "---\nname: a\n---\n");
+            let op = AuthoringOp::Move {
+                from: "skillwright.md".to_owned(),
+                to: to.to_owned(),
+                bundle,
+            };
+            let before = tree(v.path());
+            let err = preview(v.path(), &op).unwrap_err();
+            assert!(matches!(err, ApplyError::Refused(_)), "{to}: {err:?}");
+            let err = apply(v.path(), &op).unwrap_err();
+            assert!(matches!(err, ApplyError::Refused(_)), "{to}: {err:?}");
+            assert_eq!(tree(v.path()), before, "{to}");
+        }
     }
 
     /// A bundled component named `skillwright` is an ordinary `<dir>/<dir>.md`
