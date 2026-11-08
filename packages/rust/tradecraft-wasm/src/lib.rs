@@ -313,25 +313,26 @@ struct WireDiscoverRequest {
     namespace: Option<String>,
 }
 
-/// The vault as `wire` asks to scan it.
+/// The vault as `wire` asks to scan it. Refused when the request names no
+/// config and the vault's root file or workspace file does not parse.
 fn discovery_view<'v>(
     vfs: &'v dyn Vfs,
     wire: &WireDiscoverRequest,
     ns: &Namespace,
-) -> SourceView<'v> {
-    let config = wire
-        .config
-        .clone()
-        .unwrap_or_else(|| vault_config(vfs, &wire.vault_root));
+) -> Result<SourceView<'v>, CoreError> {
+    let config = match &wire.config {
+        Some(config) => config.clone(),
+        None => vault_config(vfs, &wire.vault_root)?,
+    };
     let mut scope = VaultScope::new(&wire.vault_root);
     scope.skills_root = wire.skills_root.as_deref();
-    source_view(
+    Ok(source_view(
         SourceView::over(vfs),
         scope,
         wire.out_root.as_deref(),
         &config,
         ns,
-    )
+    ))
 }
 
 /// Every component under a vault's skills root, vetted and sorted, and every
@@ -360,7 +361,7 @@ pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, J
         .map_err(|e| throwable(&format!("request is not a valid discovery request: {e}")))?;
     let ns = namespace_of(wire.namespace.as_deref())?;
 
-    let view = discovery_view(&vfs, &wire, &ns);
+    let view = discovery_view(&vfs, &wire, &ns).map_err(|e| core_error_to_js(&e))?;
     let report =
         core_discover_components(&view, &wire.vault_root, wire.skills_root.as_deref(), &ns)
             .map_err(|e| core_error_to_js(&e))?;
@@ -840,7 +841,7 @@ mod tests {
         let ns = Namespace::bare();
         let found = |json: &str| {
             let wire: WireDiscoverRequest = serde_json::from_str(json).unwrap();
-            let view = discovery_view(&vfs, &wire, &ns);
+            let view = discovery_view(&vfs, &wire, &ns).unwrap();
             let root = wire.vault_root.as_path();
             let report = core_discover_components(&view, root, None, &ns).unwrap();
             serde_json::to_string(&report).unwrap()

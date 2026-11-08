@@ -20,6 +20,7 @@ Behaviour:
 
 API:
 
+- `vault_config` returns `Result<MarketplaceConfig, CoreError>`. It refuses a root file or a workspace file above it that does not parse with `refused: malformed-root-file`, as `load_marketplace` does. It ignored a bad workspace file before, so a member silently lost the workspace's namespace, targets, blocks and exclusions. The wasm `discoverComponents` throws for such a file when the request names no `config`.
 - Removed `Patterns::read`, which read a malformed root file as empty. Use `Patterns::load`, which refuses it.
 - Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 
