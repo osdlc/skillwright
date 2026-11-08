@@ -59,8 +59,10 @@ pnpm run capture --harness "Codex CLI" --reference "https://github.com/openai/co
   from the harness's vendor (or `--publisher`).
 - `--kind` is one of `docs`, `changelog`, `source`, `issue` and `third-party`: the kinds that look
   at a page.
-- The quote must occur in the page's visible text, compared with whitespace collapsed. `capture`
-  stores it with about 32 characters either side, and fails when it is not found.
+- The quote must occur in the page's visible text, compared with whitespace collapsed. Page chrome
+  (`nav`, `header`, `footer`, `aside`) is not text. For a GitHub `blob/` URL, `capture` reads the
+  raw file instead of the HTML page. It stores the quote with 32 characters either side, and fails
+  when it is not found.
 - `observed` is today. The file is `evidence/<harness>/<today> <name>.md`; `--name` defaults to the
   reference's name. `capture` never overwrites a record; a second look the same day needs its own
   `--name`.
@@ -80,5 +82,5 @@ pnpm run check           # every corpus: validate, test, typecheck, generate
 ```
 
 The validator checks each record against its schema, its id, and every link in it: `successor` and
-`fork_of` must link to a harness, `sources` and `reference` to a reference record. `pnpm exec markdown-db validate --fix corpora/beta`
-rewrites any wikilinks as relative links first.
+`fork_of` must link to a harness, `sources` and `reference` to a reference record.
+`pnpm exec markdown-db validate --fix corpora/beta` rewrites any wikilinks as relative links first.

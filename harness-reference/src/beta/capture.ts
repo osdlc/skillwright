@@ -9,12 +9,20 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
-import { type CorpusReport, type Data, validateCorpus } from '@osdlc/markdown-db'
+import {
+  type CorpusReport,
+  type Data,
+  fold,
+  idProblem,
+  markdownLink,
+  validateCorpus,
+} from '@osdlc/markdown-db'
 import { stringify } from 'yaml'
 
-/** The kinds that observe a page, so carry a `reference`. */
+/** The kinds evidence.schema.md requires a reference for (its if/then); keep the two in step. */
 export const PAGE_KINDS = ['docs', 'changelog', 'source', 'issue', 'third-party'] as const
 export type PageKind = (typeof PAGE_KINDS)[number]
+/** The `version_basis` enum of evidence.schema.md; keep the two in step. */
 const VERSION_BASES = ['exact', 'inferred', 'unknown'] as const
 type VersionBasis = (typeof VERSION_BASES)[number]
 
@@ -33,9 +41,11 @@ export interface CaptureOptions {
   versionBasis?: VersionBasis
   /** The evidence record's name after its date. Defaults to the reference's id. */
   name?: string
-  /** For a new reference: its id, title and publisher. Default: the page title, the page title, the harness's vendor. */
+  /** A new reference's id. Defaults to the page title. */
   referenceName?: string
+  /** A new reference's title. Defaults to the page's <title>. */
   title?: string
+  /** A new reference's publisher. Defaults to the harness's vendor. */
   publisher?: string
 }
 
@@ -51,6 +61,9 @@ export interface CaptureResult {
   reference: string
   createdReference: boolean
 }
+
+/** Milliseconds `capture` waits for a page. */
+const FETCH_TIMEOUT_MS = 30_000
 
 /** Characters around the quote kept in `prefix` and `suffix`, as Hypothes.is does. */
 const CONTEXT = 32
@@ -94,11 +107,17 @@ const decodeEntities = (s: string): string =>
 const BLOCK_TAGS =
   'address|article|aside|blockquote|br|dd|details|div|dl|dt|figcaption|figure|footer|h[1-6]|header|hr|li|main|nav|ol|option|p|pre|section|summary|table|td|th|tr|ul'
 
-/** The visible text of an HTML page: no markup, scripts or styles; block tags become spaces. */
+/**
+ * The visible text of an HTML page: no markup, scripts, styles or page chrome (nav, header, footer,
+ * aside); block tags become spaces.
+ */
 export function htmlToText(html: string): string {
   const text = html
     .replace(/<!--[\s\S]*?-->/gu, '')
-    .replace(/<(head|script|style|noscript|template|svg)\b[\s\S]*?<\/\1\s*>/giu, ' ')
+    .replace(
+      /<(head|script|style|noscript|template|svg|nav|header|footer|aside)\b[\s\S]*?<\/\1\s*>/giu,
+      ' ',
+    )
     .replace(new RegExp(`</?(?:${BLOCK_TAGS})\\b[^>]*>`, 'giu'), ' ')
     .replace(/<[^>]*>/gu, '')
   return normalize(decodeEntities(text))
@@ -118,43 +137,23 @@ export function findExcerpt(
   const exact = normalize(excerpt)
   const at = exact === '' ? -1 : text.indexOf(exact)
   if (at < 0) return undefined
+  // By code point, so a slice never starts or ends inside a surrogate pair.
   return {
     exact,
-    prefix: text.slice(Math.max(0, at - CONTEXT), at),
-    suffix: text.slice(at + exact.length, at + exact.length + CONTEXT),
+    prefix: [...text.slice(0, at)].slice(-CONTEXT).join(''),
+    suffix: [...text.slice(at + exact.length)].slice(0, CONTEXT).join(''),
   }
 }
-
-const percent = (c: string): string =>
-  [...new TextEncoder().encode(c)]
-    .map((b) => `%${b.toString(16).toUpperCase().padStart(2, '0')}`)
-    .join('')
 
 /** A relative Markdown link from the file `from` to the file `to`, both corpus-relative. */
-function link(from: string, to: string): string {
-  const path = relative(dirname(from), to).split(sep).join('/')
-  return `[${basename(to, extname(to))}](${path.replace(/[%\s()<>?#]/gu, percent)})`
-}
+const link = (from: string, to: string): string =>
+  markdownLink(basename(to, extname(to)), relative(dirname(from), to).split(sep).join('/'))
 
-/** Corpus-relative paths of every record file under `typeDir`, by id. */
-function recordFiles(corpus: string, typeDir: string): Map<string, string> {
-  const files = new Map<string, string>()
-  const visit = (rel: string): void => {
-    const abs = join(corpus, rel)
-    if (!existsSync(abs)) return
-    for (const d of readdirSync(abs, { withFileTypes: true })) {
-      if (d.name.startsWith('.')) continue
-      const path = `${rel}/${d.name}`
-      if (d.isDirectory()) visit(path)
-      else if (['.md', '.yaml', '.json'].includes(extname(d.name)) && !d.name.includes('.schema.'))
-        files.set(basename(d.name, extname(d.name)), path)
-    }
-  }
-  visit(typeDir)
-  return files
+/** The raw file behind a github.com `blob/` URL, or the URL itself: the page is chrome around it. */
+function fetchUrl(url: string): string {
+  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/u.exec(url)
+  return m === null ? url : `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}`
 }
-
-const fold = (s: string): string => s.normalize('NFC').toLowerCase()
 
 function record(data: Data, body: string): string {
   return `---\n${stringify(data, { lineWidth: 0 })}---\n${body === '' ? '' : `\n${body}\n`}`
@@ -172,15 +171,15 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
     throw new Error(`version basis must be one of ${VERSION_BASES.join(', ')}`)
 
   const harness = before.records.get('harnesses')?.get(opts.harness)
-  const harnessFile = recordFiles(corpus, 'harnesses').get(opts.harness)
+  const harnessFile = before.files.get('harnesses')?.get(opts.harness)
   if (harness === undefined || harnessFile === undefined)
     throw new Error(`no harness record named "${opts.harness}"`)
 
   const references = before.records.get('references') ?? new Map<string, Data>()
-  const referenceFiles = recordFiles(corpus, 'references')
+  const referenceFiles = before.files.get('references') ?? new Map<string, string>()
   let referenceId: string | undefined
   let url: string
-  if (/^[a-z][a-z0-9+.-]*:/iu.test(opts.reference)) {
+  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(opts.reference)) {
     url = opts.reference
     if (!url.startsWith('https://')) throw new Error(`${url}: a reference URL must use https`)
     referenceId = [...references].find(([, data]) => data['url'] === url)?.[0]
@@ -192,8 +191,9 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
     url = String(references.get(referenceId)?.['url'])
   }
 
-  const response = await deps.fetch(url, {
+  const response = await deps.fetch(fetchUrl(url), {
     redirect: 'follow',
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     headers: { accept: 'text/html, text/markdown, text/plain;q=0.9, */*;q=0.1' },
   })
   if (!response.ok) throw new Error(`${url}: fetch failed with HTTP ${response.status}`)
@@ -218,10 +218,11 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
       if (title === undefined) throw new Error(`${url}: the page has no title; pass --title`)
       const name = normalize(opts.referenceName ?? title)
       const publisher = normalize(opts.publisher ?? String(harness['vendor']))
-      if (/[/\\]/u.test(name) || /[/\\]/u.test(publisher))
-        throw new Error(
-          `"${name}" or "${publisher}" holds a slash; pass --reference-name or --publisher`,
-        )
+      const nameProblem = idProblem(name)
+      if (nameProblem !== undefined)
+        throw new Error(`reference name "${name}" ${nameProblem}; pass --reference-name`)
+      if (/[/\\]/u.test(publisher))
+        throw new Error(`publisher "${publisher}" holds a slash; pass --publisher`)
       if ([...references.keys()].some((id) => fold(id) === fold(name)))
         throw new Error(
           `a reference named "${name}" already exists for another URL; pass --reference-name`,
@@ -232,21 +233,19 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
 
     const observed = deps.today()
     const name = opts.name ?? basename(referenceFile, extname(referenceFile))
-    if (/[/\\]/u.test(name)) throw new Error(`"${name}" holds a slash; pass another --name`)
     const evidenceFile = `evidence/${opts.harness}/${observed} ${name}.md`
+    const nameProblem = idProblem(`${observed} ${name}`)
+    if (nameProblem !== undefined)
+      throw new Error(`evidence name "${observed} ${name}" ${nameProblem}; pass another --name`)
     if (existsSync(join(corpus, evidenceFile)))
       throw new Error(`${evidenceFile} already exists; evidence is append-only, so pass --name`)
-    const version =
-      opts.version === undefined
-        ? opts.versionBasis === undefined
-          ? {}
-          : { version_basis: opts.versionBasis }
-        : { version: opts.version, version_basis: opts.versionBasis ?? 'inferred' }
+    const basis = opts.versionBasis ?? (opts.version === undefined ? undefined : 'inferred')
     const data: Data = {
       kind: opts.kind,
       reference: link(evidenceFile, referenceFile),
       harness: link(evidenceFile, harnessFile),
-      ...version,
+      ...(opts.version === undefined ? {} : { version: opts.version }),
+      ...(basis === undefined ? {} : { version_basis: basis }),
       observed,
       ...(opts.locator === undefined ? {} : { locator: opts.locator }),
       excerpt: found,
