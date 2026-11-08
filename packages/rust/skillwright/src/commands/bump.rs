@@ -70,7 +70,8 @@ struct ChangedReport<'a> {
 /// One row's `--json` object. `status` is `written`, `dry-run`, `unchanged`,
 /// `skipped` or `refused`. Not one of the CLI spec's worked transcripts —
 /// those are human-only — so the shape here is this file's own judgement
-/// call, kept minimal on purpose. A single-plugin run names no plugin.
+/// call, kept minimal on purpose. [`JsonShape`] says which fields a row
+/// sets.
 #[derive(Serialize)]
 struct JsonRow<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -405,7 +406,7 @@ fn run_one(
     };
     let Some(new) = planned.new.clone() else {
         let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
-        let row = Row::refused(None, &planned.rel, &planned.current, reason);
+        let row = Row::refused(plugin, &planned.rel, &planned.current, reason).single();
         if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
         }
@@ -415,7 +416,7 @@ fn run_one(
         return EXIT_REFUSED;
     };
     if flags.dry_run {
-        let row = Row::bumped(None, planned, "dry-run", new);
+        let row = Row::bumped(plugin, planned, "dry-run", new).single();
         if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
         }
@@ -441,7 +442,7 @@ fn run_one(
         return bump_failed(ctx.err, err);
     }
 
-    let row = Row::bumped(None, planned, "written", new);
+    let row = Row::bumped(plugin, planned, "written", new).single();
     if let Err(code) = write_row(ctx, flags.json, &row) {
         return code;
     }
@@ -639,7 +640,7 @@ fn run_changed(
             [] => marketplace_note(run, components, name),
             _ => {
                 rows.push(Row::refused(
-                    Some(name),
+                    name,
                     "",
                     "",
                     format!("`{name}` names more than one plugin in this vault"),
@@ -649,7 +650,7 @@ fn run_changed(
         };
         let Some(note) = note else {
             let reason = format!("`{name}` has no note to bump; add one with a `version`");
-            let mut row = Row::refused(Some(name), "", "", reason);
+            let mut row = Row::refused(name, "", "", reason);
             if !verdict.drift {
                 row.status = "unchanged";
                 row.reason = None;
@@ -679,9 +680,9 @@ fn run_changed(
             row
         } else if planned.new.is_none() {
             let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
-            Row::refused(Some(name), &planned.rel, &planned.current, reason)
+            Row::refused(name, &planned.rel, &planned.current, reason)
         } else {
-            Row::bump(Some(name), planned)
+            Row::bump(name, planned)
         };
         rows.push(row);
     }
@@ -779,9 +780,9 @@ fn run_changed(
 /// One plugin's row in a `bump` report: one for a single plugin, one per
 /// plugin for `--changed-since`.
 struct Row {
-    /// The plugin, by name; `None` for a single-plugin run, whose row names
-    /// only its note.
-    plugin: Option<String>,
+    plugin: String,
+    /// Which `--json` object the row prints as.
+    shape: JsonShape,
     rel: String,
     status: &'static str,
     current: String,
@@ -793,10 +794,21 @@ struct Row {
     planned: Option<Planned>,
 }
 
+/// The two `--json` row objects `bump` prints.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JsonShape {
+    /// A single-plugin run's object: the note, its status and versions. It
+    /// names no plugin and carries no reason.
+    Single,
+    /// A `--changed-since` row: the plugin, and why when there is a reason.
+    Changed,
+}
+
 impl Row {
     fn plain(plugin: &str, planned: &Planned, status: &'static str, reason: Option<String>) -> Row {
         Row {
-            plugin: Some(plugin.to_owned()),
+            plugin: plugin.to_owned(),
+            shape: JsonShape::Changed,
             rel: planned.rel.clone(),
             status,
             current: planned.current.clone(),
@@ -807,9 +819,10 @@ impl Row {
         }
     }
 
-    fn refused(plugin: Option<&str>, rel: &str, current: &str, reason: String) -> Row {
+    fn refused(plugin: &str, rel: &str, current: &str, reason: String) -> Row {
         Row {
-            plugin: plugin.map(str::to_owned),
+            plugin: plugin.to_owned(),
+            shape: JsonShape::Changed,
             rel: rel.to_owned(),
             status: "refused",
             current: current.to_owned(),
@@ -820,9 +833,10 @@ impl Row {
         }
     }
 
-    fn bump(plugin: Option<&str>, planned: Planned) -> Row {
+    fn bump(plugin: &str, planned: Planned) -> Row {
         Row {
-            plugin: plugin.map(str::to_owned),
+            plugin: plugin.to_owned(),
+            shape: JsonShape::Changed,
             rel: planned.rel.clone(),
             status: "pending",
             current: planned.current.clone(),
@@ -834,7 +848,7 @@ impl Row {
     }
 
     /// A bump settled as `status`, `dry-run` or `written`, to `new`.
-    fn bumped(plugin: Option<&str>, planned: Planned, status: &'static str, new: String) -> Row {
+    fn bumped(plugin: &str, planned: Planned, status: &'static str, new: String) -> Row {
         let mut row = Row::bump(plugin, planned);
         row.status = status;
         row.new = Some(new);
@@ -843,7 +857,7 @@ impl Row {
 
     fn line(&self) -> String {
         let label = if self.rel.is_empty() {
-            self.plugin.as_deref().unwrap_or_default()
+            &self.plugin
         } else {
             &self.rel
         };
@@ -861,16 +875,22 @@ impl Row {
         }
     }
 
-    /// The row's `--json` object. A single-plugin run's object has never
-    /// carried a `reason`, so only a row that names its plugin does.
+    /// The row as a single-plugin run prints it.
+    fn single(mut self) -> Row {
+        self.shape = JsonShape::Single;
+        self
+    }
+
+    /// The row's `--json` object, in its [`JsonShape`].
     fn json(&self) -> JsonRow<'_> {
+        let changed = self.shape == JsonShape::Changed;
         JsonRow {
-            plugin: self.plugin.as_deref(),
+            plugin: changed.then_some(self.plugin.as_str()),
             path: &self.rel,
             status: self.status,
             current: &self.current,
             new: self.new.as_deref(),
-            reason: self.plugin.as_ref().and(self.reason.as_deref()),
+            reason: self.reason.as_deref().filter(|_| changed),
         }
     }
 }
