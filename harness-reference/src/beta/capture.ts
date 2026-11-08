@@ -226,12 +226,14 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
         throw new Error(
           `a reference named "${name}" already exists for another URL; pass --reference-name`,
         )
-      referenceId = name
       referenceFile = `references/${publisher.replace(/[ .]+$/u, '')}/${name}.md`
       write(referenceFile, record({ url, title, publisher, url_status: 'live' }, ''))
     }
 
-    const evidenceFile = `evidence/${opts.harness}/${deps.today()} ${opts.name ?? referenceId}.md`
+    const observed = deps.today()
+    const name = opts.name ?? basename(referenceFile, extname(referenceFile))
+    if (/[/\\]/u.test(name)) throw new Error(`"${name}" holds a slash; pass another --name`)
+    const evidenceFile = `evidence/${opts.harness}/${observed} ${name}.md`
     if (existsSync(join(corpus, evidenceFile)))
       throw new Error(`${evidenceFile} already exists; evidence is append-only, so pass --name`)
     const version =
@@ -245,7 +247,7 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
       reference: link(evidenceFile, referenceFile),
       harness: link(evidenceFile, harnessFile),
       ...version,
-      observed: deps.today(),
+      observed,
       ...(opts.locator === undefined ? {} : { locator: opts.locator }),
       excerpt: found,
       observed_by: opts.observedBy,

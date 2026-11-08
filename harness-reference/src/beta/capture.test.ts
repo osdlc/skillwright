@@ -126,7 +126,12 @@ observed_by: "person: test"
     await assert.rejects(capture(opts(), deps('gone', 404)), /HTTP 404/)
     await assert.rejects(capture(opts({ harness: 'Nope' }), deps()), /no harness record/)
     await assert.rejects(capture(opts({ kind: 'run' as 'docs' }), deps()), /pages only/)
-    assert.deepEqual(fetched, ['https://code.claude.com/docs/en/overview'])
+    await assert.rejects(capture(opts({ name: 'a/b' }), deps()), /holds a slash/)
+    assert.deepEqual(fetched, [
+      'https://code.claude.com/docs/en/overview',
+      'https://code.claude.com/docs/en/overview',
+    ])
+    assert.ok(!existsSync(join(dir, 'evidence/Claude Code')))
   })
 
   test('never overwrites a record: a second look the same day needs its own name', async () => {
