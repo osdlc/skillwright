@@ -20,6 +20,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `delete <plugin>` trashes a plugin whose folder holds only `assets/` besides its note. It was refused, with the asset files named as members it still held.
+- `publish <note>` for a note outside `marketplaces/` is no longer refused by a duplicate name inside a marketplace.
 - With a pattern that matches the vault root, such as `build.patterns.skills: "*"`, `list`, `build` and `publish` no longer treat the vault's own `skillwright.md` as a skill.
 - A move treats `marketplaces/<m>/skillwright.md` as a marketplace's entry for every `<m>`, `skillwright` included, and every other `<dir>/skillwright.md` as an ordinary bundle, such as `tools/skillwright/skillwright.md` or `skills/group/skillwright/skillwright.md`. It decided by the folder's name, so `marketplaces/skillwright/skillwright.md` moved as a bundle, and a bundle named `skillwright` outside a kind folder moved as a marketplace, with its links left as written.
 - Moving or renaming the vault's own `skillwright.md`, or moving a note onto it, is refused, and nothing is written. The check ignores case, so `SKILLWRIGHT.md` is refused too: on a case-insensitive file system, as macOS's is by default, it is the same file. Moving it failed with a file error, and moving a plain note onto it replaced the vault's config file.

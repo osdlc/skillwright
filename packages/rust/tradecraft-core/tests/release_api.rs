@@ -2277,12 +2277,12 @@ fn a_skills_root_is_walked_with_the_vaults_patterns() {
     );
 }
 
-/// A marketplaces folder a build would refuse to read does not have one
-/// marketplace for a vault-level note to inherit from: the publish goes on,
-/// on the root file alone.
+/// A marketplaces folder a build refuses to read refuses a publish of a
+/// vault-level note too: without it, the note could ship to a harness the
+/// one marketplace's `targets` leaves out.
 #[cfg(unix)]
 #[test]
-fn a_marketplaces_folder_a_build_refuses_has_no_one_marketplace() {
+fn a_marketplaces_folder_a_build_refuses_refuses_the_publish() {
     use std::os::unix::fs::PermissionsExt;
     for case in ["symlink", "unlistable"] {
         let dir = tempfile::tempdir().unwrap();
@@ -2292,23 +2292,20 @@ fn a_marketplaces_folder_a_build_refuses_has_no_one_marketplace() {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, text).unwrap();
         };
+        put("skillwright.md", "---\nname: v\n---\n");
+        put("skills/a.md", "---\ndescription: A.\n---\n");
         put(
-            "marketplaces/m/skillwright.md",
-            &note("m", "license: ISC\ntargets:\n  - claude\n"),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\ndescription: M.\ntargets: [codex-cli]\n---\n",
         );
-        put("skills/loose.md", &note("loose", ""));
+        put("marketplaces/m1/skills/x.md", "---\ndescription: X.\n---\n");
         let locked = vault.join("marketplaces/n");
         match case {
             "symlink" => {
-                std::fs::write(dir.path().join("outside.md"), "Plain.\n").unwrap();
-                std::os::unix::fs::symlink(
-                    dir.path().join("outside.md"),
-                    vault.join("marketplaces/m/link.md"),
-                )
-                .unwrap();
+                std::os::unix::fs::symlink(dir.path(), vault.join("marketplaces/m1/link")).unwrap();
             }
             _ => {
-                put("marketplaces/n/skills/x.md", &note("x", ""));
+                put("marketplaces/n/skills/y.md", "---\ndescription: Y.\n---\n");
                 std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
                 if std::fs::read_dir(&locked).is_ok() {
                     // Running as root: nothing is unlistable.
@@ -2318,22 +2315,29 @@ fn a_marketplaces_folder_a_build_refuses_has_no_one_marketplace() {
                 }
             }
         }
-        // The cascade a publish of the note takes. (A publish itself also
-        // walks the whole vault for its links, which refuses an unlistable
-        // folder on its own account.)
+        let vfs = tradecraft_core::NativeVfs;
+        let mut request = PublishRequest::new(
+            vault.join("skills/a.md"),
+            dir.path().join("dest"),
+            "claude-code",
+        );
+        request.skills_root = Some(vault.clone());
+        let published = publish_skill(&vfs, &request, &Namespace::default());
+        // The cascade alone, apart from the vault-wide link walk a publish
+        // also makes.
         let cascade = tradecraft_core::model::Cascade::above(
-            &tradecraft_core::NativeVfs,
+            &vfs,
             Some(&vault),
-            &vault.join("skills/loose.md"),
+            &vault.join("skills/a.md"),
             &MarketplaceConfig::default(),
             &Namespace::default(),
         );
         if case == "unlistable" {
             std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        let cascade = cascade.unwrap_or_else(|err| panic!("{case}: {err}"));
-        assert_eq!(cascade.config.license, None, "{case}");
-        assert_eq!(cascade.config.name, None, "{case}");
+        assert!(published.is_err(), "{case}: {published:?}");
+        assert!(!dir.path().join("dest/.claude").exists(), "{case}");
+        assert!(cascade.is_err(), "{case}");
     }
 }
 
