@@ -552,7 +552,7 @@ pub fn field_reference() -> String {
          wrong kind is refused, naming the key. So is a spec key on a skill, agent or \
          command: it takes its Value, except where its Meaning or a harness's docs show \
          another form: `allowed-tools` and `tools` also take one string, an agent's \
-         `tools` also takes OpenCode's mapping of tool name to `true` or `false`, \
+         `tools` also takes a mapping of tool names, as OpenCode writes it, \
          which a Claude Code target refuses, \
          `argument-hint` also takes a list of strings (an unquoted `[issue-number]` \
          reads as that text), `arguments` takes a string or any list, and `metadata` \

@@ -308,9 +308,9 @@ pub(crate) fn component_type(kind: EntityKind, key: &str) -> Option<FieldType> {
         // The table's summary: a list, or one string separated by spaces or
         // commas.
         ("allowed-tools", _) => STRING_OR_STRINGS,
-        // OpenCode's agent `tools` is a mapping of tool name to `true` or
-        // `false` (its agents docs, "Tools (deprecated)"). Claude Code reads
-        // only the list, and `project_agent` refuses a mapping for it.
+        // OpenCode's agent `tools` is a mapping of tool names (its agents
+        // docs, "Tools (deprecated)"). Its values are not checked. Claude Code
+        // reads only the list, and `project_agent` refuses a mapping for it.
         ("tools", _) if kind == EntityKind::Agent => STRINGS_OR_OBJECT,
         // Claude's subagent docs write the list as one string: `Read, Grep`.
         ("tools", _) => STRING_OR_STRINGS,
