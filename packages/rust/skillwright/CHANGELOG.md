@@ -10,7 +10,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Breaking
 
 - skillwright no longer checks for the pre-1.0 vault shape. Old keys and files are treated like any other key or file it does not know:
-  - The `removed-key` refusal is gone. `kind` and `plugin` on a note, `sw-kind` and `sw-plugin` under `build.namespace: sw`, and, with no namespace, an `sw-` spelling or an `sw:` block of a skillwright key are ordinary unknown keys. Each warns `unknown-key`. On a component it ships under `metadata:`; on a container it is ignored.
+  - The `removed-key` refusal is gone. `kind` and `plugin` on a note, `sw-kind` and `sw-plugin` under `build.namespace: sw`, and, with no namespace, an `sw-` spelling or an `sw:` block of a skillwright key are ordinary unknown keys. Each warns `unknown-key` and is handled like any unknown key: a skill ships it under `metadata:`, a command carries it as written, and a container ignores it.
   - A top-level `bump:` and `build.shim_target` in `skillwright.md` are ordinary unknown keys: each warns that it is not a key skillwright reads, and is ignored. They were refused.
   - A `skillwright.yaml` or `tradecraft.yaml` beside the vault gets no note.
   - A `marketplaces/<m>/<m>.md` note is no longer refused with a pointer to `marketplaces/<m>/skillwright.md`. It is skipped as a stray note if it declares a `description`.
