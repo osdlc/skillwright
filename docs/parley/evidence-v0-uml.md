@@ -1,12 +1,11 @@
 # Claims profile: class diagram
 
 The proposed claims profile of markdown-db, after GA4GH VA-Spec, with harness-reference as the
-domain and the optional software overlay. Stereotypes:
+domain. Stereotypes:
 
 - `record`: its own file. `folder record`: a folder holding `<name>.md` and its files.
 - `inline`: an object inside another record.
 - `domain`: supplied by the corpus, not the profile.
-- `overlay`: the optional software overlay, an `allOf` layer over a base class.
 
 Links are relative Markdown links checked with `x-ref`. Inline objects that hold links need nested
 `x-ref` (roadmap item 3).
@@ -109,30 +108,6 @@ classDiagram
     +claim_type : behaviour | policy
   }
 
-  class SoftwareStudyResult {
-    <<overlay>>
-    observations/
-    +subject_version : string
-    +commit : sha
-    +digest : string
-    +environment : os, arch, runtime, model
-    +command : string
-    +exit_code : integer
-    +transcript : file
-  }
-  class SoftwareMethod {
-    <<overlay>>
-    probes/
-    +entrypoint : string
-    +fingerprint : hash of files
-  }
-  class SoftwareDocument {
-    <<overlay>>
-    sources/
-    +repo : string
-    +ref : commit sha
-    +lines : range
-  }
 
   InformationEntity <|-- Statement
   InformationEntity <|-- StudyResult
@@ -153,10 +128,6 @@ classDiagram
   Proposition --> "1" Subject : predicate
   Method --> "0..*" Subject : predicates
   Harness --> "0..*" Document : sources
-
-  StudyResult <|-- SoftwareStudyResult
-  Method <|-- SoftwareMethod
-  Document <|-- SoftwareDocument
 ```
 
 Read it as:
@@ -170,6 +141,3 @@ Read it as:
 - Every record carries **Contributions**: who created, verified or disputed it, and when.
 - **Harness** and **Subject** belong to harness-reference. Another corpus swaps in its own, such
   as models and jobs in small-model-evals.
-- The **software overlay** adds version, commit, environment and transcript fields, and renames
-  the folders (`observations`, `probes`, `sources`). Its schemas say which class they implement
-  with `x-class`.
