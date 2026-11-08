@@ -55,7 +55,13 @@ export interface CaptureResult {
 /** Characters around the quote kept in `prefix` and `suffix`, as Hypothes.is does. */
 const CONTEXT = 32
 
-export const normalize = (s: string): string => s.normalize('NFC').replace(/\s+/gu, ' ').trim()
+/** NFC, no zero-width characters, and each whitespace run as one space. */
+export const normalize = (s: string): string =>
+  s
+    .normalize('NFC')
+    .replace(/[\u200b-\u200d\ufeff]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim()
 
 const ENTITIES: Record<string, string> = {
   amp: '&',

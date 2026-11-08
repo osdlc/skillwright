@@ -13,7 +13,7 @@ const beta = resolve(import.meta.dirname, '../../corpora/beta')
 
 const PAGE = `<!doctype html><html><head><title>Fixture &amp; page</title>
 <style>p { color: red }</style></head><body>
-<nav>Docs home</nav>
+<nav>Docs\u200b home</nav>
 <script>var hidden = "Claude Code starts as claude"</script>
 <p>Install it, then run   <code>claude</code>
 in your project.</p><p>Claude Code starts as <strong>claude</strong> in a terminal&nbsp;and more text follows here.</p>
