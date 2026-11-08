@@ -19,6 +19,7 @@ Behaviour:
 API:
 
 - Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
+- Removed `VaultFrontmatter::unknown_ours`. Nothing read it. A prefixed key this build does not model is still consumed, and `VaultFrontmatter::unknown` still lists it.
 
 ### Added
 

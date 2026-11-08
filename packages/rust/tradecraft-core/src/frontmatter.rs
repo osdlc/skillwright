@@ -16,8 +16,8 @@
 //! the prefix claims is skillwright's, in the flat shape (`sw-version`) or
 //! the nested one (`sw: {version: …}`); a note carrying both is refused ·
 //! `mixed-frontmatter-shape`. A prefixed key this build does not model is
-//! consumed into [`VaultFrontmatter::unknown_ours`] so it cannot reach a
-//! destination.
+//! consumed, so it cannot reach a destination, and listed in
+//! [`VaultFrontmatter::unknown`].
 //!
 //! # A wrong-shaped value of ours is refused
 //!
@@ -349,9 +349,6 @@ pub struct VaultFrontmatter {
     /// by [`crate::publish::overrides_for`] for a component, and by the
     /// manifest writer for a container.
     pub overrides: Map<String, Value>,
-    /// Keys inside a prefixed namespace this build does not model, under
-    /// their flat spelling — consumed so they cannot reach a destination.
-    pub unknown_ours: Map<String, Value>,
     /// Every key on the note that the key table does not list for its kind,
     /// sorted. Each gets a warning. On a skill they publish under
     /// `metadata:`; on a container they are ignored.
@@ -459,7 +456,6 @@ impl VaultFrontmatter {
             provenance,
             identity,
             overrides,
-            unknown_ours: ours,
             unknown,
             own_keys,
         })
@@ -567,7 +563,7 @@ fn is_claude_arguments(value: &Value) -> bool {
 
 /// Refuses a key of ours whose value is not the [`crate::keys::Shape`] the
 /// table lists for `kind`. `ours` holds flat spellings, so a prefixed key the
-/// table does not list is left for [`VaultFrontmatter::unknown_ours`].
+/// table does not list is left to be reported in [`VaultFrontmatter::unknown`].
 fn check_shapes(
     ours: &Map<String, Value>,
     path: &Path,
@@ -1097,13 +1093,12 @@ mod tests {
 
     #[test]
     fn under_a_namespace_a_bare_unprefixed_key_stays_among_the_notes_own_keys() {
-        let (ours, rest) = read_kind(
+        let (_, rest) = read_kind(
             &Namespace::sw(),
             EntityKind::Skill,
             json!({"description": "d", "flavour": "mint"}),
         )
         .unwrap();
-        assert!(ours.unknown_ours.is_empty(), "{:?}", ours.unknown_ours);
         assert_eq!(rest["flavour"], "mint");
     }
 
@@ -1266,7 +1261,6 @@ mod tests {
     fn an_unmodeled_prefixed_key_is_consumed_and_reported() {
         let (ours, rest) = read(json!({"sw-invented": 1})).unwrap();
         assert!(!rest.contains_key("sw-invented"));
-        assert_eq!(ours.unknown_ours["sw-invented"], 1);
         assert_eq!(ours.unknown, vec!["sw-invented".to_owned()]);
     }
 
