@@ -157,15 +157,27 @@ pub(crate) fn is_flat_root_file_name(path: &Path) -> bool {
 /// it holds must not fail open, so loading it refuses the run.
 pub fn workspace_above(vfs: &dyn Vfs, dir: &Path) -> Option<PathBuf> {
     let file = workspace_file(dir)?;
-    match read_root(vfs, &file) {
+    match read_root(vfs, &file, RootRead::Full) {
         Ok(None) => None,
         Ok(Some(root)) if !root.workspace => None,
         _ => Some(file),
     }
 }
 
-/// The workspace file above the marketplace at `dir`, read, when `dir` is
-/// `<workspace>/marketplaces/<m>/` and the file says `workspace: true`.
+/// How much of a root file a read checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RootRead {
+    /// Every key, as [`parse_root_file`] reads it.
+    Full,
+    /// Only what decides which files are notes and where they go, as
+    /// [`crate::settings::parse_root_layout`] reads it: a bad value elsewhere
+    /// is for the verbs that read it to refuse.
+    Layout,
+}
+
+/// The workspace file above the marketplace at `dir`, read as `read` says,
+/// when `dir` is `<workspace>/marketplaces/<m>/` and the file says
+/// `workspace: true`.
 ///
 /// # Errors
 ///
@@ -173,11 +185,12 @@ pub fn workspace_above(vfs: &dyn Vfs, dir: &Path) -> Option<PathBuf> {
 pub(crate) fn read_workspace_above(
     vfs: &dyn Vfs,
     dir: &Path,
+    read: RootRead,
 ) -> Result<Option<RootFile>, CoreError> {
     let Some(file) = workspace_file(dir) else {
         return Ok(None);
     };
-    Ok(read_root(vfs, &file)?.filter(|root| root.workspace))
+    Ok(read_root(vfs, &file, read)?.filter(|root| root.workspace))
 }
 
 /// Where a workspace file above `dir` would be, when `dir` is
@@ -190,27 +203,34 @@ fn workspace_file(dir: &Path) -> Option<PathBuf> {
     Some(parent.parent()?.join(ROOT_FILE))
 }
 
-/// The root file at `file`, `None` when there is none.
+/// The root file at `file`, read as `read` says, `None` when there is none.
 ///
 /// # Errors
 ///
-/// `refused: malformed-root-file` when it is not UTF-8 or does not parse: an
-/// exclusion that cannot be read must not fail open.
-pub(crate) fn read_root(vfs: &dyn Vfs, file: &Path) -> Result<Option<RootFile>, CoreError> {
+/// `refused: malformed-root-file` when it is not UTF-8, its frontmatter is
+/// not a YAML mapping, or a key `read` checks holds a value of the wrong
+/// shape.
+pub(crate) fn read_root(
+    vfs: &dyn Vfs,
+    file: &Path,
+    read: RootRead,
+) -> Result<Option<RootFile>, CoreError> {
     if !vfs.exists(file) {
         return Ok(None);
     }
     let malformed = |detail: String| {
         CoreError::refused(
-            "malformed-root-file",
+            crate::publish::ReasonToken::MalformedRootFile.as_str(),
             format!("{}: {detail}. Nothing was written", file.display()),
         )
     };
     let text = String::from_utf8(vfs.read_file(file)?)
         .map_err(|_| malformed("it is not UTF-8".to_owned()))?;
-    parse_root_file(&text)
-        .map(Some)
-        .map_err(|err| malformed(err.to_string()))
+    let parsed = match read {
+        RootRead::Full => parse_root_file(&text),
+        RootRead::Layout => crate::settings::parse_root_layout(&text),
+    };
+    parsed.map(Some).map_err(|err| malformed(err.to_string()))
 }
 
 /// What a marketplace load reads from the root file besides the vault: the
@@ -326,9 +346,9 @@ pub fn load_marketplace(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let mut root = read_root(vfs, &root_file)?.unwrap_or_default();
+    let mut root = read_root(vfs, &root_file, RootRead::Full)?.unwrap_or_default();
     if !root.workspace
-        && let Some(shared) = read_workspace_above(vfs, &dir)?
+        && let Some(shared) = read_workspace_above(vfs, &dir, RootRead::Full)?
     {
         root.inherit(&shared);
     }

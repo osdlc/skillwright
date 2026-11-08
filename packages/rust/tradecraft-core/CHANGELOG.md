@@ -15,17 +15,18 @@ Behaviour:
 - `parse_root_file` no longer refuses a top-level `bump` or `build.shim_target`. Each is an ordinary unknown key: it warns and is ignored.
 - The vault scan no longer gives a `marketplaces/<m>/<m>.md` note its own refusal pointing to `marketplaces/<m>/skillwright.md`. It is read like any other file at that path: skipped as a stray note if it declares a `description`, otherwise ignored.
 - An adopted skill's carried `kind` or `plugin` key stays in its frontmatter instead of moving under `metadata:`.
-- A root file or workspace file that does not parse now refuses `publish_skill`, `status_of`, `discover_components`, `discover_roster`, `load` and `load_plugin` with `refused: malformed-root-file`. They read it as empty before, so a note `build.exclude` excludes was published and listed. `export_skills` already refused. `source_view` hides nothing for such a file and leaves the refusal to the scan or build that reads through it.
-- `load_marketplace` refuses a root file or workspace file that is not UTF-8 or does not parse as `refused: malformed-root-file`, not `refused: root-file`. A build already used `malformed-root-file` for the same file, so one bad file now has one token.
+- `publish_skill`, `status_of`, `discover_components`, `discover_roster`, `load` and `load_plugin` refuse with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes: its frontmatter is not a YAML mapping, or its `workspace`, `build`, `build.exclude` or `build.patterns` has the wrong shape. They read such a file as excluding nothing before, so a note `build.exclude` excludes was published and listed. A bad value in any other key, such as `repository: example`, does not refuse them; the verbs that read that value, such as a build, still do. `export_skills` already refused. `source_view` hides nothing for such a file and leaves the refusal to the scan or build that reads through it.
+- `load_marketplace` refuses a root file or workspace file it cannot read, whether its frontmatter is not YAML or a key holds a bad value, as `refused: malformed-root-file`, not `refused: root-file`. A build already used `malformed-root-file` for the same file, so one bad file now has one token.
 
 API:
 
-- `vault_config` returns `Result<MarketplaceConfig, CoreError>`. It refuses a root file or a workspace file above it that does not parse with `refused: malformed-root-file`, as `load_marketplace` does. It ignored a bad workspace file before, so a member silently lost the workspace's namespace, targets, blocks and exclusions. The wasm `discoverComponents` throws for such a file when the request names no `config`.
+- `vault_config` returns `Result<MarketplaceConfig, CoreError>`. It refuses with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes, as the scan it configures does. It ignored such a workspace file before, so a member silently lost the workspace's namespace, targets, blocks and exclusions. A bad value in another key still gives the default config, or leaves the workspace file out, as before: a build says what is wrong with it. The wasm `discoverComponents` throws when the vault's root file or workspace file cannot say what it excludes.
 - Removed `Patterns::read`, which read a malformed root file as empty. Use `Patterns::load`, which refuses it.
 - Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 
 ### Added
 
+- `ReasonToken::MalformedRootFile` (`malformed-root-file`), the token of a refusal for a root file or workspace file that cannot be read. It is in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`.
 - `is_component_note(path)`: whether a `skillwright.md` is `<kind>/skillwright/skillwright.md`, a component's note, rather than a root file. A host that moves notes uses it to tell a marketplace's entry from a component's.
 
 ### Fixed

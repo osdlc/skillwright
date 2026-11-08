@@ -145,6 +145,11 @@ struct WireRequest {
 ///
 /// # Errors
 ///
+/// The core's refusals throw an `Error` whose `.name` is `Refused`, its
+/// message led by the reason token. Among them is `malformed-root-file`, when
+/// the root file at `skills_root`, or the workspace file above it, cannot say
+/// what it excludes.
+///
 /// A stem the core refuses throws an `Error` whose `.name` is `InvalidStem`,
 /// carrying [`InvalidStem`]'s own message. A host should validate its
 /// configured stem up front with [`validate_namespace`] rather than discover it
@@ -350,8 +355,13 @@ fn discovery_view<'v>(
 /// # Errors
 ///
 /// Only what is not a fact about one note: a missing skills root
-/// (`RootNotFound`), a symlink in the tree, a duplicate name, and a bundle
-/// containing another component's entry. Everything wrong with a single note
+/// (`RootNotFound`), a symlink in the tree, a duplicate name, a bundle
+/// containing another component's entry, and `refused: malformed-root-file`
+/// when the vault's root file, or the workspace file above it, cannot say
+/// what it excludes (its frontmatter is not YAML, or its `workspace`,
+/// `build`, `build.exclude` or `build.patterns` has the wrong shape). A bad
+/// value in any other key of the root file does not throw here; a build says
+/// what is wrong with it. Everything wrong with a single note
 /// is reported in `skipped` and does not throw — one half-written draft must
 /// not block every publish out of a shared vault.
 #[wasm_bindgen(js_name = discoverComponents)]

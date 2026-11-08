@@ -2183,3 +2183,69 @@ fn a_problem_in_another_marketplace_does_not_refuse_a_publish() {
     let skill = published(&vfs, &report, "SKILL.md");
     assert!(!skill.contains("license: ISC"), "{skill}");
 }
+
+/// A root file whose exclusions read fine is not refused by a scan or a
+/// publish for a value elsewhere in it: the verbs that read that value, such
+/// as a build, say what is wrong with it.
+#[test]
+fn a_bad_value_outside_the_exclusions_does_not_refuse_a_scan_or_publish() {
+    for bad in [
+        "repository: example\n",
+        "targets: [nowhere]\n",
+        "author: [1, 2]\n",
+        "claude: 5\n",
+    ] {
+        let root = format!("---\n{bad}build:\n  exclude: '**/*.draft.md'\n---\n");
+        let vfs = root_vault(
+            &root,
+            &[
+                ("plugins/p/skills/keep.md", USE_IT),
+                ("plugins/p/skills/hid.draft.md", USE_IT),
+            ],
+        );
+        let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare())
+            .unwrap_or_else(|err| panic!("{bad}: {err}"));
+        let paths: Vec<&str> = scan
+            .components
+            .iter()
+            .map(|c| c.vault_relative_path.as_str())
+            .collect();
+        assert!(
+            paths.contains(&"plugins/p/skills/keep.md"),
+            "{bad}: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("draft")),
+            "{bad}: {paths:?}"
+        );
+
+        let publish = |note: &str| {
+            let mut value = PublishRequest::new(note, "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            publish_skill(&vfs, &value, &Namespace::bare())
+        };
+        publish("/vault/plugins/p/skills/keep.md").unwrap_or_else(|err| panic!("{bad}: {err}"));
+        let err = publish("/vault/plugins/p/skills/hid.draft.md").unwrap_err();
+        assert!(err.to_string().contains("excluded-note"), "{bad}: {err}");
+
+        tradecraft_core::vault_config(&vfs, Path::new("/vault"))
+            .unwrap_or_else(|err| panic!("{bad}: {err}"));
+    }
+}
+
+/// What a scan cannot do without, it refuses: exclusions or patterns of the
+/// wrong shape.
+#[test]
+fn a_bad_exclusion_or_pattern_refuses_a_scan() {
+    for bad in [
+        "build:\n  exclude: 5\n",
+        "build:\n  patterns: 5\n",
+        "build: 5\n",
+    ] {
+        let vfs = root_vault(&format!("---\n{bad}---\n"), &[TOOL_SKILL]);
+        let err = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("malformed-root-file"), "{bad}: {err}");
+    }
+}

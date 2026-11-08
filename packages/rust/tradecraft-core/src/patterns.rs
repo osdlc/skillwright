@@ -28,7 +28,7 @@ use crate::compile::EXCLUDED_BUNDLE_DIRECTORIES;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
-use crate::paths::{read_root, read_workspace_above};
+use crate::paths::{RootRead, read_root, read_workspace_above};
 use crate::settings::{FolderPatterns, ROOT_FILE};
 use crate::vfs::Vfs;
 
@@ -154,10 +154,13 @@ impl Patterns {
     ///
     /// # Errors
     ///
-    /// `refused: malformed-root-file`: an exclusion that cannot be read must
-    /// not fail open.
+    /// `refused: malformed-root-file` when either file's frontmatter is not a
+    /// YAML mapping, or its `workspace`, `build`, `build.exclude` or
+    /// `build.patterns` has the wrong shape: an exclusion that cannot be read
+    /// must not fail open. A bad value in any other key is not checked here.
     pub fn load(vfs: &dyn Vfs, vault_root: &Path) -> Result<Self, CoreError> {
-        let mut root = read_root(vfs, &vault_root.join(ROOT_FILE))?.unwrap_or_default();
+        let mut root =
+            read_root(vfs, &vault_root.join(ROOT_FILE), RootRead::Layout)?.unwrap_or_default();
         let mut own = Self {
             folders: root.build.patterns.clone(),
             exclude: root.build.exclude.clone(),
@@ -165,7 +168,7 @@ impl Patterns {
         };
         let written: BTreeSet<String> = own.globs().map(str::to_owned).collect();
         if !root.workspace
-            && let Some(shared) = read_workspace_above(vfs, vault_root)?
+            && let Some(shared) = read_workspace_above(vfs, vault_root, RootRead::Layout)?
         {
             root.inherit(&shared);
         }

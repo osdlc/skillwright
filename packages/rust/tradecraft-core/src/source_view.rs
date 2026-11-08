@@ -383,19 +383,23 @@ pub(crate) fn check_pack_location(
 
 /// What the root file at `vault_root` configures, for a caller that holds no
 /// configuration of its own, over what a workspace file above it sets.
-/// Default when there is no root file.
+/// Default when there is no root file, or when it holds a bad value a build
+/// would refuse: a build says what is wrong with it. A workspace file with a
+/// bad value is left out the same way.
 ///
 /// # Errors
 ///
-/// `refused: malformed-root-file` when the root file or the workspace file
-/// above it does not parse, as [`crate::load_marketplace`] refuses it: a
-/// member must not silently lose the workspace's settings.
+/// `refused: malformed-root-file` when either file cannot say what it
+/// excludes, as [`crate::patterns::Patterns::load`] refuses it: the scan this
+/// configures would refuse it too.
 pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> Result<MarketplaceConfig, CoreError> {
-    let Some(mut root) = crate::paths::read_root(vfs, &vault_root.join(ROOT_FILE))? else {
+    Patterns::load(vfs, vault_root)?;
+    let full = crate::paths::RootRead::Full;
+    let Ok(Some(mut root)) = crate::paths::read_root(vfs, &vault_root.join(ROOT_FILE), full) else {
         return Ok(MarketplaceConfig::default());
     };
     if !root.workspace
-        && let Some(shared) = crate::paths::read_workspace_above(vfs, vault_root)?
+        && let Ok(Some(shared)) = crate::paths::read_workspace_above(vfs, vault_root, full)
     {
         root.inherit(&shared);
     }

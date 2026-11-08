@@ -363,14 +363,8 @@ fn unterminated(frontmatter: &str, body: &str) -> bool {
     frontmatter.is_empty() && first.is_some_and(|line| line.trim_end() == "---")
 }
 
-/// Read a root file's text. A file with no frontmatter is a root file with
-/// every default.
-///
-/// # Errors
-///
-/// Frontmatter that is not a YAML mapping, and a known key whose value has
-/// the wrong shape.
-pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
+/// A root file's frontmatter as a YAML mapping. No frontmatter is an empty one.
+fn frontmatter_map(text: &str) -> Result<serde_yaml::Mapping, SettingsError> {
     let (frontmatter, body) = split_frontmatter(text);
     if unterminated(frontmatter, body) {
         return Err(SettingsError {
@@ -388,17 +382,57 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             detail: err.to_string(),
         })?
     };
-    let map = match doc {
-        serde_yaml::Value::Null => serde_yaml::Mapping::new(),
-        serde_yaml::Value::Mapping(map) => map,
-        _ => {
-            return Err(SettingsError {
-                key: ROOT_FILE.to_owned(),
-                what: "a frontmatter mapping",
-                detail: "the frontmatter is not a mapping of keys".to_owned(),
-            });
+    match doc {
+        serde_yaml::Value::Null => Ok(serde_yaml::Mapping::new()),
+        serde_yaml::Value::Mapping(map) => Ok(map),
+        _ => Err(SettingsError {
+            key: ROOT_FILE.to_owned(),
+            what: "a frontmatter mapping",
+            detail: "the frontmatter is not a mapping of keys".to_owned(),
+        }),
+    }
+}
+
+/// Only the part of a root file that decides which files are notes and where
+/// they go: `workspace`, `build.exclude` and `build.patterns`. Every other
+/// key is left at its default and is not checked, so a bad value elsewhere
+/// in the file is for the verbs that read it to refuse.
+///
+/// # Errors
+///
+/// Frontmatter that is not a YAML mapping, and a `workspace`, `build`,
+/// `build.exclude` or `build.patterns` of the wrong shape.
+pub(crate) fn parse_root_layout(text: &str) -> Result<RootFile, SettingsError> {
+    let mut root = RootFile::default();
+    for (key, value) in frontmatter_map(text)? {
+        match key.as_str() {
+            Some("workspace") => root.workspace = field("workspace", &value, "true or false")?,
+            Some("build") => {
+                for (key, value) in build_map(&value)?.into_iter().flatten() {
+                    match key.as_str() {
+                        Some("exclude") => root.build.exclude = globs("build.exclude", value)?,
+                        Some("patterns") => {
+                            root.build.patterns = folder_patterns(value, &mut Vec::new())?;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
         }
-    };
+    }
+    Ok(root)
+}
+
+/// Read a root file's text. A file with no frontmatter is a root file with
+/// every default.
+///
+/// # Errors
+///
+/// Frontmatter that is not a YAML mapping, and a known key whose value has
+/// the wrong shape.
+pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
+    let map = frontmatter_map(text)?;
 
     let mut root = RootFile::default();
     let mut marketplace = serde_yaml::Mapping::new();
@@ -500,16 +534,8 @@ fn build(
     value: &serde_yaml::Value,
     warnings: &mut Vec<String>,
 ) -> Result<BuildSettings, SettingsError> {
-    let map = match value {
-        serde_yaml::Value::Null => return Ok(BuildSettings::default()),
-        serde_yaml::Value::Mapping(map) => map,
-        _ => {
-            return Err(SettingsError {
-                key: "build".to_owned(),
-                what: "a mapping",
-                detail: "`build:` holds keys such as `out` and `harnesses`".to_owned(),
-            });
-        }
+    let Some(map) = build_map(value)? else {
+        return Ok(BuildSettings::default());
     };
     let mut kept = serde_yaml::Mapping::new();
     let mut exclude = Vec::new();
@@ -540,6 +566,19 @@ fn build(
         patterns,
         ..build
     })
+}
+
+/// The `build:` block's keys, `None` when it is unset.
+fn build_map(value: &serde_yaml::Value) -> Result<Option<&serde_yaml::Mapping>, SettingsError> {
+    match value {
+        serde_yaml::Value::Null => Ok(None),
+        serde_yaml::Value::Mapping(map) => Ok(Some(map)),
+        _ => Err(SettingsError {
+            key: "build".to_owned(),
+            what: "a mapping",
+            detail: "`build:` holds keys such as `out` and `harnesses`".to_owned(),
+        }),
+    }
 }
 
 /// `build.patterns`, with unknown keys warned about and dropped.

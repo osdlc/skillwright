@@ -373,6 +373,11 @@ pub enum ReasonToken {
     /// A note or root file that parsed holds a value of the wrong kind or
     /// shape for a key it sets, bare or in a harness block.
     Malformed,
+    /// A root file, or the workspace file above it, cannot be read: its
+    /// frontmatter is not YAML, or a key it sets has the wrong shape. When
+    /// the keys that say what is excluded are the ones that cannot be read,
+    /// a scan and a publish refuse too, rather than ship what may be excluded.
+    MalformedRootFile,
     /// Not a refusal, and the one token here that names a success: the file
     /// was already byte-identical to our own output, so this run claimed it
     /// into the destination's manifest. The table's refusal set is
@@ -417,6 +422,7 @@ impl ReasonToken {
         Self::MixedFrontmatterShape,
         Self::ExcludedNote,
         Self::Malformed,
+        Self::MalformedRootFile,
     ];
 
     /// The wire spelling, which prose never varies from.
@@ -441,6 +447,7 @@ impl ReasonToken {
             Self::MixedFrontmatterShape => "mixed-frontmatter-shape",
             Self::ExcludedNote => "excluded-note",
             Self::Malformed => "malformed",
+            Self::MalformedRootFile => "malformed-root-file",
             Self::Claimed => "claimed",
             Self::RedundantOverride => "redundant-override",
             Self::Overwritten => "overwritten",
@@ -5065,6 +5072,7 @@ mod tests {
                 "mixed-frontmatter-shape",
                 "excluded-note",
                 "malformed",
+                "malformed-root-file",
             ]
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));
