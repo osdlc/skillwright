@@ -1,12 +1,167 @@
 {
   "schema": 1,
   "pr": 74,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "5b589cc4a94c14d0bb1ed9a8c0dcc1d421a32db8",
+  "base": "0f8b1f4f80ec0179a86f73a3bb1d1af9627250aa",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-r7k2mq",
     "at": "2026-11-08T18:08:02.024Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 123,
+      "title": "prefix/suffix slice by UTF-16 units can split a surrogate pair",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 195,
+      "title": "fetch has no timeout",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 183,
+      "title": "Windows drive path matches the URL scheme test",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 257,
+      "title": "rollback after failed validation is untested",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 140,
+      "title": "recordFiles re-walks the corpus markdown-db already walked",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 128,
+      "title": "percent/link copy markdown-db encodePath/markdownLink",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 157,
+      "title": "fold is a weaker copy of markdown-db fold",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 221,
+      "title": "slash checks are a narrow copy of idProblem",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 16,
+      "title": "PAGE_KINDS and VERSION_BASES mirror evidence.schema.md with no pointer",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 36,
+      "title": "one doc comment covers three fields",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 239,
+      "title": "nested ternary for version fields",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-12",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.ts",
+      "line": 101,
+      "title": "GitHub page chrome lands in prefix/suffix",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-13",
+      "round": 1,
+      "path": "harness-reference/src/beta/capture.test.ts",
+      "line": 125,
+      "title": "test title omits the slash case",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-14",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/README.md",
+      "line": 83,
+      "title": "line runs past the 100-column wrap",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
