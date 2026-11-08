@@ -341,19 +341,17 @@ pub(crate) fn unknown_block_keys(blocks: &Map<String, Value>, kind: EntityKind) 
 }
 
 /// Refuses a value of the wrong kind in the root file's own blocks, before
-/// any workspace file's are folded in. A file that does not parse passes:
-/// the run that reads its settings reports that.
+/// any workspace file's are folded in. A file that cannot be read in full
+/// passes on purpose: the scan has already refused one whose exclusions
+/// cannot be read, and the run that reads its other settings reports the
+/// rest.
 ///
 /// # Errors
 ///
 /// `refused: malformed`.
 fn check_root_blocks(vfs: &dyn Vfs, vault_root: &Path) -> Result<(), CoreError> {
-    let Some(root) = vfs
-        .read_file(&vault_root.join(crate::settings::ROOT_FILE))
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .and_then(|text| crate::settings::parse_root_file(&text).ok())
-    else {
+    let file = vault_root.join(crate::settings::ROOT_FILE);
+    let Ok(Some(root)) = crate::paths::read_root(vfs, &file, crate::paths::RootRead::Full) else {
         return Ok(());
     };
     if root.workspace {
@@ -656,18 +654,21 @@ pub fn discover_components(
     content_root: Option<&Path>,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    let source = load_source(vfs, vault_root, content_root)?;
-    discover_in(vfs, vault_root, &source, ns)
+    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
+    let source = load_source(vfs, vault_root, &patterns, content_root)?;
+    discover_in(vfs, vault_root, &patterns, &source, ns)
 }
 
-/// [`discover_roster`] over a source already listed.
+/// [`discover_roster`] over a source already listed, with the vault's
+/// patterns already read.
 pub(crate) fn discover_roster_in(
     vfs: &dyn Vfs,
     vault_root: &Path,
+    patterns: &crate::patterns::Patterns,
     source: &Source,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    discover_with(vfs, vault_root, source, ns, true)
+    discover_with(vfs, vault_root, patterns, source, ns, true)
 }
 
 /// [`discover_components`] for a roster: a duplicate name or a bundle overlap
@@ -685,8 +686,9 @@ pub fn discover_roster(
     content_root: Option<&Path>,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    let source = load_source(vfs, vault_root, content_root)?;
-    discover_with(vfs, vault_root, &source, ns, true)
+    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
+    let source = load_source(vfs, vault_root, &patterns, content_root)?;
+    discover_with(vfs, vault_root, &patterns, &source, ns, true)
 }
 
 /// The skills source at `content_root` (the vault root when `None`): its
@@ -704,7 +706,8 @@ pub(crate) struct Source {
     pub(crate) files: Vec<PathBuf>,
 }
 
-/// Walks the skills source. See [`Source`].
+/// Walks the skills source. See [`Source`]. `patterns` are the vault's, read
+/// from its root file: a skills root below the vault has none of its own.
 ///
 /// # Errors
 ///
@@ -714,6 +717,7 @@ pub(crate) struct Source {
 pub(crate) fn load_source(
     vfs: &dyn Vfs,
     vault_root: &Path,
+    patterns: &crate::patterns::Patterns,
     content_root: Option<&Path>,
 ) -> Result<Source, CoreError> {
     let root = content_root.unwrap_or(vault_root).to_path_buf();
@@ -723,6 +727,7 @@ pub(crate) fn load_source(
     let files = crate::walk::vault_files_refusing_symlinks(
         vfs,
         &root,
+        (patterns, vault_root),
         crate::compile::EXCLUDED_VAULT_DIRECTORIES,
         |path| {
             CoreError::refused(
@@ -746,30 +751,30 @@ pub(crate) fn load_source(
 pub(crate) fn discover_in(
     vfs: &dyn Vfs,
     vault_root: &Path,
+    patterns: &crate::patterns::Patterns,
     source: &Source,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    discover_with(vfs, vault_root, source, ns, false)
+    discover_with(vfs, vault_root, patterns, source, ns, false)
 }
 
 /// [`discover_in`], with `roster` turning each path collision into warnings
-/// instead of a refusal.
+/// instead of a refusal. `patterns` are the vault's, which its caller read,
+/// refusing a root file whose exclusions cannot be read.
 fn discover_with(
     vfs: &dyn Vfs,
     vault_root: &Path,
+    patterns: &crate::patterns::Patterns,
     source: &Source,
     ns: &Namespace,
     roster: bool,
 ) -> Result<DiscoveryReport, CoreError> {
     let root = &source.root;
-    // Refused when the root file is malformed: an exclusion that cannot be
-    // read must not fail open.
-    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
-    let files = source_files(vfs, vault_root, &patterns, source);
+    let files = source_files(vfs, vault_root, patterns, source);
 
     // Structure first, over the whole file set: a note's shape depends on what
     // sits beside it, so no single path can be classified on its own.
-    let placed = place(root, &files, &patterns);
+    let placed = place(root, &files, patterns);
 
     let mut discovered = Vec::new();
     let mut skipped = Vec::new();
@@ -787,7 +792,7 @@ fn discover_with(
             // and a note there is not a malformed component however it is
             // shaped. Only inside a marketplace is a declared note at an
             // unrecognised path a mistake worth naming.
-            let reads_as = conventional(root, entry_path, &patterns);
+            let reads_as = conventional(root, entry_path, patterns);
             if under_a_kind_folder(root, &reads_as) {
                 let relative = |path: &Path| {
                     path.strip_prefix(root)

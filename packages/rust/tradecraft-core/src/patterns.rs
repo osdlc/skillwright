@@ -138,6 +138,9 @@ fn segment_match(glob: &[u8], text: &[u8]) -> bool {
     }
 }
 
+/// A vault's patterns and the vault root they were read from.
+pub(crate) type Placed<'a> = (Patterns, &'a Path);
+
 /// The root file's folder patterns and exclusions.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Patterns {
@@ -180,6 +183,21 @@ impl Patterns {
             .map(str::to_owned)
             .collect();
         Ok(own)
+    }
+
+    /// The patterns of the vault at `vault_root`, paired with it, or `None`
+    /// with no vault root: what a one-note verb places its note with.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::load`].
+    pub(crate) fn load_at<'r>(
+        vfs: &dyn Vfs,
+        vault_root: Option<&'r Path>,
+    ) -> Result<Option<Placed<'r>>, CoreError> {
+        vault_root
+            .map(|root| Self::load(vfs, root).map(|patterns| (patterns, root)))
+            .transpose()
     }
 
     /// Every glob, whichever key holds it.

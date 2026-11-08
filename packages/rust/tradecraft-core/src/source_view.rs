@@ -241,7 +241,10 @@ fn marketplace_notes(
         }
     }
     let source = Source { root, files };
-    let Ok(notes) = discover_in(vfs, scope.vault_root, &source, ns) else {
+    let Ok(patterns) = Patterns::load(vfs, scope.vault_root) else {
+        return Vec::new();
+    };
+    let Ok(notes) = discover_in(vfs, scope.vault_root, &patterns, &source, ns) else {
         return Vec::new();
     };
     notes

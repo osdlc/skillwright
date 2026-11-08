@@ -2249,3 +2249,30 @@ fn a_bad_exclusion_or_pattern_refuses_a_scan() {
         assert!(err.contains("malformed-root-file"), "{bad}: {err}");
     }
 }
+
+/// A skills root inside the vault is walked with the vault's own patterns. A
+/// `skillwright.md` at the skills root is not the vault's root file, so it is
+/// not read as one.
+#[test]
+fn a_skills_root_is_walked_with_the_vaults_patterns() {
+    let vfs = root_vault(
+        "---\nname: m\n---\n",
+        &[
+            ("src/skillwright.md", "---\nbuild: [\n---\n"),
+            ("src/plugins/rev/skills/a.md", USE_IT),
+        ],
+    );
+    let scan = discover_components(
+        &vfs,
+        Path::new("/vault"),
+        Some(Path::new("/vault/src")),
+        &Namespace::bare(),
+    )
+    .unwrap();
+    assert!(
+        scan.components
+            .iter()
+            .any(|c| c.vault_relative_path == "src/plugins/rev/skills/a.md"),
+        "{scan:?}"
+    );
+}

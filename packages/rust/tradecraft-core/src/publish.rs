@@ -748,12 +748,8 @@ fn publish_onto(
     // kind says which of the note's keys are skillwright's.
     // Read once, and refused when malformed: an exclusion that cannot be read
     // must not fail open.
-    let patterns = request
-        .skills_root
-        .as_deref()
-        .map(|root| crate::patterns::Patterns::load(vfs, root).map(|p| (p, root)))
-        .transpose()?;
-    let placed = patterns.as_ref().map(|(patterns, root)| (patterns, *root));
+    let placed = crate::patterns::Patterns::load_at(vfs, request.skills_root.as_deref())?;
+    let placed = placed.as_ref();
     refuse_excluded(placed, &request.skill_path)?;
     let resolved = publish_kind(placed, &request.skill_path);
     let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
@@ -1175,7 +1171,7 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
 /// Refuses a note `build.exclude` or a folder that never ships holds, named or
 /// not: what never ships from a build does not ship from a publish either.
 fn refuse_excluded(
-    placed: Option<(&crate::patterns::Patterns, &Path)>,
+    placed: Option<&crate::patterns::Placed<'_>>,
     skill_path: &Path,
 ) -> Result<(), CoreError> {
     let Some((patterns, root)) = placed else {
@@ -1205,7 +1201,7 @@ fn refuse_excluded(
 /// else a skill. Shared with [`crate::status::status_of`] so status and
 /// publish agree on what a unit is.
 pub(crate) fn publish_kind(
-    placed: Option<(&crate::patterns::Patterns, &Path)>,
+    placed: Option<&crate::patterns::Placed<'_>>,
     skill_path: &Path,
 ) -> ResolvedKind {
     resolve_kind(KindHints {

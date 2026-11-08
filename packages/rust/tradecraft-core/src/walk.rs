@@ -175,14 +175,22 @@ pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> V
     .map_or_else(|_| Vec::new(), |outcome| outcome.errors)
 }
 
-/// The paths of a vault walk's `entries`, plugin assets left out.
+/// The paths of a vault walk's `entries`, plugin assets left out. `vault` is
+/// the vault's patterns and root; each entry is matched by its path relative
+/// to that root, wherever the walk started.
 fn notes_and_resources(
-    patterns: &crate::patterns::Patterns,
+    (patterns, vault_root): (&crate::patterns::Patterns, &Path),
     entries: Vec<vault::Entry>,
 ) -> Vec<PathBuf> {
     entries
         .into_iter()
-        .filter(|entry| !in_plugin_assets(patterns, &entry.rel))
+        .filter(|entry| {
+            let rel = entry
+                .abs
+                .strip_prefix(vault_root)
+                .map_or_else(|_| entry.rel.clone(), crate::skill::forward_slashed);
+            !in_plugin_assets(patterns, &rel)
+        })
         .map(|entry| entry.abs)
         .collect()
 }
@@ -196,21 +204,22 @@ pub(crate) fn vault_files(
 ) -> Result<Vec<PathBuf>, CoreError> {
     let patterns = crate::patterns::Patterns::load(vfs, root)?;
     vault::walk(vfs, root, &vault_walk(prune))
-        .map(|entries| notes_and_resources(&patterns, entries))
+        .map(|entries| notes_and_resources((&patterns, root), entries))
         .map_err(|err| core_error(err, not_refused))
 }
 
-/// Every file under the vault folder `root`, refusing a symlink anywhere in
-/// it with the error `refuse` makes from its path.
+/// Every file under the folder `root` of the vault `vault` names with its
+/// patterns, refusing a symlink anywhere in it with the error `refuse` makes
+/// from its path.
 pub(crate) fn vault_files_refusing_symlinks(
     vfs: &dyn Vfs,
     root: &Path,
+    vault: (&crate::patterns::Patterns, &Path),
     prune: &[&str],
     refuse: impl Fn(&Path) -> CoreError,
 ) -> Result<Vec<PathBuf>, CoreError> {
-    let patterns = crate::patterns::Patterns::load(vfs, root)?;
     vault::walk(vfs, root, &vault_options(prune, true, true))
-        .map(|entries| notes_and_resources(&patterns, entries))
+        .map(|entries| notes_and_resources(vault, entries))
         .map_err(|err| core_error(err, refuse))
 }
 

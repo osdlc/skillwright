@@ -344,13 +344,8 @@ fn plugin_version_bump_suggestion(
 
     // The folder decides the kind; the note, read only once the cheap
     // checks pass, decides the version.
-    let patterns = request
-        .skills_root
-        .as_deref()
-        .map(|root| crate::patterns::Patterns::load(vfs, root).map(|p| (p, root)))
-        .transpose()?;
-    let placed = patterns.as_ref().map(|(patterns, root)| (patterns, *root));
-    let kind = publish_kind(placed, &request.skill_path);
+    let placed = crate::patterns::Patterns::load_at(vfs, request.skills_root.as_deref())?;
+    let kind = publish_kind(placed.as_ref(), &request.skill_path);
     if kind.kind != EntityKind::Plugin {
         return Ok(None);
     }

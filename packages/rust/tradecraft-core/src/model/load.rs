@@ -106,8 +106,20 @@ pub fn read_notes(
     skills_root: Option<&Path>,
     ns: &Namespace,
 ) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
-    let source = load_source(vfs, vault_root, skills_root)?;
-    let report = discover_in(vfs, vault_root, &source, ns)?;
+    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
+    read_notes_with(vfs, vault_root, &patterns, skills_root, ns)
+}
+
+/// [`read_notes`] with the vault's patterns already read.
+pub(crate) fn read_notes_with(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    patterns: &crate::patterns::Patterns,
+    skills_root: Option<&Path>,
+    ns: &Namespace,
+) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
+    let source = load_source(vfs, vault_root, patterns, skills_root)?;
+    let report = discover_in(vfs, vault_root, patterns, &source, ns)?;
     // The source walk and compile's vault walk prune the same folders, and
     // the source walk refused any symlink, so over the vault they list the
     // same files.
@@ -184,7 +196,14 @@ pub fn load(
     let roots = selected_harnesses(&request.harnesses)?;
 
     // Pass 1.
-    let (scan, links) = read_notes(vfs, &vault_root, request.skills_root.as_deref(), ns)?;
+    let patterns = crate::patterns::Patterns::load(vfs, &vault_root)?;
+    let (scan, links) = read_notes_with(
+        vfs,
+        &vault_root,
+        &patterns,
+        request.skills_root.as_deref(),
+        ns,
+    )?;
     // The root file's own entry is configuration, not a note, and
     // `check_block_values` below refuses it naming the marketplace.
     let skipped: Vec<&SkippedNote> = scan
@@ -331,7 +350,7 @@ pub fn load(
         &plugins,
         config,
     ));
-    let folder_assets = folder_assets(vfs, &vault_root, &plugins)?;
+    let folder_assets = folder_assets(vfs, &vault_root, &patterns, &plugins);
     warnings.extend(changelog_warnings(vfs, &vault_root, &folder_assets, config));
     load_assets(
         vfs,
@@ -1444,9 +1463,9 @@ pub const ASSETS_DIR: &str = "assets";
 fn folder_assets(
     vfs: &dyn Vfs,
     vault_root: &Path,
+    patterns: &crate::patterns::Patterns,
     plugins: &BTreeMap<String, Plugin>,
-) -> Result<Vec<AssetSpec>, CoreError> {
-    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
+) -> Vec<AssetSpec> {
     let mut specs = Vec::new();
     for (name, plugin) in plugins {
         let Some(relative) = plugin.components().find_map(|member| {
@@ -1478,7 +1497,7 @@ fn folder_assets(
             });
         }
     }
-    Ok(specs)
+    specs
 }
 
 /// `…/plugins/<plugin>` out of a member's vault-relative path, or `None` for

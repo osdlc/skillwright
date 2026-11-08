@@ -172,17 +172,14 @@ impl Cascade {
         requested: &MarketplaceConfig,
         ns: &Namespace,
     ) -> Result<Self, CoreError> {
-        let patterns = vault_root
-            .map(|root| crate::patterns::Patterns::load(vfs, root).map(|p| (p, root)))
-            .transpose()?;
-        let placed = patterns.as_ref().map(|(patterns, root)| (patterns, *root));
-        Self::above_with(vfs, placed, note_path, requested, ns)
+        let placed = crate::patterns::Patterns::load_at(vfs, vault_root)?;
+        Self::above_with(vfs, placed.as_ref(), note_path, requested, ns)
     }
 
     /// [`Self::above`] with the vault root's patterns already read.
     pub(crate) fn above_with(
         vfs: &dyn crate::vfs::Vfs,
-        placed: Option<(&crate::patterns::Patterns, &Path)>,
+        placed: Option<&crate::patterns::Placed<'_>>,
         note_path: &Path,
         requested: &MarketplaceConfig,
         ns: &Namespace,
@@ -194,7 +191,7 @@ impl Cascade {
         let placed = crate::discover::folder_placement_with(patterns, root, note_path).marketplace;
         let market = match placed {
             Some(market) => Some(market),
-            None => only_marketplace(vfs, root, ns)?.inspect(|name| {
+            None => only_marketplace(vfs, root, patterns, ns)?.inspect(|name| {
                 paths.push(marketplace_note(root, name));
             }),
         };
@@ -373,6 +370,7 @@ fn marketplace_note(root: &Path, folder: &str) -> PathBuf {
 fn only_marketplace(
     vfs: &dyn crate::vfs::Vfs,
     root: &Path,
+    patterns: &crate::patterns::Patterns,
     ns: &Namespace,
 ) -> Result<Option<String>, CoreError> {
     let folder = root.join("marketplaces");
@@ -388,7 +386,7 @@ fn only_marketplace(
         root: root.to_path_buf(),
         files,
     };
-    let scan = crate::discover::discover_roster_in(vfs, root, &source, ns)?;
+    let scan = crate::discover::discover_roster_in(vfs, root, patterns, &source, ns)?;
     let present = marketplaces_in(&scan.components);
     Ok(match present.len() {
         1 => present.first().map(|name| (*name).to_owned()),
