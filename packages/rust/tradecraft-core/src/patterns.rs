@@ -185,12 +185,6 @@ impl Patterns {
         Ok(own)
     }
 
-    /// Whether any key holds a glob. With none, [`Self::warnings_with`] has
-    /// nothing to say, so a caller need not walk the vault for it.
-    pub(crate) fn has_globs(&self) -> bool {
-        self.globs().next().is_some()
-    }
-
     /// Every glob, whichever key holds it.
     fn globs(&self) -> impl Iterator<Item = &str> {
         self.kinds()
@@ -255,18 +249,24 @@ impl Patterns {
         output: &[String],
         siblings: &[String],
     ) -> Vec<DiscoveryWarning> {
-        self.warnings_with(files, output, || siblings.to_vec())
+        self.warnings_with(|| files.to_vec(), output, || siblings.to_vec())
     }
 
-    /// [`Self::warnings`] with the other marketplaces' files read only when a
-    /// shared glob matches nothing here, and then once.
+    /// [`Self::warnings`] with the vault's files and the other marketplaces'
+    /// read only when there is something to check. With no glob there is
+    /// nothing to say, so neither is read; the other marketplaces are read
+    /// only when a shared glob matches nothing here, and then once.
     pub(crate) fn warnings_with(
         &self,
-        files: &[String],
+        files: impl Fn() -> Vec<String>,
         output: &[String],
-        siblings: impl FnOnce() -> Vec<String>,
+        siblings: impl Fn() -> Vec<String>,
     ) -> Vec<DiscoveryWarning> {
-        let mut siblings = Some(siblings);
+        if self.globs().next().is_none() {
+            return Vec::new();
+        }
+        let files = files();
+        let files = files.as_slice();
         let mut sibling_files: Option<Vec<String>> = None;
         let warn = |path: &str, reason: &str, detail: String| DiscoveryWarning {
             path: path.to_owned(),
@@ -294,11 +294,7 @@ impl Patterns {
                 continue;
             }
             let shared = self.inherited.contains(glob)
-                && matches_some(
-                    sibling_files
-                        .get_or_insert_with(|| siblings.take().map_or_else(Vec::new, |f| f())),
-                    glob,
-                );
+                && matches_some(sibling_files.get_or_insert_with(&siblings), glob);
             if !shared {
                 warnings.push(warn(
                     ROOT_FILE,

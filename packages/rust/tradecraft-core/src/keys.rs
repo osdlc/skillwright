@@ -629,6 +629,15 @@ mod tests {
         assert!(!is_known(Plugin, "license", &sw));
     }
 
+    /// `targets` inherits on every kind, which the cascade relies on: it asks
+    /// no kind whether `targets` inherits.
+    #[test]
+    fn targets_inherits_on_every_kind() {
+        for kind in EntityKind::ALL {
+            assert!(inherits(kind, "targets"), "{kind:?}");
+        }
+    }
+
     /// The Decided block's list, for the kinds that carry each key.
     #[test]
     fn the_inherited_keys_are_the_decided_list() {

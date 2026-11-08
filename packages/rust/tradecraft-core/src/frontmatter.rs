@@ -1019,30 +1019,25 @@ fn refuse(token: &str, path: &Path, message: impl fmt::Display) -> CoreError {
 mod tests {
     use super::*;
 
-    /// `EntityKind::ALL` names every kind. The match has no wildcard, so a new
-    /// kind fails to compile here until it is added to the list.
+    /// `EntityKind::ALL` names every kind, once, in order. The match has no
+    /// wildcard, so a new kind fails to compile here until it is given the
+    /// next position, which `ALL` must then hold.
     #[test]
     fn all_names_every_kind() {
-        fn listed(kind: EntityKind) -> bool {
+        fn position(kind: EntityKind) -> usize {
             match kind {
-                EntityKind::Skill
-                | EntityKind::Plugin
-                | EntityKind::Command
-                | EntityKind::Agent
-                | EntityKind::Hook
-                | EntityKind::Marketplace => EntityKind::ALL.contains(&kind),
+                EntityKind::Skill => 0,
+                EntityKind::Plugin => 1,
+                EntityKind::Command => 2,
+                EntityKind::Agent => 3,
+                EntityKind::Hook => 4,
+                EntityKind::Marketplace => 5,
             }
         }
-        for kind in [
-            EntityKind::Skill,
-            EntityKind::Plugin,
-            EntityKind::Command,
-            EntityKind::Agent,
-            EntityKind::Hook,
-            EntityKind::Marketplace,
-        ] {
-            assert!(listed(kind), "{kind:?}");
+        for (at, kind) in EntityKind::ALL.iter().enumerate() {
+            assert_eq!(position(*kind), at, "{kind:?}");
         }
+        assert_eq!(EntityKind::ALL.len(), position(EntityKind::Marketplace) + 1);
     }
     use serde_json::json;
 
