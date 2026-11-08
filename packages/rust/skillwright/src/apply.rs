@@ -542,7 +542,7 @@ fn move_marketplace(
         )));
     }
     let before = outcome.entries.len();
-    let moved = if mode.writes() {
+    let (moved, restored) = if mode.writes() {
         if abs_from != root_from {
             std::fs::rename(&root_from, &abs_from).map_err(|source| ApplyError::Io {
                 what: format!("preparing {from}"),
@@ -551,10 +551,7 @@ fn move_marketplace(
         }
         let moved = relink_move(vault, &temp_from, &temp_to, true, mode, outcome);
         let restored = restore_entry(&root_from, &abs_from, &new_dir, &root_to, &abs_to);
-        match (moved, restored) {
-            (Err(err), _) | (Ok(()), Err(err)) => Err(err),
-            (Ok(()), Ok(())) => Ok(()),
-        }
+        (moved, restored)
     } else {
         // A preview renames in memory, over the same view, and writes nothing.
         let overlay = PreviewVfs::over(vault.source);
@@ -567,8 +564,21 @@ fn move_marketplace(
             dir: vault.dir,
             source: &overlay,
         };
-        relink_move(view, &temp_from, &temp_to, true, mode, outcome)
+        (
+            relink_move(view, &temp_from, &temp_to, true, mode, outcome),
+            Ok(()),
+        )
     };
+    // Where the entry is now, by its own name, when `restore_entry` put it
+    // back: `execute_move` may have named it at `<to_dir>/<m>.md`, the
+    // source's temporary name inside the new folder.
+    let (to_dir, _) = temp_to.rsplit_once('/').unwrap_or(("", ""));
+    let (_, from_leaf) = temp_from.rsplit_once('/').unwrap_or(("", &temp_from));
+    let landed = format!("{to_dir}/{from_leaf}");
+    let restored_at = [(&root_to, to), (&root_from, from)]
+        .into_iter()
+        .find(|(path, _)| path.is_file())
+        .map(|(_, now)| now);
     // The rows, and a partial failure's own copy of them, name the entry by
     // its own name, not the temporary one.
     let own_names = |entries: &mut [AppliedEntry]| {
@@ -577,6 +587,10 @@ fn move_marketplace(
                 entry.path = to.to_owned();
             } else if entry.path == temp_from {
                 entry.path = from.to_owned();
+            } else if let Some(now) = restored_at
+                && entry.path == landed
+            {
+                entry.path = now.to_owned();
             }
             if let Applied::Renamed { from: old } = &mut entry.applied
                 && *old == temp_from
@@ -586,7 +600,7 @@ fn move_marketplace(
         }
     };
     own_names(&mut outcome.entries[before..]);
-    match moved {
+    match settle(moved, restored, outcome) {
         Err(ApplyError::Partial {
             mut outcome,
             mut source,
@@ -594,20 +608,70 @@ fn move_marketplace(
             if let Some(entries) = outcome.entries.get_mut(before..) {
                 own_names(entries);
             }
-            // `execute_move` says where the entry landed under its temporary
-            // name; `restore_entry` has since put it back.
-            let restored = [(&root_to, to), (&root_from, from)]
-                .into_iter()
-                .find(|(path, _)| path.is_file());
-            if let (ApplyError::Refused(message), Some((_, now))) = (source.as_mut(), restored) {
-                let (to_dir, _) = temp_to.rsplit_once('/').unwrap_or(("", ""));
-                let (_, from_leaf) = temp_from.rsplit_once('/').unwrap_or(("", &temp_from));
-                *message = message.replace(&format!("{to_dir}/{from_leaf}"), now);
+            if let (ApplyError::Refused(message), Some(now)) = (source.as_mut(), restored_at) {
+                *message = replace_path(message, &landed, now);
             }
             Err(ApplyError::Partial { outcome, source })
         }
         other => other,
     }
+}
+
+/// A marketplace move's result, once `restore_entry` has tried to give the
+/// entry its name back. The move landed, or partly landed, whenever the
+/// restore fails, because the entry was renamed first: so a failed restore
+/// is [`ApplyError::Partial`] with what landed, and when the move failed too
+/// its error is kept in front of the restore's.
+fn settle(
+    moved: Result<(), ApplyError>,
+    restored: Result<(), ApplyError>,
+    outcome: &Outcome,
+) -> Result<(), ApplyError> {
+    let Err(restore) = restored else {
+        return moved;
+    };
+    let both = |first: ApplyError, restore: ApplyError| match restore {
+        ApplyError::Io { what, source } => ApplyError::Io {
+            what: format!("{first}; then {what}"),
+            source,
+        },
+        other => ApplyError::Refused(format!("{first}; then {other}")),
+    };
+    Err(match moved {
+        Ok(()) => ApplyError::partial(outcome.clone(), restore),
+        Err(ApplyError::Partial { outcome, source }) => ApplyError::Partial {
+            outcome,
+            source: Box::new(both(*source, restore)),
+        },
+        Err(first) => ApplyError::partial(outcome.clone(), both(first, restore)),
+    })
+}
+
+/// `message` with each whole occurrence of the path `old` replaced by `new`.
+/// An occurrence is whole when no path character runs on from either end,
+/// so `a/m.md` is not found inside `a/m.mdx` or `xa/m.md`.
+fn replace_path(message: &str, old: &str, new: &str) -> String {
+    let is_path_char = |c: char| c.is_alphanumeric() || matches!(c, '/' | '-' | '_' | '.');
+    let mut out = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(at) = rest.find(old) {
+        let (head, tail) = rest.split_at(at);
+        let after = &tail[old.len()..];
+        let starts = head.chars().next_back().is_none_or(|c| !is_path_char(c));
+        // A `.` after the path ends a sentence unless a path character
+        // follows it.
+        let mut next = after.chars();
+        let ends = match next.next() {
+            None => true,
+            Some('.') => next.next().is_none_or(|c| !is_path_char(c)),
+            Some(c) => !is_path_char(c),
+        };
+        out.push_str(head);
+        out.push_str(if starts && ends { new } else { old });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Give the marketplace entry its `skillwright.md` name back, wherever the
@@ -624,7 +688,11 @@ fn restore_entry(
 ) -> Result<(), ApplyError> {
     let rename = |from: &Path, to: &Path| {
         std::fs::rename(from, to).map_err(|source| ApplyError::Io {
-            what: format!("restoring {}", to.display()),
+            what: format!(
+                "restoring {}, so the entry is still at {}",
+                to.display(),
+                from.display()
+            ),
             source,
         })
     };
@@ -1728,6 +1796,67 @@ mod tests {
         assert!(
             message.contains("marketplaces/m2/skillwright.md"),
             "{message}"
+        );
+    }
+
+    /// A marketplace move whose entry name cannot be put back reports what
+    /// landed, and says where the entry is; when the move failed too, both
+    /// failures are said.
+    #[test]
+    fn a_failed_entry_restore_is_partial_and_keeps_both_errors() {
+        let mut landed = Outcome::new(Mode::Apply);
+        landed.push("notes.md", Applied::LinksRewritten { edits: 1 });
+        let restore = || ApplyError::Io {
+            what: "restoring m2/skillwright.md, so the entry is still at m2/m2.md".to_owned(),
+            source: std::io::Error::other("denied"),
+        };
+
+        let err = settle(Ok(()), Err(restore()), &landed).unwrap_err();
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert_eq!(outcomes(&outcome), vec![("notes.md", "relinked")]);
+        assert!(source.to_string().contains("still at m2/m2.md"), "{source}");
+
+        let moved =
+            ApplyError::partial(landed.clone(), ApplyError::Refused("moving failed".into()));
+        let err = settle(Err(moved), Err(restore()), &Outcome::new(Mode::Apply)).unwrap_err();
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert_eq!(outcomes(&outcome), vec![("notes.md", "relinked")]);
+        let message = source.to_string();
+        assert!(message.contains("moving failed"), "{message}");
+        assert!(message.contains("still at m2/m2.md"), "{message}");
+
+        let err = settle(
+            Err(ApplyError::Refused("bare".into())),
+            Err(restore()),
+            &landed,
+        )
+        .unwrap_err();
+        let ApplyError::Partial { source, .. } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(source.to_string().contains("bare"), "{source}");
+        assert!(matches!(settle(Ok(()), Ok(()), &landed), Ok(())));
+    }
+
+    #[test]
+    fn a_temporary_path_is_replaced_only_where_it_is_whole() {
+        let old = "marketplaces/m2/m1.md";
+        let new = "marketplaces/m2/skillwright.md";
+        assert_eq!(
+            replace_path(&format!("now at {old}."), old, new),
+            format!("now at {new}.")
+        );
+        assert_eq!(
+            replace_path(&format!("now at {old}; see {old}x"), old, new),
+            format!("now at {new}; see {old}x")
+        );
+        assert_eq!(
+            replace_path(&format!("at x{old} and {old}.bak"), old, new),
+            format!("at x{old} and {old}.bak")
         );
     }
 
