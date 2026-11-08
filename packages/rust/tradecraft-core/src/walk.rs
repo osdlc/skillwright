@@ -243,15 +243,15 @@ pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
         .collect()
 }
 
-/// Every file under the vault folder `root` this walk can read, without
-/// failing: a folder that cannot be listed is skipped.
-pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path) -> Vec<vault::Entry> {
-    let mut entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
+/// Every file under the folder `root` of the vault at `vault_root` this walk
+/// can read, without failing: a folder that cannot be listed is skipped.
+/// Plugin assets are left out, matched by their path from the vault root.
+pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path, vault_root: &Path) -> Vec<PathBuf> {
+    let entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
     // Without failing, as promised: a root file that cannot be read keeps
     // every entry, which lists more than it should rather than less.
-    let patterns = crate::patterns::Patterns::load(vfs, root).unwrap_or_default();
-    entries.retain(|entry| !in_plugin_assets(&patterns, &entry.rel));
-    entries
+    let patterns = crate::patterns::Patterns::load(vfs, vault_root).unwrap_or_default();
+    notes_and_resources(&patterns, vault_root, root, entries)
 }
 
 /// The vault's excluded files (Obsidian's `userIgnoreFilters`, read from

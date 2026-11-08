@@ -495,19 +495,19 @@ pub fn move_destination(
 /// Walked directly rather than through [`discover_components`]: this only
 /// needs to know "is anything else in here", not each member's resolved key.
 pub fn container_members(vfs: &dyn Vfs, vault_dir: &Path, dir: &str, entry: &str) -> Vec<String> {
-    let mut members: Vec<String> = crate::walk::readable_vault_files(vfs, &vault_dir.join(dir))
-        .into_iter()
-        .filter(|item| {
-            item.abs
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-        })
-        .filter_map(|item| {
-            let rel = item.abs.strip_prefix(vault_dir).ok()?;
-            Some(rel.to_string_lossy().replace('\\', "/"))
-        })
-        .filter(|rel| rel != entry)
-        .collect();
+    let mut members: Vec<String> =
+        crate::walk::readable_vault_files(vfs, &vault_dir.join(dir), vault_dir)
+            .into_iter()
+            .filter(|abs| {
+                abs.extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+            })
+            .filter_map(|abs| {
+                let rel = abs.strip_prefix(vault_dir).ok()?;
+                Some(rel.to_string_lossy().replace('\\', "/"))
+            })
+            .filter(|rel| rel != entry)
+            .collect();
     members.sort();
     members
 }
@@ -2836,5 +2836,23 @@ mod tests {
             panic!("expected a conversion");
         };
         assert_eq!(to, "marketplaces/m/plugins/tools/tools.md");
+    }
+
+    /// A plugin's assets are not its members, wherever the plugin folder
+    /// sits: they are matched by their path from the vault root.
+    #[test]
+    fn a_plugins_assets_are_not_members() {
+        let vfs = crate::vfs::MemVfs::new();
+        for (path, text) in [
+            ("/v/plugins/p/p.md", "---\nname: p\n---\n"),
+            ("/v/plugins/p/skills/s.md", "---\ndescription: S.\n---\n"),
+            ("/v/plugins/p/assets/guide.md", "Plain.\n"),
+        ] {
+            let path = Path::new(path);
+            vfs.create_dir_all(path.parent().unwrap()).unwrap();
+            vfs.write_file(path, text.as_bytes()).unwrap();
+        }
+        let members = container_members(&vfs, Path::new("/v"), "plugins/p", "plugins/p/p.md");
+        assert_eq!(members, vec!["plugins/p/skills/s.md".to_owned()]);
     }
 }
