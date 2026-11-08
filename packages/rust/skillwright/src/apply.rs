@@ -568,17 +568,45 @@ fn move_marketplace(
         };
         relink_move(view, &temp_from, &temp_to, true, mode, outcome)
     };
-    for entry in &mut outcome.entries[before..] {
-        if entry.path == temp_to {
-            entry.path = to.to_owned();
+    // The rows, and a partial failure's own copy of them, name the entry by
+    // its own name, not the temporary one.
+    let own_names = |entries: &mut [AppliedEntry]| {
+        for entry in entries {
+            if entry.path == temp_to {
+                entry.path = to.to_owned();
+            } else if entry.path == temp_from {
+                entry.path = from.to_owned();
+            }
+            if let Applied::Renamed { from: old } = &mut entry.applied
+                && *old == temp_from
+            {
+                *old = from.to_owned();
+            }
         }
-        if let Applied::Renamed { from: old } = &mut entry.applied
-            && *old == temp_from
-        {
-            *old = from.to_owned();
+    };
+    own_names(&mut outcome.entries[before..]);
+    match moved {
+        Err(ApplyError::Partial {
+            mut outcome,
+            mut source,
+        }) => {
+            if let Some(entries) = outcome.entries.get_mut(before..) {
+                own_names(entries);
+            }
+            // `execute_move` says where the entry landed under its temporary
+            // name; `restore_entry` has since put it back.
+            let restored = [(&root_to, to), (&root_from, from)]
+                .into_iter()
+                .find(|(path, _)| path.is_file());
+            if let (ApplyError::Refused(message), Some((_, now))) = (source.as_mut(), restored) {
+                let (to_dir, _) = temp_to.rsplit_once('/').unwrap_or(("", ""));
+                let (_, from_leaf) = temp_from.rsplit_once('/').unwrap_or(("", &temp_from));
+                *message = message.replace(&format!("{to_dir}/{from_leaf}"), now);
+            }
+            Err(ApplyError::Partial { outcome, source })
         }
+        other => other,
     }
-    moved
 }
 
 /// Give the marketplace entry its `skillwright.md` name back, wherever the
@@ -606,7 +634,9 @@ fn restore_entry(
     if abs_to != root_to && new_dir.exists() && !root_to.exists() {
         let kept = abs_from.file_name().map(|name| new_dir.join(name));
         for candidate in std::iter::once(abs_to.to_path_buf()).chain(kept) {
-            if candidate.exists() {
+            // Only a file is the entry: a folder of the user's may hold the
+            // name.
+            if candidate.is_file() {
                 let renamed = rename(&candidate, root_to);
                 result = result.and(renamed);
                 break;
@@ -1651,6 +1681,53 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    /// A marketplace rename that half-lands reports the entry by its own
+    /// name, not the temporary `<m>.md` name the move gave it.
+    #[test]
+    fn a_partial_marketplace_rename_names_no_temporary_path() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        write(
+            v.path(),
+            "marketplaces/m1/plugins/p/skills/a.md",
+            "---\nname: a\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[a](marketplaces/m1/plugins/p/skills/a.md)\n",
+        );
+        // A folder where the relinker renames the entry makes that rename fail
+        // after the folder moved.
+        write(v.path(), "marketplaces/m1/m2.md/keep.txt", "x");
+        let op = AuthoringOp::Rename {
+            from: "marketplaces/m1/skillwright.md".to_owned(),
+            to: "marketplaces/m2/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(v.path().join("marketplaces/m2/skillwright.md").is_file());
+        assert!(v.path().join("marketplaces/m2/m2.md/keep.txt").is_file());
+        for entry in &outcome.entries {
+            assert!(!entry.path.ends_with("/m1.md"), "{outcome:?}");
+            assert!(!entry.path.ends_with("/m2.md"), "{outcome:?}");
+        }
+        let message = source.to_string();
+        assert!(!message.contains("m1.md"), "{message}");
+        assert!(
+            message.contains("marketplaces/m2/skillwright.md"),
+            "{message}"
+        );
     }
 
     /// When the folder moves and the entry's own rename then fails, the
