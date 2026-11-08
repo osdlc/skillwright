@@ -457,7 +457,7 @@ fn new_marketplace_writes_a_root_file_a_workspace_builds() {
 }
 
 #[test]
-fn the_old_marketplace_note_form_is_not_read() {
+fn a_described_note_beside_a_marketplace_folder_is_skipped_as_a_stray() {
     let dir = tempfile::tempdir().unwrap();
     let market = dir.path().join("marketplaces/house");
     fs::create_dir_all(market.join("plugins/p/skills")).unwrap();
@@ -472,6 +472,13 @@ fn the_old_marketplace_note_form_is_not_read() {
         listed
             .stderr
             .contains("marketplaces/house/house.md  skipped"),
+        "{}",
+        listed.stderr
+    );
+    assert!(
+        listed
+            .stderr
+            .contains("sits where no component can be read"),
         "{}",
         listed.stderr
     );

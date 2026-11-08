@@ -1096,9 +1096,15 @@ mod tests {
     }
 
     #[test]
-    fn a_kind_key_is_an_ordinary_unknown_key() {
-        let (ours, _) = bare(EntityKind::Skill, json!({"description": "d", "kind": "x"}));
-        assert_eq!(ours.unknown, vec!["kind".to_owned()]);
+    fn under_a_namespace_a_bare_unprefixed_key_stays_among_the_notes_own_keys() {
+        let (ours, rest) = read_kind(
+            &Namespace::sw(),
+            EntityKind::Skill,
+            json!({"description": "d", "flavour": "mint"}),
+        )
+        .unwrap();
+        assert!(ours.unknown_ours.is_empty(), "{:?}", ours.unknown_ours);
+        assert_eq!(rest["flavour"], "mint");
     }
 
     #[test]

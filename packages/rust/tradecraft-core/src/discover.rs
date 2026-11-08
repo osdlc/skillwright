@@ -1160,8 +1160,8 @@ fn declares_description(vfs: &dyn Vfs, path: &Path, ns: &Namespace) -> Result<bo
     let source = read_utf8(vfs, path)?;
     let (frontmatter, _body) = split_frontmatter(&source);
     let mut fields = frontmatter_map(frontmatter, path)?;
-    // Drained for its refusals: a removed key on a stray note is still worth
-    // naming, and it names itself better than the shape does.
+    // Drained for its refusals: a malformed key on a stray note names
+    // itself better than the shape does.
     VaultFrontmatter::take_from(&mut fields, path, ns, EntityKind::Skill)?;
     Ok(trimmed_string(&fields, "description").is_some())
 }

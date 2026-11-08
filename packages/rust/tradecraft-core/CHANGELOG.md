@@ -12,8 +12,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Behaviour:
 
 - The `removed-key` refusal is gone. `VaultFrontmatter::take_from` no longer refuses `kind`, `plugin`, their prefixed spellings, or, with no namespace, an `sw-` spelling or `sw:` block of a skillwright key. Each is an ordinary unknown key and warns `unknown-key`.
-- `parse_root_file` no longer refuses a top-level `bump` or `build.shim_target`. Each warns as an unknown key and is ignored.
-- The vault scan no longer refuses a `marketplaces/<m>/<m>.md` note in the old marketplace form.
+- `parse_root_file` no longer refuses a top-level `bump` or `build.shim_target`. Each is an ordinary unknown key: it warns and is ignored.
+- The vault scan no longer gives a `marketplaces/<m>/<m>.md` note its own refusal pointing to `marketplaces/<m>/skillwright.md`. It is read like any other file at that path: skipped as a stray note if it declares a `description`, otherwise ignored.
 - An adopted skill's carried `kind` or `plugin` key stays in its frontmatter instead of moving under `metadata:`.
 
 API:
