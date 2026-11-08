@@ -71,7 +71,9 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     ) {
         Ok(scan) => scan,
         // What still fails is run-level by construction — a symlink, a
-        // missing root — so this stays a blocker rather than a refused row. A
+        // missing root, a root file whose exclusions cannot be read (which
+        // `resolve_run` has already refused) — so this stays a blocker rather
+        // than a refused row. A
         // note the scan could not read is not one of these; it comes back in
         // `skipped` instead. A duplicate name or bundle overlap does not
         // abort: it flags the rows involved and the exit code.

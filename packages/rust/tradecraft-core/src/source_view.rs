@@ -25,7 +25,7 @@ use crate::model::cascade::Cascade;
 use crate::model::load::ASSETS_DIR;
 use crate::namespace::Namespace;
 use crate::patterns::Patterns;
-use crate::settings::{ROOT_FILE, parse_root_file};
+use crate::settings::ROOT_FILE;
 use crate::vfs::{DirEntry, Metadata, Vfs, VfsError, normalize};
 
 /// `inner`, less the hidden paths, with `<vault>/skillwright.md` standing for
@@ -241,7 +241,10 @@ fn marketplace_notes(
         }
     }
     let source = Source { root, files };
-    let Ok(notes) = discover_in(vfs, scope.vault_root, &source, ns) else {
+    let Ok(patterns) = Patterns::load(vfs, scope.vault_root) else {
+        return Vec::new();
+    };
+    let Ok(notes) = discover_in(vfs, scope.vault_root, &patterns, &source, ns) else {
         return Vec::new();
     };
     notes
@@ -382,23 +385,32 @@ pub(crate) fn check_pack_location(
 }
 
 /// What the root file at `vault_root` configures, for a caller that holds no
-/// configuration of its own, over what a workspace file above it sets. Default
-/// when the file is missing or unreadable: a build says what is wrong with it.
-pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> MarketplaceConfig {
-    let Some(mut root) = vfs
-        .read_file(&vault_root.join(ROOT_FILE))
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .and_then(|text| parse_root_file(&text).ok())
-    else {
-        return MarketplaceConfig::default();
+/// configuration of its own, over what a workspace file above it sets.
+/// Default when there is no root file, or when it holds a bad value a build
+/// would refuse: a build says what is wrong with it. A workspace file with a
+/// bad value is left out the same way.
+///
+/// # Errors
+///
+/// `refused: malformed-root-file` when either file cannot say what it
+/// excludes, as [`crate::patterns::Patterns::load`] refuses it: the scan this
+/// configures would refuse it too.
+pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> Result<MarketplaceConfig, CoreError> {
+    use crate::paths::{read_root_both, workspace_file};
+    let Some((layout, full)) = read_root_both(vfs, &vault_root.join(ROOT_FILE))? else {
+        return Ok(MarketplaceConfig::default());
     };
-    if !root.workspace
-        && let Ok(Some(shared)) = crate::patterns::workspace_above(vfs, vault_root)
-    {
+    let shared = match workspace_file(vault_root).filter(|_| !layout.workspace) {
+        Some(file) => read_root_both(vfs, &file)?.filter(|(layout, _)| layout.workspace),
+        None => None,
+    };
+    let Ok(mut root) = full else {
+        return Ok(MarketplaceConfig::default());
+    };
+    if let Some((_, Ok(shared))) = shared {
         root.inherit(&shared);
     }
-    root.to_config("")
+    Ok(root.to_config(""))
 }
 
 /// The view of the vault for a run that does not build: `base`, less the
@@ -416,7 +428,11 @@ pub fn source_view<'v>(
     let Some(out_root) = out_root else {
         return base;
     };
-    let patterns = Patterns::read(&base, scope.vault_root);
+    // A root file that cannot be read hides nothing, as a `packs` a build
+    // would refuse: the scan or build that reads through this view refuses it.
+    let Ok(patterns) = Patterns::load(&base, scope.vault_root) else {
+        return base;
+    };
     let mut paths = Vec::new();
     for config in effective_configs(&base, scope, config, ns) {
         if check_pack_location(&base, scope.vault_root, out_root, &config, &patterns).is_ok() {
@@ -446,8 +462,21 @@ mod tests {
         .unwrap();
         vfs.write_file(&member.join(ROOT_FILE), b"---\nname: m\n---\n")
             .unwrap();
-        let config = vault_config(&vfs, member);
+        let config = vault_config(&vfs, member).unwrap();
         assert_eq!(config.license.as_deref(), Some("MIT"));
         assert!(config.blocks.contains_key("claude"));
+    }
+
+    #[test]
+    fn vault_config_refuses_a_malformed_workspace_file() {
+        let vfs = MemVfs::new();
+        let member = Path::new("/w/marketplaces/m");
+        vfs.create_dir_all(member).unwrap();
+        vfs.write_file(Path::new("/w/skillwright.md"), b"---\nworkspace: [\n---\n")
+            .unwrap();
+        vfs.write_file(&member.join(ROOT_FILE), b"---\nname: m\n---\n")
+            .unwrap();
+        let err = vault_config(&vfs, member).unwrap_err().to_string();
+        assert!(err.contains("malformed-root-file"), "{err}");
     }
 }

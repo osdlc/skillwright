@@ -28,8 +28,8 @@ use crate::compile::EXCLUDED_BUNDLE_DIRECTORIES;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
-use crate::paths::WORKSPACE_DIR;
-use crate::settings::{FolderPatterns, ROOT_FILE, RootFile, parse_root_file};
+use crate::paths::{RootRead, WORKSPACE_DIR, read_root, read_workspace_above};
+use crate::settings::{FolderPatterns, ROOT_FILE};
 use crate::vfs::Vfs;
 
 /// Why `glob` cannot be read, if it cannot. A glob is `/`-separated and
@@ -138,6 +138,9 @@ fn segment_match(glob: &[u8], text: &[u8]) -> bool {
     }
 }
 
+/// A vault's patterns and the vault root they were read from.
+pub(crate) type Placed<'a> = (Patterns, &'a Path);
+
 /// The root file's folder patterns and exclusions.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Patterns {
@@ -148,22 +151,19 @@ pub struct Patterns {
 }
 
 impl Patterns {
-    /// The patterns in the root file at `vault_root`. A missing or malformed
-    /// file has none: [`Self::load`] is what reports a malformed one.
-    pub fn read(vfs: &dyn Vfs, vault_root: &Path) -> Self {
-        Self::load(vfs, vault_root).unwrap_or_default()
-    }
-
     /// The patterns in the root file at `vault_root`, over what a workspace
     /// file above it sets, key by key. None when there is no file. Globs are
     /// read from the marketplace's folder wherever they were written.
     ///
     /// # Errors
     ///
-    /// `refused: malformed-root-file`: an exclusion that cannot be read must
-    /// not fail open.
+    /// `refused: malformed-root-file` when either file's frontmatter is not a
+    /// YAML mapping, or its `workspace`, `build`, `build.exclude` or
+    /// `build.patterns` has the wrong shape: an exclusion that cannot be read
+    /// must not fail open. A bad value in any other key is not checked here.
     pub fn load(vfs: &dyn Vfs, vault_root: &Path) -> Result<Self, CoreError> {
-        let mut root = read_root(vfs, &vault_root.join(ROOT_FILE))?.unwrap_or_default();
+        let mut root =
+            read_root(vfs, &vault_root.join(ROOT_FILE), RootRead::Layout)?.unwrap_or_default();
         let mut own = Self {
             folders: root.build.patterns.clone(),
             exclude: root.build.exclude.clone(),
@@ -171,7 +171,7 @@ impl Patterns {
         };
         let written: BTreeSet<String> = own.globs().map(str::to_owned).collect();
         if !root.workspace
-            && let Some(shared) = workspace_above(vfs, vault_root)?
+            && let Some(shared) = read_workspace_above(vfs, vault_root, RootRead::Layout)?
         {
             root.inherit(&shared);
         }
@@ -183,6 +183,21 @@ impl Patterns {
             .map(str::to_owned)
             .collect();
         Ok(own)
+    }
+
+    /// The patterns of the vault at `vault_root`, paired with it, or `None`
+    /// with no vault root: what a one-note verb places its note with.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::load`].
+    pub(crate) fn load_at<'r>(
+        vfs: &dyn Vfs,
+        vault_root: Option<&'r Path>,
+    ) -> Result<Option<Placed<'r>>, CoreError> {
+        vault_root
+            .map(|root| Self::load(vfs, root).map(|patterns| (patterns, root)))
+            .transpose()
     }
 
     /// Every glob, whichever key holds it.
@@ -506,41 +521,6 @@ fn keep_conventional<'r>(out: &mut Vec<&'r str>, pending: &mut Vec<&'r str>, kin
         out.extend(&pending[..kept]);
     }
     pending.clear();
-}
-
-/// The root file at `file`, `None` when there is none.
-fn read_root(vfs: &dyn Vfs, file: &Path) -> Result<Option<RootFile>, CoreError> {
-    if !vfs.exists(file) {
-        return Ok(None);
-    }
-    let malformed = |detail: String| {
-        CoreError::refused(
-            "malformed-root-file",
-            format!("{}: {detail}. Nothing was written", file.display()),
-        )
-    };
-    let text = String::from_utf8(vfs.read_file(file)?)
-        .map_err(|_| malformed("it is not UTF-8".to_owned()))?;
-    parse_root_file(&text)
-        .map(Some)
-        .map_err(|err| malformed(err.to_string()))
-}
-
-/// The workspace file above the marketplace at `vault_root`, when that is
-/// `<workspace>/marketplaces/<m>/` and the file says `workspace: true`.
-pub(crate) fn workspace_above(
-    vfs: &dyn Vfs,
-    vault_root: &Path,
-) -> Result<Option<RootFile>, CoreError> {
-    let Some(above) = vault_root
-        .parent()
-        .filter(|folder| folder.file_name().is_some_and(|name| name == WORKSPACE_DIR))
-        .and_then(Path::parent)
-    else {
-        return Ok(None);
-    };
-    let root = read_root(vfs, &above.join(ROOT_FILE))?;
-    Ok(root.filter(|root| root.workspace))
 }
 
 /// Each `/`-bounded prefix of `rel`, shortest first, `rel` itself last.

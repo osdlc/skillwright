@@ -145,6 +145,11 @@ struct WireRequest {
 ///
 /// # Errors
 ///
+/// The core's refusals throw an `Error` whose `.name` is `Refused`, its
+/// message led by the reason token. Among them is `malformed-root-file`, when
+/// the root file at `skills_root`, or the workspace file above it, cannot say
+/// what it excludes.
+///
 /// A stem the core refuses throws an `Error` whose `.name` is `InvalidStem`,
 /// carrying [`InvalidStem`]'s own message. A host should validate its
 /// configured stem up front with [`validate_namespace`] rather than discover it
@@ -313,25 +318,26 @@ struct WireDiscoverRequest {
     namespace: Option<String>,
 }
 
-/// The vault as `wire` asks to scan it.
+/// The vault as `wire` asks to scan it. Refused when the request names no
+/// config and the vault's root file or workspace file does not parse.
 fn discovery_view<'v>(
     vfs: &'v dyn Vfs,
     wire: &WireDiscoverRequest,
     ns: &Namespace,
-) -> SourceView<'v> {
-    let config = wire
-        .config
-        .clone()
-        .unwrap_or_else(|| vault_config(vfs, &wire.vault_root));
+) -> Result<SourceView<'v>, CoreError> {
+    let config = match &wire.config {
+        Some(config) => config.clone(),
+        None => vault_config(vfs, &wire.vault_root)?,
+    };
     let mut scope = VaultScope::new(&wire.vault_root);
     scope.skills_root = wire.skills_root.as_deref();
-    source_view(
+    Ok(source_view(
         SourceView::over(vfs),
         scope,
         wire.out_root.as_deref(),
         &config,
         ns,
-    )
+    ))
 }
 
 /// Every component under a vault's skills root, vetted and sorted, and every
@@ -349,8 +355,13 @@ fn discovery_view<'v>(
 /// # Errors
 ///
 /// Only what is not a fact about one note: a missing skills root
-/// (`RootNotFound`), a symlink in the tree, a duplicate name, and a bundle
-/// containing another component's entry. Everything wrong with a single note
+/// (`RootNotFound`), a symlink in the tree, a duplicate name, a bundle
+/// containing another component's entry, and `refused: malformed-root-file`
+/// when the vault's root file, or the workspace file above it, cannot say
+/// what it excludes (its frontmatter is not YAML, or its `workspace`,
+/// `build`, `build.exclude` or `build.patterns` has the wrong shape). A bad
+/// value in any other key of the root file does not throw here; a build says
+/// what is wrong with it. Everything wrong with a single note
 /// is reported in `skipped` and does not throw — one half-written draft must
 /// not block every publish out of a shared vault.
 #[wasm_bindgen(js_name = discoverComponents)]
@@ -360,7 +371,7 @@ pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, J
         .map_err(|e| throwable(&format!("request is not a valid discovery request: {e}")))?;
     let ns = namespace_of(wire.namespace.as_deref())?;
 
-    let view = discovery_view(&vfs, &wire, &ns);
+    let view = discovery_view(&vfs, &wire, &ns).map_err(|e| core_error_to_js(&e))?;
     let report =
         core_discover_components(&view, &wire.vault_root, wire.skills_root.as_deref(), &ns)
             .map_err(|e| core_error_to_js(&e))?;
@@ -840,7 +851,7 @@ mod tests {
         let ns = Namespace::bare();
         let found = |json: &str| {
             let wire: WireDiscoverRequest = serde_json::from_str(json).unwrap();
-            let view = discovery_view(&vfs, &wire, &ns);
+            let view = discovery_view(&vfs, &wire, &ns).unwrap();
             let root = wire.vault_root.as_path();
             let report = core_discover_components(&view, root, None, &ns).unwrap();
             serde_json::to_string(&report).unwrap()

@@ -11,6 +11,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - Library API: `ResolvedRun::config_dir` is removed; it always equalled `vault`. `ResolvedRun::namespace` is a `Namespace`, bare by default, not an `Option`. `config::resolve_configured_path` is removed; use `config::resolve_against_cwd`, or `ResolvedRun::configured_path` for a path the root file names. `ResolvedRun::core_namespace` returns `&Namespace`. `ResolvedRun::configured_out` is public.
 
+### Fixed
+
+- `delete <plugin>` trashes a plugin whose folder holds only `assets/` besides its note. It was refused, with the asset files named as members it still held.
+- `publish <note>` for a note outside `marketplaces/` is no longer refused by a duplicate name inside a marketplace.
+- With a pattern that matches the vault root, such as `build.patterns.skills: "*"`, `list`, `build` and `publish` no longer treat the vault's own `skillwright.md` as a skill.
+- A move treats `marketplaces/<m>/skillwright.md` as a marketplace's entry for every `<m>`, `skillwright` included, and every other `<dir>/skillwright.md` as an ordinary bundle, such as `tools/skillwright/skillwright.md` or `skills/group/skillwright/skillwright.md`. It decided by the folder's name, so `marketplaces/skillwright/skillwright.md` moved as a bundle, and a bundle named `skillwright` outside a kind folder moved as a marketplace, with its links left as written.
+- Moving or renaming the vault's own `skillwright.md`, or moving a note onto it, is refused, and nothing is written. The check ignores case, so `SKILLWRIGHT.md` is refused too: on a case-insensitive file system, as macOS's is by default, it is the same file. Moving it failed with a file error, and moving a plain note onto it replaced the vault's config file.
+- A marketplace rename that half-lands names the entry `skillwright.md` in its report and error, not the temporary `<m>.md` name the move used. Putting the entry's name back no longer renames a folder of yours that holds `<m>.md`.
+- When a marketplace rename lands but the entry's `skillwright.md` name cannot be put back, the error lists what was written and says where the entry is. It reported a bare file error. When the move failed too, both failures are reported.
+- When a marketplace folder moves and its entry's rename then fails, the error says the folder moved and where the entry now is. It reported a bare file error, which means nothing was written.
+
 ## [0.8.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.7.0...skillwright/v0.8.0) - 2026-11-08
 
 ### Breaking

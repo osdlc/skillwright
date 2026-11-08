@@ -175,14 +175,31 @@ pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> V
     .map_or_else(|_| Vec::new(), |outcome| outcome.errors)
 }
 
-/// The paths of a vault walk's `entries`, plugin assets left out.
+/// The paths of a walk of `root`'s `entries`, plugin assets left out by the
+/// patterns of the vault at `vault_root`: each entry is matched by its path
+/// relative to the vault root, wherever the walk started.
 fn notes_and_resources(
     patterns: &crate::patterns::Patterns,
+    vault_root: &Path,
+    root: &Path,
     entries: Vec<vault::Entry>,
 ) -> Vec<PathBuf> {
+    // The walk root's own path from the vault root, once: empty for a walk of
+    // the vault itself, the usual case, where an entry's path is already
+    // vault-relative.
+    let prefix = root
+        .strip_prefix(vault_root)
+        .map(crate::skill::forward_slashed)
+        .unwrap_or_default();
     entries
         .into_iter()
-        .filter(|entry| !in_plugin_assets(patterns, &entry.rel))
+        .filter(|entry| {
+            if prefix.is_empty() {
+                !in_plugin_assets(patterns, &entry.rel)
+            } else {
+                !in_plugin_assets(patterns, &format!("{prefix}/{}", entry.rel))
+            }
+        })
         .map(|entry| entry.abs)
         .collect()
 }
@@ -194,23 +211,25 @@ pub(crate) fn vault_files(
     root: &Path,
     prune: &[&str],
 ) -> Result<Vec<PathBuf>, CoreError> {
-    let patterns = crate::patterns::Patterns::read(vfs, root);
+    let patterns = crate::patterns::Patterns::load(vfs, root)?;
     vault::walk(vfs, root, &vault_walk(prune))
-        .map(|entries| notes_and_resources(&patterns, entries))
+        .map(|entries| notes_and_resources(&patterns, root, root, entries))
         .map_err(|err| core_error(err, not_refused))
 }
 
-/// Every file under the vault folder `root`, refusing a symlink anywhere in
-/// it with the error `refuse` makes from its path.
+/// Every file under the folder `root` of the vault at `vault_root`, whose
+/// patterns are `patterns`, refusing a symlink anywhere in it with the error
+/// `refuse` makes from its path.
 pub(crate) fn vault_files_refusing_symlinks(
     vfs: &dyn Vfs,
     root: &Path,
+    patterns: &crate::patterns::Patterns,
+    vault_root: &Path,
     prune: &[&str],
     refuse: impl Fn(&Path) -> CoreError,
 ) -> Result<Vec<PathBuf>, CoreError> {
-    let patterns = crate::patterns::Patterns::read(vfs, root);
     vault::walk(vfs, root, &vault_options(prune, true, true))
-        .map(|entries| notes_and_resources(&patterns, entries))
+        .map(|entries| notes_and_resources(patterns, vault_root, root, entries))
         .map_err(|err| core_error(err, refuse))
 }
 
@@ -224,13 +243,15 @@ pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
         .collect()
 }
 
-/// Every file under the vault folder `root` this walk can read, without
-/// failing: a folder that cannot be listed is skipped.
-pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path) -> Vec<vault::Entry> {
-    let mut entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
-    let patterns = crate::patterns::Patterns::read(vfs, root);
-    entries.retain(|entry| !in_plugin_assets(&patterns, &entry.rel));
-    entries
+/// Every file under the folder `root` of the vault at `vault_root` this walk
+/// can read, without failing: a folder that cannot be listed is skipped.
+/// Plugin assets are left out, matched by their path from the vault root.
+pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path, vault_root: &Path) -> Vec<PathBuf> {
+    let entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
+    // Without failing, as promised: a root file that cannot be read keeps
+    // every entry, which lists more than it should rather than less.
+    let patterns = crate::patterns::Patterns::load(vfs, vault_root).unwrap_or_default();
+    notes_and_resources(&patterns, vault_root, root, entries)
 }
 
 /// The vault's excluded files (Obsidian's `userIgnoreFilters`, read from

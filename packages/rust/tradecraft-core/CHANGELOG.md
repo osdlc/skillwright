@@ -9,8 +9,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Breaking
 
+Behaviour:
+
+- `publish_skill`, `status_of`, `Cascade::above`, `discover_components`, `discover_roster`, `load` and `load_plugin` refuse with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes: its frontmatter is not a YAML mapping, or its `workspace`, `build`, `build.exclude` or `build.patterns` has the wrong shape. They read such a file as excluding nothing before, so a note `build.exclude` excludes was published and listed. A bad value in any other key, such as `repository: example`, does not refuse them; the verbs that read that value, such as a build, still do. `export_skills` already refused. `source_view` hides nothing for such a file and leaves the refusal to the scan or build that reads through it.
+- `load_marketplace` refuses a root file or workspace file it cannot read, whether its frontmatter is not YAML or a key holds a bad value, as `refused: malformed-root-file`, not `refused: root-file`. A build already used `malformed-root-file` for the same file, so one bad file now has one token.
+
 API:
 
+- `vault_config` returns `Result<MarketplaceConfig, CoreError>`. It refuses with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes, as the scan it configures does. It ignored such a workspace file before, so a member silently lost the workspace's namespace, targets, blocks and exclusions. A bad value in another key still gives the default config, or leaves the workspace file out, as before: a build says what is wrong with it. The wasm `discoverComponents` throws when the vault's root file or workspace file cannot say what it excludes.
+- Removed `Patterns::read`, which read a malformed root file as empty. Use `Patterns::load`, which refuses it.
 - `VaultFrontmatter::overrides` is renamed `blocks`, the name `DiscoveredComponent`, `MarketplaceConfig` and `MarketplaceFields` use for the same harness blocks. `PluginOverrides` keeps its name. The serialized form changes too: a serialized `VaultFrontmatter` or `VaultNote` has a `blocks` key where it had `overrides`, and no `unknown_ours` key.
 - Removed `authoring::MARKETPLACES_DIR`. Use `WORKSPACE_DIR` (`paths::WORKSPACE_DIR`), which holds the same `marketplaces`.
 - Removed `keys::is_skillwright_key`. Ask `keys::is_owned` for each of `EntityKind::ALL` instead.
@@ -18,8 +25,17 @@ API:
 
 ### Added
 
+- `ReasonToken::MalformedRootFile` (`malformed-root-file`), the token of a refusal for a root file or workspace file that cannot be read. It is in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`.
+- `is_marketplace_entry(path)`: whether a vault-relative path is a marketplace's entry note, exactly `marketplaces/<m>/skillwright.md`. A host that moves notes uses it to tell a marketplace's entry from a bundle named `skillwright`.
 - `EntityKind::ALL`: every kind.
 - `model::marketplaces_in`: the marketplace folders a scan holds. The CLI's `bump` and `status` use it in place of their own copy.
+
+### Fixed
+
+- A scan never places the vault's own `skillwright.md` as a note. With a pattern that matches the vault root, such as `build.patterns.skills: "*"`, it was read as a skill.
+- `container_members` and so `plan_delete_component` leave a plugin's `assets/` files out of its members. They were counted, so deleting a plugin whose folder held only assets was refused.
+- A scan of a skills root below the vault, as in `discover_components` with a `content_root`, reads the vault's root file for its patterns. It read a `skillwright.md` at the skills root as if it were the root file, and refused if that file did not parse.
+- `publish_skill` and `Cascade::above` of a note outside `marketplaces/` no longer refuse on a duplicate name inside a marketplace: they scan `marketplaces/` to count the marketplaces as a build does, and a duplicate is a warning there. A symlink or a folder that cannot be listed under `marketplaces/` still refuses them, as it refuses a build, because without the count the note cannot know which `targets` apply.
 
 ## [0.46.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.45.0...tradecraft-core/v0.46.0) - 2026-11-08
 

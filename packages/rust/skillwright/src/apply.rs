@@ -426,19 +426,25 @@ fn move_note(
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
     let root_file = |path: &str| path.rsplit('/').next() == Some(tradecraft_core::ROOT_FILE);
-    // `<dir>/skillwright.md` is a marketplace's entry, unless `<dir>` is named
-    // `skillwright`: then it is also an ordinary `<dir>/<dir>.md` bundle entry.
-    let marketplace_entry = |path: &str| {
-        root_file(path)
-            && path
-                .rsplit('/')
-                .nth(1)
-                .is_none_or(|dir| dir != tradecraft_core::ROOT_FILE.trim_end_matches(".md"))
-    };
-    if bundle && root_file(from) && root_file(to) {
-        return move_marketplace(vault, from, to, mode, outcome);
+    // The vault's own root file is no folder's entry: moving it would move
+    // the vault, and moving a note onto it would replace the vault's config.
+    // Compared without case: on a case-insensitive file system, as macOS's
+    // is by default, `SKILLWRIGHT.md` is that file.
+    for (path, what) in [(from, "move"), (to, "be replaced")] {
+        if path.eq_ignore_ascii_case(tradecraft_core::ROOT_FILE) {
+            return Err(ApplyError::Refused(format!(
+                "{path} is the vault's root file, so it cannot {what}"
+            )));
+        }
     }
+    // A marketplace's entry is exactly `marketplaces/<m>/skillwright.md`. Any
+    // other `<dir>/skillwright.md`, such as a bundle named `skillwright`, is an
+    // ordinary `<dir>/<dir>.md` bundle entry the relinker moves.
+    let marketplace_entry = |path: &str| tradecraft_core::is_marketplace_entry(Path::new(path));
     if bundle && (marketplace_entry(from) || marketplace_entry(to)) {
+        if root_file(from) && root_file(to) {
+            return move_marketplace(vault, from, to, mode, outcome);
+        }
         return move_folder(vault.dir, from, to, mode, outcome);
     }
     relink_move(vault, from, to, bundle, mode, outcome)
@@ -538,7 +544,7 @@ fn move_marketplace(
         )));
     }
     let before = outcome.entries.len();
-    let moved = if mode.writes() {
+    let (moved, restored) = if mode.writes() {
         if abs_from != root_from {
             std::fs::rename(&root_from, &abs_from).map_err(|source| ApplyError::Io {
                 what: format!("preparing {from}"),
@@ -546,11 +552,10 @@ fn move_marketplace(
             })?;
         }
         let moved = relink_move(vault, &temp_from, &temp_to, true, mode, outcome);
-        let restored = restore_entry(&root_from, &abs_from, &new_dir, &root_to, &abs_to);
-        match (moved, restored) {
-            (Err(err), _) | (Ok(()), Err(err)) => Err(err),
-            (Ok(()), Ok(())) => Ok(()),
-        }
+        let restored = restore_entry(
+            vault.dir, &root_from, &abs_from, &new_dir, &root_to, &abs_to,
+        );
+        (moved, restored)
     } else {
         // A preview renames in memory, over the same view, and writes nothing.
         let overlay = PreviewVfs::over(vault.source);
@@ -563,19 +568,157 @@ fn move_marketplace(
             dir: vault.dir,
             source: &overlay,
         };
-        relink_move(view, &temp_from, &temp_to, true, mode, outcome)
+        (
+            relink_move(view, &temp_from, &temp_to, true, mode, outcome),
+            Ok(()),
+        )
     };
-    for entry in &mut outcome.entries[before..] {
-        if entry.path == temp_to {
-            entry.path = to.to_owned();
+    let names = OwnNames {
+        from,
+        temp_from: &temp_from,
+        temp_to: &temp_to,
+        landed: landed(&temp_from, &temp_to),
+        now: [(&root_to, to), (&root_from, from)]
+            .into_iter()
+            .find(|(path, _)| path.is_file())
+            .map(|(_, now)| now),
+    };
+    // Once, on whichever outcome the caller reads: a partial failure's own,
+    // or this one.
+    match settle(moved, restored, outcome) {
+        Err(ApplyError::Partial {
+            mut outcome,
+            mut source,
+        }) => {
+            if let Some(entries) = outcome.entries.get_mut(before..) {
+                names.rows(entries);
+            }
+            names.error(&mut source);
+            Err(ApplyError::Partial { outcome, source })
         }
-        if let Applied::Renamed { from: old } = &mut entry.applied
-            && *old == temp_from
-        {
-            *old = from.to_owned();
+        other => {
+            names.rows(&mut outcome.entries[before..]);
+            other
         }
     }
-    moved
+}
+
+/// The temporary names a marketplace move gives its entry, and what each
+/// stands for once the move is over.
+struct OwnNames<'a> {
+    from: &'a str,
+    /// `<m>.md` in the source folder.
+    temp_from: &'a str,
+    /// `<m>.md` in the target folder.
+    temp_to: &'a str,
+    /// The source's `<m>.md` in the target folder, where the entry is when
+    /// the folder moved and its own rename did not.
+    landed: String,
+    /// The entry's own name where it is now, `None` when `restore_entry`
+    /// could not put it back: then the temporary paths are true.
+    now: Option<&'a str>,
+}
+
+impl OwnNames<'_> {
+    /// Names each row's path by the entry's own name. A rename's source is
+    /// always the entry's own name, which is what the user moved.
+    fn rows(&self, entries: &mut [AppliedEntry]) {
+        for entry in entries {
+            if let Some(now) = self.now {
+                if entry.path == self.temp_from {
+                    entry.path = self.from.to_owned();
+                } else if entry.path == self.temp_to || entry.path == self.landed {
+                    entry.path = now.to_owned();
+                }
+            }
+            if let Applied::Renamed { from: old } = &mut entry.applied
+                && *old == self.temp_from
+            {
+                *old = self.from.to_owned();
+            }
+        }
+    }
+
+    /// Names the entry where it is now in `err`'s message, where that names
+    /// the landed temporary path.
+    fn error(&self, err: &mut ApplyError) {
+        let Some(now) = self.now else {
+            return;
+        };
+        match err {
+            ApplyError::Refused(message) | ApplyError::Io { what: message, .. } => {
+                *message = replace_path(message, &self.landed, now);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Where an entry moved from `from` to `to` sits when the folder moved and
+/// its own rename did not: inside `to`'s folder, under `from`'s file name.
+fn landed(from: &str, to: &str) -> String {
+    let leaf = from.rsplit('/').next().unwrap_or(from);
+    match to.rsplit_once('/') {
+        Some((dir, _)) => format!("{dir}/{leaf}"),
+        None => leaf.to_owned(),
+    }
+}
+
+/// A marketplace move's result, once `restore_entry` has tried to give the
+/// entry its name back. The move landed, or partly landed, whenever the
+/// restore fails, because the entry was renamed first: so a failed restore
+/// is [`ApplyError::Partial`] with what landed, and when the move failed too
+/// its error is kept in front of the restore's.
+fn settle(
+    moved: Result<(), ApplyError>,
+    restored: Result<(), ApplyError>,
+    outcome: &Outcome,
+) -> Result<(), ApplyError> {
+    let Err(restore) = restored else {
+        return moved;
+    };
+    let both = |first: ApplyError, restore: ApplyError| match restore {
+        ApplyError::Io { what, source } => ApplyError::Io {
+            what: format!("{first}; then {what}"),
+            source,
+        },
+        other => ApplyError::Refused(format!("{first}; then {other}")),
+    };
+    Err(match moved {
+        Ok(()) => ApplyError::partial(outcome.clone(), restore),
+        Err(ApplyError::Partial { outcome, source }) => ApplyError::Partial {
+            outcome,
+            source: Box::new(both(*source, restore)),
+        },
+        Err(first) => ApplyError::partial(outcome.clone(), both(first, restore)),
+    })
+}
+
+/// `message` with each whole occurrence of the path `old` replaced by `new`.
+/// An occurrence is whole when no path character runs on from either end,
+/// so `a/m.md` is not found inside `a/m.mdx` or `xa/m.md`.
+fn replace_path(message: &str, old: &str, new: &str) -> String {
+    let is_path_char = |c: char| c.is_alphanumeric() || matches!(c, '/' | '-' | '_' | '.');
+    let mut out = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(at) = rest.find(old) {
+        let (head, tail) = rest.split_at(at);
+        let after = &tail[old.len()..];
+        let starts = head.chars().next_back().is_none_or(|c| !is_path_char(c));
+        // A `.` after the path ends a sentence unless a path character
+        // follows it.
+        let mut next = after.chars();
+        let ends = match next.next() {
+            None => true,
+            Some('.') => next.next().is_none_or(|c| !is_path_char(c)),
+            Some(c) => !is_path_char(c),
+        };
+        out.push_str(head);
+        out.push_str(if starts && ends { new } else { old });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Give the marketplace entry its `skillwright.md` name back, wherever the
@@ -584,15 +727,27 @@ fn move_marketplace(
 /// created, when it did. A partly failed move leaves the entry under the
 /// source's `<m>.md` name inside the new folder, so that name is tried too.
 fn restore_entry(
+    vault_dir: &Path,
     root_from: &Path,
     abs_from: &Path,
     new_dir: &Path,
     root_to: &Path,
     abs_to: &Path,
 ) -> Result<(), ApplyError> {
+    // Vault-relative, as every other path in a report.
+    let shown = |path: &Path| {
+        path.strip_prefix(vault_dir)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
     let rename = |from: &Path, to: &Path| {
         std::fs::rename(from, to).map_err(|source| ApplyError::Io {
-            what: format!("restoring {}", to.display()),
+            what: format!(
+                "restoring {}, so the entry is still at {}",
+                shown(to),
+                shown(from)
+            ),
             source,
         })
     };
@@ -603,7 +758,9 @@ fn restore_entry(
     if abs_to != root_to && new_dir.exists() && !root_to.exists() {
         let kept = abs_from.file_name().map(|name| new_dir.join(name));
         for candidate in std::iter::once(abs_to.to_path_buf()).chain(kept) {
-            if candidate.exists() {
+            // Only a file is the entry: a folder of the user's may hold the
+            // name.
+            if candidate.is_file() {
                 let renamed = rename(&candidate, root_to);
                 result = result.and(renamed);
                 break;
@@ -642,8 +799,17 @@ fn move_folder(
             std::fs::create_dir_all(parent).map_err(io)?;
         }
         std::fs::rename(old_dir, new_dir).map_err(io)?;
-        if let Some(leaf) = old.file_name() {
-            std::fs::rename(new_dir.join(leaf), &new).map_err(io)?;
+        // The folder has moved: a failure from here is reported with it.
+        if let Some(leaf) = old.file_name()
+            && let Err(source) = std::fs::rename(new_dir.join(leaf), &new)
+        {
+            outcome.push(
+                landed(from, to),
+                Applied::Renamed {
+                    from: from.to_owned(),
+                },
+            );
+            return Err(ApplyError::partial(outcome.clone(), io(source)));
         }
     }
     outcome.push(
@@ -701,11 +867,7 @@ fn execute_move(
         // kept its old leaf name inside the new directory; no row names that
         // path, so the refusal does.
         Some(conflict) => {
-            let leaf = from.rsplit('/').next().unwrap_or(from);
-            let landed = match to.rsplit_once('/') {
-                Some((dir, _)) => format!("{dir}/{leaf}"),
-                None => leaf.to_owned(),
-            };
+            let landed = landed(from, to);
             Err(ApplyError::partial(
                 outcome.clone(),
                 ApplyError::Refused(format!("{conflict}; the entry note is now at {landed}")),
@@ -1597,6 +1759,364 @@ mod tests {
             read(v.path(), "notes.md"),
             "[a](marketplaces/shop/plugins/p/skills/a.md)\n"
         );
+    }
+
+    /// A marketplace's `skillwright.md` is its entry whatever the folder is
+    /// called, as the core reads it: a member named `skillwright` moves the
+    /// same way as one named `m1`.
+    #[test]
+    fn a_marketplace_entry_moves_alike_whatever_its_folder_is_called() {
+        for name in ["m1", "skillwright"] {
+            let v = vault();
+            let entry = format!("marketplaces/{name}/skillwright.md");
+            write(v.path(), &entry, "---\nname: m\n---\n");
+            write(
+                v.path(),
+                &format!("marketplaces/{name}/plugins/p/skills/a.md"),
+                "---\nname: a\n---\n",
+            );
+            write(
+                v.path(),
+                "notes.md",
+                &format!("[a](marketplaces/{name}/plugins/p/skills/a.md)\n"),
+            );
+            let op = AuthoringOp::Move {
+                from: entry.clone(),
+                to: "marketplaces/shop/shop.md".to_owned(),
+                bundle: true,
+            };
+            let outcome = apply(v.path(), &op).unwrap();
+            assert_eq!(
+                outcomes(&outcome),
+                vec![("marketplaces/shop/shop.md", "renamed")],
+                "{name}"
+            );
+            assert!(
+                v.path().join("marketplaces/shop/shop.md").is_file(),
+                "{name}"
+            );
+        }
+    }
+
+    /// A marketplace rename that half-lands reports the entry by its own
+    /// name, not the temporary `<m>.md` name the move gave it.
+    #[test]
+    fn a_partial_marketplace_rename_names_no_temporary_path() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        write(
+            v.path(),
+            "marketplaces/m1/plugins/p/skills/a.md",
+            "---\nname: a\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[a](marketplaces/m1/plugins/p/skills/a.md)\n",
+        );
+        // A folder where the relinker renames the entry makes that rename fail
+        // after the folder moved.
+        write(v.path(), "marketplaces/m1/m2.md/keep.txt", "x");
+        let op = AuthoringOp::Rename {
+            from: "marketplaces/m1/skillwright.md".to_owned(),
+            to: "marketplaces/m2/skillwright.md".to_owned(),
+            bundle: true,
+            frontmatter: vec![],
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(v.path().join("marketplaces/m2/skillwright.md").is_file());
+        assert!(v.path().join("marketplaces/m2/m2.md/keep.txt").is_file());
+        for entry in &outcome.entries {
+            assert!(!entry.path.ends_with("/m1.md"), "{outcome:?}");
+            assert!(!entry.path.ends_with("/m2.md"), "{outcome:?}");
+        }
+        let message = source.to_string();
+        assert!(!message.contains("m1.md"), "{message}");
+        assert!(
+            message.contains("marketplaces/m2/skillwright.md"),
+            "{message}"
+        );
+    }
+
+    /// A marketplace move whose entry name cannot be put back reports what
+    /// landed, and says where the entry is; when the move failed too, both
+    /// failures are said.
+    #[test]
+    fn a_failed_entry_restore_is_partial_and_keeps_both_errors() {
+        let mut landed = Outcome::new(Mode::Apply);
+        landed.push("notes.md", Applied::LinksRewritten { edits: 1 });
+        let restore = || ApplyError::Io {
+            what: "restoring m2/skillwright.md, so the entry is still at m2/m2.md".to_owned(),
+            source: std::io::Error::other("denied"),
+        };
+
+        let err = settle(Ok(()), Err(restore()), &landed).unwrap_err();
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert_eq!(outcomes(&outcome), vec![("notes.md", "relinked")]);
+        assert!(source.to_string().contains("still at m2/m2.md"), "{source}");
+
+        let moved =
+            ApplyError::partial(landed.clone(), ApplyError::Refused("moving failed".into()));
+        let err = settle(Err(moved), Err(restore()), &Outcome::new(Mode::Apply)).unwrap_err();
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert_eq!(outcomes(&outcome), vec![("notes.md", "relinked")]);
+        let message = source.to_string();
+        assert!(message.contains("moving failed"), "{message}");
+        assert!(message.contains("still at m2/m2.md"), "{message}");
+
+        let err = settle(
+            Err(ApplyError::Refused("bare".into())),
+            Err(restore()),
+            &landed,
+        )
+        .unwrap_err();
+        let ApplyError::Partial { source, .. } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(source.to_string().contains("bare"), "{source}");
+        assert!(matches!(settle(Ok(()), Ok(()), &landed), Ok(())));
+    }
+
+    /// The rows and the error say where the entry is: under its own name
+    /// once it is put back, and under the temporary one while it is not.
+    #[test]
+    fn own_names_follow_where_the_entry_is() {
+        let rows = || {
+            let mut outcome = Outcome::new(Mode::Apply);
+            outcome.push(
+                "m2/m2.md",
+                Applied::Renamed {
+                    from: "m1/m1.md".to_owned(),
+                },
+            );
+            outcome.push(
+                "m1/m1.md",
+                Applied::Skipped {
+                    reason: "entry_rename_failed".to_owned(),
+                },
+            );
+            outcome.entries
+        };
+        let names = |now| OwnNames {
+            from: "m1/skillwright.md",
+            temp_from: "m1/m1.md",
+            temp_to: "m2/m2.md",
+            landed: "m2/m1.md".to_owned(),
+            now,
+        };
+        let paths = |entries: &[AppliedEntry]| -> Vec<String> {
+            entries.iter().map(|e| e.path.clone()).collect()
+        };
+
+        let mut entries = rows();
+        names(Some("m2/skillwright.md")).rows(&mut entries);
+        assert_eq!(
+            paths(&entries),
+            vec!["m2/skillwright.md", "m1/skillwright.md"]
+        );
+
+        let mut entries = rows();
+        names(None).rows(&mut entries);
+        assert_eq!(paths(&entries), vec!["m2/m2.md", "m1/m1.md"]);
+        assert!(matches!(
+            &entries[0].applied,
+            Applied::Renamed { from } if from == "m1/skillwright.md"
+        ));
+
+        let mut err = ApplyError::Io {
+            what: "the entry note is now at m2/m1.md; then restoring".to_owned(),
+            source: std::io::Error::other("denied"),
+        };
+        names(Some("m2/skillwright.md")).error(&mut err);
+        assert!(
+            err.to_string().contains("now at m2/skillwright.md;"),
+            "{err}"
+        );
+    }
+
+    /// A failed restore names its paths from the vault root.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_restore_names_vault_relative_paths() {
+        let v = vault();
+        write(v.path(), "marketplaces/m1/m1.md", "---\nname: m1\n---\n");
+        let m1 = v.path().join("marketplaces/m1");
+        if !lock_writes(&m1) {
+            return;
+        }
+        let err = restore_entry(
+            v.path(),
+            &m1.join("skillwright.md"),
+            &m1.join("m1.md"),
+            &v.path().join("marketplaces/m2"),
+            &v.path().join("marketplaces/m2/skillwright.md"),
+            &v.path().join("marketplaces/m2/m2.md"),
+        );
+        unlock_writes(&m1);
+        let message = err.unwrap_err().to_string();
+        assert!(
+            message.contains("restoring marketplaces/m1/skillwright.md"),
+            "{message}"
+        );
+        assert!(!message.contains(&*v.path().to_string_lossy()), "{message}");
+    }
+
+    #[test]
+    fn a_temporary_path_is_replaced_only_where_it_is_whole() {
+        let old = "marketplaces/m2/m1.md";
+        let new = "marketplaces/m2/skillwright.md";
+        assert_eq!(
+            replace_path(&format!("now at {old}."), old, new),
+            format!("now at {new}.")
+        );
+        assert_eq!(
+            replace_path(&format!("now at {old}; see {old}x"), old, new),
+            format!("now at {new}; see {old}x")
+        );
+        assert_eq!(
+            replace_path(&format!("at x{old} and {old}.bak"), old, new),
+            format!("at x{old} and {old}.bak")
+        );
+    }
+
+    /// When the folder moves and the entry's own rename then fails, the
+    /// error says what already moved rather than claiming nothing did.
+    #[test]
+    fn a_folder_move_whose_entry_rename_fails_reports_the_folder_move() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        // A folder where the entry's new name goes makes its rename fail.
+        write(v.path(), "marketplaces/m1/shop.md/keep.txt", "x");
+        let op = AuthoringOp::Move {
+            from: "marketplaces/m1/skillwright.md".to_owned(),
+            to: "marketplaces/shop/shop.md".to_owned(),
+            bundle: true,
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(matches!(*source, ApplyError::Io { .. }), "{source:?}");
+        assert!(v.path().join("marketplaces/shop/skillwright.md").is_file());
+        assert_eq!(
+            outcomes(&outcome),
+            vec![("marketplaces/shop/skillwright.md", "renamed")]
+        );
+    }
+
+    /// A bundle named `skillwright` anywhere but directly under
+    /// `marketplaces/` is an ordinary `<dir>/<dir>.md` bundle: it moves with
+    /// its links rewritten.
+    #[test]
+    fn a_bundle_named_skillwright_outside_marketplaces_is_relinked() {
+        for (from, to) in [
+            (
+                "skills/group/skillwright/skillwright.md",
+                "skills/group/sw/sw.md",
+            ),
+            ("tools/skillwright/skillwright.md", "tools/sw/sw.md"),
+        ] {
+            let v = vault();
+            write(v.path(), from, "---\nname: skillwright\n---\n");
+            write(v.path(), "notes.md", &format!("[s]({from})\n"));
+            let op = AuthoringOp::Move {
+                from: from.to_owned(),
+                to: to.to_owned(),
+                bundle: true,
+            };
+            let outcome = apply(v.path(), &op).unwrap();
+            assert!(v.path().join(to).is_file(), "{from}");
+            assert_eq!(read(v.path(), "notes.md"), format!("[s]({to})\n"), "{from}");
+            assert!(
+                outcomes(&outcome).contains(&("notes.md", "relinked")),
+                "{from}: {outcome:?}"
+            );
+        }
+    }
+
+    /// Nothing moves onto the vault's root file either.
+    #[test]
+    fn moving_onto_the_vaults_root_file_is_refused() {
+        for (from, bundle) in [("notes/a.md", false), ("skills/a/a.md", true)] {
+            let v = vault();
+            write(v.path(), from, "---\nname: a\n---\n");
+            let op = AuthoringOp::Move {
+                from: from.to_owned(),
+                to: "skillwright.md".to_owned(),
+                bundle,
+            };
+            let before = tree(v.path());
+            let err = preview(v.path(), &op).unwrap_err();
+            assert!(err.to_string().contains("root file"), "{from}: {err}");
+            let err = apply(v.path(), &op).unwrap_err();
+            assert!(err.to_string().contains("root file"), "{from}: {err}");
+            assert_eq!(tree(v.path()), before, "{from}");
+        }
+    }
+
+    /// The root-file guard does not depend on the file system's case: on a
+    /// case-insensitive one, `SKILLWRIGHT.md` is the vault's root file.
+    #[test]
+    fn the_root_file_guard_ignores_case() {
+        for (from, to) in [
+            ("SKILLWRIGHT.md", "x/x.md"),
+            ("notes/a.md", "Skillwright.md"),
+        ] {
+            let v = vault();
+            write(v.path(), "skillwright.md", "---\nname: v\n---\n");
+            write(v.path(), "notes/a.md", "---\nname: a\n---\n");
+            let op = AuthoringOp::Move {
+                from: from.to_owned(),
+                to: to.to_owned(),
+                bundle: false,
+            };
+            let err = apply(v.path(), &op).unwrap_err();
+            assert!(
+                err.to_string().contains("root file"),
+                "{from} -> {to}: {err}"
+            );
+        }
+    }
+
+    /// The vault's own root file is not a folder's entry: moving it is
+    /// refused, and nothing changes.
+    #[test]
+    fn moving_the_vaults_root_file_is_refused() {
+        for (to, bundle) in [
+            ("x/skillwright.md", true),
+            ("x/x.md", true),
+            ("x.md", false),
+        ] {
+            let v = vault();
+            write(v.path(), "skillwright.md", "---\nname: v\n---\n");
+            write(v.path(), "skills/a.md", "---\nname: a\n---\n");
+            let op = AuthoringOp::Move {
+                from: "skillwright.md".to_owned(),
+                to: to.to_owned(),
+                bundle,
+            };
+            let before = tree(v.path());
+            let err = preview(v.path(), &op).unwrap_err();
+            assert!(matches!(err, ApplyError::Refused(_)), "{to}: {err:?}");
+            let err = apply(v.path(), &op).unwrap_err();
+            assert!(matches!(err, ApplyError::Refused(_)), "{to}: {err:?}");
+            assert_eq!(tree(v.path()), before, "{to}");
+        }
     }
 
     /// A bundled component named `skillwright` is an ordinary `<dir>/<dir>.md`

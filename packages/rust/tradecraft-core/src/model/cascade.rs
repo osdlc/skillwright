@@ -157,14 +157,19 @@ impl Cascade {
     }
 
     /// The containers above the one note at `note_path`, read from their own
-    /// paths with no scan: a publish of one note must not fail on a problem
-    /// elsewhere in the vault. With no `vault_root` there is no folder to read
-    /// a container from, so `requested` is all there is.
+    /// paths. A note outside `marketplaces/` also counts the marketplaces, by
+    /// a scan of that folder alone, where a duplicate name is only a warning.
+    /// With no `vault_root` there is no folder to read a container from, so
+    /// `requested` is all there is.
     ///
     /// # Errors
     ///
-    /// What reading a container note refuses. A note whose plugin note cannot
-    /// be read cannot know where it may go.
+    /// What reading a container note refuses: a note whose plugin note cannot
+    /// be read cannot know where it may go. `refused: malformed-root-file`
+    /// when the root file, or a workspace file above it, cannot say what it
+    /// excludes. For a note outside `marketplaces/`, `refused: unsafe-path` for
+    /// a symlink under `marketplaces/` and [`CoreError::Io`] for a folder
+    /// there that cannot be listed, as a build refuses them.
     pub fn above(
         vfs: &dyn crate::vfs::Vfs,
         vault_root: Option<&Path>,
@@ -172,21 +177,32 @@ impl Cascade {
         requested: &MarketplaceConfig,
         ns: &Namespace,
     ) -> Result<Self, CoreError> {
-        let Some(root) = vault_root else {
+        let placed = crate::patterns::Patterns::load_at(vfs, vault_root)?;
+        Self::above_with(vfs, placed.as_ref(), note_path, requested, ns)
+    }
+
+    /// [`Self::above`] with the vault root's patterns already read.
+    pub(crate) fn above_with(
+        vfs: &dyn crate::vfs::Vfs,
+        placed: Option<&crate::patterns::Placed<'_>>,
+        note_path: &Path,
+        requested: &MarketplaceConfig,
+        ns: &Namespace,
+    ) -> Result<Self, CoreError> {
+        let Some((patterns, root)) = placed else {
             return Ok(Self::over(&[], None, requested));
         };
-        let patterns = crate::patterns::Patterns::read(vfs, root);
-        let mut paths = crate::discover::container_notes_with(&patterns, root, note_path);
-        let placed = crate::discover::folder_placement_with(&patterns, root, note_path).marketplace;
+        let mut paths = crate::discover::container_notes_with(patterns, root, note_path);
+        let placed = crate::discover::folder_placement_with(patterns, root, note_path).marketplace;
         let market = match placed {
             Some(market) => Some(market),
-            None => only_marketplace(vfs, root, ns)?.inspect(|name| {
+            None => only_marketplace(vfs, root, patterns, ns)?.inspect(|name| {
                 paths.push(marketplace_note(root, name));
             }),
         };
         let mut containers = Vec::new();
         for path in paths {
-            containers.extend(read_container(vfs, root, &path, ns)?);
+            containers.extend(read_container(vfs, root, patterns, &path, ns)?);
         }
         Ok(Self::over(&containers, market.as_deref(), requested))
     }
@@ -374,24 +390,32 @@ fn marketplace_note(root: &Path, folder: &str) -> PathBuf {
 /// The vault's one marketplace, or `None` when it holds none or several. Counted
 /// by scanning `marketplaces/` as a build does, so the two cannot disagree.
 ///
+/// A duplicate name inside a marketplace is a warning, not a refusal: it is
+/// that marketplace's build's news. What stops the scan itself refuses, as it
+/// refuses the build: without the count, the note cannot know which
+/// marketplace's `targets` it may ship under.
+///
 /// # Errors
 ///
-/// What a build's scan of that folder refuses.
+/// What walking `marketplaces/` refuses: `refused: unsafe-path` for a
+/// symlink, and [`CoreError::Io`] for a folder that cannot be listed.
 fn only_marketplace(
     vfs: &dyn crate::vfs::Vfs,
     root: &Path,
+    patterns: &crate::patterns::Patterns,
     ns: &Namespace,
 ) -> Result<Option<String>, CoreError> {
     let folder = root.join(crate::paths::WORKSPACE_DIR);
     if !vfs.exists(&folder) {
         return Ok(None);
     }
-    let files = crate::discover::load_source(vfs, root, Some(&folder))?.files;
+    let files = crate::discover::load_source(vfs, root, patterns, Some(&folder))?.files;
+    // Placed from the vault root, as a build places them.
     let source = crate::discover::Source {
         root: root.to_path_buf(),
         files,
     };
-    let scan = crate::discover::discover_in(vfs, root, &source, ns)?;
+    let scan = crate::discover::discover_roster_in(vfs, root, patterns, &source, ns)?;
     Ok(sole_marketplace(&marketplaces_in(&scan.components)))
 }
 

@@ -955,7 +955,7 @@ impl<'a> Renderer<'a> {
         destinations.insert("SKILL.md".to_owned(), entry_path.clone());
         Ok(Renderer {
             vfs,
-            patterns: crate::patterns::Patterns::read(vfs, &vault_root),
+            patterns: crate::patterns::Patterns::load(vfs, &vault_root)?,
             vault_root,
             entry_path,
             bundle_root,

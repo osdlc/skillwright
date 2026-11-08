@@ -2091,3 +2091,271 @@ fn load_marketplace_loads_a_member_named_after_a_kind_folder() {
         );
     }
 }
+
+/// A root file that does not parse is refused with one token, whichever
+/// entry point reads it: `load_marketplace` and a build agree.
+#[test]
+fn a_malformed_root_file_is_refused_with_one_token_everywhere() {
+    for (root, member) in [
+        ("---\nname: [\n---\n", None),
+        ("---\nworkspace: [\n---\n", Some("---\nname: a\n---\n")),
+    ] {
+        let vfs = MemVfs::new();
+        let start = match member {
+            None => {
+                write(&vfs, "/vault/skillwright.md", root);
+                "/vault"
+            }
+            Some(member) => {
+                write(&vfs, "/ws/skillwright.md", root);
+                write(&vfs, "/ws/marketplaces/a/skillwright.md", member);
+                "/ws/marketplaces/a"
+            }
+        };
+        let err = tradecraft_core::load_marketplace(&vfs, Path::new(start), Path::new("/home"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("malformed-root-file: "), "{start}: {err}");
+    }
+}
+
+/// A root file with a YAML error cannot say what it excludes, so a publish of
+/// one note and a scan of the vault refuse rather than ship or list a note
+/// the file may exclude.
+#[test]
+fn a_malformed_root_file_refuses_a_publish_and_a_scan() {
+    let root = "---\nbuild:\n  exclude: '**/*.draft.md'\n  oops: [\n---\n";
+    let vfs = root_vault(root, &[("plugins/p/skills/hid.draft.md", USE_IT)]);
+    let request = {
+        let mut value =
+            PublishRequest::new("/vault/plugins/p/skills/hid.draft.md", "/dest", "claude");
+        value.skills_root = Some(PathBuf::from("/vault"));
+        value
+    };
+    let err = publish_skill(&vfs, &request, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("malformed-root-file"), "{err}");
+    assert!(!vfs.exists(Path::new("/dest")));
+
+    let err = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("malformed-root-file"), "{err}");
+}
+
+#[test]
+fn a_malformed_workspace_file_refuses_a_member_publish() {
+    let (vfs, _) = workspace("---\nworkspace: [\n---\n", "---\nname: a\n---\n");
+    let request = {
+        let mut value = PublishRequest::new(
+            "/ws/marketplaces/a/plugins/rev/skills/h.draft.md",
+            "/dest",
+            "claude",
+        );
+        value.skills_root = Some(PathBuf::from("/ws/marketplaces/a"));
+        value
+    };
+    let err = publish_skill(&vfs, &request, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("malformed-root-file"), "{err}");
+    assert!(!vfs.exists(Path::new("/dest")));
+}
+
+/// Counting the marketplaces for a vault-level note does not refuse on a
+/// problem inside one of them: a duplicate name in `n` is that marketplace's
+/// build's news, not this publish's.
+#[test]
+fn a_problem_in_another_marketplace_does_not_refuse_a_publish() {
+    let vfs = beside_a_marketplace();
+    write(&vfs, "/vault/marketplaces/n/skills/a.md", &note("a", ""));
+    write(&vfs, "/vault/marketplaces/n/skills/b.md", &note("a", ""));
+    let request = {
+        let mut value = PublishRequest::new("/vault/skills/loose.md", "/dest", "claude");
+        value.skills_root = Some(PathBuf::from("/vault"));
+        value
+    };
+    let report = publish_skill(&vfs, &request, &Namespace::default()).unwrap();
+    // Two marketplaces, so the note stays on the root file.
+    let skill = published(&vfs, &report, "SKILL.md");
+    assert!(!skill.contains("license: ISC"), "{skill}");
+}
+
+/// A root file whose exclusions read fine is not refused by a scan or a
+/// publish for a value elsewhere in it: the verbs that read that value, such
+/// as a build, say what is wrong with it.
+#[test]
+fn a_bad_value_outside_the_exclusions_does_not_refuse_a_scan_or_publish() {
+    for bad in [
+        "repository: example\n",
+        "targets: [nowhere]\n",
+        "author: [1, 2]\n",
+        "claude: 5\n",
+    ] {
+        let root = format!("---\n{bad}build:\n  exclude: '**/*.draft.md'\n---\n");
+        let vfs = root_vault(
+            &root,
+            &[
+                ("plugins/p/skills/keep.md", USE_IT),
+                ("plugins/p/skills/hid.draft.md", USE_IT),
+            ],
+        );
+        let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare())
+            .unwrap_or_else(|err| panic!("{bad}: {err}"));
+        let paths: Vec<&str> = scan
+            .components
+            .iter()
+            .map(|c| c.vault_relative_path.as_str())
+            .collect();
+        assert!(
+            paths.contains(&"plugins/p/skills/keep.md"),
+            "{bad}: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("draft")),
+            "{bad}: {paths:?}"
+        );
+
+        let publish = |note: &str| {
+            let mut value = PublishRequest::new(note, "/dest", "claude");
+            value.skills_root = Some(PathBuf::from("/vault"));
+            publish_skill(&vfs, &value, &Namespace::bare())
+        };
+        publish("/vault/plugins/p/skills/keep.md").unwrap_or_else(|err| panic!("{bad}: {err}"));
+        let err = publish("/vault/plugins/p/skills/hid.draft.md").unwrap_err();
+        assert!(err.to_string().contains("excluded-note"), "{bad}: {err}");
+
+        tradecraft_core::vault_config(&vfs, Path::new("/vault"))
+            .unwrap_or_else(|err| panic!("{bad}: {err}"));
+    }
+}
+
+/// What a scan cannot do without, it refuses: exclusions or patterns of the
+/// wrong shape.
+#[test]
+fn a_bad_exclusion_or_pattern_refuses_a_scan() {
+    for bad in [
+        "build:\n  exclude: 5\n",
+        "build:\n  patterns: 5\n",
+        "build: 5\n",
+    ] {
+        let vfs = root_vault(&format!("---\n{bad}---\n"), &[TOOL_SKILL]);
+        let err = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("malformed-root-file"), "{bad}: {err}");
+    }
+}
+
+/// A skills root inside the vault is walked with the vault's own patterns. A
+/// `skillwright.md` at the skills root is not the vault's root file, so it is
+/// not read as one.
+#[test]
+fn a_skills_root_is_walked_with_the_vaults_patterns() {
+    let vfs = root_vault(
+        "---\nname: m\n---\n",
+        &[
+            ("src/skillwright.md", "---\nbuild: [\n---\n"),
+            ("src/plugins/rev/skills/a.md", USE_IT),
+        ],
+    );
+    let scan = discover_components(
+        &vfs,
+        Path::new("/vault"),
+        Some(Path::new("/vault/src")),
+        &Namespace::bare(),
+    )
+    .unwrap();
+    assert!(
+        scan.components
+            .iter()
+            .any(|c| c.vault_relative_path == "src/plugins/rev/skills/a.md"),
+        "{scan:?}"
+    );
+}
+
+/// A marketplaces folder a build refuses to read refuses a publish of a
+/// vault-level note too: without it, the note could ship to a harness the
+/// one marketplace's `targets` leaves out.
+#[cfg(unix)]
+#[test]
+fn a_marketplaces_folder_a_build_refuses_refuses_the_publish() {
+    use std::os::unix::fs::PermissionsExt;
+    for case in ["symlink", "unlistable"] {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path().join("vault");
+        let put = |rel: &str, text: &str| {
+            let path = vault.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        put("skillwright.md", "---\nname: v\n---\n");
+        put("skills/a.md", "---\ndescription: A.\n---\n");
+        put(
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\ndescription: M.\ntargets: [codex-cli]\n---\n",
+        );
+        put("marketplaces/m1/skills/x.md", "---\ndescription: X.\n---\n");
+        let locked = vault.join("marketplaces/n");
+        match case {
+            "symlink" => {
+                std::os::unix::fs::symlink(dir.path(), vault.join("marketplaces/m1/link")).unwrap();
+            }
+            _ => {
+                put("marketplaces/n/skills/y.md", "---\ndescription: Y.\n---\n");
+                std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+                if std::fs::read_dir(&locked).is_ok() {
+                    // Running as root: nothing is unlistable.
+                    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
+                        .unwrap();
+                    continue;
+                }
+            }
+        }
+        let vfs = tradecraft_core::NativeVfs;
+        let mut request = PublishRequest::new(
+            vault.join("skills/a.md"),
+            dir.path().join("dest"),
+            "claude-code",
+        );
+        request.skills_root = Some(vault.clone());
+        let published = publish_skill(&vfs, &request, &Namespace::default());
+        // The cascade alone, apart from the vault-wide link walk a publish
+        // also makes.
+        let cascade = tradecraft_core::model::Cascade::above(
+            &vfs,
+            Some(&vault),
+            &vault.join("skills/a.md"),
+            &MarketplaceConfig::default(),
+            &Namespace::default(),
+        );
+        if case == "unlistable" {
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert!(published.is_err(), "{case}: {published:?}");
+        assert!(!dir.path().join("dest/.claude").exists(), "{case}");
+        assert!(cascade.is_err(), "{case}");
+    }
+}
+
+/// A pattern that matches every file at the vault root does not make the
+/// vault's own root file a note: it is configuration, whatever the patterns
+/// say.
+#[test]
+fn a_pattern_never_places_the_vaults_root_file() {
+    let root = "---\nname: v\nbuild:\n  patterns:\n    skills: '*'\n---\n";
+    let vfs = root_vault(root, &[("top.md", USE_IT)]);
+    let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    let paths: Vec<&str> = scan
+        .components
+        .iter()
+        .map(|c| c.vault_relative_path.as_str())
+        .collect();
+    assert_eq!(paths, vec!["top.md"]);
+    assert!(
+        scan.warnings.iter().all(|w| w.path != "skillwright.md"),
+        "{:?}",
+        scan.warnings
+    );
+}
