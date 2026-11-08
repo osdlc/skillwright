@@ -645,8 +645,22 @@ fn move_folder(
             std::fs::create_dir_all(parent).map_err(io)?;
         }
         std::fs::rename(old_dir, new_dir).map_err(io)?;
-        if let Some(leaf) = old.file_name() {
-            std::fs::rename(new_dir.join(leaf), &new).map_err(io)?;
+        // The folder has moved: a failure from here is reported with it.
+        if let Some(leaf) = old.file_name()
+            && let Err(source) = std::fs::rename(new_dir.join(leaf), &new)
+        {
+            let from_leaf = from.rsplit('/').next().unwrap_or(from);
+            let landed = match to.rsplit_once('/') {
+                Some((dir, _)) => format!("{dir}/{from_leaf}"),
+                None => from_leaf.to_owned(),
+            };
+            outcome.push(
+                landed,
+                Applied::Renamed {
+                    from: from.to_owned(),
+                },
+            );
+            return Err(ApplyError::partial(outcome.clone(), io(source)));
         }
     }
     outcome.push(
@@ -1637,6 +1651,35 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    /// When the folder moves and the entry's own rename then fails, the
+    /// error says what already moved rather than claiming nothing did.
+    #[test]
+    fn a_folder_move_whose_entry_rename_fails_reports_the_folder_move() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        // A folder where the entry's new name goes makes its rename fail.
+        write(v.path(), "marketplaces/m1/shop.md/keep.txt", "x");
+        let op = AuthoringOp::Move {
+            from: "marketplaces/m1/skillwright.md".to_owned(),
+            to: "marketplaces/shop/shop.md".to_owned(),
+            bundle: true,
+        };
+        let err = apply(v.path(), &op).unwrap_err();
+        let ApplyError::Partial { outcome, source } = err else {
+            panic!("expected a partial outcome, got {err:?}");
+        };
+        assert!(matches!(*source, ApplyError::Io { .. }), "{source:?}");
+        assert!(v.path().join("marketplaces/shop/skillwright.md").is_file());
+        assert_eq!(
+            outcomes(&outcome),
+            vec![("marketplaces/shop/skillwright.md", "renamed")]
+        );
     }
 
     /// The vault's own root file is not a folder's entry: moving it is

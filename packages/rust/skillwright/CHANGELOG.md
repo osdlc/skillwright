@@ -22,6 +22,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - Moving `marketplaces/skillwright/skillwright.md` treats it as a marketplace's entry, like `marketplaces/<m>/skillwright.md` for any other name. It was moved as a `skillwright` component bundle. Only `<kind>/skillwright/skillwright.md` is a component's note.
 - Moving or renaming the vault's own `skillwright.md` is refused, and nothing is written. It failed with a file error.
+- When a marketplace folder moves and its entry's rename then fails, the error says the folder moved and where the entry now is. It reported a bare file error, which means nothing was written.
 
 ## [0.7.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.6.0...skillwright/v0.7.0) - 2026-11-07
 
