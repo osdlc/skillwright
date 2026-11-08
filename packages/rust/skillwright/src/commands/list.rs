@@ -20,7 +20,9 @@
 
 use tradecraft_core::model::load::{LoadRequest, load};
 use tradecraft_core::settings::ROOT_FILE;
-use tradecraft_core::{DiscoveryReport, EntityKind, discover_roster, inherit_targets};
+use tradecraft_core::{
+    DiscoveredComponent, DiscoveryReport, EntityKind, discover_roster, inherit_targets,
+};
 
 use crate::commands::marketplace::marketplace_inputs;
 use crate::config::relative_path;
@@ -29,7 +31,7 @@ use crate::exit::{EXIT_BLOCKED, EXIT_OK, blocked};
 use crate::report::{render_roster, render_roster_tally, render_warning_line, roster_row};
 use crate::resolve::{
     CommonFlags, ResolvedRun, refuse_workspace, resolve_run, resolve_skills_root, workspace_runs,
-    workspace_warnings,
+    workspace_warnings, workspace_warnings_over,
 };
 use tradecraft_core::MarketplaceInputs;
 
@@ -83,7 +85,7 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // A roster says where a note goes, so it shows what the note inherits.
     inherit_targets(&mut scan, &run.root_config());
     if run.is_workspace()
-        && let Err(code) = read_members(&mut scan, &run, &flags.common, ctx)
+        && let Err(code) = read_members(&mut scan, &run, skills_root.is_none(), &flags.common, ctx)
     {
         return code;
     }
@@ -161,12 +163,31 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
 /// Replaces what a workspace scan says about each marketplace with that
 /// marketplace's own scan: a build reads each one as a vault of its own, with
 /// its own `exclude`, `patterns` and namespace. What sits outside them stays.
+///
+/// `whole_vault` says `scan` read the workspace root itself, so the workspace
+/// warnings read it rather than scanning again.
 fn read_members(
     scan: &mut DiscoveryReport,
     run: &ResolvedRun,
+    whole_vault: bool,
     common: &CommonFlags,
     ctx: &mut CommandContext<'_>,
 ) -> Result<(), i32> {
+    // What `workspace_warnings` would scan: the components at the workspace
+    // root, taken before the members' own scans replace theirs. A roster keeps
+    // a path collision that a plain scan refuses, and a refused scan has no
+    // components, so a collision leaves none here either.
+    let at_root: Option<Vec<DiscoveredComponent>> = whole_vault.then(|| {
+        if scan.warnings.iter().any(|w| w.reason == "path-collision") {
+            Vec::new()
+        } else {
+            scan.components
+                .iter()
+                .filter(|c| !c.vault_relative_path.starts_with("marketplaces/"))
+                .cloned()
+                .collect()
+        }
+    });
     for member in workspace_runs(run, common, None, ctx.err)? {
         let namespace = member.core_namespace();
         let mut inner = discover_roster(&member.source_vfs(None), &member.vault, None, &namespace)
@@ -214,7 +235,10 @@ fn read_members(
     }
     scan.components
         .sort_by(|a, b| a.vault_relative_path.cmp(&b.vault_relative_path));
-    scan.warnings.extend(workspace_warnings(run));
+    scan.warnings.extend(match &at_root {
+        Some(components) => workspace_warnings_over(run, components),
+        None => workspace_warnings(run),
+    });
     Ok(())
 }
 

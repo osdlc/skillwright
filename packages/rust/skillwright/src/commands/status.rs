@@ -39,7 +39,8 @@ use serde::Serialize;
 use tradecraft_core::publish::kind_has_renderer;
 use tradecraft_core::status::{PublishState, StatusRequest, VersionBumpSuggestion, status_of};
 use tradecraft_core::{
-    NativeVfs, PublishStatus, SkippedNote, discover_components, read_vault_skill,
+    DiscoveredComponent, NativeVfs, PublishStatus, SkippedNote, discover_components,
+    read_vault_skill,
 };
 
 use crate::commands::bump::marketplaces_in;
@@ -101,6 +102,8 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Notes whose kind no destination installs, by vault-relative path and
     // kind. Rows, but not questions for the core.
     let mut unpublishable: Vec<(String, String)> = Vec::new();
+    // The whole-vault scan, kept for the advisory below.
+    let mut scanned: Option<Vec<DiscoveredComponent>> = None;
     match &flags.note {
         Some(note) => {
             let note_path = normalize_join(&run.vault, Path::new(note));
@@ -123,6 +126,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
                         }
                     }
                     unreadable = scan.skipped;
+                    scanned = Some(scan.components);
                 }
                 // What discovery still fails on is run-level by construction — a
                 // duplicate name, a bundle overlap, a symlink, a missing root. A
@@ -293,9 +297,12 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // shape.
     if !flags.json && !suggestions.is_empty() {
         // In a vault of several marketplaces, `bump` needs the one named.
-        let scan = discover_components(&run.source_vfs(None), &run.vault, None, &namespace)
-            .map(|scan| scan.components)
-            .unwrap_or_default();
+        // A whole-vault run scanned already; a named note's run has not.
+        let scan = scanned.unwrap_or_else(|| {
+            discover_components(&run.source_vfs(None), &run.vault, None, &namespace)
+                .map(|scan| scan.components)
+                .unwrap_or_default()
+        });
         let several = marketplaces_in(&scan).len() > 1;
         let scope = |note_path: &Path| {
             scan.iter()
