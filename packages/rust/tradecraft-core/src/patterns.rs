@@ -413,11 +413,19 @@ impl Patterns {
     /// Whether `rel`, or a folder holding it, matches `build.exclude`: this
     /// file's globs from the vault root, or a workspace's from its folder.
     pub fn excluded(&self, rel: &str) -> bool {
-        matches_any(&self.exclude, rel)
-            || self
-                .workspace_exclude
-                .as_ref()
-                .is_some_and(|(member, globs)| matches_any(globs, &format!("{member}/{rel}")))
+        self.excluded_by(rel).is_some()
+    }
+
+    /// The root file whose `build.exclude` excludes `rel`, by its path from
+    /// the vault root: this one's, else the workspace's above it.
+    pub(crate) fn excluded_by(&self, rel: &str) -> Option<String> {
+        if matches_any(&self.exclude, rel) {
+            return Some(ROOT_FILE.to_owned());
+        }
+        self.workspace_exclude
+            .as_ref()
+            .filter(|(member, globs)| matches_any(globs, &format!("{member}/{rel}")))
+            .map(|_| format!("../../{ROOT_FILE}"))
     }
 
     /// Whether a folder that never ships holds `rel`.

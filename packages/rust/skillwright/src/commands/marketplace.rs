@@ -38,7 +38,8 @@ use crate::report::{
     render_warning_line,
 };
 use crate::resolve::{
-    CommonFlags, ResolvedRun, resolve_run, resolve_skills_root, workspace_runs, workspace_warnings,
+    CommonFlags, ResolvedRun, member_workspace_warnings, resolve_run, resolve_skills_root,
+    workspace_runs, workspace_warnings,
 };
 
 /// Which of the two verbs this run is.
@@ -135,6 +136,9 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
         Err(code) => return code,
     };
     if !run.is_workspace() {
+        for warning in member_workspace_warnings(&run) {
+            let _ = writeln!(ctx.err, "{}", render_warning_line(&warning));
+        }
         let advise = flags.marketplace.clone();
         return export_one(verb, flags, &run, flags.marketplace.clone(), advise, ctx);
     }

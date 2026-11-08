@@ -426,10 +426,8 @@ pub fn refuse_workspace(verb: &str, run: &ResolvedRun, err: &mut dyn Write) -> R
 pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
     // The workspace file on disk, as each member reads it, whatever
     // `--config` names.
-    let mut warnings = tradecraft_core::patterns::workspace_exclude_warnings(
-        &tradecraft_core::NativeVfs,
-        &run.vault,
-    );
+    let mut warnings =
+        tradecraft_core::patterns::workspace_exclude_warnings(&NativeVfs, &run.vault);
     if run.config.build.out.is_some() {
         warnings.push(DiscoveryWarning::new(
             ROOT_FILE,
@@ -463,6 +461,30 @@ pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
         ));
     }
     warnings
+}
+
+/// What a run in one member says about the workspace above it: each
+/// workspace `build.exclude` glob that matches nothing in any of its
+/// marketplaces, as a run at the workspace root says it, named by the
+/// workspace file's path from the member. Nothing outside a workspace.
+pub fn member_workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
+    if run.is_workspace() {
+        return Vec::new();
+    }
+    let Some(workspace) = workspace_above(&run.vault)
+        .as_deref()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+    else {
+        return Vec::new();
+    };
+    tradecraft_core::patterns::workspace_exclude_warnings(&NativeVfs, &workspace)
+        .into_iter()
+        .map(|mut warning| {
+            warning.path = format!("../../{ROOT_FILE}");
+            warning
+        })
+        .collect()
 }
 
 /// The skills root a `--skills-root` or `adopt --into` flag names, resolved

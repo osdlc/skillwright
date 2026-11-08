@@ -134,10 +134,15 @@ build:
 
 Here `acme` leaves out both `secrets/` and `drafts/`. A workspace glob
 `secrets/**` means `workspace/secrets/**`, not each member's `secrets/`: write
-`**/secrets/**` for every member, or `marketplaces/*/secrets/**`. A workspace
-glob that matches nothing in any member warns once, naming the workspace file.
-A member's build also warns when a workspace glob misses it but would match it
-read from the member's folder, and says how to rewrite it. The
+`**/secrets/**` for every member, or `marketplaces/*/secrets/**`. A member's
+`exclude` can no longer drop a workspace glob: narrow the workspace glob
+instead, such as `marketplaces/other/secrets/**` in place of `**/secrets/**`.
+
+A workspace glob that matches nothing in any member gets one warning that names
+the workspace file, from `build`, `check` or `list` at the workspace root or in
+a member. A member's build also warns when a workspace glob misses it but would
+match it read from the member's folder, and says how to rewrite it.
+`publish <note>` names the file whose glob excluded the note. The
 authoring verbs (`new`, `move`, `convert`) always write to the conventional
 folders: `new skill` to `skills/`, and `new plugin` to `plugins/`.
 

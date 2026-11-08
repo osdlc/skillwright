@@ -1181,10 +1181,10 @@ fn refuse_excluded(
         return Ok(());
     };
     let relative = crate::skill::forward_slashed(relative);
-    if patterns.excluded(&relative) {
+    if let Some(file) = patterns.excluded_by(&relative) {
         return Err(CoreError::refused(
             "excluded-note",
-            format!("{relative} matches `build.exclude`, so it never ships"),
+            format!("{relative} matches `build.exclude` in {file}, so it never ships"),
         ));
     }
     if patterns.never_ships(&relative) {

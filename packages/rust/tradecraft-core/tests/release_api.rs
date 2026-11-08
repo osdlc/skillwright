@@ -2000,6 +2000,10 @@ fn every_verb_honours_a_workspace_exclusion_from_the_workspace_folder() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("excluded-note"), "{err}");
+    assert!(
+        err.contains("`build.exclude` in ../../skillwright.md"),
+        "{err}"
+    );
 
     write(
         &vfs,
