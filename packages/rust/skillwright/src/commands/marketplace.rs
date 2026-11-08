@@ -111,7 +111,7 @@ pub(crate) fn configured_request(
         &run.config_vfs(),
         run.scope(None, marketplace),
         &config,
-        &run.core_namespace(),
+        run.core_namespace(),
     );
     let mut request = ExportRequest::new(run.vault.clone(), out_root, config);
     request.marketplace = marketplace.map(str::to_owned);
@@ -241,7 +241,7 @@ fn export_one(
         &vfs,
         run.scope(skills_root.as_deref(), marketplace.as_deref()),
         &marketplace_config,
-        &run.core_namespace(),
+        run.core_namespace(),
     );
 
     // --- the mode -----------------------------------------------------------
@@ -327,7 +327,7 @@ fn export_one(
 
     // --- run ----------------------------------------------------------------
     let vfs = run.export_vfs(request.skills_root.as_deref(), &out_root);
-    let report = match export_skills(&vfs, &request, &run.core_namespace()) {
+    let report = match export_skills(&vfs, &request, run.core_namespace()) {
         Ok(report) => report,
         // An export has no partial report: its rails fire before anything is
         // staged, and a failed swap rolls back. So a failure means nothing

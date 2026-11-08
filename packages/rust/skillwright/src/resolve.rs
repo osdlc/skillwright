@@ -52,8 +52,8 @@ pub struct ResolvedRun {
 
 impl ResolvedRun {
     /// This run's namespace as the core takes it.
-    pub fn core_namespace(&self) -> Namespace {
-        self.namespace.clone()
+    pub fn core_namespace(&self) -> &Namespace {
+        &self.namespace
     }
 
     /// The filesystem as this run reads it: the root file in use answers
@@ -74,7 +74,7 @@ impl ResolvedRun {
             self.scope(skills_root, None),
             self.configured_out().as_deref(),
             &self.root_config(),
-            &self.core_namespace(),
+            self.core_namespace(),
         )
     }
 
@@ -126,7 +126,7 @@ impl ResolvedRun {
             &self.config_vfs(),
             self.scope(None, marketplace),
             &self.root_config(),
-            &self.core_namespace(),
+            self.core_namespace(),
         )
     }
 
@@ -137,7 +137,7 @@ impl ResolvedRun {
             &self.config_vfs(),
             self.scope(None, marketplace),
             &self.root_config(),
-            &self.core_namespace(),
+            self.core_namespace(),
         )
     }
 
@@ -147,7 +147,7 @@ impl ResolvedRun {
             &self.config_vfs(),
             self.scope(None, None),
             name,
-            &self.core_namespace(),
+            self.core_namespace(),
         )
     }
 
@@ -435,7 +435,7 @@ pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
         &run.source_vfs(None),
         &run.vault,
         None,
-        &run.core_namespace(),
+        run.core_namespace(),
     );
     let in_marketplaces = format!("{WORKSPACE_DIR}/");
     let folders: std::collections::BTreeSet<String> = scan
@@ -515,7 +515,7 @@ mod tests {
             assert_eq!(loaded.dir, run.vault, "{start}");
             assert_eq!(Some(&loaded.root_file), run.config_path.as_ref(), "{start}");
             assert_eq!(loaded.root, run.config, "{start}");
-            assert_eq!(loaded.namespace, run.core_namespace(), "{start}");
+            assert_eq!(&loaded.namespace, run.core_namespace(), "{start}");
             let out = run
                 .config
                 .build

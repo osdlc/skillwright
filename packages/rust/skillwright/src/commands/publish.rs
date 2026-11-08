@@ -280,7 +280,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             &run.source_vfs(None),
             &run.vault,
             None,
-            &run.core_namespace(),
+            run.core_namespace(),
         ) {
             Ok(scan) => scan,
             // What discovery still refuses is run-level by construction — a
@@ -329,7 +329,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 &run.source_vfs(None),
                 &run.vault,
                 None,
-                &run.core_namespace(),
+                run.core_namespace(),
             )
         {
             inherit_targets(&mut scan, &run.root_config());
@@ -443,7 +443,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             request.config = Some(root_config.clone());
             request.published_at = Some(published_at);
             request.overwrite = flags.overwrite.clone();
-            match publish_skill(&run.config_vfs(), &request, &namespace) {
+            match publish_skill(&run.config_vfs(), &request, namespace) {
                 Ok(report) => {
                     reported = true;
                     for warning in &report.warnings {

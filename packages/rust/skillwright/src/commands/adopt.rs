@@ -322,7 +322,7 @@ pub fn run_adopt(flags: &AdoptFlags, ctx: &mut CommandContext<'_>) -> i32 {
         request.overwrite = flags.overwrite.clone();
         request.mode = AdoptMode::Write;
 
-        match adopt_skills(vfs, &request, &namespace) {
+        match adopt_skills(vfs, &request, namespace) {
             Ok(report) => {
                 for skill in report.skills {
                     adopted.push(AttributedSkill {

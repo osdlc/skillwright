@@ -113,7 +113,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             note_paths.push(note_path);
         }
         None => {
-            match discover_components(&run.source_vfs(None), &run.vault, None, &namespace) {
+            match discover_components(&run.source_vfs(None), &run.vault, None, namespace) {
                 Ok(scan) => {
                     for component in &scan.components {
                         if kind_has_renderer(component.kind) {
@@ -178,7 +178,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             // something that is not one.
             request.skills_root = Some(run.vault.clone());
             request.config = Some(root_config.clone());
-            match status_of(&run.config_vfs(), &request, &namespace) {
+            match status_of(&run.config_vfs(), &request, namespace) {
                 Ok(status) => {
                     if let Some(suggestion) = &status.version_bump_suggestion {
                         suggestions.push((
@@ -299,7 +299,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
         // In a vault of several marketplaces, `bump` needs the one named.
         // A whole-vault run scanned already; a named note's run has not.
         let scan = scanned.unwrap_or_else(|| {
-            discover_components(&run.source_vfs(None), &run.vault, None, &namespace)
+            discover_components(&run.source_vfs(None), &run.vault, None, namespace)
                 .map(|scan| scan.components)
                 .unwrap_or_default()
         });
@@ -314,7 +314,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
         for (skill, note_path, suggestion) in &suggestions {
             // `bump` matches the frontmatter `name`, which may differ from the
             // filename.
-            let Ok(note) = read_vault_skill(&NativeVfs, note_path, &namespace) else {
+            let Ok(note) = read_vault_skill(&NativeVfs, note_path, namespace) else {
                 continue;
             };
             let _ = writeln!(

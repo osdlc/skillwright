@@ -255,7 +255,7 @@ fn bump_in(
 ) -> i32 {
     let namespace = run.core_namespace();
 
-    let mut scan = match discover_components(&run.source_vfs(None), &run.vault, None, &namespace) {
+    let mut scan = match discover_components(&run.source_vfs(None), &run.vault, None, namespace) {
         Ok(scan) => scan,
         Err(err) => {
             let message = err.to_string();
@@ -354,7 +354,7 @@ fn plugin_version_note(component: &DiscoveredComponent, run: &ResolvedRun) -> Ve
     VersionNote {
         path: component.entry_path.clone(),
         rel: component.vault_relative_path.clone(),
-        namespace: run.core_namespace(),
+        namespace: run.core_namespace().clone(),
     }
 }
 
@@ -602,7 +602,7 @@ fn run_changed(
     }
     let namespace = run.core_namespace();
     let vfs = run.export_vfs(None, baseline.root());
-    let report = match export_skills(&vfs, &request, &namespace) {
+    let report = match export_skills(&vfs, &request, namespace) {
         Ok(report) => report,
         Err(err) => {
             return blocked(
@@ -1084,7 +1084,7 @@ impl BuiltRef {
         let request = configured_request(&base_run, market, built.out.clone(), ExportMode::Build);
         // The ref's own `build.out` may be committed, and is output, not source.
         let vfs = base_run.export_vfs(None, &built.out);
-        if let Err(err) = export_skills(&vfs, &request, &base_run.core_namespace()) {
+        if let Err(err) = export_skills(&vfs, &request, base_run.core_namespace()) {
             return fail(
                 ctx,
                 format!(
