@@ -16,7 +16,7 @@ flowchart TD
     A1["Port package and standard to osdlc/osdlc: dist build, 0.1.0, release wiring"]
     A2["Run lib-publish-ready audit on the osdlc copy"]
     A3["Fix audit gaps and blockers"]
-    A4["Independent review of the osdlc PR"]
+    A4["Review: comment @claude review on the osdlc PR"]
     A5["Merge the osdlc PR"]
     A6["Publish @osdlc/markdown-db 0.1.0 to npm"]
     A7["skillwright depends on the npm package and deletes its copy"]
@@ -28,7 +28,7 @@ flowchart TD
   subgraph B["B · Land the evidence work, skillwright #74"]
     B1["Answer the evidence page questions, at least q-names and q-focus"]
     B2["Rename references to documents and evidence to study-results; drop the harness field"]
-    B3["Review the renames"]
+    B3["Review the renames: @claude review on #74"]
     B4["Merge #74"]
     B1 --> B2 --> B3 --> B4
   end
