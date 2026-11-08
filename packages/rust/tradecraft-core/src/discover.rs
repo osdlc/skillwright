@@ -107,7 +107,7 @@
 //! floor, the same one [`Vfs::canonicalize`]'s lexical default sets for the
 //! publish guard.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -756,6 +756,7 @@ fn discover_with(
     // sits beside it, so no single path can be classified on its own.
     let patterns = crate::patterns::Patterns::read(vfs, vault_root);
     let placed = place(root, &files, &patterns);
+    let skill_folders = skill_bundle_folders(&placed, root);
 
     let mut discovered = Vec::new();
     let mut skipped = Vec::new();
@@ -792,7 +793,10 @@ fn discover_with(
                                 .to_owned(),
                         });
                     }
-                } else if in_a_skill_folder(entry_path, &placed, root) {
+                } else if entry_path
+                    .ancestors()
+                    .any(|folder| skill_folders.contains(folder))
+                {
                     // A file of that skill: it ships with it, whatever it declares.
                 } else if let Err(err) = refuse_stray(vfs, root, entry_path, &reads_as, ns) {
                     // A stray sits at no recognised shape, so it is a member
@@ -1109,18 +1113,23 @@ pub(crate) fn under_a_kind_folder(root: &Path, path: &Path) -> bool {
     })
 }
 
-/// Whether `path` sits in the folder of a skill whose entry note is placed.
-fn in_a_skill_folder(path: &Path, placed: &BTreeMap<PathBuf, Placement>, root: &Path) -> bool {
-    placed.iter().any(|(entry, placement)| {
-        let bundled = entry
-            .strip_prefix(root)
-            .is_ok_and(|rel| is_bundle_entry(&forward_slashed(rel)).unwrap_or(false));
-        placement.kind == Some(EntityKind::Skill)
-            && bundled
-            && entry
-                .parent()
-                .is_some_and(|folder| path.starts_with(folder))
-    })
+/// The folders of the skills whose entry note is placed, built once so a
+/// file under a kind folder is tested against its ancestors rather than
+/// against every placed note.
+fn skill_bundle_folders<'a>(
+    placed: &'a BTreeMap<PathBuf, Placement>,
+    root: &Path,
+) -> BTreeSet<&'a Path> {
+    placed
+        .iter()
+        .filter(|(entry, placement)| {
+            placement.kind == Some(EntityKind::Skill)
+                && entry
+                    .strip_prefix(root)
+                    .is_ok_and(|rel| is_bundle_entry(&forward_slashed(rel)).unwrap_or(false))
+        })
+        .filter_map(|(entry, _)| entry.parent())
+        .collect()
 }
 
 /// The folder of the plugin `name` in a vault-relative `path`, as a scan
