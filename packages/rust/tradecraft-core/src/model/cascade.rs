@@ -335,7 +335,7 @@ pub(crate) fn member_block_keys(kind: EntityKind, harness: &str) -> &'static BTr
             .map(|profile| {
                 let by_kind = EntityKind::ALL
                     .into_iter()
-                    .map(|kind| (kind, compute_member_block_keys(kind, profile.name)))
+                    .map(|kind| (kind, compute_member_block_keys(kind, profile)))
                     .collect();
                 (profile.name, by_kind)
             })
@@ -347,18 +347,20 @@ pub(crate) fn member_block_keys(kind: EntityKind, harness: &str) -> &'static BTr
         .unwrap_or(&NONE)
 }
 
-/// [`member_block_keys`] worked out, for the table.
-fn compute_member_block_keys(kind: EntityKind, harness: &str) -> BTreeSet<String> {
-    let mut keys = accepted_keys(kind, harness);
-    if let Some(profile) = crate::harness::profile_named(harness) {
-        let format = profile.format();
-        let agent_only = profile.agent_override_keys();
-        keys.retain(|key| {
-            !agent_only.contains(key)
-                && !format.manifest_fields.contains(&key.as_str())
-                && !format.entry_fields.contains(&key.as_str())
-        });
-    }
+/// [`member_block_keys`] worked out for one harness with a plugin format,
+/// for the table.
+fn compute_member_block_keys(
+    kind: EntityKind,
+    profile: &crate::harness::HarnessProfile,
+) -> BTreeSet<String> {
+    let format = profile.format();
+    let agent_only = profile.agent_override_keys();
+    let mut keys = accepted_keys(kind, profile.name);
+    keys.retain(|key| {
+        !agent_only.contains(key)
+            && !format.manifest_fields.contains(&key.as_str())
+            && !format.entry_fields.contains(&key.as_str())
+    });
     keys
 }
 
@@ -483,9 +485,13 @@ mod tests {
     /// from, so it gives a member none, whatever its kind.
     #[test]
     fn a_harness_with_no_plugin_format_gives_a_member_no_block_keys() {
-        for harness in ["amp", "antigravity", "copilot", "opencode", "portable"] {
-            let profile = crate::harness::profile_named(harness).unwrap();
-            assert!(profile.plugin.is_none(), "{harness}");
+        let without: Vec<&str> = crate::harness::PROFILES
+            .iter()
+            .filter(|profile| profile.plugin.is_none())
+            .map(|profile| profile.name)
+            .collect();
+        assert!(!without.is_empty());
+        for harness in without {
             for kind in EntityKind::ALL {
                 assert!(
                     member_block_keys(kind, harness).is_empty(),

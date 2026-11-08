@@ -1019,6 +1019,8 @@ fn refuse(token: &str, path: &Path, message: impl fmt::Display) -> CoreError {
 mod tests {
     use super::*;
 
+    use serde_json::json;
+
     /// `EntityKind::ALL` names every kind, once, in order. The match has no
     /// wildcard, so a new kind fails to compile here until it is given the
     /// next position, which `ALL` must then hold.
@@ -1039,7 +1041,6 @@ mod tests {
         }
         assert_eq!(EntityKind::ALL.len(), position(EntityKind::Marketplace) + 1);
     }
-    use serde_json::json;
 
     const NOTE: &str = "/vault/skills/code-review.md";
 
