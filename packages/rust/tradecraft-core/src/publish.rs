@@ -4623,10 +4623,10 @@ mod tests {
         );
     }
 
-    // The migration. A destination written to by a build with no manifest has
-    // our exact bytes at our exact paths and no record of them. Those files
-    // are claimed rather than refused, so upgrading does not present a wall of
-    // foreign files for output we produced ourselves.
+    // A destination whose manifest is gone has our exact bytes at our exact
+    // paths and no record of them. Those files are claimed rather than
+    // refused, so it does not present a wall of foreign files for output we
+    // produced ourselves.
     #[test]
     fn output_already_identical_to_ours_is_claimed_rather_than_refused() {
         let vfs = vault_with_peers();

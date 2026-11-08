@@ -25,7 +25,6 @@ cargo install skillwright
 - [`skillwright.md` reference](docs/reference/skillwright-md.md)
 - [Field reference](docs/reference/fields.md), for each kind of note
 - [Structure spec](docs/spec/structure-v1.md), versioned
-- [Migrating a vault](docs/guide/migrating.md)
 
 Releases are built from this repository. See
 [RELEASING.md](packages/rust/skillwright/RELEASING.md).

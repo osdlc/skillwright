@@ -5,9 +5,8 @@
 //! * **The publish strip.** A key skillwright owns ([`Owner::Skillwright`])
 //!   is read into the model and never reaches a destination as written.
 //! * **Validation.** A key outside the table for a note's kind is unknown,
-//!   and gets a warning. Only a removed key or, with no namespace, an old
-//!   prefixed spelling ([`legacy_key`]) is refused. A key of ours with the wrong
-//!   [`Shape`] is refused when the note is read. An [`Owner::Spec`] key on a
+//!   and gets a warning. A key of ours with the wrong [`Shape`] is refused
+//!   when the note is read. An [`Owner::Spec`] key on a
 //!   skill, agent or command is refused by [`crate::vault`] when its value is
 //!   the wrong kind, by the check a harness block applies to the same key. On
 //!   other kinds a spec key's shape is documentation.
@@ -20,8 +19,7 @@
 //! nested block (`sw: {version: …}`). [`Owner::Spec`] keys are never
 //! prefixed.
 //!
-//! The kind comes from the folder a note sits in, never from the note. The
-//! `kind` and `plugin` keys are removed ([`REMOVED`]).
+//! The kind comes from the folder a note sits in, never from the note.
 
 use serde_json::Value;
 
@@ -131,62 +129,6 @@ pub const HARNESS_BLOCKS: &[&str] = &["claude", "codex", "cursor", "pi"];
 /// never takes one from the marketplace's block: each plugin has its own.
 pub const BLOCK_IDENTITY_KEYS: &[&str] =
     &["name", "description", "version", "displayName", "source"];
-
-/// Keys that structured a vault before 1.0 and are refused now: the folder a
-/// note sits in decides its kind and its plugin.
-pub const REMOVED: &[&str] = &["kind", "plugin"];
-
-/// The stems a vault used before keys were bare.
-const LEGACY_STEMS: &[&str] = &["sw"];
-
-/// The guide a refusal of an old spelling points to.
-pub const MIGRATING_GUIDE: &str =
-    "https://github.com/osdlc/skillwright/blob/main/docs/guide/migrating.md";
-
-/// Old prefixed keys whose new home is not the same word, bare, and the fix
-/// for each. `build.namespace` does not help these.
-const LEGACY_MOVED: &[(&str, &str)] = &[
-    ("kind", "delete it and move the note into the right folder"),
-    (
-        "plugin",
-        "delete it and move the note into the right folder",
-    ),
-    (
-        "overrides",
-        "move each entry to a block named for the harness",
-    ),
-    ("source", "move it to `adopted.source`"),
-    ("format", "move it to `adopted.format`"),
-    ("source-hash", "move it to `adopted.source_hash`"),
-    ("adopted-hash", "move it to `adopted.hash`"),
-    ("adopted-at", "move it to `adopted.at`"),
-    ("also-at", "move it to `adopted.also_at`"),
-];
-
-/// The fix for `key`, when it is an old prefixed spelling of a key skillwright
-/// owns. A `sw-` key that matches nothing is not one.
-pub fn legacy_key(key: &str) -> Option<String> {
-    let (stem, rest) = key.split_once('-')?;
-    let stem = LEGACY_STEMS.iter().find(|known| **known == stem)?;
-    if let Some((_, fix)) = LEGACY_MOVED.iter().find(|(old, _)| *old == rest) {
-        return Some((*fix).to_owned());
-    }
-    let bare = rest.replace('-', "_");
-    is_skillwright_key(&bare)
-        .then(|| format!("rename it `{bare}`, or set `build.namespace: {stem}` to keep the prefix"))
-}
-
-/// The fix for the first old prefixed key in a nested `sw:` block, when `key`
-/// is a stem and `value` a mapping holding one.
-pub fn legacy_block(key: &str, value: &Value) -> Option<String> {
-    if !LEGACY_STEMS.contains(&key) {
-        return None;
-    }
-    value
-        .as_object()?
-        .keys()
-        .find_map(|field| legacy_key(&format!("{key}-{field}")))
-}
 
 /// Whether any kind's row owns `key`.
 pub fn is_skillwright_key(key: &str) -> bool {
@@ -560,9 +502,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 ## What is checked
 
 - A key the table does not list for that kind gets a warning.
-- A plugin or component note refuses a removed key instead:
-  - `kind` or `plugin`, written `sw-kind` or `sw-plugin` under `build.namespace: sw`;
-  - with no namespace set, an `sw-` spelling of a `skillwright` key, such as `sw-version`, or an `sw:` block holding one.
 - A listed key with the wrong kind of value is refused, and the message names the key. This applies to every `skillwright` key, and to every `spec` key on a skill, agent or command.
 - A `spec` key with no value, such as `model:`, is dropped. It does not clear a value the note inherits.
 
@@ -741,13 +680,6 @@ mod tests {
                     );
                 }
             }
-        }
-    }
-
-    #[test]
-    fn the_removed_keys_are_not_in_the_table() {
-        for key in REMOVED {
-            assert!(KEYS.iter().all(|spec| spec.key != *key), "{key}");
         }
     }
 }

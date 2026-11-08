@@ -7,6 +7,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- skillwright no longer checks for the pre-1.0 vault shape. Old keys and files are treated like any other key or file it does not know:
+  - The `removed-key` refusal is gone. `kind` and `plugin` on a note, `sw-kind` and `sw-plugin` under `build.namespace: sw`, and, with no namespace, an `sw-` spelling or an `sw:` block of a skillwright key are ordinary unknown keys. Each warns `unknown-key` and is handled like any unknown key: a skill ships it under `metadata:`, a command carries it as written, and a container ignores it.
+  - A top-level `bump:` and `build.shim_target` in `skillwright.md` are ordinary unknown keys: each warns that it is not a key skillwright reads, and is ignored. They were refused.
+  - A `skillwright.yaml` or `tradecraft.yaml` beside the vault gets no note.
+  - A `marketplaces/<m>/<m>.md` note is no longer refused with a pointer to `marketplaces/<m>/skillwright.md`. It is skipped as a stray note if it declares a `description`.
+  - `adopt` keeps a source skill's `kind` or `plugin` key at the top level instead of moving it under `metadata:`. It now warns `unknown-key` on build.
+- `check --fix-adopt-hashes` is removed. It only refreshed adopt hashes after the move from prefixed to bare keys.
+- The plugin's `migrate` skill and the migration guide are removed.
+
 ## [0.7.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.6.0...skillwright/v0.7.0) - 2026-11-07
 
 This release refuses some vaults that 0.6.0 built. To find what needs fixing, run `skillwright list`: it shows each refused note as `skipped · malformed: …`, naming the key and the kind of value it must hold. The [field reference](https://github.com/osdlc/skillwright/blob/skillwright/v0.7.0/docs/reference/fields.md) gives each key's type.

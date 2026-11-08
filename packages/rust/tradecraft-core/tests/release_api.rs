@@ -122,16 +122,6 @@ fn an_unknown_key_on_a_container_warns_and_goes_nowhere() {
 }
 
 #[test]
-fn a_removed_key_is_refused_naming_the_folder_rule() {
-    let vfs = vault("", "", "kind: skill\n");
-    let err = export_skills(&vfs, &request(), &Namespace::bare())
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("removed-key"), "{err}");
-    assert!(err.contains("`kind`"), "{err}");
-}
-
-#[test]
 fn repository_and_homepage_reach_every_manifest_with_the_field() {
     let vfs = vault(
         "repository: https://example.com/house\nhomepage: https://example.com\n",

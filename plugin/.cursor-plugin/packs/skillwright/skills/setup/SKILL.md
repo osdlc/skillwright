@@ -43,8 +43,7 @@ Scope: installs the binary and writes the root file. It does not author notes (s
    Run `skillwright --version` again. Stop and report the error if it still fails.
 
 4. Look for a root file. skillwright reads the nearest `skillwright.md` at or above the working
-   directory, or the file named with `--config`. If one exists, read it and stop. If you find a
-   `skillwright.yaml` or `tradecraft.yaml` instead, run `/migrate`.
+   directory, or the file named with `--config`. If one exists, read it and stop.
 
 5. Run `skillwright init --out <path>` in the folder that will hold the notes. It writes a
    `skillwright.md` with the marketplace's name and `build.out`, the folder `build` writes to. The

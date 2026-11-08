@@ -126,4 +126,3 @@ folder instead, which must sit outside the vault.
 - [`skillwright.md` reference](../reference/skillwright-md.md)
 - [Field reference](../reference/fields.md)
 - [Structure spec](../spec/structure-v1.md)
-- [Migrating a vault](migrating.md)

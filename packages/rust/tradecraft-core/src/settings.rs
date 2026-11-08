@@ -411,17 +411,6 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
         match key.as_str() {
             "workspace" => root.workspace = field(&key, &value, "true or false")?,
             "build" => root.build = build(&value, &mut root.warnings)?,
-            // Ignored, a run would write the wrong version with no error.
-            "bump" => {
-                return Err(SettingsError {
-                    key: "bump".to_owned(),
-                    what: "read at the top level",
-                    detail: format!(
-                        "it is `build.bump` now. See {}",
-                        crate::keys::MIGRATING_GUIDE
-                    ),
-                });
-            }
             known if MARKETPLACE_KEYS.contains(&known) => {
                 check_person(known, &value)?;
                 marketplace.insert(serde_yaml::Value::String(key), value);
@@ -529,17 +518,6 @@ fn build(
         match key.as_str() {
             Some("exclude") => exclude = globs("build.exclude", value)?,
             Some("patterns") => patterns = folder_patterns(value, warnings)?,
-            // Ignored, it would ship the launcher calls unrewritten.
-            Some("shim_target") => {
-                return Err(SettingsError {
-                    key: "build.shim_target".to_owned(),
-                    what: "read any more",
-                    detail: format!(
-                        "it is `build.launcher_path` now. See {}",
-                        crate::keys::MIGRATING_GUIDE
-                    ),
-                });
-            }
             Some(name) if BUILD_KEYS.contains(&name) => {
                 warn_nested(name, value, warnings);
                 kept.insert(key.clone(), value.clone());
@@ -965,13 +943,6 @@ mod tests {
     }
 
     #[test]
-    fn a_top_level_bump_is_refused_naming_its_new_key() {
-        let err = parse_root_file("---\nbump:\n  patch: timestamp\n---\n").unwrap_err();
-        assert_eq!(err.key, "bump");
-        assert!(err.detail.contains("build.bump"), "{err}");
-    }
-
-    #[test]
     fn a_marketplace_inherits_build_bump_from_its_workspace() {
         let workspace =
             parse_root_file("---\nworkspace: true\nbuild:\n  bump:\n    patch: timestamp\n---\n")
@@ -979,13 +950,6 @@ mod tests {
         let mut member = parse_root_file("---\nname: one\n---\n").unwrap();
         member.inherit(&workspace);
         assert_eq!(member.build.bump.unwrap().patch, PatchScheme::Timestamp);
-    }
-
-    #[test]
-    fn a_leftover_shim_target_is_refused_naming_its_new_key() {
-        let err = parse_root_file("---\nbuild:\n  shim_target: bin/tool\n---\n").unwrap_err();
-        assert_eq!(err.key, "build.shim_target");
-        assert!(err.detail.contains("build.launcher_path"), "{err}");
     }
 
     #[test]

@@ -106,8 +106,8 @@ pub mod vfs;
 mod walk;
 
 pub use adopt::{
-    AdoptHashFix, AdoptHashStatus, AdoptMode, AdoptReport, AdoptRequest, AdoptStatus, AdoptedSkill,
-    DEFAULT_ADOPTED_PLUGIN, adopt_skills, fix_adopt_hashes, rewrite_to_wikilinks,
+    AdoptMode, AdoptReport, AdoptRequest, AdoptStatus, AdoptedSkill, DEFAULT_ADOPTED_PLUGIN,
+    adopt_skills, rewrite_to_wikilinks,
 };
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
 pub use authoring::{
@@ -140,7 +140,7 @@ pub use frontmatter::{
     VaultFrontmatter, resolve_kind,
 };
 pub use harness::manifest::{check_packs, packs_of};
-pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, REMOVED, Shape};
+pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, Shape};
 /// The vault's file index, for [`CompileSource::links`]: re-exported so a
 /// consumer needs no `markdown-link` dependency of its own.
 pub use markdown_link::LinkIndex;

@@ -25,9 +25,7 @@ code and is part of this spec.
 4. It is the only configuration file. There is no machine file.
 5. With no root file, a folder holding `plugins/` or `skills/` is read with every
    default, and a note suggests adding one.
-6. A leftover `skillwright.yaml` or `tradecraft.yaml` is not read, and gets a note
-   saying so.
-7. An outer root file with `workspace: true` holds shared defaults. Each
+6. An outer root file with `workspace: true` holds shared defaults. Each
    `marketplaces/<m>/skillwright.md` below it is a marketplace. That file is the
    only form a marketplace's note has. Every `build:` key inherits from the
    workspace except `out`, and a relative path in an inherited key reads from the
@@ -107,15 +105,10 @@ adds to what never ships. See the
    always bare.
 3. One closed table lists the keys of each kind. It drives the publish strip,
    validation and the field reference.
-4. A key outside the table gets a warning, and only rule 5 refuses one. On a component it
-   is published under `metadata:` as YAML. On a container or in the root file it
-   is ignored.
-5. A note with a `kind` or `plugin` key is refused and skipped: the folder decides
-   both. Under a namespace, the bare words are ordinary unknown keys, and the
-   warning names the right spelling. With no namespace, a `sw-<key>`
-   spelling of a key skillwright owns is refused `removed-key`, like `kind` and
-   `plugin`. A `sw-` key that matches nothing is an ordinary unknown key.
-6. `license` on a plugin or marketplace is the pack's licence. On a skill it is
+4. A key outside the table gets a warning. On a component it is published under
+   `metadata:` as YAML. On a container or in the root file it is ignored. Under a
+   namespace, the warning names the right spelling.
+5. `license` on a plugin or marketplace is the pack's licence. On a skill it is
    the spec field.
 
 ## 6. The cascade

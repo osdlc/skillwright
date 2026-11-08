@@ -29,7 +29,7 @@
 //! # The kind comes from the folder
 //!
 //! [`resolve_kind`] ranks a caller's request over the kind folder a note sits
-//! in. The `kind` and `plugin` keys are refused · `removed-key`.
+//! in.
 
 use std::fmt;
 use std::path::Path;
@@ -373,8 +373,6 @@ impl VaultFrontmatter {
     ///
     /// # Errors
     ///
-    /// * `refused: removed-key` — the note carries `kind` or `plugin`, or, with
-    ///   no namespace, an old prefixed spelling of a key skillwright owns.
     /// * `refused: mixed-frontmatter-shape` — under a prefixed namespace, the
     ///   note carries the nested block *and* at least one flat key.
     /// * A content error naming the key and the path when one of
@@ -392,40 +390,6 @@ impl VaultFrontmatter {
             .filter(|(_, value)| !value.is_null())
             .map(|(key, _)| ns.field(key).to_owned())
             .collect();
-
-        for removed in crate::keys::REMOVED {
-            let key = ns.key(removed);
-            if ours.contains_key(&key) || (ns.is_bare() && fields.contains_key(*removed)) {
-                return Err(refuse(
-                    "removed-key",
-                    path,
-                    format!(
-                        "`{key}` is no longer read: the folder a note sits in decides its \
-                         {removed}. Remove the key and move the note into the right folder"
-                    ),
-                ));
-            }
-        }
-
-        // A marketplace note is always read bare, so a prefix says nothing there.
-        if ns.is_bare() && kind != EntityKind::Marketplace {
-            let legacy = fields.iter().find_map(|(key, value)| {
-                crate::keys::legacy_key(key)
-                    .or_else(|| crate::keys::legacy_block(key, value))
-                    .map(|fix| (key, fix))
-            });
-            if let Some((key, fix)) = legacy {
-                return Err(refuse(
-                    "removed-key",
-                    path,
-                    format!(
-                        "`{key}` is an old spelling: {fix}. If it is another tool's key, move it \
-                         under `metadata:`. See {}",
-                        crate::keys::MIGRATING_GUIDE
-                    ),
-                ));
-            }
-        }
 
         check_shapes(&ours, path, ns, kind)?;
 
@@ -1132,24 +1096,15 @@ mod tests {
     }
 
     #[test]
-    fn kind_and_plugin_are_refused_bare_and_prefixed() {
-        for key in ["kind", "plugin"] {
-            let err = read_kind(
-                &Namespace::bare(),
-                EntityKind::Skill,
-                json!({"description": "d", key: "x"}),
-            )
-            .unwrap_err()
-            .to_string();
-            assert!(err.contains("removed-key"), "{err}");
-            let err = read(json!({"description": "d", format!("sw-{key}"): "x"}))
-                .unwrap_err()
-                .to_string();
-            assert!(err.contains("removed-key"), "{err}");
-        }
-        // Under a namespace, a bare `kind` is the author's own key.
-        let (_, rest) = read(json!({"description": "d", "kind": "x"})).unwrap();
-        assert!(rest.contains_key("kind"));
+    fn under_a_namespace_a_bare_unprefixed_key_stays_among_the_notes_own_keys() {
+        let (ours, rest) = read_kind(
+            &Namespace::sw(),
+            EntityKind::Skill,
+            json!({"description": "d", "flavour": "mint"}),
+        )
+        .unwrap();
+        assert!(ours.unknown_ours.is_empty(), "{:?}", ours.unknown_ours);
+        assert_eq!(rest["flavour"], "mint");
     }
 
     #[test]

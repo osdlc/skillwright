@@ -15,9 +15,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 ## What is checked
 
 - A key the table does not list for that kind gets a warning.
-- A plugin or component note refuses a removed key instead:
-  - `kind` or `plugin`, written `sw-kind` or `sw-plugin` under `build.namespace: sw`;
-  - with no namespace set, an `sw-` spelling of a `skillwright` key, such as `sw-version`, or an `sw:` block holding one.
 - A listed key with the wrong kind of value is refused, and the message names the key. This applies to every `skillwright` key, and to every `spec` key on a skill, agent or command.
 - A `spec` key with no value, such as `model:`, is dropped. It does not clear a value the note inherits.
 
