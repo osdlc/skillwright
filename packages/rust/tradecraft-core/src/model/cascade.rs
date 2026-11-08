@@ -41,7 +41,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::OnceLock;
 
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
@@ -57,7 +57,7 @@ use crate::publish::accepted_keys;
 use crate::vault::VaultNote;
 
 /// The containers above some notes, folded into one config.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Cascade {
     /// The request's config with the marketplace note over it, and each plugin
     /// note in [`MarketplaceConfig::plugins`].
@@ -70,22 +70,6 @@ pub struct Cascade {
     market: Option<String>,
     /// The request's own `targets`, for a component of another marketplace.
     requested_targets: Option<Vec<String>>,
-    /// Each plugin's harness blocks as [`plugin_block`] reads them, filled on
-    /// first use so [`Self::apply`] reads them once per plugin rather than
-    /// once per note. `config` is settled before the first `apply`.
-    plugin_blocks: Mutex<BTreeMap<(String, String), Map<String, Value>>>,
-}
-
-impl Clone for Cascade {
-    fn clone(&self) -> Self {
-        Self {
-            config: self.config.clone(),
-            configured: self.configured.clone(),
-            market: self.market.clone(),
-            requested_targets: self.requested_targets.clone(),
-            plugin_blocks: Mutex::default(),
-        }
-    }
 }
 
 impl Cascade {
@@ -169,7 +153,6 @@ impl Cascade {
             configured,
             market: market.map(str::to_owned),
             requested_targets: requested.targets.clone(),
-            plugin_blocks: Mutex::default(),
         }
     }
 
@@ -284,24 +267,17 @@ impl Cascade {
             );
         }
         let own_metadata = crate::projection::skill_metadata(&note.projection.content, ns);
-        let mut plugin_blocks = self
-            .plugin_blocks
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
         for harness in keys::HARNESS_BLOCKS
             .iter()
             .filter(|harness| keys::inherits(kind, harness))
         {
             let reaching = member_block_keys(kind, harness);
-            let from_plugin = plugin_blocks
-                .entry((plugin.to_owned(), (*harness).to_owned()))
-                .or_insert_with(|| plugin_block(&self.config, plugin, harness));
-            for (key, value) in from_plugin.iter() {
+            for (key, value) in plugin_block(&self.config, plugin, harness) {
                 let merges = key == "metadata" && value.is_object();
-                if !reaching.contains(key) || (!merges && note.frontmatter.own_keys.contains(key)) {
+                if !reaching.contains(&key) || (!merges && note.frontmatter.own_keys.contains(&key))
+                {
                     continue;
                 }
-                let (key, value) = (key.clone(), value.clone());
                 let block = note
                     .frontmatter
                     .blocks
