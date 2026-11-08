@@ -394,7 +394,7 @@ pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> MarketplaceConfig {
         return MarketplaceConfig::default();
     };
     if !root.workspace
-        && let Ok(Some(shared)) = crate::patterns::workspace_above(vfs, vault_root)
+        && let Ok(Some(shared)) = crate::paths::read_workspace_above(vfs, vault_root)
     {
         root.inherit(&shared);
     }

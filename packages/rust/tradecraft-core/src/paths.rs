@@ -154,30 +154,61 @@ pub(crate) fn is_flat_root_file_name(path: &Path) -> bool {
 /// `workspace: true`. A file that cannot be read is returned too: an exclusion
 /// it holds must not fail open, so loading it refuses the run.
 pub fn workspace_above(vfs: &dyn Vfs, dir: &Path) -> Option<PathBuf> {
-    let parent = dir.parent()?;
-    if parent.file_name()? != WORKSPACE_DIR {
-        return None;
-    }
-    let file = parent.parent()?.join(ROOT_FILE);
-    if !vfs.exists(&file) {
-        return None;
-    }
+    let file = workspace_file(dir)?;
     match read_root(vfs, &file) {
-        Ok(root) if !root.workspace => None,
+        Ok(None) => None,
+        Ok(Some(root)) if !root.workspace => None,
         _ => Some(file),
     }
 }
 
-fn read_root(vfs: &dyn Vfs, file: &Path) -> Result<RootFile, CoreError> {
-    let bytes = vfs.read_file(file)?;
-    let text = String::from_utf8(bytes).map_err(|_| {
+/// The workspace file above the marketplace at `dir`, read, when `dir` is
+/// `<workspace>/marketplaces/<m>/` and the file says `workspace: true`.
+///
+/// # Errors
+///
+/// `refused: malformed-root-file`, as [`read_root`].
+pub(crate) fn read_workspace_above(
+    vfs: &dyn Vfs,
+    dir: &Path,
+) -> Result<Option<RootFile>, CoreError> {
+    let Some(file) = workspace_file(dir) else {
+        return Ok(None);
+    };
+    Ok(read_root(vfs, &file)?.filter(|root| root.workspace))
+}
+
+/// Where a workspace file above `dir` would be, when `dir` is
+/// `<workspace>/marketplaces/<m>/`.
+fn workspace_file(dir: &Path) -> Option<PathBuf> {
+    let parent = dir.parent()?;
+    if parent.file_name()? != WORKSPACE_DIR {
+        return None;
+    }
+    Some(parent.parent()?.join(ROOT_FILE))
+}
+
+/// The root file at `file`, `None` when there is none.
+///
+/// # Errors
+///
+/// `refused: malformed-root-file` when it is not UTF-8 or does not parse: an
+/// exclusion that cannot be read must not fail open.
+pub(crate) fn read_root(vfs: &dyn Vfs, file: &Path) -> Result<Option<RootFile>, CoreError> {
+    if !vfs.exists(file) {
+        return Ok(None);
+    }
+    let malformed = |detail: String| {
         CoreError::refused(
-            "root-file",
-            format!("{} is not valid UTF-8", file.display()),
+            "malformed-root-file",
+            format!("{}: {detail}. Nothing was written", file.display()),
         )
-    })?;
+    };
+    let text = String::from_utf8(vfs.read_file(file)?)
+        .map_err(|_| malformed("it is not UTF-8".to_owned()))?;
     parse_root_file(&text)
-        .map_err(|err| CoreError::refused("root-file", format!("{}: {err}", file.display())))
+        .map(Some)
+        .map_err(|err| malformed(err.to_string()))
 }
 
 /// What a marketplace load reads from the root file besides the vault: the
@@ -293,11 +324,11 @@ pub fn load_marketplace(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let mut root = read_root(vfs, &root_file)?;
+    let mut root = read_root(vfs, &root_file)?.unwrap_or_default();
     if !root.workspace
-        && let Some(shared) = workspace_above(vfs, &dir)
+        && let Some(shared) = read_workspace_above(vfs, &dir)?
     {
-        root.inherit(&read_root(vfs, &shared)?);
+        root.inherit(&shared);
     }
     let namespace = match &root.build.namespace {
         Some(stem) => Namespace::new(stem).map_err(|invalid| {

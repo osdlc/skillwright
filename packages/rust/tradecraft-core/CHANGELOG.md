@@ -15,6 +15,7 @@ Behaviour:
 - `parse_root_file` no longer refuses a top-level `bump` or `build.shim_target`. Each is an ordinary unknown key: it warns and is ignored.
 - The vault scan no longer gives a `marketplaces/<m>/<m>.md` note its own refusal pointing to `marketplaces/<m>/skillwright.md`. It is read like any other file at that path: skipped as a stray note if it declares a `description`, otherwise ignored.
 - An adopted skill's carried `kind` or `plugin` key stays in its frontmatter instead of moving under `metadata:`.
+- `load_marketplace` refuses a root file or workspace file that is not UTF-8 or does not parse as `refused: malformed-root-file`, not `refused: root-file`. A build already used `malformed-root-file` for the same file, so one bad file now has one token.
 
 API:
 

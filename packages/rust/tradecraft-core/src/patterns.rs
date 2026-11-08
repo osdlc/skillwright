@@ -28,7 +28,8 @@ use crate::compile::EXCLUDED_BUNDLE_DIRECTORIES;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
-use crate::settings::{FolderPatterns, ROOT_FILE, RootFile, parse_root_file};
+use crate::paths::{read_root, read_workspace_above};
+use crate::settings::{FolderPatterns, ROOT_FILE};
 use crate::vfs::Vfs;
 
 /// Why `glob` cannot be read, if it cannot. A glob is `/`-separated and
@@ -170,7 +171,7 @@ impl Patterns {
         };
         let written: BTreeSet<String> = own.globs().map(str::to_owned).collect();
         if !root.workspace
-            && let Some(shared) = workspace_above(vfs, vault_root)?
+            && let Some(shared) = read_workspace_above(vfs, vault_root)?
         {
             root.inherit(&shared);
         }
@@ -480,45 +481,6 @@ fn keep_conventional<'r>(out: &mut Vec<&'r str>, pending: &mut Vec<&'r str>, kin
         out.extend(&pending[..kept]);
     }
     pending.clear();
-}
-
-/// The root file at `file`, `None` when there is none.
-fn read_root(vfs: &dyn Vfs, file: &Path) -> Result<Option<RootFile>, CoreError> {
-    if !vfs.exists(file) {
-        return Ok(None);
-    }
-    let malformed = |detail: String| {
-        CoreError::refused(
-            "malformed-root-file",
-            format!("{}: {detail}. Nothing was written", file.display()),
-        )
-    };
-    let text = String::from_utf8(vfs.read_file(file)?)
-        .map_err(|_| malformed("it is not UTF-8".to_owned()))?;
-    parse_root_file(&text)
-        .map(Some)
-        .map_err(|err| malformed(err.to_string()))
-}
-
-/// The workspace file above the marketplace at `vault_root`, when that is
-/// `<workspace>/marketplaces/<m>/` and the file says `workspace: true`.
-pub(crate) fn workspace_above(
-    vfs: &dyn Vfs,
-    vault_root: &Path,
-) -> Result<Option<RootFile>, CoreError> {
-    let Some(above) = vault_root
-        .parent()
-        .filter(|folder| {
-            folder
-                .file_name()
-                .is_some_and(|name| name == "marketplaces")
-        })
-        .and_then(Path::parent)
-    else {
-        return Ok(None);
-    };
-    let root = read_root(vfs, &above.join(ROOT_FILE))?;
-    Ok(root.filter(|root| root.workspace))
 }
 
 /// Each `/`-bounded prefix of `rel`, shortest first, `rel` itself last.

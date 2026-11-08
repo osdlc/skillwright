@@ -2093,3 +2093,30 @@ fn load_marketplace_loads_a_member_named_after_a_kind_folder() {
         );
     }
 }
+
+/// A root file that does not parse is refused with one token, whichever
+/// entry point reads it: `load_marketplace` and a build agree.
+#[test]
+fn a_malformed_root_file_is_refused_with_one_token_everywhere() {
+    for (root, member) in [
+        ("---\nname: [\n---\n", None),
+        ("---\nworkspace: [\n---\n", Some("---\nname: a\n---\n")),
+    ] {
+        let vfs = MemVfs::new();
+        let start = match member {
+            None => {
+                write(&vfs, "/vault/skillwright.md", root);
+                "/vault"
+            }
+            Some(member) => {
+                write(&vfs, "/ws/skillwright.md", root);
+                write(&vfs, "/ws/marketplaces/a/skillwright.md", member);
+                "/ws/marketplaces/a"
+            }
+        };
+        let err = tradecraft_core::load_marketplace(&vfs, Path::new(start), Path::new("/home"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("malformed-root-file: "), "{start}: {err}");
+    }
+}
