@@ -73,6 +73,13 @@ describe('corpus and root file', () => {
     assert.equal(records.get('cards')?.size, 1)
   })
 
+  test('the report lists the file of each valid record', () => {
+    const { files } = run()
+    assert.deepEqual([...(files.get('notes') ?? [])], [['Note A', 'notes/Note A.md']])
+    assert.deepEqual([...(files.get('tags') ?? [])], [['T', 'tags/T.yaml']])
+    assert.deepEqual([...(files.get('cards') ?? [])], [['C', 'cards/C.json']])
+  })
+
   test('a .yaml or .json root file works', () => {
     rmSync(join(dir, 'markdown-db.md'))
     put('markdown-db.yaml', 'markdown-db: 0\nformats: [md, yaml, json]\n')
@@ -498,5 +505,16 @@ describe('links.ts', () => {
 
   test('markdownLink encodes the path and escapes the text', () => {
     assert.equal(markdownLink('A [b]', '../x y (1).md'), '[A \\[b\\]](../x%20y%20%281%29.md)')
+  })
+})
+
+describe('index exports for record writers', () => {
+  test('idProblem, fold, encodePath and markdownLink are public', async () => {
+    const api = await import('../src/index.ts')
+    assert.equal(api.idProblem('a|b'), 'holds "|"')
+    assert.equal(api.idProblem('Fine name'), undefined)
+    assert.equal(api.fold('Straße docs'), api.fold('STRASSE docs'))
+    assert.equal(api.encodePath('a b/(c)#d'), 'a%20b/%28c%29%23d')
+    assert.equal(api.markdownLink('[x]', 'a b.md'), '[\\[x\\]](a%20b.md)')
   })
 })

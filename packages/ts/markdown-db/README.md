@@ -44,6 +44,18 @@ for (const root of findCorpora('Data')) {
 }
 ```
 
+A `CorpusReport` holds `records` (valid records by type, then id), `files` (the corpus-relative path
+of each of those records, by type, then id), `errors`, `warnings` and `fixed`.
+
+Writers of records can use the same rules the validator reads with:
+
+| Export                          | Use                                                              |
+| ------------------------------- | ---------------------------------------------------------------- |
+| `idProblem(id)`                 | Why an id breaks the id rules, or `undefined`.                   |
+| `fold(s)`                       | The key two ids are compared by: NFC and case folding.           |
+| `markdownLink(text, path)`      | A relative Markdown link, with the path and label escaped.       |
+| `encodePath(path)`              | A path as a link destination.                                    |
+
 `src/index.ts` lists the exports.
 
 Unlike [markdown-contract](https://github.com/sksizer/markdown-contract), which checks the section and
