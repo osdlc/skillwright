@@ -708,6 +708,8 @@ pub struct PublishReport {
 ///   stamped on every projected file.
 /// * `refused: excluded-note` when `build.exclude` or a folder that never ships
 ///   holds the note.
+/// * `refused: malformed-root-file` when the root file at `skills_root`, or a
+///   workspace file above it, does not parse: what it excludes is unknown.
 /// * A destination the note's `targets` excludes is `Ok` with an empty
 ///   report and [`PublishReport::not_published`] set. See the module doc.
 pub fn publish_skill(
@@ -737,8 +739,16 @@ fn publish_onto(
     let runtime_target = runtime_target_for(&request.target);
     // The folder holding the note decides its kind, before the read: the
     // kind says which of the note's keys are skillwright's.
-    refuse_excluded(vfs, request)?;
-    let resolved = publish_kind(vfs, request.skills_root.as_deref(), &request.skill_path);
+    // Read once, and refused when malformed: an exclusion that cannot be read
+    // must not fail open.
+    let patterns = request
+        .skills_root
+        .as_deref()
+        .map(|root| crate::patterns::Patterns::load(vfs, root).map(|p| (p, root)))
+        .transpose()?;
+    let placed = patterns.as_ref().map(|(patterns, root)| (patterns, *root));
+    refuse_excluded(placed, &request.skill_path)?;
+    let resolved = publish_kind(placed, &request.skill_path);
     let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
     // Everything a renderer cannot take is refused here, before the renderer
@@ -767,19 +777,12 @@ fn publish_onto(
     // What the note inherits, before `targets` is asked: the same answer a
     // build reaches.
     let requested = request.config.clone().unwrap_or_default();
-    let cascade = Cascade::above(
-        vfs,
-        request.skills_root.as_deref(),
-        &request.skill_path,
-        &requested,
-        ns,
-    )?;
+    let cascade = Cascade::above_with(vfs, placed, &request.skill_path, &requested, ns)?;
     // The containers' own blocks first, as a build checks them, so a bad
     // value names the container that holds it, not this note.
     crate::harness::manifest::check_block_values(&cascade.config)?;
-    let plugin = request.skills_root.as_deref().and_then(|root| {
-        let patterns = crate::patterns::Patterns::read(vfs, root);
-        crate::discover::folder_placement_with(&patterns, root, &request.skill_path).plugin
+    let plugin = placed.and_then(|(patterns, root)| {
+        crate::discover::folder_placement_with(patterns, root, &request.skill_path).plugin
     });
     cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
 
@@ -1164,15 +1167,17 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
 
 /// Refuses a note `build.exclude` or a folder that never ships holds, named or
 /// not: what never ships from a build does not ship from a publish either.
-fn refuse_excluded(vfs: &dyn Vfs, request: &PublishRequest) -> Result<(), CoreError> {
-    let Some(root) = request.skills_root.as_deref() else {
+fn refuse_excluded(
+    placed: Option<(&crate::patterns::Patterns, &Path)>,
+    skill_path: &Path,
+) -> Result<(), CoreError> {
+    let Some((patterns, root)) = placed else {
         return Ok(());
     };
-    let Ok(relative) = request.skill_path.strip_prefix(root) else {
+    let Ok(relative) = skill_path.strip_prefix(root) else {
         return Ok(());
     };
     let relative = crate::skill::forward_slashed(relative);
-    let patterns = crate::patterns::Patterns::read(vfs, root);
     if patterns.excluded(&relative) {
         return Err(CoreError::refused(
             "excluded-note",
@@ -1189,18 +1194,17 @@ fn refuse_excluded(vfs: &dyn Vfs, request: &PublishRequest) -> Result<(), CoreEr
 }
 
 /// The kind a publish of the note at `skill_path` resolves to: the kind
-/// folder holding it, else a skill. Shared with [`crate::status::status_of`]
-/// so status and publish agree on what a unit is.
+/// folder holding it, under the vault root `placed` names with its patterns,
+/// else a skill. Shared with [`crate::status::status_of`] so status and
+/// publish agree on what a unit is.
 pub(crate) fn publish_kind(
-    vfs: &dyn Vfs,
-    skills_root: Option<&Path>,
+    placed: Option<(&crate::patterns::Patterns, &Path)>,
     skill_path: &Path,
 ) -> ResolvedKind {
     resolve_kind(KindHints {
         requested: None,
-        folder: skills_root.and_then(|root| {
-            let patterns = crate::patterns::Patterns::read(vfs, root);
-            crate::discover::folder_placement_with(&patterns, root, skill_path).kind
+        folder: placed.and_then(|(patterns, root)| {
+            crate::discover::folder_placement_with(patterns, root, skill_path).kind
         }),
     })
 }

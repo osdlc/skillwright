@@ -15,10 +15,12 @@ Behaviour:
 - `parse_root_file` no longer refuses a top-level `bump` or `build.shim_target`. Each is an ordinary unknown key: it warns and is ignored.
 - The vault scan no longer gives a `marketplaces/<m>/<m>.md` note its own refusal pointing to `marketplaces/<m>/skillwright.md`. It is read like any other file at that path: skipped as a stray note if it declares a `description`, otherwise ignored.
 - An adopted skill's carried `kind` or `plugin` key stays in its frontmatter instead of moving under `metadata:`.
+- A root file or workspace file that does not parse now refuses `publish_skill`, `status_of`, `discover_components`, `discover_roster`, `load` and `load_plugin` with `refused: malformed-root-file`. They read it as empty before, so a note `build.exclude` excludes was published and listed. `export_skills` already refused. `source_view` hides nothing for such a file and leaves the refusal to the scan or build that reads through it.
 - `load_marketplace` refuses a root file or workspace file that is not UTF-8 or does not parse as `refused: malformed-root-file`, not `refused: root-file`. A build already used `malformed-root-file` for the same file, so one bad file now has one token.
 
 API:
 
+- Removed `Patterns::read`, which read a malformed root file as empty. Use `Patterns::load`, which refuses it.
 - Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 
 ## [0.45.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.44.0...tradecraft-core/v0.45.0) - 2026-11-07

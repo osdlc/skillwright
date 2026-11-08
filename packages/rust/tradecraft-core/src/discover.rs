@@ -648,6 +648,8 @@ impl SkippedNote {
 /// * [`CoreError::Io`] — a folder in the source that cannot be listed.
 /// * `refused: path-collision` — a duplicate skill name, or a bundle that
 ///   contains another skill's entry.
+/// * `refused: malformed-root-file` — the root file, or a workspace file above
+///   it, does not parse, so what it excludes is unknown.
 pub fn discover_components(
     vfs: &dyn Vfs,
     vault_root: &Path,
@@ -750,11 +752,13 @@ fn discover_with(
     roster: bool,
 ) -> Result<DiscoveryReport, CoreError> {
     let root = &source.root;
-    let files = source_files(vfs, vault_root, source);
+    // Refused when the root file is malformed: an exclusion that cannot be
+    // read must not fail open.
+    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
+    let files = source_files(vfs, vault_root, &patterns, source);
 
     // Structure first, over the whole file set: a note's shape depends on what
     // sits beside it, so no single path can be classified on its own.
-    let patterns = crate::patterns::Patterns::read(vfs, vault_root);
     let placed = place(root, &files, &patterns);
 
     let mut discovered = Vec::new();
@@ -1401,9 +1405,13 @@ fn owned_resources(
 /// Every file in the source, in walk order, without the vault's excluded
 /// files (Obsidian's "Excluded files", see [`crate::walk::excluded_files`]),
 /// so an excluded file is neither placed nor published.
-fn source_files(vfs: &dyn Vfs, vault_root: &Path, source: &Source) -> Vec<PathBuf> {
+fn source_files(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    patterns: &crate::patterns::Patterns,
+    source: &Source,
+) -> Vec<PathBuf> {
     let excluded = crate::walk::excluded_files(vfs, vault_root);
-    let patterns = crate::patterns::Patterns::read(vfs, vault_root);
     source
         .files
         .iter()
@@ -1651,14 +1659,14 @@ pub(crate) fn container_notes_with(
 pub(crate) fn read_container(
     vfs: &dyn Vfs,
     root: &Path,
+    patterns: &crate::patterns::Patterns,
     entry: &Path,
     ns: &Namespace,
 ) -> Result<Option<DiscoveredComponent>, CoreError> {
     if !vfs.exists(entry) {
         return Ok(None);
     }
-    let patterns = crate::patterns::Patterns::read(vfs, root);
-    let conventional = conventional(root, entry, &patterns);
+    let conventional = conventional(root, entry, patterns);
     let Ok(rest) = conventional.strip_prefix(root) else {
         return Ok(None);
     };

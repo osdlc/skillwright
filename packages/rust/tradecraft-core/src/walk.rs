@@ -194,7 +194,7 @@ pub(crate) fn vault_files(
     root: &Path,
     prune: &[&str],
 ) -> Result<Vec<PathBuf>, CoreError> {
-    let patterns = crate::patterns::Patterns::read(vfs, root);
+    let patterns = crate::patterns::Patterns::load(vfs, root)?;
     vault::walk(vfs, root, &vault_walk(prune))
         .map(|entries| notes_and_resources(&patterns, entries))
         .map_err(|err| core_error(err, not_refused))
@@ -208,7 +208,7 @@ pub(crate) fn vault_files_refusing_symlinks(
     prune: &[&str],
     refuse: impl Fn(&Path) -> CoreError,
 ) -> Result<Vec<PathBuf>, CoreError> {
-    let patterns = crate::patterns::Patterns::read(vfs, root);
+    let patterns = crate::patterns::Patterns::load(vfs, root)?;
     vault::walk(vfs, root, &vault_options(prune, true, true))
         .map(|entries| notes_and_resources(&patterns, entries))
         .map_err(|err| core_error(err, refuse))
@@ -228,7 +228,9 @@ pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
 /// failing: a folder that cannot be listed is skipped.
 pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path) -> Vec<vault::Entry> {
     let mut entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
-    let patterns = crate::patterns::Patterns::read(vfs, root);
+    // Without failing, as promised: a root file that cannot be read keeps
+    // every entry, which lists more than it should rather than less.
+    let patterns = crate::patterns::Patterns::load(vfs, root).unwrap_or_default();
     entries.retain(|entry| !in_plugin_assets(&patterns, &entry.rel));
     entries
 }

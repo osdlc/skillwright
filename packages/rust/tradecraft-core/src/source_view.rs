@@ -416,7 +416,11 @@ pub fn source_view<'v>(
     let Some(out_root) = out_root else {
         return base;
     };
-    let patterns = Patterns::read(&base, scope.vault_root);
+    // A root file that cannot be read hides nothing, as a `packs` a build
+    // would refuse: the scan or build that reads through this view refuses it.
+    let Ok(patterns) = Patterns::load(&base, scope.vault_root) else {
+        return base;
+    };
     let mut paths = Vec::new();
     for config in effective_configs(&base, scope, config, ns) {
         if check_pack_location(&base, scope.vault_root, out_root, &config, &patterns).is_ok() {

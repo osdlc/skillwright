@@ -163,7 +163,8 @@ impl Cascade {
     /// # Errors
     ///
     /// What reading a container note refuses. A note whose plugin note cannot
-    /// be read cannot know where it may go.
+    /// be read cannot know where it may go. `refused: malformed-root-file`
+    /// when the root file, or a workspace file above it, does not parse.
     pub fn above(
         vfs: &dyn crate::vfs::Vfs,
         vault_root: Option<&Path>,
@@ -171,12 +172,26 @@ impl Cascade {
         requested: &MarketplaceConfig,
         ns: &Namespace,
     ) -> Result<Self, CoreError> {
-        let Some(root) = vault_root else {
+        let patterns = vault_root
+            .map(|root| crate::patterns::Patterns::load(vfs, root).map(|p| (p, root)))
+            .transpose()?;
+        let placed = patterns.as_ref().map(|(patterns, root)| (patterns, *root));
+        Self::above_with(vfs, placed, note_path, requested, ns)
+    }
+
+    /// [`Self::above`] with the vault root's patterns already read.
+    pub(crate) fn above_with(
+        vfs: &dyn crate::vfs::Vfs,
+        placed: Option<(&crate::patterns::Patterns, &Path)>,
+        note_path: &Path,
+        requested: &MarketplaceConfig,
+        ns: &Namespace,
+    ) -> Result<Self, CoreError> {
+        let Some((patterns, root)) = placed else {
             return Ok(Self::over(&[], None, requested));
         };
-        let patterns = crate::patterns::Patterns::read(vfs, root);
-        let mut paths = crate::discover::container_notes_with(&patterns, root, note_path);
-        let placed = crate::discover::folder_placement_with(&patterns, root, note_path).marketplace;
+        let mut paths = crate::discover::container_notes_with(patterns, root, note_path);
+        let placed = crate::discover::folder_placement_with(patterns, root, note_path).marketplace;
         let market = match placed {
             Some(market) => Some(market),
             None => only_marketplace(vfs, root, ns)?.inspect(|name| {
@@ -185,7 +200,7 @@ impl Cascade {
         };
         let mut containers = Vec::new();
         for path in paths {
-            containers.extend(read_container(vfs, root, &path, ns)?);
+            containers.extend(read_container(vfs, root, patterns, &path, ns)?);
         }
         Ok(Self::over(&containers, market.as_deref(), requested))
     }

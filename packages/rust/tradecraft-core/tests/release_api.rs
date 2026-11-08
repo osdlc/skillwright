@@ -2120,3 +2120,47 @@ fn a_malformed_root_file_is_refused_with_one_token_everywhere() {
         assert!(err.contains("malformed-root-file: "), "{start}: {err}");
     }
 }
+
+/// A root file with a YAML error cannot say what it excludes, so a publish of
+/// one note and a scan of the vault refuse rather than ship or list a note
+/// the file may exclude.
+#[test]
+fn a_malformed_root_file_refuses_a_publish_and_a_scan() {
+    let root = "---\nbuild:\n  exclude: '**/*.draft.md'\n  oops: [\n---\n";
+    let vfs = root_vault(root, &[("plugins/p/skills/hid.draft.md", USE_IT)]);
+    let request = {
+        let mut value =
+            PublishRequest::new("/vault/plugins/p/skills/hid.draft.md", "/dest", "claude");
+        value.skills_root = Some(PathBuf::from("/vault"));
+        value
+    };
+    let err = publish_skill(&vfs, &request, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("malformed-root-file"), "{err}");
+    assert!(!vfs.exists(Path::new("/dest")));
+
+    let err = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("malformed-root-file"), "{err}");
+}
+
+#[test]
+fn a_malformed_workspace_file_refuses_a_member_publish() {
+    let (vfs, _) = workspace("---\nworkspace: [\n---\n", "---\nname: a\n---\n");
+    let request = {
+        let mut value = PublishRequest::new(
+            "/ws/marketplaces/a/plugins/rev/skills/h.draft.md",
+            "/dest",
+            "claude",
+        );
+        value.skills_root = Some(PathBuf::from("/ws/marketplaces/a"));
+        value
+    };
+    let err = publish_skill(&vfs, &request, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("malformed-root-file"), "{err}");
+    assert!(!vfs.exists(Path::new("/dest")));
+}

@@ -331,7 +331,7 @@ pub fn load(
         &plugins,
         config,
     ));
-    let folder_assets = folder_assets(vfs, &vault_root, &plugins);
+    let folder_assets = folder_assets(vfs, &vault_root, &plugins)?;
     warnings.extend(changelog_warnings(vfs, &vault_root, &folder_assets, config));
     load_assets(
         vfs,
@@ -1445,8 +1445,8 @@ fn folder_assets(
     vfs: &dyn Vfs,
     vault_root: &Path,
     plugins: &BTreeMap<String, Plugin>,
-) -> Vec<AssetSpec> {
-    let patterns = crate::patterns::Patterns::read(vfs, vault_root);
+) -> Result<Vec<AssetSpec>, CoreError> {
+    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
     let mut specs = Vec::new();
     for (name, plugin) in plugins {
         let Some(relative) = plugin.components().find_map(|member| {
@@ -1478,7 +1478,7 @@ fn folder_assets(
             });
         }
     }
-    specs
+    Ok(specs)
 }
 
 /// `…/plugins/<plugin>` out of a member's vault-relative path, or `None` for

@@ -148,12 +148,6 @@ pub struct Patterns {
 }
 
 impl Patterns {
-    /// The patterns in the root file at `vault_root`. A missing or malformed
-    /// file has none: [`Self::load`] is what reports a malformed one.
-    pub fn read(vfs: &dyn Vfs, vault_root: &Path) -> Self {
-        Self::load(vfs, vault_root).unwrap_or_default()
-    }
-
     /// The patterns in the root file at `vault_root`, over what a workspace
     /// file above it sets, key by key. None when there is no file. Globs are
     /// read from the marketplace's folder wherever they were written.
