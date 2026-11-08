@@ -149,10 +149,24 @@ export function findExcerpt(
 const link = (from: string, to: string): string =>
   markdownLink(basename(to, extname(to)), relative(dirname(from), to).split(sep).join('/'))
 
-/** The raw file behind a github.com `blob/` URL, or the URL itself: the page is chrome around it. */
-function fetchUrl(url: string): string {
-  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/u.exec(url)
-  return m === null ? url : `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}`
+/**
+ * What to fetch for `url`. A github.com page is chrome around a file, so a `blob/` URL is read as
+ * the raw file and a repository URL as its README source; any other URL is read as it is.
+ */
+function fetchTarget(url: string): { url: string; accept: string } {
+  const blob = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/u.exec(url)
+  if (blob !== null)
+    return {
+      url: `https://raw.githubusercontent.com/${blob[1]}/${blob[2]}/${blob[3]}`,
+      accept: 'text/plain, */*;q=0.1',
+    }
+  const repo = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)\/?$/u.exec(url)
+  if (repo !== null)
+    return {
+      url: `https://api.github.com/repos/${repo[1]}/${repo[2]}/readme`,
+      accept: 'application/vnd.github.raw+json',
+    }
+  return { url, accept: 'text/html, text/markdown, text/plain;q=0.9, */*;q=0.1' }
 }
 
 function record(data: Data, body: string): string {
@@ -191,10 +205,11 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
     url = String(references.get(referenceId)?.['url'])
   }
 
-  const response = await deps.fetch(fetchUrl(url), {
+  const target = fetchTarget(url)
+  const response = await deps.fetch(target.url, {
     redirect: 'follow',
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    headers: { accept: 'text/html, text/markdown, text/plain;q=0.9, */*;q=0.1' },
+    headers: { accept: target.accept },
   })
   if (!response.ok) throw new Error(`${url}: fetch failed with HTTP ${response.status}`)
   const raw = await response.text()

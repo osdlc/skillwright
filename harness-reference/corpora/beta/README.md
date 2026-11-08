@@ -61,8 +61,9 @@ pnpm run capture --harness "Codex CLI" --reference "https://github.com/openai/co
   at a page.
 - The quote must occur in the page's visible text, compared with whitespace collapsed. Page chrome
   (`nav`, `header`, `footer`, `aside`) is not text. For a GitHub `blob/` URL, `capture` reads the
-  raw file instead of the HTML page. It stores the quote with 32 characters either side, and fails
-  when it is not found.
+  raw file, and for a repository URL its README source, instead of the HTML page; quote what that
+  source holds, Markdown link syntax included. It stores the quote with 32 characters either side,
+  and fails when it is not found.
 - `observed` is today. The file is `evidence/<harness>/<today> <name>.md`; `--name` defaults to the
   reference's name. `capture` never overwrites a record; a second look the same day needs its own
   `--name`.

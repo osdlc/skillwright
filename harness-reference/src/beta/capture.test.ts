@@ -234,6 +234,15 @@ observed_by: "person: test"
     assert.ok(readFileSync(join(dir, result.reference), 'utf8').includes(`url: ${url}\n`))
   })
 
+  test('reads a github.com repository URL as its README source', async () => {
+    const url = 'https://github.com/acme/tool'
+    await capture(
+      opts({ reference: url, title: 'acme tool README', excerpt: 'starts as claude' }),
+      deps('Claude Code starts as claude in a terminal', 200, 'text/markdown'),
+    )
+    assert.deepEqual(fetched, ['https://api.github.com/repos/acme/tool/readme'])
+  })
+
   test('removes what it wrote when the corpus no longer validates', async () => {
     await assert.rejects(
       capture(
