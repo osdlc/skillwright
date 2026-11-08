@@ -660,6 +660,16 @@ pub fn discover_components(
     discover_in(vfs, vault_root, &source, ns)
 }
 
+/// [`discover_roster`] over a source already listed.
+pub(crate) fn discover_roster_in(
+    vfs: &dyn Vfs,
+    vault_root: &Path,
+    source: &Source,
+    ns: &Namespace,
+) -> Result<DiscoveryReport, CoreError> {
+    discover_with(vfs, vault_root, source, ns, true)
+}
+
 /// [`discover_components`] for a roster: a duplicate name or a bundle overlap
 /// is not an error. Every component stays, and each note involved gets a
 /// `path-collision` entry in [`DiscoveryReport::warnings`] naming the other

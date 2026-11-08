@@ -225,9 +225,15 @@ pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
 }
 
 /// Every file under the vault folder `root` this walk can read, without
-/// failing: a folder that cannot be listed is skipped.
-pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path) -> Vec<vault::Entry> {
-    let mut entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
+/// failing: a folder that cannot be listed is skipped, and a symlinked file is
+/// listed like any other.
+pub(crate) fn readable_vault_files(
+    vfs: &dyn Vfs,
+    root: &Path,
+    prune: &[&str],
+) -> Vec<vault::Entry> {
+    let mut entries =
+        vault::walk(vfs, root, &vault_options(prune, false, false)).unwrap_or_default();
     // Without failing, as promised: a root file that cannot be read keeps
     // every entry, which lists more than it should rather than less.
     let patterns = crate::patterns::Patterns::load(vfs, root).unwrap_or_default();

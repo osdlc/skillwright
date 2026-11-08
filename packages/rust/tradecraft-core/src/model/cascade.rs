@@ -362,9 +362,14 @@ fn marketplace_note(root: &Path, folder: &str) -> PathBuf {
 /// The vault's one marketplace, or `None` when it holds none or several. Counted
 /// by scanning `marketplaces/` as a build does, so the two cannot disagree.
 ///
+/// The scan refuses nothing a build of one marketplace would: a symlink, a
+/// folder it cannot list or a duplicate name inside another marketplace is
+/// that build's news, not this publish's. A symlinked file is listed, an
+/// unlistable folder is skipped, and a duplicate is a warning.
+///
 /// # Errors
 ///
-/// What a build's scan of that folder refuses.
+/// What reading the vault's root file refuses.
 fn only_marketplace(
     vfs: &dyn crate::vfs::Vfs,
     root: &Path,
@@ -374,12 +379,16 @@ fn only_marketplace(
     if !vfs.exists(&folder) {
         return Ok(None);
     }
-    let files = crate::discover::load_source(vfs, root, Some(&folder))?.files;
+    let files =
+        crate::walk::readable_vault_files(vfs, &folder, crate::compile::EXCLUDED_VAULT_DIRECTORIES)
+            .into_iter()
+            .map(|entry| entry.abs)
+            .collect();
     let source = crate::discover::Source {
         root: root.to_path_buf(),
         files,
     };
-    let scan = crate::discover::discover_in(vfs, root, &source, ns)?;
+    let scan = crate::discover::discover_roster_in(vfs, root, &source, ns)?;
     let present = marketplaces_in(&scan.components);
     Ok(match present.len() {
         1 => present.first().map(|name| (*name).to_owned()),

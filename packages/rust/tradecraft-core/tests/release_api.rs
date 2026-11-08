@@ -2164,3 +2164,22 @@ fn a_malformed_workspace_file_refuses_a_member_publish() {
     assert!(err.contains("malformed-root-file"), "{err}");
     assert!(!vfs.exists(Path::new("/dest")));
 }
+
+/// Counting the marketplaces for a vault-level note does not refuse on a
+/// problem inside one of them: a duplicate name in `n` is that marketplace's
+/// build's news, not this publish's.
+#[test]
+fn a_problem_in_another_marketplace_does_not_refuse_a_publish() {
+    let vfs = beside_a_marketplace();
+    write(&vfs, "/vault/marketplaces/n/skills/a.md", &note("a", ""));
+    write(&vfs, "/vault/marketplaces/n/skills/b.md", &note("a", ""));
+    let request = {
+        let mut value = PublishRequest::new("/vault/skills/loose.md", "/dest", "claude");
+        value.skills_root = Some(PathBuf::from("/vault"));
+        value
+    };
+    let report = publish_skill(&vfs, &request, &Namespace::default()).unwrap();
+    // Two marketplaces, so the note stays on the root file.
+    let skill = published(&vfs, &report, "SKILL.md");
+    assert!(!skill.contains("license: ISC"), "{skill}");
+}
