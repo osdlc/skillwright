@@ -17,10 +17,8 @@ const DRAFT: &str = "/vault/marketplaces/house/plugins/other/skills/draft.md";
 
 const CLAUDE_REVIEW: &str = "/market/.claude-plugin/packs/tools/skills/review/SKILL.md";
 
-fn write(vfs: &dyn Vfs, path: &str, content: &str) {
-    let path = Path::new(path);
-    vfs.create_dir_all(path.parent().unwrap()).unwrap();
-    vfs.write_file(path, content.as_bytes()).unwrap();
+fn write(vfs: &MemVfs, path: &str, content: &str) {
+    vfs.insert(path, content).unwrap();
 }
 
 fn text_at(vfs: &dyn Vfs, path: &str) -> String {

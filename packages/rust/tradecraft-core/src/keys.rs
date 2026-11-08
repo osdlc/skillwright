@@ -130,12 +130,6 @@ pub const HARNESS_BLOCKS: &[&str] = &["claude", "codex", "cursor", "pi"];
 pub const BLOCK_IDENTITY_KEYS: &[&str] =
     &["name", "description", "version", "displayName", "source"];
 
-/// Whether any kind's row owns `key`.
-pub fn is_skillwright_key(key: &str) -> bool {
-    KEYS.iter()
-        .any(|spec| spec.key == key && spec.owner == Owner::Skillwright)
-}
-
 /// Every key skillwright reads, in the order the field reference lists them.
 pub const KEYS: &[KeySpec] = &[
     KeySpec {
@@ -633,6 +627,15 @@ mod tests {
         assert!(is_known(Skill, "license", &sw));
         assert!(!is_known(Skill, "targets", &sw));
         assert!(!is_known(Plugin, "license", &sw));
+    }
+
+    /// `targets` inherits on every kind, which the cascade relies on: it asks
+    /// no kind whether `targets` inherits.
+    #[test]
+    fn targets_inherits_on_every_kind() {
+        for kind in EntityKind::ALL {
+            assert!(inherits(kind, "targets"), "{kind:?}");
+        }
     }
 
     /// The Decided block's list, for the kinds that carry each key.

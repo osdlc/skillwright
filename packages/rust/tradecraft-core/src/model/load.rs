@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use markdown_link::LinkIndex;
 use serde::{Deserialize, Serialize};
 
-use super::cascade::{Cascade, belongs_to, marketplaces_in};
+use super::cascade::{Cascade, belongs_to, marketplaces_in, sole_marketplace};
 use super::{
     Asset, Body, Component, Extensions, HooksFile, Marketplace, Plugin, Resolved, Resource,
     ResourceContent, Segment, pack_kind, segments,
@@ -36,9 +36,10 @@ use crate::discover::{
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
-use crate::harness::manifest::DEFAULT_PLUGIN_VERSION;
+use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, with_plugin_format};
 use crate::namespace::Namespace;
+use crate::paths::WORKSPACE_DIR;
 use crate::projection::parse_runtime_target;
 use crate::publish::{PLUGIN_HOOKS_PATH, canonical_target, refuse_carried_peers};
 use crate::vault::{VaultNote, read_vault_note};
@@ -258,7 +259,8 @@ pub fn load(
         .collect();
     // A never-ship note is no component, so only its path says whose it is.
     let another_marketplace = |path: &str| {
-        path.strip_prefix("marketplaces/")
+        path.strip_prefix(WORKSPACE_DIR)
+            .and_then(|rest| rest.strip_prefix('/'))
             .and_then(|rest| rest.split('/').next())
             .is_some_and(|folder| market.as_deref() != Some(folder))
     };
@@ -1005,7 +1007,7 @@ fn standalone(request: &ComponentRequest<'_>, note: &VaultNote) -> DiscoveredCom
         vault_relative_path: vault_relative(request.root, request.path),
         hook: None,
         identity: ContainerIdentity::default(),
-        blocks: note.frontmatter.overrides.clone(),
+        blocks: note.frontmatter.blocks.clone(),
         unknown_keys: note.frontmatter.unknown.clone(),
     }
 }
@@ -1112,9 +1114,10 @@ fn has_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name: &s
 }
 
 /// The plugins this build publishes with no version from the
-/// note or the config. It ships as [`DEFAULT_PLUGIN_VERSION`], and a harness compares versions
-/// to decide whether an installed pack is out of date — so a pack that never
-/// states one never looks updated.
+/// note or the config. It ships as
+/// [`crate::harness::manifest::DEFAULT_PLUGIN_VERSION`], and a harness
+/// compares versions to decide whether an installed pack is out of date — so
+/// a pack that never states one never looks updated.
 fn missing_versions(
     discovered: &[DiscoveredComponent],
     market: Option<&str>,
@@ -1140,7 +1143,7 @@ fn missing_versions(
         .map(|name| {
             if implicit(name) {
                 let file = match market {
-                    Some(m) => format!("marketplaces/{m}/{}", crate::settings::ROOT_FILE),
+                    Some(m) => format!("{WORKSPACE_DIR}/{m}/{}", crate::settings::ROOT_FILE),
                     None => crate::settings::ROOT_FILE.to_owned(),
                 };
                 return DiscoveryWarning {
@@ -1253,8 +1256,7 @@ fn resolve_marketplace(
             ))
         }
         None => match present.len() {
-            0 => Ok(None),
-            1 => Ok(present.iter().next().map(|name| (*name).to_owned())),
+            0 | 1 => Ok(sole_marketplace(&present)),
             _ => Err(CoreError::refused(
                 "ambiguous-marketplace",
                 format!(
@@ -1523,16 +1525,12 @@ fn changelog_warnings(
         let Some(plugin) = asset.plugin.as_deref() else {
             continue;
         };
-        let version = config
-            .plugins
-            .get(plugin)
-            .and_then(|o| o.version.as_deref())
-            .unwrap_or(DEFAULT_PLUGIN_VERSION);
+        let version = plugin_version(config, plugin);
         let Ok(bytes) = vfs.read_file(&asset.source) else {
             continue;
         };
         let text = String::from_utf8_lossy(&bytes);
-        let named = text.lines().any(|line| heading_names(line, version));
+        let named = text.lines().any(|line| heading_names(line, &version));
         if !named {
             warnings.push(DiscoveryWarning {
                 path: asset

@@ -28,6 +28,7 @@ use crate::discover::{
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::namespace::Namespace;
+use crate::paths::WORKSPACE_DIR;
 use crate::settings::ROOT_FILE;
 use crate::vault::read_vault_skill;
 use crate::vfs::{MemVfs, Vfs};
@@ -149,9 +150,6 @@ pub const TRASH_DIR: &str = ".trash";
 /// The vault-relative folder that holds plugins.
 pub const SKILLS_ROOT: &str = "plugins";
 
-/// The folder marketplaces are looked for in, under the content root.
-pub const MARKETPLACES_DIR: &str = "marketplaces";
-
 /// Frontmatter keys no conversion removes: both are the note's identity, and
 /// every kind carries them.
 const UNDROPPABLE_KEYS: &[&str] = &["name", "description"];
@@ -255,7 +253,7 @@ fn placement_prefix(
 ) -> Result<String, String> {
     let mut dir = String::new();
     if let Some(market) = segment("marketplace", placement.marketplace.as_deref())? {
-        dir.push_str(MARKETPLACES_DIR);
+        dir.push_str(WORKSPACE_DIR);
         dir.push('/');
         dir.push_str(&market);
         dir.push('/');
@@ -317,14 +315,14 @@ fn container_dir(
             if segment("marketplace", placement.marketplace.as_deref())?.is_some() {
                 return Err(MARKETPLACE_NESTED.to_owned());
             }
-            Ok(MARKETPLACES_DIR.to_owned())
+            Ok(WORKSPACE_DIR.to_owned())
         }
         EntityKind::Plugin => {
             if segment("plugin", placement.plugin.as_deref())?.is_some() {
                 return Err(PLUGIN_NESTED.to_owned());
             }
             match segment("marketplace", placement.marketplace.as_deref())? {
-                Some(market) => Ok(format!("{MARKETPLACES_DIR}/{market}/{SKILLS_ROOT}")),
+                Some(market) => Ok(format!("{WORKSPACE_DIR}/{market}/{SKILLS_ROOT}")),
                 None => Ok(SKILLS_ROOT.to_owned()),
             }
         }
@@ -442,7 +440,7 @@ pub fn rename_destination(entry: &str, slug: &str) -> String {
     match bundle_dir(entry) {
         Some(dir) => {
             // A rename keeps the kind, and only a skill has a `SKILL.md`.
-            let market = dir.rsplit_once('/').map(|(parent, _)| parent) == Some(MARKETPLACES_DIR);
+            let market = dir.rsplit_once('/').map(|(parent, _)| parent) == Some(WORKSPACE_DIR);
             let kind = if market {
                 EntityKind::Marketplace
             } else {

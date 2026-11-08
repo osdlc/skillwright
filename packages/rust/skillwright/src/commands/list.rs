@@ -67,7 +67,7 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
         &run.source_vfs(skills_root.as_deref()),
         &run.vault,
         skills_root.as_deref(),
-        &run.core_namespace(),
+        run.core_namespace(),
     ) {
         Ok(scan) => scan,
         // What still fails is run-level by construction — a symlink, a
@@ -171,8 +171,9 @@ fn read_members(
 ) -> Result<(), i32> {
     for member in workspace_runs(run, common, None, ctx.err)? {
         let namespace = member.core_namespace();
-        let mut inner = discover_roster(&member.source_vfs(None), &member.vault, None, &namespace)
-            .map_err(|err| blocked(ctx.err, &format!("the vault scan could not run: {err}")))?;
+        let mut inner =
+            discover_roster(&member.source_vfs(None), &member.vault, None, namespace)
+                .map_err(|err| blocked(ctx.err, &format!("the vault scan could not run: {err}")))?;
         inherit_targets(&mut inner, &member.root_config());
 
         let folder = member.folder_name();
@@ -245,7 +246,7 @@ fn print_model(
     request.assets = assets;
     request.hooks = hooks;
     let vfs = run.source_vfs(request.skills_root.as_deref());
-    let market = match load(&vfs, &request, &run.core_namespace()) {
+    let market = match load(&vfs, &request, run.core_namespace()) {
         Ok(market) => market,
         Err(err) => return blocked(ctx.err, &format!("the marketplace would not load: {err}")),
     };

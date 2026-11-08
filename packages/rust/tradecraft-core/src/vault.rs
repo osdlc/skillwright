@@ -568,7 +568,6 @@ mod tests {
         // A note that declares nothing of ours reads as the ordinary vault.
         assert_eq!(note.frontmatter.targets, None);
         assert!(note.frontmatter.provenance.is_hand_authored());
-        assert!(note.frontmatter.unknown_ours.is_empty());
     }
 
     #[test]
@@ -736,9 +735,10 @@ mod tests {
             Some("2026-08-11"),
             "an unquoted date stays a string through the YAML/JSON hop"
         );
-        assert_eq!(
-            note.frontmatter.unknown_ours["sw-not-modeled-yet"],
-            serde_json::json!("keep me")
+        assert!(
+            note.frontmatter
+                .unknown
+                .contains(&"sw-not-modeled-yet".to_owned())
         );
 
         // The whole point: annotations is foreign keys only.
@@ -771,9 +771,10 @@ mod tests {
             note.frontmatter.provenance.source.as_deref(),
             Some("/src/review")
         );
-        assert_eq!(
-            note.frontmatter.unknown_ours["x-not-modeled-yet"],
-            serde_json::json!("keep me")
+        assert!(
+            note.frontmatter
+                .unknown
+                .contains(&"x-not-modeled-yet".to_owned())
         );
 
         let annotations = note.projection.content.annotations;

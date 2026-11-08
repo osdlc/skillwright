@@ -18,11 +18,17 @@ API:
 
 - `vault_config` returns `Result<MarketplaceConfig, CoreError>`. It refuses with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes, as the scan it configures does. It ignored such a workspace file before, so a member silently lost the workspace's namespace, targets, blocks and exclusions. A bad value in another key still gives the default config, or leaves the workspace file out, as before: a build says what is wrong with it. The wasm `discoverComponents` throws when the vault's root file or workspace file cannot say what it excludes.
 - Removed `Patterns::read`, which read a malformed root file as empty. Use `Patterns::load`, which refuses it.
+- `VaultFrontmatter::overrides` is renamed `blocks`, the name `DiscoveredComponent`, `MarketplaceConfig` and `MarketplaceFields` use for the same harness blocks. `PluginOverrides` keeps its name. The serialized form changes too: a serialized `VaultFrontmatter` or `VaultNote` has a `blocks` key where it had `overrides`, and no `unknown_ours` key.
+- Removed `authoring::MARKETPLACES_DIR`. Use `WORKSPACE_DIR` (`paths::WORKSPACE_DIR`), which holds the same `marketplaces`.
+- Removed `keys::is_skillwright_key`. Ask `keys::is_owned` for each of `EntityKind::ALL` instead.
+- Removed `VaultFrontmatter::unknown_ours`. Nothing read it. A prefixed key this build does not model is still consumed, and `VaultFrontmatter::unknown` still lists it.
 
 ### Added
 
 - `ReasonToken::MalformedRootFile` (`malformed-root-file`), the token of a refusal for a root file or workspace file that cannot be read. It is in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`.
 - `is_marketplace_entry(path)`: whether a vault-relative path is a marketplace's entry note, exactly `marketplaces/<m>/skillwright.md`. A host that moves notes uses it to tell a marketplace's entry from a bundle named `skillwright`.
+- `EntityKind::ALL`: every kind.
+- `model::marketplaces_in`: the marketplace folders a scan holds. The CLI's `bump` and `status` use it in place of their own copy.
 
 ### Fixed
 

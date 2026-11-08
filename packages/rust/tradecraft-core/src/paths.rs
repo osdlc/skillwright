@@ -118,9 +118,7 @@ fn is_component_note(path: &Path) -> bool {
         .and_then(Path::parent)
         .and_then(Path::file_name)
         .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            name != "marketplaces" && KIND_DIRS.iter().any(|(dir, _)| *dir == name)
-        });
+        .is_some_and(|name| name != WORKSPACE_DIR && KIND_DIRS.iter().any(|(dir, _)| *dir == name));
     named && in_kind
 }
 
@@ -428,9 +426,7 @@ mod tests {
     use crate::vfs::MemVfs;
 
     fn put(vfs: &MemVfs, path: &str) {
-        let path = Path::new(path);
-        vfs.create_dir_all(path.parent().unwrap()).unwrap();
-        vfs.write_file(path, b"---\n---\n").unwrap();
+        vfs.insert(path, "---\n---\n").unwrap();
     }
 
     #[test]

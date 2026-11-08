@@ -103,13 +103,6 @@ pub fn resolve_against_cwd(path: &str, base: &Path) -> PathBuf {
     resolve_path(path, base, &home_dir())
 }
 
-/// [`resolve_against_cwd`] for a value read from the root file: the same
-/// rule, with `base` the file's folder, never the process's working
-/// directory. The second name marks that intent at the call site.
-pub fn resolve_configured_path(path: &str, base: &Path) -> PathBuf {
-    resolve_against_cwd(path, base)
-}
-
 /// The user's home directory, read directly from `$HOME`. Falls back to `/`
 /// rather than panicking when unset.
 pub(crate) fn home_dir() -> PathBuf {
@@ -151,7 +144,7 @@ mod tests {
             PathBuf::from("/work/~alice/notes")
         );
         assert_eq!(
-            resolve_configured_path("~notes", Path::new("/proj")),
+            resolve_against_cwd("~notes", Path::new("/proj")),
             PathBuf::from("/proj/~notes")
         );
         assert_eq!(resolve_against_cwd("~", Path::new("/work")), home);

@@ -1841,7 +1841,7 @@ pub fn overrides_for(
     ns: &Namespace,
 ) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
     let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
-    for (declared, block) in &note.overrides {
+    for (declared, block) in &note.blocks {
         let Some(canonical) = canonical_target(declared) else {
             return Err(CoreError::refused(
                 "unknown-target",
@@ -1973,7 +1973,7 @@ pub fn override_states(
     ns: &Namespace,
 ) -> Vec<OverrideBlockState> {
     let mut out = Vec::new();
-    for (declared, block) in &note.overrides {
+    for (declared, block) in &note.blocks {
         let canonical = canonical_target(declared).unwrap_or(declared.as_str());
         let accepted = accepted_keys(kind, canonical);
         let block = block.as_object().cloned().unwrap_or_default();
@@ -5006,7 +5006,7 @@ mod tests {
         // An unmapped harness receives no unchecked keys: its block is
         // emptied, at every destination.
         let note = VaultFrontmatter {
-            overrides: serde_json::json!({"cursor": {"anything": 1}})
+            blocks: serde_json::json!({"cursor": {"anything": 1}})
                 .as_object()
                 .unwrap()
                 .clone(),

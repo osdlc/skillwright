@@ -3,13 +3,13 @@
 
 mod common;
 
+use common::{run_home, run_with_runner as run};
+
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use skillwright::cli::run_with;
 use skillwright::commands::harness::cli_runner::{RunResult, Runner};
-use skillwright::ctx::CommandContext;
 use skillwright::exit::{EXIT_BLOCKED, EXIT_USAGE};
 
 /// Answers each list command with canned stdout and every other command
@@ -109,27 +109,6 @@ fn write_project(dir: &Path) -> String {
         fs::write(path, r#"{"name": "acme", "plugins": []}"#).unwrap();
     }
     root.display().to_string()
-}
-
-struct Run {
-    code: i32,
-    stdout: String,
-    stderr: String,
-}
-
-fn run(argv: &[&str], cwd: &Path, runner: &dyn Runner) -> Run {
-    let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
-    let mut out: Vec<u8> = Vec::new();
-    let mut err: Vec<u8> = Vec::new();
-    let code = {
-        let mut ctx = CommandContext::new(cwd, &mut out, &mut err).with_runner(runner);
-        run_with(&owned, &mut ctx)
-    };
-    Run {
-        code,
-        stdout: String::from_utf8(out).unwrap(),
-        stderr: String::from_utf8(err).unwrap(),
-    }
 }
 
 fn claude_market(path: &str) -> String {
@@ -1090,23 +1069,6 @@ fn install_refuses_a_packs_that_leaves_the_output() {
     assert!(fake.calls().is_empty());
 }
 // --- pi ---------------------------------------------------------------------
-
-/// `run`, with `home` standing in for the user's home directory.
-fn run_home(argv: &[&str], cwd: &Path, home: &Path, runner: &dyn Runner) -> Run {
-    let owned: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
-    let mut out: Vec<u8> = Vec::new();
-    let mut err: Vec<u8> = Vec::new();
-    let mut ctx = CommandContext::new(cwd, &mut out, &mut err)
-        .with_runner(runner)
-        .with_home(home);
-    let code = run_with(&owned, &mut ctx);
-    drop(ctx);
-    Run {
-        code,
-        stdout: String::from_utf8(out).unwrap(),
-        stderr: String::from_utf8(err).unwrap(),
-    }
-}
 
 /// A built skill folder at `<root>/<packs>/<plugin>/skills/<skill>`.
 fn write_built_skill(root: &Path, packs: &str, plugin: &str, skill: &str) -> std::path::PathBuf {

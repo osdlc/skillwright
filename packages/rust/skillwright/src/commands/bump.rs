@@ -14,11 +14,12 @@
 //! has never carried the key is bumped, not refused. The root file's
 //! `build.bump.patch` picks how the patch number is written ([`PatchScheme`]).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tradecraft_core::harness::with_plugin_format;
+use tradecraft_core::model::marketplaces_in;
 use tradecraft_core::{
     BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit,
     MarketplaceConfig, Namespace, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs,
@@ -58,31 +59,23 @@ pub struct BumpFlags {
     pub quiet: bool,
 }
 
-/// The `--json` row: the same facts the report line carries. Not one of
-/// the CLI spec's worked transcripts — those are human-only — so the shape
-/// here is this file's own judgement call, kept minimal on purpose.
-#[derive(Serialize)]
-struct BumpRow<'a> {
-    path: &'a str,
-    status: &'a str,
-    current: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    new: Option<&'a str>,
-}
-
 /// `--changed-since`'s `--json` document: the baseline, and one row per
 /// plugin the render holds.
 #[derive(Serialize)]
 struct ChangedReport<'a> {
     baseline: &'a str,
-    plugins: Vec<ChangedRow<'a>>,
+    plugins: Vec<JsonRow<'a>>,
 }
 
-/// One plugin of a `--changed-since` run. `status` is `written`,
-/// `dry-run`, `unchanged`, `skipped` or `refused`.
+/// One row's `--json` object. `status` is `written`, `dry-run`, `unchanged`,
+/// `skipped` or `refused`. Not one of the CLI spec's worked transcripts —
+/// those are human-only — so the shape here is this file's own judgement
+/// call, kept minimal on purpose. [`JsonShape`] says which fields a row
+/// sets.
 #[derive(Serialize)]
-struct ChangedRow<'a> {
-    plugin: &'a str,
+struct JsonRow<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plugin: Option<&'a str>,
     path: &'a str,
     status: &'a str,
     current: &'a str,
@@ -96,25 +89,11 @@ struct ChangedRow<'a> {
 /// object in `--json` mode — [`crate::commands::marketplace::run_export`]'s
 /// own `--json` branch, applied to a single-unit verb. `Err` is the exit code
 /// a report that would not serialize earns; every other outcome is `Ok(())`.
-fn write_row(
-    ctx: &mut CommandContext<'_>,
-    json: bool,
-    path: &str,
-    status: &str,
-    current: &str,
-    new: Option<&str>,
-    line: &str,
-) -> Result<(), i32> {
+fn write_row(ctx: &mut CommandContext<'_>, json: bool, row: &Row) -> Result<(), i32> {
     if json {
-        let row = BumpRow {
-            path,
-            status,
-            current,
-            new,
-        };
-        print_json(ctx, &row)
+        print_json(ctx, &row.json())
     } else {
-        let _ = writeln!(ctx.out, "{line}");
+        let _ = writeln!(ctx.out, "{}", row.line());
         Ok(())
     }
 }
@@ -267,18 +246,6 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
 }
 
-/// The marketplace folders a scan holds: each marketplace note's, and each
-/// component's under `marketplaces/`, as the build counts them.
-pub(crate) fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
-    components
-        .iter()
-        .filter_map(|c| match c.kind {
-            EntityKind::Marketplace => Some(c.folder()),
-            _ => c.marketplace.as_deref(),
-        })
-        .collect()
-}
-
 /// `bump` in one vault, narrowed to the marketplace folder `market`.
 fn bump_in(
     flags: &BumpFlags,
@@ -288,7 +255,7 @@ fn bump_in(
 ) -> i32 {
     let namespace = run.core_namespace();
 
-    let mut scan = match discover_components(&run.source_vfs(None), &run.vault, None, &namespace) {
+    let mut scan = match discover_components(&run.source_vfs(None), &run.vault, None, namespace) {
         Ok(scan) => scan,
         Err(err) => {
             let message = err.to_string();
@@ -387,7 +354,7 @@ fn plugin_version_note(component: &DiscoveredComponent, run: &ResolvedRun) -> Ve
     VersionNote {
         path: component.entry_path.clone(),
         rel: component.vault_relative_path.clone(),
-        namespace: run.core_namespace(),
+        namespace: run.core_namespace().clone(),
     }
 }
 
@@ -437,15 +404,10 @@ fn run_one(
         Ok(planned) => planned,
         Err(err) => return bump_failed(ctx.err, err),
     };
-    let (rel, version_key, current) = (
-        planned.rel.as_str(),
-        planned.key.as_str(),
-        planned.current.as_str(),
-    );
-
-    let Some(new) = planned.new.as_deref() else {
-        let line = format!("{rel}  refused · non-semver: `{version_key}` reads `{current}`");
-        if let Err(code) = write_row(ctx, flags.json, rel, "refused", current, None, &line) {
+    let Some(new) = planned.new.clone() else {
+        let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
+        let row = Row::refused(plugin, &planned.rel, &planned.current, reason).single();
+        if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
         }
         if !flags.quiet {
@@ -453,10 +415,9 @@ fn run_one(
         }
         return EXIT_REFUSED;
     };
-
     if flags.dry_run {
-        let line = format!("{rel}  {current} \u{2192} {new}");
-        if let Err(code) = write_row(ctx, flags.json, rel, "dry-run", current, Some(new), &line) {
+        let row = Row::bumped(plugin, planned, "dry-run", new).single();
+        if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
         }
         let _ = writeln!(
@@ -467,19 +428,22 @@ fn run_one(
     }
 
     if !flags.yes {
-        let plan = vec![format!("{rel}  {version_key} {current} -> {new}")];
+        let plan = vec![format!(
+            "{}  {} {} -> {new}",
+            planned.rel, planned.key, planned.current
+        )];
         let gate = confirm_write("bump", &plan, ctx.err);
         if gate != EXIT_OK {
             return gate;
         }
     }
 
-    if let Err(err) = write_bump(&planned, new) {
+    if let Err(err) = write_bump(&planned, &new) {
         return bump_failed(ctx.err, err);
     }
 
-    let line = format!("{rel}  written · {version_key} {current} -> {new}");
-    if let Err(code) = write_row(ctx, flags.json, rel, "written", current, Some(new), &line) {
+    let row = Row::bumped(plugin, planned, "written", new).single();
+    if let Err(code) = write_row(ctx, flags.json, &row) {
         return code;
     }
     if !flags.quiet {
@@ -638,7 +602,7 @@ fn run_changed(
     }
     let namespace = run.core_namespace();
     let vfs = run.export_vfs(None, baseline.root());
-    let report = match export_skills(&vfs, &request, &namespace) {
+    let report = match export_skills(&vfs, &request, namespace) {
         Ok(report) => report,
         Err(err) => {
             return blocked(
@@ -813,9 +777,12 @@ fn run_changed(
     }
 }
 
-/// One plugin's line in a `--changed-since` report.
+/// One plugin's row in a `bump` report: one for a single plugin, one per
+/// plugin for `--changed-since`.
 struct Row {
     plugin: String,
+    /// Which `--json` object the row prints as.
+    shape: JsonShape,
     rel: String,
     status: &'static str,
     current: String,
@@ -827,10 +794,21 @@ struct Row {
     planned: Option<Planned>,
 }
 
+/// The two `--json` row objects `bump` prints.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JsonShape {
+    /// A single-plugin run's object: the note, its status and versions. It
+    /// names no plugin and carries no reason.
+    Single,
+    /// A `--changed-since` row: the plugin, and why when there is a reason.
+    Changed,
+}
+
 impl Row {
     fn plain(plugin: &str, planned: &Planned, status: &'static str, reason: Option<String>) -> Row {
         Row {
             plugin: plugin.to_owned(),
+            shape: JsonShape::Changed,
             rel: planned.rel.clone(),
             status,
             current: planned.current.clone(),
@@ -844,6 +822,7 @@ impl Row {
     fn refused(plugin: &str, rel: &str, current: &str, reason: String) -> Row {
         Row {
             plugin: plugin.to_owned(),
+            shape: JsonShape::Changed,
             rel: rel.to_owned(),
             status: "refused",
             current: current.to_owned(),
@@ -857,6 +836,7 @@ impl Row {
     fn bump(plugin: &str, planned: Planned) -> Row {
         Row {
             plugin: plugin.to_owned(),
+            shape: JsonShape::Changed,
             rel: planned.rel.clone(),
             status: "pending",
             current: planned.current.clone(),
@@ -865,6 +845,14 @@ impl Row {
             explain: None,
             planned: Some(planned),
         }
+    }
+
+    /// A bump settled as `status`, `dry-run` or `written`, to `new`.
+    fn bumped(plugin: &str, planned: Planned, status: &'static str, new: String) -> Row {
+        let mut row = Row::bump(plugin, planned);
+        row.status = status;
+        row.new = Some(new);
+        row
     }
 
     fn line(&self) -> String {
@@ -887,14 +875,22 @@ impl Row {
         }
     }
 
-    fn json(&self) -> ChangedRow<'_> {
-        ChangedRow {
-            plugin: &self.plugin,
+    /// The row as a single-plugin run prints it.
+    fn single(mut self) -> Row {
+        self.shape = JsonShape::Single;
+        self
+    }
+
+    /// The row's `--json` object, in its [`JsonShape`].
+    fn json(&self) -> JsonRow<'_> {
+        let changed = self.shape == JsonShape::Changed;
+        JsonRow {
+            plugin: changed.then_some(self.plugin.as_str()),
             path: &self.rel,
             status: self.status,
             current: &self.current,
             new: self.new.as_deref(),
-            reason: self.reason.as_deref(),
+            reason: self.reason.as_deref().filter(|_| changed),
         }
     }
 }
@@ -1088,7 +1084,7 @@ impl BuiltRef {
         let request = configured_request(&base_run, market, built.out.clone(), ExportMode::Build);
         // The ref's own `build.out` may be committed, and is output, not source.
         let vfs = base_run.export_vfs(None, &built.out);
-        if let Err(err) = export_skills(&vfs, &request, &base_run.core_namespace()) {
+        if let Err(err) = export_skills(&vfs, &request, base_run.core_namespace()) {
             return fail(
                 ctx,
                 format!(

@@ -28,7 +28,7 @@ use crate::compile::EXCLUDED_BUNDLE_DIRECTORIES;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
-use crate::paths::{RootRead, read_root, read_workspace_above};
+use crate::paths::{RootRead, WORKSPACE_DIR, read_root, read_workspace_above};
 use crate::settings::{FolderPatterns, ROOT_FILE};
 use crate::vfs::Vfs;
 
@@ -251,18 +251,39 @@ impl Patterns {
             .collect()
     }
 
-    /// What is worth saying about these patterns over the vault's `files`,
-    /// vault-relative: a glob that matches nothing, a path two kinds claim,
-    /// and one plugin read from two folders. `output` is what a build owns in
-    /// the vault: not source, but a fair thing for `build.exclude` to name.
-    /// `siblings` are the other marketplaces' files: a glob a workspace shares
-    /// need only match in one of them.
+    /// [`Self::warnings_with`] over lists already in hand, for the tests.
+    #[cfg(test)]
     pub(crate) fn warnings(
         &self,
         files: &[String],
         output: &[String],
         siblings: &[String],
     ) -> Vec<DiscoveryWarning> {
+        self.warnings_with(|| files.to_vec(), output, || siblings.to_vec())
+    }
+
+    /// What is worth saying about these patterns over the vault's `files`,
+    /// vault-relative: a glob that matches nothing, a path two kinds claim,
+    /// and one plugin read from two folders. `output` is what a build owns in
+    /// the vault: not source, but a fair thing for `build.exclude` to name.
+    /// `siblings` are the other marketplaces' files: a glob a workspace shares
+    /// need only match in one of them.
+    ///
+    /// Both lists are read only when there is something to check. With no
+    /// glob there is nothing to say, so neither is read; `siblings` is read
+    /// only when a shared glob matches nothing here, and then once.
+    pub(crate) fn warnings_with(
+        &self,
+        files: impl Fn() -> Vec<String>,
+        output: &[String],
+        siblings: impl Fn() -> Vec<String>,
+    ) -> Vec<DiscoveryWarning> {
+        if self.globs().next().is_none() {
+            return Vec::new();
+        }
+        let files = files();
+        let files = files.as_slice();
+        let mut sibling_files: Option<Vec<String>> = None;
         let warn = |path: &str, reason: &str, detail: String| DiscoveryWarning {
             path: path.to_owned(),
             reason: reason.to_owned(),
@@ -285,8 +306,12 @@ impl Patterns {
             .chain(self.exclude.iter().map(|g| ("build.exclude".to_owned(), g)));
         for (key, glob) in keyed {
             let names_output = key == "build.exclude" && matches_some(output, glob);
-            let shared = self.inherited.contains(glob) && matches_some(siblings, glob);
-            if !names_output && !shared && !matches_some(files, glob) {
+            if names_output || matches_some(files, glob) {
+                continue;
+            }
+            let shared = self.inherited.contains(glob)
+                && matches_some(sibling_files.get_or_insert_with(&siblings), glob);
+            if !shared {
                 warnings.push(warn(
                     ROOT_FILE,
                     "unmatched-glob",
@@ -332,7 +357,7 @@ impl Patterns {
             }
             let canonical = self.canonical(file);
             let parts: Vec<&str> = canonical.split('/').collect();
-            let at = if parts.first() == Some(&"marketplaces") {
+            let at = if parts.first() == Some(&WORKSPACE_DIR) {
                 2
             } else {
                 0
@@ -442,15 +467,15 @@ impl Patterns {
                 pending.push(segment);
                 settled = true;
             } else if matches(&self.folders.assets) {
-                keep_conventional(&mut out, &mut pending, &["marketplaces", "plugins"]);
+                keep_conventional(&mut out, &mut pending, &[WORKSPACE_DIR, "plugins"]);
                 out.push(crate::model::load::ASSETS_DIR);
                 settled = true;
             } else if let Some((_, kind)) = leaves.iter().find(|(globs, _)| matches(globs)) {
-                keep_conventional(&mut out, &mut pending, &["marketplaces", "plugins"]);
+                keep_conventional(&mut out, &mut pending, &[WORKSPACE_DIR, "plugins"]);
                 out.extend([*kind, segment]);
                 settled = true;
             } else if matches(&self.folders.plugins) {
-                keep_conventional(&mut out, &mut pending, &["marketplaces"]);
+                keep_conventional(&mut out, &mut pending, &[WORKSPACE_DIR]);
                 out.extend(["plugins", segment]);
             } else {
                 pending.push(segment);

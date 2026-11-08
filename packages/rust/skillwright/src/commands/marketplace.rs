@@ -29,7 +29,7 @@ use tradecraft_core::{
     owned_paths,
 };
 
-use crate::config::{ROOT_FILE, resolve_against_cwd, resolve_configured_path};
+use crate::config::{ROOT_FILE, resolve_against_cwd};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, no_config, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
@@ -86,7 +86,7 @@ pub(crate) fn marketplace_inputs(run: &ResolvedRun) -> MarketplaceInputs {
     tradecraft_core::marketplace_inputs(
         &run.config,
         &run.folder_name(),
-        &run.config_dir,
+        &run.vault,
         &crate::config::home_dir(),
     )
 }
@@ -111,7 +111,7 @@ pub(crate) fn configured_request(
         &run.config_vfs(),
         run.scope(None, marketplace),
         &config,
-        &run.core_namespace(),
+        run.core_namespace(),
     );
     let mut request = ExportRequest::new(run.vault.clone(), out_root, config);
     request.marketplace = marketplace.map(str::to_owned);
@@ -183,21 +183,21 @@ pub(crate) fn out_root(
 ) -> Result<PathBuf, i32> {
     match &flags.out {
         Some(out) => Ok(resolve_against_cwd(out, cwd)),
-        None => configured_out(run, err),
+        None => required_out(run, err),
     }
 }
 
-/// `build.out`, resolved against the root file's folder.
+/// [`ResolvedRun::configured_out`], which a run that builds must have.
 ///
 /// # Errors
 ///
 /// The exit code, having said so, when the file sets none.
-pub(crate) fn configured_out(
+pub(crate) fn required_out(
     run: &ResolvedRun,
     err: &mut dyn std::io::Write,
 ) -> Result<PathBuf, i32> {
-    match &run.config.build.out {
-        Some(out) => Ok(resolve_configured_path(out, &run.config_dir)),
+    match run.configured_out() {
+        Some(out) => Ok(out),
         None => Err(no_config(
             err,
             &format!(
@@ -241,7 +241,7 @@ fn export_one(
         &vfs,
         run.scope(skills_root.as_deref(), marketplace.as_deref()),
         &marketplace_config,
-        &run.core_namespace(),
+        run.core_namespace(),
     );
 
     // --- the mode -----------------------------------------------------------
@@ -327,7 +327,7 @@ fn export_one(
 
     // --- run ----------------------------------------------------------------
     let vfs = run.export_vfs(request.skills_root.as_deref(), &out_root);
-    let report = match export_skills(&vfs, &request, &run.core_namespace()) {
+    let report = match export_skills(&vfs, &request, run.core_namespace()) {
         Ok(report) => report,
         // An export has no partial report: its rails fire before anything is
         // staged, and a failed swap rolls back. So a failure means nothing

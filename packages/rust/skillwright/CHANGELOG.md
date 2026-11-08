@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- Library API: `ResolvedRun::config_dir` is removed; it always equalled `vault`. `ResolvedRun::namespace` is a `Namespace`, bare by default, not an `Option`. `config::resolve_configured_path` is removed; use `config::resolve_against_cwd`, or `ResolvedRun::configured_path` for a path the root file names. `ResolvedRun::core_namespace` returns `&Namespace`. `ResolvedRun::configured_out` is public.
+
 ### Fixed
 
 - `delete <plugin>` trashes a plugin whose folder holds only `assets/` besides its note. It was refused, with the asset files named as members it still held.
