@@ -424,10 +424,11 @@ pub fn refuse_workspace(verb: &str, run: &ResolvedRun, err: &mut dyn Write) -> R
 /// components at its root, since each marketplace is a vault of its own, and
 /// a `build.exclude` glob that matches nothing under the workspace.
 pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
+    // The workspace file on disk, as each member reads it, whatever
+    // `--config` names.
     let mut warnings = tradecraft_core::patterns::workspace_exclude_warnings(
-        &run.source_vfs(None),
+        &tradecraft_core::NativeVfs,
         &run.vault,
-        &run.config.build.exclude,
     );
     if run.config.build.out.is_some() {
         warnings.push(DiscoveryWarning::new(

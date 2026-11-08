@@ -9,7 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Breaking
 
-- In a workspace, `build.exclude` works like nested `.gitignore` files: each glob reads from the folder of the `skillwright.md` it is written in, and a member's exclusions add to the workspace's. A workspace glob `secrets/**` now means `<workspace>/secrets/**`; write `**/secrets/**` or `marketplaces/*/secrets/**` to reach each member. `build`, `check` and `list` at the workspace root warn once, naming the workspace file, about a workspace exclude glob that matches nothing under the workspace; a member's build no longer warns about it. Experimental.
+- In a workspace, `build.exclude` works like nested `.gitignore` files: each glob reads from the folder of the `skillwright.md` it is written in, and a member's exclusions add to the workspace's. A workspace glob `secrets/**` now means `<workspace>/secrets/**`; write `**/secrets/**` or `marketplaces/*/secrets/**` to reach each member. `build`, `check` and `list` at the workspace root warn once, naming the workspace file, about a workspace exclude glob that matches nothing in any member. A member's build warns when a workspace glob misses it but would have matched it under the old rule, and says how to rewrite it. Experimental.
 - Library API: `ResolvedRun::config_dir` is removed; it always equalled `vault`. `ResolvedRun::namespace` is a `Namespace`, bare by default, not an `Option`. `config::resolve_configured_path` is removed; use `config::resolve_against_cwd`, or `ResolvedRun::configured_path` for a path the root file names. `ResolvedRun::core_namespace` returns `&Namespace`. `ResolvedRun::configured_out` is public.
 
 ### Fixed

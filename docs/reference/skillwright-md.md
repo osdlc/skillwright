@@ -117,7 +117,7 @@ key, and its globs read from each member's folder.
 
 `build.exclude` works like nested `.gitignore` files. Each glob reads from the
 folder of the `skillwright.md` it is written in. The workspace's globs apply to
-everything under the workspace folder, every member included. A member's globs
+every member under it. A member's globs
 apply to its own folder and below, never to a sibling. A member's exclusions add
 to the workspace's; they never replace them.
 
@@ -135,8 +135,9 @@ build:
 Here `acme` leaves out both `secrets/` and `drafts/`. A workspace glob
 `secrets/**` means `workspace/secrets/**`, not each member's `secrets/`: write
 `**/secrets/**` for every member, or `marketplaces/*/secrets/**`. A workspace
-glob that matches nothing under the workspace warns once, naming the workspace
-file. The
+glob that matches nothing in any member warns once, naming the workspace file.
+A member's build also warns when a workspace glob misses it but would match it
+read from the member's folder, and says how to rewrite it. The
 authoring verbs (`new`, `move`, `convert`) always write to the conventional
 folders: `new skill` to `skills/`, and `new plugin` to `plugins/`.
 

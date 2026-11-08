@@ -268,6 +268,25 @@ fn a_workspace_glob_warns_once_when_nothing_under_the_workspace_matches_it() {
     }
 }
 
+/// A workspace glob written for the old, member-relative reading no longer
+/// excludes, and a member's own build says how to rewrite it.
+#[test]
+fn a_member_build_names_a_workspace_glob_written_the_old_way() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: ['skills/a.md']\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", shared),
+        ("marketplaces/one/skillwright.md", &member("one", "")),
+        ("marketplaces/one/skills/a.md", SKILL),
+    ]);
+    let built = sw(&dir.path().join("marketplaces/one"), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    assert!(
+        built.text.contains("write `marketplaces/one/skills/a.md`"),
+        "{}",
+        built.text
+    );
+}
+
 /// The secrets/drafts case: a member's exclusions add to the workspace's,
 /// each read from its own folder, and build, list and publish agree.
 #[test]

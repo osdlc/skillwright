@@ -97,8 +97,8 @@ adds to what never ships. See the
 6. A `build.exclude` glob reads from the folder of the `skillwright.md` it is
    written in, like a nested `.gitignore`. A workspace's globs apply to every
    member; a member's apply to its own folder only. A member's exclusions add to
-   the workspace's. A workspace glob that matches nothing under the workspace
-   warns once.
+   the workspace's. A workspace glob that matches nothing in any member warns
+   once.
 
 ## 5. Frontmatter
 

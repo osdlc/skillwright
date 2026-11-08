@@ -26,7 +26,7 @@ API:
 
 ### Added
 
-- `patterns::workspace_exclude_warnings(vfs, workspace_root)`: an `unmatched-glob` warning, once and of the workspace file, for each workspace `build.exclude` glob that matches nothing under the workspace folder. A member's build no longer checks the workspace's exclude globs.
+- `patterns::workspace_exclude_warnings(vfs, workspace_root)`: an `unmatched-glob` warning, once and of the workspace file, for each workspace `build.exclude` glob that matches nothing in the workspace's marketplaces. A member's build checks a workspace glob only to say when it would have matched there under the old rule, with how to rewrite it.
 - `ReasonToken::MalformedRootFile` (`malformed-root-file`), the token of a refusal for a root file or workspace file that cannot be read. It is in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`.
 - `is_marketplace_entry(path)`: whether a vault-relative path is a marketplace's entry note, exactly `marketplaces/<m>/skillwright.md`. A host that moves notes uses it to tell a marketplace's entry from a bundle named `skillwright`.
 - `EntityKind::ALL`: every kind.
