@@ -31,6 +31,7 @@ API:
 
 ### Fixed
 
+- `container_members` and so `plan_delete_component` leave a plugin's `assets/` files out of its members. They were counted, so deleting a plugin whose folder held only assets was refused.
 - A scan of a skills root below the vault, as in `discover_components` with a `content_root`, reads the vault's root file for its patterns. It read a `skillwright.md` at the skills root as if it were the root file, and refused if that file did not parse.
 - `publish_skill` of a note outside `marketplaces/` no longer refuses on a problem inside a marketplace. It still scans `marketplaces/` to count the marketplaces as a build does. A duplicate name there is a warning. A symlink or a folder it cannot list, which a build refuses, means the count is not one, so the note inherits from no marketplace.
 

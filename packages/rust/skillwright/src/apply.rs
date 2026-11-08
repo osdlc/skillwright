@@ -428,8 +428,10 @@ fn move_note(
     let root_file = |path: &str| path.rsplit('/').next() == Some(tradecraft_core::ROOT_FILE);
     // The vault's own root file is no folder's entry: moving it would move
     // the vault, and moving a note onto it would replace the vault's config.
+    // Compared without case: on a case-insensitive file system, as macOS's
+    // is by default, `SKILLWRIGHT.md` is that file.
     for (path, what) in [(from, "move"), (to, "be replaced")] {
-        if path == tradecraft_core::ROOT_FILE {
+        if path.eq_ignore_ascii_case(tradecraft_core::ROOT_FILE) {
             return Err(ApplyError::Refused(format!(
                 "{path} is the vault's root file, so it cannot {what}"
             )));
@@ -2064,6 +2066,30 @@ mod tests {
             let err = apply(v.path(), &op).unwrap_err();
             assert!(err.to_string().contains("root file"), "{from}: {err}");
             assert_eq!(tree(v.path()), before, "{from}");
+        }
+    }
+
+    /// The root-file guard does not depend on the file system's case: on a
+    /// case-insensitive one, `SKILLWRIGHT.md` is the vault's root file.
+    #[test]
+    fn the_root_file_guard_ignores_case() {
+        for (from, to) in [
+            ("SKILLWRIGHT.md", "x/x.md"),
+            ("notes/a.md", "Skillwright.md"),
+        ] {
+            let v = vault();
+            write(v.path(), "skillwright.md", "---\nname: v\n---\n");
+            write(v.path(), "notes/a.md", "---\nname: a\n---\n");
+            let op = AuthoringOp::Move {
+                from: from.to_owned(),
+                to: to.to_owned(),
+                bundle: false,
+            };
+            let err = apply(v.path(), &op).unwrap_err();
+            assert!(
+                err.to_string().contains("root file"),
+                "{from} -> {to}: {err}"
+            );
         }
     }
 
