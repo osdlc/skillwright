@@ -423,16 +423,12 @@ fn only_marketplace(
         files,
     };
     let scan = crate::discover::discover_in(vfs, root, &source, ns)?;
-    let present = marketplaces_in(&scan.components);
-    Ok(match present.len() {
-        1 => present.first().map(|name| (*name).to_owned()),
-        _ => None,
-    })
+    Ok(sole_marketplace(&marketplaces_in(&scan.components)))
 }
 
 /// The marketplaces a scan holds, by folder. A marketplace's own note counts:
 /// a marketplace need not hold a member of its own.
-pub(super) fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
+pub fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
     components
         .iter()
         .filter_map(|c| match c.kind {
@@ -442,15 +438,19 @@ pub(super) fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&s
         .collect()
 }
 
+/// The one marketplace of `present`, or `None` when it holds none or several.
+pub(super) fn sole_marketplace(present: &BTreeSet<&str>) -> Option<String> {
+    match present.len() {
+        1 => present.first().map(|name| (*name).to_owned()),
+        _ => None,
+    }
+}
+
 /// Gives every component of a scan what its containers say about `targets`,
 /// for a caller reporting on the vault with no build to run. `requested` is
 /// the root file's config.
 pub fn inherit_targets(report: &mut DiscoveryReport, requested: &MarketplaceConfig) {
-    let present = marketplaces_in(&report.components);
-    let market = match present.len() {
-        1 => present.first().map(|name| (*name).to_owned()),
-        _ => None,
-    };
+    let market = sole_marketplace(&marketplaces_in(&report.components));
     Cascade::over(&report.components, market.as_deref(), requested)
         .resolve_targets(&mut report.components);
 }

@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use markdown_link::LinkIndex;
 use serde::{Deserialize, Serialize};
 
-use super::cascade::{Cascade, belongs_to, marketplaces_in};
+use super::cascade::{Cascade, belongs_to, marketplaces_in, sole_marketplace};
 use super::{
     Asset, Body, Component, Extensions, HooksFile, Marketplace, Plugin, Resolved, Resource,
     ResourceContent, Segment, pack_kind, segments,
@@ -1234,8 +1234,7 @@ fn resolve_marketplace(
             ))
         }
         None => match present.len() {
-            0 => Ok(None),
-            1 => Ok(present.iter().next().map(|name| (*name).to_owned())),
+            0 | 1 => Ok(sole_marketplace(&present)),
             _ => Err(CoreError::refused(
                 "ambiguous-marketplace",
                 format!(

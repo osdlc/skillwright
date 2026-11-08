@@ -36,6 +36,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use tradecraft_core::model::marketplaces_in;
 use tradecraft_core::publish::kind_has_renderer;
 use tradecraft_core::status::{PublishState, StatusRequest, VersionBumpSuggestion, status_of};
 use tradecraft_core::{
@@ -43,7 +44,6 @@ use tradecraft_core::{
     read_vault_skill,
 };
 
-use crate::commands::bump::marketplaces_in;
 use crate::config::{normalize_join, relative_path};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked};

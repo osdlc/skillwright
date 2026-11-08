@@ -14,11 +14,12 @@
 //! has never carried the key is bumped, not refused. The root file's
 //! `build.bump.patch` picks how the patch number is written ([`PatchScheme`]).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tradecraft_core::harness::with_plugin_format;
+use tradecraft_core::model::marketplaces_in;
 use tradecraft_core::{
     BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit,
     MarketplaceConfig, Namespace, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs,
@@ -265,18 +266,6 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
             .map_or(EXIT_OK, |member| bump_in(flags, ctx, member, None)),
         Err(code) => code,
     }
-}
-
-/// The marketplace folders a scan holds: each marketplace note's, and each
-/// component's under `marketplaces/`, as the build counts them.
-pub(crate) fn marketplaces_in(components: &[DiscoveredComponent]) -> BTreeSet<&str> {
-    components
-        .iter()
-        .filter_map(|c| match c.kind {
-            EntityKind::Marketplace => Some(c.folder()),
-            _ => c.marketplace.as_deref(),
-        })
-        .collect()
 }
 
 /// `bump` in one vault, narrowed to the marketplace folder `market`.

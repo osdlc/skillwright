@@ -20,6 +20,10 @@ API:
 
 - Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 
+### Added
+
+- `model::marketplaces_in`: the marketplace folders a scan holds. The CLI's `bump` and `status` use it in place of their own copy.
+
 ## [0.45.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.44.0...tradecraft-core/v0.45.0) - 2026-11-07
 
 ### Breaking
