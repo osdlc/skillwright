@@ -9,18 +9,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.8.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.7.0...skillwright/v0.8.0) - 2026-11-08
 
-### Fixed
-
-- correct changelog wording and cover the surviving unknown-key behaviour
-
-### Other
-
-- *(changelog)* say how each kind handles an unknown key
-- [**breaking**] drop legacy-key and migration checks
-- say which keys set to nothing are dropped
-- tighten three 0.7.0 changelog lines
-- correct the 0.7.0 and 0.45.0 changelog entries
-
 ### Breaking
 
 - skillwright no longer checks for the pre-1.0 vault shape. Old keys and files are treated like any other key or file it does not know:

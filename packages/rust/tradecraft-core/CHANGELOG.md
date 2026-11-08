@@ -9,20 +9,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.46.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.45.0...tradecraft-core/v0.46.0) - 2026-11-08
 
-### Fixed
-
-- correct changelog wording and cover the surviving unknown-key behaviour
-
-### Other
-
-- [**breaking**] drop legacy-key and migration checks
-- name exactly which removed keys are refused, and the type of a passed-down block key
-- correct the field reference intro and split the harness blocks paragraph
-- split the field reference intro into short sections and a table
-- tighten three 0.7.0 changelog lines
-- say an agent's tools mapping takes any values
-- correct the 0.7.0 and 0.45.0 changelog entries
-
 ### Breaking
 
 Behaviour:
