@@ -16,6 +16,7 @@ describe('corpora/beta', () => {
     assert.deepEqual(warnings, [])
     assert.equal(records.get('harnesses')?.size, 14)
     assert.equal(records.get('references')?.size, 52)
+    assert.equal(records.get('evidence')?.size, 5)
   })
 
   test('refuses a license on a closed-source harness, and a successor that is not a harness', () => {
