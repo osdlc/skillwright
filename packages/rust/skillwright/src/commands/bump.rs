@@ -59,31 +59,22 @@ pub struct BumpFlags {
     pub quiet: bool,
 }
 
-/// The `--json` row: the same facts the report line carries. Not one of
-/// the CLI spec's worked transcripts — those are human-only — so the shape
-/// here is this file's own judgement call, kept minimal on purpose.
-#[derive(Serialize)]
-struct BumpRow<'a> {
-    path: &'a str,
-    status: &'a str,
-    current: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    new: Option<&'a str>,
-}
-
 /// `--changed-since`'s `--json` document: the baseline, and one row per
 /// plugin the render holds.
 #[derive(Serialize)]
 struct ChangedReport<'a> {
     baseline: &'a str,
-    plugins: Vec<ChangedRow<'a>>,
+    plugins: Vec<JsonRow<'a>>,
 }
 
-/// One plugin of a `--changed-since` run. `status` is `written`,
-/// `dry-run`, `unchanged`, `skipped` or `refused`.
+/// One row's `--json` object. `status` is `written`, `dry-run`, `unchanged`,
+/// `skipped` or `refused`. Not one of the CLI spec's worked transcripts —
+/// those are human-only — so the shape here is this file's own judgement
+/// call, kept minimal on purpose. A single-plugin run names no plugin.
 #[derive(Serialize)]
-struct ChangedRow<'a> {
-    plugin: &'a str,
+struct JsonRow<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plugin: Option<&'a str>,
     path: &'a str,
     status: &'a str,
     current: &'a str,
@@ -97,25 +88,11 @@ struct ChangedRow<'a> {
 /// object in `--json` mode — [`crate::commands::marketplace::run_export`]'s
 /// own `--json` branch, applied to a single-unit verb. `Err` is the exit code
 /// a report that would not serialize earns; every other outcome is `Ok(())`.
-fn write_row(
-    ctx: &mut CommandContext<'_>,
-    json: bool,
-    path: &str,
-    status: &str,
-    current: &str,
-    new: Option<&str>,
-    line: &str,
-) -> Result<(), i32> {
+fn write_row(ctx: &mut CommandContext<'_>, json: bool, row: &Row) -> Result<(), i32> {
     if json {
-        let row = BumpRow {
-            path,
-            status,
-            current,
-            new,
-        };
-        print_json(ctx, &row)
+        print_json(ctx, &row.json())
     } else {
-        let _ = writeln!(ctx.out, "{line}");
+        let _ = writeln!(ctx.out, "{}", row.line());
         Ok(())
     }
 }
@@ -426,15 +403,10 @@ fn run_one(
         Ok(planned) => planned,
         Err(err) => return bump_failed(ctx.err, err),
     };
-    let (rel, version_key, current) = (
-        planned.rel.as_str(),
-        planned.key.as_str(),
-        planned.current.as_str(),
-    );
-
-    let Some(new) = planned.new.as_deref() else {
-        let line = format!("{rel}  refused · non-semver: `{version_key}` reads `{current}`");
-        if let Err(code) = write_row(ctx, flags.json, rel, "refused", current, None, &line) {
+    let Some(new) = planned.new.clone() else {
+        let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
+        let row = Row::refused(None, &planned.rel, &planned.current, reason);
+        if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
         }
         if !flags.quiet {
@@ -442,10 +414,9 @@ fn run_one(
         }
         return EXIT_REFUSED;
     };
-
     if flags.dry_run {
-        let line = format!("{rel}  {current} \u{2192} {new}");
-        if let Err(code) = write_row(ctx, flags.json, rel, "dry-run", current, Some(new), &line) {
+        let row = Row::bumped(None, planned, "dry-run", new);
+        if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
         }
         let _ = writeln!(
@@ -456,19 +427,22 @@ fn run_one(
     }
 
     if !flags.yes {
-        let plan = vec![format!("{rel}  {version_key} {current} -> {new}")];
+        let plan = vec![format!(
+            "{}  {} {} -> {new}",
+            planned.rel, planned.key, planned.current
+        )];
         let gate = confirm_write("bump", &plan, ctx.err);
         if gate != EXIT_OK {
             return gate;
         }
     }
 
-    if let Err(err) = write_bump(&planned, new) {
+    if let Err(err) = write_bump(&planned, &new) {
         return bump_failed(ctx.err, err);
     }
 
-    let line = format!("{rel}  written · {version_key} {current} -> {new}");
-    if let Err(code) = write_row(ctx, flags.json, rel, "written", current, Some(new), &line) {
+    let row = Row::bumped(None, planned, "written", new);
+    if let Err(code) = write_row(ctx, flags.json, &row) {
         return code;
     }
     if !flags.quiet {
@@ -665,7 +639,7 @@ fn run_changed(
             [] => marketplace_note(run, components, name),
             _ => {
                 rows.push(Row::refused(
-                    name,
+                    Some(name),
                     "",
                     "",
                     format!("`{name}` names more than one plugin in this vault"),
@@ -675,7 +649,7 @@ fn run_changed(
         };
         let Some(note) = note else {
             let reason = format!("`{name}` has no note to bump; add one with a `version`");
-            let mut row = Row::refused(name, "", "", reason);
+            let mut row = Row::refused(Some(name), "", "", reason);
             if !verdict.drift {
                 row.status = "unchanged";
                 row.reason = None;
@@ -705,9 +679,9 @@ fn run_changed(
             row
         } else if planned.new.is_none() {
             let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
-            Row::refused(name, &planned.rel, &planned.current, reason)
+            Row::refused(Some(name), &planned.rel, &planned.current, reason)
         } else {
-            Row::bump(name, planned)
+            Row::bump(Some(name), planned)
         };
         rows.push(row);
     }
@@ -802,9 +776,12 @@ fn run_changed(
     }
 }
 
-/// One plugin's line in a `--changed-since` report.
+/// One plugin's row in a `bump` report: one for a single plugin, one per
+/// plugin for `--changed-since`.
 struct Row {
-    plugin: String,
+    /// The plugin, by name; `None` for a single-plugin run, whose row names
+    /// only its note.
+    plugin: Option<String>,
     rel: String,
     status: &'static str,
     current: String,
@@ -819,7 +796,7 @@ struct Row {
 impl Row {
     fn plain(plugin: &str, planned: &Planned, status: &'static str, reason: Option<String>) -> Row {
         Row {
-            plugin: plugin.to_owned(),
+            plugin: Some(plugin.to_owned()),
             rel: planned.rel.clone(),
             status,
             current: planned.current.clone(),
@@ -830,9 +807,9 @@ impl Row {
         }
     }
 
-    fn refused(plugin: &str, rel: &str, current: &str, reason: String) -> Row {
+    fn refused(plugin: Option<&str>, rel: &str, current: &str, reason: String) -> Row {
         Row {
-            plugin: plugin.to_owned(),
+            plugin: plugin.map(str::to_owned),
             rel: rel.to_owned(),
             status: "refused",
             current: current.to_owned(),
@@ -843,9 +820,9 @@ impl Row {
         }
     }
 
-    fn bump(plugin: &str, planned: Planned) -> Row {
+    fn bump(plugin: Option<&str>, planned: Planned) -> Row {
         Row {
-            plugin: plugin.to_owned(),
+            plugin: plugin.map(str::to_owned),
             rel: planned.rel.clone(),
             status: "pending",
             current: planned.current.clone(),
@@ -856,9 +833,17 @@ impl Row {
         }
     }
 
+    /// A bump settled as `status`, `dry-run` or `written`, to `new`.
+    fn bumped(plugin: Option<&str>, planned: Planned, status: &'static str, new: String) -> Row {
+        let mut row = Row::bump(plugin, planned);
+        row.status = status;
+        row.new = Some(new);
+        row
+    }
+
     fn line(&self) -> String {
         let label = if self.rel.is_empty() {
-            &self.plugin
+            self.plugin.as_deref().unwrap_or_default()
         } else {
             &self.rel
         };
@@ -876,14 +861,16 @@ impl Row {
         }
     }
 
-    fn json(&self) -> ChangedRow<'_> {
-        ChangedRow {
-            plugin: &self.plugin,
+    /// The row's `--json` object. A single-plugin run's object has never
+    /// carried a `reason`, so only a row that names its plugin does.
+    fn json(&self) -> JsonRow<'_> {
+        JsonRow {
+            plugin: self.plugin.as_deref(),
             path: &self.rel,
             status: self.status,
             current: &self.current,
             new: self.new.as_deref(),
-            reason: self.reason.as_deref(),
+            reason: self.plugin.as_ref().and(self.reason.as_deref()),
         }
     }
 }
