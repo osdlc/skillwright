@@ -111,6 +111,12 @@ Smaller known issues:
   targets), so the validator keeps a local pattern:
   [osdlc/osdlc#635](https://github.com/osdlc/osdlc/issues/635).
 - A `dependentRequired` failure is reported at the record (`(data): …`) rather than at the field.
+- The validator checks every relative Markdown link in frontmatter strings, including links inside
+  quoted text such as `excerpt.exact`. A quote from a README that contains `[Apache-2.0
+  License](LICENSE)` fails, because `LICENSE` is not in the corpus. The `Codex README on the
+  license` record works around it by ending the quote before `(LICENSE)`. Fix: check links only in
+  `x-ref` properties and the body, or let a schema mark a property as quoted text (`x-quote`), and
+  then capture that record again with the whole sentence.
 - S-GFFY's Deferred list is unordered. Items 3 to 6 above come from it or from building beta; the
   rest stay deferred: links between corpora and mount / distribution, schema versions and
   migrations, concurrent edits, Obsidian's vault-wide property types, reserved names, stable error
@@ -137,8 +143,8 @@ Rules taken from the survey, where both passes agreed:
 - A negative claim ("does not read AGENTS.md") needs a run with a positive control.
 - The date we looked (`observed`) is kept apart from the source's own date.
 - Excerpts are `{exact, prefix, suffix}` (W3C text-quote selector), so a re-check can report
-  present / moved / gone. Source code is pinned to a commit, never `blob/main`; the Claude Code and Copilot license
-  references are pinned, and Grok Build's still points at `blob/main`.
+  present / moved / gone. Source code is pinned to a commit, never `blob/main`; all three license
+  references in beta (Claude Code, GitHub Copilot CLI, Grok Build) are pinned.
 - Evidence records are append-only; a correction or a later contradicting run is a new record.
 - A type ships with a writer and a reader (the dev repo's D-ORMG rule). `capture` is the first writer.
 
