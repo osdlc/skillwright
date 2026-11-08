@@ -39,6 +39,7 @@ use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, with_plugin_format};
 use crate::namespace::Namespace;
+use crate::paths::WORKSPACE_DIR;
 use crate::projection::parse_runtime_target;
 use crate::publish::{PLUGIN_HOOKS_PATH, canonical_target, refuse_carried_peers};
 use crate::vault::{VaultNote, read_vault_note};
@@ -239,7 +240,8 @@ pub fn load(
         .collect();
     // A never-ship note is no component, so only its path says whose it is.
     let another_marketplace = |path: &str| {
-        path.strip_prefix("marketplaces/")
+        path.strip_prefix(WORKSPACE_DIR)
+            .and_then(|rest| rest.strip_prefix('/'))
             .and_then(|rest| rest.split('/').next())
             .is_some_and(|folder| market.as_deref() != Some(folder))
     };
@@ -1122,7 +1124,7 @@ fn missing_versions(
         .map(|name| {
             if implicit(name) {
                 let file = match market {
-                    Some(m) => format!("marketplaces/{m}/{}", crate::settings::ROOT_FILE),
+                    Some(m) => format!("{WORKSPACE_DIR}/{m}/{}", crate::settings::ROOT_FILE),
                     None => crate::settings::ROOT_FILE.to_owned(),
                 };
                 return DiscoveryWarning {

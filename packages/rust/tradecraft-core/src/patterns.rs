@@ -28,6 +28,7 @@ use crate::compile::EXCLUDED_BUNDLE_DIRECTORIES;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
+use crate::paths::WORKSPACE_DIR;
 use crate::settings::{FolderPatterns, ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
 
@@ -344,7 +345,7 @@ impl Patterns {
             }
             let canonical = self.canonical(file);
             let parts: Vec<&str> = canonical.split('/').collect();
-            let at = if parts.first() == Some(&"marketplaces") {
+            let at = if parts.first() == Some(&WORKSPACE_DIR) {
                 2
             } else {
                 0
@@ -454,15 +455,15 @@ impl Patterns {
                 pending.push(segment);
                 settled = true;
             } else if matches(&self.folders.assets) {
-                keep_conventional(&mut out, &mut pending, &["marketplaces", "plugins"]);
+                keep_conventional(&mut out, &mut pending, &[WORKSPACE_DIR, "plugins"]);
                 out.push(crate::model::load::ASSETS_DIR);
                 settled = true;
             } else if let Some((_, kind)) = leaves.iter().find(|(globs, _)| matches(globs)) {
-                keep_conventional(&mut out, &mut pending, &["marketplaces", "plugins"]);
+                keep_conventional(&mut out, &mut pending, &[WORKSPACE_DIR, "plugins"]);
                 out.extend([*kind, segment]);
                 settled = true;
             } else if matches(&self.folders.plugins) {
-                keep_conventional(&mut out, &mut pending, &["marketplaces"]);
+                keep_conventional(&mut out, &mut pending, &[WORKSPACE_DIR]);
                 out.extend(["plugins", segment]);
             } else {
                 pending.push(segment);
@@ -536,11 +537,7 @@ pub(crate) fn workspace_above(
 ) -> Result<Option<RootFile>, CoreError> {
     let Some(above) = vault_root
         .parent()
-        .filter(|folder| {
-            folder
-                .file_name()
-                .is_some_and(|name| name == crate::paths::WORKSPACE_DIR)
-        })
+        .filter(|folder| folder.file_name().is_some_and(|name| name == WORKSPACE_DIR))
         .and_then(Path::parent)
     else {
         return Ok(None);
