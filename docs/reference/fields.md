@@ -14,7 +14,10 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 ## What is checked
 
-- A key the table does not list for that kind gets a warning. The exceptions are removed keys, which are refused: `kind`, `plugin`, and `sw-` spellings when no `build.namespace` is set.
+- A key the table does not list for that kind gets a warning.
+- A plugin or component note refuses a removed key instead:
+  - `kind` or `plugin`, written `sw-kind` or `sw-plugin` under `build.namespace: sw`;
+  - with no namespace set, an `sw-` spelling of a `skillwright` key, such as `sw-version`, or an `sw:` block holding one.
 - A listed key with the wrong kind of value is refused, and the message names the key. This applies to every `skillwright` key, and to every `spec` key on a skill, agent or command.
 - A `spec` key with no value, such as `model:`, is dropped. It does not clear a value the note inherits.
 
@@ -168,7 +171,7 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
 - Any other key gets a warning and is left out of that harness's output.
 - A listed key with the wrong kind of value is refused. Every block is checked, even for a harness the build leaves out.
 - On a skill, agent or command, a key takes the same type it takes written bare.
-- On a plugin or marketplace, a key takes the type that harness's manifest docs give. A key with no documented type is not checked.
+- On a plugin or marketplace, a key takes the type that harness's manifest and marketplace docs give. A key with no documented type is not checked. A key the plugin passes down to its skills, such as `model`, takes the type it has on a skill.
 - A key with no value is dropped. It does not clear a value the note inherits.
 
 ### `claude:`
