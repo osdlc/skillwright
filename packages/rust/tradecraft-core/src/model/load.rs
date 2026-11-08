@@ -36,7 +36,7 @@ use crate::discover::{
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
-use crate::harness::manifest::DEFAULT_PLUGIN_VERSION;
+use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, with_plugin_format};
 use crate::namespace::Namespace;
 use crate::projection::parse_runtime_target;
@@ -1093,9 +1093,10 @@ fn has_folder(discovered: &[DiscoveredComponent], market: Option<&str>, name: &s
 }
 
 /// The plugins this build publishes with no version from the
-/// note or the config. It ships as [`DEFAULT_PLUGIN_VERSION`], and a harness compares versions
-/// to decide whether an installed pack is out of date — so a pack that never
-/// states one never looks updated.
+/// note or the config. It ships as
+/// [`crate::harness::manifest::DEFAULT_PLUGIN_VERSION`], and a harness
+/// compares versions to decide whether an installed pack is out of date — so
+/// a pack that never states one never looks updated.
 fn missing_versions(
     discovered: &[DiscoveredComponent],
     market: Option<&str>,
@@ -1503,16 +1504,12 @@ fn changelog_warnings(
         let Some(plugin) = asset.plugin.as_deref() else {
             continue;
         };
-        let version = config
-            .plugins
-            .get(plugin)
-            .and_then(|o| o.version.as_deref())
-            .unwrap_or(DEFAULT_PLUGIN_VERSION);
+        let version = plugin_version(config, plugin);
         let Ok(bytes) = vfs.read_file(&asset.source) else {
             continue;
         };
         let text = String::from_utf8_lossy(&bytes);
-        let named = text.lines().any(|line| heading_names(line, version));
+        let named = text.lines().any(|line| heading_names(line, &version));
         if !named {
             warnings.push(DiscoveryWarning {
                 path: asset
