@@ -245,9 +245,8 @@ fn a_workspace_warns_about_what_builds_nowhere() {
 }
 
 #[test]
-fn an_inherited_glob_warns_only_when_no_member_matches_it() {
-    let shared =
-        "---\nworkspace: true\nbuild:\n  exclude: ['skills/a.md', 'skills/gone.md']\n---\n";
+fn a_workspace_glob_warns_once_when_nothing_under_the_workspace_matches_it() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: ['marketplaces/*/skills/a.md', 'skills/gone.md']\n---\n";
     let dir = vault(&[
         ("skillwright.md", shared),
         ("marketplaces/one/skillwright.md", &member("one", "")),
@@ -256,15 +255,92 @@ fn an_inherited_glob_warns_only_when_no_member_matches_it() {
         ("marketplaces/two/skillwright.md", &member("two", "")),
         ("marketplaces/two/skills/s.md", SKILL),
     ]);
+    for args in [&["build", "--yes"][..], &["check"][..], &["list"][..]] {
+        let ran = sw(&dir.path(), args);
+        assert_eq!(ran.code, 0, "{args:?}: {}", ran.text);
+        assert_eq!(
+            ran.text.matches("`skills/gone.md`").count(),
+            1,
+            "{args:?}: {}",
+            ran.text
+        );
+        assert!(!ran.text.contains("skills/a.md`"), "{args:?}: {}", ran.text);
+    }
+}
+
+/// The secrets/drafts case: a member's exclusions add to the workspace's,
+/// each read from its own folder, and build, list and publish agree.
+#[test]
+fn a_members_exclusions_add_to_the_workspaces_for_every_verb() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: ['**/secrets/**']\n---\n";
+    let one = member("one", "  exclude: ['skills/drafts/**']\n");
+    let dir = vault(&[
+        ("skillwright.md", shared),
+        ("marketplaces/one/skillwright.md", &one),
+        ("marketplaces/one/skills/open.md", SKILL),
+        ("marketplaces/one/skills/secrets/secrets.md", SKILL),
+        ("marketplaces/one/skills/drafts/drafts.md", SKILL),
+        ("marketplaces/two/skillwright.md", &member("two", "")),
+        ("marketplaces/two/skills/drafts/drafts.md", SKILL),
+        ("marketplaces/two/skills/secrets/secrets.md", SKILL),
+    ]);
     let built = sw(&dir.path(), &["build", "--yes"]);
     assert_eq!(built.code, 0, "{}", built.text);
-    assert_eq!(
-        built.text.matches("`skills/gone.md`").count(),
-        2,
-        "{}",
-        built.text
+    let one_skills = dir
+        .path()
+        .join("marketplaces/one/built/.claude-plugin/packs");
+    let two_skills = dir
+        .path()
+        .join("marketplaces/two/built/.claude-plugin/packs");
+    let shipped = |root: &Path, name: &str| {
+        files_under(root)
+            .iter()
+            .any(|path| path.to_string_lossy().contains(&format!("/{name}/")))
+    };
+    assert!(
+        shipped(&one_skills, "open"),
+        "{:?}",
+        files_under(&one_skills)
     );
-    assert!(!built.text.contains("`skills/a.md`"), "{}", built.text);
+    assert!(!shipped(&one_skills, "secrets"));
+    assert!(!shipped(&one_skills, "drafts"));
+    // A member's glob does not reach its sibling; the workspace's does.
+    assert!(
+        shipped(&two_skills, "drafts"),
+        "{:?}",
+        files_under(&two_skills)
+    );
+    assert!(!shipped(&two_skills, "secrets"));
+
+    let listed = sw(&dir.path(), &["list"]);
+    assert_eq!(listed.code, 0, "{}", listed.text);
+    assert!(
+        listed.text.contains("marketplaces/one/skills/open.md"),
+        "{}",
+        listed.text
+    );
+    assert!(
+        !listed.text.contains("marketplaces/one/skills/drafts"),
+        "{}",
+        listed.text
+    );
+    assert!(
+        listed.text.contains("marketplaces/two/skills/drafts"),
+        "{}",
+        listed.text
+    );
+    assert!(!listed.text.contains("secrets"), "{}", listed.text);
+
+    let one_dir = dir.path().join("marketplaces/one");
+    for note in ["skills/secrets/secrets.md", "skills/drafts/drafts.md"] {
+        let published = sw(&one_dir, &["publish", note, "--yes"]);
+        assert_ne!(published.code, 0, "{note}: {}", published.text);
+        assert!(
+            published.text.contains("excluded-note"),
+            "{note}: {}",
+            published.text
+        );
+    }
 }
 
 #[test]

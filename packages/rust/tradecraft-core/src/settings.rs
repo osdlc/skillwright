@@ -709,9 +709,11 @@ impl RootFile {
     /// `targets`, `repository`, `homepage` and the harness blocks, key by key)
     /// inherit from the workspace too. So do `harnesses`, `namespace`,
     /// `launcher_path`, `bump`, `require_descriptions`, `destinations`,
-    /// `scan_locations`, `assets`, `hooks`, `exclude` and each key of
-    /// `patterns`. Their paths and globs read from each marketplace's own
-    /// folder. An exclusion must not fail open. `out` is each marketplace's own.
+    /// `scan_locations`, `assets`, `hooks` and each key of `patterns`. Their
+    /// paths and globs read from each marketplace's own folder. `out` is each
+    /// marketplace's own, and so is `exclude`: a workspace's exclusions add to
+    /// a member's, read from the workspace folder
+    /// ([`crate::patterns::Patterns::load`]).
     ///
     /// Key by key: a value this file sets wins, and every other key still
     /// comes from the workspace. The workspace root holds shared defaults and
@@ -770,9 +772,6 @@ impl RootFile {
         }
         if build.hooks.is_empty() {
             build.hooks.clone_from(&shared.hooks);
-        }
-        if build.exclude.is_empty() {
-            build.exclude.clone_from(&shared.exclude);
         }
         build.patterns.inherit(&shared.patterns);
     }
@@ -1018,7 +1017,7 @@ mod tests {
     }
 
     #[test]
-    fn a_marketplace_inherits_exclusions_and_patterns_key_by_key() {
+    fn a_marketplace_inherits_patterns_key_by_key_and_keeps_its_own_exclusions() {
         let workspace = parse_root_file(
             "---\nworkspace: true\nbuild:\n  exclude: '**/*.draft.md'\n  patterns:\n    \
              skills: notes/*\n    plugins: packs/*\n---\n",
@@ -1027,7 +1026,7 @@ mod tests {
         let mut member =
             parse_root_file("---\nbuild:\n  patterns:\n    skills: mine/*\n---\n").unwrap();
         member.inherit(&workspace);
-        assert_eq!(member.build.exclude, ["**/*.draft.md"]);
+        assert!(member.build.exclude.is_empty());
         assert_eq!(member.build.patterns.skills, ["mine/*"]);
         assert_eq!(member.build.patterns.plugins, ["packs/*"]);
     }

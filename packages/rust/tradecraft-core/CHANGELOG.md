@@ -11,6 +11,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 Behaviour:
 
+- In a workspace, `build.exclude` works like nested `.gitignore` files. Each glob reads from the folder of the `skillwright.md` it is written in, and a member's exclusions add to the workspace's instead of replacing them. Before, a member with its own `exclude` lost the workspace's, and a workspace glob was read from each member's folder. So workspace `exclude: ['**/secrets/**']` and member `exclude: ['drafts/**']` now leave out both. A workspace glob `secrets/**` now means `<workspace>/secrets/**`; to reach each member's `secrets/`, write `**/secrets/**` or `marketplaces/*/secrets/**`. A member's glob never reaches a sibling. `Patterns::load` and everything that asks it (build, discovery, status, publish, links) follow the new rule. `RootFile::inherit` no longer copies `build.exclude`. `build.patterns` inherits as before. Experimental.
 - `publish_skill`, `status_of`, `Cascade::above`, `discover_components`, `discover_roster`, `load` and `load_plugin` refuse with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes: its frontmatter is not a YAML mapping, or its `workspace`, `build`, `build.exclude` or `build.patterns` has the wrong shape. They read such a file as excluding nothing before, so a note `build.exclude` excludes was published and listed. A bad value in any other key, such as `repository: example`, does not refuse them; the verbs that read that value, such as a build, still do. `export_skills` already refused. `source_view` hides nothing for such a file and leaves the refusal to the scan or build that reads through it.
 - `load_marketplace` refuses a root file or workspace file it cannot read, whether its frontmatter is not YAML or a key holds a bad value, as `refused: malformed-root-file`, not `refused: root-file`. A build already used `malformed-root-file` for the same file, so one bad file now has one token.
 
@@ -25,6 +26,7 @@ API:
 
 ### Added
 
+- `patterns::workspace_exclude_warnings(vfs, workspace_root)`: an `unmatched-glob` warning, once and of the workspace file, for each workspace `build.exclude` glob that matches nothing under the workspace folder. A member's build no longer checks the workspace's exclude globs.
 - `ReasonToken::MalformedRootFile` (`malformed-root-file`), the token of a refusal for a root file or workspace file that cannot be read. It is in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`.
 - `is_marketplace_entry(path)`: whether a vault-relative path is a marketplace's entry note, exactly `marketplaces/<m>/skillwright.md`. A host that moves notes uses it to tell a marketplace's entry from a bundle named `skillwright`.
 - `EntityKind::ALL`: every kind.

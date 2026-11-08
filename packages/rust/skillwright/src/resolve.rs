@@ -420,10 +420,12 @@ pub fn refuse_workspace(verb: &str, run: &ResolvedRun, err: &mut dyn Write) -> R
     ))
 }
 
-/// What a workspace file holds that no build acts on: a `build.out`, and
-/// components at its root, since each marketplace is a vault of its own.
+/// What a workspace file holds that no build acts on: a `build.out`,
+/// components at its root, since each marketplace is a vault of its own, and
+/// a `build.exclude` glob that matches nothing under the workspace.
 pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
-    let mut warnings = Vec::new();
+    let mut warnings =
+        tradecraft_core::patterns::workspace_exclude_warnings(&run.source_vfs(None), &run.vault);
     if run.config.build.out.is_some() {
         warnings.push(DiscoveryWarning::new(
             ROOT_FILE,

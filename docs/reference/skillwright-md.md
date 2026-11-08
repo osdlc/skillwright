@@ -61,7 +61,7 @@ are also defaults for every plugin and component below. See
 | `scan_locations` | list of paths | Folders a bare `adopt` reads. Empty means each harness's user skill folder. |
 | `assets` | list of `{from, to, plugin}` | Files copied into a plugin's root, besides each plugin's `assets/`. |
 | `hooks` | list of `{from, plugin}` | Canonical hooks files. |
-| `exclude` | glob or list | Experimental. What never ships, added to the folders that never ship. |
+| `exclude` | glob or list | Experimental. What never ships, added to the folders that never ship. Read from this file's folder; a workspace's adds to a member's. |
 | `patterns` | mapping | Experimental. Globs that stand in for the conventional folders. |
 
 Relative paths resolve against this file's folder. A flag's path resolves against
@@ -112,9 +112,31 @@ it matches. It does not apply to a plugin's `assets/`. A body link or embed that
 refused with the same diagnostic in every link form, so a skill cannot point at a
 file that will not be there.
 
-`build.exclude` and each key of `build.patterns` inherit from a workspace, key by
-key, and their globs read from each member's folder. A member's empty
-`exclude: []` cannot clear an inherited exclusion. The
+In a workspace, each key of `build.patterns` inherits from the workspace, key by
+key, and its globs read from each member's folder.
+
+`build.exclude` works like nested `.gitignore` files. Each glob reads from the
+folder of the `skillwright.md` it is written in. The workspace's globs apply to
+everything under the workspace folder, every member included. A member's globs
+apply to its own folder and below, never to a sibling. A member's exclusions add
+to the workspace's; they never replace them.
+
+```yaml
+# workspace/skillwright.md
+workspace: true
+build:
+  exclude: ['**/secrets/**']   # any secrets/ folder, in any member
+---
+# workspace/marketplaces/acme/skillwright.md
+build:
+  exclude: ['drafts/**']       # acme/drafts/ only
+```
+
+Here `acme` leaves out both `secrets/` and `drafts/`. A workspace glob
+`secrets/**` means `workspace/secrets/**`, not each member's `secrets/`: write
+`**/secrets/**` for every member, or `marketplaces/*/secrets/**`. A workspace
+glob that matches nothing under the workspace warns once, naming the workspace
+file. The
 authoring verbs (`new`, `move`, `convert`) always write to the conventional
 folders: `new skill` to `skills/`, and `new plugin` to `plugins/`.
 
@@ -136,7 +158,8 @@ A marketplace's own value wins, key by key. Every `build:` key inherits from the
 workspace except `out`: each marketplace sets its own, and it resolves against
 that marketplace's file. A relative path or glob in an inherited key, such as
 `assets[].from`, reads from the member's folder, not the workspace's. A list a
-member leaves empty inherits, so `[]` cannot clear an inherited list.
+member leaves empty inherits, so `[]` cannot clear an inherited list. `exclude` is the exception: the workspace's globs add to a member's,
+and read from the workspace folder (see [Patterns](#patterns)).
 
 `skillwright new marketplace <name> --description <text>` at the workspace root
 writes `marketplaces/<name>/skillwright.md`. Add its `build.out` before you build.
@@ -144,8 +167,8 @@ It is refused inside a marketplace. Other authoring verbs run inside a marketpla
 folder.
 
 A workspace builds only its marketplaces. `build`, `check` and `list` warn about
-components at its root, and about a `build.out` on the workspace file, which is
-not read. `list` at the root reads each marketplace with its own `exclude`,
+components at its root, about a `build.out` on the workspace file, which is
+not read, and about a workspace `build.exclude` glob that matches nothing. `list` at the root reads each marketplace with its own `exclude`,
 `patterns` and namespace. A workspace file that cannot be read stops every verb
 in its marketplaces.
 
