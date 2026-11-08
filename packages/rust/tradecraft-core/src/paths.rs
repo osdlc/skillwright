@@ -198,7 +198,7 @@ pub(crate) fn read_workspace_above(
 
 /// Where a workspace file above `dir` would be, when `dir` is
 /// `<workspace>/marketplaces/<m>/`.
-fn workspace_file(dir: &Path) -> Option<PathBuf> {
+pub(crate) fn workspace_file(dir: &Path) -> Option<PathBuf> {
     let parent = dir.parent()?;
     if parent.file_name()? != WORKSPACE_DIR {
         return None;
@@ -218,22 +218,58 @@ pub(crate) fn read_root(
     file: &Path,
     read: RootRead,
 ) -> Result<Option<RootFile>, CoreError> {
-    if !vfs.exists(file) {
+    let Some(text) = root_text(vfs, file)? else {
         return Ok(None);
-    }
-    let malformed = |detail: String| {
-        CoreError::refused(
-            crate::publish::ReasonToken::MalformedRootFile.as_str(),
-            format!("{}: {detail}. Nothing was written", file.display()),
-        )
     };
-    let text = String::from_utf8(vfs.read_file(file)?)
-        .map_err(|_| malformed("it is not UTF-8".to_owned()))?;
     let parsed = match read {
         RootRead::Full => parse_root_file(&text),
         RootRead::Layout => crate::settings::parse_root_layout(&text),
     };
-    parsed.map(Some).map_err(|err| malformed(err.to_string()))
+    parsed
+        .map(Some)
+        .map_err(|err| malformed_root(file, &err.to_string()))
+}
+
+/// A root file's layout and its full reading, which may have failed.
+pub(crate) type BothReadings = (RootFile, Result<RootFile, CoreError>);
+
+/// The root file at `file` read both ways from one read of its text: the
+/// layout, which must be readable, and the full reading, which may hold a bad
+/// value. `None` when there is no file.
+///
+/// # Errors
+///
+/// `refused: malformed-root-file` when the layout cannot be read, as
+/// [`read_root`] with [`RootRead::Layout`].
+pub(crate) fn read_root_both(
+    vfs: &dyn Vfs,
+    file: &Path,
+) -> Result<Option<BothReadings>, CoreError> {
+    let Some(text) = root_text(vfs, file)? else {
+        return Ok(None);
+    };
+    let layout = crate::settings::parse_root_layout(&text)
+        .map_err(|err| malformed_root(file, &err.to_string()))?;
+    let full = parse_root_file(&text).map_err(|err| malformed_root(file, &err.to_string()));
+    Ok(Some((layout, full)))
+}
+
+/// The text of the root file at `file`, `None` when there is none.
+fn root_text(vfs: &dyn Vfs, file: &Path) -> Result<Option<String>, CoreError> {
+    if !vfs.exists(file) {
+        return Ok(None);
+    }
+    String::from_utf8(vfs.read_file(file)?)
+        .map(Some)
+        .map_err(|_| malformed_root(file, "it is not UTF-8"))
+}
+
+/// The refusal for a root file at `file` that cannot be read.
+fn malformed_root(file: &Path, detail: &str) -> CoreError {
+    CoreError::refused(
+        crate::publish::ReasonToken::MalformedRootFile.as_str(),
+        format!("{}: {detail}. Nothing was written", file.display()),
+    )
 }
 
 /// What a marketplace load reads from the root file besides the vault: the

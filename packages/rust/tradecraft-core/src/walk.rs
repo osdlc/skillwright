@@ -175,21 +175,30 @@ pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> V
     .map_or_else(|_| Vec::new(), |outcome| outcome.errors)
 }
 
-/// The paths of a vault walk's `entries`, plugin assets left out. `vault` is
-/// the vault's patterns and root; each entry is matched by its path relative
-/// to that root, wherever the walk started.
+/// The paths of a walk of `root`'s `entries`, plugin assets left out by the
+/// patterns of the vault at `vault_root`: each entry is matched by its path
+/// relative to the vault root, wherever the walk started.
 fn notes_and_resources(
-    (patterns, vault_root): (&crate::patterns::Patterns, &Path),
+    patterns: &crate::patterns::Patterns,
+    vault_root: &Path,
+    root: &Path,
     entries: Vec<vault::Entry>,
 ) -> Vec<PathBuf> {
+    // The walk root's own path from the vault root, once: empty for a walk of
+    // the vault itself, the usual case, where an entry's path is already
+    // vault-relative.
+    let prefix = root
+        .strip_prefix(vault_root)
+        .map(crate::skill::forward_slashed)
+        .unwrap_or_default();
     entries
         .into_iter()
         .filter(|entry| {
-            let rel = entry
-                .abs
-                .strip_prefix(vault_root)
-                .map_or_else(|_| entry.rel.clone(), crate::skill::forward_slashed);
-            !in_plugin_assets(patterns, &rel)
+            if prefix.is_empty() {
+                !in_plugin_assets(patterns, &entry.rel)
+            } else {
+                !in_plugin_assets(patterns, &format!("{prefix}/{}", entry.rel))
+            }
         })
         .map(|entry| entry.abs)
         .collect()
@@ -204,22 +213,23 @@ pub(crate) fn vault_files(
 ) -> Result<Vec<PathBuf>, CoreError> {
     let patterns = crate::patterns::Patterns::load(vfs, root)?;
     vault::walk(vfs, root, &vault_walk(prune))
-        .map(|entries| notes_and_resources((&patterns, root), entries))
+        .map(|entries| notes_and_resources(&patterns, root, root, entries))
         .map_err(|err| core_error(err, not_refused))
 }
 
-/// Every file under the folder `root` of the vault `vault` names with its
-/// patterns, refusing a symlink anywhere in it with the error `refuse` makes
-/// from its path.
+/// Every file under the folder `root` of the vault at `vault_root`, whose
+/// patterns are `patterns`, refusing a symlink anywhere in it with the error
+/// `refuse` makes from its path.
 pub(crate) fn vault_files_refusing_symlinks(
     vfs: &dyn Vfs,
     root: &Path,
-    vault: (&crate::patterns::Patterns, &Path),
+    patterns: &crate::patterns::Patterns,
+    vault_root: &Path,
     prune: &[&str],
     refuse: impl Fn(&Path) -> CoreError,
 ) -> Result<Vec<PathBuf>, CoreError> {
     vault::walk(vfs, root, &vault_options(prune, true, true))
-        .map(|entries| notes_and_resources(vault, entries))
+        .map(|entries| notes_and_resources(patterns, vault_root, root, entries))
         .map_err(|err| core_error(err, refuse))
 }
 

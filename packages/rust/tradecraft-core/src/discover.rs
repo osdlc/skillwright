@@ -688,7 +688,7 @@ pub fn discover_roster(
 ) -> Result<DiscoveryReport, CoreError> {
     let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
     let source = load_source(vfs, vault_root, &patterns, content_root)?;
-    discover_with(vfs, vault_root, &patterns, &source, ns, true)
+    discover_roster_in(vfs, vault_root, &patterns, &source, ns)
 }
 
 /// The skills source at `content_root` (the vault root when `None`): its
@@ -727,7 +727,8 @@ pub(crate) fn load_source(
     let files = crate::walk::vault_files_refusing_symlinks(
         vfs,
         &root,
-        (patterns, vault_root),
+        patterns,
+        vault_root,
         crate::compile::EXCLUDED_VAULT_DIRECTORIES,
         |path| {
             CoreError::refused(

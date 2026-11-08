@@ -191,7 +191,7 @@ impl Cascade {
         let placed = crate::discover::folder_placement_with(patterns, root, note_path).marketplace;
         let market = match placed {
             Some(market) => Some(market),
-            None => only_marketplace(vfs, root, patterns, ns)?.inspect(|name| {
+            None => only_marketplace(vfs, root, patterns, ns).inspect(|name| {
                 paths.push(marketplace_note(root, name));
             }),
         };
@@ -363,39 +363,31 @@ fn marketplace_note(root: &Path, folder: &str) -> PathBuf {
 /// or a folder that cannot be listed under `marketplaces/` gives `None`, since
 /// the build cannot say how many there are, and a duplicate name inside a
 /// marketplace is a warning.
-///
-/// # Errors
-///
-/// None today; a `Result` so a read the count needs can refuse.
 fn only_marketplace(
     vfs: &dyn crate::vfs::Vfs,
     root: &Path,
     patterns: &crate::patterns::Patterns,
     ns: &Namespace,
-) -> Result<Option<String>, CoreError> {
+) -> Option<String> {
     let folder = root.join("marketplaces");
     if !vfs.exists(&folder) {
-        return Ok(None);
+        return None;
     }
-    let Ok(files) = crate::walk::vault_files_refusing_symlinks(
-        vfs,
-        &folder,
-        (patterns, root),
-        crate::compile::EXCLUDED_VAULT_DIRECTORIES,
-        |path| CoreError::PathEscapesRoot(path.to_path_buf()),
-    ) else {
-        return Ok(None);
-    };
+    let files = crate::discover::load_source(vfs, root, patterns, Some(&folder))
+        .ok()?
+        .files;
+    // Placed from the vault root, as a build places them.
     let source = crate::discover::Source {
         root: root.to_path_buf(),
         files,
     };
-    let scan = crate::discover::discover_roster_in(vfs, root, patterns, &source, ns)?;
+    // A roster scan refuses no collision, so it does not fail.
+    let scan = crate::discover::discover_roster_in(vfs, root, patterns, &source, ns).ok()?;
     let present = marketplaces_in(&scan.components);
-    Ok(match present.len() {
+    match present.len() {
         1 => present.first().map(|name| (*name).to_owned()),
         _ => None,
-    })
+    }
 }
 
 /// The marketplaces a scan holds, by folder. A marketplace's own note counts:

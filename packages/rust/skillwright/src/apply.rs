@@ -572,9 +572,7 @@ fn move_marketplace(
     // Where the entry is now, by its own name, when `restore_entry` put it
     // back: `execute_move` may have named it at `<to_dir>/<m>.md`, the
     // source's temporary name inside the new folder.
-    let (to_dir, _) = temp_to.rsplit_once('/').unwrap_or(("", ""));
-    let (_, from_leaf) = temp_from.rsplit_once('/').unwrap_or(("", &temp_from));
-    let landed = format!("{to_dir}/{from_leaf}");
+    let landed = landed(&temp_from, &temp_to);
     let restored_at = [(&root_to, to), (&root_from, from)]
         .into_iter()
         .find(|(path, _)| path.is_file())
@@ -599,7 +597,8 @@ fn move_marketplace(
             }
         }
     };
-    own_names(&mut outcome.entries[before..]);
+    // Once, on whichever outcome the caller reads: a partial failure's own,
+    // or this one.
     match settle(moved, restored, outcome) {
         Err(ApplyError::Partial {
             mut outcome,
@@ -613,7 +612,20 @@ fn move_marketplace(
             }
             Err(ApplyError::Partial { outcome, source })
         }
-        other => other,
+        other => {
+            own_names(&mut outcome.entries[before..]);
+            other
+        }
+    }
+}
+
+/// Where an entry moved from `from` to `to` sits when the folder moved and
+/// its own rename did not: inside `to`'s folder, under `from`'s file name.
+fn landed(from: &str, to: &str) -> String {
+    let leaf = from.rsplit('/').next().unwrap_or(from);
+    match to.rsplit_once('/') {
+        Some((dir, _)) => format!("{dir}/{leaf}"),
+        None => leaf.to_owned(),
     }
 }
 
@@ -748,13 +760,8 @@ fn move_folder(
         if let Some(leaf) = old.file_name()
             && let Err(source) = std::fs::rename(new_dir.join(leaf), &new)
         {
-            let from_leaf = from.rsplit('/').next().unwrap_or(from);
-            let landed = match to.rsplit_once('/') {
-                Some((dir, _)) => format!("{dir}/{from_leaf}"),
-                None => from_leaf.to_owned(),
-            };
             outcome.push(
-                landed,
+                landed(from, to),
                 Applied::Renamed {
                     from: from.to_owned(),
                 },
@@ -817,11 +824,7 @@ fn execute_move(
         // kept its old leaf name inside the new directory; no row names that
         // path, so the refusal does.
         Some(conflict) => {
-            let leaf = from.rsplit('/').next().unwrap_or(from);
-            let landed = match to.rsplit_once('/') {
-                Some((dir, _)) => format!("{dir}/{leaf}"),
-                None => leaf.to_owned(),
-            };
+            let landed = landed(from, to);
             Err(ApplyError::partial(
                 outcome.clone(),
                 ApplyError::Refused(format!("{conflict}; the entry note is now at {landed}")),
