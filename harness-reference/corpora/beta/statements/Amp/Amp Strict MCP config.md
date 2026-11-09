@@ -17,6 +17,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 execute mode mcp-config inline json](../../study-results/Amp/2026-11-09%20execute%20mode%20mcp-config%20inline%20json.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
 reportedIn:
   - "[Amp docs Execute Mode](../../documents/ampcode.com/Amp%20docs%20Execute%20Mode.md)"
 contributions:
@@ -24,6 +29,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research

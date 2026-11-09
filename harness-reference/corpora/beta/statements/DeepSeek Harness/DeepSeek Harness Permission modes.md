@@ -4,25 +4,8 @@ proposition:
   predicate: permissions/modes
   object:
     supported: true
-    modes:
-      - name: workspace-write
-        intent: edits
-        argv:
-          - --permission-mode
-          - workspace-write
-        env:
-          DSH_PERMISSION_MODE: workspace-write
-        notes: preset workspace-write + approval ask
-      - name: danger-full-access
-        intent: bypass
-        argv:
-          - --permission-mode
-          - danger-full-access
-        env:
-          DSH_PERMISSION_MODE: danger-full-access
-        notes: preset danger-full-access + approval never
     default: workspace-write
-    note: The default configured preset table ships workspace-write and danger-full-access. --approval-policy ask|never adjusts approval after the preset is chosen. DSH_PERMISSION_MODE is documented as the process fallback.
+    note: Headless takes --permission-mode <preset> to select a configured permission preset, and --approval-policy ask|never. The default configured preset table ships workspace-write (workspace-write + ask) and danger-full-access (danger-full-access + never). DSH_PERMISSION_MODE changes the process fallback, and its documented use takes a preset name. Presets are not mapped to read-only, edits, full-auto or bypass intents.
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -66,6 +49,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research

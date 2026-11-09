@@ -11,18 +11,13 @@ proposition:
           - --mode
           - accept-edits
         notes: auto-approves file creations and edits inside the workspace; still asks before running terminal commands
-      - name: auto
-        intent: full-auto
-        argv:
-          - --mode
-          - auto
-        notes: requires the terminal sandbox; not available for business or enterprise accounts; v1.3.5+ on macOS and Linux, v1.4.4+ on Windows
       - name: dangerously-skip-permissions
         intent: bypass
         argv:
           - --dangerously-skip-permissions
+        notes: auto-approves all tool permission requests
     default: default
-    note: --sandbox runs in a terminal sandbox with OS containment restrictions. plan mode prepends the /plan instruction prefix.
+    note: "Also --mode auto: requires the terminal sandbox, not available for business or enterprise accounts, v1.3.5+ on macOS and Linux and v1.4.4+ on Windows (not mapped to an intent). --sandbox runs in a terminal sandbox with OS containment restrictions. plan mode prepends the /plan instruction prefix."
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -70,6 +65,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research
