@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { Ajv2020 } from 'ajv/dist/2020.js'
 
 import { BETA, loadBeta } from '../beta/corpus.ts'
-import { compile, permalink, writeKnowledge } from './compile.ts'
+import { compile, dirtyFiles, permalink, writeKnowledge } from './compile.ts'
 import { KNOWLEDGE_SCHEMA } from './knowledge.ts'
 import { lookup } from './lookup.ts'
 
@@ -84,6 +85,47 @@ describe('compile', () => {
       false,
     )
     assert.equal(k.values.length, 29)
+  })
+
+  test('a current statement that disputes its proposition cannot be compiled into a value', () => {
+    writeFileSync(
+      join(dir, STATEMENT),
+      readFileSync(join(dir, STATEMENT), 'utf8').replace(
+        'direction: supports',
+        'direction: disputes',
+      ),
+    )
+    assert.throws(() => compile(loadBeta(dir), SHA), /must have direction supports/)
+  })
+
+  test('an open, neutral statement is not a value', () => {
+    const open = 'statements/Claude Code/Claude Code Open with a chosen session id.md'
+    writeFileSync(
+      join(dir, open),
+      readFileSync(join(dir, open), 'utf8')
+        .replace('direction: supports\nstrength: strong\n', 'direction: neutral\n')
+        .replace('status: current', 'status: open\nopen:\n  - Does it?'),
+    )
+    const k = compile(loadBeta(dir), SHA)
+    assert.equal(
+      k.values.some((v) => v.harness === 'claude-code' && v.subject === 'cli/open-with-id'),
+      false,
+    )
+    assert.ok(k.values.every((v) => v.strength !== undefined))
+  })
+
+  test('warns about a dirty corpus tree', () => {
+    const repo = join(dir, 'repo')
+    mkdirSync(repo)
+    const git = (...a: string[]): string => execFileSync('git', a, { cwd: repo, encoding: 'utf8' })
+    git('init', '-q')
+    writeFileSync(join(repo, 'a.md'), 'x')
+    git('add', '.')
+    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x')
+    assert.deepEqual(dirtyFiles(repo), [])
+    writeFileSync(join(repo, 'a.md'), 'y')
+    writeFileSync(join(repo, 'b.md'), 'z')
+    assert.equal(dirtyFiles(repo).length, 2)
   })
 
   test('refuses a corpus that fails lint', () => {

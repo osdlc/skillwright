@@ -71,7 +71,11 @@ describe('lint', () => {
     const text = readFileSync(join(dir, FORK), 'utf8')
     const copy = 'statements/Claude Code/Claude Code Fork again.md'
     writeFileSync(join(dir, copy), text)
-    assert.ok(problems().some((p) => p.startsWith(`${copy}: a second current statement overlaps`)))
+    assert.ok(
+      problems().some((p) =>
+        p.startsWith(`${copy}: a second current or disputed statement overlaps`),
+      ),
+    )
     edit(FORK, '  until: null', '  until: 2.0.0')
     edit(copy, '  since: null', '  since: 2.0.0')
     assert.deepEqual(problems(), [])
@@ -108,5 +112,36 @@ describe('lint', () => {
     const found = problems()
     assert.ok(found.some((p) => p.includes('is about another harness')))
     assert.ok(found.some((p) => p.includes('names a home directory')))
+  })
+
+  test('refuses a current or disputed statement that does not support its proposition', () => {
+    edit(FORK, 'direction: supports', 'direction: disputes')
+    assert.ok(
+      problems().some((p) => p.includes('a current statement must have direction supports')),
+    )
+    edit(FORK, 'status: current', 'status: disputed')
+    assert.ok(
+      problems().some((p) => p.includes('a disputed statement must have direction supports')),
+    )
+  })
+
+  test('refuses overlap with a disputed statement', () => {
+    const text = readFileSync(join(dir, FORK), 'utf8')
+    const copy = 'statements/Claude Code/Claude Code Fork again.md'
+    writeFileSync(join(dir, copy), text.replace('status: current', 'status: disputed'))
+    assert.ok(problems().some((p) => p.includes('a second current or disputed statement overlaps')))
+    edit(FORK, 'status: current', 'status: disputed')
+    assert.ok(problems().some((p) => p.includes('a second current or disputed statement overlaps')))
+  })
+
+  test('a subject slug with more than one slash is refused', () => {
+    // The subjects schema pattern already refuses it; lint repeats the rule for a loaded record.
+    edit('subjects/cli/Session environment.md', 'slug: cli/session-env', 'slug: cli/session/env')
+    assert.ok(problems().some((p) => p.includes('slug')))
+  })
+
+  test('refuses a scope boundary that is not a real version', () => {
+    edit(FORK, '  since: null', '  since: 1.0.0-01')
+    assert.ok(problems().some((p) => p.includes('"1.0.0-01" is not a semver version')))
   })
 })

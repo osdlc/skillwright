@@ -42,11 +42,13 @@ export function lint(beta: Beta): string[] {
   }
   for (const { ref, data } of beta.all('subjects')) {
     const slug = str(data['slug']) ?? ''
-    const [category, name] = slug.split('/')
+    const parts = slug.split('/')
+    const [category, name] = parts
     if (data['category'] !== category) bad(ref.file, `slug "${slug}" must start with its category`)
     const folder = ref.file.split('/')[1]
     if (folder !== category) bad(ref.file, `a ${category} subject belongs in subjects/${category}/`)
-    if (name === undefined) bad(ref.file, 'slug must be <category>/<name>')
+    if (parts.length !== 2 || category === '' || name === '')
+      bad(ref.file, 'slug must be <category>/<name>, with exactly one "/"')
     try {
       ajv.compile(obj(data['valueSchema']))
     } catch (e) {
@@ -176,8 +178,10 @@ export function lint(beta: Beta): string[] {
     }
     if (status === 'open' && data['direction'] !== 'neutral')
       bad(ref.file, 'an open statement is neutral')
+    if ((status === 'current' || status === 'disputed') && data['direction'] !== 'supports')
+      bad(ref.file, `a ${status} statement must have direction supports`)
 
-    if (status === 'current') {
+    if (status === 'current' || status === 'disputed') {
       const key = `${harness.file}|${subject.file}|${scope.model ?? ''}`
       const list = cells.get(key) ?? []
       list.push({ file: ref.file, scope, versioning })
@@ -197,7 +201,7 @@ export function lint(beta: Beta): string[] {
           platformsMeet &&
           (a.versioning === 'unknown' || overlaps(a.scope, b.scope, a.versioning))
         )
-          bad(b.file, `a second current statement overlaps ${a.file}`)
+          bad(b.file, `a second current or disputed statement overlaps ${a.file}`)
       }
   return problems
 }

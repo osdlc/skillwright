@@ -1,7 +1,8 @@
 /**
  * `compile`: read the beta corpus and write `harness-knowledge.json`, the one file tools look
  * values up in, and `harness-knowledge.schema.json`, its JSON Schema. Only `current` and
- * `disputed` statements go in. Each value carries a permalink to its statement at the corpus
+ * `disputed` statements that support their proposition go in; open and neutral statements are
+ * not values. Each value carries a permalink to its statement at the corpus
  * commit. Evidence, study results and documents stay in the corpus.
  */
 import { execFileSync } from 'node:child_process'
@@ -12,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 
 import { type Beta, BETA, loadBeta } from '../beta/corpus.ts'
 import { lint } from '../beta/lint.ts'
-import { compareVersions, type Versioning } from '../beta/versions.ts'
+import { compareScopes, type Versioning } from '../beta/versions.ts'
 import { KNOWLEDGE_SCHEMA, type Knowledge, type KnowledgeValue, type Scope } from './knowledge.ts'
 
 export const REPO = 'osdlc/skillwright'
@@ -55,6 +56,7 @@ export function compile(beta: Beta, commit: string): Knowledge {
   for (const { ref, data } of beta.all('statements')) {
     const status = data['status']
     if (status !== 'current' && status !== 'disputed') continue
+    if (data['direction'] !== 'supports') continue
     const harness = slugOf.get(beta.resolve(ref.file, data['harness'])?.file ?? '') as string
     const subject = subjectSlug.get(beta.resolve(ref.file, data['subject'])?.file ?? '') as string
     const scope = data['scope'] as Scope
@@ -77,18 +79,9 @@ export function compile(beta: Beta, commit: string): Knowledge {
     if (a.harness !== b.harness) return a.harness < b.harness ? -1 : 1
     if (a.subject !== b.subject) return a.subject < b.subject ? -1 : 1
     const v = harnesses[a.harness]?.versioning ?? 'unknown'
-    if (a.scope.since !== b.scope.since) {
-      if (a.scope.since === null) return -1
-      if (b.scope.since === null) return 1
-      return v === 'unknown' ? 0 : compareVersions(a.scope.since, b.scope.since, v)
-    }
-    return (a.scope.model ?? '') < (b.scope.model ?? '')
-      ? -1
-      : (a.scope.model ?? '') > (b.scope.model ?? '')
-        ? 1
-        : a.basis < b.basis
-          ? -1
-          : 1
+    return (
+      compareScopes(a.scope, b.scope, v) || (a.basis < b.basis ? -1 : a.basis > b.basis ? 1 : 0)
+    )
   }
   values.sort(order)
   const sorted = <T>(o: Record<string, T>): Record<string, T> =>
@@ -116,19 +109,48 @@ export function writeKnowledge(outDir: string, knowledge: Knowledge): string[] {
   })
 }
 
+/**
+ * The corpus files git sees as changed or untracked under `corpus`, or none when git cannot say.
+ * Permalinks point at a commit, so values from a dirty tree link to text that is not there.
+ */
+export function dirtyFiles(corpus: string): string[] {
+  try {
+    return execFileSync('git', ['status', '--porcelain', '--', '.'], {
+      cwd: corpus,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter((l) => l !== '')
+  } catch {
+    return []
+  }
+}
+
 function main(argv: string[]): number {
   const { values } = parseArgs({
     args: argv,
-    options: { commit: { type: 'string' }, out: { type: 'string' }, corpus: { type: 'string' } },
+    options: {
+      commit: { type: 'string' },
+      out: { type: 'string' },
+      corpus: { type: 'string' },
+      strict: { type: 'boolean' },
+    },
   })
+  const corpus = values.corpus === undefined ? BETA : resolve(values.corpus)
   const commit =
     values.commit ??
     execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim()
+  const dirty = values.commit === undefined ? dirtyFiles(corpus) : []
+  if (dirty.length > 0) {
+    const what = `the corpus has uncommitted changes, so permalinks at ${commit} will not match:\n${dirty.join('\n')}`
+    if (values.strict === true) {
+      console.error(`compile: ${what}`)
+      return 1
+    }
+    console.error(`warning: ${what}`)
+  }
   try {
-    const knowledge = compile(
-      loadBeta(values.corpus === undefined ? BETA : resolve(values.corpus)),
-      commit,
-    )
+    const knowledge = compile(loadBeta(corpus), commit)
     for (const f of writeKnowledge(resolve(values.out ?? join(ROOT, 'dist')), knowledge))
       console.log(`wrote ${f}`)
     console.log(`${knowledge.values.length} values at ${commit}`)
