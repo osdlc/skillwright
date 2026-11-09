@@ -244,6 +244,9 @@ export function plan(ctx: Context): Plan {
     for (const { ref, data } of beta.all(type)) {
       const from = data['imported_from']
       if (typeof from !== 'string') continue
+      const first = owned.get(from)
+      if (first !== undefined)
+        throw new Error(`${first.file} and ${ref.file} both claim imported_from "${from}"`)
       owned.set(from, { type, id: ref.id, file: ref.file })
       ownedFiles.add(ref.file)
     }
@@ -252,7 +255,8 @@ export function plan(ctx: Context): Plan {
   const selectedProbeIds = new Set<string>()
   const identities = new Set<string>()
   for (const f of allFacts) {
-    if (!harnessBySlug.has(f.harness)) continue
+    // Only facts the import can write: a fact it skips leaves its old records to be retired.
+    if (!harnessBySlug.has(f.harness) || !subjectById.has(f.subject)) continue
     f.observations.forEach((o, i) => {
       identities.add(resultIdentity(f, i + 1))
       identities.add(statementIdentity(f, o))
@@ -645,6 +649,8 @@ export function plan(ctx: Context): Plan {
         .map((q) => q.observed)
         .sort()
         .at(-1) as string
+      // Documents are named for every fact, written or not, so names do not depend on the run.
+      const openDocs = [...new Set((fact.open ?? []).map((q) => q.source))].map(docFor)
       if (emit) {
         out.files.set(
           file,
@@ -656,9 +662,7 @@ export function plan(ctx: Context): Plan {
                 object: { open },
               },
               direction: 'neutral',
-              reportedIn: [...new Set((fact.open ?? []).map((q) => q.source))].map((s) =>
-                link(file, docFor(s)),
-              ),
+              reportedIn: openDocs.map((d) => link(file, d)),
               contributions: [createdBy(IMPORTER, 'software', date)],
               harness: link(file, h.file, h.id),
               subject: link(file, sfile as string),

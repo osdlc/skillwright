@@ -362,7 +362,8 @@ describe('identity and scope', () => {
 
   test('a hand-written record is never overwritten or deleted, even when it quotes the importer', () => {
     const mine = 'statements/Pi/Pi Thing.md'
-    cpSync(join(dir, 'statements/Pi/Pi Fork a session.md'), join(dir, mine))
+    const source = readFileSync(join(dir, 'statements/Pi/Pi Fork a session.md'), 'utf8')
+    writeFileSync(join(dir, mine), source.replace(/^imported_from:.*\n/mu, ''))
     const text = readFileSync(join(dir, mine), 'utf8')
     writeFileSync(join(dir, mine), `${text}\nImported from \`x.md\`.\n`)
     const p = run(['ca'], twoCategories())
@@ -489,5 +490,54 @@ describe('identity and scope', () => {
     assert.equal(notePath(`${base}../x.md`, '/s'), undefined)
     assert.equal(notePath(`${base}%E0%A4%A.md`, '/s'), undefined)
     assert.equal(notePath('https://example.com/x.md', '/s'), undefined)
+  })
+
+  test('an open-only fact names its documents even when its category is not imported', () => {
+    const ds = twoCategories()
+    ds.facts = [
+      fact('ca/thing', {
+        conceptId: 'facts/pi/ca/thing',
+        observations: [],
+        open: [{ question: 'Does it?', observed: '2026-04-01', source: 'one' }],
+        sources: [{ id: 'one', resource: 'https://one.example/x', title: 'Guide' }],
+      }),
+      fact('cb/thing', {
+        conceptId: 'facts/pi/cb/thing',
+        observations: [obs({ source: 'two' })],
+        sources: [{ id: 'two', resource: 'https://two.example/x', title: 'Guide' }],
+      }),
+    ] as never
+    const all = mkdtempSync(join(tmpdir(), 'hr-all-'))
+    const ba = mkdtempSync(join(tmpdir(), 'hr-ba-'))
+    try {
+      for (const d of [all, ba]) cpSync(BETA, d, { recursive: true })
+      run(['ca', 'cb'], ds, all)
+      run(['cb'], ds, ba)
+      run(['ca'], ds, ba)
+      assert.deepEqual(tree(ba), tree(all))
+      assert.ok(existsSync(join(ba, 'documents/two.example/Guide two.example.md')))
+    } finally {
+      for (const d of [all, ba]) rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  test('two records claiming one identity are an error naming both files', () => {
+    run(['ca'], twoCategories())
+    cpSync(join(dir, 'statements/Pi/Pi Thing.md'), join(dir, 'statements/Pi/Pi Copy.md'))
+    assert.throws(
+      () => plan(ctxFor(['ca'], twoCategories())),
+      /Pi Copy\.md and statements\/Pi\/Pi Thing\.md both claim imported_from|Pi Thing\.md and statements\/Pi\/Pi Copy\.md both claim/,
+    )
+  })
+
+  test('a selected fact skipped for a missing subject retires its old statement', () => {
+    run(['ca'], twoCategories())
+    assert.ok(existsSync(join(dir, 'statements/Pi/Pi Thing.md')))
+    const ds = twoCategories()
+    ds.subjects.splice(0, 1)
+    const p = run(['ca'], ds)
+    assert.match(p.warnings.join('\n'), /not in the alpha corpus/)
+    assert.equal(existsSync(join(dir, 'statements/Pi/Pi Thing.md')), false)
+    assert.ok(p.removed.includes('statements/Pi/Pi Thing.md'))
   })
 })
