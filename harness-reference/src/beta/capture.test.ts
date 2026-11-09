@@ -51,11 +51,11 @@ const opts = (over: Partial<CaptureOptions> = {}): CaptureOptions => ({
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'harness-reference-capture-'))
   cpSync(beta, dir, { recursive: true })
-  rmSync(join(dir, 'study-results'), { recursive: true })
-  cpSync(
-    join(beta, 'study-results/study-results.schema.md'),
-    join(dir, 'study-results/study-results.schema.md'),
-  )
+  // Statements cite study results, so both start empty.
+  for (const type of ['study-results', 'statements']) {
+    rmSync(join(dir, type), { recursive: true })
+    cpSync(join(beta, type, `${type}.schema.md`), join(dir, type, `${type}.schema.md`))
+  }
   fetched = []
   signals = []
 })

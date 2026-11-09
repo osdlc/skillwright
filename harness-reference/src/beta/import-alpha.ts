@@ -9,7 +9,15 @@
  * second run writes nothing new. A document already in beta (same URL) is reused, and a subject
  * record already in beta is never rewritten, so a hand-tuned `valueSchema` survives.
  */
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, dirname, join, posix, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -73,12 +81,14 @@ export interface Plan {
 
 /** A record id from free text: no character the spec forbids, no edge spaces or dots. */
 export function idSafe(text: string): string {
-  return text
-    .replace(/[/\\:*?"<>|[\]#^]/gu, ' ')
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u001f]/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .replace(/^[ .]+|[ .]+$/gu, '')
+  return (
+    text
+      .replace(/[/\\:*?"<>|[\]#^]/gu, ' ')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001f]/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .replace(/^[ .]+|[ .]+$/gu, '')
+  )
 }
 
 function record(data: Record<string, unknown>, body: string): string {
@@ -108,7 +118,15 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json }
 const jsonType = (v: unknown): string =>
-  v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v === 'number' ? (Number.isInteger(v) ? 'integer' : 'number') : typeof v
+  v === null
+    ? 'null'
+    : Array.isArray(v)
+      ? 'array'
+      : typeof v === 'number'
+        ? Number.isInteger(v)
+          ? 'integer'
+          : 'number'
+        : typeof v
 
 /** A permissive object schema for the values seen: each key with the types it has held. */
 export function inferValueSchema(values: Record<string, unknown>[]): Record<string, unknown> {
@@ -234,7 +252,8 @@ export function plan(ctx: Context): Plan {
 
   // Methods: the probes that imported run observations name.
   const probeIds = new Set<string>()
-  for (const f of facts) for (const o of f.observations) if (o.probe !== undefined) probeIds.add(o.probe)
+  for (const f of facts)
+    for (const o of f.observations) if (o.probe !== undefined) probeIds.add(o.probe)
   const methodFile = new Map<string, string>()
   const methodNames = new Names(
     beta
@@ -271,7 +290,8 @@ export function plan(ctx: Context): Plan {
       out.warnings.push(`probe ${id}: fixture holds a record-folder shape, so it was not copied`)
       fixture = []
     }
-    for (const f of fixture) out.copies.set(`${posix.dirname(file)}/fixture/${f}`, `${id}/fixture/${f}`)
+    for (const f of fixture)
+      out.copies.set(`${posix.dirname(file)}/fixture/${f}`, `${id}/fixture/${f}`)
     const body = `${ctx.probeBody(id).trim()}\n\nImported from \`probes/${id}/probe.md\`.${fixture.length > 0 ? ' The fixture files are in [fixture](fixture).' : ''}`
     out.files.set(
       file,
@@ -304,7 +324,9 @@ export function plan(ctx: Context): Plan {
     const subject = subjectById.get(fact.subject) as Subject | undefined
     const sfile = subjectFile.get(fact.subject)
     if (h === undefined || subject === undefined || sfile === undefined) {
-      out.warnings.push(`${fact.conceptId}.md: harness ${fact.harness} has no beta record; not imported`)
+      out.warnings.push(
+        `${fact.conceptId}.md: harness ${fact.harness} has no beta record; not imported`,
+      )
       count('facts skipped')
       continue
     }
@@ -328,7 +350,9 @@ export function plan(ctx: Context): Plan {
       const kind = o.evidence ?? (s !== undefined && isNote(s.resource) ? 'third-party' : 'docs')
       const name = resultNames.claim(idSafe(`${o.observed} ${h.id} ${subject.title}`))
       const file = `study-results/${h.id}/${name}.md`
-      const reported = [...new Set([docFor(o.source), ...(o.via === undefined ? [] : [docFor(o.via)])])]
+      const reported = [
+        ...new Set([docFor(o.source), ...(o.via === undefined ? [] : [docFor(o.via)])]),
+      ]
       const method = o.probe === undefined ? undefined : methodFile.get(o.probe)
       const lines = [
         `Imported from \`${alphaPath}\`, observation ${i + 1}.`,
@@ -416,20 +440,31 @@ export function plan(ctx: Context): Plan {
         }
       })
       const supporting = lines.filter((l) => l.directionOfEvidenceProvided === 'supports')
-      let best = Math.max(...supporting.map((l) => STRENGTHS.indexOf(l.strengthOfEvidenceProvided as Strength)))
+      let best = Math.max(
+        ...supporting.map((l) => STRENGTHS.indexOf(l.strengthOfEvidenceProvided as Strength)),
+      )
       if (supporting.length < lines.length) best = Math.max(0, best - 1)
       const status = o0.until !== null ? 'superseded' : conflicts.size > 0 ? 'disputed' : 'current'
       const prior =
         o0.since === null
           ? undefined
-          : ordered.find((p) => p[0]!.obs.until === o0.since && (p[0]!.obs.model ?? null) === (o0.model ?? null))
+          : ordered.find(
+              (p) =>
+                p[0]!.obs.until === o0.since && (p[0]!.obs.model ?? null) === (o0.model ?? null),
+            )
       const last = gi === ordered.length - 1
-      const date = g.map((m) => m.obs.observed).sort().at(-1) as string
+      const date = g
+        .map((m) => m.obs.observed)
+        .sort()
+        .at(-1) as string
       const sources = [...new Set(g.flatMap((m) => [m.obs.source]))].map(docFor)
       const body = [
         `Imported from \`${alphaPath}\`.`,
         ...(conflicts.size > 0
-          ? ['', `The observations disagree on: ${[...conflicts].sort().join(', ')}. The latest value is kept.`]
+          ? [
+              '',
+              `The observations disagree on: ${[...conflicts].sort().join(', ')}. The latest value is kept.`,
+            ]
           : []),
         ...(last && open.length > 0 ? ['', 'Open questions:', ...open.map((q) => `- ${q}`)] : []),
       ].join('\n')
@@ -457,7 +492,9 @@ export function plan(ctx: Context): Plan {
             subject: link(file, sfile),
             scope: { since: o0.since, until: o0.until, platform: [], model: o0.model ?? null },
             status,
-            ...(prior === undefined ? {} : { supersedes: link(file, statementFiles.get(scopeKey(prior[0]!.obs)) as string) }),
+            ...(prior === undefined
+              ? {}
+              : { supersedes: link(file, statementFiles.get(scopeKey(prior[0]!.obs)) as string) }),
             ...(last && open.length > 0 ? { open } : {}),
           },
           body,
@@ -471,7 +508,10 @@ export function plan(ctx: Context): Plan {
     if (fact.observations.length === 0) {
       const name = statementNames.claim(idSafe(`${h.id} ${subject.title} open`))
       const file = `statements/${h.id}/${name}.md`
-      const date = (fact.open ?? []).map((q) => q.observed).sort().at(-1) as string
+      const date = (fact.open ?? [])
+        .map((q) => q.observed)
+        .sort()
+        .at(-1) as string
       out.files.set(
         file,
         record(
@@ -482,7 +522,9 @@ export function plan(ctx: Context): Plan {
               object: { open },
             },
             direction: 'neutral',
-            reportedIn: [...new Set((fact.open ?? []).map((q) => q.source))].map((s) => link(file, docFor(s))),
+            reportedIn: [...new Set((fact.open ?? []).map((q) => q.source))].map((s) =>
+              link(file, docFor(s)),
+            ),
             contributions: [
               {
                 contributor: { name: IMPORTER, agentType: 'software' },
@@ -496,7 +538,12 @@ export function plan(ctx: Context): Plan {
             status: 'open',
             open,
           },
-          [`Imported from \`${alphaPath}\`.`, '', 'Open questions:', ...open.map((q) => `- ${q}`)].join('\n'),
+          [
+            `Imported from \`${alphaPath}\`.`,
+            '',
+            'Open questions:',
+            ...open.map((q) => `- ${q}`),
+          ].join('\n'),
         ),
       )
       count('statements')
@@ -504,7 +551,7 @@ export function plan(ctx: Context): Plan {
     }
     count('facts')
   }
-    return out
+  return out
 }
 
 // ---- disk -----------------------------------------------------------------------------------
@@ -520,7 +567,11 @@ export function writePlan(root: string, p: Plan): string[] {
   }
   for (const [rel, text] of [...p.files].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const file = join(root, rel)
-    put(rel, () => writeFileSync(file, text), existsSync(file) && readFileSync(file, 'utf8') === text)
+    put(
+      rel,
+      () => writeFileSync(file, text),
+      existsSync(file) && readFileSync(file, 'utf8') === text,
+    )
   }
   for (const [rel, from] of [...p.copies].sort(([a], [b]) => (a < b ? -1 : 1)))
     put(
@@ -541,10 +592,7 @@ const walkFiles = (dir: string, base = ''): string[] =>
         })
     : []
 
-export function defaultContext(
-  categories: Set<string>,
-  betaRoot: string = BETA,
-): Context {
+export function defaultContext(categories: Set<string>, betaRoot: string = BETA): Context {
   const { dataset, errors } = load()
   if (dataset === null || errors.length > 0)
     throw new Error(`the alpha corpus has errors:\n${errors.join('\n')}`)
@@ -572,7 +620,10 @@ export function defaultContext(
 }
 
 /** Copy sources resolve against the probes folder. */
-export function importAlpha(categories: Set<string>, betaRoot: string = BETA): { plan: Plan; changed: string[] } {
+export function importAlpha(
+  categories: Set<string>,
+  betaRoot: string = BETA,
+): { plan: Plan; changed: string[] } {
   const ctx = defaultContext(categories, betaRoot)
   const p = plan(ctx)
   for (const [rel, from] of p.copies) p.copies.set(rel, join(ROOT, 'probes', from))
@@ -598,14 +649,19 @@ function main(argv: string[]): number {
     )
     return 2
   }
-  const { plan: p, changed } = importAlpha(chosen, values.beta === undefined ? BETA : resolve(values.beta))
+  const { plan: p, changed } = importAlpha(
+    chosen,
+    values.beta === undefined ? BETA : resolve(values.beta),
+  )
   for (const w of p.warnings) console.error(`warning: ${w}`)
   console.log(
     Object.entries(p.counts)
       .map(([k, n]) => `${n} ${k}`)
       .join(', '),
   )
-  console.log(`${changed.length} file(s) written, ${p.files.size + p.copies.size - changed.length} unchanged`)
+  console.log(
+    `${changed.length} file(s) written, ${p.files.size + p.copies.size - changed.length} unchanged`,
+  )
   return 0
 }
 

@@ -15,8 +15,11 @@ describe('corpora/beta', () => {
     assert.deepEqual(errors, [])
     assert.deepEqual(warnings, [])
     assert.equal(records.get('harnesses')?.size, 14)
-    assert.equal(records.get('documents')?.size, 52)
-    assert.equal(records.get('study-results')?.size, 5)
+    assert.equal(records.get('documents')?.size, 57)
+    assert.equal(records.get('study-results')?.size, 35)
+    assert.equal(records.get('methods')?.size, 2)
+    assert.equal(records.get('subjects')?.size, 8)
+    assert.equal(records.get('statements')?.size, 30)
   })
 
   test('refuses a license on a closed-source harness, and a successor that is not a harness', () => {
@@ -66,7 +69,9 @@ describe('corpora/beta', () => {
       )
       assert.ok(has('study-results/2026-11-08 no document.md: reportedIn: required'))
       // dependentRequired reports at the record, not the field.
-      assert.ok(has('study-results/2026-11-08 no basis.md: (data): must have property version_basis'))
+      assert.ok(
+        has('study-results/2026-11-08 no basis.md: (data): must have property version_basis'),
+      )
       assert.ok(has('study-results/no date.md: id: "no date" does not match x-id-pattern'))
     } finally {
       rmSync(dir, { recursive: true, force: true })

@@ -152,7 +152,10 @@ export function findExcerpt(
 export function contribution(observedBy: string, observed: string): Data {
   const m = /^(person|agent):\s*(.*)$/su.exec(observedBy)
   return {
-    contributor: { name: m?.[2] ?? observedBy, agentType: m?.[1] === 'agent' ? 'software' : 'person' },
+    contributor: {
+      name: m?.[2] ?? observedBy,
+      agentType: m?.[1] === 'agent' ? 'software' : 'person',
+    },
     activityType: 'created',
     date: `${observed}T00:00:00Z`,
   }
@@ -209,7 +212,9 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
   if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(opts.document)) {
     url = opts.document
     if (!url.startsWith('https://')) throw new Error(`${url}: a document URL must use https`)
-    documentId = [...documents].find(([, data]) => (data['urls'] as string[] | undefined)?.includes(url) === true)?.[0]
+    documentId = [...documents].find(
+      ([, data]) => (data['urls'] as string[] | undefined)?.includes(url) === true,
+    )?.[0]
   } else {
     const abs = [resolve(opts.document), resolve(corpus, opts.document)].find(existsSync)
     const rel = abs === undefined ? undefined : relative(corpus, abs).split(sep).join('/')
@@ -266,7 +271,9 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
     if (nameProblem !== undefined)
       throw new Error(`study-result name "${observed} ${name}" ${nameProblem}; pass another --name`)
     if (existsSync(join(corpus, studyResultFile)))
-      throw new Error(`${studyResultFile} already exists; study results are append-only, so pass --name`)
+      throw new Error(
+        `${studyResultFile} already exists; study results are append-only, so pass --name`,
+      )
     const basis = opts.versionBasis ?? (opts.version === undefined ? undefined : 'inferred')
     const data: Data = {
       kind: opts.kind,

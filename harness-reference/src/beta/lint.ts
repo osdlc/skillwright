@@ -63,7 +63,8 @@ export function lint(beta: Beta): string[] {
       if (slug !== undefined) slugs.add(slug)
     }
     const commands = obj(data['commands'])
-    for (const slug of slugs) if (!(slug in commands)) bad(ref.file, `no commands for harness ${slug}`)
+    for (const slug of slugs)
+      if (!(slug in commands)) bad(ref.file, `no commands for harness ${slug}`)
     for (const [slug, steps] of Object.entries(commands)) {
       if (!slugs.has(slug)) bad(ref.file, `commands for ${slug}, which is not in harnesses`)
       for (const step of Array.isArray(steps) ? steps : [])
@@ -105,7 +106,10 @@ export function lint(beta: Beta): string[] {
     if (beta.resolve(ref.file, prop['subject'])?.file !== harness.file)
       bad(ref.file, 'proposition.subject must link the same harness as harness')
     if (prop['predicate'] !== subjectData['slug'])
-      bad(ref.file, `proposition.predicate must be the subject's slug "${String(subjectData['slug'])}"`)
+      bad(
+        ref.file,
+        `proposition.predicate must be the subject's slug "${String(subjectData['slug'])}"`,
+      )
 
     if (status !== 'open') {
       const schema = obj(subjectData['valueSchema'])
@@ -113,18 +117,26 @@ export function lint(beta: Beta): string[] {
         const validate = ajv.compile(schema)
         if (!validate(prop['object']))
           for (const e of validate.errors ?? [])
-            bad(ref.file, `proposition.object${e.instancePath} ${e.message ?? 'is invalid'} (valueSchema)`)
+            bad(
+              ref.file,
+              `proposition.object${e.instancePath} ${e.message ?? 'is invalid'} (valueSchema)`,
+            )
       } catch {
         // The subject reports its own broken schema.
       }
     }
 
-    if (scope.model !== null && scope.model !== undefined && subjectData['model_dependent'] !== true)
+    if (
+      scope.model !== null &&
+      scope.model !== undefined &&
+      subjectData['model_dependent'] !== true
+    )
       bad(ref.file, `scope.model is set, but subject ${subject.id} is not model_dependent`)
     for (const key of ['since', 'until'] as const) {
       const v = scope[key]
       if (v === null || v === undefined) continue
-      if (versioning === 'unknown') bad(ref.file, `scope.${key} is set, but ${harness.id} has no known versioning`)
+      if (versioning === 'unknown')
+        bad(ref.file, `scope.${key} is set, but ${harness.id} has no known versioning`)
       else if (!validVersion(v, versioning))
         bad(ref.file, `scope.${key} "${v}" is not a ${versioning} version`)
     }
@@ -142,7 +154,10 @@ export function lint(beta: Beta): string[] {
         bad(ref.file, `supersedes ${target.id}, which does not have status superseded`)
       if (target !== undefined) {
         const t = beta.get('statements', target.id) ?? {}
-        if (beta.resolve(target.file, t['harness'])?.file !== harness.file || beta.resolve(target.file, t['subject'])?.file !== subject.file)
+        if (
+          beta.resolve(target.file, t['harness'])?.file !== harness.file ||
+          beta.resolve(target.file, t['subject'])?.file !== subject.file
+        )
           bad(ref.file, `supersedes ${target.id}, which is about another harness or subject`)
       }
     }
@@ -152,11 +167,15 @@ export function lint(beta: Beta): string[] {
         const target = beta.resolve(ref.file, link)
         if (target === undefined || target.type !== 'study-results')
           bad(ref.file, `evidence link ${String(link)} is not a study-results record`)
-        else if (beta.resolve(target.file, beta.get('study-results', target.id)?.['harness'])?.file !== harness.file)
+        else if (
+          beta.resolve(target.file, beta.get('study-results', target.id)?.['harness'])?.file !==
+          harness.file
+        )
           bad(ref.file, `evidence ${target.id} is about another harness`)
       }
     }
-    if (status === 'open' && data['direction'] !== 'neutral') bad(ref.file, 'an open statement is neutral')
+    if (status === 'open' && data['direction'] !== 'neutral')
+      bad(ref.file, 'an open statement is neutral')
 
     if (status === 'current') {
       const key = `${harness.file}|${subject.file}|${scope.model ?? ''}`
@@ -174,7 +193,10 @@ export function lint(beta: Beta): string[] {
           a.scope.platform.length === 0 ||
           b.scope.platform.length === 0 ||
           a.scope.platform.some((p) => b.scope.platform.includes(p))
-        if (platformsMeet && (a.versioning === 'unknown' || overlaps(a.scope, b.scope, a.versioning)))
+        if (
+          platformsMeet &&
+          (a.versioning === 'unknown' || overlaps(a.scope, b.scope, a.versioning))
+        )
           bad(b.file, `a second current statement overlaps ${a.file}`)
       }
   return problems
