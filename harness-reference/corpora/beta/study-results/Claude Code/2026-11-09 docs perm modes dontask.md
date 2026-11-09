@@ -8,9 +8,9 @@ locator: Permission modes
 harness: "[Claude Code](../../harnesses/Claude%20Code.md)"
 observed: 2026-11-09
 excerpt:
-  exact: dontAsk File reads inside your working directories and pre-approved tools;
+  exact: dontAsk File reads inside your working directories and pre-approved tools; anything that would prompt is denied, though a mod you installed can still approve some of those calls Locked-down CI and scripts
   prefix: " tasks, reducing prompt fatigue "
-  suffix: " anything that would prompt is d"
+  suffix: " bypassPermissions Everything Is"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T07:53:54Z
 ---
 
-> dontAsk File reads inside your working directories and pre-approved tools;
+> dontAsk File reads inside your working directories and pre-approved tools; anything that would prompt is denied, though a mod you installed can still approve some of those calls Locked-down CI and scripts

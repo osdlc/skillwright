@@ -33,13 +33,13 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs skills skill tool](../../study-results/Claude%20Code/2026-11-09%20docs%20skills%20skill%20tool.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The skills page names the Skill tool as the way Claude invokes a skill.
+    strengthOfEvidenceProvided: weak
+    description: "Partial: the skills page names the Skill tool as the way Claude invokes a skill; the excerpt covers the mechanism only."
   - hasEvidenceItems:
       - "[2026-11-09 docs skills deny skill tool](../../study-results/Claude%20Code/2026-11-09%20docs%20skills%20deny%20skill%20tool.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Denying the Skill tool disables Claude-invoked skills.
+    strengthOfEvidenceProvided: weak
+    description: "Partial: denying the Skill tool disables Claude-invoked skills; the excerpt covers the mechanism only."
 reportedIn:
   - "[Claude Code docs skills](../../documents/code.claude.com/Claude%20Code%20docs%20skills.md)"
   - "[Claude Code docs skills](../../documents/code.claude.com/Claude%20Code%20docs%20skills.md)"

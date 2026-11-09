@@ -10,12 +10,11 @@ proposition:
     deny_argv:
       - --disallowedTools
       - "{rules}"
-    config_key: permissions
-    syntax: Tool(pattern), for example Bash(git log *); a bare tool name matches the whole tool
+    syntax: Tool(pattern), for example Bash(git *); a bare tool name such as Edit
     precedence: deny, then ask, then allow; the first match wins
     note: A bare tool name in --disallowedTools removes the tool from the model context; a scoped rule only denies matching calls. --allowedTools only pre-approves; --tools restricts which tools exist.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help allowed tools](../../study-results/Claude%20Code/2026-11-09%20help%20allowed%20tools.md)"

@@ -17,8 +17,8 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs pmanifest location](../../study-results/Claude%20Code/2026-11-09%20docs%20pmanifest%20location.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The manifest is .claude-plugin/plugin.json under the plugin root.
+    strengthOfEvidenceProvided: weak
+    description: "Partial: the manifest is .claude-plugin/plugin.json under the plugin root; the excerpt does not cover the skills layout or that it is optional."
 reportedIn:
   - "[Claude Code docs plugins reference](../../documents/code.claude.com/Claude%20Code%20docs%20plugins%20reference.md)"
 contributions:

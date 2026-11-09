@@ -12,7 +12,6 @@ proposition:
     ignores:
       - all other MCP configurations
     inline_json: true
-    note: Under a managed-mcp.json file the flag behaves as the managed MCP page describes.
 direction: supports
 strength: strong
 hasEvidenceLines:

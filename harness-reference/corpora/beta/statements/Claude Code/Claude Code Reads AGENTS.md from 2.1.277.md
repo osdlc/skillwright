@@ -4,7 +4,7 @@ proposition:
   predicate: instructions/agents-md
   object:
     supported: true
-    role: "fallback: read when there is no CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md in the working directory or above it"
+    role: "fallback: read only when there is no CLAUDE.md in the working directory or above it"
 direction: supports
 strength: moderate
 hasEvidenceLines:

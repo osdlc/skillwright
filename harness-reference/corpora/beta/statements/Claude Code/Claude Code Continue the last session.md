@@ -7,10 +7,9 @@ proposition:
     argv:
       - --continue
     chosen_by: most recent conversation in the current working directory
-    accepts_prompt: true
     note: -c is the short form. Without -p it skips sessions created with `claude -p` or the Agent SDK; `claude -p --continue` includes them.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help continue](../../study-results/Claude%20Code/2026-11-09%20help%20continue.md)"

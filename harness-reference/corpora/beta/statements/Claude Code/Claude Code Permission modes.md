@@ -4,14 +4,14 @@ proposition:
   predicate: permissions/modes
   object:
     supported: true
-    default: auto in interactive terminal and VS Code sessions from 2.1.283; see "which mode a session starts in" for -p runs
+    default: auto in interactive terminal and VS Code sessions from 2.1.283
     modes:
       - name: plan
         intent: read-only
         argv:
           - --permission-mode
           - plan
-        notes: Reads, plus classifier-approved commands when auto mode is available. The adapter treats it as read-only.
+        notes: Reads, plus classifier-approved commands when auto mode is available.
       - name: acceptEdits
         intent: edits
         argv:
@@ -23,7 +23,7 @@ proposition:
         argv:
           - --permission-mode
           - auto
-        notes: Everything runs, with background safety checks by a classifier.
+        notes: Everything runs, with background safety checks.
       - name: bypassPermissions
         intent: bypass
         argv:
@@ -40,9 +40,9 @@ proposition:
         argv:
           - --permission-mode
           - manual
-        notes: Called Manual in the CLI; config value default; reads only without asking.
+        notes: Reads only. Manual is accepted as an alias for default.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help permission mode](../../study-results/Claude%20Code/2026-11-09%20help%20permission%20mode.md)"
@@ -60,13 +60,20 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: The CLI reference lists default, acceptEdits, plan, auto, dontAsk, bypassPermissions and the manual alias.
   - hasEvidenceItems:
+      - "[2026-11-09 docs perm modes table](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20table.md)"
       - "[2026-11-09 docs perm modes plan](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20plan.md)"
       - "[2026-11-09 docs perm modes accept](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20accept.md)"
+      - "[2026-11-09 docs perm modes auto](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20auto.md)"
       - "[2026-11-09 docs perm modes bypass](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20bypass.md)"
       - "[2026-11-09 docs perm modes dontask](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20dontask.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The permission modes page says what each mode runs without asking.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs cli skip permissions](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20skip%20permissions.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: The CLI reference says --dangerously-skip-permissions is equivalent to --permission-mode bypassPermissions.
   - hasEvidenceItems:
       - "[2026-11-09 docs perm modes auto start](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20auto%20start.md)"
     directionOfEvidenceProvided: supports

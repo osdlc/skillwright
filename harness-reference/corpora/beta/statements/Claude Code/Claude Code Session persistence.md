@@ -9,10 +9,9 @@ proposition:
       - --no-session-persistence
     disable_env:
       CLAUDE_CODE_SKIP_PROMPT_HISTORY: "1"
-    store: ~/.claude/projects
     note: --no-session-persistence works with --print only; the environment variable works in any mode.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help no session persistence](../../study-results/Claude%20Code/2026-11-09%20help%20no%20session%20persistence.md)"

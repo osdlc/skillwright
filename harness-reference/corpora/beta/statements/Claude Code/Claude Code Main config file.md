@@ -6,7 +6,7 @@ proposition:
     file: .claude/settings.json
     format: JSON
 direction: supports
-strength: moderate
+strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 Claude Code Main config file](../../study-results/Claude%20Code/2026-08-08%20Claude%20Code%20Main%20config%20file.md)"
@@ -16,8 +16,8 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs settings user file](../../study-results/Claude%20Code/2026-11-09%20docs%20settings%20user%20file.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Settings live in ~/.claude/settings.json, .claude/settings.json and .claude/settings.local.json.
+    strengthOfEvidenceProvided: weak
+    description: "Partial: user settings live in ~/.claude/settings.json; the excerpt does not name the project file or the format."
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

@@ -7,14 +7,13 @@ proposition:
     argv:
       - --add-dir
       - "{dir}"
-    repeatable: true
     config_key: permissions.additionalDirectories
     env:
       CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: 1 loads memory files from the added directories
-    trusted: "grants file access, not configuration: most .claude configuration is not discovered from an added directory; skills in its .claude/skills load"
+    trusted: "grants file access, not configuration: most .claude configuration is not discovered from an added directory"
     note: The flag is variadic (--add-dir <directories...>), so several directories may follow one flag.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help add-dir](../../study-results/Claude%20Code/2026-11-09%20help%20add-dir.md)"

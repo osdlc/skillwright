@@ -16,8 +16,8 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs pmarket location](../../study-results/Claude%20Code/2026-11-09%20docs%20pmarket%20location.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The marketplace file is .claude-plugin/marketplace.json.
+    strengthOfEvidenceProvided: weak
+    description: "Partial: the marketplace file is .claude-plugin/marketplace.json; the excerpt does not cover the name@marketplace install id."
 reportedIn:
   - "[Claude Code docs marketplace reference code.claude.com](../../documents/code.claude.com/Claude%20Code%20docs%20marketplace%20reference%20code.claude.com.md)"
 contributions:

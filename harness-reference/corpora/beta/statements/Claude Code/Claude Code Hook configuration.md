@@ -6,7 +6,7 @@ proposition:
     location: settings JSON `hooks` key
     kind: shell commands in JSON config
 direction: supports
-strength: moderate
+strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 Claude Code Hook configuration](../../study-results/Claude%20Code/2026-08-08%20Claude%20Code%20Hook%20configuration.md)"
@@ -16,8 +16,8 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs hooks locations](../../study-results/Claude%20Code/2026-11-09%20docs%20hooks%20locations.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Hooks are defined in settings.json files, plugin hooks/hooks.json or managed policy settings.
+    strengthOfEvidenceProvided: weak
+    description: "Partial: hooks are defined in ~/.claude/settings.json among other locations; the excerpt does not show the `hooks` key or shell commands."
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

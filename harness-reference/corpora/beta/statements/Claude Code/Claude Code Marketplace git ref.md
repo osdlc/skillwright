@@ -13,9 +13,9 @@ proposition:
       - marketplace
       - add
       - "{source}#{ref}"
-    note: The docs name branches and tags only. A GitHub source in a marketplace entry may also carry ref and sha fields. `claude plugin marketplace add --sparse` limits the checkout to directories.
+    note: The docs name branches and tags only.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs pinstall marketplace ref](../../study-results/Claude%20Code/2026-11-09%20docs%20pinstall%20marketplace%20ref.md)"

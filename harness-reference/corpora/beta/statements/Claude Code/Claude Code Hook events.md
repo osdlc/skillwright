@@ -5,7 +5,7 @@ proposition:
   object:
     count: 30+ events
 direction: supports
-strength: moderate
+strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 Claude Code Hook events](../../study-results/Claude%20Code/2026-08-08%20Claude%20Code%20Hook%20events.md)"
@@ -14,9 +14,8 @@ hasEvidenceLines:
     description: third-party observed 2026-08-08.
   - hasEvidenceItems:
       - "[2026-11-09 docs hooks events table](../../study-results/Claude%20Code/2026-11-09%20docs%20hooks%20events%20table.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The hooks reference opens with a table of 33 events.
+    directionOfEvidenceProvided: neutral
+    description: The hooks reference has a table summarizing when each event fires; the excerpt does not give a count.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

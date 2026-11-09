@@ -8,7 +8,7 @@ proposition:
       - --effort
       - "{level}"
     env:
-      CLAUDE_CODE_EFFORT_LEVEL: low | medium | high | xhigh | max | auto | unset
+      CLAUDE_CODE_EFFORT_LEVEL: low | medium | high | xhigh | max
     config_key: effortLevel
     levels:
       - low
@@ -16,10 +16,10 @@ proposition:
       - high
       - xhigh
       - max
-    below_low: use low; claude has no level below low
+    below_low: the lowest accepted level is low
     note: The docs also accept ultracode on 2.1.203 or later, which requests xhigh with ultracode on. Available levels depend on the model. CLAUDE_CODE_EFFORT_LEVEL takes precedence over --effort.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help effort](../../study-results/Claude%20Code/2026-11-09%20help%20effort.md)"

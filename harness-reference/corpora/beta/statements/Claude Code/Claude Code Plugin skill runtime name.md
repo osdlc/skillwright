@@ -22,8 +22,8 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs skills plugin namespace](../../study-results/Claude%20Code/2026-11-09%20docs%20skills%20plugin%20namespace.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Plugin skills are namespaced as /plugin-name:skill-name.
+    strengthOfEvidenceProvided: weak
+    description: "Partial: plugin skills are namespaced as /plugin-name:skill-name; the excerpt does not say where the prefix comes from or the bare alias."
 reportedIn:
   - "[Claude Code docs plugins reference](../../documents/code.claude.com/Claude%20Code%20docs%20plugins%20reference.md)"
   - "[Claude Code docs skills](../../documents/code.claude.com/Claude%20Code%20docs%20skills.md)"

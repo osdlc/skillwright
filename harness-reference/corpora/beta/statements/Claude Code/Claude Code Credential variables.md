@@ -6,15 +6,14 @@ proposition:
     supported: true
     vars:
       - name: ANTHROPIC_API_KEY
-        note: API key; wins over a logged-in subscription, always used with -p
+        note: API key sent as X-Api-Key; used instead of a logged-in subscription
       - name: CLAUDE_CODE_OAUTH_TOKEN
-        note: OAuth token from `claude setup-token`; wins over keychain credentials
+        note: OAuth access token; alternative to /login for SDK and automated environments
       - name: ANTHROPIC_AUTH_TOKEN
         note: sent as a Bearer Authorization header
     login_command: claude auth login
-    note: Bedrock, Vertex and Foundry use their own provider credentials.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs env API_KEY](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20API_KEY.md)"
@@ -60,4 +59,6 @@ scope:
   platform: []
   model: null
 status: current
+open:
+  - Does CLAUDE_CODE_OAUTH_TOKEN take precedence over keychain credentials, and do Bedrock, Vertex and Foundry use their own provider credentials? Neither is in a quoted excerpt.
 ---

@@ -6,7 +6,7 @@ proposition:
     file: .mcp.json
     format: JSON
 direction: supports
-strength: moderate
+strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 Claude Code MCP config file](../../study-results/Claude%20Code/2026-08-08%20Claude%20Code%20MCP%20config%20file.md)"
@@ -16,8 +16,8 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs mcp json files](../../study-results/Claude%20Code/2026-11-09%20docs%20mcp%20json%20files.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: MCP servers are configured in .mcp.json, ~/.claude.json or claude mcp add-json.
+    strengthOfEvidenceProvided: weak
+    description: "Partial: MCP servers are configured as JSON in .mcp.json or ~/.claude.json."
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

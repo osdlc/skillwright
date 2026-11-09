@@ -10,9 +10,6 @@ proposition:
           - sh
           - -c
           - curl -fsSL https://claude.ai/install.sh | bash
-        platforms:
-          - macos
-          - linux
       - kind: brew
         argv:
           - brew
@@ -20,17 +17,12 @@ proposition:
           - --cask
           - claude-code
         package: claude-code
-        platforms:
-          - macos
-          - linux
       - kind: other
         argv:
           - winget
           - install
           - Anthropic.ClaudeCode
         package: Anthropic.ClaudeCode
-        platforms:
-          - windows
         note: WinGet
       - kind: binary
         argv:
@@ -38,10 +30,10 @@ proposition:
           - install
           - "[target]"
         note: installs or reinstalls the native build from an existing claude
-    update: native installs update in the background; `claude update` checks and installs; Homebrew and WinGet installs update through the package manager
-    uninstall: rm -f ~/.local/bin/claude && rm -rf ~/.local/share/claude for a native install
+    update: native installations update in the background; `claude update` checks for updates and installs; package-manager installs update through the package manager
+    uninstall: "native install: rm -f ~/.local/bin/claude and rm -rf ~/.local/share/claude"
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help install](../../study-results/Claude%20Code/2026-11-09%20help%20install.md)"

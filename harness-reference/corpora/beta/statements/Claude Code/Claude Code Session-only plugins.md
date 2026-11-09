@@ -8,9 +8,8 @@ proposition:
       - --plugin-dir
       - "{dir}"
     repeatable: true
-    disable_via: enabledPlugins in settings; the osdlc adapter passes --settings {"enabledPlugins":{"<id>":false}}
     persists: false
-    note: The flag also takes a .zip or a folder of plugins; --plugin-url fetches a .zip for one session.
+    note: The flag also takes a .zip or a folder of plugins.
 direction: supports
 strength: strong
 hasEvidenceLines:

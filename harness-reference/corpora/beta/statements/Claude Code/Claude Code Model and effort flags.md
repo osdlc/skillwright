@@ -7,7 +7,7 @@ proposition:
     effort: --effort <level>
     context: ANTHROPIC_MODEL environment variable sets the model too
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help model](../../study-results/Claude%20Code/2026-11-09%20help%20model.md)"
@@ -38,4 +38,6 @@ scope:
   platform: []
   model: null
 status: current
+open:
+  - Does CLAUDE_CODE_OAUTH_TOKEN take precedence over keychain credentials, and do Bedrock, Vertex and Foundry use their own provider credentials? Neither is in a quoted excerpt
 ---

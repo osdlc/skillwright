@@ -8,15 +8,15 @@ proposition:
       argv:
         - --max-turns
         - "{n}"
-      config_key: CLAUDE_CODE_MAX_TURNS (environment variable)
+      env: CLAUDE_CODE_MAX_TURNS
     max_budget:
       argv:
         - --max-budget-usd
         - "{usd}"
-    on_limit: the run stops; a spawn after the budget cap fails with Budget limit reached
-    note: Both flags work in print mode only. --max-turns does not appear in `claude --help` of 2.1.319, but the docs list it and say help does not list every flag. There is no wall-time flag.
+    on_limit: "budget: the run stops once estimated spend reaches the cap"
+    note: Both flags work in print mode only. The docs list --max-turns and say --help does not list every flag.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help max budget](../../study-results/Claude%20Code/2026-11-09%20help%20max%20budget.md)"
@@ -63,5 +63,7 @@ scope:
   model: null
 status: current
 open:
-  - What exit code or result subtype does a run report when --max-turns ends it? The excerpts do not say.
+  - What exit code or result subtype does a run report when --max-turns or the budget cap ends it?
+  - The 2.1.319 `claude --help` output does not list --max-turns; is that a docs/help gap or is the flag hidden on purpose?
+  - Is there a wall-time limit flag? None was found in the help or the quoted docs.
 ---

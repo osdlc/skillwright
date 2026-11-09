@@ -6,7 +6,7 @@ proposition:
     location: .claude/agents/*.md
     format: markdown with frontmatter
 direction: supports
-strength: moderate
+strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 Claude Code Subagent definition](../../study-results/Claude%20Code/2026-08-08%20Claude%20Code%20Subagent%20definition.md)"
@@ -16,8 +16,8 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 docs agents locations](../../study-results/Claude%20Code/2026-11-09%20docs%20agents%20locations.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Subagents are files in ~/.claude/agents or a project .claude/agents.
+    strengthOfEvidenceProvided: weak
+    description: "Partial: a project scope is .claude/agents; the excerpt does not show the file format."
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

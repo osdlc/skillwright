@@ -10,8 +10,7 @@ proposition:
       - settings
       - sessions
       - plugins
-    still_reads_home: []
-    note: ~/.claude.json moves into the directory too. Ignored in project and local settings; set it in the shell, user settings or managed settings.
+    note: The same applies to .claude.json, which otherwise sits at ~/.claude.json.
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -39,4 +38,6 @@ scope:
   platform: []
   model: null
 status: current
+open:
+  - Does CLAUDE_CONFIG_DIR leave anything read from the home directory, and is it ignored in project and local settings? Neither is in a quoted excerpt
 ---

@@ -9,8 +9,7 @@ proposition:
         value: "1"
       - name: CLAUDE_CODE_CHILD_SESSION
         value: "1"
-    reliable: true
-    note: CLAUDECODE is set in subprocesses Claude Code spawns (Bash and PowerShell tools, tmux sessions, hook and status line commands, stdio MCP servers); IDE extensions also set it in integrated terminals, so it does not tell a nested session from a top-level claude in an IDE terminal. CLAUDE_CODE_CHILD_SESSION is set only by Claude Code itself, not for stdio MCP servers, and requires 2.1.172 or later. CLAUDE_CODE_SESSION_ID and CLAUDE_PID are also exported but are session details, not markers.
+    note: CLAUDECODE is set in subprocesses Claude Code spawns (Bash and PowerShell tools, tmux sessions, hook and status line commands, stdio MCP server subprocesses); IDE extensions also set it in their integrated terminals. CLAUDE_CODE_CHILD_SESSION is set in subprocesses spawned via the Bash, PowerShell and Monitor tools, hook commands and status line commands, but not for stdio MCP server subprocesses.
 direction: supports
 strength: moderate
 hasEvidenceLines:

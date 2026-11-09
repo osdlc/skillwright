@@ -9,7 +9,7 @@ proposition:
       - --version
     path_hint: ~/.local/bin/claude
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help binary usage](../../study-results/Claude%20Code/2026-11-09%20help%20binary%20usage.md)"

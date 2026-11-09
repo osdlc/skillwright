@@ -17,8 +17,7 @@ proposition:
         argv:
           - --output-format
           - stream-json
-          - --verbose
-    note: Print mode only. The flag defaults to text. The docs example for stream-json passes --verbose; the help text does not say it is required.
+    note: Print mode only; text is the default.
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -36,7 +35,7 @@ hasEvidenceLines:
       - "[2026-11-09 docs cli stream flags](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20stream%20flags.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: The docs example for stream-json passes --verbose with --output-format stream-json.
+    description: The docs say --include-partial-messages requires --print and --output-format stream-json.
 contributions:
   - contributor:
       name: harness-reference research
@@ -52,5 +51,5 @@ scope:
   model: null
 status: current
 open:
-  - Does stream-json fail without --verbose in print mode? The help text and docs excerpts do not state a requirement; the osdlc agent-call adapter always adds --verbose.
+  - Does stream-json need --verbose in print mode? No help or docs excerpt here says so, though the osdlc agent-call adapter always adds it; if it is required, formats[stream-json].argv gains --verbose.
 ---

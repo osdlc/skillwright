@@ -17,9 +17,8 @@ proposition:
       - --append-system-prompt-file
       - "{file}"
     replace_drops_defaults: true
-    note: The file variants are in the docs but not in the 2.1.319 help text. A recorded system prompt is reused on resume unless --system-prompt-snapshot off is passed.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help system prompt](../../study-results/Claude%20Code/2026-11-09%20help%20system%20prompt.md)"
@@ -60,4 +59,6 @@ scope:
   platform: []
   model: null
 status: current
+open:
+  - The 2.1.319 help text lists --system-prompt and --append-system-prompt but not the -file variants the docs list. A recorded system prompt may be reused on resume (--system-prompt-snapshot); no excerpt here quotes it.
 ---

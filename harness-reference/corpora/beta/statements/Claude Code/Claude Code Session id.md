@@ -14,7 +14,7 @@ proposition:
     result_field: session_id
     env_var: CLAUDE_CODE_SESSION_ID
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 help session id](../../study-results/Claude%20Code/2026-11-09%20help%20session%20id.md)"
