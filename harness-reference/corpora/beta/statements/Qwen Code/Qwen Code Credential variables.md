@@ -18,7 +18,6 @@ proposition:
       - name: QWENCLOUD_API_KEY
         kind: api-key
         provider: QwenCloud
-        precedence: takes effect once a settings.json provider entry names it as envKey
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -27,6 +26,7 @@ hasEvidenceLines:
       - "[2026-11-09 Qwen Code Anthropic API key docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Anthropic%20API%20key%20docs.md)"
       - "[2026-11-09 Qwen Code Gemini API key docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Gemini%20API%20key%20docs.md)"
       - "[2026-11-09 Qwen Code QwenCloud API key docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20QwenCloud%20API%20key%20docs.md)"
+      - "[2026-11-09 Qwen Code Auth command docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Auth%20command%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: auth docs at v0.27.0.

@@ -4,9 +4,10 @@ proposition:
   predicate: cli/session-persistence
   object:
     supported: true
-    persists_by_default: true
     config_key: general.chatRecording
-    note: --chat-recording=false turns saving off; --continue and --resume then do not work
+    disable_argv:
+      - --chat-recording=false
+    note: with recording off, chat history is not saved and --continue and --resume do not work
 direction: supports
 strength: strong
 hasEvidenceLines:

@@ -8,7 +8,7 @@ proposition:
       - --include-directories
       - "{dir}"
     repeatable: true
-    note: --add-dir is an alias; comma-separated values are split
+    note: --add-dir is an alias; values may be comma-separated
 direction: supports
 strength: strong
 hasEvidenceLines:

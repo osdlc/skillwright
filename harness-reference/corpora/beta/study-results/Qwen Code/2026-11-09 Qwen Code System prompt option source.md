@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: system-prompt option
 excerpt:
-  exact: "'Override the main session system prompt for this run. Can be combined with --append-system-prompt.',"
-  prefix: "'string' as const, description: "
-  suffix: " }, 'append-system-prompt': { ty"
+  exact: "'system-prompt': { type: 'string' as const, description: 'Override the main session system prompt for this run. Can be combined with --append-system-prompt.', },"
+  prefix: "ntinue in interactive mode', }, "
+  suffix: " 'append-system-prompt': { type:"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> 'Override the main session system prompt for this run. Can be combined with --append-system-prompt.',
+> 'system-prompt': { type: 'string' as const, description: 'Override the main session system prompt for this run. Can be combined with --append-system-prompt.', },

@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: allowed-tools option
 excerpt:
-  exact: "description: 'Tools to allow, will bypass confirmation',"
-  prefix: "dated help output is unchanged. "
-  suffix: " }, extensions: { alias: 'e', ty"
+  exact: "'allowed-tools': { type: 'array' as const,"
+  prefix: "cpServers\": {...}} format.', }, "
+  suffix: " // Pre-PR the default-command b"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Tools to allow, will bypass confirmation',
+> 'allowed-tools': { type: 'array' as const,

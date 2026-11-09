@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: output-format option
 excerpt:
-  exact: "choices: ['text', 'json', 'stream-json'] as const,"
-  prefix: "The format of the CLI output.', "
-  suffix: " }, 'include-partial-messages': "
+  exact: "'output-format': { alias: 'o', type: 'string' as const, description: 'The format of the CLI output.', choices: ['text', 'json', 'stream-json'] as const, },"
+  prefix: "rd input.', default: 'text', }, "
+  suffix: " 'include-partial-messages': { t"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> choices: ['text', 'json', 'stream-json'] as const,
+> 'output-format': { alias: 'o', type: 'string' as const, description: 'The format of the CLI output.', choices: ['text', 'json', 'stream-json'] as const, },

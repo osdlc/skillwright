@@ -6,7 +6,6 @@ proposition:
     supported: true
     argv:
       - --continue
-    accepts_prompt: true
 direction: supports
 strength: strong
 hasEvidenceLines:

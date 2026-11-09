@@ -8,7 +8,7 @@ proposition:
       - --session-id
       - "{id}"
     format: uuid
-    note: an existing id resumes that session; a new session is created only for a valid UUID
+    note: an existing id resumes that session; a new session is created only when the value is a valid UUID
 direction: supports
 strength: moderate
 hasEvidenceLines:

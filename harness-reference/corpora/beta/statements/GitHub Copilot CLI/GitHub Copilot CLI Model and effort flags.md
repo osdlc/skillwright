@@ -3,8 +3,7 @@ proposition:
   subject: "[GitHub Copilot CLI](../../harnesses/GitHub%20Copilot%20CLI.md)"
   predicate: cli/model-selection
   object:
-    model: --model=MODEL (or COPILOT_MODEL); auto lets Copilot choose
-    provider: GitHub-hosted models
+    model: --model=MODEL (or COPILOT_MODEL)
     effort: --reasoning-effort=LEVEL
 direction: supports
 strength: moderate

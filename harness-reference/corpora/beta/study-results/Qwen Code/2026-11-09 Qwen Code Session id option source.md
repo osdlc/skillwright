@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: session-id option
 excerpt:
-  exact: "description: 'Specify a session ID for this run.',"
-  prefix: "id': { type: 'string' as const, "
-  suffix: " }, 'fork-session': { type: 'boo"
+  exact: "'session-id': { type: 'string' as const, description: 'Specify a session ID for this run.', },"
+  prefix: "ID to show session picker.', }, "
+  suffix: " 'fork-session': { type: 'boolea"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Specify a session ID for this run.',
+> 'session-id': { type: 'string' as const, description: 'Specify a session ID for this run.', },

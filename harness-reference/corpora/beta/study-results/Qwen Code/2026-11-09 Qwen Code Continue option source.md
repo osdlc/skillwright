@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: continue option
 excerpt:
-  exact: "description: 'Resume the most recent session for the current project.',"
-  prefix: " 'c', type: 'boolean' as const, "
-  suffix: " default: false, }, resume: { al"
+  exact: "continue: { alias: 'c', type: 'boolean' as const, description: 'Resume the most recent session for the current project.', default: false, },"
+  prefix: "atches and processes them.', }, "
+  suffix: " resume: { alias: 'r', type: 'st"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Resume the most recent session for the current project.',
+> continue: { alias: 'c', type: 'boolean' as const, description: 'Resume the most recent session for the current project.', default: false, },

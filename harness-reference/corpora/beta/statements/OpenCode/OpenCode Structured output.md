@@ -4,7 +4,6 @@ proposition:
   predicate: cli/structured-output
   object:
     output: run --format json (raw JSON events)
-    schema: none
 direction: supports
 strength: strong
 hasEvidenceLines:

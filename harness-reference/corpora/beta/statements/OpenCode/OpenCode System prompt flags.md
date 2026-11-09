@@ -4,12 +4,13 @@ proposition:
   predicate: instructions/system-prompt-flag
   object:
     supported: false
-    note: no system prompt flag; the instructions config option lists extra instruction files, and an agent config can set a prompt
+    note: the instructions option lists extra instruction files, and an agent config can carry a prompt
 direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode Instructions option docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Instructions%20option%20docs.md)"
+      - "[2026-11-09 OpenCode Agent prompt docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Agent%20prompt%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: config docs.

@@ -18,7 +18,7 @@ hasEvidenceLines:
       - "[2026-11-09 mcpServers docs](../../study-results/Gemini%20CLI/2026-11-09%20mcpServers%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: configuration reference documents the mcpServers key in settings.json.
+    description: configuration reference documents the mcpServers key.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

@@ -8,7 +8,6 @@ proposition:
     version_argv:
       - --version
     subcommand: run
-    note: OpenCode 2 uses the same executable name as OpenCode 1
 direction: supports
 strength: strong
 hasEvidenceLines:

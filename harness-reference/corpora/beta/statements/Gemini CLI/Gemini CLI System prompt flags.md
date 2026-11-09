@@ -5,9 +5,9 @@ proposition:
   object:
     supported: partial
     env:
-      GEMINI_SYSTEM_MD: true|1 or a path to a Markdown file
+      GEMINI_SYSTEM_MD: a path to a Markdown file
     replace_drops_defaults: true
-    note: no system prompt flag in 0.65.0 help; the environment variable replaces the built-in prompt
+    note: no system prompt flag in the 0.65.0 help; the environment variable replaces the built-in prompt
 direction: supports
 strength: moderate
 hasEvidenceLines:

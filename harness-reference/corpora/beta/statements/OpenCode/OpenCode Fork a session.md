@@ -9,6 +9,11 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
+      - "[2026-11-09 OpenCode Fork flag source v1.1.54](../../study-results/OpenCode/2026-11-09%20OpenCode%20Fork%20flag%20source%20v1.1.54.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source at v1.1.54, the first 1.x tag with the option.
+  - hasEvidenceItems:
       - "[2026-11-09 OpenCode Fork flag source v2.2.6](../../study-results/OpenCode/2026-11-09%20OpenCode%20Fork%20flag%20source%20v2.2.6.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
@@ -22,7 +27,7 @@ contributions:
 harness: "[OpenCode](../../harnesses/OpenCode.md)"
 subject: "[Fork a session](../../subjects/cli/Fork%20a%20session.md)"
 scope:
-  since: 2.0.0
+  since: 1.1.54
   until: null
   platform: []
   model: null

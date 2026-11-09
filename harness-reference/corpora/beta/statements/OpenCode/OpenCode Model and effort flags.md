@@ -13,6 +13,7 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode Run model flag help](../../study-results/OpenCode/2026-11-09%20OpenCode%20Run%20model%20flag%20help.md)"
       - "[2026-11-09 OpenCode Run variant flag help](../../study-results/OpenCode/2026-11-09%20OpenCode%20Run%20variant%20flag%20help.md)"
+      - "[2026-11-09 OpenCode Models command help](../../study-results/OpenCode/2026-11-09%20OpenCode%20Models%20command%20help.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text for 1.1.36.

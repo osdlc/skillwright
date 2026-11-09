@@ -6,11 +6,6 @@ proposition:
     supported: true
     var: COPILOT_HOME
     replaces: ~/.copilot
-    sets:
-      - settings
-      - sessions
-      - mcp config
-      - skills
     note: --config-dir is the deprecated flag form
 direction: supports
 strength: moderate
@@ -20,6 +15,12 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: config directory reference.
+  - hasEvidenceItems:
+      - "[2026-11-09 GitHub Copilot CLI Config dir flag docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Config%20dir%20flag%20docs.md)"
+      - "[2026-11-09 GitHub Copilot CLI Default config dir docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Default%20config%20dir%20docs.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: command reference.
 contributions:
   - contributor:
       name: harness-reference research

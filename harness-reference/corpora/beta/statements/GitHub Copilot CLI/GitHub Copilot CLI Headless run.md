@@ -4,7 +4,6 @@ proposition:
   predicate: cli/headless
   object:
     flag: -p, --prompt PROMPT
-    one_task_per_run: true
     note: exits after completion, or non-zero if interrupted
 direction: supports
 strength: moderate

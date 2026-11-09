@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: max-session-turns option
 excerpt:
-  exact: "description: 'Maximum number of session turns (must be an integer)',"
-  prefix: "ns': { type: 'number' as const, "
-  suffix: " }, 'max-wall-time': { type: 'st"
+  exact: "'max-session-turns': { type: 'number' as const, description: 'Maximum number of session turns (must be an integer)', },"
+  prefix: "ep or remove the worktree.', }, "
+  suffix: " 'max-wall-time': { type: 'strin"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Maximum number of session turns (must be an integer)',
+> 'max-session-turns': { type: 'number' as const, description: 'Maximum number of session turns (must be an integer)', },

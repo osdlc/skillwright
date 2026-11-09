@@ -7,17 +7,15 @@ proposition:
     assign_argv:
       - --session
       - "{id}"
-    reported_in:
-      - event
-    note: 2.x creates the session when the id does not exist; 1.x --session only continues one
+    note: a --session id that does not exist is created
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 OpenCode Session flag source v2.2.6](../../study-results/OpenCode/2026-11-09%20OpenCode%20Session%20flag%20source%20v2.2.6.md)"
+      - "[2026-11-09 OpenCode Session flag source v2.0.19](../../study-results/OpenCode/2026-11-09%20OpenCode%20Session%20flag%20source%20v2.0.19.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: source at v2.2.6.
+    description: source at v2.0.19, the first tag with the create-if-missing wording.
 contributions:
   - contributor:
       name: harness-reference research
@@ -27,11 +25,9 @@ contributions:
 harness: "[OpenCode](../../harnesses/OpenCode.md)"
 subject: "[Session id](../../subjects/cli/Session%20id.md)"
 scope:
-  since: 2.0.0
+  since: 2.0.19
   until: null
   platform: []
   model: null
 status: current
-open:
-  - The accepted id format was not checked.
 ---

@@ -6,8 +6,7 @@ proposition:
     supported: true
     argv:
       - --continue
-    chosen_by: most recent session in the working directory, else the globally most recent
-    accepts_prompt: true
+    chosen_by: the most recent session in the current working directory, falling back to the globally most recent
 direction: supports
 strength: moderate
 hasEvidenceLines:

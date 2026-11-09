@@ -11,13 +11,14 @@ proposition:
     strict_argv:
       - --allowed-mcp-server-names
       - "{name}"
-    note: --mcp-config takes a file path or inline JSON; --allowed-mcp-server-names filters which servers load. A --safe-mode flag disables MCP servers entirely.
+    note: --mcp-config takes a JSON file path or inline JSON; --allowed-mcp-server-names names the allowed servers; --safe-mode disables MCP servers along with other customizations
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code MCP config option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20MCP%20config%20option%20source.md)"
       - "[2026-11-09 Qwen Code Allowed MCP server names option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Allowed%20MCP%20server%20names%20option%20source.md)"
+      - "[2026-11-09 Qwen Code Safe mode option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Safe%20mode%20option%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: option source at v0.27.0.

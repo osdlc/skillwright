@@ -17,7 +17,7 @@ proposition:
         argv:
           - --output-format
           - stream-json
-    note: -o is the short form; default is text
+    note: -o is the short form
 direction: supports
 strength: strong
 hasEvidenceLines:

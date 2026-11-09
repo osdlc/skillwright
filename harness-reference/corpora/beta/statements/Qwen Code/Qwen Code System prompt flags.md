@@ -10,8 +10,7 @@ proposition:
     append_argv:
       - --append-system-prompt
       - "{text}"
-    replace_drops_defaults: true
-    note: the two flags can be combined; they apply to the main session prompt
+    note: the two flags can be combined and apply to the main session system prompt
 direction: supports
 strength: strong
 hasEvidenceLines:

@@ -5,11 +5,7 @@ proposition:
   object:
     supported: true
     var: GEMINI_CLI_HOME
-    replaces: ~/
-    sets:
-      - settings
-      - sessions
-    note: a .gemini folder is created inside the directory it names
+    note: the root directory for Gemini CLI's user-level configuration and storage
 direction: supports
 strength: moderate
 hasEvidenceLines:

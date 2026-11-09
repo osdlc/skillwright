@@ -8,8 +8,8 @@ version_basis: exact
 observed: 2026-11-09
 locator: max-tool-calls option
 excerpt:
-  exact: Maximum cumulative tool calls executed during the run
-  prefix: "number' as const, description: '"
+  exact: "'max-tool-calls': { type: 'number' as const, description: 'Maximum cumulative tool calls executed during the run"
+  prefix: "xit code 55 when exceeded.', }, "
   suffix: " (success or failure; `structure"
 contributions:
   - contributor:
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> Maximum cumulative tool calls executed during the run
+> 'max-tool-calls': { type: 'number' as const, description: 'Maximum cumulative tool calls executed during the run

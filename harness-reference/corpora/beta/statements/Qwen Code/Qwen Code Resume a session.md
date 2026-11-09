@@ -5,13 +5,14 @@ proposition:
   object:
     supported: true
     flags: -r, --resume [id]
-    picker: --resume without an id shows a picker
+    picker: --resume without an id shows a session picker
     latest: --continue
 direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code Resume option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Resume%20option%20source.md)"
+      - "[2026-11-09 Qwen Code Continue option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Continue%20option%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: option source at v0.27.0.

@@ -1,9 +1,9 @@
 ---
 kind: docs
 reportedIn:
-  - "[OpenCode source README.md at dc2ffcf](../../documents/github.com/OpenCode%20source%20README.md%20at%20dc2ffcf.md)"
+  - "[OpenCode source README.md at 60c68d1](../../documents/github.com/OpenCode%20source%20README.md%20at%2060c68d1.md)"
 harness: "[OpenCode](../../harnesses/OpenCode.md)"
-version: 2.2.6
+version: 2.1.0
 version_basis: exact
 observed: 2026-11-09
 locator: Installation

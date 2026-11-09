@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: chat-recording option
 excerpt:
-  exact: "'Enable chat recording to disk. If false, chat history is not saved and --continue/--resume will not work.',"
-  prefix: "boolean' as const, description: "
-  suffix: " }, } as const satisfies Record<"
+  exact: "'chat-recording': { type: 'boolean' as const, description: 'Enable chat recording to disk. If false, chat history is not saved and --continue/--resume will not work.', },"
+  prefix: "e attacks.', default: false, }, "
+  suffix: " } as const satisfies Record<str"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> 'Enable chat recording to disk. If false, chat history is not saved and --continue/--resume will not work.',
+> 'chat-recording': { type: 'boolean' as const, description: 'Enable chat recording to disk. If false, chat history is not saved and --continue/--resume will not work.', },

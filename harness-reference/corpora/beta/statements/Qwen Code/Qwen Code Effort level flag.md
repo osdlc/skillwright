@@ -11,7 +11,7 @@ proposition:
       - high
       - xhigh
       - max
-    note: a setting and the /effort command; no CLI flag was found in the option source
+    note: a setting; no CLI flag was found in the option source
 direction: supports
 strength: moderate
 hasEvidenceLines:

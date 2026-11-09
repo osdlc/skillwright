@@ -13,7 +13,6 @@ proposition:
       - high
       - xhigh
       - max
-    note: max is the highest-depth tier for Anthropic models
 direction: supports
 strength: moderate
 hasEvidenceLines:

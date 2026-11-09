@@ -5,7 +5,6 @@ proposition:
   object:
     flag: -p, --prompt
     stdin: the prompt is appended to stdin input
-    note: a prompt on stdin also runs headless
 direction: supports
 strength: strong
 hasEvidenceLines:

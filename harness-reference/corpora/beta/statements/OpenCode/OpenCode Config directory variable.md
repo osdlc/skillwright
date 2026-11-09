@@ -5,7 +5,6 @@ proposition:
   object:
     supported: true
     var: OPENCODE_CONFIG_DIR
-    replaces: ~/.config/opencode
     sets:
       - agents
       - commands
@@ -17,9 +16,10 @@ strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode Config dir env docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Config%20dir%20env%20docs.md)"
+      - "[2026-11-09 OpenCode Config dir search docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Config%20dir%20search%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: env var table.
+    description: env var table and config docs.
 contributions:
   - contributor:
       name: harness-reference research

@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: mcp-config option
 excerpt:
-  exact: "'MCP server configuration as JSON string or file path. Can be a path to a JSON file or inline JSON with {\"mcpServers\": {...}} format.',"
-  prefix: "'string' as const, description: "
-  suffix: " }, 'allowed-tools': { type: 'ar"
+  exact: "'mcp-config': { type: 'string' as const, description: 'MCP server configuration as JSON string or file path. Can be a path to a JSON file or inline JSON with {\"mcpServers\": {...}} format.', },"
+  prefix: "isable for this invocation', }, "
+  suffix: " 'allowed-tools': { type: 'array"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> 'MCP server configuration as JSON string or file path. Can be a path to a JSON file or inline JSON with {"mcpServers": {...}} format.',
+> 'mcp-config': { type: 'string' as const, description: 'MCP server configuration as JSON string or file path. Can be a path to a JSON file or inline JSON with {"mcpServers": {...}} format.', },

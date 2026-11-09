@@ -11,6 +11,7 @@ strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode Run session flag help](../../study-results/OpenCode/2026-11-09%20OpenCode%20Run%20session%20flag%20help.md)"
+      - "[2026-11-09 OpenCode Run continue flag help](../../study-results/OpenCode/2026-11-09%20OpenCode%20Run%20continue%20flag%20help.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text for 1.1.36.

@@ -8,9 +8,9 @@ version_basis: inferred
 observed: 2026-11-09
 locator: mcpServers
 excerpt:
-  exact: "#### `mcpServers`"
-  prefix: "` <!-- SETTINGS-AUTOGEN:END --> "
-  suffix: " Configures connections to one o"
+  exact: Configures connections to one or more Model-Context Protocol (MCP) servers for discovering and using custom tools.
+  prefix: "TOGEN:END --> #### `mcpServers` "
+  suffix: " Gemini CLI attempts to connect "
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> #### `mcpServers`
+> Configures connections to one or more Model-Context Protocol (MCP) servers for discovering and using custom tools.

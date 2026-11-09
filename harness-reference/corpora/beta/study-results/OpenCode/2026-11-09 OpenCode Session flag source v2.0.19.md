@@ -1,9 +1,9 @@
 ---
 kind: source
 reportedIn:
-  - "[OpenCode source commands commands.ts at dc2ffcf](../../documents/github.com/OpenCode%20source%20commands%20commands.ts%20at%20dc2ffcf.md)"
+  - "[OpenCode source commands commands.ts at 1fd016e](../../documents/github.com/OpenCode%20source%20commands%20commands.ts%20at%201fd016e.md)"
 harness: "[OpenCode](../../harnesses/OpenCode.md)"
-version: 2.2.6
+version: 2.0.19
 version_basis: exact
 observed: 2026-11-09
 locator: run command, session flag

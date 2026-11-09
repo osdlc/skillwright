@@ -3,13 +3,9 @@ proposition:
   subject: "[OpenCode](../../harnesses/OpenCode.md)"
   predicate: config/credentials-env
   object:
-    supported: true
+    supported: partial
     login_command: opencode auth login
-    vars:
-      - name: OPENCODE_SERVER_PASSWORD
-        kind: other
-        provider: opencode serve/web basic auth
-    note: provider keys come from provider environment variables or stored login in ~/.local/share/opencode/auth.json; the config file wins over environment variables
+    note: stored logins go in ~/.local/share/opencode/auth.json
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -19,11 +15,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: providers and CLI docs.
-  - hasEvidenceItems:
-      - "[2026-11-09 OpenCode Provider env var docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Provider%20env%20var%20docs.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: "providers docs: provider environment variables."
 contributions:
   - contributor:
       name: harness-reference research
@@ -38,4 +29,6 @@ scope:
   platform: []
   model: null
 status: current
+open:
+  - Which environment variables supply provider keys was not checked.
 ---

@@ -20,7 +20,11 @@ hasEvidenceLines:
       - "[2026-11-09 OpenCode Variant flag source v1.19.5](../../study-results/OpenCode/2026-11-09%20OpenCode%20Variant%20flag%20source%20v1.19.5.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: source at v1.19.5.
+    description: source at v1.19.5, the latest 1.x tag.
+  - hasEvidenceItems:
+      - "[2026-11-09 OpenCode Model flag source v2.0.0](../../study-results/OpenCode/2026-11-09%20OpenCode%20Model%20flag%20source%20v2.0.0.md)"
+    directionOfEvidenceProvided: neutral
+    description: at v2.0.0, the first 2.x tag, the run command carries the variant in the model string instead, so the flag no longer holds from 2.0.0.
 contributions:
   - contributor:
       name: harness-reference research

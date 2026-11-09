@@ -6,12 +6,13 @@ proposition:
     status: current
     successor: antigravity
     since_date: 2026-06
-    note: free-tier and Google AI Pro/Ultra access moved to Antigravity CLI on 2026-06-18; the CLI is still released and maintained for Gemini Code Assist Standard and Enterprise and is not tuned for Gemini 4+. The earlier sunsetting value came from a sign-in failure on an individual account
+    note: free individual access and Google AI Pro/Ultra moved to Antigravity CLI on 2026-06-18; the CLI is maintained for enterprise Gemini Code Assist workflows on Google Cloud, with stable releases continuing
 direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 README on the Antigravity replacement](../../study-results/Gemini%20CLI/2026-11-09%20README%20on%20the%20Antigravity%20replacement.md)"
+      - "[2026-11-09 README at v0.67.0 on the Antigravity replacement](../../study-results/Gemini%20CLI/2026-11-09%20README%20at%20v0.67.0%20on%20the%20Antigravity%20replacement.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: "README: free and Google AI Pro/Ultra access moved to Antigravity CLI on 2026-06-18."
@@ -20,6 +21,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: "README: maintained for enterprise Gemini Code Assist workflows."
+  - hasEvidenceItems:
+      - "[2026-11-09 Changelog latest stable release](../../study-results/Gemini%20CLI/2026-11-09%20Changelog%20latest%20stable%20release.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: "changelog: v0.65.0 stable release dated 2026-10-20."
 contributions:
   - contributor:
       name: harness-reference research
@@ -29,10 +35,11 @@ contributions:
 harness: "[Gemini CLI](../../harnesses/Gemini%20CLI.md)"
 subject: "[Lifecycle](../../subjects/meta/Lifecycle.md)"
 scope:
-  since: null
+  since: 0.65.0
   until: null
   platform: []
   model: null
 status: current
-supersedes: "[Gemini CLI Lifecycle](Gemini%20CLI%20Lifecycle.md)"
 ---
+
+Replaces the sunsetting reading kept as disputed in the Lifecycle statement.

@@ -4,7 +4,6 @@ proposition:
   predicate: cli/structured-output
   object:
     output: --output-format json (JSONL, one JSON object per line)
-    schema: none documented
 direction: supports
 strength: moderate
 hasEvidenceLines:

@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: append-system-prompt option
 excerpt:
-  exact: "'Append instructions to the main session system prompt for this run. Can be combined with --system-prompt.',"
-  prefix: "'string' as const, description: "
-  suffix: " }, 'output-style': { type: 'str"
+  exact: "'append-system-prompt': { type: 'string' as const, description: 'Append instructions to the main session system prompt for this run. Can be combined with --system-prompt.', },"
+  prefix: "th --append-system-prompt.', }, "
+  suffix: " 'output-style': { type: 'string"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> 'Append instructions to the main session system prompt for this run. Can be combined with --system-prompt.',
+> 'append-system-prompt': { type: 'string' as const, description: 'Append instructions to the main session system prompt for this run. Can be combined with --system-prompt.', },

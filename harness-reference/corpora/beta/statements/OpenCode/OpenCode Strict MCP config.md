@@ -6,8 +6,8 @@ proposition:
     supported: partial
     inline_json: true
     ignores:
-      - project config via OPENCODE_DISABLE_PROJECT_CONFIG
-    note: no MCP flag; servers come from config. OPENCODE_CONFIG_CONTENT passes inline JSON config, but the user config is still merged
+      - project configuration (OPENCODE_DISABLE_PROJECT_CONFIG)
+    note: no MCP flag on run; OPENCODE_CONFIG_CONTENT passes inline JSON config
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -20,7 +20,7 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode MCP command help](../../study-results/OpenCode/2026-11-09%20OpenCode%20MCP%20command%20help.md)"
     directionOfEvidenceProvided: neutral
-    description: "help-text for 1.1.36: the mcp command manages servers; no run flag takes MCP config."
+    description: "help-text for 1.1.36: the mcp command manages servers."
 contributions:
   - contributor:
       name: harness-reference research
@@ -36,5 +36,5 @@ scope:
   model: null
 status: current
 open:
-  - Whether OPENCODE_CONFIG_CONTENT can exclude the user MCP servers was not checked.
+  - Whether the inline config can exclude the user MCP servers was not checked.
 ---

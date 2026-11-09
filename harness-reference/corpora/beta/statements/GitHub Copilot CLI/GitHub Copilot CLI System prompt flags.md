@@ -5,8 +5,8 @@ proposition:
   object:
     supported: false
     env:
-      COPILOT_CUSTOM_INSTRUCTIONS_DIRS: extra directories of custom instructions
-    note: no system prompt flag; custom instructions are loaded from files and --no-custom-instructions turns them off
+      COPILOT_CUSTOM_INSTRUCTIONS_DIRS: comma-separated list of additional directories for custom instructions
+    note: --no-custom-instructions disables loading custom instructions from AGENTS.md and related files; no system prompt flag was found in the command reference
 direction: supports
 strength: moderate
 hasEvidenceLines:

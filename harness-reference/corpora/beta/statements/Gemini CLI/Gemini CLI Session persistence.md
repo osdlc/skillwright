@@ -5,14 +5,14 @@ proposition:
   object:
     supported: true
     persists_by_default: true
-    config_key: general.sessionRetention
     store: ~/.gemini/tmp/<project_hash>/chats/
-    note: old sessions are cleaned up after 30 days by default
+    note: the default policy is to retain sessions for 30 days
 direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Session recording docs](../../study-results/Gemini%20CLI/2026-11-09%20Session%20recording%20docs.md)"
+      - "[2026-11-09 Session location docs](../../study-results/Gemini%20CLI/2026-11-09%20Session%20location%20docs.md)"
       - "[2026-11-09 Session retention docs](../../study-results/Gemini%20CLI/2026-11-09%20Session%20retention%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

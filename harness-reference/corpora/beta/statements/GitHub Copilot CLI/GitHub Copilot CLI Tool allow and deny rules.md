@@ -5,11 +5,10 @@ proposition:
   object:
     supported: true
     allow_argv:
-      - --allow-tool={rules}
+      - --allow-tool=TOOL
     deny_argv:
-      - --deny-tool={rules}
-    syntax: Kind(argument), such as shell(git push), write, MyMCP(create_issue)
-    note: several tools as a quoted comma-separated list
+      - --deny-tool=TOOL
+    syntax: Kind(argument)
 direction: supports
 strength: moderate
 hasEvidenceLines:

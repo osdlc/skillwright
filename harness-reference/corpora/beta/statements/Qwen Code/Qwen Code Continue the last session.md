@@ -7,7 +7,6 @@ proposition:
     argv:
       - --continue
     chosen_by: most recent session for the current project
-    accepts_prompt: true
 direction: supports
 strength: strong
 hasEvidenceLines:

@@ -7,7 +7,7 @@ proposition:
     format: JSON
     published_schema: true
 direction: supports
-strength: moderate
+strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 OpenCode Main config file](../../study-results/OpenCode/2026-08-08%20OpenCode%20Main%20config%20file.md)"

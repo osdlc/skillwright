@@ -10,12 +10,6 @@ proposition:
         argv:
           - --approval-mode
           - plan
-      - name: default
-        intent: edits
-        argv:
-          - --approval-mode
-          - default
-        notes: prompts for approval; headless that stalls or declines
       - name: auto_edit
         intent: edits
         argv:
@@ -26,7 +20,7 @@ proposition:
         argv:
           - --approval-mode
           - yolo
-    default: default
+    note: default prompts for approval (--approval-mode default)
 direction: supports
 strength: strong
 hasEvidenceLines:

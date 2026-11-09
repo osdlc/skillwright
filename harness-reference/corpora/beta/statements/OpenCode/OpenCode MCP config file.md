@@ -7,7 +7,7 @@ proposition:
     key: mcp
     format: JSON
 direction: supports
-strength: moderate
+strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 OpenCode MCP config file](../../study-results/OpenCode/2026-08-08%20OpenCode%20MCP%20config%20file.md)"

@@ -10,26 +10,18 @@ proposition:
           - bash
           - -c
           - curl -fsSL https://gh.io/copilot-install | bash
-        platforms:
-          - macos
-          - linux
       - kind: brew
         argv:
           - brew
           - install
           - copilot-cli
         package: copilot-cli
-        platforms:
-          - macos
-          - linux
       - kind: other
         argv:
           - winget
           - install
           - GitHub.Copilot
         package: GitHub.Copilot
-        platforms:
-          - windows
         note: WinGet
       - kind: npm
         argv:
@@ -51,9 +43,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: README installation section.
   - hasEvidenceItems:
-      - "[2026-11-09 GitHub Copilot CLI Version command docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Version%20command%20docs.md)"
-    directionOfEvidenceProvided: neutral
-    description: copilot version checks for updates.
+      - "[2026-11-09 GitHub Copilot CLI Update command docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Update%20command%20docs.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: "command reference: copilot update."
 contributions:
   - contributor:
       name: harness-reference research

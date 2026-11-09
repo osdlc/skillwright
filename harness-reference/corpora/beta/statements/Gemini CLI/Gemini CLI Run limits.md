@@ -6,7 +6,6 @@ proposition:
     supported: partial
     max_turns:
       config_key: model.maxSessionTurns
-    note: turn cap is a setting with no CLI flag in 0.65.0 help; no budget or timeout setting found
 direction: supports
 strength: moderate
 hasEvidenceLines:

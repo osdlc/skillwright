@@ -6,12 +6,13 @@ proposition:
     supported: true
     flags: --resume[=VALUE] (session id, id prefix or name)
     latest: --continue
-    picker: bare --resume
+    picker: choosing from a list
 direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 GitHub Copilot CLI Resume option docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Resume%20option%20docs.md)"
+      - "[2026-11-09 GitHub Copilot CLI Continue option docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Continue%20option%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: command reference.

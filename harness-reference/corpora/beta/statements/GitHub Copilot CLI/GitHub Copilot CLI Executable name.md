@@ -7,7 +7,7 @@ proposition:
     name: copilot
     version_argv:
       - version
-    note: a version subcommand, not a flag
+    note: version is a subcommand
 direction: supports
 strength: moderate
 hasEvidenceLines:

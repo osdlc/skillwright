@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: prompt option
 excerpt:
-  exact: "description: 'Prompt. Appended to input on stdin (if any).',"
-  prefix: ": 'p', type: 'string' as const, "
-  suffix: " }, 'prompt-interactive': { alia"
+  exact: "prompt: { alias: 'p', type: 'string' as const, description: 'Prompt. Appended to input on stdin (if any).', },"
+  prefix: "or comma-separated (max 3)', }, "
+  suffix: " 'prompt-interactive': { alias: "
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Prompt. Appended to input on stdin (if any).',
+> prompt: { alias: 'p', type: 'string' as const, description: 'Prompt. Appended to input on stdin (if any).', },

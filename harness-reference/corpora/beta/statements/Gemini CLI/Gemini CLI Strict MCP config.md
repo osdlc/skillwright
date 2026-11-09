@@ -7,9 +7,9 @@ proposition:
     strict_argv:
       - --allowed-mcp-server-names
       - "{name}"
-    note: filters servers by name; no flag passes an MCP config file for one run in 0.65.0 help
+    note: the only MCP flag in the 0.65.0 help names allowed servers; no flag passes an MCP config file
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Allowed MCP server names help](../../study-results/Gemini%20CLI/2026-11-09%20Allowed%20MCP%20server%20names%20help.md)"

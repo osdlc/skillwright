@@ -7,15 +7,24 @@ proposition:
     argv:
       - --model
       - "{provider/model}#{level}"
-    note: the v2.2.6 run command defines no --variant flag; the model string carries the variant. The v2.2.6 CLI docs table still lists --variant.
+    note: the run command source defines no --variant flag at v2.0.0 or v2.2.6; the variant goes in the model string
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
+  - hasEvidenceItems:
+      - "[2026-11-09 OpenCode Model flag source v2.0.0](../../study-results/OpenCode/2026-11-09%20OpenCode%20Model%20flag%20source%20v2.0.0.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source at v2.0.0.
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode Model flag source v2.2.6](../../study-results/OpenCode/2026-11-09%20OpenCode%20Model%20flag%20source%20v2.2.6.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source at v2.2.6.
+  - hasEvidenceItems:
+      - "[2026-11-09 OpenCode CLI docs variant row](../../study-results/OpenCode/2026-11-09%20OpenCode%20CLI%20docs%20variant%20row.md)"
+    directionOfEvidenceProvided: neutral
+    description: the v2.2.6 docs table still lists --variant.
 contributions:
   - contributor:
       name: harness-reference research
@@ -31,5 +40,5 @@ scope:
   model: null
 status: current
 open:
-  - "Whether --variant is still accepted by the 2.x run command: the docs table lists it, the command definition does not."
+  - The v2.2.6 CLI docs table still lists --variant, which the command definition does not define.
 ---

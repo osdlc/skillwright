@@ -7,8 +7,7 @@ proposition:
     argv:
       - --resume
       - latest
-    chosen_by: most recent session of the current project
-    accepts_prompt: true
+    chosen_by: the most recent session
 direction: supports
 strength: strong
 hasEvidenceLines:

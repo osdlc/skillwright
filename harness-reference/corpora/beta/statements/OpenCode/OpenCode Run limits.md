@@ -4,7 +4,7 @@ proposition:
   predicate: cli/limits
   object:
     supported: false
-    note: the run help lists no turn, budget or time flag
+    note: the 1.1.36 run help lists no turn, budget or time flag
 direction: supports
 strength: weak
 hasEvidenceLines:

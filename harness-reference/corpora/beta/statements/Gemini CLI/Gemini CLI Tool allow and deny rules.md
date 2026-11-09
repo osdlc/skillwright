@@ -7,10 +7,9 @@ proposition:
     allow_argv:
       - --allowed-tools
       - "{rules}"
-    config_key: policy files (--policy); settings tools.allowed
-    note: --allowed-tools is deprecated in favour of the policy engine; deny is a policy rule decision, tools.exclude is deprecated
+    note: --allowed-tools is deprecated in favour of the policy engine, whose files load with --policy; deny is a policy rule decision and tools.exclude is deprecated
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Allowed tools help](../../study-results/Gemini%20CLI/2026-11-09%20Allowed%20tools%20help.md)"

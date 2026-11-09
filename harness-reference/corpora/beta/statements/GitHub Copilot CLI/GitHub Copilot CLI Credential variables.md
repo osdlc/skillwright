@@ -7,24 +7,25 @@ proposition:
     login_command: copilot login
     vars:
       - name: COPILOT_GITHUB_TOKEN
-        kind: oauth-token
+        kind: other
         provider: GitHub
         precedence: first
       - name: GH_TOKEN
-        kind: oauth-token
+        kind: other
         provider: GitHub
         precedence: second
       - name: GITHUB_TOKEN
-        kind: oauth-token
+        kind: other
         provider: GitHub
         precedence: third
-    note: classic ghp_ tokens are not supported
+    note: classic personal access tokens (ghp_) are not supported
 direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 GitHub Copilot CLI Token env docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Token%20env%20docs.md)"
       - "[2026-11-09 GitHub Copilot CLI Login command docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Login%20command%20docs.md)"
+      - "[2026-11-09 GitHub Copilot CLI Classic token docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Classic%20token%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: command reference.

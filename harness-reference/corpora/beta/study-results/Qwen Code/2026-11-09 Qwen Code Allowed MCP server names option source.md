@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: allowed-mcp-server-names option
 excerpt:
-  exact: "description: 'Allowed MCP server names',"
-  prefix: "mes': { type: 'array' as const, "
-  suffix: " }, 'disable-mcp-server': { type"
+  exact: "'allowed-mcp-server-names': { type: 'array' as const, description: 'Allowed MCP server names', },"
+  prefix: " SDK, CI, desktop, daemon)', }, "
+  suffix: " 'disable-mcp-server': { type: '"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Allowed MCP server names',
+> 'allowed-mcp-server-names': { type: 'array' as const, description: 'Allowed MCP server names', },

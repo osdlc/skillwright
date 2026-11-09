@@ -10,12 +10,6 @@ proposition:
         argv:
           - --approval-mode
           - plan
-      - name: default
-        intent: edits
-        argv:
-          - --approval-mode
-          - default
-        notes: requires approval for edits and shell commands
       - name: auto-edit
         intent: edits
         argv:
@@ -32,19 +26,19 @@ proposition:
         argv:
           - --approval-mode
           - yolo
-        notes: --yolo, -y is the same
-    default: default
+    note: default requires approval for file edits or shell commands
 direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 Qwen Code Approval modes source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20modes%20source.md)"
+      - "[2026-11-09 Qwen Code Approval mode option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20option%20source.md)"
+      - "[2026-11-09 Qwen Code Approval mode auto source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20auto%20source.md)"
       - "[2026-11-09 Qwen Code Approval mode plan source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20plan%20source.md)"
       - "[2026-11-09 Qwen Code Approval mode auto-edit source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20auto-edit%20source.md)"
       - "[2026-11-09 Qwen Code Approval mode yolo source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20yolo%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: approval mode descriptions in the option source at v0.27.0.
+    description: approval mode option and descriptions in the source at v0.27.0.
 contributions:
   - contributor:
       name: harness-reference research

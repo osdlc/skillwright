@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: resume option
 excerpt:
-  exact: "description: 'Resume a specific session by its ID. Use without an ID to show session picker.',"
-  prefix: ": 'r', type: 'string' as const, "
-  suffix: " }, 'session-id': { type: 'strin"
+  exact: "resume: { alias: 'r', type: 'string' as const, description: 'Resume a specific session by its ID. Use without an ID to show session picker.', },"
+  prefix: "t project.', default: false, }, "
+  suffix: " 'session-id': { type: 'string' "
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Resume a specific session by its ID. Use without an ID to show session picker.',
+> resume: { alias: 'r', type: 'string' as const, description: 'Resume a specific session by its ID. Use without an ID to show session picker.', },

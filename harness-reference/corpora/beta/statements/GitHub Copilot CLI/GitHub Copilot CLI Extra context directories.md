@@ -8,7 +8,7 @@ proposition:
       - --add-dir
       - "{dir}"
     repeatable: true
-    trusted: loads skills and agents from the directory as trusted configuration
+    trusted: loads skills and agents from the directory as trusted configurations
 direction: supports
 strength: moderate
 hasEvidenceLines:

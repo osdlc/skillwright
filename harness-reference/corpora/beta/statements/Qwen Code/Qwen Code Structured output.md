@@ -4,13 +4,14 @@ proposition:
   predicate: cli/structured-output
   object:
     output: --output-format text|json|stream-json
-    schema: --json-schema <literal or @file> (headless only)
+    schema: --json-schema <JSON literal or @file> (headless mode only)
 direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code Output format option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Output%20format%20option%20source.md)"
       - "[2026-11-09 Qwen Code JSON schema option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20JSON%20schema%20option%20source.md)"
+      - "[2026-11-09 Qwen Code JSON schema headless source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20JSON%20schema%20headless%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: option source at v0.27.0.

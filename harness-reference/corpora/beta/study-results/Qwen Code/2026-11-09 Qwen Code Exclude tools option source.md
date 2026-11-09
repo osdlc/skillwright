@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: exclude-tools option
 excerpt:
-  exact: "description: 'Tools to exclude',"
-  prefix: "ols': { type: 'array' as const, "
-  suffix: " }, 'disabled-slash-commands': {"
+  exact: "'exclude-tools': { type: 'array' as const, description: 'Tools to exclude', },"
+  prefix: "cription: 'Core tool paths', }, "
+  suffix: " 'disabled-slash-commands': { ty"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Tools to exclude',
+> 'exclude-tools': { type: 'array' as const, description: 'Tools to exclude', },

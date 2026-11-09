@@ -26,7 +26,7 @@ harness: "[OpenCode](../../harnesses/OpenCode.md)"
 subject: "[Running-inside variables](../../subjects/cli/Running-inside%20variables.md)"
 scope:
   since: null
-  until: 2.0.0
+  until: null
   platform: []
   model: null
 status: current

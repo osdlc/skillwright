@@ -4,7 +4,6 @@ proposition:
   predicate: cli/headless
   object:
     command: opencode run [message..]
-    note: positional message; --attach and --port reach a running server
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -13,11 +12,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text for 1.1.36.
-  - hasEvidenceItems:
-      - "[2026-11-09 OpenCode Run command source v2.2.6](../../study-results/OpenCode/2026-11-09%20OpenCode%20Run%20command%20source%20v2.2.6.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: run command still defined at v2.2.6.
 contributions:
   - contributor:
       name: harness-reference research

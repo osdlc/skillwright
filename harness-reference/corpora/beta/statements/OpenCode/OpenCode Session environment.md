@@ -25,8 +25,10 @@ harness: "[OpenCode](../../harnesses/OpenCode.md)"
 subject: "[Session environment](../../subjects/cli/Session%20environment.md)"
 scope:
   since: null
-  until: 2.0.0
+  until: null
   platform: []
   model: null
 status: current
+open:
+  - Whether 2.x still sets these was not found in the v2.2.6 source.
 ---

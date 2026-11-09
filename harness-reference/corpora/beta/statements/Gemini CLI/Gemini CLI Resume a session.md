@@ -4,7 +4,7 @@ proposition:
   predicate: cli/resume
   object:
     supported: true
-    flags: -r, --resume <latest|index|session-id>
+    flags: -r, --resume <latest|index>
     latest: --resume latest
 direction: supports
 strength: strong

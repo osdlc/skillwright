@@ -4,8 +4,8 @@ proposition:
   predicate: cli/effort
   object:
     supported: false
-    config_key: modelConfigs thinkingBudget / thinkingLevel in settings.json
-    note: no CLI flag for effort in 0.65.0 help
+    config_key: thinkingBudget
+    note: no effort flag appears in the 0.65.0 help; a thinkingBudget is a settings value
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -17,7 +17,7 @@ hasEvidenceLines:
       - "[2026-11-09 Thinking config docs](../../study-results/Gemini%20CLI/2026-11-09%20Thinking%20config%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: thinking budget is a settings value (modelConfigs), not a flag.
+    description: a thinkingBudget is set in settings, not by flag.
 contributions:
   - contributor:
       name: harness-reference research

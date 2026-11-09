@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: include-directories option
 excerpt:
-  exact: "description: 'Additional directories to include in the workspace (comma-separated or multiple --include-directories)',"
-  prefix: "d-dir', type: 'array' as const, "
-  suffix: " }, 'openai-logging': { type: 'b"
+  exact: "'include-directories': { alias: 'add-dir', type: 'array' as const, description: 'Additional directories to include in the workspace (comma-separated or multiple --include-directories)', },"
+  prefix: "lable extensions and exit.', }, "
+  suffix: " 'openai-logging': { type: 'bool"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Additional directories to include in the workspace (comma-separated or multiple --include-directories)',
+> 'include-directories': { alias: 'add-dir', type: 'array' as const, description: 'Additional directories to include in the workspace (comma-separated or multiple --include-directories)', },

@@ -9,13 +9,12 @@ proposition:
         argv:
           - --output-format
           - text
-          - --silent
       - name: json
         argv:
           - --output-format
           - json
     default: text
-    note: json is JSONL; --silent (-s) suppresses progress so only the final result prints
+    note: json is JSONL; --silent (-s) suppresses progress output and still emits the final result
 direction: supports
 strength: moderate
 hasEvidenceLines:

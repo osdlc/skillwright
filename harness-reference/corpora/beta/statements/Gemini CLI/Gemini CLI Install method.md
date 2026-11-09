@@ -18,7 +18,6 @@ proposition:
           - install
           - gemini-cli
         package: gemini-cli
-    uninstall: npm uninstall or brew uninstall, matching the install method
 direction: supports
 strength: moderate
 hasEvidenceLines:

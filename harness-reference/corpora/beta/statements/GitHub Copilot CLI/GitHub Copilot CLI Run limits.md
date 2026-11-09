@@ -8,7 +8,7 @@ proposition:
       argv:
         - --max-ai-credits
         - "{credits}"
-    note: a soft cap in AI credits per response, not USD; --max-autopilot-continues caps automatic continuations. No turn or time flag found.
+    note: a soft cap in AI credits for each response, not USD
 direction: supports
 strength: moderate
 hasEvidenceLines:

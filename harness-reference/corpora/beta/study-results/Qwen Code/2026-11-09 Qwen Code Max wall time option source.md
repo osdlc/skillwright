@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: max-wall-time option
 excerpt:
-  exact: Aborts the run with exit code 55 when exceeded.
-  prefix: "ejected as typos; max ~24 days. "
-  suffix: "', }, 'max-tool-calls': { type: "
+  exact: "'max-wall-time': { type: 'string' as const, description: 'Run-level wall-clock budget for headless / unattended runs."
+  prefix: "turns (must be an integer)', }, "
+  suffix: " Accepts seconds (e.g. `90`), or"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> Aborts the run with exit code 55 when exceeded.
+> 'max-wall-time': { type: 'string' as const, description: 'Run-level wall-clock budget for headless / unattended runs.

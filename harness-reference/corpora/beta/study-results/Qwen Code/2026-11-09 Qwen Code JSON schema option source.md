@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: json-schema option
 excerpt:
-  exact: JSON Schema that the model's final output must conform to
-  prefix: "string' as const, description: \""
-  suffix: " \" + '(headless mode only). Acce"
+  exact: "'json-schema': { type: 'string' as const, description: \"JSON Schema that the model's final output must conform to \""
+  prefix: "named pipe), or /dev/fd/N.', }, "
+  suffix: " + '(headless mode only). Accept"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> JSON Schema that the model's final output must conform to
+> 'json-schema': { type: 'string' as const, description: "JSON Schema that the model's final output must conform to "

@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: model option
 excerpt:
-  exact: "description: 'Model',"
-  prefix: ": 'm', type: 'string' as const, "
-  suffix: " }, advisor: { type: 'string' as"
+  exact: "model: { alias: 'm', type: 'string' as const, description: 'Model', },"
+  prefix: "nst DEFAULT_COMMAND_OPTIONS = { "
+  suffix: " advisor: { type: 'string' as co"
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T00:00:00Z
 ---
 
-> description: 'Model',
+> model: { alias: 'm', type: 'string' as const, description: 'Model', },

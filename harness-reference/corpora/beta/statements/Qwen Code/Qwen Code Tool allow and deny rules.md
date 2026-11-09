@@ -10,12 +10,13 @@ proposition:
     deny_argv:
       - --exclude-tools
       - "{rules}"
-    note: comma-separated or repeated; --allowed-tools bypasses confirmation, --exclude-tools removes the tools; --core-tools also exists
+    note: allowed tools bypass confirmation; excluded tools are excluded
 direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code Allowed tools option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Allowed%20tools%20option%20source.md)"
+      - "[2026-11-09 Qwen Code Allowed tools description source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Allowed%20tools%20description%20source.md)"
       - "[2026-11-09 Qwen Code Exclude tools option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Exclude%20tools%20option%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
