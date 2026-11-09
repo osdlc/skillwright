@@ -5,9 +5,9 @@ proposition:
   object:
     supported: true
     default: workspace-write
-    note: Headless takes --permission-mode <preset> to select a configured permission preset, and --approval-policy ask|never. The default configured preset table ships workspace-write (workspace-write + ask) and danger-full-access (danger-full-access + never). DSH_PERMISSION_MODE changes the process fallback, and its documented use takes a preset name. Presets are not mapped to read-only, edits, full-auto or bypass intents.
+    note: Headless takes --permission-mode <preset> to select a configured permission preset, and --approval-policy ask|never. The default configured preset table ships workspace-write (workspace-write + ask) and danger-full-access (danger-full-access + never). DSH_PERMISSION_MODE changes the process fallback, and its documented use takes a preset name.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 headless help permission-mode](../../study-results/DeepSeek%20Harness/2026-11-09%20headless%20help%20permission-mode.md)"

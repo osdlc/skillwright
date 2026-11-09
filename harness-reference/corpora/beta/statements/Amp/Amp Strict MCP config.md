@@ -35,11 +35,6 @@ contributions:
       agentType: software
     activityType: verified
     date: 2026-11-09T12:00:00Z
-  - contributor:
-      name: harness-reference research
-      agentType: software
-    activityType: verified
-    date: 2026-11-09T12:00:00Z
 harness: "[Amp](../../harnesses/Amp.md)"
 subject: "[Strict MCP config](../../subjects/mcp/Strict%20MCP%20config.md)"
 scope:
