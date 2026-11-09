@@ -75,13 +75,15 @@ release = false
 # `## [Unreleased]`, which release-plz moves below the heading. With no notes
 # the section is empty, so write them in the PR that makes the change. The
 # default body also listed every commit, grouped by type, above those notes,
-# and that list was deleted by hand on each release PR. The one commit entry
-# kept is release-plz's own "update Cargo.toml/Cargo.lock dependencies", the
-# only reason given for a crate bumped because a dependency changed.
+# and that list was deleted by hand on each release PR. The commit entries
+# kept are the ones release-plz writes itself for a crate bumped because a
+# dependency changed ("update Cargo.toml/Cargo.lock dependencies", and
+# "updated the following local packages" for a workspace crate such as
+# tradecraft-core); nobody writes notes for those bumps.
 body = """
 {%- set_global deps = [] -%}
 {%- for commit in commits -%}
-{%- if commit.message is containing("update Cargo.") -%}
+{%- if commit.message is containing("update Cargo.") or commit.message is containing("updated the following local packages") -%}
 {%- set_global deps = deps | concat(with=commit.message) -%}
 {%- endif -%}
 {%- endfor %}
@@ -95,11 +97,12 @@ body = """
 """
 # The commit groups. The body above does not print them, but they still
 # matter: a release whose commits are all skipped still bumps its version,
-# but gets no heading, and its notes stay under Unreleased. These are release-plz's defaults (Keep a
-# Changelog groups from conventional commit types), plus skips for commits
-# that say nothing to a user of the crate: merges, release-plz's own release
-# commits, the old wasm rebuild commits, CI changes and release-process docs.
-# Setting `commit_parsers` replaces the defaults, so they are repeated here.
+# but gets no heading, and its notes stay under Unreleased. These are
+# release-plz's defaults (Keep a Changelog groups from conventional commit
+# types), plus skips for commits that say nothing to a user of the crate:
+# merges, release-plz's own release commits, the old wasm rebuild commits, CI
+# changes and release-process docs. Setting `commit_parsers` replaces the
+# defaults, so they are repeated here.
 commit_parsers = [
   { message = "^Merge ", skip = true },
   { message = "^chore(\\(release\\))?: (release|rebuild the committed wasm)", skip = true },
