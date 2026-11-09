@@ -151,10 +151,13 @@ describe('lint', () => {
     })
 
     test('refuses a strength with no supporting evidence line', () => {
-      edit(
-        SESSION,
-        'directionOfEvidenceProvided: supports',
-        'directionOfEvidenceProvided: disputes',
+      const file = join(dir, SESSION)
+      writeFileSync(
+        file,
+        readFileSync(file, 'utf8').replaceAll(
+          'directionOfEvidenceProvided: supports',
+          'directionOfEvidenceProvided: disputes',
+        ),
       )
       assert.ok(
         strength(problems()).includes(
