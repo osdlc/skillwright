@@ -10,7 +10,8 @@ strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode Run file flag help](../../study-results/OpenCode/2026-11-09%20OpenCode%20Run%20file%20flag%20help.md)"
-    directionOfEvidenceProvided: neutral
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: weak
     description: help-text for 1.1.36 lists no limit flags.
 contributions:
   - contributor:
