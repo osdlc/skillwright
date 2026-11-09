@@ -89,6 +89,47 @@ describe('lookup scope', () => {
   })
 })
 
+describe('lookup omitted dimensions', () => {
+  test('a value broad on an omitted dimension beats a narrower one', () => {
+    const kn = k([
+      val('opus', { model: 'opus' }),
+      val('mac opus', { platform: ['macos'], model: 'opus' }),
+    ])
+    assert.equal(pick(kn), 'opus')
+    assert.equal(pick(kn, { model: 'opus' }), 'opus')
+    assert.equal(pick(kn, { model: 'opus', platform: 'macos' }), 'mac opus')
+  })
+  test('mixed partial scopes: omitted dimensions are ranked apart from supplied ones', () => {
+    const kn = k([
+      val('mac', { platform: ['macos'] }),
+      val('opus', { model: 'opus' }),
+      val('mac opus', { platform: ['macos'], model: 'opus' }),
+    ])
+    // Platform asked, model not: the platform-only value is broad on model.
+    assert.equal(pick(kn, { platform: 'macos' }), 'mac')
+    // Model asked, platform not: the model-only value is broad on platform.
+    assert.equal(pick(kn, { model: 'opus' }), 'opus')
+    // Neither asked: one narrow on a single dimension beats one narrow on two.
+    const both = k([
+      val('mac', { platform: ['macos'] }),
+      val('mac opus', { platform: ['macos'], model: 'opus' }),
+    ])
+    assert.equal(pick(both), 'mac')
+  })
+})
+
+describe('lookup version validation', () => {
+  test('a malformed version throws instead of matching everything', () => {
+    const kn = k([val('a', { until: '2.0.0' })])
+    assert.throws(() => lookup(kn, 'h', 'c/s', { version: 'garbage' }), /not a semver version/)
+    assert.throws(() => lookup(kn, 'h', 'c/s', { version: '1.0.0-01' }), /not a semver version/)
+    assert.throws(
+      () => lookup(k([val('a')], 'date'), 'h', 'c/s', { version: '2026-02-30' }),
+      /not a date version/,
+    )
+  })
+})
+
 describe('lookup strength and ambiguity', () => {
   test('weak and disputed values need accept', () => {
     const weak = k([val('w', {}, { strength: 'weak' })])

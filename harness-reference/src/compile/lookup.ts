@@ -1,7 +1,7 @@
 /**
  * `lookup`: the value a harness has for a subject, from a compiled `harness-knowledge.json`.
  */
-import { inRange } from '../beta/versions.ts'
+import { inRange, validVersion } from '../beta/versions.ts'
 import type { Knowledge, KnowledgeValue, Strength } from './knowledge.ts'
 
 export interface LookupQuery {
@@ -42,10 +42,13 @@ const specificity = (v: KnowledgeValue): number =>
  * - Version: `since` is inclusive and `until` exclusive. Semver compares by precedence, dates as
  *   strings. With no version, only values with `until: null` count. A value with no version limit
  *   fits every version.
+ * - A version query is checked against the harness's versioning and throws when malformed. For a
+ *   harness with `unknown` versioning the version is ignored.
  * - Platform and model: an empty platform list or a null model fits any query. A listed platform
- *   or a model fits only when the query names it. When the query names none, such a value is
- *   used only if nothing broader remains.
- * - The narrowest scope wins. Two equally narrow candidates throw {@link AmbiguousValue}; a
+ *   or a model fits only when the query names it. A value that is narrow on a dimension the query
+ *   leaves out loses to one that is broad on it; candidates are ranked by how many omitted
+ *   dimensions they narrow first, then by how narrow the supplied dimensions are.
+ * - Among those, the narrowest scope wins. Two equally narrow candidates throw {@link AmbiguousValue}; a
  *   disputed one loses to an undisputed one.
  * - Weak and disputed values are skipped unless `query.accept` allows them.
  */
@@ -56,6 +59,12 @@ export function lookup(
   query: LookupQuery = {},
 ): Found | undefined {
   const versioning = knowledge.harnesses[harness]?.versioning ?? 'unknown'
+  if (
+    query.version !== undefined &&
+    versioning !== 'unknown' &&
+    !validVersion(query.version, versioning)
+  )
+    throw new Error(`${harness}: "${query.version}" is not a ${versioning} version`)
   let candidates = knowledge.values.filter((v) => {
     if (v.harness !== harness || v.subject !== subject) return false
     if (v.strength === 'weak' && query.accept?.weak !== true) return false
@@ -65,19 +74,18 @@ export function lookup(
     return inRange(query.version, v.scope, versioning)
   })
 
-  const fits = (v: KnowledgeValue, strict: boolean): boolean => {
-    const platformOk =
-      v.scope.platform.length === 0 ||
-      (query.platform === undefined ? !strict : v.scope.platform.includes(query.platform))
-    const modelOk =
-      v.scope.model === null ||
-      (query.model === undefined ? !strict : v.scope.model === query.model)
-    return platformOk && modelOk
-  }
-  let fitting = candidates.filter((v) => fits(v, true))
-  if (fitting.length === 0) fitting = candidates.filter((v) => fits(v, false))
-  candidates = fitting
+  const fits = (v: KnowledgeValue): boolean =>
+    (v.scope.platform.length === 0 ||
+      query.platform === undefined ||
+      v.scope.platform.includes(query.platform)) &&
+    (v.scope.model === null || query.model === undefined || v.scope.model === query.model)
+  const narrowOnOmitted = (v: KnowledgeValue): number =>
+    (query.platform === undefined && v.scope.platform.length > 0 ? 1 : 0) +
+    (query.model === undefined && v.scope.model !== null ? 1 : 0)
+  candidates = candidates.filter(fits)
   if (candidates.length === 0) return undefined
+  const fewest = Math.min(...candidates.map(narrowOnOmitted))
+  candidates = candidates.filter((v) => narrowOnOmitted(v) === fewest)
 
   const best = Math.max(...candidates.map(specificity))
   let top = candidates.filter((v) => specificity(v) === best)
