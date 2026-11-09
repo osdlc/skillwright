@@ -38,7 +38,12 @@ flowchart TD
 
 1. **Release PR.** On every push to main, `release-pr` opens or updates a
    pull request that bumps each changed crate's version and changelog. The
-   `osdlc-release` GitHub App opens it, so its checks run.
+   `osdlc-release` GitHub App opens it, so its checks run. Each crate's new
+   changelog section is the notes from its `## [Unreleased]`; release-plz
+   adds no commit list (`[changelog] body` in `release-plz.toml`). If a
+   section is empty, merge a PR that adds the notes under Unreleased, and the
+   release PR picks them up. Do not edit the release PR itself: release-plz
+   closes a release PR that has commits of yours and opens a new one.
 2. **Merge.** The owner merges the release PR once its checks pass. Approve
    its release (step 4) before merging anything else. release-plz does not
    raise a version that is already ahead of crates.io, so changes merged first

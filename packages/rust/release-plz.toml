@@ -21,6 +21,37 @@ release_always = true
 # is not checked.
 semver_check = true
 changelog_update = true
+# The release PR's description. Tera 2; the variables are listed at
+# https://release-plz.dev/docs/config#the-pr_body-field. release-plz unsets
+# `title` and `changelog` when the description would pass GitHub's size limit,
+# hence the check before using them.
+pr_body = """
+## New release
+
+| Crate | Version | Rust API (cargo-semver-checks) |
+|---|---|---|
+{%- for release in releases %}
+| `{{ release.package }}` | {% if release.previous_version and release.previous_version != release.next_version %}{{ release.previous_version }} → {% endif %}{{ release.next_version }} | {% if release.semver_check == "incompatible" %}⚠ breaking{% elif release.semver_check == "compatible" %}compatible{% else %}not checked{% endif %} |
+{%- endfor %}
+
+cargo-semver-checks does not see behaviour changes. The **Breaking** section of each crate's CHANGELOG lists every breaking change, in the API and in behaviour.
+{% for release in releases %}{% if release.title and release.changelog %}
+## `{{ release.package }}` {{ release.title }}
+
+{{ release.changelog }}
+{% endif %}{% endfor %}
+{%- for release in releases %}{% if release.breaking_changes %}
+<details><summary>cargo-semver-checks report for <code>{{ release.package }}</code></summary>
+
+````text
+{{ release.breaking_changes }}
+````
+
+</details>
+{% endif %}{% endfor %}
+---
+Opened by [release-plz](https://github.com/release-plz/release-plz/). The template is `pr_body` in `packages/rust/release-plz.toml`.
+"""
 
 # The wasm-bindgen wrapper over tradecraft-core, built for the npm package
 # @osdlc/tradecraft-wasm. Never released as a crate. `publish = false` must
@@ -39,12 +70,39 @@ name = "tradecraft-typegen"
 publish = false
 release = false
 
-# The changelog's commit groups. These are release-plz's defaults (Keep a
-# Changelog groups from conventional commit types), plus skips for commits
-# that say nothing to a user of the crate: merges, release-plz's own release
-# commits, the old wasm rebuild commits, CI changes and release-process docs. Setting
-# `commit_parsers` replaces the defaults, so they are repeated here.
 [changelog]
+# Each release's section is its heading, then the hand-written notes from
+# `## [Unreleased]`, which release-plz moves below the heading. With no notes
+# the section is empty, so write them in the PR that makes the change. The
+# default body also listed every commit, grouped by type, above those notes,
+# and that list was deleted by hand on each release PR. The commit entries
+# kept are the ones release-plz writes itself for a crate bumped because a
+# dependency changed ("update Cargo.toml/Cargo.lock dependencies", and
+# "updated the following local packages" for a workspace crate such as
+# tradecraft-core); nobody writes notes for those bumps.
+body = """
+{%- set_global deps = [] -%}
+{%- for commit in commits -%}
+{%- if commit.message is containing("update Cargo.") or commit.message is containing("updated the following local packages") -%}
+{%- set_global deps = deps | concat(with=commit.message) -%}
+{%- endif -%}
+{%- endfor %}
+## [{{ version | trim_start_matches(pat="v") }}]{%- if release_link -%}({{ release_link }}){% endif %} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% if deps %}
+### Dependencies
+
+{% for dep in deps -%}
+- {{ dep | upper_first }}
+{% endfor %}{% endif %}
+"""
+# The commit groups. The body above does not print them, but they still
+# matter: a release whose commits are all skipped still bumps its version,
+# but gets no heading, and its notes stay under Unreleased. These are
+# release-plz's defaults (Keep a Changelog groups from conventional commit
+# types), plus skips for commits that say nothing to a user of the crate:
+# merges, release-plz's own release commits, the old wasm rebuild commits, CI
+# changes and release-process docs. Setting `commit_parsers` replaces the
+# defaults, so they are repeated here.
 commit_parsers = [
   { message = "^Merge ", skip = true },
   { message = "^chore(\\(release\\))?: (release|rebuild the committed wasm)", skip = true },
