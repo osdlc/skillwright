@@ -141,6 +141,15 @@ observed_by: "person: test"
     assert.equal(result.reference, 'references/Anthropic/Claude Code overview.md')
   })
 
+  test('reuses the reference record when the URL differs by a fragment or trailing slash', async () => {
+    const result = await capture(
+      opts({ reference: 'https://code.claude.com/docs/en/overview/#get-started' }),
+      deps(),
+    )
+    assert.equal(result.createdReference, false)
+    assert.equal(result.reference, 'references/Anthropic/Claude Code overview.md')
+  })
+
   test('refuses an excerpt the page does not hold, and writes nothing', async () => {
     await assert.rejects(
       capture(opts({ reference: 'https://example.com/x', excerpt: 'hidden' }), deps()),

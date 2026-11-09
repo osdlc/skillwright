@@ -177,6 +177,23 @@ function fetchTarget(url: string): { url: string; accept: string } {
   return other
 }
 
+/**
+ * The form of `url` used to find and store a reference: no fragment, no trailing slash, and on
+ * github.com no query, because the same page is reached with all of them.
+ */
+function canonicalUrl(url: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return url
+  }
+  parsed.hash = ''
+  if (parsed.hostname === 'github.com') parsed.search = ''
+  const text = parsed.toString()
+  return text.endsWith('/') && parsed.pathname !== '/' ? text.slice(0, -1) : text
+}
+
 function record(data: Data, body: string): string {
   return `---\n${stringify(data, { lineWidth: 0 })}---\n${body === '' ? '' : `\n${body}\n`}`
 }
@@ -204,7 +221,8 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
   if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(opts.reference)) {
     url = opts.reference
     if (!url.startsWith('https://')) throw new Error(`${url}: a reference URL must use https`)
-    referenceId = [...references].find(([, data]) => data['url'] === url)?.[0]
+    url = canonicalUrl(url)
+    referenceId = [...references].find(([, data]) => canonicalUrl(String(data['url'])) === url)?.[0]
   } else {
     const abs = [resolve(opts.reference), resolve(corpus, opts.reference)].find(existsSync)
     const rel = abs === undefined ? undefined : relative(corpus, abs).split(sep).join('/')
@@ -281,15 +299,22 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
       throw new Error(`the new records do not validate:\n${after.errors.join('\n')}`)
     return { evidence: evidenceFile, reference: referenceFile, createdReference }
   } catch (e) {
+    const cleanupFailures: string[] = []
     for (const rel of written.reverse()) {
-      rmSync(join(corpus, rel))
-      for (
-        let d = dirname(rel);
-        d !== '.' && readdirSync(join(corpus, d)).length === 0;
-        d = dirname(d)
-      )
-        rmdirSync(join(corpus, d))
+      try {
+        rmSync(join(corpus, rel))
+        for (
+          let d = dirname(rel);
+          d !== '.' && readdirSync(join(corpus, d)).length === 0;
+          d = dirname(d)
+        )
+          rmdirSync(join(corpus, d))
+      } catch (cleanup) {
+        cleanupFailures.push(`${rel}: ${cleanup instanceof Error ? cleanup.message : cleanup}`)
+      }
     }
+    if (cleanupFailures.length > 0 && e instanceof Error)
+      e.message += `\nrollback could not remove:\n${cleanupFailures.join('\n')}`
     throw e
   }
 }
