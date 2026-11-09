@@ -1,0 +1,34 @@
+---
+proposition:
+  subject: "[Kiro](../../harnesses/Kiro.md)"
+  predicate: instructions/rules
+  object:
+    supported: true
+    dir: .kiro/steering/*.md
+direction: supports
+strength: weak
+hasEvidenceLines:
+  - hasEvidenceItems:
+      - "[2026-08-08 Kiro Rules and steering files](../../study-results/Kiro/2026-08-08%20Kiro%20Rules%20and%20steering%20files.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: weak
+    description: third-party observed 2026-08-08.
+reportedIn:
+  - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
+contributions:
+  - contributor:
+      name: harness-reference import
+      agentType: software
+    activityType: created
+    date: 2026-08-08T00:00:00Z
+harness: "[Kiro](../../harnesses/Kiro.md)"
+subject: "[Rules and steering files](../../subjects/instructions/Rules%20and%20steering%20files.md)"
+scope:
+  since: null
+  until: null
+  platform: []
+  model: null
+status: current
+---
+
+Imported from `facts/kiro/instructions/rules.md`.
