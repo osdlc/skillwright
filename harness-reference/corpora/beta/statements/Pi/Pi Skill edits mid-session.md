@@ -39,6 +39,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/live-reload@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/live-reload.md`.

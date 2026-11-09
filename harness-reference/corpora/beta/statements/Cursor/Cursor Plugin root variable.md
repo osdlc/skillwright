@@ -51,6 +51,7 @@ scope:
 status: current
 open:
   - Is any plugin root variable substituted in a skill body or in hooks config?
+imported_from: fact:skills/plugin-root-variable@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/plugin-root-variable.md`.

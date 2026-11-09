@@ -41,6 +41,7 @@ scope:
 status: current
 open:
   - Where do marketplace-installed plugin files go on disk (path, versioned cache or not)?
+imported_from: fact:plugins/install-location@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/plugins/install-location.md`.

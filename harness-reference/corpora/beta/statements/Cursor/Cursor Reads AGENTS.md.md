@@ -38,6 +38,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/agents-md@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/instructions/agents-md.md`.

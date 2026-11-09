@@ -46,6 +46,7 @@ scope:
 status: current
 open:
   - Are symlinked skill folders followed during discovery? Only package manifest globs are documented (symlinked resource roots must be listed directly).
+imported_from: fact:skills/discovery-walk@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/discovery-walk.md`.

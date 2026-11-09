@@ -39,6 +39,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/claude-md@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/instructions/claude-md.md`.

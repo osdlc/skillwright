@@ -38,6 +38,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/claude-md@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/instructions/claude-md.md`.

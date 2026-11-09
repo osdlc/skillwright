@@ -46,6 +46,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/project-trust@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/project-trust.md`.

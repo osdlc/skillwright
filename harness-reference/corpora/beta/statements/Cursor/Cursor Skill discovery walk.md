@@ -47,6 +47,7 @@ scope:
 status: current
 open:
   - Are skill folders in parent directories above the working directory found, and are symlinked skill folders followed?
+imported_from: fact:skills/discovery-walk@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/discovery-walk.md`.
