@@ -11,6 +11,7 @@ import {
   capture,
   type CaptureDeps,
   type CaptureOptions,
+  contribution,
   findExcerpt,
   htmlToText,
 } from './capture.ts'
@@ -150,6 +151,23 @@ contributions:
     assert.equal(result.document, 'documents/Anthropic/Claude Code overview.md')
   })
 
+  test('matches a document URL the way import-alpha does, ignoring space and trailing slashes', async () => {
+    const result = await capture(
+      opts({ document: 'https://code.claude.com/docs/en/overview/' }),
+      deps(),
+    )
+    assert.equal(result.createdDocument, false)
+    assert.equal(result.document, 'documents/Anthropic/Claude Code overview.md')
+  })
+
+  test('refuses an observed-by that names nobody', () => {
+    assert.throws(() => contribution('agent:  ', '2026-11-08'), /names nobody/)
+    assert.deepEqual(contribution('agent: bot', '2026-11-08').contributor, {
+      name: 'bot',
+      agentType: 'software',
+    })
+  })
+
   test('refuses an excerpt the page does not hold, and writes nothing', async () => {
     await assert.rejects(
       capture(opts({ document: 'https://example.com/x', excerpt: 'hidden' }), deps()),
@@ -258,7 +276,7 @@ contributions:
         opts({ document: 'https://example.com/new', publisher: 'New Pub', observedBy: '' }),
         deps(),
       ),
-      /do not validate/,
+      /names nobody/,
     )
     assert.ok(!existsSync(join(dir, 'documents/New Pub')))
     assert.ok(!existsSync(join(dir, 'study-results/Claude Code')))

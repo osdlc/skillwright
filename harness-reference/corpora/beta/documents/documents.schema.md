@@ -31,7 +31,7 @@ properties:
   doi:
     description: The document's Digital Object Identifier, for a paper that has one.
     type: string
-    pattern: "^10.(\\d+)(\\.\\d+)*/[\\w\\-\\.]+"
+    pattern: "^10\\.\\d+(\\.\\d+)*/[\\w\\-.;()/:<>]+$"
   publisher:
     description: Who publishes the page. For a harness's own pages, the harness's vendor.
     type: string

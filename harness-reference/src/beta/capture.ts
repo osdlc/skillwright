@@ -9,15 +9,9 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
-import {
-  type CorpusReport,
-  type Data,
-  fold,
-  idProblem,
-  markdownLink,
-  validateCorpus,
-} from '@osdlc/corpus-schema'
-import { stringify } from 'yaml'
+import { type CorpusReport, type Data, fold, idProblem, validateCorpus } from '@osdlc/corpus-schema'
+
+import { createdBy, link, normalizeUrl, record } from './corpus.ts'
 
 /** The kinds study-results.schema.md requires a document for (its if/then); keep the two in step. */
 export const PAGE_KINDS = ['docs', 'changelog', 'source', 'issue', 'third-party'] as const
@@ -151,19 +145,10 @@ export function findExcerpt(
  */
 export function contribution(observedBy: string, observed: string): Data {
   const m = /^(person|agent):\s*(.*)$/su.exec(observedBy)
-  return {
-    contributor: {
-      name: m?.[2] ?? observedBy,
-      agentType: m?.[1] === 'agent' ? 'software' : 'person',
-    },
-    activityType: 'created',
-    date: `${observed}T00:00:00Z`,
-  }
+  const name = (m?.[2] ?? observedBy).trim()
+  if (name === '') throw new Error(`observed-by "${observedBy}" names nobody`)
+  return createdBy(name, m?.[1] === 'agent' ? 'software' : 'person', observed)
 }
-
-/** A relative Markdown link from the file `from` to the file `to`, both corpus-relative. */
-const link = (from: string, to: string): string =>
-  markdownLink(basename(to, extname(to)), relative(dirname(from), to).split(sep).join('/'))
 
 /**
  * What to fetch for `url`. A github.com page is chrome around a file, so a `blob/` URL is read as
@@ -183,10 +168,6 @@ function fetchTarget(url: string): { url: string; accept: string } {
       accept: 'application/vnd.github.raw+json',
     }
   return { url, accept: 'text/html, text/markdown, text/plain;q=0.9, */*;q=0.1' }
-}
-
-function record(data: Data, body: string): string {
-  return `---\n${stringify(data, { lineWidth: 0 })}---\n${body === '' ? '' : `\n${body}\n`}`
 }
 
 /** Find or create the document, fetch the page, check the quote and write the study result. */
@@ -212,14 +193,17 @@ export async function capture(opts: CaptureOptions, deps: CaptureDeps): Promise<
   if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(opts.document)) {
     url = opts.document
     if (!url.startsWith('https://')) throw new Error(`${url}: a document URL must use https`)
-    documentId = [...documents].find(
-      ([, data]) => (data['urls'] as string[] | undefined)?.includes(url) === true,
+    documentId = [...documents].find(([, data]) =>
+      ((data['urls'] as string[] | undefined) ?? []).some(
+        (u) => normalizeUrl(u) === normalizeUrl(url),
+      ),
     )?.[0]
   } else {
     const abs = [resolve(opts.document), resolve(corpus, opts.document)].find(existsSync)
     const rel = abs === undefined ? undefined : relative(corpus, abs).split(sep).join('/')
     documentId = [...documentFiles].find(([, file]) => file === rel)?.[0]
     if (documentId === undefined) throw new Error(`${opts.document}: not a document record`)
+    // A record with several URLs is read at its first, which the document lists as canonical.
     url = String((documents.get(documentId)?.['urls'] as string[] | undefined)?.[0])
   }
 
@@ -312,9 +296,7 @@ const USAGE = `usage: capture --harness <id> --document <url or path> --kind <${
                [--document-name <name>] [--title <title>] [--publisher <name>] [--corpus <dir>]`
 
 const today = (): string => {
-  const d = new Date()
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return new Date().toISOString().slice(0, 10)
 }
 
 async function main(argv: string[]): Promise<number> {

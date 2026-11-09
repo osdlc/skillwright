@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { validateCorpus } from '@osdlc/corpus-schema'
+import { parse } from 'yaml'
+
+import { canonicalJson, normalizeUrl } from './corpus.ts'
 
 const beta = resolve(import.meta.dirname, '../../corpora/beta')
 
@@ -76,5 +79,42 @@ describe('corpora/beta', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('shared helpers', () => {
+  test('canonicalJson ignores object key order at every depth and keeps array order', () => {
+    assert.equal(
+      canonicalJson({ a: 1, b: { y: 1, x: [1, { d: 1, c: 2 }] } }),
+      canonicalJson({ b: { x: [1, { c: 2, d: 1 }], y: 1 }, a: 1 }),
+    )
+    assert.notEqual(canonicalJson({ a: [1, 2] }), canonicalJson({ a: [2, 1] }))
+  })
+  test('normalizeUrl drops surrounding space and trailing slashes', () => {
+    assert.equal(normalizeUrl(' https://x.test/a// '), 'https://x.test/a')
+  })
+})
+
+describe('documents.schema.md doi', () => {
+  const schema = readFileSync(join(beta, 'documents/documents.schema.md'), 'utf8')
+  const pattern = new RegExp(
+    String(parse(/^---\n([\s\S]*?)\n---/u.exec(schema)?.[1] ?? '').properties.doi.pattern),
+    'u',
+  )
+  test('accepts real DOIs and refuses malformed ones', () => {
+    for (const ok of [
+      '10.1000/xyz123',
+      '10.1234.5/a-b_c.d',
+      '10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI4>3.0.CO;2-O',
+    ])
+      assert.ok(pattern.test(ok), ok)
+    for (const bad of [
+      '10x123/example',
+      '10.123/ex ample',
+      '10.123/',
+      '10.123/ok junk',
+      'doi:10.123/x',
+    ])
+      assert.ok(!pattern.test(bad), bad)
   })
 })
