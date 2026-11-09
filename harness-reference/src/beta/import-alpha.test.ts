@@ -314,6 +314,7 @@ describe('cli import', () => {
     assert.equal(first.plan.counts['facts'], 30)
     const second = importAlpha(new Set(['cli']), dir)
     assert.deepEqual(second.changed, [])
+    assert.deepEqual(second.plan.removed, [])
   })
 
   test('is byte-identical from an empty corpus, and the result validates and lints', () => {
@@ -339,10 +340,21 @@ describe('cli import', () => {
         beta.report.errors.filter((e) => !e.startsWith('harnesses/')),
         [],
       )
-      // Subjects are the exception: the committed ones were tidied by hand.
-      for (const rel of r.changed.filter((f) => !f.startsWith('subjects/'))) {
-        const committed = join(BETA, rel)
-        assert.equal(readFileSync(join(fresh, rel), 'utf8'), readFileSync(committed, 'utf8'), rel)
+      // Committed records may have been edited since the import, so byte-for-byte reproduction is
+      // checked against a second fresh run instead.
+      const again = mkdtempSync(join(tmpdir(), 'harness-reference-fresh-'))
+      try {
+        cpSync(fresh, again, { recursive: true })
+        for (const rel of r.changed) rmSync(join(again, rel), { force: true })
+        assert.deepEqual(importAlpha(new Set(['cli']), again).changed.sort(), [...r.changed].sort())
+        for (const rel of r.changed)
+          assert.equal(
+            readFileSync(join(again, rel), 'utf8'),
+            readFileSync(join(fresh, rel), 'utf8'),
+            rel,
+          )
+      } finally {
+        rmSync(again, { recursive: true, force: true })
       }
       assert.deepEqual(importAlpha(new Set(['cli']), fresh).changed, [])
     } finally {
@@ -406,7 +418,7 @@ const ctxFor = (categories: string[], ds: Dataset, root = dir): Context => ({
 })
 const run = (categories: string[], ds: Dataset, root = dir) => {
   const p = plan(ctxFor(categories, ds, root))
-  writePlan(root, p)
+  writePlan(root, p, { force: true })
   return p
 }
 describe('identity and scope', () => {
@@ -625,5 +637,54 @@ describe('identity and scope', () => {
     assert.match(p.warnings.join('\n'), /not in the alpha corpus/)
     assert.equal(existsSync(join(dir, 'statements/Pi/Pi Thing.md')), false)
     assert.ok(p.removed.includes('statements/Pi/Pi Thing.md'))
+  })
+
+  describe('edits since the import', () => {
+    const FORK = 'statements/Claude Code/Claude Code Fork a session.md'
+    const edited = (): string => {
+      const file = join(dir, FORK)
+      writeFileSync(file, readFileSync(file, 'utf8').replace('strength: strong', 'strength: weak'))
+      return readFileSync(file, 'utf8')
+    }
+
+    test('a record edited since the import is left alone and reported', () => {
+      const text = edited()
+      const r = importAlpha(new Set(['cli']), dir)
+      assert.deepEqual(r.changed, [])
+      assert.deepEqual(r.plan.edited, [FORK])
+      assert.equal(readFileSync(join(dir, FORK), 'utf8'), text)
+    })
+
+    test('--force writes the importer output over it', () => {
+      edited()
+      const r = importAlpha(new Set(['cli']), dir, undefined, { force: true })
+      assert.deepEqual(r.changed, [FORK])
+      assert.match(readFileSync(join(dir, FORK), 'utf8'), /strength: strong/)
+    })
+
+    test('retiring a record someone else contributed to is skipped and reported', () => {
+      const rel = 'statements/Pi/Pi Thing.md'
+      const ds = dataset([fact('zz/thing', { observations: [obs({})] })])
+      const ctx = (): Context => ({ ...context([]), dataset: ds, beta: loadBeta(dir) })
+      writePlan(dir, plan(ctx()))
+      assert.ok(existsSync(join(dir, rel)))
+      const file = join(dir, rel)
+      writeFileSync(
+        file,
+        readFileSync(file, 'utf8').replace(
+          'contributions:\n',
+          'contributions:\n  - contributor: { name: Researcher, agentType: person }\n    activityType: reviewed\n    date: 2026-11-10T00:00:00Z\n',
+        ),
+      )
+      const empty: Context = { ...ctx(), dataset: dataset([]) }
+      const p = plan(empty)
+      assert.ok(p.removed.includes(rel))
+      writePlan(dir, p)
+      assert.ok(existsSync(file), 'kept')
+      assert.deepEqual(p.edited, [rel])
+      assert.equal(p.removed.includes(rel), false)
+      writePlan(dir, plan({ ...empty, beta: loadBeta(dir) }), { force: true })
+      assert.equal(existsSync(file), false, 'force removes it')
+    })
   })
 })

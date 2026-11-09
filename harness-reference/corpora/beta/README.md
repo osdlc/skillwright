@@ -82,6 +82,15 @@ on a note. Replace the note with the upstream page as study results are captured
 3. Set `checked` to today's date and write the body.
 4. Run the check.
 
+## After the import
+
+Alpha is frozen and its facts are imported, so imported records are ordinary records now: edit
+them freely to add evidence lines, mark a statement superseded or fix a value. `imported_from`
+stays on a record as provenance. `import-alpha` never overwrites a record whose `imported_from`
+matches but whose content differs from what it would write: it reports it as "edited since
+import" and leaves it. It also keeps a record it would retire when someone besides the importer
+has a contribution on it. `--force` writes and retires regardless.
+
 ## Recording a study result
 
 `capture` fetches a page, checks that a quote occurs on it, and writes a study result. From
