@@ -645,6 +645,11 @@ describe('identity and scope', () => {
 
   describe('report-only by default', () => {
     const FORK = 'statements/Claude Code/Claude Code Fork a session.md'
+    // The copied corpus carries research edits to imported records; reset the cli import so
+    // these tests see only the edit each one makes.
+    beforeEach(() => {
+      importAlpha(new Set(['cli']), dir, undefined, { force: true })
+    })
     const edit = (): string => {
       const file = join(dir, FORK)
       writeFileSync(file, readFileSync(file, 'utf8').replace('strength: strong', 'strength: weak'))
