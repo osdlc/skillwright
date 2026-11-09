@@ -105,6 +105,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-05.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Marketplace fields source](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Marketplace%20fields%20source.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: "source observed 2026-11-09 at 0.162.0: confirms the marketplace file path only; entry fields were not re-read"
 reportedIn:
   - "[openai codex marketplace.rs at a037e65](../../documents/github.com/openai%20codex%20marketplace.rs%20at%20a037e65.md)"
   - "[OpenAI docs Package your plugin](../../documents/developers.openai.com/OpenAI%20docs%20Package%20your%20plugin.md)"
@@ -114,6 +119,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-05T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Codex CLI](../../harnesses/Codex%20CLI.md)"
 subject: "[Marketplace fields](../../subjects/plugins/Marketplace%20fields.md)"
 scope:

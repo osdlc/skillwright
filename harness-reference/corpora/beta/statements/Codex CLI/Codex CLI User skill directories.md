@@ -21,6 +21,16 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-10-01.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI User skill directories source](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20User%20skill%20directories%20source.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI User skill directories docs](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20User%20skill%20directories%20docs.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09 at 0.162.0.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Codex README](../../documents/OpenAI/Codex%20README.md)"
@@ -30,6 +40,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Codex CLI](../../harnesses/Codex%20CLI.md)"
 subject: "[User skill directories](../../subjects/skills/User%20skill%20directories.md)"
 scope:

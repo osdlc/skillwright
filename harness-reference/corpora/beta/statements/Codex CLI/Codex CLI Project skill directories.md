@@ -4,31 +4,27 @@ proposition:
   predicate: skills/project-dirs
   object:
     dirs:
-      - .codex/skills
       - .agents/skills
-    scope: each ancestor of the working directory
+    scope: each directory from the working directory up to the repository root
 direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-08-08 Codex CLI Project skill directories](../../study-results/Codex%20CLI/2026-08-08%20Codex%20CLI%20Project%20skill%20directories.md)"
-    directionOfEvidenceProvided: disputes
-    strengthOfEvidenceProvided: weak
-    description: third-party observed 2026-08-08; its value differs from the latest.
-  - hasEvidenceItems:
-      - "[2026-10-01 Codex CLI Project skill directories](../../study-results/Codex%20CLI/2026-10-01%20Codex%20CLI%20Project%20skill%20directories.md)"
+      - "[2026-11-09 Codex CLI Project skill directories docs](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Project%20skill%20directories%20docs.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-10-01.
-reportedIn:
-  - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
-  - "[Codex README](../../documents/OpenAI/Codex%20README.md)"
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09 at 0.162.0.
 contributions:
   - contributor:
-      name: harness-reference import
+      name: harness-reference research
       agentType: software
     activityType: created
-    date: 2026-10-01T00:00:00Z
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Codex CLI](../../harnesses/Codex%20CLI.md)"
 subject: "[Project skill directories](../../subjects/skills/Project%20skill%20directories.md)"
 scope:
@@ -36,10 +32,10 @@ scope:
   until: null
   platform: []
   model: null
-status: disputed
-imported_from: fact:skills/project-dirs@codex#scope-[null,null,null]
+status: superseded
+supersedes: "[Codex CLI Project skill directories](Codex%20CLI%20Project%20skill%20directories.md)"
+open:
+  - Whether .codex/skills is still read in a repository was not found in the 0.162.0 source.
 ---
 
-Imported from `facts/codex/skills/project-dirs.md`.
-
-The observations disagree on: dirs. The latest value is kept.
+The superseded statement listed .codex/skills as well, from a third-party look. The vendor docs name only .agents/skills.

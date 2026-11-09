@@ -4,23 +4,46 @@ proposition:
   predicate: instructions/files
   object:
     files:
+      - AGENTS.override.md
       - AGENTS.md
+      - project_doc_fallback_filenames entries
+    walk: from the project root (marker .git) down to the working directory, one file per directory; plus the Codex home directory
+    budget: project_doc_max_bytes, 32 KiB by default
+    not_read: CLAUDE.md unless named in project_doc_fallback_filenames
 direction: supports
-strength: weak
+strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-08-08 Codex CLI Instruction files read](../../study-results/Codex%20CLI/2026-08-08%20Codex%20CLI%20Instruction%20files%20read.md)"
+      - "[2026-11-09 Codex CLI Instruction files read source](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Instruction%20files%20read%20source.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: weak
-    description: third-party observed 2026-08-08.
-reportedIn:
-  - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Instruction files read walk](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Instruction%20files%20read%20walk.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Instruction files read budget](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Instruction%20files%20read%20budget.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Instruction files read fallback](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Instruction%20files%20read%20fallback.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09 at 0.162.0.
 contributions:
   - contributor:
-      name: harness-reference import
+      name: harness-reference research
       agentType: software
     activityType: created
-    date: 2026-08-08T00:00:00Z
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Codex CLI](../../harnesses/Codex%20CLI.md)"
 subject: "[Instruction files read](../../subjects/instructions/Instruction%20files%20read.md)"
 scope:
@@ -28,8 +51,8 @@ scope:
   until: null
   platform: []
   model: null
-status: current
-imported_from: fact:instructions/files@codex#scope-[null,null,null]
+status: superseded
+supersedes: "[Codex CLI Instruction files read](Codex%20CLI%20Instruction%20files%20read.md)"
 ---
 
-Imported from `facts/codex/instructions/files.md`.
+The older statement named only AGENTS.md. At 0.162.0 AGENTS.override.md is checked first in each directory, and fallback names are configurable.
