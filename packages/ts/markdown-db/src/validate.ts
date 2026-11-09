@@ -74,6 +74,8 @@ export interface CorpusReport {
   id: string | undefined
   /** Valid records by type, then id. */
   records: Map<string, Map<string, Data>>
+  /** The corpus-relative path of each valid record, by type, then id. */
+  files: Map<string, Map<string, string>>
   errors: string[]
   warnings: string[]
   /** Files `fix` rewrote. */
@@ -570,6 +572,12 @@ export function validateCorpus(root: string, { fix = false } = {}): CorpusReport
       [...c.types].map(([name, t]) => [
         name,
         new Map([...t.records].map(([id, r]) => [id, r.data])),
+      ]),
+    ),
+    files: new Map(
+      [...c.types].map(([name, t]) => [
+        name,
+        new Map([...t.records].map(([id, r]) => [id, r.file])),
       ]),
     ),
     errors: c.errors,
