@@ -1029,7 +1029,7 @@ fn refuse_agent_overrides(
 /// A project-relative path as it lands under the home directory: the
 /// harness's project folder swapped for its user folder.
 fn user_folder_path(canonical: &str, relative: &str) -> String {
-    let format = crate::harness::profile_named(canonical).and_then(|p| p.plugin.as_ref());
+    let format = crate::harness::profile_named(canonical).and_then(|p| p.plugin_format());
     let bases = format.and_then(|format| {
         Some((
             format.skills_dir.strip_suffix("skills")?,
