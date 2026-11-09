@@ -9,7 +9,7 @@ proposition:
     supported: true
     note: project servers in .pi/mcp.json after project trust; `pi mcp add|list|login` manage it
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Pi mcp config files](../../study-results/Pi/2026-11-09%20Pi%20mcp%20config%20files.md)"
@@ -29,7 +29,7 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Pi changelog 0.99.0 mcp](../../study-results/Pi/2026-11-09%20Pi%20changelog%200.99.0%20mcp.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
+    strengthOfEvidenceProvided: moderate
     description: Released in 0.99.0.
 contributions:
   - contributor:

@@ -8,7 +8,7 @@ proposition:
     trigger: task matches the description
     explicit: /skill:name
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Pi skills loading](../../study-results/Pi/2026-11-09%20Pi%20skills%20loading.md)"
