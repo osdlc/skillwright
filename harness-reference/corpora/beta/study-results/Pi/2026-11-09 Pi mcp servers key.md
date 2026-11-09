@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: Configure servers
 excerpt:
-  exact: Stdio servers use `command`, `args`, `env`, and `cwd`.
-  prefix: 'roduct documentation" } } } ``` '
-  suffix: " Relative `cwd` values resolve a"
+  exact: '"mcpServers": { "filesystem": {'
+  prefix: "es other MCP clients: ```json { "
+  suffix: ' "command": "npx", "args": '
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T12:00:00Z
 ---
 
-> Stdio servers use `command`, `args`, `env`, and `cwd`.
+> "mcpServers": { "filesystem": {

@@ -4,7 +4,7 @@ proposition:
   predicate: cli/context-dirs
   object:
     supported: false
-    note: no add-dir flag in --help; @files add files to the first prompt
+    note: no add-dir flag in --help
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -19,6 +19,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[Extra context directories](../../subjects/cli/Extra%20context%20directories.md)"
 scope:
@@ -30,3 +35,5 @@ status: current
 ---
 
 Absence in --help only.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

@@ -7,8 +7,7 @@ proposition:
     argv:
       - --continue
     chosen_by: the previous session
-    accepts_prompt: true
-    note: "`agent resume` does the same without print mode"
+    note: "`agent resume` resumes the latest chat session"
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -33,6 +32,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Continue the last session](../../subjects/cli/Continue%20the%20last%20session.md)"
 scope:
@@ -42,3 +46,7 @@ scope:
   model: null
 status: current
 ---
+
+
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

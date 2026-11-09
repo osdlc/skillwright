@@ -6,11 +6,11 @@ harness: "[Pi](../../harnesses/Pi.md)"
 version: 1.5.0
 version_basis: exact
 observed: 2026-11-09
-locator: Choose a source
+locator: Install and manage packages
 excerpt:
-  exact: Relative local paths resolve from the settings file that contains them.
-  prefix: "t do not move a configured ref. "
-  suffix: " A file path loads one extension"
+  exact: Pi caches `-e` packages under `~/.pi/agent/tmp/extensions/`
+  prefix: "pi -e npm:@example/pi-tools ``` "
+  suffix: " and checks them on every start "
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T12:00:00Z
 ---
 
-> Relative local paths resolve from the settings file that contains them.
+> Pi caches `-e` packages under `~/.pi/agent/tmp/extensions/`

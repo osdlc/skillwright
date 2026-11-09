@@ -10,7 +10,7 @@ proposition:
     append_argv:
       - --append-system-prompt
       - "{text}"
-    note: both take literal text or a file path; --append-system-prompt repeats
+    note: --append-system-prompt takes text or file contents and can be repeated
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -25,6 +25,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[System prompt flags](../../subjects/instructions/System%20prompt%20flags.md)"
 scope:
@@ -36,3 +41,5 @@ status: current
 ---
 
 Text-or-file behavior comes from the --append-system-prompt help line; --system-prompt help says only <text>.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

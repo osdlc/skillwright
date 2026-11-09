@@ -22,11 +22,21 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The docs install script and run it as `agent`.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor version](../../study-results/Cursor/2026-11-09%20Cursor%20version.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: "`cursor-agent --version` prints the version."
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Executable name](../../subjects/cli/Executable%20name.md)"
@@ -39,3 +49,5 @@ status: current
 ---
 
 The docs call the command `agent`; the installed `cursor-agent` is the same binary.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

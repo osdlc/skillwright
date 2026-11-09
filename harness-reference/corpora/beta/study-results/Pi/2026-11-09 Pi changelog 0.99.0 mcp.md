@@ -8,9 +8,9 @@ version_basis: exact
 observed: 2026-11-09
 locator: 0.99.0
 excerpt:
-  exact: Added codemode, tool search, and MCP support as built-in extensions.
-  prefix: "md#classification). ### Added - "
-  suffix: " The `codemode` tool runs model-"
+  exact: "## [0.99.0] - 2026-09-29 ### New Features - **Codemode and MCP** — Connect MCP servers and let models run JavaScript that calls tools in parallel."
+  prefix: "penai-chatgpt.js` module error. "
+  suffix: " See "
 contributions:
   - contributor:
       name: harness-reference research
@@ -19,4 +19,4 @@ contributions:
     date: 2026-11-09T12:00:00Z
 ---
 
-> Added codemode, tool search, and MCP support as built-in extensions.
+> ## [0.99.0] - 2026-09-29 ### New Features - **Codemode and MCP** — Connect MCP servers and let models run JavaScript that calls tools in parallel.

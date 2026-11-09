@@ -18,11 +18,21 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: "Docs: json emits one result object; stream-json is NDJSON."
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor help stream-partial-output](../../study-results/Cursor/2026-11-09%20Cursor%20help%20stream-partial-output.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: --stream-partial-output.
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Structured output](../../subjects/cli/Structured%20output.md)"
@@ -33,3 +43,7 @@ scope:
   model: null
 status: current
 ---
+
+
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

@@ -8,7 +8,7 @@ proposition:
       - .agents/skills
     scope: .agents/skills in each ancestor up to the git root
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 Pi Project skill directories](../../study-results/Pi/2026-08-08%20Pi%20Project%20skill%20directories.md)"
@@ -48,6 +48,11 @@ contributions:
       agentType: software
     activityType: verified
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[Project skill directories](../../subjects/skills/Project%20skill%20directories.md)"
 scope:
@@ -64,3 +69,5 @@ Imported from `facts/pi/skills/project-dirs.md`.
 The observations disagree on: dirs. The latest value is kept.
 
 Rechecked 2026-11-09 against the installed pi 1.5.0 and the v1.5.0 source tree. The dispute was an incomplete old list.
+
+Strength lowered 2026-11-09: the ancestor walk to the repository root rests on docs only; the source line shows the .pi skills directory.

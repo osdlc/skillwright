@@ -5,11 +5,9 @@ proposition:
   object:
     command: agent -p "<prompt>"
     flag: -p/--print
-    one_task_per_run: true
-    stdin: prompt argument; stdin not documented
-    note: print mode has all tools; add --force to apply changes and run commands
+    note: --help says print has write and shell access; the headless docs say add --force to apply changes
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Cursor help print](../../study-results/Cursor/2026-11-09%20Cursor%20help%20print.md)"
@@ -27,6 +25,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Headless run](../../subjects/cli/Headless%20run.md)"
 scope:
@@ -38,3 +41,5 @@ status: current
 ---
 
 The docs disagree with themselves about writes without --force: --help says print has write and shell access, the headless page says changes are only proposed.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

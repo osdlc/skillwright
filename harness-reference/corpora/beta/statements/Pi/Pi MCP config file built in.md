@@ -22,15 +22,25 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: "`pi mcp --help` names the files."
   - hasEvidenceItems:
-      - "[2026-11-09 Pi changelog mcp added](../../study-results/Pi/2026-11-09%20Pi%20changelog%20mcp%20added.md)"
+      - "[2026-11-09 Pi mcp servers key](../../study-results/Pi/2026-11-09%20Pi%20mcp%20servers%20key.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: mcpServers key.
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi changelog 0.99.0 mcp](../../study-results/Pi/2026-11-09%20Pi%20changelog%200.99.0%20mcp.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: MCP support arrived as a built-in extension in 0.99.0.
+    description: Released in 0.99.0.
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research
@@ -49,3 +59,5 @@ supersedes: "[Pi MCP config file](Pi%20MCP%20config%20file.md)"
 ---
 
 Replaces the earlier "no MCP" claim, which held before 0.99.0.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

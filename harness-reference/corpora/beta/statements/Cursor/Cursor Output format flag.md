@@ -17,7 +17,7 @@ proposition:
         argv:
           - --output-format
           - stream-json
-    note: only with --print (or inferred print mode); the default is text; --stream-partial-output adds text deltas to stream-json
+    note: only works with --print; the default is text; --stream-partial-output adds text deltas to stream-json
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -31,11 +31,21 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: Docs state the default is text.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor help stream-partial-output](../../study-results/Cursor/2026-11-09%20Cursor%20help%20stream-partial-output.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: --stream-partial-output.
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Output format flag](../../subjects/cli/Output%20format%20flag.md)"
@@ -48,3 +58,5 @@ status: current
 ---
 
 Shape follows the coordinator’s new formats/argv form.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

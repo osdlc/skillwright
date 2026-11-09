@@ -16,7 +16,7 @@ proposition:
         argv:
           - --mode
           - rpc
-    note: --mode text is the default; -p prints the final answer and exits; json is a JSONL event stream
+    note: --mode text is the default; -p processes the prompt and exits
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -31,6 +31,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[Output format flag](../../subjects/cli/Output%20format%20flag.md)"
 scope:
@@ -40,3 +45,7 @@ scope:
   model: null
 status: current
 ---
+
+
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

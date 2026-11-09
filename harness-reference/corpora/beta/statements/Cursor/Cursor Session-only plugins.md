@@ -8,8 +8,6 @@ proposition:
       - --plugin-dir
       - <path>
     repeatable: true
-    persists: false
-    note: no flag disables an installed plugin
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -24,6 +22,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Session-only plugins](../../subjects/plugins/Session-only%20plugins.md)"
 scope:
@@ -35,3 +38,5 @@ status: current
 ---
 
 Whether the directory needs a manifest was not checked.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

@@ -15,11 +15,26 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: Installed --help.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor help list-models](../../study-results/Cursor/2026-11-09%20Cursor%20help%20list-models.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: --list-models.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor help models command](../../study-results/Cursor/2026-11-09%20Cursor%20help%20models%20command.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: "`models` command."
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Model and effort flags](../../subjects/cli/Model%20and%20effort%20flags.md)"
@@ -30,3 +45,7 @@ scope:
   model: null
 status: current
 ---
+
+
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

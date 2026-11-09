@@ -10,27 +10,26 @@ proposition:
         argv:
           - --mode
           - ask
-        notes: Q&A mode; read-only per --help
+        notes: Q&A, read-only per --help
       - name: plan
         intent: read-only
         argv:
           - --mode
           - plan
-      - name: sandbox enabled
+        notes: read-only planning, no edits per --help
+      - name: auto-review
         intent: full-auto
         argv:
-          - --sandbox
-          - enabled
-        notes: intent is the closest generic match; help does not describe auto-running
+          - --auto-review
+        notes: a server classifier auto-runs safe tool calls and prompts for the rest
       - name: force
         intent: bypass
         argv:
           - --force
-        config_key: approvalMode
-        notes: --yolo is an alias; approvalMode in cli-config.json is allowlist, auto-review or unrestricted
-    default: "agent mode (docs: agent is the default when no mode is given)"
+        notes: allows commands unless explicitly denied; --yolo is an alias
+    note: --sandbox enabled|disabled is a separate switch that restricts or unrestricts command execution; it is not mapped to an intent
 direction: supports
-strength: moderate
+strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Cursor help mode](../../study-results/Cursor/2026-11-09%20Cursor%20help%20mode.md)"
@@ -42,16 +41,16 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: --force, --auto-review and --sandbox flags.
-  - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs config approvalMode](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20config%20approvalMode.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: approvalMode setting.
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Permission modes](../../subjects/permissions/Permission%20modes.md)"
@@ -64,3 +63,5 @@ status: current
 ---
 
 Intents are the closest generic match, not the vendor’s words.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited. Every key rests on the help-text lines; the earlier sandbox-as-full-auto mapping and the docs-only approvalMode and default keys were removed.

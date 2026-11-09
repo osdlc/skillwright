@@ -3,15 +3,14 @@ proposition:
   subject: "[Pi](../../harnesses/Pi.md)"
   predicate: permissions/tool-rules
   object:
-    supported: partial
+    supported: true
     allow_argv:
       - --tools
       - "{rules}"
     deny_argv:
       - --exclude-tools
       - "{rules}"
-    syntax: tool names or * patterns, such as read,grep or mcp__server__*
-    note: allowlist/denylist of whole tools; no per-argument patterns
+    syntax: comma-separated tool names or * patterns
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -26,6 +25,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[Tool allow and deny rules](../../subjects/permissions/Tool%20allow%20and%20deny%20rules.md)"
 scope:
@@ -35,3 +39,7 @@ scope:
   model: null
 status: current
 ---
+
+
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

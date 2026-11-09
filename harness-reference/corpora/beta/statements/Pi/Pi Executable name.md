@@ -5,12 +5,11 @@ proposition:
   object:
     supported: true
     name: pi
-    aliases: []
     version_argv:
       - --version
     note: npm package @earendil-works/pi-coding-agent
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Pi version](../../study-results/Pi/2026-11-09%20Pi%20version.md)"
@@ -28,6 +27,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[Executable name](../../subjects/cli/Executable%20name.md)"
 scope:
@@ -37,3 +41,7 @@ scope:
   model: null
 status: current
 ---
+
+
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

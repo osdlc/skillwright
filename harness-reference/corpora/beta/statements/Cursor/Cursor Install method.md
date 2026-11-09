@@ -10,15 +10,15 @@ proposition:
         platforms:
           - macos
           - linux
-        note: curl https://cursor.com/install -fsS | bash (Windows via WSL)
+        note: curl https://cursor.com/install -fsS | bash; Windows through WSL
       - kind: script
         package: https://cursor.com/install?win32=true
         platforms:
           - windows
-        note: irm 'https://cursor.com/install?win32=true' | iex
+        note: irm 'https://cursor.com/install?win32=true' | iex (native PowerShell)
     update: agent update
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Cursor docs install](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20install.md)"
@@ -35,11 +35,21 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: The CLI lists an update command.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor docs install platforms](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20install%20platforms.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Platforms.
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Install method](../../subjects/cli/Install%20method.md)"
@@ -52,3 +62,5 @@ status: current
 ---
 
 Uninstall is not documented.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

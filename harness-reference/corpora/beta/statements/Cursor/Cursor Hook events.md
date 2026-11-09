@@ -30,15 +30,20 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs hook events](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20hook%20events.md)"
+      - "[2026-11-09 Cursor docs hook event list](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20hook%20event%20list.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: Hook categories list.
+    description: Hook categories list every event.
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Hook events](../../subjects/hooks/Hook%20events.md)"
@@ -51,3 +56,5 @@ status: current
 ---
 
 Whether the CLI fires every event the IDE does is not stated.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

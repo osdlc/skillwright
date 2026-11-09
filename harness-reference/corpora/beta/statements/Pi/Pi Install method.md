@@ -16,9 +16,9 @@ proposition:
           - -g
           - --ignore-scripts
           - "@earendil-works/pi-coding-agent"
-    update: pi update self
+    update: pi update
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Pi readme script install](../../study-results/Pi/2026-11-09%20Pi%20readme%20script%20install.md)"
@@ -35,11 +35,21 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: "`pi update` updates pi itself by default."
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi help update default](../../study-results/Pi/2026-11-09%20Pi%20help%20update%20default.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: "`pi update` updates pi only by default."
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[Install method](../../subjects/cli/Install%20method.md)"
@@ -50,3 +60,7 @@ scope:
   model: null
 status: current
 ---
+
+
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

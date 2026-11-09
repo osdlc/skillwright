@@ -7,7 +7,6 @@ proposition:
     result_field: session_id
     reported_in:
       - json
-      - stream-json
     note: a new chat id comes from `agent create-chat` or the json result; no documented flag assigns one
 direction: supports
 strength: moderate
@@ -28,6 +27,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Session id](../../subjects/cli/Session%20id.md)"
 scope:
@@ -39,3 +43,5 @@ status: current
 ---
 
 A hidden --new-session-id flag is used by a consumer but does not appear in --help or the docs, so it is not recorded.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.

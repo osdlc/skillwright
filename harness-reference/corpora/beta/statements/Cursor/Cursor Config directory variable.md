@@ -5,7 +5,6 @@ proposition:
   object:
     supported: true
     var: CURSOR_CONFIG_DIR
-    replaces: ~/.cursor
     note: documented for the CLI config file; XDG_CONFIG_HOME also moves cli-config.json on Linux and BSD
 direction: supports
 strength: moderate
@@ -21,6 +20,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[Config directory variable](../../subjects/config/Config%20directory%20variable.md)"
 scope:
@@ -32,3 +36,5 @@ status: current
 ---
 
 Whether it moves anything beyond cli-config.json was not checked.
+
+Audit fix 2026-11-09: values without a cited excerpt were removed or cited.
