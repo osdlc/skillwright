@@ -29,7 +29,7 @@ proposition:
         argv:
           - --dangerously-bypass-approvals-and-sandbox
         notes: Skips approval prompts and the sandbox.
-    note: "Approval prompts are a separate axis: approval_policy takes on-request, never or a granular table (-a is on the interactive command, not in codex exec --help)."
+    note: "Approval prompts are a separate axis: approval_policy takes on-request, never or a granular table."
 direction: supports
 strength: strong
 hasEvidenceLines:

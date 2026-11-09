@@ -3,7 +3,7 @@ proposition:
   subject: "[Codex CLI](../../harnesses/Codex%20CLI.md)"
   predicate: hooks/events
   object:
-    count: "10"
+    count: "12"
     via: hooks.json or [hooks] tables in config.toml
     events:
       - PreToolUse
@@ -16,6 +16,8 @@ proposition:
       - Stop
       - SessionStart
       - SubagentStart
+      - SessionEnd
+      - Interrupt
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -54,5 +56,5 @@ scope:
   model: null
 status: current
 open:
-  - The source enum HookEventName also lists SessionEnd and Interrupt; the docs page names ten events and not SessionEnd or Interrupt.
+  - SessionEnd and Interrupt come from the source enum HookEventName only; the docs page names the other ten. Their spelling in hooks.json was not checked (the enum serialises snake_case).
 ---
