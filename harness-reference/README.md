@@ -20,7 +20,7 @@ The record is kept in `corpora/`: `alpha`, an OKF bundle with its own validator,
 - `schema/alpha/`: JSON Schemas generated from `src/alpha/schema.ts`, for other tools.
 - `src/beta/`: `capture`, which writes evidence records from a fetched page, and tests of the beta
   corpus. The corpus is checked by the
-  [`@osdlc/corpus-schema`](https://www.npmjs.com/package//corpus-schema) validator, a published package.
+  [`@osdlc/corpus-schema`](https://www.npmjs.com/package/@osdlc/corpus-schema) validator, a published package.
 
 ## The alpha corpus
 
@@ -137,8 +137,8 @@ pnpm run write-schema   # rewrite schema/alpha/*.json after changing src/alpha/s
 pnpm run capture ...    # write a beta evidence record; see corpora/beta/README.md
 ```
 
-CI runs `pnpm run check` when anything under `harness-reference/`
-changes (`.github/workflows/harness-reference.yml`).
+CI runs `pnpm run check` when anything under `harness-reference/`, the workflow file
+(`.github/workflows/harness-reference.yml`) or `pnpm-lock.yaml` changes.
 
 `generate` writes `index.html` (the current state, one table per category; each cell lists every
 observation still in force), a page per harness and

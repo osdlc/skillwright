@@ -8,7 +8,7 @@ Every value is backed by an upstream page: the vendor's site, docs, repository, 
 release list. Our own research notes are never the evidence.
 
 The corpus follows [corpus-schema](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md). It is data only.
-The validator is the [`@osdlc/corpus-schema`](https://www.npmjs.com/package//corpus-schema) package from npm.
+The validator is the [`@osdlc/corpus-schema`](https://www.npmjs.com/package/@osdlc/corpus-schema) package from npm.
 
 ## Layout
 

@@ -2,7 +2,7 @@
 
 Status: current.
 
-In harness-reference and [S-GFFY](../standards/S-GFFY-markdown-db.md): a folder holding a
+In harness-reference (see [corpus-schema](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md); originally [S-GFFY](../standards/S-GFFY-markdown-db.md)): a folder holding a
 `corpus-schema.md` root file (or `.yaml` / `.json`), and everything under it: types of records, their
 schemas and free-form narrative. Its name is its folder name. Elsewhere in this repository, corpus
 has osdlc's meaning (see below).

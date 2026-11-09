@@ -1,5 +1,7 @@
 # What is left: the work graph
 
+> Note: the `@osdlc/markdown-db` package and its spec moved to osdlc as `@osdlc/corpus-schema` ([spec](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md)); `packages/ts/markdown-db/` no longer exists here and the `markdown-db` binary is now `corpus-schema`. The text below is historical.
+
 Every step to release markdown-db, land the evidence work, and move harness-reference and the
 other corpora onto the claims profile. An arrow means "must come first". Owner steps are the
 repository owner's: merges, publishing, settings and review answers. The full context for each
