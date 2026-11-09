@@ -3,10 +3,10 @@ proposition:
   subject: "[Amp](../../harnesses/Amp.md)"
   predicate: config/main-file
   object:
-    file: .amp/settings.json (workspace) and ~/.config/amp/settings.json (user)
+    file: .amp/settings.json or .amp/settings.jsonc (workspace, nearest searched upward); ~/.config/amp/settings.json or settings.jsonc (user)
     format: JSON or JSONC
     merge: workspace settings override user settings
-    note: Every key has the amp. prefix. --settings-file <path> replaces the user file.
+    note: All settings use the amp. prefix. --settings-file <path> replaces the user file.
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -30,6 +30,16 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 settings workspace overrides](../../study-results/Amp/2026-11-09%20settings%20workspace%20overrides.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 settings amp prefix](../../study-results/Amp/2026-11-09%20settings%20amp%20prefix.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Amp docs Configuration](../../documents/ampcode.com/Amp%20docs%20Configuration.md)"
@@ -39,6 +49,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research
       agentType: software

@@ -4,7 +4,7 @@ proposition:
   predicate: skills/name-validation
   object:
     length: 1-64
-    charset: lowercase a-z, 0-9 and hyphens
+    charset: unicode lowercase alphanumeric characters and hyphens
     edges: no leading or trailing hyphen
     consecutive_hyphens: false
     colon_allowed: false
@@ -36,6 +36,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research
       agentType: software

@@ -4,15 +4,15 @@ proposition:
   predicate: skills/agent-loading
   object:
     mechanism: skill tool
-    loads: "on demand: the model calls skill with the exact name; a /name token in user input injects the body without a tool call"
+    loads: "on demand: the model calls skill with the exact skill name"
+    user_activation: a /name token in direct user input that names a user-invocable skill injects the body
 direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-10-08 DeepSeek Harness How the agent loads a skill](../../study-results/DeepSeek%20Harness/2026-10-08%20DeepSeek%20Harness%20How%20the%20agent%20loads%20a%20skill.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-10-08 for 0.2.1-alpha.1; says "a skill tool", the same mechanism worded differently (no real disagreement).
+    directionOfEvidenceProvided: neutral
+    description: source observed 2026-10-08; its locator (skill-filesystem/README.md at 5badb150) does not state the mechanism, so it is neutral.
   - hasEvidenceItems:
       - "[2026-11-04 DeepSeek Harness How the agent loads a skill](../../study-results/DeepSeek%20Harness/2026-11-04%20DeepSeek%20Harness%20How%20the%20agent%20loads%20a%20skill.md)"
     directionOfEvidenceProvided: supports
@@ -48,6 +48,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research
       agentType: software

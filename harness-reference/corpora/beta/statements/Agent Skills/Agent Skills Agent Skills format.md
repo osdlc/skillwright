@@ -18,6 +18,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 spec layout optional dirs](../../study-results/Agent%20Skills/2026-11-09%20spec%20layout%20optional%20dirs.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Agent Skills specification github.com](../../documents/github.com/Agent%20Skills%20specification%20github.com.md)"
@@ -27,6 +32,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research
       agentType: software

@@ -24,6 +24,16 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 grok hook definition](../../study-results/Grok%20Build/2026-11-09%20grok%20hook%20definition.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 grok hook cursor row](../../study-results/Grok%20Build/2026-11-09%20grok%20hook%20cursor%20row.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Grok Build user guide Hooks](../../documents/github.com/Grok%20Build%20user%20guide%20Hooks.md)"
@@ -33,6 +43,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research
       agentType: software

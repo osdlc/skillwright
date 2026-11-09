@@ -8,7 +8,7 @@ proposition:
       - --add-dir
       - <path>
     repeatable: true
-    note: Adds a directory to the workspace. The consumer note that agy documents no extra-directory flag is out of date.
+    note: Adds a directory to the workspace.
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -24,6 +24,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Antigravity](../../harnesses/Antigravity.md)"
 subject: "[Extra context directories](../../subjects/cli/Extra%20context%20directories.md)"

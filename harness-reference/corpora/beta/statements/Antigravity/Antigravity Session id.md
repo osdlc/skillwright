@@ -5,7 +5,7 @@ proposition:
   object:
     supported: false
     result_field: conversation_id
-    note: The flag tables list no option that assigns an id. The id is reported in the json envelope and the stream init event, and is passed back with --conversation.
+    note: The flag tables list no option that assigns an id. The id is reported in the json envelope and is passed back with --conversation.
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -21,6 +21,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Antigravity](../../harnesses/Antigravity.md)"
 subject: "[Session id](../../subjects/cli/Session%20id.md)"

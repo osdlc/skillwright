@@ -5,7 +5,7 @@ proposition:
   object:
     supported: true
     persists_by_default: true
-    note: A headless one-shot task creates one fresh persisted Agent and flushes the Session before it exits. No switch to turn persistence off was found.
+    note: A headless one-shot task creates one fresh persisted Agent.
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -21,6 +21,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[DeepSeek Harness](../../harnesses/DeepSeek%20Harness.md)"
 subject: "[Session persistence](../../subjects/cli/Session%20persistence.md)"

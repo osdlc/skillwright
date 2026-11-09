@@ -5,7 +5,7 @@ proposition:
   object:
     symlinks: may resolve to targets inside the plugin root; package paths resolving outside must be rejected
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-04 Agent Plugins Plugin install copy](../../study-results/Agent%20Plugins/2026-11-04%20Agent%20Plugins%20Plugin%20install%20copy.md)"

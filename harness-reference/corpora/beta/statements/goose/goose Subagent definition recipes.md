@@ -3,7 +3,7 @@ proposition:
   subject: "[goose](../../harnesses/goose.md)"
   predicate: subagents/definition
   object:
-    file_format: recipe file (YAML) that defines instructions, extensions and behavior for a subagent
+    file_format: "recipe: a reusable configuration that can be shared and referenced by name"
     format: recipe
 direction: supports
 strength: moderate
@@ -20,6 +20,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[goose](../../harnesses/goose.md)"
 subject: "[Subagent definition](../../subjects/subagents/Subagent%20definition.md)"

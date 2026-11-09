@@ -6,7 +6,7 @@ proposition:
     version_use: clients may use version for update checks and cache staleness
     plugin_data: must be preserved across updates
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-04 Agent Plugins Old plugin versions](../../study-results/Agent%20Plugins/2026-11-04%20Agent%20Plugins%20Old%20plugin%20versions.md)"

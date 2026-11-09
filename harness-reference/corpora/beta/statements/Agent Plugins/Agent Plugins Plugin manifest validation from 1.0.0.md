@@ -9,7 +9,7 @@ proposition:
     unsupported_schema_version: the client rejects the plugin and should report the version
     schema: https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-05 Agent Plugins Plugin manifest validation](../../study-results/Agent%20Plugins/2026-11-05%20Agent%20Plugins%20Plugin%20manifest%20validation.md)"

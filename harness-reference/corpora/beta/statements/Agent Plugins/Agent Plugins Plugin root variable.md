@@ -11,7 +11,7 @@ proposition:
     not_in: env keys, command, fixed component locations, http url
     requirement: clients MUST expand in supported configuration fields
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-04 Agent Plugins Plugin root variable](../../study-results/Agent%20Plugins/2026-11-04%20Agent%20Plugins%20Plugin%20root%20variable.md)"

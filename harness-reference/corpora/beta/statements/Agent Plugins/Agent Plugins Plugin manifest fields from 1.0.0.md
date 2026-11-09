@@ -76,7 +76,7 @@ proposition:
       - keywords
       - extensions
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-05 Agent Plugins Plugin manifest fields](../../study-results/Agent%20Plugins/2026-11-05%20Agent%20Plugins%20Plugin%20manifest%20fields.md)"

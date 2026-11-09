@@ -13,7 +13,7 @@ proposition:
       - high
       - xhigh
       - max
-    note: xhigh and max exist only for models that publish those variants. The headless page still lists only low, medium or high; the CLI reference page says low through max.
+    note: xhigh and max exist only for models that publish those variants.
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -22,13 +22,24 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 effort page levels](../../study-results/Antigravity/2026-11-09%20effort%20page%20levels.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
 reportedIn:
   - "[Antigravity docs CLI commands](../../documents/antigravity.google/Antigravity%20docs%20CLI%20commands.md)"
+  - "[Antigravity docs CLI effort command](../../documents/antigravity.google/Antigravity%20docs%20CLI%20effort%20command.md)"
 contributions:
   - contributor:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Antigravity](../../harnesses/Antigravity.md)"
 subject: "[Effort level flag](../../subjects/cli/Effort%20level%20flag.md)"

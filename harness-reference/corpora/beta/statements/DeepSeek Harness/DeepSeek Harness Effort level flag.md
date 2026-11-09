@@ -5,9 +5,9 @@ proposition:
   object:
     supported: partial
     config_key: reasoningEffort on the agent-default-model config row
-    note: There is no effort flag on the launcher or the headless profile; effort is a field of the default-model row, set through a --patch overlay or the profile patch.
+    note: No effort option appears in the launcher or headless help; reasoningEffort is a field of the agent-default-model row.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 default model reasoningEffort](../../study-results/DeepSeek%20Harness/2026-11-09%20default%20model%20reasoningEffort.md)"
@@ -21,6 +21,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[DeepSeek Harness](../../harnesses/DeepSeek%20Harness.md)"
 subject: "[Effort level flag](../../subjects/cli/Effort%20level%20flag.md)"

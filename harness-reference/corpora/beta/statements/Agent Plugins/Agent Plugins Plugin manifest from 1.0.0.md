@@ -10,7 +10,7 @@ proposition:
     covers: skills and MCP only
     schema: https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-10-01 Agent Plugins Plugin manifest](../../study-results/Agent%20Plugins/2026-10-01%20Agent%20Plugins%20Plugin%20manifest.md)"

@@ -6,7 +6,7 @@ proposition:
     resolves_from: the skill root (the skill directory)
     tells_model: include the skill directory path and note that relative paths are relative to it
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-04 Agent Skills Relative paths in SKILL.md](../../study-results/Agent%20Skills/2026-11-04%20Agent%20Skills%20Relative%20paths%20in%20SKILL.md.md)"

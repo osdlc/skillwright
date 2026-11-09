@@ -10,19 +10,19 @@ proposition:
         argv:
           - --mode
           - accept-edits
-        notes: auto-approves file edits in the workspace; still asks before terminal commands
+        notes: auto-approves file creations and edits inside the workspace; still asks before running terminal commands
       - name: auto
         intent: full-auto
         argv:
           - --mode
           - auto
-        notes: needs the terminal sandbox and a personal account; v1.3.5+ on macOS and Linux, v1.4.4+ on Windows
+        notes: requires the terminal sandbox; not available for business or enterprise accounts; v1.3.5+ on macOS and Linux, v1.4.4+ on Windows
       - name: dangerously-skip-permissions
         intent: bypass
         argv:
           - --dangerously-skip-permissions
     default: default
-    note: No read-only mode. --sandbox adds terminal containment; plan mode only prepends the /plan instruction.
+    note: --sandbox runs in a terminal sandbox with OS containment restrictions. plan mode prepends the /plan instruction prefix.
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -46,6 +46,21 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 reference auto mode details](../../study-results/Antigravity/2026-11-09%20reference%20auto%20mode%20details.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 modes default and plan](../../study-results/Antigravity/2026-11-09%20modes%20default%20and%20plan.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 modes plan prefix](../../study-results/Antigravity/2026-11-09%20modes%20plan%20prefix.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
 reportedIn:
   - "[Antigravity docs CLI commands](../../documents/antigravity.google/Antigravity%20docs%20CLI%20commands.md)"
   - "[Antigravity docs CLI execution modes](../../documents/antigravity.google/Antigravity%20docs%20CLI%20execution%20modes.md)"
@@ -55,6 +70,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Antigravity](../../harnesses/Antigravity.md)"
 subject: "[Permission modes](../../subjects/permissions/Permission%20modes.md)"

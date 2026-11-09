@@ -6,7 +6,6 @@ proposition:
     documented: true
     supported: true
     location: .agents/hooks.json (workspace), ~/.gemini/config/hooks.json (global)
-    shell_hooks: true
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -22,6 +21,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Antigravity](../../harnesses/Antigravity.md)"
 subject: "[Hook configuration](../../subjects/hooks/Hook%20configuration.md)"

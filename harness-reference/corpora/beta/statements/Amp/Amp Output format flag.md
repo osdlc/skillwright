@@ -12,7 +12,7 @@ proposition:
         argv:
           - --execute
           - --stream-json
-    note: Execute mode prints the final message. --stream-json needs --execute and prints newline-delimited JSON; --stream-json-thinking adds thinking blocks.
+    note: Execute mode prints the final message. --stream-json needs --execute and outputs streaming JSON instead of plain text.
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -39,6 +39,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Amp](../../harnesses/Amp.md)"
 subject: "[Output format flag](../../subjects/cli/Output%20format%20flag.md)"

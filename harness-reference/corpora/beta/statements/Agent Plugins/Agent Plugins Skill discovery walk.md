@@ -5,7 +5,7 @@ proposition:
   object:
     inside_plugin: each immediate child directory of skills/ containing a regular file named SKILL.md is one skill
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-04 Agent Plugins Skill discovery walk](../../study-results/Agent%20Plugins/2026-11-04%20Agent%20Plugins%20Skill%20discovery%20walk.md)"

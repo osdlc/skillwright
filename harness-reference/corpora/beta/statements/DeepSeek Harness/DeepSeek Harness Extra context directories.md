@@ -8,7 +8,7 @@ proposition:
       - --add-dir
       - <path>
     repeatable: true
-    note: Headless profile only; the directory must be a physical absolute path and takes effect under the workspace-write preset.
+    note: Option of the headless profile; the directory must be a physical absolute path and applies under workspace-write.
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -24,6 +24,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[DeepSeek Harness](../../harnesses/DeepSeek%20Harness.md)"
 subject: "[Extra context directories](../../subjects/cli/Extra%20context%20directories.md)"

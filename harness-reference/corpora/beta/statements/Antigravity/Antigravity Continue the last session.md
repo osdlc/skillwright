@@ -7,7 +7,6 @@ proposition:
     argv:
       - --continue
     chosen_by: most recent conversation of the current working directory
-    accepts_prompt: true
     note: -c is the short form
 direction: supports
 strength: moderate
@@ -30,6 +29,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Antigravity](../../harnesses/Antigravity.md)"
 subject: "[Continue the last session](../../subjects/cli/Continue%20the%20last%20session.md)"

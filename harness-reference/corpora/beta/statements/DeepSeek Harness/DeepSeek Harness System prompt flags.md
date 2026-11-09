@@ -4,12 +4,22 @@ proposition:
   predicate: instructions/system-prompt-flag
   object:
     supported: false
-    note: No system-prompt flag. The persona is the personaPrefix and personaSuffix settings of the system-prompt row, set through a patch. The system-prompt README says to remove the 'Your working directory is {{cwd}}.' clause from personaSuffix settings because the loop registers no {{cwd}} variable and an unresolved reference fails prompt assembly.
+    note: No system-prompt option in the launcher or headless help. The persona is the personaPrefix and personaSuffix settings of the system-prompt row. The README says to remove the 'Your working directory is {{cwd}}.' clause from personaSuffix settings because the loop does not register {{cwd}} and an unresolved reference fails prompt assembly.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 persona cwd unresolved](../../study-results/DeepSeek%20Harness/2026-11-09%20persona%20cwd%20unresolved.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 persona prefix global](../../study-results/DeepSeek%20Harness/2026-11-09%20persona%20prefix%20global.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 persona cwd not registered](../../study-results/DeepSeek%20Harness/2026-11-09%20persona%20cwd%20not%20registered.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
@@ -20,6 +30,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[DeepSeek Harness](../../harnesses/DeepSeek%20Harness.md)"
 subject: "[System prompt flags](../../subjects/instructions/System%20prompt%20flags.md)"

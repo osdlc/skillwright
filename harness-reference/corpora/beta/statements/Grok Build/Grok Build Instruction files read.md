@@ -6,7 +6,6 @@ proposition:
     files:
       - AGENTS.md
       - CLAUDE.md
-    note: reads the whole Claude Code surface zero-config
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -29,6 +28,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research
       agentType: software

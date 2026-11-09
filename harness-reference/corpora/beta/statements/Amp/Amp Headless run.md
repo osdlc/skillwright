@@ -5,7 +5,7 @@ proposition:
   object:
     command: amp -x <prompt>
     flag: -x, --execute
-    stdin: piped input is read; with -x the agent sees both the prompt and the piped text
+    stdin: piped input is accepted with -x
     one_task_per_run: true
     resume: amp threads continue --execute <prompt>
 direction: supports
@@ -34,6 +34,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Amp](../../harnesses/Amp.md)"
 subject: "[Headless run](../../subjects/cli/Headless%20run.md)"

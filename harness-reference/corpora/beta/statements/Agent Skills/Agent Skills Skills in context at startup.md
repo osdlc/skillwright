@@ -8,7 +8,7 @@ proposition:
     cap: no cap stated
     catalog_fields: name, description, optionally location (path to SKILL.md)
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-04 Agent Skills Skills in context at startup](../../study-results/Agent%20Skills/2026-11-04%20Agent%20Skills%20Skills%20in%20context%20at%20startup.md)"

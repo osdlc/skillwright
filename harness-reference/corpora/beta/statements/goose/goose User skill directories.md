@@ -5,7 +5,7 @@ proposition:
   object:
     dirs:
       - ~/.agents/skills
-    order: global skills, then project skills, then plugin skills; ~/.claude/skills is also discovered for backward compatibility
+    order: global skills (~/.agents/skills) then project skills; ~/.claude/skills is also discovered for backward compatibility
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -26,6 +26,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[goose](../../harnesses/goose.md)"
 subject: "[User skill directories](../../subjects/skills/User%20skill%20directories.md)"

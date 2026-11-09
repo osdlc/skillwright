@@ -3,12 +3,12 @@ proposition:
   subject: "[Antigravity](../../harnesses/Antigravity.md)"
   predicate: config/credentials-env
   object:
-    supported: partial
+    supported: true
     vars:
       - name: GEMINI_API_KEY
         kind: api-key
         provider: gemini
-    note: Read when the modelProvider setting is gemini; the default sign-in is an OAuth login stored in the keyring.
+    note: Used when model requests go directly to the Gemini API.
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -24,6 +24,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Antigravity](../../harnesses/Antigravity.md)"
 subject: "[Credential variables](../../subjects/config/Credential%20variables.md)"

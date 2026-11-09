@@ -8,7 +8,7 @@ proposition:
       - --mcp-config
       - <json>
     inline_json: true
-    note: Documented as specifying a server without changing the settings file; no flag that ignores other configured servers is documented.
+    note: "Documented with -x (execute mode) commands only: it specifies a server without changing the settings file."
 direction: supports
 strength: moderate
 hasEvidenceLines:
@@ -24,6 +24,11 @@ contributions:
       name: harness-reference research
       agentType: software
     activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
     date: 2026-11-09T12:00:00Z
 harness: "[Amp](../../harnesses/Amp.md)"
 subject: "[Strict MCP config](../../subjects/mcp/Strict%20MCP%20config.md)"

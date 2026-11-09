@@ -4,7 +4,7 @@ reportedIn:
   - "[dsh tool-skill package README](../../documents/github.com/dsh%20tool-skill%20package%20README.md)"
 harness: "[DeepSeek Harness](../../harnesses/DeepSeek%20Harness.md)"
 version: 0.2.2-rc.1
-version_basis: exact
+version_basis: inferred
 observed: 2026-11-09
 locator: Summary
 excerpt:

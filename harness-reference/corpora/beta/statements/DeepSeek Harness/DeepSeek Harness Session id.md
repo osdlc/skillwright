@@ -7,7 +7,7 @@ proposition:
     assign_argv: []
     note: --session-id adopts an existing persisted Session and an unknown id is an error, so a caller cannot choose the id of a new run.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 headless help session-id](../../study-results/DeepSeek%20Harness/2026-11-09%20headless%20help%20session-id.md)"

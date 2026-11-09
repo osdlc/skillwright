@@ -5,7 +5,6 @@ proposition:
   object:
     supported: true
     command: dsh --profile headless --session-id <id> <prompt>
-    refused_when: different cwd, subagent or fork session, id held by another agent, or an uncomposed preset
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -28,6 +27,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-08T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
   - contributor:
       name: harness-reference research
       agentType: software
