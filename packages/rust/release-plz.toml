@@ -21,6 +21,40 @@ release_always = true
 # is not checked.
 semver_check = true
 changelog_update = true
+# The release PR's description. It leads with each crate's changelog section,
+# which holds the hand-written Breaking and Fixed notes. cargo-semver-checks
+# checks only the Rust API, so its column says "Rust API" and its full report
+# is folded away at the end. A behaviour change it cannot see is listed under
+# Breaking in the changelog. Tera 2 template; the variables are listed at
+# https://release-plz.dev/docs/config#the-pr_body-field. If the description
+# would pass GitHub's limit, release-plz drops `title` and `changelog`.
+pr_body = """
+## New release
+
+| Crate | Version | Rust API (cargo-semver-checks) |
+|---|---|---|
+{%- for release in releases %}
+| `{{ release.package }}` | {% if release.previous_version and release.previous_version != release.next_version %}{{ release.previous_version }} → {% endif %}{{ release.next_version }} | {% if release.semver_check == "incompatible" %}⚠ breaking{% elif release.semver_check == "compatible" %}compatible{% else %}not checked{% endif %} |
+{%- endfor %}
+
+cargo-semver-checks does not see behaviour changes. The **Breaking** section of each crate's CHANGELOG lists every breaking change, in the API and in behaviour.
+{% for release in releases %}{% if release.title and release.changelog %}
+## `{{ release.package }}` {{ release.title }}
+
+{{ release.changelog }}
+{% endif %}{% endfor %}
+{%- for release in releases %}{% if release.breaking_changes %}
+<details><summary>cargo-semver-checks report for <code>{{ release.package }}</code></summary>
+
+```text
+{{ release.breaking_changes }}
+```
+
+</details>
+{% endif %}{% endfor %}
+---
+Opened by [release-plz](https://github.com/release-plz/release-plz/). The template is `pr_body` in `packages/rust/release-plz.toml`.
+"""
 
 # The wasm-bindgen wrapper over tradecraft-core, built for the npm package
 # @osdlc/tradecraft-wasm. Never released as a crate. `publish = false` must
