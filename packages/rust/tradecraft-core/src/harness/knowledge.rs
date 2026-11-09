@@ -764,6 +764,50 @@ mod tests {
         }
     }
 
+    /// `harness-reference/src/beta/version-cases.json`, which the TypeScript tests read too.
+    fn shared_cases() -> Value {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../harness-reference/src/beta/version-cases.json"
+        );
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn version_validity_matches_the_shared_cases() {
+        for case in shared_cases()["valid"].as_array().unwrap() {
+            let [versioning, version, ok] = &case.as_array().unwrap()[..] else {
+                panic!("{case}");
+            };
+            let versioning = match versioning.as_str().unwrap() {
+                "semver" => Versioning::Semver,
+                "date" => Versioning::Date,
+                _ => Versioning::Unknown,
+            };
+            let version = version.as_str().unwrap();
+            assert_eq!(
+                valid_version(version, versioning),
+                ok.as_bool().unwrap(),
+                "{version}"
+            );
+        }
+    }
+
+    #[test]
+    fn semver_order_matches_the_shared_cases() {
+        for case in shared_cases()["semverOrder"].as_array().unwrap() {
+            let [a, b, order] = &case.as_array().unwrap()[..] else {
+                panic!("{case}");
+            };
+            let expected = order.as_i64().unwrap().cmp(&0);
+            assert_eq!(
+                compare_semver(a.as_str().unwrap(), b.as_str().unwrap()),
+                expected,
+                "{a} {b}"
+            );
+        }
+    }
+
     #[test]
     fn the_embedded_file_parses_and_names_its_corpus() {
         let kn = embedded();

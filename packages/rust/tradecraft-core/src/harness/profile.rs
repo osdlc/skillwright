@@ -65,7 +65,7 @@ pub struct HarnessProfile {
 }
 
 /// Where a profile value comes from.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source<T> {
     /// The compiled harness knowledge file, looked up at first use.
     Knowledge,
@@ -76,7 +76,7 @@ pub enum Source<T> {
 
 /// The plugin-root variable's row: which variable is a fact, the evidence note
 /// beside it is the row's.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct PluginRootPolicy {
     /// The variable's name.
     pub name: Source<&'static str>,
@@ -91,7 +91,7 @@ pub struct PluginRootPolicy {
 /// A harness's plugin row as written in code: the policy, and for each fact
 /// whether the knowledge file or a constant gives it. [`HarnessProfile::format`]
 /// resolves it into a [`PluginFormat`] (D-QXRN).
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct PluginPolicy {
     /// The project directory the projection puts a skill under. A choice
     /// among the several a harness reads, and the knowledge file's
@@ -836,27 +836,36 @@ impl HarnessProfile {
     ///
     /// On a spelling-only row. Every caller holds a row from
     /// [`with_plugin_format`], which yields no other kind. Also if the
-    /// embedded knowledge lacks a fact the row takes from it, which a test
-    /// rules out.
+    /// embedded knowledge lacks a fact the row takes from it. The canonical
+    /// rows cannot, and that guarantee is the
+    /// `the_resolved_formats_equal_the_constants_the_rows_held` test; a custom
+    /// row that takes a fact the file lacks panics here.
     pub fn format(&self) -> &'static PluginFormat {
         self.plugin_format()
             .expect("only a harness with a plugin format is asked for one")
     }
 
     /// [`Self::format`], or `None` for a spelling-only row.
+    ///
+    /// Resolved from this row's own policy. A row equal to a canonical one
+    /// shares its cached format; a modified or custom row is resolved once per
+    /// call and leaked, which is bounded by how many such rows a program makes.
     pub fn plugin_format(&self) -> Option<&'static PluginFormat> {
-        static FORMATS: OnceLock<[PluginFormat; 4]> = OnceLock::new();
-        self.plugin.as_ref()?;
-        let at = match self.name {
-            "claude" => 0,
-            "codex" => 1,
-            "cursor" => 2,
-            "pi" => 3,
-            other => unreachable!("{other} has a plugin policy but no format slot"),
-        };
-        let formats = FORMATS
-            .get_or_init(|| [CLAUDE, CODEX, CURSOR, PI].map(|profile| resolve_format(&profile)));
-        formats.get(at)
+        static FORMATS: OnceLock<[(HarnessProfile, PluginFormat); 4]> = OnceLock::new();
+        let policy = self.plugin.as_ref()?;
+        let canonical = FORMATS.get_or_init(|| {
+            [CLAUDE, CODEX, CURSOR, PI].map(|profile| {
+                let format = resolve_format(&profile);
+                (profile, format)
+            })
+        });
+        if let Some((_, format)) = canonical
+            .iter()
+            .find(|(row, _)| row.name == self.name && row.plugin.as_ref() == Some(policy))
+        {
+            return Some(format);
+        }
+        Some(Box::leak(Box::new(resolve_format(self))))
     }
 
     /// The paths this harness owns in a marketplace directory: its packs
@@ -1100,6 +1109,8 @@ mod tests {
 
     #[test]
     fn every_lookup_a_profile_makes_resolves_at_moderate_or_better_to_the_held_value() {
+        // A guard: `Query::default()` already drops weak values, so this fails
+        // only if that default or the strength order changes.
         let enough = |strength: Strength, what: &str| {
             assert!(strength >= Strength::Moderate, "{what} is {strength:?}");
         };
@@ -1186,5 +1197,35 @@ mod tests {
         let pi = profile_named("pi").unwrap();
         assert!(known(claude, "plugins/manifest-fields").is_some());
         assert!(known(pi, "skills/project-dirs").is_some());
+    }
+}
+
+#[cfg(test)]
+mod custom_rows {
+    use super::*;
+
+    #[test]
+    fn a_modified_row_resolves_from_its_own_policy() {
+        let mut row = CLAUDE;
+        row.plugin.as_mut().unwrap().packs = ".other/packs";
+        row.plugin.as_mut().unwrap().plugin_manifest = Source::Constant("custom/plugin.json");
+        let format = row.plugin_format().unwrap();
+        assert_eq!(format.plugin_manifest, "custom/plugin.json");
+        assert_eq!(format.packs, ".other/packs");
+        assert_eq!(
+            CLAUDE.format().plugin_manifest,
+            ".claude-plugin/plugin.json"
+        );
+    }
+
+    #[test]
+    fn a_custom_row_of_constants_needs_no_knowledge() {
+        let mut row = PI;
+        row.name = "mine";
+        let policy = row.plugin.as_mut().unwrap();
+        policy.user_skills_dir = Source::Constant(".mine/skills");
+        policy.plugin_manifest = Source::Constant("mine.json");
+        policy.marketplace_manifest = Source::Constant(None);
+        assert_eq!(row.format().user_skills_dir, ".mine/skills");
     }
 }
