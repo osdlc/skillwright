@@ -9,8 +9,8 @@ The record is kept in `corpora/`: `alpha`, an OKF bundle with its own validator,
 [corpus-schema](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md) corpus.
 
 - `corpora/alpha/`: the alpha corpus, the first prototype. Beta now holds subjects and statements.
-  Alpha stays the place for new facts until the full import (phase 4 of the
-  [harness knowledge plan](https://github.com/osdlc/skillwright/pull/96)) lands; then it is frozen.
+  Phase 4 of the [harness knowledge plan](https://github.com/osdlc/skillwright/pull/96) imported
+  every alpha category into beta, so alpha is frozen: new facts go to beta.
 - `corpora/alpha/sources/`: research notes the alpha corpus cites. Upstream docs and repositories
   are cited by their own URLs.
 - `corpora/beta/`: the beta corpus, a claims corpus: harnesses, documents, methods, study results,
