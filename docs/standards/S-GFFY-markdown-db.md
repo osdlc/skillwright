@@ -1,7 +1,7 @@
 # S-GFFY: markdown-db, version 0
 
 Accepted 2026-11-05. [Review](../parley/markdown-db-v0.json). The spec now lives in osdlc as [corpus-schema](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md), where it is kept current; this copy keeps the original name and is no longer updated.
-This standard lives in skillwright until it is promoted to osdlc.
+This standard now lives in osdlc as [corpus-schema](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md), where it is kept current. This copy keeps the original name and is no longer updated.
 
 markdown-db keeps typed records as files in a folder that people browse and edit as plain notes,
 and tools validate. The folder is pure data. Every rule a tool enforces is written in this standard
