@@ -181,6 +181,24 @@ the profile's shape are unchanged. A new decision record, D-xxxx, says so when p
 | 6 | **Drift loop.** Probes run in CI on a schedule; a new run writes a study result; the lint flags statements whose evidence now disputes them; the compiler refuses a disputed value a consumer depends on. | scheduled workflow | 5 |
 | 7 | **Retire alpha.** Delete the alpha corpus, its validator and page generator; generate pages from statements. | — | 4 |
 
+### Research scope for phase 4
+
+A survey of the consumers (agent-call adapters, detect-harness, agent-seat, the agent-setup and
+`*-pr` actions, agent-adapt runtimes, tradecraft-core profiles, skillwright's harness adapters)
+found facts they hardcode that alpha has no subject for. Phase 4 adds these subjects and researches
+them from primary sources (docs, changelogs, source, `--help` output, probe runs), for claude-code,
+codex, cursor and pi first, then opencode, copilot-cli, qwen-code, droid, dsh and antigravity:
+
+- `cli/binary`, `cli/install`, `cli/output-format`, `cli/effort`, `cli/context-dirs`,
+  `cli/session-id`, `cli/session-persistence`, `cli/limits`, `cli/continue`, `cli/current-env`
+  (the variables that mark a process as running inside the harness; not `cli/session-env`)
+- `permissions/modes` and `permissions/tool-rules` (a new `permissions` category)
+- `mcp/strict-config`, `plugins/session-load`, `plugins/marketplace-git-ref`,
+  `instructions/system-prompt-flag`, `config/config-dir-env`, `config/credentials-env`
+
+Every existing alpha fact a consumer uses is re-checked against a current primary source, not
+only converted, so its statement cites at least one study result dated 2026-11 or later.
+
 Phases 1 to 3 land together as the first implementation PR. Phase 4 is mechanical and large, so it
 gets its own PR.
 
