@@ -243,6 +243,26 @@ observed_by: "person: test"
     assert.deepEqual(fetched, ['https://api.github.com/repos/acme/tool/readme'])
   })
 
+  test('ignores a fragment or query on a github.com repository URL', async () => {
+    for (const url of [
+      'https://github.com/acme/tool#readme',
+      'https://github.com/acme/tool?tab=readme-ov-file',
+    ]) {
+      fetched.length = 0
+      await capture(
+        opts({
+          reference: url,
+          title: 'acme tool README',
+          referenceName: `acme tool ${url.length}`,
+          excerpt: 'starts as claude',
+          name: `n${url.length}`,
+        }),
+        deps('Claude Code starts as claude in a terminal', 200, 'text/markdown'),
+      )
+      assert.deepEqual(fetched, ['https://api.github.com/repos/acme/tool/readme'])
+    }
+  })
+
   test('removes what it wrote when the corpus no longer validates', async () => {
     await assert.rejects(
       capture(

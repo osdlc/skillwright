@@ -154,19 +154,27 @@ const link = (from: string, to: string): string =>
  * the raw file and a repository URL as its README source; any other URL is read as it is.
  */
 function fetchTarget(url: string): { url: string; accept: string } {
-  const blob = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/u.exec(url)
-  if (blob !== null)
+  const other = { url, accept: 'text/html, text/markdown, text/plain;q=0.9, */*;q=0.1' }
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return other
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com') return other
+  const [owner, repo, kind, ...rest] = parsed.pathname.split('/').filter((part) => part !== '')
+  if (owner === undefined || repo === undefined) return other
+  if (kind === 'blob' && rest.length > 0)
     return {
-      url: `https://raw.githubusercontent.com/${blob[1]}/${blob[2]}/${blob[3]}`,
+      url: `https://raw.githubusercontent.com/${owner}/${repo}/${rest.join('/')}`,
       accept: 'text/plain, */*;q=0.1',
     }
-  const repo = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)\/?$/u.exec(url)
-  if (repo !== null)
+  if (kind === undefined)
     return {
-      url: `https://api.github.com/repos/${repo[1]}/${repo[2]}/readme`,
+      url: `https://api.github.com/repos/${owner}/${repo}/readme`,
       accept: 'application/vnd.github.raw+json',
     }
-  return { url, accept: 'text/html, text/markdown, text/plain;q=0.9, */*;q=0.1' }
+  return other
 }
 
 function record(data: Data, body: string): string {

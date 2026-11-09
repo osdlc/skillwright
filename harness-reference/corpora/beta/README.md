@@ -51,7 +51,7 @@ A public repository that holds only issues, docs or install scripts is not a sou
 pnpm run capture --harness "Codex CLI" --reference "https://github.com/openai/codex" \
   --kind docs --locator "Docs" --name "Codex README on the license" \
   --observed-by "person: <you>" \
-  --excerpt "This repository is licensed under the Apache-2.0 License."
+  --excerpt "This repository is licensed under the [Apache-2.0 License]"
 ```
 
 - `--reference` is an https URL or the path of a reference record. A URL with no record gets one:
