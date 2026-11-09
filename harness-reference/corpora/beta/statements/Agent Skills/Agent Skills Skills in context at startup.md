@@ -8,7 +8,7 @@ proposition:
     cap: no cap stated
     catalog_fields: name, description, optionally location (path to SKILL.md)
 direction: supports
-strength: moderate
+strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-04 Agent Skills Skills in context at startup](../../study-results/Agent%20Skills/2026-11-04%20Agent%20Skills%20Skills%20in%20context%20at%20startup.md)"
@@ -20,15 +20,26 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
+  - hasEvidenceItems:
+      - "[2026-11-09 spec progressive](../../study-results/Agent%20Skills/2026-11-09%20spec%20progressive.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09.
 reportedIn:
   - "[Agent Skills specification](../../documents/agentskills.io/Agent%20Skills%20specification.md)"
   - "[Agent Skills how to add skills support to your agent](../../documents/agentskills.io/Agent%20Skills%20how%20to%20add%20skills%20support%20to%20your%20agent.md)"
+  - "[Agent Skills specification github.com](../../documents/github.com/Agent%20Skills%20specification%20github.com.md)"
 contributions:
   - contributor:
       name: harness-reference import
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Agent Skills](../../harnesses/Agent%20Skills.md)"
 subject: "[Skills in context at startup](../../subjects/skills/Skills%20in%20context%20at%20startup.md)"
 scope:

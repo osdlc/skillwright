@@ -9,13 +9,28 @@ proposition:
     unsupported_schema_version: the client rejects the plugin and should report the version
     schema: https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 direction: supports
-strength: moderate
+strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-05 Agent Plugins Plugin manifest validation](../../study-results/Agent%20Plugins/2026-11-05%20Agent%20Plugins%20Plugin%20manifest%20validation.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-05.
+  - hasEvidenceItems:
+      - "[2026-11-09 spec manifest unknown fields](../../study-results/Agent%20Plugins/2026-11-09%20spec%20manifest%20unknown%20fields.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 spec manifest fatal](../../study-results/Agent%20Plugins/2026-11-09%20spec%20manifest%20fatal.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 spec schema unsupported](../../study-results/Agent%20Plugins/2026-11-09%20spec%20schema%20unsupported.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09.
 reportedIn:
   - "[Agent Plugins Specification 1.0.0](../../documents/github.com/Agent%20Plugins%20Specification%201.0.0.md)"
 contributions:
@@ -24,6 +39,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-05T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Agent Plugins](../../harnesses/Agent%20Plugins.md)"
 subject: "[Plugin manifest validation](../../subjects/plugins/Plugin%20manifest%20validation.md)"
 scope:
