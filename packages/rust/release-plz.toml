@@ -43,9 +43,9 @@ cargo-semver-checks does not see behaviour changes. The **Breaking** section of 
 {%- for release in releases %}{% if release.breaking_changes %}
 <details><summary>cargo-semver-checks report for <code>{{ release.package }}</code></summary>
 
-```text
+````text
 {{ release.breaking_changes }}
-```
+````
 
 </details>
 {% endif %}{% endfor %}
@@ -71,14 +71,27 @@ publish = false
 release = false
 
 [changelog]
-# Each release's section is only its heading. The notes under it are the
-# hand-written ones from `## [Unreleased]`, which release-plz moves below the
-# heading. The default body also listed every commit, grouped by type, above
-# those notes, and that list was deleted by hand on each release PR.
+# Each release's section is its heading, then the hand-written notes from
+# `## [Unreleased]`, which release-plz moves below the heading. With no notes
+# the section is empty, so write them in the PR that makes the change. The
+# default body also listed every commit, grouped by type, above those notes,
+# and that list was deleted by hand on each release PR. The one commit entry
+# kept is release-plz's own "update Cargo.toml/Cargo.lock dependencies", the
+# only reason given for a crate bumped because a dependency changed.
 body = """
+{%- set_global deps = [] -%}
+{%- for commit in commits -%}
+{%- if commit.message is containing("update Cargo.") -%}
+{%- set_global deps = deps | concat(with=commit.message) -%}
+{%- endif -%}
+{%- endfor %}
+## [{{ version | trim_start_matches(pat="v") }}]{%- if release_link -%}({{ release_link }}){% endif %} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% if deps %}
+### Dependencies
 
-## [{{ version }}]{%- if release_link -%}({{ release_link }}){% endif %} - {{ timestamp | date(format="%Y-%m-%d") }}
-
+{% for dep in deps -%}
+- {{ dep | upper_first }}
+{% endfor %}{% endif %}
 """
 # The commit groups. The body above does not print them, but they still
 # matter: a release whose commits are all skipped gets no heading, and its
