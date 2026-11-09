@@ -34,7 +34,6 @@ scope:
   platform: []
   model: null
 status: superseded
-imported_from: fact:config/main-file@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/config/main-file.md`.

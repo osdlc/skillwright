@@ -39,7 +39,6 @@ scope:
   platform: []
   model: null
 status: current
-imported_from: fact:config/main-file@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/config/main-file.md`.

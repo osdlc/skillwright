@@ -40,11 +40,12 @@ contributions:
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[MCP config file](../../subjects/mcp/MCP%20config%20file.md)"
 scope:
-  since: null
-  until: 0.99.0
+  since: 0.99.0
+  until: null
   platform: []
   model: null
-status: superseded
+status: current
+supersedes: "[Pi MCP config file](Pi%20MCP%20config%20file.md)"
 ---
 
 Replaces the earlier "no MCP" claim, which held before 0.99.0.

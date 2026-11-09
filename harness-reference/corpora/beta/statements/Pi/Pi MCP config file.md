@@ -25,11 +25,10 @@ harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[MCP config file](../../subjects/mcp/MCP%20config%20file.md)"
 scope:
   since: null
-  until: null
+  until: 0.99.0
   platform: []
   model: null
-status: current
-imported_from: fact:mcp/config-file@pi#scope-[null,null,null]
+status: superseded
 ---
 
 Imported from `facts/pi/mcp/config-file.md`.

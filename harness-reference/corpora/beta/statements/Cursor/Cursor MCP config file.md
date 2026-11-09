@@ -44,7 +44,6 @@ scope:
   platform: []
   model: null
 status: current
-imported_from: fact:mcp/config-file@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/mcp/config-file.md`.

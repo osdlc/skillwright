@@ -38,7 +38,6 @@ scope:
   platform: []
   model: null
 status: current
-imported_from: fact:instructions/agents-md@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/instructions/agents-md.md`.

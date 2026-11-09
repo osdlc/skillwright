@@ -39,7 +39,6 @@ scope:
   platform: []
   model: null
 status: current
-imported_from: fact:skills/relative-paths@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/relative-paths.md`.

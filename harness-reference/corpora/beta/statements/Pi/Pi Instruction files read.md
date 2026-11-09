@@ -50,7 +50,6 @@ scope:
   platform: []
   model: null
 status: current
-imported_from: fact:instructions/files@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/instructions/files.md`.

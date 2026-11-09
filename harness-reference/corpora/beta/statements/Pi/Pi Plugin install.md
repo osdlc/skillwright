@@ -66,7 +66,6 @@ scope:
 status: current
 open:
   - Is a plain string entry in `packages` accepted besides the object form with `source`? Only the object form is shown in the docs.
-imported_from: fact:plugins/install@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/plugins/install.md`.

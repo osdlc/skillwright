@@ -39,7 +39,6 @@ scope:
   platform: []
   model: null
 status: current
-imported_from: fact:cli/fork@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/cli/fork.md`.

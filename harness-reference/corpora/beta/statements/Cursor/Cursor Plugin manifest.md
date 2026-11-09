@@ -43,7 +43,6 @@ scope:
 status: current
 open:
   - Whether custom component paths in the manifest replace or add to the default directories.
-imported_from: fact:plugins/manifest@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/plugins/manifest.md`.

@@ -39,7 +39,6 @@ scope:
   platform: []
   model: null
 status: current
-imported_from: fact:hooks/config@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/hooks/config.md`.

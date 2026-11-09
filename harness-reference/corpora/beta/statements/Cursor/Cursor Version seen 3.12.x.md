@@ -35,7 +35,6 @@ scope:
   platform: []
   model: null
 status: superseded
-imported_from: fact:meta/version-seen@cursor#sighting-1
 ---
 
 Imported from `facts/cursor/meta/version-seen.md`, observation 1.

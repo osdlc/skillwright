@@ -45,7 +45,6 @@ scope:
   platform: []
   model: null
 status: current
-imported_from: fact:skills/user-dirs@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/user-dirs.md`.

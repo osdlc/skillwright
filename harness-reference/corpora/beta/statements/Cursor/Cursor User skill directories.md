@@ -40,7 +40,6 @@ scope:
   platform: []
   model: null
 status: current
-imported_from: fact:skills/user-dirs@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/user-dirs.md`.
