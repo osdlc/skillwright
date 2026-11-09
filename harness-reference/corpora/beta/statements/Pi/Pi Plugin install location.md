@@ -20,6 +20,16 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi packages npm git](../../study-results/Pi/2026-11-09%20Pi%20packages%20npm%20git.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: npm and git rows.
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi packages settings files](../../study-results/Pi/2026-11-09%20Pi%20packages%20settings%20files.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Settings files.
 reportedIn:
   - "[Pi docs Pi Packages (main at d57c2d2)](../../documents/github.com/Pi%20docs%20Pi%20Packages%20%28main%20at%20d57c2d2%29.md)"
 contributions:
@@ -28,6 +38,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[Plugin install location](../../subjects/plugins/Plugin%20install%20location.md)"
 scope:
@@ -45,3 +60,5 @@ Imported from `facts/pi/plugins/install-location.md`.
 
 Open questions:
 - What are the exact on-disk directories for npm and git package installs?
+
+Rechecked 2026-11-09 against the installed pi 1.5.0 and the v1.5.0 source tree.

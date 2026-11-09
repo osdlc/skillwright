@@ -1,0 +1,50 @@
+---
+proposition:
+  subject: "[Pi](../../harnesses/Pi.md)"
+  predicate: mcp/config-file
+  object:
+    file: ~/.pi/agent/mcp.json
+    format: JSON
+    key: mcpServers
+    supported: true
+    note: project servers in .pi/mcp.json after project trust; `pi mcp add|list|login` manage it
+direction: supports
+strength: strong
+hasEvidenceLines:
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi mcp config files](../../study-results/Pi/2026-11-09%20Pi%20mcp%20config%20files.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: mcp.md.
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi help mcp](../../study-results/Pi/2026-11-09%20Pi%20help%20mcp.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: "`pi mcp --help` names the files."
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi changelog mcp added](../../study-results/Pi/2026-11-09%20Pi%20changelog%20mcp%20added.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: MCP support arrived as a built-in extension in 0.99.0.
+contributions:
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: created
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
+harness: "[Pi](../../harnesses/Pi.md)"
+subject: "[MCP config file](../../subjects/mcp/MCP%20config%20file.md)"
+scope:
+  since: null
+  until: 0.99.0
+  platform: []
+  model: null
+status: superseded
+---
+
+Replaces the earlier "no MCP" claim, which held before 0.99.0.
