@@ -6,13 +6,18 @@ proposition:
     location: settings JSON `hooks` key
     kind: shell commands in JSON config
 direction: supports
-strength: weak
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 Claude Code Hook configuration](../../study-results/Claude%20Code/2026-08-08%20Claude%20Code%20Hook%20configuration.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: weak
     description: third-party observed 2026-08-08.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs hooks locations](../../study-results/Claude%20Code/2026-11-09%20docs%20hooks%20locations.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Hooks are defined in settings.json files, plugin hooks/hooks.json or managed policy settings.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:
@@ -21,6 +26,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T07:53:54Z
 harness: "[Claude Code](../../harnesses/Claude%20Code.md)"
 subject: "[Hook configuration](../../subjects/hooks/Hook%20configuration.md)"
 scope:

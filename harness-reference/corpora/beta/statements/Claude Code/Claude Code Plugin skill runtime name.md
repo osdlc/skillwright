@@ -19,6 +19,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-10-29.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs skills plugin namespace](../../study-results/Claude%20Code/2026-11-09%20docs%20skills%20plugin%20namespace.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Plugin skills are namespaced as /plugin-name:skill-name.
 reportedIn:
   - "[Claude Code docs plugins reference](../../documents/code.claude.com/Claude%20Code%20docs%20plugins%20reference.md)"
   - "[Claude Code docs skills](../../documents/code.claude.com/Claude%20Code%20docs%20skills.md)"
@@ -28,6 +33,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-29T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T07:53:54Z
 harness: "[Claude Code](../../harnesses/Claude%20Code.md)"
 subject: "[Plugin skill runtime name](../../subjects/skills/Plugin%20skill%20runtime%20name.md)"
 scope:
