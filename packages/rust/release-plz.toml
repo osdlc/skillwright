@@ -94,8 +94,8 @@ body = """
 {% endfor %}{% endif %}
 """
 # The commit groups. The body above does not print them, but they still
-# matter: a release whose commits are all skipped gets no heading, and its
-# notes stay under Unreleased. These are release-plz's defaults (Keep a
+# matter: a release whose commits are all skipped still bumps its version,
+# but gets no heading, and its notes stay under Unreleased. These are release-plz's defaults (Keep a
 # Changelog groups from conventional commit types), plus skips for commits
 # that say nothing to a user of the crate: merges, release-plz's own release
 # commits, the old wasm rebuild commits, CI changes and release-process docs.
