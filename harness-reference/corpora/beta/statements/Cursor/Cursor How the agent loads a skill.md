@@ -25,6 +25,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor docs skill loading](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20skill%20loading.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Skills are discovered when Cursor starts and the agent decides when to use them.
 reportedIn:
   - "[Cursor docs Agent Skills](../../documents/cursor.com/Cursor%20docs%20Agent%20Skills.md)"
 contributions:
@@ -33,6 +38,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Cursor](../../harnesses/Cursor.md)"
 subject: "[How the agent loads a skill](../../subjects/skills/How%20the%20agent%20loads%20a%20skill.md)"
 scope:
@@ -52,3 +62,5 @@ Imported from `facts/cursor/skills/agent-loading.md`.
 Open questions:
 - Whether the CLI (cursor-agent) loads skills and plugins the way the IDE does.
 - What mechanism loads the SKILL.md body when the agent picks a skill (a tool call or a file read)?
+
+Rechecked 2026-11-09 against the installed CLI and vendor docs. Whether the CLI loads skills the way the IDE does stays open.
