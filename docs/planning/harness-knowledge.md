@@ -49,7 +49,7 @@ so the harness fields below are extensions on the profile's types, not new schem
 
 ### What an observation is
 
-A **study result**. It is one of two things:
+A **study result**. It is one of three things:
 
 - **A page someone read** (`kind`: docs, changelog, source, help-text, issue, third-party).
   `reportedIn` links the document, `excerpt` quotes the words, and `version` says which release
@@ -57,7 +57,7 @@ A **study result**. It is one of two things:
 - **An experiment someone ran** (`kind`: run). `specifiedBy` links the method, which holds the
   probe script. The run's output sits beside the study result in its record folder.
 
-`inferred` is the third kind: a conclusion drawn from other study results, which it names.
+- **A conclusion drawn from other study results** (`kind`: inferred), which it names.
 
 A study result never states a value. A statement does: it cites study results in its evidence
 lines and gives the verdict.
@@ -86,7 +86,8 @@ status: current            # current | superseded | disputed | open
 supersedes: null           # x-ref statements
 ```
 
-`harness` and `subject` repeat `proposition.subject` and `proposition.predicate` because
+Links in the example are relative to the corpus folder. The ones nested in `proposition` and
+`hasEvidenceItems` are plain Markdown links, checked only for resolving. `harness` and `subject` repeat `proposition.subject` and `proposition.predicate` because
 corpus-schema allows `x-ref` only on top-level fields. A lint keeps them equal:
 `proposition.subject` links the same record as `harness`, and `proposition.predicate` equals the
 linked subject's `slug`. They collapse
@@ -101,7 +102,7 @@ The importer sets strength by rule; a reviewer may lower it, never raise it abov
 |---|---|
 | run, source, help-text | strong |
 | docs, changelog | moderate |
-| issue, third-party, inferred, research note only | weak |
+| issue, third-party, inferred; or any kind whose document is a research note | weak |
 
 A statement's strength is its strongest supporting line, dropped one step when any line
 disputes it.
@@ -113,7 +114,7 @@ disputes it.
   one evidence line per study result.
 - Two observations in the same scope that disagree on a key make one statement with `status:
   disputed` and a `disputes` evidence line.
-- Each distinct (since, until, model) is its own statement. Older ones are `superseded` and
+- Each distinct (since, until, platform, model) is its own statement. Older ones are `superseded` and
   linked by `supersedes` in version order.
 - A fact that holds only open questions becomes a `neutral` statement with `status: open`, no
   strength, and its questions in `open`. Any statement keeps its open questions in `open`.
@@ -190,7 +191,7 @@ claude, `--sandbox read-only` for codex) and skillwright's translators. Those ad
 translators read their per-harness facts from the derived file instead of keeping their own
 tables, and tests check each adapter against it.
 
-This amends [D-FDLQ](../decisions/D-FDLQ-harness-profile-and-translator.md): a harness profile's
+Once phase 5 lands, this amends [D-FDLQ](../decisions/D-FDLQ-harness-profile-and-translator.md): a harness profile's
 *fact* values now come from the derived file rather than a hand-written row. Only facts move:
 skills and plugin paths, manifest and marketplace locations, naming rules, plugin root variables,
 install CLI shapes. Policy stays in code with its defaults and its config overrides from
@@ -203,7 +204,7 @@ the profile's shape are unchanged. A new decision record, D-xxxx, says so when p
 | # | Phase | Output | Depends on |
 |---|---|---|---|
 | 1 | **Profile types in beta.** Rename `references` to `documents` and `evidence` to `study-results` with their extensions. Add `methods`, `statements`, `subjects` schemas. Copy the claims profile schemas with a pinned source commit. Add `lint`. | beta validates; lint passes; existing beta records migrated | — |
-| 2 | **Importer, pilot.** `src/beta/import-alpha.ts` converts one category (`cli`) of alpha: sources and notes to documents, probes to methods, observations to study-results, facts to statements, with strength by rule. Idempotent: rerunning writes the same files. The `cli` subjects get a `valueSchema` written by hand from the inferred one. | ~60 statements; diff reviewed by a person | 1 |
+| 2 | **Importer, pilot.** `src/beta/import-alpha.ts` converts one category (`cli`) of alpha: sources and notes to documents, probes to methods, observations to study-results, facts to statements, with strength by rule. Idempotent: rerunning writes the same files. The `cli` subjects get a `valueSchema` written by hand from the values observed in the `cli` facts. | ~60 statements; diff reviewed by a person | 1 |
 | 3 | **Compiler and lookup.** `src/compile/` writes `harness-knowledge.json` and its schema; `lookup` and tests. | the file for the pilot slice | 2 |
 | 4 | **Full import.** All 589 facts and 11 categories. Value shapes written as `valueSchema` per subject; facts whose values don't fit get fixed by hand. | the full file; alpha frozen | 2 |
 | 5 | **First consumers.** agent-call's adapters and detect-harness (osdlc/osdlc) read the npm package; tradecraft-core's profiles read the embedded file. Decision record amending D-FDLQ. | consumer PRs | 3, 4 |
