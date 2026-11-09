@@ -29,18 +29,13 @@ proposition:
         argv:
           - --dangerously-skip-permissions
         notes: --permission-mode bypassPermissions is equivalent.
-      - name: dontAsk
-        intent: read-only
-        argv:
-          - --permission-mode
-          - dontAsk
-        notes: Only pre-approved tools run; anything that would prompt is denied.
       - name: default
         intent: read-only
         argv:
           - --permission-mode
           - manual
         notes: Reads only. Manual is accepted as an alias for default.
+    note: 'dontAsk (--permission-mode dontAsk) has no generic intent here: file reads inside the working directories and pre-approved tools run, and anything that would prompt is denied, though an installed mod can still approve some of those calls.'
 direction: supports
 strength: moderate
 hasEvidenceLines:
