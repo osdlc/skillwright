@@ -257,9 +257,15 @@ export function plan(ctx: Context): Plan {
       if (notes.length > 0) dropped.set(fact, notes)
       return fact
     })
-  const latest = new Set<string>(LATEST_SEEDS)
-  for (const { data } of beta.all('subjects'))
+  // An existing subject record decides (no field means one); a seed applies only to a subject
+  // with no record yet.
+  const latest = new Set<string>()
+  const recorded = new Set<string>()
+  for (const { data } of beta.all('subjects')) {
+    recorded.add(String(data['slug']))
     if (data['cardinality'] === 'latest') latest.add(String(data['slug']))
+  }
+  for (const slug of LATEST_SEEDS) if (!recorded.has(slug)) latest.add(slug)
   /** A latest-cardinality fact has one statement per sighting; any other, one per scope. */
   const stmtIdentity = (
     f: { subject: string; harness: string },
@@ -566,7 +572,7 @@ export function plan(ctx: Context): Plan {
 
     // A latest-cardinality subject: one statement per sighting, oldest first. The newest is
     // current; each older one is superseded and linked from the one that replaced it.
-    if (latest.has(fact.subject)) {
+    if (latest.has(fact.subject) && fact.observations.length > 0) {
       const chain = [...made].sort(
         (a, b) =>
           (a.obs.observed < b.obs.observed ? -1 : a.obs.observed > b.obs.observed ? 1 : 0) ||

@@ -222,6 +222,58 @@ describe('mapping', () => {
     assert.match(text('statements/Amp/Amp Version seen 9.md'), /Dropped `since: 9`/)
   })
 
+  test('a seed yields to an existing subject record, and open-only latest facts still import', () => {
+    const subject = {
+      id: 'meta/version-seen',
+      category: 'meta',
+      title: 'Version seen',
+      description: 'A version.',
+      order: 3,
+    }
+    const run = (facts: unknown[], card?: string) => {
+      const file = join(dir, 'subjects/meta/Version seen.md')
+      const text = readFileSync(file, 'utf8')
+      const bare = text.replace(/^cardinality: .*\n/mu, '')
+      writeFileSync(
+        file,
+        card === undefined ? bare : bare.replace(/^(category: .*\n)/mu, `$1cardinality: ${card}\n`),
+      )
+      for (const f of readdirSync(join(dir, 'statements/Pi')))
+        if (f.startsWith('Pi Version seen')) rmSync(join(dir, 'statements/Pi', f))
+      const ctx = context(facts)
+      ctx.dataset.subjects.push(subject as never)
+      ctx.categories.add('meta')
+      return plan(ctx)
+    }
+    const sightings = [
+      fact('meta/version-seen', {
+        observations: [
+          obs({ value: { version: '7.0.0' }, observed: '2026-01-01' }),
+          obs({ value: { version: '7.1.0' }, observed: '2026-02-01' }),
+        ],
+      }),
+    ]
+    // The record says `one`, or nothing: a seed does not override it.
+    for (const card of ['one', undefined]) {
+      const p = run(sightings, card)
+      assert.equal(p.files.has('statements/Pi/Pi Version seen 7.0.0.md'), false)
+      assert.equal(p.counts['statements superseded'], undefined)
+    }
+    // The record says `latest`.
+    assert.equal(run(sightings, 'latest').counts['statements superseded'], 1)
+    // An open-only fact still yields its open statement.
+    const open = run(
+      [
+        fact('meta/version-seen', {
+          observations: [],
+          open: [{ question: 'Which version?', observed: '2026-04-01', source: 'doc' }],
+        }),
+      ],
+      'latest',
+    )
+    assert.equal(open.counts['statements open'], 1)
+  })
+
   test('skips a fact whose harness has no beta record, with a warning', () => {
     const p = plan(
       context([fact('zz/thing', { harness: 'no-such-harness', observations: [obs({})] })]),

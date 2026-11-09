@@ -3,7 +3,7 @@ slug: cli/output-format
 category: cli
 description: Which flag picks the output format of a non-interactive run, and which formats exist?
 valueSchema:
-  description: The output format flag.
+  description: The output formats a non-interactive run can print, and the arguments that select each.
   type: object
   properties:
     supported:
@@ -15,25 +15,28 @@ valueSchema:
         - true
         - false
         - partial
-    flag:
-      description: The flag, such as --output-format.
-      type: string
     formats:
-      description: Values the flag takes, mapped to what they print.
-      type: object
-      additionalProperties:
-        type: string
-    default:
-      description: The format used when the flag is absent.
-      type: string
-    stream_flag_extra:
-      description: Further arguments a stream format needs, such as ["--verbose"].
+      description: The formats the harness can print, each with the full arguments that select it.
       type: array
       items:
-        type: string
-    note:
+        type: object
+        properties:
+          name:
+            description: The format, such as text, json, stream-json or jsonl.
+            type: string
+          argv:
+            description: >-
+              The full arguments to add for this format, such as ["--output-format","stream-json","--verbose"]
+              or the standalone switch ["--json"]. Empty when it is the default and needs no argument.
+            type: array
+            items:
+              type: string
+        required: [name, argv]
+        additionalProperties: true
+    notes:
       description: A caveat the other keys do not carry.
       type: string
+  required: [formats]
   additionalProperties: true
 ---
 
