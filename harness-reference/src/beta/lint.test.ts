@@ -122,7 +122,7 @@ describe('lint', () => {
       edit(RUN, 'kind: run', 'kind: docs')
       edit(SESSION, 'strength: strong', 'strength: moderate')
       edit(SESSION, 'strengthOfEvidenceProvided: strong', 'strengthOfEvidenceProvided: moderate')
-      assert.deepEqual(strength(problems()), [])
+      assert.deepEqual(problems(), [])
     })
 
     test('refuses an evidence line stronger than its evidence kinds allow', () => {
@@ -139,6 +139,28 @@ describe('lint', () => {
       assert.deepEqual(strength(problems()), [
         `${SESSION}: strength strong is above its strongest supporting evidence line (moderate)`,
       ])
+    })
+
+    test('caps a line at its evidence kinds before comparing the statement to it', () => {
+      edit(RUN, 'kind: run', 'kind: docs')
+      assert.ok(
+        strength(problems()).includes(
+          `${SESSION}: strength strong is above its strongest supporting evidence line (moderate)`,
+        ),
+      )
+    })
+
+    test('refuses a strength with no supporting evidence line', () => {
+      edit(
+        SESSION,
+        'directionOfEvidenceProvided: supports',
+        'directionOfEvidenceProvided: disputes',
+      )
+      assert.ok(
+        strength(problems()).includes(
+          `${SESSION}: strength strong has no supporting evidence line`,
+        ),
+      )
     })
   })
 

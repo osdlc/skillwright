@@ -219,10 +219,12 @@ export function lint(beta: Beta): string[] {
           `evidence line is ${NAMES[given]}, but its evidence kinds allow at most ${NAMES[max]}`,
         )
       if (l['directionOfEvidenceProvided'] === 'supports')
-        strongestLine = Math.max(strongestLine, given)
+        strongestLine = Math.max(strongestLine, max >= 0 ? Math.min(given, max) : given)
     }
     const top = RANK[str(data['strength']) ?? '']
-    if (top !== undefined && strongestLine >= 0 && top > strongestLine)
+    if (top !== undefined && strongestLine < 0)
+      bad(ref.file, `strength ${NAMES[top]} has no supporting evidence line`)
+    else if (top !== undefined && top > strongestLine)
       bad(
         ref.file,
         `strength ${NAMES[top]} is above its strongest supporting evidence line (${NAMES[strongestLine]})`,
