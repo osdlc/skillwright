@@ -1,7 +1,8 @@
 # Mention @cursor in a pull request comment, an inline review comment or a
 # review and Cursor replies on the pull request. A comment that starts with
-# `@cursor review [focus]` gets a code review of the pull request (craft's code-review skill, inlined)
-# instead. The work is the cursor-pr action (packages/gh-actions/cursor-pr);
+# `@cursor review [focus]` gets a code review of the pull request instead,
+# from craft's code-review skill. The work is the cursor-pr action
+# (osdlc/osdlc packages/gh-actions/cursor-pr);
 # this file only says when it runs and with what.
 #
 # Only sksizer can trigger it: the job's `if` checks the author before a
