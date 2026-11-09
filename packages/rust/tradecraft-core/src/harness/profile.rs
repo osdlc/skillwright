@@ -29,7 +29,7 @@
 //! statement and to the value the row held before, so a corpus change that
 //! moves a fact is a visible test failure, not a silent change.
 
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use agent_adapt::RuntimeId;
 
@@ -76,7 +76,7 @@ pub enum Source<T> {
 
 /// The plugin-root variable's row: which variable is a fact, the evidence note
 /// beside it is the row's.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginRootPolicy {
     /// The variable's name.
     pub name: Source<&'static str>,
@@ -91,7 +91,7 @@ pub struct PluginRootPolicy {
 /// A harness's plugin row as written in code: the policy, and for each fact
 /// whether the knowledge file or a constant gives it. [`HarnessProfile::format`]
 /// resolves it into a [`PluginFormat`] (D-QXRN).
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginPolicy {
     /// The project directory the projection puts a skill under. A choice
     /// among the several a harness reads, and the knowledge file's
@@ -865,7 +865,20 @@ impl HarnessProfile {
         {
             return Some(format);
         }
-        Some(Box::leak(Box::new(resolve_format(self))))
+        static CUSTOM: Mutex<Vec<(&'static str, PluginPolicy, &'static PluginFormat)>> =
+            Mutex::new(Vec::new());
+        let mut custom = CUSTOM
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((_, _, format)) = custom
+            .iter()
+            .find(|(name, row, _)| *name == self.name && row == policy)
+        {
+            return Some(format);
+        }
+        let format: &'static PluginFormat = Box::leak(Box::new(resolve_format(self)));
+        custom.push((self.name, policy.clone(), format));
+        Some(format)
     }
 
     /// The paths this harness owns in a marketplace directory: its packs
@@ -1227,5 +1240,15 @@ mod custom_rows {
         policy.plugin_manifest = Source::Constant("mine.json");
         policy.marketplace_manifest = Source::Constant(None);
         assert_eq!(row.format().user_skills_dir, ".mine/skills");
+    }
+
+    #[test]
+    fn a_custom_row_is_resolved_once() {
+        let mut row = CLAUDE;
+        row.plugin.as_mut().unwrap().packs = ".once/packs";
+        let first = row.plugin_format().unwrap();
+        for _ in 0..100 {
+            assert!(std::ptr::eq(first, row.plugin_format().unwrap()));
+        }
     }
 }
