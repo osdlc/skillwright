@@ -1,8 +1,9 @@
 # Handoff: markdown-db and harness-reference
 
-The full context for the next session. The order of the remaining work is drawn in
-[release-graph.md](release-graph.md). It is meant to be split later into issues, standard edits
-and package docs; until then it is the one place that holds it.
+The full context for the next session. The plan and task graph are in
+[release-graph.md](release-graph.md), which links to the ecosystem plan. This document is meant to
+be split later into issues, standard edits and package docs; until then it is the one place that
+holds it.
 
 ## The goal
 
@@ -57,8 +58,8 @@ observations; code still reads alpha.
 
 ## Next for harness-reference, in order
 
-1. [ ] **Subjects and claims types in beta, with typed values.** A claim is one record per harness
-   and subject, for example `skills/project-dirs` as a list of paths, not prose. It cites evidence
+1. [ ] **Subjects and statements types in beta, with typed values.** A statement is one record per
+   harness and subject, for example `skills/project-dirs` as a list of paths, not prose. It cites evidence
    through a top-level `evidence` array of links (`x-ref: evidence`), which S-GFFY v0 can validate.
    Supports / contradicts per evidence needs `x-ref` in nested objects (markdown-db item 3).
 2. [ ] **Move the facts code reads first** from alpha to beta (the subjects listed above), capture
@@ -158,8 +159,10 @@ Kinds and their writers:
 | `run` | an experiment (not built) |
 | `inferred` | a person or agent by hand, citing what it infers from |
 
-The review questions on `docs/parley/evidence-v0.json` were not answered. Beta uses each question's
-recommended option; all are open:
+The owner answered q-names and q-focus on 2026-11-08 (see [release-graph.md](release-graph.md)).
+`references` becomes `documents`, `evidence` becomes `study-results`, and the `harness` field is
+dropped. Beta does not have these changes yet; they are plan task 4. The other questions were not
+answered. Beta uses each one's recommended option, and those stay open:
 
 | Question | Default used |
 |---|---|
