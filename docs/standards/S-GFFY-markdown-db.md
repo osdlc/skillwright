@@ -1,12 +1,12 @@
 # S-GFFY: markdown-db, version 0
 
-Accepted 2026-11-05. [Review](../parley/markdown-db-v0.json).
+Accepted 2026-11-05. [Review](../parley/markdown-db-v0.json). The spec now lives in osdlc as [corpus-schema](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md), where it is kept current; this copy keeps the original name and is no longer updated.
 This standard lives in skillwright until it is promoted to osdlc.
 
 markdown-db keeps typed records as files in a folder that people browse and edit as plain notes,
 and tools validate. The folder is pure data. Every rule a tool enforces is written in this standard
 or in the corpus's own files, never only in code. Code is one implementation of it; the reference
-validator is the [`@osdlc/markdown-db`](../../packages/ts/markdown-db/README.md) package.
+validator is the [`@osdlc/corpus-schema`](https://www.npmjs.com/package/@osdlc/corpus-schema) package.
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 

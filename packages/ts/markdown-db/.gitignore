@@ -1,4 +1,0 @@
-node_modules/
-
-# Test coverage (`pnpm run coverage`).
-coverage/
