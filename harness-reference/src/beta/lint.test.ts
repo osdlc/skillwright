@@ -95,6 +95,53 @@ describe('lint', () => {
     )
   })
 
+  test('refuses a statement that supersedes itself', () => {
+    edit(
+      SESSION,
+      'status: current',
+      'status: current\nsupersedes: "[x](Claude%20Code%20Session%20environment.md)"',
+    )
+    assert.ok(problems().some((p) => p === `${SESSION}: supersedes links to itself`))
+  })
+
+  test('says so when a supersedes link names a file that is not a statement', () => {
+    edit(SESSION, 'status: current', 'status: current\nsupersedes: "[x](../../harnesses/Pi.md)"')
+    const found = problems().filter((p) => p.endsWith('not a statement'))
+    assert.equal(found.length, 1, found.join('\n'))
+    assert.ok(found[0]!.startsWith(`${SESSION}: supersedes `))
+    assert.match(found[0]!, /which is a harnesses record, not a statement/)
+  })
+
+  describe('strength by rule', () => {
+    const RUN = 'study-results/Claude Code/2026-10-10 Claude Code Session environment.md'
+    const strength = (list: string[]): string[] =>
+      list.filter((p) => p.includes('strength') || p.includes('evidence kinds'))
+
+    test('passes a docs result held at moderate, and a run held at strong', () => {
+      assert.deepEqual(strength(problems()), [])
+      edit(RUN, 'kind: run', 'kind: docs')
+      edit(SESSION, 'strength: strong', 'strength: moderate')
+      edit(SESSION, 'strengthOfEvidenceProvided: strong', 'strengthOfEvidenceProvided: moderate')
+      assert.deepEqual(strength(problems()), [])
+    })
+
+    test('refuses an evidence line stronger than its evidence kinds allow', () => {
+      edit(RUN, 'kind: run', 'kind: docs')
+      edit(SESSION, 'strength: strong', 'strength: moderate')
+      const found = strength(problems())
+      assert.deepEqual(found, [
+        `${SESSION}: evidence line is strong, but its evidence kinds allow at most moderate`,
+      ])
+    })
+
+    test('refuses a statement stronger than its strongest supporting line', () => {
+      edit(SESSION, 'strengthOfEvidenceProvided: strong', 'strengthOfEvidenceProvided: moderate')
+      assert.deepEqual(strength(problems()), [
+        `${SESSION}: strength strong is above its strongest supporting evidence line (moderate)`,
+      ])
+    })
+  })
+
   test('refuses a run whose method does not list the harness', () => {
     edit(
       'study-results/Claude Code/2026-10-10 Claude Code Session environment.md',
