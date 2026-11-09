@@ -43,18 +43,23 @@ jobs:
       - name: Compile
         run: pnpm --filter harness-reference run compile --strict --out "$RUNNER_TEMP/knowledge"
 
+      # Idempotent: a rerun, or a run that died between creating and publishing, finishes the
+      # same release. A release for the tag that was cut from another commit is an error.
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="harness-knowledge-$(date -u +%Y%m%d)-$(git rev-parse --short=7 HEAD)"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "$tag already exists"
-            exit 0
+          files=("$RUNNER_TEMP/knowledge/harness-knowledge.json" "$RUNNER_TEMP/knowledge/harness-knowledge.schema.json")
+          if target="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish 2>/dev/null)"; then
+            if [ "$target" != "$GITHUB_SHA" ]; then
+              echo "::error::$tag exists for $target, not $GITHUB_SHA"
+              exit 1
+            fi
+          else
+            gh release create "$tag" --draft --latest=false --target "$GITHUB_SHA" \
+              --title "Harness knowledge $tag" \
+              --notes "Compiled from harness-reference/corpora/beta at $GITHUB_SHA."
           fi
-          gh release create "$tag" \
-            "$RUNNER_TEMP/knowledge/harness-knowledge.json" \
-            "$RUNNER_TEMP/knowledge/harness-knowledge.schema.json" \
-            --target "$GITHUB_SHA" \
-            --title "Harness knowledge $tag" \
-            --notes "Compiled from harness-reference/corpora/beta at $GITHUB_SHA."
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release edit "$tag" --draft=false --latest=false
