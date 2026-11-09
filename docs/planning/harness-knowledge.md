@@ -6,7 +6,42 @@ that sets it. From the statement a reader can reach its evidence.
 
 The corpus is never compiled into a tool or shipped with one. Tools ship the derived file only.
 
-Status: draft, 2026-11-09.
+Status: in progress, updated 2026-11-09.
+
+## Progress
+
+| Phase | PR | State |
+|---|---|---|
+| Plan | [skillwright#96](https://github.com/osdlc/skillwright/pull/96) | ready for review |
+| 1–3 profile types, importer pilot, compiler and lookup | [skillwright#97](https://github.com/osdlc/skillwright/pull/97) | ready for review |
+| 4 full import, 18 new subjects | [skillwright#98](https://github.com/osdlc/skillwright/pull/98) | ready for review; stacks on #97 |
+| 4 research: Codex | [skillwright#100](https://github.com/osdlc/skillwright/pull/100) | ready; fact-check converged |
+| 4 research: Cursor, Pi | [skillwright#101](https://github.com/osdlc/skillwright/pull/101) | ready; fact-check converged |
+| 4 research: opencode, Gemini CLI, Copilot CLI, Qwen Code | [skillwright#102](https://github.com/osdlc/skillwright/pull/102) | ready; fact-check converged |
+| 4 research: Claude Code | [skillwright#103](https://github.com/osdlc/skillwright/pull/103) | ready; fact-check converged |
+| 4 research: Antigravity, dsh, Amp, Goose, Kiro, Grok Build, standards | [skillwright#104](https://github.com/osdlc/skillwright/pull/104) | ready; fact-check converged |
+| 4 lint: self-supersedes, strength above the evidence rule | [skillwright#105](https://github.com/osdlc/skillwright/pull/105) | draft; review pending |
+| 5 tradecraft-core reads the embedded file; D-QXRN | [skillwright#99](https://github.com/osdlc/skillwright/pull/99) | draft; review converged; needs the researched data |
+| 5 `@osdlc/harness-knowledge`, agent-call and detect-harness | [osdlc#750](https://github.com/osdlc/osdlc/pull/750) | draft; needs re-sync, wiring and a first publish |
+| 6 drift loop | — | not started |
+| 7 retire alpha | — | not started |
+
+Next:
+
+1. Merge #96 and #97, then #98, then #100–#105 (they stack on #98's branch).
+2. Rebase #99 onto the researched data; switch profile values that now agree to the knowledge
+   file.
+3. Re-sync #750, wire the agent-call and detect-harness facts, and fix what the research found
+   wrong in consumers: opencode 2.x dropped `--variant`; agy has `--add-dir` and
+   `--mode accept-edits|auto|plan`; dsh has `--permission-mode`, `--approval-policy` and
+   `--add-dir`; Amp's MCP lives in `amp.mcpServers` in `.amp/settings.json`; claude plugins
+   take a git ref (`owner/repo#ref`).
+4. A subject-shape pass for what research could not express: mode intents for plan, sandbox
+   and deny-unapproved, and per-action rules with no named modes; session ids from a command or
+   created on a missing id; stateless-but-resumable sessions; `cli/limits` slots for tool
+   calls, credits and wall time; effort levels that vary by model; plugins installed only in the
+   app and `--plugin-url`; argv-shaped values for `cli/headless`, `cli/resume` and
+   `cli/structured-output`; a Droid harness record.
 
 ## The shape
 
