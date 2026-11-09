@@ -33,10 +33,18 @@ valueSchema:
               type: string
         required: [name, argv]
         additionalProperties: true
-    notes:
+    note:
       description: A caveat the other keys do not carry.
       type: string
-  required: [formats]
+  if:
+    properties:
+      supported:
+        enum:
+          - true
+          - partial
+    required: [supported]
+  then:
+    required: [formats]
   additionalProperties: true
 ---
 
