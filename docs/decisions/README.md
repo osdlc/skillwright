@@ -15,6 +15,7 @@ random keys, so parallel branches do not collide.
 | [D-KVMB](D-KVMB-bare-keys-by-default.md) | Frontmatter keys are bare by default |
 | [D-HJCZ](D-HJCZ-harness-blocks.md) | Harness-only fields live in a top-level block per harness (supersedes D-ISOU) |
 | [D-WNTQ](D-WNTQ-harness-profile-values-from-config.md) | A harness profile value can come from config (amends D-FDLQ) |
+| [D-QXRN](D-QXRN-harness-facts-from-knowledge.md) | Harness profile facts come from the compiled knowledge file (amends D-FDLQ) |
 
 Terms are defined in [../terms](../terms/README.md). Standards are in [../standards](../standards/README.md).
 

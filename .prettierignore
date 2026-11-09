@@ -9,3 +9,4 @@ packages/ts/tradecraft-wasm/src/core.generated.ts
 # Generated: the parley tool writes the review page and its answers.
 docs/parley/*.html
 docs/parley/*.json
+packages/rust/tradecraft-core/data/

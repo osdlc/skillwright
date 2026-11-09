@@ -2,7 +2,8 @@
 
 Accepted 2026-11-04. [Review](../parley/discuss-architecture.json). Part of
 [D-COMG](D-COMG-marketplace-model-and-translators.md). Amended by
-[D-WNTQ](D-WNTQ-harness-profile-values-from-config.md).
+[D-WNTQ](D-WNTQ-harness-profile-values-from-config.md) and
+[D-QXRN](D-QXRN-harness-facts-from-knowledge.md).
 
 ## Decision
 
