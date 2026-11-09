@@ -92,9 +92,13 @@ adds to what never ships. See the
    note it matches.
 4. A link to a never-ship or excluded file is refused with the same diagnostic in
    every link form.
-5. `build.exclude` and each key of `build.patterns` inherit from a workspace, key
-   by key, and their globs read from each member's folder. A member's empty
-   `exclude: []` cannot clear an inherited exclusion.
+5. Each key of `build.patterns` inherits from a workspace, key by key, and its
+   globs read from each member's folder.
+6. A `build.exclude` glob reads from the folder of the `skillwright.md` it is
+   written in, like a nested `.gitignore`. A workspace's globs apply to every
+   member; a member's apply to its own folder only. A member's exclusions add to
+   the workspace's, and cannot drop them. A workspace glob that matches nothing
+   in any member warns once per run, at the workspace root or in a member.
 
 ## 5. Frontmatter
 

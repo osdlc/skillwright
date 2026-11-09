@@ -28,8 +28,8 @@ use crate::ctx::CommandContext;
 use crate::exit::{EXIT_BLOCKED, EXIT_OK, blocked};
 use crate::report::{render_roster, render_roster_tally, render_warning_line, roster_row};
 use crate::resolve::{
-    CommonFlags, ResolvedRun, refuse_workspace, resolve_run, resolve_skills_root, workspace_runs,
-    workspace_warnings,
+    CommonFlags, ResolvedRun, member_workspace_warnings, refuse_workspace, resolve_run,
+    resolve_skills_root, workspace_runs, workspace_warnings,
 };
 use tradecraft_core::MarketplaceInputs;
 
@@ -89,6 +89,7 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     {
         return code;
     }
+    scan.warnings.extend(member_workspace_warnings(&run));
 
     let collisions: std::collections::BTreeMap<&str, &str> = scan
         .warnings

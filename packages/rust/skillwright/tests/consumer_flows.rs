@@ -245,9 +245,8 @@ fn a_workspace_warns_about_what_builds_nowhere() {
 }
 
 #[test]
-fn an_inherited_glob_warns_only_when_no_member_matches_it() {
-    let shared =
-        "---\nworkspace: true\nbuild:\n  exclude: ['skills/a.md', 'skills/gone.md']\n---\n";
+fn a_workspace_glob_warns_once_when_nothing_under_the_workspace_matches_it() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: ['marketplaces/*/skills/a.md', 'skills/gone.md']\n---\n";
     let dir = vault(&[
         ("skillwright.md", shared),
         ("marketplaces/one/skillwright.md", &member("one", "")),
@@ -256,15 +255,154 @@ fn an_inherited_glob_warns_only_when_no_member_matches_it() {
         ("marketplaces/two/skillwright.md", &member("two", "")),
         ("marketplaces/two/skills/s.md", SKILL),
     ]);
-    let built = sw(&dir.path(), &["build", "--yes"]);
+    for args in [&["build", "--yes"][..], &["check"][..], &["list"][..]] {
+        let ran = sw(&dir.path(), args);
+        assert_eq!(ran.code, 0, "{args:?}: {}", ran.text);
+        assert_eq!(
+            ran.text.matches("`skills/gone.md`").count(),
+            1,
+            "{args:?}: {}",
+            ran.text
+        );
+        assert!(!ran.text.contains("skills/a.md`"), "{args:?}: {}", ran.text);
+    }
+}
+
+/// A member's own run names a workspace glob that matches nothing in any
+/// marketplace, as a run at the workspace root does.
+#[test]
+fn a_member_run_names_a_workspace_glob_that_matches_nothing() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: ['**/nothing-here/**']\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", shared),
+        ("marketplaces/one/skillwright.md", &member("one", "")),
+        ("marketplaces/one/skills/s.md", SKILL),
+    ]);
+    let inside = dir.path().join("marketplaces/one");
+    for (cwd, args) in [
+        (inside.clone(), &["build", "--yes"][..]),
+        (inside.clone(), &["check"][..]),
+        (inside.clone(), &["list"][..]),
+        (dir.path(), &["check", "--vault", "marketplaces/one"][..]),
+    ] {
+        let ran = sw(&cwd, args);
+        assert_eq!(ran.code, 0, "{args:?}: {}", ran.text);
+        let said: Vec<&str> = ran
+            .text
+            .lines()
+            .filter(|line| line.contains("`**/nothing-here/**`"))
+            .collect();
+        let [line] = said[..] else {
+            panic!("{args:?}: {}", ran.text);
+        };
+        assert!(line.starts_with("../../skillwright.md"), "{line}");
+        assert!(line.contains("unmatched-glob"), "{line}");
+    }
+}
+
+/// A workspace glob written for the old, member-relative reading no longer
+/// excludes, and a member's own build says how to rewrite it.
+#[test]
+fn a_member_build_names_a_workspace_glob_written_the_old_way() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: ['skills/a.md']\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", shared),
+        ("marketplaces/one/skillwright.md", &member("one", "")),
+        ("marketplaces/one/skills/a.md", SKILL),
+    ]);
+    let built = sw(&dir.path().join("marketplaces/one"), &["build", "--yes"]);
     assert_eq!(built.code, 0, "{}", built.text);
-    assert_eq!(
-        built.text.matches("`skills/gone.md`").count(),
-        2,
+    assert!(
+        built.text.contains("write `marketplaces/one/skills/a.md`"),
         "{}",
         built.text
     );
-    assert!(!built.text.contains("`skills/a.md`"), "{}", built.text);
+}
+
+/// The secrets/drafts case: a member's exclusions add to the workspace's,
+/// each read from its own folder, and build, list and publish agree.
+#[test]
+fn a_members_exclusions_add_to_the_workspaces_for_every_verb() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: ['**/secrets/**']\n---\n";
+    let one = member("one", "  exclude: ['skills/drafts/**']\n");
+    let dir = vault(&[
+        ("skillwright.md", shared),
+        ("marketplaces/one/skillwright.md", &one),
+        ("marketplaces/one/skills/open.md", SKILL),
+        ("marketplaces/one/skills/secrets/secrets.md", SKILL),
+        ("marketplaces/one/skills/drafts/drafts.md", SKILL),
+        ("marketplaces/two/skillwright.md", &member("two", "")),
+        ("marketplaces/two/skills/drafts/drafts.md", SKILL),
+        ("marketplaces/two/skills/secrets/secrets.md", SKILL),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    let one_skills = dir
+        .path()
+        .join("marketplaces/one/built/.claude-plugin/packs");
+    let two_skills = dir
+        .path()
+        .join("marketplaces/two/built/.claude-plugin/packs");
+    let shipped = |root: &Path, name: &str| {
+        files_under(root)
+            .iter()
+            .any(|path| path.to_string_lossy().contains(&format!("/{name}/")))
+    };
+    assert!(
+        shipped(&one_skills, "open"),
+        "{:?}",
+        files_under(&one_skills)
+    );
+    assert!(!shipped(&one_skills, "secrets"));
+    assert!(!shipped(&one_skills, "drafts"));
+    // A member's glob does not reach its sibling; the workspace's does.
+    assert!(
+        shipped(&two_skills, "drafts"),
+        "{:?}",
+        files_under(&two_skills)
+    );
+    assert!(!shipped(&two_skills, "secrets"));
+
+    let listed = sw(&dir.path(), &["list"]);
+    assert_eq!(listed.code, 0, "{}", listed.text);
+    assert!(
+        listed.text.contains("marketplaces/one/skills/open.md"),
+        "{}",
+        listed.text
+    );
+    assert!(
+        !listed.text.contains("marketplaces/one/skills/drafts"),
+        "{}",
+        listed.text
+    );
+    assert!(
+        listed.text.contains("marketplaces/two/skills/drafts"),
+        "{}",
+        listed.text
+    );
+    assert!(!listed.text.contains("secrets"), "{}", listed.text);
+
+    let one_dir = dir.path().join("marketplaces/one");
+    // The refusal names the file whose glob excluded the note.
+    for (note, file) in [
+        ("skills/secrets/secrets.md", "in ../../skillwright.md"),
+        ("skills/drafts/drafts.md", "in skillwright.md"),
+    ] {
+        let published = sw(&one_dir, &["publish", note, "--yes"]);
+        assert_ne!(published.code, 0, "{note}: {}", published.text);
+        assert!(
+            published.text.contains("excluded-note"),
+            "{note}: {}",
+            published.text
+        );
+        assert!(
+            published
+                .text
+                .contains(&format!("matches `build.exclude` {file}, so")),
+            "{note}: {}",
+            published.text
+        );
+    }
 }
 
 #[test]

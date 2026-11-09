@@ -1917,13 +1917,103 @@ fn a_workspace_exclusion_reaches_its_members() {
 }
 
 #[test]
-fn a_members_own_exclusion_replaces_the_workspaces() {
+fn a_members_exclusions_add_to_the_workspaces() {
     let shared = "---\nworkspace: true\nbuild:\n  exclude: '**/*.draft.md'\n---\n";
     let member = "---\nname: a\nbuild:\n  exclude: '**/keep.md'\n---\n";
     let (vfs, build) = workspace(shared, member);
+    write(
+        &vfs,
+        "/ws/marketplaces/a/plugins/rev/skills/open.md",
+        USE_IT,
+    );
     export_skills(&vfs, &build, &Namespace::bare()).unwrap();
+    let built = "/market/.claude-plugin/packs/rev/skills";
+    assert!(!vfs.exists(Path::new(&format!("{built}/keep/SKILL.md"))));
+    assert!(!vfs.exists(Path::new(&format!("{built}/h-draft/SKILL.md"))));
+    assert!(!vfs.exists(Path::new(&format!("{built}/h.draft/SKILL.md"))));
+    assert!(vfs.exists(Path::new(&format!("{built}/open/SKILL.md"))));
+}
+
+#[test]
+fn a_workspace_glob_reads_from_the_workspace_folder() {
     let built = "/market/.claude-plugin/packs/rev/skills/keep/SKILL.md";
-    assert!(!vfs.exists(Path::new(built)));
+    for (glob, ships) in [
+        ("plugins/rev/skills/keep.md", true),
+        ("marketplaces/b/plugins/rev/skills/keep.md", true),
+        ("marketplaces/a/plugins/rev/skills/keep.md", false),
+        ("marketplaces/*/plugins/rev/skills/keep.md", false),
+        ("'**/plugins/rev/skills/keep.md'", false),
+    ] {
+        let shared = format!("---\nworkspace: true\nbuild:\n  exclude: {glob}\n---\n");
+        let (vfs, build) = workspace(&shared, "---\nname: a\n---\n");
+        export_skills(&vfs, &build, &Namespace::bare()).unwrap();
+        assert_eq!(vfs.exists(Path::new(built)), ships, "{glob}");
+    }
+}
+
+#[test]
+fn a_members_exclusion_does_not_reach_a_sibling() {
+    let (vfs, mut build) = workspace(
+        "---\nworkspace: true\n---\n",
+        "---\nname: a\nbuild:\n  exclude: '**/keep.md'\n---\n",
+    );
+    write(
+        &vfs,
+        "/ws/marketplaces/b/skillwright.md",
+        "---\nname: b\n---\n",
+    );
+    write(
+        &vfs,
+        "/ws/marketplaces/b/plugins/rev/skills/keep.md",
+        USE_IT,
+    );
+    build.vault_root = PathBuf::from("/ws/marketplaces/b");
+    build.config = tradecraft_core::settings::root_file_config("---\nname: b\n---\n", "b").unwrap();
+    export_skills(&vfs, &build, &Namespace::bare()).unwrap();
+    assert!(vfs.exists(Path::new(
+        "/market/.claude-plugin/packs/rev/skills/keep/SKILL.md"
+    )));
+}
+
+/// Publish, list and a link agree with a build on what a workspace excludes.
+#[test]
+fn every_verb_honours_a_workspace_exclusion_from_the_workspace_folder() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: 'marketplaces/*/plugins/rev/skills/h.draft.md'\n---\n";
+    let (vfs, build) = workspace(shared, "---\nname: a\n---\n");
+    let member = Path::new("/ws/marketplaces/a");
+    let listed = discover_components(&vfs, member, None, &Namespace::bare()).unwrap();
+    let paths: Vec<&str> = listed
+        .components
+        .iter()
+        .map(|c| c.vault_relative_path.as_str())
+        .collect();
+    assert!(paths.contains(&"plugins/rev/skills/keep.md"), "{paths:?}");
+    assert!(!paths.iter().any(|p| p.contains("draft")), "{paths:?}");
+
+    let mut request = PublishRequest::new(
+        "/ws/marketplaces/a/plugins/rev/skills/h.draft.md",
+        "/dest",
+        "claude",
+    );
+    request.skills_root = Some(member.to_path_buf());
+    let err = publish_skill(&vfs, &request, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("excluded-note"), "{err}");
+    assert!(
+        err.contains("`build.exclude` in ../../skillwright.md"),
+        "{err}"
+    );
+
+    write(
+        &vfs,
+        "/ws/marketplaces/a/plugins/rev/skills/keep.md",
+        "---\ndescription: Use it.\n---\n\nSee [[h.draft]].\n",
+    );
+    let err = export_skills(&vfs, &build, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("excluded-link"), "{err}");
 }
 
 #[test]

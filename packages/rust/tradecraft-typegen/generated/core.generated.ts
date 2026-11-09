@@ -524,7 +524,11 @@ export interface BuildSettings {
   /** Canonical hooks files. */
   hooks?: HookSetting[];
 
-  /** Globs of what never ships, relative to the root file. Experimental. */
+  /**
+   * Globs of what never ships, relative to the root file. Only this
+   * file's own: a workspace's globs are not inherited into this list, but
+   * added to it, read from the workspace folder. Experimental.
+   */
   exclude?: string[];
 
   /** Globs that stand in for the conventional folders. Experimental. */

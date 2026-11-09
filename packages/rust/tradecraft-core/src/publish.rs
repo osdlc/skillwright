@@ -1181,10 +1181,10 @@ fn refuse_excluded(
         return Ok(());
     };
     let relative = crate::skill::forward_slashed(relative);
-    if patterns.excluded(&relative) {
+    if let Some(file) = patterns.excluded_by(&relative) {
         return Err(CoreError::refused(
             "excluded-note",
-            format!("{relative} matches `build.exclude`, so it never ships"),
+            format!("{relative} matches `build.exclude` in {file}, so it never ships"),
         ));
     }
     if patterns.never_ships(&relative) {
@@ -2245,7 +2245,7 @@ mod tests {
     /// Every file under `root`, with bytes and execute bit — the thing an
     /// "and mutates nothing" assertion has to compare.
     fn snapshot(vfs: &dyn Vfs, root: &Path) -> Vec<(String, Vec<u8>, bool)> {
-        let mut out: Vec<_> = crate::walk::readable_files(vfs, root)
+        let mut out: Vec<_> = crate::walk::readable_files(vfs, root, &[])
             .into_iter()
             .map(|entry| {
                 (

@@ -141,7 +141,9 @@ pub struct BuildSettings {
     /// Canonical hooks files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<HookSetting>,
-    /// Globs of what never ships, relative to the root file. Experimental.
+    /// Globs of what never ships, relative to the root file. Only this
+    /// file's own: a workspace's globs are not inherited into this list, but
+    /// added to it, read from the workspace folder. Experimental.
     #[serde(
         default,
         deserialize_with = "one_or_many",
@@ -200,6 +202,23 @@ impl FolderPatterns {
     /// Whether no pattern is set.
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
+    }
+
+    /// Each key with its globs, in the order a path is claimed.
+    pub(crate) fn kinds(&self) -> [(&'static str, &[String]); 6] {
+        [
+            ("assets", &self.assets),
+            ("skills", &self.skills),
+            ("agents", &self.agents),
+            ("commands", &self.commands),
+            ("hooks", &self.hooks),
+            ("plugins", &self.plugins),
+        ]
+    }
+
+    /// Every glob, whichever key holds it.
+    pub(crate) fn globs(&self) -> impl Iterator<Item = &String> {
+        self.kinds().into_iter().flat_map(|(_, globs)| globs)
     }
 
     /// Fill each key this leaves unset from `shared`.
@@ -709,9 +728,11 @@ impl RootFile {
     /// `targets`, `repository`, `homepage` and the harness blocks, key by key)
     /// inherit from the workspace too. So do `harnesses`, `namespace`,
     /// `launcher_path`, `bump`, `require_descriptions`, `destinations`,
-    /// `scan_locations`, `assets`, `hooks`, `exclude` and each key of
-    /// `patterns`. Their paths and globs read from each marketplace's own
-    /// folder. An exclusion must not fail open. `out` is each marketplace's own.
+    /// `scan_locations`, `assets`, `hooks` and each key of `patterns`. Their
+    /// paths and globs read from each marketplace's own folder. `out` is each
+    /// marketplace's own. `exclude` is not inherited: a workspace's globs add
+    /// to a member's, read from the workspace folder
+    /// ([`crate::patterns::Patterns::load`]).
     ///
     /// Key by key: a value this file sets wins, and every other key still
     /// comes from the workspace. The workspace root holds shared defaults and
@@ -770,9 +791,6 @@ impl RootFile {
         }
         if build.hooks.is_empty() {
             build.hooks.clone_from(&shared.hooks);
-        }
-        if build.exclude.is_empty() {
-            build.exclude.clone_from(&shared.exclude);
         }
         build.patterns.inherit(&shared.patterns);
     }
@@ -1018,7 +1036,7 @@ mod tests {
     }
 
     #[test]
-    fn a_marketplace_inherits_exclusions_and_patterns_key_by_key() {
+    fn a_marketplace_inherits_patterns_key_by_key_and_keeps_its_own_exclusions() {
         let workspace = parse_root_file(
             "---\nworkspace: true\nbuild:\n  exclude: '**/*.draft.md'\n  patterns:\n    \
              skills: notes/*\n    plugins: packs/*\n---\n",
@@ -1027,7 +1045,7 @@ mod tests {
         let mut member =
             parse_root_file("---\nbuild:\n  patterns:\n    skills: mine/*\n---\n").unwrap();
         member.inherit(&workspace);
-        assert_eq!(member.build.exclude, ["**/*.draft.md"]);
+        assert!(member.build.exclude.is_empty());
         assert_eq!(member.build.patterns.skills, ["mine/*"]);
         assert_eq!(member.build.patterns.plugins, ["packs/*"]);
     }
