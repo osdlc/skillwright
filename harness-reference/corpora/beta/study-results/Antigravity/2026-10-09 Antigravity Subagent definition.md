@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-09T00:00:00Z
+imported_from: fact:subagents/definition@antigravity#observation-1
 ---
 
 Imported from `facts/antigravity/subagents/definition.md`, observation 1.

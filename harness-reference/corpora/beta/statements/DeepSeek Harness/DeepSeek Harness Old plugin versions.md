@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/upgrade-retention@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/plugins/upgrade-retention.md`.

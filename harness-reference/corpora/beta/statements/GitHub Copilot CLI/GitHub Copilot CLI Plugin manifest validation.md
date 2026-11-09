@@ -34,6 +34,7 @@ status: current
 open:
   - What does Copilot CLI do with an unknown or wrongly typed field in a legacy plugin.json or in marketplace.json? The docs answer only for Agent Plugins manifests.
   - Does Copilot CLI have a command that validates a manifest? The plugin command table lists none.
+imported_from: fact:plugins/manifest-validation@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/plugins/manifest-validation.md`.

@@ -34,6 +34,7 @@ scope:
 status: current
 open:
   - Are nested directories below the working directory scanned, and are symlinked skill folders followed?
+imported_from: fact:skills/discovery-walk@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/skills/discovery-walk.md`.

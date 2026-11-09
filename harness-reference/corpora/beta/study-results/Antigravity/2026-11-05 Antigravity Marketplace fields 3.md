@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-05T00:00:00Z
+imported_from: fact:plugins/marketplace-fields@antigravity#observation-3
 ---
 
 Imported from `facts/antigravity/plugins/marketplace-fields.md`, observation 3.

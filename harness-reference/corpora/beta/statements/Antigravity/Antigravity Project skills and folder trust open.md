@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/project-trust@antigravity#open
 ---
 
 Imported from `facts/antigravity/skills/project-trust.md`.

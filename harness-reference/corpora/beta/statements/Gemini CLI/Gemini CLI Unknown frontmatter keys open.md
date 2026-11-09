@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skill-frontmatter/unknown-keys@gemini-cli#open
 ---
 
 Imported from `facts/gemini-cli/skill-frontmatter/unknown-keys.md`.

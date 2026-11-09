@@ -36,6 +36,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/bundled-files@agent-skills#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-skills/skills/bundled-files.md`.

@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/plugin-root-variable@dsh#open
 ---
 
 Imported from `facts/dsh/skills/plugin-root-variable.md`.

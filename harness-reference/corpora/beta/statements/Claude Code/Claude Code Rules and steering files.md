@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/rules@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/instructions/rules.md`.

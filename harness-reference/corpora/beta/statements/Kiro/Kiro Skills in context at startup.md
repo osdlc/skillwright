@@ -32,6 +32,7 @@ scope:
 status: current
 open:
   - Is the number of skills listed at startup capped?
+imported_from: fact:skills/startup-context@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skills/startup-context.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Do files beside SKILL.md enter context without being requested?
+imported_from: fact:skills/bundled-files@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/skills/bundled-files.md`.

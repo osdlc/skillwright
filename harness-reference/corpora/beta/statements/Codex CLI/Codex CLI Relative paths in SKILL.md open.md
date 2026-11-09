@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/relative-paths@codex#open
 ---
 
 Imported from `facts/codex/skills/relative-paths.md`.

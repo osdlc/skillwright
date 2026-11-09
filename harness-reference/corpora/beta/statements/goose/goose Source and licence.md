@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/source-license@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/meta/source-license.md`.

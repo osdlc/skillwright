@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/arguments@codex#open
 ---
 
 Imported from `facts/codex/skills/arguments.md`.

@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/discovery-walk@agent-plugins#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-plugins/skills/discovery-walk.md`.

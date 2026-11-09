@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-05T00:00:00Z
+imported_from: fact:plugins/manifest-fields@pi#observation-2
 ---
 
 Imported from `facts/pi/plugins/manifest-fields.md`, observation 2.

@@ -13,6 +13,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-08T00:00:00Z
+imported_from: fact:meta/lifecycle@dsh#observation-1
 ---
 
 Imported from `facts/dsh/meta/lifecycle.md`, observation 1.

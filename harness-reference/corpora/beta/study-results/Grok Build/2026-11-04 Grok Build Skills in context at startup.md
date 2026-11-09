@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/startup-context@grok-build#observation-1
 ---
 
 Imported from `facts/grok-build/skills/startup-context.md`, observation 1.

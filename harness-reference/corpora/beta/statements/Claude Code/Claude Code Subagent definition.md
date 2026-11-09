@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:subagents/definition@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/subagents/definition.md`.

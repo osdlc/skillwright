@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Are scripts and assets beside SKILL.md ever placed in context without the agent asking for them?
+imported_from: fact:skills/bundled-files@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/bundled-files.md`.

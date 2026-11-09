@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/bundled-files@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/skills/bundled-files.md`.

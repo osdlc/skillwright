@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/subagent-visibility@grok-build#open
 ---
 
 Imported from `facts/grok-build/skills/subagent-visibility.md`.

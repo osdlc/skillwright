@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Does Amp tell the model the skill folder when a skill loads?
+imported_from: fact:skills/relative-paths@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/skills/relative-paths.md`.

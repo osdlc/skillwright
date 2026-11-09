@@ -48,6 +48,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/discovery-walk@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/discovery-walk.md`.

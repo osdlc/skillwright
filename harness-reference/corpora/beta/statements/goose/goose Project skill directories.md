@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/project-dirs@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/skills/project-dirs.md`.

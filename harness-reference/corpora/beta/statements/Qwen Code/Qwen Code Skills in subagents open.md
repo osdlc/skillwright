@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/subagent-visibility@qwen-code#open
 ---
 
 Imported from `facts/qwen-code/skills/subagent-visibility.md`.

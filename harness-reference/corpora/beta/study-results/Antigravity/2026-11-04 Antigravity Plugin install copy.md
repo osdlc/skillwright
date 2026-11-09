@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:plugins/install-copy@antigravity#observation-1
 ---
 
 Imported from `facts/antigravity/plugins/install-copy.md`, observation 1.

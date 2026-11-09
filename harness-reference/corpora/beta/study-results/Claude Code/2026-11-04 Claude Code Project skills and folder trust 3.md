@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/project-trust@claude-code#observation-3
 ---
 
 Imported from `facts/claude-code/skills/project-trust.md`, observation 3.

@@ -35,6 +35,7 @@ scope:
 status: current
 open:
   - Is GROK_PLUGIN_ROOT or CLAUDE_PLUGIN_ROOT substituted in a SKILL.md body or in .mcp.json?
+imported_from: fact:skills/plugin-root-variable@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/skills/plugin-root-variable.md`.

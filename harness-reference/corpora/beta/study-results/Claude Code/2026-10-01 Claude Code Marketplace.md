@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+imported_from: fact:plugins/marketplace@claude-code#observation-1
 ---
 
 Imported from `facts/claude-code/plugins/marketplace.md`, observation 1.

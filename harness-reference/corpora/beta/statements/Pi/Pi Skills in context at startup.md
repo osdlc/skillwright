@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is the number of listed skills, or the description length, capped?
+imported_from: fact:skills/startup-context@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/startup-context.md`.

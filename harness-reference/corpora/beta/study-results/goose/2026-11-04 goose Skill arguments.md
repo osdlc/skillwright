@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/arguments@goose#observation-1
 ---
 
 Imported from `facts/goose/skills/arguments.md`, observation 1.

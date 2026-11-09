@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/agent-loading@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/skills/agent-loading.md`.

@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/source-license@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/meta/source-license.md`.

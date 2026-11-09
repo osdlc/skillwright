@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:hooks/config@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/hooks/config.md`.

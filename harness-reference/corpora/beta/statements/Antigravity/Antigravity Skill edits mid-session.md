@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does an edit to an existing skill take effect without /skills reload, and what is the App and IDE behavior?
+imported_from: fact:skills/live-reload@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/skills/live-reload.md`.

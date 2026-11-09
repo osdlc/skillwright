@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/marketplace@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/plugins/marketplace.md`.

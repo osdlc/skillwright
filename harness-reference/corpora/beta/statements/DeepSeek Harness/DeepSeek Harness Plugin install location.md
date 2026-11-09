@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Which folder holds an installed plugin package, and where is it relative to the profile directory?
+imported_from: fact:plugins/install-location@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/plugins/install-location.md`.

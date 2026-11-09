@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/bundled-files@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skills/bundled-files.md`.

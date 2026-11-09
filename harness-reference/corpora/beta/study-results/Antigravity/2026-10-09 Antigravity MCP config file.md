@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-09T00:00:00Z
+imported_from: fact:mcp/config-file@antigravity#observation-1
 ---
 
 Imported from `facts/antigravity/mcp/config-file.md`, observation 1.

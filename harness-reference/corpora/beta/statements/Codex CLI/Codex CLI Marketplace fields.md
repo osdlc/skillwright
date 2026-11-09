@@ -122,6 +122,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/marketplace-fields@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/plugins/marketplace-fields.md`.

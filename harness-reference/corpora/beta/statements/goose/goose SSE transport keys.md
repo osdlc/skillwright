@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/sse@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/mcp/sse.md`.

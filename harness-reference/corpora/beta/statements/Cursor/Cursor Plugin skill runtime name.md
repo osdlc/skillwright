@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - What happens when two plugins export the same skill name, and whether a plugin skill has a qualified form.
+imported_from: fact:skills/plugin-namespace@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/plugin-namespace.md`.

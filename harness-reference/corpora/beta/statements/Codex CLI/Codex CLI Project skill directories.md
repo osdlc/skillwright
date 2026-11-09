@@ -37,6 +37,7 @@ scope:
   platform: []
   model: null
 status: disputed
+imported_from: fact:skills/project-dirs@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/skills/project-dirs.md`.

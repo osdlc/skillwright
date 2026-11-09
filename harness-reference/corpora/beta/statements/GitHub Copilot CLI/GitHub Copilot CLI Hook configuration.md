@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:hooks/config@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/hooks/config.md`.

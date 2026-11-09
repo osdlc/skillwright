@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/sse@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/mcp/sse.md`.

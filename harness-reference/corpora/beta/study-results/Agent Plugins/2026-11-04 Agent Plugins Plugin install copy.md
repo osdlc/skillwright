@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:plugins/install-copy@agent-plugins#observation-1
 ---
 
 Imported from `facts/agent-plugins/plugins/install-copy.md`, observation 1.

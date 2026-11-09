@@ -40,6 +40,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/discovery-walk@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/skills/discovery-walk.md`.

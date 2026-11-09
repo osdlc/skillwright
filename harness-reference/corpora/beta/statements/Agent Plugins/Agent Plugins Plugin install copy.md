@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Does the spec say whether a client copies the plugin folder on install, and whether exec bits survive? The fetched text says neither.
+imported_from: fact:plugins/install-copy@agent-plugins#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-plugins/plugins/install-copy.md`.

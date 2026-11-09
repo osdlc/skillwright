@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Does a marketplace install copy the plugin folder whole, and do exec bits survive?
+imported_from: fact:plugins/install-copy@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/plugins/install-copy.md`.

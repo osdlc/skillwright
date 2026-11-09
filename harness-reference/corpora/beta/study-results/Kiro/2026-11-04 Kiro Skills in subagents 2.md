@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/subagent-visibility@kiro#observation-2
 ---
 
 Imported from `facts/kiro/skills/subagent-visibility.md`, observation 2.

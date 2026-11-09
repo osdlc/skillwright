@@ -134,6 +134,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/marketplace-fields@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/plugins/marketplace-fields.md`.

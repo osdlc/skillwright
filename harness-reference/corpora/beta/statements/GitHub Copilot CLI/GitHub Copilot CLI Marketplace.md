@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/marketplace@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/plugins/marketplace.md`.

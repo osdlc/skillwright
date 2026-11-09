@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+imported_from: fact:skill-frontmatter/name@agent-skills#observation-1
 ---
 
 Imported from `facts/agent-skills/skill-frontmatter/name.md`, observation 1.

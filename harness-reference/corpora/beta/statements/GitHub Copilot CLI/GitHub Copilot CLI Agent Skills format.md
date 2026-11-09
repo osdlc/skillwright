@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/agent-skills-format@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/agent-skills-format.md`.

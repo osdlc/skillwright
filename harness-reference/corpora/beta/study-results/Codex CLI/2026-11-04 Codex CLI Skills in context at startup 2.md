@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/startup-context@codex#observation-2
 ---
 
 Imported from `facts/codex/skills/startup-context.md`, observation 2.

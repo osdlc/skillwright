@@ -31,6 +31,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/stdio@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/mcp/stdio.md`.

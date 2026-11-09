@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skill-frontmatter/unknown-keys@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skill-frontmatter/unknown-keys.md`.

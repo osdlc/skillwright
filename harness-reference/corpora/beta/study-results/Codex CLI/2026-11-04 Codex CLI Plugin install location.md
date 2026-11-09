@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:plugins/install-location@codex#observation-1
 ---
 
 Imported from `facts/codex/plugins/install-location.md`, observation 1.

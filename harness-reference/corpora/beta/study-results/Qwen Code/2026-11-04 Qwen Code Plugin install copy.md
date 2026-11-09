@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:plugins/install-copy@qwen-code#observation-1
 ---
 
 Imported from `facts/qwen-code/plugins/install-copy.md`, observation 1.

@@ -38,6 +38,7 @@ scope:
 status: current
 open:
   - Does dsh ship a validate command or a published JSON Schema for the dsh block? None was found; the types package says it has no parser.
+imported_from: fact:plugins/manifest-validation@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/plugins/manifest-validation.md`.

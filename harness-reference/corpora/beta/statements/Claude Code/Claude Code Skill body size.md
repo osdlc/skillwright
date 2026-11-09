@@ -36,6 +36,7 @@ scope:
 status: current
 open:
   - Is there a hard byte or token limit on a SKILL.md body, and how much of an invoked skill survives compaction?
+imported_from: fact:skills/body-size@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/body-size.md`.

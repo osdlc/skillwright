@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - For npm and git installs, do exec bits and symlinks survive?
+imported_from: fact:plugins/install-copy@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/plugins/install-copy.md`.

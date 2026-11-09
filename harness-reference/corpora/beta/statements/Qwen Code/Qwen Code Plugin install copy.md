@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Do exec bits survive the install copy?
+imported_from: fact:plugins/install-copy@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/plugins/install-copy.md`.

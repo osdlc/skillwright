@@ -33,6 +33,7 @@ scope:
 status: current
 open:
   - Are symlinked skill folders followed?
+imported_from: fact:skills/discovery-walk@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/skills/discovery-walk.md`.

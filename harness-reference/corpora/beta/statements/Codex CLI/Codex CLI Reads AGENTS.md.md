@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/agents-md@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/instructions/agents-md.md`.

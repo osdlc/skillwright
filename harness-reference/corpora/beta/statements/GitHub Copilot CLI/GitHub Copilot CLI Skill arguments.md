@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - How does text typed after /skill-name reach the skill body (placeholder, appended text, or not supported)?
+imported_from: fact:skills/arguments@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/arguments.md`.

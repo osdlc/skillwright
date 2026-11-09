@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is text typed after /name passed to the skill in any form?
+imported_from: fact:skills/arguments@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/skills/arguments.md`.

@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:commands/files@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/commands/files.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does the harness tell the model the skill folder when the body loads?
+imported_from: fact:skills/relative-paths@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/skills/relative-paths.md`.

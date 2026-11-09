@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is the number of skills listed, or the length of each description, capped or truncated?
+imported_from: fact:skills/startup-context@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/skills/startup-context.md`.

@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/streamable-http@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/mcp/streamable-http.md`.

@@ -33,6 +33,7 @@ scope:
 status: current
 open:
   - Is ${extensionPath} substituted inside an extension SKILL.md body or only in qwen-extension.json?
+imported_from: fact:skills/plugin-root-variable@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/plugin-root-variable.md`.

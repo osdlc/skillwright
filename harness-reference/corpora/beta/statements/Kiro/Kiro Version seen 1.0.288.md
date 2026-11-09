@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/version-seen@kiro#sighting-1
 ---
 
 Imported from `facts/kiro/meta/version-seen.md`, observation 1.

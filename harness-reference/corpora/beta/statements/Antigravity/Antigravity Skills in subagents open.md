@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/subagent-visibility@antigravity#open
 ---
 
 Imported from `facts/antigravity/skills/subagent-visibility.md`.

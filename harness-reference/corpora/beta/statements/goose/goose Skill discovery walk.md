@@ -32,6 +32,7 @@ scope:
 status: current
 open:
   - Are skill folders in parent directories of the working directory searched? The source builds project roots from the working directory only.
+imported_from: fact:skills/discovery-walk@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/skills/discovery-walk.md`.

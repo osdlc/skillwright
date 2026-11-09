@@ -43,6 +43,7 @@ scope:
 status: current
 open:
   - Do the docs give a measured reliability for description-only selection, or name a model it was tuned for?
+imported_from: fact:skills/description-match@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/description-match.md`.

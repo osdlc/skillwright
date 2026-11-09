@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/streamable-http@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/mcp/streamable-http.md`.

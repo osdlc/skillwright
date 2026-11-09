@@ -31,6 +31,7 @@ scope:
   model: null
 status: current
 supersedes: "[Claude Code Version seen 2.1.283](Claude%20Code%20Version%20seen%202.1.283.md)"
+imported_from: fact:meta/version-seen@claude-code#sighting-3
 ---
 
 Imported from `facts/claude-code/meta/version-seen.md`, observation 3.

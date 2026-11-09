@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/name-source@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/skills/name-source.md`.

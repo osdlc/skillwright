@@ -195,6 +195,7 @@ status: current
 open:
   - "Docs and the cursor/plugins schema disagree: the docs require owner, the schema does not; the docs list sixteen more entry fields, which the schema rejects; the schema requires source as a string, the docs allow an object. Which does the Cursor client follow?"
   - The docs say source may be an object with path and options but name no options. What source object forms does Cursor accept?
+imported_from: fact:plugins/marketplace-fields@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/plugins/marketplace-fields.md`.

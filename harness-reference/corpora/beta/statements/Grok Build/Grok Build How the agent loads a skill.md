@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Which tool does the model call to invoke a skill?
+imported_from: fact:skills/agent-loading@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/skills/agent-loading.md`.

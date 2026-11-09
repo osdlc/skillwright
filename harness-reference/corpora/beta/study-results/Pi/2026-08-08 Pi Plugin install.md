@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:plugins/install@pi#observation-1
 ---
 
 Imported from `facts/pi/plugins/install.md`, observation 1.

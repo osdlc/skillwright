@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is there a numeric limit on SKILL.md size?
+imported_from: fact:skills/body-size@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/skills/body-size.md`.

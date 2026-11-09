@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does OpenCode have any marketplace or catalog of plugins beyond npm? Neither docs set mentions one.
+imported_from: fact:plugins/marketplace-fields@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/plugins/marketplace-fields.md`.

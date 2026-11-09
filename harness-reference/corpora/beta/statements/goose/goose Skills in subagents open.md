@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/subagent-visibility@goose#open
 ---
 
 Imported from `facts/goose/skills/subagent-visibility.md`.

@@ -31,6 +31,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/name-source@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/name-source.md`.

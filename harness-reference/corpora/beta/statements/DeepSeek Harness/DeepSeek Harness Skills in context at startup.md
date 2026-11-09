@@ -34,6 +34,7 @@ scope:
 status: current
 open:
   - Is there a cap on the number of skills listed?
+imported_from: fact:skills/startup-context@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/skills/startup-context.md`.

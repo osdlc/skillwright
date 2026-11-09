@@ -33,6 +33,7 @@ scope:
 status: current
 open:
   - Is there a limit or recommendation on SKILL.md body length for local skills?
+imported_from: fact:skills/body-size@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/skills/body-size.md`.

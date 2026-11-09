@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/project-dirs@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/skills/project-dirs.md`.

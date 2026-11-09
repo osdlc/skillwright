@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+imported_from: fact:meta/version-seen@agent-plugins#observation-1
 ---
 
 Imported from `facts/agent-plugins/meta/version-seen.md`, observation 1.

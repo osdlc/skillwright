@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/body-size@gemini-cli#open
 ---
 
 Imported from `facts/gemini-cli/skills/body-size.md`.

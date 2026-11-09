@@ -220,6 +220,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/marketplace-fields@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/plugins/marketplace-fields.md`.

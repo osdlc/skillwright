@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/name-source@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/name-source.md`.

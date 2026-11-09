@@ -10,6 +10,7 @@ commands:
 record:
   - The version printed.
 safety: []
+imported_from: probe:pi-version
 ---
 
 # pi version

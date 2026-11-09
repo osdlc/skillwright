@@ -103,6 +103,7 @@ scope:
 status: current
 open:
   - Does Grok Build show author, homepage, repository, license or keywords from plugin.json anywhere? The struct parses them but the code read does not use them.
+imported_from: fact:plugins/manifest-fields@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/plugins/manifest-fields.md`.

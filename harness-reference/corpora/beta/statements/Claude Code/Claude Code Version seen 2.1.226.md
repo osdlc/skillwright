@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: superseded
+imported_from: fact:meta/version-seen@claude-code#sighting-1
 ---
 
 Imported from `facts/claude-code/meta/version-seen.md`, observation 1.

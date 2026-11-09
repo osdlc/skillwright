@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:subagents/definition@goose#observation-1
 ---
 
 Imported from `facts/goose/subagents/definition.md`, observation 1.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - "How do the arguments appear in the skill body: a placeholder or appended text?"
+imported_from: fact:skills/arguments@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/skills/arguments.md`.

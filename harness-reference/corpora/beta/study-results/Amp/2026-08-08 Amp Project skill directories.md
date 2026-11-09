@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:skills/project-dirs@amp#observation-1
 ---
 
 Imported from `facts/amp/skills/project-dirs.md`, observation 1.

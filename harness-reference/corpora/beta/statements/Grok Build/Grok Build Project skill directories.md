@@ -31,6 +31,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/project-dirs@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/skills/project-dirs.md`.

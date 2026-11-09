@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/description-match@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/description-match.md`.

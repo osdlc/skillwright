@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - What mechanism loads the body (a tool or a file read)?
+imported_from: fact:skills/agent-loading@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/skills/agent-loading.md`.

@@ -13,6 +13,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-08T00:00:00Z
+imported_from: fact:instructions/claude-md@dsh#observation-1
 ---
 
 Imported from `facts/dsh/instructions/claude-md.md`, observation 1.

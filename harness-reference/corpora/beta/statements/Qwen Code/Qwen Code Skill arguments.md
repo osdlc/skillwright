@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is there an $ARGUMENTS style placeholder, or only the args file?
+imported_from: fact:skills/arguments@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/arguments.md`.

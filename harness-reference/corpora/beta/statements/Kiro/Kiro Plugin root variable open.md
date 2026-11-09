@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/plugin-root-variable@kiro#open
 ---
 
 Imported from `facts/kiro/skills/plugin-root-variable.md`.

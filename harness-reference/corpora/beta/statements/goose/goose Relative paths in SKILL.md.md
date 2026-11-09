@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/relative-paths@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/skills/relative-paths.md`.

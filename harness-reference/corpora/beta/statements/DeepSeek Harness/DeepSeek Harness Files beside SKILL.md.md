@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/bundled-files@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/skills/bundled-files.md`.

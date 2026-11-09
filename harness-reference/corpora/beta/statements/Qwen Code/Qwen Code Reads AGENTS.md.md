@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/agents-md@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/instructions/agents-md.md`.

@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:config/main-file@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/config/main-file.md`.

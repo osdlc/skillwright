@@ -39,6 +39,7 @@ scope:
 status: current
 open:
   - Does a skill file edited or added on disk, without running /skills reload, take effect in a running session?
+imported_from: fact:skills/live-reload@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/skills/live-reload.md`.

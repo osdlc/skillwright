@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/streamable-http@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/mcp/streamable-http.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is the number of listed skills or the description length capped?
+imported_from: fact:skills/startup-context@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/skills/startup-context.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does OpenCode ship a validator or published JSON Schema for a plugin package? opencode plugin check looks for updates; no validate command or plugin schema was found.
+imported_from: fact:plugins/manifest-validation@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/plugins/manifest-validation.md`.

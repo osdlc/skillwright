@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/source-license@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/meta/source-license.md`.

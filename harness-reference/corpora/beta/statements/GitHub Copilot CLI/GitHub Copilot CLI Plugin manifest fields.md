@@ -170,6 +170,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest-fields@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/plugins/manifest-fields.md`.

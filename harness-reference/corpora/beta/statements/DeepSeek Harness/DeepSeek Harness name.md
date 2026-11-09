@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skill-frontmatter/name@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/skill-frontmatter/name.md`.

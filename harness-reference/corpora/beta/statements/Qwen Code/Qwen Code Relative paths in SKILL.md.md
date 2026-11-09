@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - What folder do relative paths in the SKILL.md body resolve from, and is the folder shown to the model?
+imported_from: fact:skills/relative-paths@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/relative-paths.md`.

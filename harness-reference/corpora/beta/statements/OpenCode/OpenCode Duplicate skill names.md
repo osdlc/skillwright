@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - When two skills share a name, does one shadow the other (which wins) or are both shown?
+imported_from: fact:skills/duplicate-names@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/skills/duplicate-names.md`.

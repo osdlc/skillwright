@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Do exec bits and symlinks survive the copy?
+imported_from: fact:plugins/install-copy@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/plugins/install-copy.md`.

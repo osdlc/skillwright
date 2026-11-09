@@ -212,6 +212,7 @@ scope:
 status: current
 open:
   - The plugin submission docs mark version, description, author.name, interface, interface.capabilities, interface.composerIcon and interface.logo as required in the Codex format, and list fields the CLI parser never reads (interface.supportURL, brandColorDark, composerIconDark, id, review.*, publication.*). The CLI loader treats every one of them as optional or ignores it. Are those requirements enforced anywhere a CLI user would meet them, or only at directory upload?
+imported_from: fact:plugins/manifest-fields@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/plugins/manifest-fields.md`.

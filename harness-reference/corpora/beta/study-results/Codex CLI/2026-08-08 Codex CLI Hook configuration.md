@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:hooks/config@codex#observation-1
 ---
 
 Imported from `facts/codex/hooks/config.md`, observation 1.

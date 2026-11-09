@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - When Codex copies a plugin into its cache, do exec bits and symlinks survive?
+imported_from: fact:plugins/install-copy@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/plugins/install-copy.md`.

@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/description-match@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/skills/description-match.md`.

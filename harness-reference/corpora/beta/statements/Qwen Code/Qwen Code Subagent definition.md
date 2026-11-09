@@ -31,6 +31,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:subagents/definition@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/subagents/definition.md`.

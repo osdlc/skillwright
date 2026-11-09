@@ -34,6 +34,7 @@ scope:
 status: current
 open:
   - Does the project ship a validator command or library, beyond the JSON Schemas? The spec and site name none.
+imported_from: fact:plugins/manifest-validation@agent-plugins#scope-["1.0.0",null,null]
 ---
 
 Imported from `facts/agent-plugins/plugins/manifest-validation.md`.

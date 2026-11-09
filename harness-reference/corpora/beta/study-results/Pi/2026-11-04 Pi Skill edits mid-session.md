@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/live-reload@pi#observation-1
 ---
 
 Imported from `facts/pi/skills/live-reload.md`, observation 1.

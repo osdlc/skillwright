@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/source-license@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/meta/source-license.md`.

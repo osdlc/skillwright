@@ -31,6 +31,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/name-validation@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/name-validation.md`.

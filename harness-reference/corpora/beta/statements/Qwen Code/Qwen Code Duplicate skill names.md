@@ -34,6 +34,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/duplicate-names@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/duplicate-names.md`.

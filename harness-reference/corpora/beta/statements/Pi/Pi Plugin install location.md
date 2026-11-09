@@ -38,6 +38,7 @@ scope:
 status: current
 open:
   - What are the exact on-disk directories for npm and git package installs?
+imported_from: fact:plugins/install-location@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/plugins/install-location.md`.

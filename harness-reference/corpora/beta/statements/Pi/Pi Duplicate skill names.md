@@ -39,6 +39,7 @@ scope:
 status: current
 open:
   - In which order are user, project, .agents and package skill locations scanned, so which scope wins a collision?
+imported_from: fact:skills/duplicate-names@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/duplicate-names.md`.

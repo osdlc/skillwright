@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Does Cursor tell the model the skill folder (for example a base directory line) when a skill loads?
+imported_from: fact:skills/relative-paths@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/relative-paths.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Do exec bits and symlinks inside an extension survive the install copy?
+imported_from: fact:plugins/install-copy@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/plugins/install-copy.md`.

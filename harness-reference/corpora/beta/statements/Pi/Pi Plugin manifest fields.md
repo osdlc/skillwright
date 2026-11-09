@@ -85,6 +85,7 @@ scope:
 status: current
 open:
   - What type do pi.image and pi.video take, and what reads them? The docs name them as gallery preview fields; the loader does not read them.
+imported_from: fact:plugins/manifest-fields@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/plugins/manifest-fields.md`.

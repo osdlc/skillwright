@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/agents-dir@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/skills/agents-dir.md`.

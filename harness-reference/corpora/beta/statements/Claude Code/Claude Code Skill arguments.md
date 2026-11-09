@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/arguments@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/arguments.md`.

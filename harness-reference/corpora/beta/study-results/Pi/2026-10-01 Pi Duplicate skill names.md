@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+imported_from: fact:skills/duplicate-names@pi#observation-1
 ---
 
 Imported from `facts/pi/skills/duplicate-names.md`, observation 1.

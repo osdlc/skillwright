@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/version-seen@copilot-cli#sighting-1
 ---
 
 Imported from `facts/copilot-cli/meta/version-seen.md`, observation 1.

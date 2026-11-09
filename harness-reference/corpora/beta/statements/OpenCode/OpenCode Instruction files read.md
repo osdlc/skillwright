@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/files@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/instructions/files.md`.

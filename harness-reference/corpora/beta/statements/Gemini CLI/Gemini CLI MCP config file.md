@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/config-file@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/mcp/config-file.md`.

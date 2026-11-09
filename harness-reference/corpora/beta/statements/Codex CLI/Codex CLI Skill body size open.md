@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/body-size@codex#open
 ---
 
 Imported from `facts/codex/skills/body-size.md`.

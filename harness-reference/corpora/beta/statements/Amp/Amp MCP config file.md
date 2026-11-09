@@ -32,6 +32,7 @@ scope:
 status: current
 open:
   - Which keys select each MCP transport.
+imported_from: fact:mcp/config-file@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/mcp/config-file.md`.

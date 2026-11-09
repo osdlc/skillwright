@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Do exec bits and symlinks survive install?
+imported_from: fact:plugins/install-copy@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/plugins/install-copy.md`.

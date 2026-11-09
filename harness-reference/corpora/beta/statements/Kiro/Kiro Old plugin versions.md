@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Do older power versions stay on disk after an update?
+imported_from: fact:plugins/upgrade-retention@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/plugins/upgrade-retention.md`.

@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/upgrade-retention@copilot-cli#open
 ---
 
 Imported from `facts/copilot-cli/plugins/upgrade-retention.md`.

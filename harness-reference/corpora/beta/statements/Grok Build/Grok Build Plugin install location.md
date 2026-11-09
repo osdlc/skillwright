@@ -34,6 +34,7 @@ scope:
 status: current
 open:
   - Where does grok plugin install put the files of a marketplace plugin, and is a local path copied or used in place?
+imported_from: fact:plugins/install-location@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/plugins/install-location.md`.

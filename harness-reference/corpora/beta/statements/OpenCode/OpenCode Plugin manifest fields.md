@@ -92,6 +92,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest-fields@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/plugins/manifest-fields.md`.

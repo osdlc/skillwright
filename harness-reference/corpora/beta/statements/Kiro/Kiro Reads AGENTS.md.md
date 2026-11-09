@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/agents-md@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/instructions/agents-md.md`.

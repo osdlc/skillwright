@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/project-trust@amp#open
 ---
 
 Imported from `facts/amp/skills/project-trust.md`.

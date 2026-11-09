@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-08T00:00:00Z
+imported_from: fact:subagents/definition@dsh#observation-1
 ---
 
 Imported from `facts/dsh/subagents/definition.md`, observation 1.

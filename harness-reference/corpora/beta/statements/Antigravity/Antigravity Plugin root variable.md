@@ -36,6 +36,7 @@ scope:
 status: current
 open:
   - Is ${PLUGIN_ROOT} substituted inside a SKILL.md body?
+imported_from: fact:skills/plugin-root-variable@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/skills/plugin-root-variable.md`.

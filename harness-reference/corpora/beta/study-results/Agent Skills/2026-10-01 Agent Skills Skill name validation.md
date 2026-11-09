@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+imported_from: fact:skills/name-validation@agent-skills#observation-1
 ---
 
 Imported from `facts/agent-skills/skills/name-validation.md`, observation 1.

@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/agent-skills-format@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/skills/agent-skills-format.md`.

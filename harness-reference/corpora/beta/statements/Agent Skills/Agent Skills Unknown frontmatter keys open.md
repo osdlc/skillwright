@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skill-frontmatter/unknown-keys@agent-skills#open
 ---
 
 Imported from `facts/agent-skills/skill-frontmatter/unknown-keys.md`.

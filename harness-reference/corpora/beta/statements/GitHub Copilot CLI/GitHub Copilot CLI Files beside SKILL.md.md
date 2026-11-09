@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Do files beside SKILL.md load into context automatically, or only when the model reads them?
+imported_from: fact:skills/bundled-files@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/bundled-files.md`.

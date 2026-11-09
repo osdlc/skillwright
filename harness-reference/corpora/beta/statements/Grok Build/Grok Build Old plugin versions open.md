@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/upgrade-retention@grok-build#open
 ---
 
 Imported from `facts/grok-build/plugins/upgrade-retention.md`.

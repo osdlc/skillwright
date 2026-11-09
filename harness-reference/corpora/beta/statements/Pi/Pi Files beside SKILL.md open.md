@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/bundled-files@pi#open
 ---
 
 Imported from `facts/pi/skills/bundled-files.md`.

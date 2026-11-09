@@ -31,6 +31,7 @@ scope:
   model: null
 status: current
 supersedes: "[Codex CLI Version seen 0.155.1](Codex%20CLI%20Version%20seen%200.155.1.md)"
+imported_from: fact:meta/version-seen@codex#sighting-3
 ---
 
 Imported from `facts/codex/meta/version-seen.md`, observation 3.

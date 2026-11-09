@@ -33,6 +33,7 @@ scope:
 status: current
 open:
   - The 2026-08-08 note lists `.opencode/` with no subfolder. Is the project directory `.opencode/skills`, or `.opencode` itself?
+imported_from: fact:skills/project-dirs@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/skills/project-dirs.md`.

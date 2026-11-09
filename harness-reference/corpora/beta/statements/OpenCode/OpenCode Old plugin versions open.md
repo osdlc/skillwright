@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/upgrade-retention@opencode#open
 ---
 
 Imported from `facts/opencode/plugins/upgrade-retention.md`.

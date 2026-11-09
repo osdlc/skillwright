@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:hooks/config@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/hooks/config.md`.

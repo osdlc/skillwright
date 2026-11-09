@@ -13,6 +13,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-08T00:00:00Z
+imported_from: fact:config/main-file@dsh#observation-1
 ---
 
 Imported from `facts/dsh/config/main-file.md`, observation 1.

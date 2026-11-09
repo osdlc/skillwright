@@ -43,6 +43,7 @@ status: current
 open:
   - What does the Cursor client do with an unknown or wrongly typed field in .cursor-plugin/plugin.json or marketplace.json? The docs do not say.
   - Does Cursor ship a validate command of its own? The docs' submission checklist asks for a valid manifest but names no tool.
+imported_from: fact:plugins/manifest-validation@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/plugins/manifest-validation.md`.

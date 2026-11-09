@@ -36,6 +36,7 @@ scope:
 status: current
 open:
   - When the plugin folder is copied into the cache, do exec bits and symlinks that stay inside the plugin survive the copy?
+imported_from: fact:plugins/install-copy@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/plugins/install-copy.md`.

@@ -36,6 +36,7 @@ scope:
   platform: []
   model: null
 status: disputed
+imported_from: fact:meta/lifecycle@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/meta/lifecycle.md`.

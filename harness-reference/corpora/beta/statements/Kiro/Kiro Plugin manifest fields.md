@@ -78,6 +78,7 @@ open:
   - Kiro marks version, description, author and keywords required, which the Agent Plugins spec leaves optional. Does Kiro reject a plugin.json that omits them?
   - Does Kiro read the Agent Plugins extensions field?
   - Which front-matter fields does a legacy POWER.md take? The docs fetched do not list them.
+imported_from: fact:plugins/manifest-fields@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/plugins/manifest-fields.md`.

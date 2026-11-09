@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/agent-loading@qwen-code#observation-1
 ---
 
 Imported from `facts/qwen-code/skills/agent-loading.md`, observation 1.

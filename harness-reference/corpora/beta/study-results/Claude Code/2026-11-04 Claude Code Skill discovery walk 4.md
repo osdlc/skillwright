@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/discovery-walk@claude-code#observation-4
 ---
 
 Imported from `facts/claude-code/skills/discovery-walk.md`, observation 4.

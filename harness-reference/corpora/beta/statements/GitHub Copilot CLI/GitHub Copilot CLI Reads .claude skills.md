@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/claude-dir@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/claude-dir.md`.

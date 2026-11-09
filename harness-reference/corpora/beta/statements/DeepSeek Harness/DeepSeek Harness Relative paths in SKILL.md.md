@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/relative-paths@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/skills/relative-paths.md`.

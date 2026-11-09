@@ -35,6 +35,7 @@ scope:
 status: current
 open:
   - What happens with a frontmatter key outside name, description, license, compatibility and metadata?
+imported_from: fact:skill-frontmatter/unknown-keys@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skill-frontmatter/unknown-keys.md`.

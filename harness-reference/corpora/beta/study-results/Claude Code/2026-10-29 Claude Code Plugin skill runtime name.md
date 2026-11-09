@@ -13,6 +13,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-29T00:00:00Z
+imported_from: fact:skills/plugin-namespace@claude-code#observation-2
 ---
 
 Imported from `facts/claude-code/skills/plugin-namespace.md`, observation 2.

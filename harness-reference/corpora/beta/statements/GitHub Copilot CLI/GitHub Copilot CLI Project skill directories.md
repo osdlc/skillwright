@@ -31,6 +31,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/project-dirs@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/project-dirs.md`.

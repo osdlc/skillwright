@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/config-file@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/mcp/config-file.md`.

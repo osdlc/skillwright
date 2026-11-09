@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+imported_from: fact:instructions/claude-md@cursor#observation-1
 ---
 
 Imported from `facts/cursor/instructions/claude-md.md`, observation 1.

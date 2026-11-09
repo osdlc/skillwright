@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does the spec say whether old plugin versions stay on disk after an upgrade? Update mechanics are client-owned and not described.
+imported_from: fact:plugins/upgrade-retention@agent-plugins#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-plugins/plugins/upgrade-retention.md`.

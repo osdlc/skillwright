@@ -34,6 +34,7 @@ scope:
 status: current
 open:
   - "What happens with an arbitrary unknown key: ignored, warned, or rejected?"
+imported_from: fact:skill-frontmatter/unknown-keys@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skill-frontmatter/unknown-keys.md`.

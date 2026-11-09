@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/install-location@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/plugins/install-location.md`.

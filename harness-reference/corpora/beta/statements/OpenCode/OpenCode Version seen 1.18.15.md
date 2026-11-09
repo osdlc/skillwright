@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/version-seen@opencode#sighting-1
 ---
 
 Imported from `facts/opencode/meta/version-seen.md`, observation 1.

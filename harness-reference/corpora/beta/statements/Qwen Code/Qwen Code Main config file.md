@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:config/main-file@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/config/main-file.md`.

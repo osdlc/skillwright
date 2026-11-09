@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/files@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/instructions/files.md`.

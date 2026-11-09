@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:hooks/config@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/hooks/config.md`.

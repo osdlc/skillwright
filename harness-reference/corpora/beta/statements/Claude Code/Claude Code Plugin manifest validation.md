@@ -43,6 +43,7 @@ scope:
 status: current
 open:
   - The docs describe a $schema key for editor autocomplete but name no schema URL. Does Anthropic publish a JSON Schema for plugin.json or marketplace.json?
+imported_from: fact:plugins/manifest-validation@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/plugins/manifest-validation.md`.

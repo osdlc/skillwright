@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/description-match@dsh#observation-1
 ---
 
 Imported from `facts/dsh/skills/description-match.md`, observation 1.

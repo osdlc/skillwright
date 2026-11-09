@@ -44,6 +44,7 @@ status: current
 open:
   - Whether the CLI (cursor-agent) loads skills and plugins the way the IDE does.
   - What mechanism loads the SKILL.md body when the agent picks a skill (a tool call or a file read)?
+imported_from: fact:skills/agent-loading@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/agent-loading.md`.

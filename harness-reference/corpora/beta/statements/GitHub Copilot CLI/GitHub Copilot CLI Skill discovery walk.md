@@ -51,6 +51,7 @@ status: current
 open:
   - Are symlinked skill folders followed?
   - Do parent-directory walks include .agents/skills and .claude/skills, or only .github/skills?
+imported_from: fact:skills/discovery-walk@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/discovery-walk.md`.

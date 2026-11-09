@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:subagents/definition@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/subagents/definition.md`.

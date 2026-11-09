@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:config/main-file@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/config/main-file.md`.

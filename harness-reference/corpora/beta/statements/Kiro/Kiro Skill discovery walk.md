@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Are parent directories, nested monorepo directories, .agents/skills, or symlinked folders scanned?
+imported_from: fact:skills/discovery-walk@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skills/discovery-walk.md`.

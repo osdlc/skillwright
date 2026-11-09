@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/plugin-root-variable@antigravity#observation-1
 ---
 
 Imported from `facts/antigravity/skills/plugin-root-variable.md`, observation 1.

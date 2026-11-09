@@ -36,6 +36,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/install-location@agent-plugins#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-plugins/plugins/install-location.md`.

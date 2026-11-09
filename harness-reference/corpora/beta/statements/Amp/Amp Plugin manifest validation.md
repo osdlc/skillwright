@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest-validation@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/plugins/manifest-validation.md`.

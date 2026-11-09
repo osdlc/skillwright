@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skill-frontmatter/unknown-keys@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/skill-frontmatter/unknown-keys.md`.

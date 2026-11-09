@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/source-license@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/meta/source-license.md`.

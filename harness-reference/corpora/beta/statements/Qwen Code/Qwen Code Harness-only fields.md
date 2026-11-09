@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skill-frontmatter/extensions@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skill-frontmatter/extensions.md`.

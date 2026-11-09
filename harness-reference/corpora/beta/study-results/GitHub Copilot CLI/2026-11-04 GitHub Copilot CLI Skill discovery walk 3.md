@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/discovery-walk@copilot-cli#observation-3
 ---
 
 Imported from `facts/copilot-cli/skills/discovery-walk.md`, observation 3.

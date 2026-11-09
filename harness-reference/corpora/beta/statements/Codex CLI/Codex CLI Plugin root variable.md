@@ -33,6 +33,7 @@ scope:
 status: current
 open:
   - Is ${PLUGIN_ROOT} substituted in SKILL.md bodies or in plugin MCP config, or only in hook commands?
+imported_from: fact:skills/plugin-root-variable@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/skills/plugin-root-variable.md`.

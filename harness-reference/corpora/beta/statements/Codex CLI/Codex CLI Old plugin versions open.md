@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/upgrade-retention@codex#open
 ---
 
 Imported from `facts/codex/plugins/upgrade-retention.md`.

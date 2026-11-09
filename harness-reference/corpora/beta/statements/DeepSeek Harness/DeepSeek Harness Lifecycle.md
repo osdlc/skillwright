@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/lifecycle@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/meta/lifecycle.md`.

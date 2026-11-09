@@ -36,6 +36,7 @@ scope:
 status: current
 open:
   - Do the docs give any reliability data for description-based selection, or name a model?
+imported_from: fact:skills/description-match@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/description-match.md`.

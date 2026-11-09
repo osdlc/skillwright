@@ -149,6 +149,7 @@ scope:
 status: current
 open:
   - Is suggestedPrompts required for the Marketplace? The Build plugins field table marks it Recommended, but the Publish to the Antigravity Marketplace section asks for a complete plugin.json (name, displayName, description, version, logo, suggestedPrompts, and author).
+imported_from: fact:plugins/manifest-fields@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/plugins/manifest-fields.md`.

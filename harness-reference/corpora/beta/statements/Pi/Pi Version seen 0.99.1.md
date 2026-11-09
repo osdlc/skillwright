@@ -31,6 +31,7 @@ scope:
   model: null
 status: superseded
 supersedes: "[Pi Version seen 0.84.3](Pi%20Version%20seen%200.84.3.md)"
+imported_from: fact:meta/version-seen@pi#sighting-3
 ---
 
 Imported from `facts/pi/meta/version-seen.md`, observation 3.

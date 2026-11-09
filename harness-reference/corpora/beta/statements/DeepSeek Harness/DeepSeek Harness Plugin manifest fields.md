@@ -114,6 +114,7 @@ scope:
 status: current
 open:
   - The README names internal configTrees, sessionFormatMigration and moduleFallback metadata that the public types leave out. Where do they live in package.json, and may a third-party package set them?
+imported_from: fact:plugins/manifest-fields@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/plugins/manifest-fields.md`.

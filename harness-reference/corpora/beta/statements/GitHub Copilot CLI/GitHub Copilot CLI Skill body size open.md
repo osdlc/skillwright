@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/body-size@copilot-cli#open
 ---
 
 Imported from `facts/copilot-cli/skills/body-size.md`.

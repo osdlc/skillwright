@@ -48,6 +48,7 @@ scope:
   platform: []
   model: null
 status: disputed
+imported_from: fact:skills/agent-loading@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/agent-loading.md`.

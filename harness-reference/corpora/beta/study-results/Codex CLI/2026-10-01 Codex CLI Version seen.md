@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+imported_from: fact:meta/version-seen@codex#observation-3
 ---
 
 Imported from `facts/codex/meta/version-seen.md`, observation 3.

@@ -42,6 +42,7 @@ scope:
 status: current
 open:
   - Does discovery walk parent directories of the working directory up to a repo root?
+imported_from: fact:skills/discovery-walk@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/discovery-walk.md`.

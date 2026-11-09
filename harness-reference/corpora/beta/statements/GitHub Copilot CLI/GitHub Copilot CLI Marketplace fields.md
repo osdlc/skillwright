@@ -151,6 +151,7 @@ scope:
 status: current
 open:
   - What keys does a url source object take besides sha and ref? The page names the url type and says it accepts sha, but shows only github objects and does not list the url key itself.
+imported_from: fact:plugins/marketplace-fields@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/plugins/marketplace-fields.md`.

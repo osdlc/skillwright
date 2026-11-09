@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:hooks/config@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/hooks/config.md`.

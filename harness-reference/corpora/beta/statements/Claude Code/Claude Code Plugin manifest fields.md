@@ -226,6 +226,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest-fields@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/plugins/manifest-fields.md`.

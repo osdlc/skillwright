@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/streamable-http@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/mcp/streamable-http.md`.

@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/lifecycle@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/meta/lifecycle.md`.

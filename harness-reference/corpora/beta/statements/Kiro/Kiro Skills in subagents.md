@@ -40,6 +40,7 @@ scope:
 status: current
 open:
   - Can a subagent see and load the parent session skills? The subagents page names only steering, MCP and permissions as shared.
+imported_from: fact:skills/subagent-visibility@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skills/subagent-visibility.md`.

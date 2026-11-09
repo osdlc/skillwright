@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:config/main-file@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/config/main-file.md`.

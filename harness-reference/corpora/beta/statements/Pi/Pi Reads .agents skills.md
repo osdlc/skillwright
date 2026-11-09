@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/agents-dir@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/agents-dir.md`.

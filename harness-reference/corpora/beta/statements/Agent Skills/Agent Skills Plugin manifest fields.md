@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest-fields@agent-skills#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-skills/plugins/manifest-fields.md`.

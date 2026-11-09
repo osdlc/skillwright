@@ -35,6 +35,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/description-match@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/description-match.md`.

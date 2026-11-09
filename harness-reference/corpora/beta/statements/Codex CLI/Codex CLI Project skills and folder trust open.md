@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/project-trust@codex#open
 ---
 
 Imported from `facts/codex/skills/project-trust.md`.

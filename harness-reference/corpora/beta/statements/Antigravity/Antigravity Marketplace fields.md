@@ -46,6 +46,7 @@ scope:
 status: current
 open:
   - Does Antigravity read a marketplace catalog file, and if so, what are its fields? The docs name only the official marketplace and a submission form. Our own probe of https://antigravity.google/schemas/v1/marketplace.json returned 404.
+imported_from: fact:plugins/marketplace-fields@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/plugins/marketplace-fields.md`.

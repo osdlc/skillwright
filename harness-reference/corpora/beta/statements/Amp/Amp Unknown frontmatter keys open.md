@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skill-frontmatter/unknown-keys@amp#open
 ---
 
 Imported from `facts/amp/skill-frontmatter/unknown-keys.md`.

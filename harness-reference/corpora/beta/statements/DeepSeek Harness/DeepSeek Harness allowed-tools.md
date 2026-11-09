@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skill-frontmatter/allowed-tools@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/skill-frontmatter/allowed-tools.md`.

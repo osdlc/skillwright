@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/marketplace-fields@kiro#open
 ---
 
 Imported from `facts/kiro/plugins/marketplace-fields.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does a local-folder install copy the folder or use it in place?
+imported_from: fact:plugins/install-location@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/plugins/install-location.md`.

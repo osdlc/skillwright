@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/install-copy@dsh#open
 ---
 
 Imported from `facts/dsh/plugins/install-copy.md`.

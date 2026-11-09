@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - What folder do relative paths in a SKILL.md body resolve from, and does the loaded text tell the model that folder?
+imported_from: fact:skills/relative-paths@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/skills/relative-paths.md`.

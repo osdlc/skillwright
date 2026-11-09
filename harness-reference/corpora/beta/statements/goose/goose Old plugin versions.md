@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/upgrade-retention@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/plugins/upgrade-retention.md`.

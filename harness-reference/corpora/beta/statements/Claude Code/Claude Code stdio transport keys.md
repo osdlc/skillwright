@@ -31,6 +31,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/stdio@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/mcp/stdio.md`.

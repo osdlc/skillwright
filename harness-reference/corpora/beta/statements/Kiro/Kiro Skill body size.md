@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/body-size@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skills/body-size.md`.

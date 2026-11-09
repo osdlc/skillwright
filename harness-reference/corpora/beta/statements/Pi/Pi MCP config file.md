@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/config-file@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/mcp/config-file.md`.

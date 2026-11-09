@@ -33,6 +33,7 @@ scope:
 status: current
 open:
   - Is ${extensionPath} substituted inside an extension skill SKILL.md body?
+imported_from: fact:skills/plugin-root-variable@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/skills/plugin-root-variable.md`.

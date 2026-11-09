@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:config/main-file@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/config/main-file.md`.

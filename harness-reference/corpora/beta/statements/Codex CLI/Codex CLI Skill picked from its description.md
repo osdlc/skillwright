@@ -36,6 +36,7 @@ scope:
 status: current
 open:
   - Do the docs name a model or give a reliability figure for implicit skill selection?
+imported_from: fact:skills/description-match@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/skills/description-match.md`.

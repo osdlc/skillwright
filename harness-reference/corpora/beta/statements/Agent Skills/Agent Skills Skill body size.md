@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does the spec say what a client does with a body past the recommended size?
+imported_from: fact:skills/body-size@agent-skills#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-skills/skills/body-size.md`.

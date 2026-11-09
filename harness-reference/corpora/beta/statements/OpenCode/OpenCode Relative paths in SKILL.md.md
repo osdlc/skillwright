@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/relative-paths@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/skills/relative-paths.md`.

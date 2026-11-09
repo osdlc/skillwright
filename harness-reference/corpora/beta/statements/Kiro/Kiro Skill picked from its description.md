@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/description-match@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skills/description-match.md`.

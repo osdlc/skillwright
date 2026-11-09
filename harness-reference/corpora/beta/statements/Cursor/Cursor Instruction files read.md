@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/files@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/instructions/files.md`.

@@ -33,6 +33,7 @@ scope:
 status: current
 open:
   - Does Gemini CLI publish a JSON Schema for gemini-extension.json? None was found in the docs or the repository's config source.
+imported_from: fact:plugins/manifest-validation@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/plugins/manifest-validation.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does anything else retain the prior version on disk?
+imported_from: fact:plugins/upgrade-retention@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/plugins/upgrade-retention.md`.

@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Is the body loaded through a tool or a file read?
+imported_from: fact:skills/agent-loading@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skills/agent-loading.md`.

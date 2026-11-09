@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:hooks/config@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/hooks/config.md`.

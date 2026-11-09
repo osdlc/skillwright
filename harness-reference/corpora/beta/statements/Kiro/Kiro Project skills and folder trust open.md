@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/project-trust@kiro#open
 ---
 
 Imported from `facts/kiro/skills/project-trust.md`.

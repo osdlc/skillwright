@@ -37,6 +37,7 @@ scope:
 status: current
 open:
   - Is the description length capped in the startup list, or the number of local skills?
+imported_from: fact:skills/startup-context@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/skills/startup-context.md`.

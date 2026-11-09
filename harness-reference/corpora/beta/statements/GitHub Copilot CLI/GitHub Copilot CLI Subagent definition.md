@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:subagents/definition@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/subagents/definition.md`.

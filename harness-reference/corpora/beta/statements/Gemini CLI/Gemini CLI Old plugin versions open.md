@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/upgrade-retention@gemini-cli#open
 ---
 
 Imported from `facts/gemini-cli/plugins/upgrade-retention.md`.

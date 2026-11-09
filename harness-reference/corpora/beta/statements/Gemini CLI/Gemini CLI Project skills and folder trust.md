@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/project-trust@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/skills/project-trust.md`.

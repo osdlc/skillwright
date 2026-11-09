@@ -38,6 +38,7 @@ scope:
 status: current
 open:
   - Are edits to an existing skill picked up without /skills reload?
+imported_from: fact:skills/live-reload@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/live-reload.md`.

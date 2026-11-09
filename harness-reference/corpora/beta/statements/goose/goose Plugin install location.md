@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/install-location@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/plugins/install-location.md`.

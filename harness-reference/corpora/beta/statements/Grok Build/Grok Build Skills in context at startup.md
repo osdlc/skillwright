@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - What does the system prompt list per skill (name, description, when-to-use), and is the count or description length capped?
+imported_from: fact:skills/startup-context@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/skills/startup-context.md`.

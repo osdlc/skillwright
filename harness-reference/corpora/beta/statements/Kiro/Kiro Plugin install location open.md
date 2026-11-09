@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/install-location@kiro#open
 ---
 
 Imported from `facts/kiro/plugins/install-location.md`.

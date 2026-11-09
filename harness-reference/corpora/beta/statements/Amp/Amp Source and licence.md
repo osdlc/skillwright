@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/source-license@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/meta/source-license.md`.

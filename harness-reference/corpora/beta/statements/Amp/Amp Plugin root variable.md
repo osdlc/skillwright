@@ -35,6 +35,7 @@ scope:
 status: current
 open:
   - Is there a variable naming a plugin folder, and is any variable substituted in a skill body?
+imported_from: fact:skills/plugin-root-variable@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/skills/plugin-root-variable.md`.

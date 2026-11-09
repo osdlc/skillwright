@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:commands/files@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/commands/files.md`.

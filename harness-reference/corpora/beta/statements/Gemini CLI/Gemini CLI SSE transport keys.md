@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/sse@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/mcp/sse.md`.

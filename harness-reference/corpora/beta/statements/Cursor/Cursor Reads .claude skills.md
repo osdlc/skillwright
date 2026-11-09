@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/claude-dir@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/claude-dir.md`.

@@ -31,6 +31,7 @@ scope:
   model: null
 status: current
 supersedes: "[Gemini CLI Version seen 0.54.4](Gemini%20CLI%20Version%20seen%200.54.4.md)"
+imported_from: fact:meta/version-seen@gemini-cli#sighting-2
 ---
 
 Imported from `facts/gemini-cli/meta/version-seen.md`, observation 2.

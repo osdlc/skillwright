@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/config-file@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/mcp/config-file.md`.

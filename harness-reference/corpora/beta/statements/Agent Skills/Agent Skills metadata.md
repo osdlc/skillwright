@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skill-frontmatter/metadata@agent-skills#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-skills/skill-frontmatter/metadata.md`.

@@ -229,6 +229,7 @@ scope:
 status: current
 open:
   - The docs omit displayName, minClientVersions, publisher, category and tags, which the cursor/plugins schema allows, and the schema omits nothing the docs list. Does the Cursor client read the schema-only fields?
+imported_from: fact:plugins/manifest-fields@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/plugins/manifest-fields.md`.

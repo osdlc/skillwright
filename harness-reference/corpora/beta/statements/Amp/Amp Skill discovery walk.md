@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Are symlinked skill folders followed?
+imported_from: fact:skills/discovery-walk@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/skills/discovery-walk.md`.

@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:plugins/upgrade-retention@goose#observation-1
 ---
 
 Imported from `facts/goose/plugins/upgrade-retention.md`, observation 1.

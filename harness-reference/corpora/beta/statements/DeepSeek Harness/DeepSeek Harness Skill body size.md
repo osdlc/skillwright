@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is there a recommendation on SKILL.md body size?
+imported_from: fact:skills/body-size@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/skills/body-size.md`.

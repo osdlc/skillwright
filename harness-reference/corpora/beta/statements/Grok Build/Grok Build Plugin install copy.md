@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Do exec bits and symlinks inside a plugin survive install?
+imported_from: fact:plugins/install-copy@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/plugins/install-copy.md`.

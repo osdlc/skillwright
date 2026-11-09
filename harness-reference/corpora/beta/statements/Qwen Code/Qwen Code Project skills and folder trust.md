@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Are project skills themselves (not only their hooks) withheld in an untrusted folder?
+imported_from: fact:skills/project-trust@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/project-trust.md`.

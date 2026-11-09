@@ -37,6 +37,7 @@ scope:
   platform: []
   model: null
 status: disputed
+imported_from: fact:skills/agent-loading@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/agent-loading.md`.

@@ -32,6 +32,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/description-match@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/skills/description-match.md`.

@@ -32,6 +32,7 @@ scope:
 status: current
 open:
   - How the hooks bridge's payload and exit-code semantics compare with Claude Code's, field by field.
+imported_from: fact:hooks/config@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/hooks/config.md`.

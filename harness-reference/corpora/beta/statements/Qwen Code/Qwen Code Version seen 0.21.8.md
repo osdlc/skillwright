@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/version-seen@qwen-code#sighting-1
 ---
 
 Imported from `facts/qwen-code/meta/version-seen.md`, observation 1.

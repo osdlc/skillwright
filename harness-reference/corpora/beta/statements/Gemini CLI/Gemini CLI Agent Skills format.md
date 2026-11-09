@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/agent-skills-format@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/skills/agent-skills-format.md`.

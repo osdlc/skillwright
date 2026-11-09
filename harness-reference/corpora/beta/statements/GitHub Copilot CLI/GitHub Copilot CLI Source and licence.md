@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/source-license@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/meta/source-license.md`.

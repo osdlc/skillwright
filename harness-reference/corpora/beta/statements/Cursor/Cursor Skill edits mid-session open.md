@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/live-reload@cursor#open
 ---
 
 Imported from `facts/cursor/skills/live-reload.md`.

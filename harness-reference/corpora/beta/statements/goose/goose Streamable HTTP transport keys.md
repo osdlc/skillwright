@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/streamable-http@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/mcp/streamable-http.md`.

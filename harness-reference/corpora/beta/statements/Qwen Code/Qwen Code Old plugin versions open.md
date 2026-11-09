@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/upgrade-retention@qwen-code#open
 ---
 
 Imported from `facts/qwen-code/plugins/upgrade-retention.md`.

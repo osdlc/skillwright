@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/project-trust@goose#open
 ---
 
 Imported from `facts/goose/skills/project-trust.md`.

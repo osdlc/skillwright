@@ -37,6 +37,7 @@ scope:
 status: current
 open:
   - Within one tier, which of .grok/skills, .agents/skills and .claude/skills wins a name clash?
+imported_from: fact:skills/duplicate-names@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/skills/duplicate-names.md`.

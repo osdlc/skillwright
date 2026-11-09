@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/agents-dir@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/agents-dir.md`.

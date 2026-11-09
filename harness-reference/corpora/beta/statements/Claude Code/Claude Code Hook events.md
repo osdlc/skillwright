@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:hooks/events@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/hooks/events.md`.

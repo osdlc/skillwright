@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/files@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/instructions/files.md`.

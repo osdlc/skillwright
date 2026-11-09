@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does the startup list hold only each skill name and description, and is the number of skills or the description length capped?
+imported_from: fact:skills/startup-context@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/startup-context.md`.

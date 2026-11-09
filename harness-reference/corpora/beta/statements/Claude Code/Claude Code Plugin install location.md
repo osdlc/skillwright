@@ -41,6 +41,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/install-location@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/plugins/install-location.md`.

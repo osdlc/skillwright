@@ -38,6 +38,7 @@ scope:
 status: current
 open:
   - When the model picks a skill by name and two skills share it, which one loads?
+imported_from: fact:skills/duplicate-names@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/skills/duplicate-names.md`.

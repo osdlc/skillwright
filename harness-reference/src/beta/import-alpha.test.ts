@@ -189,6 +189,9 @@ describe('mapping', () => {
   })
 
   test('a latest-cardinality subject chains sightings, and unknown versioning drops since', () => {
+    // The real corpus owns Pi's sightings already, which would pin their names.
+    for (const f of readdirSync(join(dir, 'statements/Pi')))
+      if (f.startsWith('Pi Version seen')) rmSync(join(dir, 'statements/Pi', f))
     const ctx = context([
       fact('meta/version-seen', {
         observations: [

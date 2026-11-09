@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Do the docs give guidance on writing descriptions or reliability of automatic selection?
+imported_from: fact:skills/description-match@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/skills/description-match.md`.

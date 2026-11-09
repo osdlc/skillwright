@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:config/main-file@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/config/main-file.md`.

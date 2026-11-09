@@ -34,6 +34,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/duplicate-names@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/skills/duplicate-names.md`.

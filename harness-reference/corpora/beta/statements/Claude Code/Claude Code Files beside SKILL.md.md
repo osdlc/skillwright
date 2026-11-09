@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Which tool does Claude use to load a referenced supporting file, and does the harness list the skill's bundled files when the skill loads?
+imported_from: fact:skills/bundled-files@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/bundled-files.md`.

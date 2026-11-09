@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/install-copy@copilot-cli#open
 ---
 
 Imported from `facts/copilot-cli/plugins/install-copy.md`.

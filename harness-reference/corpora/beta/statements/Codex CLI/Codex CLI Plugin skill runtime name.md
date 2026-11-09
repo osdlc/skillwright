@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/plugin-namespace@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/skills/plugin-namespace.md`.

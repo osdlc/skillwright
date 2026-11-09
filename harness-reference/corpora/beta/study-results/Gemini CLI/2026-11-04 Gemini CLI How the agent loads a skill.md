@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/agent-loading@gemini-cli#observation-1
 ---
 
 Imported from `facts/gemini-cli/skills/agent-loading.md`, observation 1.

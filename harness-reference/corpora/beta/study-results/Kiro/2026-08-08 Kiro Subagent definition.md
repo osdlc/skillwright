@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:subagents/definition@kiro#observation-1
 ---
 
 Imported from `facts/kiro/subagents/definition.md`, observation 1.

@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/claude-md@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/instructions/claude-md.md`.

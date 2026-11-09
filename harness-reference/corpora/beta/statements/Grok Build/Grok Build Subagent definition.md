@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:subagents/definition@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/subagents/definition.md`.

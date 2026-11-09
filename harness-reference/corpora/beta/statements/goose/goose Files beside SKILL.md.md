@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does loading a skill put supporting file contents (not just names) in context?
+imported_from: fact:skills/bundled-files@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/skills/bundled-files.md`.

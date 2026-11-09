@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - What folder does a bare relative path in a SKILL.md body (for example scripts/x.py) resolve from, and does Claude Code tell the model the skill's base directory when the skill loads?
+imported_from: fact:skills/relative-paths@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/relative-paths.md`.

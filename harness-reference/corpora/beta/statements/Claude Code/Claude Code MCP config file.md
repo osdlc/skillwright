@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/config-file@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/mcp/config-file.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Which transports .agents/mcp_config.json supports, and whether serverUrl selects streamable HTTP or SSE.
+imported_from: fact:mcp/config-file@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/mcp/config-file.md`.

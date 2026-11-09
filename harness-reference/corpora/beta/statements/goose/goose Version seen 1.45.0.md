@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/version-seen@goose#sighting-1
 ---
 
 Imported from `facts/goose/meta/version-seen.md`, observation 1.

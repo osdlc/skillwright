@@ -38,6 +38,7 @@ scope:
 status: current
 open:
   - What happens with a frontmatter key outside the known list?
+imported_from: fact:skill-frontmatter/unknown-keys@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/skill-frontmatter/unknown-keys.md`.

@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/source-license@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/meta/source-license.md`.

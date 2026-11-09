@@ -39,6 +39,7 @@ status: current
 open:
   - Whether a bare name also works for a plugin skill whose name comes from its directory. The docs state it only for a skill whose frontmatter `name` is set.
   - Whether the model's `Skill` tool resolves a bare plugin skill name, and in which versions.
+imported_from: fact:skills/plugin-namespace@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/plugin-namespace.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - What is the root order across project, global, plugin and legacy directories in the shipped build?
+imported_from: fact:skills/duplicate-names@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/skills/duplicate-names.md`.

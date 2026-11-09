@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - For npm plugins, do exec bits and symlinks survive the Bun install?
+imported_from: fact:plugins/install-copy@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/plugins/install-copy.md`.

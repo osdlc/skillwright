@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/duplicate-names@copilot-cli#observation-2
 ---
 
 Imported from `facts/copilot-cli/skills/duplicate-names.md`, observation 2.

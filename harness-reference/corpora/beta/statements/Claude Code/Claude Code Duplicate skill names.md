@@ -40,6 +40,7 @@ scope:
 status: current
 open:
   - What happens when two skills with the same name exist at the same scope, for example two nested .claude/skills directories in a monorepo?
+imported_from: fact:skills/duplicate-names@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/duplicate-names.md`.

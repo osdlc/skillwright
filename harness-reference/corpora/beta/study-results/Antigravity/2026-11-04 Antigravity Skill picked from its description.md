@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/description-match@antigravity#observation-1
 ---
 
 Imported from `facts/antigravity/skills/description-match.md`, observation 1.

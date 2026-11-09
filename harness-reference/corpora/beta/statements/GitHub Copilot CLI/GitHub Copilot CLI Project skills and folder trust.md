@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - Do project skills in .github/skills load only after the user trusts the folder?
+imported_from: fact:skills/project-trust@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/project-trust.md`.

@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/config-file@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/mcp/config-file.md`.

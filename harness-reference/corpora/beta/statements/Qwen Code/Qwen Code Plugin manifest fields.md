@@ -217,6 +217,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest-fields@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/plugins/manifest-fields.md`.

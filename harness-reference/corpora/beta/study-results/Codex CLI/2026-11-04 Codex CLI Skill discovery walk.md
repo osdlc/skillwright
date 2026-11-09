@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/discovery-walk@codex#observation-1
 ---
 
 Imported from `facts/codex/skills/discovery-walk.md`, observation 1.

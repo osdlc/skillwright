@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/files@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/instructions/files.md`.

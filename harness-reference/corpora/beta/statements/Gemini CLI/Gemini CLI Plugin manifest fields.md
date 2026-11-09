@@ -95,6 +95,7 @@ scope:
 status: current
 open:
   - The docs say the name should be lowercase letters or numbers with dashes; the loader accepts upper-case letters too. Which one does the gallery crawler apply?
+imported_from: fact:plugins/manifest-fields@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/plugins/manifest-fields.md`.

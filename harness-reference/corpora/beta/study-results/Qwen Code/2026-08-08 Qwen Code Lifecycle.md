@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:meta/lifecycle@qwen-code#observation-1
 ---
 
 Imported from `facts/qwen-code/meta/lifecycle.md`, observation 1.

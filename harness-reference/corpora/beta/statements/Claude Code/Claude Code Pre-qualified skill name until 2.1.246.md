@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: superseded
+imported_from: fact:skills/prequalified-name@claude-code#scope-[null,"2.1.246",null]
 ---
 
 Imported from `facts/claude-code/skills/prequalified-name.md`.

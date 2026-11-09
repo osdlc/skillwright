@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/subagent-visibility@codex#open
 ---
 
 Imported from `facts/codex/skills/subagent-visibility.md`.

@@ -43,6 +43,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/duplicate-names@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/duplicate-names.md`.

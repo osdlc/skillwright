@@ -39,6 +39,7 @@ scope:
 status: current
 open:
   - Does Codex ship a command that validates a plugin or marketplace manifest? The CLI's plugin and marketplace commands show no validate subcommand, and the docs name none.
+imported_from: fact:plugins/manifest-validation@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/plugins/manifest-validation.md`.

@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:plugins/install-copy@amp#open
 ---
 
 Imported from `facts/amp/plugins/install-copy.md`.

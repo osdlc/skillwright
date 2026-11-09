@@ -36,6 +36,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/marketplace@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/plugins/marketplace.md`.

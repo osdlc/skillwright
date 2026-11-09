@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is the body loaded only on invocation, or also at startup?
+imported_from: fact:skills/agent-loading@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/agent-loading.md`.

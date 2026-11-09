@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-05T00:00:00Z
+imported_from: fact:plugins/manifest-validation@cursor#observation-2
 ---
 
 Imported from `facts/cursor/plugins/manifest-validation.md`, observation 2.

@@ -32,6 +32,7 @@ scope:
 status: current
 open:
   - Is ${PLUGIN_ROOT} substituted in a skill body?
+imported_from: fact:skills/plugin-root-variable@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/skills/plugin-root-variable.md`.

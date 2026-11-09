@@ -41,6 +41,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/plugins/manifest.md`.

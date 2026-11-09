@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/config-file@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/mcp/config-file.md`.

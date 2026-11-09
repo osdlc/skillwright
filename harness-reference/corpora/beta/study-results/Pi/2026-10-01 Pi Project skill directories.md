@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+imported_from: fact:skills/project-dirs@pi#observation-2
 ---
 
 Imported from `facts/pi/skills/project-dirs.md`, observation 2.

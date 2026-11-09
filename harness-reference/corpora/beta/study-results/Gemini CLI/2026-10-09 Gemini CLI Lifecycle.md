@@ -13,6 +13,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-09T00:00:00Z
+imported_from: fact:meta/lifecycle@gemini-cli#observation-2
 ---
 
 Imported from `facts/gemini-cli/meta/lifecycle.md`, observation 2.

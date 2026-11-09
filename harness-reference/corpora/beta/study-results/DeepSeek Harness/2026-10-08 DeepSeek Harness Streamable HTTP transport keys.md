@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-08T00:00:00Z
+imported_from: fact:mcp/streamable-http@dsh#observation-1
 ---
 
 Imported from `facts/dsh/mcp/streamable-http.md`, observation 1.

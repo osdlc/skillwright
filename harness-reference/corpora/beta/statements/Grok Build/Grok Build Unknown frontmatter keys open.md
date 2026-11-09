@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skill-frontmatter/unknown-keys@grok-build#open
 ---
 
 Imported from `facts/grok-build/skill-frontmatter/unknown-keys.md`.

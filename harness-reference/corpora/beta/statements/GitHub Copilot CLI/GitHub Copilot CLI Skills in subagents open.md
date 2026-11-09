@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/subagent-visibility@copilot-cli#open
 ---
 
 Imported from `facts/copilot-cli/skills/subagent-visibility.md`.

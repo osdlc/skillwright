@@ -155,6 +155,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/marketplace-fields@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/plugins/marketplace-fields.md`.

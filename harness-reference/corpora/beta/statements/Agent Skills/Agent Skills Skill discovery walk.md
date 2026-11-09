@@ -35,6 +35,7 @@ scope:
 status: current
 open:
   - Does the standard say anything about symlinked skill folders?
+imported_from: fact:skills/discovery-walk@agent-skills#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-skills/skills/discovery-walk.md`.

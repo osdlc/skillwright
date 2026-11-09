@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does OpenCode have a plugin or package format that installs skills? The plugins page describes JavaScript or TypeScript plugin modules and never mentions skills.
+imported_from: fact:plugins/install-location@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/plugins/install-location.md`.

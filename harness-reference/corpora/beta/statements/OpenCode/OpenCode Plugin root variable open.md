@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/plugin-root-variable@opencode#open
 ---
 
 Imported from `facts/opencode/skills/plugin-root-variable.md`.

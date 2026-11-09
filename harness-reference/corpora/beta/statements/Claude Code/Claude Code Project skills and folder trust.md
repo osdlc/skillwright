@@ -43,6 +43,7 @@ scope:
 status: current
 open:
   - Does a plain project skill (not a plugin folder) appear in the skill listing in a folder the user has not trusted?
+imported_from: fact:skills/project-trust@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/project-trust.md`.

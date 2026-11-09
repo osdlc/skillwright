@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/discovery-walk@gemini-cli#open
 ---
 
 Imported from `facts/gemini-cli/skills/discovery-walk.md`.

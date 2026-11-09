@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/live-reload@goose#open
 ---
 
 Imported from `facts/goose/skills/live-reload.md`.

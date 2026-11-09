@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/marketplace-fields@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/plugins/marketplace-fields.md`.

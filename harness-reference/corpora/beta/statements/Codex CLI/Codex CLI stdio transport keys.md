@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/stdio@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/mcp/stdio.md`.

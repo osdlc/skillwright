@@ -42,6 +42,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/install-location@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/plugins/install-location.md`.

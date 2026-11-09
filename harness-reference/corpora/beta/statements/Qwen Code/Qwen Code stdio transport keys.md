@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/stdio@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/mcp/stdio.md`.

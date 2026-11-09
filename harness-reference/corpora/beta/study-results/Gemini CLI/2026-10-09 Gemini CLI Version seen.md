@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-09T00:00:00Z
+imported_from: fact:meta/version-seen@gemini-cli#observation-2
 ---
 
 Imported from `facts/gemini-cli/meta/version-seen.md`, observation 2.

@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/project-dirs@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/project-dirs.md`.

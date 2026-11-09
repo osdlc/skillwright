@@ -32,6 +32,7 @@ scope:
 status: current
 open:
   - Is the variable substituted in SKILL.md bodies?
+imported_from: fact:skills/plugin-root-variable@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/plugin-root-variable.md`.

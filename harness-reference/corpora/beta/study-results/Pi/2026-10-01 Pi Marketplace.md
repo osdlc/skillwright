@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-01T00:00:00Z
+imported_from: fact:plugins/marketplace@pi#observation-2
 ---
 
 Imported from `facts/pi/plugins/marketplace.md`, observation 2.

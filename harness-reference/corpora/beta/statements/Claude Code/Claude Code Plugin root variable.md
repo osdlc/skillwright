@@ -56,6 +56,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/plugin-root-variable@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/plugin-root-variable.md`.

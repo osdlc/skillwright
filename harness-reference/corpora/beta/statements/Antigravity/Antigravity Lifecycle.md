@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/lifecycle@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/meta/lifecycle.md`.

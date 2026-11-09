@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:hooks/config@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/hooks/config.md`.

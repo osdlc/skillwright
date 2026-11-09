@@ -34,6 +34,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/description-match@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/description-match.md`.

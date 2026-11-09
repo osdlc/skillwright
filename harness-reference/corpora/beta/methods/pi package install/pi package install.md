@@ -17,6 +17,7 @@ record:
   - The `packages` entry each install wrote, as written, and whether it is relative.
 safety:
   - "`pi install` without `-l` records the package in the user's agent settings, which every pi session reads. Run it against a throwaway agent folder, or remove the packages afterwards."
+imported_from: probe:pi-package-install
 ---
 
 # pi package install

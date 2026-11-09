@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skill-frontmatter/disable-model-invocation@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skill-frontmatter/disable-model-invocation.md`.

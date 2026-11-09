@@ -31,6 +31,7 @@ status: current
 open:
   - What does Kiro do with an unknown or wrongly typed field in plugin.json? The docs say only that each power must have a valid plugin.json or POWER.md.
   - Does Kiro ship a validator? The docs point to the Power Builder for creating and converting powers but name no validate command.
+imported_from: fact:plugins/manifest-validation@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/plugins/manifest-validation.md`.

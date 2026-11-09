@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/files@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/instructions/files.md`.

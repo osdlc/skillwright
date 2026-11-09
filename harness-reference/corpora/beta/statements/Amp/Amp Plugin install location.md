@@ -43,6 +43,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/install-location@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/plugins/install-location.md`.

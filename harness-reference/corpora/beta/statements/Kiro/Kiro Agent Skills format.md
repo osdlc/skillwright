@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/agent-skills-format@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skills/agent-skills-format.md`.

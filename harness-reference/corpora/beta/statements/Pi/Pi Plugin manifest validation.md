@@ -32,6 +32,7 @@ scope:
 status: current
 open:
   - Does pi ship a command or published JSON Schema that validates the pi block in package.json? None was found in the source or the packages docs.
+imported_from: fact:plugins/manifest-validation@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/plugins/manifest-validation.md`.

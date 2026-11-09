@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:config/main-file@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/config/main-file.md`.

@@ -38,6 +38,7 @@ scope:
 status: current
 open:
   - Does Qwen Code ship a validate command or a published JSON Schema for qwen-extension.json? The extensions command folder has no validate command, and no schema was found.
+imported_from: fact:plugins/manifest-validation@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/plugins/manifest-validation.md`.

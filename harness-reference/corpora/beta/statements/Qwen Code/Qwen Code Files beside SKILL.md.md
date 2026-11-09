@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Do files beside SKILL.md enter context without being requested?
+imported_from: fact:skills/bundled-files@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/bundled-files.md`.

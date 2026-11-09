@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/marketplace-fields@agent-skills#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-skills/plugins/marketplace-fields.md`.

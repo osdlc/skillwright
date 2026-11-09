@@ -33,6 +33,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest@agent-plugins#scope-["1.0.0",null,null]
 ---
 
 Imported from `facts/agent-plugins/plugins/manifest.md`.

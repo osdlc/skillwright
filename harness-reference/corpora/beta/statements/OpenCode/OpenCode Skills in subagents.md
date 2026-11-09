@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does a subagent started by another agent see the skill tool and the same skill list?
+imported_from: fact:skills/subagent-visibility@opencode#scope-[null,null,null]
 ---
 
 Imported from `facts/opencode/skills/subagent-visibility.md`.

@@ -35,6 +35,7 @@ scope:
   platform: []
   model: null
 status: disputed
+imported_from: fact:skills/agent-loading@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/skills/agent-loading.md`.

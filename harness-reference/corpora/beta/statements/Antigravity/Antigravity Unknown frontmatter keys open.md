@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skill-frontmatter/unknown-keys@antigravity#open
 ---
 
 Imported from `facts/antigravity/skill-frontmatter/unknown-keys.md`.

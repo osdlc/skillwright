@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:skills/agents-dir@goose#observation-1
 ---
 
 Imported from `facts/goose/skills/agents-dir.md`, observation 1.

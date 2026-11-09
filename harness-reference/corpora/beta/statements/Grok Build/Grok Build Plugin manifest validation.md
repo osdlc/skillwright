@@ -45,6 +45,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest-validation@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/plugins/manifest-validation.md`.

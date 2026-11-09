@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:mcp/sse@copilot-cli#observation-1
 ---
 
 Imported from `facts/copilot-cli/mcp/sse.md`, observation 1.

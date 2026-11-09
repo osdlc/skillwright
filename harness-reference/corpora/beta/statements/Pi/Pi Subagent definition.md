@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:subagents/definition@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/subagents/definition.md`.

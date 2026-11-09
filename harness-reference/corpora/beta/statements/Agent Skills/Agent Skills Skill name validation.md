@@ -33,6 +33,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/name-validation@agent-skills#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-skills/skills/name-validation.md`.

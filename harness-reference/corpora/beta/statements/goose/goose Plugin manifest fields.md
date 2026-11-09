@@ -72,6 +72,7 @@ scope:
 status: current
 open:
   - Do the skills and mcpServers path rules (each path must start with ./ and stay inside the plugin) appear in any goose doc? Only the code states them.
+imported_from: fact:plugins/manifest-fields@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/plugins/manifest-fields.md`.

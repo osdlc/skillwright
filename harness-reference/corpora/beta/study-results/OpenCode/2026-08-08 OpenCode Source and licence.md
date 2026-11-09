@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:meta/source-license@opencode#observation-1
 ---
 
 Imported from `facts/opencode/meta/source-license.md`, observation 1.

@@ -47,6 +47,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:skills/subagent-visibility@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/skills/subagent-visibility.md`.

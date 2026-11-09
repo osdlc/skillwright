@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Does goose ship a validate command or a published JSON Schema for plugin.json? The plugin CLI has only install and update.
+imported_from: fact:plugins/manifest-validation@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/plugins/manifest-validation.md`.

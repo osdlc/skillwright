@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/duplicate-names@antigravity#open
 ---
 
 Imported from `facts/antigravity/skills/duplicate-names.md`.

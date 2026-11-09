@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/stdio@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/mcp/stdio.md`.

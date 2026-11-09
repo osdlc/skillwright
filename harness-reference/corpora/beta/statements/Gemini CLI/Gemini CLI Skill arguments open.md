@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/arguments@gemini-cli#open
 ---
 
 Imported from `facts/gemini-cli/skills/arguments.md`.

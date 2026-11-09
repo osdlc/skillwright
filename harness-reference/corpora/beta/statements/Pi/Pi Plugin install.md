@@ -41,6 +41,7 @@ scope:
 status: disputed
 open:
   - What is the shape of a `packages` entry for a local install (a string, or an object with `source`), and is a relative entry read against the settings file's folder or the folder `pi install` ran in?
+imported_from: fact:plugins/install@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/plugins/install.md`.

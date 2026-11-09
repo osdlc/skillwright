@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/agents-md@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/instructions/agents-md.md`.

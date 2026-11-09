@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:subagents/definition@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/subagents/definition.md`.

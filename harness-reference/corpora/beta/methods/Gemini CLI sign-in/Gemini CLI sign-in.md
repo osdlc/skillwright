@@ -14,6 +14,7 @@ record:
   - "The sign-in kind: personal Google account, Workspace, or an API key."
 safety:
   - Uses the signed-in Google account. A first run may start a browser sign-in.
+imported_from: probe:gemini-sign-in
 ---
 
 # Gemini CLI sign-in

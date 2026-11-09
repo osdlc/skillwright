@@ -39,6 +39,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:plugins/manifest-validation@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/plugins/manifest-validation.md`.

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - After a local or IDE plugin upgrade, do old plugin versions stay on disk?
+imported_from: fact:plugins/upgrade-retention@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/plugins/upgrade-retention.md`.

@@ -10,6 +10,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-08-08T00:00:00Z
+imported_from: fact:meta/version-seen@grok-build#observation-1
 ---
 
 Imported from `facts/grok-build/meta/version-seen.md`, observation 1.

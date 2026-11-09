@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/duplicate-names@cursor#open
 ---
 
 Imported from `facts/cursor/skills/duplicate-names.md`.

@@ -43,6 +43,7 @@ scope:
 status: current
 open:
   - Does Codex scan nested .agents/skills directories below the working directory in a monorepo?
+imported_from: fact:skills/discovery-walk@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/skills/discovery-walk.md`.

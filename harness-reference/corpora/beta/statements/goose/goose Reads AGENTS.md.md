@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/agents-md@goose#scope-[null,null,null]
 ---
 
 Imported from `facts/goose/instructions/agents-md.md`.

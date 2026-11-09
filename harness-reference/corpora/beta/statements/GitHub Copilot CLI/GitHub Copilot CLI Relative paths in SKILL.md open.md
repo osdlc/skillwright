@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/relative-paths@copilot-cli#open
 ---
 
 Imported from `facts/copilot-cli/skills/relative-paths.md`.

@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/stdio@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/mcp/stdio.md`.

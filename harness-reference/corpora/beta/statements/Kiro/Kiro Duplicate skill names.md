@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - How are duplicates handled across .kiro, .agents and .claude locations and plugins?
+imported_from: fact:skills/duplicate-names@kiro#scope-[null,null,null]
 ---
 
 Imported from `facts/kiro/skills/duplicate-names.md`.

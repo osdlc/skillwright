@@ -41,6 +41,7 @@ scope:
 status: current
 open:
   - Does the spec say whether ${PLUGIN_ROOT} is substituted in SKILL.md bodies or hook files? The fetched text is silent on skills and hooks.
+imported_from: fact:skills/plugin-root-variable@agent-plugins#scope-[null,null,null]
 ---
 
 Imported from `facts/agent-plugins/skills/plugin-root-variable.md`.

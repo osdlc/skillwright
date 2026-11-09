@@ -45,6 +45,7 @@ scope:
 status: current
 open:
   - Does the model load a skill through a named tool or a file read?
+imported_from: fact:skills/agent-loading@copilot-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/copilot-cli/skills/agent-loading.md`.

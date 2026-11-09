@@ -29,6 +29,7 @@ scope:
   model: null
 status: current
 supersedes: "[Claude Code Pre-qualified skill name until 2.1.246](Claude%20Code%20Pre-qualified%20skill%20name%20until%202.1.246.md)"
+imported_from: fact:skills/prequalified-name@claude-code#scope-["2.1.246",null,null]
 ---
 
 Imported from `facts/claude-code/skills/prequalified-name.md`.

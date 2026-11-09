@@ -23,6 +23,7 @@ scope:
   model: null
 status: open
 open: *a1
+imported_from: fact:skills/relative-paths@kiro#open
 ---
 
 Imported from `facts/kiro/skills/relative-paths.md`.

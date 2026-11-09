@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is the body read through a dedicated tool or a plain file read?
+imported_from: fact:skills/agent-loading@antigravity#scope-[null,null,null]
 ---
 
 Imported from `facts/antigravity/skills/agent-loading.md`.

@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:meta/version-seen@agent-plugins#sighting-1
 ---
 
 Imported from `facts/agent-plugins/meta/version-seen.md`, observation 1.

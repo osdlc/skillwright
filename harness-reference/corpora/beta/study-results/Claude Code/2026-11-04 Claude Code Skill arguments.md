@@ -11,6 +11,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+imported_from: fact:skills/arguments@claude-code#observation-1
 ---
 
 Imported from `facts/claude-code/skills/arguments.md`, observation 1.

@@ -36,6 +36,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:instructions/files@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/instructions/files.md`.

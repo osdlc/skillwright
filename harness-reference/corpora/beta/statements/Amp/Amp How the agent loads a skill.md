@@ -30,6 +30,7 @@ scope:
 status: current
 open:
   - What mechanism loads a skill body (a tool or a file read), and does the model invoke it itself or only the user?
+imported_from: fact:skills/agent-loading@amp#scope-[null,null,null]
 ---
 
 Imported from `facts/amp/skills/agent-loading.md`.

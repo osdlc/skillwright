@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:mcp/config-file@grok-build#scope-[null,null,null]
 ---
 
 Imported from `facts/grok-build/mcp/config-file.md`.

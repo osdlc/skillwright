@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - What does the listing contain per skill (name, description, more), and is the count or description length capped?
+imported_from: fact:skills/startup-context@qwen-code#scope-[null,null,null]
 ---
 
 Imported from `facts/qwen-code/skills/startup-context.md`.

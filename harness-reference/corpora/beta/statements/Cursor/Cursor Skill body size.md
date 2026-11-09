@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Is there a numeric limit on SKILL.md size, and what happens past it?
+imported_from: fact:skills/body-size@cursor#scope-[null,null,null]
 ---
 
 Imported from `facts/cursor/skills/body-size.md`.
