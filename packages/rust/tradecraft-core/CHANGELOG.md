@@ -7,6 +7,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.47.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.46.0...tradecraft-core/v0.47.0) - 2026-11-09
+
+### Added
+
+- [**breaking**] workspace build.exclude reads from its own folder and adds to a member's ([#90](https://github.com/osdlc/skillwright/pull/90))
+
+### Fixed
+
+- [**breaking**] release API bugs (exclusions fail open, root-file tokens, marketplace moves) ([#85](https://github.com/osdlc/skillwright/pull/85))
+
+### Other
+
+- Code-quality fixes: fewer rescans, shared helpers, smaller API ([#84](https://github.com/osdlc/skillwright/pull/84))
+
 ### Breaking
 
 Behaviour:
