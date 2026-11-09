@@ -1,12 +1,90 @@
 {
   "schema": 1,
   "pr": 95,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "8a24cee2601cc4762f6bef03da4674f7504e20b0",
+  "base": "9597d1c5d827baf9288ee944c2bf36b605a0a411",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:agent-k3x9qa",
     "at": "2026-11-09T04:14:07.101Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "harness-reference/README.md",
+      "line": 23,
+      "title": "npm link drops the @osdlc scope and has a doubled slash",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/README.md",
+      "line": 11,
+      "title": "npm link drops the @osdlc scope and has a doubled slash",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "docs/standards/S-GFFY-markdown-db.md",
+      "line": 4,
+      "title": "moved-to-osdlc notice is written twice",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "docs/terms/corpus.md",
+      "line": 6,
+      "title": "term gives corpus-schema.md root file but cites S-GFFY, which still says markdown-db.md",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "harness-reference/README.md",
+      "line": 140,
+      "title": "CI trigger sentence omits pnpm-lock.yaml and the workflow file",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "deleted validator test suite is not replaced; only the beta corpus is checked",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "docs/handoff still points at packages/ts/markdown-db and the markdown-db binary",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
