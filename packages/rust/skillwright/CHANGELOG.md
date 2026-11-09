@@ -9,18 +9,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.9.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.8.0...skillwright/v0.9.0) - 2026-11-09
 
-### Added
-
-- [**breaking**] workspace build.exclude reads from its own folder and adds to a member's ([#90](https://github.com/osdlc/skillwright/pull/90))
-
-### Fixed
-
-- [**breaking**] release API bugs (exclusions fail open, root-file tokens, marketplace moves) ([#85](https://github.com/osdlc/skillwright/pull/85))
-
-### Other
-
-- Code-quality fixes: fewer rescans, shared helpers, smaller API ([#84](https://github.com/osdlc/skillwright/pull/84))
-
 ### Breaking
 
 - In a workspace, `build.exclude` works like nested `.gitignore` files: each glob reads from the folder of the `skillwright.md` it is written in, and a member's exclusions add to the workspace's. A workspace glob `secrets/**` now means `<workspace>/secrets/**`; write `**/secrets/**` or `marketplaces/*/secrets/**` to reach each member. A member's `exclude` can no longer drop a workspace glob; narrow the workspace glob instead, such as `marketplaces/other/secrets/**` in place of `**/secrets/**`. `build`, `check` and `list`, at the workspace root or in a member, warn once, naming the workspace file, about a workspace exclude glob that matches nothing in any member. `publish <note>` names the file whose `build.exclude` excluded the note. A member's build warns when a workspace glob misses it but would have matched it under the old rule, and says how to rewrite it. Experimental.
