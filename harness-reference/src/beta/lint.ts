@@ -17,6 +17,21 @@ interface Scope {
   model: string | null
 }
 
+/** The strongest strength a study result of each kind can support. An unlisted kind is weak. */
+const KIND_MAX: Record<string, number> = {
+  run: 2,
+  source: 2,
+  'help-text': 2,
+  docs: 1,
+  changelog: 1,
+  issue: 0,
+  'third-party': 0,
+  inferred: 0,
+  'research-note': 0,
+}
+const RANK: Record<string, number> = { weak: 0, moderate: 1, strong: 2 }
+const NAMES = ['weak', 'moderate', 'strong']
+
 const MACHINE_PATH = /(^|[\s'"=:(])(\/(Users|home)\/|~\/|\$\{?HOME\b)/u
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
@@ -154,19 +169,64 @@ export function lint(beta: Beta): string[] {
     )
       bad(ref.file, 'scope.since must come before scope.until')
 
-    if (data['supersedes'] !== undefined) {
-      const target = beta.resolve(ref.file, data['supersedes'])
-      if (target !== undefined && beta.get('statements', target.id)?.['status'] !== 'superseded')
-        bad(ref.file, `supersedes ${target.id}, which does not have status superseded`)
-      if (target !== undefined) {
-        const t = beta.get('statements', target.id) ?? {}
-        if (
-          beta.resolve(target.file, t['harness'])?.file !== harness.file ||
-          beta.resolve(target.file, t['subject'])?.file !== subject.file
+    const supersedes = data['supersedes']
+    const supersedesRef = supersedes === undefined ? undefined : beta.resolve(ref.file, supersedes)
+    // The statement a supersedes link names, or undefined; a link that resolves to anything else
+    // is reported here, once.
+    let supersedesTarget: typeof supersedesRef
+    let supersedesReported = false
+    if (supersedes !== undefined) {
+      if (supersedesRef?.file === ref.file) {
+        bad(ref.file, 'supersedes links to itself')
+        supersedesReported = true
+      } else if (supersedesRef !== undefined && supersedesRef.type !== 'statements') {
+        bad(
+          ref.file,
+          `supersedes ${String(supersedes)}, which is a ${supersedesRef.type} record, not a statement`,
         )
-          bad(ref.file, `supersedes ${target.id}, which is about another harness or subject`)
-      }
+        supersedesReported = true
+      } else supersedesTarget = supersedesRef
     }
+    if (supersedesTarget !== undefined) {
+      const target = supersedesTarget
+      if (beta.get('statements', target.id)?.['status'] !== 'superseded')
+        bad(ref.file, `supersedes ${target.id}, which does not have status superseded`)
+      const t = beta.get('statements', target.id) ?? {}
+      if (
+        beta.resolve(target.file, t['harness'])?.file !== harness.file ||
+        beta.resolve(target.file, t['subject'])?.file !== subject.file
+      )
+        bad(ref.file, `supersedes ${target.id}, which is about another harness or subject`)
+    }
+
+    // Strength by rule: a line is no stronger than the best kind among its own evidence items,
+    // and the statement is no stronger than its strongest supporting line.
+    let strongestLine = -1
+    for (const line of (data['hasEvidenceLines'] as unknown[] | undefined) ?? []) {
+      const l = obj(line)
+      const given = RANK[str(l['strengthOfEvidenceProvided']) ?? '']
+      if (given === undefined) continue
+      let max = -1
+      for (const link of (l['hasEvidenceItems'] as unknown[] | undefined) ?? []) {
+        const target = beta.resolve(ref.file, link)
+        if (target === undefined || target.type !== 'study-results') continue
+        const kind = str(beta.get('study-results', target.id)?.['kind']) ?? ''
+        max = Math.max(max, KIND_MAX[kind] ?? 0)
+      }
+      if (max >= 0 && given > max)
+        bad(
+          ref.file,
+          `evidence line is ${NAMES[given]}, but its evidence kinds allow at most ${NAMES[max]}`,
+        )
+      if (l['directionOfEvidenceProvided'] === 'supports')
+        strongestLine = Math.max(strongestLine, given)
+    }
+    const top = RANK[str(data['strength']) ?? '']
+    if (top !== undefined && strongestLine >= 0 && top > strongestLine)
+      bad(
+        ref.file,
+        `strength ${NAMES[top]} is above its strongest supporting evidence line (${NAMES[strongestLine]})`,
+      )
 
     for (const line of (data['hasEvidenceLines'] as unknown[] | undefined) ?? []) {
       for (const link of (obj(line)['hasEvidenceItems'] as unknown[] | undefined) ?? []) {
@@ -188,9 +248,8 @@ export function lint(beta: Beta): string[] {
     if (subjectData['cardinality'] === 'latest') {
       const key = `${harness.file}|${subject.file}`
       const list = chains.get(key) ?? []
-      const supersedes = data['supersedes']
-      const target = supersedes === undefined ? undefined : beta.resolve(ref.file, supersedes)?.file
-      if (supersedes !== undefined && target === undefined)
+      const target = supersedesTarget?.file
+      if (supersedes !== undefined && target === undefined && !supersedesReported)
         bad(ref.file, `supersedes ${String(supersedes)}, which does not name a statement`)
       list.push({
         file: ref.file,
