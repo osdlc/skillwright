@@ -26,7 +26,7 @@ too (for example inherited policies and shared information distributed as corpor
 | Language-neutral example corpora with expected results | `packages/ts/markdown-db/tests/cases/` |
 | Corpus alpha, the frozen prototype (OKF v0.2) | `harness-reference/corpora/alpha/` |
 | Corpus beta, on the standard | `harness-reference/corpora/beta/` |
-| The evidence design review and its prior-art survey | `docs/parley/evidence-v0.json`, `docs/parley/evidence-v0-survey.md` |
+| The evidence design (current) | [ecosystem plan](https://github.com/osdlc/markdown/blob/ecosystem-plan/docs/ecosystem-plan.md) ([osdlc/markdown#4](https://github.com/osdlc/markdown/pull/4)), the claims example ([osdlc/markdown#6](https://github.com/osdlc/markdown/pull/6), `profiles/claims/` on branch `claims-example`) and the corpus-schema guide ([osdlc/markdown#7](https://github.com/osdlc/markdown/pull/7)) |
 | The evidence writer | `harness-reference/src/beta/capture.ts` |
 
 Run `pnpm run validate:beta` from `harness-reference/`, or `pnpm exec markdown-db validate <folder>`.

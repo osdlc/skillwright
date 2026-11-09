@@ -19,8 +19,12 @@ The full context for the work in this repo is in
 
 ## Owner answers, 2026-11-08
 
-The owner answered two naming questions on the evidence review page,
-`docs/parley/evidence-v0.json`.
+The owner answered two naming questions about the evidence design. The current design lives in
+osdlc/markdown: the [ecosystem plan](https://github.com/osdlc/markdown/blob/ecosystem-plan/docs/ecosystem-plan.md)
+([osdlc/markdown#4](https://github.com/osdlc/markdown/pull/4)), the claims example
+([osdlc/markdown#6](https://github.com/osdlc/markdown/pull/6)) and the corpus-schema guide
+([osdlc/markdown#7](https://github.com/osdlc/markdown/pull/7)). Where those differ from the answers
+below (for example "claims" versus "statements"), the osdlc/markdown documents win.
 
 - q-names: use VA-Spec's model, type names and field names. GA4GH's Variant Annotation spec is a
   JSON Schema model for claims backed by evidence. `references` becomes `documents`, and `evidence`
