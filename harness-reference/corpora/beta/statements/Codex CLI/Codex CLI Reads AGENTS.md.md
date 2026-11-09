@@ -6,7 +6,7 @@ proposition:
     supported: true
     role: primary
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 Codex CLI Reads AGENTS.md](../../study-results/Codex%20CLI/2026-08-08%20Codex%20CLI%20Reads%20AGENTS.md.md)"

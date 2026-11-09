@@ -8,9 +8,7 @@ proposition:
       - name: jsonl
         argv:
           - --json
-      - name: text
-        argv: []
-    note: --json prints events to stdout as JSON Lines; without it Codex prints human-readable output (--color always|never|auto, default auto).
+    note: --json prints events to stdout as JSONL. --color always|never|auto sets colour (default auto).
 direction: supports
 strength: strong
 hasEvidenceLines:

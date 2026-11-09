@@ -13,7 +13,7 @@ proposition:
     replace_drops_defaults: true
     note: No dedicated flag; both are config keys set with -c. The source discourages model_instructions_file.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Codex CLI System prompt flags source](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20System%20prompt%20flags%20source.md)"

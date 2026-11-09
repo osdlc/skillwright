@@ -30,6 +30,11 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09 at 0.162.0.
   - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Hook events location](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Hook%20events%20location.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Hook events enum](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Hook%20events%20enum.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

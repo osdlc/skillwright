@@ -6,7 +6,7 @@ proposition:
     file: ~/.codex/config.toml
     format: TOML
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-08-08 Codex CLI Main config file](../../study-results/Codex%20CLI/2026-08-08%20Codex%20CLI%20Main%20config%20file.md)"

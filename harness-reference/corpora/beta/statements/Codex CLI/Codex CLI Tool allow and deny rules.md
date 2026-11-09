@@ -5,9 +5,9 @@ proposition:
   object:
     supported: partial
     syntax: Starlark .rules files under a rules folder next to a config layer, such as ~/.codex/rules/default.rules
-    note: Rules decide which shell commands run or prompt; there is no per-tool allow or deny flag. --ignore-rules skips them.
+    note: Rules are execpolicy files; no per-tool allow or deny flag appears in codex exec --help. --ignore-rules skips them.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Tool allow and deny rules docs](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Tool%20allow%20and%20deny%20rules%20docs.md)"

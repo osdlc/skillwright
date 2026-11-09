@@ -7,7 +7,6 @@ proposition:
     persists_by_default: true
     disable_argv:
       - --ephemeral
-    store: $CODEX_HOME/sessions
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -35,4 +34,6 @@ scope:
   platform: []
   model: null
 status: current
+open:
+  - Where the sessions folder sits was not confirmed in the source.
 ---

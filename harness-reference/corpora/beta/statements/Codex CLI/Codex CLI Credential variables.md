@@ -8,7 +8,7 @@ proposition:
       - name: CODEX_API_KEY
         kind: api-key
         provider: openai
-        precedence: documented for a single codex exec run
+        note: a documented single-run override for codex exec
       - name: OPENAI_API_KEY
         kind: api-key
         provider: openai

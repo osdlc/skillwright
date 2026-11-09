@@ -4,11 +4,10 @@ proposition:
   predicate: cli/current-env
   object:
     supported: true
-    reliable: false
     vars:
       - name: CODEX_THREAD_ID
         value: any
-        meaning: the thread id; set in the environment of commands Codex runs
+        meaning: the thread id; injected into the environment of commands Codex runs
       - name: CODEX_SANDBOX
         value: seatbelt
         meaning: the command runs under the macOS seatbelt sandbox
@@ -26,6 +25,11 @@ hasEvidenceLines:
     description: source observed 2026-11-09 at 0.162.0.
   - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Running-inside variables sandbox](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Running-inside%20variables%20sandbox.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Running-inside variables network meaning](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Running-inside%20variables%20network%20meaning.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09 at 0.162.0.

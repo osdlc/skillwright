@@ -17,7 +17,7 @@ proposition:
           - --sandbox
           - workspace-write
         config_key: sandbox_mode
-        notes: Also permits commands that write inside the workspace; the closest match for both edits and full-auto.
+        notes: The intent is the closest of the four fixed values.
       - name: danger-full-access
         intent: bypass
         argv:
@@ -29,7 +29,7 @@ proposition:
         argv:
           - --dangerously-bypass-approvals-and-sandbox
         notes: Skips approval prompts and the sandbox.
-    note: "Approval prompts are a separate axis: approval_policy on-request or never (-a on the interactive command; not in codex exec --help)."
+    note: "Approval prompts are a separate axis: approval_policy takes on-request, never or a granular table (-a is on the interactive command, not in codex exec --help)."
 direction: supports
 strength: strong
 hasEvidenceLines:
@@ -43,6 +43,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Permission modes sandbox mode](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Permission%20modes%20sandbox%20mode.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09 at 0.162.0.
   - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Permission modes approval policy](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Permission%20modes%20approval%20policy.md)"
     directionOfEvidenceProvided: supports

@@ -42,3 +42,5 @@ imported_from: fact:meta/version-seen@codex#sighting-3
 Imported from `facts/codex/meta/version-seen.md`, observation 3.
 
 The latest sighting is the current statement; an older one is superseded by the next.
+
+Superseded by [Codex CLI Version seen 0.162.0](Codex%20CLI%20Version%20seen%200.162.0.md), which checks the value against 0.162.0.

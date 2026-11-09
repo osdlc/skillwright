@@ -7,9 +7,9 @@ proposition:
     format: UUID
     result_field: thread_id
     env_var: CODEX_THREAD_ID
-    note: "No flag assigns an id: Codex generates it. exec --json reports it in the thread.started event."
+    note: No flag assigns an id; exec --json reports it in the thread.started event.
 direction: supports
-strength: strong
+strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Session id docs](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Session%20id%20docs.md)"
