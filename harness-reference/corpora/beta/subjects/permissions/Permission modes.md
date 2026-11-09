@@ -56,9 +56,9 @@ valueSchema:
             type: array
             items: &a1
               type: string
-          approval_policy:
-            description: The approval policy that goes with the mode, where approvals are a separate axis from
-              the sandbox or mode.
+          approval:
+            description: The approval-policy value that goes with the mode, where approvals are the
+              separate `approval_policy` axis.
             type: string
         required:
           - name

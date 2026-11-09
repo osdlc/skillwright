@@ -1,6 +1,6 @@
 ---
-title: Factory
+title: "Factory | Agent-Native Software Development"
 urls:
-  - https://factory.ai
+  - https://factory.com/
 publisher: Factory AI
 ---
