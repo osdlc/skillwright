@@ -28,6 +28,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-09T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: superseded
+    date: 2026-11-09T12:00:00Z
 harness: "[Gemini CLI](../../harnesses/Gemini%20CLI.md)"
 subject: "[Lifecycle](../../subjects/meta/Lifecycle.md)"
 scope:
@@ -35,7 +40,7 @@ scope:
   until: null
   platform: []
   model: null
-status: disputed
+status: superseded
 imported_from: fact:meta/lifecycle@gemini-cli#scope-[null,null,null]
 ---
 
