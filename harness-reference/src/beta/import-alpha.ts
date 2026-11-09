@@ -64,6 +64,13 @@ export const KIND_STRENGTH: Record<string, Strength> = {
   inferred: 'weak',
 }
 
+/**
+ * Subjects whose alpha facts record one observation per sighting, so the beta record keeps only
+ * the latest as current. Seeds the `cardinality` field of a new subject record; from then on the
+ * record's field decides.
+ */
+const LATEST_SEEDS = new Set(['meta/version-seen'])
+
 export interface Source {
   title: string
   description?: string
@@ -226,9 +233,39 @@ export function plan(ctx: Context): Plan {
 
   // Every fact, in one fixed order, so names do not depend on which categories were asked for.
   // Only the selected categories' records are written.
-  const allFacts = [...dataset.facts].sort((a, b) =>
-    a.conceptId < b.conceptId ? -1 : a.conceptId > b.conceptId ? 1 : 0,
-  )
+  // Alpha forbids a version range on an `unknown` versioning, so a stray one is dropped here, and
+  // the statement body says so.
+  const dropped = new Map<object, string[]>()
+  const allFacts = [...dataset.facts]
+    .sort((a, b) => (a.conceptId < b.conceptId ? -1 : a.conceptId > b.conceptId ? 1 : 0))
+    .map((f) => {
+      const h = harnessBySlug.get(f.harness)
+      if (h === undefined || h.versioning !== 'unknown') return f
+      const notes: string[] = []
+      const observations = f.observations.map((o) => {
+        if (o.since === null && o.until === null) return o
+        const parts = [
+          ...(o.since === null ? [] : [`since: ${o.since}`]),
+          ...(o.until === null ? [] : [`until: ${o.until}`]),
+        ]
+        notes.push(
+          `Dropped \`${parts.join(', ')}\` from the ${o.observed} observation: ${h.id} has no known versioning.`,
+        )
+        return { ...o, since: null, until: null }
+      })
+      const fact = { ...f, observations }
+      if (notes.length > 0) dropped.set(fact, notes)
+      return fact
+    })
+  const latest = new Set<string>(LATEST_SEEDS)
+  for (const { data } of beta.all('subjects'))
+    if (data['cardinality'] === 'latest') latest.add(String(data['slug']))
+  /** A latest-cardinality fact has one statement per sighting; any other, one per scope. */
+  const stmtIdentity = (
+    f: { subject: string; harness: string },
+    o: Observation,
+    n: number,
+  ): string => (latest.has(f.subject) ? `${factKey(f)}#sighting-${n}` : statementIdentity(f, o))
   const factSelected = (f: { subject: string }): boolean => selected(f.subject.split('/')[0])
   const subjectById = new Map(dataset.subjects.map((s) => [s.id, s]))
 
@@ -259,7 +296,7 @@ export function plan(ctx: Context): Plan {
     if (!harnessBySlug.has(f.harness) || !subjectById.has(f.subject)) continue
     f.observations.forEach((o, i) => {
       identities.add(resultIdentity(f, i + 1))
-      identities.add(statementIdentity(f, o))
+      identities.add(stmtIdentity(f, o, i + 1))
       if (o.probe !== undefined) {
         probeIds.add(o.probe)
         if (factSelected(f)) selectedProbeIds.add(o.probe)
@@ -339,6 +376,7 @@ export function plan(ctx: Context): Plan {
           category: s.category,
           description: s.description,
           ...(s.model_dependent === true ? { model_dependent: true } : {}),
+          ...(LATEST_SEEDS.has(s.id) ? { cardinality: 'latest' } : {}),
           valueSchema: inferValueSchema(seen),
         },
         '',
@@ -526,6 +564,73 @@ export function plan(ctx: Context): Plan {
       count('study-results')
     })
 
+    // A latest-cardinality subject: one statement per sighting, oldest first. The newest is
+    // current; each older one is superseded and linked from the one that replaced it.
+    if (latest.has(fact.subject)) {
+      const chain = [...made].sort(
+        (a, b) =>
+          (a.obs.observed < b.obs.observed ? -1 : a.obs.observed > b.obs.observed ? 1 : 0) ||
+          a.index - b.index,
+      )
+      const files = chain.map((m) => {
+        const wanted = idSafe(
+          `${h.id} ${subject.title} ${String(m.obs.value['version'] ?? m.obs.observed)}`,
+        )
+        return `statements/${h.id}/${nameFor(stmtIdentity(fact, m.obs, m.index + 1), statementNames, wanted)}.md`
+      })
+      if (emit)
+        chain.forEach((m, i) => {
+          const file = files[i] as string
+          const isLast = i === chain.length - 1
+          const prev = files[i - 1]
+          const strength = KIND_STRENGTH[m.kind] ?? 'weak'
+          out.files.set(
+            file,
+            record(
+              {
+                proposition: {
+                  subject: link(file, h.file, h.id),
+                  predicate: fact.subject,
+                  object: { ...m.obs.value, observed: m.obs.observed },
+                },
+                direction: 'supports',
+                strength,
+                hasEvidenceLines: [
+                  {
+                    hasEvidenceItems: [link(file, m.file)],
+                    directionOfEvidenceProvided: 'supports',
+                    strengthOfEvidenceProvided: strength,
+                    description: `${m.kind} observed ${m.obs.observed}.`,
+                  },
+                ],
+                reportedIn: [docFor(m.obs.source)].map((d) => link(file, d)),
+                contributions: [createdBy(IMPORTER, 'software', m.obs.observed)],
+                harness: link(file, h.file, h.id),
+                subject: link(file, sfile as string),
+                scope: { since: null, until: null, platform: [], model: null },
+                status: isLast ? 'current' : 'superseded',
+                ...(prev === undefined ? {} : { supersedes: link(file, prev) }),
+                ...(isLast && open.length > 0 ? { open } : {}),
+                imported_from: stmtIdentity(fact, m.obs, m.index + 1),
+              },
+              [
+                `Imported from \`${alphaPath}\`, observation ${m.index + 1}.`,
+                '',
+                'The latest sighting is the current statement; an older one is superseded by the next.',
+                ...(dropped.has(fact) ? ['', ...(dropped.get(fact) as string[])] : []),
+                ...(isLast && open.length > 0
+                  ? ['', 'Open questions:', ...open.map((q) => `- ${q}`)]
+                  : []),
+              ].join('\n'),
+            ),
+          )
+          count('statements')
+          count(`statements ${isLast ? 'current' : 'superseded'}`)
+        })
+      if (emit) count('facts')
+      continue
+    }
+
     // One statement per distinct scope.
     const groups = new Map<string, Made[]>()
     for (const m of made) groups.set(scopeKey(m.obs), [...(groups.get(scopeKey(m.obs)) ?? []), m])
@@ -599,6 +704,7 @@ export function plan(ctx: Context): Plan {
         const sources = [...new Set(g.map((m) => m.obs.source))].map(docFor)
         const body = [
           `Imported from \`${alphaPath}\`.`,
+          ...(dropped.has(fact) ? ['', ...(dropped.get(fact) as string[])] : []),
           ...(conflicts.size > 0
             ? [
                 '',

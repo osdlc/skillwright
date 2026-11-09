@@ -188,13 +188,44 @@ describe('mapping', () => {
     assert.ok(p.files.get(file)!.includes('Claude%20Code%20overview.md'))
   })
 
+  test('a latest-cardinality subject chains sightings, and unknown versioning drops since', () => {
+    const ctx = context([
+      fact('meta/version-seen', {
+        observations: [
+          obs({ value: { version: '7.0.0' }, since: '7.0.0', observed: '2026-01-01' }),
+          obs({ value: { version: '7.1.0' }, since: '7.1.0', observed: '2026-02-01' }),
+        ],
+      }),
+      fact('meta/version-seen', {
+        harness: 'amp',
+        conceptId: 'facts/amp/meta/version-seen',
+        observations: [obs({ value: { version: '9' }, since: '9', observed: '2026-01-01' })],
+      }),
+    ])
+    ctx.dataset.subjects.push({
+      id: 'meta/version-seen',
+      category: 'meta',
+      title: 'Version seen',
+      description: 'A version.',
+      order: 3,
+    } as never)
+    ctx.categories.add('meta')
+    const p = plan(ctx)
+    const text = (name: string): string => p.files.get(name) ?? ''
+    assert.match(text('statements/Pi/Pi Version seen 7.0.0.md'), /status: superseded/)
+    assert.match(text('statements/Pi/Pi Version seen 7.1.0.md'), /status: current/)
+    assert.match(text('statements/Pi/Pi Version seen 7.1.0.md'), /supersedes: .*7\.0\.0/)
+    assert.match(text('statements/Pi/Pi Version seen 7.1.0.md'), /observed: 2026-02-01/)
+    assert.match(text('statements/Amp/Amp Version seen 9.md'), /Dropped `since: 9`/)
+  })
+
   test('skips a fact whose harness has no beta record, with a warning', () => {
     const p = plan(
-      context([fact('zz/thing', { harness: 'agent-skills', observations: [obs({})] })]),
+      context([fact('zz/thing', { harness: 'no-such-harness', observations: [obs({})] })]),
     )
     assert.equal(p.counts['facts skipped'], 1)
     assert.equal(p.counts['statements'], undefined)
-    assert.match(p.warnings[0] ?? '', /agent-skills has no beta record/)
+    assert.match(p.warnings[0] ?? '', /no-such-harness has no beta record/)
   })
 })
 

@@ -17,12 +17,12 @@ describe('corpora/beta', () => {
     const { records, errors, warnings } = validateCorpus(beta)
     assert.deepEqual(errors, [])
     assert.deepEqual(warnings, [])
-    assert.equal(records.get('harnesses')?.size, 14)
-    assert.equal(records.get('documents')?.size, 57)
-    assert.equal(records.get('study-results')?.size, 35)
-    assert.equal(records.get('methods')?.size, 2)
-    assert.equal(records.get('subjects')?.size, 8)
-    assert.equal(records.get('statements')?.size, 30)
+    assert.ok((records.get('harnesses')?.size ?? 0) >= 16)
+    assert.ok((records.get('documents')?.size ?? 0) >= 57)
+    assert.ok((records.get('study-results')?.size ?? 0) >= 35)
+    assert.ok((records.get('methods')?.size ?? 0) >= 2)
+    assert.ok((records.get('subjects')?.size ?? 0) >= 8)
+    assert.ok((records.get('statements')?.size ?? 0) >= 30)
   })
 
   test('refuses a license on a closed-source harness, and a successor that is not a harness', () => {

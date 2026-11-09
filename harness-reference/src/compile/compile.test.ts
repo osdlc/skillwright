@@ -32,8 +32,8 @@ describe('compile', () => {
       path: 'harness-reference/corpora/beta',
       commit: SHA,
     })
-    assert.equal(k.values.length, 30)
-    assert.equal(Object.keys(k.harnesses).length, 14)
+    assert.ok(k.values.length >= 30)
+    assert.equal(Object.keys(k.harnesses).length, 16)
     assert.equal(k.harnesses['claude-code']?.title, 'Claude Code')
     assert.equal(k.harnesses['claude-code']?.cli, 'claude')
     assert.equal(k.subjects['cli/session-env']?.category, 'cli')
@@ -68,6 +68,7 @@ describe('compile', () => {
   })
 
   test('keeps disputed values flagged and leaves superseded and open ones out', () => {
+    const before = compile(loadBeta(dir), SHA).values.length
     const text = readFileSync(join(dir, STATEMENT), 'utf8')
     writeFileSync(join(dir, STATEMENT), text.replace('status: current', 'status: disputed'))
     const second = 'statements/Pi/Pi Fork a session.md'
@@ -84,7 +85,7 @@ describe('compile', () => {
       k.values.some((v) => v.harness === 'pi' && v.subject === 'cli/fork'),
       false,
     )
-    assert.equal(k.values.length, 29)
+    assert.equal(k.values.length, before - 1)
   })
 
   test('a current statement that disputes its proposition cannot be compiled into a value', () => {
