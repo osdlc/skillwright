@@ -1,8 +1,6 @@
-# Checks harness-reference/: the alpha bundle and the beta markdown-db corpus
+# Checks harness-reference/: the alpha bundle and the beta corpus-schema corpus
 # validate, schema/alpha/*.json is current, and the tests, typecheck and page
-# generator pass. The beta corpus is checked by packages/ts/markdown-db, so a
-# change there runs this workflow too; that package's own tests, typecheck and
-# lint run in ts.yml.
+# generator pass. The beta corpus is checked by the @osdlc/corpus-schema validator from npm.
 #
 # The `paths` filter means this workflow does not run on every pull request,
 # so it is not one to require in a ruleset.
@@ -14,14 +12,12 @@ on:
   pull_request:
     paths:
       - 'harness-reference/**'
-      - 'packages/ts/markdown-db/**'
       - '.github/workflows/harness-reference.yml'
       - 'pnpm-lock.yaml'
   push:
     branches: [main]
     paths:
       - 'harness-reference/**'
-      - 'packages/ts/markdown-db/**'
       - '.github/workflows/harness-reference.yml'
       - 'pnpm-lock.yaml'
   workflow_dispatch:

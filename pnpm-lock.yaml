@@ -44,9 +44,9 @@ importers:
 
   harness-reference:
     dependencies:
-      '@osdlc/markdown-db':
-        specifier: workspace:*
-        version: link:../packages/ts/markdown-db
+      '@osdlc/corpus-schema':
+        specifier: ^0.2.0
+        version: 0.2.0
       yaml:
         specifier: 2.9.1
         version: 2.9.1
@@ -60,49 +60,6 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
-
-  packages/ts/markdown-db:
-    dependencies:
-      '@osdlc/frontmatter-lossless':
-        specifier: 1.1.2
-        version: 1.1.2
-      '@osdlc/markdown-link':
-        specifier: 0.8.0
-        version: 0.8.0
-      ajv:
-        specifier: 8.20.0
-        version: 8.20.0
-      ajv-formats:
-        specifier: 3.0.1
-        version: 3.0.1(ajv@8.20.0)
-      yaml:
-        specifier: 2.9.1
-        version: 2.9.1
-    devDependencies:
-      '@osdlc/prettier-config':
-        specifier: ^0.3.1
-        version: 0.3.1
-      '@osdlc/tsconfig':
-        specifier: ^0.4.1
-        version: 0.4.1
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.6.6
-      '@vitest/coverage-v8':
-        specifier: 'catalog:'
-        version: 5.0.5(vitest@5.0.5)
-      oxlint:
-        specifier: 'catalog:'
-        version: 1.90.0
-      prettier:
-        specifier: 'catalog:'
-        version: 3.9.6
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-      vitest:
-        specifier: 'catalog:'
-        version: 5.0.5(@types/node@26.6.6)(@vitest/coverage-v8@5.0.5)(vite@8.3.5(@types/node@26.6.6)(yaml@2.9.1))
 
   packages/ts/tradecraft-wasm:
     devDependencies:
@@ -164,12 +121,17 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@osdlc/corpus-schema@0.2.0':
+    resolution: {integrity: sha512-BZEqg2tfVRPl42VstSqdF8uecp3GNMz85XQMOBH5CQxRk5XYTGayxBm282ycsc9oJyBw2mZV+ntYNbXzIPVcaA==}
+    engines: {node: '>=22'}
+    hasBin: true
+
   '@osdlc/frontmatter-lossless@1.1.2':
     resolution: {integrity: sha512-ckZPpz+i5aRTmncUvrPOvuXm7rQDqaaluhkUn/wxCmWXFwdGyxJgLkGBpqnyd1AyYUoDiMZ3vmV4dsW2tv7J6Q==}
     engines: {node: '>=22'}
 
-  '@osdlc/markdown-link@0.8.0':
-    resolution: {integrity: sha512-ILXDRoTavBWeSni8jNjA6fsF1FL6++3uEvdvt7aEcAEOo9SG9DxzVcIQRh5Ts9VcYEXH0ZmSAhu2m2rQghc5MQ==}
+  '@osdlc/markdown-link@0.8.1':
+    resolution: {integrity: sha512-IGyY8BK9fqPeD1skLp6CsDC2NSP0686QXhhDJ+WDoih8Kqp2o2PB5OA4TG/16OjbF+kNmKCpXT0IrI65ubJ2iA==}
     engines: {node: '>=22'}
 
   '@osdlc/prettier-config@0.3.1':
@@ -770,9 +732,17 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
+  '@osdlc/corpus-schema@0.2.0':
+    dependencies:
+      '@osdlc/frontmatter-lossless': 1.1.2
+      '@osdlc/markdown-link': 0.8.1
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      yaml: 2.9.1
+
   '@osdlc/frontmatter-lossless@1.1.2': {}
 
-  '@osdlc/markdown-link@0.8.0': {}
+  '@osdlc/markdown-link@0.8.1': {}
 
   '@osdlc/prettier-config@0.3.1': {}
 

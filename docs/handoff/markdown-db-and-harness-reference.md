@@ -1,5 +1,7 @@
 # Handoff: markdown-db and harness-reference
 
+> Note: the `@osdlc/markdown-db` package and its spec moved to osdlc as `@osdlc/corpus-schema` ([spec](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md)); `packages/ts/markdown-db/` no longer exists here and the `markdown-db` binary is now `corpus-schema`. The text below is historical.
+
 The full context for the next session. The order of the remaining work is drawn in
 [release-graph.md](release-graph.md). It is meant to be split later into issues, standard edits
 and package docs; until then it is the one place that holds it.
