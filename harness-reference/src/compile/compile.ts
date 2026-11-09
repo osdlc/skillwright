@@ -95,13 +95,11 @@ export function compile(beta: Beta, commit: string): Knowledge {
   }
 }
 
-/** Write both files under `outDir`. */
-export function writeKnowledge(outDir: string, knowledge: Knowledge): string[] {
+/** Write both files under `outDir`, or only the data file with `schema: false`. */
+export function writeKnowledge(outDir: string, knowledge: Knowledge, schema = true): string[] {
   mkdirSync(outDir, { recursive: true })
-  const files: [string, unknown][] = [
-    ['harness-knowledge.json', knowledge],
-    ['harness-knowledge.schema.json', KNOWLEDGE_SCHEMA],
-  ]
+  const files: [string, unknown][] = [['harness-knowledge.json', knowledge]]
+  if (schema) files.push(['harness-knowledge.schema.json', KNOWLEDGE_SCHEMA])
   return files.map(([name, data]) => {
     const file = join(outDir, name)
     writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`)
@@ -134,6 +132,7 @@ function main(argv: string[]): number {
       out: { type: 'string' },
       corpus: { type: 'string' },
       strict: { type: 'boolean' },
+      'no-schema': { type: 'boolean' },
     },
   })
   const corpus = values.corpus === undefined ? BETA : resolve(values.corpus)
@@ -151,7 +150,8 @@ function main(argv: string[]): number {
   }
   try {
     const knowledge = compile(loadBeta(corpus), commit)
-    for (const f of writeKnowledge(resolve(values.out ?? join(ROOT, 'dist')), knowledge))
+    const outDir = resolve(values.out ?? join(ROOT, 'dist'))
+    for (const f of writeKnowledge(outDir, knowledge, values['no-schema'] !== true))
       console.log(`wrote ${f}`)
     console.log(`${knowledge.values.length} values at ${commit}`)
     return 0
