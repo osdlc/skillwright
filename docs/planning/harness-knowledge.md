@@ -176,8 +176,9 @@ A `lint` script in `src/beta/` checks the rules that compare records:
 
 **Packages:**
 
-- npm `@osdlc/harness-knowledge`: the JSON file, its schema, types, and `lookup`. Versioned on
-  its own; a new corpus commit that changes the file is a new version.
+- npm `@osdlc/harness-knowledge` (in osdlc/osdlc): the JSON file, its schema, types, and
+  `lookup`, synced from a skillwright release. Versioned on its own; a new release that changes
+  the file is a new version.
 - Rust: `tradecraft-core` embeds the same file with `include_str!` and deserializes it with serde
   into hand-written structs, once, behind a `OnceLock`. (tradecraft-typegen goes the other way,
   Rust to TypeScript, so it does not apply.) Profile values that are constants today become
@@ -246,8 +247,10 @@ gets its own PR.
 
 ## Open questions
 
-1. Does `harness-knowledge` publish from skillwright's release pipeline, or from osdlc/osdlc
-   where agent-call lives? Recommend skillwright, beside the corpus, so a corpus change and its
-   file version ship together.
+1. ~~Where does `harness-knowledge` publish from?~~ Settled: skillwright has no npm publishing,
+   so skillwright CI compiles the file on main and attaches it to a GitHub release
+   (`harness-knowledge-<date>-<sha>`). osdlc/osdlc's `@osdlc/harness-knowledge` syncs a release
+   into its `data/` and publishes through changesets. tradecraft-core embeds a committed copy
+   that a check keeps current.
 2. When the claims profile becomes `@osdlc/corpus-profile-claims`, beta switches from copied
    schemas to the package. Track with osdlc/markdown tasks 9 and 23.
