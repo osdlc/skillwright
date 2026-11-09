@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/send-to-live@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/cli/send-to-live.md`.

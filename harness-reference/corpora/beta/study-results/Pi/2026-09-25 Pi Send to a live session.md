@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-09-25T00:00:00Z
+imported_from: fact:cli/send-to-live@pi#observation-1
 ---
 
 Imported from `facts/pi/cli/send-to-live.md`, observation 1.

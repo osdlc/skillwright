@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/structured-output@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/cli/structured-output.md`.

@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-09T00:00:00Z
+imported_from: fact:cli/headless@gemini-cli#observation-1
 ---
 
 Imported from `facts/gemini-cli/cli/headless.md`, observation 1.

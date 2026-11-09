@@ -31,6 +31,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/resume@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/cli/resume.md`.

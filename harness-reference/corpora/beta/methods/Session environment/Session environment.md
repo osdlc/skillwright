@@ -14,6 +14,7 @@ record:
 safety:
   - Uses the signed-in account and counts against its usage.
   - The output can include session ids and paths; record names, not values.
+imported_from: probe:claude-session-env
 ---
 
 # Session environment

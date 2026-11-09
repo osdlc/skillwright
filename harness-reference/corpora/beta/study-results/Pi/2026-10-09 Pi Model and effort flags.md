@@ -13,6 +13,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-09T00:00:00Z
+imported_from: fact:cli/model-selection@pi#observation-1
 ---
 
 Imported from `facts/pi/cli/model-selection.md`, observation 1.

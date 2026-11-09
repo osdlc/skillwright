@@ -8,6 +8,13 @@
  * Output is deterministic and idempotent: the same alpha and beta give the same files, and a
  * second run writes nothing new. A document already in beta (same URL) is reused, and a subject
  * record already in beta is never rewritten, so a hand-tuned `valueSchema` survives.
+ *
+ * Every method, study result and statement written carries `imported_from`, the alpha identity it
+ * came from. That field, not the body text, says the importer owns the record. Names are assigned
+ * over the whole alpha corpus in one fixed order, whatever categories were asked for, so importing
+ * categories one by one gives the names an import of all of them gives. A record keeps its file
+ * name while its identity stands; a name held by any other record is never reused; an owned
+ * record in the selected categories whose identity no longer exists is deleted.
  */
 import {
   copyFileSync,
@@ -15,20 +22,29 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, dirname, join, posix, resolve } from 'node:path'
+import { dirname, join, posix, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
-import { fold, markdownLink } from '@osdlc/corpus-schema'
-import { stringify } from 'yaml'
+import { fold } from '@osdlc/corpus-schema'
 
 import { type Dataset, load, parseConcept, ROOT } from '../alpha/load.ts'
 import type { Observation, Probe, Subject } from '../alpha/schema.ts'
-import { BETA, type Beta, loadBeta } from './corpus.ts'
-import { compareVersions, type Versioning } from './versions.ts'
+import {
+  BETA,
+  type Beta,
+  canonicalJson,
+  createdBy,
+  link,
+  loadBeta,
+  normalizeUrl,
+  record,
+} from './corpus.ts'
+import { compareScopes, type Versioning } from './versions.ts'
 
 export const IMPORTER = 'harness-reference import'
 const REPO_BLOB = 'https://github.com/osdlc/skillwright/blob/main/'
@@ -62,10 +78,8 @@ export interface Context {
   note: (url: string) => Source | undefined
   /** The body of `probes/<id>/probe.md`. */
   probeBody: (id: string) => string
-  /** Whether `probes/<id>/fixture/` can be copied into a record folder (see `fixtureFiles`). */
+  /** The files under `probes/<id>/fixture/`, relative to it. */
   fixtureFiles: (id: string) => string[]
-  /** Whether the beta record at this corpus-relative path was written by this importer. */
-  imported: (file: string) => boolean
 }
 
 export interface Plan {
@@ -73,6 +87,8 @@ export interface Plan {
   files: Map<string, string>
   /** Corpus-relative path -> source file to copy, for method fixtures. */
   copies: Map<string, string>
+  /** Owned records (a file, or a method's folder) the import retires, corpus-relative. */
+  removed: string[]
   warnings: string[]
   counts: Record<string, number>
 }
@@ -91,18 +107,18 @@ export function idSafe(text: string): string {
   )
 }
 
-function record(data: Record<string, unknown>, body: string): string {
-  return `---\n${stringify(data, { lineWidth: 0 })}---\n${body === '' ? '' : `\n${body}\n`}`
-}
-
-const link = (from: string, to: string, text?: string): string =>
-  markdownLink(text ?? posix.basename(to, '.md'), posix.relative(posix.dirname(from), to))
-
 /** Claims unique ids: the first caller of a folded name keeps it, later ones get a number. */
 class Names {
   private readonly taken = new Set<string>()
   constructor(existing: Iterable<string> = []) {
     for (const id of existing) this.taken.add(fold(id))
+  }
+  has(id: string): boolean {
+    return this.taken.has(fold(id))
+  }
+  /** Hold `id` exactly as it is. */
+  pin(id: string): void {
+    this.taken.add(fold(id))
   }
   claim(wanted: string): string {
     let id = wanted
@@ -112,11 +128,33 @@ class Names {
   }
 }
 
+// ---- identities -----------------------------------------------------------------------------
+
+/**
+ * The alpha identity of what a record was made from. A fact is told apart by subject and harness;
+ * a statement by the scope it covers, so a changed range is a new identity.
+ */
+const factKey = (f: { subject: string; harness: string }): string =>
+  `fact:${f.subject}@${f.harness}`
+const scopeKey = (o: Observation): string => JSON.stringify([o.since, o.until, o.model ?? null])
+export const resultIdentity = (f: { subject: string; harness: string }, n: number): string =>
+  `${factKey(f)}#observation-${n}`
+export const statementIdentity = (
+  f: { subject: string; harness: string },
+  o: Observation,
+): string => `${factKey(f)}#scope-${scopeKey(o)}`
+export const openIdentity = (f: { subject: string; harness: string }): string =>
+  `${factKey(f)}#open`
+export const methodIdentity = (probe: string): string => `probe:${probe}`
+
+/** The alpha category an identity belongs to, or undefined for a probe. */
+const categoryOf = (identity: string): string | undefined =>
+  /^fact:([^/@#]+)\//u.exec(identity)?.[1]
+
 // ---- values ---------------------------------------------------------------------------------
 
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+const same = (a: unknown, b: unknown): boolean => canonicalJson(a) === canonicalJson(b)
 
-type Json = null | boolean | number | string | Json[] | { [k: string]: Json }
 const jsonType = (v: unknown): string =>
   v === null
     ? 'null'
@@ -163,12 +201,20 @@ const hostOf = (url: string): string => {
     return 'web'
   }
 }
-const trimUrl = (url: string): string => url.replace(/\/+$/u, '')
+const isNote = (url: string): boolean => url.startsWith(NOTES_PREFIX)
 
 export function plan(ctx: Context): Plan {
   const { dataset, beta } = ctx
-  const out: Plan = { files: new Map(), copies: new Map(), warnings: [], counts: {} }
+  const out: Plan = {
+    files: new Map(),
+    copies: new Map(),
+    removed: [],
+    warnings: [],
+    counts: {},
+  }
   const count = (k: string, n = 1): void => void (out.counts[k] = (out.counts[k] ?? 0) + n)
+  const selected = (category: string | undefined): boolean =>
+    category !== undefined && ctx.categories.has(category)
 
   const harnessBySlug = new Map<string, { id: string; file: string; versioning: Versioning }>()
   for (const { ref, data } of beta.all('harnesses'))
@@ -178,19 +224,104 @@ export function plan(ctx: Context): Plan {
       versioning: data['versioning'] as Versioning,
     })
 
-  const subjects = dataset.subjects.filter((s) => ctx.categories.has(s.category))
-  const facts = dataset.facts
-    .filter((f) => ctx.categories.has(f.subject.split('/')[0] ?? ''))
-    .sort((a, b) => (a.conceptId < b.conceptId ? -1 : a.conceptId > b.conceptId ? 1 : 0))
+  // Every fact, in one fixed order, so names do not depend on which categories were asked for.
+  // Only the selected categories' records are written.
+  const allFacts = [...dataset.facts].sort((a, b) =>
+    a.conceptId < b.conceptId ? -1 : a.conceptId > b.conceptId ? 1 : 0,
+  )
+  const factSelected = (f: { subject: string }): boolean => selected(f.subject.split('/')[0])
   const subjectById = new Map(dataset.subjects.map((s) => [s.id, s]))
 
+  // ---- ownership: the records this importer wrote earlier, by alpha identity ----
+  interface Owned {
+    type: string
+    id: string
+    file: string
+  }
+  const owned = new Map<string, Owned>()
+  const ownedFiles = new Set<string>()
+  for (const type of ['methods', 'study-results', 'statements'])
+    for (const { ref, data } of beta.all(type)) {
+      const from = data['imported_from']
+      if (typeof from !== 'string') continue
+      owned.set(from, { type, id: ref.id, file: ref.file })
+      ownedFiles.add(ref.file)
+    }
+
+  const probeIds = new Set<string>()
+  const selectedProbeIds = new Set<string>()
+  const identities = new Set<string>()
+  for (const f of allFacts) {
+    if (!harnessBySlug.has(f.harness)) continue
+    f.observations.forEach((o, i) => {
+      identities.add(resultIdentity(f, i + 1))
+      identities.add(statementIdentity(f, o))
+      if (o.probe !== undefined) {
+        probeIds.add(o.probe)
+        if (factSelected(f)) selectedProbeIds.add(o.probe)
+      }
+    })
+    if (f.observations.length === 0 && (f.open ?? []).length > 0) identities.add(openIdentity(f))
+  }
+  for (const id of probeIds) identities.add(methodIdentity(id))
+
+  // An owned record whose identity stands keeps its name. One in the selected categories whose
+  // identity is gone is retired. Every other record keeps its name reserved.
+  const pinned = new Map<string, string>()
+  const retired = new Set<string>()
+  const reserved = new Map<string, Set<string>>()
+  const hold = (type: string, id: string): void => {
+    const set = reserved.get(type) ?? new Set<string>()
+    set.add(id)
+    reserved.set(type, set)
+  }
+  for (const type of ['methods', 'study-results', 'statements', 'subjects', 'documents'])
+    for (const { ref } of beta.all(type)) if (!ownedFiles.has(ref.file)) hold(type, ref.id)
+  for (const [identity, rec] of owned) {
+    const probe = identity.startsWith('probe:') ? identity.slice(6) : undefined
+    const inScope = probe === undefined ? selected(categoryOf(identity)) : !probeIds.has(probe)
+    if (identities.has(identity)) {
+      const folder = posix.dirname(rec.file)
+      const inPlace =
+        rec.type === 'methods'
+          ? rec.file === `methods/${rec.id}/${rec.id}.md`
+          : [...harnessBySlug.values()].some((h) => folder === `${rec.type}/${h.id}`)
+      const rewritten = probe === undefined ? inScope : selectedProbeIds.has(probe)
+      if (inPlace) pinned.set(identity, rec.id)
+      else if (rewritten) retired.add(rec.file)
+      else hold(rec.type, rec.id)
+    } else if (inScope) retired.add(rec.file)
+    else hold(rec.type, rec.id)
+  }
+  // A method no alpha fact names is still kept while a surviving study result is specified by it.
+  const specifying = new Set<string>()
+  for (const { ref, data } of beta.all('study-results'))
+    if (!retired.has(ref.file)) {
+      const m = beta.resolve(ref.file, data['specifiedBy'])
+      if (m !== undefined) specifying.add(m.file)
+    }
+  for (const [identity, rec] of owned)
+    if (identity.startsWith('probe:') && retired.has(rec.file) && specifying.has(rec.file)) {
+      retired.delete(rec.file)
+      hold(rec.type, rec.id)
+    }
+  const namesFor = (type: string): Names => {
+    const names = new Names(reserved.get(type) ?? [])
+    for (const [identity, rec] of owned)
+      if (rec.type === type && pinned.has(identity)) names.pin(rec.id)
+    return names
+  }
+  const nameFor = (identity: string, names: Names, wanted: string): string =>
+    pinned.get(identity) ?? names.claim(wanted)
+
   // Subjects. An existing record is kept as it is.
-  const subjectNames = new Names(beta.all('subjects').map((s) => s.ref.id))
+  const subjectNames = namesFor('subjects')
   const subjectFile = new Map<string, string>()
   for (const { ref, data } of beta.all('subjects')) subjectFile.set(String(data['slug']), ref.file)
-  for (const s of [...subjects].sort((a, b) => (a.id < b.id ? -1 : 1))) {
+  for (const s of [...dataset.subjects].sort((a, b) => (a.id < b.id ? -1 : 1))) {
     if (subjectFile.has(s.id)) continue
     const id = subjectNames.claim(idSafe(s.title))
+    if (!selected(s.category)) continue
     const file = `subjects/${s.category}/${id}.md`
     subjectFile.set(s.id, file)
     const seen = dataset.facts
@@ -212,62 +343,56 @@ export function plan(ctx: Context): Plan {
     count('subjects')
   }
 
-  // Documents: reuse a beta document with the same URL, else add one.
+  // Documents: reuse a beta document with the same URL, else add one. Documents are shared
+  // between categories, so they are never retired.
   const docByUrl = new Map<string, string>()
-  const docNames = new Names(beta.all('documents').map((d) => d.ref.id))
+  const docNames = namesFor('documents')
   for (const { ref, data } of beta.all('documents'))
-    for (const u of (data['urls'] as string[]) ?? []) docByUrl.set(trimUrl(u), ref.file)
-  const newDocs = new Map<string, { file: string; title: string; url: string }>()
-  const documentFor = (url: string, title: string): string => {
-    const known = docByUrl.get(trimUrl(url))
-    if (known !== undefined) return known
-    const note = url.startsWith(NOTES_PREFIX) ? ctx.note(url) : undefined
-    const host = url.startsWith(NOTES_PREFIX) ? 'skillwright' : hostOf(url)
+    for (const u of (data['urls'] as string[]) ?? []) docByUrl.set(normalizeUrl(u), ref.file)
+  const newDocs = new Map<string, string>()
+  const wantedDocs = new Set<string>()
+  const documentFor = (url: string, title: string, emit: boolean): string => {
+    const known = docByUrl.get(normalizeUrl(url))
+    if (known !== undefined) {
+      if (emit && newDocs.has(known)) wantedDocs.add(known)
+      return known
+    }
+    const note = isNote(url) ? ctx.note(url) : undefined
+    const host = isNote(url) ? 'skillwright' : hostOf(url)
     const docTitle = note?.title ?? title
     let id = idSafe(docTitle)
     if (id === '') id = host
-    if (docNames.claim(id) !== id) {
-      // Name taken by another URL: qualify it with the publisher.
-      id = docNames.claim(`${id} ${host}`)
-    }
+    // Name taken by another URL: qualify it with the publisher.
+    id = docNames.has(id) ? docNames.claim(`${id} ${host}`) : docNames.claim(id)
     const file = `documents/${host}/${id}.md`
-    docByUrl.set(trimUrl(url), file)
-    newDocs.set(file, { file, title: docTitle, url })
-    out.files.set(
+    docByUrl.set(normalizeUrl(url), file)
+    newDocs.set(
       file,
       record(
         {
           title: docTitle,
-          ...(url.startsWith(NOTES_PREFIX) ? { documentType: 'research note' } : {}),
+          ...(isNote(url) ? { documentType: 'research note' } : {}),
           urls: [url],
           publisher: host,
         },
         note?.description ?? '',
       ),
     )
-    count('documents')
+    if (emit) wantedDocs.add(file)
     return file
   }
-  const isNote = (url: string): boolean => url.startsWith(NOTES_PREFIX)
 
   // Methods: the probes that imported run observations name.
-  const probeIds = new Set<string>()
-  for (const f of facts)
-    for (const o of f.observations) if (o.probe !== undefined) probeIds.add(o.probe)
   const methodFile = new Map<string, string>()
-  const methodNames = new Names(
-    beta
-      .all('methods')
-      .filter((m) => !ctx.imported(m.ref.file))
-      .map((m) => m.ref.id),
-  )
+  const methodNames = namesFor('methods')
   for (const id of [...probeIds].sort()) {
     const p = dataset.probes.find((x) => x.id === id)
     if (p === undefined) continue
-    const name = methodNames.claim(idSafe(p.title))
+    const name = nameFor(methodIdentity(id), methodNames, idSafe(p.title))
     methodFile.set(id, `methods/${name}/${name}.md`)
   }
   for (const [id, file] of [...methodFile].sort()) {
+    if (!selectedProbeIds.has(id)) continue
     const p = dataset.probes.find((x) => x.id === id) as Probe
     const harnesses = p.harnesses
       .map((h) => harnessBySlug.get(h))
@@ -303,6 +428,7 @@ export function plan(ctx: Context): Plan {
           commands: p.commands,
           record: p.record,
           safety: p.safety,
+          imported_from: methodIdentity(id),
         },
         body,
       ),
@@ -311,36 +437,46 @@ export function plan(ctx: Context): Plan {
   }
 
   // Study results and statements, fact by fact.
-  // Records this importer wrote are regenerated, so their names are free to claim again.
-  const others = (type: string): string[] =>
-    beta
-      .all(type)
-      .filter((r) => !ctx.imported(r.ref.file))
-      .map((r) => r.ref.id)
-  const resultNames = new Names(others('study-results'))
-  const statementNames = new Names(others('statements'))
-  for (const fact of facts) {
+  const resultNames = namesFor('study-results')
+  const statementNames = namesFor('statements')
+  for (const fact of allFacts) {
+    const emit = factSelected(fact)
     const h = harnessBySlug.get(fact.harness)
     const subject = subjectById.get(fact.subject) as Subject | undefined
     const sfile = subjectFile.get(fact.subject)
-    if (h === undefined || subject === undefined || sfile === undefined) {
-      out.warnings.push(
-        `${fact.conceptId}.md: harness ${fact.harness} has no beta record; not imported`,
-      )
-      count('facts skipped')
+    const alphaPath = `${fact.conceptId}.md`
+    if (h === undefined || subject === undefined || (emit && sfile === undefined)) {
+      if (emit) {
+        const missing =
+          h === undefined
+            ? `harness ${fact.harness} has no beta record`
+            : subject === undefined
+              ? `subject ${fact.subject} is not in the alpha corpus`
+              : `subject ${fact.subject} has no beta record`
+        out.warnings.push(`${alphaPath}: ${missing}; not imported`)
+        count('facts skipped')
+      }
+      continue
+    }
+    const open = (fact.open ?? []).map((q) => q.question)
+    if (fact.observations.length === 0 && open.length === 0) {
+      if (emit) {
+        out.warnings.push(`${alphaPath}: no observations and no open questions; not imported`)
+        count('facts skipped')
+      }
       continue
     }
     const versioning = h.versioning
-    const alphaPath = `${fact.conceptId}.md`
     const sourceUrl = new Map(fact.sources.map((s) => [s.id, s]))
     const docFor = (sid: string): string => {
       const s = sourceUrl.get(sid) as { resource: string; title: string }
-      return documentFor(s.resource, s.title)
+      return documentFor(s.resource, s.title, emit)
     }
 
     // One study result per observation.
     interface Made {
       obs: Observation
+      index: number
       file: string
       kind: string
     }
@@ -348,11 +484,14 @@ export function plan(ctx: Context): Plan {
     fact.observations.forEach((o, i) => {
       const s = sourceUrl.get(o.source)
       const kind = o.evidence ?? (s !== undefined && isNote(s.resource) ? 'third-party' : 'docs')
-      const name = resultNames.claim(idSafe(`${o.observed} ${h.id} ${subject.title}`))
+      const identity = resultIdentity(fact, i + 1)
+      const name = nameFor(identity, resultNames, idSafe(`${o.observed} ${h.id} ${subject.title}`))
       const file = `study-results/${h.id}/${name}.md`
       const reported = [
         ...new Set([docFor(o.source), ...(o.via === undefined ? [] : [docFor(o.via)])]),
       ]
+      made.push({ obs: o, index: i, file, kind })
+      if (!emit) return
       const method = o.probe === undefined ? undefined : methodFile.get(o.probe)
       const lines = [
         `Imported from \`${alphaPath}\`, observation ${i + 1}.`,
@@ -374,38 +513,26 @@ export function plan(ctx: Context): Plan {
               : { version: o.checked_version, version_basis: 'exact' }),
             observed: o.observed,
             ...(o.locator === undefined ? {} : { locator: o.locator }),
-            contributions: [
-              {
-                contributor: { name: IMPORTER, agentType: 'software' },
-                activityType: 'created',
-                date: `${o.observed}T00:00:00Z`,
-              },
-            ],
+            contributions: [createdBy(IMPORTER, 'software', o.observed)],
+            imported_from: identity,
           },
           lines.join('\n'),
         ),
       )
-      made.push({ obs: o, file, kind })
       count('study-results')
     })
 
     // One statement per distinct scope.
-    const scopeKey = (o: Observation): string => JSON.stringify([o.since, o.until, o.model ?? null])
     const groups = new Map<string, Made[]>()
     for (const m of made) groups.set(scopeKey(m.obs), [...(groups.get(scopeKey(m.obs)) ?? []), m])
-    const ordered = [...groups.values()].sort((a, b) => {
-      const x = a[0]!.obs
-      const y = b[0]!.obs
-      if (x.since !== y.since) {
-        if (x.since === null) return -1
-        if (y.since === null) return 1
-        return versioning === 'unknown' ? 0 : compareVersions(x.since, y.since, versioning)
-      }
-      return (x.model ?? '') < (y.model ?? '') ? -1 : (x.model ?? '') > (y.model ?? '') ? 1 : 0
-    })
-    const open = (fact.open ?? []).map((q) => q.question)
+    const ordered = [...groups.values()].sort((a, b) =>
+      compareScopes(
+        { since: a[0]!.obs.since, model: a[0]!.obs.model ?? null },
+        { since: b[0]!.obs.since, model: b[0]!.obs.model ?? null },
+        versioning,
+      ),
+    )
     const statementFiles = new Map<string, string>()
-    const names: string[] = []
     // Names first, so a superseding statement can link the older one.
     for (const g of ordered) {
       const o = g[0]!.obs
@@ -414,149 +541,168 @@ export function plan(ctx: Context): Plan {
         o.until !== null ? ` until ${o.until}` : '',
         o.model !== undefined ? ` on ${o.model}` : '',
       ].join('')
-      const name = statementNames.claim(idSafe(`${h.id} ${subject.title}${suffix}`))
-      names.push(name)
+      const name = nameFor(
+        statementIdentity(fact, o),
+        statementNames,
+        idSafe(`${h.id} ${subject.title}${suffix}`),
+      )
       statementFiles.set(scopeKey(o), `statements/${h.id}/${name}.md`)
     }
-    ordered.forEach((g, gi) => {
-      const o0 = g[0]!.obs
-      const file = statementFiles.get(scopeKey(o0)) as string
-      const merged: Record<string, unknown> = {}
-      const conflicts = new Set<string>()
-      for (const m of g)
-        for (const [k, v] of Object.entries(m.obs.value)) {
-          if (k in merged && !same(merged[k], v)) conflicts.add(k)
-          merged[k] = v
-        }
-      const lines = g.map((m) => {
-        const disputes = [...conflicts].some(
-          (k) => k in m.obs.value && !same(m.obs.value[k], merged[k]),
+    if (emit)
+      ordered.forEach((g, gi) => {
+        const o0 = g[0]!.obs
+        const file = statementFiles.get(scopeKey(o0)) as string
+        // The latest observation wins; a tie goes to the later one in the alpha file.
+        const byDate = [...g].sort(
+          (a, b) =>
+            (a.obs.observed < b.obs.observed ? -1 : a.obs.observed > b.obs.observed ? 1 : 0) ||
+            a.index - b.index,
         )
-        return {
-          hasEvidenceItems: [link(file, m.file)],
-          directionOfEvidenceProvided: disputes ? 'disputes' : 'supports',
-          strengthOfEvidenceProvided: KIND_STRENGTH[m.kind] ?? 'weak',
-          description: `${m.kind} observed ${m.obs.observed}${disputes ? '; its value differs from the latest' : ''}.`,
-        }
-      })
-      const supporting = lines.filter((l) => l.directionOfEvidenceProvided === 'supports')
-      let best = Math.max(
-        ...supporting.map((l) => STRENGTHS.indexOf(l.strengthOfEvidenceProvided as Strength)),
-      )
-      if (supporting.length < lines.length) best = Math.max(0, best - 1)
-      const status = o0.until !== null ? 'superseded' : conflicts.size > 0 ? 'disputed' : 'current'
-      const prior =
-        o0.since === null
-          ? undefined
-          : ordered.find(
-              (p) =>
-                p[0]!.obs.until === o0.since && (p[0]!.obs.model ?? null) === (o0.model ?? null),
-            )
-      const last = gi === ordered.length - 1
-      const date = g
-        .map((m) => m.obs.observed)
-        .sort()
-        .at(-1) as string
-      const sources = [...new Set(g.flatMap((m) => [m.obs.source]))].map(docFor)
-      const body = [
-        `Imported from \`${alphaPath}\`.`,
-        ...(conflicts.size > 0
-          ? [
-              '',
-              `The observations disagree on: ${[...conflicts].sort().join(', ')}. The latest value is kept.`,
-            ]
-          : []),
-        ...(last && open.length > 0 ? ['', 'Open questions:', ...open.map((q) => `- ${q}`)] : []),
-      ].join('\n')
-      out.files.set(
-        file,
-        record(
-          {
-            proposition: {
-              subject: link(file, h.file, h.id),
-              predicate: fact.subject,
-              object: merged,
-            },
-            direction: 'supports',
-            strength: STRENGTHS[best],
-            hasEvidenceLines: lines,
-            reportedIn: sources.map((d) => link(file, d)),
-            contributions: [
-              {
-                contributor: { name: IMPORTER, agentType: 'software' },
-                activityType: 'created',
-                date: `${date}T00:00:00Z`,
+        const merged: Record<string, unknown> = {}
+        const conflicts = new Set<string>()
+        for (const m of byDate)
+          for (const [k, v] of Object.entries(m.obs.value)) {
+            if (k in merged && !same(merged[k], v)) conflicts.add(k)
+            merged[k] = v
+          }
+        const lines = g.map((m) => {
+          const disputes = [...conflicts].some(
+            (k) => k in m.obs.value && !same(m.obs.value[k], merged[k]),
+          )
+          return {
+            hasEvidenceItems: [link(file, m.file)],
+            directionOfEvidenceProvided: disputes ? 'disputes' : 'supports',
+            strengthOfEvidenceProvided: KIND_STRENGTH[m.kind] ?? 'weak',
+            description: `${m.kind} observed ${m.obs.observed}${disputes ? '; its value differs from the latest' : ''}.`,
+          }
+        })
+        const supporting = lines.filter((l) => l.directionOfEvidenceProvided === 'supports')
+        let best = Math.max(
+          ...supporting.map((l) => STRENGTHS.indexOf(l.strengthOfEvidenceProvided as Strength)),
+        )
+        if (supporting.length < lines.length) best = Math.max(0, best - 1)
+        const status =
+          o0.until !== null ? 'superseded' : conflicts.size > 0 ? 'disputed' : 'current'
+        const prior =
+          o0.since === null
+            ? undefined
+            : ordered.find(
+                (p) =>
+                  p[0]!.obs.until === o0.since && (p[0]!.obs.model ?? null) === (o0.model ?? null),
+              )
+        const last = gi === ordered.length - 1
+        const date = byDate.at(-1)!.obs.observed
+        const sources = [...new Set(g.map((m) => m.obs.source))].map(docFor)
+        const body = [
+          `Imported from \`${alphaPath}\`.`,
+          ...(conflicts.size > 0
+            ? [
+                '',
+                `The observations disagree on: ${[...conflicts].sort().join(', ')}. The latest value is kept.`,
+              ]
+            : []),
+          ...(last && open.length > 0 ? ['', 'Open questions:', ...open.map((q) => `- ${q}`)] : []),
+        ].join('\n')
+        out.files.set(
+          file,
+          record(
+            {
+              proposition: {
+                subject: link(file, h.file, h.id),
+                predicate: fact.subject,
+                object: merged,
               },
-            ],
-            harness: link(file, h.file, h.id),
-            subject: link(file, sfile),
-            scope: { since: o0.since, until: o0.until, platform: [], model: o0.model ?? null },
-            status,
-            ...(prior === undefined
-              ? {}
-              : { supersedes: link(file, statementFiles.get(scopeKey(prior[0]!.obs)) as string) }),
-            ...(last && open.length > 0 ? { open } : {}),
-          },
-          body,
-        ),
-      )
-      count('statements')
-      count(`statements ${status}`)
-    })
+              direction: 'supports',
+              strength: STRENGTHS[best],
+              hasEvidenceLines: lines,
+              reportedIn: sources.map((d) => link(file, d)),
+              contributions: [createdBy(IMPORTER, 'software', date)],
+              harness: link(file, h.file, h.id),
+              subject: link(file, sfile as string),
+              scope: { since: o0.since, until: o0.until, platform: [], model: o0.model ?? null },
+              status,
+              ...(prior === undefined
+                ? {}
+                : {
+                    supersedes: link(file, statementFiles.get(scopeKey(prior[0]!.obs)) as string),
+                  }),
+              ...(last && open.length > 0 ? { open } : {}),
+              imported_from: statementIdentity(fact, o0),
+            },
+            body,
+          ),
+        )
+        count('statements')
+        count(`statements ${status}`)
+      })
 
     // A fact with only open questions is one open statement.
     if (fact.observations.length === 0) {
-      const name = statementNames.claim(idSafe(`${h.id} ${subject.title} open`))
+      const identity = openIdentity(fact)
+      const name = nameFor(identity, statementNames, idSafe(`${h.id} ${subject.title} open`))
       const file = `statements/${h.id}/${name}.md`
       const date = (fact.open ?? [])
         .map((q) => q.observed)
         .sort()
         .at(-1) as string
-      out.files.set(
-        file,
-        record(
-          {
-            proposition: {
-              subject: link(file, h.file, h.id),
-              predicate: fact.subject,
-              object: { open },
-            },
-            direction: 'neutral',
-            reportedIn: [...new Set((fact.open ?? []).map((q) => q.source))].map((s) =>
-              link(file, docFor(s)),
-            ),
-            contributions: [
-              {
-                contributor: { name: IMPORTER, agentType: 'software' },
-                activityType: 'created',
-                date: `${date}T00:00:00Z`,
+      if (emit) {
+        out.files.set(
+          file,
+          record(
+            {
+              proposition: {
+                subject: link(file, h.file, h.id),
+                predicate: fact.subject,
+                object: { open },
               },
-            ],
-            harness: link(file, h.file, h.id),
-            subject: link(file, sfile),
-            scope: { since: null, until: null, platform: [], model: null },
-            status: 'open',
-            open,
-          },
-          [
-            `Imported from \`${alphaPath}\`.`,
-            '',
-            'Open questions:',
-            ...open.map((q) => `- ${q}`),
-          ].join('\n'),
-        ),
-      )
-      count('statements')
-      count('statements open')
+              direction: 'neutral',
+              reportedIn: [...new Set((fact.open ?? []).map((q) => q.source))].map((s) =>
+                link(file, docFor(s)),
+              ),
+              contributions: [createdBy(IMPORTER, 'software', date)],
+              harness: link(file, h.file, h.id),
+              subject: link(file, sfile as string),
+              scope: { since: null, until: null, platform: [], model: null },
+              status: 'open',
+              open,
+              imported_from: identity,
+            },
+            [
+              `Imported from \`${alphaPath}\`.`,
+              '',
+              'Open questions:',
+              ...open.map((q) => `- ${q}`),
+            ].join('\n'),
+          ),
+        )
+        count('statements')
+        count('statements open')
+      }
     }
-    count('facts')
+    if (emit) count('facts')
+  }
+
+  for (const file of wantedDocs) {
+    out.files.set(file, newDocs.get(file) as string)
+    count('documents')
+  }
+
+  // Retire what is owned, in scope and no longer written. A method goes with its folder.
+  const written = [...out.files.keys()]
+  for (const file of [...retired].sort()) {
+    const method = file.startsWith('methods/')
+    const target = method ? posix.dirname(file) : file
+    if (!written.some((w) => w === target || w.startsWith(`${target}/`))) out.removed.push(target)
   }
   return out
 }
 
 // ---- disk -----------------------------------------------------------------------------------
 
-/** Write the plan under `root`, leaving files whose text is already right. Returns the paths changed. */
+/**
+ * Write the plan under `root`, leaving files whose text is already right, then delete what it
+ * retires. Returns the paths written; `p.removed` lists the deletions.
+ */
 export function writePlan(root: string, p: Plan): string[] {
   const changed: string[] = []
   const put = (rel: string, write: () => void, same: boolean): void => {
@@ -579,6 +725,7 @@ export function writePlan(root: string, p: Plan): string[] {
       () => copyFileSync(from, join(root, rel)),
       existsSync(join(root, rel)) && readFileSync(join(root, rel)).equals(readFileSync(from)),
     )
+  for (const rel of p.removed) rmSync(join(root, rel), { recursive: true, force: true })
   return changed
 }
 
@@ -592,18 +739,37 @@ const walkFiles = (dir: string, base = ''): string[] =>
         })
     : []
 
-export function defaultContext(categories: Set<string>, betaRoot: string = BETA): Context {
-  const { dataset, errors } = load()
-  if (dataset === null || errors.length > 0)
-    throw new Error(`the alpha corpus has errors:\n${errors.join('\n')}`)
+/**
+ * The research note a repository URL names, as a path under `sources`: the part after the notes
+ * prefix, without query or fragment, decoded. Anything that leaves the folder is not a note.
+ */
+export function notePath(url: string, sources: string): string | undefined {
+  if (!isNote(url)) return undefined
+  let rel = url.slice(NOTES_PREFIX.length).replace(/[?#].*$/su, '')
+  try {
+    rel = decodeURIComponent(rel)
+  } catch {
+    return undefined
+  }
+  const parts = rel.split('/')
+  if (rel === '' || parts.some((x) => x === '' || x === '.' || x === '..' || x.includes('\\')))
+    return undefined
+  return join(sources, ...parts)
+}
+
+export function defaultContext(
+  categories: Set<string>,
+  betaRoot: string = BETA,
+  dataset: Dataset = loadDataset(),
+): Context {
   const probes = join(ROOT, 'probes')
   return {
     dataset,
     beta: loadBeta(betaRoot),
     categories,
     note: (url) => {
-      const file = join(ROOT, 'corpora/alpha/sources', basename(url))
-      if (!existsSync(file)) return undefined
+      const file = notePath(url, join(ROOT, 'corpora/alpha/sources'))
+      if (file === undefined || !existsSync(file)) return undefined
       const fm = parseConcept(readFileSync(file, 'utf8')).frontmatter as Record<string, unknown>
       return {
         title: String(fm['title']),
@@ -612,20 +778,23 @@ export function defaultContext(categories: Set<string>, betaRoot: string = BETA)
     },
     probeBody: (id) => parseConcept(readFileSync(join(probes, id, 'probe.md'), 'utf8')).body,
     fixtureFiles: (id) => walkFiles(join(probes, id, 'fixture')),
-    imported: (file) => {
-      const full = join(betaRoot, file)
-      return existsSync(full) && readFileSync(full, 'utf8').includes('\nImported from `')
-    },
   }
 }
 
-/** Copy sources resolve against the probes folder. */
+function loadDataset(): Dataset {
+  const { dataset, errors } = load()
+  if (dataset === null || errors.length > 0)
+    throw new Error(`the alpha corpus has errors:\n${errors.join('\n')}`)
+  return dataset
+}
+
+/** Plan and write the import. Fixture copy sources resolve against the probes folder. */
 export function importAlpha(
   categories: Set<string>,
   betaRoot: string = BETA,
+  dataset?: Dataset,
 ): { plan: Plan; changed: string[] } {
-  const ctx = defaultContext(categories, betaRoot)
-  const p = plan(ctx)
+  const p = plan(defaultContext(categories, betaRoot, dataset))
   for (const [rel, from] of p.copies) p.copies.set(rel, join(ROOT, 'probes', from))
   return { plan: p, changed: writePlan(betaRoot, p) }
 }
@@ -639,8 +808,8 @@ function main(argv: string[]): number {
       beta: { type: 'string' },
     },
   })
-  const { dataset } = load()
-  const known = new Set((dataset?.categories ?? []).map((c) => c.id))
+  const dataset = loadDataset()
+  const known = new Set(dataset.categories.map((c) => c.id))
   const chosen = values.all === true ? known : new Set(values.category ?? [])
   const unknown = [...chosen].filter((c) => !known.has(c))
   if (chosen.size === 0 || unknown.length > 0) {
@@ -652,8 +821,10 @@ function main(argv: string[]): number {
   const { plan: p, changed } = importAlpha(
     chosen,
     values.beta === undefined ? BETA : resolve(values.beta),
+    dataset,
   )
   for (const w of p.warnings) console.error(`warning: ${w}`)
+  for (const r of p.removed) console.log(`removed ${r}`)
   console.log(
     Object.entries(p.counts)
       .map(([k, n]) => `${n} ${k}`)

@@ -31,6 +31,7 @@ scope:
 status: current
 open:
   - Whether `codex queue` reaches a session open in a live TUI, or only a saved or idle one.
+imported_from: fact:cli/send-to-live@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/cli/send-to-live.md`.

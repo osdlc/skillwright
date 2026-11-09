@@ -101,6 +101,13 @@ properties:
     description: Questions the sources leave unresolved about this claim, one sentence each.
     type: array
     items: { type: string, minLength: 1 }
+  imported_from:
+    description: >-
+      The alpha identity this record was generated from. Present only on records written by
+      import-alpha, which regenerates and retires records by it. Leave it off a record written by
+      hand.
+    type: string
+    minLength: 1
 if:
   properties: { direction: { const: neutral } }
 then:

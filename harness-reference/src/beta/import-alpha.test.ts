@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -14,6 +23,7 @@ import {
   idSafe,
   importAlpha,
   inferValueSchema,
+  notePath,
   plan,
   writePlan,
 } from './import-alpha.ts'
@@ -73,7 +83,6 @@ const context = (facts: unknown[]): Context => ({
   note: () => ({ title: 'A note', description: 'Notes.' }),
   probeBody: () => '',
   fixtureFiles: () => [],
-  imported: () => false,
 })
 
 describe('mapping', () => {
@@ -264,5 +273,221 @@ describe('cli import', () => {
     assert.equal(run.kind, 'run')
     assert.match(run.specifiedBy, /Session%20environment\.md\)$/)
     assert.equal(run.version, '2.1.294')
+  })
+})
+
+// ---- identity, scope and merge --------------------------------------------------------------
+
+const tree = (root: string, base = ''): Record<string, string> =>
+  Object.fromEntries(
+    readdirSync(join(root, base)).flatMap((n) => {
+      const rel = base === '' ? n : `${base}/${n}`
+      return statSync(join(root, rel)).isDirectory()
+        ? Object.entries(tree(root, rel))
+        : [[rel, readFileSync(join(root, rel), 'utf8')]]
+    }),
+  )
+
+const twoCategories = (over: { a?: unknown[]; b?: unknown[] } = {}): Dataset =>
+  ({
+    categories: [],
+    harnesses: [],
+    probes: [],
+    subjects: [
+      { id: 'ca/thing', category: 'ca', title: 'Thing', description: 'A.', order: 1 },
+      { id: 'cb/thing', category: 'cb', title: 'Thing', description: 'B.', order: 2 },
+    ],
+    facts: [
+      fact('ca/thing', {
+        conceptId: 'facts/pi/ca/thing',
+        observations: [obs({}), obs({ observed: '2026-02-01', value: { a: 1 } })],
+        ...(over.a === undefined ? {} : { observations: over.a }),
+      }),
+      fact('cb/thing', {
+        conceptId: 'facts/pi/cb/thing',
+        observations: [obs({ value: { b: 2 } })],
+        ...(over.b === undefined ? {} : { observations: over.b }),
+      }),
+    ],
+  }) as unknown as Dataset
+const ctxFor = (categories: string[], ds: Dataset, root = dir): Context => ({
+  dataset: ds,
+  beta: loadBeta(root),
+  categories: new Set(categories),
+  note: () => undefined,
+  probeBody: () => '',
+  fixtureFiles: () => [],
+})
+const run = (categories: string[], ds: Dataset, root = dir) => {
+  const p = plan(ctxFor(categories, ds, root))
+  writePlan(root, p)
+  return p
+}
+describe('identity and scope', () => {
+  test('every written record names its alpha identity, and old ones are not owned by body text', () => {
+    run(['ca'], twoCategories())
+    assert.equal(
+      front('statements/Pi/Pi Thing.md').imported_from,
+      'fact:ca/thing@pi#scope-[null,null,null]',
+    )
+    assert.equal(
+      front('study-results/Pi/2026-01-01 Pi Thing.md').imported_from,
+      'fact:ca/thing@pi#observation-1',
+    )
+  })
+
+  test('one category after the other gives what all of them give, in either order', () => {
+    const ds = twoCategories()
+    const all = mkdtempSync(join(tmpdir(), 'hr-all-'))
+    const ab = mkdtempSync(join(tmpdir(), 'hr-ab-'))
+    const ba = mkdtempSync(join(tmpdir(), 'hr-ba-'))
+    try {
+      for (const d of [all, ab, ba]) cpSync(BETA, d, { recursive: true })
+      run(['ca', 'cb'], ds, all)
+      run(['ca'], ds, ab)
+      run(['cb'], ds, ab)
+      run(['cb'], ds, ba)
+      run(['ca'], ds, ba)
+      const want = tree(all)
+      assert.deepEqual(tree(ab), want)
+      assert.deepEqual(tree(ba), want)
+      // The same title in two categories got two distinct names.
+      assert.ok(want['statements/Pi/Pi Thing.md'] !== undefined)
+      assert.ok(want['statements/Pi/Pi Thing 2.md'] !== undefined)
+      assert.deepEqual(plan(ctxFor(['ca', 'cb'], ds, ab)).removed, [])
+    } finally {
+      for (const d of [all, ab, ba]) rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  test('a hand-written record is never overwritten or deleted, even when it quotes the importer', () => {
+    const mine = 'statements/Pi/Pi Thing.md'
+    cpSync(join(dir, 'statements/Pi/Pi Fork a session.md'), join(dir, mine))
+    const text = readFileSync(join(dir, mine), 'utf8')
+    writeFileSync(join(dir, mine), `${text}\nImported from \`x.md\`.\n`)
+    const p = run(['ca'], twoCategories())
+    assert.equal(readFileSync(join(dir, mine), 'utf8').includes('Imported from `x.md`'), true)
+    assert.ok(p.files.has('statements/Pi/Pi Thing 2.md'))
+    assert.equal(p.removed.includes(mine), false)
+  })
+
+  test('a version boundary retires the file the old range had', () => {
+    run(['ca'], twoCategories())
+    assert.ok(existsSync(join(dir, 'statements/Pi/Pi Thing.md')))
+    const ds = twoCategories({
+      a: [
+        obs({ until: '2.0.0' }),
+        obs({ since: '2.0.0', observed: '2026-03-01', value: { a: 2 } }),
+      ],
+    })
+    const p = run(['ca'], ds)
+    assert.ok(existsSync(join(dir, 'statements/Pi/Pi Thing until 2.0.0.md')))
+    assert.ok(existsSync(join(dir, 'statements/Pi/Pi Thing from 2.0.0.md')))
+    assert.equal(existsSync(join(dir, 'statements/Pi/Pi Thing.md')), false)
+    assert.deepEqual(p.removed, ['statements/Pi/Pi Thing.md'])
+    const beta = loadBeta(dir)
+    assert.deepEqual([...beta.report.errors], [])
+    assert.deepEqual(lint(beta), [])
+    assert.deepEqual(run(['ca'], ds) && plan(ctxFor(['ca'], ds)).removed, [])
+  })
+
+  test('a record keeps its name while its identity stands', () => {
+    run(['ca'], twoCategories())
+    // A colliding record now exists earlier in the order: the importer's own file does not move.
+    const ds = twoCategories()
+    ds.subjects.unshift({
+      id: 'c0/thing',
+      category: 'c0',
+      title: 'Thing',
+      description: 'Z.',
+      order: 0,
+    } as never)
+    ds.facts.unshift(
+      fact('c0/thing', { conceptId: 'facts/pi/a0/thing', observations: [obs({})] }) as never,
+    )
+    run(['ca', 'cb', 'c0'], ds)
+    assert.equal(
+      front('statements/Pi/Pi Thing.md').imported_from,
+      'fact:ca/thing@pi#scope-[null,null,null]',
+    )
+  })
+
+  test('reordered object keys are one value, not a dispute', () => {
+    const ds = twoCategories({
+      a: [
+        obs({ value: { x: { a: 1, b: [1, 2] } } }),
+        obs({ observed: '2026-02-01', value: { x: { b: [1, 2], a: 1 } } }),
+      ],
+    })
+    run(['ca'], ds)
+    const st = front('statements/Pi/Pi Thing.md')
+    assert.equal(st.status, 'current')
+    assert.deepEqual(st.proposition.object, { x: { a: 1, b: [1, 2] } })
+    const other = twoCategories({
+      a: [obs({ value: { x: [1, 2] } }), obs({ observed: '2026-02-01', value: { x: [2, 1] } })],
+    })
+    run(['ca'], other)
+    assert.equal(front('statements/Pi/Pi Thing.md').status, 'disputed')
+  })
+
+  test('the value kept is the latest by observed date, not by array position', () => {
+    const ds = twoCategories({
+      a: [
+        obs({ observed: '2026-03-01', value: { a: 'newest' } }),
+        obs({ observed: '2026-01-01', value: { a: 'oldest' } }),
+      ],
+    })
+    run(['ca'], ds)
+    const st = front('statements/Pi/Pi Thing.md')
+    assert.deepEqual(st.proposition.object, { a: 'newest' })
+    assert.equal(st.status, 'disputed')
+    assert.match(String(st.contributions[0].date), /2026-03-01/)
+  })
+
+  test('a fact with nothing in it is skipped with a warning', () => {
+    const p = plan(ctxFor(['ca'], twoCategories({ a: [] })))
+    assert.match(p.warnings.join('\n'), /no observations and no open questions/)
+    assert.equal(p.counts['facts skipped'], 1)
+    assert.ok(![...p.files.values()].some((t) => t.includes('undefined')))
+  })
+
+  test('a missing subject is reported as the subject, not the harness', () => {
+    const ds = twoCategories()
+    ds.subjects.splice(0, 1)
+    const p = plan(ctxFor(['ca'], ds))
+    assert.match(p.warnings[0] ?? '', /subject ca\/thing is not in the alpha corpus/)
+  })
+
+  test('two documents with one title do not burn a numbered name before the qualified one', () => {
+    const a = fact('ca/thing', {
+      conceptId: 'facts/pi/ca/thing',
+      sources: [
+        { id: 'one', resource: 'https://one.example/x', title: 'Guide' },
+        { id: 'two', resource: 'https://two.example/x', title: 'Guide' },
+        { id: 'three', resource: 'https://three.example/x', title: 'Guide' },
+      ],
+      observations: [
+        obs({ source: 'one' }),
+        obs({ source: 'two', value: { z: 1 } }),
+        obs({ source: 'three', value: { y: 1 } }),
+      ],
+    })
+    const ds = twoCategories()
+    ds.facts = [a as never]
+    run(['ca'], ds)
+    assert.ok(existsSync(join(dir, 'documents/one.example/Guide.md')))
+    assert.ok(existsSync(join(dir, 'documents/two.example/Guide two.example.md')))
+    assert.ok(existsSync(join(dir, 'documents/three.example/Guide three.example.md')))
+  })
+
+  test('notePath decodes, drops query and fragment, and refuses anything leaving the folder', () => {
+    const base =
+      'https://github.com/osdlc/skillwright/blob/main/harness-reference/corpora/alpha/sources/'
+    assert.equal(notePath(`${base}a%20b.md?plain=1#L3`, '/s'), '/s/a b.md')
+    assert.equal(notePath(`${base}sub/n.md`, '/s'), '/s/sub/n.md')
+    assert.equal(notePath(`${base}..%2Fx.md`, '/s'), undefined)
+    assert.equal(notePath(`${base}../x.md`, '/s'), undefined)
+    assert.equal(notePath(`${base}%E0%A4%A.md`, '/s'), undefined)
+    assert.equal(notePath('https://example.com/x.md', '/s'), undefined)
   })
 })

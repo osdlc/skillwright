@@ -32,6 +32,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/model-selection@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/cli/model-selection.md`.

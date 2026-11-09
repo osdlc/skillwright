@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/headless@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/cli/headless.md`.

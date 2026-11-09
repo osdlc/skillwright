@@ -28,6 +28,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/structured-output@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/cli/structured-output.md`.

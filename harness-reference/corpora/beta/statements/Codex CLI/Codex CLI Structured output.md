@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/structured-output@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/cli/structured-output.md`.

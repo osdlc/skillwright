@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/open-with-id@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/cli/open-with-id.md`.

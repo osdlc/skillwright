@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/headless@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/cli/headless.md`.

@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/model-selection@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/cli/model-selection.md`.

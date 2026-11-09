@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/headless@codex#scope-[null,null,null]
 ---
 
 Imported from `facts/codex/cli/headless.md`.

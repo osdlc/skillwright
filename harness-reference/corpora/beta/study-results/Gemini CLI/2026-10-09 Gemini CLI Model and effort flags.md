@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-09T00:00:00Z
+imported_from: fact:cli/model-selection@gemini-cli#observation-1
 ---
 
 Imported from `facts/gemini-cli/cli/model-selection.md`, observation 1.

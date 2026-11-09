@@ -18,6 +18,7 @@ record:
   - The model and thinking level each prompt ran at.
 safety:
   - Needs a local Ollama server and a `providers.ollama` entry in pi's `models.json`. Adding that entry changes every pi session for the user.
+imported_from: probe:pi-model-selection
 ---
 
 # pi model selection

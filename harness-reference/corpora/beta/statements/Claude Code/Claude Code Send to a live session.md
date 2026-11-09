@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/send-to-live@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/cli/send-to-live.md`.

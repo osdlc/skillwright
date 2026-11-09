@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/headless@gemini-cli#scope-[null,null,null]
 ---
 
 Imported from `facts/gemini-cli/cli/headless.md`.

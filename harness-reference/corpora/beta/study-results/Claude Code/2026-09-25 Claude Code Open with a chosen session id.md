@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-09-25T00:00:00Z
+imported_from: fact:cli/open-with-id@claude-code#observation-1
 ---
 
 Imported from `facts/claude-code/cli/open-with-id.md`, observation 1.

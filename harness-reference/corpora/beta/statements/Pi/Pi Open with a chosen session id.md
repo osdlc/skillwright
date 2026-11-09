@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/open-with-id@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/cli/open-with-id.md`.

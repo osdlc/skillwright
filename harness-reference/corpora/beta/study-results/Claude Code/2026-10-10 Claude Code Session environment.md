@@ -13,6 +13,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-10T00:00:00Z
+imported_from: fact:cli/session-env@claude-code#observation-1
 ---
 
 Imported from `facts/claude-code/cli/session-env.md`, observation 1.

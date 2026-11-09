@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/headless@claude-code#scope-[null,null,null]
 ---
 
 Imported from `facts/claude-code/cli/headless.md`.

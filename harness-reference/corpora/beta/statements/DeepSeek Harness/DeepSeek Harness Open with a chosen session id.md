@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/open-with-id@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/cli/open-with-id.md`.

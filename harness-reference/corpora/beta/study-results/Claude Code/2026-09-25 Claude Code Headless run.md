@@ -12,6 +12,7 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-09-25T00:00:00Z
+imported_from: fact:cli/headless@claude-code#observation-1
 ---
 
 Imported from `facts/claude-code/cli/headless.md`, observation 1.

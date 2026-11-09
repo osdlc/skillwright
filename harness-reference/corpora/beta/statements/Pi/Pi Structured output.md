@@ -29,6 +29,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/structured-output@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/cli/structured-output.md`.

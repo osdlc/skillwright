@@ -30,6 +30,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/resume@dsh#scope-[null,null,null]
 ---
 
 Imported from `facts/dsh/cli/resume.md`.

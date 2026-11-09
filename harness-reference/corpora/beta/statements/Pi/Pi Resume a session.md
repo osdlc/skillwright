@@ -31,6 +31,7 @@ scope:
   platform: []
   model: null
 status: current
+imported_from: fact:cli/resume@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/cli/resume.md`.
