@@ -93,7 +93,10 @@ export function lint(beta: Beta): string[] {
 
   // Statements.
   const statements = beta.all('statements')
-  const chains = new Map<string, { file: string; status?: string; target?: string }[]>()
+  const chains = new Map<
+    string,
+    { file: string; status?: string; target?: string; broken?: boolean }[]
+  >()
   const cells = new Map<string, { file: string; scope: Scope; versioning: Versioning }[]>()
   for (const { ref, data } of statements) {
     const harness = beta.resolve(ref.file, data['harness'])
@@ -185,13 +188,15 @@ export function lint(beta: Beta): string[] {
     if (subjectData['cardinality'] === 'latest') {
       const key = `${harness.file}|${subject.file}`
       const list = chains.get(key) ?? []
+      const supersedes = data['supersedes']
+      const target = supersedes === undefined ? undefined : beta.resolve(ref.file, supersedes)?.file
+      if (supersedes !== undefined && target === undefined)
+        bad(ref.file, `supersedes ${String(supersedes)}, which does not name a statement`)
       list.push({
         file: ref.file,
         status,
-        target:
-          data['supersedes'] === undefined
-            ? undefined
-            : beta.resolve(ref.file, data['supersedes'])?.file,
+        target,
+        broken: supersedes !== undefined && target === undefined,
       })
       chains.set(key, list)
     }
@@ -215,7 +220,7 @@ export function lint(beta: Beta): string[] {
         replacedBy.set(r.target, [...(replacedBy.get(r.target) ?? []), r.file])
     for (const r of list) {
       const by = replacedBy.get(r.file) ?? []
-      if (r.status === 'superseded' && by.length !== 1)
+      if (r.status === 'superseded' && by.length !== 1 && !list.some((x) => x.broken))
         bad(
           r.file,
           `a superseded statement of a latest subject must be replaced by exactly one statement, found ${by.length}`,

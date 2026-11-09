@@ -184,6 +184,15 @@ describe('lint', () => {
       assert.ok(problems().some((p) => p.startsWith(PI('0.99.1')) && p.includes('found 2')))
     })
 
+    test('reports a supersedes target that does not resolve, not a wrong count', () => {
+      setSupersedes('1.1.0', 'nowhere')
+      const found = problems()
+      assert.ok(
+        found.some((p) => p.startsWith(PI('1.1.0')) && p.includes('does not name a statement')),
+      )
+      assert.ok(!found.some((p) => p.includes('must be replaced by exactly one')))
+    })
+
     test('refuses a loop', () => {
       setSupersedes('0.84.1', '1.1.0')
       assert.ok(problems().some((p) => p.includes('supersedes chain loops')))

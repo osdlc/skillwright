@@ -31,7 +31,6 @@ import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
 import { fold } from '@osdlc/corpus-schema'
-import { parse } from 'yaml'
 
 import { type Dataset, load, parseConcept, ROOT } from '../alpha/load.ts'
 import type { Observation, Probe, Subject } from '../alpha/schema.ts'
@@ -99,8 +98,6 @@ export interface Plan {
   removed: string[]
   warnings: string[]
   counts: Record<string, number>
-  /** Set by `writePlan`: records left alone because they were edited after the import. */
-  edited?: string[]
 }
 
 // ---- names and files ------------------------------------------------------------------------
@@ -818,80 +815,59 @@ export function plan(ctx: Context): Plan {
 
 // ---- disk -----------------------------------------------------------------------------------
 
+/** What a plan would do to a corpus on disk. All paths are corpus-relative. */
+export interface Diff {
+  /** Files that do not exist yet. */
+  add: string[]
+  /** Existing files whose text differs from what the plan writes. */
+  overwrite: string[]
+  /** Records the plan retires. */
+  remove: string[]
+}
+
+export function diffPlan(root: string, p: Plan): Diff {
+  const add: string[] = []
+  const overwrite: string[] = []
+  const check = (rel: string, same: (file: string) => boolean): void => {
+    const file = join(root, rel)
+    if (!existsSync(file)) add.push(rel)
+    else if (!same(file)) overwrite.push(rel)
+  }
+  for (const [rel, text] of [...p.files].sort(([a], [b]) => (a < b ? -1 : 1)))
+    check(rel, (file) => readFileSync(file, 'utf8') === text)
+  for (const [rel, from] of [...p.copies].sort(([a], [b]) => (a < b ? -1 : 1)))
+    check(rel, (file) => readFileSync(file).equals(readFileSync(from)))
+  return {
+    add,
+    overwrite,
+    remove: existsSync(root) ? p.removed.filter((r) => existsSync(join(root, r))) : [],
+  }
+}
+
 /**
- * Write the plan under `root`, leaving files whose text is already right, then delete what it
- * retires. Returns the paths written; `p.removed` lists the deletions.
+ * Write the plan under `root`. By default only files that do not exist yet are written: an
+ * existing file is never touched, and nothing is removed. With `force`, every file is written
+ * and every retired record removed. Returns the paths written.
  */
 export function writePlan(root: string, p: Plan, options: { force?: boolean } = {}): string[] {
   const force = options.force === true
+  const d = diffPlan(root, p)
+  const todo = new Set(force ? [...d.add, ...d.overwrite] : d.add)
   const changed: string[] = []
-  const edited: string[] = []
-  p.edited = edited
-  const put = (rel: string, write: () => void, same: boolean): void => {
-    if (same) return
-    mkdirSync(dirname(join(root, rel)), { recursive: true })
-    write()
-    changed.push(rel)
-  }
-  for (const [rel, text] of [...p.files].sort(([a], [b]) => (a < b ? -1 : 1))) {
-    const file = join(root, rel)
-    const have = existsSync(file) ? readFileSync(file, 'utf8') : undefined
-    // A record this import wrote earlier, since changed by hand, is an ordinary record now.
-    if (have !== undefined && have !== text && !force) {
-      const from = importedFrom(have)
-      if (from !== undefined && from === importedFrom(text)) {
-        edited.push(rel)
-        continue
-      }
+  for (const [rel, text] of [...p.files].sort(([a], [b]) => (a < b ? -1 : 1)))
+    if (todo.has(rel)) {
+      mkdirSync(dirname(join(root, rel)), { recursive: true })
+      writeFileSync(join(root, rel), text)
+      changed.push(rel)
     }
-    put(rel, () => writeFileSync(file, text), have === text)
-  }
   for (const [rel, from] of [...p.copies].sort(([a], [b]) => (a < b ? -1 : 1)))
-    put(
-      rel,
-      () => copyFileSync(from, join(root, rel)),
-      existsSync(join(root, rel)) && readFileSync(join(root, rel)).equals(readFileSync(from)),
-    )
-  const kept: string[] = []
-  for (const rel of p.removed) {
-    const main = rel.startsWith('methods/') ? `${rel}/${posix.basename(rel)}.md` : rel
-    const file = join(root, main)
-    if (!force && existsSync(file) && editedByHand(readFileSync(file, 'utf8'))) {
-      edited.push(rel)
-      kept.push(rel)
-      continue
+    if (todo.has(rel)) {
+      mkdirSync(dirname(join(root, rel)), { recursive: true })
+      copyFileSync(from, join(root, rel))
+      changed.push(rel)
     }
-    rmSync(join(root, rel), { recursive: true, force: true })
-  }
-  p.removed = p.removed.filter((r) => !kept.includes(r))
+  if (force) for (const rel of p.removed) rmSync(join(root, rel), { recursive: true, force: true })
   return changed
-}
-
-/** The `imported_from` of a record's text, or undefined. */
-function importedFrom(text: string): string | undefined {
-  const fm = /^---\n([\s\S]*?)\n---/u.exec(text)?.[1]
-  if (fm === undefined) return undefined
-  try {
-    const v = (parse(fm) as Record<string, unknown> | null)?.['imported_from']
-    return typeof v === 'string' ? v : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/** Whether anyone but this importer has a contribution on the record: a sign of hand edits. */
-function editedByHand(text: string): boolean {
-  const fm = /^---\n([\s\S]*?)\n---/u.exec(text)?.[1]
-  if (fm === undefined) return false
-  try {
-    const c = (parse(fm) as Record<string, unknown> | null)?.['contributions']
-    return (
-      Array.isArray(c) &&
-      c.some((x) => (x as { contributor?: { name?: string } })?.contributor?.name !== IMPORTER)
-    )
-  } catch {
-    return false
-  }
 }
 
 const walkFiles = (dir: string, base = ''): string[] =>
@@ -953,16 +929,24 @@ function loadDataset(): Dataset {
   return dataset
 }
 
-/** Plan and write the import. Fixture copy sources resolve against the probes folder. */
+/**
+ * Plan the import and compare it with the corpus. It writes only when asked: `write` adds files
+ * that do not exist yet, `force` also overwrites and removes.
+ */
 export function importAlpha(
   categories: Set<string>,
   betaRoot: string = BETA,
   dataset?: Dataset,
-  options: { force?: boolean } = {},
-): { plan: Plan; changed: string[] } {
+  options: { write?: boolean; force?: boolean } = {},
+): { plan: Plan; diff: Diff; changed: string[] } {
   const p = plan(defaultContext(categories, betaRoot, dataset))
   for (const [rel, from] of p.copies) p.copies.set(rel, join(ROOT, 'probes', from))
-  return { plan: p, changed: writePlan(betaRoot, p, options) }
+  const diff = diffPlan(betaRoot, p)
+  const changed =
+    options.write === true || options.force === true
+      ? writePlan(betaRoot, p, { force: options.force === true })
+      : []
+  return { plan: p, diff, changed }
 }
 
 function main(argv: string[]): number {
@@ -972,6 +956,7 @@ function main(argv: string[]): number {
       category: { type: 'string', multiple: true },
       all: { type: 'boolean' },
       beta: { type: 'string' },
+      write: { type: 'boolean' },
       force: { type: 'boolean' },
     },
   })
@@ -981,28 +966,41 @@ function main(argv: string[]): number {
   const unknown = [...chosen].filter((c) => !known.has(c))
   if (chosen.size === 0 || unknown.length > 0) {
     console.error(
-      `usage: import-alpha (--category <id>)... | --all [--beta <dir>] [--force]\ncategories: ${[...known].join(', ')}${unknown.length > 0 ? `\nunknown: ${unknown.join(', ')}` : ''}`,
+      `usage: import-alpha (--category <id>)... | --all [--beta <dir>] [--write | --force]\ncategories: ${[...known].join(', ')}${unknown.length > 0 ? `\nunknown: ${unknown.join(', ')}` : ''}`,
     )
     return 2
   }
-  const { plan: p, changed } = importAlpha(
-    chosen,
-    values.beta === undefined ? BETA : resolve(values.beta),
-    dataset,
-    { force: values.force === true },
-  )
-  for (const w of p.warnings) console.error(`warning: ${w}`)
-  for (const r of p.removed) console.log(`removed ${r}`)
-  for (const r of p.edited ?? []) console.log(`edited since import, left alone: ${r}`)
+  const force = values.force === true
+  const {
+    plan: p,
+    diff,
+    changed,
+  } = importAlpha(chosen, values.beta === undefined ? BETA : resolve(values.beta), dataset, {
+    write: values.write === true,
+    force,
+  })
+  for (const w of p.warnings) console.warn(`warning: ${w}`)
   console.log(
     Object.entries(p.counts)
       .map(([k, n]) => `${n} ${k}`)
       .join(', '),
   )
-  console.log(
-    `${changed.length} file(s) written, ${p.files.size + p.copies.size - changed.length} unchanged`,
-  )
-  return 0
+  const written = new Set(changed)
+  const removed = force ? diff.remove : []
+  const left = {
+    add: diff.add.filter((r) => !written.has(r)),
+    overwrite: diff.overwrite.filter((r) => !written.has(r)),
+    remove: diff.remove.filter((r) => !removed.includes(r)),
+  }
+  const verb = changed.length > 0 || removed.length > 0 ? 'wrote' : 'would write'
+  for (const r of changed) console.log(`wrote ${r}`)
+  for (const r of removed) console.log(`removed ${r}`)
+  for (const r of left.add) console.log(`${verb === 'wrote' ? 'not written' : 'would write'}: ${r}`)
+  for (const r of left.overwrite) console.log(`differs, would overwrite (needs --force): ${r}`)
+  for (const r of left.remove) console.log(`would remove (needs --force): ${r}`)
+  const pending = left.add.length + left.overwrite.length + left.remove.length
+  console.log(`${changed.length} written, ${removed.length} removed, ${pending} pending`)
+  return pending === 0 ? 0 : 1
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))

@@ -26,6 +26,7 @@ import {
   notePath,
   plan,
   writePlan,
+  diffPlan,
 } from './import-alpha.ts'
 import { lint } from './lint.ts'
 
@@ -308,13 +309,11 @@ describe('cli import', () => {
   test('regenerating the committed cli import changes nothing', () => {
     const first = importAlpha(new Set(['cli']), dir)
     assert.deepEqual(first.changed, [])
+    assert.deepEqual(first.diff, { add: [], overwrite: [], remove: [] })
     assert.deepEqual(first.plan.warnings, [])
     assert.equal(first.plan.counts['statements'], 30)
     assert.equal(first.plan.counts['study-results'], 30)
     assert.equal(first.plan.counts['facts'], 30)
-    const second = importAlpha(new Set(['cli']), dir)
-    assert.deepEqual(second.changed, [])
-    assert.deepEqual(second.plan.removed, [])
   })
 
   test('is byte-identical from an empty corpus, and the result validates and lints', () => {
@@ -331,7 +330,7 @@ describe('cli import', () => {
         cpSync(join(BETA, t, `${t}.schema.md`), join(fresh, t, `${t}.schema.md`))
       for (const f of ['corpus-schema.md', 'README.md']) cpSync(join(BETA, f), join(fresh, f))
       cpSync(join(BETA, 'harnesses'), join(fresh, 'harnesses'), { recursive: true })
-      const r = importAlpha(new Set(['cli']), fresh)
+      const r = importAlpha(new Set(['cli']), fresh, undefined, { write: true })
       assert.ok(r.changed.length > 60)
       const beta = loadBeta(fresh)
       // Documents the corpus cites that only the full corpus holds are missing here, so only the
@@ -346,7 +345,10 @@ describe('cli import', () => {
       try {
         cpSync(fresh, again, { recursive: true })
         for (const rel of r.changed) rmSync(join(again, rel), { force: true })
-        assert.deepEqual(importAlpha(new Set(['cli']), again).changed.sort(), [...r.changed].sort())
+        assert.deepEqual(
+          importAlpha(new Set(['cli']), again, undefined, { write: true }).changed.sort(),
+          [...r.changed].sort(),
+        )
         for (const rel of r.changed)
           assert.equal(
             readFileSync(join(again, rel), 'utf8'),
@@ -356,7 +358,7 @@ describe('cli import', () => {
       } finally {
         rmSync(again, { recursive: true, force: true })
       }
-      assert.deepEqual(importAlpha(new Set(['cli']), fresh).changed, [])
+      assert.deepEqual(importAlpha(new Set(['cli']), fresh, undefined, { write: true }).changed, [])
     } finally {
       rmSync(fresh, { recursive: true, force: true })
     }
@@ -639,52 +641,55 @@ describe('identity and scope', () => {
     assert.ok(p.removed.includes('statements/Pi/Pi Thing.md'))
   })
 
-  describe('edits since the import', () => {
+  describe('report-only by default', () => {
     const FORK = 'statements/Claude Code/Claude Code Fork a session.md'
-    const edited = (): string => {
+    const edit = (): string => {
       const file = join(dir, FORK)
       writeFileSync(file, readFileSync(file, 'utf8').replace('strength: strong', 'strength: weak'))
       return readFileSync(file, 'utf8')
     }
 
-    test('a record edited since the import is left alone and reported', () => {
-      const text = edited()
+    test('a hand-edited record is reported and left alone', () => {
+      const text = edit()
       const r = importAlpha(new Set(['cli']), dir)
       assert.deepEqual(r.changed, [])
-      assert.deepEqual(r.plan.edited, [FORK])
+      assert.deepEqual(r.diff, { add: [], overwrite: [FORK], remove: [] })
+      assert.equal(readFileSync(join(dir, FORK), 'utf8'), text)
+      // --write adds new files only, so it leaves the edit too.
+      assert.deepEqual(importAlpha(new Set(['cli']), dir, undefined, { write: true }).changed, [])
       assert.equal(readFileSync(join(dir, FORK), 'utf8'), text)
     })
 
-    test('--force writes the importer output over it', () => {
-      edited()
+    test('a record that lost its frontmatter is reported, not overwritten', () => {
+      writeFileSync(join(dir, FORK), 'not a record\n')
+      const r = importAlpha(new Set(['cli']), dir, undefined, { write: true })
+      assert.deepEqual(r.diff.overwrite, [FORK])
+      assert.equal(readFileSync(join(dir, FORK), 'utf8'), 'not a record\n')
+    })
+
+    test('--write adds a missing file, --force overwrites', () => {
+      rmSync(join(dir, FORK))
+      assert.deepEqual(importAlpha(new Set(['cli']), dir, undefined, { write: true }).changed, [
+        FORK,
+      ])
+      edit()
       const r = importAlpha(new Set(['cli']), dir, undefined, { force: true })
       assert.deepEqual(r.changed, [FORK])
       assert.match(readFileSync(join(dir, FORK), 'utf8'), /strength: strong/)
     })
 
-    test('retiring a record someone else contributed to is skipped and reported', () => {
+    test('a retired record is removed only with force', () => {
       const rel = 'statements/Pi/Pi Thing.md'
       const ds = dataset([fact('zz/thing', { observations: [obs({})] })])
-      const ctx = (): Context => ({ ...context([]), dataset: ds, beta: loadBeta(dir) })
-      writePlan(dir, plan(ctx()))
+      writePlan(dir, plan({ ...context([]), dataset: ds, beta: loadBeta(dir) }))
       assert.ok(existsSync(join(dir, rel)))
-      const file = join(dir, rel)
-      writeFileSync(
-        file,
-        readFileSync(file, 'utf8').replace(
-          'contributions:\n',
-          'contributions:\n  - contributor: { name: Researcher, agentType: person }\n    activityType: reviewed\n    date: 2026-11-10T00:00:00Z\n',
-        ),
-      )
-      const empty: Context = { ...ctx(), dataset: dataset([]) }
+      const empty: Context = { ...context([]), dataset: dataset([]), beta: loadBeta(dir) }
       const p = plan(empty)
-      assert.ok(p.removed.includes(rel))
+      assert.ok(diffPlan(dir, p).remove.includes(rel))
       writePlan(dir, p)
-      assert.ok(existsSync(file), 'kept')
-      assert.deepEqual(p.edited, [rel])
-      assert.equal(p.removed.includes(rel), false)
-      writePlan(dir, plan({ ...empty, beta: loadBeta(dir) }), { force: true })
-      assert.equal(existsSync(file), false, 'force removes it')
+      assert.ok(existsSync(join(dir, rel)), 'kept')
+      writePlan(dir, p, { force: true })
+      assert.equal(existsSync(join(dir, rel)), false)
     })
   })
 })

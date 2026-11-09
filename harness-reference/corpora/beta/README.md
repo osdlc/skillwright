@@ -86,10 +86,13 @@ on a note. Replace the note with the upstream page as study results are captured
 
 Alpha is frozen and its facts are imported, so imported records are ordinary records now: edit
 them freely to add evidence lines, mark a statement superseded or fix a value. `imported_from`
-stays on a record as provenance. `import-alpha` never overwrites a record whose `imported_from`
-matches but whose content differs from what it would write: it reports it as "edited since
-import" and leaves it. It also keeps a record it would retire when someone besides the importer
-has a contribution on it. `--force` writes and retires regardless.
+stays on a record as provenance.
+
+`import-alpha` is report-only by default. It builds its plan and prints what it would write,
+overwrite and remove, and which existing records differ from its output. It exits 0 when there
+is nothing to do and 1 otherwise. `--write` adds files that do not exist yet and never touches an
+existing file. `--force` writes, overwrites and removes everything in the plan, discarding hand
+edits.
 
 ## Recording a study result
 
