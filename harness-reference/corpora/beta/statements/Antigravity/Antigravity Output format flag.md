@@ -17,7 +17,7 @@ proposition:
         argv:
           - --output-format
           - stream-json
-    notes: text is the default; json prints one envelope at the end; stream-json is NDJSON with init, step_update and result events
+    note: text is the default; json prints one envelope at the end; stream-json is NDJSON with init, step_update and result events
 direction: supports
 strength: moderate
 hasEvidenceLines:
