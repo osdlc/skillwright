@@ -89,8 +89,9 @@ them freely to add evidence lines, mark a statement superseded or fix a value. `
 stays on a record as provenance.
 
 `import-alpha` is report-only by default. It builds its plan and prints what it would write,
-overwrite and remove, and which existing records differ from its output. It exits 0 when there
-is nothing to do and 1 otherwise. `--write` adds files that do not exist yet and never touches an
+overwrite and remove, and which existing records differ from its output. A record that differs
+has been edited since the import: it is listed and does not fail the run. It exits 1 only when a
+file is missing or a record would be retired, and 0 otherwise. `--write` adds files that do not exist yet and never touches an
 existing file. `--force` writes, overwrites and removes everything in the plan, discarding hand
 edits.
 

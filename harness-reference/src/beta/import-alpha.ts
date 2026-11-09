@@ -996,10 +996,15 @@ function main(argv: string[]): number {
   for (const r of changed) console.log(`wrote ${r}`)
   for (const r of removed) console.log(`removed ${r}`)
   for (const r of left.add) console.log(`${verb === 'wrote' ? 'not written' : 'would write'}: ${r}`)
-  for (const r of left.overwrite) console.log(`differs, would overwrite (needs --force): ${r}`)
+  for (const r of left.overwrite)
+    console.log(`edited since import, left alone (--force overwrites): ${r}`)
   for (const r of left.remove) console.log(`would remove (needs --force): ${r}`)
-  const pending = left.add.length + left.overwrite.length + left.remove.length
-  console.log(`${changed.length} written, ${removed.length} removed, ${pending} pending`)
+  // A record that merely differs has been edited since the import, which is expected: it is
+  // listed and does not fail the run.
+  const pending = left.add.length + left.remove.length
+  console.log(
+    `${changed.length} written, ${removed.length} removed, ${pending} pending, ${left.overwrite.length} edited`,
+  )
   return pending === 0 ? 0 : 1
 }
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
+import { spawnSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
@@ -309,7 +310,8 @@ describe('cli import', () => {
   test('regenerating the committed cli import changes nothing', () => {
     const first = importAlpha(new Set(['cli']), dir)
     assert.deepEqual(first.changed, [])
-    assert.deepEqual(first.diff, { add: [], overwrite: [], remove: [] })
+    // Records edited since the import may differ; none may be missing or retired.
+    assert.deepEqual([first.diff.add, first.diff.remove], [[], []])
     assert.deepEqual(first.plan.warnings, [])
     assert.equal(first.plan.counts['statements'], 30)
     assert.equal(first.plan.counts['study-results'], 30)
@@ -658,6 +660,19 @@ describe('identity and scope', () => {
       // --write adds new files only, so it leaves the edit too.
       assert.deepEqual(importAlpha(new Set(['cli']), dir, undefined, { write: true }).changed, [])
       assert.equal(readFileSync(join(dir, FORK), 'utf8'), text)
+    })
+
+    test('the command exits 0 with edited records, and 1 with a pending add', () => {
+      edit()
+      const run = (): number =>
+        spawnSync(
+          process.execPath,
+          [join(import.meta.dirname, 'import-alpha.ts'), '--category', 'cli', '--beta', dir],
+          { encoding: 'utf8' },
+        ).status ?? -1
+      assert.equal(run(), 0)
+      rmSync(join(dir, FORK))
+      assert.equal(run(), 1)
     })
 
     test('a record that lost its frontmatter is reported, not overwritten', () => {
