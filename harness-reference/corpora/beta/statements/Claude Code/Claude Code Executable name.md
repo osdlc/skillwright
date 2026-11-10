@@ -12,10 +12,10 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 help binary usage](../../study-results/Claude%20Code/2026-11-09%20help%20binary%20usage.md)"
+      - "[2026-11-09 version output](../../study-results/Claude%20Code/2026-11-09%20version%20output.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: "`claude --help` prints `Usage: claude [options] [command] [prompt]`."
+    description: "`claude --version` printed `2.1.319 (Claude Code)`."
   - hasEvidenceItems:
       - "[2026-11-09 docs setup launcher path](../../study-results/Claude%20Code/2026-11-09%20docs%20setup%20launcher%20path.md)"
     directionOfEvidenceProvided: supports

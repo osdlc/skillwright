@@ -40,15 +40,30 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 help permission mode](../../study-results/Claude%20Code/2026-11-09%20help%20permission%20mode.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: Help text lists the choices acceptEdits, auto, bypassPermissions, manual, dontAsk, plan.
-  - hasEvidenceItems:
       - "[2026-11-09 docs cli permission-mode](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20permission-mode.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference lists default, acceptEdits, plan, auto, dontAsk, bypassPermissions and the manual alias.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs perm modes table](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20table.md)"
+      - "[2026-11-09 docs perm modes plan](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20plan.md)"
+      - "[2026-11-09 docs perm modes accept](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20accept.md)"
+      - "[2026-11-09 docs perm modes auto](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20auto.md)"
+      - "[2026-11-09 docs perm modes bypass](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20bypass.md)"
+      - "[2026-11-09 docs perm modes dontask](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20dontask.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: The permission modes page says what each mode runs without asking.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs cli skip permissions](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20skip%20permissions.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: The CLI reference says --dangerously-skip-permissions is equivalent to --permission-mode bypassPermissions.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs perm modes auto start](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20modes%20auto%20start.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Auto is the starting mode for interactive terminal sessions from 2.1.283.
 contributions:
   - contributor:
       name: harness-reference research

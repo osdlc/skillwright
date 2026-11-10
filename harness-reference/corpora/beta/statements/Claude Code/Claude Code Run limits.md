@@ -19,15 +19,25 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 help max budget](../../study-results/Claude%20Code/2026-11-09%20help%20max%20budget.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: Help text lists --max-budget-usd, print mode only.
-  - hasEvidenceItems:
-      - "[2026-11-09 changelog max-turns](../../study-results/Claude%20Code/2026-11-09%20changelog%20max-turns.md)"
+      - "[2026-11-09 docs cli max-turns](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20max-turns.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: A 2.1.281 fix names --max-turns as a working limit.
+    description: The CLI reference documents --max-turns, print mode only.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs cli max-budget](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20max-budget.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: The CLI reference describes the budget cap.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs cli help not exhaustive](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20help%20not%20exhaustive.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: The docs say a flag missing from --help may still be available.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs env MAX_TURNS](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20MAX_TURNS.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: CLAUDE_CODE_MAX_TURNS is equivalent to --max-turns.
 contributions:
   - contributor:
       name: harness-reference research

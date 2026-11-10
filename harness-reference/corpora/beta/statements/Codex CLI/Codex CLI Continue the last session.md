@@ -23,6 +23,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Continue the last session prompt](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Continue%20the%20last%20session%20prompt.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: help-text observed 2026-11-09 at 0.162.0.
 contributions:
   - contributor:
       name: harness-reference research

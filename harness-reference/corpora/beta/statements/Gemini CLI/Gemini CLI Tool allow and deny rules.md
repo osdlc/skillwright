@@ -17,6 +17,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text for 0.65.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Policy engine deny docs](../../study-results/Gemini%20CLI/2026-11-09%20Policy%20engine%20deny%20docs.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: policy engine docs on deny and tools.exclude.
 contributions:
   - contributor:
       name: harness-reference research

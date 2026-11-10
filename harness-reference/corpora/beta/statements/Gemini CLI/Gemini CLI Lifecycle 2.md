@@ -12,10 +12,19 @@ strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 README on the Antigravity replacement](../../study-results/Gemini%20CLI/2026-11-09%20README%20on%20the%20Antigravity%20replacement.md)"
-      - "[2026-11-09 README at v0.67.0 on the Antigravity replacement](../../study-results/Gemini%20CLI/2026-11-09%20README%20at%20v0.67.0%20on%20the%20Antigravity%20replacement.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: "README: free and Google AI Pro/Ultra access moved to Antigravity CLI on 2026-06-18."
+  - hasEvidenceItems:
+      - "[2026-11-09 README on enterprise maintenance](../../study-results/Gemini%20CLI/2026-11-09%20README%20on%20enterprise%20maintenance.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: "README: maintained for enterprise Gemini Code Assist workflows."
+  - hasEvidenceItems:
+      - "[2026-11-09 Changelog latest stable release](../../study-results/Gemini%20CLI/2026-11-09%20Changelog%20latest%20stable%20release.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: "changelog: v0.65.0 stable release dated 2026-10-20."
 contributions:
   - contributor:
       name: harness-reference research

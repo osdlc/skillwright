@@ -17,10 +17,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: --continue in --help.
   - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs parameters continue](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20parameters%20continue.md)"
+      - "[2026-11-09 Cursor docs resume](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20resume.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: "Docs: alias for --resume=-1."
+    description: "`agent resume` resumes the latest chat."
 contributions:
   - contributor:
       name: harness-reference research

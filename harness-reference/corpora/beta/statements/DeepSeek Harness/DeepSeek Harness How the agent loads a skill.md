@@ -10,16 +10,16 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-10-08 DeepSeek Harness How the agent loads a skill](../../study-results/DeepSeek%20Harness/2026-10-08%20DeepSeek%20Harness%20How%20the%20agent%20loads%20a%20skill.md)"
-    directionOfEvidenceProvided: neutral
-    description: source observed 2026-10-08; its locator (skill-filesystem/README.md at 5badb150) does not state the mechanism, so it is neutral.
-  - hasEvidenceItems:
       - "[2026-11-04 DeepSeek Harness How the agent loads a skill](../../study-results/DeepSeek%20Harness/2026-11-04%20DeepSeek%20Harness%20How%20the%20agent%20loads%20a%20skill.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-04.
+  - hasEvidenceItems:
+      - "[2026-11-09 tool-skill user invocation](../../study-results/DeepSeek%20Harness/2026-11-09%20tool-skill%20user%20invocation.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09.
 reportedIn:
-  - "[DeepSeek Harness (dsh) harness notes for a dispatcher](../../documents/skillwright/DeepSeek%20Harness%20%28dsh%29%20harness%20notes%20for%20a%20dispatcher.md)"
   - "[dsh tool-skill package README](../../documents/github.com/dsh%20tool-skill%20package%20README.md)"
 contributions:
   - contributor:

@@ -21,6 +21,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 headless input format](../../study-results/Antigravity/2026-11-09%20headless%20input%20format.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
 reportedIn:
   - "[Antigravity docs CLI headless mode](../../documents/antigravity.google/Antigravity%20docs%20CLI%20headless%20mode.md)"
 contributions:

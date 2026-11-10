@@ -21,10 +21,15 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 Pi help update](../../study-results/Pi/2026-11-09%20Pi%20help%20update.md)"
+      - "[2026-11-09 Pi readme script install](../../study-results/Pi/2026-11-09%20Pi%20readme%20script%20install.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: "`pi update` updates pi itself by default."
+    strengthOfEvidenceProvided: moderate
+    description: README script install.
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi readme npm install](../../study-results/Pi/2026-11-09%20Pi%20readme%20npm%20install.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: README npm install.
   - hasEvidenceItems:
       - "[2026-11-09 Pi help update default](../../study-results/Pi/2026-11-09%20Pi%20help%20update%20default.md)"
     directionOfEvidenceProvided: supports

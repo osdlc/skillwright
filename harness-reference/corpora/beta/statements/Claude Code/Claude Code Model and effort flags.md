@@ -10,10 +10,10 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 help model](../../study-results/Claude%20Code/2026-11-09%20help%20model.md)"
+      - "[2026-11-09 help effort](../../study-results/Claude%20Code/2026-11-09%20help%20effort.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: "Help text: --model takes an alias or a full model name."
+    description: "Help text: --effort sets the effort level."
   - hasEvidenceItems:
       - "[2026-11-09 docs cli model](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20model.md)"
     directionOfEvidenceProvided: supports

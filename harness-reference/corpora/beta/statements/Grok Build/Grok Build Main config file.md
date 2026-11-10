@@ -10,17 +10,16 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-08-08 Grok Build Main config file](../../study-results/Grok%20Build/2026-08-08%20Grok%20Build%20Main%20config%20file.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: weak
-    description: third-party observed 2026-08-08.
-  - hasEvidenceItems:
       - "[2026-11-09 grok config location](../../study-results/Grok%20Build/2026-11-09%20grok%20config%20location.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 grok project config](../../study-results/Grok%20Build/2026-11-09%20grok%20project%20config.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
 reportedIn:
-  - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Grok Build user guide Configuration](../../documents/github.com/Grok%20Build%20user%20guide%20Configuration.md)"
 contributions:
   - contributor:

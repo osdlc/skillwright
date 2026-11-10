@@ -21,6 +21,16 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: Rule syntax.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor docs permissions precedence](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20permissions%20precedence.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Precedence.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor docs permissions mcp](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20permissions%20mcp.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: MCP rule form.
 contributions:
   - contributor:
       name: harness-reference research

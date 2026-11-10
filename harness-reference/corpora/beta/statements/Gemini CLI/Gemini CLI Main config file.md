@@ -14,10 +14,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: weak
     description: third-party observed 2026-08-08.
   - hasEvidenceItems:
-      - "[2026-11-09 Settings file docs](../../study-results/Gemini%20CLI/2026-11-09%20Settings%20file%20docs.md)"
+      - "[2026-11-09 Project settings file docs](../../study-results/Gemini%20CLI/2026-11-09%20Project%20settings%20file%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: "configuration reference: ~/.gemini/settings.json (user) and .gemini/settings.json (project)."
+    description: "configuration reference: .gemini/settings.json (project)."
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

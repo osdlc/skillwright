@@ -14,10 +14,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: The 2.1.277 changelog adds AGENTS.md support.
   - hasEvidenceItems:
-      - "[2026-11-09 docs memory agents-md](../../study-results/Claude%20Code/2026-11-09%20docs%20memory%20agents-md.md)"
+      - "[2026-11-09 docs memory agents-md rule](../../study-results/Claude%20Code/2026-11-09%20docs%20memory%20agents-md%20rule.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: The memory page says Claude Code can read AGENTS.md as project instructions.
+    description: By default AGENTS.md is read only when there is no CLAUDE.md.
 contributions:
   - contributor:
       name: harness-reference research

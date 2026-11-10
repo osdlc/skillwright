@@ -20,6 +20,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Model and effort flags model list](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Model%20and%20effort%20flags%20model%20list.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: help-text observed 2026-11-09 at 0.162.0.
 contributions:
   - contributor:
       name: harness-reference research

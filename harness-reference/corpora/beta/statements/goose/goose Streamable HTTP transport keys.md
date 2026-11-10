@@ -14,7 +14,7 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: weak
     description: third-party observed 2026-08-08.
   - hasEvidenceItems:
-      - "[2026-11-09 config-files streamable uri](../../study-results/goose/2026-11-09%20config-files%20streamable%20uri.md)"
+      - "[2026-11-09 config-files extension types](../../study-results/goose/2026-11-09%20config-files%20extension%20types.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.

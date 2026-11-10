@@ -11,10 +11,10 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Resume a session help](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Resume%20a%20session%20help.md)"
+      - "[2026-09-25 Codex CLI Resume a session](../../study-results/Codex%20CLI/2026-09-25%20Codex%20CLI%20Resume%20a%20session.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: help-text observed 2026-11-09 at 0.162.0.
+    description: help-text observed 2026-09-25.
   - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Resume a session interactive](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Resume%20a%20session%20interactive.md)"
     directionOfEvidenceProvided: supports

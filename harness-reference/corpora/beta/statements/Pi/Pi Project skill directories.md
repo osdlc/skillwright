@@ -11,10 +11,10 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-10-01 Pi Project skill directories](../../study-results/Pi/2026-10-01%20Pi%20Project%20skill%20directories.md)"
+      - "[2026-11-09 Pi skills agents dirs](../../study-results/Pi/2026-11-09%20Pi%20skills%20agents%20dirs.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-10-01.
+    strengthOfEvidenceProvided: moderate
+    description: "Skills page: .agents/skills walk."
   - hasEvidenceItems:
       - "[2026-11-09 Pi skills project dirs](../../study-results/Pi/2026-11-09%20Pi%20skills%20project%20dirs.md)"
     directionOfEvidenceProvided: supports
@@ -52,8 +52,6 @@ imported_from: fact:skills/project-dirs@pi#scope-[null,null,null]
 
 Imported from `facts/pi/skills/project-dirs.md`.
 
-The observations disagree on: dirs. The latest value is kept.
-
-Rechecked 2026-11-09 against the installed pi 1.5.0 and the v1.5.0 source tree. The dispute was an incomplete old list.
+Rechecked 2026-11-09 against the installed pi 1.5.0 and the v1.5.0 source tree.
 
 Strength lowered 2026-11-09: the ancestor walk to the repository root rests on docs only; the source line shows the .pi skills directory.

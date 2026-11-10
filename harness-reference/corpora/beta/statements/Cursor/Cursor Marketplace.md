@@ -9,10 +9,10 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs marketplace repos](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20marketplace%20repos.md)"
+      - "[2026-08-08 Cursor Marketplace](../../study-results/Cursor/2026-08-08%20Cursor%20Marketplace.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: .cursor-plugin/marketplace.json for multi-plugin repositories.
+    strengthOfEvidenceProvided: weak
+    description: third-party observed 2026-08-08.
   - hasEvidenceItems:
       - "[2026-11-09 Cursor help plugin marketplace](../../study-results/Cursor/2026-11-09%20Cursor%20help%20plugin%20marketplace.md)"
     directionOfEvidenceProvided: supports

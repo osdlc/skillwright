@@ -22,9 +22,15 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 GitHub Copilot CLI Allow all tools option docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Allow%20all%20tools%20option%20docs.md)"
       - "[2026-11-09 GitHub Copilot CLI Allow all option docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Allow%20all%20option%20docs.md)"
+      - "[2026-11-09 GitHub Copilot CLI Yolo option docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Yolo%20option%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: command reference.
+  - hasEvidenceItems:
+      - "[2026-11-09 GitHub Copilot CLI Mode option docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Mode%20option%20docs.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: command reference on --mode.
 contributions:
   - contributor:
       name: harness-reference research

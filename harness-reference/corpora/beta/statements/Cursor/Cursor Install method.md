@@ -21,15 +21,15 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs install](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20install.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Install page.
-  - hasEvidenceItems:
       - "[2026-11-09 Cursor help update](../../study-results/Cursor/2026-11-09%20Cursor%20help%20update.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: The CLI lists an update command.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor docs install platforms](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20install%20platforms.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Platforms.
 contributions:
   - contributor:
       name: harness-reference research

@@ -33,6 +33,9 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code Approval mode option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20option%20source.md)"
       - "[2026-11-09 Qwen Code Approval mode auto source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20auto%20source.md)"
+      - "[2026-11-09 Qwen Code Approval mode plan source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20plan%20source.md)"
+      - "[2026-11-09 Qwen Code Approval mode auto-edit source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20auto-edit%20source.md)"
+      - "[2026-11-09 Qwen Code Approval mode yolo source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Approval%20mode%20yolo%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: approval mode option and descriptions in the source at v0.27.0.

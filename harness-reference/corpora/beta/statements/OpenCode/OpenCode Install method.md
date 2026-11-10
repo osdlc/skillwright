@@ -29,6 +29,7 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode README v2.1.0 install](../../study-results/OpenCode/2026-11-09%20OpenCode%20README%20v2.1.0%20install.md)"
       - "[2026-11-09 OpenCode README v2.1.0 npm install](../../study-results/OpenCode/2026-11-09%20OpenCode%20README%20v2.1.0%20npm%20install.md)"
+      - "[2026-11-09 OpenCode README v2.1.0 brew install](../../study-results/OpenCode/2026-11-09%20OpenCode%20README%20v2.1.0%20brew%20install.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: README at v2.1.0, the first tag listing all three.

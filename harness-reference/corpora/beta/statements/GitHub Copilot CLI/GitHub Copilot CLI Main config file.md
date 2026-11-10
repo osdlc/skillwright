@@ -17,7 +17,7 @@ hasEvidenceLines:
       - "[2026-11-09 GitHub Copilot CLI Settings file docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Settings%20file%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: "config directory reference: settings.json under ~/.copilot, relocatable by COPILOT_HOME."
+    description: "config directory reference: settings.json under ~/.copilot."
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

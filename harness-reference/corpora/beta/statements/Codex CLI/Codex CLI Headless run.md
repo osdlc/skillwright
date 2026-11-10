@@ -10,12 +10,12 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Headless run help](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Headless%20run%20help.md)"
+      - "[2026-09-25 Codex CLI Headless run](../../study-results/Codex%20CLI/2026-09-25%20Codex%20CLI%20Headless%20run.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: help-text observed 2026-11-09 at 0.162.0.
+    description: help-text observed 2026-09-25.
   - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Headless run subcommands](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Headless%20run%20subcommands.md)"
+      - "[2026-11-09 Codex CLI Headless run help](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Headless%20run%20help.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text observed 2026-11-09 at 0.162.0.

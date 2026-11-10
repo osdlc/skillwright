@@ -14,15 +14,15 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 help no session persistence](../../study-results/Claude%20Code/2026-11-09%20help%20no%20session%20persistence.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: "Help text: sessions are not saved to disk and cannot be resumed; print mode only."
-  - hasEvidenceItems:
       - "[2026-11-09 docs cli no-session-persistence](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20no-session-persistence.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference names the environment variable that does the same in any mode.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs env SKIP_PROMPT_HISTORY](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20SKIP_PROMPT_HISTORY.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: The variable skips writing prompt history and transcripts.
 contributions:
   - contributor:
       name: harness-reference research

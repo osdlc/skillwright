@@ -14,7 +14,7 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: weak
     description: third-party observed 2026-08-08.
   - hasEvidenceItems:
-      - "[2026-11-09 Qwen Code User settings file docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20User%20settings%20file%20docs.md)"
+      - "[2026-11-09 Qwen Code Project settings file docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Project%20settings%20file%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: settings docs at v0.27.0.

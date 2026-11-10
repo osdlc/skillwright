@@ -22,10 +22,15 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: "`--session-id <uuid>` assigns the id; it must be a valid UUID."
   - hasEvidenceItems:
-      - "[2026-11-09 docs cli session-id](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20session-id.md)"
+      - "[2026-11-09 docs headless session id](../../study-results/Claude%20Code/2026-11-09%20docs%20headless%20session%20id.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: The CLI reference repeats the flag.
+    description: The docs read the id from the json result field session_id.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs env SESSION_ID](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20SESSION_ID.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: CLAUDE_CODE_SESSION_ID carries the id in tool, hook and stdio MCP subprocesses.
 contributions:
   - contributor:
       name: harness-reference research

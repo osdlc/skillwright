@@ -10,12 +10,12 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 subagents locations](../../study-results/Antigravity/2026-11-09%20subagents%20locations.md)"
+      - "[2026-11-09 subagents workspace and global paths](../../study-results/Antigravity/2026-11-09%20subagents%20workspace%20and%20global%20paths.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
   - hasEvidenceItems:
-      - "[2026-11-09 subagents workspace and global paths](../../study-results/Antigravity/2026-11-09%20subagents%20workspace%20and%20global%20paths.md)"
+      - "[2026-11-09 subagents yaml frontmatter](../../study-results/Antigravity/2026-11-09%20subagents%20yaml%20frontmatter.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.

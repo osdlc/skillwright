@@ -17,6 +17,11 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
   - hasEvidenceItems:
+      - "[2026-11-09 execute mode stdin](../../study-results/Amp/2026-11-09%20execute%20mode%20stdin.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
+  - hasEvidenceItems:
       - "[2026-11-09 streaming json continue command](../../study-results/Amp/2026-11-09%20streaming%20json%20continue%20command.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

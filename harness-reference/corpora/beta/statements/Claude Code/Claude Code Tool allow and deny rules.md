@@ -17,15 +17,20 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 help allowed tools](../../study-results/Claude%20Code/2026-11-09%20help%20allowed%20tools.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: Help text lists --allowedTools with a Tool(pattern) example.
-  - hasEvidenceItems:
       - "[2026-11-09 docs cli allowed tools](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20allowed%20tools.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference says allowed tools run without prompting.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs cli disallowed tools](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20disallowed%20tools.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: The CLI reference says a bare name removes the tool and a scoped rule denies matching calls.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs perm precedence](../../study-results/Claude%20Code/2026-11-09%20docs%20perm%20precedence.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: The permissions page gives the rule order.
 contributions:
   - contributor:
       name: harness-reference research

@@ -14,15 +14,15 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
+      - "[2026-10-01 Cursor Project skill directories](../../study-results/Cursor/2026-10-01%20Cursor%20Project%20skill%20directories.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-10-01.
+  - hasEvidenceItems:
       - "[2026-11-09 Cursor docs skill dirs](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20skill%20dirs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: Skill directories table.
-  - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs skill compat dirs](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20skill%20compat%20dirs.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Claude and Codex directories load for compatibility.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Cursor docs Agent Skills](../../documents/cursor.com/Cursor%20docs%20Agent%20Skills.md)"
@@ -50,6 +50,4 @@ imported_from: fact:skills/project-dirs@cursor#scope-[null,null,null]
 
 Imported from `facts/cursor/skills/project-dirs.md`.
 
-The observations disagree on: dirs. The latest value is kept.
-
-Rechecked 2026-11-09 against the installed CLI and vendor docs. The dispute was only a flattened list, so the statement is current.
+Rechecked 2026-11-09 against the installed CLI and vendor docs.

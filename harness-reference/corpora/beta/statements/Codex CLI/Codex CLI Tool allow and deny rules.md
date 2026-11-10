@@ -15,6 +15,11 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09 at 0.162.0.
   - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Tool allow and deny rules format](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Tool%20allow%20and%20deny%20rules%20format.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Tool allow and deny rules flag](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Tool%20allow%20and%20deny%20rules%20flag.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

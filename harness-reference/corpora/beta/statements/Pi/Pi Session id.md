@@ -23,6 +23,21 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: cli.md constraints.
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi cli session id characters](../../study-results/Pi/2026-11-09%20Pi%20cli%20session%20id%20characters.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Characters.
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi cli session id edges](../../study-results/Pi/2026-11-09%20Pi%20cli%20session%20id%20edges.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: Edges.
+  - hasEvidenceItems:
+      - "[2026-11-09 Pi env session table](../../study-results/Pi/2026-11-09%20Pi%20env%20session%20table.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: PI_SESSION_ID.
 contributions:
   - contributor:
       name: harness-reference research

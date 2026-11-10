@@ -20,10 +20,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: source at v1.17.12, the first 1.x tag with the option.
   - hasEvidenceItems:
-      - "[2026-11-09 OpenCode Auto flag source v2.2.6](../../study-results/OpenCode/2026-11-09%20OpenCode%20Auto%20flag%20source%20v2.2.6.md)"
+      - "[2026-11-09 OpenCode OPENCODE_PERMISSION source v1.19.5](../../study-results/OpenCode/2026-11-09%20OpenCode%20OPENCODE_PERMISSION%20source%20v1.19.5.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: source at v2.2.6.
+    description: OPENCODE_PERMISSION in the v1.19.5 flags.
 contributions:
   - contributor:
       name: harness-reference research

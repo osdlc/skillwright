@@ -23,6 +23,11 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: "A GitHub owner/repo source takes #ref to pin a branch or tag."
   - hasEvidenceItems:
+      - "[2026-11-09 docs pinstall git url ref](../../study-results/Claude%20Code/2026-11-09%20docs%20pinstall%20git%20url%20ref.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: "A full clone URL takes #ref to pin a branch or tag."
+  - hasEvidenceItems:
       - "[2026-11-09 help marketplace add](../../study-results/Claude%20Code/2026-11-09%20help%20marketplace%20add.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

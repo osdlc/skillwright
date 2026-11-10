@@ -21,6 +21,10 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source at v2.2.6.
+  - hasEvidenceItems:
+      - "[2026-11-09 OpenCode CLI docs variant row](../../study-results/OpenCode/2026-11-09%20OpenCode%20CLI%20docs%20variant%20row.md)"
+    directionOfEvidenceProvided: neutral
+    description: the v2.2.6 docs table still lists --variant.
 contributions:
   - contributor:
       name: harness-reference research

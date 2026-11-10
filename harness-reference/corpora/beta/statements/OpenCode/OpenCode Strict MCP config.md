@@ -13,13 +13,10 @@ strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode Inline config env docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Inline%20config%20env%20docs.md)"
+      - "[2026-11-09 OpenCode Disable project config docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Disable%20project%20config%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: env var table.
-  - hasEvidenceItems:
-      - "[2026-11-09 OpenCode MCP command help](../../study-results/OpenCode/2026-11-09%20OpenCode%20MCP%20command%20help.md)"
-    directionOfEvidenceProvided: neutral
-    description: "help-text for 1.1.36: the mcp command manages servers."
 contributions:
   - contributor:
       name: harness-reference research

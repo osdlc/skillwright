@@ -22,6 +22,7 @@ hasEvidenceLines:
     description: storage source at v0.27.0.
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code QWEN_HOME docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20QWEN_HOME%20docs.md)"
+      - "[2026-11-09 Qwen Code QWEN_HOME scope docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20QWEN_HOME%20scope%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: settings docs.

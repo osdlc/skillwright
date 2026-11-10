@@ -17,6 +17,7 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code Allowed tools option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Allowed%20tools%20option%20source.md)"
       - "[2026-11-09 Qwen Code Allowed tools description source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Allowed%20tools%20description%20source.md)"
+      - "[2026-11-09 Qwen Code Exclude tools option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Exclude%20tools%20option%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: option source at v0.27.0.

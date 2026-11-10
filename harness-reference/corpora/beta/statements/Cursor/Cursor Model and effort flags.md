@@ -20,6 +20,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: --list-models.
+  - hasEvidenceItems:
+      - "[2026-11-09 Cursor help models command](../../study-results/Cursor/2026-11-09%20Cursor%20help%20models%20command.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: "`models` command."
 contributions:
   - contributor:
       name: harness-reference research

@@ -36,6 +36,9 @@ strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 GitHub Copilot CLI README curl install](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20README%20curl%20install.md)"
+      - "[2026-11-09 GitHub Copilot CLI README npm install](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20README%20npm%20install.md)"
+      - "[2026-11-09 GitHub Copilot CLI README brew install](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20README%20brew%20install.md)"
+      - "[2026-11-09 GitHub Copilot CLI README winget install](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20README%20winget%20install.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: README installation section.

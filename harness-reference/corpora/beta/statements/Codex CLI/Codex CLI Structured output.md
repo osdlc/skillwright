@@ -10,12 +10,12 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Structured output help](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Structured%20output%20help.md)"
+      - "[2026-09-25 Codex CLI Structured output](../../study-results/Codex%20CLI/2026-09-25%20Codex%20CLI%20Structured%20output.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
-    description: help-text observed 2026-11-09 at 0.162.0.
+    description: help-text observed 2026-09-25.
   - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Structured output last message](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Structured%20output%20last%20message.md)"
+      - "[2026-11-09 Codex CLI Structured output help](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Structured%20output%20help.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text observed 2026-11-09 at 0.162.0.

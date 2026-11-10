@@ -20,6 +20,16 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
+  - hasEvidenceItems:
+      - "[2026-11-04 Claude Code How the agent loads a skill 2](../../study-results/Claude%20Code/2026-11-04%20Claude%20Code%20How%20the%20agent%20loads%20a%20skill%202.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-04.
+  - hasEvidenceItems:
+      - "[2026-11-04 Claude Code How the agent loads a skill 3](../../study-results/Claude%20Code/2026-11-04%20Claude%20Code%20How%20the%20agent%20loads%20a%20skill%203.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-04.
 reportedIn:
   - "[Claude Code docs skills](../../documents/code.claude.com/Claude%20Code%20docs%20skills.md)"
   - "[Claude Code docs skills](../../documents/code.claude.com/Claude%20Code%20docs%20skills.md)"

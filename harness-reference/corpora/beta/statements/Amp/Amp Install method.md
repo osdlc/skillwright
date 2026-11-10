@@ -41,6 +41,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 cli install windows](../../study-results/Amp/2026-11-09%20cli%20install%20windows.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
 reportedIn:
   - "[Amp docs CLI getting started](../../documents/ampcode.com/Amp%20docs%20CLI%20getting%20started.md)"
 contributions:

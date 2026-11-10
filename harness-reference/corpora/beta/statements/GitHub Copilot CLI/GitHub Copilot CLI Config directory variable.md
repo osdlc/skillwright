@@ -11,12 +11,8 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 GitHub Copilot CLI Config home docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Config%20home%20docs.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: config directory reference.
-  - hasEvidenceItems:
       - "[2026-11-09 GitHub Copilot CLI Config dir flag docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Config%20dir%20flag%20docs.md)"
+      - "[2026-11-09 GitHub Copilot CLI Default config dir docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Default%20config%20dir%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: command reference.

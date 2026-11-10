@@ -9,8 +9,8 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 GitHub Copilot CLI Model option docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Model%20option%20docs.md)"
       - "[2026-11-09 GitHub Copilot CLI Model env docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Model%20env%20docs.md)"
+      - "[2026-11-09 GitHub Copilot CLI Reasoning effort option docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Reasoning%20effort%20option%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: command reference.

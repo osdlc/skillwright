@@ -26,6 +26,11 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
+  - hasEvidenceItems:
+      - "[2026-11-09 streaming json requires execute](../../study-results/Amp/2026-11-09%20streaming%20json%20requires%20execute.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: docs observed 2026-11-09.
 reportedIn:
   - "[Amp docs Execute Mode](../../documents/ampcode.com/Amp%20docs%20Execute%20Mode.md)"
   - "[Amp docs Streaming JSON](../../documents/ampcode.com/Amp%20docs%20Streaming%20JSON.md)"

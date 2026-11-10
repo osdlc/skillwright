@@ -28,6 +28,16 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Running-inside variables network meaning](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Running-inside%20variables%20network%20meaning.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09 at 0.162.0.
+  - hasEvidenceItems:
+      - "[2026-11-09 Codex CLI Running-inside variables network](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Running-inside%20variables%20network.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: strong
+    description: source observed 2026-11-09 at 0.162.0.
 contributions:
   - contributor:
       name: harness-reference research

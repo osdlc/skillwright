@@ -16,10 +16,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
   - hasEvidenceItems:
-      - "[2026-11-09 Pi security trust resources](../../study-results/Pi/2026-11-09%20Pi%20security%20trust%20resources.md)"
+      - "[2026-11-04 Pi Project skills and folder trust 2](../../study-results/Pi/2026-11-04%20Pi%20Project%20skills%20and%20folder%20trust%202.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: Security page.
+    description: docs observed 2026-11-04.
 reportedIn:
   - "[Pi docs Security and project trust (main at d57c2d2)](../../documents/github.com/Pi%20docs%20Security%20and%20project%20trust%20%28main%20at%20d57c2d2%29.md)"
 contributions:

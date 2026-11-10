@@ -22,15 +22,15 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 help effort](../../study-results/Claude%20Code/2026-11-09%20help%20effort.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: Help text lists low, medium, high, xhigh, max.
-  - hasEvidenceItems:
       - "[2026-11-09 docs cli effort](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20effort.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference adds ultracode and names the effortLevel setting.
+  - hasEvidenceItems:
+      - "[2026-11-09 docs env EFFORT](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20EFFORT.md)"
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: CLAUDE_CODE_EFFORT_LEVEL sets the level and wins over --effort.
 contributions:
   - contributor:
       name: harness-reference research
