@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 119,
-  "head": "2a172915b893b49bcb37b10141c251d544053d53",
-  "base": "8a932fac79cdb31b6b5c7b242273274803071e2c",
-  "round": 1,
+  "head": "3e181c2fc20b5fb3a8efc04b041d289744a75bfb",
+  "base": "af26f0a083700ecc3bbbf538e8a05fa0f32c849c",
+  "round": 2,
   "claim": {
     "owner": "Mac.local:claude-r8w4tn",
     "at": "2026-11-10T05:30:03.348Z"
@@ -159,6 +159,50 @@
       "line": 249,
       "title": "corpus/ departs from the corpus-schema placement guidance corpora/<name>/",
       "comment": "https://github.com/osdlc/skillwright/pull/119#pullrequestreview-5836595839",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "docs/handoff/markdown-db-and-harness-reference.md",
+      "line": 51,
+      "title": "profile.rs bullet says tests read alpha and check nothing until #99; #99 is merged into this branch",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "docs/handoff/markdown-db-and-harness-reference.md",
+      "line": 65,
+      "title": "Next item 1 still lists pointing profile.rs tests at the knowledge file, which #99 did",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "docs/planning/harness-knowledge.md",
+      "line": 27,
+      "title": "Phase 7 row still in progress waiting on #99, and its PR and State cells are swapped",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "harness-reference/corpus/statements/statements.schema.md",
+      "line": 207,
+      "title": "strength rule still says the importer sets it; the importer is deleted",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
