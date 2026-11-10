@@ -125,6 +125,11 @@ pub struct Plugin {
     /// prefixes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bare_on: Vec<String>,
+    /// The harnesses that name this plugin's skills `<plugin>-<skill>`
+    /// against their profile's default: `<harness>: {naming: prefixed}` where
+    /// the default is bare.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prefixed_on: Vec<String>,
 }
 
 impl Plugin {
@@ -290,6 +295,10 @@ pub struct Call {
     /// default, as its plugin's [`Plugin::bare_on`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bare_on: Vec<String>,
+    /// The harnesses that prefix the skill with its plugin against their
+    /// profile's default, as its plugin's [`Plugin::prefixed_on`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prefixed_on: Vec<String>,
     /// The call as written, for a refusal.
     pub destination: String,
     /// A plain `[[skill]]`: written as the skill's published name, with no
@@ -433,6 +442,7 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
         },
         targets: None,
         bare_on: Vec::new(),
+        prefixed_on: Vec::new(),
         destination: site.destination.clone(),
         mention: site.mention,
         caller: site.caller.clone(),

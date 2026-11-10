@@ -1324,6 +1324,13 @@ export interface Plugin {
    * prefixes.
    */
   bare_on?: string[];
+
+  /**
+   * The harnesses that name this plugin's skills `<plugin>-<skill>`
+   * against their profile's default: `<harness>: {naming: prefixed}` where
+   * the default is bare.
+   */
+  prefixed_on?: string[];
 }
 
 /**
@@ -1591,6 +1598,12 @@ export interface Call {
    * default, as its plugin's [`Plugin::bare_on`].
    */
   bare_on?: string[];
+
+  /**
+   * The harnesses that prefix the skill with its plugin against their
+   * profile's default, as its plugin's [`Plugin::prefixed_on`].
+   */
+  prefixed_on?: string[];
 
   /** The call as written, for a refusal. */
   destination: string;

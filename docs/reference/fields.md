@@ -179,8 +179,8 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
 
 - Skill and command: `allowed-tools`, `color`, `compatibility`, `description`, `disable-model-invocation`, `globs`, `icon`, `license`, `metadata`, `name`, `paths`
 - Agent: not checked.
-- Plugin: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `description`, `disable-model-invocation`, `displayName`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `name`, `paths`, `publisher`, `repository`, `rules`, `skills`, `source`, `tags`, `variables`, `version`
-- Marketplace: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `disable-model-invocation`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `name`, `owner`, `packs`, `paths`, `plugins`, `publisher`, `repository`, `rules`, `skills`, `tags`, `variables`
+- Plugin: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `description`, `disable-model-invocation`, `displayName`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `name`, `naming`, `paths`, `publisher`, `repository`, `rules`, `skills`, `source`, `tags`, `variables`, `version`
+- Marketplace: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `disable-model-invocation`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `name`, `naming`, `owner`, `packs`, `paths`, `plugins`, `publisher`, `repository`, `rules`, `skills`, `tags`, `variables`
 
 ### `pi:`
 

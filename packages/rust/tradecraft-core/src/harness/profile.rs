@@ -637,7 +637,7 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         manifest_fields: CURSOR_MANIFEST_FIELDS,
         marketplace_fields: CURSOR_MARKETPLACE_FIELDS,
         entry_fields: CURSOR_ENTRY_FIELDS,
-        naming_choice: false,
+        naming_choice: true,
         agent_only_overrides: &[],
     }),
     install: Some(InstallCli {
@@ -665,7 +665,7 @@ pub const PI: HarnessProfile = HarnessProfile {
         plugin_root: None,
         // Policy: Pi has no plugin namespace (knowledge says bare), and the
         // row prefixes the plugin so two plugins' skills cannot collide.
-        // D-WNTQ lets a marketplace choose `bare`.
+        // D-WNTQ lets a marketplace or a plugin choose `bare`.
         naming: Source::Constant(SkillNaming::PluginPrefixed),
         hooks_manifest_entry: None,
         carries_commands: false,

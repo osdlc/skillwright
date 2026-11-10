@@ -968,6 +968,7 @@ mod tests {
     fn a_marketplace_block_passes_down_only_its_passed_down_keys() {
         let mut config = MarketplaceConfig::default();
         let block = serde_json::json!({
+            "naming": "prefixed",
             "logo": "logo.png",
             "owner": {"name": "o"},
             "name": "m",
@@ -977,6 +978,7 @@ mod tests {
             .blocks
             .insert("cursor".to_owned(), block.as_object().unwrap().clone());
         let block = plugin_block(&config, "p", "cursor");
+        assert_eq!(block.get("naming"), Some(&serde_json::json!("prefixed")));
         assert_eq!(block.get("logo"), Some(&serde_json::json!("logo.png")));
         for key in ["owner", "name", "zz-unknown"] {
             assert!(!block.contains_key(key), "{key}");

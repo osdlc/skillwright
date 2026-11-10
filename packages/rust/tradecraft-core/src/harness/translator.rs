@@ -159,7 +159,7 @@ pub trait HarnessTranslator: Sync {
     /// `refused: published-name-invalid` — a prefixed name the Agent Skills
     /// spec does not admit.
     fn published_name(&self, plugin: &Plugin, skill: &str) -> Result<String, CoreError> {
-        let naming = naming(self.profile(), &plugin.bare_on);
+        let naming = naming(self.profile(), &plugin.bare_on, &plugin.prefixed_on);
         crate::export::published_skill_name(naming, &plugin.name, skill)
     }
 
@@ -175,7 +175,7 @@ pub trait HarnessTranslator: Sync {
             call,
             profile.name,
             Some(profile.declaration),
-            naming(profile, &call.bare_on),
+            naming(profile, &call.bare_on, &call.prefixed_on),
         )
     }
 
@@ -393,7 +393,7 @@ pub trait HarnessTranslator: Sync {
         let skill_dir = format!("skills/{published}");
         let mut projection = projection_of(skill, |body| self.render_body(body, Some(&skill_dir)))?;
         projection.content.name = published.clone();
-        if naming(profile, &plugin.bare_on) == SkillNaming::PluginPrefixed {
+        if naming(profile, &plugin.bare_on, &plugin.prefixed_on) == SkillNaming::PluginPrefixed {
             projection.content.body =
                 rewrite_sibling_paths(&projection.content.body, &plugin.name, siblings);
         }
@@ -581,12 +581,21 @@ fn render_call(
     }
 }
 
-/// How a harness names a published skill of a plugin that says it is bare on
-/// the harnesses in `bare_on`; [`SkillNaming::Bare`] for a row with no plugin
-/// format, where no skill has a plugin.
-fn naming<S: AsRef<str>>(profile: &HarnessProfile, bare_on: &[S]) -> SkillNaming {
-    if bare_on.iter().any(|name| name.as_ref() == profile.name) {
+/// How a harness names a published skill of a plugin that is bare on the
+/// harnesses in `bare_on` and prefixed on those in `prefixed_on`, or else the
+/// profile's default; [`SkillNaming::Bare`] for a row with no plugin format,
+/// where no skill has a plugin.
+fn naming<S: AsRef<str>>(
+    profile: &HarnessProfile,
+    bare_on: &[S],
+    prefixed_on: &[S],
+) -> SkillNaming {
+    let lists = |names: &[S]| names.iter().any(|name| name.as_ref() == profile.name);
+    if lists(bare_on) {
         return SkillNaming::Bare;
+    }
+    if lists(prefixed_on) {
+        return SkillNaming::PluginPrefixed;
     }
     profile
         .plugin_format()
@@ -635,13 +644,16 @@ pub(crate) fn relative_path(from: &str, to: &str) -> String {
     out.join("/")
 }
 
-/// Refuses two skills that publish under one name on a harness that
-/// prefixes each skill with its plugin.
+/// Refuses two skills that publish under one name on a harness with no plugin
+/// namespace, when a prefixed name is involved.
 ///
-/// `<plugin>-<skill>` is not injective (`a` + `b-c` and `a-b` + `c` are both
-/// `a-b-c`), and a harness with no plugin namespace would load two skills of
-/// one name. The load refuses a collision inside one plugin; this refuses one
-/// across plugins.
+/// A prefixed name is an opt-in to uniqueness, so it must be unique on its
+/// harness. `<plugin>-<skill>` is not injective (`a` + `b-c` and `a-b` + `c`
+/// are both `a-b-c`), and a plugin's prefixed name can meet another plugin's
+/// bare one. Where the profile prefixes by default (Pi), every duplicate is
+/// refused, bare ones too. Where it is bare (Cursor), two bare duplicates stay
+/// allowed: the harness lists both. The load refuses a collision inside one
+/// plugin; this refuses one across plugins.
 ///
 /// # Errors
 ///
@@ -651,25 +663,50 @@ fn refuse_prefixed_collisions<T: HarnessTranslator + ?Sized>(
     translator: &T,
     market: &Marketplace,
 ) -> Result<(), CoreError> {
-    if translator.format().naming != SkillNaming::PluginPrefixed {
+    let profile = translator.profile();
+    let default = translator.format().naming;
+    if default == SkillNaming::HostNamespaced {
         return Ok(());
     }
-    let mut published: BTreeMap<String, &Component> = BTreeMap::new();
+    let prefixed = |plugin: &Plugin| {
+        naming(profile, &plugin.bare_on, &plugin.prefixed_on) == SkillNaming::PluginPrefixed
+    };
+    let mut published: BTreeMap<String, (&Plugin, &Component)> = BTreeMap::new();
     for group in market.plugins.values() {
         for skill in group.skills.iter().filter(|c| translator.admits(c)) {
             let name = translator.published_name(group, &skill.name)?;
-            if let Some(first) = published.insert(name.clone(), skill) {
-                return Err(CoreError::refused(
-                    "path-collision",
-                    format!(
-                        "`{}` and `{}` both publish as skill `{name}` on the {} root, which has \
-                         no plugin namespace: two skills cannot publish under one name",
-                        first.path,
-                        skill.path,
-                        translator.profile().name
-                    ),
-                ));
+            let Some((first_group, first)) = published.get(&name).copied() else {
+                published.insert(name, (group, skill));
+                continue;
+            };
+            if default != SkillNaming::PluginPrefixed && !prefixed(first_group) && !prefixed(group)
+            {
+                continue;
             }
+            let harness = profile.name;
+            let label = profile.label;
+            let chosen = [group, first_group]
+                .into_iter()
+                .find(|g| g.prefixed_on.iter().any(|h| h == harness));
+            let why = match chosen {
+                Some(plugin) => format!(
+                    "`{harness}.naming: prefixed` on plugin `{p}` makes its names unique on \
+                     {label}, so no other skill may take one. Rename one, or set \
+                     `{harness}.naming: bare` on `{p}`",
+                    p = plugin.name
+                ),
+                None => format!(
+                    "{label} has no plugin namespace and names a skill `<plugin>-<skill>` by \
+                     default, so no two skills may take one name. Rename one"
+                ),
+            };
+            return Err(CoreError::refused(
+                "path-collision",
+                format!(
+                    "`{}` and `{}` both publish as {label} skill `{name}`: {why}",
+                    first.path, skill.path
+                ),
+            ));
         }
     }
     Ok(())
@@ -954,6 +991,35 @@ pub fn translator_for(name: &str) -> Option<&'static dyn HarnessTranslator> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn naming_reads_both_override_lists_then_the_default() {
+        use crate::harness::profile::{CLAUDE, CODEX, CURSOR, PI};
+        let none: [&str; 0] = [];
+        for (profile, default) in [
+            (&CLAUDE, SkillNaming::HostNamespaced),
+            (&CODEX, SkillNaming::HostNamespaced),
+            (&CURSOR, SkillNaming::Bare),
+            (&PI, SkillNaming::PluginPrefixed),
+        ] {
+            let name = [profile.name];
+            assert_eq!(naming(profile, &none, &none), default, "{}", profile.name);
+            assert_eq!(
+                naming(profile, &name, &none),
+                SkillNaming::Bare,
+                "{}",
+                profile.name
+            );
+            assert_eq!(
+                naming(profile, &none, &name),
+                SkillNaming::PluginPrefixed,
+                "{}",
+                profile.name
+            );
+            let other = ["elsewhere"];
+            assert_eq!(naming(profile, &other, &other), default, "{}", profile.name);
+        }
+    }
 
     #[test]
     fn every_profile_has_a_translator_answering_with_it() {

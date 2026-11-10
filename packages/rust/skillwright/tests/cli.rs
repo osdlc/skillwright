@@ -3983,3 +3983,43 @@ fn a_nested_marketplace_named_after_a_kind_folder_is_not_reserved() {
         list.stderr
     );
 }
+
+// `cursor.naming` is a key Cursor's block reads on a marketplace and a
+// plugin; Claude's and Codex's blocks do not read `naming`.
+#[test]
+fn check_accepts_cursor_naming() {
+    let checked = |harness: &str| {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path().join("vault");
+        let plugin = vault.join("plugins/tools");
+        fs::create_dir_all(plugin.join("skills")).unwrap();
+        fs::write(
+            vault.join("skillwright.md"),
+            format!(
+                "---\nname: house\nowner: acme\n{harness}:\n  naming: prefixed\nbuild:\n  out: out\n---\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            plugin.join("tools.md"),
+            format!("---\nname: tools\nversion: 1.0.0\n{harness}:\n  naming: bare\n---\n"),
+        )
+        .unwrap();
+        fs::write(
+            plugin.join("skills/review.md"),
+            "---\nname: review\ndescription: Use review.\n---\n\n# review\n",
+        )
+        .unwrap();
+        let built = run(&["build", "--yes"], &vault);
+        assert_eq!(built.code, 0, "{}", built.stderr);
+        let check = run(&["check"], &vault);
+        assert_eq!(check.code, 0, "{}{}", check.stdout, check.stderr);
+        format!("{}{}", check.stdout, check.stderr)
+    };
+    let cursor = checked("cursor");
+    assert!(!cursor.contains("cursor.naming"), "{cursor}");
+    for harness in ["claude", "codex"] {
+        let out = checked(harness);
+        assert!(out.contains(&format!("{harness}.naming")), "{out}");
+    }
+}

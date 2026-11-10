@@ -945,24 +945,31 @@ fn apply_naming(
     plugins: &mut BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Result<(), CoreError> {
-    let mut bare: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // Per plugin, the harnesses that name it bare and those that prefix it,
+    // each against that harness's default.
+    let mut chosen: BTreeMap<String, (Vec<String>, Vec<String>)> = BTreeMap::new();
     for profile in crate::harness::with_plugin_format().filter(|p| p.format().naming_choice) {
         let default = profile.format().naming;
         for name in plugins.keys() {
             let naming = crate::harness::manifest::naming_of(config, name, profile)?;
-            if naming == SkillNaming::Bare && default != SkillNaming::Bare {
-                bare.entry(name.clone())
-                    .or_default()
-                    .push(profile.name.to_owned());
+            if naming == default {
+                continue;
+            }
+            let (bare, prefixed) = chosen.entry(name.clone()).or_default();
+            match naming {
+                SkillNaming::Bare => bare.push(profile.name.to_owned()),
+                SkillNaming::PluginPrefixed => prefixed.push(profile.name.to_owned()),
+                SkillNaming::HostNamespaced => {}
             }
         }
     }
-    if bare.is_empty() {
+    if chosen.is_empty() {
         return Ok(());
     }
     for plugin in plugins.values_mut() {
-        if let Some(harnesses) = bare.get(&plugin.name) {
-            plugin.bare_on.clone_from(harnesses);
+        if let Some((bare, prefixed)) = chosen.get(&plugin.name) {
+            plugin.bare_on.clone_from(bare);
+            plugin.prefixed_on.clone_from(prefixed);
         }
         let members = plugin
             .skills
@@ -973,10 +980,11 @@ fn apply_naming(
             for body in bodies_of(resolved) {
                 for segment in &mut body.segments {
                     if let Segment::Call { call } = segment
-                        && let Some(harnesses) =
-                            call.skill.plugin.as_ref().and_then(|p| bare.get(p))
+                        && let Some((bare, prefixed)) =
+                            call.skill.plugin.as_ref().and_then(|p| chosen.get(p))
                     {
-                        call.bare_on.clone_from(harnesses);
+                        call.bare_on.clone_from(bare);
+                        call.prefixed_on.clone_from(prefixed);
                     }
                 }
             }
