@@ -12,11 +12,11 @@
 //!
 //! # What is modeled, and what is merely carried
 //!
-//! Three classes of key, not two. **Ours** — anything in the `sw-` namespace —
-//! is lifted into [`VaultNote::frontmatter`] by [`crate::frontmatter`] and
+//! Three classes of key, not two. **Ours** — what [`crate::keys`] lists for the
+//! note's kind, or anything a namespace prefixes — is lifted into [`VaultNote::frontmatter`] by [`crate::frontmatter`] and
 //! never reaches [`SkillContent`] *through this function* — it is
 //! configuration about *this vault* and a destination has no business reading
-//! it. `sw-arguments` is the one exception, and it is not this function's:
+//! it. `arguments` is the one exception, and it is not this function's:
 //! `SkillContent::arguments` stays empty here, and `publish` and `export` are
 //! the ones that carry it over, once, after this read — see
 //! [`SkillContent::apply_arguments`].
@@ -26,7 +26,8 @@
 //! `annotations` and is re-emitted verbatim, which is the acceptance criterion
 //! the vault spec states and the failure that motivated it: deriving a live
 //! plugin tree through a model that could not represent it lost 89 of 148
-//! files.
+//! files. An agent or a command, whose model has no annotations, writes them
+//! into its own frontmatter instead — see [`crate::projection`].
 //!
 //! Two consequences of the carry rule look like oversights:
 //!
@@ -34,20 +35,23 @@
 //!   `tags` field. `agent-adapt`'s skill renderer emits no `tags:` key, so
 //!   lifting it out of the frontmatter would delete it from every published
 //!   `SKILL.md`. Left in `annotations` it survives the round trip.
-//! * **A modeled key whose value is the wrong shape stays put.** `name: [a]`
-//!   does not become an empty name and a dropped key; it falls back to the
-//!   default and the note's own bytes travel on. The model bends to the note.
-//!   `metadata:` holding a nested map is that rule's live case: the Agent Skills spec
-//!   types it `dict[str, str]`, so a nested one is carried whole and the
-//!   renderer folds it in with the other keys it cannot type.
+//! * **A spec key holding the wrong kind of value is refused.** `name: [a]` or
+//!   `user-invocable: yes-please` stops the read, naming the key, by the same
+//!   check a harness block applies to that key. A value of the right kind the
+//!   model still cannot type stays put and travels on. `metadata:` holding a
+//!   nested map is the live case: the Agent Skills spec types it
+//!   `dict[str, str]`, so a nested one is carried whole and the renderer folds
+//!   it in with the other keys it cannot type. A spec key set to nothing is
+//!   unset, and is dropped rather than carried.
+//! * **Claude Code's lenient forms are read.** `allowed-tools: Read, Grep` is
+//!   two tools, as Claude Code's skills docs say. A boolean field also reads
+//!   `yes`, `no`, `on`, `off`, `1` and `0`, and becomes a real boolean, so a
+//!   harness that reads only `true` and `false` gets one.
 //!
 //! Key spellings are the standard's: `allowed-tools`, `argument-hint`,
 //! `arguments`, `disable-model-invocation`, `license`, `compatibility`,
 //! `metadata`. A snake_case spelling is simply an unknown key and is
-//! carried — normalising it would rewrite bytes the author wrote. The
-//! standard's `license:` is not our `sw-license:`: the first is what a
-//! skill publishes under, the second a container note's package identity,
-//! and they are read by different halves of this function.
+//! carried — normalising it would rewrite bytes the author wrote.
 //!
 //! # Transclusion and link rewriting live in [`crate::compile`], not here
 //!
@@ -66,7 +70,7 @@ use serde_json::{Map, Value};
 
 use crate::content::{SkillContent, SkillProjection};
 use crate::error::CoreError;
-use crate::frontmatter::VaultFrontmatter;
+use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::namespace::Namespace;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vfs::Vfs;
@@ -76,24 +80,24 @@ use crate::vfs::Vfs;
 ///
 /// The two halves are separate types rather than one flat struct because the
 /// separation is the strip. [`SkillProjection`] is everything that may reach a
-/// destination, and it has nowhere to put an `sw-` key —
+/// destination, and it has nowhere to put a key of ours —
 /// [`crate::projection::project_skill`] takes only that half, so our fields
 /// cannot travel by accident. [`VaultNote::frontmatter`] is everything that
 /// must not travel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VaultNote {
-    /// The content and peers, ready to project. Carries no `sw-` data by
+    /// The content and peers, ready to project. Carries no key of ours by
     /// construction.
     pub projection: SkillProjection,
-    /// What the `sw-` namespace declared: the kind, the targets, provenance,
-    /// and any key inside the prefix this build does not model.
+    /// What skillwright's own keys declared: the targets, provenance, and any
+    /// key inside the prefix this build does not model.
     pub frontmatter: VaultFrontmatter,
 }
 
 /// Reads the note at `skill_path` and its peer resources.
 ///
-/// `ns` is the vault's frontmatter namespace — [`Namespace::default`] is the
-/// documented `sw`. Whatever is passed here must also be passed to the emit
+/// `ns` is the vault's frontmatter namespace; [`Namespace::default`] is
+/// bare. Whatever is passed here must also be passed to the emit
 /// side ([`crate::projection::project_skill`]), because these two are the
 /// halves of one strip: a key this read did not claim is a key that publishes.
 /// [`crate::publish::publish_skill`] takes one namespace and hands the same
@@ -105,24 +109,31 @@ pub struct VaultNote {
 ///
 /// A `description` or a `name` is then required — either makes a note
 /// publish — and a note with neither is an error naming the path, so a caller
-/// holding several is told which one was not. A `name` alone reads with
-/// [`crate::discover::MISSING_DESCRIPTION`] as its description. `name`
+/// holding several is told which one was not. A container's note is the
+/// exception: it reads with an empty description. A `name` alone reads with
+/// an empty description too, which a build and a publish refuse for a skill,
+/// command or agent. `name`
 /// defaults to the filename slugified — via [`crate::discover::default_name`],
 /// the one derivation the scan uses too — so the ordinary note needs no
 /// frontmatter beyond a `description`.
 ///
-/// # The kind is read, not enforced
-///
-/// `sw-kind` is parsed and reported through
-/// [`crate::frontmatter::VaultFrontmatter::declared_kind`]; nothing here
-/// refuses a note whose kind this reader cannot publish. A caller wanting the
-/// kind resolved against a flag or a configured directory mapping passes that
-/// field to [`crate::frontmatter::resolve_kind`] with its hints; this function
-/// takes none.
+/// Reads the note as a skill. [`read_vault_note`] reads one of another kind.
 pub fn read_vault_skill(
     vfs: &dyn Vfs,
     skill_path: &Path,
     ns: &Namespace,
+) -> Result<VaultNote, CoreError> {
+    read_vault_note(vfs, skill_path, ns, EntityKind::Skill)
+}
+
+/// [`read_vault_skill`] for a note whose kind the caller has resolved from
+/// its folder. The kind says which of the note's keys are skillwright's: on
+/// a plugin note `license` is the pack's, on a skill it is the spec's.
+pub fn read_vault_note(
+    vfs: &dyn Vfs,
+    skill_path: &Path,
+    ns: &Namespace,
+    kind: EntityKind,
 ) -> Result<VaultNote, CoreError> {
     let source = read_utf8(vfs, skill_path)?;
     let (frontmatter, body) = split_frontmatter(&source);
@@ -130,17 +141,17 @@ pub fn read_vault_skill(
 
     // Ours, out of the map before anything else looks at it. What survives
     // this line is the note's own frontmatter and nothing of ours.
-    let ours = VaultFrontmatter::take_from(&mut fields, skill_path, ns)?;
+    let ours = VaultFrontmatter::take_from(&mut fields, skill_path, ns, kind)?;
+    check_spec_kinds(&mut fields, skill_path, kind)?;
 
     let name = take_string(&mut fields, "name").filter(|n| !n.trim().is_empty());
-    // A `name` alone opts in, as it does for the scan, which reports the
-    // filler — see `crate::discover::MISSING_DESCRIPTION`.
+    // A `name` alone opts in, as it does for the scan, and reads with an
+    // empty description, which a build and a publish refuse. A container's
+    // note is optional and may hold any of its keys, so it need not describe
+    // itself.
     let description = take_string(&mut fields, "description")
         .filter(|d| !d.trim().is_empty())
-        .or_else(|| {
-            name.is_some()
-                .then(|| crate::discover::MISSING_DESCRIPTION.to_owned())
-        })
+        .or_else(|| (name.is_some() || kind.holds_components()).then(String::new))
         .ok_or_else(|| {
             CoreError::malformed(
                 skill_path,
@@ -151,31 +162,29 @@ pub fn read_vault_skill(
     let content = SkillContent {
         name: name.unwrap_or_else(|| crate::discover::default_name(skill_path)),
         description,
-        argument_hint: take_string(&mut fields, "argument-hint"),
+        argument_hint: take_hint(&mut fields),
         // Claude Code's own key, hand-written. Empty and absent both read as
         // `None` — see `SkillContent::argument_names`'s own doc for why that
-        // simplification is fine here where it is not for `sw-targets`: an
+        // simplification is fine here where it is not for `targets`: an
         // author has no reason to write `arguments: []` on purpose the way
-        // they would `sw-targets: []`, so there is no second outcome worth
+        // they would `targets: []`, so there is no second outcome worth
         // keeping distinct from "derive it".
         argument_names: {
-            let names = take_string_list(&mut fields, "arguments");
+            let names = take_argument_names(&mut fields);
             (!names.is_empty()).then_some(names)
         },
-        // Never `sw-arguments` here — see the module doc's three classes.
+        // Never our own `arguments` here — see the module doc's three classes.
         // `publish` and `export` call `SkillContent::apply_arguments` after
         // this read, with `ours.arguments`, once the kind is resolved.
         arguments: Vec::new(),
-        // Nor `sw-overrides`, and for the same reason twice over: the block's
+        // Nor harness blocks, and for the same reason twice over: the block's
         // target names have not been folded yet and its keys have not been
         // put to the capability matrix. `SkillContent::apply_overrides` is
         // called after both, by the same two callers.
         overrides: Default::default(),
         body: body.to_owned(),
-        allowed_tools: take_string_list(&mut fields, "allowed-tools"),
-        // The Agent Skills spec's three optional keys. `license` here is the standard's
-        // own, never `sw-license` — that one is a container's package
-        // identity and was lifted out with the rest of our namespace above.
+        allowed_tools: take_tools(&mut fields),
+        // The Agent Skills spec's three optional keys.
         license: take_string(&mut fields, "license"),
         compatibility: take_string(&mut fields, "compatibility"),
         metadata: take_string_map(&mut fields, "metadata"),
@@ -200,23 +209,37 @@ pub fn read_vault_skill(
 }
 
 /// The folder whose files travel with this note: the one named for it and
-/// holding it. `skills/release/release.md` owns `skills/release/`, and so does
-/// `skills/release/SKILL.md`; `skills/loose.md` owns nothing, which is the
-/// common case.
+/// holding it. `skills/release/release.md` owns `skills/release/`, and so
+/// does `skills/release/SKILL.md`; `skills/loose.md` owns nothing, which is
+/// the common case, and neither does `skills/skills.md` or `skills/SKILL.md`
+/// — the folder holding them is a kind folder, not theirs. Inside a kind
+/// folder, `SKILL.md` names its folder only under `skills/`.
 ///
-/// This is the rule [`crate::discover`] already places a component by, spelled
-/// again here because this function has one path and no scan to consult. They
-/// must not diverge: if they do, a component in the canonical layout publishes
-/// its `SKILL.md` alone and reports it written, because the peers this side
-/// looks for are in a sibling folder that layout does not have.
+/// A note with no kind folder above its folder (`drafts/release/release.md`,
+/// or a project's `my-skill/SKILL.md` published with no vault root) has no
+/// placement to follow, and its named folder still travels with it, so there
+/// `SKILL.md` names its folder anywhere.
+///
+/// Inside a kind folder this asks `crate::discover::is_entry`, the rule
+/// discovery places a component by, so the two cannot diverge. If they did, a
+/// component in the canonical layout would publish its `SKILL.md` alone, or a
+/// lone note would carry every sibling in its kind folder as its resources.
 pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
     let file = skill_path.file_name()?.to_str()?;
     let parent = skill_path.parent()?;
-    if crate::discover::is_skill_entry(file) {
-        return parent.file_name().is_some().then_some(parent);
+    let name = parent.file_name()?.to_str()?;
+    let above = parent
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|n| n.to_str());
+    if let Some(kind) = above.and_then(crate::discover::kind_dir) {
+        return crate::discover::is_entry(file, name, kind).then_some(parent);
     }
-    let stem = skill_path.file_stem()?.to_str()?;
-    (parent.file_name()?.to_str()? == stem).then_some(parent)
+    if crate::discover::kind_dir(name).is_some() {
+        return None;
+    }
+    let owns = crate::discover::is_skill_entry(file) || skill_path.file_stem()?.to_str()? == name;
+    owns.then_some(parent)
 }
 
 /// Every file under the bundle root except the entry note itself, recursively,
@@ -224,8 +247,8 @@ pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
 ///
 /// The note is excluded because it is *inside* what it owns: the renderer
 /// writes it as `SKILL.md`, and carrying it a second time under its vault name
-/// would publish the same content twice, once with the `sw-` frontmatter this
-/// crate exists to strip.
+/// would publish the same content twice, once with the frontmatter this crate
+/// exists to strip.
 ///
 /// Unlike [`crate::skill`]'s supporting-file listing — an aid to a view, which
 /// skips what it cannot read — this feeds a publish, so an unreadable peer is
@@ -310,6 +333,65 @@ pub(crate) fn frontmatter_map(
     }
 }
 
+/// Refuses a spec key on a skill, agent or command whose value is not the kind
+/// [`crate::harness::field_types::component_type`] gives it, the check a
+/// harness block applies to the same key. A spec key set to nothing is unset,
+/// so it is removed rather than carried.
+///
+/// # Errors
+///
+/// `refused: malformed`, naming the key and the kind it must be.
+pub(crate) fn check_spec_kinds(
+    fields: &mut Map<String, Value>,
+    path: &Path,
+    kind: EntityKind,
+) -> Result<(), CoreError> {
+    if !matches!(
+        kind,
+        EntityKind::Skill | EntityKind::Agent | EntityKind::Command
+    ) {
+        return Ok(());
+    }
+    let spec_owned = |key: &str| {
+        crate::keys::lookup(kind, key).is_some_and(|spec| spec.owner == crate::keys::Owner::Spec)
+    };
+    let unset: Vec<String> = fields
+        .iter()
+        .filter(|(key, value)| value.is_null() && spec_owned(key))
+        .map(|(key, _)| key.clone())
+        .collect();
+    for key in unset {
+        fields.remove(&key);
+    }
+    for (key, value) in fields.iter() {
+        if !spec_owned(key) {
+            continue;
+        }
+        if let Some(ty) = crate::harness::field_types::component_type(kind, key)
+            && !ty.accepts(value)
+        {
+            return Err(CoreError::wrong_kind(
+                path,
+                format!("`{key}` {}", ty.refusal(value)),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `argument-hint`, as the hint text. A list of strings is the unquoted
+/// `[issue-number]` form Claude's docs show, and reads back as that text.
+fn take_hint(fields: &mut Map<String, Value>) -> Option<String> {
+    if let Some(hint) = fields
+        .get("argument-hint")
+        .and_then(crate::harness::field_types::hint_text)
+    {
+        fields.remove("argument-hint");
+        return Some(hint);
+    }
+    take_string(fields, "argument-hint")
+}
+
 /// Removes `key` and returns it as a string — but only when it *is* a string.
 /// A wrong-shaped value is left in the map so it is carried verbatim instead
 /// of being consumed and discarded.
@@ -321,12 +403,14 @@ fn take_string(fields: &mut Map<String, Value>, key: &str) -> Option<String> {
         .and_then(|v| v.as_str().map(str::to_owned))
 }
 
+/// Removes `key` and returns it as a boolean, in any form
+/// [`crate::harness::field_types::flag`] reads.
 fn take_bool(fields: &mut Map<String, Value>, key: &str) -> Option<bool> {
-    let matches = fields.get(key).is_some_and(Value::is_boolean);
-    matches
-        .then(|| fields.remove(key))
-        .flatten()
-        .and_then(|v| v.as_bool())
+    let yes = fields
+        .get(key)
+        .and_then(crate::harness::field_types::flag)?;
+    fields.remove(key);
+    Some(yes)
 }
 
 /// A string-to-string map, all-or-nothing for the same reason
@@ -359,6 +443,63 @@ fn take_string_map(
         .unwrap_or_default()
 }
 
+/// `allowed-tools`, when [`tool_list`] reads it. Any other value stays in place
+/// and warns.
+fn take_tools(fields: &mut Map<String, Value>) -> Vec<String> {
+    let tools = fields.get("allowed-tools").and_then(tool_list);
+    if tools.is_some() {
+        fields.remove("allowed-tools");
+    }
+    tools.unwrap_or_default()
+}
+
+/// The tools an `allowed-tools` value names: a list of strings, or one string
+/// of tools separated by spaces (the Agent Skills spec's form) or commas (which
+/// Claude Code's skills docs also accept). A space or comma inside parentheses
+/// belongs to the tool, as in `Bash(git status)`. `None` for anything else.
+pub(crate) fn tool_list(value: &Value) -> Option<Vec<String>> {
+    let tools = match value {
+        Value::String(tools) => tools,
+        Value::Array(items) => {
+            return items
+                .iter()
+                .map(|item| item.as_str().map(str::to_owned))
+                .collect();
+        }
+        _ => return None,
+    };
+    let (mut list, mut tool, mut depth) = (Vec::new(), String::new(), 0usize);
+    for c in tools.chars() {
+        match c {
+            c if (c == ',' || c.is_whitespace()) && depth == 0 => {
+                if !tool.is_empty() {
+                    list.push(std::mem::take(&mut tool));
+                }
+                continue;
+            }
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        tool.push(c);
+    }
+    if !tool.is_empty() {
+        list.push(tool);
+    }
+    Some(list)
+}
+
+/// Claude's `arguments`: a list of names, or the names in one space-separated
+/// string.
+fn take_argument_names(fields: &mut Map<String, Value>) -> Vec<String> {
+    if let Some(Value::String(names)) = fields.get("arguments") {
+        let names = names.split_whitespace().map(str::to_owned).collect();
+        fields.remove("arguments");
+        return names;
+    }
+    take_string_list(fields, "arguments")
+}
+
 /// A list of strings, all-or-nothing: a sequence with a non-string in it is
 /// left in place whole rather than partially lifted.
 fn take_string_list(fields: &mut Map<String, Value>, key: &str) -> Vec<String> {
@@ -386,14 +527,13 @@ fn take_string_list(fields: &mut Map<String, Value>, key: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frontmatter::EntityKind;
     use crate::vfs::MemVfs;
     use std::path::PathBuf;
 
     /// The default namespace — every test but the configured one reads a vault
     /// that declared no stem.
     fn sw() -> Namespace {
-        Namespace::default()
+        Namespace::sw()
     }
 
     /// A vault with one note at `skills/<name>.md`.
@@ -423,11 +563,8 @@ mod tests {
         assert!(note.projection.resources.is_empty());
 
         // A note that declares nothing of ours reads as the ordinary vault.
-        assert_eq!(note.frontmatter.kind(), EntityKind::Skill);
-        assert_eq!(note.frontmatter.declared_kind, None);
         assert_eq!(note.frontmatter.targets, None);
         assert!(note.frontmatter.provenance.is_hand_authored());
-        assert!(note.frontmatter.unknown_ours.is_empty());
     }
 
     #[test]
@@ -447,13 +584,10 @@ mod tests {
     }
 
     #[test]
-    fn a_name_alone_reads_with_the_filler() {
+    fn a_name_alone_reads_with_an_empty_description() {
         let (vfs, path) = vault("nameless", "---\nname: nameless\n---\nBody.\n");
         let note = read_vault_skill(&vfs, &path, &sw()).unwrap();
-        assert_eq!(
-            note.projection.content.description,
-            crate::discover::MISSING_DESCRIPTION
-        );
+        assert_eq!(note.projection.content.description, "");
     }
 
     #[test]
@@ -563,33 +697,29 @@ mod tests {
 
     #[test]
     fn our_namespace_is_typed_and_never_lands_in_annotations() {
-        // `sw-targets` is ours and typed — annotations holds genuinely
+        // `targets` is ours and typed — annotations holds genuinely
         // foreign keys only.
         let (vfs, path) = vault(
             "adopted",
             "---\n\
              description: d\n\
              owner: kelly\n\
-             sw-kind: skill\n\
              sw-targets:\n  - claude-code\n\
-             sw-plugin: tools\n\
-             sw-source: /src/review\n\
-             sw-format: claude\n\
-             sw-source-hash: \"3f9a\"\n\
-             sw-adopted-hash: \"b17c\"\n\
-             sw-adopted-at: 2026-08-11\n\
-             sw-also-at:\n  - /elsewhere/review\n\
+             sw-adopted:\n  \
+               source: /src/review\n  \
+               format: claude\n  \
+               source_hash: \"3f9a\"\n  \
+               hash: \"b17c\"\n  \
+               at: 2026-08-11\n  \
+               also_at:\n    - /elsewhere/review\n\
              sw-not-modeled-yet: keep me\n\
              ---\nb\n",
         );
         let note = read_vault_skill(&vfs, &path, &sw()).unwrap();
-
-        assert_eq!(note.frontmatter.kind(), EntityKind::Skill);
         assert_eq!(
             note.frontmatter.targets,
             Some(vec!["claude-code".to_owned()])
         );
-        assert_eq!(note.frontmatter.plugin.as_deref(), Some("tools"));
         assert_eq!(
             note.frontmatter.provenance.source.as_deref(),
             Some("/src/review")
@@ -599,9 +729,10 @@ mod tests {
             Some("2026-08-11"),
             "an unquoted date stays a string through the YAML/JSON hop"
         );
-        assert_eq!(
-            note.frontmatter.unknown_ours["sw-not-modeled-yet"],
-            serde_json::json!("keep me")
+        assert!(
+            note.frontmatter
+                .unknown
+                .contains(&"sw-not-modeled-yet".to_owned())
         );
 
         // The whole point: annotations is foreign keys only.
@@ -617,29 +748,27 @@ mod tests {
     #[test]
     fn a_configured_vault_types_its_own_prefix_and_carries_the_default_one() {
         // The structural strip under a configured stem: `x-` is lifted off the
-        // note before a `SkillContent` exists, and `sw-kind` — which this
-        // vault never claimed — lands in `annotations` with every other key
+        // note before a `SkillContent` exists, and `sw-kind`, which this
+        // vault never claimed, lands in `annotations` with every other key
         // that is the author's own.
         let (vfs, path) = vault(
             "configured",
             "---\n\
              description: d\n\
-             x-kind: skill\n\
-             x-source: /src/review\n\
-             x-not-modeled-yet: keep me\n\
              sw-kind: somebody-elses-key\n\
+             x-adopted:\n  source: /src/review\n\
+             x-not-modeled-yet: keep me\n\
              ---\nb\n",
         );
         let note = read_vault_skill(&vfs, &path, &Namespace::new("x").unwrap()).unwrap();
-
-        assert_eq!(note.frontmatter.declared_kind, Some(EntityKind::Skill));
         assert_eq!(
             note.frontmatter.provenance.source.as_deref(),
             Some("/src/review")
         );
-        assert_eq!(
-            note.frontmatter.unknown_ours["x-not-modeled-yet"],
-            serde_json::json!("keep me")
+        assert!(
+            note.frontmatter
+                .unknown
+                .contains(&"x-not-modeled-yet".to_owned())
         );
 
         let annotations = note.projection.content.annotations;
@@ -656,11 +785,9 @@ mod tests {
         // both surfaces edit one vault.
         let (vfs, path) = vault(
             "nested",
-            "---\ndescription: d\nsw:\n  kind: plugin\n  targets:\n    - claude-code\n  source: /src\n---\nb\n",
+            "---\ndescription: d\nsw:\n  targets:\n    - claude-code\n  adopted:\n    source: /src\n---\nb\n",
         );
         let note = read_vault_skill(&vfs, &path, &sw()).unwrap();
-
-        assert_eq!(note.frontmatter.declared_kind, Some(EntityKind::Plugin));
         assert_eq!(
             note.frontmatter.targets,
             Some(vec!["claude-code".to_owned()])
@@ -673,7 +800,7 @@ mod tests {
     fn a_note_carrying_both_shapes_is_refused() {
         let (vfs, path) = vault(
             "mixed",
-            "---\ndescription: d\nsw:\n  kind: skill\nsw-targets:\n  - claude-code\n---\nb\n",
+            "---\ndescription: d\nsw:\n  license: MIT\nsw-targets:\n  - claude-code\n---\nb\n",
         );
         let message = read_vault_skill(&vfs, &path, &sw())
             .unwrap_err()
@@ -685,43 +812,108 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_kind_is_refused_before_the_description_check() {
-        // Two diagnoses compete on this note, and the right one has to win:
-        // "your kind is a typo" rather than "this is not a skill".
-        let (vfs, path) = vault("typo", "---\nsw-kind: skil\n---\nb\n");
-        let message = read_vault_skill(&vfs, &path, &sw())
-            .unwrap_err()
-            .to_string();
-
-        assert!(message.contains("unknown-kind"), "{message}");
-        assert!(message.contains("skil"), "{message}");
-        assert!(
-            !message.contains("description"),
-            "the kind refusal must not be masked by the description check: {message}"
-        );
-    }
-
-    #[test]
-    fn a_wrong_shaped_modeled_key_is_carried_rather_than_swallowed() {
+    fn a_value_the_model_cannot_type_is_carried_rather_than_swallowed() {
         let (vfs, path) = vault(
             "odd",
-            "---\ndescription: d\nallowed-tools: Read\nuser-invocable: yes-please\n---\nb\n",
+            "---\ndescription: d\nmetadata: {team: {lead: Ada}}\n---\nb\n",
         );
         let content = read_vault_skill(&vfs, &path, &sw())
             .unwrap()
             .projection
             .content;
 
-        assert!(content.allowed_tools.is_empty());
-        assert!(content.user_invocable, "falls back to the default");
+        assert!(content.metadata.is_empty());
         assert_eq!(
-            content.annotations["allowed-tools"],
-            serde_json::json!("Read")
+            content.annotations["metadata"],
+            serde_json::json!({"team": {"lead": "Ada"}})
         );
-        assert_eq!(
-            content.annotations["user-invocable"],
-            serde_json::json!("yes-please")
+    }
+
+    #[test]
+    fn claude_code_s_lenient_forms_are_read() {
+        let (vfs, path) = vault(
+            "odd",
+            "---\ndescription: d\nallowed-tools: Read, Grep Bash(git log, x)\n\
+             user-invocable: NO\ndisable-model-invocation: 1\n---\nb\n",
         );
+        let content = read_vault_skill(&vfs, &path, &sw())
+            .unwrap()
+            .projection
+            .content;
+        assert_eq!(content.allowed_tools, ["Read", "Grep", "Bash(git log, x)"]);
+        assert!(!content.user_invocable);
+        assert!(content.disable_model_invocation);
+        assert!(content.annotations.is_empty(), "{:?}", content.annotations);
+    }
+
+    #[test]
+    fn a_quoted_one_or_zero_reads_as_a_boolean() {
+        let (vfs, path) = vault(
+            "odd",
+            "---
+description: d
+user-invocable: \"0\"
+disable-model-invocation: '1'
+---
+b
+",
+        );
+        let content = read_vault_skill(&vfs, &path, &sw())
+            .unwrap()
+            .projection
+            .content;
+        assert!(!content.user_invocable);
+        assert!(content.disable_model_invocation);
+    }
+
+    #[test]
+    fn a_spec_key_set_to_nothing_is_dropped() {
+        let (vfs, path) = vault("odd", "---\ndescription: d\nmodel:\nlicense:\n---\nb\n");
+        let content = read_vault_skill(&vfs, &path, &sw())
+            .unwrap()
+            .projection
+            .content;
+        assert!(content.model_override.is_none());
+        assert!(content.annotations.is_empty(), "{:?}", content.annotations);
+    }
+
+    #[test]
+    fn a_spec_key_of_the_wrong_kind_is_refused_naming_it() {
+        for (line, said) in [
+            (
+                "user-invocable: yes-please",
+                "`user-invocable` must be a boolean, not a string; write `true` or `false`",
+            ),
+            (
+                "name: 2048",
+                "`name` must be a string, not a number — quote it",
+            ),
+            ("model: [1]", "`model` must be a string, not a list"),
+            (
+                "allowed-tools: 5",
+                "`allowed-tools` must be a string or a list of strings",
+            ),
+        ] {
+            let (vfs, path) = vault("odd", &format!("---\ndescription: d\n{line}\n---\nb\n"));
+            let err = read_vault_skill(&vfs, &path, &sw())
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(said), "{line}: {err}");
+        }
+    }
+
+    #[test]
+    fn an_unquoted_bracket_hint_reads_as_its_text() {
+        let (vfs, path) = vault(
+            "odd",
+            "---\ndescription: d\nargument-hint: [issue-number]\n---\nb\n",
+        );
+        let content = read_vault_skill(&vfs, &path, &sw())
+            .unwrap()
+            .projection
+            .content;
+        assert_eq!(content.argument_hint.as_deref(), Some("[issue-number]"));
+        assert!(!content.annotations.contains_key("argument-hint"));
     }
 
     /// The folder a note owns is the one holding it, and the note itself is
@@ -790,6 +982,72 @@ mod tests {
                 .resources
                 .is_empty()
         );
+    }
+
+    /// A note directly inside a kind folder travels alone, even when its name
+    /// matches the kind folder's: `skills/skills.md` and `skills/SKILL.md` do
+    /// not own `skills/`, the same placement `crate::discover` gives them.
+    #[test]
+    fn a_note_named_after_its_kind_folder_does_not_own_that_folder() {
+        for entry in ["skills.md", "SKILL.md"] {
+            let (vfs, _) = vault("alpha", "---\ndescription: a\n---\nb\n");
+            let path = Path::new("/vault/skills").join(entry);
+            vfs.write_file(&path, b"---\ndescription: d\n---\nb\n")
+                .unwrap();
+            vfs.create_dir_all(Path::new("/vault/skills/other"))
+                .unwrap();
+            vfs.write_file(
+                Path::new("/vault/skills/other/other.md"),
+                b"---\ndescription: o\n---\nb\n",
+            )
+            .unwrap();
+
+            assert_eq!(bundle_root(&path), None, "{entry}");
+            assert!(
+                read_vault_skill(&vfs, &path, &sw())
+                    .unwrap()
+                    .projection
+                    .resources
+                    .is_empty(),
+                "{entry}"
+            );
+        }
+    }
+
+    /// `SKILL.md` names its folder only for a skill: discover places
+    /// `agents/foo/SKILL.md` nowhere, so it owns no bundle.
+    #[test]
+    fn skill_md_outside_a_skills_folder_owns_no_bundle() {
+        assert_eq!(bundle_root(Path::new("/vault/agents/foo/SKILL.md")), None);
+        assert_eq!(
+            bundle_root(Path::new("/vault/skills/foo/SKILL.md")),
+            Some(Path::new("/vault/skills/foo"))
+        );
+        assert_eq!(
+            bundle_root(Path::new("/vault/agents/foo/foo.md")),
+            Some(Path::new("/vault/agents/foo"))
+        );
+        // A plugin named after a kind folder still owns its own folder.
+        assert_eq!(
+            bundle_root(Path::new("/vault/plugins/skills/skills.md")),
+            Some(Path::new("/vault/plugins/skills"))
+        );
+    }
+
+    /// Outside a kind folder there is no placement to follow, so the folder
+    /// named for the note still travels with it: `publish` accepts any note
+    /// path, and with no `skills_root` a project's `my-skill/SKILL.md` is one.
+    #[test]
+    fn a_named_folder_outside_a_kind_folder_still_owns_its_files() {
+        assert_eq!(
+            bundle_root(Path::new("/vault/drafts/release/release.md")),
+            Some(Path::new("/vault/drafts/release"))
+        );
+        assert_eq!(
+            bundle_root(Path::new("/proj/my-skill/SKILL.md")),
+            Some(Path::new("/proj/my-skill"))
+        );
+        assert_eq!(bundle_root(Path::new("/proj/my-skill/other.md")), None);
     }
 
     #[test]

@@ -18,9 +18,8 @@ members = ["skillwright", "tradecraft-core", "tradecraft-typegen", "tradecraft-w
 
 [workspace.package]
 edition = "2024"
-# The MSRV. Edition 2024 needs 1.85, but slug-collate's let-chain needs 1.88
-# and serde-saphyr (config-layers) needs 1.89, so the floor is 1.89. CI builds
-# every member on it.
+# The MSRV. Edition 2024 needs 1.85 and slug-collate's let-chain needs 1.88.
+# The floor stays at 1.89, where it was set. CI builds every member on it.
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/osdlc/skillwright"
@@ -30,6 +29,8 @@ unsafe_code = "forbid"
 missing_docs = "warn"
 
 [workspace.dependencies]
+# Path comparison that folds Unicode case and normalization.
+unicode-normalization = "0.1.26"
 # `derive` for the skillwright CLI's argument structs.
 clap = { version = "4.5.40", features = ["derive"] }
 # The RFC 3339 timestamps skillwright writes.
@@ -56,19 +57,23 @@ wasm-bindgen = "=0.2.126"
 
 # The osdlc library crates, from crates.io.
 agent-adapt = "0.19.2"
-config-layers = "0.8.0"
 etag-write = "0.2.4"
-frontmatter-lossless = "1.1.1"
-markdown-link = "0.5.3"
-markdown-relink = "0.1.8"
-path-guard = "0.3.2"
+frontmatter-lossless = "1.1.2"
+markdown-contract = { version = "0.4.1", default-features = false }
+markdown-corpus = "0.2.0"
+markdown-link = "0.8.0"
+markdown-relink = "0.3.0"
+markdown-vault-fs = { version = "0.5.0", default-features = false }
+path-guard = "0.3.3"
 tiered-dirs = "0.3.7"
 typed-git = "0.4.0"
+vfs-seam = { version = "0.2.0", default-features = false }
+vfs-walk = "0.2.0"
 yaml-splice = "0.3.3"
 
 # The member crate others depend on, also named by version so a published
 # manifest points at crates.io. release-plz publishes it before skillwright.
-tradecraft-core = { path = "tradecraft-core", version = "0.41.0" }
+tradecraft-core = { path = "tradecraft-core", version = "0.48.0" }
 
 # The size profile tradecraft-wasm/build.sh builds with. A named profile
 # applies only to a build that asks for it, so no other crate or test run is

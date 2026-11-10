@@ -4,10 +4,10 @@
 //! Both sides reach the same `tradecraft_core::export_skills`. The host side
 //! is not reachable from here, so this calls that function directly with a
 //! request shaped the way a host that embeds the core shapes it: name,
-//! display_name, owner and author absent, `plugins` empty, `default_plugin`
-//! `"core"`. What it proves: the CLI's own flag-to-request resolution in
-//! `commands/marketplace.rs` and a host's request-building do not disagree
-//! about what an equivalent build means.
+//! display_name, owner and author absent, `plugins` empty. What it proves:
+//! the CLI's own flag-to-request resolution in `commands/marketplace.rs` and
+//! a host's request-building do not disagree about what an equivalent build
+//! means.
 //!
 //! The vault is `freeform-vault`, the shared parity fixture: two
 //! marketplaces, so `--marketplace acme` is required on both sides or the
@@ -15,17 +15,12 @@
 
 mod common;
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use common::with_machine_env;
 use skillwright::cli::run_with;
 use skillwright::ctx::CommandContext;
-use tradecraft_core::{
-    DEFAULT_SHIM_TARGET, ExportMode, ExportRequest, MarketplaceConfig, Namespace, NativeVfs,
-    export_skills,
-};
+use tradecraft_core::{ExportRequest, Namespace, NativeVfs, RootFile, export_skills};
 
 fn fixture_vault() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -80,11 +75,6 @@ fn the_cli_and_a_host_request_render_identical_trees() {
         &cli_out.display().to_string(),
         "--marketplace",
         "acme",
-        // Matched to the host's default rather than left to each
-        // side's, so a future change to either shows up as a real difference
-        // instead of being masked by both drifting together.
-        "--default-plugin",
-        "core",
         "--yes",
     ]
     .iter()
@@ -93,39 +83,23 @@ fn the_cli_and_a_host_request_render_identical_trees() {
 
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
-    // The machine file is relocated for the CLI half alone — the direct call
-    // below reads no configuration, so a developer's real one would feed only
-    // one side of the comparison.
-    let code = with_machine_env(Some(&dir.path().join("no-machine-config.yaml")), || {
+    let code = {
         let mut ctx = CommandContext::new(dir.path(), &mut out, &mut err);
         run_with(&argv, &mut ctx)
-    });
+    };
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
     assert!(cli_out.is_dir());
 
     export_skills(
         &NativeVfs,
-        &ExportRequest {
-            vault_root: vault.clone(),
-            skills_root: None,
-            marketplace: Some("acme".to_string()),
-            out_root: host_out.clone(),
-            mode: ExportMode::Build,
-            config: MarketplaceConfig {
-                name: None,
-                display_name: None,
-                owner: None,
-                description: None,
-                author: None,
-                license: None,
-                default_plugin: "core".to_string(),
-                plugins: BTreeMap::new(),
-                require_descriptions: false,
-                shim_target: DEFAULT_SHIM_TARGET.to_owned(),
-            },
-            harnesses: BTreeSet::new(),
-            assets: Vec::new(),
-            hooks: Vec::new(),
+        &{
+            // The vault has no root file, so the CLI reads it with every
+            // default; the host asks the core for the same defaults.
+            let config =
+                RootFile::default().to_config(&vault.file_name().unwrap().to_string_lossy());
+            let mut request = ExportRequest::new(vault.clone(), host_out.clone(), config);
+            request.marketplace = Some("acme".to_string());
+            request
         },
         &Namespace::default(),
     )
@@ -159,8 +133,6 @@ fn a_vault_holding_two_marketplaces_refuses_a_build_that_names_neither() {
         &vault.display().to_string(),
         "--out",
         &dir.path().join("out").display().to_string(),
-        "--default-plugin",
-        "core",
         "--yes",
     ]
     .iter()
@@ -169,10 +141,10 @@ fn a_vault_holding_two_marketplaces_refuses_a_build_that_names_neither() {
 
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
-    let code = with_machine_env(Some(&dir.path().join("no-machine-config.yaml")), || {
+    let code = {
         let mut ctx = CommandContext::new(dir.path(), &mut out, &mut err);
         run_with(&argv, &mut ctx)
-    });
+    };
     // A run-level blocker: nothing was staged, so there is no report to
     // print — and the core's own token leads the reason.
     assert_eq!(code, 2);

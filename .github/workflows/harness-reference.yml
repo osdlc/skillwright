@@ -1,6 +1,6 @@
-# Checks the harness reference bundle in harness-reference/: every concept
-# validates, its links into this repository resolve, schema/*.json is current,
-# and the tests, typecheck and page generator pass.
+# Checks harness-reference/: the alpha bundle and the beta corpus-schema corpus
+# validate, schema/alpha/*.json is current, and the tests, typecheck and page
+# generator pass. The beta corpus is checked by the @osdlc/corpus-schema validator from npm.
 #
 # The `paths` filter means this workflow does not run on every pull request,
 # so it is not one to require in a ruleset.
@@ -12,12 +12,14 @@ on:
   pull_request:
     paths:
       - 'harness-reference/**'
+      - 'packages/rust/tradecraft-core/data/**'
       - '.github/workflows/harness-reference.yml'
       - 'pnpm-lock.yaml'
   push:
     branches: [main]
     paths:
       - 'harness-reference/**'
+      - 'packages/rust/tradecraft-core/data/**'
       - '.github/workflows/harness-reference.yml'
       - 'pnpm-lock.yaml'
   workflow_dispatch:

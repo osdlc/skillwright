@@ -1,19 +1,21 @@
-//! The frontmatter namespace — which prefix skillwright claims in a note.
+//! The frontmatter namespace — which prefix, if any, skillwright's keys
+//! carry in a note.
 //!
-//! The namespace spec claims `sw-` wholesale, and names
-//! the price: two letters will sit next to a key the user or another plugin
-//! already owns sooner than a longer prefix would. The default stays `sw`; a
-//! vault that already has an `sw-` key, or an author who wants a different one,
-//! configures a stem and the whole namespace moves with it.
+//! Keys are bare by default: `version`, `targets`, `codex:`. Which bare keys
+//! are skillwright's is a closed list per kind ([`crate::keys`]), so the
+//! publish strip and the unknown-key warning read one table. A vault where
+//! those words mean something else sets `build.namespace: sw`, and every
+//! skillwright key moves under that stem: flat `sw-version`, or a nested
+//! `sw:` block. Spec keys are never prefixed.
 //!
 //! # One stem, two derived forms
 //!
-//! A namespace is configured as a **stem** — `sw` — and both spellings the
+//! A prefixed namespace is configured as a **stem** — `sw` — and both spellings the
 //! reader uses are derived from it at construction:
 //!
 //! | Form | From `sw` | Used by |
 //! |---|---|---|
-//! | flat prefix | `sw-` | every flat key: `sw-kind`, `sw-targets`, … |
+//! | flat prefix | `sw-` | every flat key: `sw-version`, `sw-targets`, … |
 //! | nested block key | `sw` | the nested shape, `sw:` |
 //!
 //! They are derived rather than configured separately on purpose. Two
@@ -28,9 +30,7 @@
 //! which of the author's keys this crate *deletes* at publish. The rules, and
 //! why each one is a rejection rather than a caveat:
 //!
-//! * **Empty** — there is no unprefixed namespace. A stem of `""` gives a
-//!   prefix of `-` and a block key of `""`, and `is_ours` would answer for keys
-//!   nobody claimed.
+//! * **Empty** is not refused: it is the bare namespace, the default.
 //! * **Lowercase ASCII letters and digits only, starting with a letter.** The
 //!   reader does not case-fold — that is a deliberate property, pinned by its
 //!   own test — so a stem carrying an uppercase letter would make `X-kind` ours
@@ -48,6 +48,10 @@
 //! * **Not a stem that claims one of the Agent Skills spec's six keys.** Our
 //!   keys are dropped at publish, so a stem that claims a spec key deletes a
 //!   field the standard requires, from every published skill, silently.
+//! * **Not a stem that claims a key the reader models and a renderer
+//!   publishes** ([`Namespace::PUBLISHED_KEYS`]: `user-invocable`, `model`,
+//!   …). Same failure: the key drains as ours, the modeled field falls back
+//!   to its default, and `user-invocable: false` publishes as invocable.
 //!
 //! # Two boundary rules
 //!
@@ -74,16 +78,16 @@ use std::fmt;
 /// and both spellings the reader derives from it.
 ///
 /// Construct with [`Namespace::new`], or take [`Namespace::default`] for the
-/// `sw` the rest of the system documents. This is a value, passed to the
+/// bare namespace. This is a value, passed to the
 /// functions that need it — there is deliberately no global, no static, and no
 /// thread-local holding "the" namespace, for the same reason
 /// [`crate::vfs::Vfs`] is a parameter: a core that reads its configuration from
 /// an ambient cannot be given two of them, and cannot be tested with either.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Namespace {
-    /// The configured stem. Also the nested block key, exactly.
+    /// The configured stem, and the nested block key. Empty when bare.
     stem: String,
-    /// `stem` + `-`, computed once in [`Namespace::new`]. Stored rather than
+    /// `stem` + `-`, computed once in [`Namespace::new`]; empty when bare. Stored rather than
     /// formatted per call because [`Namespace::is_ours`] runs on every key of
     /// every note; derived rather than configured so it cannot drift from the
     /// stem.
@@ -91,9 +95,8 @@ pub struct Namespace {
 }
 
 impl Namespace {
-    /// The stem every document, mockup, and adopted note uses:
-    /// the namespace spec's `sw`.
-    pub const DEFAULT_STEM: &'static str = "sw";
+    /// The stem `build.namespace: sw` names: the conventional prefixed form.
+    pub const SW: &'static str = "sw";
 
     /// The Agent Skills spec's six allowed top-level keys, sorted.
     ///
@@ -106,6 +109,22 @@ impl Namespace {
         "license",
         "metadata",
         "name",
+    ];
+
+    /// The top-level keys outside the spec that a renderer reads by name,
+    /// sorted: the ones [`crate::vault`] lifts into modeled fields, and the
+    /// agent's `tools` and `temperature`, which [`crate::projection`] reads
+    /// from the carried keys. A stem may not claim one either: the namespace
+    /// drain runs first, so a claimed key never reaches its field.
+    pub const PUBLISHED_KEYS: &'static [&'static str] = &[
+        "argument-hint",
+        "arguments",
+        "context",
+        "disable-model-invocation",
+        "model",
+        "temperature",
+        "tools",
+        "user-invocable",
     ];
 
     /// Words a YAML reader may type as something other than a string. A stem
@@ -125,6 +144,9 @@ impl Namespace {
     /// [`InvalidStem`], naming the stem and the reason. See the module
     /// documentation for what each rule is protecting.
     pub fn new(stem: &str) -> Result<Self, InvalidStem> {
+        if stem.is_empty() {
+            return Ok(Self::bare());
+        }
         let reject = |reason| {
             Err(InvalidStem {
                 stem: stem.to_owned(),
@@ -132,9 +154,6 @@ impl Namespace {
             })
         };
 
-        if stem.is_empty() {
-            return reject(StemProblem::Empty);
-        }
         // Before the character rule, because the advice is different: a
         // hyphenated stem is well-formed and still refused.
         if stem.contains('-') {
@@ -154,11 +173,14 @@ impl Namespace {
         }
         // Claiming, not resembling: the stem *is* a spec key (so its block
         // would be one), or a spec key is one of its flat keys.
-        if let Some(key) = Self::SPEC_KEYS
-            .iter()
-            .find(|key| **key == stem || key.strip_prefix(stem).is_some_and(|r| r.starts_with('-')))
-        {
+        let claims = |key: &&&str| {
+            **key == stem || key.strip_prefix(stem).is_some_and(|r| r.starts_with('-'))
+        };
+        if let Some(key) = Self::SPEC_KEYS.iter().find(claims) {
             return reject(StemProblem::ClaimsSpecKey { key });
+        }
+        if let Some(key) = Self::PUBLISHED_KEYS.iter().find(claims) {
+            return reject(StemProblem::ClaimsPublishedKey { key });
         }
 
         Ok(Self {
@@ -167,12 +189,31 @@ impl Namespace {
         })
     }
 
-    /// The configured stem, as given.
+    /// The bare namespace: skillwright's keys carry no prefix.
+    pub fn bare() -> Self {
+        Self {
+            stem: String::new(),
+            prefix: String::new(),
+        }
+    }
+
+    /// The conventional prefixed namespace, `sw`.
+    pub fn sw() -> Self {
+        Self::new(Self::SW).expect("`sw` is a valid stem")
+    }
+
+    /// True when skillwright's keys carry no prefix.
+    pub fn is_bare(&self) -> bool {
+        self.stem.is_empty()
+    }
+
+    /// The configured stem, as given. Empty when bare.
     pub fn stem(&self) -> &str {
         &self.stem
     }
 
-    /// The prefix on every flat key we own — `sw-` for the default stem.
+    /// The prefix on every flat key we own — `sw-` for the `sw` stem, empty
+    /// when bare.
     pub fn prefix(&self) -> &str {
         &self.prefix
     }
@@ -187,7 +228,8 @@ impl Namespace {
         &self.stem
     }
 
-    /// The flat spelling of one of our fields: `key("kind")` is `sw-kind`.
+    /// The flat spelling of one of our fields: `key("version")` is
+    /// `sw-version` under `sw`, and `version` when bare.
     ///
     /// The only way anything in this crate names one of our keys. A literal
     /// `"sw-kind"` written anywhere would be a key that stops being ours the
@@ -198,23 +240,29 @@ impl Namespace {
         format!("{}{field}", self.prefix)
     }
 
-    /// True for any key this namespace claims, in either shape.
+    /// The field a flat spelling names: [`Self::key`] undone. `sw-version` is
+    /// `version` under `sw`, and any other key is itself.
+    pub fn field<'k>(&self, key: &'k str) -> &'k str {
+        key.strip_prefix(self.prefix.as_str()).unwrap_or(key)
+    }
+
+    /// True for any key a prefixed namespace claims, in either shape.
     ///
-    /// The one predicate the publish-time strip is made of.
-    /// [`crate::projection`] applies it at emit, and [`crate::frontmatter`]
-    /// drains exactly the keys it accepts.
+    /// The bare namespace claims no key by its spelling: which bare keys are
+    /// skillwright's is the key table's answer ([`crate::keys`]), so this is
+    /// false for every key when bare.
     ///
     /// Not case-folded. `SW-KIND` is a key we did not claim, and treating it as
     /// ours would delete a key the author typed on the strength of a guess.
     pub fn is_ours(&self, key: &str) -> bool {
-        key == self.block_key() || key.starts_with(&self.prefix)
+        !self.is_bare() && (key == self.block_key() || key.starts_with(&self.prefix))
     }
 }
 
 impl Default for Namespace {
-    /// The namespace spec's `sw`.
+    /// The bare namespace.
     fn default() -> Self {
-        Self::new(Self::DEFAULT_STEM).expect("the default stem is valid")
+        Self::bare()
     }
 }
 
@@ -255,9 +303,8 @@ impl std::error::Error for InvalidStem {}
 /// Why a stem was refused. One variant per rule, so a caller can act on the
 /// reason rather than match on prose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum StemProblem {
-    /// No stem at all.
-    Empty,
     /// The stem contains the separator between the namespace and the field.
     Hyphenated,
     /// Something outside lowercase ASCII letters and digits.
@@ -273,12 +320,18 @@ pub enum StemProblem {
         /// The Agent Skills spec key it would claim.
         key: &'static str,
     },
+    /// The namespace would own a key outside the spec that the reader models
+    /// and a renderer publishes ([`Namespace::PUBLISHED_KEYS`]) — and so drop
+    /// it at publish.
+    ClaimsPublishedKey {
+        /// The published key it would claim.
+        key: &'static str,
+    },
 }
 
 impl fmt::Display for StemProblem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Empty => f.write_str("a namespace needs a stem; there is no unprefixed one"),
             Self::Hyphenated => f.write_str(
                 "`-` separates the namespace from the field, so the stem may not contain one — \
                  `my-vault-kind` would be field `vault-kind` under stem `my` and field `kind` \
@@ -304,6 +357,12 @@ impl fmt::Display for StemProblem {
                  keys are dropped at publish, so every published skill would lose it",
                 Namespace::SPEC_KEYS.join(", ")
             ),
+            Self::ClaimsPublishedKey { key } => write!(
+                f,
+                "it would claim `{key}`, a key skillwright reads and publishes ({}) — and our \
+                 keys are dropped at publish, so the author's value would be lost",
+                Namespace::PUBLISHED_KEYS.join(", ")
+            ),
         }
     }
 }
@@ -317,8 +376,19 @@ mod tests {
     }
 
     #[test]
-    fn the_default_is_sw_and_behaves_as_the_constants_did() {
+    fn the_default_is_bare_and_claims_nothing_by_spelling() {
         let ns = Namespace::default();
+        assert!(ns.is_bare());
+        assert_eq!(ns.prefix(), "");
+        assert_eq!(ns.key("version"), "version");
+        assert!(!ns.is_ours("version"));
+        assert!(!ns.is_ours("sw-kind"));
+        assert_eq!(Namespace::new("").unwrap(), ns);
+    }
+
+    #[test]
+    fn sw_behaves_as_the_constants_did() {
+        let ns = Namespace::sw();
         assert_eq!(ns.stem(), "sw");
         assert_eq!(ns.prefix(), "sw-");
         assert_eq!(ns.block_key(), "sw");
@@ -368,11 +438,6 @@ mod tests {
             // a flat key — the one collision the two shapes could have had.
             assert!(!ns.block_key().starts_with(ns.prefix()));
         }
-    }
-
-    #[test]
-    fn an_empty_stem_is_refused() {
-        assert_eq!(rejected("").reason, StemProblem::Empty);
     }
 
     #[test]
@@ -451,6 +516,32 @@ mod tests {
         assert!(err.to_string().contains("allowed-tools"), "{err}");
     }
 
+    /// The read lifts these keys into modeled fields and a renderer emits
+    /// them, so a stem that claims one deletes a field the author wrote for
+    /// publication — `user` would drain `user-invocable: false` and publish
+    /// the skill as invocable.
+    #[test]
+    fn a_stem_that_claims_a_published_key_is_refused_naming_it() {
+        for (stem, key) in [
+            ("user", "user-invocable"),
+            ("disable", "disable-model-invocation"),
+            ("argument", "argument-hint"),
+            ("arguments", "arguments"),
+            ("model", "model"),
+            ("context", "context"),
+            ("tools", "tools"),
+            ("temperature", "temperature"),
+        ] {
+            let err = rejected(stem);
+            assert_eq!(
+                err.reason,
+                StemProblem::ClaimsPublishedKey { key },
+                "{stem}"
+            );
+            assert!(err.to_string().contains(key), "{err}");
+        }
+    }
+
     #[test]
     fn a_stem_that_is_merely_a_textual_prefix_of_a_spec_key_is_allowed() {
         // The boundary has to fall on a hyphen for a claim to exist. `desc-…`
@@ -467,7 +558,7 @@ mod tests {
     fn every_refusal_names_the_stem_and_says_why() {
         // The message is what a user configuring this actually sees, so it has
         // to carry both halves for every rule.
-        for stem in ["", "my-vault", "SW", "1", "no", "metadata"] {
+        for stem in ["my-vault", "SW", "1", "no", "metadata"] {
             let err = rejected(stem);
             let message = err.to_string();
             assert_eq!(err.stem, stem);

@@ -16,8 +16,14 @@ cargo install skillwright
 - `packages/ts/tradecraft-wasm/`: the WebAssembly build of the core, for TypeScript.
 - `plugin/`: the agent plugin, with skills for using the skillwright CLI. See [plugin/README.md](plugin/README.md).
 - `harness-reference/`: reference notes on agent harnesses.
-- `site/`: the project site.
-- `talks/`: talk material.
+- `docs/`: [decisions](docs/decisions/README.md), [standards](docs/standards/README.md) and [terms](docs/terms/README.md).
+
+## Documentation
+
+- [Getting started](docs/guide/getting-started.md)
+- [`skillwright.md` reference](docs/reference/skillwright-md.md)
+- [Field reference](docs/reference/fields.md), for each kind of note
+- [Structure spec](docs/spec/structure-v1.md), versioned
 
 Releases are built from this repository. See
 [RELEASING.md](packages/rust/skillwright/RELEASING.md).

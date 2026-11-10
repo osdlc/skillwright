@@ -1,0 +1,1616 @@
+{
+  "id": "evidence-v0",
+  "title": "Evidence as a primitive: references, evidence, experiments, synthesis",
+  "summary": "A proposal for the evidence types in the harness corpus, built on markdown-db (S-GFFY), with a survey of prior art and a worked example.",
+  "created": "2026-11-05",
+  "revision": 1,
+  "repo": {
+    "remote": "https://github.com/osdlc/skillwright",
+    "commit": "0f8b1f4f80ec0179a86f73a3bb1d1af9627250aa",
+    "root": "/Users/sksizer2/dev/repos/osdlc/skillwright-evidence"
+  },
+  "blocks": [
+    {
+      "type": "prose",
+      "id": "problem",
+      "title": "The problem and the constraints",
+      "text": "Evidence is the primitive the rest of the harness corpus builds on. A fact such as \"Claude Code does not read AGENTS.md natively\" is only as good as what backs it.\n\nAlpha, the frozen prototype, has the parts but not the shape:\n\n- **Evidence is mixed into the claim.** Each observation inside a fact holds both the value (`value`, `since`, `until`) and its backing (`source`, `locator`, `evidence`, `checked_version`).\n- **A run leaves no record.** `probes/` hold the commands, but a run's output and date are not kept. Some facts reuse the source's date instead.\n- **No excerpt.** What a page said lives in prose or in a research note, not in a field.\n- **Unpinned locators.** Sources link to `blob/main`, which changes under the link.\n\nConstraints:\n\n- **S-GFFY v0.** `x-ref` works only on a top-level property or the items of a top-level array. So a claim that points at evidence must be its own record with a top-level `evidence` list, or the standard must grow.\n- **Ship a type with a writer.** The dev repo's data-model decision (D-ORMG) deferred its own Evidence entity, and its one donor instance was broken. A type ships with one thing that writes it and one that reads it.\n- **No confidence score.** OKF, osdlc's system-model and the survey all argue against a stored score: it invites arithmetic nobody can justify, and it goes stale.\n- **Pure data.** Every rule is in a schema or the standard, never only in code."
+    },
+    {
+      "type": "prose",
+      "id": "recommendation",
+      "title": "Recommendation: a VA-Spec claims profile of markdown-db",
+      "text": "Built from three sources: our own prior art (`evidence-v0-own-prior-art.md`), the outside survey\n(`evidence-v0-survey.md`), and GA4GH VA-Spec's core information model.\n\n## Recommendation\n\nAdopt VA-Spec's core model as a reusable **claims profile** of markdown-db: a set of record types\nany corpus can use, with its own domain types beside them. Use VA-Spec's names. Keep markdown-db's\none-file-per-record layout and relative links, and depart from VA-Spec only where noted.\n\n### The framework\n\n| Type (folder) | VA-Spec | Holds | Our own prior art it follows |\n|---|---|---|---|\n| `statements` | Statement + Proposition | the claim: `subject` (link to a domain record), `predicate` (link to a domain question), `object` (the value), qualifiers (`since`, `until`, version range), `direction`, `evidence_lines` | harness-reference facts; fitness `claim` + subject address |\n| evidence lines, inside a statement | Evidence Line | `items` (links), `direction` (supports, disputes, neutral), optional `strength`, `warrant` | bug-finder and duplication-scan verdicts; fitness audit verdicts (disputes) |\n| `study-results` | Study Result | one observation: `kind`, `document` or `method` link, `locator`, `excerpt` or data, `context` (version, environment, machine), `contributions`. Asserts nothing | harness-reference observations; small-model-evals ledger lines; detect-harness reports |\n| `methods` | Method | a procedure: stages, fixtures, positive controls, safety notes, a fingerprint of its files, `maturity` | harness-reference probes; small-model-evals suites and snapshots (`suite_fp`); agent-dev judge eval |\n| `documents` | Document | a thing to point at: `url` or `path` (+ `sha256`), `title`, `publisher`, `quality`, `retrieved`, `archive` | fitness `Sources` (quality tiers); #74 references |\n| `contributions`, inline on every record | Contribution + Agent | `{agent, role: created, verified or disputed, at}` | sdlc step-evidence ledger (`session`, `timestamp`); review-pr state ref history |\n\nDepartures from VA-Spec:\n\n- **No `focus` on a study result.** What evidence is about is decided by the statement that cites\n  it, through an evidence line. One observation can back statements about several things.\n- **Strength is derived, not stored.** It comes from `kind` and the statement's claim type\n  (behaviour or policy), with an optional override on an evidence line that must give a `warrant`.\n  This follows osdlc system-model, OKF and the fitness evidence floor.\n- **Links, not nested objects or IRIs.** Each VA-Spec object reference is a relative Markdown link\n  to a record. A link may also point into a data file that is not a record (see gap G-2).\n\n### The domain\n\nEach corpus brings its own subject and predicate types. They are not part of the framework.\n\n| Corpus | Subject type | Predicate type |\n|---|---|---|\n| harness-reference | `harnesses` | `subjects` (`skills/project-dirs`) |\n| small-model-evals | `models` (by digest) | `jobs` or suites (\"good enough for redaction\") |\n| fitness vault | exercises, muscles, nutrients | `field` + `field_key` |\n\nThe fitness vault's subject address `(subject_kind, subject, field, field_key)` is the best\npredicate scheme we have and should be the pattern.\n\n### Names\n\nVA-Spec's names are unused in our repos, so they can replace words that mean four different\nthings today: **evidence** (fitness claim + quote, harness-reference's method kind, sdlc step\nledger, receipt signals), **finding** (lint diagnostic, rule breach, resolver diagnostic, review\ncomment), **verdict** (one agent's evidence line, an aggregate statement, a classification).\n`source` stays as an alias for Document. Severity is impact, not strength, and stays separate.\n\n### Adoption order\n\n1. **harness-reference** (reference adopter). Split each alpha observation into a study result and\n   a statement with one evidence line. Probes become methods. Rename #74's types: `references` →\n   `documents`, `evidence` → `study-results`; drop the `harness` field; group study results by\n   date or document, not harness.\n2. **small-model-evals.** Keep the JSONL ledger as study-result storage (9,178 lines is too many\n   for one file each). Add `statements` (\"model X passes suite Y on machine class Z\") whose\n   evidence lines cite ledger slices by `suite_fp`, `model.digest` and `env`. Suites become\n   methods.\n3. **fitness vault.** Add `direction` and `strength` to its Evidence notes, turn audit verdicts\n   into dispute lines, and make Sources documents.\n4. **sdlc producers** (bug-finder, duplication-scan, verify, review reports): match the field\n   names; persist only the statements worth keeping.\n\n## Does markdown-db hold it?\n\nYes, as a container. Every type is a record type with a JSON Schema, and every VA-Spec reference\nis an `x-ref` link. Today's S-GFFY expresses documents, study results and statements with evidence\nlines as separate records. It needs these to express the whole profile well:\n\n| Gap | Needed for | In the handoff roadmap |\n|---|---|---|\n| `x-ref` inside nested objects | evidence lines inside a statement; contributions | item 3 |\n| Folder records | methods with stages and fixtures; study results with output files | item 4 |\n| `x-warn` | \"a statement should have an evidence line\"; \"excerpt missing\" | item 5 (decided) |\n| G-1 **Shared schemas across corpora** | the claims profile is defined once and used by every corpus (`allOf` / `$ref` to a published schema, as VA-Spec profiles do) | new |\n| G-2 **Links into non-record data** | an evidence line citing ledger lines in a JSONL file (`results/ledger/<suite>.jsonl` with a key), as VA-Spec's `iriReference` does | new |\n| G-3 **Rules across records** | a statement's `object` must match its predicate record's value schema; evidence floors such as \"≥ 2 lines from ≥ 2 publishers\" | new; may belong in a validator plugin, not the spec |\n| G-4 **Append-only records** | study results must not change once written (small-model-evals enforces this with hashes) | new; can start as a convention plus a check script |\n\nG-1 and G-3 matter most. Without G-1 each corpus copies the profile; without G-3 a statement's\nvalue is not checked against its question.\n\n## Where it lives\n\nAs a second standard next to S-GFFY in skillwright: a markdown-db **claims profile**, with its JSON\nSchemas, promoted to osdlc together with markdown-db.\n"
+    },
+    {
+      "type": "matrix",
+      "id": "cascade",
+      "title": "The cascade: four levels, each built on the one below",
+      "rowLabel": "level",
+      "colLabel": "",
+      "rows": [
+        {
+          "id": "lv0",
+          "label": "0 · Reference",
+          "detail": "A page, repo or binary we can point at. No claim about what it says."
+        },
+        {
+          "id": "lv1",
+          "label": "1 · Evidence",
+          "detail": "One observation of a reference: what it said or did, when, for which version."
+        },
+        {
+          "id": "lv2",
+          "label": "2 · Experiment",
+          "detail": "A folder with a procedure and fixtures. Each run writes a level-1 record."
+        },
+        {
+          "id": "lv3",
+          "label": "3 · Synthesis",
+          "detail": "A narrative note that argues across many evidence records."
+        }
+      ],
+      "cols": [
+        {
+          "id": "form",
+          "label": "Form"
+        },
+        {
+          "id": "adds",
+          "label": "Adds"
+        },
+        {
+          "id": "alpha",
+          "label": "Alpha today"
+        }
+      ],
+      "cells": [
+        {
+          "row": "lv0",
+          "col": "form",
+          "state": "valid",
+          "note": "one file: `references/<publisher>/<name>.md`"
+        },
+        {
+          "row": "lv0",
+          "col": "adds",
+          "state": "valid",
+          "note": "a stable locator and title"
+        },
+        {
+          "row": "lv0",
+          "col": "alpha",
+          "state": "warn",
+          "note": "inline `sources[] {id, resource, title}` repeated per fact"
+        },
+        {
+          "row": "lv1",
+          "col": "form",
+          "state": "valid",
+          "note": "one file: `evidence/<harness>/<date> <name>.md`"
+        },
+        {
+          "row": "lv1",
+          "col": "adds",
+          "state": "valid",
+          "note": "kind, observed date, version, excerpt"
+        },
+        {
+          "row": "lv1",
+          "col": "alpha",
+          "state": "error",
+          "note": "no file: fields mixed into each observation; no excerpt"
+        },
+        {
+          "row": "lv2",
+          "col": "form",
+          "state": "warn",
+          "note": "a folder record; needs a spec addition"
+        },
+        {
+          "row": "lv2",
+          "col": "adds",
+          "state": "valid",
+          "note": "repeatable; positive control; verdict per claim"
+        },
+        {
+          "row": "lv2",
+          "col": "alpha",
+          "state": "warn",
+          "note": "`probes/<id>/probe.md` + `fixture/`; runs not recorded"
+        },
+        {
+          "row": "lv3",
+          "col": "form",
+          "state": "valid",
+          "note": "one file, OKF-style named footnotes to evidence"
+        },
+        {
+          "row": "lv3",
+          "col": "adds",
+          "state": "valid",
+          "note": "the argument across sources"
+        },
+        {
+          "row": "lv3",
+          "col": "alpha",
+          "state": "valid",
+          "note": "`sources/*.md` research notes"
+        }
+      ]
+    },
+    {
+      "id": "entities",
+      "type": "schema",
+      "dialect": "markdown-db",
+      "title": "Entities: the reusable framework and harness-reference's domain (VA-Spec names in each purpose)",
+      "groups": [
+        {
+          "id": "g-framework",
+          "title": "Framework (reusable for any domain)",
+          "tables": [
+            "claims",
+            "evidence_lines",
+            "evidence",
+            "references",
+            "experiments"
+          ]
+        },
+        {
+          "id": "g-domain",
+          "title": "Domain: harness-reference",
+          "tables": [
+            "harnesses",
+            "subjects"
+          ]
+        }
+      ],
+      "tables": [
+        {
+          "id": "harnesses",
+          "name": "harnesses",
+          "purpose": "Built. One record per harness, named by product. VA-Spec: the subject of a Proposition (a domain entity).",
+          "primaryKey": [
+            "id"
+          ],
+          "columns": [
+            {
+              "id": "harnesses.id",
+              "name": "id",
+              "type": "file name",
+              "pk": true,
+              "purpose": "`Claude Code`"
+            },
+            {
+              "id": "harnesses.vendor",
+              "name": "vendor",
+              "type": "string",
+              "nullable": false
+            },
+            {
+              "id": "harnesses.sources",
+              "name": "sources",
+              "type": "link[]",
+              "purpose": "Pages that back the record's own fields.",
+              "references": {
+                "table": "references",
+                "column": "id"
+              }
+            },
+            {
+              "id": "harnesses.successor",
+              "name": "successor",
+              "type": "link",
+              "references": {
+                "table": "harnesses",
+                "column": "id"
+              }
+            },
+            {
+              "id": "harnesses.fork_of",
+              "name": "fork_of",
+              "type": "link",
+              "references": {
+                "table": "harnesses",
+                "column": "id"
+              }
+            }
+          ]
+        },
+        {
+          "id": "references",
+          "name": "references",
+          "purpose": "Built. One record per thing you can point at: a web page today; a document (PDF, file at a commit) next. VA-Spec: Document.",
+          "primaryKey": [
+            "id"
+          ],
+          "columns": [
+            {
+              "id": "references.id",
+              "name": "id",
+              "type": "file name",
+              "pk": true,
+              "purpose": "`Anthropic/Claude Code overview`"
+            },
+            {
+              "id": "references.url",
+              "name": "url",
+              "type": "https url",
+              "nullable": false,
+              "purpose": "Required today. Planned: `url` or `path`."
+            },
+            {
+              "id": "references.path",
+              "name": "path",
+              "type": "file path",
+              "purpose": "Planned. A document the corpus keeps, with `sha256`.",
+              "flags": [
+                "planned"
+              ]
+            },
+            {
+              "id": "references.title",
+              "name": "title",
+              "type": "string",
+              "nullable": false
+            },
+            {
+              "id": "references.publisher",
+              "name": "publisher",
+              "type": "string",
+              "nullable": false,
+              "purpose": "Also the folder name."
+            },
+            {
+              "id": "references.archive",
+              "name": "archive",
+              "type": "url",
+              "purpose": "Wayback snapshot."
+            },
+            {
+              "id": "references.url_status",
+              "name": "url_status",
+              "type": "live | dead"
+            }
+          ]
+        },
+        {
+          "id": "evidence",
+          "name": "evidence",
+          "purpose": "Built. One look at a reference, a command or a run: when, which version, what it showed. Append-only. VA-Spec: Study Result.",
+          "primaryKey": [
+            "id"
+          ],
+          "columns": [
+            {
+              "id": "evidence.id",
+              "name": "id",
+              "type": "file name",
+              "pk": true,
+              "purpose": "`2026-11-08 Claude Code license`"
+            },
+            {
+              "id": "evidence.kind",
+              "name": "kind",
+              "type": "enum",
+              "nullable": false,
+              "purpose": "docs, changelog, source, help-text, run, issue, third-party, inferred"
+            },
+            {
+              "id": "evidence.reference",
+              "name": "reference",
+              "type": "link",
+              "purpose": "Required for page kinds. VA-Spec: reportedIn.",
+              "references": {
+                "table": "references",
+                "column": "id"
+              }
+            },
+            {
+              "id": "evidence.focus",
+              "name": "focus",
+              "type": "link",
+              "nullable": false,
+              "purpose": "What the evidence is about: a record of the corpus's domain type (here a harness). Named `harness` in #74 today. VA-Spec: focus.",
+              "references": {
+                "table": "harnesses",
+                "column": "id"
+              }
+            },
+            {
+              "id": "evidence.experiment",
+              "name": "experiment",
+              "type": "link",
+              "purpose": "Planned, for `kind: run`. VA-Spec: specifiedBy.",
+              "references": {
+                "table": "experiments",
+                "column": "id"
+              },
+              "flags": [
+                "planned"
+              ]
+            },
+            {
+              "id": "evidence.version",
+              "name": "version",
+              "type": "string",
+              "purpose": "With `version_basis`: exact, inferred or unknown."
+            },
+            {
+              "id": "evidence.observed",
+              "name": "observed",
+              "type": "date",
+              "nullable": false,
+              "purpose": "When we looked."
+            },
+            {
+              "id": "evidence.locator",
+              "name": "locator",
+              "type": "string",
+              "purpose": "Section, `#L10-L20`, or the command."
+            },
+            {
+              "id": "evidence.excerpt",
+              "name": "excerpt",
+              "type": "{exact, prefix, suffix}",
+              "purpose": "W3C text-quote selector."
+            },
+            {
+              "id": "evidence.observed_by",
+              "name": "observed_by",
+              "type": "string",
+              "nullable": false,
+              "purpose": "Person or agent session. VA-Spec: Contribution by an Agent."
+            }
+          ]
+        },
+        {
+          "id": "experiments",
+          "name": "experiments",
+          "purpose": "Planned. A folder record: procedure stages (setup, run, validate, teardown), fixtures with a positive control, safety notes. Each run writes one evidence record. VA-Spec: Method.",
+          "primaryKey": [
+            "id"
+          ],
+          "columns": [
+            {
+              "id": "experiments.id",
+              "name": "id",
+              "type": "folder name",
+              "pk": true,
+              "purpose": "`agents-md-read`"
+            },
+            {
+              "id": "experiments.subjects",
+              "name": "subjects",
+              "type": "link[]",
+              "purpose": "What its runs answer.",
+              "references": {
+                "table": "subjects",
+                "column": "id"
+              }
+            },
+            {
+              "id": "experiments.focus",
+              "name": "focus",
+              "type": "link[]",
+              "references": {
+                "table": "harnesses",
+                "column": "id"
+              },
+              "purpose": "The domain records its runs cover (here harnesses)."
+            },
+            {
+              "id": "experiments.maturity",
+              "name": "maturity",
+              "type": "enum",
+              "purpose": "draft, functional, reusable, reproduced (ACM badges)"
+            },
+            {
+              "id": "experiments.safety",
+              "name": "safety",
+              "type": "string[]",
+              "purpose": "What a run touches beyond its folder."
+            }
+          ]
+        },
+        {
+          "id": "subjects",
+          "name": "subjects",
+          "purpose": "Planned. A question asked of every harness, with the shape of its answer. VA-Spec: the predicate of a Proposition.",
+          "primaryKey": [
+            "id"
+          ],
+          "columns": [
+            {
+              "id": "subjects.id",
+              "name": "id",
+              "type": "path",
+              "pk": true,
+              "purpose": "`skills/project-dirs`"
+            },
+            {
+              "id": "subjects.question",
+              "name": "question",
+              "type": "string",
+              "nullable": false
+            },
+            {
+              "id": "subjects.value",
+              "name": "value",
+              "type": "JSON Schema",
+              "nullable": false,
+              "purpose": "The shape a claim's value must have."
+            },
+            {
+              "id": "subjects.claim_type",
+              "name": "claim_type",
+              "type": "behaviour | policy",
+              "purpose": "Picks the strength ladder."
+            }
+          ]
+        },
+        {
+          "id": "claims",
+          "name": "claims",
+          "purpose": "Planned. One harness's answer to one subject. This is what code reads. VA-Spec: Statement, holding a Proposition (harness, subject, value).",
+          "primaryKey": [
+            "id"
+          ],
+          "columns": [
+            {
+              "id": "claims.id",
+              "name": "id",
+              "type": "path",
+              "pk": true,
+              "purpose": "`claims/Claude Code/skills/project-dirs`"
+            },
+            {
+              "id": "claims.subject_entity",
+              "name": "subject_entity",
+              "type": "link",
+              "nullable": false,
+              "purpose": "Proposition subject: a record of the domain type (here a harness).",
+              "references": {
+                "table": "harnesses",
+                "column": "id"
+              }
+            },
+            {
+              "id": "claims.subject",
+              "name": "subject",
+              "type": "link",
+              "nullable": false,
+              "purpose": "Proposition predicate: a record of the domain's question vocabulary (here a harness-reference subject).",
+              "references": {
+                "table": "subjects",
+                "column": "id"
+              }
+            },
+            {
+              "id": "claims.value",
+              "name": "value",
+              "type": "per subject",
+              "nullable": false,
+              "purpose": "Proposition object, checked against the subject's `value` schema."
+            },
+            {
+              "id": "claims.since / until",
+              "name": "since / until",
+              "type": "version or date",
+              "purpose": "Proposition qualifiers."
+            },
+            {
+              "id": "claims.direction",
+              "name": "direction",
+              "type": "supports | disputes | neutral",
+              "purpose": "VA-Spec Statement.direction. Default supports."
+            }
+          ]
+        },
+        {
+          "id": "evidence_lines",
+          "name": "evidence_lines",
+          "purpose": "Planned. Why some evidence bears on a claim. Lives inside the claim record (needs nested x-ref) or as its own record. VA-Spec: Evidence Line.",
+          "primaryKey": [],
+          "columns": [
+            {
+              "id": "evidence_lines.claim",
+              "name": "claim",
+              "type": "link",
+              "nullable": false,
+              "purpose": "The claim it argues for. VA-Spec: targetProposition.",
+              "references": {
+                "table": "claims",
+                "column": "id"
+              }
+            },
+            {
+              "id": "evidence_lines.evidence",
+              "name": "evidence",
+              "type": "link[]",
+              "nullable": false,
+              "purpose": "VA-Spec: hasEvidenceItems.",
+              "references": {
+                "table": "evidence",
+                "column": "id"
+              }
+            },
+            {
+              "id": "evidence_lines.stance",
+              "name": "stance",
+              "type": "supports | disputes | neutral",
+              "nullable": false,
+              "purpose": "VA-Spec: directionOfEvidenceProvided."
+            },
+            {
+              "id": "evidence_lines.strength",
+              "name": "strength",
+              "type": "enum",
+              "purpose": "Optional override of the default from `kind`. VA-Spec: strengthOfEvidenceProvided."
+            },
+            {
+              "id": "evidence_lines.warrant",
+              "name": "warrant",
+              "type": "string",
+              "purpose": "Why this evidence bears on the claim (Toulmin)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "prose",
+      "id": "own-prior-art",
+      "title": "Our own prior art (scan of small-model-evals, osdlc, dev, skillwright)",
+      "text": "A scan of small-model-evals, osdlc, the dev monorepo and skillwright, 2026-11-08, mapped onto\nGA4GH VA-Spec's core classes. Plans: **(a)** adopt the shared model, **(b)** feed a corpus,\n**(c)** stay as is. Read from `origin/main` (small-model-evals `97850cf`, osdlc `943891bf`,\nskillwright `0f8b1f4`, dev `e97111bc88`).\n\n## sksizer/small-model-evals\n\n- **Ledger, snapshots, environments, model builds** (`scripts/ledger.ts`,\n  `results/ledger/<suite>.jsonl`, `results/suites/<suite>/<fp>.json`, `results/environments/`,\n  `results/models/<digest>.json`, `results/conditions/<run>.json`). 9,178 append-only lines over 19\n  suites. Cases are immutable (superseded via `metadata.supersedes`, moved to `cases/retired/`).\n  Snapshots freeze prompts, providers, scorer hashes and case hashes (`suite_fp`), enforced by\n  `scripts/check.ts`.\n  - `run`, `at` → Contribution. `machine`, `env`, runtime versions → study-result context.\n    `model{label, tag, digest}` → what the result is about. `suite`, `suite_fp`, `case` → Method.\n    `pass`, `score`, `latency_ms`, `tokens`, `metrics`, `reason`, `output`, `detail` → Study Result\n    data. Conditions (machine load) → result-quality qualifiers.\n  - No statements as records: \"model X is good enough for job Y\" lives only in `results/summary.md`,\n    site pages and prose in `docs/plans/*.md`.\n  - Plan (b) then (a): keep the ledger as study-result storage; add statements citing ledger slices.\n- **Model catalogue** (`scripts/catalog.ts`): url, publisher, licence, parameters, paper. Document\n  plus uncited facts. (b)\n- **Corpus image provenance** (`corpus/sources.yaml`): licence, credit, derived-from. (c)\n\n## osdlc\n\n- **system-model Evidence** (`packages/ts/system-model/src/aspect.ts`): `{kind, tier, source,\n  found}`, tier ranks directness, explicitly no confidence score. Closest field-level match.\n- **Conformance suites** (`packages/conformance/<family>/suite.json`): reference implementation\n  and version, cases with expected values. Method plus expected results; test runs are unpersisted\n  study results. (c), optionally (b) for \"implementation conforms\" statements.\n- **detect-harness report** (`packages/ts/detect-harness/src/report.ts`, D-05): provenance on\n  every fact (`scope`, `origin`, file), `sources[]` with parse status, `install` with version. Each\n  report is a study result of one machine. (b) as a run producer for harness-reference.\n- **dashboard bench** (`bench/`): a method whose results (`bench/results/runtime.json`) are not\n  committed, behind a rule in `docs/modules.md`. Statement with its evidence missing. (b)\n- **markdown-contract Finding**: a lint diagnostic, not a claim. (c); name clash.\n\n## dev monorepo\n\n- **Fitness vault Evidence and Sources** (`packages/vaults/fitness/vault/Evidence/`, 2,760 notes;\n  `vault/Sources/`, about 737; schema `solutions/determined/crates/determined-fitness/src/schema/evidence.rs`;\n  decisions D-0020 corpus claims carry evidence, D-0030 provenance has two faces). Evidence note:\n  `subject` + `subject_kind` + `field` + `field_key` (Proposition subject and predicate), `claim`\n  (statement text), `quote`, `source` (Document), `pack_id`, `updated_at` (Contribution). Direction\n  is always supports. Sources carry `quality` tiers and `retrieved_at`. Evidence floor: ≥ 2\n  citations from ≥ 2 publishers, ≥ 1 not Wikipedia. Audit shards hold dispute verdicts with a\n  corrected value. (a)\n- **sdlc step-evidence ledger** (`solutions/ontological/lib/services/pr/evidence.ts`,\n  `.sdlc/pr-evidence/<head_sha>.jsonl`): `{step, head_sha, result, timestamp, session}`. Method,\n  study result, Contribution; the merge gate's decision is the statement. (c) storage; match names.\n- **verify findings** (`lib/services/verify/reports/changes/schema.ts`): `{sourceId, file, line,\n  evidence (quote), why, severity}`, plus a verdict. Subject, predicate \"breaches\", a quoted item,\n  an evidence-line rationale. (a) for names.\n- **agent-dev judge eval** (`packages/ts/agent-dev/src/eval/`): planted breaches, matched / missed\n  / spurious scoring, engine and model. Method and study result, unpersisted. (b)\n- **review-pr state ref** (`refs/review-pr/<pr>`, 232 refs): findings with `open | fixed |\n  declined`, history as git commits with compare-and-swap. A pattern for contribution history. (c)\n- **bug-finder validate** (`*.workflow.js`, `docs/planning/bug-sweeps/…/findings.jsonl`):\n  several agents' `{refuted, reason, evidence: file:line, severity}` tallied into confirmed or\n  refuted. Evidence lines with direction, one per agent. (a)\n- **duplication-scan** arbiter verdicts and objections in rounds: same pattern. (a)\n- **task claims, review reports, friction, research notes** (S-0014 requires observation-based\n  findings with version and fixture), **D-3PDM evidence attachment**, delivery receipt, pr-check\n  verdicts, plugin eval suites, parley answers: mostly (b) or (c).\n\n## skillwright\n\n- **harness-reference alpha**: 589 facts, about 633 observations, 223 open questions, 6 probes. An\n  observation merges a statement (`value`, `since`, `until`), an evidence line and a study result\n  (`observed`, `source`, `via`, `locator`, `checked_version`, `evidence` kind, `probe`, `model`).\n  Missing: direction and strength. (a), reference adopter.\n- **harness-reference beta**: already markdown-db. (a) first.\n- **tradecraft-core `profile.rs`**: a consumer; its tests check hand-written rows against facts.\n\n## Strongest patterns\n\n1. harness-reference observation + probe: split into study result, statement and evidence line.\n2. Fitness Evidence/Source: the subject address, verbatim quotes, source quality, evidence floors,\n   dispute verdicts.\n3. small-model-evals provenance: immutable cases, hashed snapshots, environment and build files,\n   append-only ledger. Lacks statements.\n4. bug-finder / duplication-scan adversarial validation: per-agent supports / disputes lines.\n5. sdlc step ledger keyed by sha, and review-pr's git-native history.\n\n## Name clashes\n\n- **evidence**: fitness claim + quote + source; harness-reference method kind; sdlc step ledger;\n  receipt signals. None is VA-Spec's Evidence Line.\n- **finding**: markdown-contract diagnostic; verify rule breach; task-claims diagnostic; review-pr\n  comment.\n- **verdict**: one agent's evidence line; an aggregate statement; a classification.\n- **observation**: harness-reference's merged record; unrelated session hook wiring.\n- **claim**: fitness statement text; sdlc task prose assertions.\n- **source**: consistently a Document; keep as an alias.\n- Statement, Method, Study Result and Contribution are unused, so they can be introduced cleanly.\n- Strength-like fields are scattered (confidence, quality, research_status); severity is impact.\n\nNot covered: dashboard bench results (uncommitted); `apps/ontological-legacy` and\n`experiences/system-graph` evidence docs were only touched.\n"
+    },
+    {
+      "type": "matrix",
+      "id": "survey-own",
+      "title": "Survey · our own work first",
+      "rowLabel": "model",
+      "colLabel": "",
+      "rows": [
+        {
+          "id": "o-sm",
+          "label": "osdlc system-model `Evidence`",
+          "detail": "`{kind, tier, source, found}` in `packages/ts/system-model/src/aspect.ts`. The closest existing pattern."
+        },
+        {
+          "id": "o-ref",
+          "label": "dev sdlc `reference` entity",
+          "detail": "Curated catalog entry: id, title, url, cited-by, body Summary/Material/Notes. Its definition says a Reference is not Evidence."
+        },
+        {
+          "id": "o-ormg",
+          "label": "dev decision D-ORMG",
+          "detail": "Reserves an `EV` Evidence entity, deferred. A type ships with a writer and a reader."
+        },
+        {
+          "id": "o-onto",
+          "label": "sksizer/ontological evidence",
+          "detail": "`relates_to_id/type`, free-string `source`, `confidence`. Its only instance was broken."
+        },
+        {
+          "id": "o-alpha",
+          "label": "skillwright alpha",
+          "detail": "Evidence enum and probes are good; evidence mixed into claims."
+        },
+        {
+          "id": "o-gffy",
+          "label": "S-GFFY",
+          "detail": "`x-ref` top-level only."
+        }
+      ],
+      "cols": [
+        {
+          "id": "borrow",
+          "label": "Borrow"
+        },
+        {
+          "id": "avoid",
+          "label": "Avoid"
+        }
+      ],
+      "cells": [
+        {
+          "row": "o-sm",
+          "col": "borrow",
+          "state": "valid",
+          "note": "locator (`source`) + raw value (`found`) split; kind ranked by directness; claim tier = weakest of its evidence"
+        },
+        {
+          "row": "o-sm",
+          "col": "avoid",
+          "state": "skip",
+          "note": "its kinds (manifest, dependency, files, content) are about repos, not harnesses"
+        },
+        {
+          "row": "o-ref",
+          "col": "borrow",
+          "state": "valid",
+          "note": "level-0 sibling; align field names"
+        },
+        {
+          "row": "o-ref",
+          "col": "avoid",
+          "state": "warn",
+          "note": "cited-by list points the wrong way; derive it instead"
+        },
+        {
+          "row": "o-ormg",
+          "col": "borrow",
+          "state": "valid",
+          "note": "ship evidence with a writer from day one"
+        },
+        {
+          "row": "o-ormg",
+          "col": "avoid",
+          "state": "skip",
+          "note": "nothing"
+        },
+        {
+          "row": "o-onto",
+          "col": "borrow",
+          "state": "skip",
+          "note": "nothing"
+        },
+        {
+          "row": "o-onto",
+          "col": "avoid",
+          "state": "error",
+          "note": "untyped back-pointer, free-string kind, confidence enum"
+        },
+        {
+          "row": "o-alpha",
+          "col": "borrow",
+          "state": "valid",
+          "note": "evidence enum; `run` needs a probe and a checked version"
+        },
+        {
+          "row": "o-alpha",
+          "col": "avoid",
+          "state": "error",
+          "note": "evidence inside claims; `blob/main` locators"
+        },
+        {
+          "row": "o-gffy",
+          "col": "borrow",
+          "state": "valid",
+          "note": "claims as records with a top-level `evidence` list"
+        },
+        {
+          "row": "o-gffy",
+          "col": "avoid",
+          "state": "warn",
+          "note": "nested x-ref is deferred; don't depend on it"
+        }
+      ]
+    },
+    {
+      "type": "matrix",
+      "id": "survey-ext",
+      "title": "Survey · outside models",
+      "rowLabel": "model",
+      "colLabel": "",
+      "rows": [
+        {
+          "id": "e-prov",
+          "label": "W3C PROV-O",
+          "detail": "entity / activity / agent; plan vs activity"
+        },
+        {
+          "id": "e-wd",
+          "label": "Wikidata references",
+          "detail": "stated in, reference URL, retrieved, quote; ranks; time on the statement"
+        },
+        {
+          "id": "e-nano",
+          "label": "Nanopublications",
+          "detail": "assertion / provenance / pubinfo; immutable"
+        },
+        {
+          "id": "e-micro",
+          "label": "Micropublications",
+          "detail": "minimal → full; supports / challenges; methods as objects"
+        },
+        {
+          "id": "e-sepio",
+          "label": "SEPIO",
+          "detail": "the evidence line: direction and strength on the link"
+        },
+        {
+          "id": "e-eco",
+          "label": "ECO / GO evidence codes [ids unverified]",
+          "detail": "author statement vs experimental vs curator inference"
+        },
+        {
+          "id": "e-grade",
+          "label": "GRADE / CEBM",
+          "detail": "certainty of a conclusion; ladder per question type; indirectness"
+        },
+        {
+          "id": "e-adm",
+          "label": "Admiralty code",
+          "detail": "source reliability A–F separate from credibility 1–6"
+        },
+        {
+          "id": "e-okf",
+          "label": "OKF v0.2",
+          "detail": "no score; generated vs verified; named footnotes"
+        },
+        {
+          "id": "e-wa",
+          "label": "W3C Web Annotation / Hypothes.is",
+          "detail": "TextQuoteSelector; fuzzy re-anchoring"
+        },
+        {
+          "id": "e-cite",
+          "label": "Wikipedia cite web / CSL-JSON",
+          "detail": "source date vs access date; archive-url; version; typed locator"
+        },
+        {
+          "id": "e-mem",
+          "label": "Memento / SWHID",
+          "detail": "URI-M snapshots; commit-pinned code"
+        },
+        {
+          "id": "e-popper",
+          "label": "Popper convention",
+          "detail": "experiment folder: setup / run / validate / teardown"
+        },
+        {
+          "id": "e-acm",
+          "label": "ACM artifact badges",
+          "detail": "available → functional → reusable → reproduced"
+        },
+        {
+          "id": "e-run",
+          "label": "RO-Crate run / MLflow / DVC / in-toto [in-toto fields unverified]",
+          "detail": "run records: instrument, inputs, outputs, agent, times, digests"
+        },
+        {
+          "id": "e-toul",
+          "label": "Toulmin / AIF",
+          "detail": "warrant; rebut vs undercut"
+        }
+      ],
+      "cols": [
+        {
+          "id": "x-borrow",
+          "label": "Borrow"
+        },
+        {
+          "id": "x-avoid",
+          "label": "Avoid"
+        }
+      ],
+      "cells": [
+        {
+          "row": "e-prov",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "check each record answers what, by what act, by whom"
+        },
+        {
+          "row": "e-prov",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "RDF, qualified relations"
+        },
+        {
+          "row": "e-wd",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "the reference field set; time qualifiers on the claim"
+        },
+        {
+          "row": "e-wd",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "item/property id indirection"
+        },
+        {
+          "row": "e-nano",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "records append-only; content hash"
+        },
+        {
+          "row": "e-nano",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "named graphs, trusty URIs"
+        },
+        {
+          "row": "e-micro",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "confirms the cascade"
+        },
+        {
+          "row": "e-micro",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "the full OWL model"
+        },
+        {
+          "row": "e-sepio",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "stance and strength on the claim→evidence link"
+        },
+        {
+          "row": "e-sepio",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "the ontology"
+        },
+        {
+          "row": "e-eco",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "flat kind enum; vendor statement vs our observation"
+        },
+        {
+          "row": "e-eco",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "hundreds of leaf terms"
+        },
+        {
+          "row": "e-grade",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "ladders per claim type; adjust only with a reason"
+        },
+        {
+          "row": "e-grade",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "evidence profiles"
+        },
+        {
+          "row": "e-adm",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "who said it vs how well confirmed"
+        },
+        {
+          "row": "e-adm",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "hand-entered codes on every record"
+        },
+        {
+          "row": "e-okf",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "no score; named footnote keys in synthesis"
+        },
+        {
+          "row": "e-okf",
+          "col": "x-avoid",
+          "state": "warn",
+          "note": "no versioned values; keep since/until"
+        },
+        {
+          "row": "e-wa",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "`excerpt {exact, prefix, suffix}`; present / moved / gone check"
+        },
+        {
+          "row": "e-wa",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "DOM selectors, JSON-LD"
+        },
+        {
+          "row": "e-cite",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "`observed` vs `source_date`; `archive`, `url_status`"
+        },
+        {
+          "row": "e-cite",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "full bibliographic fields"
+        },
+        {
+          "row": "e-mem",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "archive as a Wayback URL; code pinned to a commit"
+        },
+        {
+          "row": "e-mem",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "WARC files"
+        },
+        {
+          "row": "e-popper",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "fixed stages; `validate` gives a verdict per claim"
+        },
+        {
+          "row": "e-popper",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "its later container engine"
+        },
+        {
+          "row": "e-acm",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "experiment maturity ladder"
+        },
+        {
+          "row": "e-acm",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "the review process"
+        },
+        {
+          "row": "e-run",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "run record fields; hash fixtures; subject = harness@version"
+        },
+        {
+          "row": "e-run",
+          "col": "x-avoid",
+          "state": "error",
+          "note": "tracking servers, signing"
+        },
+        {
+          "row": "e-toul",
+          "col": "x-borrow",
+          "state": "valid",
+          "note": "optional `warrant` on a link"
+        },
+        {
+          "row": "e-toul",
+          "col": "x-avoid",
+          "state": "warn",
+          "note": "`undercuts` as a stance; start with a note"
+        }
+      ]
+    },
+    {
+      "type": "annotated-text",
+      "id": "example",
+      "title": "Worked example · \"Claude Code does not read AGENTS.md natively\" (illustration: URL, excerpt, version and hash are made up, not fetched)",
+      "language": "text",
+      "text": "harness-reference/corpora/beta/\n├── references/\n│   ├── references.schema.md\n│   └── Anthropic/\n│       └── Claude Code memory docs.md\n├── evidence/\n│   ├── evidence.schema.md\n│   └── Claude Code/\n│       ├── 2026-11-05 memory docs on AGENTS.md.md\n│       └── 2026-11-05 run agents-md-read.md\n├── experiments/\n│   ├── experiments.schema.md\n│   └── agents-md-read/\n│       ├── agents-md-read.md          the folder record\n│       ├── setup.sh\n│       ├── run.sh\n│       ├── validate.sh\n│       ├── teardown.sh\n│       ├── fixtures/\n│       │   ├── CLAUDE.md               positive control: says \"marker A\"\n│       │   └── AGENTS.md               says \"marker B\"\n│       └── runs/2026-11-05T0930Z/transcript.txt\n└── claims/\n    ├── claims.schema.md\n    └── Claude Code/\n        └── Reads AGENTS.md.md\n\n# references/Anthropic/Claude Code memory docs.md\n---\nurl: \"https://code.claude.com/docs/en/memory\"\ntitle: \"Manage Claude's memory\"\npublisher: Anthropic\narchive: \"https://web.archive.org/web/20261105093000/https://code.claude.com/docs/en/memory\"\nurl_status: live\n---\n\n# evidence/Claude Code/2026-11-05 memory docs on AGENTS.md.md\n---\nkind: docs\nreference: \"[Claude Code memory docs](../../references/Anthropic/Claude%20Code%20memory%20docs.md)\"\nharness: \"[Claude Code](../../harnesses/Claude%20Code.md)\"\nversion: 2.1.318\nversion_basis: inferred\nobserved: 2026-11-05\nlocator: { section: \"Determine memory type\" }\nexcerpt:\n  exact: \"Claude Code reads CLAUDE.md files\"\n  prefix: \"memory locations. \"\n  suffix: \" in a hierarchical\"\nobserved_by: \"agent: claude-opus-5-5, session 01NQ…\"\n---\n\n# evidence/Claude Code/2026-11-05 run agents-md-read.md\n---\nkind: run\nexperiment: \"[agents-md-read](../../experiments/agents-md-read/agents-md-read.md)\"\nharness: \"[Claude Code](../../harnesses/Claude%20Code.md)\"\nversion: 2.1.318\nversion_basis: exact\nobserved: 2026-11-05\nrun:\n  id: 2026-11-05T0930Z\n  environment: { os: macOS 26.1, model: claude-opus-5-5 }\n  outcome: { CLAUDE.md: read, AGENTS.md: not-read }\n  transcript: \"../../experiments/agents-md-read/runs/2026-11-05T0930Z/transcript.txt\"\n  sha256: 9f2c…\nobserved_by: \"person: sksizer\"\n---\n\n# claims/Claude Code/Reads AGENTS.md.md\n---\nharness: \"[Claude Code](../../harnesses/Claude%20Code.md)\"\nsubject: \"instructions/agents-md\"\nvalue: { supported: false, workaround: \"import it with @AGENTS.md in CLAUDE.md\" }\nsince: null\nuntil: null\nevidence:\n  - \"[run agents-md-read](../../evidence/Claude%20Code/2026-11-05%20run%20agents-md-read.md)\"\n  - \"[memory docs](../../evidence/Claude%20Code/2026-11-05%20memory%20docs%20on%20AGENTS.md.md)\"\nlines:\n  - evidence: 0\n    stance: supports\n  - evidence: 1\n    stance: supports\n    warrant: \"Docs list the files it reads; AGENTS.md is not among them. Indirect.\"\n---",
+      "steps": [
+        {
+          "id": "ex-tree",
+          "title": "Four types, one folder each",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "harness-reference/corpora/beta/\n├── references/"
+          },
+          "summary": "`references`, `evidence`, `experiments` and `claims` sit beside `harnesses` in corpus beta.",
+          "detail": "Each is a type folder holding `<name>.schema.md`, as S-GFFY already requires. Records are named for people: the page title, or the date plus what was looked at."
+        },
+        {
+          "id": "ex-ref",
+          "title": "Level 0: the page itself",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "# references/Anthropic/Claude Code memory docs.md"
+          },
+          "summary": "One record per page, grouped by publisher. Many evidence records can point at it over time.",
+          "detail": "Holds only what is stable about the page: URL, title, publisher, and an optional Wayback snapshot plus live/dead status. It says nothing about what the page claims."
+        },
+        {
+          "id": "ex-docs",
+          "title": "Level 1: what the docs said, on a date",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "# evidence/Claude Code/2026-11-05 memory docs on AGENTS.md.md"
+          },
+          "summary": "An observation of the reference: kind, date, version, and the quoted text.",
+          "detail": "`excerpt` follows the W3C TextQuoteSelector: the exact words plus a little text either side, so a re-check can tell whether the quote is still on the page, moved, or gone. `version_basis: inferred` because a docs page does not say which release it describes."
+        },
+        {
+          "id": "ex-run",
+          "title": "Level 1: what a run showed",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "# evidence/Claude Code/2026-11-05 run agents-md-read.md"
+          },
+          "summary": "Same type, `kind: run`. Points at the experiment, not at a reference.",
+          "detail": "The run block borrows from RO-Crate and MLflow: run id, environment, outcome, transcript path and hash. The record is written once and not edited; a later run that disagrees is a new record."
+        },
+        {
+          "id": "ex-exp",
+          "title": "Level 2: the experiment is a folder",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "│       ├── agents-md-read.md          the folder record"
+          },
+          "summary": "A folder record: its markdown file has the folder's name, everything else in the folder belongs to it.",
+          "detail": "Popper-style stages: `setup`, `run`, `validate`, `teardown`. `validate.sh` turns raw output into a verdict per claim."
+        },
+        {
+          "id": "ex-control",
+          "title": "A negative claim needs a positive control",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "│       │   ├── CLAUDE.md               positive control: says \"marker A\""
+          },
+          "summary": "The run proves CLAUDE.md is read, so \"AGENTS.md was not read\" means something.",
+          "detail": "Without the control, a broken test and a real \"not read\" look the same."
+        },
+        {
+          "id": "ex-claim",
+          "title": "The claim points at its evidence",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "# claims/Claude Code/Reads AGENTS.md.md"
+          },
+          "summary": "A claim is its own record with a top-level `evidence` list, which S-GFFY v0 can check with `x-ref`.",
+          "detail": "`lines` holds stance per link (supports / contradicts) and an optional `warrant`: why this evidence bears on this claim. Strength is not stored; it comes from each evidence record's kind. The docs line is marked indirect."
+        }
+      ]
+    },
+    {
+      "type": "annotated-text",
+      "id": "fields",
+      "title": "Proposed level-1 fields",
+      "language": "text",
+      "text": "# evidence/evidence.schema.md (sketch)\nrequired: [kind, observed, harness]\nproperties:\n  kind:          enum [run, source, help-text, changelog, docs, issue, third-party, inferred]\n  reference:     x-ref references     (required unless kind is run or inferred)\n  experiment:    x-ref experiments    (required when kind is run)\n  harness:       x-ref harnesses\n  version:       string\n  version_basis: enum [exact, inferred, unknown]\n  observed:      date                 when we looked\n  source_date:   date                 the source's own date, if it has one\n  locator:       { section | line | timestamp | commit | path }\n  excerpt:       { exact, prefix?, suffix? }\n  archive:       uri                  a Wayback snapshot, or a file in the corpus\n  observed_by:   string               person, or agent + session\n  run:           { id, environment, outcome, transcript, sha256 }",
+      "steps": [
+        {
+          "id": "f-kind",
+          "title": "`kind` is ranked by directness",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "  kind:          enum [run, source, help-text, changelog, docs, issue, third-party, inferred]"
+          },
+          "summary": "Alpha's enum plus `issue` and `third-party`, listed strongest first for behaviour claims.",
+          "detail": "For policy claims (\"deprecated\", \"recommended\") docs and changelog rank first, because a run cannot show intent. Like system-model's `tier`, a claim is as strong as its best supporting line; no number is stored."
+        },
+        {
+          "id": "f-locator",
+          "title": "Locators are typed and pinned",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "  locator:       { section | line | timestamp | commit | path }"
+          },
+          "summary": "Where in the reference. Source code is pinned to a commit, never `main`.",
+          "detail": "Field names follow CSL-JSON's locator types."
+        },
+        {
+          "id": "f-observed",
+          "title": "Two dates, not one",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "  observed:      date                 when we looked"
+          },
+          "summary": "`observed` is when we looked; `source_date` is the page's own date.",
+          "detail": "Alpha conflates them. Wikipedia's cite web and CSL keep them apart."
+        },
+        {
+          "id": "f-excerpt",
+          "title": "The quote, re-findable",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "  excerpt:       { exact, prefix?, suffix? }"
+          },
+          "summary": "W3C TextQuoteSelector shape.",
+          "detail": "A `recheck` verb could refetch the page and report present / moved / gone, like Hypothes.is."
+        },
+        {
+          "id": "f-archive",
+          "title": "A snapshot against link rot",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "  archive:       uri                  a Wayback snapshot, or a file in the corpus"
+          },
+          "summary": "Optional. A Wayback URL carries its own timestamp (a Memento URI-M).",
+          "detail": "Vendor docs pages are rewritten without notice."
+        },
+        {
+          "id": "f-by",
+          "title": "Who looked",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "  observed_by:   string               person, or agent + session"
+          },
+          "summary": "Keeps human-checked and agent-extracted evidence apart.",
+          "detail": "OKF separates `generated` from `verified`; ECO separates manual from automatic assertion."
+        }
+      ]
+    },
+    {
+      "type": "annotated-text",
+      "id": "experiment",
+      "title": "Proposed level-2 shape and the spec addition it needs",
+      "language": "text",
+      "text": "experiments/agents-md-read/\n├── agents-md-read.md     id, question, claims tested, harnesses + version range,\n│                         expected result per claim, controls, safety, maturity\n├── setup.sh\n├── run.sh\n├── validate.sh           output → verdict per claim\n├── teardown.sh\n├── fixtures/             inputs; hashed per run\n└── runs/<run id>/        transcript and outputs\n\nS-GFFY addition (folder records):\n  A folder inside a type folder that holds a file named after the folder\n  (agents-md-read/agents-md-read.md) is one record. Its id is the folder name.\n  Every other file under that folder is an attachment of the record: not a\n  record, not checked against the schema, allowed in any format.",
+      "steps": [
+        {
+          "id": "x-meta",
+          "title": "The record's frontmatter",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "├── agents-md-read.md     id, question, claims tested, harnesses + version range,"
+          },
+          "summary": "What is asked, which claims it tests, and what is expected.",
+          "detail": "`maturity` follows ACM's artifact badges: draft → functional → reusable → reproduced. Reproduced means a second person, machine, agent session or harness version got the same verdict."
+        },
+        {
+          "id": "x-stages",
+          "title": "Fixed stages",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "├── setup.sh"
+          },
+          "summary": "Popper convention: setup, run, validate, teardown.",
+          "detail": "Fixed names let a tool re-run any experiment when a new harness version ships."
+        },
+        {
+          "id": "x-validate",
+          "title": "A verdict per claim",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "├── validate.sh           output → verdict per claim"
+          },
+          "summary": "Turns raw output into supports / contradicts / inconclusive for each claim.",
+          "detail": "The verdict becomes the stance on the claim's evidence line."
+        },
+        {
+          "id": "x-runs",
+          "title": "Each run leaves a record",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "└── runs/<run id>/        transcript and outputs"
+          },
+          "summary": "Raw output stays here; the run's level-1 evidence record points at it with a hash.",
+          "detail": "This is the writer D-ORMG asks for."
+        },
+        {
+          "id": "x-folder",
+          "title": "Folder records in S-GFFY",
+          "anchor": {
+            "type": "TextQuoteSelector",
+            "exact": "S-GFFY addition (folder records):"
+          },
+          "summary": "Today a `.sh` or `.txt` file inside a type folder is fine, but a `.json` output in a markdown-only corpus is an error, and nothing ties the files to one record.",
+          "detail": "Same naming rule as `<type>/<type>.schema.md`, so it reads the same way in a file browser."
+        }
+      ]
+    },
+    {
+      "type": "trace",
+      "id": "uc-capture",
+      "title": "First writer · `capture` a docs page",
+      "input": "markdown-db capture evidence --harness \"Claude Code\" https://code.claude.com/docs/en/memory",
+      "steps": [
+        {
+          "id": "c-ref",
+          "label": "Find or create the reference",
+          "outcome": "checked",
+          "reason": "Looks up `references/` by URL; creates `references/Anthropic/Claude Code memory docs.md` if missing."
+        },
+        {
+          "id": "c-fetch",
+          "label": "Fetch the page and ask for a Wayback snapshot",
+          "outcome": "checked",
+          "reason": "Stores `archive` and `url_status`. A failed snapshot is a warning, not an error."
+        },
+        {
+          "id": "c-quote",
+          "label": "Store the quoted text",
+          "outcome": "checked",
+          "reason": "The person or agent picks the quote; the tool stores `exact` plus 32 characters either side."
+        },
+        {
+          "id": "c-write",
+          "label": "Write the evidence record",
+          "outcome": "pass",
+          "reason": "`evidence/Claude Code/2026-11-05 memory docs.md`, then `validate` runs on it."
+        }
+      ],
+      "outcomes": {
+        "checked": "skip",
+        "pass": "ok",
+        "error": "bad",
+        "warn": "warn"
+      }
+    }
+  ],
+  "questions": [
+    {
+      "id": "q-names",
+      "group": "Types",
+      "about": "recommendation",
+      "kind": "single",
+      "recommended": "va-names",
+      "prompt": "Use VA-Spec's names for the framework types, and rename #74's `references` → `documents` and `evidence` → `study-results` before it merges?",
+      "options": [
+        {
+          "id": "va-names",
+          "label": "VA-Spec names, rename in #74",
+          "detail": "Statement, Evidence Line, Study Result, Method, Document, Contribution. They are unused in our repos and replace 'evidence', 'finding' and 'verdict', which each mean several things today. `source` stays as an alias."
+        },
+        {
+          "id": "keep-ours",
+          "label": "Keep references / evidence, map to VA-Spec in docs",
+          "detail": "No rename; the overloaded words stay."
+        }
+      ]
+    },
+    {
+      "id": "q-focus",
+      "group": "Evidence",
+      "about": "recommendation",
+      "kind": "single",
+      "recommended": "drop",
+      "prompt": "Drop the `harness` field from evidence (study results), so what it is about comes only from the statements that cite it?",
+      "options": [
+        {
+          "id": "drop",
+          "label": "Drop it; group study results by date or document",
+          "detail": "Departs from VA-Spec's required `focus`. One observation can back statements about several things."
+        },
+        {
+          "id": "keep-as-focus",
+          "label": "Keep it as an optional `focus`",
+          "detail": "Closer to VA-Spec; a second copy of what the statement already says."
+        }
+      ]
+    },
+    {
+      "id": "q-profile-home",
+      "group": "Spec",
+      "about": "recommendation",
+      "kind": "single",
+      "recommended": "second-standard",
+      "prompt": "Where does the claims framework live?",
+      "options": [
+        {
+          "id": "second-standard",
+          "label": "A second standard next to S-GFFY: the markdown-db claims profile, with its JSON Schemas",
+          "detail": "Promoted to osdlc with markdown-db. Needs gap G-1 (shared schemas across corpora)."
+        },
+        {
+          "id": "in-harness-reference",
+          "label": "Inside harness-reference for now",
+          "detail": "Faster; small-model-evals and the fitness vault cannot reuse it yet."
+        }
+      ]
+    },
+    {
+      "id": "q-ledger",
+      "group": "Spec",
+      "about": "recommendation",
+      "kind": "single",
+      "recommended": "keyed-links",
+      "prompt": "High-volume results (small-model-evals' 9,178 ledger lines, sdlc step ledgers): how do statements cite them?",
+      "options": [
+        {
+          "id": "keyed-links",
+          "label": "Links into non-record data files with a key (gap G-2)",
+          "detail": "Ledgers stay JSONL; an evidence line names the file and the key (`suite_fp`, `model.digest`, `env`). Like VA-Spec's iriReference."
+        },
+        {
+          "id": "one-record-each",
+          "label": "One study-result record per ledger line",
+          "detail": "Uniform, but thousands of files."
+        },
+        {
+          "id": "summary-records",
+          "label": "Summary study-result records per run, written from the ledger",
+          "detail": "Fewer files; a build step keeps them in step."
+        }
+      ]
+    },
+    {
+      "id": "q-cross-rules",
+      "group": "Spec",
+      "about": "recommendation",
+      "kind": "single",
+      "recommended": "validator-plugin",
+      "prompt": "Rules across records (a statement's value must match its predicate's value schema; evidence floors like '≥ 2 lines from ≥ 2 publishers'): where do they live? (gap G-3)",
+      "options": [
+        {
+          "id": "validator-plugin",
+          "label": "A profile-level check the validator runs, defined by the claims profile",
+          "detail": "markdown-db gains a hook for profile checks; S-GFFY stays plain JSON Schema."
+        },
+        {
+          "id": "in-spec",
+          "label": "New S-GFFY keywords",
+          "detail": "Every implementation must support them."
+        },
+        {
+          "id": "per-corpus-scripts",
+          "label": "Each corpus's own check script",
+          "detail": "As small-model-evals does today; no reuse."
+        }
+      ]
+    },
+    {
+      "id": "q-adopt-order",
+      "group": "Claims",
+      "about": "recommendation",
+      "kind": "single",
+      "recommended": "hr-sme-fitness",
+      "prompt": "Adoption order?",
+      "options": [
+        {
+          "id": "hr-sme-fitness",
+          "label": "harness-reference, then small-model-evals, then the fitness vault, then sdlc producers",
+          "detail": "harness-reference is already markdown-db and backs code; small-model-evals has the richest results and lacks statements; fitness is largest."
+        },
+        {
+          "id": "sme-first",
+          "label": "small-model-evals first",
+          "detail": "Most data, but needs the ledger links (G-2) before anything works."
+        }
+      ]
+    },
+    {
+      "id": "q-vaspec",
+      "prompt": "Adopt GA4GH VA-Spec's core model (Statement, Proposition, Evidence Line, Study Result, Method, Document, Contribution) for claims and evidence? It is JSON Schema, Apache-2.0, and its profiles are JSON Schema `allOf` constraints, so markdown-db type schemas can be VA-Spec profiles.",
+      "kind": "single",
+      "about": "entities",
+      "recommended": "terms-and-shape",
+      "options": [
+        {
+          "id": "terms-and-shape",
+          "label": "Use its names and shape; map its object references to markdown-db links",
+          "detail": "Records keep markdown-db's file-per-record layout. A claim's fields follow Statement and Proposition; evidence follows Study Result; references follow Document. Field names follow VA-Spec where they exist (`direction`, `hasEvidenceItems` or a plain alias). An export can emit VA-Spec JSON."
+        },
+        {
+          "id": "full-conformance",
+          "label": "Validate records against VA-Spec's own JSON Schemas",
+          "detail": "Strongest interop, but VA-Spec nests objects and uses IRIs where markdown-db uses one file per record and relative links, so every record needs an adapter."
+        },
+        {
+          "id": "terms-only",
+          "label": "Borrow the vocabulary, keep our own shapes",
+          "detail": "Cheapest. Loses the export and the profile mechanism."
+        }
+      ],
+      "group": "Types"
+    },
+    {
+      "id": "q-split",
+      "group": "Types",
+      "kind": "single",
+      "about": "ex-ref",
+      "prompt": "Are a page and an observation of it two types?",
+      "recommended": "two",
+      "options": [
+        {
+          "id": "two",
+          "label": "Two types: `references` (the page) and `evidence` (one look at it)",
+          "detail": "A page is checked many times; each look keeps its own date, version and quote. Matches the sdlc reference entity and Wikidata's split."
+        },
+        {
+          "id": "one",
+          "label": "One `evidence` type with the URL inline",
+          "detail": "Fewer files. Page facts such as its archive repeat in every record."
+        }
+      ]
+    },
+    {
+      "id": "q-stance",
+      "group": "Claims",
+      "kind": "single",
+      "about": "ex-claim",
+      "prompt": "Where does stance (supports / contradicts) live?",
+      "recommended": "link",
+      "options": [
+        {
+          "id": "link",
+          "label": "On the claim→evidence link, with an optional warrant",
+          "detail": "One run can support one claim and contradict another. SEPIO, Micropublications."
+        },
+        {
+          "id": "record",
+          "label": "On the evidence record",
+          "detail": "Simpler, but forces one stance per evidence record."
+        }
+      ]
+    },
+    {
+      "id": "q-score",
+      "group": "Claims",
+      "kind": "single",
+      "about": "f-kind",
+      "prompt": "Do we store a strength or confidence value?",
+      "recommended": "derive",
+      "options": [
+        {
+          "id": "derive",
+          "label": "No. Derive it from `kind`, ranked by directness, with one ladder for behaviour claims and one for policy claims",
+          "detail": "OKF, system-model, GRADE. An override on a link needs a written reason."
+        },
+        {
+          "id": "stored",
+          "label": "Yes, a `strength` field on each evidence record",
+          "detail": "Explicit, but hand-entered and goes stale."
+        }
+      ]
+    },
+    {
+      "id": "q-kind",
+      "group": "Evidence",
+      "kind": "single",
+      "about": "f-kind",
+      "prompt": "Which `kind` values?",
+      "recommended": "alpha",
+      "options": [
+        {
+          "id": "alpha",
+          "label": "Alpha's list plus `issue` and `third-party`",
+          "detail": "run, source, help-text, changelog, docs, issue, third-party, inferred. Fits harness evidence."
+        },
+        {
+          "id": "system-model",
+          "label": "system-model's list exactly",
+          "detail": "manifest, dependency, files, content. Shared with osdlc, but about repos, not harness behaviour."
+        }
+      ]
+    },
+    {
+      "id": "q-excerpt",
+      "group": "Evidence",
+      "kind": "single",
+      "about": "f-excerpt",
+      "prompt": "Is an excerpt required?",
+      "recommended": "optional",
+      "options": [
+        {
+          "id": "optional",
+          "label": "Optional; `validate` warns when a non-run record has none",
+          "detail": "Lets a bare reference-level look land now and be filled in later."
+        },
+        {
+          "id": "required",
+          "label": "Required on every non-run record",
+          "detail": "Stronger records; more work per capture."
+        }
+      ]
+    },
+    {
+      "id": "q-archive",
+      "group": "Evidence",
+      "kind": "single",
+      "about": "f-archive",
+      "prompt": "How do we guard against link rot?",
+      "recommended": "uri-m",
+      "options": [
+        {
+          "id": "uri-m",
+          "label": "Optional `archive` (a Wayback URL) and `url_status`",
+          "detail": "Cheap; the snapshot carries its own date."
+        },
+        {
+          "id": "none",
+          "label": "Nothing for now",
+          "detail": "Simplest; pages vanish."
+        },
+        {
+          "id": "file",
+          "label": "Capture the page as a file in the corpus, with sha256",
+          "detail": "Fully local; large and copyright-sensitive."
+        }
+      ]
+    },
+    {
+      "id": "q-immutable",
+      "group": "Evidence",
+      "kind": "single",
+      "about": "ex-run",
+      "prompt": "Can an evidence record be edited after it is written?",
+      "recommended": "append",
+      "options": [
+        {
+          "id": "append",
+          "label": "No. Corrections and later results are new records",
+          "detail": "A history of what we saw stays intact; `until` comes from a later contradicting record. Nanopublications."
+        },
+        {
+          "id": "edit",
+          "label": "Yes",
+          "detail": "Fewer files; history only in git."
+        }
+      ]
+    },
+    {
+      "id": "q-folder-records",
+      "group": "Spec",
+      "kind": "single",
+      "about": "x-folder",
+      "prompt": "When do folder records enter S-GFFY?",
+      "recommended": "now",
+      "options": [
+        {
+          "id": "now",
+          "label": "Now, with this work",
+          "detail": "Experiments need them, and the rule is small."
+        },
+        {
+          "id": "defer",
+          "label": "When we build the first experiment",
+          "detail": "Keeps S-GFFY unchanged until then."
+        }
+      ]
+    },
+    {
+      "id": "q-claims",
+      "group": "Claims",
+      "kind": "single",
+      "about": "ex-claim",
+      "prompt": "How does a claim point at its evidence?",
+      "recommended": "records",
+      "options": [
+        {
+          "id": "records",
+          "label": "Each claim is a record with a top-level `evidence` list",
+          "detail": "Works with S-GFFY v0's `x-ref` as is."
+        },
+        {
+          "id": "nested",
+          "label": "Keep observations nested in a fact; add nested `x-ref` to S-GFFY",
+          "detail": "Closer to alpha; changes the standard."
+        }
+      ]
+    },
+    {
+      "id": "q-layout",
+      "group": "Types",
+      "kind": "single",
+      "about": "ex-ref",
+      "prompt": "How are reference files organised?",
+      "recommended": "publisher",
+      "options": [
+        {
+          "id": "publisher",
+          "label": "By publisher: `references/Anthropic/…`",
+          "detail": "One folder per vendor; easy to browse."
+        },
+        {
+          "id": "flat",
+          "label": "Flat",
+          "detail": "Simplest; a long list."
+        },
+        {
+          "id": "harness",
+          "label": "By harness",
+          "detail": "Fits harness pages; awkward for pages about several harnesses."
+        }
+      ]
+    },
+    {
+      "id": "q-first-writer",
+      "group": "Writers",
+      "kind": "single",
+      "about": "uc-capture",
+      "prompt": "What writes evidence first?",
+      "recommended": "capture",
+      "options": [
+        {
+          "id": "capture",
+          "label": "A `capture` verb: fetch a page, snapshot it, store a quote",
+          "detail": "Most evidence today is docs. Small to build."
+        },
+        {
+          "id": "runs",
+          "label": "Experiment runs",
+          "detail": "The strongest evidence, but needs folder records and a runner first."
+        }
+      ]
+    }
+  ]
+}

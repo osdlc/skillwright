@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 /// Something went wrong locating or reading a skill corpus.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CoreError {
     /// A content root (or an adopt source) does not exist. Returned before
     /// anything is read.
@@ -61,7 +62,49 @@ pub enum CoreError {
     SwapFailed(String),
 }
 
+/// A failed [`crate::vfs::Vfs`] call is a read failure against its path:
+/// `reading <path>: <cause>`, as it was when the trait returned this type.
+impl From<crate::vfs::VfsError> for CoreError {
+    fn from(err: crate::vfs::VfsError) -> Self {
+        let path = err.path().to_path_buf();
+        Self::io(path, err.into_io_error())
+    }
+}
+
 impl CoreError {
+    /// The variant's name, such as `"Refused"`. The wasm binding sets it as
+    /// the thrown `Error`'s `.name`. The match is exhaustive on purpose: a new
+    /// variant fails to compile here until it is given a name.
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            CoreError::RootNotFound(_) => "RootNotFound",
+            CoreError::PathEscapesRoot(_) => "PathEscapesRoot",
+            CoreError::SkillNotFound(_) => "SkillNotFound",
+            CoreError::Io { .. } => "Io",
+            CoreError::Refused(_) => "Refused",
+            CoreError::Conflict(_) => "Conflict",
+            CoreError::Projection(_) => "Projection",
+            CoreError::SwapFailed(_) => "SwapFailed",
+        }
+    }
+
+    /// The closed-set reason token a host reports for this error when its
+    /// message carries none. Exhaustive like [`Self::variant_name`], so a new
+    /// variant needs a token before it compiles.
+    pub fn reason_token(&self) -> crate::publish::ReasonToken {
+        use crate::publish::ReasonToken;
+        match self {
+            CoreError::Projection(_) => ReasonToken::NoRenderer,
+            CoreError::PathEscapesRoot(_) => ReasonToken::UnsafePath,
+            CoreError::RootNotFound(_) => ReasonToken::Io,
+            CoreError::SkillNotFound(_) => ReasonToken::Io,
+            CoreError::Io { .. } => ReasonToken::Io,
+            CoreError::SwapFailed(_) => ReasonToken::Io,
+            CoreError::Refused(_) => ReasonToken::Io,
+            CoreError::Conflict(_) => ReasonToken::Conflict,
+        }
+    }
+
     /// Attach a path to an [`std::io::Error`]. Threading the path through
     /// every `?` is the whole reason this helper exists.
     pub fn io(path: impl AsRef<Path>, source: std::io::Error) -> Self {
@@ -72,7 +115,8 @@ impl CoreError {
     }
 
     /// A *content* problem in a file we read: frontmatter that will not parse,
-    /// a value the wrong shape, bytes that are not UTF-8.
+    /// or bytes that are not UTF-8. A value of the wrong kind or shape in a
+    /// note that parsed is [`Self::wrong_kind`].
     ///
     /// [`CoreError::Io`] rather than a variant of its own, because it is the
     /// one variant that already carries a path and its `Display` — `reading
@@ -84,6 +128,28 @@ impl CoreError {
             path,
             std::io::Error::new(std::io::ErrorKind::InvalidData, message.into()),
         )
+    }
+
+    /// A note that parsed holds a value of the wrong kind:
+    /// `refused: malformed: <path>: <message>`. Not [`Self::malformed`],
+    /// whose `reading <path>` says the file could not be read.
+    pub fn wrong_kind(path: impl AsRef<Path>, message: impl Into<String>) -> Self {
+        Self::refused(
+            "malformed",
+            format!("{}: {}", path.as_ref().display(), message.into()),
+        )
+    }
+
+    /// A refusal message split into the token it leads with and the prose
+    /// after it, or `None` when it leads with nothing shaped like a token:
+    /// some rails carry prose alone.
+    pub(crate) fn split_refusal(message: &str) -> Option<(&str, &str)> {
+        message.split_once(": ").filter(|(token, _)| {
+            !token.is_empty()
+                && token
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
     }
 
     /// A refusal prefixed with one of the publish spec's
@@ -128,6 +194,23 @@ mod tests {
             CoreError::refused("mixed-frontmatter-shape", "/vault/a.md: keep one shape")
                 .to_string(),
             "refused: mixed-frontmatter-shape: /vault/a.md: keep one shape"
+        );
+    }
+
+    #[test]
+    fn a_wrong_kind_carries_the_malformed_token() {
+        let err = CoreError::wrong_kind("/vault/a.md", "`model` must be a string, not a list");
+        assert_eq!(
+            err.to_string(),
+            "refused: malformed: /vault/a.md: `model` must be a string, not a list"
+        );
+        assert_eq!(
+            crate::publish::PublishReason::from_refusal(
+                err.to_string().strip_prefix("refused: ").unwrap(),
+                crate::publish::ReasonToken::Io,
+            )
+            .token,
+            crate::publish::ReasonToken::Malformed
         );
     }
 

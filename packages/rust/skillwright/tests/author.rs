@@ -547,18 +547,9 @@ fn a_relative_path_outside_the_vault_from_cwd_falls_back_to_the_vault() {
 fn a_bad_author_block_warns_and_breaks_nothing() {
     let world = World::new("vault");
     fs::create_dir_all(world.machine.parent().unwrap()).unwrap();
-    // No project file: the vault comes from the machine file.
-    fs::write(
-        &world.machine,
-        format!(
-            "vault: {}\nauthor:\n  editor: vscode\n  colour: red\n",
-            world.vault.display()
-        ),
-    )
-    .unwrap();
+    fs::write(&world.machine, "author:\n  editor: vscode\n  colour: red\n").unwrap();
     let host = FakeHost::new(world.probe(true)).answering(&[Some(1)]);
-    let mut f = flags(&world, None, None, false);
-    f.common.vault = None;
+    let f = flags(&world, None, None, false);
     let r = run(&world, &f, &host);
     assert_eq!(r.code, 0, "{}", r.stderr);
     assert!(r.stderr.contains("`author.editor`"), "{}", r.stderr);
@@ -572,9 +563,8 @@ fn a_bad_author_block_warns_and_breaks_nothing() {
         "{saved}"
     );
 
-    // With a project file too, and a scalar `author:`.
+    // A scalar `author:`.
     fs::write(&world.machine, "author: code\n").unwrap();
-    fs::write(world.root.join("skillwright.yaml"), "vault: vault\n").unwrap();
     let host = FakeHost::new(world.probe(false));
     let r = run(&world, &f, &host);
     assert_eq!(r.code, 0, "{}", r.stderr);
@@ -712,26 +702,6 @@ fn a_path_outside_the_vault_is_a_usage_error() {
     );
     assert_eq!(r.code, 3);
     assert!(r.stderr.contains("is not inside the vault"), "{}", r.stderr);
-}
-
-#[test]
-fn a_project_file_may_not_set_author() {
-    let world = World::new("vault");
-    fs::write(
-        world.root.join("skillwright.yaml"),
-        "vault: vault\nauthor:\n  editor: code\n",
-    )
-    .unwrap();
-    let mut f = flags(&world, None, Some(Editor::Code), true);
-    f.common.vault = None;
-    let host = FakeHost::new(world.probe(false));
-    let r = run(&world, &f, &host);
-    assert_eq!(r.code, 2);
-    assert!(
-        r.stderr.contains("`author` is a per-user setting"),
-        "{}",
-        r.stderr
-    );
 }
 
 const ADD: &str = "Add it to Obsidian's vault list and open it (Obsidian is closed) (recommended)";

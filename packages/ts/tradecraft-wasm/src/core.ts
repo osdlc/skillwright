@@ -1,6 +1,7 @@
 /**
  * The seam to the Rust core — `tradecraft-core`, reached through the
- * committed WASM binding in `wasm/` (`packages/rust/tradecraft-wasm`).
+ * WASM binding that `pnpm run build:wasm` writes to `wasm/`
+ * (`packages/rust/tradecraft-wasm`).
  *
  * This is the ONLY file in the package that imports the wasm glue. Nothing
  * above this module may decide anything a publish, adopt, or status
@@ -10,7 +11,7 @@
  * `CoreError` into a typed one, exactly mirroring what
  * `@osdlc/yaml-splice`'s `index.ts` does for `yaml-splice-wasm`.
  *
- * The binding exports nine functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
+ * The binding exports twelve functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
  *
  * | Export | Reaches | Serves |
  * |---|---|---|
@@ -18,11 +19,14 @@
  * | `validateNamespace` | the frontmatter-stem rule | every verb, once, at config load |
  * | `discoverComponents` | the vault scan | `build`, `check`, `list`, and whatever needs a roster |
  * | `exportSkills` | the marketplace renderer | `build`, and `check` through `mode` |
+ * | `loadMarketplace` | the marketplace model, loaded and resolved | `list --model`, and a host that wants structure rather than files |
  * | `adoptSkills` | the import direction | `adopt`, and its preview through `mode` |
  * | `knownTargets` | the target vocabulary | every verb that takes a target name |
  * | `canonicalTarget` | the target-name fold | a host narrowing a run by target |
  * | `publishableKinds` | the kinds a publish can project | a host choosing which notes to ask a status of |
  * | `statusOf` | one unit's state at one destination | `status` |
+ * | `parseRootFile` | the `skillwright.md` reader | a host reading the root file |
+ * | `rootFileConfig` | the root file's build config | a host building from the root file |
  *
  * A mode is a key on a request, never an export of its own — `check` is
  * `exportSkills` with `mode: "check"`, a dry-run adopt is `adoptSkills` with
@@ -38,9 +42,12 @@ import {
   canonicalTarget as canonicalTargetWasm,
   discoverComponents as discoverComponentsWasm,
   exportSkills as exportSkillsWasm,
+  loadMarketplace as loadMarketplaceWasm,
   knownTargets as knownTargetsWasm,
+  parseRootFile as parseRootFileWasm,
   publishableKinds as publishableKindsWasm,
   publishSkill as publishSkillWasm,
+  rootFileConfig as rootFileConfigWasm,
   statusOf as statusOfWasm,
   validateNamespace as validateNamespaceWasm,
 } from '#wasm'
@@ -55,10 +62,16 @@ import type {
   EntityKind,
   ExportReport,
   ExportRequest,
+  LoadRequest,
+  Marketplace,
+  MarketplaceConfig,
   PublishReport,
   PublishRequest,
   PublishOutcome,
+  RootFile,
   PublishStatus,
+  PublishUnitStatus as WirePublishUnitStatus,
+  StatusRequest as WireStatusRequest,
   ReasonToken as CoreReasonToken,
 } from './core.generated.ts'
 
@@ -68,13 +81,10 @@ import type {
  * one door to the core.
  *
  * Re-exported, never re-declared — except for `Target`,
- * `ReasonToken`/`PublishReason`/`PublishedFile` together, and
- * `StatusRequest`/`PublishState`/`PublishUnitStatus` together, each
- * hand-widened or hand-named below for a reason of its own (the status trio
- * exists because `tradecraft_core::status::UnitStatus` and
- * `tradecraft_core::export::UnitStatus` share a name, and the generator
- * resolves the export report's — see {@link PublishUnitStatus}). Everything
- * else here is exactly what `tradecraft-typegen` read off the Rust source.
+ * `ReasonToken`/`PublishReason`/`PublishedFile` together, and the derived
+ * `StatusRequest` and `PublishUnitStatus`, each widened below for a reason of
+ * its own. Everything else here is exactly what `tradecraft-typegen` read off
+ * the Rust source.
  * Regenerate with `cargo run -p tradecraft-typegen`; `cargo test -p tradecraft-typegen`
  * fails when the committed file is behind the Rust source, and a test in this
  * package fails when src/core.generated.ts differs from the crate's copy.
@@ -95,15 +105,24 @@ export type {
   ExportRequest,
   ExportUnit,
   KindSource,
+  LoadRequest,
+  Marketplace,
   MarketplaceConfig,
+  Plugin,
+  Component,
+  Segment,
   PluginOverrides,
   PublishMode,
   PublishOutcome,
   PublishReport,
   PublishRequest,
+  PublishState,
   PublishStatus,
+  RootFile,
+  BuildSettings,
   SkippedNote,
   UnitStatus,
+  VersionBumpSuggestion,
   WasmExportsWithoutJson,
   WasmRequests,
   WasmResponses,
@@ -225,7 +244,8 @@ export class CoreError extends Error {
 
 /**
  * A configured frontmatter stem the core will not accept, thrown by
- * {@link validateNamespace}.
+ * {@link validateNamespace} and by any export whose request carries such a
+ * `namespace`.
  *
  * Deliberately NOT a {@link CoreError}: `tradecraft_core::InvalidStem` is not
  * a `CoreError` variant, and it is not one for a reason the caller cares about
@@ -264,6 +284,7 @@ function toCoreError(raw: unknown): CoreError {
  * is enumerated (an unreadable note, an unrenderable target, a bad path);
  * a partial refusal — one file the destination-guard rail declines — comes
  * back inside `PublishReport.files` with `status: "refused"`, never thrown.
+ * A `namespace` the core rejects throws {@link InvalidNamespaceError}.
  */
 export function publishSkill(vfs: Vfs, request: PublishRequest): PublishReport {
   return callCore<PublishReport>(() => publishSkillWasm(vfs, JSON.stringify(request)))
@@ -322,7 +343,8 @@ export function publishableKinds(): EntityKind[] {
  * vault must not block everybody else's publish. What still throws is what is
  * not a fact about one note — a duplicate name, a bundle overlap, a symlink,
  * a missing root. A caller that ignores `skipped` is claiming the vault holds
- * nothing but what it listed, so every one of them reports it.
+ * nothing but what it listed, so every one of them reports it. A `namespace`
+ * the core rejects throws {@link InvalidNamespaceError}.
  */
 export function discoverComponents(vfs: Vfs, request: DiscoverRequest): DiscoveryReport {
   return callCore<DiscoveryReport>(() => discoverComponentsWasm(vfs, JSON.stringify(request)))
@@ -330,54 +352,18 @@ export function discoverComponents(vfs: Vfs, request: DiscoverRequest): Discover
 
 // --- tracking ----------------------------------------------------------------
 
-/** Mirrors `WireStatusRequest` in `packages/rust/tradecraft-wasm/src/lib.rs`. */
-export interface StatusRequest {
-  /** Absolute path to the vault note. */
-  skill_path: string
-  /** Absolute path to the destination root. */
-  destination_root: string
-  target: Target
-  /** The content root the note lives under. Omitted means no structural layer. */
-  skills_root?: string
-  /** This vault's frontmatter namespace stem. Omitted means `sw`. */
-  namespace?: string
-}
+/**
+ * `WireStatusRequest` in `packages/rust/tradecraft-wasm/src/lib.rs`. Derived
+ * from the generated type so `target` uses this package's widened {@link Target}.
+ */
+export type StatusRequest = Omit<WireStatusRequest, 'target'> & { target: Target }
 
 /**
- * Mirrors `tradecraft_core::status::PublishState` — the closed five
- * the status documentation specifies, spelled once in the core and copied verbatim here.
- *
- * Named `PublishState`, not `State`, because {@link UnitStatus} above is
- * already the marketplace's four-word status and the two must not be mistaken
- * for each other.
+ * `tradecraft_core::status::PublishUnitStatus` — one unit's state at one
+ * destination, and enough of the working to act on it. Derived from the
+ * generated type so `files` uses this package's widened {@link PublishedFile}.
  */
-export type PublishState = 'never-published' | 'current' | 'stale' | 'conflict' | 'unknown'
-
-/**
- * Mirrors `tradecraft_core::status::UnitStatus` — one unit's state at one
- * destination, and enough of the working to act on it.
- *
- * Named `PublishUnitStatus` for the same reason {@link PublishState} is:
- * `UnitStatus` in this module is the export report's status token.
- */
-export interface PublishUnitStatus {
-  state: PublishState
-  /** What makes the state what it is, when there is something to name. */
-  reason: string | null
-  /** When we last wrote anything here, from the destination's manifest. */
-  published_at: string | null
-  /** Every projected file, classified — the drift, per file. */
-  files: PublishedFile[]
-  /** The notes that fed this unit's output, as the manifest recorded them. */
-  contributing_notes: string[]
-  /** Recorded contributors no longer in the vault. */
-  missing_notes: string[]
-  /**
-   * Set when the note's targets key excludes this destination — the `n/a`
-   * cell, which the status documentation is explicit is not one of the five states.
-   */
-  not_published: string | null
-}
+export type PublishUnitStatus = Omit<WirePublishUnitStatus, 'files'> & { files: PublishedFile[] }
 
 /**
  * One unit's publish state at one destination, for one target.
@@ -392,6 +378,7 @@ export interface PublishUnitStatus {
  * target with no renderer for this unit's kind. A destination whose manifest
  * cannot be read is NOT one of those: it comes back as `state: "unknown"`
  * with the reason, because "we could not determine a state" is an answer.
+ * A `namespace` the core rejects throws {@link InvalidNamespaceError}.
  */
 export function statusOf(vfs: Vfs, request: StatusRequest): PublishUnitStatus {
   return callCore<PublishUnitStatus>(() => statusOfWasm(vfs, JSON.stringify(request)))
@@ -411,9 +398,53 @@ export function statusOf(vfs: Vfs, request: StatusRequest): PublishUnitStatus {
  * Throws {@link CoreError} for everything an export refuses — the rail, an
  * empty marketplace, a failed swap. There is no per-unit refusal to look for
  * inside the report: an export's rails all fire before anything is staged.
+ * A `namespace` the core rejects throws {@link InvalidNamespaceError}.
  */
 export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
   return callCore<ExportReport>(() => exportSkillsWasm(vfs, JSON.stringify(request)))
+}
+
+/**
+ * Load the vault into the marketplace model and write nothing: every plugin
+ * and its members, each body as segments with its links and calls resolved.
+ *
+ * The same model `exportSkills` translates into files, so a host that wants
+ * a vault's structure reads it here rather than parsing a built tree.
+ *
+ * Throws {@link CoreError} for everything the load refuses — an unreadable
+ * member note, a call that names no skill, an override key a requested
+ * harness does not read, an empty marketplace.
+ */
+export function loadMarketplace(vfs: Vfs, request: LoadRequest): Marketplace {
+  return callCore<Marketplace>(() => loadMarketplaceWasm(vfs, JSON.stringify(request)))
+}
+
+// --- the root file -----------------------------------------------------------
+
+/**
+ * Read a `skillwright.md`'s text, with the reader the CLI uses. Finding the
+ * file is the caller's; an unknown key comes back in `warnings`.
+ *
+ * @throws {CoreError} on frontmatter that is not a mapping, or a known key of
+ * the wrong shape.
+ */
+export function parseRootFile(text: string): RootFile {
+  return callCore<RootFile>(() => parseRootFileWasm(text))
+}
+
+/**
+ * The {@link MarketplaceConfig} a `skillwright.md`'s text describes, ready for
+ * an {@link ExportRequest}. `folderName` is the root file's folder, the
+ * marketplace's name when the file gives none.
+ *
+ * @throws {CoreError} as {@link parseRootFile}.
+ */
+export function rootFileConfig(text: string, folderName: string): MarketplaceConfig {
+  try {
+    return rootFileConfigWasm(text, folderName) as MarketplaceConfig
+  } catch (raw) {
+    throw toThrown(raw)
+  }
 }
 
 // --- adoption ----------------------------------------------------------------
@@ -431,7 +462,8 @@ export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
  * content root that contains it, an unknown target, a colliding pair. One skill
  * whose vault target already exists is NOT a throw: it is `"unchanged"`,
  * `"updated"`, or `"refused"` on that skill's line, with the others
- * proceeding.
+ * proceeding. A `namespace` the core rejects throws
+ * {@link InvalidNamespaceError}.
  */
 export function adoptSkills(vfs: Vfs, request: AdoptRequest): AdoptReport {
   return callCore<AdoptReport>(() => adoptSkillsWasm(vfs, JSON.stringify(request)))
@@ -439,7 +471,8 @@ export function adoptSkills(vfs: Vfs, request: AdoptRequest): AdoptReport {
 
 /**
  * One call into the binding: run it, parse the report it hands back, and turn
- * whatever it threw into a {@link CoreError}.
+ * whatever it threw into an {@link InvalidNamespaceError} (a request's
+ * `namespace` the core rejects) or a {@link CoreError}.
  *
  * The shape every export above shares, said once. Nothing decided here — the
  * generic is the report's type, and the only judgement in the function is that
@@ -450,9 +483,20 @@ function callCore<T>(call: () => string): T {
   try {
     resultJson = call()
   } catch (raw) {
-    throw toCoreError(raw)
+    throw toThrown(raw)
   }
   return JSON.parse(resultJson) as T
+}
+
+/**
+ * A thrown `InvalidStem` as an {@link InvalidNamespaceError}, anything else as
+ * a {@link CoreError}: a boundary failure must not read as a bad stem.
+ */
+function toThrown(raw: unknown): Error {
+  if (raw instanceof Error && raw.name === 'InvalidStem') {
+    return new InvalidNamespaceError(raw.message)
+  }
+  return toCoreError(raw)
 }
 
 /**
@@ -471,11 +515,6 @@ export function validateNamespace(stem: string): void {
   try {
     validateNamespaceWasm(stem)
   } catch (raw) {
-    // The only refusal this export has. Anything else is a boundary failure
-    // and must not be dressed up as the user's stem being wrong.
-    if (raw instanceof Error && raw.name === 'InvalidStem') {
-      throw new InvalidNamespaceError(raw.message)
-    }
-    throw toCoreError(raw)
+    throw toThrown(raw)
   }
 }

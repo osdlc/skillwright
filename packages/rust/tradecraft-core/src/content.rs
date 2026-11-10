@@ -26,7 +26,7 @@ pub struct SkillContent {
     pub argument_names: Option<Vec<String>>,
     /// What this skill or command's invocation takes.
     ///
-    /// The one field here sourced from our `sw-` namespace rather than from
+    /// The one field here sourced from skillwright's own keys rather than from
     /// the standard's own frontmatter — see
     /// [`crate::frontmatter::VaultFrontmatter::arguments`] for why that is
     /// not the contradiction it looks like. `Vec::new()` by construction
@@ -49,9 +49,9 @@ pub struct SkillContent {
     /// 500 characters by [`crate::discover`].
     #[serde(default)]
     pub compatibility: Option<String>,
-    /// The Agent Skills spec's `metadata:` — a string-to-string map. Only the entries the
-    /// note wrote under that key; the unmodeled top-level keys in
-    /// [`Self::annotations`] join them in one block at render time.
+    /// The Agent Skills spec's `metadata:`. Only the entries the note wrote under that key;
+    /// the unmodeled top-level keys in [`Self::annotations`] join them in one block at render
+    /// time, as YAML, so an unquoted `true` publishes as a boolean.
     #[serde(default)]
     pub metadata: std::collections::BTreeMap<String, String>,
     /// Model the skill asks to run on, when it names one.
@@ -66,10 +66,10 @@ pub struct SkillContent {
     pub tags: Vec<String>,
     /// Unmodeled frontmatter, preserved as-is. A JSON object.
     pub annotations: serde_json::Map<String, serde_json::Value>,
-    /// `sw-overrides`, keyed by **canonical** destination name — what one
+    /// harness blocks, keyed by **canonical** destination name — what one
     /// harness receives that the shared model cannot say.
     ///
-    /// The second field here sourced from our `sw-` namespace, and it is
+    /// The second field here sourced from skillwright's own keys, and it is
     /// here for the same reason [`Self::arguments`] is: a renderer needs it.
     /// `BTreeMap::new()` by construction from
     /// [`crate::vault::read_vault_skill`]; only
@@ -77,7 +77,7 @@ pub struct SkillContent {
     /// [`crate::publish::overrides_for`] has folded the target names and
     /// checked every key against the harness that will receive it.
     ///
-    /// The raw `sw-overrides` key still reaches no destination — the strip
+    /// The raw harness block key still reaches no destination — the strip
     /// is unaffected, because this is not `annotations`.
     #[serde(default)]
     pub overrides: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
@@ -107,11 +107,10 @@ impl SkillContent {
     /// Carries the checked per-destination override blocks onto this content.
     ///
     /// Keyed by the canonical destination name, which is what
-    /// [`crate::projection::project_skill`] looks one up by. Called by
-    /// `publish` between reading a note and projecting it, on the same seam
-    /// as [`SkillContent::apply_arguments`] — never by
-    /// [`crate::vault::read_vault_skill`], which has no destination roster,
-    /// and not by `export`, which does not apply per-target overrides.
+    /// [`crate::projection::project_skill`] looks one up by. Called by a
+    /// harness translator between the model and the projection, on the same
+    /// seam as [`SkillContent::apply_arguments`] — never by
+    /// [`crate::vault::read_vault_skill`], which has no destination roster.
     pub fn apply_overrides(
         &mut self,
         overrides: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>,

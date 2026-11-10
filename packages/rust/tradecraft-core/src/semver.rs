@@ -1,6 +1,6 @@
 //! Pure semver-bump logic.
 //!
-//! `sw-version` is a free string — nothing the core reads enforces semver on
+//! `version` is a free string — nothing the core reads enforces semver on
 //! it — so a bump is offered only for a version this parses as plain
 //! `MAJOR.MINOR.PATCH`. A version that does not parse bumps to nothing:
 //! guessing at a shape it does not recognise would write a value the author
@@ -45,19 +45,33 @@ fn parse_component(s: &str) -> Option<u64> {
 }
 
 /// The next version at one semver level, or `None` when `current` is not
-/// plain `MAJOR.MINOR.PATCH` — the one shape this bumps without guessing.
+/// plain `MAJOR.MINOR.PATCH` — the one shape this bumps without guessing —
+/// or when the component being bumped is already `u64::MAX`.
 pub fn next_version(current: &str, level: BumpLevel) -> Option<String> {
     let (major, minor, patch) = parse_semver(current)?;
     Some(match level {
-        BumpLevel::Patch => format!("{major}.{minor}.{}", patch + 1),
-        BumpLevel::Minor => format!("{major}.{}.0", minor + 1),
-        BumpLevel::Major => format!("{}.0.0", major + 1),
+        BumpLevel::Patch => format!("{major}.{minor}.{}", patch.checked_add(1)?),
+        BumpLevel::Minor => format!("{major}.{}.0", minor.checked_add(1)?),
+        BumpLevel::Major => format!("{}.0.0", major.checked_add(1)?),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_component_at_u64_max_cannot_be_bumped() {
+        let max = u64::MAX;
+        assert_eq!(next_version(&format!("1.2.{max}"), BumpLevel::Patch), None);
+        assert_eq!(next_version(&format!("1.{max}.0"), BumpLevel::Minor), None);
+        assert_eq!(next_version(&format!("{max}.0.0"), BumpLevel::Major), None);
+        // Only the level being bumped has to have room.
+        assert_eq!(
+            next_version(&format!("1.2.{max}"), BumpLevel::Minor),
+            Some("1.3.0".to_owned())
+        );
+    }
 
     #[test]
     fn valid_versions_parse() {

@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 720" font-family="ui-sans-serif, -apple-system, Helvetica, Arial" font-size="13">
+  <style>
+    .layer{fill:#f6f7f9;stroke:#c9ced6}
+    .box{fill:#ffffff;stroke:#7a8494;rx:6}
+    .hot{fill:#fff3e8;stroke:#d9822b}
+    .ext{fill:#eef4ff;stroke:#5b7fc7}
+    .lbl{font-weight:600;fill:#222}
+    .small{font-size:11px;fill:#555}
+    .lay{font-size:12px;font-weight:700;fill:#666;letter-spacing:.06em}
+    .arrow{stroke:#555;stroke-width:1.4;fill:none;marker-end:url(#a)}
+  </style>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#555"/></marker></defs>
+
+  <!-- Hosts -->
+  <rect class="layer" x="10" y="10" width="1020" height="120" rx="8"/>
+  <text class="lay" x="22" y="30">HOSTS</text>
+  <rect class="box" x="30" y="42" width="470" height="76"/>
+  <text class="lbl" x="42" y="62">skillwright CLI  (crate: skillwright)</text>
+  <text class="small" x="42" y="80">cli.rs · resolve.rs · config.rs · report.rs · apply.rs (executes AuthoringOp)</text>
+  <text class="small" x="42" y="96">commands: build/check · publish · status · list · adopt · bump · new/rename/move/delete/convert</text>
+  <rect class="hot" x="330" y="100" width="164" height="14" rx="3"/>
+  <text class="small" x="336" y="111">harness/adapter.rs: own harness table</text>
+  <rect class="box" x="520" y="42" width="240" height="76"/>
+  <text class="lbl" x="532" y="62">tradecraft-wasm</text>
+  <text class="small" x="532" y="80">JS-backed Vfs; exports publish_skill,</text>
+  <text class="small" x="532" y="96">export_skills, discover, adopt, status_of</text>
+  <rect class="box" x="780" y="42" width="236" height="76"/>
+  <text class="lbl" x="792" y="62">tradecraft-typegen</text>
+  <text class="small" x="792" y="80">reads core source → TS types</text>
+  <text class="small" x="792" y="96">(packages/ts/tradecraft-wasm)</text>
+
+  <!-- Core -->
+  <rect class="layer" x="10" y="145" width="1020" height="380" rx="8"/>
+  <text class="lay" x="22" y="165">TRADECRAFT-CORE</text>
+
+  <rect class="box" x="30" y="178" width="300" height="150"/>
+  <text class="lbl" x="42" y="198">Read</text>
+  <text class="small" x="42" y="218">discover.rs  → DiscoveredComponent[] (kind, plugin,</text>
+  <text class="small" x="42" y="232">                  marketplace, targets)</text>
+  <text class="small" x="42" y="250">vault.rs  → VaultNote { frontmatter, projection }</text>
+  <text class="small" x="42" y="266">frontmatter.rs / namespace.rs  (sw- keys)</text>
+  <text class="small" x="42" y="282">settings.rs  (marketplace: block)</text>
+  <text class="small" x="42" y="298">scan.rs / skill.rs  (published SKILL.md, for adopt)</text>
+  <text class="small" x="42" y="314">content.rs  → SkillContent / SkillProjection</text>
+
+  <rect class="box" x="350" y="178" width="250" height="150"/>
+  <text class="lbl" x="362" y="198">Transform</text>
+  <text class="small" x="362" y="218">compile.rs</text>
+  <text class="small" x="362" y="234">  expand ![[embeds]]</text>
+  <text class="small" x="362" y="250">  [[links]] → relative paths + resources</text>
+  <text class="small" x="362" y="266">  /[[calls]] → rendered per harness</text>
+  <text class="small" x="362" y="282">    (needs CallContext of the root)</text>
+  <text class="small" x="362" y="304">→ body is already harness-specific</text>
+  <text class="small" x="362" y="318">   text when compile returns</text>
+
+  <rect class="hot" x="620" y="178" width="390" height="150"/>
+  <text class="lbl" x="632" y="198">Render + write  (two pipelines)</text>
+  <text class="small" x="632" y="218">export.rs  (build / check)  6.8k lines</text>
+  <text class="small" x="632" y="232">  ROOTS[4] table · group_by_plugin · render_root</text>
+  <text class="small" x="632" y="246">  render_skill: read + compile + string rewrites</text>
+  <text class="small" x="632" y="260">  per-dialect manifest JSON builders</text>
+  <text class="small" x="632" y="280">publish.rs  (one note → one destination)  6.1k lines</text>
+  <text class="small" x="632" y="294">  PluginLayout (claude, codex only) · project_plugin</text>
+  <text class="small" x="632" y="308">  canonical_target · runtime_target_for · KNOWN_TARGETS</text>
+  <text class="small" x="632" y="322">status.rs = publish in DryRun</text>
+
+  <rect class="box" x="30" y="345" width="300" height="90"/>
+  <text class="lbl" x="42" y="365">Plan (no writes)</text>
+  <text class="small" x="42" y="385">authoring.rs → AuthoringOp</text>
+  <text class="small" x="42" y="401">adopt.rs (reverse: SKILL.md → notes)</text>
+  <text class="small" x="42" y="417">semver.rs</text>
+
+  <rect class="box" x="350" y="345" width="250" height="90"/>
+  <text class="lbl" x="362" y="365">projection.rs</text>
+  <text class="small" x="362" y="385">SkillContent → agent_adapt::Skill</text>
+  <text class="small" x="362" y="401">strip sw- keys, hash output</text>
+  <text class="small" x="362" y="417">project_skill / _command / _agent</text>
+
+  <rect class="box" x="620" y="345" width="390" height="90"/>
+  <text class="lbl" x="632" y="365">Rails + bookkeeping</text>
+  <text class="small" x="632" y="385">guard.rs (never write into vault) · manifest.rs (.skillwright/manifest.json)</text>
+  <text class="small" x="632" y="401">hooks_file.rs (hooks.json + per-harness gap report)</text>
+  <text class="small" x="632" y="417">error.rs (closed set of refusal tokens)</text>
+
+  <rect class="box" x="30" y="450" width="980" height="60"/>
+  <text class="lbl" x="42" y="470">vfs.rs — the I/O seam</text>
+  <text class="small" x="42" y="490">NativeVfs (std::fs) · MemVfs (tests, scratch scans) · PreviewVfs (capturing overlay: dry-run and check) · JsVfs (in tradecraft-wasm)</text>
+
+  <!-- External -->
+  <rect class="layer" x="10" y="540" width="1020" height="80" rx="8"/>
+  <text class="lay" x="22" y="560">OSDLC LIBRARY CRATES</text>
+  <rect class="ext" x="30" y="570" width="300" height="40" rx="6"/>
+  <text class="lbl" x="42" y="588">agent-adapt 0.19</text>
+  <text class="small" x="42" y="603">per-runtime frontmatter, tool names, skills_dir</text>
+  <rect class="ext" x="350" y="570" width="660" height="40" rx="6"/>
+  <text class="small" x="362" y="594">markdown-link · markdown-relink · frontmatter-lossless · yaml-splice · path-guard · etag-write · config-layers · typed-git</text>
+
+  <!-- Outputs -->
+  <rect class="layer" x="10" y="635" width="1020" height="75" rx="8"/>
+  <text class="lay" x="22" y="655">OUTPUTS</text>
+  <rect class="box" x="30" y="664" width="480" height="38"/>
+  <text class="small" x="42" y="687">marketplace trees: .claude-plugin/ · .agents/ · .cursor-plugin/ · .pi/</text>
+  <rect class="box" x="530" y="664" width="480" height="38"/>
+  <text class="small" x="542" y="687">destinations: .claude/skills/ · .agents/skills/ · … + manifest.json</text>
+
+  <!-- legend -->
+  <rect class="hot" x="860" y="16" width="14" height="10" rx="2"/>
+  <text class="small" x="880" y="25">holds harness facts</text>
+</svg>

@@ -1,6 +1,6 @@
 [package]
 name = "skillwright"
-version = "0.4.0"
+version = "0.10.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "A command-line tool that publishes a vault of markdown skill notes into the formats of coding-agent tools (Claude Code, Codex, Cursor and Pi), checks them for drift, and authors and reorganises the vault."
@@ -40,17 +40,17 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tradecraft-core = { workspace = true }
-config-layers = { workspace = true }
 typed-git = { workspace = true }
-# The cache and config directories.
+# The `--from-git` cache directory.
 tiered-dirs = { workspace = true }
-# `bump` sets `sw-version` with `FieldEdit::set`, whose value is a
+# `bump` sets `version` with `FieldEdit::set`, whose value is a
 # `yaml_splice::Value`.
 yaml-splice = { workspace = true }
 # The authoring executor: `apply` turns a core `AuthoringOp` into writes, with
 # the link-rewriting rename, the vault-relative path guards and the durable
 # note write.
 markdown-relink = { workspace = true }
+markdown-corpus = { workspace = true }
 # Also guards the untrusted subpath of a --from-git clone.
 path-guard = { workspace = true }
 etag-write = { workspace = true }

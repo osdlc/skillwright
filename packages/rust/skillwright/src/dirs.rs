@@ -1,5 +1,5 @@
-//! The machine-local directories skillwright reads and writes: the machine
-//! config file and the `--from-git` checkout cache.
+//! The machine-local directory skillwright reads and writes: the
+//! `--from-git` checkout cache.
 //!
 //! Resolved with `tiered-dirs`:
 //!

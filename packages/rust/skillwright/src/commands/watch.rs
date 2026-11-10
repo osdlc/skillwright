@@ -26,7 +26,8 @@
 //! created, written, and renamed over the target, which a naive watcher
 //! would see as three or four separate events. `DEBOUNCE` collapses a
 //! burst into one rebuild. The loop needs no per-path classification,
-//! only "something changed, rebuild".
+//! only "something changed, rebuild". A read is not a change: see
+//! `is_change`.
 //!
 //! # No confirmation prompt
 //!
@@ -40,17 +41,17 @@
 //! change on every save, write nothing" loop.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use notify::{RecursiveMode, Watcher};
+use tradecraft_core::built_paths_for;
 
-use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export};
-use crate::config::resolve_configured_path;
+use crate::commands::marketplace::{ExportFlags, ExportVerb, out_root, run_export};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, blocked};
-use crate::resolve::resolve_run;
+use crate::resolve::{refuse_workspace, resolve_run};
 
 /// How long a burst of filesystem events is treated as one save. Long enough
 /// to swallow an editor's create/write/rename trio; short enough that the
@@ -85,6 +86,15 @@ pub fn run_watch_for(
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("watch", &run, ctx.err) {
+        return code;
+    }
+    // The output can be inside the vault, and what a build writes there is
+    // not a change.
+    let out = match out_root(flags, &run, &ctx.cwd, ctx.err) {
+        Ok(out) => out,
+        Err(code) => return code,
+    };
 
     // Every rebuild this loop triggers writes unattended — see the module
     // doc's "No confirmation prompt" section.
@@ -92,7 +102,6 @@ pub fn run_watch_for(
         out: flags.out.clone(),
         skills_root: flags.skills_root.clone(),
         marketplace: flags.marketplace.clone(),
-        default_plugin: flags.default_plugin.clone(),
         common: flags.common.clone(),
         json: flags.json,
         dry_run: flags.dry_run,
@@ -149,28 +158,18 @@ pub fn run_watch_for(
 
     let mut rebuilds = 0usize;
     loop {
-        // Block until the first event of a new batch, then drain whatever
-        // else arrives within the debounce window so one save is one
-        // rebuild rather than one per underlying OS event.
-        let Ok(first) = rx.recv() else {
+        // Read each time: a rebuild's note edit can move the packs folder.
+        let built: Vec<String> = run
+            .effective_configs(flags.marketplace.as_deref())
+            .iter()
+            .flat_map(built_paths_for)
+            .collect();
+        match next_batch(&rx, DEBOUNCE, &out, &built) {
             // The sender lives inside the watcher's OS callback; a closed
             // channel means the watcher itself was torn down.
-            return EXIT_OK;
-        };
-        let mut saw_event = first.is_ok();
-        let deadline = Instant::now() + DEBOUNCE;
-        loop {
-            let now = Instant::now();
-            if now >= deadline {
-                break;
-            }
-            match rx.recv_timeout(deadline - now) {
-                Ok(next) => saw_event |= next.is_ok(),
-                Err(_) => break,
-            }
-        }
-        if !saw_event {
-            continue;
+            None => return EXIT_OK,
+            Some(false) => continue,
+            Some(true) => {}
         }
 
         let started = Instant::now();
@@ -197,6 +196,56 @@ pub fn run_watch_for(
     }
 }
 
+/// Wait for the next batch of events and say whether any of it was a change.
+/// Blocks for the batch's first event, then takes whatever else arrives
+/// within `debounce`, so one save is one rebuild rather than one per OS
+/// event. `None` when the channel has closed.
+fn next_batch(
+    rx: &mpsc::Receiver<notify::Result<notify::Event>>,
+    debounce: Duration,
+    out: &Path,
+    built: &[String],
+) -> Option<bool> {
+    let is_change = |event: &notify::Event| is_change(event) && !is_build_output(event, out, built);
+    let first = rx.recv().ok()?;
+    let mut changed = first.as_ref().is_ok_and(is_change);
+    let deadline = Instant::now() + debounce;
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok(next) => changed |= next.as_ref().is_ok_and(is_change),
+            Err(_) => break,
+        }
+    }
+    Some(changed)
+}
+
+/// Whether an event can mean a file's content changed. A read is not one:
+/// Linux's watcher reports every open and read-only close, and each rebuild
+/// reads the whole vault, so counting them would rebuild forever.
+fn is_change(event: &notify::Event) -> bool {
+    use notify::event::{AccessKind, AccessMode, EventKind};
+    match event.kind {
+        EventKind::Access(AccessKind::Close(AccessMode::Write)) => true,
+        EventKind::Access(_) => false,
+        _ => true,
+    }
+}
+
+/// Whether every path in `event` is something a build writes under `out`,
+/// `built` being those paths. Only those: with `out` at the vault root, a
+/// `build.hooks` source can sit in a dot folder beside them.
+fn is_build_output(event: &notify::Event, out: &Path, built: &[String]) -> bool {
+    !event.paths.is_empty()
+        && event.paths.iter().all(|path| {
+            path.strip_prefix(out).is_ok_and(|rest| {
+                let rest = rest.to_string_lossy().replace('\\', "/");
+                built.iter().any(|fragment| {
+                    rest == fragment.trim_end_matches('/') || rest.starts_with(fragment.as_str())
+                })
+            })
+        })
+}
+
 /// Every path the watcher arms, each with its recursion: the vault itself,
 /// then each `assets:` and `hooks:` source resolved the way the build
 /// resolves it, with the recursion rule in the module doc. A path named
@@ -204,14 +253,20 @@ pub fn run_watch_for(
 fn watch_targets(run: &crate::resolve::ResolvedRun) -> Vec<(PathBuf, RecursiveMode)> {
     let mut targets: BTreeMap<PathBuf, RecursiveMode> = BTreeMap::new();
     targets.insert(run.vault.clone(), RecursiveMode::Recursive);
-    let sources = run.config.as_ref().into_iter().flat_map(|c| {
-        c.assets
-            .iter()
-            .map(|a| &a.from)
-            .chain(c.hooks.iter().map(|h| &h.from))
-    });
+    // A workspace file above feeds this build too.
+    if let Some(parent) =
+        crate::config::workspace_above(&run.vault).and_then(|file| Some(file.parent()?.to_owned()))
+    {
+        targets.insert(parent, RecursiveMode::NonRecursive);
+    }
+    let build = &run.config.build;
+    let sources = build
+        .assets
+        .iter()
+        .map(|a| &a.from)
+        .chain(build.hooks.iter().map(|h| &h.from));
     for from in sources {
-        let source = resolve_configured_path(from, &run.config_dir);
+        let source = run.configured_path(from);
         let (path, mode) = if source.is_dir() {
             (source, RecursiveMode::Recursive)
         } else {
@@ -233,8 +288,6 @@ mod tests {
     use crate::resolve::CommonFlags;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
     /// The same vault the CLI/host parity test builds from
@@ -278,7 +331,6 @@ mod tests {
             // the same way `marketplace_parity.rs` does, or the render
             // refuses `ambiguous-marketplace`.
             marketplace: Some("acme".to_string()),
-            default_plugin: Some("core".to_string()),
             common: CommonFlags {
                 vault: Some(vault.display().to_string()),
                 config: None,
@@ -289,6 +341,51 @@ mod tests {
             yes: false,
             quiet: true,
         }
+    }
+
+    #[test]
+    fn a_read_is_not_a_change_but_a_write_is() {
+        use notify::event::{AccessKind, AccessMode, CreateKind, EventKind, ModifyKind};
+        let event = |kind| notify::Event::new(kind);
+        assert!(!is_change(&event(EventKind::Access(AccessKind::Open(
+            AccessMode::Any
+        )))));
+        assert!(!is_change(&event(EventKind::Access(AccessKind::Close(
+            AccessMode::Read
+        )))));
+        assert!(is_change(&event(EventKind::Access(AccessKind::Close(
+            AccessMode::Write
+        )))));
+        assert!(is_change(&event(EventKind::Modify(ModifyKind::Any))));
+        assert!(is_change(&event(EventKind::Create(CreateKind::File))));
+    }
+
+    #[test]
+    fn a_batch_of_reads_does_not_rebuild_but_a_batch_with_a_write_does() {
+        use notify::event::{AccessKind, AccessMode, EventKind, ModifyKind};
+        let event = |kind| Ok(notify::Event::new(kind));
+        let open = EventKind::Access(AccessKind::Open(AccessMode::Any));
+        let read = EventKind::Access(AccessKind::Close(AccessMode::Read));
+        let debounce = Duration::from_millis(50);
+        let (tx, rx) = mpsc::channel();
+
+        tx.send(event(open)).unwrap();
+        tx.send(event(read)).unwrap();
+        assert_eq!(
+            next_batch(&rx, debounce, Path::new("/out"), &[]),
+            Some(false)
+        );
+
+        tx.send(event(open)).unwrap();
+        tx.send(event(EventKind::Modify(ModifyKind::Any))).unwrap();
+        tx.send(event(read)).unwrap();
+        assert_eq!(
+            next_batch(&rx, debounce, Path::new("/out"), &[]),
+            Some(true)
+        );
+
+        drop(tx);
+        assert_eq!(next_batch(&rx, debounce, Path::new("/out"), &[]), None);
     }
 
     #[test]
@@ -314,29 +411,74 @@ mod tests {
     }
 
     #[test]
+    fn only_a_write_a_build_makes_under_the_output_is_not_a_change() {
+        let event =
+            |path: &str| notify::Event::new(notify::EventKind::Any).add_path(PathBuf::from(path));
+        let out = Path::new("/vault");
+        let built = tradecraft_core::built_paths();
+        assert!(is_build_output(
+            &event("/vault/.claude-plugin/packs/x"),
+            out,
+            &built
+        ));
+        assert!(is_build_output(
+            &event("/vault/.claude-plugin/packs"),
+            out,
+            &built
+        ));
+        assert!(is_build_output(
+            &event("/vault/.skillwright-stage/a"),
+            out,
+            &built
+        ));
+        assert!(!is_build_output(
+            &event("/vault/plugins/p/skills/s.md"),
+            out,
+            &built
+        ));
+        // A source in a dot folder beside the output.
+        assert!(!is_build_output(
+            &event("/vault/.claude/hooks.json"),
+            out,
+            &built
+        ));
+        assert!(!is_build_output(
+            &event("/vault/.agents/skills/s.md"),
+            out,
+            &built
+        ));
+        assert!(!is_build_output(&event("/elsewhere/.pi/x"), out, &built));
+        // A moved packs folder, as the run resolves it.
+        assert!(!is_build_output(&event("/vault/moved/x"), out, &built));
+        let moved = ["moved/".to_owned()];
+        assert!(is_build_output(&event("/vault/moved/x"), out, &moved));
+    }
+
+    #[test]
     fn asset_sources_are_watched_beside_the_vault() {
-        use crate::config::{AssetEntry, SkillwrightConfig};
+        use crate::config::{AssetSetting, RootFile};
         use crate::resolve::ResolvedRun;
 
         let root = tempfile::tempdir().unwrap();
         let vault = root.path().join("plugin");
         fs::create_dir_all(&vault).unwrap();
         fs::create_dir_all(root.path().join("conventions")).unwrap();
-        fs::create_dir_all(root.path().join("cli")).unwrap();
-        fs::write(root.path().join("cli/sdlc"), "launcher\n").unwrap();
-        let asset = |from: &str| AssetEntry {
+        fs::create_dir_all(root.path().join("bin")).unwrap();
+        fs::write(root.path().join("bin/tool"), "launcher\n").unwrap();
+        let asset = |from: &str| AssetSetting {
             from: from.to_owned(),
             to: from.to_owned(),
             plugin: None,
         };
         let run = ResolvedRun {
-            config: Some(SkillwrightConfig {
-                assets: vec![asset("conventions"), asset("cli/sdlc")],
-                ..SkillwrightConfig::default()
-            }),
-            config_dir: root.path().to_path_buf(),
+            config: {
+                let mut config = RootFile::default();
+                // The root file sits in the vault, so its paths resolve there.
+                config.build.assets = vec![asset("../conventions"), asset("../bin/tool")];
+                config
+            },
             config_path: None,
-            namespace: None,
+            namespace: tradecraft_core::Namespace::default(),
             vault: vault.clone(),
         };
 
@@ -345,19 +487,50 @@ mod tests {
         assert!(targets.contains(&(root.path().join("conventions"), RecursiveMode::Recursive)));
         // A file asset is watched through its parent, so an editor's
         // rename-over save is still seen.
-        assert!(targets.contains(&(root.path().join("cli"), RecursiveMode::NonRecursive)));
+        assert!(targets.contains(&(root.path().join("bin"), RecursiveMode::NonRecursive)));
         assert_eq!(targets.len(), 3);
+    }
+
+    #[test]
+    fn a_workspace_file_above_is_watched() {
+        use crate::config::RootFile;
+        use crate::resolve::ResolvedRun;
+
+        let root = tempfile::tempdir().unwrap();
+        let vault = root.path().join("marketplaces/m");
+        fs::create_dir_all(&vault).unwrap();
+        fs::write(
+            root.path().join("skillwright.md"),
+            "---\nworkspace: true\n---\n",
+        )
+        .unwrap();
+        let run = ResolvedRun {
+            config: RootFile::default(),
+            config_path: None,
+            namespace: tradecraft_core::Namespace::default(),
+            vault,
+        };
+        assert!(
+            watch_targets(&run).contains(&(root.path().to_path_buf(), RecursiveMode::NonRecursive))
+        );
     }
 
     #[test]
     fn a_saved_change_triggers_exactly_one_rebuild() {
         let vault_dir = fixture_vault();
         let out_dir = tempfile::tempdir().unwrap();
+        // Beside the vault, not in it: the temp file is not a vault event.
+        let scratch = tempfile::tempdir().unwrap();
         let flags = flags_for(vault_dir.path(), out_dir.path());
-
-        let mut out: Vec<u8> = Vec::new();
-        let mut err: Vec<u8> = Vec::new();
-        let mut ctx = CommandContext::new(vault_dir.path(), &mut out, &mut err);
+        let cwd = vault_dir.path().to_path_buf();
+        let watch = thread::spawn(move || {
+            let mut out: Vec<u8> = Vec::new();
+            let mut err: Vec<u8> = Vec::new();
+            let mut ctx = CommandContext::new(&cwd, &mut out, &mut err);
+            let code = run_watch_for(&flags, &mut ctx, Some(1));
+            drop(ctx);
+            (code, String::from_utf8_lossy(&err).into_owned())
+        });
 
         let skill_path = vault_dir
             .path()
@@ -365,27 +538,29 @@ mod tests {
         let edited = fs::read_to_string(&skill_path)
             .unwrap()
             .replace("Reviews a diff.", "Reviews a diff, now edited.");
-        // Save repeatedly until the watch returns, not once after a fixed
-        // sleep: the initial build runs before the watcher arms, and on a
-        // loaded host it can outlast any fixed delay — a single early save
-        // would then land before anything is watching, and the loop would
-        // wait forever for an event that already happened.
-        let stop = Arc::new(AtomicBool::new(false));
-        let saver = {
-            let stop = Arc::clone(&stop);
-            thread::spawn(move || {
-                while !stop.load(Ordering::Relaxed) {
-                    thread::sleep(Duration::from_millis(200));
-                    let _ = fs::write(&skill_path, &edited);
-                }
-            })
-        };
-
-        let code = run_watch_for(&flags, &mut ctx, Some(1));
-        stop.store(true, Ordering::Relaxed);
-        saver.join().unwrap();
-        drop(ctx);
-        assert_eq!(code, EXIT_OK, "{}", String::from_utf8_lossy(&err));
+        let staged = scratch.path().join("review.md");
+        // The watcher arms only after the initial build, so one early save
+        // can go unseen: save again until the watch returns. Each save is a
+        // rename, so a rebuild never reads a half-written note (a truncated
+        // note renders no skill and the build removes its output). Both temp
+        // dirs sit under the same temp root, so the rename stays on one
+        // filesystem.
+        let ceiling = Instant::now() + Duration::from_secs(30);
+        while !watch.is_finished() {
+            assert!(
+                Instant::now() < ceiling,
+                "no rebuild followed the saved edit within 30s"
+            );
+            fs::write(&staged, &edited).unwrap();
+            fs::rename(&staged, &skill_path).unwrap();
+            thread::sleep(Duration::from_millis(200));
+        }
+        let (code, log) = watch.join().unwrap();
+        assert_eq!(code, EXIT_OK, "{log}");
+        assert!(
+            !log.contains("rebuild failed"),
+            "the rebuild after the save failed: {log}"
+        );
 
         let rendered = fs::read_to_string(
             out_dir
@@ -395,7 +570,7 @@ mod tests {
         .expect("the rebuilt output should carry the edited skill");
         assert!(
             rendered.contains("Reviews a diff, now edited."),
-            "the rebuild did not pick up the saved change: {rendered}"
+            "the rebuild did not pick up the saved change: {rendered}\nwatch log: {log}"
         );
     }
 }

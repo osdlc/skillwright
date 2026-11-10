@@ -2,24 +2,24 @@
   "hooks": {
     "beforeSubmitPrompt": [
       {
-        "command": "${CURSOR_PLUGIN_ROOT}/cli/sdlc session received",
+        "command": "${CURSOR_PLUGIN_ROOT}/bin/tool session received",
         "timeout": 5
       }
     ],
     "sessionEnd": [
       {
-        "command": "${CURSOR_PLUGIN_ROOT}/cli/sdlc session end"
+        "command": "${CURSOR_PLUGIN_ROOT}/bin/tool session end"
       }
     ],
     "sessionStart": [
       {
-        "command": "${CURSOR_PLUGIN_ROOT}/cli/sdlc session start",
+        "command": "${CURSOR_PLUGIN_ROOT}/bin/tool session start",
         "timeout": 5
       }
     ],
     "stop": [
       {
-        "command": "${CURSOR_PLUGIN_ROOT}/cli/sdlc session stop --harness cursor --event Stop",
+        "command": "${CURSOR_PLUGIN_ROOT}/bin/tool session stop --harness cursor --event Stop",
         "timeout": 10
       }
     ]

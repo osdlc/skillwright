@@ -175,3 +175,49 @@ fn a_diagnostic_export_emits() {
         );
     }
 }
+
+/// `statusOf` hands back `tradecraft_core::status`'s per-unit report, an
+/// object with a `state`, not the export report's four-word status token.
+#[test]
+fn status_of_responds_with_the_status_report() {
+    let model = tradecraft_typegen::read(&crates()).expect("reading the crates");
+    let export = model
+        .exports
+        .iter()
+        .find(|e| e.js_name == "statusOf")
+        .expect("the wrapper exports statusOf");
+    let (name, list) = export.response.clone().expect("statusOf has a response");
+    assert!(!list);
+    let Some(tradecraft_typegen::parse::TypeDef::Struct(s)) = model.types.get(&name) else {
+        panic!("statusOf's response `{name}` is not a struct");
+    };
+    let fields: Vec<&str> = s.fields.iter().map(|f| f.name.as_str()).collect();
+    for field in ["state", "reason", "files", "version_bump_suggestion"] {
+        assert!(
+            fields.contains(&field),
+            "statusOf's response `{name}` has no `{field}`: {fields:?}"
+        );
+    }
+}
+
+/// The marketplace model is declared in `tradecraft-core/src/model/`, a module
+/// directory, and holds fields marked `#[serde(skip)]` that never reach the
+/// wire. Both must hold for `loadMarketplace` to emit at all: the directory is
+/// read, and a skipped field — `Marketplace::config`, here — is left out of the
+/// interface rather than described.
+#[test]
+fn the_marketplace_model_emits_without_its_skipped_fields() {
+    let ts = tradecraft_typegen::generate(&crates()).expect("generating");
+
+    let start = ts
+        .find("export interface Marketplace {")
+        .expect("`Marketplace` is emitted");
+    let end = start + ts[start..].find("\n}").expect("the interface closes");
+    let interface = &ts[start..end];
+    assert!(
+        interface.contains("plugins: Record<string, Plugin>;"),
+        "{interface}"
+    );
+    assert!(!interface.contains("config"), "{interface}");
+    assert!(!interface.contains("vault_root"), "{interface}");
+}

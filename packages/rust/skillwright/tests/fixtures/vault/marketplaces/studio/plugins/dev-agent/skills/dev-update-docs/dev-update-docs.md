@@ -13,8 +13,6 @@ allowed-tools:
 - Glob
 - Grep
 - AskUserQuestion
-sw-kind: skill
-sw-plugin: dev-agent
 ---
 
 # /[[dev-update-docs]]

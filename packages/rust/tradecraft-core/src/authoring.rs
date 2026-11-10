@@ -22,11 +22,14 @@ use yaml_splice::edit_frontmatter;
 use yaml_splice::parse::parse_mapping;
 
 use crate::discover::{
-    DiscoveredComponent, KIND_DIRS, discover_components, folder_placement, name_refusal, slugify,
+    DiscoveredComponent, KIND_DIRS, discover_components, folder_kind, folder_placement,
+    name_refusal, slugify,
 };
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::namespace::Namespace;
+use crate::paths::WORKSPACE_DIR;
+use crate::settings::ROOT_FILE;
 use crate::vault::read_vault_skill;
 use crate::vfs::{MemVfs, Vfs};
 
@@ -36,6 +39,7 @@ use crate::vfs::{MemVfs, Vfs};
 /// The neutral shape of a host's own placement wire type: the levels a path
 /// is derived from, and nothing a transport cares about.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Placement {
     /// The marketplace folder, when named.
     pub marketplace: Option<String>,
@@ -84,6 +88,7 @@ impl FieldEdit {
 /// entry or a CAS token: those are the host's, and a plan that carried them
 /// could not be computed in a browser.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum AuthoringOp {
     /// Write `bytes` at `path`, then make each `scaffold` directory.
     Create {
@@ -106,7 +111,8 @@ pub enum AuthoringOp {
         /// Frontmatter edits to apply to the note at `to`.
         frontmatter: Vec<FieldEdit>,
     },
-    /// The same move, to a placement rather than to a name.
+    /// The same move, to a placement rather than to a name. The folder names
+    /// the plugin, so no frontmatter changes.
     Move {
         /// Current vault-relative path.
         from: String,
@@ -114,8 +120,6 @@ pub enum AuthoringOp {
         to: String,
         /// Whether the note's whole bundle folder moves.
         bundle: bool,
-        /// Frontmatter edits to apply to the note at `to`.
-        frontmatter: Vec<FieldEdit>,
     },
     /// Trash every path, into `trash_dir`.
     Delete {
@@ -138,49 +142,13 @@ pub enum AuthoringOp {
         /// Member directories to create.
         scaffold: Vec<String>,
     },
-    /// Rename a plugin: its folder, its own `name`, and every member whose
-    /// explicit `sw-plugin` named the old slug.
-    ///
-    /// `members` is keyed on the member's path in the OLD tree, since that is
-    /// where a host reads their etags before anything moves; rebase each onto
-    /// `dir_to` after the folder lands.
-    RenamePlugin {
-        /// Path of the plugin note before the rename.
-        from: String,
-        /// Path of the plugin note after the rename.
-        to: String,
-        /// The plugin folder before the rename.
-        dir_from: String,
-        /// The plugin folder after the rename.
-        dir_to: String,
-        /// Frontmatter edits to apply to the plugin note.
-        frontmatter: Vec<FieldEdit>,
-        /// Each member's path in the old tree, with its frontmatter edits.
-        members: Vec<(String, Vec<FieldEdit>)>,
-    },
 }
 
 /// The vault-relative folder a delete moves its paths into.
 pub const TRASH_DIR: &str = ".trash";
 
-/// The plugin an un-keyed note groups into. Configuration, not a property of
-/// the note — stated once here so a host can explain where a row's `plugin`
-/// value came from.
-pub const DEFAULT_PLUGIN: &str = "core";
-
-/// The vault-relative directory discovery scans —
-/// [`discover_components`] with `skills_root: None`, spelled out.
+/// The vault-relative folder that holds plugins.
 pub const SKILLS_ROOT: &str = "plugins";
-
-/// The folder marketplaces are looked for in, under the content root.
-pub const MARKETPLACES_DIR: &str = "marketplaces";
-
-/// Where a newly authored skill lands when the request does not say.
-///
-/// A component's marketplace and plugin are decided by the folders holding it,
-/// and [`derive_create`] derives the path rather than taking one — so a create
-/// with no placement has to pick, and it picks the defaults.
-const DEFAULT_MARKETPLACE: &str = "default";
 
 /// Frontmatter keys no conversion removes: both are the note's identity, and
 /// every kind carries them.
@@ -222,9 +190,7 @@ fn named(value: &Option<String>) -> Option<&str> {
 /// `container_dir`, which names the folder the note itself makes.
 pub fn new_note_dir(placement: Option<&Placement>) -> Result<String, String> {
     let Some(placement) = placement else {
-        return Ok(format!(
-            "{MARKETPLACES_DIR}/{DEFAULT_MARKETPLACE}/{SKILLS_ROOT}/{DEFAULT_PLUGIN}/skills"
-        ));
+        return Ok("skills".to_owned());
     };
     let segment = |level: &str, name: Option<&str>| -> Result<Option<String>, String> {
         match name.map(str::trim) {
@@ -287,7 +253,7 @@ fn placement_prefix(
 ) -> Result<String, String> {
     let mut dir = String::new();
     if let Some(market) = segment("marketplace", placement.marketplace.as_deref())? {
-        dir.push_str(MARKETPLACES_DIR);
+        dir.push_str(WORKSPACE_DIR);
         dir.push('/');
         dir.push_str(&market);
         dir.push('/');
@@ -349,18 +315,16 @@ fn container_dir(
             if segment("marketplace", placement.marketplace.as_deref())?.is_some() {
                 return Err(MARKETPLACE_NESTED.to_owned());
             }
-            Ok(MARKETPLACES_DIR.to_owned())
+            Ok(WORKSPACE_DIR.to_owned())
         }
         EntityKind::Plugin => {
-            let market =
-                segment("marketplace", placement.marketplace.as_deref())?.ok_or_else(|| {
-                    "a plugin is authored inside a marketplace, so the placement has to name one"
-                        .to_owned()
-                })?;
             if segment("plugin", placement.plugin.as_deref())?.is_some() {
                 return Err(PLUGIN_NESTED.to_owned());
             }
-            Ok(format!("{MARKETPLACES_DIR}/{market}/{SKILLS_ROOT}"))
+            match segment("marketplace", placement.marketplace.as_deref())? {
+                Some(market) => Ok(format!("{WORKSPACE_DIR}/{market}/{SKILLS_ROOT}")),
+                None => Ok(SKILLS_ROOT.to_owned()),
+            }
         }
         other => Err(format!("{} holds no components", other.as_str())),
     }
@@ -405,7 +369,10 @@ pub fn derive_create(
     // A container note names its folder, so it is bundled whatever the request
     // said: `marketplaces/house.md` is a note the reader would find as a loose
     // component rather than as a marketplace.
-    let path = if bundled || placement_kind(placement).is_some_and(EntityKind::holds_components) {
+    let kind = placement_kind(placement);
+    let path = if kind == Some(EntityKind::Marketplace) {
+        format!("{dir}/{slug}/{ROOT_FILE}")
+    } else if bundled || kind.is_some_and(EntityKind::holds_components) {
         format!("{dir}/{slug}/{slug}.md")
     } else {
         format!("{dir}/{slug}.md")
@@ -413,20 +380,25 @@ pub fn derive_create(
     Ok((path, with_name(fields, &slug)))
 }
 
-/// The directory a component bundle's entry note names, when `entry` is
-/// shaped `<dir>/<dir>.md` or `<dir>/SKILL.md`. The shape and nothing else:
-/// the plans here decide what moves, never how a host moves it.
+/// The directory a component bundle's entry note owns, or `None` for a note
+/// that travels alone. Under a kind folder the scan's own shape rule decides:
+/// a note directly inside one (`skills/skills.md`, `skills/SKILL.md`) is a
+/// lone note, and so is a path the rule gives no shape (`plugins/p/SKILL.md`).
+/// Outside every kind folder, a note shaped `<dir>/<dir>.md` or
+/// `<dir>/SKILL.md` (extension case-insensitive) owns `<dir>`. The shape and
+/// nothing else: the plans here decide what moves, never how a host moves it.
 pub fn bundle_dir(entry: &str) -> Option<&str> {
     let (dir, file) = entry.rsplit_once('/')?;
-    if crate::discover::is_skill_entry(file) {
-        return Some(dir);
-    }
-    if !entry.ends_with(".md") {
-        return None;
-    }
-    let stem = &file[..file.len() - 3];
-    let dir_name = dir.rsplit('/').next().unwrap_or(dir);
-    (dir_name == stem).then_some(dir)
+    let bundled = match crate::discover::is_bundle_entry(entry) {
+        Some(bundled) => bundled,
+        None if crate::discover::under_a_kind_folder(Path::new(""), Path::new(dir)) => false,
+        None => {
+            let dir_name = dir.rsplit('/').next().unwrap_or(dir);
+            crate::discover::is_skill_entry(file)
+                || crate::discover::md_stem(file) == Some(dir_name)
+        }
+    };
+    bundled.then_some(dir)
 }
 
 /// The entry file a bundle named `name` gets as a `to_kind`: `SKILL.md` stays
@@ -435,7 +407,9 @@ pub fn bundle_dir(entry: &str) -> Option<&str> {
 /// take its folder's name or discovery cannot read it back.
 fn bundle_entry_file(entry: &str, name: &str, to_kind: EntityKind) -> String {
     let file = entry.rsplit('/').next().unwrap_or(entry);
-    if to_kind == EntityKind::Skill && crate::discover::is_skill_entry(file) {
+    if to_kind == EntityKind::Marketplace {
+        ROOT_FILE.to_owned()
+    } else if to_kind == EntityKind::Skill && crate::discover::is_skill_entry(file) {
         file.to_owned()
     } else {
         format!("{name}.md")
@@ -466,7 +440,13 @@ pub fn rename_destination(entry: &str, slug: &str) -> String {
     match bundle_dir(entry) {
         Some(dir) => {
             // A rename keeps the kind, and only a skill has a `SKILL.md`.
-            let file = bundle_entry_file(entry, slug, EntityKind::Skill);
+            let market = dir.rsplit_once('/').map(|(parent, _)| parent) == Some(WORKSPACE_DIR);
+            let kind = if market {
+                EntityKind::Marketplace
+            } else {
+                EntityKind::Skill
+            };
+            let file = bundle_entry_file(entry, slug, kind);
             match dir.rsplit_once('/') {
                 Some((parent, _)) => format!("{parent}/{slug}/{file}"),
                 None => format!("{slug}/{file}"),
@@ -513,35 +493,21 @@ pub fn move_destination(
 /// Walked directly rather than through [`discover_components`]: this only
 /// needs to know "is anything else in here", not each member's resolved key.
 pub fn container_members(vfs: &dyn Vfs, vault_dir: &Path, dir: &str, entry: &str) -> Vec<String> {
-    let mut members = Vec::new();
-    walk_markdown(vfs, &vault_dir.join(dir), vault_dir, entry, &mut members);
+    let mut members: Vec<String> =
+        crate::walk::readable_vault_files(vfs, &vault_dir.join(dir), vault_dir)
+            .into_iter()
+            .filter(|abs| {
+                abs.extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+            })
+            .filter_map(|abs| {
+                let rel = abs.strip_prefix(vault_dir).ok()?;
+                Some(rel.to_string_lossy().replace('\\', "/"))
+            })
+            .filter(|rel| rel != entry)
+            .collect();
     members.sort();
     members
-}
-
-fn walk_markdown(
-    vfs: &dyn Vfs,
-    current: &Path,
-    vault_dir: &Path,
-    entry: &str,
-    out: &mut Vec<String>,
-) {
-    let Ok(entries) = vfs.read_dir(current) else {
-        return;
-    };
-    for item in entries {
-        let path = current.join(&item.name);
-        if item.is_dir {
-            walk_markdown(vfs, &path, vault_dir, entry, out);
-        } else if path.extension().is_some_and(|ext| ext == "md")
-            && let Ok(rel) = path.strip_prefix(vault_dir)
-        {
-            let rel = rel.to_string_lossy().replace('\\', "/");
-            if rel != entry {
-                out.push(rel);
-            }
-        }
-    }
 }
 
 /// The marketplace directory a component publishes onto — the four values
@@ -609,16 +575,8 @@ pub fn rename_collision(
 ) -> Option<String> {
     let ours = find_component(vfs, vault_dir, entry, ns)?;
     let placement = folder_placement(vault_dir, &vault_dir.join(to));
-    // The publish key carries the RESOLVED plugin, and `sw-plugin` overrules
-    // the folder. A rename touches no frontmatter, so an overridden note
-    // keeps its override and the folder's plugin is not its bucket; a note
-    // that takes its plugin from the folder follows the destination, which is
-    // how renaming a plugin's own directory moves it into its new bucket.
-    let plugin = if ours.plugin == ours.folder_plugin {
-        placement.plugin
-    } else {
-        ours.plugin.clone()
-    };
+    // The folder names the plugin, so the note follows its destination.
+    let plugin = placement.plugin;
     key_collision(
         vfs,
         vault_dir,
@@ -640,7 +598,7 @@ fn component_slug(entry: &str) -> &str {
         Some(dir) => dir.rsplit('/').next().unwrap_or(dir),
         None => {
             let leaf = entry.rsplit('/').next().unwrap_or(entry);
-            leaf.strip_suffix(".md").unwrap_or(leaf)
+            crate::discover::md_stem(leaf).unwrap_or(leaf)
         }
     }
 }
@@ -671,9 +629,9 @@ fn convert_placement(
 /// kind-directory sibling of [`move_destination`], which it delegates to for
 /// every leaf kind.
 ///
-/// The one shape a move never produces: a container is authored as its own
-/// folder's note (`<name>/<name>.md`) whatever shape the note has now, so a
-/// lone file converting to `plugin` or `marketplace` gains a folder.
+/// The one shape a move never produces: a container is authored in a folder
+/// of its own whatever shape the note has now, so a lone file gains a folder:
+/// `<name>/<name>.md` for a plugin, `<name>/skillwright.md` for a marketplace.
 pub fn convert_kind_destination(
     entry: &str,
     to_kind: EntityKind,
@@ -690,7 +648,10 @@ pub fn convert_kind_destination(
         folder: None,
     }))?;
     let name = component_slug(entry);
-    Ok(format!("{dir}/{name}/{name}.md"))
+    Ok(format!(
+        "{dir}/{name}/{}",
+        bundle_entry_file(entry, name, to_kind)
+    ))
 }
 
 /// The member folders a container of `kind` holds, read off [`KIND_DIRS`] so
@@ -719,13 +680,10 @@ fn container_scaffold_dirs(kind: EntityKind) -> Vec<&'static str> {
 /// folder levels, so a listed component comes back with its key already
 /// resolved.
 ///
-/// Being *skipped* by discovery is not the same as being refused by it, and
-/// the difference is a whole kind of note. `read_source` gates on the kind
-/// before it checks anything else, so a note declaring `sw-kind: plugin` comes
-/// back as a silent skip — the component list is not where it belongs, and its
-/// name never has to agree with its filename. The reader
-/// ([`read_vault_skill`]) is what judges those notes, and it is asked here so
-/// the form can offer `plugin` as a kind and have the write accept it.
+/// A note the scan neither lists nor refuses — a non-skill note that opts
+/// in to nothing, say — is judged by the reader ([`read_vault_skill`]) and
+/// comes back [`ScratchVerdict::Skipped`]. A note the scan refuses is
+/// [`ScratchVerdict::Refused`] whatever its kind, in the scan's own words.
 pub fn scratch_scan(source: &str, rel_path: &str, ns: &Namespace) -> ScratchVerdict {
     match scratch_vault(source, rel_path) {
         Ok((vfs, abs)) => scan_scratch(&vfs, &abs, rel_path, ns),
@@ -740,8 +698,16 @@ fn scan_scratch(vfs: &MemVfs, abs: &Path, rel_path: &str, ns: &Namespace) -> Scr
         Ok(mut found) if found.components.len() == 1 => {
             ScratchVerdict::Listed(Box::new(found.components.remove(0)))
         }
-        Ok(_) => match read_vault_skill(vfs, abs, ns) {
-            Ok(note) if note.frontmatter.kind() != EntityKind::Skill => ScratchVerdict::Skipped,
+        Ok(found) => match read_vault_skill(vfs, abs, ns) {
+            Ok(_)
+                if crate::discover::folder_kind(Path::new(SCRATCH_ROOT), abs)
+                    .is_some_and(|k| k != EntityKind::Skill) =>
+            {
+                match found.skipped.first() {
+                    Some(skipped) => ScratchVerdict::Refused(skipped.sentence()),
+                    None => ScratchVerdict::Skipped,
+                }
+            }
             Ok(_) => ScratchVerdict::Refused(format!(
                 "the composed note is not one the vault's scan would list at `{rel_path}`"
             )),
@@ -917,7 +883,8 @@ pub enum ScratchVerdict {
     /// The scan lists it, and the component carries the resolved
     /// (marketplace, plugin, kind, name) the folders and frontmatter decided.
     Listed(Box<DiscoveredComponent>),
-    /// Legitimately skipped — a container note the component list is not for.
+    /// Legitimately skipped — a non-skill note the scan neither lists nor
+    /// refuses.
     Skipped,
     /// The scan refuses it, in the core's own words.
     Refused(String),
@@ -977,14 +944,17 @@ fn convert_target(
     let (to_market, to_plugin) = convert_placement(
         to_kind,
         component.marketplace.as_deref(),
-        component.folder_plugin.as_deref(),
+        component.plugin.as_deref(),
     );
     let to = convert_kind_destination(entry, to_kind, to_market.as_deref(), to_plugin.as_deref())?;
 
-    // The key the destination publishes onto. A conversion that keeps the
-    // plugin level keeps whatever `sw-plugin` resolved to; one that drops it
-    // publishes at the level the folders now put the note.
-    let key_plugin = to_plugin.as_ref().and_then(|_| component.plugin.clone());
+    // The key the destination publishes onto. A leaf conversion stays in its
+    // plugin. A container sits above the plugin level and publishes in none.
+    let key_plugin = if to_kind.holds_components() {
+        None
+    } else {
+        component.plugin.clone()
+    };
     if let Some(refusal) = key_collision(
         vfs,
         vault_dir,
@@ -1028,26 +998,6 @@ fn create_scaffold(path: &str, kind: Option<EntityKind>) -> Vec<String> {
         .collect()
 }
 
-/// Every member note whose explicit `sw-plugin` key names `plugin_slug`
-/// outright — the set a plugin rename must rewrite. Read from the OLD tree,
-/// before anything moves.
-fn stale_plugin_key_members(
-    vfs: &dyn Vfs,
-    vault_dir: &Path,
-    dir: &str,
-    entry: &str,
-    plugin_slug: &str,
-    ns: &Namespace,
-) -> Vec<String> {
-    container_members(vfs, vault_dir, dir, entry)
-        .into_iter()
-        .filter(|member| {
-            read_vault_skill(vfs, &vault_dir.join(member), ns)
-                .is_ok_and(|note| note.frontmatter.plugin.as_deref() == Some(plugin_slug))
-        })
-        .collect()
-}
-
 /// [`FieldEdit`] in the editor's own vocabulary. Total: `None` is a removal,
 /// and nothing here can produce the `Rename` this module never asks for.
 pub fn splice_edits(edits: &[FieldEdit]) -> Vec<yaml_splice::FieldEdit> {
@@ -1077,24 +1027,138 @@ fn with_name(edits: &[FieldEdit], slug: &str) -> Vec<FieldEdit> {
     edits
 }
 
-/// One frontmatter key's raw value, read out of `source` as a string.
-///
-/// `None` for no frontmatter block and for a key the frontmatter does not
-/// have. Exists so a caller can read one raw, unmodeled key — an
-/// author-managed `sw-version`, say — without this crate modeling that key
-/// as a typed field.
-pub fn read_field(source: &str, key: &str) -> Result<Option<String>, CoreError> {
+/// The frontmatter of `source` as a mapping, or `None` for no block.
+fn frontmatter_mapping(source: &str) -> Result<Option<yaml_splice::Mapping>, CoreError> {
     let yaml = match frontmatter_lossless::split(source).yaml {
         Some(yaml) if !yaml.trim().is_empty() => yaml,
         _ => return Ok(None),
     };
-    let mapping = parse_mapping(yaml).map_err(|e| {
+    parse_mapping(yaml).map(Some).map_err(|e| {
         CoreError::refused(
             "frontmatter-read",
             format!("frontmatter could not be read: {e}"),
         )
-    })?;
-    Ok(mapping.get(key).map(|value| value.to_string()))
+    })
+}
+
+/// One frontmatter key's raw value, read out of `source` as a string.
+///
+/// `None` for no frontmatter block and for a key the frontmatter does not
+/// have. Exists so a caller can read one raw, unmodeled key without this
+/// crate modeling that key as a typed field. The key is read as spelled: for
+/// one of our own fields, which a note may also write inside the nested
+/// `sw:` block, use [`read_ns_field`].
+pub fn read_field(source: &str, key: &str) -> Result<Option<String>, CoreError> {
+    Ok(frontmatter_mapping(source)?
+        .and_then(|mapping| mapping.get(key).map(|value| value.to_string())))
+}
+
+/// One of our own fields (`version`, say) read out of `source`, in any shape
+/// a note may write it: bare, the flat `sw-<field>` key, or `<field>` inside
+/// the nested `sw:` block.
+pub fn read_ns_field(
+    source: &str,
+    ns: &Namespace,
+    field: &str,
+) -> Result<Option<String>, CoreError> {
+    let Some(mapping) = frontmatter_mapping(source)? else {
+        return Ok(None);
+    };
+    if let Some(value) = mapping.get(&ns.key(field)) {
+        return Ok(Some(value.to_string()));
+    }
+    Ok(mapping
+        .get(ns.block_key())
+        .and_then(yaml_splice::Value::as_mapping)
+        .and_then(|block| block.get(field))
+        .map(|value| value.to_string()))
+}
+
+/// The edits to apply to `source` that set (or, for `None`, remove) each of
+/// `changes`, in the shape the note already uses.
+///
+/// A note with a nested `sw:` block gets one edit rewriting that block; any
+/// other note gets flat keys, prefixed under a namespace. Writing a flat key beside an
+/// existing block would give the note both shapes, which discovery refuses.
+///
+/// [`FieldEdit`] addresses top-level keys only, so the block is written back
+/// whole: its keys keep their order and a new one is appended, but a comment
+/// inside the block is lost (a trailing one on its last entry moves to the
+/// `sw:` line), quoting on its values is dropped, and a flow-style block
+/// (`sw: {…}`) comes back in block style. Every byte outside the block is
+/// kept.
+pub fn ns_field_edits(
+    source: &str,
+    ns: &Namespace,
+    changes: &[(&str, Option<yaml_splice::Value>)],
+) -> Result<Vec<FieldEdit>, CoreError> {
+    let Some(mut block) = nested_block(source, ns)? else {
+        return Ok(changes
+            .iter()
+            .map(|(field, value)| FieldEdit {
+                key: ns.key(field),
+                value: value.clone(),
+            })
+            .collect());
+    };
+    let before = block.clone();
+    for (field, value) in changes {
+        match value {
+            Some(value) => {
+                block.insert(*field, value.clone());
+            }
+            None => {
+                block.remove(field);
+            }
+        }
+    }
+    Ok(if block == before {
+        Vec::new()
+    } else if block.is_empty() {
+        vec![FieldEdit::remove(ns.block_key())]
+    } else {
+        vec![FieldEdit::set(
+            ns.block_key(),
+            yaml_splice::Value::Map(block),
+        )]
+    })
+}
+
+/// How `field` is spelled in `source`, for a message: `sw.<field>` for a
+/// note with a nested `sw:` block, its flat key otherwise — the shape
+/// [`ns_field_edits`] writes in.
+pub fn ns_field_label(source: &str, ns: &Namespace, field: &str) -> Result<String, CoreError> {
+    Ok(match nested_block(source, ns)? {
+        Some(_) => format!("{}.{field}", ns.block_key()),
+        None => ns.key(field),
+    })
+}
+
+/// The note's nested `sw:` block, or `None` when it has none or the key
+/// holds something other than a mapping.
+fn nested_block(source: &str, ns: &Namespace) -> Result<Option<yaml_splice::Mapping>, CoreError> {
+    Ok(
+        match frontmatter_mapping(source)?.and_then(|m| m.get(ns.block_key()).cloned()) {
+            Some(yaml_splice::Value::Map(block)) => Some(block),
+            // `sw:` with nothing under it is an empty block, not a broken one.
+            Some(yaml_splice::Value::Null) => Some(yaml_splice::Mapping::new()),
+            _ => None,
+        },
+    )
+}
+
+/// [`ns_field_edits`] for the note at vault-relative `rel`, in a plan's own
+/// refusal vocabulary.
+fn note_ns_edits(
+    vfs: &dyn Vfs,
+    vault: &Path,
+    rel: &str,
+    ns: &Namespace,
+    changes: &[(&str, Option<yaml_splice::Value>)],
+) -> Result<Vec<FieldEdit>, String> {
+    let bytes = vfs.read_file(&vault.join(rel)).map_err(|e| e.to_string())?;
+    let source = String::from_utf8(bytes).map_err(|e| format!("`{rel}` is not UTF-8: {e}"))?;
+    ns_field_edits(&source, ns, changes).map_err(|e| e.to_string())
 }
 
 /// The note as it would be written to disk, frontmatter spliced and body kept.
@@ -1115,6 +1179,7 @@ pub fn apply_field_edits(source: &str, edits: &[FieldEdit]) -> Result<String, Co
 /// The note a create is asked for: where it goes, what it is called, and
 /// what it says.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct NewNote<'a> {
     /// Where the author put it, or `None` for the default placement.
     pub placement: Option<&'a Placement>,
@@ -1128,6 +1193,20 @@ pub struct NewNote<'a> {
     pub fields: &'a [FieldEdit],
     /// Everything below the frontmatter block.
     pub body: &'a str,
+}
+
+impl<'a> NewNote<'a> {
+    /// A note called `name`, at the default placement, not bundled, with no
+    /// fields and an empty body. Set the other fields after.
+    pub fn new(name: &'a str) -> Self {
+        Self {
+            placement: None,
+            name,
+            bundled: false,
+            fields: &[],
+            body: "",
+        }
+    }
 }
 
 /// Write a new note: its derived path, its composed bytes, and the member
@@ -1182,15 +1261,8 @@ pub fn plan_rename_component(
 
 /// Move a component to a new placement.
 ///
-/// **The rule:** a move always REMOVES an explicit `sw-plugin` key when the
-/// note carries one — never sets or rewrites it, whatever `plugin` is. The
-/// physical folder now correctly names the destination (that is what the move
-/// does), so an explicit key left behind is stale by construction: it named
-/// where the note WAS grouped, and the folder alone decides where it is
-/// grouped now — including "no plugin" when `plugin` is `None`, shared at the
-/// marketplace level. A caller that wants a virtual grouping preserved
-/// through a physical move rewrites it afterward; this op does not infer that
-/// intent.
+/// The folder decides the plugin, so no frontmatter changes. `plugin: None`
+/// shares the note at the marketplace level.
 pub fn plan_move_component(
     vfs: &dyn Vfs,
     vault: &Path,
@@ -1219,36 +1291,29 @@ pub fn plan_move_component(
     ) {
         return Err(refusal);
     }
-    let carries_plugin_key = read_vault_skill(vfs, &vault.join(entry), ns)
-        .ok()
-        .and_then(|note| note.frontmatter.plugin)
-        .is_some();
     Ok(AuthoringOp::Move {
         from: entry.to_owned(),
         to,
         bundle: bundle_dir(entry).is_some(),
-        frontmatter: if carries_plugin_key {
-            vec![FieldEdit::remove(ns.key("plugin"))]
-        } else {
-            Vec::new()
-        },
     })
 }
 
 /// Delete a component, plus the one check a generic delete cannot make:
 /// refusing a container note (plugin or marketplace) whose folder still holds
 /// members. Deleting an empty container's note is allowed — nothing else is
-/// there to lose.
+/// there to lose. When the scan cannot resolve the note (it is skipped, or
+/// the scan refuses), the folders it sits in decide its kind, and a note no
+/// folder names is checked as a container would be, since its whole folder
+/// is what the delete trashes.
 pub fn plan_delete_component(
     vfs: &dyn Vfs,
     vault: &Path,
     ns: &Namespace,
     entry: &str,
 ) -> Result<AuthoringOp, String> {
-    if let Some(component) = find_component(vfs, vault, entry, ns)
-        && component.kind.holds_components()
-        && let Some(dir) = bundle_dir(entry)
-    {
+    let may_hold_members =
+        resolved_kind(vfs, vault, ns, entry).is_none_or(EntityKind::holds_components);
+    if may_hold_members && let Some(dir) = bundle_dir(entry) {
         let members = container_members(vfs, vault, dir, entry);
         if !members.is_empty() {
             return Err(format!(
@@ -1269,7 +1334,8 @@ pub fn plan_delete_component(
 /// Delete a container's whole folder — its own note plus every component
 /// beneath it — whether or not it still holds members. Holding members is
 /// what a container delete is for, so [`plan_delete_component`]'s refusal is
-/// dropped here; only the kind is checked.
+/// dropped here; only the kind is checked — against the folder the note sits
+/// in when the scan cannot resolve it.
 pub fn plan_delete_container(
     vfs: &dyn Vfs,
     vault: &Path,
@@ -1277,9 +1343,7 @@ pub fn plan_delete_container(
     entry: &str,
     expected_kind: EntityKind,
 ) -> Result<AuthoringOp, String> {
-    if let Some(component) = find_component(vfs, vault, entry, ns)
-        && component.kind != expected_kind
-    {
+    if resolved_kind(vfs, vault, ns, entry) != Some(expected_kind) {
         return Err(format!(
             "`{}` is not a {}'s own entry note",
             entry,
@@ -1297,9 +1361,17 @@ fn deletion(entry: &str) -> AuthoringOp {
     }
 }
 
-/// Rename a plugin: move its folder, set its own `name`, then rewrite every
-/// member whose explicit `sw-plugin` key named the old slug. A member that
-/// takes its plugin from the folder needs no edit — the folder moved with it.
+/// The kind the scan lists `entry` as, or, when the scan cannot resolve it,
+/// the kind the folders it sits in name.
+fn resolved_kind(vfs: &dyn Vfs, vault: &Path, ns: &Namespace, entry: &str) -> Option<EntityKind> {
+    match find_component(vfs, vault, entry, ns) {
+        Some(component) => Some(component.kind),
+        None => folder_kind(vault, &vault.join(entry)),
+    }
+}
+
+/// Rename a plugin: move its folder and set its own `name`. Its members ride
+/// along with the folder, which is what names their plugin.
 pub fn plan_rename_plugin(
     vfs: &dyn Vfs,
     vault: &Path,
@@ -1311,7 +1383,10 @@ pub fn plan_rename_plugin(
     if let Some(refusal) = slug_refusal(&slug, "plugin name") {
         return Err(refusal);
     }
-    let Some(component) = find_component(vfs, vault, entry, ns) else {
+    let components = discover_components(vfs, vault, None, ns)
+        .map_err(|e| e.to_string())?
+        .components;
+    let Some(component) = components.iter().find(|c| c.vault_relative_path == entry) else {
         return Err(format!(
             "`{entry}` is not a component the vault's scan lists"
         ));
@@ -1319,37 +1394,21 @@ pub fn plan_rename_plugin(
     if component.kind != EntityKind::Plugin {
         return Err(format!("`{entry}` is not a plugin's own entry note"));
     }
-    let old_slug = component.name;
     let to = rename_destination(entry, &slug);
     if let Some(refusal) = rename_collision(vfs, vault, ns, entry, &to, &slug) {
         return Err(refusal);
     }
-    let (Some(dir_from), Some(dir_to)) = (bundle_dir(entry), bundle_dir(&to)) else {
+    if bundle_dir(entry).is_none() {
         return Err(format!(
             "`{entry}` is not a plugin's own `<dir>/<dir>.md` entry note, so its folder has no \
              name to move"
         ));
-    };
-    let (dir_from, dir_to) = (dir_from.to_owned(), dir_to.to_owned());
-    let members = stale_plugin_key_members(vfs, vault, &dir_from, entry, &old_slug, ns)
-        .into_iter()
-        .map(|member| {
-            (
-                member,
-                vec![FieldEdit::set(
-                    ns.key("plugin"),
-                    yaml_splice::Value::Str(slug.clone()),
-                )],
-            )
-        })
-        .collect();
-    Ok(AuthoringOp::RenamePlugin {
+    }
+    Ok(AuthoringOp::Rename {
         from: entry.to_owned(),
         to,
-        dir_from,
-        dir_to,
+        bundle: true,
         frontmatter: vec![FieldEdit::set("name", yaml_splice::Value::Str(slug))],
-        members,
     })
 }
 
@@ -1371,9 +1430,9 @@ pub fn plan_rename_marketplace(
     plan_rename_component(vfs, vault, ns, entry, new_name)
 }
 
-/// Convert a note to another kind: move it into the new kind's folder, set
-/// `sw-kind`, remove the keys the new kind does not carry, and make the
-/// member folders a container kind holds.
+/// Convert a note to another kind: move it into the new kind's folder, remove
+/// the keys the new kind does not carry, and make the member folders a
+/// container kind holds.
 ///
 /// `drop_keys` is the caller's list, not this crate's: the table saying which
 /// fields a kind carries belongs to whatever renders the form, and a second
@@ -1398,22 +1457,34 @@ pub fn plan_convert_kind(
             "`{key}` is carried by every kind and is not dropped by a conversion"
         ));
     }
+    // The namespace block is dropped field by field, never whole.
+    if let Some(key) = drop_keys
+        .iter()
+        .find(|k| !ns.is_bare() && k.trim() == ns.block_key())
+    {
+        return Err(format!(
+            "`{key}` holds skillwright's fields; drop them by their `{}` keys",
+            ns.key("<field>")
+        ));
+    }
     let target = convert_target(vfs, vault, ns, entry, to_kind)?;
-    // `sw-kind` first, then the removals — one list, so a note never sits
-    // with its new kind declared and the old kind's keys still on it.
-    let kind_key = ns.key("kind");
-    let mut frontmatter = vec![FieldEdit::set(
-        kind_key.clone(),
-        yaml_splice::Value::Str(to_kind.as_str().to_owned()),
-    )];
+    // The folder carries the new kind. Our own fields go in whichever shape
+    // the note uses, flat or nested; any other key is removed as spelled.
+    let mut changes: Vec<(&str, Option<yaml_splice::Value>)> = Vec::new();
+    let mut others: Vec<&str> = Vec::new();
     let mut dropped: BTreeSet<&str> = BTreeSet::new();
     for key in drop_keys {
         let key = key.trim();
-        if key.is_empty() || key == kind_key || !dropped.insert(key) {
+        if key.is_empty() || !dropped.insert(key) {
             continue;
         }
-        frontmatter.push(FieldEdit::remove(key));
+        match key.strip_prefix(ns.prefix()) {
+            Some(field) if !field.is_empty() => changes.push((field, None)),
+            _ => others.push(key),
+        }
     }
+    let mut frontmatter = note_ns_edits(vfs, vault, entry, ns, &changes)?;
+    frontmatter.extend(others.into_iter().map(FieldEdit::remove));
     Ok(AuthoringOp::ConvertKind {
         from: entry.to_owned(),
         to: target.to,
@@ -1430,8 +1501,107 @@ mod tests {
 
     const VAULT: &str = "/vault";
 
+    fn ns_rewrite(source: &str, changes: &[(&str, Option<Value>)]) -> (Vec<FieldEdit>, String) {
+        let edits = ns_field_edits(source, &sw(), changes).unwrap();
+        let out = apply_field_edits(source, &edits).unwrap();
+        (edits, out)
+    }
+
+    fn str_value(s: &str) -> Option<Value> {
+        Some(Value::Str(s.to_owned()))
+    }
+
+    #[test]
+    fn ns_field_edits_is_empty_when_the_block_already_holds_the_value() {
+        let source = "---\nname: a\nsw:\n  version: 1.0.0\n---\nbody\n";
+        let (edits, out) = ns_rewrite(source, &[("version", str_value("1.0.0"))]);
+        assert!(edits.is_empty());
+        assert_eq!(out, source);
+    }
+
+    #[test]
+    fn ns_field_edits_removes_a_block_its_changes_empty() {
+        let source = "---\nname: a\nsw:\n  version: 1.0.0\ntail: x\n---\nbody\n";
+        let (edits, out) = ns_rewrite(source, &[("version", None)]);
+        assert_eq!(edits, vec![FieldEdit::remove("sw")]);
+        assert_eq!(out, "---\nname: a\ntail: x\n---\nbody\n");
+    }
+
+    #[test]
+    fn ns_field_edits_fills_a_null_block() {
+        let source = "---\nname: a\nsw:\ntail: x\n---\nbody\n";
+        let (_, out) = ns_rewrite(source, &[("plugin", str_value("p"))]);
+        assert_eq!(out, "---\nname: a\nsw:\n  plugin: p\ntail: x\n---\nbody\n");
+    }
+
+    #[test]
+    fn ns_field_edits_falls_back_to_flat_keys_beside_a_block_that_is_not_a_map() {
+        let source = "---\nname: a\nsw: oops\n---\nbody\n";
+        let (edits, _) = ns_rewrite(source, &[("plugin", str_value("p"))]);
+        assert_eq!(
+            edits,
+            vec![FieldEdit::set("sw-plugin", Value::Str("p".to_owned()))]
+        );
+    }
+
+    /// The costs the doc names, pinned so a splicer upgrade that changes
+    /// them shows up here: a flow block comes back in block style and its
+    /// quoting is dropped, while bytes outside the block are kept.
+    #[test]
+    fn ns_field_edits_rewrites_a_flow_block_in_block_style() {
+        let source =
+            "---\nname: a # keep\nsw: {version: 1.0.0, plugin: \"p\"}\ntail: x\n---\nbody\n";
+        let (_, out) = ns_rewrite(source, &[("version", str_value("1.0.1"))]);
+        assert_eq!(
+            out,
+            "---\nname: a # keep\nsw:\n  version: 1.0.1\n  plugin: p\ntail: x\n---\nbody\n"
+        );
+    }
+
+    #[test]
+    fn ns_field_edits_drops_a_comment_inside_the_block() {
+        let source = "---\nname: a\nsw:\n  # note\n  plugin: \"p\"\n  version: 1.0.0 # last\ntail: x\n---\nbody\n";
+        let (_, out) = ns_rewrite(source, &[("version", str_value("1.0.1"))]);
+        assert_eq!(
+            out,
+            "---\nname: a\nsw: # last\n  plugin: p\n  version: 1.0.1\ntail: x\n---\nbody\n"
+        );
+    }
+
+    #[test]
+    fn a_plugin_rename_fails_with_the_scan_error_when_the_scan_cannot_run() {
+        let vfs = one_plugin_unscannable();
+        let scan_error = discover_components(&vfs, vault(), None, &sw())
+            .unwrap_err()
+            .to_string();
+
+        let refusal = plan_rename_plugin(
+            &vfs,
+            vault(),
+            &sw(),
+            "marketplaces/house/plugins/tools/tools.md",
+            "gear",
+        )
+        .unwrap_err();
+        assert_eq!(refusal, scan_error);
+    }
+
+    #[test]
+    fn ns_field_label_spells_the_key_the_way_the_note_does() {
+        let nested = "---\nname: a\nsw:\n  version: 1.0.0\n---\n";
+        let flat = "---\nname: a\nsw-version: 1.0.0\n---\n";
+        assert_eq!(
+            ns_field_label(nested, &sw(), "version").unwrap(),
+            "sw.version"
+        );
+        assert_eq!(
+            ns_field_label(flat, &sw(), "version").unwrap(),
+            "sw-version"
+        );
+    }
+
     fn sw() -> Namespace {
-        Namespace::default()
+        Namespace::sw()
     }
 
     fn vault() -> &'static Path {
@@ -1532,7 +1702,7 @@ mod tests {
         write(
             &vfs,
             "marketplaces/house/plugins/tools/tools.md",
-            &note("tools", "sw-kind: plugin\n"),
+            &note("tools", ""),
         );
         write(
             &vfs,
@@ -1542,14 +1712,21 @@ mod tests {
         vfs
     }
 
+    /// [`one_plugin`] plus two unrelated notes on one publish key, so the
+    /// whole scan refuses.
+    fn one_plugin_unscannable() -> MemVfs {
+        let vfs = one_plugin();
+        write(&vfs, "marketplaces/house/skills/a.md", &note("dup", ""));
+        write(&vfs, "marketplaces/house/skills/b.md", &note("dup", ""));
+        assert!(discover_components(&vfs, vault(), None, &sw()).is_err());
+        vfs
+    }
+
     // ── Placement and naming ────────────────────────────────────────────────
 
     #[test]
-    fn a_create_with_no_placement_lands_on_the_defaults() {
-        assert_eq!(
-            new_note_dir(None).unwrap(),
-            "marketplaces/default/plugins/core/skills"
-        );
+    fn a_create_with_no_placement_lands_in_the_vaults_skills_folder() {
+        assert_eq!(new_note_dir(None).unwrap(), "skills");
     }
 
     #[test]
@@ -1653,18 +1830,14 @@ mod tests {
     fn a_create_derives_its_path_from_the_slugged_name() {
         let vfs = one_plugin();
         let p = placement("house", "tools", "skill");
-        let op = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "Code Review",
-                bundled: false,
-                fields: &fields("ignored"),
-                body: "\n# Body\n",
-            },
-        )
+        let edits = fields("ignored");
+        let op = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("Code Review");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
+            value.placement = Some(&p);
+            value
+        })
         .unwrap();
         let AuthoringOp::Create {
             path,
@@ -1686,18 +1859,15 @@ mod tests {
     fn a_bundled_create_gets_a_folder_of_its_own() {
         let vfs = one_plugin();
         let p = placement("house", "tools", "skill");
-        let AuthoringOp::Create { path, .. } = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "deploy",
-                bundled: true,
-                fields: &fields("deploy"),
-                body: "\n# Body\n",
-            },
-        )
+        let edits = fields("deploy");
+        let AuthoringOp::Create { path, .. } = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("deploy");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
+            value.placement = Some(&p);
+            value.bundled = true;
+            value
+        })
         .unwrap() else {
             panic!("expected a create");
         };
@@ -1716,18 +1886,14 @@ mod tests {
             kind: Some("plugin".to_owned()),
             folder: None,
         };
-        let AuthoringOp::Create { path, scaffold, .. } = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "extras",
-                bundled: false,
-                fields: &fields("extras"),
-                body: "\n# Body\n",
-            },
-        )
+        let edits = fields("extras");
+        let AuthoringOp::Create { path, scaffold, .. } = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("extras");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
+            value.placement = Some(&p);
+            value
+        })
         .unwrap() else {
             panic!("expected a create");
         };
@@ -1747,18 +1913,15 @@ mod tests {
     fn a_create_onto_an_occupied_publish_key_is_refused() {
         let vfs = one_plugin();
         let p = placement("house", "tools", "skill");
-        let refusal = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "review",
-                bundled: true,
-                fields: &fields("review"),
-                body: "\n# Body\n",
-            },
-        )
+        let edits = fields("review");
+        let refusal = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("review");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
+            value.placement = Some(&p);
+            value.bundled = true;
+            value
+        })
         .unwrap_err();
         assert!(
             refusal.contains("two components cannot publish onto one marketplace directory"),
@@ -1770,21 +1933,17 @@ mod tests {
     fn a_create_the_scan_would_refuse_is_refused_here() {
         let vfs = one_plugin();
         let p = placement("house", "tools", "skill");
-        let refusal = plan_create_note(
-            &vfs,
-            vault(),
-            &sw(),
-            &NewNote {
-                placement: Some(&p),
-                name: "audit",
-                bundled: false,
-                fields: &[
-                    FieldEdit::set("name", Value::Str("audit".to_owned())),
-                    FieldEdit::set("description", Value::Str("d".repeat(1025))),
-                ],
-                body: "\n# Body\n",
-            },
-        )
+        let edits = [
+            FieldEdit::set("name", Value::Str("audit".to_owned())),
+            FieldEdit::set("description", Value::Str("d".repeat(1025))),
+        ];
+        let refusal = plan_create_note(&vfs, vault(), &sw(), &{
+            let mut value = NewNote::new("audit");
+            value.fields = &edits;
+            value.body = "\n# Body\n";
+            value.placement = Some(&p);
+            value
+        })
         .unwrap_err();
         assert!(
             refusal.contains("not one the vault's scan would list"),
@@ -1813,8 +1972,8 @@ mod tests {
             "plugins/tools/skills/audit/SKILL.md"
         );
         assert_eq!(
-            bundle_dir("plugins/tools/review/SKILL.md"),
-            Some("plugins/tools/review")
+            bundle_dir("plugins/tools/skills/review/SKILL.md"),
+            Some("plugins/tools/skills/review")
         );
     }
 
@@ -1917,35 +2076,9 @@ mod tests {
     }
 
     #[test]
-    fn a_move_removes_an_explicit_plugin_key() {
+    fn a_move_names_the_new_path_and_nothing_else() {
         let vfs = one_plugin();
-        write(
-            &vfs,
-            "marketplaces/house/plugins/tools/skills/keyed.md",
-            &note("keyed", "sw-plugin: tools\n"),
-        );
-        let AuthoringOp::Move {
-            frontmatter, to, ..
-        } = plan_move_component(
-            &vfs,
-            vault(),
-            &sw(),
-            "marketplaces/house/plugins/tools/skills/keyed.md",
-            Some("house"),
-            Some("extras"),
-        )
-        .unwrap()
-        else {
-            panic!("expected a move");
-        };
-        assert_eq!(to, "marketplaces/house/plugins/extras/skills/keyed.md");
-        assert_eq!(frontmatter, vec![FieldEdit::remove("sw-plugin")]);
-    }
-
-    #[test]
-    fn a_move_of_an_unkeyed_note_edits_no_frontmatter() {
-        let vfs = one_plugin();
-        let AuthoringOp::Move { frontmatter, .. } = plan_move_component(
+        let AuthoringOp::Move { from, to, bundle } = plan_move_component(
             &vfs,
             vault(),
             &sw(),
@@ -1956,7 +2089,9 @@ mod tests {
         .unwrap() else {
             panic!("expected a move");
         };
-        assert!(frontmatter.is_empty());
+        assert_eq!(from, "marketplaces/house/plugins/tools/skills/review.md");
+        assert_eq!(to, "marketplaces/house/plugins/extras/skills/review.md");
+        assert!(!bundle);
     }
 
     #[test]
@@ -2072,20 +2207,18 @@ mod tests {
     // ── Plugin and marketplace rename ───────────────────────────────────────
 
     #[test]
-    fn a_plugin_rename_moves_the_folder_and_rewrites_its_keyed_members() {
+    fn a_plugin_rename_moves_the_folder_and_edits_only_its_own_note() {
         let vfs = one_plugin();
         write(
             &vfs,
             "marketplaces/house/plugins/tools/skills/keyed.md",
-            &note("keyed", "sw-plugin: tools\n"),
+            &note("keyed", ""),
         );
-        let AuthoringOp::RenamePlugin {
+        let AuthoringOp::Rename {
             from,
             to,
-            dir_from,
-            dir_to,
+            bundle,
             frontmatter,
-            members,
         } = plan_rename_plugin(
             &vfs,
             vault(),
@@ -2099,19 +2232,10 @@ mod tests {
         };
         assert_eq!(from, "marketplaces/house/plugins/tools/tools.md");
         assert_eq!(to, "marketplaces/house/plugins/gear/gear.md");
-        assert_eq!(dir_from, "marketplaces/house/plugins/tools");
-        assert_eq!(dir_to, "marketplaces/house/plugins/gear");
+        assert!(bundle);
         assert_eq!(
             frontmatter,
             vec![FieldEdit::set("name", Value::Str("gear".to_owned()))]
-        );
-        // Only the member whose explicit key named the old slug.
-        assert_eq!(
-            members,
-            vec![(
-                "marketplaces/house/plugins/tools/skills/keyed.md".to_owned(),
-                vec![FieldEdit::set("sw-plugin", Value::Str("gear".to_owned()))],
-            )]
         );
     }
 
@@ -2147,10 +2271,36 @@ mod tests {
         );
     }
 
+    /// A marketplace's entry note is `marketplaces/<m>/skillwright.md`, and a
+    /// rename or delete of it works on the whole folder.
+    #[test]
+    fn a_marketplace_folder_renames_and_deletes_through_its_root_file() {
+        let vfs = one_plugin();
+        write(
+            &vfs,
+            "marketplaces/house/skillwright.md",
+            &note("house", ""),
+        );
+        let entry = "marketplaces/house/skillwright.md";
+        let AuthoringOp::Rename { to, bundle, .. } =
+            plan_rename_marketplace(&vfs, vault(), &sw(), entry, "shop").unwrap()
+        else {
+            panic!("expected a rename");
+        };
+        assert_eq!(to, "marketplaces/shop/skillwright.md");
+        assert!(bundle);
+        let AuthoringOp::Delete { paths, .. } =
+            plan_delete_container(&vfs, vault(), &sw(), entry, EntityKind::Marketplace).unwrap()
+        else {
+            panic!("expected a delete");
+        };
+        assert_eq!(paths, vec!["marketplaces/house"]);
+    }
+
     // ── Convert ─────────────────────────────────────────────────────────────
 
     #[test]
-    fn a_convert_moves_into_the_new_kinds_folder_and_restates_the_kind() {
+    fn a_convert_moves_into_the_new_kinds_folder() {
         let vfs = one_plugin();
         let AuthoringOp::ConvertKind {
             to,
@@ -2170,10 +2320,7 @@ mod tests {
             panic!("expected a conversion");
         };
         assert_eq!(to, "marketplaces/house/plugins/tools/commands/review.md");
-        assert_eq!(
-            frontmatter,
-            vec![FieldEdit::set("sw-kind", Value::Str("command".to_owned()))]
-        );
+        assert!(frontmatter.is_empty());
         assert!(scaffold.is_empty());
     }
 
@@ -2270,20 +2417,13 @@ mod tests {
             &[
                 "allowed-tools".to_owned(),
                 " allowed-tools ".to_owned(),
-                "sw-kind".to_owned(),
                 String::new(),
             ],
         )
         .unwrap() else {
             panic!("expected a conversion");
         };
-        assert_eq!(
-            frontmatter,
-            vec![
-                FieldEdit::set("sw-kind", Value::Str("command".to_owned())),
-                FieldEdit::remove("allowed-tools"),
-            ]
-        );
+        assert_eq!(frontmatter, vec![FieldEdit::remove("allowed-tools"),]);
     }
 
     #[test]
@@ -2316,17 +2456,17 @@ mod tests {
 
     #[test]
     fn applying_edits_keeps_the_body_and_the_unnamed_keys() {
-        let source = "---\nname: review\ndescription: d\nsw-plugin: tools\n---\n\n# Body\n";
+        let source = "---\nname: review\ndescription: d\n---\n\n# Body\n";
         let out = apply_field_edits(
             source,
             &[
-                FieldEdit::remove("sw-plugin"),
+                FieldEdit::remove("sw-target"),
                 FieldEdit::set("name", Value::Str("audit".to_owned())),
             ],
         )
         .unwrap();
-        // `sw-plugin` was the last key: removing it takes its whole line, so
-        // no blank line is left before the closing fence.
+        // The key is absent, so removing it changes nothing: the output keeps the
+        // closing fence where it was.
         assert_eq!(out, "---\nname: audit\ndescription: d\n---\n\n# Body\n");
     }
 
@@ -2334,8 +2474,383 @@ mod tests {
     fn removing_a_key_that_is_not_there_is_a_no_op() {
         let source = "---\nname: review\n---\n\n# Body\n";
         assert_eq!(
-            apply_field_edits(source, &[FieldEdit::remove("sw-plugin")]).unwrap(),
+            apply_field_edits(source, &[FieldEdit::remove("sw-target")]).unwrap(),
             source
         );
+    }
+
+    // ── Regressions ─────────────────────────────────────────────────────────
+
+    fn read(vfs: &MemVfs, rel: &str) -> String {
+        String::from_utf8(vfs.read_file(&Path::new(VAULT).join(rel)).unwrap()).unwrap()
+    }
+
+    /// Carry out a single-note op the way a host does: apply `edits` to the
+    /// note at `from`, write the result at `to`, and remove `from`.
+    fn apply_note(vfs: &MemVfs, from: &str, to: &str, edits: &[FieldEdit]) {
+        let edited = apply_field_edits(&read(vfs, from), edits).unwrap();
+        if from != to {
+            vfs.remove(&Path::new(VAULT).join(from)).unwrap();
+        }
+        write(vfs, to, &edited);
+    }
+
+    fn rescan(vfs: &MemVfs) -> crate::discover::DiscoveryReport {
+        discover_components(vfs, vault(), None, &sw()).unwrap()
+    }
+
+    #[test]
+    fn a_note_named_after_its_kind_folder_is_a_lone_note() {
+        let vfs = MemVfs::new();
+        write(&vfs, "skills/skills.md", &note("skills", ""));
+        write(&vfs, "skills/other.md", &note("other", ""));
+        assert_eq!(bundle_dir("skills/skills.md"), None);
+        assert_eq!(
+            bundle_dir("marketplaces/m/plugins/p/skills/skills.md"),
+            None
+        );
+        assert_eq!(bundle_dir("commands/commands.md"), None);
+
+        let AuthoringOp::Delete { paths, .. } =
+            plan_delete_component(&vfs, vault(), &sw(), "skills/skills.md").unwrap()
+        else {
+            panic!("expected a delete");
+        };
+        assert_eq!(paths, vec!["skills/skills.md"]);
+
+        let AuthoringOp::Rename { to, bundle, .. } =
+            plan_rename_component(&vfs, vault(), &sw(), "skills/skills.md", "renamed").unwrap()
+        else {
+            panic!("expected a rename");
+        };
+        assert_eq!(to, "skills/renamed.md");
+        assert!(!bundle);
+    }
+
+    #[test]
+    fn a_lone_skill_md_in_a_kind_folder_is_not_a_bundle() {
+        let vfs = MemVfs::new();
+        write(
+            &vfs,
+            "marketplaces/m/plugins/p/skills/SKILL.md",
+            "---\ndescription: lone\n---\n",
+        );
+        write(
+            &vfs,
+            "marketplaces/m/plugins/p/skills/other/other.md",
+            &note("other", ""),
+        );
+        let AuthoringOp::Delete { paths, .. } = plan_delete_component(
+            &vfs,
+            vault(),
+            &sw(),
+            "marketplaces/m/plugins/p/skills/SKILL.md",
+        )
+        .unwrap() else {
+            panic!("expected a delete");
+        };
+        assert_eq!(paths, vec!["marketplaces/m/plugins/p/skills/SKILL.md"]);
+
+        let AuthoringOp::Rename { to, bundle, .. } = plan_rename_component(
+            &vfs,
+            vault(),
+            &sw(),
+            "marketplaces/m/plugins/p/skills/SKILL.md",
+            "lone",
+        )
+        .unwrap() else {
+            panic!("expected a rename");
+        };
+        assert_eq!(to, "marketplaces/m/plugins/p/skills/lone.md");
+        assert!(!bundle);
+    }
+
+    #[test]
+    fn an_uppercase_md_bundle_is_still_a_bundle() {
+        let vfs = MemVfs::new();
+        write(&vfs, "skills/bund/bund.MD", &note("bund", ""));
+        write(&vfs, "skills/bund/scripts/a.py", "print(1)\n");
+        let AuthoringOp::Delete { paths, .. } =
+            plan_delete_component(&vfs, vault(), &sw(), "skills/bund/bund.MD").unwrap()
+        else {
+            panic!("expected a delete");
+        };
+        assert_eq!(paths, vec!["skills/bund"]);
+
+        // A container whose only member is an `.MD` note still holds it.
+        write(&vfs, "marketplaces/m/plugins/p/p.md", &note("p", ""));
+        write(
+            &vfs,
+            "marketplaces/m/plugins/p/skills/Only.MD",
+            &note("only", ""),
+        );
+        let refusal = plan_convert_kind(
+            &vfs,
+            vault(),
+            &sw(),
+            "marketplaces/m/plugins/p/p.md",
+            EntityKind::Skill,
+            &[],
+        )
+        .unwrap_err();
+        assert!(refusal.contains("still holds a component"), "{refusal}");
+    }
+
+    #[test]
+    fn a_container_with_uppercase_md_members_refuses_a_plain_delete() {
+        let vfs = MemVfs::new();
+        write(&vfs, "marketplaces/m/plugins/p/p.md", &note("p", ""));
+        write(
+            &vfs,
+            "marketplaces/m/plugins/p/skills/Review.MD",
+            "---\nname: review\ndescription: r\n---\n",
+        );
+        assert_eq!(rescan(&vfs).components.len(), 2);
+        let refusal = plan_delete_component(&vfs, vault(), &sw(), "marketplaces/m/plugins/p/p.md")
+            .unwrap_err();
+        assert!(refusal.contains("still holds a component"), "{refusal}");
+    }
+
+    #[test]
+    fn renaming_an_uppercase_md_bundle_renames_its_folder() {
+        let vfs = MemVfs::new();
+        write(&vfs, "skills/foo/foo.MD", "---\ndescription: f\n---\n");
+        write(&vfs, "skills/foo/scripts/a.py", "print(1)\n");
+        let AuthoringOp::Rename { to, bundle, .. } =
+            plan_rename_component(&vfs, vault(), &sw(), "skills/foo/foo.MD", "bar").unwrap()
+        else {
+            panic!("expected a rename");
+        };
+        assert_eq!(to, "skills/bar/bar.md");
+        assert!(bundle);
+    }
+
+    #[test]
+    fn a_convert_writes_the_kind_into_a_nested_block() {
+        let vfs = MemVfs::new();
+        let from = "marketplaces/m/plugins/p/skills/a.md";
+        write(
+            &vfs,
+            from,
+            "---\nname: a\ndescription: d\nsw:\n  targets: [claude]\n---\n",
+        );
+        let AuthoringOp::ConvertKind {
+            to, frontmatter, ..
+        } = plan_convert_kind(&vfs, vault(), &sw(), from, EntityKind::Command, &[]).unwrap()
+        else {
+            panic!("expected a conversion");
+        };
+        apply_note(&vfs, from, &to, &frontmatter);
+        let report = rescan(&vfs);
+        assert!(report.skipped.is_empty(), "{:?}", report.skipped);
+        assert_eq!(report.components.len(), 1);
+        assert_eq!(report.components[0].kind, EntityKind::Command);
+        assert_eq!(
+            report.components[0].targets,
+            Some(vec!["claude".to_owned()])
+        );
+    }
+
+    #[test]
+    fn a_container_delete_is_refused_when_the_scan_cannot_run() {
+        let vfs = one_plugin_unscannable();
+
+        let refusal = plan_delete_component(
+            &vfs,
+            vault(),
+            &sw(),
+            "marketplaces/house/plugins/tools/tools.md",
+        )
+        .unwrap_err();
+        assert!(refusal.contains("still holds a component"), "{refusal}");
+
+        write(
+            &vfs,
+            "marketplaces/house/skills/deploy/deploy.md",
+            &note("deploy", ""),
+        );
+        let refusal = plan_delete_container(
+            &vfs,
+            vault(),
+            &sw(),
+            "marketplaces/house/skills/deploy/deploy.md",
+            EntityKind::Plugin,
+        )
+        .unwrap_err();
+        assert!(
+            refusal.contains("is not a plugin's own entry note"),
+            "{refusal}"
+        );
+    }
+
+    #[test]
+    fn a_note_the_scratch_scan_skips_is_refused_whatever_its_kind() {
+        let vfs = MemVfs::new();
+        let bogus = "---\nname: c\ndescription: ok\nsw-targets: [bogus]\n---\n";
+        let refusal = refusal_for(&vfs, bogus, "commands/c.md", vault(), &sw());
+        assert!(
+            refusal.as_deref().is_some_and(|r| r.contains("bogus")),
+            "{refusal:?}"
+        );
+        let long = format!("---\nname: c\ndescription: {}\n---\n", "d".repeat(1100));
+        assert!(refusal_for(&vfs, &long, "commands/c.md", vault(), &sw()).is_some());
+    }
+
+    #[test]
+    fn a_version_in_a_nested_block_is_read_and_written_in_place() {
+        let source = "---\nname: review\ndescription: d\nsw:\n  version: 2.3.0\n---\n\n# Body\n";
+        assert_eq!(
+            read_ns_field(source, &sw(), "version").unwrap().as_deref(),
+            Some("2.3.0")
+        );
+        let edits = ns_field_edits(
+            source,
+            &sw(),
+            &[("version", Some(Value::Str("2.3.1".to_owned())))],
+        )
+        .unwrap();
+        let out = apply_field_edits(source, &edits).unwrap();
+        let vfs = MemVfs::new();
+        write(&vfs, "marketplaces/m/plugins/review/review.md", &out);
+        let report = rescan(&vfs);
+        assert!(report.skipped.is_empty(), "{out}\n{:?}", report.skipped);
+        assert_eq!(report.components.len(), 1);
+        assert_eq!(
+            read_ns_field(&out, &sw(), "version").unwrap().as_deref(),
+            Some("2.3.1")
+        );
+
+        // The flat shape still reads and writes as itself.
+        let flat = "---\nname: review\nsw-version: 0.2.0\n---\n";
+        assert_eq!(
+            read_ns_field(flat, &sw(), "version").unwrap().as_deref(),
+            Some("0.2.0")
+        );
+        assert_eq!(
+            ns_field_edits(flat, &sw(), &[("version", None)]).unwrap(),
+            vec![FieldEdit::remove("sw-version")]
+        );
+    }
+
+    #[test]
+    fn a_bundled_note_outside_the_component_tree_is_still_a_bundle() {
+        assert_eq!(bundle_dir("notes/foo/foo.md"), Some("notes/foo"));
+        assert_eq!(bundle_dir("notes/foo/SKILL.md"), Some("notes/foo"));
+        assert_eq!(bundle_dir("notes/foo/bar.md"), None);
+        assert_eq!(
+            rename_destination("notes/foo/foo.md", "bar"),
+            "notes/bar/bar.md"
+        );
+    }
+
+    /// Under a kind folder, a path the shape rule gives no shape is a lone
+    /// note, not a bundle owning the folder it sits in.
+    #[test]
+    fn an_unshaped_note_inside_a_kind_folder_is_not_a_bundle() {
+        assert_eq!(bundle_dir("plugins/p/SKILL.md"), None);
+        assert_eq!(bundle_dir("skills/x/y/y.md"), None);
+        assert_eq!(
+            rename_destination("plugins/p/SKILL.md", "q"),
+            "plugins/p/q.md"
+        );
+    }
+
+    #[test]
+    fn a_skill_bundle_with_markdown_resources_deletes_when_the_scan_cannot_run() {
+        let vfs = one_plugin_unscannable();
+
+        let entry = "marketplaces/house/skills/deploy/deploy.md";
+        write(&vfs, entry, &note("deploy", ""));
+        write(
+            &vfs,
+            "marketplaces/house/skills/deploy/references/guide.md",
+            "# Guide\n",
+        );
+        let AuthoringOp::Delete { paths, .. } =
+            plan_delete_component(&vfs, vault(), &sw(), entry).unwrap()
+        else {
+            panic!("expected a delete");
+        };
+        assert_eq!(paths, vec!["marketplaces/house/skills/deploy"]);
+    }
+
+    #[test]
+    fn a_convert_drops_our_own_keys_from_a_nested_block() {
+        let vfs = MemVfs::new();
+        let from = "marketplaces/m/plugins/p/p.md";
+        write(
+            &vfs,
+            from,
+            "---\nname: p\ndescription: d\nsw:\n  version: 1.0.0\n  targets: [claude]\n---\n",
+        );
+        let AuthoringOp::ConvertKind {
+            to, frontmatter, ..
+        } = plan_convert_kind(
+            &vfs,
+            vault(),
+            &sw(),
+            from,
+            EntityKind::Skill,
+            &["sw-version".to_owned()],
+        )
+        .unwrap()
+        else {
+            panic!("expected a conversion");
+        };
+        apply_note(&vfs, from, &to, &frontmatter);
+        let out = read(&vfs, &to);
+        assert!(!out.contains("version"), "{out}");
+        let report = rescan(&vfs);
+        assert!(report.skipped.is_empty(), "{:?}", report.skipped);
+        assert_eq!(report.components[0].kind, EntityKind::Skill);
+
+        // The block itself holds the kind the conversion writes, so it is not
+        // a key a conversion can drop.
+        write(
+            &vfs,
+            from,
+            "---\nname: p\ndescription: d\nsw:\n  version: 1.0.0\n---\n",
+        );
+        let refusal = plan_convert_kind(
+            &vfs,
+            vault(),
+            &sw(),
+            from,
+            EntityKind::Skill,
+            &["sw".to_owned()],
+        )
+        .unwrap_err();
+        assert!(refusal.contains("`sw`"), "{refusal}");
+    }
+
+    #[test]
+    fn converting_an_uppercase_md_note_to_a_container_names_its_folder_by_the_stem() {
+        let vfs = MemVfs::new();
+        let from = "marketplaces/m/skills/tools.MD";
+        write(&vfs, from, &note("tools", ""));
+        let AuthoringOp::ConvertKind { to, .. } =
+            plan_convert_kind(&vfs, vault(), &sw(), from, EntityKind::Plugin, &[]).unwrap()
+        else {
+            panic!("expected a conversion");
+        };
+        assert_eq!(to, "marketplaces/m/plugins/tools/tools.md");
+    }
+
+    /// A plugin's assets are not its members, wherever the plugin folder
+    /// sits: they are matched by their path from the vault root.
+    #[test]
+    fn a_plugins_assets_are_not_members() {
+        let vfs = crate::vfs::MemVfs::new();
+        for (path, text) in [
+            ("/v/plugins/p/p.md", "---\nname: p\n---\n"),
+            ("/v/plugins/p/skills/s.md", "---\ndescription: S.\n---\n"),
+            ("/v/plugins/p/assets/guide.md", "Plain.\n"),
+        ] {
+            let path = Path::new(path);
+            vfs.create_dir_all(path.parent().unwrap()).unwrap();
+            vfs.write_file(path, text.as_bytes()).unwrap();
+        }
+        let members = container_members(&vfs, Path::new("/v"), "plugins/p", "plugins/p/p.md");
+        assert_eq!(members, vec!["plugins/p/skills/s.md".to_owned()]);
     }
 }

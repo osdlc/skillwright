@@ -4,9 +4,10 @@
 //!
 //! A whole-vault run is the same fan-out over a longer list. `--all` — and a
 //! bare `publish`, which means the same thing — takes its list from
-//! [`discover_components`] and narrows it to the two kinds the publish spec
-//! calls publishable UNITS: every skill note and every plugin note, each
-//! classified by the core, never by a guess made here.
+//! [`discover_components`] and narrows it to the skill notes, each classified
+//! by the core, never by a guess made here. A pack, an agent or a command
+//! publishes when its note is named. Two notes that would land on one skill
+//! folder stop the run before anything is written.
 //!
 //! `--dry-run` needs nothing this file doesn't already have: the core carries
 //! a `mode` on [`PublishRequest`] ([`PublishMode::Write`], the default, or
@@ -16,17 +17,17 @@
 //! is setting the one field and skipping the confirmation prompt, which a
 //! plan must never trigger.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tradecraft_core::{
-    CoreError, EntityKind, KNOWN_TARGETS, NativeVfs, PublishMode, PublishOutcome, PublishReason,
-    PublishRequest, PublishStatus, PublishedFile, ReasonToken, SkippedNote, canonical_target,
-    discover_components, publish_skill,
+    CoreError, DiscoveredComponent, EntityKind, KNOWN_TARGETS, PublishMode, PublishOutcome,
+    PublishReason, PublishRequest, PublishStatus, PublishedFile, ReasonToken, SkippedNote,
+    canonical_target, discover_components, inherit_targets, publish_skill, refuse_undescribed,
 };
 
-use crate::config::{normalize_join, relative_path, resolve_against_cwd, resolve_configured_path};
+use crate::config::{normalize_join, relative_path, resolve_against_cwd};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_INTERRUPTED, EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::{confirm_write, plan_flow};
@@ -34,19 +35,20 @@ use crate::report::{
     AttributedExclusion, Attribution, has_refusal, normalize_thrown_reason, render_exclusion,
     render_file_line, render_reason, render_tally, render_unmatched_overwrite, render_warning_line,
 };
-use crate::resolve::{CommonFlags, resolve_run};
+use crate::resolve::{CommonFlags, refuse_workspace, resolve_run};
 
 /// The resolved flags of `skillwright publish`.
 pub struct PublishFlags {
-    /// Vault-relative paths to the notes to publish. Empty means every
-    /// publishable unit — the same run `--all` spells explicitly.
+    /// Vault-relative paths to the notes to publish. Empty means every skill
+    /// note — the same run `--all` spells explicitly. A named note that no
+    /// kind folder or pattern places publishes as a skill.
     pub notes: Vec<String>,
     /// Repeatable. Destination roots. Requires `--target`.
     pub to: Vec<String>,
     /// Narrows to one target across the destinations selected.
     pub target: Option<String>,
-    /// Every publishable unit in the vault. The default when no note is
-    /// named; naming both is a usage error rather than a guess.
+    /// Every skill note in the vault. The default when no note is named;
+    /// naming both is a usage error rather than a guess.
     pub all: bool,
     /// Repeatable. Resolves exactly one conflicted file, by its
     /// destination-relative path.
@@ -68,6 +70,7 @@ pub struct PublishFlags {
 struct Destination {
     root: PathBuf,
     target: String,
+    user_folders: bool,
 }
 
 /// One outcome, attributed to the (skill, destination, target) that produced
@@ -103,7 +106,18 @@ struct NotCarried {
     target: String,
 }
 
-/// The `--json` document: `not_published`, `not_carried` and `skipped` are
+/// A plugin folder's own manifest that the pack's rendered one replaced,
+/// named per destination.
+#[derive(Serialize)]
+struct ReplacedManifest {
+    manifest: String,
+    skill: String,
+    destination: String,
+    target: String,
+}
+
+/// The `--json` document: `not_published`, `not_carried`,
+/// `replaced_manifests` and `skipped` are
 /// omitted entirely when empty, mirroring the core's own
 /// `skip_serializing_if` on [`tradecraft_core::PublishReport`].
 #[derive(Serialize)]
@@ -114,28 +128,49 @@ struct PublishDocument<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     not_carried: Option<&'a [NotCarried]>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    replaced_manifests: Option<&'a [ReplacedManifest]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     skipped: Option<&'a [SkippedNote]>,
 }
 
-/// Which closed-set token a thrown [`CoreError`] becomes, by variant.
+/// The refusal of two `skills` that land on one folder of one destination:
+/// a second write would replace the first with no warning.
+fn skill_collision(skills: &[DiscoveredComponent], destinations: &[Destination]) -> Option<String> {
+    let reaches = |skill: &DiscoveredComponent, dest: &Destination| {
+        let wanted = canonical_target(&dest.target);
+        skill.targets.as_ref().is_none_or(|targets| {
+            targets
+                .iter()
+                .any(|target| canonical_target(target) == wanted)
+        })
+    };
+    destinations.iter().find_map(|dest| {
+        let mut seen: HashMap<&str, &str> = HashMap::new();
+        skills
+            .iter()
+            .filter(|skill| reaches(skill, dest))
+            .find_map(|skill| {
+                let path = skill.vault_relative_path.as_str();
+                let first = seen.insert(skill.name.as_str(), path)?;
+                Some(format!(
+                    "path-collision: `{first}` and `{path}` both publish to the skill folder \
+                     `{}`, and the second would replace the first. Nothing was written. Name one \
+                     of the notes to publish it, or rename one",
+                    skill.name
+                ))
+            })
+    })
+}
+
+/// Which closed-set token a thrown [`CoreError`] becomes.
 ///
 /// A throw means the request failed before a file list existed, so the CLI
 /// still owes one refused line with a closed-set token. `from_refusal` reads
-/// the token out of the message; this table is the fallback for a message
-/// that carries none.
+/// the token out of the message; [`CoreError::reason_token`] is the fallback
+/// for a message that carries none.
 fn thrown_reason(err: &CoreError) -> PublishReason {
-    let fallback = match err {
-        CoreError::Projection(_) => ReasonToken::NoRenderer,
-        CoreError::PathEscapesRoot(_) => ReasonToken::UnsafePath,
-        CoreError::RootNotFound(_) => ReasonToken::Io,
-        CoreError::SkillNotFound(_) => ReasonToken::Io,
-        CoreError::Io { .. } => ReasonToken::Io,
-        CoreError::SwapFailed(_) => ReasonToken::Io,
-        CoreError::Refused(_) => ReasonToken::Io,
-        CoreError::Conflict(_) => ReasonToken::Conflict,
-    };
     let message = err.to_string();
-    PublishReason::from_refusal(normalize_thrown_reason(&message), fallback)
+    PublishReason::from_refusal(normalize_thrown_reason(&message), err.reason_token())
 }
 
 /// One `(skill, destination, target)` line's [`Attribution`], read off a
@@ -162,6 +197,9 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("publish", &run, ctx.err) {
+        return code;
+    }
 
     // --- the target ------------------------------------------------------
     // Checked here, against the core's own list, so a name the tool does
@@ -192,25 +230,17 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             .map(|root| Destination {
                 root: resolve_against_cwd(root, &ctx.cwd),
                 target: target.clone(),
+                user_folders: false,
             })
             .collect()
     } else {
-        let configured = run
-            .config
-            .as_ref()
-            .map(|c| c.destinations.as_slice())
-            .filter(|destinations| !destinations.is_empty());
-        let Some(configured) = configured else {
-            return usage_error(
-                ctx.err,
-                "no destinations configured; pass --to and --target, or run `skillwright init`",
-            );
-        };
-        let mut destinations: Vec<Destination> = configured
-            .iter()
+        let mut destinations: Vec<Destination> = run
+            .destinations()
+            .into_iter()
             .map(|d| Destination {
-                root: resolve_configured_path(&d.root, &run.config_dir),
-                target: d.target.clone(),
+                root: d.root,
+                target: d.target,
+                user_folders: d.user_folders,
             })
             .collect();
         if let Some(target) = &flags.target {
@@ -228,7 +258,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 return usage_error(
                     ctx.err,
                     &format!(
-                        "no configured destination for target: {target}\nconfigured targets: {}",
+                        "no destination for target: {target}\ndestinations: {}",
                         configured_targets.join(", ")
                     ),
                 );
@@ -241,8 +271,18 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let mut note_paths: Vec<PathBuf> = Vec::new();
     // Notes the vault scan could not read. Only a whole-vault run has any.
     let mut unreadable: Vec<SkippedNote> = Vec::new();
+    // Each warning once: a report repeats it for every destination, and a
+    // whole-vault scan has already printed it.
+    let mut warned: HashSet<String> = HashSet::new();
+    // The skills this run writes, to catch two that land on one folder.
+    let mut skills: Vec<DiscoveredComponent> = Vec::new();
     if whole_vault {
-        let scan = match discover_components(&NativeVfs, &run.vault, None, &run.core_namespace()) {
+        let mut scan = match discover_components(
+            &run.source_vfs(None),
+            &run.vault,
+            None,
+            run.core_namespace(),
+        ) {
             Ok(scan) => scan,
             // What discovery still refuses is run-level by construction — a
             // duplicate name, a bundle overlap, a symlink, a missing root.
@@ -250,17 +290,30 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             // a roster worth publishing half of.
             Err(err) => return blocked(ctx.err, &err.to_string()),
         };
-        // The kinds the publish spec calls publishable units. A marketplace
-        // note names a distribution and publishes to no destination; an
-        // agent or a command publishes on its own and is not swept up by a
-        // vault run.
+        // Skills only, each once: a plugin's skills publish here on their own,
+        // so its pack would write them again. A pack, an agent or a command
+        // publishes when its note is named.
+        inherit_targets(&mut scan, &run.root_config());
         for component in &scan.components {
-            if component.kind == EntityKind::Skill || component.kind == EntityKind::Plugin {
+            if component.kind == EntityKind::Skill {
                 note_paths.push(component.entry_path.clone());
+                skills.push(component.clone());
             }
         }
         for warning in &scan.warnings {
-            let _ = writeln!(ctx.err, "{}", render_warning_line(warning));
+            let line = render_warning_line(warning);
+            let _ = writeln!(ctx.err, "{line}");
+            warned.insert(line);
+        }
+        // A skill with no description refuses the whole run before any
+        // write, as it refuses a build. A named note is refused on its own.
+        if let Err(err) = refuse_undescribed(
+            skills
+                .iter()
+                .filter(|c| c.lacks_description())
+                .map(|c| c.vault_relative_path.as_str()),
+        ) {
+            return blocked(ctx.err, &err.to_string());
         }
         unreadable = scan.skipped;
         if note_paths.is_empty() && unreadable.is_empty() {
@@ -280,6 +333,26 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             }
             note_paths.push(note_path);
         }
+        // A scan that fails here is not this run's concern: each named note
+        // is read on its own below.
+        if note_paths.len() > 1
+            && let Ok(mut scan) = discover_components(
+                &run.source_vfs(None),
+                &run.vault,
+                None,
+                run.core_namespace(),
+            )
+        {
+            inherit_targets(&mut scan, &run.root_config());
+            skills = scan
+                .components
+                .into_iter()
+                .filter(|c| c.kind == EntityKind::Skill && note_paths.contains(&c.entry_path))
+                .collect();
+        }
+    }
+    if let Some(refusal) = skill_collision(&skills, &destinations) {
+        return blocked(ctx.err, &refusal);
     }
 
     // --- confirmation --------------------------------------------------
@@ -332,10 +405,12 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
 
     let namespace = run.core_namespace();
+    let root_config = run.root_config();
     let mut attributed: Vec<AttributedFile> = Vec::new();
     let mut excluded: Vec<AttributedExclusion> = Vec::new();
     // Members a pack had no place for, named per destination.
     let mut uncarried: Vec<NotCarried> = Vec::new();
+    let mut replaced: Vec<ReplacedManifest> = Vec::new();
     // Every destination-relative path the run projected, across every
     // note-and-destination pair, so an `--overwrite` entry can be judged
     // once against the whole run. Collected only when there is an entry to
@@ -364,25 +439,30 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             // file was published.
             let published_at =
                 chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-            let request = PublishRequest {
-                skill_path: note_path.clone(),
-                destination_root: dest.root.clone(),
-                target: dest.target.clone(),
-                mode: if flags.dry_run {
-                    PublishMode::DryRun
-                } else {
-                    PublishMode::Write
-                },
-                // The vault root, so the kind gate has its structural layer
-                // and the rail protects the whole vault, not just the
-                // note's own folder.
-                skills_root: Some(run.vault.clone()),
-                published_at: Some(published_at),
-                overwrite: flags.overwrite.clone(),
+            let mut request =
+                PublishRequest::new(note_path.clone(), dest.root.clone(), dest.target.clone());
+            request.user_folders = dest.user_folders;
+            request.mode = if flags.dry_run {
+                PublishMode::DryRun
+            } else {
+                PublishMode::Write
             };
-            match publish_skill(&NativeVfs, &request, &namespace) {
+            // The vault root, so the kind gate has its structural layer and
+            // the rail protects the whole vault, not just the note's own
+            // folder.
+            request.skills_root = Some(run.vault.clone());
+            request.config = Some(root_config.clone());
+            request.published_at = Some(published_at);
+            request.overwrite = flags.overwrite.clone();
+            match publish_skill(&run.config_vfs(), &request, namespace) {
                 Ok(report) => {
                     reported = true;
+                    for warning in &report.warnings {
+                        let line = render_warning_line(warning);
+                        if warned.insert(line.clone()) {
+                            let _ = writeln!(ctx.err, "{line}");
+                        }
+                    }
                     for file in report.files {
                         if !flags.overwrite.is_empty() {
                             projected.insert(file.path.clone());
@@ -394,7 +474,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                             target: dest.target.clone(),
                         });
                     }
-                    // The note's `sw-targets` excluded this destination. Not
+                    // The note's `targets` excluded this destination. Not
                     // a failure and not an outcome.
                     if let Some(reason) = report.not_published {
                         excluded.push(AttributedExclusion {
@@ -408,6 +488,16 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                     for member in report.not_carried {
                         uncarried.push(NotCarried {
                             member,
+                            skill: skill_label.clone(),
+                            destination: dest.root.display().to_string(),
+                            target: dest.target.clone(),
+                        });
+                    }
+                    // The folder's own manifest, which the rendered one
+                    // replaced. Not a member, so not a `not_carried` line.
+                    if let Some(manifest) = report.replaced_manifest {
+                        replaced.push(ReplacedManifest {
+                            manifest,
                             skill: skill_label.clone(),
                             destination: dest.root.display().to_string(),
                             target: dest.target.clone(),
@@ -437,13 +527,14 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                     // `blocked` is the outcome for a rail that stopped the
                     // whole request: no file was classified, so none of the
                     // per-file outcomes applies.
+                    let mut file = PublishedFile::new(
+                        skill_label.clone(),
+                        PublishStatus::Refused,
+                        PublishOutcome::Blocked,
+                    );
+                    file.reason = Some(reason);
                     attributed.push(AttributedFile {
-                        file: PublishedFile {
-                            path: skill_label.clone(),
-                            status: PublishStatus::Refused,
-                            outcome: PublishOutcome::Blocked,
-                            reason: Some(reason),
-                        },
+                        file,
                         skill: skill_label.clone(),
                         destination: dest.root.display().to_string(),
                         target: dest.target.clone(),
@@ -468,6 +559,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             files: &attributed,
             not_published: (!not_published.is_empty()).then_some(not_published.as_slice()),
             not_carried: (!uncarried.is_empty()).then_some(uncarried.as_slice()),
+            replaced_manifests: (!replaced.is_empty()).then_some(replaced.as_slice()),
             skipped: (!unreadable.is_empty()).then_some(unreadable.as_slice()),
         };
         match serde_json::to_string_pretty(&document) {
@@ -506,6 +598,13 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             ctx.err,
             "not carried into {} at {} ({}): {} — a pack declares only `skills/`; publish it on its own",
             left.skill, left.destination, left.target, left.member
+        );
+    }
+    for left in &replaced {
+        let _ = writeln!(
+            ctx.err,
+            "{} at {} ({}): the folder's own `{}` was not published; the pack's manifest is rendered from the plugin note's frontmatter",
+            left.skill, left.destination, left.target, left.manifest
         );
     }
 

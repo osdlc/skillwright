@@ -20,27 +20,29 @@
 //! Every core refusal string is printed verbatim — never reworded here, and
 //! never edited in the core.
 
-use std::path::Path;
-
+use crate::resolve::ResolvedRun;
 use serde::Serialize;
+use tradecraft_core::WORKSPACE_DIR;
 use tradecraft_core::authoring::{
     bundle_dir, move_destination, new_note_dir, rename_destination, slug_refusal,
 };
 use tradecraft_core::discover::slugify;
+use tradecraft_core::settings::ROOT_FILE;
 use tradecraft_core::{
-    AuthoringOp, DiscoveredComponent, EntityKind, FieldEdit, Namespace, NativeVfs, NewNote,
-    Placement, discover_components, plan_convert_kind, plan_create_note, plan_delete_component,
+    AuthoringOp, DiscoveredComponent, EntityKind, FieldEdit, Namespace, NewNote, Placement,
+    discover_components, plan_convert_kind, plan_create_note, plan_delete_component,
     plan_delete_container, plan_move_component, plan_rename_component, plan_rename_marketplace,
     plan_rename_plugin,
 };
 use yaml_splice::Value;
 
-use crate::apply::{self, Applied, ApplyError, Outcome};
+use crate::apply::{self, Applied, ApplyError, Outcome, Vault};
+use crate::config::workspace_above;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
 use crate::report::normalize_thrown_reason;
-use crate::resolve::{CommonFlags, resolve_run};
+use crate::resolve::{CommonFlags, refuse_workspace, resolve_run};
 
 // ── Flags, one struct per verb — the command layer's own shape, resolved
 // from `cli.rs`'s clap `Args` the way `BumpFlags` is. ─────────────────────────
@@ -71,8 +73,9 @@ pub struct NewMarketplaceFlags {
 pub struct NewPluginFlags {
     /// The name of the new note.
     pub name: String,
-    /// The marketplace the plugin goes into.
-    pub marketplace: String,
+    /// The marketplace under `marketplaces/` it goes into. Absent means this
+    /// vault's `plugins/`.
+    pub marketplace: Option<String>,
     /// The description written into the new note.
     pub description: Option<String>,
     /// The global `--vault`, `--config` and `--namespace` flags.
@@ -97,7 +100,7 @@ pub struct NewSkillFlags {
     pub plugin: Option<String>,
     /// The description written into the new note.
     pub description: Option<String>,
-    /// Targets written to `sw-targets`.
+    /// Targets written to `targets`.
     pub targets: Vec<String>,
     /// The global `--vault`, `--config` and `--namespace` flags.
     pub common: CommonFlags,
@@ -196,14 +199,16 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
         Ok(run) => run,
         Err(code) => return code,
     };
+    if workspace_above(&run.vault).is_some() {
+        return usage_error(
+            ctx.err,
+            "a marketplace holds no marketplaces: run `new marketplace` at the workspace root",
+        );
+    }
     let ns = run.core_namespace();
 
-    let placement = Placement {
-        marketplace: None,
-        plugin: None,
-        kind: Some(EntityKind::Marketplace.as_str().to_string()),
-        folder: None,
-    };
+    let mut placement = Placement::default();
+    placement.kind = Some(EntityKind::Marketplace.as_str().to_string());
     let mut fields = Vec::new();
     if let Some(d) = &flags.description {
         fields.push(FieldEdit::set("description", Value::Str(d.clone())));
@@ -214,24 +219,53 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
     if let Some(a) = &flags.author {
         fields.push(FieldEdit::set(ns.key("author"), Value::Str(a.clone())));
     }
-    let note = NewNote {
-        placement: Some(&placement),
-        name: &flags.name,
-        bundled: true,
-        fields: &fields,
-        body: "",
-    };
-    let op_result = plan_create_note(&NativeVfs, &run.vault, &ns, &note);
+    let mut note = NewNote::new(&flags.name);
+    note.fields = &fields;
+    note.placement = Some(&placement);
+    note.bundled = true;
+    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "new marketplace",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_create,
         ctx,
     )
+}
+
+/// The `--marketplace` of a `new`, as a folder under `marketplaces/`. This
+/// vault's own name means no folder at all. Any other name must be a
+/// marketplace that exists, or the note would start a second one by accident.
+fn held_marketplace(
+    named: Option<&str>,
+    run: &ResolvedRun,
+    ctx: &mut CommandContext<'_>,
+) -> Result<Option<String>, i32> {
+    let Some(name) = named else {
+        return Ok(None);
+    };
+    if name == run.marketplace_name() {
+        return Ok(None);
+    }
+    if run
+        .vault
+        .join(WORKSPACE_DIR)
+        .join(name)
+        .join(ROOT_FILE)
+        .is_file()
+    {
+        return Ok(Some(name.to_owned()));
+    }
+    Err(usage_error(
+        ctx.err,
+        &format!(
+            "no marketplace `{name}` here: this vault is `{}`, and it holds no {WORKSPACE_DIR}/{name}/{ROOT_FILE}. Leave out --marketplace, or run `new marketplace {name}` first",
+            run.marketplace_name()
+        ),
+    ))
 }
 
 /// Run `skillwright new plugin` and return the exit code.
@@ -243,31 +277,32 @@ pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("new plugin", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
 
-    let placement = Placement {
-        marketplace: Some(flags.marketplace.clone()),
-        plugin: None,
-        kind: Some(EntityKind::Plugin.as_str().to_string()),
-        folder: None,
+    let marketplace = match held_marketplace(flags.marketplace.as_deref(), &run, ctx) {
+        Ok(marketplace) => marketplace,
+        Err(code) => return code,
     };
+    let mut placement = Placement::default();
+    placement.marketplace = marketplace;
+    placement.kind = Some(EntityKind::Plugin.as_str().to_string());
     let mut fields = Vec::new();
     if let Some(d) = &flags.description {
         fields.push(FieldEdit::set("description", Value::Str(d.clone())));
     }
-    let note = NewNote {
-        placement: Some(&placement),
-        name: &flags.name,
-        bundled: true,
-        fields: &fields,
-        body: "",
-    };
-    let op_result = plan_create_note(&NativeVfs, &run.vault, &ns, &note);
+    let mut note = NewNote::new(&flags.name);
+    note.fields = &fields;
+    note.placement = Some(&placement);
+    note.bundled = true;
+    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "new plugin",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_create,
@@ -284,8 +319,11 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("new skill", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -296,7 +334,11 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
     // `plugins/dev-agent/skills` outside every marketplace. Only inferred
     // when the plugin resolves to exactly one component; anything else falls
     // through to the placement as given.
-    let marketplace = flags.marketplace.clone().or_else(|| {
+    let named = match held_marketplace(flags.marketplace.as_deref(), &run, ctx) {
+        Ok(marketplace) => marketplace,
+        Err(code) => return code,
+    };
+    let marketplace = named.or_else(|| {
         flags.plugin.as_deref().and_then(|plugin| {
             let matches: Vec<&DiscoveredComponent> = components
                 .iter()
@@ -309,18 +351,17 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
         })
     });
 
-    // No placement at all is the one shape `new_note_dir` treats specially —
-    // the vault's own default marketplace and plugin. Naming either level
-    // switches to an explicit placement, passed through as given.
+    // No placement at all is the one shape `new_note_dir` treats specially:
+    // the vault's own `skills/`, a plugin named after the marketplace. Naming
+    // either level switches to an explicit placement, passed through as given.
     let placement = if marketplace.is_none() && flags.plugin.is_none() {
         None
     } else {
-        Some(Placement {
-            marketplace,
-            plugin: flags.plugin.clone(),
-            kind: Some(EntityKind::Skill.as_str().to_string()),
-            folder: None,
-        })
+        let mut placement = Placement::default();
+        placement.marketplace = marketplace;
+        placement.plugin = flags.plugin.clone();
+        placement.kind = Some(EntityKind::Skill.as_str().to_string());
+        Some(placement)
     };
     let mut fields = Vec::new();
     if let Some(d) = &flags.description {
@@ -332,19 +373,16 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
             Value::Seq(flags.targets.iter().cloned().map(Value::Str).collect()),
         ));
     }
-    let note = NewNote {
-        placement: placement.as_ref(),
-        name: &flags.name,
-        bundled: true,
-        fields: &fields,
-        body: "",
-    };
-    let op_result = plan_create_note(&NativeVfs, &run.vault, &ns, &note);
+    let mut note = NewNote::new(&flags.name);
+    note.fields = &fields;
+    note.placement = placement.as_ref();
+    note.bundled = true;
+    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, ns, &note);
     let fallback = expected_create_path(placement.as_ref(), &flags.name, true);
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "new skill",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_create,
@@ -364,8 +402,16 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("rename", &run, ctx.err) {
+        let _ = writeln!(
+            ctx.err,
+            "That renames a component inside it. To rename a marketplace, rename its folder and \
+             change `name` in its skillwright.md"
+        );
+        return code;
+    }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -376,19 +422,33 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let entry = component.vault_relative_path.as_str();
 
     let op_result = match component.kind {
-        EntityKind::Plugin => {
-            plan_rename_plugin(&NativeVfs, &run.vault, &ns, entry, &flags.new_name)
-        }
-        EntityKind::Marketplace => {
-            plan_rename_marketplace(&NativeVfs, &run.vault, &ns, entry, &flags.new_name)
-        }
-        _ => plan_rename_component(&NativeVfs, &run.vault, &ns, entry, &flags.new_name),
+        EntityKind::Plugin => plan_rename_plugin(
+            &run.source_vfs(None),
+            &run.vault,
+            ns,
+            entry,
+            &flags.new_name,
+        ),
+        EntityKind::Marketplace => plan_rename_marketplace(
+            &run.source_vfs(None),
+            &run.vault,
+            ns,
+            entry,
+            &flags.new_name,
+        ),
+        _ => plan_rename_component(
+            &run.source_vfs(None),
+            &run.vault,
+            ns,
+            entry,
+            &flags.new_name,
+        ),
     };
     let fallback = rename_destination(entry, &slug);
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "rename",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_rename,
@@ -404,8 +464,11 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("move", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -425,9 +488,9 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let plugin = Some(flags.to_plugin.clone());
 
     let op_result = plan_move_component(
-        &NativeVfs,
+        &run.source_vfs(None),
         &run.vault,
-        &ns,
+        ns,
         entry,
         marketplace.as_deref(),
         plugin.as_deref(),
@@ -442,7 +505,7 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "move",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_move,
@@ -458,8 +521,11 @@ pub fn run_delete(flags: &DeleteFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("delete", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -470,15 +536,15 @@ pub fn run_delete(flags: &DeleteFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let entry = component.vault_relative_path.as_str();
 
     let op_result = if flags.force && component.kind.holds_components() {
-        plan_delete_container(&NativeVfs, &run.vault, &ns, entry, component.kind)
+        plan_delete_container(&run.source_vfs(None), &run.vault, ns, entry, component.kind)
     } else {
-        plan_delete_component(&NativeVfs, &run.vault, &ns, entry)
+        plan_delete_component(&run.source_vfs(None), &run.vault, ns, entry)
     };
     let fallback = bundle_dir(entry).unwrap_or(entry).to_string();
     execute(
         op_result,
         &fallback,
-        &run.vault,
+        &run,
         "delete",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label_delete,
@@ -498,8 +564,11 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
+    if let Err(code) = refuse_workspace("convert", &run, ctx.err) {
+        return code;
+    }
     let ns = run.core_namespace();
-    let components = match scan_components(&run.vault, &ns, ctx) {
+    let components = match scan_components(&run, ns, ctx) {
         Ok(components) => components,
         Err(code) => return code,
     };
@@ -509,13 +578,12 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
     };
     let entry = component.vault_relative_path.as_str();
 
-    let op_result = plan_convert_kind(&NativeVfs, &run.vault, &ns, entry, to_kind, &[]);
-    let kind_key = ns.key("kind");
-    let label = label_convert(kind_key, to_kind);
+    let op_result = plan_convert_kind(&run.source_vfs(None), &run.vault, ns, entry, to_kind, &[]);
+    let label = label_convert(to_kind);
     execute(
         op_result,
         entry,
-        &run.vault,
+        &run,
         "convert",
         &write_flags(flags.json, flags.dry_run, flags.yes, flags.quiet),
         &label,
@@ -550,7 +618,7 @@ fn write_flags(json: bool, dry_run: bool, yes: bool, quiet: bool) -> WriteFlags 
 fn execute(
     op_result: Result<AuthoringOp, String>,
     fallback_path: &str,
-    vault: &Path,
+    run: &ResolvedRun,
     verb: &str,
     flags: &WriteFlags,
     label: &dyn Fn(&Applied) -> Option<String>,
@@ -560,6 +628,8 @@ fn execute(
         Ok(op) => op,
         Err(reason) => return refuse_row(fallback_path, &reason, flags, ctx),
     };
+    let source = run.source_vfs(None);
+    let vault = Vault::new(&run.vault, &source);
 
     if flags.dry_run {
         return match apply::preview(vault, &op) {
@@ -699,9 +769,8 @@ fn report_success(
 }
 
 /// [`Outcome::entries`] grouped by path, in first-occurrence order, each
-/// path's facts joined into one reason — so a rename's link rewrite and a
-/// move's dropped `sw-plugin` land as one row each, exactly as
-/// the CLI spec's transcripts show them.
+/// path's facts joined into one reason, so a rename's link rewrite and its
+/// `name` edit land as one row, as the CLI spec's transcripts show them.
 ///
 /// A [`Applied::Skipped`] fact is the one status word this file adds beyond
 /// `written`/`refused`: the op still succeeded, but `markdown_relink` left
@@ -842,19 +911,12 @@ fn label_delete(applied: &Applied) -> Option<String> {
 }
 
 /// `convert`'s own labeller, closed over the kind key and the target kind:
-/// [`Applied::FieldSet`] only ever carries the key it set, never the value,
-/// so the value shown (`sw-kind: plugin`) is this verb's own, not read back
-/// off the outcome. The physical relocation a conversion into or out of a
-/// container kind makes is not reported on its own line — `sw-kind: <k>` is
-/// the fact the CLI spec asks this verb to lead with, and the move is
-/// what becoming that kind implies.
-fn label_convert(kind_key: String, to_kind: EntityKind) -> impl Fn(&Applied) -> Option<String> {
+/// The folder carries the kind, so the move is the fact this verb leads
+/// with.
+fn label_convert(to_kind: EntityKind) -> impl Fn(&Applied) -> Option<String> {
     move |applied: &Applied| match applied {
-        Applied::Renamed { .. } => None,
+        Applied::Renamed { .. } => Some(format!("now a {}", to_kind.as_str())),
         Applied::Scaffolded => Some("scaffold".to_string()),
-        Applied::FieldSet { key } if *key == kind_key => {
-            Some(format!("{kind_key}: {}", to_kind.as_str()))
-        }
         Applied::FieldSet { key } => Some(format!("{key} set")),
         Applied::FieldRemoved { key } => Some(format!("{key} removed")),
         other => Some(generic_label(other)),
@@ -873,11 +935,11 @@ fn bad_name(name: &str, what: &str) -> Option<String> {
 /// The vault's current component scan, or the run-level blocker a failed
 /// scan earns — the same wording `bump` uses for the same failure.
 fn scan_components(
-    vault: &Path,
+    run: &ResolvedRun,
     ns: &Namespace,
     ctx: &mut CommandContext<'_>,
 ) -> Result<Vec<DiscoveredComponent>, i32> {
-    match discover_components(&NativeVfs, vault, None, ns) {
+    match discover_components(&run.source_vfs(None), &run.vault, None, ns) {
         Ok(scan) => Ok(scan.components),
         Err(err) => Err(blocked(
             ctx.err,
@@ -920,11 +982,14 @@ fn expected_create_path(placement: Option<&Placement>, name: &str, bundled: bool
     let Ok(dir) = new_note_dir(placement) else {
         return slug;
     };
-    let is_container = placement
+    let kind = placement
         .and_then(|p| p.kind.as_deref())
-        .and_then(|k| k.trim().parse::<EntityKind>().ok())
-        .is_some_and(EntityKind::holds_components);
-    if bundled || is_container {
+        .and_then(|k| k.trim().parse::<EntityKind>().ok());
+    let is_marketplace = kind == Some(EntityKind::Marketplace);
+    let is_container = kind.is_some_and(EntityKind::holds_components);
+    if is_marketplace {
+        format!("{dir}/{slug}/{ROOT_FILE}")
+    } else if bundled || is_container {
         format!("{dir}/{slug}/{slug}.md")
     } else {
         format!("{dir}/{slug}.md")

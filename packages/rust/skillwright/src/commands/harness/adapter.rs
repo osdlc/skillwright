@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde_json::Value;
+use tradecraft_core::harness::profile;
 
 use super::cli_runner::Argv;
 
@@ -62,6 +63,10 @@ pub struct Want {
 }
 
 /// One harness: its name, supported scopes, and argv builders.
+///
+/// The facts — name, label, scopes, the git-URL and git-ref rules — are the
+/// core's harness profile ([`tradecraft_core::harness::profile`]); a test
+/// holds the scopes to it. What is here alone is how to run the harness's CLI.
 pub struct HarnessAdapter {
     /// The CLI target name, and the build root whose `marketplace.json`
     /// names the marketplace.
@@ -199,11 +204,11 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 
 /// The Claude Code adapter.
 pub const CLAUDE: HarnessAdapter = HarnessAdapter {
-    name: "claude",
-    label: "Claude Code",
+    name: profile::CLAUDE.name,
+    label: profile::CLAUDE.label,
     scopes: &[Scope::User, Scope::Project, Scope::Local],
-    needs_git_url: false,
-    takes_git_ref: false,
+    needs_git_url: profile::CLAUDE.install_cli().needs_git_url,
+    takes_git_ref: profile::CLAUDE.install_cli().takes_git_ref,
     list_markets: |_| argv(&["claude", "plugin", "marketplace", "list", "--json"]),
     parse_markets: |stdout| {
         let doc = parse_json(stdout)?;
@@ -269,11 +274,11 @@ pub const CLAUDE: HarnessAdapter = HarnessAdapter {
 
 /// The Codex adapter.
 pub const CODEX: HarnessAdapter = HarnessAdapter {
-    name: "codex",
-    label: "Codex",
+    name: profile::CODEX.name,
+    label: profile::CODEX.label,
     scopes: &[Scope::User],
-    needs_git_url: false,
-    takes_git_ref: true,
+    needs_git_url: profile::CODEX.install_cli().needs_git_url,
+    takes_git_ref: profile::CODEX.install_cli().takes_git_ref,
     list_markets: |_| argv(&["codex", "plugin", "marketplace", "list", "--json"]),
     scoped_markets: |_, _| None,
     parse_markets: |stdout| {
@@ -312,11 +317,11 @@ pub const CODEX: HarnessAdapter = HarnessAdapter {
 
 /// The Cursor adapter.
 pub const CURSOR: HarnessAdapter = HarnessAdapter {
-    name: "cursor",
-    label: "Cursor",
+    name: profile::CURSOR.name,
+    label: profile::CURSOR.label,
     scopes: &[Scope::User],
-    needs_git_url: true,
-    takes_git_ref: true,
+    needs_git_url: profile::CURSOR.install_cli().needs_git_url,
+    takes_git_ref: profile::CURSOR.install_cli().takes_git_ref,
     list_markets: |_| {
         argv(&[
             "cursor-agent",
@@ -436,5 +441,17 @@ mod tests {
         let parse = CODEX.plugins.as_ref().unwrap().parse;
         let ids = parse(stdout, Scope::User, Path::new("/")).unwrap();
         assert_eq!(ids["p@m"].as_deref(), Some("0.3.0"));
+    }
+
+    #[test]
+    fn every_adapters_scopes_are_its_profiles() {
+        for (adapter, profile) in [
+            (&CLAUDE, &profile::CLAUDE),
+            (&CODEX, &profile::CODEX),
+            (&CURSOR, &profile::CURSOR),
+        ] {
+            let scopes: Vec<&str> = adapter.scopes.iter().map(|s| s.as_str()).collect();
+            assert_eq!(scopes, profile.install_cli().scopes, "{}", adapter.name);
+        }
     }
 }

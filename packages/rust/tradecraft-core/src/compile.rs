@@ -50,22 +50,31 @@
 //! the resource set is *recomputed* from this source, not merged with one
 //! computed elsewhere, so a peer folder not named here does not travel.
 //!
-//! # What comes from the `markdown-link` crate, and what stays here
+//! # What comes from the shared crates, and what stays here
 //!
-//! What counts as code comes from [`markdown_link::code`], under
-//! [`CodeRules::SkillExport`] so this pass keeps matching `skill-export`'s
-//! renderer. The link rules stay here, because `markdown-link`'s serve a different
-//! product: this pass skips HTML comments; it refuses an ambiguous basename
-//! where `markdown_link::LinkIndex` picks the shallowest path; and it reads an
-//! empty target (`[[#Heading]]`) as a self-reference where
-//! `markdown_link::parse_inner` drops it. Changing any of those in `markdown-link` would
-//! change the rendered graph.
+//! The links come from `markdown-link`: its scanner finds each `[[link]]` and
+//! `![[embed]]` (code by [`CodeRules::SkillExport`], so this pass keeps
+//! matching `skill-export`'s renderer; links in HTML comments skipped;
+//! `[[#Heading]]` a link to the note it is in), its `LinkIndex::resolve_strict`
+//! resolves them, and its `relative_link` and `escape_label` write them back
+//! out. `markdown-contract`'s `select` cuts a `#heading` or `#^block` out of an
+//! embedded note.
+//!
+//! What stays here is skillwright's own: `/[[call]]` calls and `\/[[x]]`
+//! escapes, read as a layer over `markdown-link`'s links and found in code
+//! too; hand-written calls; where resources land; and the validation that no
+//! Obsidian syntax survives.
 
+use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use markdown_link::code::{CodeRules, FenceLine, Fences, Spans};
+use markdown_link::{
+    AbandonReason, BodyLinkKind, LinkIndex, ResolveError, ScanOptions, parse_inner_self,
+    scan_body_with,
+};
 use sha2::{Digest, Sha256};
 
 use crate::content::SkillProjection;
@@ -80,6 +89,7 @@ use crate::vfs::{Vfs, normalize};
 /// ship with the skill. Paths are absolute; `entry_path` and `bundle_root`
 /// must lie under `vault_root`.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct CompileSource<'a> {
     /// The root every link resolves against and every `…/vault/<relative>`
     /// output path is derived from.
@@ -97,6 +107,26 @@ pub struct CompileSource<'a> {
     /// one that does not is recorded unresolved, since there is no index for
     /// the by-name fallback. A plain `[[x]]` stays a link.
     pub calls: Option<&'a CallContext<'a>>,
+    /// The vault's files, indexed for link resolution, when the caller has
+    /// them: a load passes the index of the walk it read the vault with.
+    /// `None` walks `vault_root` for them, leaving out tooling folders
+    /// (`.obsidian`, `.trash`, `node_modules`).
+    pub links: Option<&'a LinkIndex>,
+}
+
+impl<'a> CompileSource<'a> {
+    /// Compile the note at `entry_path`, named `skill_name`, against
+    /// `vault_root`. No bundle, call context or link index; set them after.
+    pub fn new(vault_root: &'a Path, entry_path: &'a Path, skill_name: &'a str) -> Self {
+        Self {
+            vault_root,
+            entry_path,
+            bundle_root: None,
+            skill_name,
+            calls: None,
+            links: None,
+        }
+    }
 }
 
 /// One skill a call can name: its entry note and who publishes it.
@@ -257,15 +287,83 @@ impl<'a> SkillSource<'a> {
 pub struct CallContext<'a> {
     /// Where the skills a body may name come from.
     pub skills: SkillSource<'a>,
-    /// The call token this target writes for a skill, without backticks.
-    pub render: &'a dyn Fn(&IndexedSkill) -> Result<String, CoreError>,
+    /// What this target writes for a skill, without backticks: its call, or
+    /// with `true` its name (see [`CallSite::mention`]).
+    pub render: &'a dyn Fn(&IndexedSkill, bool) -> Result<String, CoreError>,
     /// The destination's name, for a refusal about what it does not ship.
     pub target: &'a str,
     /// The body is a skill's or a command's, where a plain `[[x]]` to a skill
-    /// is a call too.
+    /// names the skill rather than copying it.
     pub implicit: bool,
-    /// `implicit-skill-call` warnings, deduplicated.
+    /// What the compile warned about, deduplicated.
     pub warnings: RefCell<Vec<DiscoveryWarning>>,
+    /// A compile done once for every harness: each call and each link is
+    /// written as a mark and its site recorded here, for a translator to
+    /// spell later. `render` is not called and nothing is refused for not
+    /// being shipped — which harness ships what is the translator's question.
+    /// See [`crate::model`].
+    pub record: Option<&'a RefCell<Recorded>>,
+}
+
+/// The calls and links a recording compile met, in the order it met them.
+/// The `n`th mark of each kind in the output names the `n`th entry here.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Recorded {
+    /// Every call, resolved to the skill it names.
+    pub calls: Vec<CallSite>,
+    /// Every surviving link, resolved to where its file lands.
+    pub links: Vec<LinkSite>,
+}
+
+/// One call, resolved: the skill it names, and what a refusal about it
+/// quotes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallSite {
+    /// The skill the call names.
+    pub skill: IndexedSkill,
+    /// The call's target as the author wrote it, fragment and all.
+    pub destination: String,
+    /// A plain `[[skill]]`: written as the skill's published name, not as an
+    /// invocation.
+    pub mention: bool,
+    /// The note the call is in, as a refusal names it.
+    pub caller: String,
+}
+
+/// One link, resolved: the markdown it renders as, and the file it reaches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkSite {
+    /// The link's text, escaped for markdown.
+    pub label: String,
+    /// The relative path from the emitting file to the linked file's output,
+    /// encoded, with its fragment.
+    pub href: String,
+    /// Rendered as an image (`![…](…)`) rather than a link.
+    pub image: bool,
+    /// The linked file, vault-relative.
+    pub target: String,
+}
+
+impl LinkSite {
+    /// The markdown this link renders as — the bytes an unrecorded compile
+    /// writes in its place.
+    pub fn markdown(&self) -> String {
+        if self.image {
+            format!("![{}]({})", self.label, self.href)
+        } else {
+            format!("[{}]({})", self.label, self.href)
+        }
+    }
+}
+
+/// Opens and closes a recording compile's mark. Private-use code points, so
+/// no vault text and no rendered syntax holds one.
+pub(crate) const MARK_OPEN: char = '\u{E000}';
+pub(crate) const MARK_CLOSE: char = '\u{E001}';
+
+/// The mark for the `index`th call (`kind` `c`) or link (`l`).
+fn mark(kind: char, index: usize) -> String {
+    format!("{MARK_OPEN}{kind}{index}{MARK_CLOSE}")
 }
 
 impl std::fmt::Debug for CallContext<'_> {
@@ -318,6 +416,11 @@ pub struct Closure {
     /// the note that owns it, plus everything transitively embedded into it.
     /// Sorted, and never empty — the owner is always a member.
     pub contributing_notes: Vec<String>,
+    /// The vault-relative path of the note this file was rendered from: the
+    /// entry note for `SKILL.md`, and the resource's own source otherwise.
+    /// One of `contributing_notes`, not necessarily the first, since they are
+    /// sorted. [`Closure::hash`] reads the whole file for this note.
+    pub owner: String,
     /// Link targets in this file that resolved to nothing, as written and
     /// sorted. Recorded rather than refused, because a note appearing at one
     /// of these names later changes the output while leaving the hash over
@@ -344,12 +447,12 @@ impl Closure {
     /// changes this hash even before it changes the member list. So are the
     /// calls, so renaming or moving a called skill changes the caller's hash.
     /// Both add nothing when empty.
-    pub fn hash(&self, vfs: &dyn Vfs, vault_root: &Path, owner: &str) -> Result<String, CoreError> {
+    pub fn hash(&self, vfs: &dyn Vfs, vault_root: &Path) -> Result<String, CoreError> {
         let mut hasher = Sha256::new();
         for note in &self.contributing_notes {
             let bytes = vfs.read_file(&vault_root.join(note))?;
             let text = String::from_utf8_lossy(&bytes);
-            let consumed = if note == owner {
+            let consumed = if *note == self.owner {
                 text.as_ref()
             } else {
                 split_frontmatter(&text).1
@@ -468,7 +571,7 @@ pub fn compile_note(
     // splicing can move text across fence boundaries and frontmatter is
     // carried untransformed, so the emitted files are scanned once more.
     let shown = &renderer.shown_notation;
-    validate_no_obsidian_syntax(&compiled_body, "SKILL.md", source.skill_name, shown)?;
+    validate_no_obsidian_syntax(&compiled_body, 0, "SKILL.md", source.skill_name, shown)?;
     for (output_path, (bytes, _)) in &outputs {
         if !output_path.to_lowercase().ends_with(".md") {
             continue;
@@ -477,10 +580,16 @@ pub fn compile_note(
         // UTF-8 by construction; the fallback only guards the invariant.
         let text = std::str::from_utf8(bytes)
             .map_err(|e| CoreError::malformed(Path::new(output_path), format!("not UTF-8: {e}")))?;
-        validate_no_obsidian_syntax(text, output_path, source.skill_name, shown)?;
+        validate_no_obsidian_syntax(
+            text,
+            body_start(text),
+            output_path,
+            source.skill_name,
+            shown,
+        )?;
     }
 
-    // Every emitted file's closure starts with the file that owns it, so a
+    // Every emitted file's closure contains the file that owns it, so a
     // closure is never empty and a resource with no embeds still hashes over
     // something. `SKILL.md` is owned by the entry note; every other output is
     // owned by the vault file it was rendered from.
@@ -499,11 +608,13 @@ pub fn compile_note(
             .get(&output_path)
             .cloned()
             .unwrap_or_default();
-        members.insert(renderer.vault_relative(&source_path)?);
+        let owner = renderer.vault_relative(&source_path)?;
+        members.insert(owner.clone());
         closures.insert(
             output_path.clone(),
             Closure {
                 contributing_notes: members.into_iter().collect(),
+                owner,
                 unresolved: renderer
                     .unresolved
                     .get(&output_path)
@@ -547,7 +658,7 @@ pub struct RelatedSplit {
     /// since a non-markdown embed is rewritten as a link too. Never the entry
     /// itself, which a self-reference resolves to.
     pub links: Vec<String>,
-    /// Notes this note calls. With a [`CallContext`] these are skills; without
+    /// Notes this note calls or names. With a [`CallContext`] these are skills; without
     /// one, whatever note each `/[[…]]` resolved to by path. A call copies
     /// nothing, so a called note is never also in [`Self::links`] for that
     /// call.
@@ -683,26 +794,30 @@ const REFERENCE_EXTENSIONS: &[&str] = &[
 
 /// Directories the vault index never descends into — tooling and trash, not
 /// notes.
-const EXCLUDED_VAULT_DIRECTORIES: &[&str] = &[".git", ".obsidian", ".trash", "node_modules"];
+pub(crate) const EXCLUDED_VAULT_DIRECTORIES: &[&str] =
+    &[".git", ".obsidian", ".trash", "node_modules"];
 
 /// Directories a skill's own bundle sweep never ships, at any depth under the
 /// bundle root — dev-only fixtures and vendored/tooling trees, never the
-/// skill's published content. Also used by [`crate::export::render_asset`]
+/// skill's published content. Also used by `crate::model::load`'s asset reader
 /// for a directory `assets:` entry, so a shared tree copied wholesale (a
 /// docs directory, a reference bundle) gets the same pruning a skill bundle
 /// gets — a vendored `node_modules` under such a tree is exactly as
 /// unwanted as one under a skill bundle.
 ///
-/// `tests`/`fixtures` are a fixed convention rather than a project-file
+/// `docs`/`tests`/`fixtures` are a fixed convention rather than a root-file
 /// setting: every skill gets this for free, with nothing to declare and
 /// nothing to forget to declare. Fixture markdown is often literal
 /// `[[decision-note]]`-shaped test data, not real Obsidian links; swept as an
 /// ordinary bundle resource, it reads as a broken link and fails
-/// `unresolved-syntax` on a vault that has nothing wrong with it. The rest
+/// `unresolved-syntax` on a vault that has nothing wrong with it. A `docs`
+/// folder holds writing about the skill for its authors, not for the agent
+/// that loads it. The rest
 /// mirror [`EXCLUDED_VAULT_DIRECTORIES`] above: no
 /// bundle or asset tree should ship a `.git`, `.obsidian`, `.trash` or
 /// vendored `node_modules` either.
 pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
+    "docs",
     "tests",
     "fixtures",
     ".git",
@@ -711,17 +826,72 @@ pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
     "node_modules",
 ];
 
+/// [`EXCLUDED_BUNDLE_DIRECTORIES`] for a `build.assets` directory, without
+/// `docs`: a shared tree of reference docs is what such an asset is for. The
+/// folder convention's `assets/` excludes nothing.
+pub(crate) const EXCLUDED_ASSET_DIRECTORIES: &[&str] = &[
+    "tests",
+    "fixtures",
+    ".git",
+    ".obsidian",
+    ".trash",
+    "node_modules",
+];
+
+/// The walk compile indexes a vault with, for a caller that must see the
+/// same files: every file, dot-named ones too, except under `.git`,
+/// `.obsidian`, `.trash` and `node_modules`. A symlink is listed, and a folder
+/// that cannot be listed fails the walk.
+pub fn vault_walk_options() -> markdown_vault_fs::walk::WalkOptions {
+    crate::walk::vault_walk(EXCLUDED_VAULT_DIRECTORIES)
+}
+
+/// What a walk with [`vault_walk_options`] cannot read under `vault_root`:
+/// each folder it cannot list and each file it cannot stat, in walk order.
+/// For a caller that walks with `propagate_errors` off and must say what the
+/// walk passed over.
+pub fn vault_walk_errors(vfs: &dyn Vfs, vault_root: &Path) -> Vec<crate::vfs::VfsError> {
+    crate::walk::vault_walk_errors(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)
+}
+
+/// Every file under `vault_root`, by vault-relative path, indexed for link
+/// resolution, leaving out [`EXCLUDED_VAULT_DIRECTORIES`].
+pub(crate) fn vault_link_index(vfs: &dyn Vfs, vault_root: &Path) -> Result<LinkIndex, CoreError> {
+    let files = crate::walk::vault_files(vfs, vault_root, EXCLUDED_VAULT_DIRECTORIES)?;
+    link_index(vault_root, &files)
+}
+
+/// `files`, by their path relative to `vault_root`, indexed for link
+/// resolution.
+pub(crate) fn link_index(vault_root: &Path, files: &[PathBuf]) -> Result<LinkIndex, CoreError> {
+    let mut paths = Vec::new();
+    for path in files {
+        let relative = path
+            .strip_prefix(vault_root)
+            .map(forward_slashed)
+            .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
+        paths.push(relative);
+    }
+    Ok(LinkIndex::build(&paths))
+}
+
 // --- The renderer -----------------------------------------------------------
 
-/// One skill's compile state: the vault index, and the resources claimed so
-/// far.
+/// One skill's compile state: the vault's link index, and the resources
+/// claimed so far.
 struct Renderer<'a> {
     vfs: &'a dyn Vfs,
     vault_root: PathBuf,
     entry_path: PathBuf,
     bundle_root: Option<PathBuf>,
     skill_name: &'a str,
-    index: VaultIndex,
+    /// The root file's `build.exclude`.
+    patterns: crate::patterns::Patterns,
+    /// Every file in the vault, by vault-relative path, for link
+    /// resolution. Built once per compile — the vault is the resolution
+    /// universe, and walking it lazily would make "not found" depend on what
+    /// happened to have been walked.
+    index: Cow<'a, LinkIndex>,
     /// Per emitted file, the notes it consumed and the links it could not
     /// resolve. Accumulated as the walk runs; the walk is the only place that
     /// knows either.
@@ -777,11 +947,15 @@ impl<'a> Renderer<'a> {
         {
             return Err(CoreError::PathEscapesRoot(root.clone()));
         }
-        let index = VaultIndex::build(vfs, &vault_root)?;
+        let index = match source.links {
+            Some(index) => Cow::Borrowed(index),
+            None => Cow::Owned(vault_link_index(vfs, &vault_root)?),
+        };
         let mut destinations = BTreeMap::new();
         destinations.insert("SKILL.md".to_owned(), entry_path.clone());
         Ok(Renderer {
             vfs,
+            patterns: crate::patterns::Patterns::load(vfs, &vault_root)?,
             vault_root,
             entry_path,
             bundle_root,
@@ -810,8 +984,9 @@ impl<'a> Renderer<'a> {
         let Some(bundle_root) = self.bundle_root.clone() else {
             return Ok(());
         };
-        for source_path in walk_files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)? {
-            if source_path == self.entry_path {
+        for source_path in crate::walk::files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)?
+        {
+            if source_path == self.entry_path || self.excluded_by_pattern(&source_path) {
                 continue;
             }
             let relative = source_path
@@ -945,6 +1120,7 @@ impl<'a> Renderer<'a> {
         output_path: &str,
         stack: &mut Vec<TransclusionHop>,
     ) -> Result<String, CoreError> {
+        self.check_markdown_links(body, source_path)?;
         let mut tokens = scan_wiki_tokens(body, true);
         let escapes = self.check_literal_calls(body, source_path, output_path)?;
         if !escapes.is_empty() {
@@ -1013,21 +1189,22 @@ impl<'a> Renderer<'a> {
             TokenKind::Link | TokenKind::Embed => {}
         }
         if token.kind == TokenKind::Link
-            && let Some(call) = self.implicit_call(token, source_path, output_path)?
+            && let Some(call) = self.skill_mention(token, source_path, output_path)?
         {
             return Ok(call);
         }
         let embed = token.kind == TokenKind::Embed;
-        let Some((resolved, fragment)) = self.resolve(token.destination, source_path)? else {
+        let Some((resolved, fragment)) = self.resolve(token, source_path)? else {
             // The name is kept so status can see a note appearing at it later,
             // and the reader is left the words rather than a dangling
             // `[[…]]`, which step 3 would refuse as surviving Obsidian syntax.
-            let (target, _) = split_destination(token.destination);
             self.unresolved
                 .entry(output_path.to_owned())
                 .or_default()
-                .insert(target.to_owned());
-            return Ok(token.alias.unwrap_or(target).to_owned());
+                .insert(token.target.clone());
+            return Ok(text_alias(token.alias.as_deref())
+                .unwrap_or(&token.target)
+                .to_owned());
         };
         let extension = extension_of_path(&resolved).unwrap_or_default();
 
@@ -1079,12 +1256,23 @@ impl<'a> Renderer<'a> {
         } else {
             self.ensure_binary_resource(&resolved)?
         };
-        let link = relative_markdown_link(output_path, &resource_output, fragment.as_deref());
-        let label = escape_label(&display_label(token.alias, &resolved));
-        if embed && IMAGE_EXTENSIONS.contains(&extension.as_str()) {
-            Ok(format!("![{label}]({link})"))
-        } else {
-            Ok(format!("[{label}]({link})"))
+        let site = LinkSite {
+            label: markdown_link::escape_label(&display_label(token.alias.as_deref(), &resolved)),
+            href: markdown_link::relative_link(output_path, &resource_output, fragment.as_deref()),
+            image: embed && IMAGE_EXTENSIONS.contains(&extension.as_str()),
+            target: String::new(),
+        };
+        match self.call_context.and_then(|context| context.record) {
+            Some(record) => {
+                let site = LinkSite {
+                    target: self.vault_relative(&resolved)?,
+                    ..site
+                };
+                let mut record = record.borrow_mut();
+                record.links.push(site);
+                Ok(mark('l', record.links.len() - 1))
+            }
+            None => Ok(site.markdown()),
         }
     }
 
@@ -1097,8 +1285,8 @@ impl<'a> Renderer<'a> {
         output_path: &str,
         in_code: bool,
     ) -> Result<String, CoreError> {
-        let resolved = self.resolve(token.destination, source_path)?;
-        let (target, _) = split_destination(token.destination);
+        let resolved = self.resolve(token, source_path)?;
+        let target = token.target.as_str();
         if let Some(context) = self.call_context {
             match self.render_call(context, token, resolved.clone(), source_path, output_path) {
                 Ok(call) => return Ok(format_call(&call, in_code)),
@@ -1133,7 +1321,7 @@ impl<'a> Renderer<'a> {
         source_path: &Path,
         output_path: &str,
     ) -> Result<String, CoreError> {
-        let (target, written_fragment) = split_destination(token.destination);
+        let (target, written_fragment) = (token.target.as_str(), token.fragment.clone());
         let skills = context.skills.get()?;
         let caller = self.relative_or_verbatim(source_path);
         let (skill, fragment) = match resolved {
@@ -1184,15 +1372,18 @@ impl<'a> Renderer<'a> {
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
         self.record_call(skill, output_path);
-        (context.render)(skill)
+        render_or_mark(context, skill, token.destination, caller, false)
     }
 
     /// A plain `[[x]]` in a skill or command body that names another skill
-    /// is a call: copying one skill into another is never what was meant.
-    /// `None` leaves the token to the link path, as does a name several
-    /// skills share, or an index that cannot be built: the reading is a
-    /// heuristic, so a fault elsewhere in the vault must not block a link.
-    fn implicit_call(
+    /// is written as that skill's published name: copying one skill into
+    /// another is never what was meant, and `/[[x]]` is the call. `None`
+    /// leaves the token to the link path, as does a name several skills
+    /// share, or an index that cannot be built: the reading is a heuristic,
+    /// so a fault elsewhere in the vault must not block a link. An author's
+    /// `|alias` stays as the words and the name follows in parentheses; a
+    /// `#fragment` is checked and then ignored.
+    fn skill_mention(
         &mut self,
         token: &WikiToken<'_>,
         source_path: &Path,
@@ -1201,8 +1392,8 @@ impl<'a> Renderer<'a> {
         let Some(context) = self.call_context.filter(|context| context.implicit) else {
             return Ok(None);
         };
-        let (target, written_fragment) = split_destination(token.destination);
-        let resolved = self.resolve(token.destination, source_path)?;
+        let (target, written_fragment) = (token.target.as_str(), token.fragment.clone());
+        let resolved = self.resolve(token, source_path)?;
         let Some(skills) = context.skills.get_or_none() else {
             return Ok(None);
         };
@@ -1220,18 +1411,13 @@ impl<'a> Renderer<'a> {
         let caller = self.relative_or_verbatim(source_path);
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
-        context.warn(
-            caller,
-            "implicit-skill-call",
-            format!(
-                "`[[{}]]` names skill `{}`, so it renders as a call; write `/[[{}]]` to say so",
-                token.destination,
-                skill.call_id(),
-                token.destination
-            ),
-        );
         self.record_call(skill, output_path);
-        Ok(Some(format_call(&(context.render)(skill)?, false)))
+        let name = render_or_mark(context, skill, token.destination, caller, true)?;
+        let name = format_call(&name, false);
+        Ok(Some(match text_alias(token.alias.as_deref()) {
+            Some(alias) => format!("{alias} ({name})"),
+            None => name,
+        }))
     }
 
     /// A call to a skill the destination does not carry would name a command
@@ -1243,7 +1429,7 @@ impl<'a> Renderer<'a> {
         caller: &str,
         destination: &str,
     ) -> Result<(), CoreError> {
-        if skill.shipped || self.tolerant_calls {
+        if skill.shipped || self.tolerant_calls || context.record.is_some() {
             return Ok(());
         }
         Err(CoreError::refused(
@@ -1316,6 +1502,8 @@ impl<'a> Renderer<'a> {
                         end: literal.start + 1,
                         kind: TokenKind::LiteralEscape,
                         destination: "",
+                        target: String::new(),
+                        fragment: None,
                         alias: None,
                     });
                 }
@@ -1422,10 +1610,11 @@ impl<'a> Renderer<'a> {
     /// failure from a name that is simply not there yet.
     fn resolve(
         &self,
-        destination: &str,
+        token: &WikiToken<'_>,
         from_file: &Path,
     ) -> Result<Option<(PathBuf, Option<String>)>, CoreError> {
-        let (target, fragment) = split_destination(destination);
+        let (destination, target) = (token.destination, token.target.as_str());
+        let fragment = token.fragment.clone();
         if target.is_empty() {
             // `[[#Heading]]` — a self-reference; the fragment addresses the
             // note it appears in.
@@ -1441,65 +1630,81 @@ impl<'a> Renderer<'a> {
             ));
         }
 
-        // A target with an extension is addressed as a file; one without gets
-        // `.md` appended and is addressed as a note. Obsidian's rule.
-        let has_extension = extension_of_target(target).is_some();
-        let candidate = if has_extension {
-            target.to_owned()
-        } else {
-            format!("{target}.md")
-        };
-        if let Some(hit) = self.index.exact(&candidate) {
-            return Ok(Some((hit, fragment)));
-        }
-        let from_dir = from_file.parent().unwrap_or(Path::new(""));
-        if let Ok(relative_dir) = from_dir.strip_prefix(&self.vault_root) {
-            let joined = if relative_dir.as_os_str().is_empty() {
-                candidate.clone()
-            } else {
-                format!("{}/{candidate}", forward_slashed(relative_dir))
-            };
-            if let Some(hit) = self.index.exact(&joined) {
-                return Ok(Some((hit, fragment)));
+        // `markdown-link`'s resolver, refusing to guess: an exact path, the
+        // path from the linking note's folder, or the only file the name
+        // matches. A bare name addresses a note (`[[photo]]` is not
+        // `photo.jpg`); a name with an extension addresses that file.
+        let from = self.vault_relative(from_file).unwrap_or_default();
+        match self.index.resolve_strict(target, &from) {
+            Ok(hit) => {
+                let path = self.vault_root.join(hit);
+                self.refuse_never_shipped(from_file, &path, destination)?;
+                Ok(Some((path, fragment)))
             }
-        }
-
-        let matches = if has_extension {
-            self.index.by_filename(basename(&candidate))
-        } else {
-            // A bare name only ever addresses a note: `[[photo]]` must not
-            // resolve to `photo.jpg`, because an attachment is addressed with
-            // its extension.
-            self.index
-                .by_stem(basename(target))
-                .into_iter()
-                .filter(|path| extension_of_path(path).as_deref() == Some(".md"))
-                .collect()
-        };
-        match matches.as_slice() {
-            [only] => Ok(Some((only.clone(), fragment))),
             // Not a refusal. The compile spec and the publish spec
             // both rule that an unresolved link is reported and the rest of
             // the skill publishes; the name is recorded in the manifest's
             // `unresolved` list so a note appearing there later counts as a
             // change. Refusing here would also make the manifest's own field
             // unreachable — nothing could ever be written into it.
-            [] => Ok(None),
-            several => {
-                let labels: Vec<String> = several
-                    .iter()
-                    .map(|path| self.relative_or_verbatim(path))
-                    .collect();
-                Err(CoreError::refused(
-                    "link-ambiguous",
-                    format!(
-                        "ambiguous Obsidian link from {}: {destination} ({})",
-                        self.relative_or_verbatim(from_file),
-                        labels.join(", ")
-                    ),
-                ))
+            Err(ResolveError::NotFound) => Ok(None),
+            Err(ResolveError::Ambiguous(candidates)) => Err(CoreError::refused(
+                "link-ambiguous",
+                format!(
+                    "ambiguous Obsidian link from {}: {destination} ({})",
+                    self.relative_or_verbatim(from_file),
+                    candidates.join(", ")
+                ),
+            )),
+        }
+    }
+
+    /// Refuses a link from `from_file` to a file that never ships, however
+    /// the link is spelled: `build.exclude` holds the file, or it is in a
+    /// folder that never ships and the linking note is not.
+    fn refuse_never_shipped(
+        &self,
+        from_file: &Path,
+        path: &Path,
+        destination: &str,
+    ) -> Result<(), CoreError> {
+        let into_never_ship = match (self.vault_relative(from_file), self.vault_relative(path)) {
+            (Ok(from), Ok(to)) => self.patterns.links_into_never_ship(&from, &to),
+            _ => false,
+        };
+        if into_never_ship || self.excluded_by_pattern(path) {
+            return Err(CoreError::refused(
+                "excluded-link",
+                format!(
+                    "{} links to {}, which never ships: {destination}",
+                    self.relative_or_verbatim(from_file),
+                    self.relative_or_verbatim(path),
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether `build.exclude` holds `path`.
+    fn excluded_by_pattern(&self, path: &Path) -> bool {
+        self.vault_relative(path)
+            .is_ok_and(|relative| self.patterns.excluded(&relative))
+    }
+
+    /// [`Self::refuse_never_shipped`] over `body`'s relative Markdown links,
+    /// the spelling the wiki tokens do not cover.
+    fn check_markdown_links(&self, body: &str, source_path: &Path) -> Result<(), CoreError> {
+        let folder = source_path.parent().unwrap_or(source_path);
+        for destination in markdown_destinations(body) {
+            let Some(relative) = local_file(destination) else {
+                continue;
+            };
+            let path = normalize(&folder.join(relative));
+            if self.vfs.exists(&path) {
+                self.refuse_never_shipped(source_path, &path, destination)?;
             }
         }
+        Ok(())
     }
 
     /// For messages only: the vault-relative spelling when there is one, the
@@ -1520,172 +1725,63 @@ type TransclusionHop = (PathBuf, Option<String>);
 /// vault to resolve it against, so anything left is a broken reference the
 /// author would only find after installing.
 ///
+/// That includes a `[[` that is not a link (see [`scan_wiki`]): it would ship
+/// as literal brackets. Only one at or after `body_start` counts, so stray
+/// brackets in a resource's frontmatter, carried as written, are not refused.
+/// A link there still is, as before.
+///
 /// The one exception is `shown`: the `/[[x]]` texts an escape wrote out on
 /// purpose. Only that exact text, `/` included, passes.
 fn validate_no_obsidian_syntax(
     text: &str,
+    body_start: usize,
     output_path: &str,
     skill_name: &str,
     shown: &BTreeSet<String>,
 ) -> Result<(), CoreError> {
     // Calls are not rescanned: every live one was replaced or refused, and
     // what is left in code is content.
-    let leftover = scan_wiki_tokens(text, false);
-    let first = leftover.iter().find(|token| {
-        let notation = token
-            .start
-            .checked_sub(1)
-            .filter(|&slash| token.kind == TokenKind::Link && text.as_bytes()[slash] == b'/')
-            .map(|slash| &text[slash..token.end]);
-        !notation.is_some_and(|notation| shown.contains(notation))
-    });
-    if let Some(first) = first {
-        return Err(CoreError::refused(
-            "unresolved-syntax",
-            format!(
-                "compiled skill {skill_name} still contains Obsidian syntax in {output_path}: {}",
-                &text[first.start..first.end]
-            ),
-        ));
-    }
-    Ok(())
-}
-
-// --- The vault index --------------------------------------------------------
-
-/// Every file in the vault, addressable three ways: by exact vault-relative
-/// path, by filename, and by stem. Built once per compile — the vault is the
-/// resolution universe, and walking it lazily would make "not found" depend
-/// on what happened to have been walked.
-///
-/// All keys are lowercased: Obsidian matches links case-insensitively, and a
-/// vault edited on macOS (case-preserving, case-insensitive) would otherwise
-/// resolve differently than the same vault on Linux.
-struct VaultIndex {
-    /// Lowercased vault-relative path → absolute path.
-    relative_files: BTreeMap<String, PathBuf>,
-    /// Lowercased filename → absolute paths, in walk (sorted) order.
-    by_filename: BTreeMap<String, Vec<PathBuf>>,
-    /// Lowercased stem → absolute paths, in walk (sorted) order.
-    by_stem: BTreeMap<String, Vec<PathBuf>>,
-}
-
-impl VaultIndex {
-    fn build(vfs: &dyn Vfs, root: &Path) -> Result<VaultIndex, CoreError> {
-        let mut relative_files = BTreeMap::new();
-        let mut by_filename: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
-        let mut by_stem: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
-        for path in walk_files(vfs, root, EXCLUDED_VAULT_DIRECTORIES)? {
-            let relative = path
-                .strip_prefix(root)
-                .map(forward_slashed)
-                .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
-            relative_files.insert(relative.to_lowercase(), path.clone());
-            let filename = basename(&relative).to_lowercase();
-            let stem = match filename.rfind('.') {
-                // A leading dot is a hidden file's name, not an extension
-                // separator.
-                Some(0) | None => filename.clone(),
-                Some(at) => filename[..at].to_owned(),
-            };
-            by_filename.entry(filename).or_default().push(path.clone());
-            by_stem.entry(stem).or_default().push(path);
-        }
-        Ok(VaultIndex {
-            relative_files,
-            by_filename,
-            by_stem,
+    let (links, leftovers) = scan_wiki(text, false);
+    let link = links
+        .iter()
+        .find(|token| {
+            let notation = token
+                .start
+                .checked_sub(1)
+                .filter(|&slash| token.kind == TokenKind::Link && text.as_bytes()[slash] == b'/')
+                .map(|slash| &text[slash..token.end]);
+            !notation.is_some_and(|notation| shown.contains(notation))
         })
-    }
-
-    /// An exact vault-relative lookup, tolerant of `./` spellings. (`..` never
-    /// reaches here; it is refused before resolution.)
-    fn exact(&self, relative: &str) -> Option<PathBuf> {
-        let folded: Vec<&str> = relative
-            .split('/')
-            .filter(|segment| !segment.is_empty() && *segment != ".")
-            .collect();
-        self.relative_files
-            .get(&folded.join("/").to_lowercase())
-            .cloned()
-    }
-
-    fn by_filename(&self, filename: &str) -> Vec<PathBuf> {
-        self.by_filename
-            .get(&filename.to_lowercase())
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn by_stem(&self, stem: &str) -> Vec<PathBuf> {
-        self.by_stem
-            .get(&stem.to_lowercase())
-            .cloned()
-            .unwrap_or_default()
-    }
+        .map(|token| (token.start, token.end, None));
+    let leftover = leftovers
+        .iter()
+        .filter(|leftover| leftover.start >= body_start)
+        .min_by_key(|leftover| leftover.start)
+        .map(|leftover| (leftover.start, leftover.end, Some(leftover.why)));
+    let Some((start, end, why)) = link.into_iter().chain(leftover).min_by_key(|first| first.0)
+    else {
+        return Ok(());
+    };
+    // An unclosed `[[` runs to the end of the text; its line is enough.
+    let written = &text[start..end];
+    let written = written.split('\n').next().unwrap_or(written);
+    let why = why.map_or_else(String::new, |why| format!(" (not a link: {why})"));
+    Err(CoreError::refused(
+        "unresolved-syntax",
+        format!(
+            "compiled skill {skill_name} still contains Obsidian syntax in {output_path}: \
+             {written}{why}"
+        ),
+    ))
 }
 
-/// Every file under `root`, depth-first, entries sorted by name at each level
-/// so the walk — and everything keyed off it, down to which of two ambiguous
-/// matches a refusal names first — is deterministic across hosts.
-///
-/// `excluded_directories` is pruned at every level. `.DS_Store` is skipped
-/// always: Finder drops it everywhere and it is never content. Symlinked
-/// directories are already not descended into ([`Vfs::read_dir`] reports them
-/// as non-directories); a symlinked *file* is indistinguishable from a file
-/// at this seam, so refusing it is discovery's job, on a real filesystem,
-/// not this walk's.
-pub(crate) fn walk_files(
-    vfs: &dyn Vfs,
-    root: &Path,
-    excluded_directories: &[&str],
-) -> Result<Vec<PathBuf>, CoreError> {
-    fn recurse(
-        vfs: &dyn Vfs,
-        dir: &Path,
-        excluded: &[&str],
-        out: &mut Vec<PathBuf>,
-    ) -> Result<(), CoreError> {
-        let mut entries = vfs.read_dir(dir)?;
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        for entry in entries {
-            if entry.name == ".DS_Store" {
-                continue;
-            }
-            let path = dir.join(&entry.name);
-            if entry.is_dir {
-                if excluded.contains(&entry.name.as_str()) {
-                    continue;
-                }
-                recurse(vfs, &path, excluded, out)?;
-            } else {
-                out.push(path);
-            }
-        }
-        Ok(())
-    }
-    let mut out = Vec::new();
-    recurse(vfs, root, excluded_directories, &mut out)?;
-    Ok(out)
+/// Where a composed file's body starts: past its frontmatter, as the strict
+/// split that carried it finds it.
+fn body_start(text: &str) -> usize {
+    text.len() - frontmatter_lossless::split(text).body.len()
 }
 
 // --- Destinations, extensions, labels ---------------------------------------
-
-/// `target#fragment` split on the *first* `#`: a heading path like
-/// `Note#Parent#Child` keeps its inner `#`s in the fragment, where the
-/// heading selector needs them.
-fn split_destination(destination: &str) -> (&str, Option<String>) {
-    match destination.find('#') {
-        None => (destination.trim(), None),
-        Some(at) => {
-            let fragment = destination[at + 1..].trim();
-            (
-                destination[..at].trim(),
-                (!fragment.is_empty()).then(|| fragment.to_owned()),
-            )
-        }
-    }
-}
 
 /// The extension of a link target as written, lowercased with its dot —
 /// `None` when the basename has no dot or only a leading one. This decides
@@ -1712,13 +1808,10 @@ pub(crate) fn basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-/// What a rewritten link displays: the alias when the author wrote one —
-/// unless it is an image size spec like `100` or `640x480`, which Obsidian
-/// reads as geometry, not text — otherwise the resolved file's name.
+/// What a rewritten link displays: the alias when it is text (see
+/// [`text_alias`]), otherwise the resolved file's name.
 fn display_label(alias: Option<&str>, resolved: &Path) -> String {
-    if let Some(alias) = alias
-        && !is_size_spec(alias)
-    {
+    if let Some(alias) = text_alias(alias) {
         return alias.to_owned();
     }
     resolved
@@ -1727,127 +1820,10 @@ fn display_label(alias: Option<&str>, resolved: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// `^\d+(?:x\d+)?$` — the image-geometry alias test.
-fn is_size_spec(alias: &str) -> bool {
-    let all_digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
-    match alias.split_once('x') {
-        Some((width, height)) => all_digits(width) && all_digits(height),
-        None => all_digits(alias),
-    }
-}
-
-/// Markdown label text: `\`, `[`, `]` escaped so an alias cannot terminate —
-/// or nest — the link syntax it sits inside.
-fn escape_label(label: &str) -> String {
-    let mut out = String::with_capacity(label.len());
-    for c in label.chars() {
-        if matches!(c, '\\' | '[' | ']') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
-}
-
-/// The spelling of one output file linking another: relative to the linking
-/// file's directory, each segment percent-encoded, the fragment appended
-/// URI-encoded with `#` itself escaped (a raw `#` would start a second
-/// fragment).
-fn relative_markdown_link(from_output: &str, to_output: &str, fragment: Option<&str>) -> String {
-    let from_dir = match from_output.rfind('/') {
-        Some(at) => &from_output[..at],
-        None => "",
-    };
-    let mut relative = posix_relative(from_dir, to_output);
-    if relative.is_empty() {
-        // A file linking itself: the relative walk yields "", and a markdown
-        // link needs a target, so its own name serves.
-        relative = basename(to_output).to_owned();
-    }
-    let encoded: Vec<String> = relative
-        .split('/')
-        .map(|segment| {
-            if segment == ".." || segment == "." {
-                segment.to_owned()
-            } else {
-                encode_uri_component(segment)
-            }
-        })
-        .collect();
-    match fragment {
-        Some(fragment) => format!("{}#{}", encoded.join("/"), encode_uri_fragment(fragment)),
-        None => encoded.join("/"),
-    }
-}
-
-/// `path.posix.relative`, for the forward-slashed output paths this pass
-/// mints: walk up out of `from_dir`'s unshared segments, then down `to`'s.
-fn posix_relative(from_dir: &str, to: &str) -> String {
-    let from_segments: Vec<&str> = from_dir.split('/').filter(|s| !s.is_empty()).collect();
-    let to_segments: Vec<&str> = to.split('/').filter(|s| !s.is_empty()).collect();
-    let shared = from_segments
-        .iter()
-        .zip(&to_segments)
-        .take_while(|(a, b)| a == b)
-        .count();
-    let mut out: Vec<&str> = vec![".."; from_segments.len() - shared];
-    out.extend(&to_segments[shared..]);
-    out.join("/")
-}
-
-/// JavaScript's `encodeURIComponent`: everything but the unreserved set is
-/// percent-encoded, byte-wise over UTF-8.
-fn encode_uri_component(segment: &str) -> String {
-    percent_encode(segment, |b| {
-        b.is_ascii_alphanumeric()
-            || matches!(
-                b,
-                b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')'
-            )
-    })
-}
-
-/// JavaScript's `encodeURI` with `#` additionally escaped for
-/// fragments. URI structure characters (`/`, `?`, `&`, …) survive so
-/// a fragment like `page=2` reads back as written.
-fn encode_uri_fragment(fragment: &str) -> String {
-    percent_encode(fragment, |b| {
-        b.is_ascii_alphanumeric()
-            || matches!(
-                b,
-                b'-' | b'_'
-                    | b'.'
-                    | b'!'
-                    | b'~'
-                    | b'*'
-                    | b'\''
-                    | b'('
-                    | b')'
-                    | b';'
-                    | b','
-                    | b'/'
-                    | b'?'
-                    | b':'
-                    | b'@'
-                    | b'&'
-                    | b'='
-                    | b'+'
-                    | b'$'
-            )
-    })
-}
-
-fn percent_encode(text: &str, keep: impl Fn(u8) -> bool) -> String {
-    use std::fmt::Write;
-    let mut out = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        if keep(byte) {
-            out.push(byte as char);
-        } else {
-            let _ = write!(out, "%{byte:02X}");
-        }
-    }
-    out
+/// The alias as words to display, or `None` when there is none or it is an
+/// image size spec like `100` or `640x480`, which Obsidian reads as geometry.
+fn text_alias(alias: Option<&str>) -> Option<&str> {
+    alias.filter(|alias| !markdown_link::is_size_spec(alias))
 }
 
 // --- The scanner ------------------------------------------------------------
@@ -1880,33 +1856,286 @@ struct WikiToken<'a> {
     /// Byte offset just past the closing `]]`, exclusive.
     end: usize,
     kind: TokenKind,
-    /// The text before any `|`, trimmed. May still carry a `#fragment`.
+    /// The text before any `|`, trimmed, as written. What a refusal quotes.
     destination: &'a str,
+    /// What resolution runs against, as `markdown-link` reads it: the text
+    /// before any `#`, trimmed. Empty for a link to the note it is in.
+    target: String,
+    /// The `#heading` path, or `^block` with its caret.
+    fragment: Option<String>,
     /// The text after the first `|`, trimmed; `None` when empty or absent.
-    alias: Option<&'a str>,
+    alias: Option<String>,
 }
+
+impl<'a> WikiToken<'a> {
+    /// A token over `start..end` from a link `markdown-link` read out of
+    /// `inner`, the text between its brackets.
+    fn new(
+        (start, end): (usize, usize),
+        kind: TokenKind,
+        inner: &'a str,
+        target: String,
+        fragment: Option<String>,
+        alias: Option<String>,
+    ) -> Self {
+        WikiToken {
+            start,
+            end,
+            kind,
+            destination: written_destination(inner),
+            target,
+            fragment,
+            alias: alias.filter(|alias| !alias.is_empty()),
+        }
+    }
+}
+
+/// How this pass reads a body's links: code by `skill-export`'s rules,
+/// links in HTML comments skipped, and `[[#Heading]]` a link to the note it
+/// is written in.
+const SCAN: ScanOptions = ScanOptions {
+    code_rules: CodeRules::SkillExport,
+    skip_html_comments: true,
+    self_links: true,
+};
 
 /// Every wiki token in `markdown` that is *live* — not inside a fenced code
 /// block, an inline code span, or an HTML comment, where the same characters
 /// are content rather than references.
 ///
-/// With `calls`, `/[[x]]` calls and `\/[[x]]` escapes are also found, in
-/// prose and in code alike: a usage line in code is where a call most often
-/// sits. See [`sigil_at`] for where a `/` is a sigil. An escape is the text
-/// `/[[x]]`. In code, a `/[[x]]` whose `/` is not a sigil is found too, as
-/// [`TokenKind::Unconverted`].
+/// The links and embeds are `markdown-link`'s, read under [`SCAN`]. Calls are
+/// this crate's layer over them: with `calls`, a link whose `[[` follows a
+/// `/` sigil is a `/[[x]]` call, and one whose `/` follows a `\` is a
+/// `\/[[x]]` escape. See [`sigil_at`] for where a `/` is a sigil. Calls are
+/// also found in code, where a usage line most often sits; in code, a
+/// `/[[x]]` whose `/` is not a sigil is found as [`TokenKind::Unconverted`].
 ///
 /// This is both halves of the pass in one function: the transform replaces
 /// exactly what it finds, and the validation refuses anything it still finds
 /// afterwards. One scanner means the two cannot disagree about what counts.
+fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
+    scan_wiki(markdown, calls).0
+}
+
+/// A `[[` in a body that is not a link, so would ship as literal brackets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Leftover {
+    /// Byte offset of the `[[`, or of the `!` before it.
+    start: usize,
+    /// Byte offset just past what the scanner read.
+    end: usize,
+    /// Why it is not a link, for a refusal.
+    why: &'static str,
+}
+
+/// [`scan_wiki_tokens`], and each `[[` that is not a token: one
+/// `markdown-link` gave up on, and a link with code in its target, which
+/// this pass leaves as written.
+fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>) {
+    let bytes = markdown.as_bytes();
+    let scan = scan_body_with(markdown, &SCAN);
+    let mut leftovers: Vec<Leftover> = scan
+        .abandoned
+        .iter()
+        // `[[WIP] Fix](url)` and `[[Note](Note.md)]` are Markdown links with
+        // a `[` beside them, not wikilinks gone wrong.
+        .filter(|abandoned| {
+            let at = abandoned.byte_start + usize::from(abandoned.embed);
+            abandoned.reason != AbandonReason::Bracket
+                || !(opens_markdown_link(markdown, at) || opens_markdown_link(markdown, at + 1))
+        })
+        .map(|abandoned| Leftover {
+            start: abandoned.byte_start,
+            end: abandoned.byte_end,
+            why: match abandoned.reason {
+                AbandonReason::Bracket => "a `[` or `]` comes before its closing `]]`",
+                AbandonReason::Code => "its target is only code",
+                AbandonReason::EmptyTarget => "it has no target",
+                AbandonReason::Unclosed => "it has no closing `]]`",
+            },
+        })
+        .collect();
+    let mut tokens: Vec<WikiToken<'_>> = scan
+        .links
+        .into_iter()
+        .filter_map(|link| {
+            let (kind, opener) = match link.kind {
+                BodyLinkKind::Wikilink => (TokenKind::Link, 2),
+                BodyLinkKind::Embed => (TokenKind::Embed, 3),
+                BodyLinkKind::Markdown => return None,
+            };
+            let at = link.byte_start;
+            let (kind, start) = match kind {
+                TokenKind::Link
+                    if calls
+                        && at >= 2
+                        && &bytes[at - 2..at] == b"\\/"
+                        && sigil_at(bytes, at - 2) =>
+                {
+                    (TokenKind::Escape, at - 2)
+                }
+                TokenKind::Link if calls && at >= 1 && sigil_at(bytes, at - 1) => {
+                    (TokenKind::Call { in_code: false }, at - 1)
+                }
+                _ => (kind, at),
+            };
+            let inner = &markdown[at + opener..link.byte_end - 2];
+            // `raw` has code blanked. Code before the alias would leave a
+            // target that is not what was written, so the link is left as
+            // written, as one that is all code is.
+            if !inner.starts_with(link.raw.split('|').next().unwrap_or_default()) {
+                leftovers.push(Leftover {
+                    start: link.byte_start,
+                    end: link.byte_end,
+                    why: "its target has code in it",
+                });
+                return None;
+            }
+            Some(WikiToken::new(
+                (start, link.byte_end),
+                kind,
+                inner,
+                link.target,
+                fragment_of(link.heading, link.block),
+                link.alias,
+            ))
+        })
+        .collect();
+    if calls {
+        for (from, to) in code_regions(markdown) {
+            scan_code_calls(markdown, from, to, &mut tokens);
+        }
+        tokens.sort_by_key(|token| token.start);
+        // A call in code inside a link's alias is part of that alias.
+        let mut end = 0;
+        tokens.retain(|token| {
+            let free = token.start >= end;
+            if free {
+                end = token.end;
+            }
+            free
+        });
+    }
+    (tokens, leftovers)
+}
+
+/// The destination of each inline Markdown link and reference definition in
+/// `markdown` that is live: not in code, not in an HTML comment.
+fn markdown_destinations(markdown: &str) -> Vec<&str> {
+    let code = code_regions(markdown);
+    let live = |at: usize| {
+        !code.iter().any(|(from, to)| (*from..*to).contains(&at))
+            && markdown[..at].rfind("<!--") <= markdown[..at].rfind("-->")
+    };
+    let inline = markdown
+        .match_indices("](")
+        .map(|(at, _)| (at, at + 2))
+        .filter(|(at, _)| !markdown[..*at].ends_with('\\'));
+    let mut offset = 0;
+    let mut definitions = Vec::new();
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[')
+            && let Some(close) = trimmed.find("]:")
+        {
+            let at = offset + (line.len() - trimmed.len()) + close;
+            definitions.push((at, at + 2));
+        }
+        offset += line.len();
+    }
+    inline
+        .chain(definitions)
+        .filter(|(at, _)| live(*at))
+        .filter_map(|(_, from)| {
+            let rest = markdown[from..].trim_start_matches([' ', '\t']);
+            match rest.strip_prefix('<') {
+                Some(angled) => angled.split_once('>').map(|(url, _)| url),
+                None => rest
+                    .split([' ', '\t', '\r', '\n', ')'])
+                    .next()
+                    .filter(|url| !url.is_empty()),
+            }
+        })
+        .collect()
+}
+
+/// The file a Markdown link's destination names relative to its note, decoded
+/// and without its fragment or query; `None` for a URL, an absolute path or a
+/// link to a place in the same note.
+fn local_file(destination: &str) -> Option<String> {
+    let path = destination.split(['#', '?']).next().unwrap_or_default();
+    let scheme = path
+        .split_once(':')
+        .is_some_and(|(before, _)| !before.contains('/'));
+    (!path.is_empty() && !path.starts_with('/') && !scheme)
+        .then(|| markdown_link::percent_decode(path))
+}
+
+/// Whether the `[` at byte `at` opens a Markdown link: its brackets balance
+/// before a blank line, and the closing `]` is followed by `(` (inline) or
+/// `[` (reference). A `\`-escaped bracket does not count.
+fn opens_markdown_link(text: &str, at: usize) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.get(at) != Some(&b'[') {
+        return false;
+    }
+    let mut depth = 0usize;
+    let mut i = at;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 1,
+            b'\n' if is_blank_line(&bytes[i + 1..]) => return false,
+            b'[' => depth += 1,
+            b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return matches!(bytes.get(i + 1), Some(b'(' | b'['));
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Whether `rest`, the text after a `\n`, starts with a blank line: one of
+/// only spaces, tabs and a `\r`, which ends a paragraph.
+fn is_blank_line(rest: &[u8]) -> bool {
+    rest.iter().find(|b| !matches!(b, b' ' | b'\t' | b'\r')) == Some(&b'\n')
+}
+
+/// A link's text before any `|`, trimmed, as written, without the `\` that
+/// escapes the pipe in a table cell.
+fn written_destination(inner: &str) -> &str {
+    inner
+        .split_once('|')
+        .map_or(inner, |(before, _)| {
+            before.strip_suffix('\\').unwrap_or(before)
+        })
+        .trim()
+}
+
+/// `markdown-link`'s heading or block as the fragment selectors read it: a
+/// heading path as written, a block with its `^`, nothing for an empty one.
+fn fragment_of(heading: Option<String>, block: Option<String>) -> Option<String> {
+    match (heading, block) {
+        (_, Some(block)) => Some(format!("^{block}")),
+        (Some(heading), None) => (!heading.is_empty()).then_some(heading),
+        (None, None) => None,
+    }
+}
+
+/// The byte ranges of `markdown` that are code: the inside of each inline
+/// span and each fenced line, outside HTML comments.
 ///
 /// Fences and inline spans are [`markdown_link::code`]'s lexer under
-/// [`CodeRules::SkillExport`]. A comment runs to `-->` or the end of input.
-/// All markers are ASCII, so the byte-wise scan can never split a UTF-8
-/// character — every slice boundary sits beside an ASCII byte.
-fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
+/// [`CodeRules::SkillExport`], the rules [`SCAN`] gives the link scanner. A
+/// comment runs to `-->` or the end of input. All markers are ASCII, so the
+/// byte-wise scan can never split a UTF-8 character.
+fn code_regions(markdown: &str) -> Vec<(usize, usize)> {
     let bytes = markdown.as_bytes();
-    let mut tokens = Vec::new();
+    let mut regions = Vec::new();
     let mut offset = 0usize;
     let mut fences = Fences::new(CodeRules::SkillExport);
     let mut spans = Spans::new(CodeRules::SkillExport, bytes);
@@ -1925,9 +2154,7 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
                     continue;
                 }
                 FenceLine::Inside => {
-                    if calls {
-                        scan_code_calls(markdown, offset, line_end, &mut tokens);
-                    }
+                    regions.push((offset, line_end));
                     offset = advance_past(line_end, bytes.len());
                     continue;
                 }
@@ -1946,9 +2173,7 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
             let (run, close) = spans.close(offset);
             offset = match close {
                 Some(at) => {
-                    if calls {
-                        scan_code_calls(markdown, offset + run, at, &mut tokens);
-                    }
+                    regions.push((offset + run, at));
                     at + run
                 }
                 None => offset + run,
@@ -1956,45 +2181,9 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
             continue;
         }
 
-        if calls && sigil_at(bytes, offset) {
-            if bytes[offset] == b'\\' {
-                if let Some(escape) = escape_token(markdown, offset, bytes.len()) {
-                    offset = escape.end;
-                    tokens.push(escape);
-                    continue;
-                }
-            } else if let Some(token) = wiki_token(markdown, offset, 3, bytes.len()) {
-                offset = token.end;
-                tokens.push(WikiToken {
-                    kind: TokenKind::Call { in_code: false },
-                    ..token
-                });
-                continue;
-            }
-        }
-
-        let embed = bytes[offset..].starts_with(b"![[");
-        let link = !embed && bytes[offset..].starts_with(b"[[");
-        if embed || link {
-            let opener = if embed { 3 } else { 2 };
-            if let Some(token) = wiki_token(markdown, offset, opener, bytes.len()) {
-                offset = token.end;
-                tokens.push(WikiToken {
-                    kind: if embed {
-                        TokenKind::Embed
-                    } else {
-                        TokenKind::Link
-                    },
-                    ..token
-                });
-                continue;
-            }
-        }
-
         offset += 1;
     }
-
-    tokens
+    regions
 }
 
 /// The calls, escapes and unconverted calls in a code span or fenced line,
@@ -2005,22 +2194,16 @@ fn scan_code_calls<'a>(markdown: &'a str, from: usize, to: usize, tokens: &mut V
     while offset < to {
         let token = if sigil_at(bytes, offset) {
             if bytes[offset] == b'\\' {
-                escape_token(markdown, offset, to)
+                code_token(markdown, offset, to, TokenKind::Escape)
             } else {
-                wiki_token(markdown, offset, 3, to).map(|token| WikiToken {
-                    kind: TokenKind::Call { in_code: true },
-                    ..token
-                })
+                code_token(markdown, offset, to, TokenKind::Call { in_code: true })
             }
         } else if bytes[offset..to].starts_with(b"/[[")
             && offset
                 .checked_sub(1)
                 .is_none_or(|before| bytes[before] != b'\\')
         {
-            wiki_token(markdown, offset, 3, to).map(|token| WikiToken {
-                kind: TokenKind::Unconverted,
-                ..token
-            })
+            code_token(markdown, offset, to, TokenKind::Unconverted)
         } else {
             None
         };
@@ -2055,45 +2238,60 @@ fn sigil_at(bytes: &[u8], offset: usize) -> bool {
     }
 }
 
-/// The `\/[[x]]` at `offset`, closed before `limit`.
-fn escape_token(markdown: &str, offset: usize, limit: usize) -> Option<WikiToken<'_>> {
-    let link = wiki_token(markdown, offset + 2, 2, limit)?;
-    Some(WikiToken {
-        start: offset,
-        kind: TokenKind::Escape,
-        ..link
-    })
-}
-
-/// The token opening at `offset` with an `opener`-byte prefix, closed by the
-/// first `]]` ending at or before `limit`. Its kind is the caller's to set.
-fn wiki_token(markdown: &str, offset: usize, opener: usize, limit: usize) -> Option<WikiToken<'_>> {
+/// A call in code opening at `offset` (`/[[`, or `\/[[` for an escape),
+/// closed by the first `]]` ending at or before `limit` and on the same line:
+/// a wikilink never crosses a line, so a stray `[[` stays text. The text
+/// between the brackets is read by `markdown-link`'s `parse_inner_self`.
+fn code_token(
+    markdown: &str,
+    offset: usize,
+    limit: usize,
+    kind: TokenKind,
+) -> Option<WikiToken<'_>> {
+    let opener = if kind == TokenKind::Escape { 4 } else { 3 };
     let content_start = offset + opener;
-    let close = markdown
-        .get(content_start..)?
-        .find("]]")
-        .map(|at| content_start + at)
-        .filter(|close| close + 2 <= limit)?;
+    let rest = markdown.get(content_start..)?;
+    let line_len = rest.find('\n').unwrap_or(rest.len());
+    let bound = limit.checked_sub(content_start)?.min(line_len);
+    let close = content_start + rest.get(..bound)?.find("]]")?;
     // Both boundaries sit beside ASCII brackets, so the str slice is valid
     // UTF-8 territory.
     let inner = &markdown[content_start..close];
-    let (destination, alias) = match inner.find('|') {
-        None => (inner.trim(), None),
-        Some(at) => {
-            let alias = inner[at + 1..].trim();
-            (inner[..at].trim(), (!alias.is_empty()).then_some(alias))
-        }
-    };
-    Some(WikiToken {
-        start: offset,
-        end: close + 2,
-        kind: TokenKind::Link,
-        destination,
-        alias,
-    })
+    let link = parse_inner_self(inner, false)?;
+    Some(WikiToken::new(
+        (offset, close + 2),
+        kind,
+        inner,
+        link.target,
+        fragment_of(link.heading, link.block),
+        link.alias,
+    ))
 }
 
-/// A call as written into output: bare in code, in backticks in prose.
+/// A call's invocation, or with `mention` the skill's name: `render`'s, or
+/// in a recording compile the mark standing in for it.
+fn render_or_mark(
+    context: &CallContext<'_>,
+    skill: &IndexedSkill,
+    destination: &str,
+    caller: String,
+    mention: bool,
+) -> Result<String, CoreError> {
+    let Some(record) = context.record else {
+        return (context.render)(skill, mention);
+    };
+    let mut record = record.borrow_mut();
+    record.calls.push(CallSite {
+        skill: skill.clone(),
+        destination: destination.to_owned(),
+        mention,
+        caller,
+    });
+    Ok(mark('c', record.calls.len() - 1))
+}
+
+/// A call or skill name as written into output: bare in code, in backticks
+/// in prose.
 fn format_call(call: &str, in_code: bool) -> String {
     if in_code {
         call.to_owned()
@@ -2129,7 +2327,7 @@ struct LiteralCall<'a> {
 /// it names a known skill is the caller's question.
 ///
 /// `/plugin:skill`, `$plugin:skill` and `/skill:plugin-skill` count unless
-/// the sigil continues a word or path, so `${CLAUDE_PLUGIN_ROOT}/cli/sdlc`
+/// the sigil continues a word or path, so `${CLAUDE_PLUGIN_ROOT}/bin/tool`
 /// and `a/b:c` are not calls. A bare `/skill` is riskier, so its `/` must
 /// start a line or follow whitespace or one of `` ( " ' ` * > `` (but not the
 /// `(` of a markdown link destination, `[site](/docs)`), and the name must not
@@ -2228,7 +2426,8 @@ fn advance_past(line_end: usize, len: usize) -> usize {
 // --- Fragment selection -----------------------------------------------------
 
 /// The slice of `body` a fragment addresses: `#^id` a block, anything else a
-/// heading path, no fragment the whole body. `source_label` names the file
+/// heading path, no fragment the whole body — Obsidian's rules, as
+/// `markdown-contract`'s `select` reads them. `source_label` names the file
 /// being selected *from* in a refusal, because the author's fix is there —
 /// not in the file that asked.
 fn select_fragment(
@@ -2236,239 +2435,16 @@ fn select_fragment(
     fragment: Option<&str>,
     source_label: &str,
 ) -> Result<String, CoreError> {
-    match fragment {
-        None => Ok(body.trim().to_owned()),
-        Some(fragment) => match fragment.strip_prefix('^') {
-            Some(block_id) => extract_block(body, block_id, source_label),
-            None => extract_heading(body, fragment, source_label),
-        },
-    }
-}
-
-/// The section a heading selector addresses: the heading line through the
-/// line before the next heading of equal or shallower level, so nested
-/// subsections travel with their parent.
-///
-/// A selector may be a path (`Parent#Child`): the last segment names the
-/// heading, the leading ones constrain its ancestry, which is how two
-/// same-named headings under different parents are told apart.
-///
-/// A heading's own text may contain `#` (`Learn C#`), so the whole trimmed
-/// selector is tried as one heading first. Only when no heading has exactly
-/// that text is the selector split into a path.
-fn extract_heading(body: &str, selector: &str, source_label: &str) -> Result<String, CoreError> {
-    let whole = [selector.trim()];
-    let path: Vec<&str> = selector
-        .split('#')
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect();
-    let lines: Vec<&str> = body
-        .split('\n')
-        .map(|line| line.strip_suffix('\r').unwrap_or(line))
-        .collect();
-    let headings = live_headings(&lines);
-    select_heading_path(&lines, &headings, &whole)
-        .or_else(|| select_heading_path(&lines, &headings, &path))
-        .ok_or_else(|| {
-            CoreError::refused(
-                "fragment-unresolved",
-                format!("heading not found in {source_label}: {selector}"),
-            )
-        })
-}
-
-fn select_heading_path(
-    lines: &[&str],
-    headings: &[Option<(usize, &str)>],
-    wanted: &[&str],
-) -> Option<String> {
-    // The open heading at each level — a running table of contents, so the
-    // ancestry constraint can be checked at the moment a candidate appears.
-    let mut ancestry: [Option<&str>; 6] = [None; 6];
-
-    for (index, heading) in headings.iter().enumerate() {
-        let Some((level, text)) = *heading else {
-            continue;
+    markdown_contract::select::fragment(body, fragment).ok_or_else(|| {
+        let missing = match fragment.and_then(|f| f.strip_prefix('^')) {
+            Some(block_id) => format!("block not found in {source_label}: ^{block_id}"),
+            None => format!(
+                "heading not found in {source_label}: {}",
+                fragment.unwrap_or_default()
+            ),
         };
-        ancestry[level - 1] = Some(text);
-        for deeper in ancestry.iter_mut().skip(level) {
-            *deeper = None;
-        }
-        if wanted.last() != Some(&text) {
-            continue;
-        }
-        if wanted.len() > 1 {
-            let ancestors: Vec<&str> = ancestry[..level]
-                .iter()
-                .flatten()
-                .filter(|t| !t.is_empty())
-                .copied()
-                .collect();
-            let tail_start = ancestors.len().saturating_sub(wanted.len());
-            if ancestors[tail_start..].join("#") != wanted.join("#") {
-                continue;
-            }
-        }
-
-        let mut end = index + 1;
-        while end < lines.len() {
-            if let Some((next_level, _)) = headings[end]
-                && next_level <= level
-            {
-                break;
-            }
-            end += 1;
-        }
-        return Some(lines[index..end].join("\n").trim().to_owned());
-    }
-
-    None
-}
-
-/// The block a `^id` marker addresses. Three shapes:
-///
-/// * A marker alone on its line labels the paragraph or list *above* it
-///   (skipping blank lines).
-/// * A marker at the end of a list item labels that one item.
-/// * A marker at the end of a paragraph line labels the whole paragraph,
-///   walked back to a blank line or heading.
-///
-/// The marker itself never survives into the selection — it is an address,
-/// not content.
-fn extract_block(body: &str, block_id: &str, source_label: &str) -> Result<String, CoreError> {
-    let lines: Vec<&str> = body
-        .split('\n')
-        .map(|line| line.strip_suffix('\r').unwrap_or(line))
-        .collect();
-
-    for (index, &line) in lines.iter().enumerate() {
-        let Some(caret_at) = block_marker_position(line, block_id) else {
-            continue;
-        };
-
-        if line.trim() == format!("^{block_id}") {
-            let mut end = index as isize - 1;
-            while end >= 0 && lines[end as usize].trim().is_empty() {
-                end -= 1;
-            }
-            if end < 0 {
-                // A marker with nothing above it labels nothing; fall through
-                // to the not-found refusal rather than inventing an empty
-                // block.
-                break;
-            }
-            let end = end as usize;
-            let mut start = end;
-            while start > 0
-                && !lines[start - 1].trim().is_empty()
-                && parse_heading(lines[start - 1]).is_none()
-            {
-                start -= 1;
-            }
-            return Ok(lines[start..=end].join("\n").trim().to_owned());
-        }
-
-        let cleaned = line[..caret_at].trim_end();
-        if is_list_item(line) {
-            return Ok(cleaned.trim().to_owned());
-        }
-        let mut start = index;
-        while start > 0
-            && !lines[start - 1].trim().is_empty()
-            && parse_heading(lines[start - 1]).is_none()
-        {
-            start -= 1;
-        }
-        let mut block: Vec<&str> = lines[start..index].to_vec();
-        block.push(cleaned);
-        return Ok(block.join("\n").trim().to_owned());
-    }
-
-    Err(CoreError::refused(
-        "fragment-unresolved",
-        format!("block not found in {source_label}: ^{block_id}"),
-    ))
-}
-
-/// [`parse_heading`] for each line, `None` in fenced code: a `#` line there is
-/// code, and ending a section on it would cut the fence open.
-fn live_headings<'a>(lines: &[&'a str]) -> Vec<Option<(usize, &'a str)>> {
-    let mut fences = Fences::new(CodeRules::SkillExport);
-    lines
-        .iter()
-        .map(|line| match fences.line(line.as_bytes()) {
-            FenceLine::Outside => parse_heading(line),
-            FenceLine::Marker | FenceLine::Inside => None,
-        })
-        .collect()
-}
-
-/// `^ {0,3}(#{1,6})\s+(.+?)\s*$` — an ATX heading's level and text, with any
-/// closing `#` sequence stripped (see [`without_closing_hashes`]). The regex's
-/// `\s+` then `.+?` means a bare `##` or `## ` is *not* a heading, while `##  `
-/// (whitespace standing in for text) is one with empty text — which still
-/// resets deeper ancestry but can never be selected.
-fn parse_heading(line: &str) -> Option<(usize, &str)> {
-    let mut indent = 0;
-    let bytes = line.as_bytes();
-    while indent < 3 && bytes.get(indent) == Some(&b' ') {
-        indent += 1;
-    }
-    let rest = &line[indent..];
-    let hashes = rest.bytes().take_while(|b| *b == b'#').count();
-    if hashes == 0 || hashes > 6 {
-        return None;
-    }
-    let after = &rest[hashes..];
-    let mut chars = after.chars();
-    // `\s+` — at least one whitespace after the hashes…
-    if !chars.next()?.is_whitespace() {
-        return None;
-    }
-    // …and `.+?` — at least one character after that.
-    chars.next()?;
-    Some((hashes, without_closing_hashes(after.trim())))
-}
-
-/// Drops a closing `#` run, which CommonMark counts only when a space or tab
-/// precedes it (or it is the whole text): `Learn C#` keeps its `#`.
-fn without_closing_hashes(text: &str) -> &str {
-    let before_hashes = text.trim_end_matches('#');
-    if before_hashes.is_empty() || before_hashes.ends_with([' ', '\t']) {
-        before_hashes.trim_end()
-    } else {
-        text
-    }
-}
-
-/// `(?:^|\s)\^id\s*$` — the byte offset of the `^` when `line` ends with the
-/// marker, `None` otherwise.
-fn block_marker_position(line: &str, block_id: &str) -> Option<usize> {
-    let trimmed = line.trim_end();
-    let before_id = trimmed.strip_suffix(block_id)?;
-    let before_caret = before_id.strip_suffix('^')?;
-    if before_caret.is_empty() || before_caret.ends_with(|c: char| c.is_whitespace()) {
-        Some(before_caret.len())
-    } else {
-        None
-    }
-}
-
-/// `^\s*(?:[-+*]|\d+[.)])\s+` — is this line a list item?
-fn is_list_item(line: &str) -> bool {
-    let rest = line.trim_start();
-    if let Some(after_bullet) = rest.strip_prefix(['-', '+', '*']) {
-        return after_bullet.starts_with(|c: char| c.is_whitespace());
-    }
-    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
-    if digits == 0 {
-        return false;
-    }
-    match rest[digits..].strip_prefix(['.', ')']) {
-        Some(after_marker) => after_marker.starts_with(|c: char| c.is_whitespace()),
-        None => false,
-    }
+        CoreError::refused("fragment-unresolved", missing)
+    })
 }
 
 #[cfg(test)]
@@ -2485,12 +2461,14 @@ mod tests {
     }
 
     fn source<'a>(bundle_root: Option<&'a Path>) -> CompileSource<'a> {
-        CompileSource {
-            vault_root: Path::new("/vault"),
-            entry_path: Path::new("/vault/plugins/demo/demo.md"),
-            bundle_root,
-            skill_name: "demo",
-            calls: None,
+        {
+            let mut value = CompileSource::new(
+                Path::new("/vault"),
+                Path::new("/vault/plugins/demo/demo.md"),
+                "demo",
+            );
+            value.bundle_root = bundle_root;
+            value
         }
     }
 
@@ -2796,12 +2774,10 @@ mod tests {
 
         let raw = read_utf8(&vfs, &entry).unwrap();
         let (_, body) = split_frontmatter(&raw);
-        let compile_source = CompileSource {
-            vault_root: &root,
-            entry_path: &entry,
-            bundle_root: Some(&bundle),
-            skill_name: "workflow-checklist",
-            calls: None,
+        let compile_source = {
+            let mut value = CompileSource::new(&root, &entry, "workflow-checklist");
+            value.bundle_root = Some(&bundle);
+            value
         };
         let compiled = compile_note(&vfs, &compile_source, body).unwrap();
 
@@ -2847,12 +2823,10 @@ mod tests {
             (&inside_entry, Some(&aliased_bundle)),
         ];
         for (entry, bundle) in cases {
-            let compile_source = CompileSource {
-                vault_root: &vault,
-                entry_path: entry,
-                bundle_root: bundle,
-                skill_name: "demo",
-                calls: None,
+            let compile_source = {
+                let mut value = CompileSource::new(&vault, entry, "demo");
+                value.bundle_root = bundle;
+                value
             };
             let err = compile_note(&vfs, &compile_source, "# Demo\n").unwrap_err();
             // The early check names the root it refused; a later failure in
@@ -2866,12 +2840,10 @@ mod tests {
         }
 
         // The same tree, spelled inside the vault, compiles.
-        let compile_source = CompileSource {
-            vault_root: &vault,
-            entry_path: &inside_entry,
-            bundle_root: Some(&inside_bundle),
-            skill_name: "demo",
-            calls: None,
+        let compile_source = {
+            let mut value = CompileSource::new(&vault, &inside_entry, "demo");
+            value.bundle_root = Some(&inside_bundle);
+            value
         };
         compile_note(&vfs, &compile_source, "# Demo\n").unwrap();
     }
@@ -2948,6 +2920,73 @@ mod tests {
             compiled.body.contains("The nested one."),
             "{}",
             compiled.body
+        );
+    }
+
+    // --- Resolution at the edges, as `resolve_strict` reads them ------------
+
+    #[test]
+    fn a_partial_path_names_the_one_file_whose_path_ends_with_it() {
+        // The bare name `x` is shared, but only one path ends with `sub/x`.
+        let vfs = demo_vault();
+        write(&vfs, "/vault/One/sub/x.md", b"One sub.\n");
+        write(&vfs, "/vault/Two/x.md", b"Two.\n");
+        let compiled = compile_note(&vfs, &source(None), "![[sub/x]]\n").unwrap();
+        assert_eq!(compiled.body, "One sub.\n");
+
+        // Two paths ending with it are still ambiguous.
+        write(&vfs, "/vault/Two/sub/x.md", b"Two sub.\n");
+        let message = compile_note(&vfs, &source(None), "![[sub/x]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("link-ambiguous"), "{message}");
+        assert!(
+            message.contains("(One/sub/x.md, Two/sub/x.md)"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn a_dot_slash_target_is_relative_to_the_linking_note() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/near.md", b"At the root.\n");
+        write(&vfs, "/vault/plugins/demo/near.md", b"Beside the entry.\n");
+        let compiled = compile_note(&vfs, &source(None), "![[near]]\n\n![[./near]]\n").unwrap();
+        // The bare name is the exact vault path; `./` is the linking note's
+        // folder.
+        assert_eq!(compiled.body, "At the root.\n\nBeside the entry.\n");
+    }
+
+    #[test]
+    fn a_dot_dot_target_is_refused_before_it_resolves() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/up.md", b"One up.\n");
+        let message = compile_note(&vfs, &source(None), "![[../up]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("unsafe-path"), "{message}");
+        assert!(message.contains("../up"), "{message}");
+    }
+
+    #[test]
+    fn a_percent_encoded_target_is_decoded() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/My Note.md", b"Spaced.\n");
+        let compiled = compile_note(&vfs, &source(None), "![[My%20Note]]\n").unwrap();
+        assert_eq!(compiled.body, "Spaced.\n");
+    }
+
+    #[test]
+    fn ambiguous_candidates_are_listed_shortest_path_first() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/Deep/er/Shared2.md", b"Deep.\n");
+        write(&vfs, "/vault/Two/Shared2.md", b"Two.\n");
+        let message = compile_note(&vfs, &source(None), "[[Shared2]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("(Two/Shared2.md, Deep/er/Shared2.md)"),
+            "{message}"
         );
     }
 
@@ -3169,15 +3208,18 @@ mod tests {
         vfs.set_executable(Path::new("/vault/skills/demo/scripts/run.sh"), true)
             .unwrap();
 
-        let ns = Namespace::default();
+        let ns = Namespace::sw();
         let mut note = read_vault_skill(&vfs, Path::new("/vault/skills/demo.md"), &ns).unwrap();
-        let compile_source = CompileSource {
-            vault_root: Path::new("/vault"),
-            entry_path: Path::new("/vault/skills/demo.md"),
+        let name = note.projection.content.name.clone();
+        let compile_source = {
+            let mut value = CompileSource::new(
+                Path::new("/vault"),
+                Path::new("/vault/skills/demo.md"),
+                &name,
+            );
             // The vault-canonical peer folder is this note's bundle root.
-            bundle_root: Some(Path::new("/vault/skills/demo")),
-            skill_name: &note.projection.content.name.clone(),
-            calls: None,
+            value.bundle_root = Some(Path::new("/vault/skills/demo"));
+            value
         };
         compile_projection(&vfs, &compile_source, &mut note.projection).unwrap();
 
@@ -3216,15 +3258,16 @@ mod tests {
         let compiled = compile_note(
             &vfs,
             &source(None),
-            "See [[Docs/manual.pdf|notes [2\\]].\n\n![[Media/pic.png|Diagram]]\n\n![[Media/pic.png|640x480]]\n",
+            "See [[Docs/manual.pdf|notes \\ 3]].\n\n![[Media/pic.png|Diagram]]\n\n![[Media/pic.png|640x480]]\n",
         )
         .unwrap();
-        // `[`, `]`, `\` in an alias are escaped so the label cannot break the
-        // link syntax around it.
+        // A `\` in an alias is escaped so the label cannot break the link
+        // syntax around it. (A `[` or `]` cannot reach a label: a wikilink
+        // holding one is not a link.)
         assert!(
             compiled
                 .body
-                .contains("[notes \\[2\\\\](references/vault/Docs/manual.pdf)"),
+                .contains("[notes \\\\ 3](references/vault/Docs/manual.pdf)"),
             "{}",
             compiled.body
         );
@@ -3239,6 +3282,171 @@ mod tests {
                 .body
                 .contains("![pic.png](assets/vault/Media/pic.png)")
         );
+    }
+
+    #[test]
+    fn a_wikilink_holding_a_bracket_or_code_or_no_target_is_refused() {
+        // markdown-link's reading: `[[` does not nest, a `[` or `]` inside
+        // ends the attempt, code inside is blanked, and a link needs a target
+        // or a `#` fragment. None is a link, so each would ship as literal
+        // brackets, and each is refused as leftover syntax.
+        let vfs = demo_vault();
+        const BRACKET: &str = "a `[` or `]` comes before its closing `]]`";
+        for (body, written, why) in [
+            ("A [[Shared|see [1]]] B\n", "[[Shared|see ", BRACKET),
+            ("A [[x]y]] B\n", "[[x", BRACKET),
+            (
+                "A [[`Shared`]] B\n",
+                "[[`Shared`]]",
+                "its target is only code",
+            ),
+            ("A [[]] B\n", "[[]]", "it has no target"),
+            ("A [[ |alone]] B\n", "[[ |alone]]", "it has no target"),
+            ("A ![[TODO\nB [[ later\n", "![[TODO", BRACKET),
+            ("A [[TODO\nB\n", "[[TODO", "it has no closing `]]`"),
+        ] {
+            let err = compile_note(&vfs, &source(None), body)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("unresolved-syntax"), "{body:?}: {err}");
+            assert!(
+                err.contains(&format!("in SKILL.md: {written} (not a link: {why})")),
+                "{body:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_markdown_link_beside_a_bracket_is_not_a_leftover() {
+        // CommonMark link text may start with a `[`, and a wikilink after a
+        // literal `[` compiles to a Markdown link inside that `[`. Neither is
+        // a wikilink gone wrong.
+        let vfs = demo_vault();
+        for body in [
+            "See [[WIP] Fix parser](https://example.com/pull/1).\n",
+            "See [[RFC] Design][rfc].\n\n[rfc]: https://example.com\n",
+            "See [[[Shared]]].\n",
+        ] {
+            let compiled = compile_note(&vfs, &source(None), body);
+            assert!(compiled.is_ok(), "{body:?}: {:?}", compiled.err());
+        }
+        // A bracket that opens no Markdown link is still refused, and a blank
+        // line ends the search whatever its line endings or spaces.
+        for body in [
+            "See [[WIP] Fix parser.\n",
+            "See [[WIP] x\r\n\r\nthen](https://example.com)\r\n",
+            "See [[WIP] x\n  \t\nthen](https://example.com)\n",
+        ] {
+            let err = compile_note(&vfs, &source(None), body)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("unresolved-syntax"), "{body:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_wikilink_with_code_in_part_of_its_target_is_refused() {
+        // markdown-link blanks code before it reads a target, so a target
+        // with code in it would resolve against the blanked text: the code
+        // would vanish, or the link would reach another note. It is left as
+        // written, so it is refused as leftover syntax.
+        let vfs = demo_vault();
+        for (body, written) in [
+            ("A [[My `code` note]]\n", "[[My `code` note]]"),
+            ("B [[Shared `v2`]]\n", "[[Shared `v2`]]"),
+        ] {
+            let err = compile_note(&vfs, &source(None), body)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(&format!(
+                    "in SKILL.md: {written} (not a link: its target has code in it)"
+                )),
+                "{body:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_leftover_bracket_in_code_or_a_comment_or_a_resources_frontmatter_passes() {
+        // Code and HTML comments are content, and a resource's frontmatter
+        // travels as written: none of them is read as markdown links.
+        assert!(
+            validate_no_obsidian_syntax(
+                "`a[[0` and\n\n```\n[[TODO\n```\n<!-- [[draft -->\n",
+                0,
+                "SKILL.md",
+                "demo",
+                &BTreeSet::new(),
+            )
+            .is_ok()
+        );
+        let resource = "---\nmatrix: [[1, 2], [3]]\n---\nBody.\n";
+        assert!(
+            validate_no_obsidian_syntax(
+                resource,
+                body_start(resource),
+                "references/x.md",
+                "demo",
+                &BTreeSet::new()
+            )
+            .is_ok()
+        );
+        let err =
+            validate_no_obsidian_syntax(resource, 0, "references/x.md", "demo", &BTreeSet::new())
+                .unwrap_err()
+                .to_string();
+        assert!(err.contains("unresolved-syntax"), "{err}");
+    }
+
+    #[test]
+    fn a_call_in_code_in_a_links_alias_is_part_of_that_alias() {
+        // The link spans the code, so a call found inside that code is not
+        // a token of its own.
+        let vfs = demo_vault();
+        let compiled = compile_note(&vfs, &source(None), "[[Shared|`/[[called]]`]]\n").unwrap();
+        assert!(
+            compiled
+                .body
+                .contains("[`/\\[\\[called\\]\\]`](references/vault/Shared.md)"),
+            "{}",
+            compiled.body
+        );
+    }
+
+    #[test]
+    fn a_refusal_quotes_a_table_cells_target_without_the_pipes_escape() {
+        let vfs = demo_vault();
+        let message = compile_note(&vfs, &source(None), "| [[../up\\|Up]] |\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("unsafe-path"), "{message}");
+        assert!(message.ends_with("../up"), "{message}");
+    }
+
+    #[test]
+    fn a_pipe_escaped_for_a_table_cell_is_not_part_of_the_target() {
+        let vfs = demo_vault();
+        let compiled = compile_note(
+            &vfs,
+            &source(None),
+            "| Doc |\n|---|\n| [[Shared\\|the shared note]] |\n",
+        )
+        .unwrap();
+        assert!(
+            compiled
+                .body
+                .contains("| [the shared note](references/vault/Shared.md) |"),
+            "{}",
+            compiled.body
+        );
+    }
+
+    #[test]
+    fn a_block_fragment_is_read_without_the_space_after_its_caret() {
+        let vfs = demo_vault();
+        let compiled = compile_note(&vfs, &source(None), "![[Blocks#^ example]]\n").unwrap();
+        assert_eq!(compiled.body, "Block content for export.\n");
     }
 
     #[test]
@@ -3312,7 +3520,7 @@ mod tests {
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0].kind, TokenKind::Embed);
         assert_eq!(tokens[0].destination, "x");
-        assert_eq!(tokens[0].alias, Some("alias"));
+        assert_eq!(tokens[0].alias.as_deref(), Some("alias"));
         assert_eq!(&markdown[tokens[0].start..tokens[0].end], "![[x|alias]]");
         assert_eq!(tokens[1].kind, TokenKind::Link);
         assert_eq!(tokens[1].alias, None);
@@ -3322,11 +3530,11 @@ mod tests {
     #[test]
     fn heading_and_block_extraction_follow_obsidian() {
         let body = "# Parent\n\n## Selected\n\nText.\n\n### Child\n\nChild text.\n\n## Later\n\n- Item one\n- Item two\n\n^list-block\n";
-        let section = extract_heading(body, "Parent#Selected", "fixture.md").unwrap();
+        let section = select_fragment(body, Some("Parent#Selected"), "fixture.md").unwrap();
         assert!(section.contains("### Child"));
         assert!(!section.contains("## Later"));
         assert_eq!(
-            extract_block(body, "list-block", "fixture.md").unwrap(),
+            select_fragment(body, Some("^list-block"), "fixture.md").unwrap(),
             "- Item one\n- Item two"
         );
     }
@@ -3334,17 +3542,19 @@ mod tests {
     #[test]
     fn a_heading_inside_a_fence_neither_ends_nor_starts_a_section() {
         let body = "## PR body\n\nTemplate:\n\n```md\n## Summary\n<why>\n\n~~~\n# Not closed by this\n~~~\n```\n\nAfter the fence.\n\n## Next\n\nOther.\n";
-        let section = extract_heading(body, "PR body", "pr-body.md").unwrap();
+        let section = select_fragment(body, Some("PR body"), "pr-body.md").unwrap();
         assert!(section.contains("## Summary"), "{section}");
         assert!(section.ends_with("After the fence."), "{section}");
         assert_eq!(section.matches("```").count(), 2, "{section}");
         // A heading only in code is not an address.
-        assert!(extract_heading(body, "Summary", "pr-body.md").is_err());
+        assert!(select_fragment(body, Some("Summary"), "pr-body.md").is_err());
     }
 
     #[test]
     fn a_closing_hash_run_is_stripped_only_after_whitespace() {
-        let text_of = |line: &str| parse_heading(line).map(|(_, text)| text.to_owned());
+        let text_of = |line: &str| {
+            markdown_contract::select::atx_heading(line).map(|(_, text)| text.to_owned())
+        };
         for (line, expected) in [
             ("## foo ##", "foo"),
             ("###   bar    ###", "bar"),
@@ -3366,14 +3576,14 @@ mod tests {
     #[test]
     fn a_heading_ending_in_a_hash_is_not_selected_by_its_hashless_prefix() {
         let body = "## Learn C#\n\nbody\n\n## Next\n";
-        assert!(extract_heading(body, "Learn C", "b.md").is_err());
+        assert!(select_fragment(body, Some("Learn C"), "b.md").is_err());
     }
 
     #[test]
     fn a_selector_naming_a_heading_that_ends_in_a_hash_resolves() {
         let body = "## Learn C#\n\nbody\n\n## Next\n";
         assert_eq!(
-            extract_heading(body, "Learn C#", "b.md").unwrap(),
+            select_fragment(body, Some("Learn C#"), "b.md").unwrap(),
             "## Learn C#\n\nbody"
         );
     }
@@ -3382,7 +3592,7 @@ mod tests {
     fn a_whole_selector_match_wins_over_the_path_reading() {
         let body = "# A\n\npath\n\n## B\n\npath child\n\n# A#B\n\nwhole\n";
         assert_eq!(
-            extract_heading(body, "A#B", "b.md").unwrap(),
+            select_fragment(body, Some("A#B"), "b.md").unwrap(),
             "# A#B\n\nwhole"
         );
     }
@@ -3390,7 +3600,10 @@ mod tests {
     #[test]
     fn a_block_marker_on_a_list_item_selects_that_item_alone() {
         let body = "- one ^here\n- two\n";
-        assert_eq!(extract_block(body, "here", "b.md").unwrap(), "- one");
+        assert_eq!(
+            select_fragment(body, Some("^here"), "b.md").unwrap(),
+            "- one"
+        );
     }
 
     #[test]
@@ -3398,7 +3611,7 @@ mod tests {
         // Two `Details` headings; the path picks the one under Second.
         let body =
             "# First\n\n## Details\n\nfirst details\n\n# Second\n\n## Details\n\nsecond details\n";
-        let section = extract_heading(body, "Second#Details", "b.md").unwrap();
+        let section = select_fragment(body, Some("Second#Details"), "b.md").unwrap();
         assert!(section.contains("second details"), "{section}");
         assert!(!section.contains("first details"), "{section}");
     }
@@ -3427,13 +3640,17 @@ mod tests {
         skills: SkillSource<'_>,
         body: &str,
     ) -> Result<(CompiledNote, Vec<DiscoveryWarning>), CoreError> {
-        let render = |skill: &IndexedSkill| Ok(format!("/{}", skill.call_id()));
+        let render = |skill: &IndexedSkill, mention: bool| {
+            let sigil = if mention { "" } else { "/" };
+            Ok(format!("{sigil}{}", skill.call_id()))
+        };
         let calls = CallContext {
             skills,
             render: &render,
             target: "test",
             implicit: true,
             warnings: RefCell::new(Vec::new()),
+            record: None,
         };
         let source = CompileSource {
             calls: Some(&calls),
@@ -3480,10 +3697,10 @@ mod tests {
     fn only_an_escape_lets_the_notation_through_validation() {
         let shown = BTreeSet::from(["/[[called]]".to_owned()]);
         assert!(
-            validate_no_obsidian_syntax("Esc /[[called]].", "SKILL.md", "demo", &shown).is_ok()
+            validate_no_obsidian_syntax("Esc /[[called]].", 0, "SKILL.md", "demo", &shown).is_ok()
         );
         for leftover in ["Esc [[called]].", "Esc /[[other]].", "Esc x[[called]]."] {
-            let err = validate_no_obsidian_syntax(leftover, "SKILL.md", "demo", &shown)
+            let err = validate_no_obsidian_syntax(leftover, 0, "SKILL.md", "demo", &shown)
                 .unwrap_err()
                 .to_string();
             assert!(err.contains("unresolved-syntax"), "{leftover}: {err}");
@@ -3573,13 +3790,12 @@ mod tests {
         assert_eq!(before.body, "Run `/tools:called`.\n");
         assert_eq!(before.closures["SKILL.md"].calls, vec!["tools:called"]);
         assert_eq!(after.closures["SKILL.md"].calls, vec!["tools:renamed"]);
-        let owner = "plugins/demo/demo.md";
         assert_ne!(
             before.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"), owner)
+                .hash(&vfs, Path::new("/vault"))
                 .unwrap(),
             after.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"), owner)
+                .hash(&vfs, Path::new("/vault"))
                 .unwrap(),
         );
     }
@@ -3818,13 +4034,13 @@ mod tests {
         let err = try_compile_with(
             &vfs,
             SkillSource::lazy(&build),
-            "Run `/sdlc:called`, `/sdlc:unknown` and /called.\n",
+            "Run `/other:called`, `/other:unknown` and /called.\n",
         )
         .unwrap_err()
         .to_string();
         // The plugin is not checked, and a bare call has no plugin to match.
         assert!(err.contains("1 literal skill call in demo"), "{err}");
-        assert!(err.contains("`/sdlc:called`"), "{err}");
+        assert!(err.contains("`/other:called`"), "{err}");
     }
 
     #[test]
@@ -3879,13 +4095,14 @@ mod tests {
         let vfs = demo_vault();
         write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
         let skills = call_index("called");
-        let render = |skill: &IndexedSkill| Ok(skill.name.clone());
+        let render = |skill: &IndexedSkill, _| Ok(skill.name.clone());
         let calls = CallContext {
             skills: SkillSource::ready(&skills),
             render: &render,
             target: "the vault",
             implicit: false,
             warnings: RefCell::new(Vec::new()),
+            record: None,
         };
         let source = CompileSource {
             calls: Some(&calls),
@@ -3914,5 +4131,56 @@ mod tests {
         write(&vfs, "/vault/Snippet.md", b"Then run `\\/tools:called`.\n");
         let compiled = compile_with_calls(&vfs, &literal_index(), "# Demo\n\n![[Snippet]]\n");
         assert_eq!(compiled.body, "# Demo\n\nThen run `/tools:called`.\n");
+    }
+
+    // --- Wikilink parsing and resolution -------------------------------------
+
+    /// Obsidian wikilinks never cross lines: a stray `[[` is refused on its
+    /// own, and the refusal does not take in the lines after it.
+    #[test]
+    fn an_unclosed_wikilink_does_not_swallow_the_lines_after_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/note.md", b"# Note\n");
+        let err = compile_note(
+            &vfs,
+            &source(None),
+            "Start [[foo\n\n| a | b |\n|---|---|\n| x | [[note]] |\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("[[foo"), "{err}");
+        assert!(!err.contains("| a |"), "{err}");
+        assert!(!err.contains("[[note"), "{err}");
+    }
+
+    /// A dot in a note's name is not an extension: `[[v1.2 notes]]` finds
+    /// `v1.2 notes.md`, as Obsidian does.
+    #[test]
+    fn a_note_name_with_a_dot_resolves_to_the_note() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/v1.2 notes.md", b"# Notes\n");
+        let compiled = compile_note(&vfs, &source(None), "See [[v1.2 notes]].\n").unwrap();
+        assert!(
+            compiled.body.starts_with("See [v1.2 notes.md]("),
+            "{}",
+            compiled.body
+        );
+        assert!(compiled.closures["SKILL.md"].unresolved.is_empty());
+        // A real extension that names nothing is still unresolved.
+        let compiled = compile_note(&vfs, &source(None), "See [[gone.pdf]].\n").unwrap();
+        assert_eq!(compiled.body, "See gone.pdf.\n");
+    }
+
+    /// A size alias is image geometry, not words for the page.
+    #[test]
+    fn an_unresolved_embed_with_a_size_alias_shows_the_target() {
+        let vfs = demo_vault();
+        let compiled = compile_note(
+            &vfs,
+            &source(None),
+            "A ![[missing.png|100]] and ![[gone.png|640x480]] here.\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "A missing.png and gone.png here.\n");
     }
 }

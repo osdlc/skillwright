@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "${CLAUDE_PLUGIN_ROOT}/cli/sdlc session notify",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session notify",
             "type": "command"
           }
         ]
@@ -14,7 +14,7 @@
       {
         "hooks": [
           {
-            "command": "${CLAUDE_PLUGIN_ROOT}/cli/sdlc session end",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session end",
             "type": "command"
           }
         ]
@@ -24,7 +24,7 @@
       {
         "hooks": [
           {
-            "command": "${CLAUDE_PLUGIN_ROOT}/cli/sdlc session start",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session start",
             "timeout": 5,
             "type": "command"
           }
@@ -35,7 +35,7 @@
       {
         "hooks": [
           {
-            "command": "${CLAUDE_PLUGIN_ROOT}/cli/sdlc session stop --harness claude --event Stop",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session stop --harness claude --event Stop",
             "timeout": 10,
             "type": "command"
           }
@@ -46,7 +46,7 @@
       {
         "hooks": [
           {
-            "command": "${CLAUDE_PLUGIN_ROOT}/cli/sdlc session received",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session received",
             "timeout": 5,
             "type": "command"
           }
