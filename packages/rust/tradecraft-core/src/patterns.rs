@@ -167,9 +167,7 @@ struct WorkspaceExclude {
     member: String,
     /// The globs, read from the workspace folder.
     globs: Vec<String>,
-    /// The workspace file as a refusal names it: `../../skillwright.md`, or
-    /// its absolute path when it was found through a link, where `../../`
-    /// names another folder.
+    /// The workspace file as a refusal names it ([`crate::paths::WorkspaceAt::label`]).
     file: String,
 }
 
@@ -196,15 +194,10 @@ impl Patterns {
         {
             root.inherit(&shared);
             if !shared.build.exclude.is_empty() {
-                let file = if at.through_link {
-                    at.file.display().to_string()
-                } else {
-                    format!("../../{ROOT_FILE}")
-                };
                 workspace_exclude = Some(WorkspaceExclude {
                     member: format!("{WORKSPACE_DIR}/{}", at.member),
                     globs: shared.build.exclude,
-                    file,
+                    file: at.label(),
                 });
             }
         }
@@ -627,6 +620,30 @@ pub fn workspace_exclude_warnings(vfs: &dyn Vfs, workspace_root: &Path) -> Vec<D
         .iter()
         .filter(|glob| !matches_some(&files, glob))
         .map(|glob| unmatched("build.exclude", glob, " in the workspace's marketplaces"))
+        .collect()
+}
+
+/// [`workspace_exclude_warnings`] for the workspace above the member at
+/// `member_root`, each named as the member's messages name the workspace
+/// file: `../../skillwright.md`, or its absolute path when the workspace was
+/// found through a link. Nothing outside a workspace.
+pub fn member_workspace_exclude_warnings(
+    vfs: &dyn Vfs,
+    member_root: &Path,
+) -> Vec<DiscoveryWarning> {
+    let Some(at) = workspace_at(vfs, member_root) else {
+        return Vec::new();
+    };
+    let Some(workspace_root) = at.file.parent() else {
+        return Vec::new();
+    };
+    let label = at.label();
+    workspace_exclude_warnings(vfs, workspace_root)
+        .into_iter()
+        .map(|mut warning| {
+            warning.path.clone_from(&label);
+            warning
+        })
         .collect()
 }
 

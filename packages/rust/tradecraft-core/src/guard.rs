@@ -125,24 +125,17 @@ impl Resolver for VfsResolver<'_> {
 /// empty or relative. The check fails closed: neither `true` nor `false`
 /// would be safe for every caller.
 pub(crate) fn within(vfs: &dyn Vfs, outer: &Path, inner: &Path) -> Result<bool, CoreError> {
-    let resolver = VfsResolver {
+    guarded(
         vfs,
-        failure: RefCell::new(None),
-    };
-    let answer = Guard::new(&resolver).contains(outer, inner);
-    if let Some(failure) = resolver.failure.into_inner() {
-        return Err(failure);
-    }
-    answer.map_err(|err| {
-        CoreError::refused(
-            "unsafe-path",
+        |guard| guard.contains(outer, inner),
+        || {
             format!(
-                "cannot compare {} with {}: {err}. Nothing was written",
+                "cannot compare {} with {}",
                 inner.display(),
                 outer.display()
-            ),
-        )
-    })
+            )
+        },
+    )
 }
 
 /// `path` with every link on the way resolved, as far as it exists, and the
@@ -153,21 +146,32 @@ pub(crate) fn within(vfs: &dyn Vfs, outer: &Path, inner: &Path) -> Result<bool, 
 /// `refused: unsafe-path`, as [`within`]: on a host failure other than a
 /// missing path or a non-link, and when `path` is empty or relative.
 pub(crate) fn real_path(vfs: &dyn Vfs, path: &Path) -> Result<PathBuf, CoreError> {
+    guarded(
+        vfs,
+        |guard| guard.real_path(path),
+        || format!("cannot resolve {}", path.display()),
+    )
+}
+
+/// Runs `op` on a [`Guard`] over `vfs`. A host failure the resolver kept
+/// comes first; any other error is `refused: unsafe-path`, led by `what`.
+fn guarded<T, E: std::fmt::Display>(
+    vfs: &dyn Vfs,
+    op: impl FnOnce(&Guard<&VfsResolver<'_>>) -> Result<T, E>,
+    what: impl FnOnce() -> String,
+) -> Result<T, CoreError> {
     let resolver = VfsResolver {
         vfs,
         failure: RefCell::new(None),
     };
-    let answer = Guard::new(&resolver).real_path(path);
+    let answer = op(&Guard::new(&resolver));
     if let Some(failure) = resolver.failure.into_inner() {
         return Err(failure);
     }
     answer.map_err(|err| {
         CoreError::refused(
             "unsafe-path",
-            format!(
-                "cannot resolve {}: {err}. Nothing was written",
-                path.display()
-            ),
+            format!("{}: {err}. Nothing was written", what()),
         )
     })
 }

@@ -18,8 +18,8 @@ use tradecraft_core::{
 };
 
 use crate::config::{
-    ROOT_FILE, RootFile, WORKSPACE_DIR, is_convention_vault, normalize_join, resolve_against_cwd,
-    user_skills_dir, workspace_above, workspace_members,
+    ROOT_FILE, RootFile, WORKSPACE_DIR, is_convention_vault, resolve_against_cwd, user_skills_dir,
+    workspace_members,
 };
 use crate::exit::{blocked, no_config};
 
@@ -461,33 +461,14 @@ pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
 /// What a run in one member says about the workspace above it: each
 /// workspace `build.exclude` glob that matches nothing in any of its
 /// marketplaces, as a run at the workspace root says it, named by the
-/// workspace file's path from the member. That is `../../skillwright.md`
-/// when it reaches the file from the member as typed, and the file's absolute
-/// path when the workspace was found through a link. Nothing outside a
-/// workspace.
+/// workspace file's path from the member
+/// ([`tradecraft_core::patterns::member_workspace_exclude_warnings`]).
+/// Nothing outside a workspace.
 pub fn member_workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
     if run.is_workspace() {
         return Vec::new();
     }
-    let Some(file) = workspace_above(&run.vault) else {
-        return Vec::new();
-    };
-    let Some(workspace) = file.parent() else {
-        return Vec::new();
-    };
-    let relative = format!("../../{ROOT_FILE}");
-    let label = if normalize_join(&run.vault, Path::new(&relative)) == file {
-        relative
-    } else {
-        file.display().to_string()
-    };
-    tradecraft_core::patterns::workspace_exclude_warnings(&NativeVfs, workspace)
-        .into_iter()
-        .map(|mut warning| {
-            warning.path.clone_from(&label);
-            warning
-        })
-        .collect()
+    tradecraft_core::patterns::member_workspace_exclude_warnings(&NativeVfs, &run.vault)
 }
 
 /// The skills root a `--skills-root` or `adopt --into` flag names, resolved

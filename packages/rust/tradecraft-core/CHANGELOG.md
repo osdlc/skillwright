@@ -16,6 +16,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `load_effective_root(vfs, dir, file)`: the root file at `file` with the workspace above `dir` folded in, unless it is a workspace itself. It returns an `EffectiveRoot` with the merged `root`, the `workspace` file folded in, and every warning tagged with its file. It fails with `RootFileError::Unreadable` (also for a `file` that is not there) or `RootFileError::Malformed`; each converts to the `CoreError` the loader gave before. `load_marketplace` is built on it.
 - `path_role(rel)` and `PathRole`: what a vault-relative path is by its shape: the root file, a workspace member's entry, a component's entry, a reserved `<kind>/skillwright.md`, or something else.
 - `entry_file(kind, name)`: the entry file a bundled component is written as, `skillwright.md` for a marketplace and `<name>.md` otherwise.
+- `patterns::member_workspace_exclude_warnings(vfs, member_root)`: `workspace_exclude_warnings` for the workspace above a member, each named as the member names the workspace file (`../../skillwright.md`, or its absolute path when found through a link).
 
 ### Changed
 

@@ -201,6 +201,19 @@ pub(crate) struct WorkspaceAt {
     pub through_link: bool,
 }
 
+impl WorkspaceAt {
+    /// The workspace file as a member's messages name it: `../../skillwright.md`,
+    /// or its absolute path when found through a link, where `../../` names
+    /// another folder.
+    pub(crate) fn label(&self) -> String {
+        if self.through_link {
+            self.file.display().to_string()
+        } else {
+            format!("../../{ROOT_FILE}")
+        }
+    }
+}
+
 /// The workspace above the member at `dir`: `dir` as given first, then its
 /// real path through [`Vfs::canonicalize`]. The first spelling whose
 /// `<ws>/skillwright.md` exists wins, so a member folder that is itself a

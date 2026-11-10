@@ -446,10 +446,12 @@ fn move_note(
             tradecraft_core::PathRole::MarketplaceEntry { .. }
         )
     };
-    match (marketplace_entry(from), marketplace_entry(to)) {
-        (true, true) if bundle => return move_marketplace(vault, from, to, mode, outcome),
-        (true, _) | (_, true) if bundle => return move_folder(vault.dir, from, to, mode, outcome),
-        _ => {}
+    let (from_entry, to_entry) = (marketplace_entry(from), marketplace_entry(to));
+    if bundle && from_entry && to_entry {
+        return move_marketplace(vault, from, to, mode, outcome);
+    }
+    if bundle && (from_entry || to_entry) {
+        return move_folder(vault.dir, from, to, mode, outcome);
     }
     relink_move(vault, from, to, bundle, mode, outcome)
 }
