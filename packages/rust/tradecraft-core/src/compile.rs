@@ -16,7 +16,9 @@
 //! 3. The output is validated: any Obsidian syntax remaining in an emitted
 //!    markdown file is a refusal, because a destination has no resolver to
 //!    give it meaning. A `[[` right after a `\` is escaped: it is neither a
-//!    link nor a leftover, and ships as written, backslash included.
+//!    link nor a leftover, and ships as written, backslash included. A
+//!    resource's frontmatter ships as written too; it is read as YAML, and a
+//!    string in it that holds a link is refused.
 //!
 //! [`crate::vault::read_vault_skill`] still reads the body verbatim — the
 //! vault's bytes are canonical and a read must not rewrite them. Compilation
@@ -500,7 +502,8 @@ impl Closure {
 /// * `refused: unsafe-path` — an absolute or `..`-carrying link target.
 /// * `refused: path-collision` — two sources claim one output path.
 /// * `refused: unresolved-syntax` — the validation pass found Obsidian syntax
-///   in an emitted markdown file.
+///   in an emitted markdown file's body, or a link in a string of a
+///   resource's frontmatter.
 /// * `refused: skill-call-not-skill` / `skill-call-unresolved` /
 ///   `skill-call-ambiguous` / `skill-call-not-shipped` — with a
 ///   [`CallContext`], a call named a note that is not a skill, nothing,
@@ -589,6 +592,9 @@ pub fn compile_note(
             source.skill_name,
             shown,
         )?;
+        if let Some(yaml) = frontmatter_lossless::split(text).yaml {
+            validate_frontmatter_links(yaml, output_path, source.skill_name)?;
+        }
     }
 
     // Every emitted file's closure contains the file that owns it, so a
@@ -1797,9 +1803,9 @@ type TransclusionHop = (PathBuf, Option<String>);
 ///
 /// That includes a `[[` that is not a link (see [`scan_wiki`]): it would ship
 /// as literal brackets, so its refusal says to write `\[[` for that. An
-/// escaped `\[[` is neither. Only one at or after `body_start` counts, so stray
-/// brackets in a resource's frontmatter, carried as written, are not refused.
-/// A link there still is, as before.
+/// escaped `\[[` is neither. Only links and leftovers at or after
+/// `body_start` count: a resource's frontmatter is YAML, carried as written,
+/// and [`validate_frontmatter_links`] reads it as YAML instead.
 ///
 /// The one exception is `shown`: the `/[[x]]` texts an escape wrote out on
 /// purpose. Only that exact text, `/` included, passes.
@@ -1815,6 +1821,7 @@ fn validate_no_obsidian_syntax(
     let (links, leftovers) = scan_wiki(text, false);
     let link = links
         .iter()
+        .filter(|token| token.start >= body_start)
         .find(|token| {
             let notation = token
                 .start
@@ -1846,6 +1853,46 @@ fn validate_no_obsidian_syntax(
              {written}{why}"
         ),
     ))
+}
+
+/// A resource's frontmatter is YAML and ships as written, so a link in one of
+/// its strings would ship unresolved. Every string key and value is read for
+/// a live `[[link]]` or `![[embed]]`. YAML structure such as `tags: [[a]]` is
+/// a nested list, not a link, and a `[[` in a string that is not a link is
+/// text. Frontmatter that does not parse is not this pass's to check.
+fn validate_frontmatter_links(
+    yaml: &str,
+    output_path: &str,
+    skill_name: &str,
+) -> Result<(), CoreError> {
+    fn first_link(value: &serde_yaml::Value) -> Option<&str> {
+        match value {
+            serde_yaml::Value::String(text) => scan_wiki(text, false)
+                .0
+                .first()
+                .map(|token| &text[token.start..token.end]),
+            serde_yaml::Value::Sequence(items) => items.iter().find_map(first_link),
+            serde_yaml::Value::Mapping(map) => map
+                .iter()
+                .find_map(|(key, value)| first_link(key).or_else(|| first_link(value))),
+            serde_yaml::Value::Tagged(tagged) => first_link(&tagged.value),
+            _ => None,
+        }
+    }
+    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(yaml) else {
+        return Ok(());
+    };
+    match first_link(&value) {
+        None => Ok(()),
+        Some(written) => Err(CoreError::refused(
+            "unresolved-syntax",
+            format!(
+                "compiled skill {skill_name} has a link in the frontmatter of {output_path}: \
+                 {written}; frontmatter ships as written, so the link is not resolved; \
+                 move it into the body"
+            ),
+        )),
+    }
 }
 
 /// Where a composed file's body starts: past its frontmatter, as the strict
@@ -3298,25 +3345,6 @@ mod tests {
     }
 
     #[test]
-    fn a_wikilink_in_resource_frontmatter_fails_validation() {
-        // The transform never touches frontmatter, so a wikilink there rides
-        // into the emitted file — where the validation pass, which scans the
-        // whole emitted text, refuses it.
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/Fm.md",
-            b"---\nrelated: \"[[Blocks]]\"\n---\nBody.\n",
-        );
-
-        let err = compile_note(&vfs, &source(None), "See [[Fm]].\n").unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("unresolved-syntax"), "{message}");
-        assert!(message.contains("demo"), "{message}");
-        assert!(message.contains("references/vault/Fm.md"), "{message}");
-    }
-
-    #[test]
     fn compile_projection_feeds_project_skill_with_compiled_output() {
         // The wiring: vault read → compile → projection. What lands at the
         // destination is the flattened body, the collected references, and
@@ -3607,35 +3635,97 @@ mod tests {
     }
 
     #[test]
-    fn a_leftover_bracket_in_code_or_a_comment_or_a_resources_frontmatter_passes() {
-        // Code and HTML comments are content, and a resource's frontmatter
-        // travels as written: none of them is read as markdown links.
+    fn a_leftover_bracket_in_code_or_a_comment_passes() {
+        // Code and HTML comments are content, not markdown links.
+        let vfs = demo_vault();
+        let body = "`a[[0` and\n\n```\n[[TODO\n```\n<!-- [[draft -->\n";
+        let compiled = compile_note(&vfs, &source(None), body).unwrap();
+        assert_eq!(compiled.body, body);
+    }
+
+    /// A linked note `Fm.md` with `frontmatter` and `Body.`, compiled.
+    fn compile_with_frontmatter(frontmatter: &str) -> Result<(String, CompiledNote), CoreError> {
+        let vfs = demo_vault();
+        let note = format!("---\n{frontmatter}\n---\nBody.\n");
+        write(&vfs, "/vault/Fm.md", note.as_bytes());
+        compile_note(&vfs, &source(None), "See [[Fm]].\n").map(|compiled| (note, compiled))
+    }
+
+    const FM_LINK: &str = "refused: unresolved-syntax: compiled skill demo has a link in the \
+                           frontmatter of references/vault/Fm.md";
+    const FM_WHY: &str = "; frontmatter ships as written, so the link is not resolved; \
+                          move it into the body";
+
+    #[test]
+    fn yaml_structure_in_a_resources_frontmatter_passes() {
+        for frontmatter in ["tags: [[a]]", "matrix: [[1, 2], [3]]"] {
+            let (note, compiled) = compile_with_frontmatter(frontmatter).unwrap();
+            assert_eq!(
+                resource(&compiled, "references/vault/Fm.md").1,
+                note.as_bytes(),
+                "{frontmatter}"
+            );
+        }
+        // The body is still checked.
+        let vfs = demo_vault();
+        write(&vfs, "/vault/Fm.md", b"---\ntags: [[a]]\n---\nSee [[TODO\n");
+        let err = compile_note(&vfs, &source(None), "See [[Fm]].\n")
+            .unwrap_err()
+            .to_string();
         assert!(
-            validate_no_obsidian_syntax(
-                "`a[[0` and\n\n```\n[[TODO\n```\n<!-- [[draft -->\n",
-                0,
-                "SKILL.md",
-                "demo",
-                &BTreeSet::new(),
-            )
-            .is_ok()
+            err.contains("in references/vault/Fm.md: [[TODO (not a link"),
+            "{err}"
         );
-        let resource = "---\nmatrix: [[1, 2], [3]]\n---\nBody.\n";
-        assert!(
-            validate_no_obsidian_syntax(
-                resource,
-                body_start(resource),
-                "references/x.md",
-                "demo",
-                &BTreeSet::new()
-            )
-            .is_ok()
-        );
-        let err =
-            validate_no_obsidian_syntax(resource, 0, "references/x.md", "demo", &BTreeSet::new())
+    }
+
+    #[test]
+    fn a_wikilink_in_resource_frontmatter_fails_validation() {
+        // The transform never touches frontmatter, so a link there would ship
+        // unresolved.
+        let err = compile_with_frontmatter("related: \"[[Blocks]]\"")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, format!("{FM_LINK}: [[Blocks]]{FM_WHY}"));
+    }
+
+    #[test]
+    fn a_link_in_a_nested_frontmatter_string_is_refused() {
+        for (frontmatter, written) in [
+            ("related: [\"[[a]]\", \"[[b]]\"]", "[[a]]"),
+            ("x: {y: \"see [[a]]\"}", "[[a]]"),
+            ("\"[[a]]\": 1", "[[a]]"),
+            ("x:\n  - y: ['![[pic.png]]']", "![[pic.png]]"),
+        ] {
+            let err = compile_with_frontmatter(frontmatter)
                 .unwrap_err()
                 .to_string();
-        assert!(err.contains("unresolved-syntax"), "{err}");
+            assert_eq!(
+                err,
+                format!("{FM_LINK}: {written}{FM_WHY}"),
+                "{frontmatter}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_frontmatter_string_without_a_live_link_passes() {
+        for frontmatter in ["title: \"[[WIP] draft\"", "note: '\\[[x]]'"] {
+            let compiled = compile_with_frontmatter(frontmatter);
+            assert!(compiled.is_ok(), "{frontmatter}: {:?}", compiled.err());
+        }
+    }
+
+    #[test]
+    fn unparsable_resource_frontmatter_is_not_checked() {
+        // `\[` is not a double-quoted YAML escape, so this does not parse.
+        for frontmatter in ["note: \"\\[[x]]\"", "related: [[Blocks]] ]"] {
+            let (note, compiled) = compile_with_frontmatter(frontmatter).unwrap();
+            assert_eq!(
+                resource(&compiled, "references/vault/Fm.md").1,
+                note.as_bytes(),
+                "{frontmatter}"
+            );
+        }
     }
 
     #[test]

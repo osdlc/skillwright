@@ -18,6 +18,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - A plain `[[s]]` to the skill being compiled names the skill, as a link to any other skill does, in its entry, in a note embedded into it, in a file in its bundle and in a vault note it links in. It compiled to a link to `SKILL.md`, and for a `<s>/SKILL.md` skill to the bare text `s`, recorded unresolved. With an implicit `CallContext` it now goes through the `render` closure with `mention: true`; in a recording compile it is a `CallSite` and so a `Segment::Call`. Its id is in that file's `Closure::calls`, so renaming the skill or its plugin changes the hash; `related_of` does not list it in `calls`. A self-link with a `#fragment` stays a link to the heading in `SKILL.md`, and for a `<s>/SKILL.md` skill `[[s#Steps]]` now resolves to it. Output changes for every skill with a self-link. ([#53](https://github.com/osdlc/skillwright/issues/53))
+- `compile_note` reads a resource's frontmatter as YAML when it checks for links. A string key or value holding a live link or embed, such as `related: "[[other]]"`, is refused `unresolved-syntax` with a message saying that frontmatter ships as written and to move the link into the body. YAML structure such as `tags: [[a]]` passes; it was refused, while `matrix: [[1, 2], [3]]` passed. Frontmatter that does not parse as YAML is not checked. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ## [0.49.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.48.0...tradecraft-core/v0.49.0) - 2026-11-10
 

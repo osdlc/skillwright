@@ -1823,3 +1823,22 @@ fn a_skill_and_its_reference_name_the_skill_they_belong_to() {
         assert_eq!(reference, format!("{want}\n"), "{skill}");
     }
 }
+
+#[test]
+fn a_bundle_resource_with_yaml_lists_in_its_frontmatter_builds() {
+    let data = "---\ntags: [[a]]\n---\nData.\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/t/t.md", PLUGIN),
+        ("plugins/t/skills/work/work.md", SKILL),
+        ("plugins/t/skills/work/references/data.md", data),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    let shipped = std::fs::read_to_string(
+        dir.path()
+            .join("dist/.claude-plugin/packs/t/skills/work/references/data.md"),
+    )
+    .unwrap();
+    assert_eq!(shipped, data);
+}
