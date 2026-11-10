@@ -28,11 +28,16 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-10-09T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: disputed
+    date: 2026-11-09T12:00:00Z
 harness: "[Gemini CLI](../../harnesses/Gemini%20CLI.md)"
 subject: "[Lifecycle](../../subjects/meta/Lifecycle.md)"
 scope:
   since: null
-  until: null
+  until: 0.65.0
   platform: []
   model: null
 status: disputed
@@ -42,3 +47,5 @@ imported_from: fact:meta/lifecycle@gemini-cli#scope-[null,null,null]
 Imported from `facts/gemini-cli/meta/lifecycle.md`.
 
 The observations disagree on: note. The latest value is kept.
+
+Research note, 2026-11-09: the sunsetting reading was observed on 2026-10-09, after the 2026-06-18 move, so it was never an accurate reading of the whole harness. It came from one individual-account sign-in failure (IneligibleTierError). The README and changelog show the project continues for enterprise Gemini Code Assist workflows. See the Lifecycle 2 statement.
