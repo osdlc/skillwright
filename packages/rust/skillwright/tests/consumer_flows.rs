@@ -1822,3 +1822,49 @@ fn publish_by_path_refuses_an_invalid_derived_name_without_truncating() {
         assert!(written.is_empty(), "{note}: {written:?}");
     }
 }
+
+#[test]
+fn a_skill_and_its_reference_name_the_skill_they_belong_to() {
+    let note = "---\ndescription: Work.\n---\nPart of [[work]].\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/t/t.md", PLUGIN),
+        ("plugins/t/skills/work/work.md", note),
+        (
+            "plugins/t/skills/work/references/bug-route.md",
+            "Part of [[work]].\n",
+        ),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    let read = |rel: &str| std::fs::read_to_string(dir.path().join(rel)).unwrap();
+    for (skill, named) in [
+        ("dist/.claude-plugin/packs/t/skills/work", "t:work"),
+        ("dist/.pi/packs/t/skills/t-work", "t-work"),
+    ] {
+        let want = format!("Part of `{named}`.");
+        let entry = read(&format!("{skill}/SKILL.md"));
+        assert!(entry.contains(&want), "{skill}: {entry}");
+        let reference = read(&format!("{skill}/references/bug-route.md"));
+        assert_eq!(reference, format!("{want}\n"), "{skill}");
+    }
+}
+
+#[test]
+fn a_bundle_resource_with_yaml_lists_in_its_frontmatter_builds() {
+    let data = "---\ntags: [[a]]\n---\nData.\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/t/t.md", PLUGIN),
+        ("plugins/t/skills/work/work.md", SKILL),
+        ("plugins/t/skills/work/references/data.md", data),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    let shipped = std::fs::read_to_string(
+        dir.path()
+            .join("dist/.claude-plugin/packs/t/skills/work/references/data.md"),
+    )
+    .unwrap();
+    assert_eq!(shipped, data);
+}

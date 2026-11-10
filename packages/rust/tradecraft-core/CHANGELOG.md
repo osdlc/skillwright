@@ -24,6 +24,7 @@ API:
 - A Cursor catalog entry in `.cursor-plugin/marketplace.json` carries the plugin's `displayName`, right after `name`: its `cursor.displayName`, else its `display_name`. It is absent when neither is set.
 - `HarnessProfile::block_keys(kind)`: the keys a harness's block accepts on a note of `kind`. The check, the field reference, the cascade and the manifest merge all read it.
 - `keys::check_shape` and `keys::ShapeRefusal`: one shape check for a key of ours, shared by a note's read and the root file's.
+- The `\[[` escape. A `[[` or `![[` right after an odd run of `\` is neither a link nor a leftover: `compile_note` ships it as written, backslash included, which CommonMark renders as `[[`. Every `unresolved-syntax` refusal of a `[[` that is not a link now ends `; write \[[ to keep the brackets as text`. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ### Changed
 
@@ -31,6 +32,12 @@ API:
 - A cross-plugin name collision on Cursor or Pi names both notes, the published name, the harness and the `<harness>.naming` setting that prefixed the name. The token stays `path-collision`.
 - The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: not a number". Some refusals named `marketplace fields` before.
 - A marketplace block passes down to each plugin only the keys a plugin block reads. Other keys were never merged, so no output changes.
+- `\[[note]]` is no longer a link. It compiled to `\[note.md](…)`, which is broken Markdown; it now ships as written. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
+### Fixed
+
+- A plain `[[s]]` to the skill being compiled names the skill, as a link to any other skill does, in its entry, in a note embedded into it, in a file in its bundle and in a vault note it links in. It compiled to a link to `SKILL.md`, and for a `<s>/SKILL.md` skill to the bare text `s`, recorded unresolved. With an implicit `CallContext` it now goes through the `render` closure with `mention: true`; in a recording compile it is a `CallSite` and so a `Segment::Call`. Its id is in that file's `Closure::calls`, so renaming the skill or its plugin changes the hash; `related_of` does not list it in `calls`. A self-link with a `#fragment` stays a link to the heading in `SKILL.md`, and for a `<s>/SKILL.md` skill `[[s#Steps]]` now resolves to it. Output changes for every skill with a self-link. ([#53](https://github.com/osdlc/skillwright/issues/53))
+- `compile_note` reads a resource's frontmatter as YAML when it checks for links. A string key or value holding a live link or embed, such as `related: "[[other]]"`, is refused `unresolved-syntax` with a message saying that frontmatter ships as written and to move the link into the body. YAML structure such as `tags: [[a]]` passes; it was refused, while `matrix: [[1, 2], [3]]` passed. Frontmatter that does not parse as YAML is not checked. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ## [0.49.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.48.0...tradecraft-core/v0.49.0) - 2026-11-10
 
@@ -58,6 +65,7 @@ Behaviour:
 
 API:
 
+
 - Removed `MISSING_DESCRIPTION`, `DiscoveredComponent::description_filled` and `Cascade::configured`. A serialized `DiscoveredComponent` has no `description_filled` key.
 - Removed `MarketplaceConfig::require_descriptions` and `BuildSettings::require_descriptions`. The refusal is always on. A root file's `build.require_descriptions` is now an unknown key: it warns and is ignored.
 
@@ -83,6 +91,7 @@ Behaviour:
 - `load_marketplace` refuses a root file or workspace file it cannot read, whether its frontmatter is not YAML or a key holds a bad value, as `refused: malformed-root-file`, not `refused: root-file`. A build already used `malformed-root-file` for the same file, so one bad file now has one token.
 
 API:
+
 
 - `vault_config` returns `Result<MarketplaceConfig, CoreError>`. It refuses with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes, as the scan it configures does. It ignored such a workspace file before, so a member silently lost the workspace's namespace, targets, blocks and exclusions. A bad value in another key still gives the default config, or leaves the workspace file out, as before: a build says what is wrong with it. The wasm `discoverComponents` throws when the vault's root file or workspace file cannot say what it excludes.
 - Removed `Patterns::read`, which read a malformed root file as empty. Use `Patterns::load`, which refuses it.
@@ -119,6 +128,7 @@ Behaviour:
 
 API:
 
+
 - Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 
 ## [0.45.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.44.0...tradecraft-core/v0.45.0) - 2026-11-07
@@ -135,6 +145,7 @@ Behaviour:
 - `load` and `load_plugin` fail with `refused: malformed`, not `unreadable-note`, when every skipped note holds a value of the wrong kind, and say so in the text.
 
 API:
+
 
 - `publish::overrides_for` takes the note's `EntityKind` in place of a target name. It folds and checks every block, and returns them all.
 - `SkippedNote::detail` is the prose after the reason token, no longer the whole error. Use `SkippedNote::sentence` for the token and the prose together.

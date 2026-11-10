@@ -11,11 +11,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - `cursor: {naming: prefixed}` on `skillwright.md` or a plugin note publishes that plugin's Cursor skills as `<plugin>-<skill>`, and body calls and mentions name them so. A plugin's value overrides the marketplace's. The default stays bare. A prefixed name that another plugin's skill also publishes under stops the build with `path-collision`.
 - A plugin's Cursor display name reaches its entry in `.cursor-plugin/marketplace.json` as well as its `plugin.json`.
+- Write `\[[` to keep a `[[` as text, such as `\[[TODO`. The build ships it as written, backslash included, and Markdown viewers show `[[TODO`. The error for a `[[` that is not a link now says so. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ### Changed
 
 - `docs/reference/fields.md` states the types `check` accepts, and lists only the harness block keys `check` accepts.
 - A root file value of the wrong shape is refused with the words a note gets, naming the key.
+- `\[[note]]` is no longer a link; it ships as written. It used to build to broken Markdown. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
+### Fixed
+
+- A link from a skill to itself, such as `[[work]]` in the `work` skill or in its `references/bug-route.md`, is written as the skill's name, the way a link to any other skill is: `` `t:work` `` on Claude Code and Codex, `` `t-work` `` on Pi. It was a link to `SKILL.md`. A link with a `#heading` stays a link to that heading. Every skill with such a link builds different output, so `check` reports drift until you rebuild. ([#53](https://github.com/osdlc/skillwright/issues/53))
+- A YAML list in a resource's frontmatter, such as `tags: [[a]]`, no longer fails the build as a link. A quoted link there, such as `related: "[[other]]"`, still fails, and the error now says to move it into the body, since frontmatter ships as written. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ## [0.11.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.11.0) - 2026-11-10
 
