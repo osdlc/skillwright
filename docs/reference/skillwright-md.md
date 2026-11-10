@@ -187,9 +187,9 @@ component of that name. In a workspace, rename the folder and change `name` in i
 Links inside the folder move with it. It rewrites nothing else:
 
 - A wikilink or embed from outside that spells the old path still resolves by file
-  name. If another file has that name, the one nearest the linking note wins: in
-  its own folder, then each folder above it. If two are equally near, the build
-  stops with `link-ambiguous`.
+  name. If another file has that name, the one under the linking note's own
+  folder wins. If there is none there, or several, the build stops with
+  `link-ambiguous`.
 - A plain markdown link from outside goes dead, and nothing reports it.
 - A path in `skillwright.md`, such as a `build.exclude` entry, keeps the old folder.
   The file it excluded then ships, with only an `unmatched-glob` warning. Update

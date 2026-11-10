@@ -1575,6 +1575,54 @@ mod tests {
     }
 
     #[test]
+    fn a_rename_relinks_a_bare_link_a_build_reads_in_the_note_s_own_folder() {
+        // `[[contract]]` names a file in each bundle. A build reads it as the
+        // one in the linking note's bundle, and so does the rename: renaming
+        // that file rewrites the link, so it never falls through to p2's.
+        let v = vault();
+        write(
+            v.path(),
+            "plugins/p1/skills/doc/doc.md",
+            "see [[contract]]\n",
+        );
+        write(
+            v.path(),
+            "plugins/p1/skills/doc/references/contract.md",
+            "one\n",
+        );
+        write(
+            v.path(),
+            "plugins/p2/skills/doc/references/contract.md",
+            "two\n",
+        );
+
+        let entry = v.path().join("plugins/p1/skills/doc/doc.md");
+        let built = tradecraft_core::compile::compile_note(
+            &NativeVfs,
+            &tradecraft_core::compile::CompileSource::new(v.path(), &entry, "doc"),
+            "see [[contract]]\n",
+        )
+        .unwrap();
+        assert!(
+            built.body.contains("references/contract.md"),
+            "{}",
+            built.body
+        );
+
+        let op = AuthoringOp::Rename {
+            from: "plugins/p1/skills/doc/references/contract.md".to_owned(),
+            to: "plugins/p1/skills/doc/references/terms.md".to_owned(),
+            bundle: false,
+            frontmatter: vec![],
+        };
+        apply(v.path(), &op).unwrap();
+        assert_eq!(
+            read(v.path(), "plugins/p1/skills/doc/doc.md"),
+            "see [[terms]]\n"
+        );
+    }
+
+    #[test]
     fn a_marketplace_rename_moves_the_folder_and_relinks_notes_outside_it() {
         let v = vault();
         write(

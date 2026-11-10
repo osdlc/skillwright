@@ -11,8 +11,8 @@
 //! manifest, and it is `status`'s job (the status spec).
 //!
 //! A note the scan could not read does not hide the rest of the roster: it
-//! is named on the error sink, one line per note, and the exit is 2: a build
-//! refuses it.
+//! is named on the error sink, one line per note, and the exit is 2 when a
+//! build would refuse it.
 //!
 //! `--model` prints something else: the marketplace model `build` renders
 //! from, loaded by the core's [`load`] with the root file's marketplace
@@ -87,14 +87,14 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
 
     // A roster says where a note goes, so it shows what the note inherits.
     inherit_targets(&mut scan, &run.root_config());
-    // The folders a build reads: the vault, or each member of a workspace.
-    let built = if run.is_workspace() {
+    // A workspace builds only its members; `None` is the whole vault.
+    let members = if run.is_workspace() {
         match read_members(&mut scan, &run, &flags.common, ctx) {
-            Ok(members) => members,
+            Ok(members) => Some(members),
             Err(code) => return code,
         }
     } else {
-        vec![String::new()]
+        None
     };
     scan.warnings.extend(member_workspace_warnings(&run));
 
@@ -173,11 +173,13 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
         );
     }
 
-    // A build refuses a note it could not read, so the exit says so too.
-    let refused_skip = scan.skipped.iter().any(|note| {
-        built
-            .iter()
-            .any(|folder| note.path.starts_with(folder.as_str()))
+    // A build refuses a note it could not read, so the exit says so too. A
+    // member's build reads the workspace's root file as well as its own folder.
+    let refused_skip = scan.skipped.iter().any(|note| match &members {
+        None => true,
+        Some(members) => {
+            note.path == ROOT_FILE || members.iter().any(|m| note.path.starts_with(m.as_str()))
+        }
     });
     if errors.is_empty() && !refused_skip {
         EXIT_OK

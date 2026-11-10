@@ -226,7 +226,10 @@ export interface PluginOverrides {
   /** Default the marketplace `license`, then `UNLICENSED`. */
   license?: string;
 
-  /** Default empty. Also the Claude and Cursor marketplace entry's `tags`. */
+  /**
+   * Default empty. Also the Claude and Cursor marketplace entry's `tags`.
+   * Pi's `package.json` adds `pi-package`.
+   */
   keywords?: string[];
 
   /**
@@ -235,7 +238,10 @@ export interface PluginOverrides {
    */
   category?: string;
 
-  /** Codex only. Default the plugin's name. */
+  /**
+   * Codex's `interface.displayName`, default the plugin's name, and
+   * Cursor's `displayName`, absent by default.
+   */
   display_name?: string;
 
   /**

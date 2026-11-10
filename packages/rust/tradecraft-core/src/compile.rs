@@ -1602,8 +1602,8 @@ impl<'a> Renderer<'a> {
 
     /// One destination string to one vault file, in order:
     /// vault-relative exact match, then relative to the linking file, then a
-    /// unique basename match across the vault, then the one match nearest the
-    /// linking file (see [`nearest_candidate`]).
+    /// unique basename match across the vault, then the one match under the
+    /// linking file's folder (see [`own_folder_candidate`]).
     ///
     /// `Ok(None)` is a link that resolved to nothing — a reportable fact, not
     /// a refusal. A tie is refused `link-ambiguous`: picking one would
@@ -1633,11 +1633,12 @@ impl<'a> Renderer<'a> {
 
         // `markdown-link`'s resolver, refusing to guess: an exact path, the
         // path from the linking note's folder, or the only file the name
-        // matches. A bare name addresses a note (`[[photo]]` is not
-        // `photo.jpg`); a name with an extension addresses that file.
+        // matches; then the only match under the linking note's folder. A
+        // bare name addresses a note (`[[photo]]` is not `photo.jpg`); a name
+        // with an extension addresses that file.
         let from = self.vault_relative(from_file).unwrap_or_default();
         let resolved = match self.index.resolve_strict(target, &from) {
-            Err(ResolveError::Ambiguous(candidates)) => nearest_candidate(candidates, &from),
+            Err(ResolveError::Ambiguous(candidates)) => own_folder_candidate(candidates, &from),
             other => other.map(str::to_owned),
         };
         match resolved {
@@ -1721,29 +1722,28 @@ impl<'a> Renderer<'a> {
     }
 }
 
-/// The one of `candidates` in the nearest folder holding `from`, the linking
-/// file's vault-relative path: its own folder first, then each folder above
-/// it. So a bare link resolves to the match in the note's own skill bundle,
-/// then its plugin, as Obsidian prefers the match closest to the note. The
-/// first folder holding any candidate decides: two there is still
-/// [`ResolveError::Ambiguous`], naming those two.
-fn nearest_candidate(candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
-    let mut folder = from;
-    while let Some((above, _)) = folder.rsplit_once('/') {
-        folder = above;
-        let prefix = format!("{folder}/");
-        let mut within: Vec<String> = candidates
-            .iter()
-            .filter(|path| path.starts_with(&prefix))
-            .cloned()
-            .collect();
-        match within.len() {
-            0 => {}
-            1 => return Ok(within.remove(0)),
-            _ => return Err(ResolveError::Ambiguous(within)),
-        }
+/// The one of `candidates` under the folder of `from`, the linking file's
+/// vault-relative path, compared without case. So a bare link from a skill's
+/// entry resolves to the match in its own bundle. This is the folder
+/// preference `markdown-link`'s `prefer_in_folder` gives, which the rename
+/// relinker reads links by, so a rename and a build agree on what a link
+/// names. None there, or several, is [`ResolveError::Ambiguous`]: several
+/// names only those.
+fn own_folder_candidate(candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
+    let Some((folder, _)) = from.rsplit_once('/') else {
+        return Err(ResolveError::Ambiguous(candidates));
+    };
+    let prefix = format!("{}/", folder.to_lowercase());
+    let mut within: Vec<String> = candidates
+        .iter()
+        .filter(|path| path.to_lowercase().starts_with(&prefix))
+        .cloned()
+        .collect();
+    match within.len() {
+        0 => Err(ResolveError::Ambiguous(candidates)),
+        1 => Ok(within.remove(0)),
+        _ => Err(ResolveError::Ambiguous(within)),
     }
-    Err(ResolveError::Ambiguous(candidates))
 }
 
 /// One embed on the transclusion stack: the file and its fragment. Two embeds
@@ -3020,10 +3020,10 @@ mod tests {
         );
     }
 
-    /// A bare name several folders match resolves to the match nearest the
-    /// linking note: its own folder first, then each folder above it.
+    /// A bare name several folders match resolves to the one match under
+    /// the linking note's folder, as a rename reads it.
     #[test]
-    fn an_ambiguous_name_takes_the_match_nearest_the_linking_note() {
+    fn an_ambiguous_name_takes_the_one_match_under_the_linking_note() {
         let vfs = demo_vault();
         write(&vfs, "/vault/plugins/demo/references/near.md", b"Ours.\n");
         write(
@@ -3033,18 +3033,20 @@ mod tests {
         );
         let compiled = compile_note(&vfs, &source(None), "![[near]]\n").unwrap();
         assert_eq!(compiled.body, "Ours.\n");
-
-        // Neither in the note's plugin: the nearest common folder decides.
-        write(&vfs, "/vault/plugins/one/far.md", b"One.\n");
-        write(&vfs, "/vault/elsewhere/far.md", b"Elsewhere.\n");
-        let compiled = compile_note(&vfs, &source(None), "![[far]]\n").unwrap();
-        assert_eq!(compiled.body, "One.\n");
     }
 
-    /// Two matches equally near are still refused, naming only those two.
+    /// No match under the linking note's folder, or two there, is still
+    /// refused. Two there names only those two.
     #[test]
-    fn a_tie_at_the_nearest_folder_is_refused() {
+    fn no_single_match_under_the_linking_note_is_refused() {
         let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/one/far.md", b"One.\n");
+        write(&vfs, "/vault/elsewhere/far.md", b"Elsewhere.\n");
+        let message = compile_note(&vfs, &source(None), "![[far]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("link-ambiguous"), "{message}");
+
         write(&vfs, "/vault/plugins/demo/a/near.md", b"A.\n");
         write(&vfs, "/vault/plugins/demo/b/near.md", b"B.\n");
         write(&vfs, "/vault/plugins/other/near.md", b"Other.\n");

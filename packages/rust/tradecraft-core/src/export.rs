@@ -387,11 +387,13 @@ pub struct PluginOverrides {
     /// Default the marketplace `license`, then `UNLICENSED`.
     pub license: Option<String>,
     /// Default empty. Also the Claude and Cursor marketplace entry's `tags`.
+    /// Pi's `package.json` adds `pi-package`.
     pub keywords: Option<Vec<String>>,
     /// Codex always writes it, default `Productivity`. Claude and Cursor
     /// write it on the marketplace entry only when it is set.
     pub category: Option<String>,
-    /// Codex only. Default the plugin's name.
+    /// Codex's `interface.displayName`, default the plugin's name, and
+    /// Cursor's `displayName`, absent by default.
     pub display_name: Option<String>,
     /// Which harnesses the plugin's members go to. Default the marketplace
     /// `targets`.

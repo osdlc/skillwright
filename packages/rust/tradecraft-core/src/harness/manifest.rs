@@ -679,8 +679,9 @@ const PI_PACKAGE_KEYWORD: &str = "pi-package";
 /// Pi's pack manifest: a `package.json` naming the pack's `skills/`
 /// directory. Pi itself needs only `pi.skills`; `name`, `version`,
 /// `description`, `author`, `license` and `keywords` are the same fields the
-/// other dialects carry, in their npm places. `keywords` always holds
-/// [`PI_PACKAGE_KEYWORD`], so the pack is listed once it is on npm.
+/// other dialects carry, in their npm places. `keywords` gains
+/// [`PI_PACKAGE_KEYWORD`], so the pack is listed once it is on npm; a
+/// `pi.keywords` block key replaces the whole list, as any block key does.
 pub(crate) fn pi_package_manifest(
     plugin: &str,
     members: &[&str],

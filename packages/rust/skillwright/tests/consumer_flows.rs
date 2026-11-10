@@ -1538,8 +1538,8 @@ fn list_exits_2_when_it_skips_a_note_a_build_refuses() {
     assert_eq!(sw(&dir.path(), &["list"]).code, 0);
 }
 
-/// In a workspace, a build reads only its marketplaces, so only a note
-/// skipped inside one makes `list` exit 2.
+/// In a workspace, a build reads only its marketplaces and the workspace's
+/// root file, so only a note skipped there makes `list` exit 2.
 #[test]
 fn list_in_a_workspace_exits_2_only_for_a_skip_inside_a_marketplace() {
     let dir = vault(&[
@@ -1576,6 +1576,22 @@ build:
     std::fs::create_dir_all(stray.parent().unwrap()).unwrap();
     std::fs::write(&stray, SKILL).unwrap();
     assert_eq!(sw(&dir.path(), &["list"]).code, 2);
+    assert_eq!(sw(&dir.path(), &["build", "--yes"]).code, 2);
+
+    // Each member's build reads the workspace's own root file.
+    std::fs::remove_file(&stray).unwrap();
+    std::fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nname: ws\nworkspace: true\ncodex: {policy: 3}\n---\n",
+    )
+    .unwrap();
+    let list = sw(&dir.path(), &["list"]);
+    assert_eq!(list.code, 2, "{}", list.text);
+    assert!(
+        list.text.contains("skillwright.md  skipped · malformed: "),
+        "{}",
+        list.text
+    );
     assert_eq!(sw(&dir.path(), &["build", "--yes"]).code, 2);
 }
 

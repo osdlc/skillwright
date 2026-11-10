@@ -13,9 +13,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Compile resolves a bare link that matches several files to the match nearest the linking file: in its own folder, then each folder above it. A tie at the nearest folder is still `refused: link-ambiguous`, naming only the tied files. Every match was refused before.
+- Compile resolves a bare link that matches several files to the one match under the linking file's folder, compared without case, as `markdown-link`'s `prefer_in_folder` and so a rename read it. With none there, or several, it is still `refused: link-ambiguous`; several names only those. Every match was refused before.
 - The Codex pack manifest carries `repository` and `homepage`, inherited as for the other dialects. Codex's `PluginFormat::manifest_fields` lists both, so a `codex` block may set them.
-- The Pi `package.json` carries the plugin's `keywords`, with `pi-package` added when it is missing.
+- The Pi `package.json` carries the plugin's `keywords`, with `pi-package` added when it is missing. A `pi.keywords` block key replaces the whole list.
 
 ## [0.48.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.47.0...tradecraft-core/v0.48.0) - 2026-11-10
 

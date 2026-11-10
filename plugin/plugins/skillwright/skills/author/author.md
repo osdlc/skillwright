@@ -69,10 +69,9 @@ A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-v
   slash. The build drops the backslash and keeps the rest as written, in every harness, in prose
   and in code alike. Code alone does not escape a call: in a code span or a fenced block, the
   build still resolves it.
-- A bare `[[name]]` that matches files in several folders resolves to the one nearest the note:
-  in the note's own folder, then each folder above it, such as its skill folder and then its
-  plugin. Two matches equally near is an error, `link-ambiguous`; write more of the path to
-  choose one.
+- A bare `[[name]]` that matches files in several folders resolves to the one match under the
+  note's own folder, such as a file in the skill's `references/`. Otherwise it is an error,
+  `link-ambiguous`; write more of the path to choose one.
 
 ## Steps
 
@@ -95,4 +94,4 @@ A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-v
    An `<entry>` is a note's `name`. Edit a note's body directly; no verb is needed for that.
    `adopt --as` and `adopt --promote` exit `not implemented`.
 3. Run `skillwright list` again and confirm the note shows with the kind, plugin and targets you
-   meant. A note listed as `skipped` names the fix; `list` exits 2 while one is listed, as `build` refuses it.
+   meant. A note listed as `skipped` names the fix; `list` exits 2 when `build` would refuse one.
