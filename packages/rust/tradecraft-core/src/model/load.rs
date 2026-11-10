@@ -639,6 +639,15 @@ pub fn load_plugin(
         ));
     }
 
+    refuse_undescribed(
+        plugin
+            .skills
+            .iter()
+            .chain(&plugin.commands)
+            .filter(|member| member.discovered.lacks_description())
+            .map(|member| member.discovered.vault_relative_path.as_str()),
+    )?;
+
     // A pack's calls name each skill under its own plugin, the way the
     // harness names a plugin's skills.
     let index = skill_index(
@@ -648,14 +657,6 @@ pub fn load_plugin(
             .map(|c| (c, c.plugin.as_deref())),
         Some(links),
     );
-    refuse_undescribed(
-        plugin
-            .skills
-            .iter()
-            .chain(&plugin.commands)
-            .filter(|member| member.discovered.description.is_empty())
-            .map(|member| member.discovered.vault_relative_path.as_str()),
-    )?;
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for member in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {

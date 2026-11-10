@@ -223,6 +223,12 @@ pub struct DiscoveredComponent {
 }
 
 impl DiscoveredComponent {
+    /// A member with a `name` and no `description`, which a build and a
+    /// publish refuse.
+    pub fn lacks_description(&self) -> bool {
+        self.description.is_empty() && needs_description(self.kind)
+    }
+
     /// The folder a container is known by: a plugin's entry note is named for
     /// it, and a marketplace's sits in it as the root file. A marketplace note's
     /// `name` is only what it publishes under.
@@ -515,7 +521,8 @@ pub struct DiscoveryReport {
     pub components: Vec<DiscoveredComponent>,
     /// Every note the scan could not read, in path order.
     pub skipped: Vec<SkippedNote>,
-    /// Notes admitted with something filled in for them, in path order.
+    /// What the scan has to say about notes it admitted, in path order. An
+    /// entry [`DiscoveryWarning::is_error`] names is one a build refuses.
     #[serde(default)]
     pub warnings: Vec<DiscoveryWarning>,
 }
@@ -525,7 +532,7 @@ pub struct DiscoveryReport {
 /// [`DiscoveryReport::warnings`].
 pub const MISSING_DESCRIPTION_REASON: &str = "missing-description";
 
-/// One note the scan admitted, with what it filled in.
+/// One note the scan admitted, and what is wrong with it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct DiscoveryWarning {
@@ -556,7 +563,11 @@ impl DiscoveryWarning {
     /// Whether a build refuses the note this names, rather than ships it: a
     /// member with no description, or a path collision.
     pub fn is_error(&self) -> bool {
-        [MISSING_DESCRIPTION_REASON, "path-collision"].contains(&self.reason.as_str())
+        [
+            MISSING_DESCRIPTION_REASON,
+            crate::publish::ReasonToken::PathCollision.as_str(),
+        ]
+        .contains(&self.reason.as_str())
     }
 }
 
@@ -843,7 +854,7 @@ fn discover_with(
         }
         match read_source(vfs, vault_root, entry_path, placement, &placed, &files, ns) {
             Ok(Some(component)) => {
-                if component.description.is_empty() && needs_description(component.kind) {
+                if component.lacks_description() {
                     warnings.push(missing_description(&component));
                 }
                 if let Some(warning) = unknown_key_warning(
@@ -973,7 +984,7 @@ fn discover_with(
 }
 
 /// Whether a note of `kind` must describe itself to publish. A container
-/// need not, and a hook has no description.
+/// need not, and a hook has no `description` key (see [`crate::keys`]).
 pub(crate) fn needs_description(kind: EntityKind) -> bool {
     !kind.holds_components() && kind != EntityKind::Hook
 }

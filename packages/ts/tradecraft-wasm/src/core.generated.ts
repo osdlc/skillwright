@@ -388,7 +388,7 @@ export interface PublishReason {
  */
 export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "excluded-note" | "missing-description" | "malformed" | "malformed-root-file" | "claimed" | "redundant-override" | "overwritten";
 
-/** One note the scan admitted, with what it filled in. */
+/** One note the scan admitted, and what is wrong with it. */
 export interface DiscoveryWarning {
   /** Vault-relative and forward-slashed, as [`SkippedNote::path`]. */
   path: string;
@@ -643,7 +643,10 @@ export interface DiscoveryReport {
   /** Every note the scan could not read, in path order. */
   skipped: SkippedNote[];
 
-  /** Notes admitted with something filled in for them, in path order. */
+  /**
+   * What the scan has to say about notes it admitted, in path order. An
+   * entry [`DiscoveryWarning::is_error`] names is one a build refuses.
+   */
   warnings: DiscoveryWarning[];
 }
 
@@ -1082,7 +1085,10 @@ export interface ExportReport {
    */
   units: ExportUnit[];
 
-  /** Notes the scan admitted with something filled in, in path order. */
+  /**
+   * What the scan and the build have to say about admitted notes, in path
+   * order.
+   */
   warnings: DiscoveryWarning[];
 }
 

@@ -427,7 +427,8 @@ pub struct ExportReport {
     /// `claude`, `codex`, `cursor`, `pi` order; within a root, plugins by name, then the
     /// manifest, then stale paths, then the members that root cannot carry.
     pub units: Vec<ExportUnit>,
-    /// Notes the scan admitted with something filled in, in path order.
+    /// What the scan and the build have to say about admitted notes, in path
+    /// order.
     #[serde(default)]
     pub warnings: Vec<DiscoveryWarning>,
 }
@@ -3067,9 +3068,9 @@ mod tests {
     }
 
     /// A container need not describe itself: a silent plugin or marketplace
-    /// note ships no filler and carries no warning.
+    /// note carries no warning, and its manifest takes the default.
     #[test]
-    fn a_silent_container_note_ships_no_filler() {
+    fn a_silent_container_note_has_no_warning() {
         let vfs = silent_plugin_vault();
         write(
             &vfs,

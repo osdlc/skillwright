@@ -309,7 +309,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
         if let Err(err) = refuse_undescribed(
             skills
                 .iter()
-                .filter(|c| c.description.is_empty())
+                .filter(|c| c.lacks_description())
                 .map(|c| c.vault_relative_path.as_str()),
         ) {
             return blocked(ctx.err, &err.to_string());

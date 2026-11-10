@@ -22,6 +22,7 @@ API:
 ### Added
 
 - `refuse_undescribed(paths)`: the `missing-description` refusal for the notes named.
+- `DiscoveredComponent::lacks_description`: a skill, command or agent with no description.
 - `DiscoveryWarning::is_error`: whether a build refuses the note a warning names (`missing-description` or `path-collision`).
 - `ReasonToken::MissingDescription` (`missing-description`). It is in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`.
 
