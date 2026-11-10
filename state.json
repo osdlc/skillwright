@@ -1,12 +1,101 @@
 {
   "schema": 1,
   "pr": 120,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "2b12c7fdff4b82fc5754ec23a2cb3c0e4214644d",
+  "base": "8a932fac79cdb31b6b5c7b242273274803071e2c",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-r7v2qm",
     "at": "2026-11-10T03:58:51.552Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/statements/Pi/Pi Install method.md",
+      "line": 7,
+      "title": "Install methods lost their evidence in the prune; both kept quotes are about pi update",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/statements/Claude Code/Claude Code Effort level flag.md",
+      "line": 10,
+      "title": "CLAUDE_CODE_EFFORT_LEVEL and its precedence lost their only quote in the prune",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/statements/Claude Code/Claude Code System prompt flags.md",
+      "line": 10,
+      "title": "The -file variants lost their only quotes in the prune",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/statements/Claude Code/Claude Code Run limits.md",
+      "line": 11,
+      "title": "CLAUDE_CODE_MAX_TURNS and the print-only rule for --max-turns lost their quotes in the prune",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/statements/Cursor/Cursor Tool allow and deny rules.md",
+      "line": 9,
+      "title": "Deny-over-allow precedence and the Mcp rule form lost their quotes in the prune",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/statements/Codex CLI/Codex CLI Marketplace fields.md",
+      "line": 104,
+      "title": "New strong line quotes the curated cache path under CODEX_HOME, not the repo marketplace file",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "harness-reference/corpora/beta/statements/Gemini CLI/Gemini CLI Effort level flag.md",
+      "line": 14,
+      "title": "Absence-in-help evidence is graded three different ways across harnesses",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "Prune orphaned 30 existing study results and left 16 statements citing documents no evidence reaches",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
