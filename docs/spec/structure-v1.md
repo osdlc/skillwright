@@ -66,6 +66,11 @@ code and is part of this spec.
    and `node_modules`. A plugin named `docs` or `tests` ships normally.
 7. A note with a `description` in a never-ship folder under a kind folder warns
    that it will not ship.
+8. One exception to rule 2: `publish <path>` publishes a note that no kind
+   folder and no `build.patterns` glob places as a skill, when the path is named.
+   The note is not part of the vault. `list`, `check`, `build` and
+   `publish --all` do not include it. Use `build.patterns` to bring a folder in
+   for every command, and an explicit path to publish one note once.
 
 ## 3. Components
 
