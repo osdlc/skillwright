@@ -260,7 +260,7 @@ value stops `build` and `check`, as any note the scan refuses does.
 Two skills that would land on one folder, such as `review` in two plugins, stop
 every publish with `path-collision`, whether the notes are named or not. This
 includes a named note outside every kind folder that shares a vault skill's name. The refusal names the notes, and nothing is written. Set a
-different `name:` in one of them. A bare `publish` writes skills only. A plugin's pack, an agent and a command
+different `name:` in all but one of them. A bare `publish` writes skills only. A plugin's pack, an agent and a command
 publish when their note is named.
 
 ## Publishing one note by path

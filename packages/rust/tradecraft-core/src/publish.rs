@@ -752,7 +752,7 @@ pub struct SkillClaim {
     /// matched on this.
     pub entry_path: PathBuf,
     /// The note as messages name it: relative to the vault root. For display
-    /// only, because a note outside the vault falls back to its file name.
+    /// only: claims are matched on `entry_path`.
     pub path: String,
     /// The note's `targets`, inherited ones included. `None` is every target.
     pub targets: Option<Vec<String>>,
