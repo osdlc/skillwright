@@ -62,9 +62,6 @@ pub struct Cascade {
     /// The request's config with the marketplace note over it, and each plugin
     /// note in [`MarketplaceConfig::plugins`].
     pub config: MarketplaceConfig,
-    /// The vault-relative paths of the silent notes whose description the
-    /// request supplied.
-    pub configured: BTreeSet<String>,
     /// The marketplace folded in, which a note under no marketplace folder
     /// takes as its own.
     market: Option<String>,
@@ -81,7 +78,6 @@ impl Cascade {
         requested: &MarketplaceConfig,
     ) -> Self {
         let mut config = requested.clone();
-        let mut configured = BTreeSet::new();
 
         // A marketplace's own note belongs to no marketplace, so its folder
         // finds it — see `DiscoveredComponent::marketplace`.
@@ -93,9 +89,7 @@ impl Cascade {
         if let Some(note) = note {
             config.name = Some(note.name.clone());
             // A marketplace describes itself where a skill describes itself.
-            if take_description(&mut config.description, note) {
-                configured.insert(note.vault_relative_path.clone());
-            }
+            take_description(&mut config.description, note);
             take(&mut config.display_name, note.identity.display_name.clone());
             take(&mut config.owner, note.identity.owner.clone());
             take(&mut config.author, note.identity.author.clone());
@@ -130,9 +124,7 @@ impl Cascade {
             let overrides = config.plugins.entry(note.folder().to_owned()).or_default();
             // A plugin note describes its pack in the same place a skill note
             // describes itself.
-            if take_description(&mut overrides.description, note) {
-                configured.insert(note.vault_relative_path.clone());
-            }
+            take_description(&mut overrides.description, note);
             take(&mut overrides.version, note.identity.version.clone());
             take(&mut overrides.author, note.identity.author.clone());
             take(&mut overrides.license, note.identity.license.clone());
@@ -150,7 +142,6 @@ impl Cascade {
 
         Self {
             config,
-            configured,
             market: market.map(str::to_owned),
             requested_targets: requested.targets.clone(),
         }
@@ -484,21 +475,12 @@ fn take<T>(slot: &mut Option<T>, from: Option<T>) {
     }
 }
 
-/// [`take`] for a note's `description`. A note with none carries discovery's
-/// [`crate::discover::MISSING_DESCRIPTION`] filler, which is the vault being
-/// silent: it yields to the request's value and stands in only where the
-/// request is silent too. Returns whether the request's value stood in for
-/// the filler. A container note with neither `name` nor `description` is
-/// silent altogether and leaves the slot alone.
-fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) -> bool {
-    if note.description.is_empty() {
-        return false;
-    }
-    if !note.description_filled || slot.is_none() {
+/// [`take`] for a note's `description`. A container note that writes none
+/// is silent and leaves the request's value in place.
+fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) {
+    if !note.description.is_empty() {
         *slot = Some(note.description.clone());
-        return false;
     }
-    true
 }
 
 #[cfg(test)]

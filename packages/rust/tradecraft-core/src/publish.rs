@@ -370,6 +370,8 @@ pub enum ReasonToken {
     MixedFrontmatterShape,
     /// `build.exclude` or a folder that never ships holds the note.
     ExcludedNote,
+    /// A member note has a `name` and no `description`.
+    MissingDescription,
     /// A note or root file that parsed holds a value of the wrong kind or
     /// shape for a key it sets, bare or in a harness block.
     Malformed,
@@ -423,6 +425,7 @@ impl ReasonToken {
         Self::ExcludedNote,
         Self::Malformed,
         Self::MalformedRootFile,
+        Self::MissingDescription,
     ];
 
     /// The wire spelling, which prose never varies from.
@@ -448,6 +451,7 @@ impl ReasonToken {
             Self::ExcludedNote => "excluded-note",
             Self::Malformed => "malformed",
             Self::MalformedRootFile => "malformed-root-file",
+            Self::MissingDescription => crate::discover::MISSING_DESCRIPTION_REASON,
             Self::Claimed => "claimed",
             Self::RedundantOverride => "redundant-override",
             Self::Overwritten => "overwritten",
@@ -5089,6 +5093,7 @@ mod tests {
                 "excluded-note",
                 "malformed",
                 "malformed-root-file",
+                "missing-description",
             ]
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));
