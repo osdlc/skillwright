@@ -771,7 +771,8 @@ impl From<&DiscoveredComponent> for SkillClaim {
 
 /// The claim [`publish_skill`] would make for the note at `skill_path`, read
 /// the way it reads it, with `skills_root` and `config` as the request's.
-/// `None` when the note's kind is not [`EntityKind::Skill`].
+/// `None` when the note's kind is not [`EntityKind::Skill`], or when the note
+/// is outside `skills_root`, where its publish refuses it.
 ///
 /// # Errors
 ///
@@ -798,9 +799,14 @@ pub fn skill_claim(
     let read = match read_for_publish(vfs, skill_path, Some(skills_root), config, ns, |kind| {
         kind == EntityKind::Skill
     })? {
-        Read::Note(read) => read,
-        Read::Stopped(_) => return Ok(None),
+        ReadOutcome::Note(read) => read,
+        ReadOutcome::Stopped(_) => return Ok(None),
     };
+    // A note outside the vault never publishes: its load refuses it
+    // `unsafe-path`, so it claims no folder.
+    if !read.in_vault.starts_with(skills_root) {
+        return Ok(None);
+    }
     let path = vault_relative(skills_root, &read.in_vault);
     // The load refuses such a name, so the note claims no folder.
     let name = &read.note.projection.content.name;
@@ -911,10 +917,10 @@ fn publish_onto(
         ns,
         kind_has_renderer,
     )? {
-        Read::Note(read) => *read,
+        ReadOutcome::Note(read) => *read,
         // Everything a renderer cannot take is refused here, before the
         // renderer builds the wrong file.
-        Read::Stopped(resolved) => {
+        ReadOutcome::Stopped(resolved) => {
             return Err(no_renderer_for(
                 &request.skill_path,
                 resolved.kind,
@@ -1154,7 +1160,7 @@ struct NoteRead {
 }
 
 /// What [`read_for_publish`] gives back.
-enum Read {
+enum ReadOutcome {
     /// The note, read and with its cascade applied.
     Note(Box<NoteRead>),
     /// The note's kind is not one the caller reads past. Nothing past the
@@ -1186,7 +1192,7 @@ fn read_for_publish(
     config: Option<&MarketplaceConfig>,
     ns: &Namespace,
     reads_past: impl FnOnce(EntityKind) -> bool,
-) -> Result<Read, CoreError> {
+) -> Result<ReadOutcome, CoreError> {
     // The folder holding the note decides its kind, before the read: the
     // kind says which of the note's keys are skillwright's.
     // Read once, and refused when malformed: an exclusion that cannot be read
@@ -1206,7 +1212,7 @@ fn read_for_publish(
     let resolved = publish_kind(placed, &in_vault);
     let mut note = read_vault_note(vfs, &in_vault, ns, resolved.kind)?;
     if !reads_past(resolved.kind) {
-        return Ok(Read::Stopped(resolved));
+        return Ok(ReadOutcome::Stopped(resolved));
     }
     let own_unknown = unknown_keys(&note.frontmatter, resolved.kind);
 
@@ -1221,7 +1227,7 @@ fn read_for_publish(
         crate::discover::folder_placement_with(patterns, root, &in_vault).plugin
     });
     cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
-    Ok(Read::Note(Box::new(NoteRead {
+    Ok(ReadOutcome::Note(Box::new(NoteRead {
         in_vault,
         resolved,
         note,
@@ -6774,6 +6780,16 @@ mod tests {
         ] {
             assert_eq!(claim_of(&vfs, note).unwrap(), None, "{note}");
         }
+    }
+
+    #[test]
+    fn skill_claim_is_none_for_a_note_outside_the_vault() {
+        let vfs = vault_with_root_file();
+        vfs.create_dir_all(Path::new("/elsewhere")).unwrap();
+        vfs.write_file(Path::new("/elsewhere/greet.md"), NOTE.as_bytes())
+            .unwrap();
+
+        assert_eq!(claim_of(&vfs, "/elsewhere/greet.md").unwrap(), None);
     }
 
     #[test]

@@ -2312,24 +2312,19 @@ fn publish_by_path_refuses_two_named_notes_with_one_name() {
     assert_eq!(dest_listing(&dir), Vec::<String>::new());
 }
 
+/// A note outside the vault never publishes, so it is refused for that, not
+/// as a collision with the vault skill of the same name.
 #[test]
-fn publish_by_path_refuses_a_note_outside_the_vault_with_a_vault_skill_s_name() {
+fn a_note_outside_the_vault_is_refused_for_its_own_reason_not_as_a_collision() {
     let dir = vault(&[("skillwright.md", ROOT), ("skills/greet/greet.md", REAL)]);
     let outside = dir.0.path().join("outside/greet.md");
     std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
     std::fs::write(&outside, STRAY).unwrap();
 
     let ran = publish_to_dest(&dir, &[outside.to_str().unwrap()], &["--yes"]);
-    assert_eq!(ran.code, 2, "{}", ran.text);
-    assert!(
-        ran.stderr.contains(&two_note_refusal(
-            "greet.md",
-            "skills/greet/greet.md",
-            "greet"
-        )),
-        "{}",
-        ran.text
-    );
+    assert_ne!(ran.code, 0, "{}", ran.text);
+    assert!(ran.text.contains("unsafe-path"), "{}", ran.text);
+    assert!(!ran.text.contains("path-collision"), "{}", ran.text);
     assert_eq!(dest_listing(&dir), Vec::<String>::new());
 }
 

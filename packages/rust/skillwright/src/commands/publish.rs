@@ -193,7 +193,8 @@ fn named_claims(
             );
         }
         // Anything else, such as a malformed root file, refuses every
-        // publish below for the same reason.
+        // publish below for the same reason. Defensive: the CLI stops at
+        // `configuration malformed` before reaching here.
         Err(_) => {}
     }
     claims
