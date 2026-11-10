@@ -476,7 +476,7 @@ fn a_failed_write_is_refused_on_its_row_and_the_others_are_still_reported() {
 }
 
 #[test]
-fn changed_since_a_git_ref_builds_it_in_a_worktree_and_cleans_up() {
+fn changed_since_a_git_ref_builds_it_in_a_temp_folder_and_cleans_up() {
     let dir = project("  bump:\n    patch: timestamp\n");
     let root = dir.path();
     git(root, &["init", "--quiet", "--initial-branch", "main"]);
@@ -500,7 +500,7 @@ fn changed_since_a_git_ref_builds_it_in_a_worktree_and_cleans_up() {
     let widget = rows.iter().find(|r| r["plugin"] == "widget").unwrap();
     assert_eq!(widget["status"], "unchanged", "{rows:?}");
 
-    // The temporary worktree is gone, and nothing was built into `market/`.
+    // No worktree was left registered, and nothing was built into `market/`.
     let worktrees = git(root, &["worktree", "list", "--porcelain"]);
     assert_eq!(worktrees.matches("worktree ").count(), 1, "{worktrees}");
     assert!(!root.join("market").exists());

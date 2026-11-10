@@ -6,7 +6,8 @@
 //! <ref|dir>` raises every plugin whose rendered members differ from a
 //! baseline and whose version has not moved since: a directory is a built
 //! marketplace as it stands, and anything else is a git ref, built in a
-//! temporary worktree with the ref's own copy of the root file.
+//! temporary folder with the ref's own copy of the root file. Only the files
+//! that build reads are checked out there.
 //!
 //! A version that does not parse as plain `MAJOR.MINOR.PATCH` is refused
 //! rather than guessed at ([`tradecraft_core::next_version`]); an absent
@@ -14,7 +15,7 @@
 //! has never carried the key is bumped, not refused. The root file's
 //! `build.bump.patch` picks how the patch number is written ([`PatchScheme`]).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -25,10 +26,10 @@ use tradecraft_core::{
     MarketplaceConfig, Namespace, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs,
     apply_field_edits, check_packs, discover_components, export_skills, in_plugin_folder,
     next_version, ns_field_edits, ns_field_label, owned_paths, packs_path, parse_semver,
-    plugin_folder_in, plugin_manifest_path, read_ns_field,
+    plugin_folder_in, plugin_manifest_path, read_ns_field, workspace_file,
 };
 
-use crate::commands::marketplace::configured_request;
+use crate::commands::marketplace::{configured_request, marketplace_inputs};
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
@@ -896,7 +897,8 @@ impl Row {
 }
 
 /// What `--changed-since` compares against: a built directory as it is, or
-/// a git ref built into a temporary directory that is removed on drop.
+/// a git ref checked out and built in a temporary folder that is removed on
+/// drop.
 enum Baseline {
     Dir(PathBuf),
     Built(BuiltRef),
@@ -937,9 +939,10 @@ const GUARD_FILE: &str = "guard";
 /// Keeps two claims in one process and one clock tick apart.
 static NEXT_CLAIM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// A git ref checked out into a temporary worktree and built there.
+/// A git ref's build inputs checked out into a temporary folder, and built
+/// there. No worktree is registered and the repository's own index is not
+/// touched.
 struct BuiltRef {
-    repo: PathBuf,
     temp: PathBuf,
     checkout: PathBuf,
     out: PathBuf,
@@ -1034,32 +1037,29 @@ impl BuiltRef {
         // Canonical: on macOS the temp dir sits behind the `/var` link.
         let temp = temp.canonicalize().unwrap_or(temp);
         let built = BuiltRef {
-            repo: repo.clone(),
             checkout: temp.join("checkout"),
             out: temp.join("out"),
             temp,
             lock_path,
             _lock: lock,
         };
-        // Hooks off and LFS left as pointers: the checkout runs nothing of the
-        // repository's and fetches nothing.
-        if let Err(err) = typed_git::git()
-            .dir(&repo)
-            .env("GIT_LFS_SKIP_SMUDGE", "1")
-            .args(&[
-                "-c",
-                "core.hooksPath=/dev/null",
-                "worktree",
-                "add",
-                "--detach",
-                "--quiet",
-            ])
-            .arg(built.checkout.to_string_lossy())
-            .arg(&sha)
-            .run()
-        {
-            return fail(ctx, format!("checking it out failed: {err}"));
+        // Git refuses a work tree that is not there.
+        if let Err(err) = std::fs::create_dir(&built.checkout) {
+            return fail(
+                ctx,
+                format!("cannot create {}: {err}", built.checkout.display()),
+            );
         }
+        let index = built.temp.join("index");
+        // The root files first: the ref's build inputs are known only once
+        // its root file is read.
+        let root_files = match path_set(&repo, &sha, root_file_candidates(&repo, &config_path))
+            .and_then(|set| {
+                check_out_paths(&repo, &sha, &index, &built.checkout, &set).map(|()| set)
+            }) {
+            Ok(set) => set,
+            Err(err) => return fail(ctx, format!("checking it out failed: {err}")),
+        };
 
         let Some(base_config) = ref_root_file(&built.checkout, &config_rel) else {
             return fail(
@@ -1081,6 +1081,16 @@ impl BuiltRef {
             .unwrap_or(&built.checkout)
             .to_path_buf();
         let base_run = resolve_run(&common, &base_cwd, ctx.err)?;
+        if root_files != [WHOLE_TREE]
+            && let Err(err) = path_set(
+                &repo,
+                &sha,
+                build_input_candidates(&built.checkout, &base_run),
+            )
+            .and_then(|set| check_out_paths(&repo, &sha, &index, &built.checkout, &set))
+        {
+            return fail(ctx, format!("checking it out failed: {err}"));
+        }
         let request = configured_request(&base_run, market, built.out.clone(), ExportMode::Build);
         // The ref's own `build.out` may be committed, and is output, not source.
         let vfs = base_run.export_vfs(None, &built.out);
@@ -1099,6 +1109,209 @@ impl BuiltRef {
         }
         Ok(built)
     }
+}
+
+/// The path set that stands for the whole tree.
+const WHOLE_TREE: &str = ".";
+
+/// `path` relative to `top`, forward-slashed, [`WHOLE_TREE`] for `top`
+/// itself. `None` for a path outside `top`, which is not a git path.
+fn relative_to(top: &Path, path: &Path) -> Option<String> {
+    let rel = path.strip_prefix(top).ok()?;
+    let parts: Vec<String> = rel
+        .components()
+        .map(|part| match part {
+            std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    Some(if parts.is_empty() {
+        WHOLE_TREE.to_owned()
+    } else {
+        parts.join("/")
+    })
+}
+
+/// What finding the ref's root file reads, relative to `repo`: the run's
+/// root file, [`ROOT_FILE`] in its folder (as [`ref_root_file`] falls back
+/// to), and the workspace file a member inherits from.
+fn root_file_candidates(repo: &Path, config_path: &Path) -> Vec<String> {
+    let dir = config_path.parent();
+    [
+        Some(config_path.to_path_buf()),
+        dir.map(|dir| dir.join(ROOT_FILE)),
+        dir.and_then(workspace_file),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|path| relative_to(repo, &path))
+    .collect()
+}
+
+/// What the ref's build reads besides its root files, relative to
+/// `checkout`: the vault, and each asset and hooks source. The sources come
+/// from [`marketplace_inputs`], as the build's own request does; a path the
+/// core learns to read outside the vault must be added there or here. A
+/// source outside the checkout is read from disk and is left out.
+fn build_input_candidates(checkout: &Path, run: &ResolvedRun) -> Vec<String> {
+    let inputs = marketplace_inputs(run);
+    std::iter::once(run.vault.clone())
+        .chain(inputs.assets.into_iter().map(|asset| asset.source))
+        .chain(inputs.hooks.into_iter().map(|hook| hook.source))
+        .filter_map(|path| relative_to(checkout, &path))
+        .collect()
+}
+
+/// What to check out for `candidates`, repo-relative paths at `sha`: the
+/// candidates the ref holds, with every `.gitattributes` above them, since
+/// a path checkout applies only the attributes it checks out. `[WHOLE_TREE]`
+/// when a candidate is the repository top or a symlink sits in, above or
+/// under one: a link can point anywhere, and the whole tree reads it as a
+/// full checkout does.
+///
+/// # Errors
+///
+/// The git failure, as the line to print.
+fn path_set(repo: &Path, sha: &str, candidates: Vec<String>) -> Result<Vec<String>, String> {
+    let mut set: BTreeSet<String> = candidates.into_iter().collect();
+    if set.contains(WHOLE_TREE) {
+        return Ok(vec![WHOLE_TREE.to_owned()]);
+    }
+    let attributes: Vec<String> = set.iter().flat_map(|path| attribute_files(path)).collect();
+    set.extend(attributes);
+    // A path inside another in the set comes with it.
+    let set: Vec<String> = set
+        .iter()
+        .filter(|path| {
+            !set.iter().any(|outer| {
+                path.strip_prefix(outer.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'))
+            })
+        })
+        .cloned()
+        .collect();
+    if has_symlink(repo, sha, &set)? {
+        return Ok(vec![WHOLE_TREE.to_owned()]);
+    }
+    paths_at_ref(repo, sha, &set)
+}
+
+/// The `.gitattributes` in each folder above `path`, the top included.
+fn attribute_files(path: &str) -> Vec<String> {
+    let parts: Vec<&str> = path.split('/').collect();
+    (0..parts.len())
+        .map(|depth| match parts[..depth].join("/") {
+            folder if folder.is_empty() => ".gitattributes".to_owned(),
+            folder => format!("{folder}/.gitattributes"),
+        })
+        .collect()
+}
+
+/// `git` in `repo`, reading every pathspec as a literal path: a `*` or `[`
+/// in a folder name is part of the name.
+fn literal_git(repo: &Path) -> typed_git::GitCommand {
+    let mut cmd = typed_git::git();
+    cmd.dir(repo).env("GIT_LITERAL_PATHSPECS", "1");
+    cmd
+}
+
+/// Whether `sha` holds a symlink at, above or under any of `paths`.
+/// Non-recursively, a link above a path shows as itself, since `ls-tree`
+/// cannot descend through it.
+fn has_symlink(repo: &Path, sha: &str, paths: &[String]) -> Result<bool, String> {
+    if paths.is_empty() {
+        return Ok(false);
+    }
+    let chain: BTreeSet<String> = paths
+        .iter()
+        .flat_map(|path| {
+            let parts: Vec<&str> = path.split('/').collect();
+            (1..=parts.len()).map(move |depth| parts[..depth].join("/"))
+        })
+        .collect();
+    let links = |recursive: bool, paths: &mut dyn Iterator<Item = &String>| {
+        let mut cmd = literal_git(repo);
+        cmd.args(&["ls-tree", "-z", "--full-tree"]);
+        if recursive {
+            cmd.arg("-r");
+        }
+        cmd.arg(sha).arg("--");
+        for path in paths {
+            cmd.arg(path);
+        }
+        cmd.run()
+            .map(|listing| {
+                listing
+                    .split('\0')
+                    .any(|entry| entry.starts_with("120000 "))
+            })
+            .map_err(|err| err.to_string())
+    };
+    Ok(links(false, &mut chain.iter())? || links(true, &mut paths.iter())?)
+}
+
+/// The `candidates` that `sha` holds, as a file or a folder, in order.
+fn paths_at_ref(repo: &Path, sha: &str, candidates: &[String]) -> Result<Vec<String>, String> {
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut cmd = literal_git(repo);
+    cmd.args(&["ls-tree", "-z", "--name-only", "--full-tree"])
+        .arg(sha)
+        .arg("--");
+    for candidate in candidates {
+        cmd.arg(candidate);
+    }
+    let listing = cmd.run().map_err(|err| err.to_string())?;
+    let held: Vec<&str> = listing.split('\0').collect();
+    // `ls-tree` lists the deepest match, so a folder may show only as the
+    // entries under it.
+    Ok(candidates
+        .iter()
+        .filter(|candidate| {
+            held.iter().any(|name| {
+                name.strip_prefix(candidate.as_str())
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+            })
+        })
+        .cloned()
+        .collect())
+}
+
+/// Writes `pathspecs` as they are at `sha` into `dest`, which must exist.
+/// Moves no `HEAD` and registers no worktree. An empty set runs nothing,
+/// since a checkout with no pathspec switches `HEAD`.
+fn check_out_paths(
+    repo: &Path,
+    sha: &str,
+    index: &Path,
+    dest: &Path,
+    pathspecs: &[String],
+) -> Result<(), String> {
+    if pathspecs.is_empty() {
+        return Ok(());
+    }
+    let mut cmd = literal_git(repo);
+    // A private index, so the repository's own is never read or written.
+    cmd.env("GIT_INDEX_FILE", index.to_string_lossy())
+        // LFS files stay pointers: nothing is fetched.
+        .env("GIT_LFS_SKIP_SMUDGE", "1")
+        .args(&[
+            "-c",
+            // Runs none of the repository's hooks.
+            "core.hooksPath=/dev/null",
+            "-c",
+            // A sparse repository does not filter the baseline.
+            "core.sparseCheckout=false",
+        ])
+        .arg(format!("--work-tree={}", dest.to_string_lossy()))
+        .args(&["checkout", "--quiet"])
+        .arg(sha)
+        .arg("--");
+    for path in pathspecs {
+        cmd.arg(path);
+    }
+    cmd.run().map(drop).map_err(|err| err.to_string())
 }
 
 /// Moves each harness's packs in a baseline built by `base` to where `current`
@@ -1177,7 +1390,8 @@ fn ref_root_file(checkout: &Path, config_rel: &Path) -> Option<PathBuf> {
 }
 
 /// Remove the baselines a killed run left behind: each `<id>.lock` no live
-/// run holds, its `<id>/` folder and that folder's worktree registration.
+/// run holds, its `<id>/` folder and, for one an older version built in a
+/// worktree, that worktree's registration.
 fn prune_stale_baselines(baselines: &Path, repo: &Path) {
     let Ok(entries) = std::fs::read_dir(baselines) else {
         return;
@@ -1194,6 +1408,8 @@ fn prune_stale_baselines(baselines: &Path, repo: &Path) {
             continue;
         }
         let dir = path.with_extension("");
+        // Fails on a checkout that is not a worktree, as every new one is;
+        // `remove_dir_all` does the work then.
         let _ = typed_git::worktree::remove(repo, &dir.join("checkout"));
         let _ = std::fs::remove_dir_all(&dir);
         drop(file);
@@ -1216,15 +1432,7 @@ fn prune_worktrees(repo: &Path) {
 
 impl Drop for BuiltRef {
     fn drop(&mut self) {
-        let removed = typed_git::worktree::remove(&self.repo, &self.checkout);
         let _ = std::fs::remove_dir_all(&self.temp);
-        if let Err(err) = removed {
-            eprintln!(
-                "skillwright: removing the baseline worktree {} failed ({err}); pruning it instead",
-                self.checkout.display()
-            );
-            prune_worktrees(&self.repo);
-        }
         let _ = std::fs::remove_file(&self.lock_path);
     }
 }
