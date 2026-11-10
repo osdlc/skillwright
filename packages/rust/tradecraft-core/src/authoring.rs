@@ -1220,10 +1220,8 @@ impl<'a> NewNote<'a> {
     }
 }
 
-/// The vault as a planner reads it, less its build output. Redundant today:
-/// each planner reads the vault only through functions that hide the output
-/// themselves ([`discover_components`], [`container_members`]). It stays so a
-/// direct read added to a planner later cannot see the output.
+/// The vault as a planner reads it, less its build output, so a direct read
+/// in a planner cannot see the output.
 fn planner_notes<'v>(vfs: &'v dyn Vfs, vault: &Path, ns: &Namespace) -> SourceView<'v> {
     notes_over(vfs, vault, None, None, ns)
 }

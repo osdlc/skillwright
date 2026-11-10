@@ -912,10 +912,8 @@ pub fn export_skills(
 
     // Load once, for every harness this build renders: the vault read, the
     // marketplace chosen and validated, every body resolved. Everything a
-    // build refuses before it renders, it refuses here. Notes are read
-    // through `notes`, which hides the vault's configured output and the
-    // output at `out_root`, so a build never reads what it wrote. The output is
-    // compared and replaced through `vfs`.
+    // build refuses before it renders, it refuses here, reading through
+    // `notes` so a build never reads what it wrote.
     let notes = notes_view(SourceView::over(vfs), scope, Some(&config), ns)
         .hiding(output_paths(vfs, scope, &out_root, &config));
     let market = load_in(&notes, &request.load_request(), ns)

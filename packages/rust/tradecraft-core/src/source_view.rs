@@ -57,7 +57,7 @@ impl<'v> SourceView<'v> {
     /// Resolves a `~` in a root file's `build.out` against `home`, so
     /// [`notes_view`] hides that output. It holds for a view built over this
     /// one too, as every core function builds one over the `vfs` it is given.
-    /// With no home, it hides nothing for such a `build.out`.
+    /// Without a home, a `~` output is not hidden.
     #[must_use]
     pub fn with_home(mut self, home: &Path) -> Self {
         self.home = Some(home.to_path_buf());
@@ -96,12 +96,16 @@ impl<'v> SourceView<'v> {
 
 /// The path a [`SourceView`] answers with its home when asked to
 /// canonicalize it. The [`Vfs`] trait has no way to ask for a home, and a view
-/// over the host's view must still find it. No host resolves this path: it
-/// holds a NUL, which a native filesystem refuses and a lexical one leaves
-/// relative.
+/// over the host's view must still find it. The path holds a NUL, so a native
+/// filesystem refuses it and a lexical one leaves it relative. A JS host's
+/// `realpath` receives it unchanged; wasm sets no home, and [`home_of`]
+/// takes no answer there. Replace this with a home method on [`Vfs`] once
+/// `vfs-seam` has one.
 const HOME_PROBE: &str = "\0home";
 
-/// The home a [`SourceView`] in `vfs`, at any depth, was given.
+/// The home a [`SourceView`] in `vfs`, at any depth, was given. A relative
+/// answer is none; on wasm32 `is_absolute` is always false, so every answer
+/// is.
 fn home_of(vfs: &dyn Vfs) -> Option<PathBuf> {
     vfs.canonicalize(Path::new(HOME_PROBE))
         .ok()
@@ -445,9 +449,9 @@ pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> Result<MarketplaceConfi
     Ok(root.to_config(""))
 }
 
-/// `base`, less the output at `out_root` as well, for each marketplace the
-/// run may touch: for a host that hides a folder the vault does not configure.
-/// [`notes_view`] already hides what the vault's root file configures. A
+/// `base`, also less the output at `out_root`, for each marketplace the run
+/// may touch: for a host whose output folder the root file does not configure
+/// ([`notes_view`] hides the one it does). A
 /// `packs` a build would refuse hides nothing, so the run sees the vault as it
 /// is and the build says what is wrong, and a moved folder that holds more
 /// than packs stays visible.
@@ -503,8 +507,7 @@ fn output_to_hide(
 /// The root file is read through `base`, so a view that answers for it with
 /// another file ([`SourceView::with_root_file`]) hides that file's output. A
 /// `~` in `build.out` resolves against [`SourceView::with_home`]; with no
-/// home, that output is not hidden. Every core function that reads notes
-/// reads through this view of the `vfs` it is given.
+/// home, that output is not hidden.
 pub fn notes_view<'v>(
     base: SourceView<'v>,
     scope: VaultScope<'_>,
@@ -591,7 +594,8 @@ fn configured_output(
     let Some(out) = root.build.out.as_deref() else {
         return Vec::new();
     };
-    // Only a `~` out needs the home, so only it asks for one.
+    // Ask for the home only for a `~` out: the probe reaches the host's
+    // `canonicalize`.
     let home = if out == "~" || out.starts_with("~/") {
         match home_of(base) {
             Some(home) => home,

@@ -2372,9 +2372,9 @@ fn status_does_not_read_the_packs_inside_the_vault() {
     );
 }
 
-/// A workspace of two members, each with a skill named `shared`. Member
-/// `one` builds into `market` inside its own folder, with Pi packs moved to
-/// `market/pi-packs`.
+/// A workspace of two members, each with a skill named `shared`, each
+/// building into `market` inside its own folder. Member `one` also builds Pi,
+/// its packs moved to `market/pi-packs`.
 fn workspace_with_member_output() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

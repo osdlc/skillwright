@@ -180,7 +180,8 @@ pub fn built_with_moved_packs() -> tempfile::TempDir {
     dir
 }
 
-/// Whether `said` names any path a build of [`built_with_moved_packs`] owns.
+/// Whether `said` names the Pi packs or the Claude marketplace folder a build
+/// of [`built_with_moved_packs`] writes.
 #[allow(dead_code)]
 pub fn names_owned_output(said: &str) -> bool {
     said.contains("market/pi-packs") || said.contains("market/.claude-plugin")

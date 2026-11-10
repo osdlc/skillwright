@@ -617,8 +617,8 @@ export interface DiscoverRequest {
 
   /**
    * Absolute path to a folder a build writes to. The scan leaves out what a
-   * build owns there too; the configured `build.out` is always left out.
-   * Absent leaves out only the configured `build.out`.
+   * build owns there too. The configured `build.out` is left out either
+   * way, unless it starts with `~`, which wasm cannot resolve.
    */
   out_root?: string;
 
@@ -1257,8 +1257,8 @@ export interface LoadRequest {
 
   /**
    * Absolute path to a folder a build writes to. The load leaves out what a
-   * build owns there too; the configured `build.out` is always left out.
-   * Absent leaves out only the configured `build.out`.
+   * build owns there too. The configured `build.out` is left out either
+   * way, unless it starts with `~`, which wasm cannot resolve.
    */
   out_root?: string;
 

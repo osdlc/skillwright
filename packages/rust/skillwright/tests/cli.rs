@@ -4145,11 +4145,11 @@ fn config_flag_reads_the_named_file_and_its_folder_is_the_vault() {
 
 // --- the packs inside the vault ----------------------------------------------
 //
-// Each test runs over `common::built_with_moved_packs`: a vault whose
+// Most tests here run over `common::built_with_moved_packs`: a vault whose
 // `build.out` (`market`) sits inside it, with Pi packs moved to
-// `market/pi-packs`. Each asserts that `market/extra/extra.md`, a real note
-// there, is read and that no owned output path is, which tells a hidden path
-// from one that was never scanned.
+// `market/pi-packs`. They assert no owned output path is named. The list
+// tests also assert `market/extra/extra.md`, a real note there, is read,
+// which tells a hidden path from one that was never scanned.
 
 #[test]
 fn list_does_not_read_the_packs_inside_the_vault() {

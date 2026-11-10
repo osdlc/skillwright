@@ -306,8 +306,8 @@ struct WireDiscoverRequest {
     #[serde(default)]
     skills_root: Option<PathBuf>,
     /// Absolute path to a folder a build writes to. The scan leaves out what a
-    /// build owns there too; the configured `build.out` is always left out.
-    /// Absent leaves out only the configured `build.out`.
+    /// build owns there too. The configured `build.out` is left out either
+    /// way, unless it starts with `~`, which wasm cannot resolve.
     #[serde(default)]
     out_root: Option<PathBuf>,
     /// Says where the packs folders are, under what the vault's own notes say.
@@ -331,8 +331,8 @@ fn discovery_view<'v>(
 ) -> Result<SourceView<'v>, CoreError> {
     let mut scope = VaultScope::new(&wire.vault_root);
     scope.skills_root = wire.skills_root.as_deref();
-    // The core hides the configured output by the root file's `packs`; a wire
-    // config's `packs` is hidden here.
+    // The core finds the configured output by the root file's `packs`; this
+    // also hides where a wire config's `packs` puts it.
     let base = match &wire.config {
         Some(config) => notes_view(SourceView::over(vfs), scope, Some(config), ns),
         None => SourceView::over(vfs),
@@ -456,8 +456,8 @@ struct WireLoadRequest {
     #[serde(flatten)]
     request: LoadRequest,
     /// Absolute path to a folder a build writes to. The load leaves out what a
-    /// build owns there too; the configured `build.out` is always left out.
-    /// Absent leaves out only the configured `build.out`.
+    /// build owns there too. The configured `build.out` is left out either
+    /// way, unless it starts with `~`, which wasm cannot resolve.
     #[serde(default)]
     out_root: Option<PathBuf>,
     /// The vault's frontmatter namespace, as a stem. Absent means

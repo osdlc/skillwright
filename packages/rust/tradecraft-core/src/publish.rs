@@ -717,10 +717,9 @@ pub struct PublishReport {
 ///
 /// # Errors
 ///
-/// * `refused: build-output` when the note sits in the vault's build output,
-///   which is hidden from every note read: with `skills_root`, the publish
-///   reads the vault through [`crate::notes_view`]. The destination is read
-///   and written as given.
+/// * `refused: build-output` when `skills_root` is set and the note sits in
+///   the vault's build output ([`crate::notes_view`]). The destination is
+///   read and written as given.
 /// * `refused: no-renderer` when the note is the vault's root file or its
 ///   workspace file, which configure the vault and are not notes.
 /// * `refused: no-renderer` when the note's resolved kind is none of
@@ -763,8 +762,8 @@ fn publish_onto(
     request: &PublishRequest,
     ns: &Namespace,
 ) -> Result<PublishReport, CoreError> {
-    // Notes are read through `notes`, which hides the vault's build output.
-    // The destination is read and written through `vfs`.
+    // Notes are read through `notes`, which with a skills root hides the
+    // vault's build output. The destination is read and written through `vfs`.
     let notes = match request.skills_root.as_deref() {
         Some(root) => notes_over(vfs, root, None, request.config.as_ref(), ns),
         None => SourceView::over(vfs),
