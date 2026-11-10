@@ -1724,11 +1724,12 @@ impl<'a> Renderer<'a> {
 
 /// The one of `candidates` under the folder of `from`, the linking file's
 /// vault-relative path, compared without case. So a bare link from a skill's
-/// entry resolves to the match in its own bundle. This is the folder
-/// preference `markdown-link`'s `prefer_in_folder` gives, which the rename
-/// relinker reads links by, so a rename and a build agree on what a link
-/// names. None there, or several, is [`ResolveError::Ambiguous`]: several
-/// names only those.
+/// entry resolves to the match in its own bundle. With exactly one match under
+/// that folder, this agrees with `markdown-link`'s `prefer_in_folder`, which the
+/// rename relinker reads links by. None there, or several, is
+/// [`ResolveError::Ambiguous`]: several names only those. In those cases
+/// `prefer_in_folder` still picks one: the first match under the folder, or
+/// with none there, the shortest match overall.
 fn own_folder_candidate(candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
     let Some((folder, _)) = from.rsplit_once('/') else {
         return Err(ResolveError::Ambiguous(candidates));
