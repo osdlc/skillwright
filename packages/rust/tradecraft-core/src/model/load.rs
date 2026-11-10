@@ -42,6 +42,7 @@ use crate::namespace::Namespace;
 use crate::paths::WORKSPACE_DIR;
 use crate::projection::parse_runtime_target;
 use crate::publish::{PLUGIN_HOOKS_PATH, canonical_target, refuse_carried_peers};
+use crate::source_view::{SourceView, VaultScope, notes_over, notes_view};
 use crate::vault::{VaultNote, read_vault_note};
 use crate::vfs::{Vfs, normalize};
 
@@ -96,7 +97,8 @@ impl LoadRequest {
 /// The one function here that walks the vault, with `markdown-vault-fs`. Beside
 /// the report it returns the vault's link index, so pass 2 resolves every link
 /// without walking again: built from the same walk when the skills root is the
-/// vault, else from one walk of the vault.
+/// vault, else from one walk of the vault. The vault's build output is hidden
+/// ([`crate::notes_view`]).
 ///
 /// # Errors
 ///
@@ -107,8 +109,19 @@ pub fn read_notes(
     skills_root: Option<&Path>,
     ns: &Namespace,
 ) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
-    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
-    read_notes_with(vfs, vault_root, &patterns, skills_root, ns)
+    let notes = notes_over(vfs, vault_root, skills_root, None, ns);
+    read_notes_in(&notes, vault_root, skills_root, ns)
+}
+
+/// [`read_notes`] over a `vfs` that already hides the output.
+fn read_notes_in(
+    notes: &dyn Vfs,
+    vault_root: &Path,
+    skills_root: Option<&Path>,
+    ns: &Namespace,
+) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
+    let patterns = crate::patterns::Patterns::load(notes, vault_root)?;
+    read_notes_with(notes, vault_root, &patterns, skills_root, ns)
 }
 
 /// [`read_notes`] with the vault's patterns already read.
@@ -168,7 +181,8 @@ pub(crate) fn selected_harnesses(
         .collect())
 }
 
-/// Loads the marketplace a build renders.
+/// Loads the marketplace a build renders. The vault's build output is hidden
+/// ([`crate::notes_view`], with `request.config` saying where the packs are).
 ///
 /// # Errors
 ///
@@ -190,6 +204,20 @@ pub(crate) fn selected_harnesses(
 ///   kind of value.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
 pub fn load(
+    vfs: &dyn Vfs,
+    request: &LoadRequest,
+    ns: &Namespace,
+) -> Result<Marketplace, CoreError> {
+    let vault_root = normalize(&request.vault_root);
+    let mut scope = VaultScope::new(&vault_root);
+    scope.skills_root = request.skills_root.as_deref();
+    scope.marketplace = request.marketplace.as_deref();
+    let notes = notes_view(SourceView::over(vfs), scope, Some(&request.config), ns);
+    load_in(&notes, request, ns)
+}
+
+/// [`load`] over a `vfs` that already hides the output.
+pub(crate) fn load_in(
     vfs: &dyn Vfs,
     request: &LoadRequest,
     ns: &Namespace,
@@ -482,7 +510,8 @@ impl<'a> ComponentRequest<'a> {
 /// `note` has had [`Cascade::apply`] run over it already: the caller needs its
 /// `targets` before it gets here. The skills a call may name come from a scan
 /// of `request.root`, built only when the body has a call or a link to check.
-/// A scan that fails blocks only a call: a plain link then stays a link.
+/// A scan that fails blocks only a call: a plain link then stays a link. The
+/// build output under `request.root` is hidden ([`crate::notes_view`]).
 ///
 /// # Errors
 ///
@@ -497,10 +526,12 @@ pub fn load_component(
     cascade: &Cascade,
     ns: &Namespace,
 ) -> Result<Component, CoreError> {
+    let notes = notes_over(vfs, request.root, None, None, ns);
+    let vfs: &dyn Vfs = &notes;
     let blocks = crate::publish::overrides_for(&note.frontmatter, request.path, request.kind, ns)?;
     let targets: OnceCell<BTreeMap<PathBuf, Option<Vec<String>>>> = OnceCell::new();
     let build = || -> Result<SkillIndex, CoreError> {
-        let (mut scan, _) = read_notes(vfs, request.root, None, ns)?;
+        let (mut scan, _) = read_notes_in(vfs, request.root, None, ns)?;
         cascade.resolve_targets(&mut scan.components);
         let built = skill_index(scan.components.iter().map(|c| (c, None)), None);
         let _ = targets.set(built.targets);
@@ -565,7 +596,8 @@ pub struct Pack {
 /// which is the same rule a build follows: the folder holding a component
 /// decides its plugin. A member narrowed away
 /// by its own `targets` is absent from the pack, exactly as it is absent
-/// from a built tree.
+/// from a built tree. The vault's build output is hidden
+/// ([`crate::notes_view`]).
 ///
 /// # Errors
 ///
@@ -586,9 +618,11 @@ pub fn load_plugin(
     ns: &Namespace,
 ) -> Result<Pack, CoreError> {
     crate::harness::manifest::check_block_values(&cascade.config)?;
+    let notes = notes_over(vfs, vault_root, None, None, ns);
+    let vfs: &dyn Vfs = &notes;
     let canonical = profile.name;
     let carries_commands = profile.format().carries_commands;
-    let (mut scan, links) = read_notes(vfs, vault_root, None, ns)?;
+    let (mut scan, links) = read_notes_in(vfs, vault_root, None, ns)?;
     cascade.resolve_targets(&mut scan.components);
     // A note elsewhere in the vault that does not parse is not this pack's
     // problem, and a shared vault always holds one. A note this pack holds

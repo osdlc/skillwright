@@ -88,7 +88,7 @@ use tradecraft_core::settings::{
 };
 use tradecraft_core::status::{StatusRequest, status_of as core_status_of};
 use tradecraft_core::vfs::Vfs;
-use tradecraft_core::{SourceView, VaultScope, source_view, vault_config};
+use tradecraft_core::{SourceView, VaultScope, notes_view, source_view, vault_config};
 use wasm_bindgen::prelude::*;
 
 pub use js_vfs::{HostVfs, JsVfs};
@@ -325,14 +325,20 @@ fn discovery_view<'v>(
     wire: &WireDiscoverRequest,
     ns: &Namespace,
 ) -> Result<SourceView<'v>, CoreError> {
+    let mut scope = VaultScope::new(&wire.vault_root);
+    scope.skills_root = wire.skills_root.as_deref();
+    // The core hides the vault's output by its root file's `packs`; a wire
+    // config's `packs` is hidden here too.
+    let base = match &wire.config {
+        Some(config) => notes_view(SourceView::over(vfs), scope, Some(config), ns),
+        None => SourceView::over(vfs),
+    };
     let config = match &wire.config {
         Some(config) => config.clone(),
         None => vault_config(vfs, &wire.vault_root)?,
     };
-    let mut scope = VaultScope::new(&wire.vault_root);
-    scope.skills_root = wire.skills_root.as_deref();
     Ok(source_view(
-        SourceView::over(vfs),
+        base,
         scope,
         wire.out_root.as_deref(),
         &config,
@@ -882,5 +888,95 @@ mod tests {
         let source = serde_json::to_string(&market).unwrap();
         assert!(source.contains("rev"), "{source}");
         assert!(!source.contains("stale"), "{source}");
+    }
+
+    /// A vault that builds to `dist` inside it, its Claude packs moved to
+    /// `dist/moved`, built once.
+    fn vault_built_inside() -> MemVfs {
+        let vfs = MemVfs::new();
+        put(
+            &vfs,
+            "/vault/skillwright.md",
+            "---\nname: m\nclaude: {packs: moved}\nbuild:\n  out: dist\n---\n",
+        );
+        put(&vfs, "/vault/plugins/rev/skills/a.md", SKILL);
+        built_pack(&vfs, "/vault/dist/moved", "stale");
+        vfs
+    }
+
+    const SKILL: &str = "---\ndescription: Use it.\n---\nBody.\n";
+
+    fn put(vfs: &MemVfs, path: &str, text: &str) {
+        let path = Path::new(path);
+        vfs.create_dir_all(path.parent().unwrap()).unwrap();
+        vfs.write_file(path, text.as_bytes()).unwrap();
+    }
+
+    /// A built Claude pack `rev` under `packs`, holding the skill `skill`.
+    fn built_pack(vfs: &MemVfs, packs: &str, skill: &str) {
+        put(
+            vfs,
+            &format!("{packs}/rev/.claude-plugin/plugin.json"),
+            "{}",
+        );
+        put(vfs, &format!("{packs}/rev/skills/{skill}/SKILL.md"), SKILL);
+    }
+
+    fn discovered(vfs: &MemVfs, json: &str) -> String {
+        let ns = Namespace::bare();
+        let wire: WireDiscoverRequest = serde_json::from_str(json).unwrap();
+        let view = discovery_view(vfs, &wire, &ns).unwrap();
+        let root = wire.vault_root.as_path();
+        let report =
+            core_discover_components(&view, root, wire.skills_root.as_deref(), &ns).unwrap();
+        serde_json::to_string(&report).unwrap()
+    }
+
+    #[test]
+    fn discover_hides_the_configured_out_without_out_root() {
+        let vfs = vault_built_inside();
+        let found = discovered(&vfs, r#"{ "vault_root": "/vault" }"#);
+        assert!(found.contains("plugins/rev/skills/a.md"), "{found}");
+        assert!(!found.contains("stale"), "{found}");
+    }
+
+    #[test]
+    fn load_hides_the_configured_out_without_out_root() {
+        let vfs = vault_built_inside();
+        let ns = Namespace::bare();
+        // The root file's config, as a host passes it.
+        let wire: WireLoadRequest = serde_json::from_str(
+            r#"{ "vault_root": "/vault", "config": { "name": "m", "blocks": { "claude": { "packs": "moved" } } } }"#,
+        )
+        .unwrap();
+        let market = core_load(&load_view(&vfs, &wire, &ns), &wire.request, &ns).unwrap();
+        let source = serde_json::to_string(&market).unwrap();
+        assert!(source.contains("rev"), "{source}");
+        assert!(!source.contains("stale"), "{source}");
+    }
+
+    #[test]
+    fn discover_with_an_out_root_hides_it_too() {
+        let vfs = vault_built_inside();
+        built_pack(&vfs, "/vault/other/moved", "old");
+        let found = discovered(
+            &vfs,
+            r#"{ "vault_root": "/vault", "out_root": "/vault/other" }"#,
+        );
+        assert!(found.contains("plugins/rev/skills/a.md"), "{found}");
+        assert!(!found.contains("stale"), "{found}");
+        assert!(!found.contains("skills/old"), "{found}");
+    }
+
+    #[test]
+    fn discover_with_a_wire_config_hides_its_packs() {
+        let vfs = vault_built_inside();
+        built_pack(&vfs, "/vault/dist/wired", "old");
+        let found = discovered(
+            &vfs,
+            r#"{ "vault_root": "/vault", "config": { "blocks": { "claude": { "packs": "wired" } } } }"#,
+        );
+        assert!(found.contains("plugins/rev/skills/a.md"), "{found}");
+        assert!(!found.contains("dist/wired"), "{found}");
     }
 }

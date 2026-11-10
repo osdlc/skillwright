@@ -523,6 +523,20 @@ pub fn notes_view<'v>(
     base.hiding(paths)
 }
 
+/// [`notes_view`] over `vfs` for the vault at `vault_root`, its skills source
+/// at `skills_root`.
+pub(crate) fn notes_over<'v>(
+    vfs: &'v dyn Vfs,
+    vault_root: &Path,
+    skills_root: Option<&Path>,
+    config: Option<&MarketplaceConfig>,
+    ns: &Namespace,
+) -> SourceView<'v> {
+    let mut scope = VaultScope::new(vault_root);
+    scope.skills_root = skills_root;
+    notes_view(SourceView::over(vfs), scope, config, ns)
+}
+
 /// The root file at `vault_root`, with the workspace above it folded in.
 /// `None` when there is none or it cannot be read.
 fn root_at(vfs: &dyn Vfs, vault_root: &Path) -> Option<RootFile> {

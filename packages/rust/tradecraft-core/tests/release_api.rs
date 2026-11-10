@@ -2685,3 +2685,81 @@ fn a_relative_vault_root_is_refused_unsafe_path() {
     assert!(err.starts_with("refused: unsafe-path: "), "{err}");
     assert!(!vfs.exists(Path::new("vault/dist")));
 }
+
+// --- the core hides the vault's output --------------------------------------
+//
+// Each test runs over a plain `MemVfs`, with no host view: the core hides
+// the output its root file configures by itself.
+
+/// A vault that builds to `dist` inside it, its Claude packs moved to
+/// `dist/moved`, where a dot folder no longer keeps them out of a scan.
+const OUT_DIST: &str = "---\nname: m\nclaude: {packs: moved}\nbuild:\n  out: dist\n---\n";
+const BUILT_SKILL: &str = "dist/moved/rev/skills/a/SKILL.md";
+const BUILT_MANIFEST: (&str, &str) = ("dist/moved/rev/.claude-plugin/plugin.json", "{}");
+
+fn as_json<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value).unwrap()
+}
+
+#[test]
+fn discover_components_hides_the_configured_out() {
+    let vfs = root_vault(
+        OUT_DIST,
+        &[TOOL_SKILL, BUILT_MANIFEST, (BUILT_SKILL, USE_IT)],
+    );
+    let report = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    let said = as_json(&report);
+    assert!(said.contains("plugins/rev/skills/a.md"), "{said}");
+    assert!(!said.contains("dist/"), "{said}");
+}
+
+#[test]
+fn discover_components_hides_output_under_a_content_root() {
+    let root = "---\nname: m\nclaude: {packs: moved}\nbuild:\n  out: src/dist\n---\n";
+    let vfs = root_vault(
+        root,
+        &[
+            ("src/plugins/rev/skills/a.md", USE_IT),
+            (&format!("src/{}", BUILT_MANIFEST.0), "{}"),
+            (&format!("src/{BUILT_SKILL}"), USE_IT),
+        ],
+    );
+    let report = discover_components(
+        &vfs,
+        Path::new("/vault"),
+        Some(Path::new("/vault/src")),
+        &Namespace::bare(),
+    )
+    .unwrap();
+    let said = as_json(&report);
+    assert!(said.contains("plugins/rev/skills/a.md"), "{said}");
+    assert!(!said.contains("dist/"), "{said}");
+}
+
+#[test]
+fn discover_roster_hides_the_configured_out() {
+    let vfs = root_vault(
+        OUT_DIST,
+        &[TOOL_SKILL, BUILT_MANIFEST, (BUILT_SKILL, USE_IT)],
+    );
+    let report =
+        tradecraft_core::discover_roster(&vfs, Path::new("/vault"), None, &Namespace::bare())
+            .unwrap();
+    let said = as_json(&report);
+    assert!(said.contains("plugins/rev/skills/a.md"), "{said}");
+    assert!(!said.contains("dist/"), "{said}");
+}
+
+#[test]
+fn load_hides_the_configured_out() {
+    let vfs = root_vault(
+        OUT_DIST,
+        &[TOOL_SKILL, BUILT_MANIFEST, (BUILT_SKILL, USE_IT)],
+    );
+    let config = tradecraft_core::settings::root_file_config(OUT_DIST, "house").unwrap();
+    let request = tradecraft_core::model::load::LoadRequest::new("/vault", config);
+    let market = tradecraft_core::model::load::load(&vfs, &request, &Namespace::bare()).unwrap();
+    let said = as_json(&market);
+    assert!(said.contains("plugins/rev/skills/a.md"), "{said}");
+    assert!(!said.contains("dist/"), "{said}");
+}

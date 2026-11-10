@@ -663,7 +663,8 @@ impl SkippedNote {
 }
 
 /// Walks `content_root` (the vault root when `None`) and returns every
-/// publishable note, sorted by name.
+/// publishable note, sorted by name. The vault's build output is hidden
+/// ([`crate::notes_view`]), so a built file is never read as a note.
 ///
 /// `ns` is the vault's frontmatter namespace, the same value every other
 /// reader takes — a note whose `targets` this scan validated must be the
@@ -704,9 +705,20 @@ pub fn discover_components(
     content_root: Option<&Path>,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
-    let source = load_source(vfs, vault_root, &patterns, content_root)?;
-    discover_in(vfs, vault_root, &patterns, &source, ns)
+    let notes = crate::source_view::notes_over(vfs, vault_root, content_root, None, ns);
+    discover_components_in(&notes, vault_root, content_root, ns)
+}
+
+/// [`discover_components`] over a `vfs` that already hides the output.
+pub(crate) fn discover_components_in(
+    notes: &dyn Vfs,
+    vault_root: &Path,
+    content_root: Option<&Path>,
+    ns: &Namespace,
+) -> Result<DiscoveryReport, CoreError> {
+    let patterns = crate::patterns::Patterns::load(notes, vault_root)?;
+    let source = load_source(notes, vault_root, &patterns, content_root)?;
+    discover_in(notes, vault_root, &patterns, &source, ns)
 }
 
 /// [`discover_roster`] over a source already listed, with the vault's
@@ -736,9 +748,10 @@ pub fn discover_roster(
     content_root: Option<&Path>,
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    let patterns = crate::patterns::Patterns::load(vfs, vault_root)?;
-    let source = load_source(vfs, vault_root, &patterns, content_root)?;
-    discover_roster_in(vfs, vault_root, &patterns, &source, ns)
+    let notes = crate::source_view::notes_over(vfs, vault_root, content_root, None, ns);
+    let patterns = crate::patterns::Patterns::load(&notes, vault_root)?;
+    let source = load_source(&notes, vault_root, &patterns, content_root)?;
+    discover_roster_in(&notes, vault_root, &patterns, &source, ns)
 }
 
 /// The skills source at `content_root` (the vault root when `None`): its
