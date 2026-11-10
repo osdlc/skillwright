@@ -204,10 +204,10 @@ scope to the name.
   evidence line for each older, differing result. `open` is a claim with no value yet: direction
   `neutral`, no strength, and the object is `{ open: [questions] }`.
 - **`open`.** The questions the sources leave unresolved. Any statement may carry them.
-- **`strength`.** The importer sets it from the best evidence kind on a supporting line: run,
-  source and help-text are strong; docs and changelog are moderate; issue, third-party and
-  inferred are weak. The statement takes its strongest supporting line, one step lower when any line
-  disputes it. A reviewer may lower a strength, never raise it past the rule.
+- **`strength`.** It follows the best evidence kind on a supporting line: run, source and
+  help-text are strong; docs and changelog are moderate; issue, third-party and inferred are weak.
+  The statement takes its strongest supporting line, one step lower when any line disputes it. A
+  reviewer may lower a strength, never raise it past the rule; `lint` refuses a strength above it.
 - Each link in `hasEvidenceItems` points at a [study result](../study-results/study-results.schema.md).
   The pattern checks the folder; `lint` checks the target is a record.
 

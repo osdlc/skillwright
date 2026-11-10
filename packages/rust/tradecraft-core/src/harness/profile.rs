@@ -93,9 +93,9 @@ pub struct PluginRootPolicy {
 /// resolves it into a [`PluginFormat`] (D-QXRN).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginPolicy {
-    /// The project directory the projection puts a skill under. A choice
-    /// among the several a harness reads, and the knowledge file's
-    /// `skills/project-dirs` is weak or disputed for every row.
+    /// The project directory the projection puts a skill under. Policy: a
+    /// choice among the several a harness reads. A test holds it to one the
+    /// knowledge file's `skills/project-dirs` lists.
     pub skills_dir: &'static str,
     /// The folder under the home directory; `skills/user-dirs`.
     pub user_skills_dir: Source<&'static str>,
@@ -449,8 +449,7 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
     declaration: RuntimeId::ClaudeCode,
     plugin: Some(PluginPolicy {
         skills_dir: ".claude/skills",
-        // knowledge has no `skills/user-dirs` for Claude Code
-        user_skills_dir: Source::Constant(".claude/skills"),
+        user_skills_dir: Source::Knowledge,
         plugin_manifest: Source::Knowledge,
         marketplace_manifest: Source::Knowledge,
         packs: ".claude-plugin/packs",

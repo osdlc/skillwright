@@ -7,8 +7,9 @@ hook and MCP formats, and their CLI session surface. Every value has a date and 
 The record is one [corpus-schema](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md)
 corpus.
 
-- `corpus/`: the corpus (one corpus in this package, so it is not under `corpora/<name>/`), a claims corpus: harnesses, documents, methods, study results, subjects
-  and statements. Each type's schema is a hand-written JSON Schema in its folder, such as
+- `corpus/`: a claims corpus of harnesses, documents, methods, study results, subjects and
+  statements. The package has one corpus, so it is not under `corpora/<name>/`. Each type's
+  schema is a hand-written JSON Schema in its folder, such as
   `corpus/statements/statements.schema.md`. See [corpus/README.md](corpus/README.md).
 - `corpus/notes/`: research notes the corpus cites. They are narrative files, not records.
   Upstream docs and repositories are cited by their own URLs.

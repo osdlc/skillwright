@@ -47,14 +47,12 @@ Run `pnpm run validate` from `harness-reference/`, or `pnpm exec corpus-schema v
 
 ## Code that reads the data
 
-- `packages/rust/tradecraft-core/src/harness/profile.rs`: the harness profiles are written by hand.
-  Its tests read the alpha facts, which this repository no longer has, so they check nothing until
-  [#99](https://github.com/osdlc/skillwright/pull/99) moves them to the compiled knowledge file:
-  `skills/project-dirs`,
-  `plugins/manifest` and `plugins/marketplace`. Its doc comments also name `skills/user-dirs` and
-  `plugins/manifest-fields`; `field_types.rs` comments name `plugins/manifest-fields` and
-  `plugins/marketplace-fields`. Checking rather than generating is deliberate: it keeps a research
-  note's wording out of the build.
+- `packages/rust/tradecraft-core/src/harness/profile.rs`: each plugin row takes its facts (user
+  skills folder, manifest and marketplace paths, plugin-root variable, naming rule) from the
+  embedded knowledge file, or from a constant with a stated reason
+  ([D-QXRN](../decisions/D-QXRN-harness-facts-from-knowledge.md)). Its tests hold each fact taken
+  from the knowledge file to a moderate or stronger statement. `field_types.rs` comments name
+  `plugins/manifest-fields` and `plugins/marketplace-fields`.
 - `packages/rust/skillwright/src/commands/harness/link.rs` and `pi.rs` cite harness-reference in
   comments and errors (which harnesses follow symlinked skill folders).
 - osdlc `packages/ts/detect-harness/src/locations.ts` has an uncited `LOCATIONS` table per harness.
@@ -62,8 +60,7 @@ Run `pnpm run validate` from `harness-reference/`, or `pnpm exec corpus-schema v
 
 ## Next for harness-reference, in order
 
-1. [ ] **Capture evidence for the facts code reads**, and point the `profile.rs` tests at the
-   compiled knowledge file.
+1. [ ] **Capture evidence for the facts code reads.**
 2. [ ] **A loader** so code reads validated records without parsing Markdown (markdown-db item 2).
    Then cite the corpus from `detect-harness`.
 3. [ ] Experiments: `harness-reference/probes/` become level-2 experiments whose runs write `kind: run`
