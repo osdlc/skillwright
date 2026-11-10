@@ -11,8 +11,9 @@ strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Model flag help 0.65](../../study-results/Gemini%20CLI/2026-11-09%20Model%20flag%20help%200.65.md)"
-    directionOfEvidenceProvided: neutral
-    description: the 0.65.0 help lists no effort flag.
+    directionOfEvidenceProvided: supports
+    strengthOfEvidenceProvided: moderate
+    description: the 0.65.0 help lists no effort flag (absence).
   - hasEvidenceItems:
       - "[2026-11-09 Thinking config docs](../../study-results/Gemini%20CLI/2026-11-09%20Thinking%20config%20docs.md)"
     directionOfEvidenceProvided: supports

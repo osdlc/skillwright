@@ -69,6 +69,10 @@ moderate, and an issue, third-party page or inference weak. The statement takes 
 supporting line, one step lower when a line disputes it. A reviewer may lower a strength, never
 raise it past the rule.
 
+A listing that lacks an option, such as help text with no flag for it, is evidence of absence. It
+supports a `supported: false` value one step below its kind, since a listing can leave an option
+out: help text or source is moderate, docs weak.
+
 Imported statements cite the alpha research notes as documents, so some strong values still rest
 on a note. Replace the note with the upstream page as study results are captured.
 
