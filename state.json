@@ -15,10 +15,10 @@
       "path": "harness-reference/corpora/beta/statements/Pi/Pi Install method.md",
       "line": 7,
       "title": "Install methods lost their evidence in the prune; both kept quotes are about pi update",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/120#discussion_r4521025186",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a1f4f30"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "harness-reference/corpora/beta/statements/Claude Code/Claude Code Effort level flag.md",
       "line": 10,
       "title": "CLAUDE_CODE_EFFORT_LEVEL and its precedence lost their only quote in the prune",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/120#discussion_r4521025189",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a1f4f30"
     },
     {
       "id": "r1-3",
@@ -37,10 +37,10 @@
       "path": "harness-reference/corpora/beta/statements/Claude Code/Claude Code System prompt flags.md",
       "line": 10,
       "title": "The -file variants lost their only quotes in the prune",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/120#discussion_r4521025195",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a1f4f30"
     },
     {
       "id": "r1-4",
@@ -48,10 +48,10 @@
       "path": "harness-reference/corpora/beta/statements/Claude Code/Claude Code Run limits.md",
       "line": 11,
       "title": "CLAUDE_CODE_MAX_TURNS and the print-only rule for --max-turns lost their quotes in the prune",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/120#discussion_r4521025200",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a1f4f30"
     },
     {
       "id": "r1-5",
@@ -59,10 +59,10 @@
       "path": "harness-reference/corpora/beta/statements/Cursor/Cursor Tool allow and deny rules.md",
       "line": 9,
       "title": "Deny-over-allow precedence and the Mcp rule form lost their quotes in the prune",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/120#discussion_r4521025202",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a1f4f30"
     },
     {
       "id": "r1-6",
@@ -70,10 +70,10 @@
       "path": "harness-reference/corpora/beta/statements/Codex CLI/Codex CLI Marketplace fields.md",
       "line": 104,
       "title": "New strong line quotes the curated cache path under CODEX_HOME, not the repo marketplace file",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/120#discussion_r4521025207",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "a1f4f30"
     },
     {
       "id": "r1-7",
@@ -81,10 +81,10 @@
       "path": "harness-reference/corpora/beta/statements/Gemini CLI/Gemini CLI Effort level flag.md",
       "line": 14,
       "title": "Absence-in-help evidence is graded three different ways across harnesses",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/120#discussion_r4521025213",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "e30e9ef"
     },
     {
       "id": "r1-8",
@@ -92,7 +92,7 @@
       "path": null,
       "line": null,
       "title": "Prune orphaned 30 existing study results and left 16 statements citing documents no evidence reaches",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/120#pullrequestreview-5836627868",
       "status": "open",
       "reason": null,
       "fixedIn": null
