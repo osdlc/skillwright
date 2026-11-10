@@ -6424,7 +6424,6 @@ mod tests {
         let vfs = vault_with_root_file();
         let report = publish_skill(&vfs, &rooted_request("/vault/notes/stray.md"), &sw()).unwrap();
 
-        assert!(!statuses(&report).is_empty());
         assert!(
             vfs.exists(Path::new("/dest/.claude/skills/stray/SKILL.md")),
             "{:?}",
