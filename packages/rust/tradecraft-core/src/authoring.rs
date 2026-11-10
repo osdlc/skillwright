@@ -369,9 +369,7 @@ pub fn derive_create(
     // said: `marketplaces/house.md` is a note the reader would find as a loose
     // component rather than as a marketplace.
     let kind = placement_kind(placement);
-    let bundled = bundled
-        || kind == Some(EntityKind::Marketplace)
-        || kind.is_some_and(EntityKind::holds_components);
+    let bundled = bundled || kind.is_some_and(EntityKind::holds_components);
     let path = if bundled {
         let entry = kind.map_or_else(
             || format!("{slug}.md"),

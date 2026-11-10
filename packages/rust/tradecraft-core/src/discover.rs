@@ -1877,7 +1877,7 @@ pub(crate) fn container_notes(root: &Path, entry: &Path) -> Vec<PathBuf> {
             break;
         };
         dir = dir.join(folder).join(name);
-        if kind == EntityKind::Marketplace || kind.holds_components() {
+        if kind.holds_components() {
             notes.push(dir.join(entry_file(kind, name)));
         }
     }
