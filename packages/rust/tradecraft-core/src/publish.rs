@@ -799,7 +799,8 @@ fn publish_onto(
     };
     let in_vault = &request.skill_path;
     if vfs.exists(in_vault) && !notes.exists(in_vault) {
-        return Err(build_output_not_a_note(in_vault));
+        let root = request.skills_root.as_deref().unwrap_or(Path::new(""));
+        return Err(build_output_not_a_note(&vault_relative(root, in_vault)));
     }
     let resolved = publish_kind(placed, in_vault);
     let mut note = read_vault_note(&notes, &request.skill_path, ns, resolved.kind)?;
@@ -1337,14 +1338,14 @@ fn no_renderer_for(
 /// The vault's root `skillwright.md` refused as a publish, by the token a
 /// marketplace note gets. It holds the vault's configuration, so publishing it
 /// would write a `SKILL.md` for something that is not a skill.
-/// `refused: build-output`: the note sits in what a build of the vault owns.
-fn build_output_not_a_note(note_path: &Path) -> CoreError {
+/// `refused: build-output`: the note at the vault-relative `note` sits in
+/// what a build of the vault owns.
+fn build_output_not_a_note(note: &str) -> CoreError {
     CoreError::refused(
         ReasonToken::BuildOutput.as_str(),
         format!(
-            "{} is build output, not a note. Publish the note it was built from. \
-             Nothing was written",
-            note_path.display()
+            "`{note}` is build output, not a note. Publish the note it was built from. \
+             Nothing was written"
         ),
     )
 }
@@ -6578,7 +6579,10 @@ mod tests {
                 .unwrap_err()
                 .to_string();
             assert!(err.contains("refused: build-output"), "{err}");
-            assert!(err.contains("is build output, not a note"), "{err}");
+            assert!(
+                err.contains("`dist/moved/rev/skills/a/SKILL.md` is build output, not a note"),
+                "{err}"
+            );
         }
         assert!(!vfs.exists(Path::new("/dest")));
     }
