@@ -711,7 +711,7 @@ pub fn inherits(kind: EntityKind, key: &str) -> bool {
 
 /// The keys a container's identity holds: the key table's rows for a
 /// marketplace or a plugin that skillwright owns, less the harness blocks
-/// and `targets`, which every kind reads. In table order, deduplicated.
+/// and `targets`, which other kinds read too. In table order, deduplicated.
 ///
 /// Any later skillwright-owned key a marketplace or plugin reads joins the
 /// identity by this rule, and a test fails until

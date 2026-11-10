@@ -323,8 +323,8 @@ pub struct MarketplaceConfig {
     #[serde(default)]
     pub description: Option<String>,
     /// The marketplace's manifest fields, flattened, so `owner`, `author`,
-    /// `license` and the rest sit at the top level on the wire. Its `author`,
-    /// `license`, `repository` and `homepage` are each plugin's defaults.
+    /// `license` and the rest sit at the top level on the wire. Each field
+    /// the key table says a plugin inherits is each plugin's default.
     #[serde(flatten)]
     pub identity: ContainerIdentity,
     /// Which harnesses get what the marketplace holds. A plugin or member

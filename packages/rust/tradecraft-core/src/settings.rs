@@ -702,9 +702,8 @@ impl RootFile {
     /// Fill what this file leaves unset from the workspace file above it.
     ///
     /// The marketplace fields come down where the key table says a
-    /// marketplace inherits them ([`crate::keys::inherits`]): today `author`,
-    /// `license`, `repository`, `homepage`, `targets` and the harness blocks,
-    /// key by key. So do `harnesses`, `namespace`, `launcher_path`, `bump`,
+    /// marketplace inherits them ([`crate::keys::inherits`]): the identity
+    /// fields it marks, `targets`, and the harness blocks key by key. So do `harnesses`, `namespace`, `launcher_path`, `bump`,
     /// `destinations`, `scan_locations`, `assets`, `hooks` and each key of
     /// `patterns`. Their paths and globs read from each marketplace's own
     /// folder. `out` is each marketplace's own. `exclude` is not inherited: a

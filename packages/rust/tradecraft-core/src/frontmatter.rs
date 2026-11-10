@@ -540,7 +540,7 @@ fn take_identity(
     kind: EntityKind,
 ) -> Result<ContainerIdentity, CoreError> {
     let mut read = Map::new();
-    for key in crate::keys::identity_keys().filter(|key| crate::keys::lookup(kind, key).is_some()) {
+    for key in crate::keys::identity_keys().filter(|key| crate::keys::is_owned(kind, key)) {
         let spelled = ns.key(key);
         let Some(value) = ours.remove(&spelled).filter(|value| !value.is_null()) else {
             continue;
