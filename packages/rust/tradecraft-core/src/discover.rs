@@ -706,19 +706,9 @@ pub fn discover_components(
     ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
     let notes = crate::source_view::notes_over(vfs, vault_root, content_root, None, ns);
-    discover_components_in(&notes, vault_root, content_root, ns)
-}
-
-/// [`discover_components`] over a `vfs` that already hides the output.
-pub(crate) fn discover_components_in(
-    notes: &dyn Vfs,
-    vault_root: &Path,
-    content_root: Option<&Path>,
-    ns: &Namespace,
-) -> Result<DiscoveryReport, CoreError> {
-    let patterns = crate::patterns::Patterns::load(notes, vault_root)?;
-    let source = load_source(notes, vault_root, &patterns, content_root)?;
-    discover_in(notes, vault_root, &patterns, &source, ns)
+    let patterns = crate::patterns::Patterns::load(&notes, vault_root)?;
+    let source = load_source(&notes, vault_root, &patterns, content_root)?;
+    discover_in(&notes, vault_root, &patterns, &source, ns)
 }
 
 /// [`discover_roster`] over a source already listed, with the vault's

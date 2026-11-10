@@ -584,13 +584,16 @@ fn configured_output(
     let Some(out) = root.build.out.as_deref() else {
         return Vec::new();
     };
-    let home = home_of(base);
-    let home = match &home {
-        Some(home) => home.as_path(),
-        None if out == "~" || out.starts_with("~/") => return Vec::new(),
-        None => Path::new(""),
+    // Only a `~` out needs the home, so only it asks for one.
+    let home = if out == "~" || out.starts_with("~/") {
+        match home_of(base) {
+            Some(home) => home,
+            None => return Vec::new(),
+        }
+    } else {
+        PathBuf::new()
     };
-    let out_root = crate::paths::resolve_path(out, scope.vault_root, home);
+    let out_root = crate::paths::resolve_path(out, scope.vault_root, &home);
     output_to_hide(base, scope, &out_root, config, ns)
 }
 
