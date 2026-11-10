@@ -548,11 +548,16 @@ struct EntryListing {
 }
 
 fn entry_listing(config: &MarketplaceConfig, plugin: &str) -> EntryListing {
-    let own = overrides_for(config, plugin);
     EntryListing {
-        category: own.and_then(|o| o.category.clone()),
-        tags: own.and_then(|o| o.keywords.clone()).unwrap_or_default(),
+        category: overrides_for(config, plugin).and_then(|o| o.category.clone()),
+        tags: plugin_keywords(config, plugin),
     }
+}
+
+fn plugin_keywords(config: &MarketplaceConfig, plugin: &str) -> Vec<String> {
+    overrides_for(config, plugin)
+        .and_then(|o| o.keywords.clone())
+        .unwrap_or_default()
 }
 
 fn plugin_category(config: &MarketplaceConfig, plugin: &str) -> String {
@@ -628,8 +633,11 @@ pub fn render_plugin_manifest(
         category: String,
     }
     #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct Manifest<'a> {
         name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
         version: String,
         description: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -642,14 +650,14 @@ pub fn render_plugin_manifest(
         #[serde(skip_serializing_if = "Option::is_none")]
         interface: Option<Interface>,
     }
+    let display_name = overrides_for(config, plugin).and_then(|o| o.display_name.clone());
     let interface = (dialect == PluginDialect::Codex).then(|| Interface {
-        display_name: overrides_for(config, plugin)
-            .and_then(|o| o.display_name.clone())
-            .unwrap_or_else(|| plugin.to_owned()),
+        display_name: display_name.clone().unwrap_or_else(|| plugin.to_owned()),
         category: plugin_category(config, plugin),
     });
     let manifest = Manifest {
         name: plugin.to_owned(),
+        display_name: display_name.filter(|_| dialect == PluginDialect::Cursor),
         version: plugin_version(config, plugin),
         description: plugin_description(config, plugin, members),
         author: plugin_author(config, plugin).map(|author| match dialect {
@@ -657,9 +665,7 @@ pub fn render_plugin_manifest(
             _ => author,
         }),
         license: plugin_license(config, plugin),
-        keywords: overrides_for(config, plugin)
-            .and_then(|o| o.keywords.clone())
-            .unwrap_or_default(),
+        keywords: plugin_keywords(config, plugin),
         skills: "./skills/",
         hooks,
         interface,
@@ -667,10 +673,15 @@ pub fn render_plugin_manifest(
     finish_plugin(&manifest, config, plugin, harness_of(dialect))
 }
 
+/// The keyword the pi.dev gallery lists an npm package by.
+const PI_PACKAGE_KEYWORD: &str = "pi-package";
+
 /// Pi's pack manifest: a `package.json` naming the pack's `skills/`
 /// directory. Pi itself needs only `pi.skills`; `name`, `version`,
-/// `description`, `author` and `license` are the same fields the other
-/// dialects carry, in their npm places.
+/// `description`, `author`, `license` and `keywords` are the same fields the
+/// other dialects carry, in their npm places. `keywords` gains
+/// [`PI_PACKAGE_KEYWORD`], so the pack is listed once it is on npm; a
+/// `pi.keywords` block key replaces the whole list, as any block key does.
 pub(crate) fn pi_package_manifest(
     plugin: &str,
     members: &[&str],
@@ -688,7 +699,12 @@ pub(crate) fn pi_package_manifest(
         #[serde(skip_serializing_if = "Option::is_none")]
         author: Option<serde_json::Value>,
         license: String,
+        keywords: Vec<String>,
         pi: Pi,
+    }
+    let mut keywords = plugin_keywords(config, plugin);
+    if !keywords.iter().any(|k| k == PI_PACKAGE_KEYWORD) {
+        keywords.push(PI_PACKAGE_KEYWORD.to_owned());
     }
     let manifest = Manifest {
         name: plugin.to_owned(),
@@ -696,6 +712,7 @@ pub(crate) fn pi_package_manifest(
         description: plugin_description(config, plugin, members),
         author: plugin_author(config, plugin),
         license: plugin_license(config, plugin),
+        keywords,
         pi: Pi {
             skills: ["./skills"],
         },

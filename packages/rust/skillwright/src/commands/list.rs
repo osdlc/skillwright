@@ -11,7 +11,8 @@
 //! manifest, and it is `status`'s job (the status spec).
 //!
 //! A note the scan could not read does not hide the rest of the roster: it
-//! is named on the error sink, one line per note.
+//! is named on the error sink, one line per note, and the exit is 2 when a
+//! build would refuse it.
 //!
 //! `--model` prints something else: the marketplace model `build` renders
 //! from, loaded by the core's [`load`] with the root file's marketplace
@@ -21,7 +22,8 @@
 use tradecraft_core::model::load::{LoadRequest, load};
 use tradecraft_core::settings::ROOT_FILE;
 use tradecraft_core::{
-    DiscoveryReport, EntityKind, MISSING_DESCRIPTION_REASON, discover_roster, inherit_targets,
+    DiscoveryReport, EntityKind, INVALID_NAME_REASON, MISSING_DESCRIPTION_REASON, discover_roster,
+    inherit_targets,
 };
 
 use crate::commands::marketplace::marketplace_inputs;
@@ -86,11 +88,15 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
 
     // A roster says where a note goes, so it shows what the note inherits.
     inherit_targets(&mut scan, &run.root_config());
-    if run.is_workspace()
-        && let Err(code) = read_members(&mut scan, &run, &flags.common, ctx)
-    {
-        return code;
-    }
+    // A workspace builds only its members; `None` is the whole vault.
+    let members = if run.is_workspace() {
+        match read_members(&mut scan, &run, &flags.common, ctx) {
+            Ok(members) => Some(members),
+            Err(code) => return code,
+        }
+    } else {
+        None
+    };
     scan.warnings.extend(member_workspace_warnings(&run));
 
     // What a build refuses, by note: each row it names is flagged, and the
@@ -114,10 +120,10 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
                     row.as_object_mut(),
                 ) {
                     for (reason, detail) in found {
-                        let key = if *reason == MISSING_DESCRIPTION_REASON {
-                            "missing_description"
-                        } else {
-                            "collision"
+                        let key = match *reason {
+                            MISSING_DESCRIPTION_REASON => "missing_description",
+                            INVALID_NAME_REASON => "invalid_name",
+                            _ => "collision",
                         };
                         map.insert(key.to_owned(), (*detail).into());
                     }
@@ -168,7 +174,15 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
         );
     }
 
-    if errors.is_empty() {
+    // A build refuses a note it could not read, so the exit says so too. A
+    // member's build reads the workspace's root file as well as its own folder.
+    let refused_skip = scan.skipped.iter().any(|note| match &members {
+        None => true,
+        Some(members) => {
+            note.path == ROOT_FILE || members.iter().any(|m| note.path.starts_with(m.as_str()))
+        }
+    });
+    if errors.is_empty() && !refused_skip {
         EXIT_OK
     } else {
         EXIT_BLOCKED
@@ -178,12 +192,14 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
 /// Replaces what a workspace scan says about each marketplace with that
 /// marketplace's own scan: a build reads each one as a vault of its own, with
 /// its own `exclude`, `patterns` and namespace. What sits outside them stays.
+/// Returns each member's folder, `/`-terminated, as the rows spell it.
 fn read_members(
     scan: &mut DiscoveryReport,
     run: &ResolvedRun,
     common: &CommonFlags,
     ctx: &mut CommandContext<'_>,
-) -> Result<(), i32> {
+) -> Result<Vec<String>, i32> {
+    let mut members = Vec::new();
     for member in workspace_runs(run, common, None, ctx.err)? {
         let namespace = member.core_namespace();
         let mut inner =
@@ -229,11 +245,12 @@ fn read_members(
             warning.path = format!("{prefix}{}", warning.path);
             scan.warnings.push(warning);
         }
+        members.push(prefix);
     }
     scan.components
         .sort_by(|a, b| a.vault_relative_path.cmp(&b.vault_relative_path));
     scan.warnings.extend(workspace_warnings(run));
-    Ok(())
+    Ok(members)
 }
 
 /// `list --model`: the marketplace model as one JSON document on stdout.

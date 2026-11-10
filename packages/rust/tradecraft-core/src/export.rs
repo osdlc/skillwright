@@ -387,11 +387,13 @@ pub struct PluginOverrides {
     /// Default the marketplace `license`, then `UNLICENSED`.
     pub license: Option<String>,
     /// Default empty. Also the Claude and Cursor marketplace entry's `tags`.
+    /// Pi's `package.json` adds `pi-package`.
     pub keywords: Option<Vec<String>>,
     /// Codex always writes it, default `Productivity`. Claude and Cursor
     /// write it on the marketplace entry only when it is set.
     pub category: Option<String>,
-    /// Codex only. Default the plugin's name.
+    /// Codex's `interface.displayName`, default the plugin's name, and
+    /// Cursor's `displayName`, absent by default.
     pub display_name: Option<String>,
     /// Which harnesses the plugin's members go to. Default the marketplace
     /// `targets`.
@@ -2659,8 +2661,9 @@ mod tests {
         assert_eq!(
             text_at(&vfs, "/market/.pi/packs/tools/package.json"),
             "{\n  \"name\": \"tools\",\n  \"version\": \"0.1.0\",\n  \"description\": \
-             \"Skills: a, b.\",\n  \"license\": \"UNLICENSED\",\n  \"pi\": {\n    \
-             \"skills\": [\n      \"./skills\"\n    ]\n  }\n}\n"
+             \"Skills: a, b.\",\n  \"license\": \"UNLICENSED\",\n  \"keywords\": [\n    \
+             \"pi-package\"\n  ],\n  \"pi\": {\n    \"skills\": [\n      \"./skills\"\n    \
+             ]\n  }\n}\n"
         );
         let b = text_at(&vfs, "/market/.pi/packs/tools/skills/tools-b/SKILL.md");
         assert!(b.contains("name: tools-b\n"), "{b}");

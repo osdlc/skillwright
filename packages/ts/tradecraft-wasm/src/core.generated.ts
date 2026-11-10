@@ -226,7 +226,10 @@ export interface PluginOverrides {
   /** Default the marketplace `license`, then `UNLICENSED`. */
   license?: string;
 
-  /** Default empty. Also the Claude and Cursor marketplace entry's `tags`. */
+  /**
+   * Default empty. Also the Claude and Cursor marketplace entry's `tags`.
+   * Pi's `package.json` adds `pi-package`.
+   */
   keywords?: string[];
 
   /**
@@ -235,7 +238,10 @@ export interface PluginOverrides {
    */
   category?: string;
 
-  /** Codex only. Default the plugin's name. */
+  /**
+   * Codex's `interface.displayName`, default the plugin's name, and
+   * Cursor's `displayName`, absent by default.
+   */
   display_name?: string;
 
   /**
@@ -386,7 +392,7 @@ export interface PublishReason {
  * all read the same token, so it may not be free text that drifts from the
  * table it reproduces.
  */
-export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "excluded-note" | "missing-description" | "malformed" | "malformed-root-file" | "claimed" | "redundant-override" | "overwritten";
+export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "excluded-note" | "missing-description" | "invalid-name" | "malformed" | "malformed-root-file" | "claimed" | "redundant-override" | "overwritten";
 
 /** One note the scan admitted, and what is wrong with it. */
 export interface DiscoveryWarning {
