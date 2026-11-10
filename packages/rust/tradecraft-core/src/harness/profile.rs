@@ -657,7 +657,7 @@ pub const PORTABLE: HarnessProfile = HarnessProfile {
 };
 
 /// The harness's slug in the knowledge file.
-fn knowledge_slug(name: &str) -> &str {
+pub(crate) fn knowledge_slug(name: &str) -> &str {
     match name {
         "claude" => "claude-code",
         "copilot" => "copilot-cli",

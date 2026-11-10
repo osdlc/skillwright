@@ -6,7 +6,7 @@
  * commit. Evidence, study results and documents stay in the corpus.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -96,17 +96,54 @@ export function compile(beta: Beta, commit: string): Knowledge {
   }
 }
 
+/** The harnesses and subjects a consumer reads; the rest of the file is dropped. */
+export interface Slice {
+  harnesses: string[]
+  subjects: string[]
+}
+
+/** `Knowledge` cut down to a {@link Slice}: no `valueSchema`, since no consumer validates values. */
+export interface SlicedKnowledge extends Omit<Knowledge, 'subjects'> {
+  subjects: Record<string, Omit<Knowledge['subjects'][string], 'valueSchema'>>
+}
+
+/** Keep only the listed harnesses and subjects, and their values. */
+export function sliceKnowledge(knowledge: Knowledge, slice: Slice): SlicedKnowledge {
+  const pick = <T>(o: Record<string, T>, keep: string[]): Record<string, T> =>
+    Object.fromEntries(Object.entries(o).filter(([k]) => keep.includes(k)))
+  const subjects = Object.fromEntries(
+    Object.entries(pick(knowledge.subjects, slice.subjects)).map(
+      ([k, { valueSchema: _, ...rest }]) => [k, rest],
+    ),
+  )
+  return {
+    ...knowledge,
+    harnesses: pick(knowledge.harnesses, slice.harnesses),
+    subjects,
+    values: knowledge.values.filter(
+      (v) => slice.harnesses.includes(v.harness) && slice.subjects.includes(v.subject),
+    ),
+  }
+}
+
 /** Write both files under `outDir`, or only the data file with `schema: false`. */
-export function writeKnowledge(outDir: string, knowledge: Knowledge, schema = true): string[] {
+export function writeKnowledge(
+  outDir: string,
+  knowledge: Knowledge | SlicedKnowledge,
+  schema = true,
+  compact = false,
+): string[] {
   mkdirSync(outDir, { recursive: true })
   const files: [string, unknown][] = [['harness-knowledge.json', knowledge]]
   if (schema) files.push(['harness-knowledge.schema.json', KNOWLEDGE_SCHEMA])
   return files.map(([name, data]) => {
     const file = join(outDir, name)
-    writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`)
+    writeFileSync(file, `${JSON.stringify(data, null, compact ? undefined : 2)}\n`)
     return file
   })
 }
+
+export const readSlice = (file: string): Slice => JSON.parse(readFileSync(file, 'utf8')) as Slice
 
 /**
  * The corpus files git sees as changed or untracked under `corpus`, or none when git cannot say.
@@ -134,6 +171,7 @@ function main(argv: string[]): number {
       corpus: { type: 'string' },
       strict: { type: 'boolean' },
       'no-schema': { type: 'boolean' },
+      slice: { type: 'string' },
     },
   })
   const corpus = values.corpus === undefined ? BETA : resolve(values.corpus)
@@ -150,9 +188,16 @@ function main(argv: string[]): number {
     console.error(`warning: ${what}`)
   }
   try {
-    const knowledge = compile(loadBeta(corpus), commit)
+    const full = compile(loadBeta(corpus), commit)
+    const knowledge =
+      values.slice === undefined ? full : sliceKnowledge(full, readSlice(resolve(values.slice)))
     const outDir = resolve(values.out ?? join(ROOT, 'dist'))
-    for (const f of writeKnowledge(outDir, knowledge, values['no-schema'] !== true))
+    for (const f of writeKnowledge(
+      outDir,
+      knowledge,
+      values['no-schema'] !== true,
+      values.slice !== undefined,
+    ))
       console.log(`wrote ${f}`)
     console.log(`${knowledge.values.length} values at ${commit}`)
     return 0

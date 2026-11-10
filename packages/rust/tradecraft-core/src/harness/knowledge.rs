@@ -6,6 +6,10 @@
 //! thing this crate reads of that corpus (D-QXRN). [`lookup`] mirrors
 //! `harness-reference/src/compile/lookup.ts`; the two are held to the same cases.
 //!
+//! The copy holds only the harnesses and subjects in `data/embedded-slice.json`, written compact
+//! and without `valueSchema`. A new lookup adds its subject to that list and reruns
+//! `compile:embed`; a test fails until it does.
+//!
 //! The copy is compiled with the placeholder commit `main`, so it is the same on every checkout;
 //! a `harness-reference` test fails when it is stale.
 
@@ -75,9 +79,6 @@ pub struct SubjectInfo {
     pub title: String,
     /// The category it sits in.
     pub category: String,
-    /// The JSON Schema of its values.
-    #[serde(rename = "valueSchema")]
-    pub value_schema: Value,
 }
 
 /// How well the evidence supports a value.
@@ -804,6 +805,62 @@ mod tests {
                 expected,
                 "{a} {b}"
             );
+        }
+    }
+
+    #[derive(Deserialize)]
+    struct Slice {
+        harnesses: Vec<String>,
+        subjects: Vec<String>,
+    }
+
+    fn slice() -> Slice {
+        serde_json::from_str(include_str!("../../data/embedded-slice.json")).unwrap()
+    }
+
+    #[test]
+    fn the_embedded_file_holds_exactly_the_slice() {
+        let (kn, slice) = (embedded(), slice());
+        let mut subjects: Vec<&String> = kn.subjects.keys().collect();
+        subjects.sort();
+        assert_eq!(subjects, slice.subjects.iter().collect::<Vec<_>>());
+        let mut harnesses: Vec<&String> = kn.harnesses.keys().collect();
+        harnesses.sort();
+        assert_eq!(harnesses, slice.harnesses.iter().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn every_subject_the_profiles_look_up_is_in_the_slice() {
+        // Subjects are the `area/name` string literals in profile.rs.
+        let source = include_str!("profile.rs");
+        let mut found = std::collections::BTreeSet::new();
+        for literal in source.split('"').skip(1).step_by(2) {
+            let is_subject = literal.split_once('/').is_some_and(|(a, b)| {
+                let word = |w: &str| {
+                    !w.is_empty() && w.bytes().all(|c| c.is_ascii_lowercase() || c == b'-')
+                };
+                word(a) && word(b)
+            });
+            if is_subject {
+                found.insert(literal.to_owned());
+            }
+        }
+        assert!(found.contains("skills/user-dirs"), "the scan found nothing");
+        let slice = slice();
+        for subject in &found {
+            assert!(
+                slice.subjects.contains(subject),
+                "{subject} is looked up in profile.rs but not in data/embedded-slice.json"
+            );
+        }
+    }
+
+    #[test]
+    fn every_profile_harness_with_a_lookup_is_in_the_slice() {
+        let slice = slice();
+        for profile in crate::harness::profile::with_plugin_format() {
+            let slug = crate::harness::profile::knowledge_slug(profile.name);
+            assert!(slice.harnesses.iter().any(|h| h == slug), "{slug}");
         }
     }
 
