@@ -40,7 +40,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::CoreError;
-use crate::keys::{Owner, Shape};
 use crate::namespace::Namespace;
 
 /// Which publishable unit a note is: what the folder it sits in names.
@@ -580,66 +579,11 @@ fn check_shapes(
     kind: EntityKind,
 ) -> Result<(), CoreError> {
     for (key, value) in ours {
-        if let Some(spec) = crate::keys::lookup(kind, ns.field(key))
-            && spec.owner == Owner::Skillwright
-            && !spec.shape.accepts(value)
-        {
-            return Err(CoreError::wrong_kind(
-                path,
-                shape_refusal(spec.shape, key, value),
-            ));
+        if let Err(refusal) = crate::keys::check_shape(kind, ns.field(key), value) {
+            return Err(CoreError::wrong_kind(path, refusal.sentence(key)));
         }
     }
     Ok(())
-}
-
-/// What a value of the wrong shape is told, naming the key as the note
-/// spelled it.
-fn shape_refusal(shape: Shape, key: &str, value: &Value) -> String {
-    let found = type_name(value);
-    match shape {
-        Shape::String => format!(
-            "`{key}` must be a string, not {found}{}",
-            quoting_hint(value)
-        ),
-        Shape::Url => match value.as_str() {
-            Some(text) => format!("`{key}` must be an http or https URL, not `{text}`"),
-            None => format!("`{key}` must be an http or https URL, not {found}"),
-        },
-        Shape::StringList => match value {
-            Value::Array(items) => format!(
-                "`{key}` must be a list of strings; one entry is {}",
-                items
-                    .iter()
-                    .find(|item| !item.is_string())
-                    .map_or("not a string", type_name)
-            ),
-            _ => format!(
-                "`{key}` must be a list, not {found}. \
-                 An empty list means nowhere; removing the key means everywhere"
-            ),
-        },
-        Shape::Person => {
-            format!("`{key}` must be a name or a `{{name, email, url}}` mapping, not {found}")
-        }
-        Shape::Arguments => format!("`{key}` must be a list of argument objects, not {found}"),
-        Shape::HarnessBlock => {
-            format!("`{key}` must be a mapping of that harness's own keys, not {found}")
-        }
-        Shape::Adopted => format!(
-            "`{key}` must be a mapping of {}, not {found}",
-            ADOPTED_FIELDS.join(", ")
-        ),
-        Shape::Words
-        | Shape::AgentTools
-        | Shape::Hint
-        | Shape::Bool
-        | Shape::Flag
-        | Shape::Number
-        | Shape::Mapping => {
-            format!("`{key}` has the wrong shape: {found}")
-        }
-    }
 }
 
 /// Removes a harness block and returns it. `key: null` reads as no block.

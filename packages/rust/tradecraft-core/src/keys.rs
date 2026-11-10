@@ -97,6 +97,90 @@ impl Shape {
     }
 }
 
+/// Why a value is not the shape its key takes, in the shape's own words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShapeRefusal {
+    /// What the value must be: `a string`.
+    pub what: &'static str,
+    /// The rest of the sentence after `must be <what>`: what the value is
+    /// instead, and a hint where one helps. `, not a number`.
+    pub detail: String,
+}
+
+impl ShapeRefusal {
+    /// The refusal as one sentence about `key`, spelled as the note wrote it.
+    pub fn sentence(&self, key: &str) -> String {
+        format!("`{key}` must be {}{}", self.what, self.detail)
+    }
+}
+
+impl Shape {
+    /// Why `value` is not this shape.
+    fn refusal(self, value: &Value) -> ShapeRefusal {
+        use crate::frontmatter::{ADOPTED_FIELDS, quoting_hint, type_name};
+        let found = type_name(value);
+        let not = format!(", not {found}");
+        let (what, detail) = match self {
+            Self::String => ("a string", format!("{not}{}", quoting_hint(value))),
+            Self::Url => (
+                "an http or https URL",
+                match value.as_str() {
+                    Some(text) => format!(", not `{text}`"),
+                    None => not,
+                },
+            ),
+            Self::StringList => match value {
+                Value::Array(items) => (
+                    "a list of strings",
+                    format!(
+                        "; one entry is {}",
+                        items
+                            .iter()
+                            .find(|item| !item.is_string())
+                            .map_or("not a string", type_name)
+                    ),
+                ),
+                _ => (
+                    "a list",
+                    format!(
+                        "{not}. An empty list means nowhere; removing the key means everywhere"
+                    ),
+                ),
+            },
+            Self::Words | Self::Hint => ("a string or a list of strings", not),
+            Self::AgentTools => ("a string, a list of strings or a mapping", not),
+            Self::Bool => ("a boolean", not),
+            Self::Flag => ("a boolean", format!("{not}; write `true` or `false`")),
+            Self::Number => ("a number", not),
+            Self::Person => ("a name or a `{name, email, url}` mapping", not),
+            Self::Mapping => ("a mapping", not),
+            Self::Arguments => ("a list of argument objects", not),
+            Self::HarnessBlock => ("a mapping of that harness's own keys", not),
+            Self::Adopted => (
+                "a mapping",
+                format!(" of {}{not}", ADOPTED_FIELDS.join(", ")),
+            ),
+        };
+        ShapeRefusal { what, detail }
+    }
+}
+
+/// Checks `value` against the shape the table gives `key` on a note of
+/// `kind`. Only skillwright's own keys are checked: a key the table does not
+/// list, and a spec key, pass.
+///
+/// # Errors
+///
+/// A [`ShapeRefusal`] when `value` is not the key's shape.
+pub fn check_shape(kind: EntityKind, key: &str, value: &Value) -> Result<(), ShapeRefusal> {
+    match lookup(kind, key) {
+        Some(spec) if spec.owner == Owner::Skillwright && !spec.shape.accepts(value) => {
+            Err(spec.shape.refusal(value))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Whether `value` is an `http` or `https` URL with no whitespace.
 pub fn is_url(value: &str) -> bool {
     (value.starts_with("https://") || value.starts_with("http://"))
