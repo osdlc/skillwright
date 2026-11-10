@@ -19,15 +19,9 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 settings mcpServers](../../study-results/Amp/2026-11-09%20settings%20mcpServers.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Amp docs MCP](../../documents/ampcode.com/Amp%20docs%20MCP.md)"
-  - "[Amp docs Configuration](../../documents/ampcode.com/Amp%20docs%20Configuration.md)"
 contributions:
   - contributor:
       name: harness-reference import

@@ -18,11 +18,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 kiro mcp user level](../../study-results/Kiro/2026-11-09%20kiro%20mcp%20user%20level.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Kiro docs MCP configuration](../../documents/kiro.dev/Kiro%20docs%20MCP%20configuration.md)"

@@ -19,25 +19,9 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 headless help task stdin](../../study-results/DeepSeek%20Harness/2026-11-09%20headless%20help%20task%20stdin.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 reference headless persisted](../../study-results/DeepSeek%20Harness/2026-11-09%20reference%20headless%20persisted.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 reference headless exit code](../../study-results/DeepSeek%20Harness/2026-11-09%20reference%20headless%20exit%20code.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
 reportedIn:
   - "[DeepSeek Harness (dsh) harness notes for a dispatcher](../../documents/skillwright/DeepSeek%20Harness%20%28dsh%29%20harness%20notes%20for%20a%20dispatcher.md)"
   - "[deepseek-ai deepseek-harness cli-help.md at fcc0ad4](../../documents/github.com/deepseek-ai%20deepseek-harness%20cli-help.md%20at%20fcc0ad4.md)"
-  - "[deepseek-ai deepseek-harness apps cli reference README at fcc0ad4](../../documents/github.com/deepseek-ai%20deepseek-harness%20apps%20cli%20reference%20README%20at%20fcc0ad4.md)"
 contributions:
   - contributor:
       name: harness-reference import

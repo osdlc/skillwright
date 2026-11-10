@@ -18,15 +18,9 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 migration serverUrl](../../study-results/Antigravity/2026-11-09%20migration%20serverUrl.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Antigravity docs MCP](../../documents/antigravity.google/Antigravity%20docs%20MCP.md)"
-  - "[Antigravity docs CLI migration](../../documents/antigravity.google/Antigravity%20docs%20CLI%20migration.md)"
 contributions:
   - contributor:
       name: harness-reference import

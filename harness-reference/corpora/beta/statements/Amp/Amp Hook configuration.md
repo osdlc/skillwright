@@ -17,11 +17,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 plugins handle events](../../study-results/Amp/2026-11-09%20plugins%20handle%20events.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Amp docs Plugins](../../documents/ampcode.com/Amp%20docs%20Plugins.md)"

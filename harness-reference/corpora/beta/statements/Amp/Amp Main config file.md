@@ -20,26 +20,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 settings user file](../../study-results/Amp/2026-11-09%20settings%20user%20file.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 settings custom file flag](../../study-results/Amp/2026-11-09%20settings%20custom%20file%20flag.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 settings workspace overrides](../../study-results/Amp/2026-11-09%20settings%20workspace%20overrides.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 settings amp prefix](../../study-results/Amp/2026-11-09%20settings%20amp%20prefix.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Amp docs Configuration](../../documents/ampcode.com/Amp%20docs%20Configuration.md)"

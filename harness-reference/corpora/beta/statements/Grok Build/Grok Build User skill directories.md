@@ -20,16 +20,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 grok skill user grok row](../../study-results/Grok%20Build/2026-11-09%20grok%20skill%20user%20grok%20row.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 grok skill dedupe by name](../../study-results/Grok%20Build/2026-11-09%20grok%20skill%20dedupe%20by%20name.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Grok Build user guide Skills](../../documents/github.com/Grok%20Build%20user%20guide%20Skills.md)"
 contributions:

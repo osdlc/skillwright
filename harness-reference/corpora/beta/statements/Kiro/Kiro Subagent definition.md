@@ -18,16 +18,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 kiro agents locations](../../study-results/Kiro/2026-11-09%20kiro%20agents%20locations.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 kiro agents two formats](../../study-results/Kiro/2026-11-09%20kiro%20agents%20two%20formats.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Kiro docs Custom agents](../../documents/kiro.dev/Kiro%20docs%20Custom%20agents.md)"

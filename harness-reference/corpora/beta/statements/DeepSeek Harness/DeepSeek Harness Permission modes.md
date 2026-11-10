@@ -15,35 +15,13 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
   - hasEvidenceItems:
-      - "[2026-11-09 headless help approval-policy](../../study-results/DeepSeek%20Harness/2026-11-09%20headless%20help%20approval-policy.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
       - "[2026-11-09 reference permission env](../../study-results/DeepSeek%20Harness/2026-11-09%20reference%20permission%20env.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 presets table](../../study-results/DeepSeek%20Harness/2026-11-09%20presets%20table.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 guide permission env value](../../study-results/DeepSeek%20Harness/2026-11-09%20guide%20permission%20env%20value.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 reference default preset](../../study-results/DeepSeek%20Harness/2026-11-09%20reference%20default%20preset.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
 reportedIn:
   - "[deepseek-ai deepseek-harness cli-help.md at fcc0ad4](../../documents/github.com/deepseek-ai%20deepseek-harness%20cli-help.md%20at%20fcc0ad4.md)"
   - "[deepseek-ai deepseek-harness apps cli reference README at fcc0ad4](../../documents/github.com/deepseek-ai%20deepseek-harness%20apps%20cli%20reference%20README%20at%20fcc0ad4.md)"
-  - "[deepseek-ai deepseek-harness permission-presets.md at fcc0ad4](../../documents/github.com/deepseek-ai%20deepseek-harness%20permission-presets.md%20at%20fcc0ad4.md)"
-  - "[deepseek-ai deepseek-harness headless-policy-composition guide at fcc0ad4](../../documents/github.com/deepseek-ai%20deepseek-harness%20headless-policy-composition%20guide%20at%20fcc0ad4.md)"
 contributions:
   - contributor:
       name: harness-reference research

@@ -19,11 +19,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 grok project config](../../study-results/Grok%20Build/2026-11-09%20grok%20project%20config.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Grok Build user guide Configuration](../../documents/github.com/Grok%20Build%20user%20guide%20Configuration.md)"

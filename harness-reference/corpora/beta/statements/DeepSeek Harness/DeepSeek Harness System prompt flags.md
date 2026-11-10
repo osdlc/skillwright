@@ -18,11 +18,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 persona cwd not registered](../../study-results/DeepSeek%20Harness/2026-11-09%20persona%20cwd%20not%20registered.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
 reportedIn:
   - "[deepseek-ai deepseek-harness system-prompt README at fcc0ad4](../../documents/github.com/deepseek-ai%20deepseek-harness%20system-prompt%20README%20at%20fcc0ad4.md)"
 contributions:

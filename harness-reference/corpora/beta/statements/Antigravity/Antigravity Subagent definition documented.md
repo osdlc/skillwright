@@ -19,11 +19,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 subagents yaml frontmatter](../../study-results/Antigravity/2026-11-09%20subagents%20yaml%20frontmatter.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Antigravity docs Subagents](../../documents/antigravity.google/Antigravity%20docs%20Subagents.md)"
 contributions:

@@ -18,11 +18,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 spec body 500 lines](../../study-results/Agent%20Skills/2026-11-09%20spec%20body%20500%20lines.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
 reportedIn:
   - "[Agent Skills specification](../../documents/agentskills.io/Agent%20Skills%20specification.md)"
   - "[Agent Skills specification github.com](../../documents/github.com/Agent%20Skills%20specification%20github.com.md)"

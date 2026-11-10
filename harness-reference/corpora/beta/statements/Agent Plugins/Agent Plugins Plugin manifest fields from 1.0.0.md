@@ -79,11 +79,6 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-05 Agent Plugins Plugin manifest fields](../../study-results/Agent%20Plugins/2026-11-05%20Agent%20Plugins%20Plugin%20manifest%20fields.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-05.
-  - hasEvidenceItems:
       - "[2026-11-05 Agent Plugins Plugin manifest fields 2](../../study-results/Agent%20Plugins/2026-11-05%20Agent%20Plugins%20Plugin%20manifest%20fields%202.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

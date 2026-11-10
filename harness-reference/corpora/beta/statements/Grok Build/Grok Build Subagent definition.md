@@ -19,11 +19,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 grok subagents definition intro](../../study-results/Grok%20Build/2026-11-09%20grok%20subagents%20definition%20intro.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Grok Build user guide Subagents](../../documents/github.com/Grok%20Build%20user%20guide%20Subagents.md)"

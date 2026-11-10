@@ -22,11 +22,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 spec manifest closed fields](../../study-results/Agent%20Plugins/2026-11-09%20spec%20manifest%20closed%20fields.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
 reportedIn:
   - "[Agent Plugins](../../documents/agent-plugins.org/Agent%20Plugins.md)"
   - "[Agent Plugins Specification 1.0.0](../../documents/github.com/Agent%20Plugins%20Specification%201.0.0.md)"

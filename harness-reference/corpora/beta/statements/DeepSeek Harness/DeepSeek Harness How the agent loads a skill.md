@@ -18,30 +18,9 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-04.
-  - hasEvidenceItems:
-      - "[2026-11-09 tool-skill loader tool](../../study-results/DeepSeek%20Harness/2026-11-09%20tool-skill%20loader%20tool.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 tool-skill user invocation](../../study-results/DeepSeek%20Harness/2026-11-09%20tool-skill%20user%20invocation.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 tool-skill summary](../../study-results/DeepSeek%20Harness/2026-11-09%20tool-skill%20summary.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 skill-filesystem on demand](../../study-results/DeepSeek%20Harness/2026-11-09%20skill-filesystem%20on%20demand.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
 reportedIn:
   - "[DeepSeek Harness (dsh) harness notes for a dispatcher](../../documents/skillwright/DeepSeek%20Harness%20%28dsh%29%20harness%20notes%20for%20a%20dispatcher.md)"
   - "[dsh tool-skill package README](../../documents/github.com/dsh%20tool-skill%20package%20README.md)"
-  - "[dsh skill-filesystem package README](../../documents/github.com/dsh%20skill-filesystem%20package%20README.md)"
 contributions:
   - contributor:
       name: harness-reference import

@@ -31,35 +31,9 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 headless permission flags](../../study-results/Antigravity/2026-11-09%20headless%20permission%20flags.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 reference sandbox flag](../../study-results/Antigravity/2026-11-09%20reference%20sandbox%20flag.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 reference auto mode details](../../study-results/Antigravity/2026-11-09%20reference%20auto%20mode%20details.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 modes default and plan](../../study-results/Antigravity/2026-11-09%20modes%20default%20and%20plan.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 modes plan prefix](../../study-results/Antigravity/2026-11-09%20modes%20plan%20prefix.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Antigravity docs CLI commands](../../documents/antigravity.google/Antigravity%20docs%20CLI%20commands.md)"
   - "[Antigravity docs CLI execution modes](../../documents/antigravity.google/Antigravity%20docs%20CLI%20execution%20modes.md)"
-  - "[Antigravity docs CLI headless mode](../../documents/antigravity.google/Antigravity%20docs%20CLI%20headless%20mode.md)"
 contributions:
   - contributor:
       name: harness-reference research

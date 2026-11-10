@@ -20,16 +20,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 permissions rules example](../../study-results/Antigravity/2026-11-09%20permissions%20rules%20example.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 permissions ask rules example](../../study-results/Antigravity/2026-11-09%20permissions%20ask%20rules%20example.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Antigravity docs Permissions and sandbox](../../documents/antigravity.google/Antigravity%20docs%20Permissions%20and%20sandbox.md)"
 contributions:

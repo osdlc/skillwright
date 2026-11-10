@@ -17,15 +17,9 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 goosehints default names](../../study-results/goose/2026-11-09%20goosehints%20default%20names.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[aaif-goose goose load_hints.rs at 0edf2bd](../../documents/github.com/aaif-goose%20goose%20load_hints.rs%20at%200edf2bd.md)"
-  - "[aaif-goose goose using-goosehints.md at 0edf2bd](../../documents/github.com/aaif-goose%20goose%20using-goosehints.md%20at%200edf2bd.md)"
 contributions:
   - contributor:
       name: harness-reference import

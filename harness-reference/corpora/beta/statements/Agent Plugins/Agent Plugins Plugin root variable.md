@@ -19,17 +19,7 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
   - hasEvidenceItems:
-      - "[2026-11-04 Agent Plugins Plugin root variable 2](../../study-results/Agent%20Plugins/2026-11-04%20Agent%20Plugins%20Plugin%20root%20variable%202.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
-  - hasEvidenceItems:
       - "[2026-11-09 spec plugin root env](../../study-results/Agent%20Plugins/2026-11-09%20spec%20plugin%20root%20env.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09.
-  - hasEvidenceItems:
-      - "[2026-11-09 spec plugin root expansion](../../study-results/Agent%20Plugins/2026-11-09%20spec%20plugin%20root%20expansion.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09.
