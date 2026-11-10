@@ -851,52 +851,83 @@ export interface DiscoveredHook {
 }
 
 /**
- * What a container note says about the thing it names — the manifest fields
- * a marketplace or a plugin publishes under.
+ * What a container note says about the thing it names: the manifest fields
+ * a marketplace or a plugin publishes under. Its fields are the key table's
+ * identity rows ([`crate::keys::identity_keys`]).
  *
  * Read only on a container: the same words on a skill are the skill's own
- * (`license`) or unknown.
+ * (`license`) or unknown. A field a kind does not read stays unset.
  *
  * **Every field is optional and every absence has a default**, resolved by
  * [`crate::export`] rather than here, because the defaults are a property of
- * the manifest dialect being written and not of the note.
+ * the manifest dialect being written and not of the note. An unset field is
+ * left out of the JSON form, so absent and unset are the same thing.
  *
  * `owner` and `author` are [`Value`] rather than `String` because an author
  * may spell either as `{name, email, url}`, and narrowing them here would
  * refuse a shape the manifest accepts.
+ *
+ * The root file, the build config and a plugin's overrides embed this struct,
+ * flattened, so its fields sit at their top level on the wire.
  */
 export interface ContainerIdentity {
-  /** `owner` — the marketplace's owner, a name or a mapping. */
-  owner: unknown;
+  /**
+   * `owner`, a marketplace's only: a name or `{name, email, url}`. A string
+   * is normalised to `{name: …}` in a manifest, because Claude and Cursor
+   * require an object. Absent, the marketplace's name stands in.
+   */
+  owner?: unknown;
 
   /**
-   * `author` — the author a plugin publishes under, a name or a mapping. On a
-   * marketplace note it is the default for every plugin under it.
+   * `author`: a name or `{name, email, url}`. A string is normalised to
+   * `{name: …}`; Cursor drops `url`. A marketplace's is the default for
+   * each plugin.
    */
-  author: unknown;
+  author?: unknown;
 
   /**
-   * `display_name` — the human-facing name where a dialect carries one
-   * separately from the slug.
+   * `display_name`: Codex's `interface.displayName`, the name when absent.
+   * On a plugin, also Cursor's `displayName` on its manifest and its
+   * catalog entry, absent by default; `cursor.displayName` overrides it.
+   * Never inherited.
    */
-  display_name: string | null;
+  display_name?: string;
 
-  /** `license` — an SPDX identifier, unread and passed through. */
-  license: string | null;
+  /**
+   * `license`, an SPDX expression, passed through. A plugin's defaults to
+   * the marketplace's, then `UNLICENSED`.
+   */
+  license?: string;
 
-  /** `keywords`. */
-  keywords: string[] | null;
+  /**
+   * `keywords`, a plugin's only. Default empty. Also the Claude and Cursor
+   * marketplace entry's `tags`; Pi's `package.json` adds `pi-package`.
+   */
+  keywords?: string[];
 
-  /** `category` — the plugin's marketplace category. */
-  category: string | null;
+  /**
+   * `category`, a plugin's only. Codex always writes it, default
+   * `Productivity`; Claude and Cursor write it on the marketplace entry
+   * only when it is set.
+   */
+  category?: string;
 
-  /** `version` — the plugin's or marketplace's own version. */
-  version: string | null;
+  /**
+   * `version`, the container's own. A plugin's defaults to `0.1.0`, with a
+   * warning; the marketplace's own plugin takes the marketplace's.
+   */
+  version?: string;
 
-  /** `repository` — the source repository URL. */
+  /**
+   * `repository`, the source repository URL, written into every manifest
+   * that has the field. A marketplace's is the default for each plugin.
+   */
   repository?: string;
 
-  /** `homepage` — the documentation URL. */
+  /**
+   * `homepage`, the documentation URL, written into every manifest that
+   * has the field. A marketplace's is the default for each plugin.
+   */
   homepage?: string;
 }
 

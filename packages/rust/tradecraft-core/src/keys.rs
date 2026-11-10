@@ -705,6 +705,29 @@ pub fn inherits(kind: EntityKind, key: &str) -> bool {
     lookup(kind, key).is_some_and(|spec| spec.inherits)
 }
 
+/// The keys a container's identity holds: the key table's rows for a
+/// marketplace or a plugin that skillwright owns, less the harness blocks
+/// and `targets`, which every kind reads. In table order, deduplicated.
+///
+/// Any later skillwright-owned key a marketplace or plugin reads joins the
+/// identity by this rule, and a test fails until
+/// [`crate::frontmatter::ContainerIdentity`] has a field for it. A container
+/// key that is not identity data must be excluded here on purpose, with a
+/// reason.
+pub fn identity_keys() -> impl Iterator<Item = &'static str> {
+    let mut seen = Vec::new();
+    KEYS.iter()
+        .filter(|spec| spec.kinds.iter().any(|kind| CONTAINERS.contains(kind)))
+        .filter(|spec| spec.owner == Owner::Skillwright)
+        .filter(|spec| spec.shape != Shape::HarnessBlock && spec.key != "targets")
+        .map(|spec| spec.key)
+        .filter(move |key| {
+            let first = !seen.contains(key);
+            seen.push(*key);
+            first
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
