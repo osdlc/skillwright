@@ -1,6 +1,5 @@
-# Checks harness-reference/: the alpha bundle and the beta corpus-schema corpus
-# validate, schema/alpha/*.json is current, and the tests, typecheck and page
-# generator pass. The beta corpus is checked by the @osdlc/corpus-schema validator from npm.
+# Checks harness-reference/: the corpus validates (with the @osdlc/corpus-schema
+# validator from npm), the lint rules hold, and the tests and typecheck pass.
 #
 # The `paths` filter means this workflow does not run on every pull request,
 # so it is not one to require in a ruleset.
@@ -49,6 +48,6 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Validate, test, typecheck and generate
+      - name: Validate, lint, test and typecheck
         working-directory: harness-reference
         run: pnpm run check

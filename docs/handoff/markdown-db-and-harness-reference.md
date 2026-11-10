@@ -25,29 +25,30 @@ too (for example inherited policies and shared information distributed as corpor
 | The `corpus` term | `docs/terms/corpus.md` |
 | The validator package, `@osdlc/markdown-db` | `packages/ts/markdown-db/` |
 | Language-neutral example corpora with expected results | `packages/ts/markdown-db/tests/cases/` |
-| Corpus alpha, the frozen prototype (OKF v0.2) | `harness-reference/corpora/alpha/` |
-| Corpus beta, on the standard | `harness-reference/corpora/beta/` |
+| The harness-reference corpus | `harness-reference/corpus/` |
+| Its research notes (narrative files) | `harness-reference/corpus/notes/` |
 | The evidence design review and its prior-art survey | `docs/parley/evidence-v0.json`, `docs/parley/evidence-v0-survey.md` |
-| The evidence writer | `harness-reference/src/beta/capture.ts` |
+| The evidence writer | `harness-reference/src/corpus/capture.ts` |
 
-Run `pnpm run validate:beta` from `harness-reference/`, or `pnpm exec markdown-db validate <folder>`.
+Run `pnpm run validate` from `harness-reference/`, or `pnpm exec markdown-db validate <folder>`.
 
-## Corpus beta today
+## The corpus today
 
 | Type | Records | Holds |
 |---|---|---|
-| `harnesses` | 14 | One per harness, named by product (`Claude Code.md`). Vendor, URLs, license, CLI command, surfaces, status, `successor` / `fork_of` links, `sources` links to references |
-| `references` | 52 | One per web page, in publisher folders (`references/Anthropic/…`) |
-| `evidence` | 5 | One observation of a page: kind, reference, harness, observed date, optional version, locator and excerpt |
+| `harnesses` | 16 | One per harness, named by product (`Claude Code.md`). Vendor, URLs, license, CLI command, surfaces, status, `successor` / `fork_of` links, `sources` links to documents |
+| `documents` | 168 | One per web page or research note, in publisher folders |
+| `methods` | 5 | One per repeatable probe |
+| `study-results` | 638 | One observation of a page or one run: kind, document or method, harness, observed date, optional version, locator and excerpt |
+| `subjects` | 83 | One per question asked of every harness, with the shape of its answer |
+| `statements` | 598 | One per claim about a harness and a subject in one scope, with its evidence lines |
 
-Beta has no subjects or facts yet. Alpha holds 16 harnesses, 65 subjects, 589 facts and 633
-observations; code still reads alpha.
+`pnpm run compile` turns the statements into `dist/harness-knowledge.json`.
 
 ## Code that reads the data
 
 - `packages/rust/tradecraft-core/src/harness/profile.rs`: the harness profiles are written by hand.
-  Its tests check them against alpha facts read from
-  `harness-reference/corpora/alpha/facts/<harness>/<subject>.md`: `skills/project-dirs`,
+  Its tests check them against facts from the corpus: `skills/project-dirs`,
   `plugins/manifest` and `plugins/marketplace`. Its doc comments also name `skills/user-dirs` and
   `plugins/manifest-fields`; `field_types.rs` comments name `plugins/manifest-fields` and
   `plugins/marketplace-fields`. Checking rather than generating is deliberate: it keeps a research
@@ -59,21 +60,20 @@ observations; code still reads alpha.
 
 ## Next for harness-reference, in order
 
-1. [ ] **Subjects and claims types in beta, with typed values.** A claim is one record per harness
+1. [ ] **Typed values for subjects and statements.** A claim is one record per harness
    and subject, for example `skills/project-dirs` as a list of paths, not prose. It cites evidence
    through a top-level `evidence` array of links (`x-ref: evidence`), which S-GFFY v0 can validate.
    Supports / contradicts per evidence needs `x-ref` in nested objects (markdown-db item 3).
-2. [ ] **Move the facts code reads first** from alpha to beta (the subjects listed above), capture
-   evidence for them, and point the `profile.rs` tests at beta.
+2. [ ] **Capture evidence for the facts code reads**, and point the `profile.rs` tests at the
+   compiled knowledge file.
 3. [ ] **A loader** so code reads validated records without parsing Markdown (markdown-db item 2).
-   Then cite beta from `detect-harness`.
-4. [ ] Move the remaining alpha facts, then retire alpha.
-5. [ ] Experiments: `harness-reference/probes/` become level-2 experiments whose runs write `kind: run`
+   Then cite the corpus from `detect-harness`.
+4. [ ] Experiments: `harness-reference/probes/` become level-2 experiments whose runs write `kind: run`
    evidence (needs markdown-db item 4).
 
 ## Next for markdown-db, in order
 
-Items 1 to 3 are the alpha: usable from another project and able to back code.
+Items 1 to 3 are the first release: usable from another project and able to back code.
 
 1. [ ] **Installable from another project.** The package ships `.ts` files and relies on Node 24
    type stripping, which Node does not do inside `node_modules`, so as a dependency it fails.
@@ -120,7 +120,7 @@ Smaller known issues:
   license` record works around it by ending the quote before `(LICENSE)`. Fix: check links only in
   `x-ref` properties and the body, or let a schema mark a property as quoted text (`x-quote`), and
   then capture that record again with the whole sentence.
-- S-GFFY's Deferred list is unordered. Items 3 to 6 above come from it or from building beta; the
+- S-GFFY's Deferred list is unordered. Items 3 to 6 above come from it or from building the corpus; the
   rest stay deferred: links between corpora and mount / distribution, schema versions and
   migrations, concurrent edits, Obsidian's vault-wide property types, reserved names, stable error
   codes, `move` / `rename` verbs, and other build targets (Astro, Nuxt, Obsidian Bases).
@@ -129,12 +129,12 @@ Smaller known issues:
 
 Evidence is the primitive the other levels build on.
 
-| Level | What | In beta |
+| Level | What | In the corpus |
 |---|---|---|
-| 0 Reference | the page: a locator | `references` |
-| 1 Evidence | one look at a page: when, which version, the excerpt | `evidence` |
-| 2 Experiment | a folder with a procedure, fixtures and safety notes; each run writes level-1 evidence | not yet (`harness-reference/probes/`) |
-| 3 Synthesis | a narrative citing many records | not yet (alpha `sources/`) |
+| 0 Reference | the page: a locator | `documents` |
+| 1 Evidence | one look at a page: when, which version, the excerpt | `study-results` |
+| 2 Experiment | a folder with a procedure, fixtures and safety notes; each run writes level-1 evidence | `methods` (probes in `harness-reference/probes/`) |
+| 3 Synthesis | a narrative citing many records | `corpus/notes/` |
 
 Rules taken from the survey, where both passes agreed:
 
@@ -147,7 +147,7 @@ Rules taken from the survey, where both passes agreed:
 - The date we looked (`observed`) is kept apart from the source's own date.
 - Excerpts are `{exact, prefix, suffix}` (W3C text-quote selector), so a re-check can report
   present / moved / gone. Source code is pinned to a commit, never `blob/main`; all three license
-  references in beta (Claude Code, GitHub Copilot CLI, Grok Build) are pinned.
+  references in the corpus (Claude Code, GitHub Copilot CLI, Grok Build) are pinned.
 - Evidence records are append-only; a correction or a later contradicting run is a new record.
 - A type ships with a writer and a reader (the dev repo's D-ORMG rule). `capture` is the first writer.
 
@@ -160,7 +160,7 @@ Kinds and their writers:
 | `run` | an experiment (not built) |
 | `inferred` | a person or agent by hand, citing what it infers from |
 
-The review questions on `docs/parley/evidence-v0.json` were not answered. Beta uses each question's
+The review questions on `docs/parley/evidence-v0.json` were not answered. The corpus uses each question's
 recommended option; all are open:
 
 | Question | Default used |
@@ -168,7 +168,7 @@ recommended option; all are open:
 | q-split | reference and evidence are two types |
 | q-stance | stance on the claim's link (not exercised yet) |
 | q-score | no stored strength |
-| q-kind | alpha's kinds plus `issue` and `third-party` |
+| q-kind | `docs`, `changelog`, `source`, `help-text`, `run`, `inferred`, plus `issue` and `third-party` |
 | q-excerpt | optional; the warning needs `x-warn` |
 | q-archive | optional `archive` and `url_status`; `capture` does not request snapshots yet |
 | q-immutable | append-only, by convention |

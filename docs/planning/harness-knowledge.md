@@ -24,7 +24,7 @@ Status: in progress, updated 2026-11-09.
 | 5 tradecraft-core reads the embedded file; D-QXRN | [skillwright#99](https://github.com/osdlc/skillwright/pull/99) | draft; review converged; needs the researched data |
 | 5 `@osdlc/harness-knowledge`, agent-call and detect-harness | [osdlc#750](https://github.com/osdlc/osdlc/pull/750) | draft; needs re-sync, wiring and a first publish |
 | 6 drift loop | — | not started |
-| 7 retire alpha | — | not started |
+| 7 retire alpha | done in [skillwright#TBD](https://github.com/osdlc/skillwright/pulls) | alpha corpus, validator, generator and importer deleted; the tradecraft-core tests that read alpha move with [skillwright#99](https://github.com/osdlc/skillwright/pull/99) |
 
 Next:
 
@@ -47,7 +47,7 @@ Next:
 
 ```mermaid
 flowchart LR
-  subgraph corpus["harness-reference/corpora/beta (the claims corpus)"]
+  subgraph corpus["harness-reference/corpus (the claims corpus)"]
     D[documents<br/>a page we can point at]
     M[methods<br/>an experiment: probe script]
     S[study-results<br/>one dated look]
@@ -156,7 +156,7 @@ disputes it.
 
 ### Rules a schema cannot hold
 
-A `lint` script in `src/beta/` checks the rules that compare records:
+A `lint` script in `src/corpus/` checks the rules that compare records:
 
 - `proposition.object` validates against the subject's `valueSchema`.
 - `proposition.subject` and `predicate` match `harness` and `subject`.
@@ -174,7 +174,7 @@ A `lint` script in `src/beta/` checks the rules that compare records:
 ```jsonc
 {
   "schema": 1,
-  "corpus": { "repo": "osdlc/skillwright", "path": "harness-reference/corpora/beta", "commit": "<sha>" },
+  "corpus": { "repo": "osdlc/skillwright", "path": "harness-reference/corpus", "commit": "<sha>" },
   "harnesses": { "claude-code": { "title": "Claude Code", "versioning": "semver", "cli": "claude" } },
   "subjects":  { "cli/session-env": { "title": "Session environment", "category": "cli", "valueSchema": {} } },
   "values": [
@@ -183,7 +183,7 @@ A `lint` script in `src/beta/` checks the rules that compare records:
       "value": { "vars": ["CLAUDE_CODE_SESSION_ID", "CLAUDE_PID"] },
       "scope": { "since": null, "until": null, "platform": [], "model": null },
       "strength": "strong",
-      "basis": "https://github.com/osdlc/skillwright/blob/<sha>/harness-reference/corpora/beta/statements/..."
+      "basis": "https://github.com/osdlc/skillwright/blob/<sha>/harness-reference/corpus/statements/..."
     }
   ]
 }
@@ -240,12 +240,12 @@ the profile's shape are unchanged. A new decision record, D-xxxx, says so when p
 | # | Phase | Output | Depends on |
 |---|---|---|---|
 | 1 | **Profile types in beta.** Rename `references` to `documents` and `evidence` to `study-results` with their extensions. Add `methods`, `statements`, `subjects` schemas. Copy the claims profile schemas with a pinned source commit. Add `lint`. | beta validates; lint passes; existing beta records migrated | — |
-| 2 | **Importer, pilot.** `src/beta/import-alpha.ts` converts one category (`cli`) of alpha: sources and notes to documents, probes to methods, observations to study-results, facts to statements, with strength by rule. Idempotent: rerunning writes the same files. The `cli` subjects get a `valueSchema` written by hand from the values observed in the `cli` facts. | ~60 statements; diff reviewed by a person | 1 |
+| 2 | **Importer, pilot.** the alpha importer converted one category (`cli`) of alpha: sources and notes to documents, probes to methods, observations to study-results, facts to statements, with strength by rule. Idempotent: rerunning writes the same files. The `cli` subjects get a `valueSchema` written by hand from the values observed in the `cli` facts. | ~60 statements; diff reviewed by a person | 1 |
 | 3 | **Compiler and lookup.** `src/compile/` writes `harness-knowledge.json` and its schema; `lookup` and tests. | the file for the pilot slice | 2 |
 | 4 | **Full import.** All 589 facts and 11 categories. Value shapes written as `valueSchema` per subject; facts whose values don't fit get fixed by hand. | the full file; alpha frozen | 2 |
 | 5 | **First consumers.** agent-call's adapters and detect-harness (osdlc/osdlc) read the npm package; tradecraft-core's profiles read the embedded file. Decision record amending D-FDLQ. | consumer PRs | 3, 4 |
 | 6 | **Drift loop.** Each method states how to read its output into a value (a `parse` script beside the probe). Probes run in CI on a schedule and write a study result with the parsed value. A check compares it with the current statement for that harness and subject. On a mismatch it opens a PR adding a `disputes` evidence line and setting `status: disputed`, for a person to resolve. Consumers list the subjects they need in a `requires` file, and the compiler fails when one of them is disputed or missing. | scheduled workflow | 5 |
-| 7 | **Retire alpha.** First move the tests that read alpha (such as tradecraft-core's `the_facts_the_test_reads_are_there`) onto the derived file. Then delete the alpha corpus, its validator and page generator, and generate pages from statements. | — | 4, 5 |
+| 7 | **Retire alpha.** First move the tests that read alpha (such as tradecraft-core's `the_facts_the_test_reads_are_there`) onto the derived file. Then delete the alpha corpus, its validator and page generator. | — | 4, 5 |
 
 ### Research scope for phase 4
 
