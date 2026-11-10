@@ -2590,3 +2590,27 @@ fn load_effective_root_tells_unreadable_from_malformed() {
         "refused: malformed-root-file: /v/latin1.md: it is not UTF-8. Nothing was written"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn load_marketplace_through_a_linked_member_folds_its_workspace() {
+    use tradecraft_core::NativeVfs;
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path().join("ws");
+    let member = ws.join("marketplaces/acme");
+    std::fs::create_dir_all(member.join("skills")).unwrap();
+    std::fs::write(
+        ws.join("skillwright.md"),
+        "---\nworkspace: true\nlicense: MIT\n---\n",
+    )
+    .unwrap();
+    std::fs::write(member.join("skillwright.md"), "---\nname: acme\n---\n").unwrap();
+    let link = tmp.path().join("acme-link");
+    std::os::unix::fs::symlink(&member, &link).unwrap();
+
+    let loaded = tradecraft_core::load_marketplace(&NativeVfs, &link, Path::new("/home"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(loaded.dir, link);
+    assert_eq!(loaded.root.marketplace.license.as_deref(), Some("MIT"));
+}

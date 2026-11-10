@@ -396,12 +396,12 @@ pub(crate) fn check_pack_location(
 /// excludes, as [`crate::patterns::Patterns::load`] refuses it: the scan this
 /// configures would refuse it too.
 pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> Result<MarketplaceConfig, CoreError> {
-    use crate::paths::{read_root_both, workspace_file};
+    use crate::paths::{read_root_both, workspace_at};
     let Some((layout, full)) = read_root_both(vfs, &vault_root.join(ROOT_FILE))? else {
         return Ok(MarketplaceConfig::default());
     };
-    let shared = match workspace_file(vault_root).filter(|_| !layout.workspace) {
-        Some(file) => read_root_both(vfs, &file)?.filter(|(layout, _)| layout.workspace),
+    let shared = match workspace_at(vfs, vault_root).filter(|_| !layout.workspace) {
+        Some(at) => read_root_both(vfs, &at.file)?.filter(|(layout, _)| layout.workspace),
         None => None,
     };
     let Ok(mut root) = full else {

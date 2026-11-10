@@ -34,7 +34,7 @@ use crate::compile::EXCLUDED_BUNDLE_DIRECTORIES;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
-use crate::paths::{RootRead, WORKSPACE_DIR, read_root, read_workspace_above};
+use crate::paths::{RootRead, WORKSPACE_DIR, read_root, read_workspace_above, workspace_at};
 use crate::settings::{FolderPatterns, ROOT_FILE};
 use crate::vfs::Vfs;
 
@@ -180,12 +180,12 @@ impl Patterns {
         let written: BTreeSet<String> = root.build.patterns.globs().cloned().collect();
         let mut workspace_exclude = None;
         if !root.workspace
-            && let Some(shared) = read_workspace_above(vfs, vault_root, RootRead::Layout)?
+            && let Some((at, shared)) = read_workspace_above(vfs, vault_root, RootRead::Layout)?
         {
             root.inherit(&shared);
             if !shared.build.exclude.is_empty() {
-                let name = vault_root.file_name().unwrap_or_default().to_string_lossy();
-                workspace_exclude = Some((format!("{WORKSPACE_DIR}/{name}"), shared.build.exclude));
+                let member = format!("{WORKSPACE_DIR}/{}", at.member);
+                workspace_exclude = Some((member, shared.build.exclude));
             }
         }
         let inherited = root
@@ -231,14 +231,21 @@ impl Patterns {
     /// The files of the other marketplaces beside the one at `vault_root`, for
     /// a glob a workspace shares among them. Empty when this one inherits none.
     pub(crate) fn sibling_files(&self, vfs: &dyn Vfs, vault_root: &Path) -> Vec<String> {
-        let Some(folder) = vault_root.parent().filter(|_| !self.inherited.is_empty()) else {
+        if self.inherited.is_empty() {
+            return Vec::new();
+        }
+        let Some(at) = workspace_at(vfs, vault_root) else {
             return Vec::new();
         };
-        vfs.read_dir(folder)
+        let Some(folder) = at.file.parent().map(|ws| ws.join(WORKSPACE_DIR)) else {
+            return Vec::new();
+        };
+        vfs.read_dir(&folder)
             .unwrap_or_default()
             .iter()
+            .filter(|entry| entry.name != at.member)
             .map(|entry| folder.join(&entry.name))
-            .filter(|path| path != vault_root && vfs.exists(&path.join(ROOT_FILE)))
+            .filter(|path| vfs.exists(&path.join(ROOT_FILE)))
             .flat_map(|path| crate::walk::glob_files(vfs, &path))
             .collect()
     }
@@ -612,6 +619,27 @@ fn prefixes(rel: &str) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_exclude_reads_the_member_name_not_the_link_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = tmp.path().join("ws");
+        let member = ws.join("marketplaces/acme");
+        std::fs::create_dir_all(&member).unwrap();
+        std::fs::write(
+            ws.join(ROOT_FILE),
+            "---\nworkspace: true\nbuild:\n  exclude: [skills/a.md]\n---\n",
+        )
+        .unwrap();
+        std::fs::write(member.join(ROOT_FILE), "---\nname: acme\n---\n").unwrap();
+        let link = tmp.path().join("acme-link");
+        std::os::unix::fs::symlink(&member, &link).unwrap();
+        let patterns = Patterns::load(&crate::vfs::NativeVfs, &link).unwrap();
+        let (prefix, globs) = patterns.workspace_exclude.unwrap();
+        assert_eq!(prefix, "marketplaces/acme");
+        assert_eq!(globs, vec!["skills/a.md".to_owned()]);
+    }
 
     fn patterns(folders: FolderPatterns) -> Patterns {
         Patterns {

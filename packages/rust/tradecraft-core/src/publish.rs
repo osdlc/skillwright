@@ -762,7 +762,9 @@ fn publish_onto(
     let placed = crate::patterns::Patterns::load_at(vfs, request.skills_root.as_deref())?;
     let placed = placed.as_ref();
     refuse_excluded(placed, &request.skill_path)?;
-    if placed.is_some_and(|(_, root)| crate::paths::is_vault_root_file(root, &request.skill_path)) {
+    if placed
+        .is_some_and(|(_, root)| crate::paths::is_vault_root_file(vfs, root, &request.skill_path))
+    {
         return Err(root_file_not_a_note(&request.skill_path));
     }
     let resolved = publish_kind(placed, &request.skill_path);

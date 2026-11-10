@@ -137,8 +137,16 @@ fn is_reserved_note(vault: &Path, path: &Path) -> bool {
 /// `skillwright.md`, directly under the vault root, or the workspace file
 /// above it when `vault` is a workspace member. Either configures the vault;
 /// neither is a note of any kind.
-pub(crate) fn is_vault_root_file(vault: &Path, path: &Path) -> bool {
-    path == vault.join(ROOT_FILE) || workspace_file(vault).is_some_and(|file| path == file)
+///
+/// Both sides are compared by their real paths, so a spelling through a link
+/// and the real spelling are one file. A path the host cannot resolve is
+/// compared as written.
+pub(crate) fn is_vault_root_file(vfs: &dyn Vfs, vault: &Path, path: &Path) -> bool {
+    let real =
+        |p: &Path| crate::guard::real_path(vfs, p).unwrap_or_else(|_| crate::vfs::normalize(p));
+    let path = real(path);
+    path == real(&vault.join(ROOT_FILE))
+        || workspace_at(vfs, vault).is_some_and(|at| path == real(&at.file))
 }
 
 /// Whether the vault-relative `path` is a marketplace's entry note,
@@ -163,11 +171,11 @@ pub(crate) fn is_flat_root_file_name(path: &Path) -> bool {
 }
 
 /// The workspace root file above the marketplace whose root is `dir`, when
-/// `dir` is `<workspace>/marketplaces/<m>/` and that file says
-/// `workspace: true`. A file that cannot be read is returned too: an exclusion
+/// `dir` is `<workspace>/marketplaces/<m>/`, as given or by its real path,
+/// and that file says `workspace: true`. A file that cannot be read is returned too: an exclusion
 /// it holds must not fail open, so loading it refuses the run.
 pub fn workspace_above(vfs: &dyn Vfs, dir: &Path) -> Option<PathBuf> {
-    let file = workspace_file(dir)?;
+    let file = workspace_at(vfs, dir)?.file;
     match read_root(vfs, &file, RootRead::Full) {
         Ok(None) => None,
         Ok(Some(root)) if !root.workspace => None,
@@ -188,41 +196,60 @@ pub(crate) enum RootRead {
 
 /// The workspace file above the marketplace at `dir`, read as `read` says,
 /// when `dir` is `<workspace>/marketplaces/<m>/` and the file says
-/// `workspace: true`.
+/// `workspace: true`, with where it was found.
 ///
 /// # Errors
 ///
-/// `refused: malformed-root-file`, as [`read_root`].
+/// As [`read_root`].
 pub(crate) fn read_workspace_above(
     vfs: &dyn Vfs,
     dir: &Path,
     read: RootRead,
-) -> Result<Option<RootFile>, CoreError> {
-    Ok(read_workspace(vfs, dir, read)?.map(|(_, root)| root))
-}
-
-/// [`read_workspace_above`], with the workspace file's path.
-fn read_workspace(
-    vfs: &dyn Vfs,
-    dir: &Path,
-    read: RootRead,
-) -> Result<Option<(PathBuf, RootFile)>, RootFileError> {
-    let Some(file) = workspace_file(dir) else {
+) -> Result<Option<(WorkspaceAt, RootFile)>, RootFileError> {
+    let Some(at) = workspace_at(vfs, dir) else {
         return Ok(None);
     };
-    Ok(read_root(vfs, &file, read)?
+    Ok(read_root(vfs, &at.file, read)?
         .filter(|root| root.workspace)
-        .map(|root| (file, root)))
+        .map(|root| (at, root)))
 }
 
-/// Where a workspace file above `dir` would be, when `dir` is
-/// `<workspace>/marketplaces/<m>/`.
-pub(crate) fn workspace_file(dir: &Path) -> Option<PathBuf> {
-    let parent = dir.parent()?;
-    if parent.file_name()? != WORKSPACE_DIR {
-        return None;
+/// Where the workspace above the member at `dir` sits, by its shape:
+/// `<ws>/marketplaces/<m>/`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkspaceAt {
+    /// `<ws>/skillwright.md`.
+    pub file: PathBuf,
+    /// `<m>`, from the spelling that matched.
+    pub member: String,
+    /// Whether the match came from the real path, not `dir` as given.
+    pub through_link: bool,
+}
+
+/// The workspace above the member at `dir`: `dir` as given first, then its
+/// real path through [`Vfs::canonicalize`]. The first spelling whose
+/// `<ws>/skillwright.md` exists wins, so a member folder that is itself a
+/// link inside `marketplaces/` keeps its workspace, and a link to a member
+/// from elsewhere finds the one it leads to.
+pub(crate) fn workspace_at(vfs: &dyn Vfs, dir: &Path) -> Option<WorkspaceAt> {
+    let by_shape = |dir: &Path, through_link: bool| {
+        let parent = dir.parent()?;
+        if parent.file_name()? != WORKSPACE_DIR {
+            return None;
+        }
+        let file = parent.parent()?.join(ROOT_FILE);
+        let member = dir.file_name()?.to_string_lossy().into_owned();
+        vfs.exists(&file).then_some(WorkspaceAt {
+            file,
+            member,
+            through_link,
+        })
+    };
+    if let Some(at) = by_shape(dir, false) {
+        return Some(at);
     }
-    Some(parent.parent()?.join(ROOT_FILE))
+    let real = vfs.canonicalize(dir).ok()?;
+    (real != dir).then(|| by_shape(&real, true))?
 }
 
 /// The root file at `file`, read as `read` says, `None` when there is none.
@@ -388,16 +415,16 @@ pub fn load_effective_root(
         .unwrap_or_default();
     let mut workspace = None;
     if !root.workspace
-        && let Some((shared_file, shared)) = read_workspace(vfs, dir, RootRead::Full)?
+        && let Some((at, shared)) = read_workspace_above(vfs, dir, RootRead::Full)?
     {
         root.inherit(&shared);
         warnings.extend(
             shared
                 .warnings
                 .into_iter()
-                .map(|warning| (shared_file.clone(), warning)),
+                .map(|warning| (at.file.clone(), warning)),
         );
-        workspace = Some(shared_file);
+        workspace = Some(at.file);
     }
     Ok(EffectiveRoot {
         root,

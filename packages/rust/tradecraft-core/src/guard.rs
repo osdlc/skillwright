@@ -145,6 +145,33 @@ pub(crate) fn within(vfs: &dyn Vfs, outer: &Path, inner: &Path) -> Result<bool, 
     })
 }
 
+/// `path` with every link on the way resolved, as far as it exists, and the
+/// missing rest kept as written.
+///
+/// # Errors
+///
+/// `refused: unsafe-path`, as [`within`]: on a host failure other than a
+/// missing path or a non-link, and when `path` is empty or relative.
+pub(crate) fn real_path(vfs: &dyn Vfs, path: &Path) -> Result<PathBuf, CoreError> {
+    let resolver = VfsResolver {
+        vfs,
+        failure: RefCell::new(None),
+    };
+    let answer = Guard::new(&resolver).real_path(path);
+    if let Some(failure) = resolver.failure.into_inner() {
+        return Err(failure);
+    }
+    answer.map_err(|err| {
+        CoreError::refused(
+            "unsafe-path",
+            format!(
+                "cannot resolve {}: {err}. Nothing was written",
+                path.display()
+            ),
+        )
+    })
+}
+
 /// Refuses `candidate` as a destination root if it is equal to, inside, or
 /// an ancestor of any protected tree.
 ///
@@ -621,6 +648,94 @@ mod tests {
             };
             Err(crate::vfs::VfsError::io(path, std::io::Error::from(kind)))
         }
+    }
+
+    /// `/link` leads to `/real`. A path that is not there cannot be
+    /// resolved, as a real filesystem answers.
+    struct LinkVfs(crate::vfs::MemVfs);
+
+    impl LinkVfs {
+        fn real(path: &Path) -> PathBuf {
+            match path.strip_prefix("/link") {
+                Ok(rest) => Path::new("/real").join(rest),
+                Err(_) => path.to_path_buf(),
+            }
+        }
+    }
+
+    impl Vfs for LinkVfs {
+        fn read_file(&self, path: &Path) -> Result<Vec<u8>, crate::vfs::VfsError> {
+            self.0.read_file(&Self::real(path))
+        }
+        fn read_dir(&self, path: &Path) -> Result<Vec<crate::vfs::DirEntry>, crate::vfs::VfsError> {
+            self.0.read_dir(&Self::real(path))
+        }
+        fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<(), crate::vfs::VfsError> {
+            self.0.write_file(&Self::real(path), bytes)
+        }
+        fn create_dir_all(&self, path: &Path) -> Result<(), crate::vfs::VfsError> {
+            self.0.create_dir_all(&Self::real(path))
+        }
+        fn exists(&self, path: &Path) -> bool {
+            self.0.exists(&Self::real(path))
+        }
+        fn metadata(&self, path: &Path) -> Result<crate::vfs::Metadata, crate::vfs::VfsError> {
+            self.0.metadata(&Self::real(path))
+        }
+        fn is_executable(&self, path: &Path) -> bool {
+            self.0.is_executable(&Self::real(path))
+        }
+        fn set_executable(&self, path: &Path, yes: bool) -> Result<(), crate::vfs::VfsError> {
+            self.0.set_executable(&Self::real(path), yes)
+        }
+        fn rename(&self, from: &Path, to: &Path) -> Result<(), crate::vfs::VfsError> {
+            self.0.rename(&Self::real(from), &Self::real(to))
+        }
+        fn remove(&self, path: &Path) -> Result<(), crate::vfs::VfsError> {
+            self.0.remove(&Self::real(path))
+        }
+        fn sees_links(&self) -> bool {
+            true
+        }
+        fn canonicalize(&self, path: &Path) -> Result<PathBuf, crate::vfs::VfsError> {
+            if !self.exists(path) {
+                let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+                return Err(crate::vfs::VfsError::io(path, missing));
+            }
+            Ok(Self::real(&crate::vfs::normalize(path)))
+        }
+        fn read_link(&self, path: &Path) -> Result<PathBuf, crate::vfs::VfsError> {
+            let not_a_link = std::io::Error::from(std::io::ErrorKind::InvalidInput);
+            Err(crate::vfs::VfsError::io(path, not_a_link))
+        }
+    }
+
+    #[test]
+    fn real_path_resolves_the_existing_part_and_keeps_the_rest() {
+        let vfs = LinkVfs(crate::vfs::MemVfs::new());
+        vfs.0.create_dir_all(Path::new("/real/a")).unwrap();
+        assert_eq!(
+            real_path(&vfs, Path::new("/link/a/missing/x.md")).unwrap(),
+            PathBuf::from("/real/a/missing/x.md")
+        );
+        assert_eq!(
+            real_path(&vfs, Path::new("/link/a")).unwrap(),
+            PathBuf::from("/real/a")
+        );
+        let relative = real_path(&vfs, Path::new("link/a"))
+            .unwrap_err()
+            .to_string();
+        assert!(relative.starts_with("refused: unsafe-path: "), "{relative}");
+    }
+
+    #[test]
+    fn real_path_refuses_when_the_host_cannot_resolve() {
+        let vfs = DeniedVfs(crate::vfs::MemVfs::new());
+        let err = real_path(&vfs, Path::new("/locked/out"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.starts_with("refused: unsafe-path: "), "{err}");
+        assert!(err.contains("/locked"), "{err}");
     }
 
     #[test]
