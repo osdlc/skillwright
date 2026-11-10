@@ -1,5 +1,6 @@
 //! What more than one integration binary here needs.
 
+use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -102,4 +103,85 @@ pub fn git(repo: &Path, args: &[&str]) -> String {
         .env("GIT_COMMITTER_NAME", "T")
         .env("GIT_COMMITTER_EMAIL", "t@t.invalid");
     cmd.run().unwrap()
+}
+
+/// A vault named `acme` that builds to `market` inside it, with plugins
+/// `widget` (0.2.1) and `gadget` (1.0.0) under `marketplaces/acme/`.
+/// `extra_config` goes under `build:`.
+#[allow(dead_code)]
+pub fn project(extra_config: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("skillwright.md"),
+        format!("---\nname: acme\nbuild:\n  out: market\n{extra_config}---\n"),
+    )
+    .unwrap();
+    for (plugin, version) in [("widget", "0.2.1"), ("gadget", "1.0.0")] {
+        let base = root.join("marketplaces/acme/plugins").join(plugin);
+        fs::create_dir_all(base.join("skills")).unwrap();
+        fs::write(
+            base.join(format!("{plugin}.md")),
+            format!(
+                "---\nname: {plugin}\ndescription: The {plugin} plugin.\nversion: {version}\n---\n"
+            ),
+        )
+        .unwrap();
+        write_skill(root, plugin, "First draft.");
+    }
+    dir
+}
+
+/// Write `<plugin>`'s one skill, `<plugin>-skill`, with `body`.
+#[allow(dead_code)]
+pub fn write_skill(root: &Path, plugin: &str, body: &str) {
+    fs::write(
+        root.join("marketplaces/acme/plugins")
+            .join(plugin)
+            .join("skills")
+            .join(format!("{plugin}-skill.md")),
+        format!("---\nname: {plugin}-skill\ndescription: Use {plugin}.\n---\n\n{body}\n"),
+    )
+    .unwrap();
+}
+
+/// The one note under `market/` that is not output: a skill that
+/// `build.patterns` places at `market/extra/`.
+#[allow(dead_code)]
+pub const EXTRA_NOTE: &str = "market/extra/extra.md";
+
+/// A built [`project`] whose Pi packs sit in a plain folder inside `out`
+/// (`market/pi-packs`), which only `build.out` marks as output. It also holds
+/// [`EXTRA_NOTE`], a real note under `market/` that no harness owns, so a test
+/// can tell a hidden output path from one that was never scanned. Built fresh
+/// for each test.
+#[allow(dead_code)]
+pub fn built_with_moved_packs() -> tempfile::TempDir {
+    let dir = project("  harnesses: [claude, pi]\n  patterns:\n    skills: market/extra/*\n");
+    let root = dir.path();
+    let config = fs::read_to_string(root.join("skillwright.md")).unwrap();
+    fs::write(
+        root.join("skillwright.md"),
+        config.replace(
+            "name: acme\n",
+            "name: acme\nversion: 1.0.0\npi: {packs: pi-packs}\n",
+        ),
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("market/extra")).unwrap();
+    fs::write(
+        root.join(EXTRA_NOTE),
+        "---\ndescription: Use extra.\n---\n\nExtra.\n",
+    )
+    .unwrap();
+    let built = run(&["build", "--yes"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    assert!(root.join("market/pi-packs/widget").is_dir());
+    dir
+}
+
+/// Whether `said` names any path a build of [`built_with_moved_packs`] owns.
+#[allow(dead_code)]
+pub fn names_owned_output(said: &str) -> bool {
+    said.contains("market/pi-packs") || said.contains("market/.claude-plugin")
 }

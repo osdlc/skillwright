@@ -4142,3 +4142,153 @@ fn config_flag_reads_the_named_file_and_its_folder_is_the_vault() {
         missing.stderr
     );
 }
+
+// --- the packs inside the vault ----------------------------------------------
+//
+// Each test runs over `common::built_with_moved_packs`: a vault whose
+// `build.out` (`market`) sits inside it, with Pi packs moved to
+// `market/pi-packs`. Each asserts that `market/extra/extra.md`, a real note
+// there, is read and that no owned output path is, which tells a hidden path
+// from one that was never scanned.
+
+#[test]
+fn list_does_not_read_the_packs_inside_the_vault() {
+    let dir = common::built_with_moved_packs();
+    let listed = run(&["list"], dir.path());
+    assert_eq!(listed.code, 0, "{}{}", listed.stdout, listed.stderr);
+    assert!(
+        listed.stdout.contains(common::EXTRA_NOTE),
+        "{}",
+        listed.stdout
+    );
+    let said = format!("{}{}", listed.stdout, listed.stderr);
+    assert!(!common::names_owned_output(&said), "{said}");
+}
+
+#[test]
+fn list_with_a_skills_root_does_not_read_the_packs_inside_it() {
+    let dir = common::built_with_moved_packs();
+    let root = vault_str(dir.path());
+    let listed = run(&["list", "--skills-root", &root], dir.path());
+    assert_eq!(listed.code, 0, "{}{}", listed.stdout, listed.stderr);
+    assert!(
+        listed.stdout.contains(common::EXTRA_NOTE),
+        "{}",
+        listed.stdout
+    );
+    let said = format!("{}{}", listed.stdout, listed.stderr);
+    assert!(!common::names_owned_output(&said), "{said}");
+}
+
+#[test]
+fn list_model_does_not_read_the_packs_inside_the_vault() {
+    let dir = common::built_with_moved_packs();
+    let listed = run(&["list", "--model"], dir.path());
+    assert_eq!(listed.code, 0, "{}{}", listed.stdout, listed.stderr);
+    assert!(
+        listed.stdout.contains(common::EXTRA_NOTE),
+        "{}",
+        listed.stdout
+    );
+    let said = format!("{}{}", listed.stdout, listed.stderr);
+    assert!(!common::names_owned_output(&said), "{said}");
+}
+
+#[test]
+fn check_does_not_read_the_packs_inside_the_vault() {
+    let dir = common::built_with_moved_packs();
+    let checked = run(&["check"], dir.path());
+    assert_eq!(checked.code, 0, "{}{}", checked.stdout, checked.stderr);
+    let said = format!("{}{}", checked.stdout, checked.stderr);
+    // `acme` is the marketplace's own plugin, and the extra note its one skill.
+    assert!(said.contains("pi/acme  ok · 1 skill"), "{said}");
+    assert!(!common::names_owned_output(&said), "{said}");
+}
+
+#[test]
+fn build_does_not_read_the_packs_inside_the_vault() {
+    let dir = common::built_with_moved_packs();
+    let built = run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}{}", built.stdout, built.stderr);
+    let said = format!("{}{}", built.stdout, built.stderr);
+    assert!(said.contains("pi/acme  unchanged · 1 skill"), "{said}");
+    assert!(said.contains("7 unchanged"), "{said}");
+    assert!(!common::names_owned_output(&said), "{said}");
+}
+
+#[test]
+fn config_flag_out_is_hidden() {
+    let dir = common::built_with_moved_packs();
+    let root = dir.path();
+    // Only the `--config` file's output is left on disk.
+    fs::remove_dir_all(root.join("market/pi-packs")).unwrap();
+    fs::remove_dir_all(root.join("market/.claude-plugin")).unwrap();
+    let config = fs::read_to_string(root.join("skillwright.md")).unwrap();
+    fs::write(
+        root.join("other.md"),
+        config.replace("out: market", "out: dist"),
+    )
+    .unwrap();
+    let built = run(&["build", "--config", "other.md", "--yes"], root);
+    assert_eq!(built.code, 0, "{}{}", built.stdout, built.stderr);
+    assert!(root.join("dist/pi-packs/widget").is_dir());
+
+    let listed = run(&["list", "--config", "other.md"], root);
+    assert_eq!(listed.code, 0, "{}{}", listed.stdout, listed.stderr);
+    assert!(
+        listed.stdout.contains(common::EXTRA_NOTE),
+        "{}",
+        listed.stdout
+    );
+    let said = format!("{}{}", listed.stdout, listed.stderr);
+    assert!(!said.contains("dist/"), "{said}");
+}
+
+/// The binary, run in `cwd` with `$HOME` set to `home`.
+fn run_with_home_env(argv: &[&str], cwd: &Path, home: &Path) -> Run {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_skillwright"))
+        .args(argv)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .output()
+        .unwrap();
+    Run {
+        code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8(output.stdout).unwrap(),
+        stderr: String::from_utf8(output.stderr).unwrap(),
+    }
+}
+
+#[test]
+fn a_home_out_inside_the_vault_is_hidden() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    let vault = home.join("v");
+    let plugin = vault.join("plugins/widget");
+    fs::create_dir_all(plugin.join("skills")).unwrap();
+    fs::write(
+        vault.join("skillwright.md"),
+        "---\nname: acme\npi: {packs: pi-packs}\nbuild:\n  out: ~/v/market\n  harnesses: [claude, pi]\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("widget.md"),
+        "---\ndescription: W.\nversion: 0.1.0\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("skills/a.md"),
+        "---\ndescription: A.\n---\n\nOne.\n",
+    )
+    .unwrap();
+    let built = run_with_home_env(&["build", "--yes"], &vault, &home);
+    assert_eq!(built.code, 0, "{}{}", built.stdout, built.stderr);
+    assert!(vault.join("market/pi-packs/widget").is_dir());
+
+    for verb in ["list", "check"] {
+        let ran = run_with_home_env(&[verb], &vault, &home);
+        assert_eq!(ran.code, 0, "{verb}: {}{}", ran.stdout, ran.stderr);
+        let said = format!("{}{}", ran.stdout, ran.stderr);
+        assert!(!common::names_owned_output(&said), "{verb}: {said}");
+    }
+}

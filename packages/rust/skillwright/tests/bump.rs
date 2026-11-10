@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{Run, git, run, vault_str};
+use common::{Run, built_with_moved_packs, git, project, run, vault_str, write_skill};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -242,40 +242,6 @@ fn a_version_in_a_nested_block_is_bumped_in_place() {
 
 /// A project with two plugins, `widget` (`0.2.1`) and `gadget` (`1.0.0`), one
 /// skill each, building into `market/`.
-fn project(extra_config: &str) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    fs::write(
-        root.join("skillwright.md"),
-        format!("---\nname: acme\nbuild:\n  out: market\n{extra_config}---\n"),
-    )
-    .unwrap();
-    for (plugin, version) in [("widget", "0.2.1"), ("gadget", "1.0.0")] {
-        let base = root.join("marketplaces/acme/plugins").join(plugin);
-        fs::create_dir_all(base.join("skills")).unwrap();
-        fs::write(
-            base.join(format!("{plugin}.md")),
-            format!(
-                "---\nname: {plugin}\ndescription: The {plugin} plugin.\nversion: {version}\n---\n"
-            ),
-        )
-        .unwrap();
-        write_skill(root, plugin, "First draft.");
-    }
-    dir
-}
-
-fn write_skill(root: &Path, plugin: &str, body: &str) {
-    fs::write(
-        root.join("marketplaces/acme/plugins")
-            .join(plugin)
-            .join("skills")
-            .join(format!("{plugin}-skill.md")),
-        format!("---\nname: {plugin}-skill\ndescription: Use {plugin}.\n---\n\n{body}\n"),
-    )
-    .unwrap();
-}
-
 fn plugin_note(root: &Path, plugin: &str) -> String {
     fs::read_to_string(
         root.join("marketplaces/acme/plugins")
@@ -798,23 +764,6 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
-/// A built `project` whose Pi packs sit in a plain folder inside `out`, which
-/// only `build.out` marks as output.
-fn built_with_moved_packs() -> tempfile::TempDir {
-    let dir = project("  harnesses: [claude, pi]\n");
-    let root = dir.path();
-    let config = fs::read_to_string(root.join("skillwright.md")).unwrap();
-    fs::write(
-        root.join("skillwright.md"),
-        config.replace("name: acme\n", "name: acme\npi: {packs: pi-packs}\n"),
-    )
-    .unwrap();
-    let built = run(&["build", "--yes"], root);
-    assert_eq!(built.code, 0, "{}", built.stderr);
-    assert!(root.join("market/pi-packs/widget").is_dir());
-    dir
-}
-
 #[test]
 fn changed_since_another_folder_does_not_read_the_moved_packs_in_out() {
     let dir = built_with_moved_packs();
@@ -1133,4 +1082,32 @@ fn a_nested_marketplace_never_takes_the_root_files_version() {
     assert_eq!(built_version(root, "barn"), "0.1.1");
     let outer = fs::read_to_string(root.join("skillwright.md")).unwrap();
     assert!(outer.contains("version: 9.0.0"), "{outer}");
+}
+
+#[test]
+fn bump_does_not_read_the_packs_inside_the_vault() {
+    let dir = built_with_moved_packs();
+    let root = dir.path();
+    write_skill(root, "widget", "Second draft.");
+    fs::write(
+        root.join(common::EXTRA_NOTE),
+        "---\ndescription: Use extra.\n---\n\nExtra, again.\n",
+    )
+    .unwrap();
+
+    let result = run(&["bump", "--changed-since", "market", "--yes"], root);
+    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
+    let said = format!("{}{}", result.stdout, result.stderr);
+    assert!(!common::names_owned_output(&said), "{said}");
+    assert!(plugin_note(root, "widget").contains("version: 0.2.2"));
+    assert!(plugin_note(root, "gadget").contains("version: 1.0.0"));
+    // The extra note is the one skill of the marketplace's own plugin, which
+    // the root file stands for: its change is seen.
+    let root_row = said
+        .lines()
+        .find(|line| line.starts_with("skillwright.md  "));
+    assert!(
+        root_row.is_some_and(|row| !row.contains("unchanged")),
+        "{said}"
+    );
 }

@@ -1,6 +1,8 @@
 //! What a user meets following the docs, run through the binary: unknown
 //! keys, workspaces, and the verbs that must agree with a build.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -2216,4 +2218,36 @@ fn publishing_an_excluded_note_through_a_link_names_the_workspace_file() {
             published.text
         );
     }
+}
+
+#[test]
+fn publish_does_not_read_the_packs_inside_the_vault() {
+    let dir = common::built_with_moved_packs();
+    let to = tempfile::tempdir().unwrap();
+    let to = common::vault_str(to.path());
+    let published = common::run(
+        &["publish", "--to", &to, "--target", "claude", "--dry-run"],
+        dir.path(),
+    );
+    assert_eq!(
+        published.code, 0,
+        "{}{}",
+        published.stdout, published.stderr
+    );
+    let said = format!("{}{}", published.stdout, published.stderr);
+    let notes: Vec<&str> = said
+        .lines()
+        .filter_map(|line| line.strip_prefix("publishing "))
+        .filter_map(|line| line.split(" -> ").next())
+        .collect();
+    assert_eq!(
+        notes,
+        [
+            common::EXTRA_NOTE,
+            "marketplaces/acme/plugins/gadget/skills/gadget-skill.md",
+            "marketplaces/acme/plugins/widget/skills/widget-skill.md",
+        ],
+        "{said}"
+    );
+    assert!(!common::names_owned_output(&said), "{said}");
 }

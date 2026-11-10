@@ -560,3 +560,67 @@ fn list_and_check_stay_clean_after_a_forced_delete() {
     assert_eq!(checked.code, 0, "{}", checked.stdout);
     assert!(!checked.stdout.contains("skipped"), "{}", checked.stdout);
 }
+
+#[test]
+fn new_skill_does_not_collide_with_the_packs_inside_the_vault() {
+    let dir = common::built_with_moved_packs();
+    let root = dir.path();
+    // The Pi build of `widget-skill` sits at
+    // `market/pi-packs/widget/skills/widget-widget-skill/`.
+    let made = run(
+        &[
+            "new",
+            "skill",
+            "widget-widget-skill",
+            "--plugin",
+            "widget",
+            "--description",
+            "New.",
+            "--yes",
+        ],
+        root,
+    );
+    assert_eq!(made.code, 0, "{}{}", made.stdout, made.stderr);
+    assert!(!common::names_owned_output(&made.stdout), "{}", made.stdout);
+}
+
+#[test]
+fn delete_and_convert_do_not_read_the_packs_inside_the_vault() {
+    let dir = common::built_with_moved_packs();
+    let root = dir.path();
+    let owned = root.join("market/pi-packs/gadget/skills/gadget-gadget-skill/SKILL.md");
+    let before = fs::read(&owned).unwrap();
+
+    let deleted = run(&["delete", "gadget-skill", "--yes"], root);
+    assert_eq!(deleted.code, 0, "{}{}", deleted.stdout, deleted.stderr);
+    assert!(
+        !common::names_owned_output(&deleted.stdout),
+        "{}",
+        deleted.stdout
+    );
+
+    let converted = run(
+        &["convert", "widget-skill", "--kind", "command", "--yes"],
+        root,
+    );
+    assert_eq!(
+        converted.code, 0,
+        "{}{}",
+        converted.stdout, converted.stderr
+    );
+    assert!(
+        !common::names_owned_output(&converted.stdout),
+        "{}",
+        converted.stdout
+    );
+
+    // The extra note under `market/` is read.
+    let extra = run(&["delete", "extra", "--yes"], root);
+    assert_eq!(extra.code, 0, "{}{}", extra.stdout, extra.stderr);
+    assert!(
+        extra.stdout.contains(".trash/market/extra"),
+        "{}",
+        extra.stdout
+    );
+    assert_eq!(fs::read(&owned).unwrap(), before);
+}
