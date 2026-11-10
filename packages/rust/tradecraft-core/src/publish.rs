@@ -194,6 +194,7 @@ use crate::model::Cascade;
 use crate::model::load::{ComponentRequest, load_component, load_plugin};
 use crate::namespace::Namespace;
 use crate::projection::{ProjectedFile, RedundantOverride, file_hash};
+use crate::source_view::{SourceView, VaultScope, notes_view};
 use crate::vault::read_vault_note;
 use crate::vfs::{PreviewVfs, Vfs};
 
@@ -712,6 +713,10 @@ pub struct PublishReport {
 ///
 /// # Errors
 ///
+/// * `refused: build-output` when the note sits in the vault's build output,
+///   which is hidden from every note read: with `skills_root`, the publish
+///   reads the vault through [`crate::notes_view`]. The destination is read
+///   and written as given.
 /// * `refused: no-renderer` when the note is the vault's root file or its
 ///   workspace file, which configure the vault and are not notes.
 /// * `refused: no-renderer` when the note's resolved kind is none of
@@ -754,25 +759,39 @@ fn publish_onto(
     request: &PublishRequest,
     ns: &Namespace,
 ) -> Result<PublishReport, CoreError> {
+    // Notes are read through `notes`, which hides the vault's build output.
+    // The destination is read and written through `vfs`.
+    let notes = match request.skills_root.as_deref() {
+        Some(root) => notes_view(
+            SourceView::over(vfs),
+            VaultScope::new(root),
+            request.config.as_ref(),
+            ns,
+        ),
+        None => SourceView::over(vfs),
+    };
+    if vfs.exists(&request.skill_path) && !notes.exists(&request.skill_path) {
+        return Err(build_output_not_a_note(&request.skill_path));
+    }
     let runtime_target = runtime_target_for(&request.target);
     // The folder holding the note decides its kind, before the read: the
     // kind says which of the note's keys are skillwright's.
     // Read once, and refused when malformed: an exclusion that cannot be read
     // must not fail open.
-    let placed = crate::patterns::Patterns::load_at(vfs, request.skills_root.as_deref())?;
+    let placed = crate::patterns::Patterns::load_at(&notes, request.skills_root.as_deref())?;
     let placed = placed.as_ref();
     let in_vault = match placed {
-        Some((_, root)) => spelled_under(vfs, root, &request.skill_path)?,
+        Some((_, root)) => spelled_under(&notes, root, &request.skill_path)?,
         None => request.skill_path.clone(),
     };
     refuse_excluded(placed, &in_vault)?;
     if let Some((_, root)) = placed
-        && crate::paths::is_vault_root_file(vfs, root, &request.skill_path)?
+        && crate::paths::is_vault_root_file(&notes, root, &request.skill_path)?
     {
         return Err(root_file_not_a_note(&request.skill_path));
     }
     let resolved = publish_kind(placed, &in_vault);
-    let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
+    let mut note = read_vault_note(&notes, &request.skill_path, ns, resolved.kind)?;
 
     // Everything a renderer cannot take is refused here, before the renderer
     // builds the wrong file.
@@ -800,7 +819,7 @@ fn publish_onto(
     // What the note inherits, before `targets` is asked: the same answer a
     // build reaches.
     let requested = request.config.clone().unwrap_or_default();
-    let cascade = Cascade::above_with(vfs, placed, &in_vault, &requested, ns)?;
+    let cascade = Cascade::above_with(&notes, placed, &in_vault, &requested, ns)?;
     // The containers' own blocks first, as a build checks them, so a bad
     // value names the container that holds it, not this note.
     crate::harness::manifest::check_block_values(&cascade.config)?;
@@ -865,7 +884,7 @@ fn publish_onto(
                 )
             })?;
         let mut pack = load_plugin(
-            vfs,
+            &notes,
             compile_root,
             &note.projection.content.name,
             &cascade,
@@ -907,7 +926,7 @@ fn publish_onto(
             if let Some(source) = &file.source {
                 closures.insert(
                     path.clone(),
-                    hash_one(vfs, compile_root, &source.closure, &source.note)?,
+                    hash_one(&notes, compile_root, &source.closure, &source.note)?,
                 );
             }
         }
@@ -940,7 +959,7 @@ fn publish_onto(
     // harness blocks carried. Folded before anything renders: an unknown
     // destination name refuses there, with no file built.
     let component = load_component(
-        vfs,
+        &notes,
         &ComponentRequest {
             path: &request.skill_path,
             root: compile_root,
@@ -987,7 +1006,7 @@ fn publish_onto(
         .unwrap_or_default();
 
     let source_note = vault_relative(compile_root, &request.skill_path);
-    let hashed = hash_closures(vfs, compile_root, &closures, &source_note)?;
+    let hashed = hash_closures(&notes, compile_root, &closures, &source_note)?;
     // An agent's body lands at a path no suffix rule connects to the entry
     // closure's key, and it is the only file the projection emits.
     let entry_output = match resolved.kind {
@@ -1307,6 +1326,18 @@ fn no_renderer_for(
 /// The vault's root `skillwright.md` refused as a publish, by the token a
 /// marketplace note gets. It holds the vault's configuration, so publishing it
 /// would write a `SKILL.md` for something that is not a skill.
+/// `refused: build-output`: the note sits in what a build of the vault owns.
+fn build_output_not_a_note(note_path: &Path) -> CoreError {
+    CoreError::refused(
+        "build-output",
+        format!(
+            "{} is build output, not a note. Publish the note it was built from. \
+             Nothing was written",
+            note_path.display()
+        ),
+    )
+}
+
 fn root_file_not_a_note(note_path: &Path) -> CoreError {
     CoreError::refused(
         "no-renderer",
@@ -6482,6 +6513,126 @@ mod tests {
             vfs.exists(Path::new("/dest/.claude/skills/stray/SKILL.md")),
             "{:?}",
             statuses(&report)
+        );
+    }
+
+    // --- the vault's build output is not a note -----------------------------
+
+    /// A vault that builds to `dist` inside it, its Claude packs moved to
+    /// `dist/moved`, with a built copy of its plugin `rev` there.
+    fn vault_built_inside() -> MemVfs {
+        let vfs = MemVfs::new();
+        for (path, text) in [
+            (
+                "/vault/skillwright.md",
+                "---\nname: v\nclaude: {packs: moved}\nbuild:\n  out: dist\n---\n",
+            ),
+            (
+                "/vault/plugins/rev/rev.md",
+                "---\ndescription: Rev.\nlicense: MIT\n---\n",
+            ),
+            (
+                "/vault/plugins/rev/skills/a.md",
+                "---\ndescription: Use a.\n---\nA.\n",
+            ),
+            ("/vault/dist/moved/rev/.claude-plugin/plugin.json", "{}"),
+            (
+                "/vault/dist/moved/rev/rev.md",
+                "---\ndescription: Rev.\ntargets: [codex]\n---\n",
+            ),
+            (
+                "/vault/dist/moved/rev/skills/a/SKILL.md",
+                "---\ndescription: Use a.\n---\nA.\n",
+            ),
+        ] {
+            vfs.insert(path, text).unwrap();
+        }
+        vfs
+    }
+
+    fn publish_in(skill: &str, destination: &str, mode: PublishMode) -> PublishRequest {
+        let mut request = PublishRequest::new(skill, destination, "claude");
+        request.skills_root = Some(PathBuf::from("/vault"));
+        request.mode = mode;
+        request
+    }
+
+    #[test]
+    fn publish_refuses_a_note_inside_output() {
+        let vfs = vault_built_inside();
+        for mode in [PublishMode::Write, PublishMode::DryRun] {
+            let request = publish_in("/vault/dist/moved/rev/skills/a/SKILL.md", "/dest", mode);
+            let err = publish_skill(&vfs, &request, &sw())
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("refused: build-output"), "{err}");
+            assert!(err.contains("is build output, not a note"), "{err}");
+        }
+        assert!(!vfs.exists(Path::new("/dest")));
+    }
+
+    #[test]
+    fn publish_skips_a_container_note_inside_output() {
+        let vfs = vault_built_inside();
+        let request = publish_in(
+            "/vault/plugins/rev/skills/a.md",
+            "/dest",
+            PublishMode::Write,
+        );
+        // The copy in output says `targets: [codex]`; the vault's plugin note
+        // says nothing, so the skill publishes to Claude.
+        let report = publish_skill(&vfs, &request, &sw()).unwrap();
+        assert_eq!(report.not_published, None);
+        assert!(vfs.exists(Path::new("/dest/.claude/skills/a/SKILL.md")));
+    }
+
+    #[test]
+    fn a_dry_run_publish_reads_through_the_overlay_and_hides_output() {
+        let vfs = vault_built_inside();
+        let skill = "/vault/plugins/rev/skills/a.md";
+        let dry = publish_skill(
+            &vfs,
+            &publish_in(skill, "/dest", PublishMode::DryRun),
+            &sw(),
+        )
+        .unwrap();
+        assert!(!vfs.exists(Path::new("/dest")));
+        let wrote =
+            publish_skill(&vfs, &publish_in(skill, "/dest", PublishMode::Write), &sw()).unwrap();
+        let paths = |report: &PublishReport| -> Vec<String> {
+            report.files.iter().map(|file| file.path.clone()).collect()
+        };
+        assert_eq!(paths(&dry), paths(&wrote));
+        let built = "/vault/dist/moved/rev/skills/a/SKILL.md";
+        let err = publish_skill(
+            &vfs,
+            &publish_in(built, "/dest", PublishMode::DryRun),
+            &sw(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("build-output"), "{err}");
+    }
+
+    #[test]
+    fn publish_reads_a_destination_inside_the_configured_out() {
+        let vfs = vault_built_inside();
+        vfs.insert(
+            "/vault/skillwright.md",
+            "---\nname: v\nbuild:\n  out: /out\n---\n",
+        )
+        .unwrap();
+        let request = publish_in("/vault/plugins/rev/skills/a.md", "/out", PublishMode::Write);
+        publish_skill(&vfs, &request, &sw()).unwrap();
+        assert!(vfs.exists(Path::new("/out/.skillwright/manifest.json")));
+        let again = publish_skill(&vfs, &request, &sw()).unwrap();
+        assert!(
+            again
+                .files
+                .iter()
+                .all(|file| file.status == PublishStatus::Unchanged),
+            "{:?}",
+            again.files
         );
     }
 }

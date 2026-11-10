@@ -31,6 +31,7 @@ use crate::publish::{
     PublishMode, PublishOutcome, PublishRequest, PublishStatus, PublishedFile, publish_kind,
     publish_skill,
 };
+use crate::source_view::{SourceView, VaultScope, notes_view};
 use crate::vault::read_vault_note;
 use crate::vfs::Vfs;
 
@@ -244,15 +245,24 @@ pub fn status_of(
     contributing_notes.sort();
     contributing_notes.dedup();
 
-    let vault_root = request.skills_root.clone();
-    let missing_notes: Vec<String> = contributing_notes
-        .iter()
-        .filter(|note| match &vault_root {
-            Some(root) => !vfs.exists(&root.join(note)),
-            None => false,
-        })
-        .cloned()
-        .collect();
+    // A note that now sits only in the vault's build output is missing: it is
+    // no note any more.
+    let missing_notes: Vec<String> = match request.skills_root.as_deref() {
+        Some(root) => {
+            let notes = notes_view(
+                SourceView::over(vfs),
+                VaultScope::new(root),
+                request.config.as_ref(),
+                ns,
+            );
+            contributing_notes
+                .iter()
+                .filter(|note| !notes.exists(&root.join(note)))
+                .cloned()
+                .collect()
+        }
+        None => Vec::new(),
+    };
 
     let published_at = recorded.iter().map(|e| e.published_at.clone()).max();
 
@@ -859,5 +869,67 @@ mod tests {
         .unwrap();
         assert_eq!(status.state, PublishState::Stale);
         assert_eq!(status.version_bump_suggestion, None);
+    }
+
+    // --- the vault's build output is not a note -----------------------------
+
+    /// Moves the vault's Claude packs to `dist/moved`, with `dist` its
+    /// output, and leaves a built pack `rev` there.
+    fn build_into_dist(vfs: &MemVfs) {
+        vfs.insert(
+            "/vault/skillwright.md",
+            "---\nname: v\nclaude: {packs: moved}\nbuild:\n  out: dist\n---\n",
+        )
+        .unwrap();
+        vfs.insert("/vault/dist/moved/rev/.claude-plugin/plugin.json", "{}")
+            .unwrap();
+    }
+
+    #[test]
+    fn status_counts_a_note_only_in_output_as_missing() {
+        let vfs = vault();
+        let note = "---\nname: code-review\ndescription: Reviews a diff.\n---\n\n![[guide]]\n";
+        vfs.insert("/vault/skills/code-review.md", note).unwrap();
+        vfs.insert("/vault/dist/moved/rev/guide.md", "Read the diff.\n")
+            .unwrap();
+        publish(&vfs);
+        build_into_dist(&vfs);
+
+        let status = state_of(&vfs);
+        assert_eq!(
+            status.missing_notes,
+            vec!["dist/moved/rev/guide.md".to_owned()]
+        );
+    }
+
+    #[test]
+    fn status_reads_the_vault_note_not_its_copy_in_output() {
+        let vfs = vault();
+        publish(&vfs);
+        build_into_dist(&vfs);
+        vfs.insert(
+            "/vault/dist/moved/rev/skills/code-review/SKILL.md",
+            "---\nname: code-review\ndescription: Edited.\n---\n\nEdited.\n",
+        )
+        .unwrap();
+        vfs.insert("/vault/dist/moved/rev/reviewer.md", "Edited.\n")
+            .unwrap();
+
+        let status = state_of(&vfs);
+        assert_eq!(status.state, PublishState::Current, "{:?}", status.files);
+    }
+
+    #[test]
+    fn status_reads_a_destination_inside_the_configured_out() {
+        let vfs = vault();
+        vfs.insert(
+            "/vault/skillwright.md",
+            "---\nname: v\nbuild:\n  out: /dest\n---\n",
+        )
+        .unwrap();
+        publish(&vfs);
+        let status = state_of(&vfs);
+        assert_eq!(status.state, PublishState::Current, "{:?}", status.files);
+        assert!(status.published_at.is_some());
     }
 }

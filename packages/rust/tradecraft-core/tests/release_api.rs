@@ -2763,3 +2763,22 @@ fn load_hides_the_configured_out() {
     assert!(said.contains("plugins/rev/skills/a.md"), "{said}");
     assert!(!said.contains("dist/"), "{said}");
 }
+
+#[test]
+fn export_into_another_folder_hides_the_configured_out() {
+    let vfs = root_vault(OUT_DIST, &[TOOL_SKILL]);
+    build_to(&vfs, "/vault/dist", OUT_DIST).unwrap();
+    assert!(vfs.exists(Path::new("/vault/dist/moved/rev/skills/a/SKILL.md")));
+    let report = build_to(&vfs, "/market", OUT_DIST).unwrap();
+    let said = as_json(&report);
+    assert!(!said.contains("dist/"), "{said}");
+    assert!(vfs.exists(Path::new("/market/moved/rev/skills/a/SKILL.md")));
+}
+
+#[test]
+fn export_into_its_configured_out_still_finds_its_last_build() {
+    let vfs = root_vault(OUT_DIST, &[TOOL_SKILL]);
+    assert!(build_to(&vfs, "/vault/dist", OUT_DIST).unwrap().changed);
+    let again = build_to(&vfs, "/vault/dist", OUT_DIST).unwrap();
+    assert!(!again.changed, "{}", as_json(&again));
+}

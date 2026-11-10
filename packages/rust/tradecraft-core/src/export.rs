@@ -124,13 +124,13 @@ use crate::harness::manifest::{first_not_a_pack, is_os_file, overrides_for, pack
 use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
 use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
-use crate::model::load::{LoadRequest, kind_carried, selected_harnesses, targets_admit};
-use crate::model::{Component, Marketplace, load};
+use crate::model::load::{LoadRequest, kind_carried, load_in, selected_harnesses, targets_admit};
+use crate::model::{Component, Marketplace};
 use crate::namespace::Namespace;
 use crate::patterns::Patterns;
 use crate::skill::forward_slashed;
 use crate::source_view::{
-    SourceView, VaultScope, check_pack_location, effective_config, output_paths,
+    SourceView, VaultScope, check_pack_location, effective_config, notes_view, output_paths,
 };
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
 use crate::vfs::{PreviewWrite, Vfs, normalize};
@@ -885,7 +885,9 @@ fn stale_output_warnings(
 /// Renders the vault into one marketplace directory, or checks it against what is already there.
 ///
 /// A note's block for a harness is applied in that harness's
-/// tree, as a publish to it applies it.
+/// tree, as a publish to it applies it. Notes are read with the vault's
+/// configured output hidden ([`crate::notes_view`]), and the output at
+/// `out_root` too; the output itself is compared and replaced through `vfs`.
 pub fn export_skills(
     vfs: &dyn Vfs,
     request: &ExportRequest,
@@ -910,11 +912,14 @@ pub fn export_skills(
 
     // Load once, for every harness this build renders: the vault read, the
     // marketplace chosen and validated, every body resolved. Everything a
-    // build refuses before it renders, it refuses here. It reads through a
-    // view without the output, so a build never reads what it wrote.
-    let source = SourceView::over(vfs).hiding(output_paths(vfs, scope, &out_root, &config));
-    let market = load(&source, &request.load_request(), ns)
-        .map_err(|err| with_stale_output_cause(&source, &vault_root, err))?;
+    // build refuses before it renders, it refuses here. Notes are read
+    // through `notes`, which hides the vault's configured output and the
+    // output at `out_root`, so a build never reads what it wrote. The output is
+    // compared and replaced through `vfs`.
+    let notes = notes_view(SourceView::over(vfs), scope, Some(&config), ns)
+        .hiding(output_paths(vfs, scope, &out_root, &config));
+    let market = load_in(&notes, &request.load_request(), ns)
+        .map_err(|err| with_stale_output_cause(&notes, &vault_root, err))?;
     // The load picked the marketplace itself, and the swap uses what it says.
     check_output(vfs, request, &roots, &market.config, &patterns)?;
     let mut warnings = market.warnings.clone();
@@ -926,9 +931,9 @@ pub fn export_skills(
     // The vault and the other marketplaces are walked again only when a
     // pattern has a glob to check against them.
     warnings.extend(patterns.warnings_with(
-        || crate::walk::glob_files(&source, &vault_root),
+        || crate::walk::glob_files(&notes, &vault_root),
         &output,
-        || patterns.sibling_files(vfs, &vault_root),
+        || patterns.sibling_files(&notes, &vault_root),
     ));
     warnings.extend(stale_output_warnings(
         vfs,
