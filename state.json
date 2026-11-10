@@ -137,9 +137,9 @@
       "line": 852,
       "title": "profile.rs module and HarnessProfile docs still say the rows carry a PluginFormat",
       "comment": "https://github.com/osdlc/skillwright/pull/99#pullrequestreview-5836753210",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "55c0992e4188c97cd5caa32013dd865dc2d13560"
     },
     {
       "id": "r1-13",
