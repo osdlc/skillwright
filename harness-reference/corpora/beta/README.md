@@ -157,7 +157,8 @@ what a schema cannot:
 - `scope.since` and `scope.until` are absent when the harness's `versioning` is `unknown`, are
   spelled as that versioning says, and are in order.
 - At most one `current` statement covers any version of a harness, subject, platform and model.
-- A `supersedes` target has status `superseded`.
+- A `supersedes` link names another statement, and that statement has status `superseded`.
+- A statement is no stronger than its evidence, by the rule in [Statements](#statements).
 - Every evidence link is a study result about the same harness.
 - A `run` study result links a method that lists its harness, and a command names no home
   directory.
