@@ -15,6 +15,7 @@
 use serde_json::Value;
 
 use crate::frontmatter::EntityKind;
+use crate::harness::{HarnessProfile, PluginDialect};
 use crate::keys::Shape;
 
 /// One kind of JSON value.
@@ -278,13 +279,13 @@ const PI: &[(&str, FieldType)] = &[
     ("pi", OBJECT),
 ];
 
-fn facts(harness: &str) -> &'static [(&'static str, FieldType)] {
-    match harness {
-        "claude" => CLAUDE,
-        "codex" => CODEX,
-        "cursor" => CURSOR,
-        "pi" => PI,
-        _ => &[],
+/// The container key types of the harness whose manifests take `dialect`.
+pub(crate) fn facts_for(dialect: PluginDialect) -> &'static [(&'static str, FieldType)] {
+    match dialect {
+        PluginDialect::Claude => CLAUDE,
+        PluginDialect::Codex => CODEX,
+        PluginDialect::Cursor => CURSOR,
+        PluginDialect::Pi => PI,
     }
 }
 
@@ -314,15 +315,17 @@ impl Shape {
     }
 }
 
-/// The type of `key` in a marketplace's or plugin's `harness` block: the
+/// The type of `key` in a marketplace's or plugin's block for `profile`: the
 /// facts' type, or for a key that passes to members, [`component_type`].
-pub(crate) fn container_type(harness: &str, key: &str) -> Option<FieldType> {
-    facts(harness)
+/// `None` for a row with no plugin format.
+pub(crate) fn container_type(profile: &HarnessProfile, key: &str) -> Option<FieldType> {
+    facts_for(profile.plugin_format()?.dialect)
         .iter()
         .find(|(name, _)| *name == key)
         .map(|(_, ty)| *ty)
         .or_else(|| {
-            crate::model::member_block_keys(EntityKind::Skill, harness)
+            profile
+                .member_block_keys(EntityKind::Skill)
                 .contains(key)
                 .then(|| component_type(EntityKind::Skill, key))
                 .flatten()
@@ -357,7 +360,7 @@ mod tests {
                 .chain(format.marketplace_fields);
             for key in keys {
                 assert!(
-                    container_type(profile.name, key).is_some() != untyped.contains(key),
+                    container_type(profile, key).is_some() != untyped.contains(key),
                     "{}.{key}",
                     profile.name
                 );
@@ -394,9 +397,10 @@ mod tests {
             component_type(EntityKind::Skill, "tools"),
             Some(STRING_OR_STRINGS)
         );
-        assert_eq!(container_type("codex", "policy"), Some(OBJECT));
-        assert_eq!(container_type("claude", "model"), Some(STRING));
-        assert_eq!(container_type("pi", "author"), None);
+        let profile = |name| crate::harness::profile_named(name).unwrap();
+        assert_eq!(container_type(profile("codex"), "policy"), Some(OBJECT));
+        assert_eq!(container_type(profile("claude"), "model"), Some(STRING));
+        assert_eq!(container_type(profile("pi"), "author"), None);
     }
 
     #[test]

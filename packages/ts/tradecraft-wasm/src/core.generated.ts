@@ -1319,8 +1319,9 @@ export interface Plugin {
   launcher: string | null;
 
   /**
-   * The harnesses that name this plugin's skills bare, whatever their
-   * profile says: `pi: {naming: bare}`.
+   * The harnesses that name this plugin's skills bare against their
+   * profile's default: `<harness>: {naming: bare}` where the default
+   * prefixes.
    */
   bare_on?: string[];
 }
@@ -1585,7 +1586,10 @@ export interface Call {
   /** That skill's `targets`, which decide whether a harness ships it. */
   targets: string[] | null;
 
-  /** The harnesses that name the skill bare, whatever their profile says. */
+  /**
+   * The harnesses that name the skill bare against their profile's
+   * default, as its plugin's [`Plugin::bare_on`].
+   */
   bare_on?: string[];
 
   /** The call as written, for a refusal. */

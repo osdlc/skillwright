@@ -17,7 +17,7 @@ use serde::Serialize;
 use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, PluginOverrides, STAGE_DIR};
 use crate::frontmatter::EntityKind;
-use crate::harness::{HarnessProfile, PluginDialect};
+use crate::harness::{HarnessProfile, PluginDialect, SkillNaming};
 use unicode_normalization::UnicodeNormalization;
 
 /// Two-space indentation, stable key order, one trailing newline — the byte
@@ -34,14 +34,12 @@ pub(crate) fn stable_json<T: Serialize>(value: &T) -> String {
     out
 }
 
-/// The harness a dialect belongs to, as its profile and its block name it.
-fn harness_of(dialect: PluginDialect) -> &'static str {
-    match dialect {
-        PluginDialect::Claude => "claude",
-        PluginDialect::Codex => "codex",
-        PluginDialect::Cursor => "cursor",
-        PluginDialect::Pi => "pi",
-    }
+/// The harness whose manifests take `dialect`. A test holds each dialect to
+/// exactly one.
+fn profile_of(dialect: PluginDialect) -> &'static HarnessProfile {
+    crate::harness::with_plugin_format()
+        .find(|profile| profile.format().dialect == dialect)
+        .expect("every dialect has a profile")
 }
 
 /// The harness's plugin format, for its manifest key lists.
@@ -57,7 +55,8 @@ type Block = serde_json::Map<String, serde_json::Value>;
 /// marketplace only.
 pub const PACKS_KEY: &str = "packs";
 
-/// The harness-block key choosing how Pi names a published skill.
+/// The harness-block key choosing how a harness whose profile allows it
+/// ([`crate::harness::PluginFormat::naming_choice`]) names a published skill.
 pub const NAMING_KEY: &str = "naming";
 
 /// Where `profile`'s packs land: the marketplace block's `packs`, or the
@@ -195,7 +194,8 @@ pub(crate) fn check_container_blocks(
     let unknown = crate::discover::unknown_container_block_keys(blocks, kind);
     for (harness, block) in blocks {
         for (key, value) in block.as_object().into_iter().flatten() {
-            if let Some(ty) = crate::harness::field_types::container_type(harness, key)
+            if let Some(ty) = crate::harness::profile_named(harness)
+                .and_then(|profile| crate::harness::field_types::container_type(profile, key))
                 && !unknown.contains(&format!("{harness}.{key}"))
                 && !ty.accepts(value)
             {
@@ -310,21 +310,33 @@ pub(crate) fn check_packs_against_sources(
     Ok(())
 }
 
-/// How `plugin`'s skills are named on Pi: whether its `naming` says bare.
+/// How `plugin`'s skills are named on `profile`: its block's `naming`, or the
+/// profile default. A profile without
+/// [`naming_choice`](crate::harness::PluginFormat::naming_choice) returns its
+/// default and never reads the key.
 ///
 /// # Errors
 ///
 /// `refused: unknown-naming` for a value other than `bare` and `prefixed`.
-pub(crate) fn bare_on_pi(config: &MarketplaceConfig, plugin: &str) -> Result<bool, CoreError> {
-    match plugin_block(config, plugin, "pi").get(NAMING_KEY) {
-        None => Ok(false),
+pub(crate) fn naming_of(
+    config: &MarketplaceConfig,
+    plugin: &str,
+    profile: &HarnessProfile,
+) -> Result<SkillNaming, CoreError> {
+    let format = profile.format();
+    if !format.naming_choice {
+        return Ok(format.naming);
+    }
+    match plugin_block(config, plugin, profile.name).get(NAMING_KEY) {
+        None => Ok(format.naming),
         Some(value) => match value.as_str() {
-            Some("bare") => Ok(true),
-            Some("prefixed") => Ok(false),
+            Some("bare") => Ok(SkillNaming::Bare),
+            Some("prefixed") => Ok(SkillNaming::PluginPrefixed),
             _ => Err(CoreError::refused(
                 "unknown-naming",
                 format!(
-                    "`pi.{NAMING_KEY}` of plugin `{plugin}` must be `bare` or `prefixed`, not {value}"
+                    "`{}.{NAMING_KEY}` of plugin `{plugin}` must be `bare` or `prefixed`, not {value}",
+                    profile.name
                 ),
             )),
         },
@@ -332,21 +344,18 @@ pub(crate) fn bare_on_pi(config: &MarketplaceConfig, plugin: &str) -> Result<boo
 }
 
 /// One plugin's harness block for `harness`: the marketplace's block, less
-/// the keys that belong to the marketplace manifest's own top level and the
-/// keys that say which plugin this is, overlaid by the plugin note's block key
-/// by key.
+/// every key it does not pass down
+/// ([`HarnessProfile::passed_down_keys`]), overlaid by the plugin note's
+/// block key by key.
 pub(crate) fn plugin_block(config: &MarketplaceConfig, plugin: &str, harness: &str) -> Block {
-    let top = format_of(harness).marketplace_fields;
+    let passed = crate::harness::profile_named(harness).map(HarnessProfile::passed_down_keys);
     let mut block: Block = config
         .blocks
         .get(harness)
         .into_iter()
         .flatten()
         .filter(|_| crate::keys::inherits(EntityKind::Plugin, harness))
-        .filter(|(key, _)| {
-            !top.contains(&key.as_str())
-                && !crate::keys::BLOCK_IDENTITY_KEYS.contains(&key.as_str())
-        })
+        .filter(|(key, _)| passed.is_some_and(|passed| passed.contains(key.as_str())))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     if let Some(own) = overrides_for(config, plugin).and_then(|o| o.blocks.get(harness)) {
@@ -670,7 +679,7 @@ pub fn render_plugin_manifest(
         hooks,
         interface,
     };
-    finish_plugin(&manifest, config, plugin, harness_of(dialect))
+    finish_plugin(&manifest, config, plugin, profile_of(dialect).name)
 }
 
 /// The keyword the pi.dev gallery lists an npm package by.
@@ -918,4 +927,59 @@ pub fn cursor_marketplace_manifest(
             .collect(),
     };
     finish_marketplace(&manifest, config, "cursor")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_dialect_has_one_profile() {
+        for dialect in [
+            PluginDialect::Claude,
+            PluginDialect::Codex,
+            PluginDialect::Cursor,
+            PluginDialect::Pi,
+        ] {
+            let rows = crate::harness::with_plugin_format()
+                .filter(|p| p.format().dialect == dialect)
+                .count();
+            assert_eq!(rows, 1, "{dialect:?}");
+            assert_eq!(profile_of(dialect).format().dialect, dialect);
+        }
+    }
+
+    /// The match in `facts_for` has no wildcard, so a new dialect does not
+    /// compile until it has a table. Each table holds the keys its manifests
+    /// carry.
+    #[test]
+    fn facts_for_covers_every_dialect() {
+        for profile in crate::harness::with_plugin_format() {
+            let facts = crate::harness::field_types::facts_for(profile.format().dialect);
+            assert!(
+                facts.iter().any(|(key, _)| *key == "name"),
+                "{}",
+                profile.name
+            );
+        }
+    }
+
+    #[test]
+    fn a_marketplace_block_passes_down_only_its_passed_down_keys() {
+        let mut config = MarketplaceConfig::default();
+        let block = serde_json::json!({
+            "logo": "logo.png",
+            "owner": {"name": "o"},
+            "name": "m",
+            "zz-unknown": 1,
+        });
+        config
+            .blocks
+            .insert("cursor".to_owned(), block.as_object().unwrap().clone());
+        let block = plugin_block(&config, "p", "cursor");
+        assert_eq!(block.get("logo"), Some(&serde_json::json!("logo.png")));
+        for key in ["owner", "name", "zz-unknown"] {
+            assert!(!block.contains_key(key), "{key}");
+        }
+    }
 }

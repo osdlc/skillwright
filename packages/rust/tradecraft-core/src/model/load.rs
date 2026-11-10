@@ -37,7 +37,7 @@ use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::manifest::plugin_version;
-use crate::harness::{HarnessProfile, with_plugin_format};
+use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
 use crate::namespace::Namespace;
 use crate::paths::WORKSPACE_DIR;
 use crate::projection::parse_runtime_target;
@@ -938,24 +938,31 @@ fn bodies_of(resolved: &mut Resolved) -> impl Iterator<Item = &mut Body> {
     ))
 }
 
-/// Marks each plugin `pi: {naming: bare}` covers, and every call to one of
-/// its skills, wherever the call sits.
+/// Marks each plugin whose `<harness>: {naming: …}` names its skills against
+/// that harness's default, and every call to one of its skills, wherever the
+/// call sits. Only a harness whose profile allows the choice is read.
 fn apply_naming(
     plugins: &mut BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Result<(), CoreError> {
-    let mut bare = BTreeSet::new();
-    for name in plugins.keys() {
-        if crate::harness::manifest::bare_on_pi(config, name)? {
-            bare.insert(name.clone());
+    let mut bare: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for profile in crate::harness::with_plugin_format().filter(|p| p.format().naming_choice) {
+        let default = profile.format().naming;
+        for name in plugins.keys() {
+            let naming = crate::harness::manifest::naming_of(config, name, profile)?;
+            if naming == SkillNaming::Bare && default != SkillNaming::Bare {
+                bare.entry(name.clone())
+                    .or_default()
+                    .push(profile.name.to_owned());
+            }
         }
     }
     if bare.is_empty() {
         return Ok(());
     }
     for plugin in plugins.values_mut() {
-        if bare.contains(&plugin.name) {
-            plugin.bare_on = vec!["pi".to_owned()];
+        if let Some(harnesses) = bare.get(&plugin.name) {
+            plugin.bare_on.clone_from(harnesses);
         }
         let members = plugin
             .skills
@@ -966,9 +973,10 @@ fn apply_naming(
             for body in bodies_of(resolved) {
                 for segment in &mut body.segments {
                     if let Segment::Call { call } = segment
-                        && call.skill.plugin.as_ref().is_some_and(|p| bare.contains(p))
+                        && let Some(harnesses) =
+                            call.skill.plugin.as_ref().and_then(|p| bare.get(p))
                     {
-                        call.bare_on = vec!["pi".to_owned()];
+                        call.bare_on.clone_from(harnesses);
                     }
                 }
             }

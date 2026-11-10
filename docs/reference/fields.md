@@ -163,24 +163,28 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
 
 ### `claude:`
 
-- Component: `allowed-tools`, `argument-hint`, `arguments`, `compatibility`, `context`, `description`, `disable-model-invocation`, `license`, `metadata`, `model`, `name`, `permissionMode`, `user-invocable`
-- Plugin: `$schema`, `agents`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `displayName`, `documentationUrl`, `experimental`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `name`, `outputStyles`, `permissionMode`, `privacyPolicyUrl`, `relevance`, `repository`, `settings`, `skills`, `source`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
-- Marketplace: `$schema`, `agents`, `allowCrossMarketplaceDependenciesOn`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `displayName`, `documentationUrl`, `experimental`, `forceRemoveDeletedPlugins`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `name`, `outputStyles`, `owner`, `packs`, `permissionMode`, `plugins`, `privacyPolicyUrl`, `relevance`, `renames`, `repository`, `settings`, `skills`, `source`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
+- Skill and command: `allowed-tools`, `argument-hint`, `arguments`, `compatibility`, `context`, `description`, `disable-model-invocation`, `license`, `metadata`, `model`, `name`, `permissionMode`, `user-invocable`
+- Agent: not checked.
+- Plugin: `$schema`, `agents`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `displayName`, `documentationUrl`, `experimental`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `name`, `outputStyles`, `privacyPolicyUrl`, `relevance`, `repository`, `settings`, `skills`, `source`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
+- Marketplace: `$schema`, `agents`, `allowCrossMarketplaceDependenciesOn`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `documentationUrl`, `experimental`, `forceRemoveDeletedPlugins`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `name`, `outputStyles`, `owner`, `packs`, `plugins`, `privacyPolicyUrl`, `relevance`, `renames`, `repository`, `settings`, `skills`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
 
 ### `codex:`
 
-- Component: `allowed-tools`, `compatibility`, `description`, `license`, `metadata`, `name`
+- Skill and command: `allowed-tools`, `compatibility`, `description`, `license`, `metadata`, `name`
+- Agent: not checked.
 - Plugin: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `policy`, `repository`, `skills`, `source`, `version`
-- Marketplace: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `packs`, `plugins`, `policy`, `repository`, `skills`, `source`, `version`
+- Marketplace: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `packs`, `plugins`, `policy`, `repository`, `skills`
 
 ### `cursor:`
 
-- Component: `allowed-tools`, `color`, `compatibility`, `description`, `disable-model-invocation`, `globs`, `icon`, `license`, `metadata`, `name`, `paths`
+- Skill and command: `allowed-tools`, `color`, `compatibility`, `description`, `disable-model-invocation`, `globs`, `icon`, `license`, `metadata`, `name`, `paths`
+- Agent: not checked.
 - Plugin: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `description`, `disable-model-invocation`, `displayName`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `name`, `paths`, `publisher`, `repository`, `rules`, `skills`, `source`, `tags`, `variables`, `version`
-- Marketplace: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `description`, `disable-model-invocation`, `displayName`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `name`, `owner`, `packs`, `paths`, `plugins`, `publisher`, `repository`, `rules`, `skills`, `source`, `tags`, `variables`, `version`
+- Marketplace: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `disable-model-invocation`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `name`, `owner`, `packs`, `paths`, `plugins`, `publisher`, `repository`, `rules`, `skills`, `tags`, `variables`
 
 ### `pi:`
 
-- Component: `allowed-tools`, `compatibility`, `description`, `disable-model-invocation`, `license`, `metadata`, `name`
+- Skill and command: `allowed-tools`, `compatibility`, `description`, `disable-model-invocation`, `license`, `metadata`, `name`
+- Agent: not checked.
 - Plugin: `allowed-tools`, `author`, `compatibility`, `dependencies`, `description`, `disable-model-invocation`, `homepage`, `keywords`, `license`, `metadata`, `name`, `naming`, `peerDependencies`, `pi`, `repository`, `version`
-- Marketplace: `allowed-tools`, `author`, `compatibility`, `dependencies`, `description`, `disable-model-invocation`, `homepage`, `keywords`, `license`, `metadata`, `name`, `naming`, `packs`, `peerDependencies`, `pi`, `repository`, `version`
+- Marketplace: `allowed-tools`, `author`, `compatibility`, `dependencies`, `disable-model-invocation`, `homepage`, `keywords`, `license`, `metadata`, `naming`, `packs`, `peerDependencies`, `pi`, `repository`

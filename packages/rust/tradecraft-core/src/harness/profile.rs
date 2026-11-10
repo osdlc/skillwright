@@ -20,7 +20,8 @@
 //! # Facts from the knowledge file, policy in code
 //!
 //! A plugin row is a [`PluginPolicy`]: what this crate chooses (the packs
-//! folder, the dialect, Pi's prefixed naming, the override lists) and, for each
+//! folder, the dialect, a naming the knowledge does not give, whether a vault
+//! may choose the naming, the override lists) and, for each
 //! fact (user skills folder, manifest and marketplace paths, plugin-root
 //! variable, naming rule), either [`Source::Knowledge`] or a
 //! [`Source::Constant`] with the reason. [`HarnessProfile::format`] resolves a
@@ -29,9 +30,12 @@
 //! statement and to the value the row held before, so a corpus change that
 //! moves a fact is a visible test failure, not a silent change.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, OnceLock};
 
 use agent_adapt::RuntimeId;
+
+use crate::frontmatter::EntityKind;
 
 use crate::hooks_file::PluginRootVar;
 
@@ -126,6 +130,10 @@ pub struct PluginPolicy {
     pub marketplace_fields: &'static [&'static str],
     /// See [`PluginFormat::entry_fields`].
     pub entry_fields: &'static [&'static str],
+    /// See [`PluginFormat::naming_choice`].
+    pub naming_choice: bool,
+    /// See [`PluginFormat::agent_only_overrides`].
+    pub agent_only_overrides: &'static [&'static str],
 }
 
 /// Where a harness reads a plugin from, and how its pack is shaped.
@@ -180,6 +188,78 @@ pub struct PluginFormat {
     /// The keys this harness reads in one marketplace entry, from the same
     /// fact.
     pub entry_fields: &'static [&'static str],
+    /// Whether a marketplace or a plugin may choose how this harness names its
+    /// skills, with `<harness>: {naming: bare | prefixed}`. Policy.
+    pub naming_choice: bool,
+    /// The override keys this harness reads on a subagent and nowhere else.
+    /// `agent_adapt` declares them with every other key.
+    pub agent_only_overrides: &'static [&'static str],
+    /// The keys each kind of note's block for this harness accepts.
+    block_keys: BlockKeys,
+}
+
+/// The keys a harness's blocks accept, by the kind of note they sit on,
+/// worked out once from the row.
+#[derive(Debug)]
+struct BlockKeys {
+    /// A skill's or a command's block.
+    component: BTreeSet<String>,
+    /// What a member of each kind takes from its plugin's block.
+    member: BTreeMap<EntityKind, BTreeSet<String>>,
+    /// A plugin's block.
+    plugin: BTreeSet<String>,
+    /// What a marketplace's block passes down to each plugin's.
+    passed_down: BTreeSet<String>,
+    /// A marketplace's block.
+    marketplace: BTreeSet<String>,
+}
+
+impl BlockKeys {
+    fn of(profile: &HarnessProfile, policy: &PluginPolicy) -> Self {
+        let component = profile.accepted_override_keys();
+        let member: BTreeMap<EntityKind, BTreeSet<String>> = EntityKind::ALL
+            .into_iter()
+            .map(|kind| {
+                let mut keys = if kind == EntityKind::Agent {
+                    BTreeSet::new()
+                } else {
+                    component.clone()
+                };
+                keys.retain(|key| {
+                    let key = key.as_str();
+                    !policy.agent_only_overrides.contains(&key)
+                        && !policy.manifest_fields.contains(&key)
+                        && !policy.entry_fields.contains(&key)
+                });
+                (kind, keys)
+            })
+            .collect();
+        let owned = |keys: &[&str]| keys.iter().map(|key| (*key).to_owned()).collect::<Vec<_>>();
+        let mut plugin: BTreeSet<String> = member[&EntityKind::Skill].clone();
+        plugin.extend(owned(policy.manifest_fields));
+        plugin.extend(owned(policy.entry_fields));
+        if policy.naming_choice {
+            plugin.insert(crate::harness::manifest::NAMING_KEY.to_owned());
+        }
+        let passed_down: BTreeSet<String> = plugin
+            .iter()
+            .filter(|key| {
+                !policy.marketplace_fields.contains(&key.as_str())
+                    && !crate::keys::BLOCK_IDENTITY_KEYS.contains(&key.as_str())
+            })
+            .cloned()
+            .collect();
+        let mut marketplace = passed_down.clone();
+        marketplace.extend(owned(policy.marketplace_fields));
+        marketplace.insert(crate::harness::manifest::PACKS_KEY.to_owned());
+        Self {
+            component,
+            member,
+            plugin,
+            passed_down,
+            marketplace,
+        }
+    }
 }
 
 /// Claude Code's `plugin.json` keys, from its `plugins/manifest-fields` fact.
@@ -471,6 +551,8 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
         manifest_fields: CLAUDE_MANIFEST_FIELDS,
         marketplace_fields: CLAUDE_MARKETPLACE_FIELDS,
         entry_fields: CLAUDE_ENTRY_FIELDS,
+        naming_choice: false,
+        agent_only_overrides: CLAUDE_AGENT_ONLY_OVERRIDES,
     }),
     install: Some(InstallCli {
         scopes: &["user", "project", "local"],
@@ -512,6 +594,8 @@ pub const CODEX: HarnessProfile = HarnessProfile {
         manifest_fields: CODEX_MANIFEST_FIELDS,
         marketplace_fields: CODEX_MARKETPLACE_FIELDS,
         entry_fields: CODEX_ENTRY_FIELDS,
+        naming_choice: false,
+        agent_only_overrides: &[],
     }),
     install: Some(InstallCli {
         scopes: &["user"],
@@ -553,6 +637,8 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         manifest_fields: CURSOR_MANIFEST_FIELDS,
         marketplace_fields: CURSOR_MARKETPLACE_FIELDS,
         entry_fields: CURSOR_ENTRY_FIELDS,
+        naming_choice: false,
+        agent_only_overrides: &[],
     }),
     install: Some(InstallCli {
         scopes: &["user"],
@@ -589,6 +675,8 @@ pub const PI: HarnessProfile = HarnessProfile {
         manifest_fields: PI_MANIFEST_FIELDS,
         marketplace_fields: &[],
         entry_fields: &[],
+        naming_choice: true,
+        agent_only_overrides: &[],
     }),
     // `pi install <path>` records a package in the user's settings, or with
     // `-l` the project's. Pi has no marketplace, so packs install by path.
@@ -799,6 +887,9 @@ fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
         manifest_fields: policy.manifest_fields,
         marketplace_fields: policy.marketplace_fields,
         entry_fields: policy.entry_fields,
+        naming_choice: policy.naming_choice,
+        agent_only_overrides: policy.agent_only_overrides,
+        block_keys: BlockKeys::of(profile, policy),
     }
 }
 
@@ -854,13 +945,12 @@ impl HarnessProfile {
     /// distinct name and policy and cached, which is bounded by how many such
     /// rows a program makes.
     pub fn plugin_format(&self) -> Option<&'static PluginFormat> {
-        static FORMATS: OnceLock<[(HarnessProfile, PluginFormat); 4]> = OnceLock::new();
+        static FORMATS: OnceLock<Vec<(&'static HarnessProfile, PluginFormat)>> = OnceLock::new();
         let policy = self.plugin.as_ref()?;
         let canonical = FORMATS.get_or_init(|| {
-            [CLAUDE, CODEX, CURSOR, PI].map(|profile| {
-                let format = resolve_format(&profile);
-                (profile, format)
-            })
+            with_plugin_format()
+                .map(|profile| (profile, resolve_format(profile)))
+                .collect()
         });
         if let Some((_, format)) = canonical
             .iter()
@@ -930,14 +1020,48 @@ impl HarnessProfile {
             .collect()
     }
 
-    /// The override keys this harness reads on a subagent and nowhere else.
+    /// The override keys this harness reads on a subagent and nowhere else:
+    /// its row's [`PluginPolicy::agent_only_overrides`].
     pub fn agent_override_keys(&self) -> std::collections::BTreeSet<String> {
-        let keys: &[&str] = if self.declaration == RuntimeId::ClaudeCode {
-            CLAUDE_AGENT_ONLY_OVERRIDES
-        } else {
-            &[]
-        };
-        keys.iter().map(|key| (*key).to_owned()).collect()
+        self.plugin
+            .iter()
+            .flat_map(|policy| policy.agent_only_overrides)
+            .map(|key| (*key).to_owned())
+            .collect()
+    }
+
+    /// The keys this harness's block accepts on a note of `kind`.
+    ///
+    /// `None` for an agent or a hook, whose blocks are not checked, and for a
+    /// row with no plugin format, which no note can carry a block for
+    /// ([`crate::keys::HARNESS_BLOCKS`] lists only plugin rows).
+    pub fn block_keys(&self, kind: EntityKind) -> Option<&'static BTreeSet<String>> {
+        let keys = &self.plugin_format()?.block_keys;
+        match kind {
+            EntityKind::Skill | EntityKind::Command => Some(&keys.component),
+            EntityKind::Plugin => Some(&keys.plugin),
+            EntityKind::Marketplace => Some(&keys.marketplace),
+            EntityKind::Agent | EntityKind::Hook => None,
+        }
+    }
+
+    /// The keys of this harness's block a member of `kind` takes from its
+    /// plugin: the keys `kind` accepts, less those a plugin's own manifests
+    /// read and those the harness reads on a subagent alone. None for a row
+    /// with no plugin format.
+    pub(crate) fn member_block_keys(&self, kind: EntityKind) -> &'static BTreeSet<String> {
+        static NONE: BTreeSet<String> = BTreeSet::new();
+        self.plugin_format()
+            .and_then(|format| format.block_keys.member.get(&kind))
+            .unwrap_or(&NONE)
+    }
+
+    /// The keys of a marketplace's block that pass down to each plugin's
+    /// block. None for a row with no plugin format.
+    pub(crate) fn passed_down_keys(&self) -> &'static BTreeSet<String> {
+        static NONE: BTreeSet<String> = BTreeSet::new();
+        self.plugin_format()
+            .map_or(&NONE, |format| &format.block_keys.passed_down)
     }
 }
 
@@ -1213,6 +1337,71 @@ mod tests {
     }
 
     #[test]
+    fn block_keys_follow_their_definitions() {
+        use crate::frontmatter::EntityKind::{Agent, Hook, Marketplace, Plugin};
+        for profile in with_plugin_format() {
+            let format = profile.format();
+            let policy = profile.plugin.as_ref().unwrap();
+            let market = profile.block_keys(Marketplace).unwrap();
+            for key in format
+                .marketplace_fields
+                .iter()
+                .chain([&crate::harness::manifest::PACKS_KEY])
+            {
+                assert!(market.contains(*key), "{} {key}", profile.name);
+            }
+            for key in crate::keys::BLOCK_IDENTITY_KEYS {
+                assert!(
+                    !market.contains(*key) || format.marketplace_fields.contains(key),
+                    "{} {key}",
+                    profile.name
+                );
+            }
+            let plugin = profile.block_keys(Plugin).unwrap();
+            for key in policy.agent_only_overrides {
+                assert!(!plugin.contains(*key), "{} {key}", profile.name);
+            }
+            assert_eq!(
+                plugin.contains(crate::harness::manifest::NAMING_KEY),
+                policy.naming_choice,
+                "{}",
+                profile.name
+            );
+            assert_eq!(profile.block_keys(Agent), None, "{}", profile.name);
+            assert_eq!(profile.block_keys(Hook), None, "{}", profile.name);
+        }
+    }
+
+    #[test]
+    fn only_claude_has_agent_only_overrides() {
+        for profile in with_plugin_format() {
+            let keys = profile.plugin.as_ref().unwrap().agent_only_overrides;
+            assert_eq!(
+                !keys.is_empty(),
+                profile.name == "claude",
+                "{}",
+                profile.name
+            );
+        }
+        assert_eq!(
+            CLAUDE.plugin.as_ref().unwrap().agent_only_overrides,
+            ["permissionMode"]
+        );
+    }
+
+    #[test]
+    fn harness_blocks_are_the_plugin_profiles() {
+        let rows: Vec<&str> = crate::keys::KEYS
+            .iter()
+            .filter(|spec| spec.shape == crate::keys::Shape::HarnessBlock)
+            .map(|spec| spec.key)
+            .collect();
+        let profiles: Vec<&str> = with_plugin_format().map(|p| p.name).collect();
+        assert_eq!(crate::keys::HARNESS_BLOCKS, rows.as_slice());
+        assert_eq!(crate::keys::HARNESS_BLOCKS, profiles.as_slice());
+    }
+
+    #[test]
     fn the_facts_the_test_reads_are_there() {
         // A moved or emptied file would turn every check above into a silent skip.
         let claude = profile_named("claude").unwrap();
@@ -1249,6 +1438,19 @@ mod custom_rows {
         policy.plugin_manifest = Source::Constant("mine.json");
         policy.marketplace_manifest = Source::Constant(None);
         assert_eq!(row.format().user_skills_dir, ".mine/skills");
+    }
+
+    #[test]
+    fn a_custom_row_gets_its_own_block_keys() {
+        use crate::frontmatter::EntityKind::Plugin;
+        let mut row = CURSOR;
+        let policy = row.plugin.as_mut().unwrap();
+        policy.manifest_fields = &["name", "zz-extra"];
+        policy.naming_choice = false;
+        let keys = row.block_keys(Plugin).unwrap();
+        assert!(keys.contains("zz-extra"));
+        assert!(!keys.contains(crate::harness::manifest::NAMING_KEY));
+        assert!(!CURSOR.block_keys(Plugin).unwrap().contains("zz-extra"));
     }
 
     #[test]

@@ -24,6 +24,7 @@
 use serde_json::Value;
 
 use crate::frontmatter::EntityKind;
+use crate::harness::profile::{CLAUDE, CODEX, CURSOR, PI};
 use crate::namespace::Namespace;
 
 /// Who a key belongs to.
@@ -215,8 +216,10 @@ const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command, H
 const ADOPTABLE: &[EntityKind] = &[Skill, Agent, Command, Hook];
 
 /// The harnesses that take a block of their own keys: `claude:`, `codex:`,
-/// `cursor:` and `pi:`.
-pub const HARNESS_BLOCKS: &[&str] = &["claude", "codex", "cursor", "pi"];
+/// `cursor:` and `pi:`, the rows with a plugin format. A test holds this list
+/// to [`crate::harness::with_plugin_format`] and to the [`Shape::HarnessBlock`]
+/// rows of [`KEYS`].
+pub const HARNESS_BLOCKS: &[&str] = &[CLAUDE.name, CODEX.name, CURSOR.name, PI.name];
 
 /// Harness block keys that say which thing a manifest describes. A plugin
 /// never takes one from the marketplace's block: each plugin has its own.
@@ -506,7 +509,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "The timeout in seconds.",
     },
     KeySpec {
-        key: "claude",
+        key: CLAUDE.name,
         kinds: ALL_BUT_HOOK,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -514,7 +517,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "Fields only Claude Code reads, in its own key names, merged over what skillwright generates.",
     },
     KeySpec {
-        key: "codex",
+        key: CODEX.name,
         kinds: ALL_BUT_HOOK,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -522,7 +525,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`.",
     },
     KeySpec {
-        key: "cursor",
+        key: CURSOR.name,
         kinds: ALL_BUT_HOOK,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -530,7 +533,7 @@ pub const KEYS: &[KeySpec] = &[
         summary: "Fields only Cursor reads, in its own key names.",
     },
     KeySpec {
-        key: "pi",
+        key: PI.name,
         kinds: ALL_BUT_HOOK,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
@@ -645,39 +648,28 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
 - A key with no value is dropped. It does not clear a value the note inherits.
 "#,
     );
-    for harness in HARNESS_BLOCKS {
-        let Some(profile) = crate::harness::profile_named(harness) else {
-            continue;
-        };
-        out.push_str(&format!("\n### `{harness}:`\n\n"));
-        let list = |keys: &[&str]| {
-            let mut keys = keys.to_vec();
-            keys.sort_unstable();
-            keys.dedup();
-            let keys: Vec<String> = keys.iter().map(|key| format!("`{key}`")).collect();
-            if keys.is_empty() {
-                "none".to_owned()
-            } else {
-                keys.join(", ")
-            }
-        };
-        let component = profile.accepted_override_keys();
-        let component: Vec<&str> = component.iter().map(String::as_str).collect();
-        out.push_str(&format!("- Component: {}\n", list(&component)));
-        let Some(format) = profile.plugin_format() else {
-            continue;
-        };
-        let mut plugin = component.clone();
-        plugin.extend(format.manifest_fields);
-        plugin.extend(format.entry_fields);
-        if *harness == "pi" {
-            plugin.push(crate::harness::manifest::NAMING_KEY);
+    let list = |keys: &std::collections::BTreeSet<String>| {
+        if keys.is_empty() {
+            return "none".to_owned();
         }
-        out.push_str(&format!("- Plugin: {}\n", list(&plugin)));
-        let mut marketplace = plugin.clone();
-        marketplace.extend(format.marketplace_fields);
-        marketplace.push(crate::harness::manifest::PACKS_KEY);
-        out.push_str(&format!("- Marketplace: {}\n", list(&marketplace)));
+        let keys: Vec<String> = keys.iter().map(|key| format!("`{key}`")).collect();
+        keys.join(", ")
+    };
+    for profile in crate::harness::with_plugin_format() {
+        out.push_str(&format!("\n### `{}:`\n\n", profile.name));
+        for (kind, label) in [
+            (Skill, "Skill and command"),
+            (Plugin, "Plugin"),
+            (Marketplace, "Marketplace"),
+        ] {
+            let keys = profile
+                .block_keys(kind)
+                .expect("a plugin row checks these kinds' blocks");
+            out.push_str(&format!("- {label}: {}\n", list(keys)));
+            if kind == Skill {
+                out.push_str("- Agent: not checked.\n");
+            }
+        }
     }
     out
 }
@@ -859,5 +851,72 @@ mod tests {
         assert_eq!(lookup(Agent, "tools").unwrap().shape, Shape::AgentTools);
         assert_eq!(lookup(Skill, "tools").unwrap().shape, Shape::Words);
         assert_eq!(lookup(Command, "tools").unwrap().shape, Shape::Words);
+    }
+
+    /// The keys `field_reference` lists for `harness` on the line that starts
+    /// with `label`.
+    fn listed(reference: &str, harness: &str, label: &str) -> std::collections::BTreeSet<String> {
+        let section = reference
+            .split(&format!("### `{harness}:`\n"))
+            .nth(1)
+            .unwrap_or_else(|| panic!("no section for {harness}"));
+        let line = section
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("- {label}: ")))
+            .unwrap_or_else(|| panic!("no {label} line for {harness}"));
+        if line == "none" {
+            return std::collections::BTreeSet::new();
+        }
+        line.split(", ")
+            .map(|key| key.trim_matches('`').to_owned())
+            .collect()
+    }
+
+    /// The docs list, for each harness and kind, exactly what `check` takes.
+    #[test]
+    fn the_field_reference_lists_exactly_the_keys_check_accepts() {
+        use serde_json::{Map, Value, json};
+        let reference = field_reference();
+        for profile in crate::harness::with_plugin_format() {
+            let harness = profile.name;
+            assert!(
+                reference.contains(&format!("### `{harness}:`\n\n- Skill and command: ")),
+                "{harness}"
+            );
+            assert!(reference.contains("- Agent: not checked.\n"), "{harness}");
+            for (kind, label) in [
+                (Skill, "Skill and command"),
+                (Plugin, "Plugin"),
+                (Marketplace, "Marketplace"),
+            ] {
+                let keys = listed(&reference, harness, label);
+                assert_eq!(
+                    &keys,
+                    profile.block_keys(kind).unwrap(),
+                    "{harness} {label}"
+                );
+                let unknown = |key: &str| {
+                    let block: Map<String, Value> = Map::from_iter([(key.to_owned(), json!(1))]);
+                    let blocks = Map::from_iter([(harness.to_owned(), Value::Object(block))]);
+                    if kind == Skill {
+                        crate::discover::unknown_component_block_keys(&blocks)
+                    } else {
+                        crate::discover::unknown_container_block_keys(&blocks, kind)
+                    }
+                };
+                for key in &keys {
+                    assert_eq!(
+                        unknown(key),
+                        Vec::<String>::new(),
+                        "{harness} {label} {key}"
+                    );
+                }
+                assert_eq!(
+                    unknown("zz-unknown"),
+                    vec![format!("{harness}.zz-unknown")],
+                    "{harness} {label}"
+                );
+            }
+        }
     }
 }
