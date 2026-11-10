@@ -46,15 +46,30 @@ pub enum Shape {
     Url,
     /// A list of strings.
     StringList,
+    /// A list of strings, or one string of words separated by spaces or
+    /// commas: `Read Grep` or `Read, Grep`.
+    Words,
+    /// An agent's tools: [`Self::Words`], or a mapping of tool names, as
+    /// OpenCode writes it. Its values are not checked.
+    AgentTools,
+    /// A hint: a string, or a list of strings, which is how YAML reads an
+    /// unquoted `[issue-number]`.
+    Hint,
     /// A boolean.
     Bool,
+    /// A boolean, or one of the words Claude Code's skills docs say its
+    /// boolean fields read: `yes`, `no`, `on`, `off`, `true`, `false`, `1`
+    /// and `0`, in any case.
+    Flag,
     /// A number.
     Number,
     /// A string, or a `{name, email, url}` mapping. Left blank, it is unset.
     Person,
-    /// A mapping of string keys to string values.
-    StringMap,
+    /// Any mapping. Its values are not checked.
+    Mapping,
     /// A list of `{name, description, required, values, default}` mappings.
+    /// With no namespace, a string or a list of strings is Claude's own
+    /// `arguments` key, which the field type takes and this shape does not.
     Arguments,
     /// A mapping of one harness's own keys.
     HarnessBlock,
@@ -64,26 +79,20 @@ pub enum Shape {
 
 impl Shape {
     /// Whether `value` has this shape. `null` passes only where the reader
-    /// takes it as absent: a harness block and the `adopted` block.
+    /// takes it as absent: a person, a harness block and the `adopted` block.
+    /// A shape with a [field type](Self::field_type) accepts what that type
+    /// does, except [`Self::Arguments`].
     pub fn accepts(self, value: &Value) -> bool {
         match self {
-            Self::String => value.is_string(),
             Self::Url => value.as_str().is_some_and(is_url),
-            Self::StringList => value
-                .as_array()
-                .is_some_and(|items| items.iter().all(Value::is_string)),
-            Self::Bool => value.is_boolean(),
-            Self::Number => value.is_number(),
             Self::Person => {
                 value.is_null()
                     || value.is_string()
                     || value.get("name").is_some_and(Value::is_string)
             }
-            Self::StringMap => value
-                .as_object()
-                .is_some_and(|map| map.values().all(Value::is_string)),
             Self::Arguments => value.is_array(),
             Self::HarnessBlock | Self::Adopted => value.is_object() || value.is_null(),
+            _ => self.field_type().is_some_and(|ty| ty.accepts(value)),
         }
     }
 }
@@ -248,7 +257,7 @@ pub const KEYS: &[KeySpec] = &[
         key: "allowed-tools",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::StringList,
+        shape: Shape::Words,
         inherits: false,
         summary: "Tools the skill may use without asking: a list, or one string separated by spaces or commas.",
     },
@@ -264,7 +273,7 @@ pub const KEYS: &[KeySpec] = &[
         key: "metadata",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::StringMap,
+        shape: Shape::Mapping,
         inherits: false,
         summary: "Free-form fields, the Agent Skills field. Unknown keys are published here.",
     },
@@ -272,7 +281,7 @@ pub const KEYS: &[KeySpec] = &[
         key: "argument-hint",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::String,
+        shape: Shape::Hint,
         inherits: false,
         summary: "The hint shown after the command name.",
     },
@@ -296,7 +305,7 @@ pub const KEYS: &[KeySpec] = &[
         key: "user-invocable",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::Bool,
+        shape: Shape::Flag,
         inherits: false,
         summary: "False hides it from the slash menu. Defaults to true.",
     },
@@ -304,15 +313,23 @@ pub const KEYS: &[KeySpec] = &[
         key: "disable-model-invocation",
         kinds: COMPONENTS,
         owner: Owner::Spec,
-        shape: Shape::Bool,
+        shape: Shape::Flag,
         inherits: false,
         summary: "True stops the model from calling it on its own.",
     },
     KeySpec {
         key: "tools",
-        kinds: COMPONENTS,
+        kinds: &[Skill, Command],
         owner: Owner::Spec,
-        shape: Shape::StringList,
+        shape: Shape::Words,
+        inherits: false,
+        summary: "An agent's tool list.",
+    },
+    KeySpec {
+        key: "tools",
+        kinds: &[Agent],
+        owner: Owner::Spec,
+        shape: Shape::AgentTools,
         inherits: false,
         summary: "An agent's tool list.",
     },
@@ -463,11 +480,17 @@ impl Shape {
             Self::String => "string",
             Self::Url => "URL",
             Self::StringList => "list of strings",
+            Self::Words => "list of strings, or one string separated by spaces or commas",
+            Self::AgentTools => "list of strings, one string separated by commas, or a mapping",
+            Self::Hint => "string, or a list of strings read as `[a, b]`",
             Self::Bool => "boolean",
+            Self::Flag => "boolean, or `yes`, `no`, `on`, `off`, `1`, `0`",
             Self::Number => "number",
             Self::Person => "string or `{name, email, url}`",
-            Self::StringMap => "map of strings",
-            Self::Arguments => "list of arguments",
+            Self::Mapping => "mapping",
+            Self::Arguments => {
+                "list of arguments; with no namespace, a string or a list of strings is Claude's own key"
+            }
             Self::HarnessBlock => "harness block",
             Self::Adopted => "adopted block",
         }
@@ -487,7 +510,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 ## Reading the tables
 
-- **Value** is the kind of value the key takes. Some keys take more forms; see [Other accepted forms](#other-accepted-forms).
+- **Value** is the kind of value the key takes. [Other accepted forms](#other-accepted-forms) notes what the column cannot say.
 - **Owner** says who the key belongs to:
   - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace: sw`, the key is written `sw-version`, or inside an `sw:` block. Keys in `skillwright.md` always stay bare.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written and never prefixed.
@@ -501,18 +524,8 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 ## Other accepted forms
 
-Some keys take more forms than the Value column shows, because a harness's docs use them:
-
-| Key | Also takes |
-|---|---|
-| `allowed-tools` | One string of names separated by spaces or commas: `Read Grep` or `Read, Grep`. |
-| an agent's `tools` | One string of names separated by commas: `Read, Grep`. Or a mapping of tool names, as OpenCode writes it, which a Claude Code target refuses. |
-| `argument-hint` | A list of strings. An unquoted `[issue-number]` reads as the text `[issue-number]`. |
-| `arguments` | A string, or any list. |
-| `metadata` | Any mapping. |
-| `user-invocable`, `disable-model-invocation` | `yes`, `no`, `on`, `off`, `1` or `0`, in any case, quoted or not. A harness that gets the key receives `true` or `false`. |
-
-Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unquoted, it is not valid YAML.
+- Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unquoted, it is not valid YAML.
+- An agent's `tools` mapping is OpenCode's form. Claude Code refuses it.
 "#,
     );
     for (kind, heading) in REFERENCE_KINDS {
@@ -684,5 +697,83 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Values every shape is asked about.
+    fn samples() -> Vec<Value> {
+        use serde_json::json;
+        vec![
+            Value::Null,
+            json!(true),
+            json!(false),
+            json!(0),
+            json!(1),
+            json!(2),
+            json!(1.5),
+            json!(""),
+            json!("a b"),
+            json!("yes"),
+            json!("Off"),
+            json!("https://x"),
+            json!([]),
+            json!(["a", "b"]),
+            json!([1]),
+            json!([{"name": "a"}]),
+            json!({}),
+            json!({"a": "b"}),
+            json!({"a": 1}),
+            json!({"name": "Ada"}),
+        ]
+    }
+
+    #[test]
+    fn every_shape_s_field_type_agrees_with_accepts() {
+        let shapes = [
+            Shape::String,
+            Shape::Url,
+            Shape::StringList,
+            Shape::Words,
+            Shape::AgentTools,
+            Shape::Hint,
+            Shape::Bool,
+            Shape::Flag,
+            Shape::Number,
+            Shape::Person,
+            Shape::Mapping,
+            Shape::Arguments,
+            Shape::HarnessBlock,
+            Shape::Adopted,
+        ];
+        for shape in shapes {
+            let Some(ty) = shape.field_type() else {
+                continue;
+            };
+            if shape == Shape::Arguments {
+                continue;
+            }
+            for value in samples() {
+                assert_eq!(
+                    shape.accepts(&value),
+                    ty.accepts(&value),
+                    "{shape:?} {value}"
+                );
+            }
+        }
+        // Ours is a list of argument objects; with no namespace, Claude's own
+        // `arguments` is a string or a list of strings.
+        let ty = Shape::Arguments.field_type().unwrap();
+        let words = serde_json::json!("a b");
+        assert!(ty.accepts(&words));
+        assert!(!Shape::Arguments.accepts(&words));
+        for value in samples().iter().filter(|v| Shape::Arguments.accepts(v)) {
+            assert!(ty.accepts(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn tools_has_one_row_per_kind() {
+        assert_eq!(lookup(Agent, "tools").unwrap().shape, Shape::AgentTools);
+        assert_eq!(lookup(Skill, "tools").unwrap().shape, Shape::Words);
+        assert_eq!(lookup(Command, "tools").unwrap().shape, Shape::Words);
     }
 }

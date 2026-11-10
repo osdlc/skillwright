@@ -6,7 +6,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 ## Reading the tables
 
-- **Value** is the kind of value the key takes. Some keys take more forms; see [Other accepted forms](#other-accepted-forms).
+- **Value** is the kind of value the key takes. [Other accepted forms](#other-accepted-forms) notes what the column cannot say.
 - **Owner** says who the key belongs to:
   - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace: sw`, the key is written `sw-version`, or inside an `sw:` block. Keys in `skillwright.md` always stay bare.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written and never prefixed.
@@ -20,18 +20,8 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 ## Other accepted forms
 
-Some keys take more forms than the Value column shows, because a harness's docs use them:
-
-| Key | Also takes |
-|---|---|
-| `allowed-tools` | One string of names separated by spaces or commas: `Read Grep` or `Read, Grep`. |
-| an agent's `tools` | One string of names separated by commas: `Read, Grep`. Or a mapping of tool names, as OpenCode writes it, which a Claude Code target refuses. |
-| `argument-hint` | A list of strings. An unquoted `[issue-number]` reads as the text `[issue-number]`. |
-| `arguments` | A string, or any list. |
-| `metadata` | Any mapping. |
-| `user-invocable`, `disable-model-invocation` | `yes`, `no`, `on`, `off`, `1` or `0`, in any case, quoted or not. A harness that gets the key receives `true` or `false`. |
-
-Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unquoted, it is not valid YAML.
+- Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unquoted, it is not valid YAML.
+- An agent's `tools` mapping is OpenCode's form. Claude Code refuses it.
 
 ## Marketplace
 
@@ -80,16 +70,16 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin or marketplace. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
-| `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
-| `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
+| `arguments` | list of arguments; with no namespace, a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
-| `metadata` | map of strings | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
-| `argument-hint` | string | spec | no | The hint shown after the command name. |
+| `metadata` | mapping | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
+| `argument-hint` | string, or a list of strings read as `[a, b]` | spec | no | The hint shown after the command name. |
 | `model` | string | spec | no | The model to run it with. |
 | `context` | string | spec | no | Claude's context mode, such as `fork`. |
-| `user-invocable` | boolean | spec | no | False hides it from the slash menu. Defaults to true. |
-| `disable-model-invocation` | boolean | spec | no | True stops the model from calling it on its own. |
-| `tools` | list of strings | spec | no | An agent's tool list. |
+| `user-invocable` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | False hides it from the slash menu. Defaults to true. |
+| `disable-model-invocation` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | True stops the model from calling it on its own. |
+| `tools` | list of strings, or one string separated by spaces or commas | spec | no | An agent's tool list. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -103,16 +93,16 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
-| `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
-| `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
+| `arguments` | list of arguments; with no namespace, a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
-| `metadata` | map of strings | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
-| `argument-hint` | string | spec | no | The hint shown after the command name. |
+| `metadata` | mapping | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
+| `argument-hint` | string, or a list of strings read as `[a, b]` | spec | no | The hint shown after the command name. |
 | `model` | string | spec | no | The model to run it with. |
 | `context` | string | spec | no | Claude's context mode, such as `fork`. |
-| `user-invocable` | boolean | spec | no | False hides it from the slash menu. Defaults to true. |
-| `disable-model-invocation` | boolean | spec | no | True stops the model from calling it on its own. |
-| `tools` | list of strings | spec | no | An agent's tool list. |
+| `user-invocable` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | False hides it from the slash menu. Defaults to true. |
+| `disable-model-invocation` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | True stops the model from calling it on its own. |
+| `tools` | list of strings, one string separated by commas, or a mapping | spec | no | An agent's tool list. |
 | `temperature` | number | spec | no | An agent's sampling temperature. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
@@ -127,16 +117,16 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
-| `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
-| `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
+| `arguments` | list of arguments; with no namespace, a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
-| `metadata` | map of strings | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
-| `argument-hint` | string | spec | no | The hint shown after the command name. |
+| `metadata` | mapping | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
+| `argument-hint` | string, or a list of strings read as `[a, b]` | spec | no | The hint shown after the command name. |
 | `model` | string | spec | no | The model to run it with. |
 | `context` | string | spec | no | Claude's context mode, such as `fork`. |
-| `user-invocable` | boolean | spec | no | False hides it from the slash menu. Defaults to true. |
-| `disable-model-invocation` | boolean | spec | no | True stops the model from calling it on its own. |
-| `tools` | list of strings | spec | no | An agent's tool list. |
+| `user-invocable` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | False hides it from the slash menu. Defaults to true. |
+| `disable-model-invocation` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | True stops the model from calling it on its own. |
+| `tools` | list of strings, or one string separated by spaces or commas | spec | no | An agent's tool list. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |

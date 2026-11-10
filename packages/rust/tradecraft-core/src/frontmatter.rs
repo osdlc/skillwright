@@ -630,7 +630,13 @@ fn shape_refusal(shape: Shape, key: &str, value: &Value) -> String {
             "`{key}` must be a mapping of {}, not {found}",
             ADOPTED_FIELDS.join(", ")
         ),
-        Shape::Bool | Shape::Number | Shape::StringMap => {
+        Shape::Words
+        | Shape::AgentTools
+        | Shape::Hint
+        | Shape::Bool
+        | Shape::Flag
+        | Shape::Number
+        | Shape::Mapping => {
             format!("`{key}` has the wrong shape: {found}")
         }
     }
