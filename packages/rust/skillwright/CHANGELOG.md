@@ -14,6 +14,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - A plugin or marketplace note with a `name` and no `description` no longer warns or ships a filler. Its manifest takes the configured description or the default.
 - `list` prints a `path-collision` line as `error ·`, not `warning ·`.
 
+### Changed
+
+- Documented that `publish <path>` publishes a note as a skill when no kind folder or `build.patterns` glob places it. The `publish` help, the structure spec and the `skillwright.md` reference say so, and say that `list`, `check`, `build` and `publish --all` do not include such a note. No behaviour change.
+
 ## [0.9.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.8.0...skillwright/v0.9.0) - 2026-11-09
 
 ### Breaking

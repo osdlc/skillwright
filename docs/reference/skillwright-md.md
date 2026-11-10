@@ -260,6 +260,23 @@ the run with `path-collision`, naming both notes, and nothing is written. Name o
 note to publish it, or rename one. A bare `publish` writes skills only. A plugin's pack, an agent and a command
 publish when their note is named.
 
+## Publishing one note by path
+
+`publish <path>` publishes the named note as a skill even when no kind folder and no
+`build.patterns` glob places it. This lets an author publish a single skill from anywhere,
+without moving it into a kind folder first. It is the one exception to "the folder alone decides
+what a note is".
+
+Such a note is not part of the vault. `list`, `check`, `build`, `publish --all` and a bare
+`publish` do not include it. A note under a kind folder or matched by a pattern takes its kind
+from there, as always, and `exclude` still refuses it.
+
+Which route to use:
+
+- `build.patterns` brings a folder into the vault for every command. Use it for notes you keep
+  and want listed, checked, built and published with the rest.
+- An explicit path publishes one note once. Nothing about the vault changes.
+
 ## What a manifest holds
 
 Each manifest keeps to what that harness documents:

@@ -287,7 +287,7 @@ enum NewVerb {
 /// `publish`'s surface.
 #[derive(Args, Debug)]
 struct PublishArgs {
-    /// Vault-relative paths to the notes to publish.
+    /// Vault-relative paths to the notes to publish. A named note that no kind folder or `build.patterns` glob places publishes as a skill.
     #[arg(value_name = "note")]
     notes: Vec<String>,
     /// Repeatable. Destination roots. Defaults to every configured destination.

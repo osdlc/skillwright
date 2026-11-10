@@ -983,6 +983,46 @@ fn a_note_the_vault_excludes_is_not_published() {
     assert!(!published.stderr.contains("hidden"), "{}", published.stderr);
 }
 
+/// `publish <path>` publishes a note that no kind folder places, as a skill.
+/// It is the one exception to "the path decides the kind", and the other
+/// verbs keep leaving such a note out of the vault.
+#[test]
+fn publish_by_path_publishes_a_note_no_kind_folder_places() {
+    let (dir, vault) = fixture();
+    let notes = vault.join("notes");
+    fs::create_dir_all(&notes).unwrap();
+    fs::write(
+        notes.join("stray.md"),
+        "---\nname: stray\ndescription: A stray note outside every kind folder\n---\nBody.\n",
+    )
+    .unwrap();
+    let vault_arg = vault.display().to_string();
+    let dest = dir.path().join("dest");
+    let dest_arg = dest.display().to_string();
+    let to = [
+        "--vault", &vault_arg, "--to", &dest_arg, "--target", "claude",
+    ];
+
+    let listed = run(&["list", "--vault", &vault_arg], dir.path());
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    assert!(!listed.stdout.contains("stray"), "{}", listed.stdout);
+
+    let mut all = vec!["publish", "--all", "--yes"];
+    all.extend(to);
+    let published = run(&all, dir.path());
+    assert_eq!(published.code, 0, "{}", published.stderr);
+    assert!(dest.join(".claude/skills/code-review/SKILL.md").is_file());
+    assert!(!dest.join(".claude/skills/stray").exists());
+
+    let mut named = vec!["publish", "notes/stray.md", "--yes"];
+    named.extend(to);
+    let published = run(&named, dir.path());
+    assert_eq!(published.code, 0, "{}", published.stderr);
+    let written = fs::read_to_string(dest.join(".claude/skills/stray/SKILL.md")).unwrap();
+    assert!(written.contains("name: stray"), "{written}");
+    assert!(written.contains("description: A stray note"), "{written}");
+}
+
 /// The first path under `root` with a component named `name`, depth first.
 fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
     for entry in fs::read_dir(root).ok()?.flatten() {
