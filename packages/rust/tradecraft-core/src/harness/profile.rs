@@ -136,9 +136,9 @@ pub struct PluginFormat {
     pub skills_dir: &'static str,
     /// The folder under the home directory the harness loads a user's own
     /// skills from. `publish` writes there and `adopt` reads from there when
-    /// no destination or source is named. Where a harness reads several, the
-    /// first. The Codex and Pi rows read it from the harness knowledge file's
-    /// `skills/user-dirs` statements; the Claude and Cursor rows are constants.
+    /// no destination or source is named. Each row's `PluginPolicy::user_skills_dir`
+    /// says where its value comes from and which folder it keeps when the
+    /// harness reads several.
     pub user_skills_dir: &'static str,
     /// The pack manifest, relative to a pack's own directory, in this
     /// harness's dialect.
@@ -1049,6 +1049,12 @@ mod tests {
     /// The value `profile` has for `subject` in the knowledge file, weak and
     /// disputed ones included.
     fn known(profile: &HarnessProfile, subject: &str) -> Option<serde_json::Value> {
+        assert!(
+            crate::harness::knowledge::embedded()
+                .subjects
+                .contains_key(subject),
+            "{subject} is not in data/embedded-slice.json"
+        );
         let query = Query {
             accept_weak: true,
             accept_disputed: true,

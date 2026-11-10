@@ -27,7 +27,7 @@ compiled from the `harness-reference` claims corpus and embedded in
   is.
 - **The embedded copy is reproducible.** It is compiled with the placeholder
   commit `main` (`pnpm --filter harness-reference run compile:embed`), cut to
-  the harnesses and subjects in `data/embedded-slice.json` and written compact.
+  the harnesses and subjects in `data/embedded-slice.json` and written compact, without `valueSchema`.
   A `harness-reference` test fails when it is stale, and a Rust test fails when
   `profile.rs` looks up a subject the list lacks.
 - A test holds every lookup a profile makes to a moderate or stronger

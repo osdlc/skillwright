@@ -214,7 +214,7 @@ A `lint` script in `src/beta/` checks the rules that compare records:
 - npm `@osdlc/harness-knowledge` (in osdlc/osdlc): the JSON file, its schema, types, and
   `lookup`, synced from a skillwright release. Versioned on its own; a new release that changes
   the file is a new version.
-- Rust: `tradecraft-core` embeds the same file with `include_str!` and deserializes it with serde
+- Rust: `tradecraft-core` embeds a slice of the file (the harnesses and subjects it reads, compact, without `valueSchema`) with `include_str!` and deserializes it with serde
   into hand-written structs, once, behind a `OnceLock`. (tradecraft-typegen goes the other way,
   Rust to TypeScript, so it does not apply.) Profile values that are constants today become
   lookups at first use; a test checks that every lookup a profile makes resolves. No separate

@@ -126,12 +126,14 @@ export function sliceKnowledge(knowledge: Knowledge, slice: Slice): SlicedKnowle
   }
 }
 
-/** Write both files under `outDir`, or only the data file with `schema: false`. */
+/**
+ * Write both files under `outDir`. `schema: false` writes only the data file; `compact: true`
+ * writes it without indentation.
+ */
 export function writeKnowledge(
   outDir: string,
   knowledge: Knowledge | SlicedKnowledge,
-  schema = true,
-  compact = false,
+  { schema = true, compact = false }: { schema?: boolean; compact?: boolean } = {},
 ): string[] {
   mkdirSync(outDir, { recursive: true })
   const files: [string, unknown][] = [['harness-knowledge.json', knowledge]]
@@ -192,12 +194,12 @@ function main(argv: string[]): number {
     const knowledge =
       values.slice === undefined ? full : sliceKnowledge(full, readSlice(resolve(values.slice)))
     const outDir = resolve(values.out ?? join(ROOT, 'dist'))
-    for (const f of writeKnowledge(
-      outDir,
-      knowledge,
-      values['no-schema'] !== true,
-      values.slice !== undefined,
-    ))
+    // A slice drops `valueSchema`, so the full schema would not describe it.
+    const sliced = values.slice !== undefined
+    for (const f of writeKnowledge(outDir, knowledge, {
+      schema: values['no-schema'] !== true && !sliced,
+      compact: sliced,
+    }))
       console.log(`wrote ${f}`)
     console.log(`${knowledge.values.length} values at ${commit}`)
     return 0
