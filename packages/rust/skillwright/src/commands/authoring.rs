@@ -859,9 +859,7 @@ fn write_rows(rows: &[Row<'_>], json: bool, ctx: &mut CommandContext<'_>) -> Res
 /// The fallback for any [`Applied`] fact a verb's own `label_*` does not name
 /// specially: `apply.rs`'s own stable outcome token, plus its reason when it
 /// has one. A skipped fact is its reason token alone, since the row's status
-/// already says `skipped`. Not tested by any acceptance transcript — every word a
-/// transcript names is matched exactly by the verb-specific arm above this
-/// one in each `label_*`.
+/// already says `skipped`.
 fn generic_label(applied: &Applied) -> String {
     if let Applied::Skipped { reason } = applied {
         return reason.clone();
