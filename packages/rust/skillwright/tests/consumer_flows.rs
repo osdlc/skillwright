@@ -1720,6 +1720,32 @@ fn a_derived_name_the_spec_does_not_admit_is_refused_as_invalid_name() {
     }
     assert!(!dir.path().join("dist").exists());
 
+    // `publish` of the vault, of the note and of its plugin refuse it too,
+    // and write nothing.
+    let to = dir.path().with_file_name("dest");
+    let to = to.to_str().unwrap();
+    for target in [
+        &[][..],
+        &["plugins/p/skills/日本.md"][..],
+        &["plugins/p/p.md"][..],
+    ] {
+        let mut args = vec!["publish", "--target", "claude", "--to", to, "--yes"];
+        args.extend_from_slice(target);
+        let ran = sw(&dir.path(), &args);
+        assert_ne!(ran.code, 0, "{target:?}: {}", ran.text);
+        assert!(
+            ran.text.contains("invalid-name: "),
+            "{target:?}: {}",
+            ran.text
+        );
+        assert!(ran.text.contains("Set `name:`"), "{target:?}: {}", ran.text);
+        assert!(
+            files_under(Path::new(to)).is_empty(),
+            "{target:?}: {}",
+            ran.text
+        );
+    }
+
     // A stated name settles each.
     std::fs::write(
         dir.path().join(&long),

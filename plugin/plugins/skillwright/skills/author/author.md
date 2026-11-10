@@ -32,12 +32,11 @@ writing, and is not part of the vault: only `publish <path>` publishes it, as a 
 
 - `description` opts a note in. A note with neither `name` nor `description` is skipped. A
   skill, command or agent with a `name` only is an error, and `build` and `publish` refuse it.
-  With no `name`, the file name gives one. If that name is empty or over 64 characters, as for
-  `日本.md`, the note is refused with `invalid-name`: set `name:`.
   Write it in the third person: what
   the skill does and when to use it. The limit is 1024 characters.
 - `name` is optional and defaults to the file name. Names are lowercase words joined by hyphens,
-  at most 64 characters.
+  at most 64 characters. If the name a file name gives is empty or longer, as for `日本.md`, the
+  note is refused with `invalid-name`: set `name:`.
 - `targets` limits a note to some harnesses, for example `[claude-code, codex]`. Absent means
   every destination, and `[]` means none.
 - `version` is a plugin's semver. Set it on every plugin note; a build warns when it is missing.

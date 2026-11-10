@@ -2512,6 +2512,72 @@ mod tests {
         assert_eq!(found[0].name, "release-notes");
     }
 
+    /// A skill, command or agent whose derived name breaks the rule is
+    /// listed with an `invalid-name` entry, not skipped. A stated name that
+    /// breaks it is still skipped, and a container is not affected.
+    #[test]
+    fn a_member_s_invalid_derived_name_is_listed_with_an_invalid_name_entry() {
+        let vfs = vault();
+        let long = "a".repeat(65);
+        for folder in ["skills", "commands", "agents"] {
+            write(
+                &vfs,
+                &format!("marketplaces/house/{folder}/日本.md"),
+                "---\ndescription: D.\n---\nb\n",
+            );
+        }
+        write(
+            &vfs,
+            &format!("marketplaces/house/skills/{long}.md"),
+            "---\ndescription: D.\n---\nb\n",
+        );
+        write(
+            &vfs,
+            "marketplaces/house/skills/stated.md",
+            &format!("---\nname: {long}\ndescription: D.\n---\nb\n"),
+        );
+        let report = scan(&vfs).unwrap();
+        let skipped: Vec<&str> = report.skipped.iter().map(|s| s.path.as_str()).collect();
+        assert_eq!(skipped, ["marketplaces/house/skills/stated.md"]);
+        let mut invalid: Vec<(&str, &str)> = report
+            .components
+            .iter()
+            .filter_map(|c| {
+                c.invalid_name()
+                    .map(|_| (c.vault_relative_path.as_str(), c.kind.as_str()))
+            })
+            .collect();
+        invalid.sort();
+        let long_path = format!("marketplaces/house/skills/{long}.md");
+        assert_eq!(
+            invalid,
+            [
+                ("marketplaces/house/agents/日本.md", "agent"),
+                ("marketplaces/house/commands/日本.md", "command"),
+                (long_path.as_str(), "skill"),
+                ("marketplaces/house/skills/日本.md", "skill"),
+            ]
+        );
+        let warned = report
+            .warnings
+            .iter()
+            .filter(|w| w.reason == INVALID_NAME_REASON && w.is_error())
+            .count();
+        assert_eq!(warned, 4, "{:?}", report.warnings);
+        // No collision between the three empty names: each is in its own kind
+        // folder, and the two skills differ.
+        assert!(
+            report.warnings.iter().all(|w| w.reason != "path-collision"),
+            "{:?}",
+            report.warnings
+        );
+        let err = refuse_invalid_names(&report.components)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("invalid-name: 4 note(s)"), "{err}");
+        assert!(err.contains("is 65 characters, over the 64"), "{err}");
+    }
+
     #[test]
     fn a_name_with_no_description_is_listed_with_a_missing_description_entry() {
         let vfs = vault();
