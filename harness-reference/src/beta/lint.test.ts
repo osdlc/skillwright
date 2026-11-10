@@ -239,10 +239,10 @@ describe('lint', () => {
       )
     })
 
-    const setSupersedes = (v: string, target: string): void => {
+    const setSupersedesLink = (v: string, href: string): void => {
       const file = join(dir, PI(v))
       const text = readFileSync(file, 'utf8')
-      const line = `supersedes: "[x](Pi%20Version%20seen%20${target}.md)"`
+      const line = `supersedes: "[x](${href})"`
       writeFileSync(
         file,
         /^supersedes: .*$/mu.test(text)
@@ -250,6 +250,23 @@ describe('lint', () => {
           : text.replace(/^status: .*$/mu, (m) => `${m}\n${line}`),
       )
     }
+    const setSupersedes = (v: string, target: string): void =>
+      setSupersedesLink(v, `Pi%20Version%20seen%20${target}.md`)
+    // lint's own reports only: the validator also refuses a link to a record of another type.
+    const supersedesProblems = (v: string): string[] =>
+      lint(loadBeta(dir)).filter((p) => p.startsWith(`${PI(v)}: supersedes`))
+
+    test('reports a self-link once', () => {
+      setSupersedes('1.1.0', '1.1.0')
+      assert.deepEqual(supersedesProblems('1.1.0'), [`${PI('1.1.0')}: supersedes links to itself`])
+    })
+
+    test('reports a link to a record that is not a statement once', () => {
+      setSupersedesLink('1.1.0', '../../harnesses/Pi.md')
+      const found = supersedesProblems('1.1.0')
+      assert.equal(found.length, 1, found.join('\n'))
+      assert.match(found[0]!, /which is a harnesses record, not a statement/)
+    })
 
     test('refuses a statement replaced twice', () => {
       setSupersedes('0.84.3', '0.99.1')

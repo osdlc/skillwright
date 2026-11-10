@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 import { Ajv2020 } from 'ajv/dist/2020.js'
 
-import { type Beta, BETA, loadBeta } from './corpus.ts'
+import { type Beta, BETA, KIND_STRENGTH, loadBeta, type Strength, STRENGTHS } from './corpus.ts'
 import { overlaps, type Versioning, validVersion, compareVersions } from './versions.ts'
 
 interface Scope {
@@ -17,20 +17,11 @@ interface Scope {
   model: string | null
 }
 
-/** The strongest strength a study result of each kind can support. An unlisted kind is weak. */
-const KIND_MAX: Record<string, number> = {
-  run: 2,
-  source: 2,
-  'help-text': 2,
-  docs: 1,
-  changelog: 1,
-  issue: 0,
-  'third-party': 0,
-  inferred: 0,
-  'research-note': 0,
+/** A strength's index in STRENGTHS, or undefined when the value is not a strength. */
+function rank(value: unknown): number | undefined {
+  const i = STRENGTHS.indexOf(value as Strength)
+  return i < 0 ? undefined : i
 }
-const RANK: Record<string, number> = { weak: 0, moderate: 1, strong: 2 }
-const NAMES = ['weak', 'moderate', 'strong']
 
 const MACHINE_PATH = /(^|[\s'"=:(])(\/(Users|home)\/|~\/|\$\{?HOME\b)/u
 
@@ -199,35 +190,34 @@ export function lint(beta: Beta): string[] {
         bad(ref.file, `supersedes ${target.id}, which is about another harness or subject`)
     }
 
-    // Strength by rule: a line is no stronger than the best kind among its own evidence items,
-    // and the statement is no stronger than its strongest supporting line.
+    // Strength by rule: see corpora/beta/README.md#statements.
     let strongestLine = -1
     for (const line of (data['hasEvidenceLines'] as unknown[] | undefined) ?? []) {
       const l = obj(line)
-      const given = RANK[str(l['strengthOfEvidenceProvided']) ?? '']
+      const given = rank(l['strengthOfEvidenceProvided'])
       if (given === undefined) continue
       let max = -1
       for (const link of (l['hasEvidenceItems'] as unknown[] | undefined) ?? []) {
         const target = beta.resolve(ref.file, link)
         if (target === undefined || target.type !== 'study-results') continue
         const kind = str(beta.get('study-results', target.id)?.['kind']) ?? ''
-        max = Math.max(max, KIND_MAX[kind] ?? 0)
+        max = Math.max(max, STRENGTHS.indexOf(KIND_STRENGTH[kind] ?? 'weak'))
       }
       if (max >= 0 && given > max)
         bad(
           ref.file,
-          `evidence line is ${NAMES[given]}, but its evidence kinds allow at most ${NAMES[max]}`,
+          `evidence line is ${STRENGTHS[given]}, but its evidence kinds allow at most ${STRENGTHS[max]}`,
         )
       if (l['directionOfEvidenceProvided'] === 'supports')
         strongestLine = Math.max(strongestLine, max >= 0 ? Math.min(given, max) : given)
     }
-    const top = RANK[str(data['strength']) ?? '']
+    const top = rank(data['strength'])
     if (top !== undefined && strongestLine < 0)
-      bad(ref.file, `strength ${NAMES[top]} has no supporting evidence line`)
+      bad(ref.file, `strength ${STRENGTHS[top]} has no supporting evidence line`)
     else if (top !== undefined && top > strongestLine)
       bad(
         ref.file,
-        `strength ${NAMES[top]} is above its strongest supporting evidence line (${NAMES[strongestLine]})`,
+        `strength ${STRENGTHS[top]} is above its strongest supporting evidence line (${STRENGTHS[strongestLine]})`,
       )
 
     for (const line of (data['hasEvidenceLines'] as unknown[] | undefined) ?? []) {
