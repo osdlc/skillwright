@@ -35,7 +35,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - A member reached through a symlink, such as a host given `/tmp/acme-link` that points at `<ws>/marketplaces/acme`, gets its workspace's settings and `build.exclude` in `load_marketplace`, `export_skills`, `publish_skill`, `vault_config` and `source_view`. The workspace is looked up by the member path as given, then by its real path. An `excluded-note` refusal names the workspace file by its absolute path when it was found through a link ([#91](https://github.com/osdlc/skillwright/issues/91)).
-- `publish_skill` places a `skill_path` spelled through a different link than `skills_root` by its real path, so its folder kind and `build.exclude` apply ([#91](https://github.com/osdlc/skillwright/issues/91)).
+- `publish_skill` places a `skill_path` spelled through a different link than `skills_root` by its real path, so its folder kind and `build.exclude` apply, and reads and records it by its spelling under `skills_root` from there ([#91](https://github.com/osdlc/skillwright/issues/91)).
 - The pack-location check runs on a first build through a symlinked vault, where `build.out` does not exist yet. It was skipped, so `packs` could land on a folder the vault reads notes from ([#83](https://github.com/osdlc/skillwright/issues/83)).
 
 ## [0.49.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.48.0...tradecraft-core/v0.49.0) - 2026-11-10
