@@ -3534,7 +3534,6 @@ mod tests {
                     keywords: Some(vec!["git".to_owned()]),
                     category: Some("Development".to_owned()),
                     display_name: Some("Git Tools".to_owned()),
-                    author: None,
                     ..ContainerIdentity::default()
                 },
                 ..PluginOverrides::default()

@@ -383,8 +383,9 @@ impl ContainerIdentity {
         }
     }
 
-    /// The identity `fields` describe. They came from [`Self::set_fields`],
-    /// so they read back.
+    /// The identity `fields` describe. Each caller passes fields that read
+    /// back: from [`Self::set_fields`], or checked one by one in
+    /// [`take_identity`].
     fn from_fields(fields: Map<String, Value>) -> Self {
         serde_json::from_value(Value::Object(fields)).expect("an identity's own fields read back")
     }
@@ -553,8 +554,7 @@ fn take_identity(
         }
         read.insert(key.to_owned(), value);
     }
-    serde_json::from_value(Value::Object(read))
-        .map_err(|err| CoreError::wrong_kind(path, format!("the identity cannot be read: {err}")))
+    Ok(ContainerIdentity::from_fields(read))
 }
 
 /// Splits skillwright's keys off `fields` and normalises them onto the flat
@@ -1665,7 +1665,7 @@ mod tests {
         // Every key a container's identity holds, with each spelling's
         // verdicts in the same order: valid, `null`, blank.
         type Row = (&'static str, [Verdict; 3]);
-        let bare_market: &[Row] = &[
+        let market: &[Row] = &[
             ("owner", [Read, Unset, Read]),
             ("author", [Read, Unset, Read]),
             ("display_name", [Read, Refused, Read]),
@@ -1676,31 +1676,7 @@ mod tests {
             ("repository", [Read, Refused, Refused]),
             ("homepage", [Read, Refused, Refused]),
         ];
-        let bare_plugin: &[Row] = &[
-            ("owner", [Unknown, Unknown, Unknown]),
-            ("author", [Read, Unset, Read]),
-            ("display_name", [Read, Refused, Read]),
-            ("license", [Read, Refused, Read]),
-            ("keywords", [Read, Refused, Refused]),
-            ("category", [Read, Refused, Read]),
-            ("version", [Read, Refused, Read]),
-            ("repository", [Read, Refused, Refused]),
-            ("homepage", [Read, Refused, Refused]),
-        ];
-        // Under a namespace every prefixed or nested key is claimed, and one
-        // the kind does not read warns, whatever its value.
-        let sw_market: &[Row] = &[
-            ("owner", [Read, Unset, Read]),
-            ("author", [Read, Unset, Read]),
-            ("display_name", [Read, Refused, Read]),
-            ("license", [Read, Refused, Read]),
-            ("keywords", [Unknown, Unknown, Unknown]),
-            ("category", [Unknown, Unknown, Unknown]),
-            ("version", [Read, Refused, Read]),
-            ("repository", [Read, Refused, Refused]),
-            ("homepage", [Read, Refused, Refused]),
-        ];
-        let sw_plugin: &[Row] = &[
+        let plugin: &[Row] = &[
             ("owner", [Unknown, Unknown, Unknown]),
             ("author", [Read, Unset, Read]),
             ("display_name", [Read, Refused, Read]),
@@ -1714,12 +1690,14 @@ mod tests {
         let bare = Namespace::bare();
         let sw = Namespace::sw();
         let cases: &[(&Namespace, EntityKind, Spelling, &[Row])] = &[
-            (&bare, Marketplace, Bare, bare_market),
-            (&bare, Plugin, Bare, bare_plugin),
-            (&sw, Marketplace, Prefixed, sw_market),
-            (&sw, Marketplace, Nested, sw_market),
-            (&sw, Plugin, Prefixed, sw_plugin),
-            (&sw, Plugin, Nested, sw_plugin),
+            (&bare, Marketplace, Bare, market),
+            (&bare, Plugin, Bare, plugin),
+            // Under a namespace every prefixed or nested key is claimed, and
+            // one the kind does not read warns, as a bare one does.
+            (&sw, Marketplace, Prefixed, market),
+            (&sw, Marketplace, Nested, market),
+            (&sw, Plugin, Prefixed, plugin),
+            (&sw, Plugin, Nested, plugin),
         ];
         let valid = |key: &str| match key {
             "keywords" => json!(["k"]),
@@ -1743,14 +1721,7 @@ mod tests {
                         assert_eq!(*verdict, Refused, "{case}");
                         continue;
                     };
-                    let identity = serde_json::to_value(&read.identity).unwrap();
-                    let set: Map<String, Value> = identity
-                        .as_object()
-                        .unwrap()
-                        .iter()
-                        .filter(|(_, value)| !value.is_null())
-                        .map(|(key, value)| (key.clone(), value.clone()))
-                        .collect();
+                    let set = set_fields(&read.identity);
                     let (expected, unknown) = match verdict {
                         Read => (Map::from_iter([((*key).to_owned(), value)]), vec![]),
                         Unset => (Map::new(), vec![]),
