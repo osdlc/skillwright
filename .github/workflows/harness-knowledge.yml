@@ -22,6 +22,7 @@ concurrency:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -49,7 +50,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="harness-knowledge-$(date -u +%Y%m%d)-$(git rev-parse --short=7 HEAD)"
+          day="$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d HEAD)"
+          tag="harness-knowledge-${day}-$(git rev-parse --short=7 HEAD)"
           files=("$RUNNER_TEMP/knowledge/harness-knowledge.json" "$RUNNER_TEMP/knowledge/harness-knowledge.schema.json")
           if target="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish 2>/dev/null)"; then
             if [ "$target" != "$GITHUB_SHA" ]; then

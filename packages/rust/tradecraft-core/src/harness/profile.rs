@@ -11,7 +11,7 @@
 //!
 //! # Two kinds of row
 //!
-//! Claude, Codex, Cursor and Pi carry a [`PluginFormat`]: they are the
+//! Claude, Codex, Cursor and Pi carry a [`PluginPolicy`]: they are the
 //! harnesses a marketplace is built for and a pack is published to. The other
 //! five — Amp, Antigravity, Copilot, OpenCode and the portable Agent Skills
 //! layout — are destinations a single note publishes to. Their rows hold only
@@ -40,7 +40,7 @@ use crate::hooks_file::PluginRootVar;
 const HOOKS_OBSERVED: &str = "2026-10-05";
 
 /// One harness: the names it answers to, the runtime it renders through and,
-/// for the four that have one, its plugin format.
+/// for the four that have one, its plugin policy.
 #[derive(Debug)]
 pub struct HarnessProfile {
     /// The canonical destination name. Every spelling folds onto it.
@@ -69,8 +69,8 @@ pub struct HarnessProfile {
 pub enum Source<T> {
     /// The compiled harness knowledge file, looked up at first use.
     Knowledge,
-    /// A constant of the row: a policy, or a fact the file does not yet carry
-    /// in a usable shape. Each one says which.
+    /// A constant of the row: a policy, a fact the file does not yet carry in
+    /// a usable shape, or a value the file disagrees with. Each one says which.
     Constant(T),
 }
 
@@ -136,9 +136,9 @@ pub struct PluginFormat {
     pub skills_dir: &'static str,
     /// The folder under the home directory the harness loads a user's own
     /// skills from. `publish` writes there and `adopt` reads from there when
-    /// no destination or source is named. Recorded in harness-reference as
-    /// each harness's `skills/user-dirs` fact (Claude Code's in
-    /// `skills/live-reload`); where a harness reads several, the first.
+    /// no destination or source is named. Where a harness reads several, the
+    /// first. The Codex and Pi rows read it from the harness knowledge file's
+    /// `skills/user-dirs` statements; the Claude and Cursor rows are constants.
     pub user_skills_dir: &'static str,
     /// The pack manifest, relative to a pack's own directory, in this
     /// harness's dialect.
@@ -849,7 +849,8 @@ impl HarnessProfile {
     ///
     /// Resolved from this row's own policy. A row equal to a canonical one
     /// shares its cached format; a modified or custom row is resolved once per
-    /// call and leaked, which is bounded by how many such rows a program makes.
+    /// distinct name and policy and cached, which is bounded by how many such
+    /// rows a program makes.
     pub fn plugin_format(&self) -> Option<&'static PluginFormat> {
         static FORMATS: OnceLock<[(HarnessProfile, PluginFormat); 4]> = OnceLock::new();
         let policy = self.plugin.as_ref()?;

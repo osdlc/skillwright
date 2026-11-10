@@ -23,8 +23,8 @@ compiled from the `harness-reference` claims corpus and embedded in
   `profile.plugin` should call one of them.
 - **A fact stays a constant** with a comment saying why, when the file has no
   value in a usable shape, only a weak or disputed one, or a value that
-  disagrees with the row. Install CLI shapes and the project skills folder are
-  such constants today.
+  disagrees with the row. Each constant in `profile.rs` says which of these it
+  is.
 - **The embedded copy is reproducible.** It is compiled with the placeholder
   commit `main` (`pnpm --filter harness-reference run compile:embed`), and a
   `harness-reference` test fails when it is stale.
