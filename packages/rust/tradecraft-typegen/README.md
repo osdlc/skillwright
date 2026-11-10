@@ -93,7 +93,9 @@ than emitted under one spelling.
 A wire wrapper is named for the type it flattens: `WireExportRequest` splices
 `ExportRequest` and one extra key, and the wire it describes is an export
 request. A wrapper that flattens nothing loses a leading `Wire`, which is how
-`WireDiscoverRequest` becomes `DiscoverRequest`.
+`WireDiscoverRequest` becomes `DiscoverRequest`. Any other struct keeps its own name,
+whatever it flattens: `MarketplaceConfig` splices `ContainerIdentity` and is
+still a config.
 
 ## What it refuses
 

@@ -793,8 +793,9 @@ fn a_workspace_roster_shows_each_marketplaces_targets() {
     assert!(!row.contains("codex"), "{row}");
 }
 
-// A member that sets no identity field writes the workspace's inherited ones
-// into every harness's plugin manifest, and not its `display_name`.
+// A member that sets no inheritable identity field writes the workspace's
+// into every harness's plugin manifest. The workspace's `display_name` reaches
+// none of them, and the member's own names its Codex catalog.
 #[test]
 fn a_workspace_member_s_manifests_carry_the_inherited_identity() {
     let dir = tempfile::tempdir().unwrap();
@@ -809,7 +810,7 @@ fn a_workspace_member_s_manifests_carry_the_inherited_identity() {
     fs::create_dir_all(member.join("skills")).unwrap();
     fs::write(
         member.join("skillwright.md"),
-        "---\nname: one\nbuild:\n  out: .\n---\n",
+        "---\nname: one\ndisplay_name: Member Name\nbuild:\n  out: .\n---\n",
     )
     .unwrap();
     fs::write(
@@ -833,6 +834,9 @@ fn a_workspace_member_s_manifests_carry_the_inherited_identity() {
         assert_eq!(json["homepage"], "https://ws.example", "{manifest}");
         assert!(!text.contains("Workspace Name"), "{manifest}: {text}");
     }
+    let catalog = fs::read_to_string(member.join(".agents/plugins/marketplace.json")).unwrap();
+    let catalog: serde_json::Value = serde_json::from_str(&catalog).unwrap();
+    assert_eq!(catalog["interface"]["displayName"], "Member Name");
 }
 
 // A workspace builds each marketplace under `marketplaces/`, each to its own

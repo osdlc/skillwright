@@ -35,7 +35,7 @@ API:
 - The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: it is a number". Some refusals named `marketplace fields` before.
 - A marketplace block passes down to each plugin only the keys a plugin block reads. Other keys were never merged, so no output changes.
 - `\[[note]]` is no longer a link. It compiled to `\[note.md](…)`, which is broken Markdown; it now ships as written. ([#47](https://github.com/osdlc/skillwright/issues/47))
-- Under a namespace, a prefixed or nested identity key that the note's kind does not read, such as `sw-owner` on a plugin or `sw-keywords` on a marketplace, now warns as unknown. It was read and then ignored. A bare spelling already warned. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- Under a namespace, a prefixed or nested identity key that the note's kind does not read, such as `sw-owner` on a plugin or `sw-keywords` on a marketplace, now warns as unknown. It was read and then ignored (a `null` or blank value was refused). A bare spelling already warned. ([#75](https://github.com/osdlc/skillwright/issues/75))
 - `RootFile::inherit` asks the key table whether `targets` and each harness block inherit, as it does for the identity fields. Today every one does, so no output changes. ([#75](https://github.com/osdlc/skillwright/issues/75))
 
 ### Fixed

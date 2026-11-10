@@ -18,7 +18,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `docs/reference/fields.md` states the types `check` accepts, and lists only the harness block keys `check` accepts.
 - A root file value of the wrong shape is refused with the words a note gets, naming the key.
 - `\[[note]]` is no longer a link; it ships as written. It used to build to broken Markdown. ([#47](https://github.com/osdlc/skillwright/issues/47))
-- Under `build.namespace`, `check` warns about a prefixed or nested identity key the note's kind does not read, such as `sw-owner` on a plugin note or `sw-keywords` on a marketplace note. It was ignored without a word. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- Under `build.namespace`, `check` warns about a prefixed or nested identity key the note's kind does not read, such as `sw-owner` on a plugin note or `sw-keywords` on a marketplace note. It was ignored without a word (a `null` or blank value was refused). ([#75](https://github.com/osdlc/skillwright/issues/75))
 
 ### Fixed
 
