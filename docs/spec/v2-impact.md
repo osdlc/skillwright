@@ -58,6 +58,10 @@ and may return in a later milestone:
 - An embed or link to nothing shipped as its words. It is now an error.
 - An embed of a file that is neither a note nor an image rendered as a plain
   link. It is now inlined as a fenced code block (decision D8).
+- `build.launcher_path` (decision D9). Every `${CLAUDE_PLUGIN_ROOT}/<path>`
+  in a component's Markdown is now checked and rewritten, not one configured
+  path. A path that names nothing shipped, left as written in v1, is now an
+  error.
 - Calls read inside code spans and fenced blocks. Code is now fully literal.
 - A fragment on a call or a mention, checked and then dropped. On a call,
   `/[[setup#Usage]]`, it is now an error. On a plain link, `[[setup#Usage]]`,
@@ -89,6 +93,7 @@ amendment too: its patterns layer is gone.
   with no marketplace fields. `root_file_config` and `RootFile::to_config`
   shrink. `AssetSetting` and `HookSetting` go under D4. `DestinationSetting`
   and the `destinations` and `scan_locations` keys go with their commands.
+  `launcher_path` goes and joins the refused keys (D9).
 - `discover.rs`: `classify` becomes a fixed-depth match. `conventional`,
   `folder_placement_with`, `RESERVED_NAME_REASON`, `SKILL_ENTRY`,
   `is_skill_entry` and the `SKILL.md` branch of `is_entry` go. `placement`
@@ -104,8 +109,8 @@ amendment too: its patterns layer is gone.
   `has_folder`, the marketplace's-own-plugin branch of `missing_versions`,
   `load_assets`, `load_hook_files` (under D4), `folder_assets` (the flat
   copy; replaced by copying the three shared folders under their own names),
-  `asset_covers` (only the launcher check is left) and `plugin_folder` go or
-  shrink. `marketplace_name` and `resolve_marketplace` read the folder.
+  `asset_covers` (its last use was the launcher check) and `plugin_folder` go
+  or shrink. The `plugin.launcher` set from `build.launcher_path` goes. `marketplace_name` and `resolve_marketplace` read the folder.
 - `source_view.rs`: `output_overlaps_vault`, `output_in`, `output_paths`,
   `check_pack_location` and the workspace folding in `effective_config`,
   `effective_configs`, `marketplace_folder` and `marketplace_notes` go.
@@ -135,8 +140,20 @@ amendment too: its patterns layer is gone.
   extension table, the fence length, list indentation and the UTF-8 check. Embed expansion,
   `select_fragment` and the cycle check stay as they are.
 - `harness/profile.rs`: `PluginFormat::packs` stays a fixed value.
-  `owned_paths_at` and the config override path go.
+  `owned_paths_at` and the config override path go. `CliInvocation` stays as
+  the per-harness switch, now for every plugin-root path (D9).
+- `model/mod.rs` and `harness/translator.rs` (D9): `Segment::LauncherCall`
+  and `push_text`'s one-path split become a plugin-root path segment that
+  holds any path, checked against the files the pack ships. `write_body`
+  writes it relative to the folder the text lands in, so a resource under
+  `references/` gets its own depth, not the skill's. `rewrite_sibling_paths`
+  goes: Pi's `skills/<p>-<s>/` folder is where the rewrite lands.
+  `rewrite_launcher_calls` goes with its test. `relative_path` stays.
+  `hooks_file::localize`, the variable swap for hooks, stays and gains the
+  path check.
 - `export.rs`: the `stale-output` warning and moved-packs handling go.
+  `MarketplaceConfig::launcher_path` and the launcher tests go; their cases
+  move to commit 5's plugin-root path tests.
 - `vault.rs`: `bundle_root` keeps only the `<name>/<name>.md` shape.
 
 ### The removed commands
@@ -350,6 +367,17 @@ The commits, in order:
      text is fenced with four backticks and ships byte for byte, with its `[[`
      unread; an embed inside a list item is indented to the item; a binary
      file is refused; `![[run.sh#main]]` is refused; `[[run.sh]]` is a link.
+   - Plugin-root paths (D9): `${CLAUDE_PLUGIN_ROOT}/scripts/tool` in a
+     skill's prose and in its code span ships as written on Claude Code and
+     as `../../scripts/tool` on Codex, Cursor and Pi; from the skill's
+     `references/guide.md` it is `../../../scripts/tool`; a path into
+     another skill follows Pi's `skills/<p>-<s>/`; a path naming nothing
+     shipped fails naming the file and the reference;
+     `${CLAUDE_PLUGIN_ROOT}/scripts/tool.js` is not `scripts/tool`; a bare
+     `${CLAUDE_PLUGIN_ROOT}` is an error; a path to a command's file is
+     refused for Codex; an embedded reference is written from the embedding
+     file; a script in `scripts/` holding the variable ships byte for byte; a
+     hook command gets `PLUGIN_ROOT` on Codex and its path is checked.
    Before this commit, run the `plugin-layout` probe on Codex. harness-reference
    does not record where Codex resolves a skill's relative paths
    (`Codex CLI Relative paths in SKILL.md open`). If it is not the skill's

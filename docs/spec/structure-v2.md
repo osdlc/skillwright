@@ -52,11 +52,10 @@ the code, the open PRs and issues, and the build order are in
    `category`. The error names the marketplace note the field belongs in.
 4. The body is not read.
 5. It is the only configuration file. There is no machine file for the build.
-6. The `build:` keys are `harnesses`, `namespace`, `launcher_path` and `bump`. `out`, `patterns`, `exclude`,
-   `assets`, `hooks`, `destinations` and `scan_locations` are refused
-   (section 11). Any other key the table does not list warns.
-7. `launcher_path` names a file in each plugin's `scripts/`, such as
-   `scripts/tool`, relative to the pack root.
+6. The `build:` keys are `harnesses`, `namespace` and `bump`. `out`,
+   `patterns`, `exclude`, `assets`, `hooks`, `destinations`, `scan_locations`
+   and `launcher_path` are refused (section 11). Any other key the table does
+   not list warns.
 
 ## 3. Folders and notes
 
@@ -156,7 +155,9 @@ Markdown link, is an ordinary link. An embed resolves by the same rules as a
 link: what it names must be in scope. The rules apply to links from a
 component's note and from any Markdown file it ships. Code is fully literal:
 nothing inside a code span or fenced block is read, so a call, link or embed
-written there ships exactly as written (rule 12).
+written there ships exactly as written (rule 12). A plugin-root path,
+`${CLAUDE_PLUGIN_ROOT}/<path>`, is not link syntax and is read in prose and
+code alike (rules 15 to 22).
 
 ### Containment
 
@@ -223,13 +224,58 @@ marketplace (rule 8, decision D2).
     link form.
 11. A link to a missing file is an error that names the link.
 12. Code is fully literal. Nothing inside a code span or fenced block is read:
-    no call, link or embed. A call written in code ships as written, so write
+    no call, link or embed. Plugin-root paths are the one exception (rule 15). A call written in code ships as written, so write
     calls in prose, where they render in backticks.
 13. After the build, no `[[` may remain in prose. A leftover is an error that
     names the file and the text. The check skips code spans, fenced blocks and
     `\[[`-escaped text. In prose, `\[[x]]` ships as `[[x]]`.
 14. Every error in this section names the linking file, the link as written and
     the rule it broke.
+
+### Plugin-root paths
+
+A component names a file of its plugin as `${CLAUDE_PLUGIN_ROOT}/<path>`, such
+as `${CLAUDE_PLUGIN_ROOT}/scripts/tool`. Claude Code expands the variable in
+skill, command and agent text. Codex, Cursor and Pi do not, so the build
+rewrites it for them (decision D9).
+
+15. Every `${CLAUDE_PLUGIN_ROOT}/<path>` in a Markdown file a component ships
+    is read: its note, the Markdown files in its `references/`, the plugin's
+    shared Markdown files, and text an embed inlines. Prose and code alike,
+    because this is a path, not link syntax.
+16. The path runs to the first character that cannot continue a path: a
+    letter, digit, `.`, `_`, `-` or `/` continues it. So
+    `${CLAUDE_PLUGIN_ROOT}/scripts/tool.js` is the path `scripts/tool.js`,
+    never `scripts/tool`.
+17. The path is a path in the plugin's pack, laid out as section 9 places
+    files for Claude Code: `scripts/tool` is the plugin's shared
+    `scripts/tool`, and `skills/setup/scripts/run.sh` is the `setup` skill's
+    `scripts/run.sh`. It must name a file the build ships. If it does not, the
+    build fails, and the error names the file holding the reference and the
+    reference as written.
+18. In Claude Code's pack the reference is left as written.
+19. In Codex's, Cursor's and Pi's packs it is rewritten to the path of that
+    same file in that harness's pack, relative to the folder the text lands in.
+    From a skill's `SKILL.md`, `${CLAUDE_PLUGIN_ROOT}/scripts/tool` becomes
+    `../../scripts/tool`; from that skill's `references/guide.md` it becomes
+    `../../../scripts/tool`. On Pi, a path into a skill follows the skill's
+    folder name there, `skills/<p>-<s>/`. Embedded text lands in the file that
+    embeds it, so the path is written from that file's folder. Files in
+    `scripts/`, `references/` and `assets/` are all rewritten this way.
+20. If a harness's pack does not carry the target, such as a command's file
+    on Codex, the reference is refused for that harness, as a link to a
+    component that is not carried is (rule 6).
+21. `${CLAUDE_PLUGIN_ROOT}` not followed by `/<path>` is an error on every
+    harness. It cannot be rewritten to a path for Codex, Cursor or Pi, and a
+    vault writes one text for all harnesses.
+22. Files that are not Markdown, such as a script in `scripts/`, ship byte for
+    byte; nothing in them is rewritten. A hooks file is not rewritten to
+    relative paths either: each hook command's `${CLAUDE_PLUGIN_ROOT}` becomes
+    the harness's own variable (`PLUGIN_ROOT` for Codex, `CURSOR_PLUGIN_ROOT`
+    for Cursor), as in v1. A hook runs as a shell command from the project
+    folder, where a pack-relative path would not resolve, and each of those
+    harnesses sets its variable for hooks. The path after the variable is
+    still checked by rule 17.
 
 ## 5. Transclusion
 
@@ -486,8 +532,8 @@ It is refused when:
 6. A component's note is not `<name>/<name>.md`, such as `skills/x.md` or
    `skills/x/SKILL.md`.
 7. The root file has `build.out`, `build.patterns`, `build.exclude`,
-   `build.assets`, `build.hooks` or `build.scan_locations`, or a `packs` key in
-   a harness block.
+   `build.assets`, `build.hooks`, `build.scan_locations` or
+   `build.launcher_path`, or a `packs` key in a harness block.
 8. A folder holds an entry its row in "What a folder may hold" (section 3)
    does not list, such as a plugin's `bin/` or a `notes.md` beside a skill's
    entry.
@@ -723,6 +769,53 @@ echo hi
 **Existing vaults.** An `![[file]]` of a text file that shipped as a link now
 ships the file's text. Write `[[file]]` to keep the link. An embed of a binary
 file is now refused. The repo's `plugin/` has none.
+
+### D9. Plugin-root paths replace `build.launcher_path`
+
+**What it is.** How a component names a file of its plugin, such as a
+launcher script, so that the path works on every harness.
+
+**Today.** `build.launcher_path` names one launcher, such as `bin/tool`,
+shipped through the flat assets copy. A skill calls it as
+`${CLAUDE_PLUGIN_ROOT}/bin/tool`. Claude Code keeps the call. For Codex,
+Cursor and Pi, the build rewrites that one path to `../../bin/tool`, relative
+to the skill's folder. Any other `${CLAUDE_PLUGIN_ROOT}/...` path is left as
+written, which is dead text on those three harnesses. If the plugin does not
+ship the launcher, the call is also left as written, with no warning. On Pi, a
+separate step renames `${CLAUDE_PLUGIN_ROOT}/skills/<s>` to `skills/<p>-<s>`
+but keeps the variable, which Pi does not expand. A Markdown file in a skill's
+`references/` is rewritten relative to the skill's folder, not its own, so its
+`../..` is one level short.
+
+**Decided.** `build.launcher_path` is dropped and refused. Every
+`${CLAUDE_PLUGIN_ROOT}/<path>` in a component's Markdown, prose and code
+alike, is checked to name a file the pack ships. Claude Code's pack keeps it
+as written. Codex, Cursor and Pi get the path relative to the folder the text
+lands in (section 4 rules 15 to 22).
+
+- `scripts/`, `references/` and `assets/` files are rewritten the same way,
+  whether a skill's own or the plugin's shared copy. A path has one meaning,
+  so it has one rule.
+- `${CLAUDE_PLUGIN_ROOT}` with no path after it is an error. There is no path
+  to rewrite it to for three harnesses.
+- A target the harness does not carry is refused for that harness, as a link
+  to it is. A dead path breaks the skill at run time with no sign at build
+  time.
+- Hooks keep v1's swap to each harness's own variable, and their paths are
+  checked. A hook runs from the project folder, so a relative path would not
+  resolve.
+
+**Why.** One setting covered one file, and every other plugin path was left
+broken on three harnesses without a word. The plugin's folders are fixed in
+v2, so the build knows where every file lands and can rewrite any path. The
+check turns a typo or a moved file into a build error instead of a failure at
+run time.
+
+**Existing vaults.** Remove `launcher_path`. Move the launcher from
+`assets/bin/tool` to `scripts/tool` and call it as
+`${CLAUDE_PLUGIN_ROOT}/scripts/tool`. A `${CLAUDE_PLUGIN_ROOT}/...` path that
+names nothing shipped now fails the build. The repo's `plugin/` uses neither
+the key nor the variable.
 
 ## Later
 
