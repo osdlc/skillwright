@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.9.0...skillwright/v0.10.0) - 2026-11-10
+
 ### Breaking
 
 - A skill, command or agent with a `name` and no `description` is an error. `build` and `check` refuse it and exit 2. `publish` of the whole vault refuses before writing anything and exits 2. `publish <path>` of the note, or of a plugin that holds it, reports that note refused with `missing-description`. They published it with "No description provided." before. `list` still lists the note, flags its row `[missing-description]`, prints an `error ·` line for it, and exits 2. Its `--json` row has a `missing_description` key.
