@@ -24,7 +24,7 @@ Status: in progress, updated 2026-11-09.
 | 5 tradecraft-core reads the embedded file; D-QXRN | [skillwright#99](https://github.com/osdlc/skillwright/pull/99) | draft; review converged; needs the researched data |
 | 5 `@osdlc/harness-knowledge`, agent-call and detect-harness | [osdlc#750](https://github.com/osdlc/osdlc/pull/750) | draft; needs re-sync, wiring and a first publish |
 | 6 drift loop | — | not started |
-| 7 retire alpha | done in [skillwright#119](https://github.com/osdlc/skillwright/pull/119) | alpha corpus, validator, generator and importer deleted; the tradecraft-core tests that read alpha move with [skillwright#99](https://github.com/osdlc/skillwright/pull/99) |
+| 7 retire alpha | in progress | alpha deleted in [skillwright#119](https://github.com/osdlc/skillwright/pull/119); the tradecraft-core tests that read alpha move in [skillwright#99](https://github.com/osdlc/skillwright/pull/99) |
 
 Next:
 
@@ -240,7 +240,7 @@ the profile's shape are unchanged. A new decision record, D-xxxx, says so when p
 | # | Phase | Output | Depends on |
 |---|---|---|---|
 | 1 | **Profile types in beta.** Rename `references` to `documents` and `evidence` to `study-results` with their extensions. Add `methods`, `statements`, `subjects` schemas. Copy the claims profile schemas with a pinned source commit. Add `lint`. | beta validates; lint passes; existing beta records migrated | — |
-| 2 | **Importer, pilot.** the alpha importer converted one category (`cli`) of alpha: sources and notes to documents, probes to methods, observations to study-results, facts to statements, with strength by rule. Idempotent: rerunning writes the same files. The `cli` subjects get a `valueSchema` written by hand from the values observed in the `cli` facts. | ~60 statements; diff reviewed by a person | 1 |
+| 2 | **Importer, pilot.** An importer (deleted with alpha) converted one category (`cli`) of alpha: sources and notes to documents, probes to methods, observations to study-results, facts to statements, with strength by rule. Idempotent: rerunning writes the same files. The `cli` subjects get a `valueSchema` written by hand from the values observed in the `cli` facts. | ~60 statements; diff reviewed by a person | 1 |
 | 3 | **Compiler and lookup.** `src/compile/` writes `harness-knowledge.json` and its schema; `lookup` and tests. | the file for the pilot slice | 2 |
 | 4 | **Full import.** All 589 facts and 11 categories. Value shapes written as `valueSchema` per subject; facts whose values don't fit get fixed by hand. | the full file; alpha frozen | 2 |
 | 5 | **First consumers.** agent-call's adapters and detect-harness (osdlc/osdlc) read the npm package; tradecraft-core's profiles read the embedded file. Decision record amending D-FDLQ. | consumer PRs | 3, 4 |

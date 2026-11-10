@@ -30,25 +30,27 @@ too (for example inherited policies and shared information distributed as corpor
 | The evidence design review and its prior-art survey | `docs/parley/evidence-v0.json`, `docs/parley/evidence-v0-survey.md` |
 | The evidence writer | `harness-reference/src/corpus/capture.ts` |
 
-Run `pnpm run validate` from `harness-reference/`, or `pnpm exec markdown-db validate <folder>`.
+Run `pnpm run validate` from `harness-reference/`, or `pnpm exec corpus-schema validate <folder>`.
 
 ## The corpus today
 
-| Type | Records | Holds |
-|---|---|---|
-| `harnesses` | 16 | One per harness, named by product (`Claude Code.md`). Vendor, URLs, license, CLI command, surfaces, status, `successor` / `fork_of` links, `sources` links to documents |
-| `documents` | 168 | One per web page or research note, in publisher folders |
-| `methods` | 5 | One per repeatable probe |
-| `study-results` | 638 | One observation of a page or one run: kind, document or method, harness, observed date, optional version, locator and excerpt |
-| `subjects` | 83 | One per question asked of every harness, with the shape of its answer |
-| `statements` | 598 | One per claim about a harness and a subject in one scope, with its evidence lines |
+| Type | Holds |
+|---|---|
+| `harnesses` | One per harness, named by product (`Claude Code.md`). Vendor, URLs, license, CLI command, surfaces, status, `successor` / `fork_of` links, `sources` links to documents |
+| `documents` | One per web page or research note, in publisher folders |
+| `methods` | One per repeatable probe |
+| `study-results` | One observation of a page or one run: kind, document or method, harness, observed date, optional version, locator and excerpt |
+| `subjects` | One per question asked of every harness, with the shape of its answer |
+| `statements` | One per claim about a harness and a subject in one scope, with its evidence lines |
 
-`pnpm run compile` turns the statements into `dist/harness-knowledge.json`.
+`pnpm run validate` prints the record counts. `pnpm run compile` turns the statements into `dist/harness-knowledge.json`.
 
 ## Code that reads the data
 
 - `packages/rust/tradecraft-core/src/harness/profile.rs`: the harness profiles are written by hand.
-  Its tests check them against facts from the corpus: `skills/project-dirs`,
+  Its tests read the alpha facts, which this repository no longer has, so they check nothing until
+  [#99](https://github.com/osdlc/skillwright/pull/99) moves them to the compiled knowledge file:
+  `skills/project-dirs`,
   `plugins/manifest` and `plugins/marketplace`. Its doc comments also name `skills/user-dirs` and
   `plugins/manifest-fields`; `field_types.rs` comments name `plugins/manifest-fields` and
   `plugins/marketplace-fields`. Checking rather than generating is deliberate: it keeps a research
@@ -60,15 +62,11 @@ Run `pnpm run validate` from `harness-reference/`, or `pnpm exec markdown-db val
 
 ## Next for harness-reference, in order
 
-1. [ ] **Typed values for subjects and statements.** A claim is one record per harness
-   and subject, for example `skills/project-dirs` as a list of paths, not prose. It cites evidence
-   through a top-level `evidence` array of links (`x-ref: evidence`), which S-GFFY v0 can validate.
-   Supports / contradicts per evidence needs `x-ref` in nested objects (markdown-db item 3).
-2. [ ] **Capture evidence for the facts code reads**, and point the `profile.rs` tests at the
+1. [ ] **Capture evidence for the facts code reads**, and point the `profile.rs` tests at the
    compiled knowledge file.
-3. [ ] **A loader** so code reads validated records without parsing Markdown (markdown-db item 2).
+2. [ ] **A loader** so code reads validated records without parsing Markdown (markdown-db item 2).
    Then cite the corpus from `detect-harness`.
-4. [ ] Experiments: `harness-reference/probes/` become level-2 experiments whose runs write `kind: run`
+3. [ ] Experiments: `harness-reference/probes/` become level-2 experiments whose runs write `kind: run`
    evidence (needs markdown-db item 4).
 
 ## Next for markdown-db, in order

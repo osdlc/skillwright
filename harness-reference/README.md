@@ -7,12 +7,14 @@ hook and MCP formats, and their CLI session surface. Every value has a date and 
 The record is one [corpus-schema](https://github.com/osdlc/osdlc/blob/main/packages/conformance/corpus-schema/SPEC.md)
 corpus.
 
-- `corpus/`: the corpus, a claims corpus: harnesses, documents, methods, study results, subjects
+- `corpus/`: the corpus (one corpus in this package, so it is not under `corpora/<name>/`), a claims corpus: harnesses, documents, methods, study results, subjects
   and statements. Each type's schema is a hand-written JSON Schema in its folder, such as
   `corpus/statements/statements.schema.md`. See [corpus/README.md](corpus/README.md).
 - `corpus/notes/`: research notes the corpus cites. They are narrative files, not records.
   Upstream docs and repositories are cited by their own URLs.
-- `probes/`: reproducible runs that back `run` study results. The corpus holds each as a method.
+- `probes/`: reproducible runs that back `run` study results. Five of the seven are also held as
+  methods in the corpus (`pi-package-install` and the fixtures it ships are copied there);
+  `plugin-layout` and `skill-symlink` are not. `probes/` is not validated.
 - `src/corpus/`: `capture`, which writes study results from a fetched page; `lint`, the rules that
   compare records; and tests. The corpus is checked by the
   [`@osdlc/corpus-schema`](https://www.npmjs.com/package/@osdlc/corpus-schema) validator, a
@@ -24,7 +26,7 @@ corpus.
 
 A probe is a run anyone can repeat: `probes/<id>/probe.md`, plus an optional `fixture/` folder of
 the files the run needs. Probes sit outside `corpus/`, so a fixture's own Markdown is never read as
-a record. The corpus holds each probe as a method, and a run as a study result that links it.
+a record. A run is a study result that links its method. `probes/` is not validated.
 
 ## Checking it
 
@@ -33,9 +35,9 @@ Node 24 runs the TypeScript in `src/` directly. From this folder:
 ```sh
 pnpm run validate       # corpus-schema validate corpus
 pnpm run lint           # the rules that compare records (values, scopes, supersedes)
-pnpm run test           # corpus, lint, capture, versions and compiler tests
+pnpm run test           # every src/*/*.test.ts
 pnpm run typecheck
-pnpm run check          # all four
+pnpm run check          # validate, lint, test and typecheck
 pnpm run capture ...    # write a study result; see corpus/README.md
 pnpm run compile        # write dist/harness-knowledge.json and its schema (not committed)
 ```

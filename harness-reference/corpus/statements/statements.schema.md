@@ -103,8 +103,8 @@ properties:
     items: { type: string, minLength: 1 }
   imported_from:
     description: >-
-      The id of the earlier record this one was generated from. Leave it off a record written by
-      hand.
+      The alpha-corpus identity this record was imported from (`fact:...`, `probe:...`), kept as
+      provenance. The alpha corpus is deleted. Leave it off new records.
     type: string
     minLength: 1
 if:

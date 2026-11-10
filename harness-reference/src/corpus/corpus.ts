@@ -1,6 +1,6 @@
 /**
  * Read the corpus once and answer questions about its records: which record a link names,
- * what a record's folder-relative path is. Shared by `lint` and `compile`.
+ * what a record's folder-relative path is.
  */
 import { posix, resolve } from 'node:path'
 
@@ -94,17 +94,3 @@ export function createdBy(name: string, agentType: 'person' | 'software', date: 
 /** A URL as documents compare it: surrounding space and trailing slashes dropped. */
 export const normalizeUrl = (url: string): string => url.trim().replace(/\/+$/u, '')
 
-/** JSON text with object keys sorted at every depth, so equal values give equal text. Arrays keep their order. */
-export function canonicalJson(value: unknown): string {
-  const sort = (v: unknown): unknown =>
-    Array.isArray(v)
-      ? v.map(sort)
-      : v !== null && typeof v === 'object'
-        ? Object.fromEntries(
-            Object.entries(v as Record<string, unknown>)
-              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-              .map(([k, x]) => [k, sort(x)]),
-          )
-        : v
-  return JSON.stringify(sort(value))
-}

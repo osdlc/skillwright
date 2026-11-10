@@ -1,14 +1,22 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import { validateCorpus } from '@osdlc/corpus-schema'
 import { parse } from 'yaml'
 
-import { canonicalJson, normalizeUrl } from './corpus.ts'
+import { normalizeUrl } from './corpus.ts'
 
 const corpus = resolve(import.meta.dirname, '../../corpus')
 
@@ -83,13 +91,6 @@ describe('corpus', () => {
 })
 
 describe('shared helpers', () => {
-  test('canonicalJson ignores object key order at every depth and keeps array order', () => {
-    assert.equal(
-      canonicalJson({ a: 1, b: { y: 1, x: [1, { d: 1, c: 2 }] } }),
-      canonicalJson({ b: { x: [1, { c: 2, d: 1 }], y: 1 }, a: 1 }),
-    )
-    assert.notEqual(canonicalJson({ a: [1, 2] }), canonicalJson({ a: [2, 1] }))
-  })
   test('normalizeUrl drops surrounding space and trailing slashes', () => {
     assert.equal(normalizeUrl(' https://x.test/a// '), 'https://x.test/a')
   })
@@ -150,5 +151,38 @@ describe('documents.schema.md doi', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('files in this repository', () => {
+  const repo = resolve(corpus, '../..')
+  const blob = 'https://github.com/osdlc/skillwright/blob/main/'
+
+  test('every document URL into this repository names a file that exists', () => {
+    const { records } = validateCorpus(corpus)
+    const missing: string[] = []
+    for (const [id, data] of records.get('documents') ?? []) {
+      const urls = (data as { urls?: string[] }).urls ?? []
+      for (const url of urls)
+        if (
+          url.startsWith(blob) &&
+          !existsSync(join(repo, decodeURIComponent(url.slice(blob.length))))
+        )
+          missing.push(`${id}: ${url}`)
+    }
+    assert.deepEqual(missing, [])
+  })
+
+  test('every relative link between notes names a note that exists', () => {
+    const notes = join(corpus, 'notes')
+    const missing: string[] = []
+    for (const name of readdirSync(notes).filter((n) => n.endsWith('.md'))) {
+      const text = readFileSync(join(notes, name), 'utf8')
+      for (const m of text.matchAll(/\]\(([^)#:]+\.md)(?:#[^)]*)?\)/gu)) {
+        const target = join(dirname(join(notes, name)), decodeURIComponent(m[1] ?? ''))
+        if (!existsSync(target)) missing.push(`${name}: ${m[1]}`)
+      }
+    }
+    assert.deepEqual(missing, [])
   })
 })
