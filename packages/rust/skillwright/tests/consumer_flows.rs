@@ -810,8 +810,9 @@ fn list_skips_a_note_with_a_wrong_kind_that_a_build_refuses() {
             ("plugins/p/p.md", plugin),
             ("plugins/p/skills/s.md", &skill),
         ]);
+        // `list` exits 2, as the build below refuses the note.
         let list = sw(&dir.path(), &["list"]);
-        assert_eq!(list.code, 0, "{said}: {}", list.text);
+        assert_eq!(list.code, 2, "{said}: {}", list.text);
         assert!(list.text.contains(said), "{said}: {}", list.text);
         assert!(!list.text.contains("unknown-key"), "{}", list.text);
         let built = sw(&dir.path(), &["build", "--yes"]);
@@ -836,7 +837,7 @@ fn list_skips_a_root_file_whose_block_holds_a_wrong_kind() {
         ("plugins/p/skills/s.md", SKILL),
     ]);
     let list = sw(&dir.path(), &["list"]);
-    assert_eq!(list.code, 0, "{}", list.text);
+    assert_eq!(list.code, 2, "{}", list.text);
     assert!(
         list.text.contains("skillwright.md  skipped · malformed: "),
         "{}",
@@ -1435,4 +1436,197 @@ fn a_plain_skill_mention_renders_on_bare_keys_in_build_and_publish() {
     assert_eq!(ran.code, 0, "{}", ran.text);
     let published = std::fs::read_to_string(dest.join(".claude/skills/a/SKILL.md")).unwrap();
     assert!(published.contains("See `b`"), "{published}");
+}
+
+/// Two bundles that each keep `references/contract.md`, each linking it bare:
+/// each skill ships its own copy.
+#[test]
+fn a_bare_link_resolves_to_the_match_in_its_own_bundle() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p1/p1.md", PLUGIN),
+        ("plugins/p2/p2.md", PLUGIN),
+        (
+            "plugins/p1/skills/doc/doc.md",
+            "---\ndescription: D.\n---\nSee [[contract]].\n",
+        ),
+        ("plugins/p1/skills/doc/references/contract.md", "# One\n"),
+        (
+            "plugins/p2/skills/doc/doc.md",
+            "---\ndescription: D.\n---\nSee [[contract]].\n",
+        ),
+        ("plugins/p2/skills/doc/references/contract.md", "# Two\n"),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    for (plugin, heading) in [("p1", "# One\n"), ("p2", "# Two\n")] {
+        let pack = dir
+            .path()
+            .join(format!("dist/.claude-plugin/packs/{plugin}/skills/doc"));
+        let body = std::fs::read_to_string(pack.join("SKILL.md")).unwrap();
+        assert!(
+            body.contains("See [contract.md](references/contract.md)."),
+            "{body}"
+        );
+        let copy = std::fs::read_to_string(pack.join("references/contract.md")).unwrap();
+        assert_eq!(copy, heading);
+    }
+}
+
+/// `\/[[skill]]` shows the call's notation in every harness, in a code span
+/// as in prose, while `/[[skill]]` in the same span is the call.
+#[test]
+fn an_escaped_call_in_a_code_span_ships_as_the_notation() {
+    let dir = vault(&[
+        (
+            "skillwright.md",
+            "---\nname: v\nbuild:\n  out: dist\n  harnesses: [claude, codex, cursor, pi]\n---\n",
+        ),
+        ("plugins/tools/tools.md", PLUGIN),
+        (
+            "plugins/tools/skills/create-pr.md",
+            "---\ndescription: D.\n---\nTo call a skill, write `\\/[[create-pr]]`: `/[[create-pr]]`.\n",
+        ),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    for (skill, call) in [
+        (
+            ".claude-plugin/packs/tools/skills/create-pr",
+            "/tools:create-pr",
+        ),
+        (".agents/packs/tools/skills/create-pr", "$tools:create-pr"),
+        (".cursor-plugin/packs/tools/skills/create-pr", "/create-pr"),
+        (
+            ".pi/packs/tools/skills/tools-create-pr",
+            "/skill:tools-create-pr",
+        ),
+    ] {
+        let body =
+            std::fs::read_to_string(dir.path().join("dist").join(skill).join("SKILL.md")).unwrap();
+        assert!(
+            body.contains(&format!(
+                "To call a skill, write `/[[create-pr]]`: `{call}`."
+            )),
+            "{skill}: {body}"
+        );
+    }
+}
+
+/// A skill outside a kind folder is skipped by `list` and refused by a
+/// build, so `list` exits 2, as it does for the notes a build refuses.
+#[test]
+fn list_exits_2_when_it_skips_a_note_a_build_refuses() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", PLUGIN),
+        ("plugins/p/skills/s.md", SKILL),
+        ("plugins/p/plan/plan.md", SKILL),
+    ]);
+    let list = sw(&dir.path(), &["list"]);
+    assert_eq!(list.code, 2, "{}", list.text);
+    assert!(
+        list.text
+            .contains("plugins/p/plan/plan.md  skipped · unreadable-note: "),
+        "{}",
+        list.text
+    );
+    assert_eq!(sw(&dir.path(), &["list", "--json"]).code, 2);
+    assert_eq!(sw(&dir.path(), &["check"]).code, 2);
+
+    std::fs::remove_file(dir.path().join("plugins/p/plan/plan.md")).unwrap();
+    assert_eq!(sw(&dir.path(), &["list"]).code, 0);
+}
+
+/// In a workspace, a build reads only its marketplaces, so only a note
+/// skipped inside one makes `list` exit 2.
+#[test]
+fn list_in_a_workspace_exits_2_only_for_a_skip_inside_a_marketplace() {
+    let dir = vault(&[
+        (
+            "skillwright.md",
+            "---
+name: ws
+workspace: true
+---
+",
+        ),
+        (
+            "marketplaces/a/skillwright.md",
+            "---
+name: a
+build:
+  out: dist
+---
+",
+        ),
+        ("marketplaces/a/plugins/p/skills/s.md", SKILL),
+        ("skills/x/y.md", SKILL),
+    ]);
+    let list = sw(&dir.path(), &["list"]);
+    assert_eq!(list.code, 0, "{}", list.text);
+    assert!(
+        list.text.contains("skills/x/y.md  skipped · "),
+        "{}",
+        list.text
+    );
+    assert_eq!(sw(&dir.path(), &["build", "--yes"]).code, 0);
+
+    let stray = dir.path().join("marketplaces/a/plugins/p/plan/plan.md");
+    std::fs::create_dir_all(stray.parent().unwrap()).unwrap();
+    std::fs::write(&stray, SKILL).unwrap();
+    assert_eq!(sw(&dir.path(), &["list"]).code, 2);
+    assert_eq!(sw(&dir.path(), &["build", "--yes"]).code, 2);
+}
+
+/// The manifest fields a plugin note states reach each harness that has the
+/// field: Codex's `repository` and `homepage`, Cursor's `displayName`, and
+/// Pi's `keywords` with `pi-package`.
+#[test]
+fn plugin_fields_reach_the_codex_cursor_and_pi_manifests() {
+    let root = "---\nname: v\nrepository: https://example.com/org/repo\n\
+                homepage: https://example.com/docs\nbuild:\n  out: dist\n\
+                \x20 harnesses: [codex, cursor, pi]\n---\n";
+    let plugin = "---\ndescription: T.\nversion: 1.0.0\nkeywords: [vertex, sdlc]\n\
+                  display_name: Ticket workflow\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", root),
+        ("plugins/t/t.md", plugin),
+        ("plugins/t/skills/s.md", SKILL),
+    ]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    let json = |path: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("dist").join(path)).unwrap())
+            .unwrap()
+    };
+
+    let codex = json(".agents/packs/t/.codex-plugin/plugin.json");
+    assert_eq!(codex["repository"], "https://example.com/org/repo");
+    assert_eq!(codex["homepage"], "https://example.com/docs");
+    assert_eq!(codex["interface"]["displayName"], "Ticket workflow");
+
+    let cursor = json(".cursor-plugin/packs/t/.cursor-plugin/plugin.json");
+    assert_eq!(cursor["displayName"], "Ticket workflow");
+
+    let pi = json(".pi/packs/t/package.json");
+    assert_eq!(
+        pi["keywords"],
+        serde_json::json!(["vertex", "sdlc", "pi-package"])
+    );
+
+    // A `cursor.displayName` wins for Cursor; a stated `pi-package` is not
+    // repeated.
+    std::fs::write(
+        dir.path().join("plugins/t/t.md"),
+        "---\ndescription: T.\nversion: 1.0.0\nkeywords: [pi-package, sdlc]\n\
+         display_name: Ticket workflow\ncursor:\n  displayName: Ticket workflow (t)\n---\n",
+    )
+    .unwrap();
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    let cursor = json(".cursor-plugin/packs/t/.cursor-plugin/plugin.json");
+    assert_eq!(cursor["displayName"], "Ticket workflow (t)");
+    let pi = json(".pi/packs/t/package.json");
+    assert_eq!(pi["keywords"], serde_json::json!(["pi-package", "sdlc"]));
 }

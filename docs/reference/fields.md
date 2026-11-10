@@ -45,7 +45,7 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | `license` | string | skillwright | yes | The pack license, an SPDX expression. Defaults to UNLICENSED. |
 | `repository` | URL | skillwright | yes | The source repository URL, written into every manifest that has the field. |
 | `homepage` | URL | skillwright | yes | The documentation URL, written into every manifest that has the field. |
-| `display_name` | string | skillwright | no | The human-facing name, Codex's `interface.displayName`. |
+| `display_name` | string | skillwright | no | The human-facing name, Codex's `interface.displayName` and a Cursor plugin's `displayName`. A `cursor.displayName` overrides it for Cursor. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
@@ -63,9 +63,9 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | `license` | string | skillwright | yes | The pack license, an SPDX expression. Defaults to UNLICENSED. |
 | `repository` | URL | skillwright | yes | The source repository URL, written into every manifest that has the field. |
 | `homepage` | URL | skillwright | yes | The documentation URL, written into every manifest that has the field. |
-| `keywords` | list of strings | skillwright | no | Plugin keywords; also the Claude and Cursor marketplace entry's `tags`. |
+| `keywords` | list of strings | skillwright | no | Plugin keywords; also the Claude and Cursor marketplace entry's `tags`. Pi's `package.json` adds `pi-package`, the keyword its gallery lists a package by. |
 | `category` | string | skillwright | no | The plugin's category in a marketplace entry. Codex defaults it to Productivity. |
-| `display_name` | string | skillwright | no | The human-facing name, Codex's `interface.displayName`. |
+| `display_name` | string | skillwright | no | The human-facing name, Codex's `interface.displayName` and a Cursor plugin's `displayName`. A `cursor.displayName` overrides it for Cursor. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
@@ -180,8 +180,8 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
 ### `codex:`
 
 - Component: `allowed-tools`, `compatibility`, `description`, `license`, `metadata`, `name`
-- Plugin: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `policy`, `skills`, `source`, `version`
-- Marketplace: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `packs`, `plugins`, `policy`, `skills`, `source`, `version`
+- Plugin: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `policy`, `repository`, `skills`, `source`, `version`
+- Marketplace: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `name`, `packs`, `plugins`, `policy`, `repository`, `skills`, `source`, `version`
 
 ### `cursor:`
 

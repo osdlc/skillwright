@@ -210,7 +210,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::StringList,
         inherits: false,
-        summary: "Plugin keywords; also the Claude and Cursor marketplace entry's `tags`.",
+        summary: "Plugin keywords; also the Claude and Cursor marketplace entry's `tags`. Pi's `package.json` adds `pi-package`, the keyword its gallery lists a package by.",
     },
     KeySpec {
         key: "category",
@@ -226,7 +226,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::String,
         inherits: false,
-        summary: "The human-facing name, Codex's `interface.displayName`.",
+        summary: "The human-facing name, Codex's `interface.displayName` and a Cursor plugin's `displayName`. A `cursor.displayName` overrides it for Cursor.",
     },
     KeySpec {
         key: "targets",

@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `render_plugin_manifest` writes a Cursor `displayName` from the plugin's `display_name`. A `cursor.displayName` block key still wins.
+
+### Fixed
+
+- Compile resolves a bare link that matches several files to the match nearest the linking file: in its own folder, then each folder above it. A tie at the nearest folder is still `refused: link-ambiguous`, naming only the tied files. Every match was refused before.
+- The Codex pack manifest carries `repository` and `homepage`, inherited as for the other dialects. Codex's `PluginFormat::manifest_fields` lists both, so a `codex` block may set them.
+- The Pi `package.json` carries the plugin's `keywords`, with `pi-package` added when it is missing.
+
 ## [0.48.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.47.0...tradecraft-core/v0.48.0) - 2026-11-10
 
 ### Breaking

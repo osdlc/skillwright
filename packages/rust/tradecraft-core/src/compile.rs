@@ -1602,11 +1602,12 @@ impl<'a> Renderer<'a> {
 
     /// One destination string to one vault file, in order:
     /// vault-relative exact match, then relative to the linking file, then a
-    /// unique basename match across the vault.
+    /// unique basename match across the vault, then the one match nearest the
+    /// linking file (see [`nearest_candidate`]).
     ///
     /// `Ok(None)` is a link that resolved to nothing — a reportable fact, not
-    /// a refusal. Several matches are refused `link-ambiguous`: picking one
-    /// would publish bytes the author may not have meant, which is a different
+    /// a refusal. A tie is refused `link-ambiguous`: picking one would
+    /// publish bytes the author may not have meant, which is a different
     /// failure from a name that is simply not there yet.
     fn resolve(
         &self,
@@ -1635,7 +1636,11 @@ impl<'a> Renderer<'a> {
         // matches. A bare name addresses a note (`[[photo]]` is not
         // `photo.jpg`); a name with an extension addresses that file.
         let from = self.vault_relative(from_file).unwrap_or_default();
-        match self.index.resolve_strict(target, &from) {
+        let resolved = match self.index.resolve_strict(target, &from) {
+            Err(ResolveError::Ambiguous(candidates)) => nearest_candidate(candidates, &from),
+            other => other.map(str::to_owned),
+        };
+        match resolved {
             Ok(hit) => {
                 let path = self.vault_root.join(hit);
                 self.refuse_never_shipped(from_file, &path, destination)?;
@@ -1714,6 +1719,34 @@ impl<'a> Renderer<'a> {
         self.vault_relative(path)
             .unwrap_or_else(|_| path.display().to_string())
     }
+}
+
+/// The one of `candidates` in the nearest folder holding `from`, the linking
+/// file's vault-relative path: its own folder first, then each folder above
+/// it. So a bare link resolves to the match in the note's own skill bundle,
+/// then its plugin, as Obsidian prefers the match closest to the note. The
+/// first folder holding any candidate decides: two there is still
+/// [`ResolveError::Ambiguous`], naming those two.
+fn nearest_candidate(mut candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
+    let mut folder = from;
+    while let Some((above, _)) = folder.rsplit_once('/') {
+        folder = above;
+        let prefix = format!("{folder}/");
+        let within: Vec<String> = candidates
+            .iter()
+            .filter(|path| path.starts_with(&prefix))
+            .cloned()
+            .collect();
+        match within.len() {
+            0 => continue,
+            1 => return Ok(within.into_iter().next().expect("one candidate")),
+            _ => {
+                candidates = within;
+                break;
+            }
+        }
+    }
+    Err(ResolveError::Ambiguous(candidates))
 }
 
 /// One embed on the transclusion stack: the file and its fragment. Two embeds
@@ -2986,6 +3019,44 @@ mod tests {
             .to_string();
         assert!(
             message.contains("(Two/Shared2.md, Deep/er/Shared2.md)"),
+            "{message}"
+        );
+    }
+
+    /// A bare name several folders match resolves to the match nearest the
+    /// linking note: its own folder first, then each folder above it.
+    #[test]
+    fn an_ambiguous_name_takes_the_match_nearest_the_linking_note() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/references/near.md", b"Ours.\n");
+        write(
+            &vfs,
+            "/vault/plugins/other/references/near.md",
+            b"Theirs.\n",
+        );
+        let compiled = compile_note(&vfs, &source(None), "![[near]]\n").unwrap();
+        assert_eq!(compiled.body, "Ours.\n");
+
+        // Neither in the note's plugin: the nearest common folder decides.
+        write(&vfs, "/vault/plugins/one/far.md", b"One.\n");
+        write(&vfs, "/vault/elsewhere/far.md", b"Elsewhere.\n");
+        let compiled = compile_note(&vfs, &source(None), "![[far]]\n").unwrap();
+        assert_eq!(compiled.body, "One.\n");
+    }
+
+    /// Two matches equally near are still refused, naming only those two.
+    #[test]
+    fn a_tie_at_the_nearest_folder_is_refused() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/a/near.md", b"A.\n");
+        write(&vfs, "/vault/plugins/demo/b/near.md", b"B.\n");
+        write(&vfs, "/vault/plugins/other/near.md", b"Other.\n");
+        let message = compile_note(&vfs, &source(None), "![[near]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("link-ambiguous"), "{message}");
+        assert!(
+            message.contains("(plugins/demo/a/near.md, plugins/demo/b/near.md)"),
             "{message}"
         );
     }

@@ -225,6 +225,8 @@ const CODEX: &[(&str, FieldType)] = &[
     ("version", STRING),
     ("description", STRING),
     ("author", OBJECT),
+    ("homepage", STRING),
+    ("repository", STRING),
     ("license", STRING),
     ("keywords", STRINGS),
     ("skills", STRING_OR_STRINGS),

@@ -197,13 +197,16 @@ const CLAUDE_ENTRY_FIELDS: &[&str] = &[
     "themes",
     "monitors",
 ];
-/// The keys Codex reads in `.codex-plugin/plugin.json`, plus the `author` and
-/// `license` every pack manifest carries.
+/// The keys Codex reads in `.codex-plugin/plugin.json`, plus the `author`,
+/// `homepage`, `repository` and `license` every pack manifest carries, which
+/// Codex reads from a root `plugin.json`.
 const CODEX_MANIFEST_FIELDS: &[&str] = &[
     "name",
     "version",
     "description",
     "author",
+    "homepage",
+    "repository",
     "license",
     "keywords",
     "skills",
@@ -297,8 +300,9 @@ pub struct InstallCli {
 
 /// Which dialect a pack manifest is rendered in.
 ///
-/// Claude, Codex and Cursor differ in one field — Codex carries an
-/// `interface` block and the other two do not. Pi's is a different file
+/// Claude, Codex and Cursor differ in the display name: Codex carries it in
+/// an `interface` block, Cursor as `displayName`, and Claude not at all.
+/// Pi's is a different file
 /// altogether. The marketplace manifests differ more, and each dialect names
 /// its own builder. Field order in the rendered manifest is fixed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,10 +314,9 @@ pub enum PluginDialect {
     /// Cursor's pack manifest is Claude's shape — `name`, `version`,
     /// `description`, `author`, `license`, `keywords`, `skills`, every one of
     /// them a documented Cursor Plugin field
-    /// (<https://cursor.com/docs/reference/plugins> retrieved 2026-09-20). It
-    /// is a separate variant because it lands in `.cursor-plugin/` and
-    /// because its marketplace index is its own shape, not because the pack
-    /// manifest differs.
+    /// (<https://cursor.com/docs/reference/plugins> retrieved 2026-09-20) —
+    /// plus `displayName`, which the cursor/plugins schema allows. It lands
+    /// in `.cursor-plugin/`, and its marketplace index is its own shape.
     Cursor,
     /// Pi's pack manifest is a `package.json` at the pack root whose
     /// `pi.skills` points at the pack's `skills/` directory. Pi has no

@@ -2659,8 +2659,9 @@ mod tests {
         assert_eq!(
             text_at(&vfs, "/market/.pi/packs/tools/package.json"),
             "{\n  \"name\": \"tools\",\n  \"version\": \"0.1.0\",\n  \"description\": \
-             \"Skills: a, b.\",\n  \"license\": \"UNLICENSED\",\n  \"pi\": {\n    \
-             \"skills\": [\n      \"./skills\"\n    ]\n  }\n}\n"
+             \"Skills: a, b.\",\n  \"license\": \"UNLICENSED\",\n  \"keywords\": [\n    \
+             \"pi-package\"\n  ],\n  \"pi\": {\n    \"skills\": [\n      \"./skills\"\n    \
+             ]\n  }\n}\n"
         );
         let b = text_at(&vfs, "/market/.pi/packs/tools/skills/tools-b/SKILL.md");
         assert!(b.contains("name: tools-b\n"), "{b}");

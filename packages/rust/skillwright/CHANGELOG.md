@@ -7,6 +7,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- `list` exits 2 when it skips a note that `build` and `check` refuse, such as a skill with a `description` outside a kind folder (`unreadable-note`) or a note with a value of the wrong kind (`malformed`). It exited 0. In a workspace, only a note skipped inside a marketplace counts, since a workspace build reads only its marketplaces.
+
+### Added
+
+- A plugin's `display_name` is also the `displayName` in its Cursor `plugin.json`. A `cursor.displayName` still wins for Cursor.
+
+### Fixed
+
+- A bare link such as `[[contract]]` that matches files in several folders resolves to the match nearest the linking note: in its own folder, then each folder above it, so its own skill bundle and then its plugin come first. Two matches equally near are still refused `link-ambiguous`, naming only those two. Every match was refused before, even one in the note's own bundle.
+- The Codex `plugin.json` carries `repository` and `homepage` from the plugin or `skillwright.md`, as the Claude and Cursor manifests do.
+- The Pi `package.json` carries the plugin's `keywords`, with `pi-package` added when it is missing, so the pi.dev gallery lists a pack published to npm.
+- The author skill says how to show a call as literal text: `\/[[skill]]` ships as `/[[skill]]` in every harness, in prose and in code spans.
+
 ## [0.10.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.9.0...skillwright/v0.10.0) - 2026-11-10
 
 ### Breaking
