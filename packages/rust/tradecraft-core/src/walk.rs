@@ -24,7 +24,7 @@ use markdown_vault_fs::walk::{self as vault, Hide, Visibility};
 use vfs_walk::{Errors, Symlinks, WalkError};
 
 use crate::error::CoreError;
-use crate::vfs::{Vfs, VfsError};
+use crate::vfs::Vfs;
 
 /// The names skipped wherever they appear. `.git` is also what a vault walk
 /// under `Visibility::Everything` drops, so both walks see the same files.
@@ -86,9 +86,6 @@ fn in_plugin_assets(patterns: &crate::patterns::Patterns, rel: &str) -> bool {
 /// A vault walk's options. `Everything` keeps dot-prefixed names (it drops
 /// only `.git`), and hides nothing: a caller that honours the vault's
 /// excluded files filters with [`excluded_files`].
-///
-/// [`vault_walk_errors`] repeats this walk's skips and prunes as a plain walk;
-/// a change to what this walk enters must change that one too.
 fn vault_options(prune: &[&str], refuse_symlinks: bool, errors: Errors) -> vault::WalkOptions {
     vault::WalkOptions {
         visibility: Visibility::Everything,
@@ -160,19 +157,6 @@ pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Vec<
 /// The options of [`vault_files`]'s walk.
 pub(crate) fn vault_walk(prune: &[&str]) -> vault::WalkOptions {
     vault_options(prune, false, Errors::Propagate)
-}
-
-/// What [`vault_walk`]'s walk under `root` cannot read: each folder it
-/// cannot list and each file it cannot stat, in walk order. A plain walk with
-/// the same skips and prunes, so it meets the same folders.
-pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Vec<VfsError> {
-    vfs_walk::walk_subtree(
-        vfs,
-        root,
-        "",
-        &plain_options(prune, Symlinks::List, Errors::Report),
-    )
-    .map_or_else(|_| Vec::new(), |outcome| outcome.errors)
 }
 
 /// The paths of a walk of `root`'s `entries`, plugin assets left out by the

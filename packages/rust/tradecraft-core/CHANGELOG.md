@@ -7,6 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- `compile::vault_walk_errors` is removed. A caller that must say what a vault walk passed over sets `errors` to `Errors::Report` on `vault_walk_options()` and reads the walk's own errors, as `markdown_corpus::LinkGraph::unreadable` does.
+- `compile::vault_walk_options` returns `markdown-vault-fs` 0.6's `WalkOptions`, whose `errors: Errors` replaces `propagate_errors: bool`. It is still `Errors::Propagate`.
+
 ## [0.49.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.48.0...tradecraft-core/v0.49.0) - 2026-11-10
 
 ### Added

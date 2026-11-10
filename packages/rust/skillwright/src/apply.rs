@@ -13,10 +13,10 @@
 
 use std::path::{Path, PathBuf};
 
-use markdown_corpus::{Corpus, LoadOptions, SplitMode};
+use markdown_corpus::{Errors, LinkGraph, SplitMode};
 use markdown_relink::{FileEdits, RenamePlan, RenameResult, VaultFacts};
 use tradecraft_core::authoring::{AuthoringOp, FieldEdit, apply_field_edits};
-use tradecraft_core::vfs::{PreviewVfs, Vfs};
+use tradecraft_core::vfs::{FixedClock, PreviewVfs, Vfs};
 
 /// Write or rehearse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,8 +110,8 @@ pub enum Applied {
     },
     /// A note `markdown_relink` declined to write, with its stable reason
     /// (`drifted`, `not_previewed`, `unreadable`, `write_failed`), or a
-    /// folder the rename could not list (`unreadable`). Its links still name
-    /// the old path.
+    /// folder the rename could not list or a note it could not read
+    /// (`unreadable`). Its links still name the old path.
     Skipped {
         /// The stable reason token.
         reason: String,
@@ -460,14 +460,16 @@ fn relink_move(
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
     let vault_dir = vault.dir;
-    let (corpus, unreadable) = load_vault(vault, from, to, bundle)?;
     // Links resolve against every file a build sees, so a rename picks the
     // target a build does. Only notes outside dot-named folders are edited:
     // `.github`, `.claude` or another checkout under `.worktrees` is not the
-    // author's notes, and a rename must not write there.
-    let mut facts = VaultFacts::from_corpus(&corpus);
-    facts.links.retain(|path, _| !in_dot_folder(path));
-    facts.frontmatter.retain(|path, _| !in_dot_folder(path));
+    // author's notes, and a rename must not write there. `load_vault` lists
+    // those notes without reading them (`with_list_only`), so they carry no
+    // links to rewrite.
+    let LoadedVault {
+        facts,
+        unreadable_rows: unreadable,
+    } = load_vault(vault, from, to, bundle)?;
     let plan = if bundle {
         markdown_relink::plan_bundle(vault.source, vault_dir, &facts, from, to)?
     } else {
@@ -937,24 +939,44 @@ fn record_unreadable(paths: Vec<String>, outcome: &mut Outcome) {
     }
 }
 
-/// The vault as a build reads it: compile's walk, so the planner resolves a
-/// link to the file a build does, and the lenient split, so a block only that
-/// split takes is frontmatter here too, not body links to rewrite. Unlike a
-/// build's skills source, symlinks are listed, not refused: one anywhere in
-/// the vault must not block a rename.
+/// What [`load_vault`] read: the planner's facts and what the walk could not
+/// read.
+struct LoadedVault {
+    facts: VaultFacts,
+    /// Vault-relative, `/`-separated; each gets a `skipped` row. Paths in or
+    /// under a dot-named folder are left out.
+    unreadable_rows: Vec<String>,
+}
+
+/// The vault as a build reads it, in one walk: compile's walk, so the planner
+/// resolves a link to the file a build does, and the lenient split, so a
+/// block only that split takes is frontmatter here too, not body links to
+/// rewrite. Unlike a build's skills source, symlinks are listed, not refused:
+/// one anywhere in the vault must not block a rename.
 ///
-/// A folder the walk cannot list is skipped, since a corner of the vault the
-/// rename cannot read must not block every rename, and returned so it gets a
-/// `skipped` row. One in or under a dot-named folder is not returned: a
-/// rename edits nothing there anyway. One that holds `from` or `to`, or lies
-/// inside a moved bundle, stops the rename instead, with an error naming it.
+/// A note under a dot-named folder is listed but not read: links resolve
+/// against it, and a rename edits nothing there.
+///
+/// A folder the walk cannot list and a note it cannot read are passed over
+/// and returned, so each gets a `skipped` row; one in or under a dot-named
+/// folder gets none. One that holds `from` or `to`, or lies inside a moved
+/// bundle, stops the rename instead, with an error naming it.
 fn load_vault(
     vault: Vault<'_>,
     from: &str,
     to: &str,
     bundle: bool,
-) -> Result<(Corpus, Vec<String>), ApplyError> {
+) -> Result<LoadedVault, ApplyError> {
     let vault_dir = vault.dir;
+    let mut walk = tradecraft_core::compile::vault_walk_options();
+    walk.errors = Errors::Report;
+    let graph = LinkGraph::new()
+        .with_walk(walk)
+        .with_split(SplitMode::Lenient)
+        .with_list_only(in_dot_folder);
+    graph.refresh_now(vault.source, &FixedClock::new(0), vault_dir);
+    let facts = VaultFacts::from_graph(&graph);
+
     let (from, to) = (Path::new(from), Path::new(to));
     // What the move carries: the note, or a bundle's whole folder.
     let moved = if bundle {
@@ -962,35 +984,31 @@ fn load_vault(
     } else {
         from
     };
-    let mut unreadable = Vec::new();
-    // A walk that lists and stats only, so finding what cannot be read costs
-    // no note reads.
-    for err in tradecraft_core::compile::vault_walk_errors(vault.source, vault_dir) {
+    let mut unreadable_rows = Vec::new();
+    for err in graph.unreadable() {
         let relative = err.path().strip_prefix(vault_dir).unwrap_or(err.path());
         if from.starts_with(relative) || to.starts_with(relative) || relative.starts_with(moved) {
             return Err(ApplyError::Io {
                 what: format!("walking {}", err.path().display()),
-                source: err.into_io_error(),
+                source: std::io::Error::new(err.kind(), err.io_error().to_string()),
             });
         }
         let relative = relative.to_string_lossy().replace('\\', "/");
-        // Every file in a folder named here sits under its own name too.
-        let edits_nothing = if err.path().is_dir() {
-            has_dot_name(&relative)
-        } else {
+        // A path the graph lists is a file or note; any other is a folder,
+        // and every file in it sits under its own name too.
+        let edits_nothing = if facts.paths.contains(&relative) {
             in_dot_folder(&relative)
+        } else {
+            has_dot_name(&relative)
         };
         if !edits_nothing {
-            unreadable.push(relative);
+            unreadable_rows.push(relative);
         }
     }
-    let mut walk = tradecraft_core::compile::vault_walk_options();
-    walk.errors = markdown_corpus::Errors::Skip;
-    let options = LoadOptions::default()
-        .with_link_walk(walk.clone())
-        .with_frontmatter_walk(walk)
-        .with_split(SplitMode::Lenient);
-    Ok((Corpus::load(vault.source, vault_dir, options), unreadable))
+    Ok(LoadedVault {
+        facts,
+        unreadable_rows,
+    })
 }
 
 /// Whether the vault-relative `path` sits under a dot-named folder.
@@ -1327,6 +1345,192 @@ mod tests {
             .iter()
             .map(|e| (e.path.as_str(), e.applied.outcome()))
             .collect()
+    }
+
+    fn rename(from: &str, to: &str, bundle: bool) -> AuthoringOp {
+        AuthoringOp::Rename {
+            from: from.to_owned(),
+            to: to.to_owned(),
+            bundle,
+            frontmatter: vec![],
+        }
+    }
+
+    /// A vault whose `notes/a.md` links the subject `notes/Alpha.md`.
+    fn linked_vault() -> tempfile::TempDir {
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "subject\n");
+        write(v.path(), "notes/a.md", "see [[Alpha]]\n");
+        v
+    }
+
+    fn alpha_to_gamma() -> AuthoringOp {
+        rename("notes/Alpha.md", "notes/Gamma.md", false)
+    }
+
+    /// [`NativeVfs`] over the vault in `dir`, failing `read_dir` and
+    /// `read_file` for the vault-relative paths named, listing extra names,
+    /// and counting every listing and read by vault-relative path.
+    struct FaultVfs {
+        dir: PathBuf,
+        unlistable: Vec<&'static str>,
+        unreadable: Vec<&'static str>,
+        /// `(folder, name)`: a file name the folder's listing shows that
+        /// need not be on disk.
+        phantom: Vec<(&'static str, &'static str)>,
+        listed: std::sync::Mutex<BTreeMap<String, usize>>,
+        read: std::sync::Mutex<BTreeMap<String, usize>>,
+    }
+
+    impl FaultVfs {
+        fn new(dir: &Path) -> Self {
+            Self {
+                dir: dir.to_path_buf(),
+                unlistable: Vec::new(),
+                unreadable: Vec::new(),
+                phantom: Vec::new(),
+                listed: Default::default(),
+                read: Default::default(),
+            }
+        }
+
+        fn rel(&self, path: &Path) -> String {
+            path.strip_prefix(&self.dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/")
+        }
+
+        fn count(map: &std::sync::Mutex<BTreeMap<String, usize>>, rel: &str) {
+            *map.lock().unwrap().entry(rel.to_owned()).or_default() += 1;
+        }
+
+        fn denied(path: &Path) -> tradecraft_core::vfs::VfsError {
+            tradecraft_core::vfs::VfsError::new(
+                path,
+                std::io::ErrorKind::PermissionDenied,
+                "denied by the test",
+            )
+        }
+
+        fn apply(&self, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+            super::apply(Vault::new(&self.dir, self), op)
+        }
+
+        fn preview(&self, op: &AuthoringOp) -> Result<Outcome, ApplyError> {
+            super::preview(Vault::new(&self.dir, self), op)
+        }
+
+        /// How many times the walk or the planner read the note at `rel`.
+        fn reads(&self, rel: &str) -> usize {
+            self.read.lock().unwrap().get(rel).copied().unwrap_or(0)
+        }
+    }
+
+    impl Vfs for FaultVfs {
+        fn read_file(&self, path: &Path) -> Result<Vec<u8>, tradecraft_core::vfs::VfsError> {
+            let rel = self.rel(path);
+            Self::count(&self.read, &rel);
+            if self.unreadable.contains(&rel.as_str()) {
+                return Err(Self::denied(path));
+            }
+            NativeVfs.read_file(path)
+        }
+        fn read_dir(
+            &self,
+            path: &Path,
+        ) -> Result<Vec<tradecraft_core::vfs::DirEntry>, tradecraft_core::vfs::VfsError> {
+            let rel = self.rel(path);
+            Self::count(&self.listed, &rel);
+            if self.unlistable.contains(&rel.as_str()) {
+                return Err(Self::denied(path));
+            }
+            let mut entries = NativeVfs.read_dir(path)?;
+            for (folder, name) in &self.phantom {
+                if *folder == rel && !entries.iter().any(|e| e.name == *name) {
+                    entries.push(tradecraft_core::vfs::DirEntry {
+                        name: (*name).to_owned(),
+                        is_dir: false,
+                    });
+                }
+            }
+            Ok(entries)
+        }
+        fn write_file(
+            &self,
+            path: &Path,
+            bytes: &[u8],
+        ) -> Result<(), tradecraft_core::vfs::VfsError> {
+            NativeVfs.write_file(path, bytes)
+        }
+        fn create_dir_all(&self, path: &Path) -> Result<(), tradecraft_core::vfs::VfsError> {
+            NativeVfs.create_dir_all(path)
+        }
+        fn exists(&self, path: &Path) -> bool {
+            NativeVfs.exists(path)
+        }
+        fn metadata(
+            &self,
+            path: &Path,
+        ) -> Result<tradecraft_core::vfs::Metadata, tradecraft_core::vfs::VfsError> {
+            NativeVfs.metadata(path)
+        }
+        fn is_executable(&self, path: &Path) -> bool {
+            NativeVfs.is_executable(path)
+        }
+        fn set_executable(
+            &self,
+            path: &Path,
+            yes: bool,
+        ) -> Result<(), tradecraft_core::vfs::VfsError> {
+            NativeVfs.set_executable(path, yes)
+        }
+        fn rename(&self, from: &Path, to: &Path) -> Result<(), tradecraft_core::vfs::VfsError> {
+            NativeVfs.rename(from, to)
+        }
+        fn remove(&self, path: &Path) -> Result<(), tradecraft_core::vfs::VfsError> {
+            NativeVfs.remove(path)
+        }
+        fn is_symlink(&self, path: &Path) -> bool {
+            NativeVfs.is_symlink(path)
+        }
+        fn canonicalize(&self, path: &Path) -> Result<PathBuf, tradecraft_core::vfs::VfsError> {
+            NativeVfs.canonicalize(path)
+        }
+        fn sees_links(&self) -> bool {
+            NativeVfs.sees_links()
+        }
+        fn read_link(&self, path: &Path) -> Result<PathBuf, tradecraft_core::vfs::VfsError> {
+            NativeVfs.read_link(path)
+        }
+    }
+
+    /// Take every permission off the file `rel` under `dir`. Whether it can
+    /// still be read: root reads any file, so a test of an unreadable one has
+    /// nothing to test.
+    #[cfg(unix)]
+    fn lock_file(dir: &Path, rel: &str) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        let abs = dir.join(rel);
+        std::fs::set_permissions(&abs, std::fs::Permissions::from_mode(0o000)).unwrap();
+        std::fs::read(&abs).is_ok()
+    }
+
+    /// Give back what [`lock_file`] took.
+    #[cfg(unix)]
+    fn unlock_file(dir: &Path, rel: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(dir.join(rel), std::fs::Permissions::from_mode(0o644));
+    }
+
+    /// The paths of the files the planner opens for `op`, a rename of
+    /// `from` to `to`.
+    fn planned_files(dir: &Path, from: &str, to: &str) -> Vec<String> {
+        let facts = load_vault(Vault::new(dir, &NativeVfs), from, to, false)
+            .unwrap()
+            .facts;
+        let plan = markdown_relink::plan(&NativeVfs, dir, &facts, from, to).unwrap();
+        plan.files.into_iter().map(|f| f.path).collect()
     }
 
     #[test]
@@ -2519,16 +2723,16 @@ mod tests {
         assert_eq!(outcomes(&outcome), vec![("notes/n.md", "relinked")]);
     }
 
-    /// A rename that half-lands still reports the folders the walk could not
-    /// list, after the rows for what landed.
+    /// A rename that half-lands still reports the notes the walk could not
+    /// read, after the rows for what landed.
     #[cfg(unix)]
     #[test]
     fn a_partial_move_keeps_the_unreadable_rows() {
         let v = vault();
         write(v.path(), "skills/alpha/alpha.md", "---\nname: alpha\n---\n");
         write(v.path(), "notes/n.md", "see [[alpha]]\n");
-        let folders = ["notes/locked"];
-        let listable = lock(v.path(), &folders);
+        write(v.path(), "notes/secret.md", "see [[alpha]]\n");
+        let readable = lock_file(v.path(), "notes/secret.md");
         let op = AuthoringOp::Rename {
             from: "skills/alpha/alpha.md".to_owned(),
             to: "skills/alpha/sub/sub.md".to_owned(),
@@ -2536,8 +2740,8 @@ mod tests {
             frontmatter: vec![],
         };
         let err = apply(v.path(), &op);
-        unlock(v.path(), &folders);
-        if listable {
+        unlock_file(v.path(), "notes/secret.md");
+        if readable {
             return;
         }
 
@@ -2546,7 +2750,7 @@ mod tests {
         };
         assert_eq!(
             outcomes(&outcome),
-            vec![("notes/n.md", "relinked"), ("notes/locked", "skipped")]
+            vec![("notes/n.md", "relinked"), ("notes/secret.md", "skipped")]
         );
     }
 
@@ -2589,8 +2793,9 @@ mod tests {
         write(v.path(), "rewritten.md", "see [[alpha]]\n");
         write(v.path(), "drifted.md", "also [[alpha]]\n");
         let source = Vault::new(v.path(), &NativeVfs);
-        let (corpus, _) = load_vault(source, "alpha.md", "gamma.md", false).unwrap();
-        let facts = VaultFacts::from_corpus(&corpus);
+        let facts = load_vault(source, "alpha.md", "gamma.md", false)
+            .unwrap()
+            .facts;
         let plan =
             markdown_relink::plan(&NativeVfs, v.path(), &facts, "alpha.md", "gamma.md").unwrap();
         let spliced = spliced_etags(v.path(), &plan);
@@ -2648,5 +2853,194 @@ mod tests {
         apply(v.path(), &op).unwrap();
 
         assert_eq!(read(v.path(), "notes/Beta.md"), "see [[tea]]\n");
+    }
+
+    /// One walk: no folder is listed twice, and each note is read once by
+    /// the walk, plus once more by the planner when it edits the note or
+    /// takes the subject's etag.
+    #[test]
+    fn a_rename_lists_the_vault_once() {
+        let v = linked_vault();
+        write(v.path(), "notes/b.md", "unrelated\n");
+        write(v.path(), "docs/deep/c.md", "see [[Alpha]]\n");
+        write(v.path(), "docs/deep/diagram.png", "png");
+        let vfs = FaultVfs::new(v.path());
+        vfs.preview(&alpha_to_gamma()).unwrap();
+
+        let listed = vfs.listed.lock().unwrap();
+        assert!(listed.contains_key("docs/deep"), "{listed:?}");
+        for (folder, times) in listed.iter() {
+            assert!(*times <= 1, "{folder} listed {times} times");
+        }
+        let planned = planned_files(v.path(), "notes/Alpha.md", "notes/Gamma.md");
+        let read = vfs.read.lock().unwrap();
+        assert!(read.contains_key("notes/b.md"), "{read:?}");
+        for (note, times) in read.iter() {
+            let allowed = 1 + usize::from(planned.contains(note) || note == "notes/Alpha.md");
+            assert!(*times <= allowed, "{note} read {times} times");
+        }
+    }
+
+    /// A note under a dot-named folder is listed, so links resolve against
+    /// it, but never read.
+    #[test]
+    fn a_rename_reads_no_note_in_a_dot_named_folder() {
+        let v = linked_vault();
+        write(v.path(), ".worktrees/b/y.md", "see [[Alpha]]\n");
+        write(v.path(), ".github/x.md", "see [[Alpha]]\n");
+        let vfs = FaultVfs::new(v.path());
+        vfs.preview(&alpha_to_gamma()).unwrap();
+
+        let read = vfs.read.lock().unwrap();
+        assert!(read.contains_key("notes/a.md"), "{read:?}");
+        let dotted: Vec<&String> = read
+            .keys()
+            .filter(|p| p.starts_with(".worktrees/") || p.starts_with(".github/"))
+            .collect();
+        assert!(dotted.is_empty(), "{dotted:?}");
+    }
+
+    /// A same-name file under a dot-named folder still counts when the
+    /// planner picks the shortest unambiguous form of a rewritten link.
+    #[test]
+    fn a_note_in_a_dot_folder_still_qualifies_a_rewritten_link() {
+        let v = linked_vault();
+        write(v.path(), ".worktrees/b/Gamma.md", "another checkout\n");
+        apply(v.path(), &alpha_to_gamma()).unwrap();
+        assert_eq!(read(v.path(), "notes/a.md"), "see [[notes/Gamma]]\n");
+    }
+
+    /// A note the rename cannot read gets an `unreadable` row after the rows
+    /// for what landed, and keeps its bytes. It does not block the rename.
+    #[cfg(unix)]
+    #[test]
+    fn a_rename_reports_a_note_it_cannot_read() {
+        let v = linked_vault();
+        write(v.path(), "notes/secret.md", "see [[Alpha]]\n");
+        let readable = lock_file(v.path(), "notes/secret.md");
+        let result = apply(v.path(), &alpha_to_gamma());
+        unlock_file(v.path(), "notes/secret.md");
+        if readable {
+            return;
+        }
+
+        let outcome = result.unwrap();
+        let last = outcome.entries.last().unwrap();
+        assert_eq!(
+            (last.path.as_str(), last.applied.outcome()),
+            ("notes/secret.md", "skipped"),
+            "{outcome:?}"
+        );
+        assert_eq!(last.applied.reason().as_deref(), Some("unreadable"));
+        assert_eq!(read(v.path(), "notes/secret.md"), "see [[Alpha]]\n");
+        assert_eq!(read(v.path(), "notes/a.md"), "see [[Gamma]]\n");
+    }
+
+    #[test]
+    fn a_rename_reports_a_note_the_vfs_cannot_read() {
+        let v = linked_vault();
+        write(v.path(), "notes/secret.md", "see [[Alpha]]\n");
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.unreadable = vec!["notes/secret.md"];
+        let outcome = vfs.preview(&alpha_to_gamma()).unwrap();
+        assert_eq!(
+            outcomes(&outcome),
+            [
+                ("notes/Gamma.md", "renamed"),
+                ("notes/a.md", "relinked"),
+                ("notes/secret.md", "skipped"),
+            ]
+        );
+        assert_eq!(
+            outcome.entries[2].applied,
+            Applied::Skipped {
+                reason: "unreadable".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn an_unreadable_note_in_a_dot_folder_gets_no_row() {
+        let v = linked_vault();
+        write(v.path(), ".worktrees/b/y.md", "see [[Alpha]]\n");
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.unreadable = vec![".worktrees/b/y.md"];
+        let outcome = vfs.preview(&alpha_to_gamma()).unwrap();
+        assert_eq!(vfs.reads(".worktrees/b/y.md"), 0);
+        assert_eq!(
+            outcomes(&outcome),
+            [("notes/Gamma.md", "renamed"), ("notes/a.md", "relinked")]
+        );
+    }
+
+    #[test]
+    fn a_rename_stops_when_the_subject_cannot_be_read() {
+        let v = linked_vault();
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.unreadable = vec!["notes/Alpha.md"];
+        let before = tree(v.path());
+        for result in [vfs.preview(&alpha_to_gamma()), vfs.apply(&alpha_to_gamma())] {
+            let err = result.unwrap_err();
+            assert!(matches!(err, ApplyError::Io { .. }), "{err:?}");
+            assert!(err.to_string().contains("notes/Alpha.md"), "{err}");
+        }
+        assert_eq!(tree(v.path()), before);
+    }
+
+    #[test]
+    fn a_bundle_rename_stops_on_an_unreadable_note_inside_it() {
+        let v = vault();
+        write(v.path(), "skills/alpha/alpha.md", "subject\n");
+        write(v.path(), "skills/alpha/notes.md", "inside\n");
+        write(v.path(), "notes/a.md", "see [[alpha]]\n");
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.unreadable = vec!["skills/alpha/notes.md"];
+        let before = tree(v.path());
+        let err = vfs
+            .apply(&rename(
+                "skills/alpha/alpha.md",
+                "skills/gamma/gamma.md",
+                true,
+            ))
+            .unwrap_err();
+        assert!(err.to_string().contains("skills/alpha/notes.md"), "{err}");
+        assert_eq!(tree(v.path()), before);
+    }
+
+    /// A symlink to a missing file is not a folder the walk could not list.
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_symlink_does_not_refuse_a_rename() {
+        let v = linked_vault();
+        std::os::unix::fs::symlink(
+            v.path().join("notes/missing.md"),
+            v.path().join("notes/gone.md"),
+        )
+        .unwrap();
+        let outcome = apply(v.path(), &alpha_to_gamma()).unwrap();
+        assert_eq!(read(v.path(), "notes/a.md"), "see [[Gamma]]\n");
+        assert_eq!(
+            outcomes(&outcome),
+            [("notes/Gamma.md", "renamed"), ("notes/a.md", "relinked")]
+        );
+    }
+
+    /// A note under a dot-named folder is never read, so it cannot fail to
+    /// read, and gets no row.
+    #[cfg(unix)]
+    #[test]
+    fn a_dot_folder_note_gets_no_row() {
+        let v = linked_vault();
+        write(v.path(), ".worktrees/b/y.md", "see [[Alpha]]\n");
+        let readable = lock_file(v.path(), ".worktrees/b/y.md");
+        let result = apply(v.path(), &alpha_to_gamma());
+        unlock_file(v.path(), ".worktrees/b/y.md");
+        if readable {
+            return;
+        }
+        assert_eq!(
+            outcomes(&result.unwrap()),
+            [("notes/Gamma.md", "renamed"), ("notes/a.md", "relinked")]
+        );
     }
 }

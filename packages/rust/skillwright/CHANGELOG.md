@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `rename` walks the vault once. It walked it three times, and read every note under a dot-named folder such as `.worktrees` only to drop its links. Such a note is now listed, so links still resolve against it, but not read. ([#49](https://github.com/osdlc/skillwright/issues/49))
+- `rename` reports a note it could list but not read as `skipped · unreadable`, as it does a folder it could not list. The note's links stay as written. It was passed over in silence. A note under a dot-named folder gets no row. ([#45](https://github.com/osdlc/skillwright/issues/45))
+- A skipped row's reason is the token alone, such as `skipped · unreadable`. It read `skipped · skipped (unreadable)`, and the `--json` row's `reason` was `skipped (unreadable)`.
+
 ## [0.11.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.11.0) - 2026-11-10
 
 ### Breaking

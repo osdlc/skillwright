@@ -560,3 +560,122 @@ fn list_and_check_stay_clean_after_a_forced_delete() {
     assert_eq!(checked.code, 0, "{}", checked.stdout);
     assert!(!checked.stdout.contains("skipped"), "{}", checked.stdout);
 }
+
+/// Take every permission off `rel` under `vault`. Whether it can still be
+/// read: root reads any file, so the test has nothing to test.
+#[cfg(unix)]
+fn lock_file(vault: &Path, rel: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let abs = vault.join(rel);
+    fs::set_permissions(&abs, fs::Permissions::from_mode(0o000)).unwrap();
+    fs::read(&abs).is_ok()
+}
+
+#[cfg(unix)]
+fn unlock_file(vault: &Path, rel: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = fs::set_permissions(vault.join(rel), fs::Permissions::from_mode(0o644));
+}
+
+/// The fixture vault with a new skill `foo` that `notes/linker.md` links.
+fn vault_with_linked_foo() -> (tempfile::TempDir, PathBuf) {
+    let (dir, vault) = fixture();
+    let made = run(
+        &[
+            "new",
+            "skill",
+            "foo",
+            "--plugin",
+            "dev-agent",
+            "--description",
+            "First skill.",
+            "--yes",
+            "--vault",
+            &vault_str(&vault),
+        ],
+        dir.path(),
+    );
+    assert_eq!(made.code, 0, "{}", made.stderr);
+    write(&vault, "notes/linker.md", "See [[foo]] for details.\n");
+    (dir, vault)
+}
+
+/// The `--json` rows of a run, parsed.
+fn json_rows(stdout: &str) -> Vec<serde_json::Value> {
+    serde_json::from_str::<serde_json::Value>(stdout)
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+#[cfg(unix)]
+#[test]
+fn rename_lists_an_unreadable_note_as_skipped() {
+    let (dir, vault) = vault_with_linked_foo();
+    write(&vault, "notes/secret.md", "See [[foo]].\n");
+    let readable = lock_file(&vault, "notes/secret.md");
+    let v = vault_str(&vault);
+    let human = run(
+        &["rename", "foo", "bar", "--yes", "--vault", &v],
+        dir.path(),
+    );
+    let json = run(
+        &["rename", "bar", "foo", "--yes", "--json", "--vault", &v],
+        dir.path(),
+    );
+    unlock_file(&vault, "notes/secret.md");
+    if readable {
+        return;
+    }
+
+    assert_eq!(human.code, 0, "{}", human.stderr);
+    assert!(
+        human
+            .stdout
+            .lines()
+            .any(|line| line == "notes/secret.md  skipped \u{b7} unreadable"),
+        "{}",
+        human.stdout
+    );
+    assert_eq!(human.stderr.trim_end(), "2 written, 1 skipped");
+
+    assert_eq!(json.code, 0, "{}", json.stderr);
+    let rows = json_rows(&json.stdout);
+    assert!(
+        rows.contains(&serde_json::json!({
+            "path": "notes/secret.md",
+            "status": "skipped",
+            "reason": "unreadable",
+        })),
+        "{rows:?}"
+    );
+}
+
+/// A note under a dot-named folder is never read, so the rename has no row
+/// for it, in either output.
+#[cfg(unix)]
+#[test]
+fn rename_has_no_row_for_an_unreadable_note_in_a_dot_folder() {
+    let (dir, vault) = vault_with_linked_foo();
+    write(&vault, ".worktrees/b/y.md", "See [[foo]].\n");
+    let readable = lock_file(&vault, ".worktrees/b/y.md");
+    let v = vault_str(&vault);
+    let human = run(
+        &["rename", "foo", "bar", "--yes", "--vault", &v],
+        dir.path(),
+    );
+    let json = run(
+        &["rename", "bar", "foo", "--yes", "--json", "--vault", &v],
+        dir.path(),
+    );
+    unlock_file(&vault, ".worktrees/b/y.md");
+    if readable {
+        return;
+    }
+
+    assert_eq!(human.code, 0, "{}", human.stderr);
+    assert!(!human.stdout.contains(".worktrees"), "{}", human.stdout);
+    assert_eq!(json.code, 0, "{}", json.stderr);
+    assert!(!json.stdout.contains(".worktrees"), "{}", json.stdout);
+}
