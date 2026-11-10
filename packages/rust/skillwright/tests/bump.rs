@@ -1464,8 +1464,9 @@ fn gitattributes_at_the_ref_apply_to_the_baseline() {
     );
 }
 
-#[test]
-fn a_shallow_clone_builds_a_ref_it_holds() {
+/// A two-commit repository, its depth-1 clone's parent folder, and the
+/// clone.
+fn shallow_clone() -> (tempfile::TempDir, tempfile::TempDir, PathBuf) {
     let dir = project("");
     let root = dir.path();
     git(root, &["init", "--quiet", "--initial-branch", "main"]);
@@ -1479,6 +1480,12 @@ fn a_shallow_clone_builds_a_ref_it_holds() {
         &["clone", "--quiet", "--depth", "1", &url, "c"],
     );
     let clone = clones.path().join("c");
+    (dir, clones, clone)
+}
+
+#[test]
+fn a_shallow_clone_builds_a_ref_it_holds() {
+    let (_dir, _clones, clone) = shallow_clone();
     write_skill(&clone, "gadget", "Third draft.");
 
     let result = dry_bump(&clone, "HEAD", &[]);
@@ -1490,21 +1497,10 @@ fn a_shallow_clone_builds_a_ref_it_holds() {
 
 #[test]
 fn a_ref_beyond_a_shallow_clone_is_blocked() {
-    let dir = project("");
-    let root = dir.path();
-    git(root, &["init", "--quiet", "--initial-branch", "main"]);
-    commit_all(root, "one");
-    write_skill(root, "widget", "Second draft.");
-    commit_all(root, "two");
-    git(root, &["rev-parse", "--verify", "HEAD~1"]);
-    let clones = tempfile::tempdir().unwrap();
-    let url = format!("file://{}", root.display());
-    git(
-        clones.path(),
-        &["clone", "--quiet", "--depth", "1", &url, "c"],
-    );
+    let (dir, _clones, clone) = shallow_clone();
+    git(dir.path(), &["rev-parse", "--verify", "HEAD~1"]);
 
-    let result = dry_bump(&clones.path().join("c"), "HEAD~1", &[]);
+    let result = dry_bump(&clone, "HEAD~1", &[]);
     assert_eq!(result.code, 2, "{}", result.stderr);
     assert!(
         result.stderr.contains("neither a directory nor a commit"),

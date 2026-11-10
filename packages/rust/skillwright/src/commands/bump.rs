@@ -1029,12 +1029,14 @@ impl BuiltRef {
             );
         }
         let index = built.temp.join("index");
+        // Checks out the path set of `candidates` and returns it.
+        let check_out = |candidates| {
+            let set = path_set(&repo, &sha, candidates)?;
+            check_out_paths(&repo, &sha, &index, &built.checkout, &set).map(|()| set)
+        };
         // The root files first: the ref's build inputs are known only once
         // its root file is read.
-        let root_files = match path_set(&repo, &sha, root_file_candidates(&repo, &config_path))
-            .and_then(|set| {
-                check_out_paths(&repo, &sha, &index, &built.checkout, &set).map(|()| set)
-            }) {
+        let root_files = match check_out(root_file_candidates(&repo, &config_path)) {
             Ok(set) => set,
             Err(err) => return fail(ctx, format!("checking it out failed: {err}")),
         };
@@ -1061,12 +1063,7 @@ impl BuiltRef {
             .to_path_buf();
         let base_run = resolve_run(&common, &base_cwd, ctx.err)?;
         if root_files != [WHOLE_TREE]
-            && let Err(err) = path_set(
-                &repo,
-                &sha,
-                build_input_candidates(&built.checkout, &base_run),
-            )
-            .and_then(|set| check_out_paths(&repo, &sha, &index, &built.checkout, &set))
+            && let Err(err) = check_out(build_input_candidates(&built.checkout, &base_run))
         {
             return fail(ctx, format!("checking it out failed: {err}"));
         }
@@ -1160,18 +1157,19 @@ fn path_set(repo: &Path, sha: &str, candidates: Vec<String>) -> Result<Vec<Strin
     // A path inside another in the set comes with it.
     let set: Vec<String> = set
         .iter()
-        .filter(|path| {
-            !set.iter().any(|outer| {
-                path.strip_prefix(outer.as_str())
-                    .is_some_and(|rest| rest.starts_with('/'))
-            })
-        })
+        .filter(|path| !set.iter().any(|outer| is_under(path, outer)))
         .cloned()
         .collect();
     if has_symlink(repo, sha, &set)? {
         return Ok(vec![WHOLE_TREE.to_owned()]);
     }
     paths_at_ref(repo, sha, &set)
+}
+
+/// Whether repo-relative `path` lies strictly inside the folder `outer`.
+fn is_under(path: &str, outer: &str) -> bool {
+    path.strip_prefix(outer)
+        .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// The `.gitattributes` in each folder above `path`, the top included.
@@ -1252,10 +1250,8 @@ fn paths_at_ref(repo: &Path, sha: &str, candidates: &[String]) -> Result<Vec<Str
     Ok(candidates
         .iter()
         .filter(|candidate| {
-            held.iter().any(|name| {
-                name.strip_prefix(candidate.as_str())
-                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-            })
+            held.iter()
+                .any(|name| name == candidate || is_under(name, candidate))
         })
         .cloned()
         .collect())
@@ -1611,11 +1607,9 @@ mod tests {
             )
         };
         let before = head();
-        let temp = tempfile::tempdir().unwrap();
-        let dest = temp.path().join("checkout");
-        std::fs::create_dir(&dest).unwrap();
+        let (_temp, dest, index) = dest();
 
-        check_out_paths(&repo, &sha, &temp.path().join("index"), &dest, &[]).unwrap();
+        check_out_paths(&repo, &sha, &index, &dest, &[]).unwrap();
 
         assert_eq!(head(), before);
         assert!(files_under(&dest).is_empty());
