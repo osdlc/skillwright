@@ -1804,9 +1804,9 @@ type TransclusionHop = (PathBuf, Option<String>);
 ///
 /// That includes a `[[` that is not a link (see [`scan_wiki`]): it would ship
 /// as literal brackets, so its refusal says to write `\[[` for that. An
-/// escaped `\[[` is neither. Only links and leftovers at or after
-/// `body_start` count: a resource's frontmatter is YAML, carried as written,
-/// and [`validate_frontmatter_links`] reads it as YAML instead.
+/// escaped `\[[` is neither a link nor a leftover. Only links and leftovers
+/// at or after `body_start` count: a resource's frontmatter is YAML, carried
+/// as written, and [`validate_frontmatter_links`] reads it as YAML instead.
 ///
 /// The one exception is `shown`: the `/[[x]]` texts an escape wrote out on
 /// purpose. Only that exact text, `/` included, passes.
@@ -2019,7 +2019,7 @@ const SCAN: ScanOptions = ScanOptions {
 
 /// Every wiki token in `markdown` that is *live* — not inside a fenced code
 /// block, an inline code span, or an HTML comment, where the same characters
-/// are content rather than references.
+/// are content rather than references, and not escaped as `\[[`.
 ///
 /// The links and embeds are `markdown-link`'s, read under [`SCAN`]. Calls are
 /// this crate's layer over them: with `calls`, a link whose `[[` follows a
