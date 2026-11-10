@@ -22,11 +22,11 @@ use serde::Serialize;
 use tradecraft_core::harness::with_plugin_format;
 use tradecraft_core::model::marketplaces_in;
 use tradecraft_core::{
-    BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit,
-    MarketplaceConfig, Namespace, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs,
-    apply_field_edits, check_packs, discover_components, export_skills, in_plugin_folder,
-    next_version, ns_field_edits, ns_field_label, owned_paths, packs_path, parse_semver,
-    plugin_folder_in, plugin_manifest_path, read_ns_field, workspace_file,
+    BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportUnit, MarketplaceConfig,
+    Namespace, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs, apply_field_edits, check_packs,
+    discover_components, export_skills, in_plugin_folder, next_version, ns_field_edits,
+    ns_field_label, owned_paths, packs_path, parse_semver, plugin_folder_in, plugin_manifest_path,
+    read_ns_field, workspace_file,
 };
 
 use crate::commands::marketplace::{configured_request, marketplace_inputs};
@@ -552,10 +552,11 @@ fn run_changed(
     since: &str,
     scheme: PatchScheme,
 ) -> i32 {
+    // Compares into the baseline, once it is known.
+    let mut request = configured_request(run, market, run.vault.clone(), ExportMode::Check);
     // The build's own `packs` check, before a ref is built and its packs are
     // moved to where this config keeps them.
-    let config = configured_request(run, market, run.vault.clone(), ExportMode::Check).config;
-    if let Err(err) = check_packs(&config) {
+    if let Err(err) = check_packs(&request.config) {
         return blocked(
             ctx.err,
             &format!(
@@ -564,16 +565,11 @@ fn run_changed(
             ),
         );
     }
-    let baseline = match Baseline::resolve(since, flags, run, market, ctx) {
+    let baseline = match Baseline::resolve(since, flags, run, market, &request.config, ctx) {
         Ok(baseline) => baseline,
         Err(code) => return code,
     };
-    let request = configured_request(
-        run,
-        market,
-        baseline.root().to_path_buf(),
-        ExportMode::Check,
-    );
+    request.out_root = baseline.root().to_path_buf();
     let mut roots: Vec<&str> = match owned_paths(&request) {
         Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
         Err(err) => return blocked(ctx.err, normalize_thrown_reason(&err.to_string())),
@@ -913,19 +909,21 @@ impl Baseline {
     }
 
     /// A directory that exists is a built baseline; anything else is a git
-    /// ref, built with the ref's own copy of the root file.
+    /// ref, built with the ref's own copy of the root file. `current` is this
+    /// run's config, where a built ref's packs are moved to.
     fn resolve(
         since: &str,
         flags: &BumpFlags,
         run: &ResolvedRun,
         market: Option<&str>,
+        current: &MarketplaceConfig,
         ctx: &mut CommandContext<'_>,
     ) -> Result<Baseline, i32> {
         let as_dir = crate::config::resolve_against_cwd(since, &ctx.cwd);
         if as_dir.is_dir() {
             return Ok(Baseline::Dir(as_dir));
         }
-        BuiltRef::build(since, flags, run, market, ctx).map(Baseline::Built)
+        BuiltRef::build(since, flags, run, market, current, ctx).map(Baseline::Built)
     }
 }
 
@@ -957,6 +955,7 @@ impl BuiltRef {
         flags: &BumpFlags,
         run: &ResolvedRun,
         market: Option<&str>,
+        current: &MarketplaceConfig,
         ctx: &mut CommandContext<'_>,
     ) -> Result<BuiltRef, i32> {
         let fail = |ctx: &mut CommandContext<'_>, why: String| {
@@ -1103,8 +1102,7 @@ impl BuiltRef {
                 ),
             );
         }
-        let current = configured_request(run, market, built.out.clone(), ExportMode::Check);
-        if let Err(err) = align_packs(&built.out, &request, &current) {
+        if let Err(err) = align_packs(&built.out, &request.config, current) {
             return fail(ctx, format!("moving its packs failed: {err}"));
         }
         Ok(built)
@@ -1314,15 +1312,19 @@ fn check_out_paths(
     cmd.run().map(drop).map_err(|err| err.to_string())
 }
 
-/// Moves each harness's packs in a baseline built by `base` to where `current`
-/// keeps them, so a `packs` setting that changed since the ref still compares
-/// each plugin with itself.
-fn align_packs(out: &Path, base: &ExportRequest, current: &ExportRequest) -> std::io::Result<()> {
+/// Moves each harness's packs in a baseline built under `base` to where
+/// `current` keeps them, so a `packs` setting that changed since the ref
+/// still compares each plugin with itself.
+fn align_packs(
+    out: &Path,
+    base: &MarketplaceConfig,
+    current: &MarketplaceConfig,
+) -> std::io::Result<()> {
     let side = out.join(".moving");
     let moved: Vec<(&str, &str, PathBuf)> = with_plugin_format()
         .filter_map(|spec| {
-            let from = packs_path(&base.config, spec.name)?;
-            let to = packs_path(&current.config, spec.name)?;
+            let from = packs_path(base, spec.name)?;
+            let to = packs_path(current, spec.name)?;
             (from != to && out.join(from).is_dir()).then(|| (from, to, side.join(spec.name)))
         })
         .collect();
