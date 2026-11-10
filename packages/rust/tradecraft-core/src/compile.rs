@@ -15,7 +15,7 @@
 //!    skill instead, the skill being compiled included.
 //! 3. The output is validated: any Obsidian syntax remaining in an emitted
 //!    markdown file is a refusal, because a destination has no resolver to
-//!    give it meaning. A `[[` right after a `\` is escaped: it is neither a
+//!    give it meaning. A `[[` after an odd run of `\` is escaped: it is neither a
 //!    link nor a leftover, and ships as written, backslash included. A
 //!    resource's frontmatter ships as written too; it is read as YAML, and a
 //!    string in it that holds a link is refused.
@@ -1072,11 +1072,8 @@ impl<'a> Renderer<'a> {
     }
 
     fn ensure_markdown_resource(&mut self, source_path: &Path) -> Result<String, CoreError> {
-        // The entry never becomes a resource of itself. A link reaches it when
-        // it has a fragment, or when the entry is not named as a skill: no
-        // implicit context, no skill index, or an entry outside the index (a
-        // command, or a note published by explicit path). Each is a link to
-        // SKILL.md.
+        // The entry never becomes a resource of itself; a link that reaches it
+        // (see `skill_mention`) is a link to SKILL.md.
         if source_path == self.entry_path {
             return Ok("SKILL.md".to_owned());
         }
