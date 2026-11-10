@@ -2577,6 +2577,24 @@ fn republishing_a_note_by_path_is_not_a_collision() {
     }
 }
 
+/// On a filesystem that ignores letter case, a note named in other letters
+/// is still one note. Skipped where case matters.
+#[test]
+fn a_note_named_in_other_letter_case_does_not_collide_with_itself() {
+    let dir = vault(&[("skillwright.md", ROOT), ("skills/greet/greet.md", REAL)]);
+    if !dir.path().join("SKILLS/greet/GREET.md").exists() {
+        return;
+    }
+    for notes in [
+        &["skills/greet/GREET.md"][..],
+        &["skills/greet/greet.md", "skills/greet/GREET.md"][..],
+    ] {
+        let ran = publish_to_dest(&dir, notes, &["--yes"]);
+        assert_eq!(ran.code, 0, "{notes:?}: {}", ran.text);
+        assert!(!ran.text.contains("path-collision"), "{}", ran.text);
+    }
+}
+
 /// Under `--vault <link>`, a note named through the link and the same note
 /// named by its real path both publish. Neither collides with its own scan
 /// entry.

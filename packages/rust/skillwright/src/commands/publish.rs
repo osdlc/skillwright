@@ -150,6 +150,10 @@ fn named_claims(
     let namespace = run.core_namespace();
     let root_config = run.root_config();
     let vfs = run.config_vfs();
+    // One note named by two spellings, such as other letter case on a
+    // filesystem that ignores case, is one claim.
+    let real = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let mut named_files: HashSet<PathBuf> = HashSet::new();
     let mut claims: Vec<SkillClaim> = note_paths
         .iter()
         .filter_map(|note_path| {
@@ -157,6 +161,7 @@ fn named_claims(
                 .ok()
                 .flatten()
         })
+        .filter(|claim| named_files.insert(real(&claim.entry_path)))
         .collect();
     if claims.is_empty() {
         return claims;
@@ -172,7 +177,7 @@ fn named_claims(
                 .filter(|c| {
                     c.kind == EntityKind::Skill
                         && claims.iter().any(|named| named.name == c.name)
-                        && !claims.iter().any(|named| named.entry_path == c.entry_path)
+                        && !named_files.contains(&real(&c.entry_path))
                 })
                 .map(SkillClaim::from)
                 .collect();
@@ -388,10 +393,9 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
         named_claims(&run, &note_paths, ctx.err)
     };
     let targets: Vec<&str> = destinations.iter().map(|d| d.target.as_str()).collect();
-    match refuse_skill_collisions(&claims, &targets) {
-        Ok(()) => {}
-        Err(CoreError::Refused(message)) => return blocked(ctx.err, &message),
-        Err(other) => return blocked(ctx.err, &other.to_string()),
+    if let Err(refusal) = refuse_skill_collisions(&claims, &targets) {
+        let text = refusal.to_string();
+        return blocked(ctx.err, text.strip_prefix("refused: ").unwrap_or(&text));
     }
 
     // --- confirmation --------------------------------------------------
