@@ -1188,8 +1188,6 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
     }
 }
 
-/// Refuses a note `build.exclude` or a folder that never ships holds, named or
-/// not: what never ships from a build does not ship from a publish either.
 /// `path` spelled under `root`: as given when it already is, else by its
 /// real path under `root`'s, so a note named through a link and its real
 /// spelling place the same. As given when it is outside `root` either way.
@@ -1210,6 +1208,8 @@ fn spelled_under(vfs: &dyn Vfs, root: &Path, path: &Path) -> Result<PathBuf, Cor
     )
 }
 
+/// Refuses a note `build.exclude` or a folder that never ships holds, named or
+/// not: what never ships from a build does not ship from a publish either.
 fn refuse_excluded(
     placed: Option<&crate::patterns::Placed<'_>>,
     skill_path: &Path,
