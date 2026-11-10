@@ -146,7 +146,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: false,
-        summary: "What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published.",
+        summary: "What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published.",
     },
     KeySpec {
         key: "version",
