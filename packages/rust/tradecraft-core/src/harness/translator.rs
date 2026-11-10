@@ -697,8 +697,8 @@ fn refuse_prefixed_collisions<T: HarnessTranslator + ?Sized>(
 }
 
 /// Why two skills of one published name on `profile` are refused: the
-/// `naming: prefixed` of one of `plugins`, and where it was set, or else the
-/// profile's prefixing default.
+/// `naming: prefixed` of one of `plugins`, and where it was set; else the
+/// profile's prefixing default; else, both names bare, `naming: bare`.
 fn collision_reason(
     profile: &HarnessProfile,
     market: &Marketplace,
@@ -710,6 +710,15 @@ fn collision_reason(
         .into_iter()
         .find(|g| g.prefixed_on.iter().any(|h| h == harness))
     else {
+        let prefixed = plugins
+            .into_iter()
+            .any(|g| naming(profile, &g.bare_on, &g.prefixed_on) == SkillNaming::PluginPrefixed);
+        if !prefixed {
+            return format!(
+                "`{harness}.naming: bare` names both bare, and {label} has no plugin namespace, \
+                 so no two skills may take one name. Rename one"
+            );
+        }
         return format!(
             "{label} has no plugin namespace and names a skill `<plugin>-<skill>` by default, \
              so no two skills may take one name. Rename one"

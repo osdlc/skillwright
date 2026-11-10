@@ -493,15 +493,18 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
 }
 
 /// Refuses a marketplace key whose value is not the shape the key table
-/// gives it, as a marketplace note's read does. A key set to nothing is
+/// gives it, as a marketplace note's read does, or that has no JSON form to
+/// check, such as a mapping with a list for a key. A key set to nothing is
 /// unset, as [`field`] reads it.
 fn check_shape(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsError> {
     if value.is_null() {
         return Ok(());
     }
-    let Ok(json) = serde_json::to_value(value) else {
-        return Ok(());
-    };
+    let json = serde_json::to_value(value).map_err(|err| SettingsError {
+        key: key.to_owned(),
+        what: "a value with a JSON form",
+        detail: err.to_string(),
+    })?;
     crate::keys::check_shape(crate::frontmatter::EntityKind::Marketplace, key, &json).map_err(
         |refusal| SettingsError {
             key: key.to_owned(),
@@ -842,6 +845,14 @@ mod tests {
             let err = parse_root_file(&format!("---\n{line}\n---\n")).unwrap_err();
             assert!(err.to_string().starts_with(said), "{line}: {err}");
         }
+    }
+
+    /// A value with no JSON form, such as a mapping with a list for a key,
+    /// cannot be checked, so it is refused rather than passed.
+    #[test]
+    fn a_value_with_no_json_form_is_refused() {
+        let err = parse_root_file("---\nowner: {[a]: b}\n---\n").unwrap_err();
+        assert_eq!(err.key, "owner", "{err}");
     }
 
     #[test]

@@ -30,7 +30,7 @@ API:
 
 - The field reference states the types the check accepts. Its harness block lists drop the keys the check warns on, such as `permissionMode` on a `claude:` plugin or marketplace and `description` and `version` on a `codex:`, `cursor:` or `pi:` marketplace. Its component line reads "Skill and command", followed by "Agent: not checked.".
 - A cross-plugin name collision on Cursor or Pi names both notes, the published name, the harness and the `<harness>.naming` setting that prefixed the name. The token stays `path-collision`.
-- The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: not a number". Some refusals named `marketplace fields` before.
+- The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: it is a number". Some refusals named `marketplace fields` before.
 - A marketplace block passes down to each plugin only the keys a plugin block reads. Other keys were never merged, so no output changes.
 - `\[[note]]` is no longer a link. It compiled to `\[note.md](…)`, which is broken Markdown; it now ships as written. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
@@ -65,7 +65,6 @@ Behaviour:
 
 API:
 
-
 - Removed `MISSING_DESCRIPTION`, `DiscoveredComponent::description_filled` and `Cascade::configured`. A serialized `DiscoveredComponent` has no `description_filled` key.
 - Removed `MarketplaceConfig::require_descriptions` and `BuildSettings::require_descriptions`. The refusal is always on. A root file's `build.require_descriptions` is now an unknown key: it warns and is ignored.
 
@@ -91,7 +90,6 @@ Behaviour:
 - `load_marketplace` refuses a root file or workspace file it cannot read, whether its frontmatter is not YAML or a key holds a bad value, as `refused: malformed-root-file`, not `refused: root-file`. A build already used `malformed-root-file` for the same file, so one bad file now has one token.
 
 API:
-
 
 - `vault_config` returns `Result<MarketplaceConfig, CoreError>`. It refuses with `refused: malformed-root-file` when the root file, or a workspace file above it, cannot say what it excludes, as the scan it configures does. It ignored such a workspace file before, so a member silently lost the workspace's namespace, targets, blocks and exclusions. A bad value in another key still gives the default config, or leaves the workspace file out, as before: a build says what is wrong with it. The wasm `discoverComponents` throws when the vault's root file or workspace file cannot say what it excludes.
 - Removed `Patterns::read`, which read a malformed root file as empty. Use `Patterns::load`, which refuses it.
@@ -128,7 +126,6 @@ Behaviour:
 
 API:
 
-
 - Removed `REMOVED` (and `keys::REMOVED`), `keys::legacy_key`, `keys::legacy_block`, `keys::MIGRATING_GUIDE`, `fix_adopt_hashes`, `AdoptHashFix` and `AdoptHashStatus`.
 
 ## [0.45.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.44.0...tradecraft-core/v0.45.0) - 2026-11-07
@@ -145,7 +142,6 @@ Behaviour:
 - `load` and `load_plugin` fail with `refused: malformed`, not `unreadable-note`, when every skipped note holds a value of the wrong kind, and say so in the text.
 
 API:
-
 
 - `publish::overrides_for` takes the note's `EntityKind` in place of a target name. It folds and checks every block, and returns them all.
 - `SkippedNote::detail` is the prose after the reason token, no longer the whole error. Use `SkippedNote::sentence` for the token and the prose together.

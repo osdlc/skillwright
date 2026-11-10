@@ -1243,6 +1243,19 @@ fn bare_names_that_collide_across_plugins_are_refused() {
     assert!(err.contains("path-collision"), "{err}");
 }
 
+#[test]
+fn a_bare_pi_collision_names_the_bare_setting() {
+    let vfs = pi_vault();
+    write(
+        &vfs,
+        "/vault/plugins/other/skills/review.md",
+        &note("review", ""),
+    );
+    let err = build_root(&vfs, pi_block("naming", "bare")).unwrap_err();
+    assert!(err.contains("`pi.naming: bare`"), "{err}");
+    assert!(!err.contains("by default"), "{err}");
+}
+
 /// Plugins `p1` and `p2`, each holding `hello`. `p2` also holds `lead`, which
 /// calls and mentions its own `hello` and calls `p1`'s.
 fn cursor_vault() -> MemVfs {
