@@ -560,6 +560,8 @@ fn name_taken(
     leaf: &str,
     own: &str,
 ) -> Result<Option<String>, ApplyError> {
+    // `to_lowercase` is not full Unicode case folding or normalization. A
+    // miss falls back to the half-land message.
     let leaf = leaf.to_lowercase();
     let listing = vault
         .source
@@ -746,15 +748,14 @@ impl OwnNames<'_> {
         }
     }
 
-    /// Names the entry where it is now in `err`'s message, where that names
-    /// the landed temporary path, and drops [`half_landed`]'s advice to
-    /// rename it to the temporary name.
+    /// Drops [`half_landed`]'s advice to rename the entry to the temporary
+    /// name, and, when the restore worked, names the entry where it is now
+    /// in `err`'s message where that names the landed temporary path.
     fn error(&self, err: &mut ApplyError) {
-        let Some(now) = self.now else {
-            return;
-        };
         match err {
             ApplyError::Refused(message) | ApplyError::Io { what: message, .. } => {
+                // The advice names the temporary target, which is never the
+                // entry's name, so it goes whether or not the restore worked.
                 let (rename, point) = RENAME_ADVICE;
                 if let Some(at) = message.find(rename) {
                     let end = message[at..]
@@ -762,7 +763,9 @@ impl OwnNames<'_> {
                         .map_or(message.len(), |i| at + i + point.len());
                     message.replace_range(at..end, "");
                 }
-                *message = replace_path(message, &self.landed, now);
+                if let Some(now) = self.now {
+                    *message = replace_path(message, &self.landed, now);
+                }
             }
             _ => {}
         }
@@ -3471,6 +3474,25 @@ mod tests {
             half_landed("<conflict>", "skills/c/b.md", "skills/c/c.md"),
             "<conflict>; the entry note is now at skills/c/b.md. Rename it to skills/c/c.md: \
              the relinked notes listed above already point there"
+        );
+    }
+
+    /// The advice to rename the entry to the temporary name is dropped even
+    /// when the restore failed and the temporary paths are still true.
+    #[test]
+    fn own_names_drop_the_rename_advice_when_the_restore_failed() {
+        let names = OwnNames {
+            from: "m1/skillwright.md",
+            temp_from: "m1/m1.md",
+            temp_to: "m2/m2.md",
+            landed: "m2/m1.md".to_owned(),
+            now: None,
+        };
+        let mut err = ApplyError::Refused(half_landed("<conflict>", "m2/m1.md", "m2/m2.md"));
+        names.error(&mut err);
+        assert_eq!(
+            err.to_string(),
+            "<conflict>; the entry note is now at m2/m1.md"
         );
     }
 
