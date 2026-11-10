@@ -42,16 +42,17 @@ the code, the open PRs and issues, and the build order are in
 ## 2. The root file
 
 1. `skillwright.md` exists only at the root.
-2. It holds tool settings under `build:`, and shared defaults: `author`,
-   `license`, `repository`, `homepage`, `targets` and the harness blocks
-   (`claude:`, `codex:`, `cursor:`, `pi:`). Nothing else.
-3. It is never a marketplace. A marketplace field in it, such as `name`,
-   `description`, `owner` or `version`, is refused. The error names the
-   marketplace note the field belongs in.
+2. It holds tool settings under `build:`, and shared defaults. A shared
+   default is a key the key table marks as inherited: `author`, `license`,
+   `repository`, `homepage`, `targets` and the harness blocks (`claude:`,
+   `codex:`, `cursor:`, `pi:`). Nothing else.
+3. It is never a marketplace. A container key the key table does not mark as
+   inherited belongs to one marketplace, so it is refused here. That covers
+   `name`, `description`, `owner`, `version`, `display_name`, `keywords` and
+   `category`. The error names the marketplace note the field belongs in.
 4. The body is not read.
 5. It is the only configuration file. There is no machine file for the build.
-6. The `build:` keys are `harnesses`, `namespace`, `launcher_path` and `bump`
-   (subject to the decisions in section 12). `out`, `patterns`, `exclude`,
+6. The `build:` keys are `harnesses`, `namespace`, `launcher_path` and `bump`. `out`, `patterns`, `exclude`,
    `assets`, `hooks`, `destinations` and `scan_locations` are refused
    (section 11). Any other key the table does not list warns.
 7. `launcher_path` names a file in each plugin's `scripts/`, such as
@@ -336,8 +337,10 @@ A value comes from the first of these that has one: a flag; the note; the
 plugin note; the marketplace note; the root file's shared defaults; the folder
 position; the environment; a built-in default.
 
-1. Only `author`, `license`, `repository`, `homepage`, `targets` and the harness
-   blocks inherit. Harness blocks inherit key by key.
+1. A key inherits only if the key table marks it as inherited. Those keys are
+   `author`, `license`, `repository`, `homepage`, `targets` and the harness
+   blocks, the same set the root file takes (section 2). Harness blocks inherit
+   key by key.
 2. The order for an inherited key is component, then plugin, then marketplace,
    then root. Each container is matched by folder, never by `name`.
 3. Inheritance applies to every component a build reads.
