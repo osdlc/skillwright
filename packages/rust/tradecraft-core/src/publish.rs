@@ -172,7 +172,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::compile::Closure;
 use crate::content::SkillProjection;
@@ -808,9 +808,8 @@ pub fn skill_claim(
         return Ok(None);
     }
     let path = vault_relative(skills_root, &read.in_vault);
-    // The load refuses such a name, so the note claims no folder.
-    let name = &read.note.projection.content.name;
-    if let Some(why) = crate::discover::name_refusal(name, "name") {
+    let name = read.note.projection.content.name;
+    if let Some(why) = crate::discover::name_refusal(&name, "name") {
         return Err(CoreError::refused(
             crate::discover::INVALID_NAME_REASON,
             format!("{path}: {why}. Set `name:` in its frontmatter"),
@@ -818,7 +817,7 @@ pub fn skill_claim(
     }
     Ok(Some(SkillClaim {
         path,
-        name: read.note.projection.content.name,
+        name,
         targets: read.note.frontmatter.targets,
         entry_path: read.in_vault,
     }))
@@ -836,37 +835,27 @@ pub fn skill_claim(
 ///
 /// `refused: path-collision`, naming every note in the first group found.
 pub fn refuse_skill_collisions(claims: &[SkillClaim], targets: &[&str]) -> Result<(), CoreError> {
-    let mut unique: Vec<&SkillClaim> = Vec::new();
-    for claim in claims {
-        if !unique
-            .iter()
-            .any(|seen| seen.entry_path == claim.entry_path)
-        {
-            unique.push(claim);
-        }
-    }
+    let mut seen: HashSet<&Path> = HashSet::new();
+    let unique: Vec<&SkillClaim> = claims
+        .iter()
+        .filter(|claim| seen.insert(&claim.entry_path))
+        .collect();
     for target in targets {
-        let wanted = canonical_target(target).unwrap_or(target);
-        let reaching: Vec<&SkillClaim> = unique
+        // Each folder name with its notes, in first-seen order.
+        let mut groups: Vec<(&str, Vec<&str>)> = Vec::new();
+        let mut index: HashMap<&str, usize> = HashMap::new();
+        for claim in unique
             .iter()
-            .copied()
-            .filter(|claim| {
-                claim.targets.as_ref().is_none_or(|names| {
-                    names
-                        .iter()
-                        .any(|name| canonical_target(name) == Some(wanted))
-                })
-            })
-            .collect();
-        for (at, first) in reaching.iter().enumerate() {
-            let group: Vec<&str> = reaching[at..]
-                .iter()
-                .filter(|claim| claim.name == first.name)
-                .map(|claim| claim.path.as_str())
-                .collect();
-            if group.len() > 1 {
-                return Err(collision(&first.name, &group));
-            }
+            .filter(|claim| reaches(claim.targets.as_deref(), target))
+        {
+            let at = *index.entry(&claim.name).or_insert_with(|| {
+                groups.push((&claim.name, Vec::new()));
+                groups.len() - 1
+            });
+            groups[at].1.push(&claim.path);
+        }
+        if let Some((name, paths)) = groups.into_iter().find(|(_, paths)| paths.len() > 1) {
+            return Err(collision(name, &paths));
         }
     }
     Ok(())
@@ -2080,12 +2069,20 @@ pub fn publishes_to(
         ));
     }
 
-    // Empty falls out of this honestly: a list that names nothing matches
-    // nothing, which is the "published nowhere".
+    Ok(reaches(Some(declared), target))
+}
+
+/// Whether a note with `declared` targets publishes to `target`. `None` is
+/// every target. A name matches on its [`canonical_target`], and an unknown
+/// name matches nothing. An empty list matches nothing: "published nowhere".
+fn reaches(declared: Option<&[String]>, target: &str) -> bool {
+    let Some(declared) = declared else {
+        return true;
+    };
     let wanted = canonical_target(target).unwrap_or(target);
-    Ok(declared
+    declared
         .iter()
-        .any(|name| canonical_target(name).is_some_and(|known| known == wanted)))
+        .any(|name| canonical_target(name).is_some_and(|known| known == wanted))
 }
 
 /// A note's harness blocks, folded onto canonical destination names and

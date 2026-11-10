@@ -149,18 +149,13 @@ fn named_claims(
 ) -> Vec<SkillClaim> {
     let namespace = run.core_namespace();
     let root_config = run.root_config();
+    let vfs = run.config_vfs();
     let mut claims: Vec<SkillClaim> = note_paths
         .iter()
         .filter_map(|note_path| {
-            skill_claim(
-                &run.config_vfs(),
-                note_path,
-                &run.vault,
-                Some(&root_config),
-                namespace,
-            )
-            .ok()
-            .flatten()
+            skill_claim(&vfs, note_path, &run.vault, Some(&root_config), namespace)
+                .ok()
+                .flatten()
         })
         .collect();
     if claims.is_empty() {
