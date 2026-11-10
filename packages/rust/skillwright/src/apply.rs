@@ -469,6 +469,7 @@ fn relink_move(
     let LoadedVault {
         facts,
         unreadable_rows: unreadable,
+        unlisted_folders,
     } = load_vault(vault, from, to, bundle)?;
     let plan = if bundle {
         markdown_relink::plan_bundle(vault.source, vault_dir, &facts, from, to)?
@@ -477,6 +478,17 @@ fn relink_move(
     };
     if let Some(conflict) = plan.conflict {
         return Err(ApplyError::Refused(conflict));
+    }
+    // A folder the walk could not list could hold a note of any name, so no
+    // link this rename writes is proven unambiguous.
+    if !unlisted_folders.is_empty()
+        && let Some(file) = edited_files(&plan).next()
+    {
+        return Err(ApplyError::Refused(unlisted_refusal(
+            &unlisted_folders,
+            &file.path,
+            &file.edits[0].insert,
+        )));
     }
 
     if mode.writes() {
@@ -495,6 +507,21 @@ fn relink_move(
     }
     record_unreadable(unreadable, outcome);
     Ok(())
+}
+
+/// Why a rename that writes `link` into `path` refuses while the walk could
+/// not list `folders`.
+fn unlisted_refusal(folders: &[String], path: &str, link: &str) -> String {
+    let (named, it, them) = match folders {
+        [one] => (one.clone(), "it", one.as_str()),
+        [rest @ .., last] => (format!("{} and {last}", rest.join(", ")), "them", "them"),
+        [] => (String::new(), "it", "it"),
+    };
+    format!(
+        "{named} could not be read, so a link this rename writes (`{link}` in {path}) might \
+         also name a note inside {it}. Make {them} readable or move {it} out of the vault, \
+         then run the rename again"
+    )
 }
 
 /// Moves a marketplace folder, rewriting links into it from outside.
@@ -946,6 +973,9 @@ struct LoadedVault {
     /// Vault-relative, `/`-separated; each gets a `skipped` row. Paths in or
     /// under a dot-named folder are left out.
     unreadable_rows: Vec<String>,
+    /// Vault-relative, `/`-separated; every folder the walk could not list,
+    /// dot-named ones included.
+    unlisted_folders: Vec<String>,
 }
 
 /// The vault as a build reads it, in one walk: compile's walk, so the planner
@@ -959,8 +989,10 @@ struct LoadedVault {
 ///
 /// A folder the walk cannot list and a note it cannot read are passed over
 /// and returned, so each gets a `skipped` row; one in or under a dot-named
-/// folder gets none. One that holds `from` or `to`, or lies inside a moved
-/// bundle, stops the rename instead, with an error naming it.
+/// folder gets none. Every folder it cannot list, dot-named ones too, is also
+/// returned on its own, since a rename that writes a link refuses while there
+/// is one. One that holds `from` or `to`, or lies inside a moved bundle,
+/// stops the rename instead, with an error naming it.
 fn load_vault(
     vault: Vault<'_>,
     from: &str,
@@ -985,6 +1017,7 @@ fn load_vault(
         from
     };
     let mut unreadable_rows = Vec::new();
+    let mut unlisted_folders = Vec::new();
     for err in graph.unreadable() {
         let relative = err.path().strip_prefix(vault_dir).unwrap_or(err.path());
         if from.starts_with(relative) || to.starts_with(relative) || relative.starts_with(moved) {
@@ -999,6 +1032,7 @@ fn load_vault(
         let edits_nothing = if facts.paths.contains(&relative) {
             in_dot_folder(&relative)
         } else {
+            unlisted_folders.push(relative.clone());
             has_dot_name(&relative)
         };
         if !edits_nothing {
@@ -1008,6 +1042,7 @@ fn load_vault(
     Ok(LoadedVault {
         facts,
         unreadable_rows,
+        unlisted_folders,
     })
 }
 
@@ -1637,55 +1672,54 @@ mod tests {
         );
     }
 
-    /// A folder the rename's walk cannot list is skipped with an
-    /// `unreadable` row naming it, after the rows for what the rename did,
-    /// and the rename goes on. One under a dot-named folder gets no row: a
-    /// rename edits nothing there anyway. Renaming into that folder stops,
-    /// and the error names it.
+    /// Renaming into a folder the walk cannot list stops, and the error
+    /// names the folder.
     #[cfg(unix)]
     #[test]
-    fn a_rename_skips_a_folder_it_cannot_list_unless_it_moves_into_it() {
+    fn a_rename_into_a_folder_it_cannot_list_stops() {
+        let v = linked_vault();
+        let folders = ["notes/locked"];
+        let listable = lock(v.path(), &folders);
+        let into = apply(
+            v.path(),
+            &rename("notes/Alpha.md", "notes/locked/Gamma.md", false),
+        );
+        unlock(v.path(), &folders);
+        if listable {
+            return;
+        }
+        let err = into.unwrap_err().to_string();
+        assert!(err.contains("notes/locked"), "{err}");
+    }
+
+    /// A rename that rewrites no link goes on past a folder the walk cannot
+    /// list, and reports it with an `unreadable` row after the rows for what
+    /// the rename did. One under a dot-named folder gets no row.
+    #[cfg(unix)]
+    #[test]
+    fn a_rename_with_no_links_goes_on_past_an_unreadable_folder() {
         let v = vault();
         write(v.path(), "notes/Alpha.md", "subject\n");
-        write(v.path(), "notes/a.md", "see [[Alpha]]\n");
         let folders = ["notes/locked", ".cache", ".worktrees/b/locked"];
         let listable = lock(v.path(), &folders);
-        let rename = |to: &str| {
-            let op = AuthoringOp::Rename {
-                from: "notes/Alpha.md".to_owned(),
-                to: to.to_owned(),
-                bundle: false,
-                frontmatter: vec![],
-            };
-            apply(v.path(), &op)
-        };
-        let into = rename("notes/locked/Gamma.md");
-        let beside = rename("notes/Gamma.md");
+        let beside = apply(v.path(), &alpha_to_gamma());
         unlock(v.path(), &folders);
         if listable {
             return;
         }
 
-        let err = into.unwrap_err().to_string();
-        assert!(err.contains("notes/locked"), "{err}");
-
         let outcome = beside.unwrap();
         assert_eq!(
             outcomes(&outcome),
-            [
-                ("notes/Gamma.md", "renamed"),
-                ("notes/a.md", "relinked"),
-                ("notes/locked", "skipped"),
-            ],
+            [("notes/Gamma.md", "renamed"), ("notes/locked", "skipped")],
             "{outcome:?}"
         );
         assert_eq!(
-            outcome.entries[2].applied,
+            outcome.entries[1].applied,
             Applied::Skipped {
                 reason: "unreadable".to_owned()
             }
         );
-        assert_eq!(read(v.path(), "notes/a.md"), "see [[Gamma]]\n");
     }
 
     /// A folder the walk cannot list inside a bundle stops the bundle's
@@ -3042,5 +3076,132 @@ mod tests {
             outcomes(&result.unwrap()),
             [("notes/Gamma.md", "renamed"), ("notes/a.md", "relinked")]
         );
+    }
+
+    const LOCKED_REFUSAL: &str = "notes/locked could not be read, so a link this rename writes \
+        (`Gamma` in notes/a.md) might also name a note inside it. Make notes/locked readable \
+        or move it out of the vault, then run the rename again";
+
+    /// A folder the walk cannot list could hold a note of any name, so a
+    /// rename that writes a link refuses, and writes nothing.
+    #[cfg(unix)]
+    #[test]
+    fn a_rename_that_rewrites_links_refuses_while_a_folder_is_unreadable() {
+        let v = linked_vault();
+        let before = tree(v.path());
+        let folders = ["notes/locked"];
+        let listable = lock(v.path(), &folders);
+        let result = apply(v.path(), &alpha_to_gamma());
+        unlock(v.path(), &folders);
+        if listable {
+            return;
+        }
+        let err = result.unwrap_err();
+        assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
+        assert_eq!(err.to_string(), LOCKED_REFUSAL);
+        assert_eq!(tree(v.path()), before);
+    }
+
+    #[test]
+    fn a_rename_refuses_while_the_vfs_cannot_list_a_folder() {
+        let v = linked_vault();
+        std::fs::create_dir_all(v.path().join("notes/locked")).unwrap();
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.unlistable = vec!["notes/locked"];
+        let before = tree(v.path());
+        for result in [vfs.preview(&alpha_to_gamma()), vfs.apply(&alpha_to_gamma())] {
+            let err = result.unwrap_err();
+            assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
+            assert_eq!(err.to_string(), LOCKED_REFUSAL);
+        }
+        assert_eq!(tree(v.path()), before);
+    }
+
+    #[test]
+    fn the_ambiguity_refusal_names_every_unreadable_folder() {
+        let v = linked_vault();
+        for folder in [".cache", "notes/locked"] {
+            std::fs::create_dir_all(v.path().join(folder)).unwrap();
+        }
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.unlistable = vec![".cache", "notes/locked"];
+        let err = vfs.preview(&alpha_to_gamma()).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            ".cache and notes/locked could not be read, so a link this rename writes \
+             (`Gamma` in notes/a.md) might also name a note inside them. Make them readable \
+             or move them out of the vault, then run the rename again"
+        );
+    }
+
+    /// The plan's own conflict comes before the unreadable-folder refusal.
+    #[test]
+    fn a_rename_conflict_is_reported_before_the_unreadable_refusal() {
+        let v = linked_vault();
+        write(v.path(), "notes/Gamma.md", "taken\n");
+        std::fs::create_dir_all(v.path().join("notes/locked")).unwrap();
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.unlistable = vec!["notes/locked"];
+        let err = vfs.preview(&alpha_to_gamma()).unwrap_err().to_string();
+        assert!(!err.contains("could not be read"), "{err}");
+        assert!(err.contains("notes/Gamma.md"), "{err}");
+    }
+
+    /// The kind of link does not matter: a markdown link refuses too.
+    #[test]
+    fn a_markdown_link_rename_also_refuses_while_a_folder_is_unreadable() {
+        let v = vault();
+        write(v.path(), "notes/Alpha.md", "subject\n");
+        write(v.path(), "notes/a.md", "see [a](Alpha.md)\n");
+        std::fs::create_dir_all(v.path().join("notes/locked")).unwrap();
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.unlistable = vec!["notes/locked"];
+        let err = vfs.preview(&alpha_to_gamma()).unwrap_err();
+        assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
+        let err = err.to_string();
+        assert!(err.starts_with("notes/locked could not be read"), "{err}");
+        assert!(err.contains(" in notes/a.md)"), "{err}");
+    }
+
+    /// The refusal comes after a marketplace's entry took its temporary
+    /// name; the entry gets its own name back.
+    #[cfg(unix)]
+    #[test]
+    fn a_marketplace_rename_refused_for_an_unreadable_folder_changes_nothing() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        write(
+            v.path(),
+            "marketplaces/m1/plugins/p/skills/a.md",
+            "---\nname: a\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[a](marketplaces/m1/plugins/p/skills/a.md)\n",
+        );
+        let before = tree(v.path());
+        let folders = ["notes/locked"];
+        let listable = lock(v.path(), &folders);
+        let result = apply(
+            v.path(),
+            &rename(
+                "marketplaces/m1/skillwright.md",
+                "marketplaces/m2/skillwright.md",
+                true,
+            ),
+        );
+        unlock(v.path(), &folders);
+        if listable {
+            return;
+        }
+        let err = result.unwrap_err();
+        assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
+        assert!(err.to_string().contains("could not be read"), "{err}");
+        assert_eq!(tree(v.path()), before);
     }
 }

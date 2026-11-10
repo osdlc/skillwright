@@ -679,3 +679,52 @@ fn rename_has_no_row_for_an_unreadable_note_in_a_dot_folder() {
     assert_eq!(json.code, 0, "{}", json.stderr);
     assert!(!json.stdout.contains(".worktrees"), "{}", json.stdout);
 }
+
+/// The vault scan the CLI runs before a rename lists every folder, and stops
+/// at one it cannot list. So the CLI never reaches the rename's own refusal
+/// for that folder; it is blocked, and writes nothing.
+#[cfg(unix)]
+#[test]
+fn rename_stops_at_the_scan_while_a_folder_is_unreadable() {
+    use std::os::unix::fs::PermissionsExt;
+    let (dir, vault) = vault_with_linked_foo();
+    let locked = vault.join("notes/locked");
+    fs::create_dir_all(&locked).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    let listable = fs::read_dir(&locked).is_ok();
+    let v = vault_str(&vault);
+    let real = run(
+        &["rename", "foo", "bar", "--yes", "--vault", &v],
+        dir.path(),
+    );
+    let dry = run(
+        &["rename", "foo", "bar", "--dry-run", "--vault", &v],
+        dir.path(),
+    );
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    if listable {
+        return;
+    }
+
+    for result in [real, dry] {
+        assert_eq!(result.code, 2, "{}", result.stderr);
+        assert_eq!(result.stdout, "");
+        assert!(
+            result
+                .stderr
+                .starts_with("the vault scan could not complete: "),
+            "{}",
+            result.stderr
+        );
+        assert!(result.stderr.contains("notes/locked"), "{}", result.stderr);
+    }
+    assert_eq!(
+        fs::read_to_string(vault.join("notes/linker.md")).unwrap(),
+        "See [[foo]] for details.\n"
+    );
+    assert!(
+        vault
+            .join(format!("{DEV_AGENT_SKILLS}/foo/foo.md"))
+            .is_file()
+    );
+}

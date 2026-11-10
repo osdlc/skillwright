@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- A rename that would rewrite a link while some folder in the vault could not be listed is refused, in a preview too, before anything is written. Such a folder could hold a note with the new name, so no link the rename writes is proven unambiguous. The message names every such folder, dot-named ones included, and one link the rename would write. A rename that rewrites no link still goes on and reports the folder as `skipped · unreadable`. This applies to `apply::apply` and `apply::preview`. The CLI's authoring verbs already stop earlier, at the vault scan, on such a folder. ([#43](https://github.com/osdlc/skillwright/issues/43))
+
 ### Fixed
 
 - `rename` walks the vault once. It walked it three times, and read every note under a dot-named folder such as `.worktrees` only to drop its links. Such a note is now listed, so links still resolve against it, but not read. ([#49](https://github.com/osdlc/skillwright/issues/49))
