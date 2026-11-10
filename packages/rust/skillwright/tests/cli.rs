@@ -793,6 +793,48 @@ fn a_workspace_roster_shows_each_marketplaces_targets() {
     assert!(!row.contains("codex"), "{row}");
 }
 
+// A member that sets no identity field writes the workspace's inherited ones
+// into every harness's plugin manifest, and not its `display_name`.
+#[test]
+fn a_workspace_member_s_manifests_carry_the_inherited_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("skillwright.md"),
+        "---\nworkspace: true\nauthor: Ada\nlicense: MIT\n\
+         repository: https://ws.example/repo\nhomepage: https://ws.example\n\
+         display_name: Workspace Name\n---\n",
+    )
+    .unwrap();
+    let member = dir.path().join("marketplaces/one");
+    fs::create_dir_all(member.join("skills")).unwrap();
+    fs::write(
+        member.join("skillwright.md"),
+        "---\nname: one\nbuild:\n  out: .\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        member.join("skills/one-skill.md"),
+        "---\ndescription: The one skill.\n---\nBody.\n",
+    )
+    .unwrap();
+    let built = run(&["build", "--yes", "--quiet"], dir.path());
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    for manifest in [
+        ".claude-plugin/packs/one/.claude-plugin/plugin.json",
+        ".agents/packs/one/.codex-plugin/plugin.json",
+        ".cursor-plugin/packs/one/.cursor-plugin/plugin.json",
+        ".pi/packs/one/package.json",
+    ] {
+        let text = fs::read_to_string(member.join(manifest)).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(json["author"]["name"], "Ada", "{manifest}");
+        assert_eq!(json["license"], "MIT", "{manifest}");
+        assert_eq!(json["repository"], "https://ws.example/repo", "{manifest}");
+        assert_eq!(json["homepage"], "https://ws.example", "{manifest}");
+        assert!(!text.contains("Workspace Name"), "{manifest}: {text}");
+    }
+}
+
 // A workspace builds each marketplace under `marketplaces/`, each to its own
 // `build.out`, with the workspace's shared fields.
 #[test]

@@ -1543,4 +1543,136 @@ mod tests {
             );
         }
     }
+
+    /// What a container's identity read does with one key and value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    enum Verdict {
+        /// The identity holds the value as written, and nothing warns.
+        Read,
+        /// The identity is empty, and nothing warns.
+        Unset,
+        /// The identity is empty, and the key warns as unknown.
+        Unknown,
+        /// The note is refused.
+        Refused,
+    }
+
+    /// How a key is spelled on the note.
+    #[derive(Debug, Clone, Copy)]
+    enum Spelling {
+        /// `owner`.
+        Bare,
+        /// `sw-owner`.
+        Prefixed,
+        /// `sw: {owner: …}`.
+        Nested,
+    }
+
+    /// One identity key's verdicts for a valid value, `null` and a blank
+    /// string, by namespace, kind and spelling.
+    #[test]
+    fn container_identity_reads_keep_their_verdicts() {
+        use EntityKind::{Marketplace, Plugin};
+        use Spelling::{Bare, Nested, Prefixed};
+        use Verdict::{Read, Refused, Unknown, Unset};
+        // Every key a container's identity holds, with each spelling's
+        // verdicts in the same order: valid, `null`, blank.
+        type Row = (&'static str, [Verdict; 3]);
+        let bare_market: &[Row] = &[
+            ("owner", [Read, Unset, Read]),
+            ("author", [Read, Unset, Read]),
+            ("display_name", [Read, Refused, Read]),
+            ("license", [Read, Refused, Read]),
+            ("keywords", [Unknown, Unknown, Unknown]),
+            ("category", [Unknown, Unknown, Unknown]),
+            ("version", [Read, Refused, Read]),
+            ("repository", [Read, Refused, Refused]),
+            ("homepage", [Read, Refused, Refused]),
+        ];
+        let bare_plugin: &[Row] = &[
+            ("owner", [Unknown, Unknown, Unknown]),
+            ("author", [Read, Unset, Read]),
+            ("display_name", [Read, Refused, Read]),
+            ("license", [Read, Refused, Read]),
+            ("keywords", [Read, Refused, Refused]),
+            ("category", [Read, Refused, Read]),
+            ("version", [Read, Refused, Read]),
+            ("repository", [Read, Refused, Refused]),
+            ("homepage", [Read, Refused, Refused]),
+        ];
+        // Under a namespace every prefixed or nested key reaches the read.
+        let sw_market: &[Row] = &[
+            ("owner", [Read, Unset, Read]),
+            ("author", [Read, Unset, Read]),
+            ("display_name", [Read, Refused, Read]),
+            ("license", [Read, Refused, Read]),
+            ("keywords", [Read, Refused, Refused]),
+            ("category", [Read, Refused, Read]),
+            ("version", [Read, Refused, Read]),
+            ("repository", [Read, Refused, Refused]),
+            ("homepage", [Read, Refused, Refused]),
+        ];
+        let sw_plugin: &[Row] = &[
+            ("owner", [Read, Unset, Read]),
+            ("author", [Read, Unset, Read]),
+            ("display_name", [Read, Refused, Read]),
+            ("license", [Read, Refused, Read]),
+            ("keywords", [Read, Refused, Refused]),
+            ("category", [Read, Refused, Read]),
+            ("version", [Read, Refused, Read]),
+            ("repository", [Read, Refused, Refused]),
+            ("homepage", [Read, Refused, Refused]),
+        ];
+        let bare = Namespace::bare();
+        let sw = Namespace::sw();
+        let cases: &[(&Namespace, EntityKind, Spelling, &[Row])] = &[
+            (&bare, Marketplace, Bare, bare_market),
+            (&bare, Plugin, Bare, bare_plugin),
+            (&sw, Marketplace, Prefixed, sw_market),
+            (&sw, Marketplace, Nested, sw_market),
+            (&sw, Plugin, Prefixed, sw_plugin),
+            (&sw, Plugin, Nested, sw_plugin),
+        ];
+        let valid = |key: &str| match key {
+            "keywords" => json!(["k"]),
+            "repository" | "homepage" => json!("https://x.example"),
+            _ => json!("v"),
+        };
+        for (ns, kind, spelling, rows) in cases {
+            for (key, verdicts) in *rows {
+                let values = [valid(key), Value::Null, json!("")];
+                for (value, verdict) in values.into_iter().zip(verdicts) {
+                    let spelled = match spelling {
+                        Bare => (*key).to_owned(),
+                        Prefixed | Nested => ns.key(key),
+                    };
+                    let note = match spelling {
+                        Bare | Prefixed => json!({ spelled.clone(): value.clone() }),
+                        Nested => json!({ ns.block_key(): { *key: value.clone() } }),
+                    };
+                    let case = format!("{ns:?} {kind:?} {spelling:?} {key}: {value}");
+                    let Ok((read, _)) = read_kind(ns, *kind, note) else {
+                        assert_eq!(*verdict, Refused, "{case}");
+                        continue;
+                    };
+                    let identity = serde_json::to_value(&read.identity).unwrap();
+                    let set: Map<String, Value> = identity
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .filter(|(_, value)| !value.is_null())
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect();
+                    let (expected, unknown) = match verdict {
+                        Read => (Map::from_iter([((*key).to_owned(), value)]), vec![]),
+                        Unset => (Map::new(), vec![]),
+                        Unknown => (Map::new(), vec![spelled]),
+                        Refused => panic!("{case}: read, not refused"),
+                    };
+                    assert_eq!(set, expected, "{case}");
+                    assert_eq!(read.unknown, unknown, "{case}");
+                }
+            }
+        }
+    }
 }

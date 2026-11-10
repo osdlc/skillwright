@@ -68,6 +68,7 @@ fn every_harness_builds_the_committed_tree() {
     for (vault, extra) in [
         ("freeform-vault", &["--marketplace", "acme"][..]),
         ("vault", &[][..]),
+        ("identity-vault", &[][..]),
     ] {
         let generated = listing(vault, extra);
         for root in [".claude-plugin/", ".agents/", ".cursor-plugin/", ".pi/"] {

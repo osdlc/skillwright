@@ -1164,4 +1164,98 @@ mod tests {
             parse_root_file(text).unwrap();
         }
     }
+
+    /// A root file setting every marketplace key and a block of each harness.
+    const EVERY_KEY: &str = "name: ws\n\
+         description: The workspace.\n\
+         owner: Org\n\
+         author: Ada\n\
+         display_name: Workspace\n\
+         license: MIT\n\
+         version: '9.9.9'\n\
+         targets: [claude, codex]\n\
+         repository: https://ws.example/repo\n\
+         homepage: https://ws.example\n\
+         claude:\n  metadata: {from: ws}\n  strict: true\n\
+         codex:\n  interface: {from: ws}\n\
+         cursor:\n  logo: ws.png\n\
+         pi:\n  keywords: [ws]\n";
+
+    /// The keys `value` sets to something other than `null`.
+    fn set_keys(value: &impl Serialize) -> serde_json::Map<String, serde_json::Value> {
+        match serde_json::to_value(value).unwrap() {
+            serde_json::Value::Object(map) => {
+                map.into_iter().filter(|(_, v)| !v.is_null()).collect()
+            }
+            other => panic!("not a mapping: {other}"),
+        }
+    }
+
+    #[test]
+    fn a_member_takes_exactly_the_inheritable_fields_from_its_workspace() {
+        let workspace =
+            parse_root_file(&format!("---\nworkspace: true\n{EVERY_KEY}---\n")).unwrap();
+        assert!(workspace.warnings.is_empty(), "{:?}", workspace.warnings);
+
+        let mut member = parse_root_file("---\n---\n").unwrap();
+        member.inherit(&workspace);
+        let took = set_keys(&member.marketplace);
+        let keys: BTreeSet<&str> = took.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from([
+                "author",
+                "license",
+                "repository",
+                "homepage",
+                "targets",
+                "blocks"
+            ])
+        );
+        let shared = set_keys(&workspace.marketplace);
+        for key in &keys {
+            assert_eq!(took[*key], shared[*key], "{key}");
+        }
+
+        // A member that sets each key keeps its own, and a block key it sets
+        // keeps its value while the workspace's other keys in that block come
+        // down.
+        let mut own = parse_root_file(
+            "---\nname: own\ndescription: Mine.\nowner: Me\nauthor: Bo\n\
+             display_name: Own\nlicense: ISC\nversion: '1.0.0'\ntargets: [pi]\n\
+             repository: https://own.example/repo\nhomepage: https://own.example\n\
+             claude:\n  strict: false\n---\n",
+        )
+        .unwrap();
+        let before = set_keys(&own.marketplace);
+        own.inherit(&workspace);
+        let after = set_keys(&own.marketplace);
+        for (key, value) in &before {
+            if key != "blocks" {
+                assert_eq!(&after[key], value, "{key}");
+            }
+        }
+        let claude = &own.marketplace.blocks["claude"];
+        assert_eq!(claude["strict"], serde_json::json!(false));
+        assert_eq!(claude["metadata"], serde_json::json!({"from": "ws"}));
+        assert_eq!(
+            own.marketplace.blocks.keys().collect::<Vec<_>>(),
+            ["claude", "codex", "cursor", "pi"]
+        );
+    }
+
+    #[test]
+    fn to_config_carries_every_marketplace_field() {
+        let root = parse_root_file(&format!("---\n{EVERY_KEY}---\n")).unwrap();
+        let config = set_keys(&root.to_config("Folder Name"));
+        let fields = set_keys(&root.marketplace);
+        for key in marketplace_keys().chain(["blocks"]) {
+            assert_eq!(config.get(key), fields.get(key), "{key}");
+        }
+        assert_eq!(config["name"], "ws");
+
+        let unnamed = parse_root_file("---\nlicense: MIT\n---\n").unwrap();
+        let config = unnamed.to_config("Folder Name");
+        assert_eq!(config.name.as_deref(), Some("folder-name"));
+    }
 }
