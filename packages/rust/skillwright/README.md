@@ -172,8 +172,8 @@ build:
 ```
 
 The `build:` keys are `out`, `harnesses`, `namespace`, `launcher_path`, `bump`,
-`require_descriptions`, `destinations`, `scan_locations`, `assets`, `hooks`,
-`exclude` and `patterns`. An unknown key is a warning, not an error. See the
+`destinations`, `scan_locations`, `assets`, `hooks`, `exclude` and `patterns`.
+An unknown key is a warning, not an error. See the
 [`skillwright.md` reference](../../../docs/reference/skillwright-md.md), and the
 [field reference](../../../docs/reference/fields.md) for every frontmatter key.
 

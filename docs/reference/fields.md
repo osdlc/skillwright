@@ -38,7 +38,7 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
+| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
 | `owner` | string or `{name, email, url}` | skillwright | no | The marketplace owner, a name or `{name, email, url}`. |
@@ -57,7 +57,7 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
+| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
 | `license` | string | skillwright | yes | The pack license, an SPDX expression. Defaults to UNLICENSED. |
@@ -77,7 +77,7 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
+| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin or marketplace. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
@@ -101,7 +101,7 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
+| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
@@ -125,7 +125,7 @@ Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unqu
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
 | `name` | string | spec | no | The name. Defaults to the file or folder name. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A component with a `name` and no description is published with a filler and a warning, or refused under `build.require_descriptions`. A component with neither is not published. |
+| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
