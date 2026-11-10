@@ -18,6 +18,10 @@ and may return in a later milestone:
 
 ## Features removed
 
+- The `/[[name]]` call syntax and its `\/[[` escape. `[[name]]` to a skill
+  or command is the only call form (D3). A v1 call is refused, not ignored.
+- A plain `[[skill]]` rendering the skill's name (v1's mention). It is a call
+  now.
 - A vault with no root file, read with every default.
 - The walk-up search for the nearest `skillwright.md`, and its reserved-name
   rule (`reserved-name`). The root is now the first folder holding both
@@ -110,9 +114,18 @@ amendment too: its patterns layer is gone.
   where the linking file lands. `own_folder_candidate`
   and the `references/vault/` and `assets/vault/` placements go.
   `vault_link_index` indexes one plugin, not the vault. A real-path
-  containment check is added beside `refuse_never_shipped`. `skill_mention`
-  goes (D3): a plain link to a skill's note is an ordinary link, plus a
-  "Did you mean to call" warning. In `replace_token`, an embed or link to
+  containment check is added beside `refuse_never_shipped`. Calls (D3):
+  `skill_mention` stays as the entry point but renders the call through
+  `replace_call` and `render_call` instead of the name, for a skill's own note
+  too; the `mention` flag of `render_or_mark` goes; the call index
+  (`skill_index` in `model/load.rs`) adds commands for harnesses that carry
+  them. The `/[[` syntax goes: `TokenKind::Call` as a token of its own,
+  `TokenKind::Escape` (`\/[[`), `TokenKind::Unconverted` with its
+  `unconverted-call` warning, and the `calls` flag of `scan_wiki` and
+  `scan_wiki_tokens`. `scan_code_calls` and `code_token` are rewritten to find
+  `[[name]]` calls in code. `sigil_at` stays only to place the new `/[[`
+  refusal. `literal_skill_calls` and `literal-skill-call`, which refuse a
+  hand-written `/plugin:skill`, stay. In `replace_token`, an embed or link to
   nothing becomes an error instead of an entry in `unresolved`, and a
   non-note, non-image embed is refused under D8. Embed expansion,
   `select_fragment` and the cycle check stay as they are.
@@ -206,7 +219,7 @@ amendment too: its patterns layer is gone.
 
 | PR | Verdict | Reason |
 |---|---|---|
-| [#136](https://github.com/osdlc/skillwright/pull/136) self-link as a skill link | Merge as is | Its `\[[` escape and leftover-`[[` checks stay in v2. Its self-link-as-name rendering does not survive D3, and commit 5 replaces it. [#138](https://github.com/osdlc/skillwright/pull/138) stacks on it. |
+| [#136](https://github.com/osdlc/skillwright/pull/136) self-link as a skill link | Merge as is | Its `\[[` escape and leftover-`[[` checks stay in v2. Its self-link change is close to D3: it renders a skill's link to its own note as the skill's name, `skillwright:setup`, through `skill_mention`. v2 renders the call string, `/skillwright:setup`, through the same path; commit 5 switches it. [#138](https://github.com/osdlc/skillwright/pull/138) stacks on it. |
 | [#138](https://github.com/osdlc/skillwright/pull/138) key table and harness profile own their facts | Merge, v2 builds on it | v2's root-file key check and its smaller key set come from the key table this PR builds. |
 | [#143](https://github.com/osdlc/skillwright/pull/143) one identity struct | Merge, v2 builds on it | The struct and key-table inheritance carry v2's root, marketplace, plugin, component cascade. Merge after [#138](https://github.com/osdlc/skillwright/pull/138). |
 | [#139](https://github.com/osdlc/skillwright/pull/139) bump checks out only what the build reads | Merge as is | `bump --changed-since` stays in v2, and this is a self-contained speed-up of it. v2 later shrinks its path set to `skillwright.md` and `marketplaces/`. |
@@ -233,7 +246,7 @@ leaves out. It stays open.
 | [#77](https://github.com/osdlc/skillwright/issues/77) `resolve_run` should call `load_marketplace` | Changed | Still one loader, written fresh in v2. Close when it lands. |
 | [#76](https://github.com/osdlc/skillwright/issues/76) one root-file and workspace loader | Changed | No workspace fold. Parse-once still applies. |
 | [#83](https://github.com/osdlc/skillwright/issues/83) path-guard and globset | Changed | The output-overlap check goes. Link containment by real path is new work for path-guard. With D5 the glob half goes. |
-| [#53](https://github.com/osdlc/skillwright/issues/53) a skill's link to itself | Moot under D3 | It asks for the skill's name in place of a file link. Under D3 a plain link stays a link. |
+| [#53](https://github.com/osdlc/skillwright/issues/53) a skill's link to itself | Fixed in v2 | Under D3 a skill's link to its own note renders as the call, not a file link. [#136](https://github.com/osdlc/skillwright/pull/136) gets most of the way; commit 5 finishes it. |
 | [#50](https://github.com/osdlc/skillwright/issues/50) compile scans bodies twice | Keep | Compile stays. |
 | [#47](https://github.com/osdlc/skillwright/issues/47) leftover `[[` check gaps | Keep | Compile stays. |
 | [#46](https://github.com/osdlc/skillwright/issues/46) valid Markdown refused as leftover `[[` | Keep | Compile stays. |
@@ -301,14 +314,21 @@ The commits, in order:
    writes two trees under `dist/`; `check` reports drift after a hand edit
    there; a `packs` key is refused.
 5. **Links and transclusion.** Scoped resolution, the link table, the
-   real-path check, missing targets as errors, calls (D2), plain links (D3)
-   and the embed rules of section 5. Test first, through `build`, one test per
+   real-path check, missing targets as errors, calls as `[[name]]` (D2, D3),
+   the `/[[` refusal, and the embed rules of section 5. Test first, through `build`, one test per
    rule in sections 4 and 5: a symlink in a skill folder pointing out of the
    marketplace is refused; a link from a skill to the plugin's
-   `references/x.md` renders as `../../references/x.md`; `[[setup]]` from a
-   sibling skill renders as `[setup](../setup/SKILL.md)` and warns
-   `Did you mean to call /[[setup]]?` (D3); a link to
-   another plugin is refused; a heading embed inlines the section with its
+   `references/x.md` renders as `../../references/x.md`; `[[setup]]` renders
+   as `` `/skillwright:setup` `` on Claude Code and `` `$skillwright:setup` ``
+   on Codex, and bare in a code span; a skill's link to its own note renders
+   the same way ([#53](https://github.com/osdlc/skillwright/issues/53));
+   `[[setup|words]]` keeps the words; `[[setup/references/install.md]]` is a
+   file link; `[[review]]` naming a skill in another plugin is a call, and a
+   name two plugins share is refused naming both; `[[deploy]]` to a command
+   renders on Claude Code and is refused for Codex; a link to an agent is
+   refused; `/[[setup]]` at the start of a line or after a space is refused
+   with an error that says to write `[[setup]]`, and `dir/[[x]]` is not;
+   `\[[x]]` ships as `[[x]]`; a link to a file in another plugin is refused; a heading embed inlines the section with its
    subsections; a block embed inlines the block without its marker; a missing
    heading is `fragment-unresolved`; a nested embed's link is written
    relative to the outer file; a cycle prints its loop; an embedded note's
@@ -320,8 +340,10 @@ The commits, in order:
    folder, links up to the pack root need another form for Codex.
 6. **`init`, `bump`, docs and the repo's plugin.** `init` writes the skeleton;
    `bump` by name and `--changed-since` on the new layout; the reference docs
-   and README; `plugin/` moved and its two workflows updated; the `author`
-   skill's text on plain skill links rewritten for D3. Test first:
+   and README; `plugin/` moved and its two workflows updated; the 10
+   `/[[...]]` calls in `plugin/` rewritten to `[[...]]`, and the `author`
+   skill's text on links and calls rewritten for D3. `plugin/` cannot build
+   from commit 2 until this commit, which is fine inside one PR. Test first:
    `init` in an empty folder writes the three notes and a `build` of it
    succeeds; `init` refuses a folder with `skillwright.md`; `bump <plugin>`
    and `bump <m>` write the right note; `bump --changed-since` bumps only a
