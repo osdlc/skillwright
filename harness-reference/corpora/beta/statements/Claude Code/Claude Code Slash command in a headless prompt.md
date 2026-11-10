@@ -16,11 +16,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: A call at the prompt start was parsed, and every later line became its arguments.
   - hasEvidenceItems:
-      - "[2026-11-10 Claude Code slash command with appended system prompt](../../study-results/Claude%20Code/2026-11-10%20Claude%20Code%20slash%20command%20with%20appended%20system%20prompt.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: A call at the prompt start with nothing after it got exactly the text after the name.
-  - hasEvidenceItems:
       - "[2026-11-10 Claude Code slash command after text](../../study-results/Claude%20Code/2026-11-10%20Claude%20Code%20slash%20command%20after%20text.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
