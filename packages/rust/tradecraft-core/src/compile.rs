@@ -3484,6 +3484,7 @@ mod tests {
         write(&vfs, "/vault/photo.png", b"PNG");
         for body in [
             "See \\[[TODO later.\n",
+            "See \\![[TODO later.\n",
             "Write \\[[note]] for a link.\n",
             "\\![[photo.png]]\n",
             "!\\[[x]]\n",
