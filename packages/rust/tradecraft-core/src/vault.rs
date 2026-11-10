@@ -111,7 +111,7 @@ pub struct VaultNote {
 /// publish — and a note with neither is an error naming the path, so a caller
 /// holding several is told which one was not. A container's note is the
 /// exception: it reads with an empty description. A `name` alone reads with
-/// [`crate::discover::MISSING_DESCRIPTION`] as its description. `name`
+/// an empty description too, which a build and a publish refuse. `name`
 /// defaults to the filename slugified — via [`crate::discover::default_name`],
 /// the one derivation the scan uses too — so the ordinary note needs no
 /// frontmatter beyond a `description`.
@@ -144,17 +144,13 @@ pub fn read_vault_note(
     check_spec_kinds(&mut fields, skill_path, kind)?;
 
     let name = take_string(&mut fields, "name").filter(|n| !n.trim().is_empty());
-    // A `name` alone opts in, as it does for the scan, which reports the
-    // filler — see `crate::discover::MISSING_DESCRIPTION`.
+    // A `name` alone opts in, as it does for the scan, and reads with an
+    // empty description, which a build and a publish refuse. A container's
+    // note is optional and may hold any of its keys, so it need not describe
+    // itself.
     let description = take_string(&mut fields, "description")
         .filter(|d| !d.trim().is_empty())
-        .or_else(|| {
-            name.is_some()
-                .then(|| crate::discover::MISSING_DESCRIPTION.to_owned())
-        })
-        // A container's note is optional and may hold any of its keys, so it
-        // need not describe itself.
-        .or_else(|| kind.holds_components().then(String::new))
+        .or_else(|| (name.is_some() || kind.holds_components()).then(String::new))
         .ok_or_else(|| {
             CoreError::malformed(
                 skill_path,
@@ -587,13 +583,10 @@ mod tests {
     }
 
     #[test]
-    fn a_name_alone_reads_with_the_filler() {
+    fn a_name_alone_reads_with_an_empty_description() {
         let (vfs, path) = vault("nameless", "---\nname: nameless\n---\nBody.\n");
         let note = read_vault_skill(&vfs, &path, &sw()).unwrap();
-        assert_eq!(
-            note.projection.content.description,
-            crate::discover::MISSING_DESCRIPTION
-        );
+        assert_eq!(note.projection.content.description, "");
     }
 
     #[test]

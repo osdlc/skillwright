@@ -42,8 +42,10 @@
 //! the answer [`crate::vault::read_vault_skill`] already gives a single-note
 //! publish.
 //!
-//! `name` without `description` also opts in: the note is admitted with
-//! [`MISSING_DESCRIPTION`] and named in [`DiscoveryReport::warnings`].
+//! `name` without `description` also opts in: the note is listed with an
+//! empty description. A skill, command or agent listed so gets a
+//! [`MISSING_DESCRIPTION_REASON`] entry in [`DiscoveryReport::warnings`],
+//! and a build and a publish refuse it.
 //! Defaulting the description for a note with neither key would make every
 //! note in the tree a component. A container's own note (`<p>/<p>.md`) is the
 //! exception: the folder already makes the container, the note is optional,
@@ -138,13 +140,10 @@ use crate::vfs::Vfs;
 pub struct DiscoveredComponent {
     /// The frontmatter `name`, already validated against the Agent Skills spec.
     pub name: String,
-    /// The frontmatter `description`, ≤1024 characters, or
-    /// [`MISSING_DESCRIPTION`] when the note wrote none. Empty on a container
-    /// note with neither `name` nor `description`.
+    /// The frontmatter `description`, ≤1024 characters. Empty when the note
+    /// wrote none: a container note, or a member a build refuses with
+    /// [`MISSING_DESCRIPTION_REASON`].
     pub description: String,
-    /// `description` is not the note's own.
-    #[serde(default)]
-    pub description_filled: bool,
     /// What this component is, resolved across the layers that can decide it.
     pub kind: EntityKind,
     /// Which layer produced [`Self::kind`], straight from
@@ -521,12 +520,9 @@ pub struct DiscoveryReport {
     pub warnings: Vec<DiscoveryWarning>,
 }
 
-/// The description a component gets when its note names itself but writes no
-/// `description`. [`DiscoveryReport::warnings`] names every note it stands in
-/// for; `build.require_descriptions` refuses the build instead.
-pub const MISSING_DESCRIPTION: &str = "No description provided.";
-
-/// The warning reason naming a note published with [`MISSING_DESCRIPTION`].
+/// The reason naming a member note with a `name` and no `description`. A
+/// build and a publish refuse such a note; a scan lists it with this entry in
+/// [`DiscoveryReport::warnings`].
 pub const MISSING_DESCRIPTION_REASON: &str = "missing-description";
 
 /// One note the scan admitted, with what it filled in.
@@ -555,6 +551,12 @@ impl DiscoveryWarning {
             reason: reason.into(),
             detail: detail.into(),
         }
+    }
+
+    /// Whether a build refuses the note this names, rather than ships it: a
+    /// member with no description, or a path collision.
+    pub fn is_error(&self) -> bool {
+        [MISSING_DESCRIPTION_REASON, "path-collision"].contains(&self.reason.as_str())
     }
 }
 
@@ -634,9 +636,9 @@ impl SkippedNote {
 /// not know, a declared note at no recognised shape, frontmatter that will
 /// not parse — lands in [`DiscoveryReport::skipped`] and the walk carries on.
 /// One person's half-written draft must not block everybody else's publish.
-/// A `name` with no `description` is not wrong enough to skip: the note is
-/// admitted with [`MISSING_DESCRIPTION`] and named in
-/// [`DiscoveryReport::warnings`].
+/// A `name` with no `description` is not skipped: the note is listed so its
+/// author sees it, and named in [`DiscoveryReport::warnings`] with
+/// [`MISSING_DESCRIPTION_REASON`], which a build and a publish refuse.
 ///
 /// What stays run-level is what is *not* a fact about one note: a duplicate
 /// name and a bundle overlap are two-note diagnoses that have to name both
@@ -841,25 +843,8 @@ fn discover_with(
         }
         match read_source(vfs, vault_root, entry_path, placement, &placed, &files, ns) {
             Ok(Some(component)) => {
-                // An empty description is a container note that names and
-                // describes nothing, which is valid: it is not a filler.
-                if component.description_filled && !component.description.is_empty() {
-                    // Only these two kinds can take a configured description.
-                    let unless =
-                        if matches!(component.kind, EntityKind::Plugin | EntityKind::Marketplace) {
-                            " unless the build configures one"
-                        } else {
-                            ""
-                        };
-                    warnings.push(DiscoveryWarning {
-                        path: component.vault_relative_path.clone(),
-                        reason: MISSING_DESCRIPTION_REASON.to_owned(),
-                        detail: format!(
-                            "`{}` has a `name` and no `description`; published with \
-                             \"{MISSING_DESCRIPTION}\"{unless}",
-                            component.name
-                        ),
-                    });
+                if component.description.is_empty() && needs_description(component.kind) {
+                    warnings.push(missing_description(&component));
                 }
                 if let Some(warning) = unknown_key_warning(
                     &component.vault_relative_path,
@@ -985,6 +970,48 @@ fn discover_with(
         skipped,
         warnings,
     })
+}
+
+/// Whether a note of `kind` must describe itself to publish. A container
+/// need not, and a hook has no description.
+pub(crate) fn needs_description(kind: EntityKind) -> bool {
+    !kind.holds_components() && kind != EntityKind::Hook
+}
+
+/// The entry a scan carries for a member note with a `name` and no
+/// `description`.
+fn missing_description(component: &DiscoveredComponent) -> DiscoveryWarning {
+    DiscoveryWarning {
+        path: component.vault_relative_path.clone(),
+        reason: MISSING_DESCRIPTION_REASON.to_owned(),
+        detail: format!(
+            "`{}` has a `name` and no `description`; build and publish refuse it",
+            component.name
+        ),
+    }
+}
+
+/// Refuses with [`MISSING_DESCRIPTION_REASON`] when `paths` names any note.
+/// A harness reads a component's description to decide when to load it, so
+/// a member without one is not published.
+///
+/// # Errors
+///
+/// `refused: missing-description`, naming every path.
+pub fn refuse_undescribed<'a>(paths: impl IntoIterator<Item = &'a str>) -> Result<(), CoreError> {
+    let paths: Vec<&str> = paths.into_iter().collect();
+    if paths.is_empty() {
+        return Ok(());
+    }
+    Err(CoreError::refused(
+        MISSING_DESCRIPTION_REASON,
+        format!(
+            "{} note(s) have a `name` and no `description`: {}. A harness reads the \
+             description to decide when to load a component. Nothing was written",
+            paths.len(),
+            paths.join(", ")
+        ),
+    ))
 }
 
 /// The warning a roster carries for one note in a path collision.
@@ -1503,7 +1530,7 @@ fn read_source(
     }
     let name = trimmed_string(&fields, "name");
     let description = trimmed_string(&fields, "description");
-    let (name, description, description_filled) = match (name, description) {
+    let (name, description) = match (name, description) {
         // `description` is the opt-in, and `name` follows the filename when
         // the note does not declare one — the same answer
         // `read_vault_skill` gives a single-note publish, from the same
@@ -1511,7 +1538,6 @@ fn read_source(
         (name, Some(description)) => (
             name.unwrap_or_else(|| default_name(entry_path)),
             description,
-            false,
         ),
         // A container's own note is optional and holds whichever of its keys
         // it needs: the folder names it, and it need not describe itself.
@@ -1520,13 +1546,14 @@ fn read_source(
                 && placement.dir.is_some()
                 && placement.container_level =>
         {
-            (default_name(entry_path), String::new(), true)
+            (default_name(entry_path), String::new())
         }
         // Neither: an ordinary note sharing the tree. The common case, and
         // the silence that lets bundle resources live beside their entry.
         (None, None) => return Ok(None),
-        // A `name` alone still opts in. The caller reports the filler.
-        (Some(name), None) => (name, MISSING_DESCRIPTION.to_owned(), true),
+        // A `name` alone still opts in. The caller reports a member's missing
+        // description.
+        (Some(name), None) => (name, String::new()),
     };
 
     // The value checks a build makes on this note, so the scan, and `list`,
@@ -1613,7 +1640,6 @@ fn read_source(
     Ok(Some(DiscoveredComponent {
         name,
         description,
-        description_filled,
         kind: resolved.kind,
         kind_source: resolved.source,
         folder_kind: placement.kind,
@@ -2392,7 +2418,7 @@ mod tests {
     }
 
     #[test]
-    fn a_name_with_no_description_is_admitted_with_the_filler_and_a_warning() {
+    fn a_name_with_no_description_is_listed_with_a_missing_description_entry() {
         let vfs = vault();
         write(
             &vfs,
@@ -2407,24 +2433,12 @@ mod tests {
         );
         let report = scan(&vfs).unwrap();
         assert!(report.skipped.is_empty(), "{:?}", report.skipped);
-        let filled: Vec<(&str, &str, bool)> = report
+        let listed: Vec<(&str, &str)> = report
             .components
             .iter()
-            .map(|c| {
-                (
-                    c.name.as_str(),
-                    c.description.as_str(),
-                    c.description_filled,
-                )
-            })
+            .map(|c| (c.name.as_str(), c.description.as_str()))
             .collect();
-        assert_eq!(
-            filled,
-            [
-                ("blank", MISSING_DESCRIPTION, true),
-                ("mute", MISSING_DESCRIPTION, true)
-            ]
-        );
+        assert_eq!(listed, [("blank", ""), ("mute", "")]);
         let warned: Vec<(&str, &str)> = report
             .warnings
             .iter()
@@ -2448,7 +2462,7 @@ mod tests {
             "---\nname: said\ndescription: d\n---\nb\n",
         );
         let report = scan(&vfs).unwrap();
-        assert!(!report.components[0].description_filled);
+        assert_eq!(report.components[0].description, "d");
         assert!(report.warnings.is_empty());
     }
 

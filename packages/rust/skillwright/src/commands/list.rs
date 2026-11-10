@@ -20,7 +20,9 @@
 
 use tradecraft_core::model::load::{LoadRequest, load};
 use tradecraft_core::settings::ROOT_FILE;
-use tradecraft_core::{DiscoveryReport, EntityKind, discover_roster, inherit_targets};
+use tradecraft_core::{
+    DiscoveryReport, EntityKind, MISSING_DESCRIPTION_REASON, discover_roster, inherit_targets,
+};
 
 use crate::commands::marketplace::marketplace_inputs;
 use crate::config::relative_path;
@@ -91,11 +93,13 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
     scan.warnings.extend(member_workspace_warnings(&run));
 
-    let collisions: std::collections::BTreeMap<&str, &str> = scan
+    // What a build refuses, by note: each row it names is flagged, and the
+    // exit says so.
+    let errors: std::collections::BTreeMap<&str, (&str, &str)> = scan
         .warnings
         .iter()
-        .filter(|w| w.reason == "path-collision")
-        .map(|w| (w.path.as_str(), w.detail.as_str()))
+        .filter(|w| w.is_error())
+        .map(|w| (w.path.as_str(), (w.reason.as_str(), w.detail.as_str())))
         .collect();
     if flags.json {
         let rows: Vec<_> = scan
@@ -103,11 +107,16 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
             .iter()
             .map(|c| {
                 let mut row = serde_json::to_value(roster_row(c)).unwrap_or_default();
-                if let (Some(detail), Some(map)) = (
-                    collisions.get(c.vault_relative_path.as_str()),
+                if let (Some((reason, detail)), Some(map)) = (
+                    errors.get(c.vault_relative_path.as_str()),
                     row.as_object_mut(),
                 ) {
-                    map.insert("collision".to_owned(), (*detail).into());
+                    let key = if *reason == MISSING_DESCRIPTION_REASON {
+                        "missing_description"
+                    } else {
+                        "collision"
+                    };
+                    map.insert(key.to_owned(), (*detail).into());
                 }
                 row
             })
@@ -123,11 +132,10 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
             .into_iter()
             .zip(&scan.components)
         {
-            let flag = if collisions.contains_key(c.vault_relative_path.as_str()) {
-                "  [path-collision]"
-            } else {
-                ""
-            };
+            let flag = errors
+                .get(c.vault_relative_path.as_str())
+                .map(|(reason, _)| format!("  [{reason}]"))
+                .unwrap_or_default();
             let _ = writeln!(ctx.out, "{line}{flag}");
         }
     }
@@ -154,7 +162,7 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
         );
     }
 
-    if collisions.is_empty() {
+    if errors.is_empty() {
         EXIT_OK
     } else {
         EXIT_BLOCKED

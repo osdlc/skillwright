@@ -3390,61 +3390,109 @@ fn a_packs_replaced_manifest_is_named_as_replaced_not_as_not_carried() {
 
 // --- a note with a `name` and no `description` ----------------------------------
 
-/// A vault holding one name-only skill and a root file — with
-/// `require_descriptions` when `strict`.
-fn name_only_project(strict: bool) -> tempfile::TempDir {
+/// A vault holding a name-only skill, a described one, and a root file.
+fn name_only_project() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
-    let skill = dir.path().join("skills").join("quiet");
-    fs::create_dir_all(&skill).unwrap();
-    fs::write(skill.join("quiet.md"), "---\nname: quiet\n---\nBody.\n").unwrap();
-    let strict = if strict {
-        "  require_descriptions: true\n"
-    } else {
-        ""
-    };
+    for (name, frontmatter) in [("quiet", "name: quiet"), ("said", "description: Says.")] {
+        let skill = dir.path().join("skills").join(name);
+        fs::create_dir_all(&skill).unwrap();
+        fs::write(
+            skill.join(format!("{name}.md")),
+            format!("---\n{frontmatter}\n---\nBody.\n"),
+        )
+        .unwrap();
+    }
     fs::write(
         dir.path().join("skillwright.md"),
-        format!("---\nname: demo\nbuild:\n  out: out\n{strict}---\n"),
+        "---\nname: demo\nbuild:\n  out: out\n---\n",
     )
     .unwrap();
     dir
 }
 
-const QUIET_WARNING: &str = "skills/quiet/quiet.md  warning · missing-description: `quiet` has a `name` and no `description`; published with \"No description provided.\"";
+const QUIET_ERROR: &str = "skills/quiet/quiet.md  error · missing-description: `quiet` has a `name` and no `description`; build and publish refuse it";
 
 #[test]
-fn a_missing_description_warns_on_stderr_even_under_quiet() {
-    let dir = name_only_project(false);
-    let build = run(&["build", "--yes", "--quiet"], dir.path());
-    assert_eq!(build.code, 0, "{}", build.stderr);
-    assert!(
-        build.stderr.lines().any(|line| line == QUIET_WARNING),
-        "{}",
-        build.stderr
-    );
-    assert!(!build.stdout.contains("warning"), "{}", build.stdout);
-
+fn list_shows_a_missing_description_as_an_error() {
+    let dir = name_only_project();
     let list = run(&["list", "--quiet"], dir.path());
-    assert_eq!(list.code, 0, "{}", list.stderr);
+    assert_eq!(list.code, 2, "{}", list.stderr);
     assert!(
-        list.stderr.lines().any(|line| line == QUIET_WARNING),
+        list.stdout
+            .lines()
+            .any(|line| line.starts_with("skills/quiet/quiet.md")
+                && line.ends_with("[missing-description]")),
+        "{}",
+        list.stdout
+    );
+    assert!(
+        list.stderr.lines().any(|line| line == QUIET_ERROR),
         "{}",
         list.stderr
     );
+    assert!(!list.stdout.contains("No description"), "{}", list.stdout);
+
+    let json = run(&["list", "--json"], dir.path());
+    let rows: serde_json::Value = serde_json::from_str(&json.stdout).unwrap();
+    let quiet = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "quiet")
+        .unwrap();
+    assert_eq!(quiet["description"], "");
+    assert!(quiet["missing_description"].is_string(), "{quiet}");
 }
 
 #[test]
-fn require_descriptions_in_the_root_file_refuses_the_build() {
-    let dir = name_only_project(true);
-    let build = run(&["build", "--yes"], dir.path());
-    assert_eq!(build.code, 2, "{}", build.stderr);
-    assert!(
-        build.stderr.contains("missing-description")
-            && build.stderr.contains("skills/quiet/quiet.md"),
-        "{}",
-        build.stderr
-    );
+fn build_and_check_refuse_a_missing_description() {
+    let dir = name_only_project();
+    for argv in [&["build", "--yes"][..], &["check"][..]] {
+        let refused = run(argv, dir.path());
+        assert_eq!(refused.code, 2, "{argv:?}: {}", refused.stderr);
+        assert!(
+            refused.stderr.contains("missing-description")
+                && refused.stderr.contains("skills/quiet/quiet.md"),
+            "{argv:?}: {}",
+            refused.stderr
+        );
+    }
     assert!(!dir.path().join("out").exists());
+}
+
+#[test]
+fn publish_refuses_a_missing_description() {
+    let dir = name_only_project();
+    // Outside the vault, which a destination may not be inside.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let dest = elsewhere.path().join("dest");
+    let dest_arg = dest.display().to_string();
+    let publish = |notes: &[&str]| {
+        let mut argv = vec!["publish", "--to", &dest_arg, "--target", "claude", "--yes"];
+        argv.extend(notes);
+        run(&argv, dir.path())
+    };
+
+    // The whole vault: refused before anything is written.
+    let all = publish(&[]);
+    assert_eq!(all.code, 2, "{}", all.stderr);
+    assert!(
+        all.stderr.contains("missing-description") && all.stderr.contains("skills/quiet/quiet.md"),
+        "{}",
+        all.stderr
+    );
+    assert!(!dest.exists());
+
+    // One note by its path: refused, and nothing written for it.
+    let one = publish(&["skills/quiet/quiet.md"]);
+    assert_eq!(one.code, 1, "{}", one.stderr);
+    assert!(one.stdout.contains("missing-description"), "{}", one.stdout);
+    assert!(!dest.join(".claude/skills/quiet").exists());
+
+    // A described note still publishes on its own.
+    let said = publish(&["skills/said/said.md"]);
+    assert_eq!(said.code, 0, "{}{}", said.stdout, said.stderr);
+    assert!(dest.join(".claude/skills/said/SKILL.md").is_file());
 }
 
 // --- a root file named with --config, and a moved packs folder ---------------
@@ -3714,7 +3762,7 @@ fn list_names_each_duplicate_once_with_workspace_paths() {
     for file in ["a", "b", "c"] {
         let warned = all
             .lines()
-            .filter(|l| l.starts_with(&format!("marketplaces/barn/skills/{file}.md  warning")))
+            .filter(|l| l.starts_with(&format!("marketplaces/barn/skills/{file}.md  error")))
             .count();
         assert_eq!(warned, 1, "{file}: {all}");
     }

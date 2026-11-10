@@ -199,14 +199,6 @@ export interface MarketplaceConfig {
   plugins?: Record<string, PluginOverrides>;
 
   /**
-   * Refuse the build when a note has a `name` and no `description` and
-   * this config supplies none for it, instead of publishing
-   * [`crate::discover::MISSING_DESCRIPTION`] and reporting it in
-   * [`ExportReport::warnings`].
-   */
-  require_descriptions?: boolean;
-
-  /**
    * The plugin's launcher, relative to the plugin's root (`bin/tool`).
    * Skill bodies call it as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`. On a
    * root whose harness does not expand that variable, the build rewrites
@@ -394,7 +386,7 @@ export interface PublishReason {
  * all read the same token, so it may not be free text that drifts from the
  * table it reproduces.
  */
-export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "excluded-note" | "malformed" | "malformed-root-file" | "claimed" | "redundant-override" | "overwritten";
+export type ReasonToken = "conflict" | "foreign" | "unsafe-path" | "io" | "no-renderer" | "plugin-managed" | "stopped" | "cycle" | "unsafe-root" | "bad-manifest" | "path-collision" | "unknown-target" | "unknown-override-key" | "unknown-kind" | "member-unresolved" | "empty-plugin" | "mixed-frontmatter-shape" | "excluded-note" | "missing-description" | "malformed" | "malformed-root-file" | "claimed" | "redundant-override" | "overwritten";
 
 /** One note the scan admitted, with what it filled in. */
 export interface DiscoveryWarning {
@@ -499,12 +491,6 @@ export interface BuildSettings {
 
   /** How `bump` writes a version. */
   bump?: BumpSettings;
-
-  /**
-   * Refuse a note with a `name` and no `description` instead of
-   * publishing a filler.
-   */
-  require_descriptions?: boolean;
 
   /**
    * Where `publish` writes when `--to` is not given. Empty means each
@@ -673,14 +659,11 @@ export interface DiscoveredComponent {
   name: string;
 
   /**
-   * The frontmatter `description`, ≤1024 characters, or
-   * [`MISSING_DESCRIPTION`] when the note wrote none. Empty on a container
-   * note with neither `name` nor `description`.
+   * The frontmatter `description`, ≤1024 characters. Empty when the note
+   * wrote none: a container note, or a member a build refuses with
+   * [`MISSING_DESCRIPTION_REASON`].
    */
   description: string;
-
-  /** `description` is not the note's own. */
-  description_filled: boolean;
 
   /** What this component is, resolved across the layers that can decide it. */
   kind: EntityKind;

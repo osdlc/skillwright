@@ -123,10 +123,10 @@ pub use compile::{
 pub use content::{SkillContent, SkillProjection};
 pub use corpus::*;
 pub use discover::{
-    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION,
-    MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON, default_name,
-    discover_components, discover_roster, folder_kind, in_plugin_folder, is_skill_entry,
-    plugin_folder_in,
+    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION_REASON,
+    SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON, default_name, discover_components,
+    discover_roster, folder_kind, in_plugin_folder, is_skill_entry, plugin_folder_in,
+    refuse_undescribed,
 };
 pub use error::*;
 pub use export::{
