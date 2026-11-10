@@ -1018,7 +1018,9 @@ fn publish_by_path_publishes_a_note_no_kind_folder_places() {
     named.extend(to);
     let published = run(&named, dir.path());
     assert_eq!(published.code, 0, "{}", published.stderr);
-    assert!(dest.join(".claude/skills/stray/SKILL.md").is_file());
+    let written = fs::read_to_string(dest.join(".claude/skills/stray/SKILL.md")).unwrap();
+    assert!(written.contains("name: stray"), "{written}");
+    assert!(written.contains("description: A stray note"), "{written}");
 }
 
 /// The first path under `root` with a component named `name`, depth first.

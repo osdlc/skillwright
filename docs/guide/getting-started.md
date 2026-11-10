@@ -121,7 +121,7 @@ marketplace, run `skillwright publish --yes`. It writes each skill on its own an
 no plugin manifests. `publish --to <root> --target <harness>` writes to one
 folder instead, which must sit outside the vault.
 
-`publish <path>` also publishes a note that sits outside every kind folder, as a skill. Only that
+`publish <path>` also publishes a note inside the vault that sits outside every kind folder, as a skill. Only that
 command does: `list`, `check`, `build` and `publish --all` leave it out. To bring a folder in for
 every command, add a `build.patterns` glob. See
 [Publishing one note by path](../reference/skillwright-md.md#publishing-one-note-by-path).

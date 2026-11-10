@@ -30,7 +30,7 @@ A vault is a folder of markdown notes. Where a note sits decides what it is:
 
 The folder alone decides what a note is and which plugin it joins. A `skills/` folder at the top is
 a plugin named after the marketplace. A note under no kind folder is a resource or the author's own
-writing, and is never published. `docs/`, `tests/` and `fixtures/` never ship. A plugin named `docs` or `tests` ships normally, and a plugin note's `name` must match its folder.
+writing, and is not part of the vault: only `publish <path>` publishes it, as a skill. `docs/`, `tests/` and `fixtures/` never ship. A plugin named `docs` or `tests` ships normally, and a plugin note's `name` must match its folder.
 
 ## Frontmatter
 
