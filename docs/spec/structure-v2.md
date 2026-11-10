@@ -168,7 +168,7 @@ file it ships.
 |---|---|
 | A file in the component's own folder | Ships as written, relative. |
 | A file in the plugin's `references/`, `scripts/` or `assets/` | Allowed. Rewritten to its installed path at the pack root. |
-| Another component in the same plugin | Allowed. Rewritten to that component's installed path. |
+| Another component in the same plugin | Allowed. A link to a skill's note renders as that skill's name (decision D3). A link to a file in its folder is rewritten to its installed path. |
 | Another plugin in the same marketplace | Refused. |
 | Anything outside `marketplaces/<m>/` | Refused. |
 
@@ -182,11 +182,12 @@ file it ships.
    pack. From a skill's entry note, the plugin's `references/x.md` becomes
    `../../references/x.md`. Every harness built for keeps a pack whole on
    install, so the path holds after install (section 9).
-6. A link to another component points at that component's entry note or at a
-   file in its folder. It is rewritten to where that file lands in the same
-   pack. A component the target harness's pack does not carry, such as an
-   agent in any build, has no installed path, and a link to it is refused for
-   that harness.
+6. A link to another skill's note renders as that skill's name as the harness
+   knows it, such as `skillwright:setup` on Claude Code (decision D3). A link
+   to a file in another component's folder is rewritten to where that file
+   lands in the same pack. A component the target harness's pack does not
+   carry, such as an agent in any build, has neither, and a link to it is
+   refused for that harness.
 7. A link into a never-ship folder is refused with the same error in every
    link form.
 8. A link to a missing file is an error that names the link.
@@ -435,111 +436,224 @@ Each case is reported once, with every path it applies to.
 
 ## 12. Decisions for the owner
 
-Each decision has a recommendation. The rest of this spec is written as if
-each recommendation is taken.
+Each decision below can be read on its own. The rest of this spec is written
+as if each recommendation is taken.
 
 ### D1. `build.out` and `--out`
 
-The output is fixed at `dist/<m>/`. No reason found keeps a setting.
-`bump --changed-since` builds its baseline in a temporary folder of its own,
-and does not need the flag.
+**What it is.** `build.out` in `skillwright.md`, or `--out` on the command
+line, says where `build` writes its output.
 
-Recommendation: drop both `build.out` and `--out`.
+**Today.** It is required. The repo's own `plugin/` builds beside its root
+file:
 
-### D2. The scope of a call (`/[[name]]`)
+```yaml
+build:
+  out: .        # writes plugin/.claude-plugin/, plugin/.agents/, ...
+```
 
-A call renders as an invocation, such as `/sdlc:task-work`, and copies no file.
-The harness resolves it when the skill runs. Calls to a skill in another plugin
-are common.
+**Options.**
 
-- Same scope as links: own plugin only.
-- The whole marketplace.
+- **Drop both.** The author writes nothing. Output always lands in
+  `<root>/dist/<m>/`, such as `plugin/dist/osdlc/.claude-plugin/`. Cost: a repo
+  that wants the catalog at its own root copies it there, for example in CI.
+- **Keep `build.out` as a folder.** The author writes `out: build`, and output
+  lands in `build/<m>/`. Cost: the output-overlaps-source checks and the
+  `stale-output` warning stay, because output can then land anywhere.
 
-Recommendation: the whole marketplace. A call to a skill outside it is
-refused. A bare call name that two plugins share is refused as ambiguous,
-naming both.
+**Recommendation: drop both.** The build stops at one fixed place, and
+nothing else needs a setting. `bump --changed-since` uses its own temporary
+folder.
+
+**Existing vaults.** Remove `out:`. The repo's `plugin/` built trees move from
+`plugin/.claude-plugin/` and its siblings to `plugin/dist/osdlc/`. The
+`plugin` workflow diffs that folder, and `plugin-release` copies from it.
+
+### D2. The scope of a call, `/[[name]]`
+
+**What it is.** `/[[name]]` in a skill's text tells the agent to run another
+skill. The build writes each harness's own form and copies nothing.
+
+**Today.** `/[[setup]]` in the repo's `author` skill becomes `/skillwright:setup`
+on Claude Code, `$skillwright:setup` on Codex and `/skill:skillwright-setup` on
+Pi. The name is looked up across the whole vault. If two skills share it, the
+build stops with `skill-call-ambiguous` and asks for the path of the one
+meant.
+
+**Options.**
+
+- **Own plugin only.** `/[[review]]` works only if `review` is in the same
+  plugin. Cost: a call to another plugin's skill, such as `/sdlc:task-work`
+  from a `craft` skill, is refused, and there is no way to write it.
+- **The whole marketplace.** `/[[review]]` finds `review` in any plugin of
+  the marketplace. Two matches are refused as today, naming both. Cost: a call
+  can name a skill in a plugin the user did not install. The harness then
+  reports an unknown command at run time.
+
+**Recommendation: the whole marketplace.** A call copies no file, so it does
+not break containment, and calls across plugins are common.
+
+**Existing vaults.** None, unless a call names a skill in another marketplace
+of the same vault. That call is now refused.
 
 ### D3. A plain link to another skill
 
-Today a plain `[[other-skill]]` in a skill or command body is read as a call.
-The link table in section 4 makes it a file link to the other skill's
-installed path.
+**What it is.** `[[setup]]` without the `/`, written in another skill of the
+same plugin.
 
-Recommendation: follow the table. A plain link is a file link, and a call is
-written `/[[name]]`. The repo's own `plugin/` vault and any vault that relies on
-the old reading changes output, and `check` shows it.
+**Today.** It names the skill without calling it. The build writes the skill's
+name as each harness knows it: `skillwright:setup` on Claude Code and Codex,
+`skillwright-setup` on Pi, `setup` on Cursor. Nothing is copied. The repo's
+`author` skill documents this.
+
+**Options.**
+
+- **Keep the name.** `See [[setup]].` ships as `See skillwright:setup.` on
+  Claude Code. A link to a file inside the other skill's folder, such as
+  `[[setup/references/install.md]]`, is rewritten to its path in the pack.
+  Cost: none. This is today's code.
+- **A file link.** `See [[setup]].` ships as `See [setup](../setup/SKILL.md).`
+  Cost: the agent is sent to read another skill's text instead of naming the
+  skill. It changes every vault that relies on today's form, and the `author`
+  skill's documentation.
+
+**Recommendation: keep the name.** The harness finds a skill by its name, not
+by its path. Section 4 is written this way.
+
+**Existing vaults.** None.
 
 ### D4. `build.assets` and `build.hooks`
 
-Both name a plugin by its bare name, which is ambiguous with several
-marketplaces, and both point at files the containment rule already confines to
-one marketplace.
+**What it is.** Two lists in `skillwright.md` that copy extra files into a
+plugin's pack.
 
-- Drop both. A plugin's shared `references/`, `scripts/` and `assets/` cover
-  what `build.assets` copied. A `hooks.json` directly in a plugin's `hooks/`
-  folder is its canonical hooks file. That is the path Claude Code reads by
-  default (harness-reference: `Claude Code Plugin manifest fields`, the
-  `hooks` field: "loaded together with hooks/hooks.json").
-- Keep both, with `plugin: <m>/<p>` and a `from` checked by section 4.
+**Today.**
 
-Recommendation: drop both.
+```yaml
+build:
+  assets:
+    - {from: shared/LICENSE, to: LICENSE, plugin: tools}
+  hooks:
+    - {from: plugin/hooks.json, plugin: tools}
+```
+
+`LICENSE` lands at the root of the `tools` pack. `hooks.json` is translated
+into each harness's hooks file.
+
+**Options.**
+
+- **Drop both.** The author puts the file in the plugin: `plugins/tools/assets/LICENSE`
+  ships as `<pack>/assets/LICENSE`, and `plugins/tools/hooks/hooks.json` is the
+  hooks file. That is the path Claude Code reads by default (harness-reference:
+  `Claude Code Plugin manifest fields`). Cost: a file shared by several plugins
+  is copied into each.
+- **Keep both.** `plugin: tools` becomes `plugin: <m>/tools`, because a bare
+  plugin name is ambiguous across marketplaces, and `from` must stay inside
+  that marketplace. Cost: two settings and their path checks stay.
+
+**Recommendation: drop both.** The plugin folder already says where things
+go.
+
+**Existing vaults.** Move each file into its plugin. The repo's `plugin/` uses
+neither.
 
 ### D5. `build.exclude`
 
-It is a glob list of what never ships. Under the strict folder rules in
-section 3, an excluded file would still be a file the folder may not hold.
+**What it is.** A list of globs in `skillwright.md` for files that never ship.
 
-- Drop it. A draft or a note that must not ship goes in a `docs/` folder,
-  which never ships.
-- Keep it, read from the root folder only, and let it also exempt a file from
-  the folder rules.
+**Today.**
 
-Recommendation: drop it. `docs/` already does the job, and one fewer setting
-keeps the layout the only rule.
+```yaml
+build:
+  exclude: ["**/*.draft.md"]
+```
+
+`skills/review/notes.draft.md` stays in the vault and is not shipped.
+
+**Options.**
+
+- **Drop it.** The author moves drafts into a `docs/` folder, such as
+  `skills/review/docs/notes.md`. `docs/` never ships. Cost: authors move files
+  once.
+- **Keep it, root only.** The glob above works as today. Cost: an excluded file
+  must also be exempt from the folder rules of section 3, which otherwise
+  refuse `notes.draft.md` beside `review.md`. That is a second way to say what
+  a folder may hold.
+
+**Recommendation: drop it.** `docs/` already does the job, and the layout
+stays the only rule.
+
+**Existing vaults.** Move excluded files into `docs/`. The repo's `plugin/`
+uses no `exclude`.
 
 ### D6. Plugin notes are required
 
-v1 lets a plugin folder stand without a note. v2 requires `<p>.md`, so every
-plugin has one place for its `version` and fields.
+**What it is.** Whether `plugins/<p>/<p>.md` must exist.
 
-Recommendation: require it. `init` writes it.
+**Today.** A plugin folder builds without a note. Its name is the folder's
+name, and its version is `0.1.0` with a warning.
 
-### D7. Plugin-root files with no folder
+**Options.**
 
-v1 copied a plugin's `assets/` flat to the pack root, so `assets/bin/tool`
-shipped as `bin/tool`. In the code and the tests that serves two things: the
-launcher script (`build.launcher_path`, as in the `plugin-layout` probe) and
-any file an author wanted at the pack root.
+- **Required.** `plugins/tools/` with no `tools.md` is an error that names the
+  missing path. Cost: one small file per plugin.
+- **Optional.** As today. Cost: the version has two sources, the note or a
+  default, and `bump` needs a note to write to anyway.
 
-- `bin/`: harness-reference records no harness that reads a plugin's `bin/`.
-  It is skillwright's own convention for the launcher. v2 moves the launcher to
-  `scripts/`, which ships at the pack root under its own name.
-- `.mcp.json`: Claude Code reads it at the plugin root
-  (`Claude Code MCP config file`), and Claude Code, Codex and Cursor read an
-  `mcpServers` manifest field (`<harness> Plugin manifest fields`). skillwright
-  has no MCP kind; the flattening was the only way to ship one. The file and
-  its keys differ per harness.
+**Recommendation: required.** Every plugin has one place for its `version`.
+`init` writes it.
 
-Options for `.mcp.json`:
+**Existing vaults.** Add a note to any plugin without one. The repo's
+`plugin/` already has `plugins/skillwright/skillwright.md`.
 
-- No home in v2. An MCP server kind comes later and renders each harness's own
-  file.
-- A plugin-root `.mcp.json` copied as is to the harnesses that read that name.
+### D7. `.mcp.json`
 
-Recommendation: no home in v2. A copied file would be right for one harness
-and wrong for the others.
+**What it is.** A plugin's MCP server configuration. Claude Code reads
+`.mcp.json` at the plugin root (harness-reference: `Claude Code MCP config
+file`). Claude Code, Codex and Cursor also read an `mcpServers` manifest field.
+
+**Today.** skillwright has no MCP kind. An author ships the file through the
+flat assets copy: `plugins/tools/assets/.mcp.json` lands at `<pack>/.mcp.json`
+for every harness.
+
+**Options.**
+
+- **No home in v2.** A `.mcp.json` in a plugin is refused by the folder rules.
+  An MCP server kind comes later and writes each harness's own file. Cost: a
+  plugin with MCP servers cannot be built with v2.
+- **Copy a plugin-root `.mcp.json` as is.** The author writes
+  `plugins/tools/.mcp.json`, and it lands at `<pack>/.mcp.json`. Cost: it is
+  right for Claude Code and may be wrong for the other harnesses, whose files
+  and keys differ.
+
+**Recommendation: no home in v2.** A file that is right for one harness and
+wrong for others breaks installs quietly.
+
+**Existing vaults.** A plugin that ships `.mcp.json` today cannot build with
+v2 until the MCP kind lands. The repo's `plugin/` has none.
 
 ### D8. Embedding a file that is neither a note nor an image
 
-`![[run.sh]]` or `![[data.csv]]` has no inline form in Markdown. v1 turns it
-into a plain link and copies the file.
+**What it is.** `![[name]]` where the target is, say, a script or a CSV file.
 
-- Refuse it, and say to write a link, `[[run.sh]]`, instead.
-- Render it as a plain link, as v1 does.
-- Inline a text file as a fenced code block.
+**Today.** `![[run.sh]]` ships as a plain link, `[run.sh](scripts/run.sh)`,
+and the file is copied.
 
-Recommendation: refuse it. An embed that does not embed misleads the author,
-and a link says what happens.
+**Options.**
+
+- **Refuse it.** The error says to write a link, `[[run.sh]]`, instead. Cost:
+  authors change `![[` to `[[` once.
+- **A plain link, as today.** Cost: the `!` is silently ignored, so the author
+  believes the file's text is inlined when it is not.
+- **Inline a text file as a fenced code block.** `![[run.sh]]` ships as the
+  script's text inside a fenced block. Cost: new code, and the build must decide
+  which files count as text.
+
+**Recommendation: refuse it.** An embed that does not embed misleads the
+author, and a link already says what happens.
+
+**Existing vaults.** Change such embeds to links. The repo's `plugin/` has
+none.
 
 ## Later
 

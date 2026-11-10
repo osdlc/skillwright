@@ -46,7 +46,6 @@ and may return in a later milestone:
   `own_folder_candidate` tiebreak, `link-ambiguous` across folders, and
   shared notes copied to `references/vault/<vault-relative>` or
   `assets/vault/<vault-relative>`.
-- A plain link to another skill read as a call (decision D3).
 - `build.assets` and `build.hooks` (decision D4).
 - The plugin `assets/` folder copied flat to the pack root (`assets/bin/tool`
   shipping as `bin/tool`). A plugin's `assets/` now ships as `assets/`. The
@@ -111,8 +110,8 @@ amendment too: its patterns layer is gone.
   where the linking file lands. `own_folder_candidate`
   and the `references/vault/` and `assets/vault/` placements go.
   `vault_link_index` indexes one plugin, not the vault. A real-path
-  containment check is added beside `refuse_never_shipped`. The plain
-  link-as-call reading goes under D3. In `replace_token`, an embed or link to
+  containment check is added beside `refuse_never_shipped`. The skill
+  mention (`skill_mention`) stays under D3. In `replace_token`, an embed or link to
   nothing becomes an error instead of an entry in `unresolved`, and a
   non-note, non-image embed is refused under D8. Embed expansion,
   `select_fragment` and the cycle check stay as they are.
@@ -210,10 +209,10 @@ amendment too: its patterns layer is gone.
 | [#138](https://github.com/osdlc/skillwright/pull/138) key table and harness profile own their facts | Merge, v2 builds on it | v2's root-file key check and its smaller key set come from the key table this PR builds. |
 | [#143](https://github.com/osdlc/skillwright/pull/143) one identity struct | Merge, v2 builds on it | The struct and key-table inheritance carry v2's root, marketplace, plugin, component cascade. Merge after [#138](https://github.com/osdlc/skillwright/pull/138). |
 | [#139](https://github.com/osdlc/skillwright/pull/139) bump checks out only what the build reads | Merge as is | `bump --changed-since` stays in v2, and this is a self-contained speed-up of it. v2 later shrinks its path set to `skillwright.md` and `marketplaces/`. |
-| [#135](https://github.com/osdlc/skillwright/pull/135) rename reports what it could not read | Close as moot for v2 | Most of it is `rename` work, and `rename` leaves v2. Its dependency bumps (markdown-vault-fs 0.6, markdown-corpus 0.3, markdown-relink 0.4) are taken in v2's first PR if `build` needs them. The rename milestone can reuse its approach. |
-| [#134](https://github.com/osdlc/skillwright/pull/134) one loader and one path rule | Close as moot | It unifies the workspace loader and the `skillwright.md` path rule, which v2 deletes. v2 writes the one loader for the fixed layout. |
-| [#137](https://github.com/osdlc/skillwright/pull/137) refuse a publish by path that would overwrite | Close as moot | `publish` leaves v2, and most of its diff is [#134](https://github.com/osdlc/skillwright/pull/134). |
-| [#140](https://github.com/osdlc/skillwright/pull/140) core hides build output | Close as moot | v2 reads only `marketplaces/` and writes only `dist/`, so output can never be read as source. It is also stacked on [#134](https://github.com/osdlc/skillwright/pull/134). |
+| [#135](https://github.com/osdlc/skillwright/pull/135) rename reports what it could not read | Closed (moot for v2) | Most of it is `rename` work, and `rename` leaves v2. Its dependency bumps (markdown-vault-fs 0.6, markdown-corpus 0.3, markdown-relink 0.4) are taken in v2's first PR if `build` needs them. The rename milestone can reuse its approach. |
+| [#134](https://github.com/osdlc/skillwright/pull/134) one loader and one path rule | Closed (moot) | It unifies the workspace loader and the `skillwright.md` path rule, which v2 deletes. v2 writes the one loader for the fixed layout. |
+| [#137](https://github.com/osdlc/skillwright/pull/137) refuse a publish by path that would overwrite | Closed (moot) | `publish` leaves v2, and most of its diff is [#134](https://github.com/osdlc/skillwright/pull/134). |
+| [#140](https://github.com/osdlc/skillwright/pull/140) core hides build output | Closed (moot) | v2 reads only `marketplaces/` and writes only `dist/`, so output can never be read as source. It is also stacked on [#134](https://github.com/osdlc/skillwright/pull/134). |
 
 ## Open issues
 
@@ -237,10 +236,10 @@ leaves out. It stays open.
 | [#50](https://github.com/osdlc/skillwright/issues/50) compile scans bodies twice | Keep | Compile stays. |
 | [#47](https://github.com/osdlc/skillwright/issues/47) leftover `[[` check gaps | Keep | Compile stays. |
 | [#46](https://github.com/osdlc/skillwright/issues/46) valid Markdown refused as leftover `[[` | Keep | Compile stays. |
-| [#78](https://github.com/osdlc/skillwright/issues/78) one rule for what a `skillwright.md` path is | Moot | There is one `skillwright.md`, at the root. Position decides every other note. |
-| [#81](https://github.com/osdlc/skillwright/issues/81) core should hide build output | Moot | Output is fixed at `dist/` and only `marketplaces/` is read. |
-| [#91](https://github.com/osdlc/skillwright/issues/91) symlinked `--vault` loses its workspace | Moot | Workspaces and member files are removed. |
-| [#118](https://github.com/osdlc/skillwright/issues/118) publish by path can overwrite a same-named skill | Moot | Publishing a note by path is gone for good, not deferred. |
+| [#78](https://github.com/osdlc/skillwright/issues/78) one rule for what a `skillwright.md` path is | Closed (moot) | There is one `skillwright.md`, at the root. Position decides every other note. |
+| [#81](https://github.com/osdlc/skillwright/issues/81) core should hide build output | Closed (moot) | Output is fixed at `dist/` and only `marketplaces/` is read. |
+| [#91](https://github.com/osdlc/skillwright/issues/91) symlinked `--vault` loses its workspace | Closed (moot) | Workspaces and member files are removed. |
+| [#118](https://github.com/osdlc/skillwright/issues/118) publish by path can overwrite a same-named skill | Closed (moot) | Publishing a note by path is gone for good, not deferred. |
 | [#142](https://github.com/osdlc/skillwright/issues/142) publish collision checks | Deferred: publish | All three asks are about `publish`. Inside a pack, v2's own rule refuses two sources on one path (section 9). |
 | [#87](https://github.com/osdlc/skillwright/issues/87) rename of a bundle that half-lands | Deferred: rename | `rename` leaves v2. |
 | [#49](https://github.com/osdlc/skillwright/issues/49) rename reads the vault three times | Deferred: rename | `rename` leaves v2. |
@@ -253,18 +252,28 @@ leaves out. It stays open.
 
 ## Build order
 
-Merge [#136](https://github.com/osdlc/skillwright/pull/136),
+v2 is one PR, built as six ordered commits. Each commit is written test-first:
+write its tests, see them fail for the right reason, then make the change.
+Each commit
+passes the gates alone (`cargo fmt --all --check`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo test --workspace`), so the branch can be
+bisected and reviewed commit by commit.
+
+Before the branch starts, merge
+[#136](https://github.com/osdlc/skillwright/pull/136),
 [#138](https://github.com/osdlc/skillwright/pull/138),
 [#143](https://github.com/osdlc/skillwright/pull/143) and
-[#139](https://github.com/osdlc/skillwright/pull/139) first, and close
+[#139](https://github.com/osdlc/skillwright/pull/139).
 [#134](https://github.com/osdlc/skillwright/pull/134),
 [#135](https://github.com/osdlc/skillwright/pull/135),
 [#137](https://github.com/osdlc/skillwright/pull/137) and
-[#140](https://github.com/osdlc/skillwright/pull/140). Then:
+[#140](https://github.com/osdlc/skillwright/pull/140) are closed.
+
+The commits, in order:
 
 1. **Cut to four commands.** Delete every command but `init`, `build`, `check`
    and `bump`, with their core code and tests ("The removed commands" above).
-   Do it first, so no later PR ports a command v2 drops. Test first: each
+   Do it first, so no later commit ports a command v2 drops. Test first: each
    removed command is an unknown command with exit code 2; the existing
    `build`, `check` and `bump` tests still pass unchanged.
 2. **Layout reader.** Root discovery, the fixed-position `classify`, the
@@ -295,14 +304,15 @@ Merge [#136](https://github.com/osdlc/skillwright/pull/136),
    and the embed rules of section 5. Test first, through `build`, one test per
    rule in sections 4 and 5: a symlink in a skill folder pointing out of the
    marketplace is refused; a link from a skill to the plugin's
-   `references/x.md` renders as `../../references/x.md`; a link to another
-   plugin is refused; a heading embed inlines the section with its
+   `references/x.md` renders as `../../references/x.md`; a link to a sibling
+   skill's note renders as that skill's name per harness (D3); a link to
+   another plugin is refused; a heading embed inlines the section with its
    subsections; a block embed inlines the block without its marker; a missing
    heading is `fragment-unresolved`; a nested embed's link is written
    relative to the outer file; a cycle prints its loop; an embedded note's
    frontmatter is dropped; an image embed is an image link; a script embed is
    refused (D8).
-   Before this PR, run the `plugin-layout` probe on Codex. harness-reference
+   Before this commit, run the `plugin-layout` probe on Codex. harness-reference
    does not record where Codex resolves a skill's relative paths
    (`Codex CLI Relative paths in SKILL.md open`). If it is not the skill's
    folder, links up to the pack root need another form for Codex.
@@ -314,5 +324,3 @@ Merge [#136](https://github.com/osdlc/skillwright/pull/136),
    and `bump <m>` write the right note; `bump --changed-since` bumps only a
    changed plugin; the `plugin` workflow's drift check passes on the rebuilt
    `plugin/dist/osdlc/`.
-
-PRs 2 and 3 can be one PR if the diff stays reviewable. PR 5 depends only on 2.
