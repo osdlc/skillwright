@@ -461,14 +461,15 @@ pub fn source_view<'v>(
     let Some(out_root) = out_root else {
         return base;
     };
-    let paths = output_to_hide(&base, scope, out_root, config, ns);
+    let paths = output_to_hide(&base, scope, None, out_root, config, ns);
     base.hiding(paths)
 }
 
-/// What [`source_view`] hides.
+/// What [`source_view`] hides, and what of it also sits in `workspace`.
 fn output_to_hide(
     vfs: &dyn Vfs,
     scope: VaultScope<'_>,
+    workspace: Option<&Path>,
     out_root: &Path,
     config: &MarketplaceConfig,
     ns: &Namespace,
@@ -485,6 +486,9 @@ fn output_to_hide(
                 holds_packs(vfs, profile, &config, folder)
             };
             paths.extend(output_where(vfs, scope, out_root, &config, &keep));
+            if let Some(root) = workspace {
+                paths.extend(output_in(vfs, root, out_root, &config, &keep));
+            }
         }
     }
     paths
@@ -521,6 +525,7 @@ pub fn notes_view<'v>(
                 paths.extend(configured_output(
                     &base,
                     VaultScope::new(dir),
+                    Some(scope.vault_root),
                     &member,
                     &config,
                     ns,
@@ -536,7 +541,7 @@ pub fn notes_view<'v>(
                 &own
             }
         };
-        paths = configured_output(&base, scope, &root, config, ns);
+        paths = configured_output(&base, scope, None, &root, config, ns);
     }
     base.hiding(paths)
 }
@@ -573,10 +578,12 @@ fn folder_name(dir: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// What a build into `root`'s `build.out` owns in the vault `scope` reads.
+/// What a build into `root`'s `build.out` owns in the vault `scope` reads,
+/// or in the `workspace` that holds it.
 fn configured_output(
     base: &SourceView<'_>,
     scope: VaultScope<'_>,
+    workspace: Option<&Path>,
     root: &RootFile,
     config: &MarketplaceConfig,
     ns: &Namespace,
@@ -594,7 +601,7 @@ fn configured_output(
         PathBuf::new()
     };
     let out_root = crate::paths::resolve_path(out, scope.vault_root, &home);
-    output_to_hide(base, scope, &out_root, config, ns)
+    output_to_hide(base, scope, workspace, &out_root, config, ns)
 }
 
 #[cfg(test)]
@@ -672,6 +679,20 @@ mod tests {
         assert!(!view.exists(&Path::new("/w/marketplaces/a/dist").join(BUILT)));
         assert!(!view.exists(&Path::new("/w/marketplaces/b/built").join(BUILT)));
         assert!(view.exists(Path::new("/w/marketplaces/a/skillwright.md")));
+    }
+
+    #[test]
+    fn notes_view_hides_a_member_s_out_outside_its_folder() {
+        let vfs = vault(&[
+            ("/w/skillwright.md", "---\nworkspace: true\n---\n"),
+            (
+                "/w/marketplaces/a/skillwright.md",
+                "---\nname: a\nbuild:\n  out: ../../dist/a\n---\n",
+            ),
+            (&format!("/w/dist/a/{BUILT}"), "{}"),
+        ]);
+        let view = notes(SourceView::over(&vfs), "/w");
+        assert!(!view.exists(&Path::new("/w/dist/a").join(BUILT)));
     }
 
     #[test]

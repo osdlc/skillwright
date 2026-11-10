@@ -1330,9 +1330,6 @@ fn no_renderer_for(
     )
 }
 
-/// The vault's root `skillwright.md` refused as a publish, by the token a
-/// marketplace note gets. It holds the vault's configuration, so publishing it
-/// would write a `SKILL.md` for something that is not a skill.
 /// `refused: build-output`: the note at the vault-relative `note` sits in
 /// what a build of the vault owns.
 fn build_output_not_a_note(note: &str) -> CoreError {
@@ -1345,6 +1342,9 @@ fn build_output_not_a_note(note: &str) -> CoreError {
     )
 }
 
+/// The vault's root `skillwright.md` refused as a publish, by the token a
+/// marketplace note gets. It holds the vault's configuration, so publishing it
+/// would write a `SKILL.md` for something that is not a skill.
 fn root_file_not_a_note(note_path: &Path) -> CoreError {
     CoreError::refused(
         "no-renderer",

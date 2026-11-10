@@ -4246,12 +4246,7 @@ fn config_flag_out_is_hidden() {
 
 /// The binary, run in `cwd` with `$HOME` set to `home`.
 fn run_with_home_env(argv: &[&str], cwd: &Path, home: &Path) -> Run {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_skillwright"))
-        .args(argv)
-        .current_dir(cwd)
-        .env("HOME", home)
-        .output()
-        .unwrap();
+    let output = run_binary(argv, cwd, &[("HOME", home.to_str().unwrap())]);
     Run {
         code: output.status.code().unwrap_or(-1),
         stdout: String::from_utf8(output.stdout).unwrap(),

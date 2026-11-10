@@ -17,7 +17,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `publish <path>` of a note inside build output is refused `build-output` ("`<path>` is build output, not a note"). It was published before ([#81](https://github.com/osdlc/skillwright/issues/81)).
 - `publish` and `status` no longer read a container note above a note when that container note sits inside build output ([#81](https://github.com/osdlc/skillwright/issues/81)).
 - `status` counts a contributing note that now sits only inside build output as gone from the vault ([#81](https://github.com/osdlc/skillwright/issues/81)).
-- A scan at a workspace root hides each member's build output. Before, a member's output inside `marketplaces/<m>/` could be read as notes there ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- A scan at a workspace root hides each member's build output, wherever in the workspace it sits. Before, a member's output could be read as notes there. The workspace file's own `build.out` builds nothing and is no longer hidden: a build left there from before the vault became a workspace is read as notes ([#81](https://github.com/osdlc/skillwright/issues/81)).
 - A root file that is not UTF-8 is reported as `configuration malformed: <file> (it is not UTF-8)`. It was `configuration unreadable`.
 - When a member's workspace file is malformed, the member file's own warnings are no longer printed before the error that blocks the run.
 - Moving a marketplace's `skillwright.md` onto a `.../skillwright.md` that is not a marketplace entry, such as `plugins/x/skillwright.md`, moves the folder as it is and leaves links into it as written. It took the marketplace-rename path before, which rewrote those links.
