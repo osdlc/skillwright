@@ -16,9 +16,9 @@
       "line": 787,
       "title": "profile.rs tests read the deleted alpha facts: one fails, three silently skip; Rust CI does not run on this PR",
       "comment": "https://github.com/osdlc/skillwright/pull/119#pullrequestreview-5836595839",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "3e181c2fc20b5fb3a8efc04b041d289744a75bfb"
     },
     {
       "id": "r1-3",
