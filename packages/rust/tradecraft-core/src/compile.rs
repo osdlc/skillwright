@@ -1727,23 +1727,20 @@ impl<'a> Renderer<'a> {
 /// then its plugin, as Obsidian prefers the match closest to the note. The
 /// first folder holding any candidate decides: two there is still
 /// [`ResolveError::Ambiguous`], naming those two.
-fn nearest_candidate(mut candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
+fn nearest_candidate(candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
     let mut folder = from;
     while let Some((above, _)) = folder.rsplit_once('/') {
         folder = above;
         let prefix = format!("{folder}/");
-        let within: Vec<String> = candidates
+        let mut within: Vec<String> = candidates
             .iter()
             .filter(|path| path.starts_with(&prefix))
             .cloned()
             .collect();
         match within.len() {
-            0 => continue,
-            1 => return Ok(within.into_iter().next().expect("one candidate")),
-            _ => {
-                candidates = within;
-                break;
-            }
+            0 => {}
+            1 => return Ok(within.remove(0)),
+            _ => return Err(ResolveError::Ambiguous(within)),
         }
     }
     Err(ResolveError::Ambiguous(candidates))

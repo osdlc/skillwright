@@ -302,9 +302,9 @@ pub struct InstallCli {
 ///
 /// Claude, Codex and Cursor differ in the display name: Codex carries it in
 /// an `interface` block, Cursor as `displayName`, and Claude not at all.
-/// Pi's is a different file
-/// altogether. The marketplace manifests differ more, and each dialect names
-/// its own builder. Field order in the rendered manifest is fixed.
+/// Pi's is a different file altogether. The marketplace manifests differ
+/// more, and each dialect names its own builder. Field order in the rendered
+/// manifest is fixed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PluginDialect {
     /// The Claude pack manifest.
