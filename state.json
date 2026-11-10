@@ -12,21 +12,10 @@
     {
       "id": "r1-1",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 787,
       "title": "profile.rs tests read the deleted alpha facts: one fails, three silently skip; Rust CI does not run on this PR",
-      "comment": null,
-      "status": "open",
-      "reason": null,
-      "fixedIn": null
-    },
-    {
-      "id": "r1-2",
-      "round": 1,
-      "path": null,
-      "line": null,
-      "title": "link.rs, pi.rs and tests/harness.rs cite deleted alpha facts/ paths, one in a user-facing error",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/119#pullrequestreview-5836595839",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -37,7 +26,7 @@
       "path": "harness-reference/README.md",
       "line": 15,
       "title": "probes/ is not fully held as methods; two probes have no method and probes/ is now unchecked alpha format",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999246",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -48,10 +37,10 @@
       "path": "docs/handoff/markdown-db-and-harness-reference.md",
       "line": 51,
       "title": "Claims profile.rs tests check facts from the corpus; they read deleted alpha paths",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999252",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-5",
@@ -59,10 +48,10 @@
       "path": "docs/planning/harness-knowledge.md",
       "line": 27,
       "title": "Phase 7 marked done although its first step (move the tests) is not done",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999257",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-6",
@@ -70,10 +59,10 @@
       "path": "harness-reference/corpus/documents/documents.schema.md",
       "line": 67,
       "title": "Nothing checks that notes/ files cited by URL exist, or their links; the alpha validator did",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999270",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-7",
@@ -81,10 +70,10 @@
       "path": "harness-reference/corpus/statements/statements.schema.md",
       "line": 106,
       "title": "imported_from description no longer says what the id refers to",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999274",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-8",
@@ -92,10 +81,10 @@
       "path": "docs/handoff/markdown-db-and-harness-reference.md",
       "line": 63,
       "title": "Next item 1 renamed to work that already shipped",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999279",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-9",
@@ -103,10 +92,10 @@
       "path": "docs/handoff/markdown-db-and-harness-reference.md",
       "line": 33,
       "title": "Edited line still names the old markdown-db binary",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999288",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-10",
@@ -114,18 +103,18 @@
       "path": "harness-reference/src/corpus/corpus.ts",
       "line": 3,
       "title": "Module comment lists consumers and misses capture",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999294",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-11",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "harness-reference/src/corpus/corpus.ts",
+      "line": 97,
       "title": "canonicalJson is dead after the importer deletion",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/119#pullrequestreview-5836595839",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -136,10 +125,10 @@
       "path": "harness-reference/README.md",
       "line": 36,
       "title": "test comment lists suites and misses lookup",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999298",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-13",
@@ -147,10 +136,10 @@
       "path": "docs/planning/harness-knowledge.md",
       "line": 243,
       "title": "Phase 2 cell reads as a broken sentence",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999303",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-14",
@@ -158,18 +147,18 @@
       "path": "docs/handoff/markdown-db-and-harness-reference.md",
       "line": 37,
       "title": "Record counts in a doc marked historical will drift",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/119#discussion_r4520999309",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "f90b3ba"
     },
     {
       "id": "r1-15",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "docs/standards/S-GFFY-markdown-db.md",
+      "line": 249,
       "title": "corpus/ departs from the corpus-schema placement guidance corpora/<name>/",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/119#pullrequestreview-5836595839",
       "status": "open",
       "reason": null,
       "fixedIn": null
