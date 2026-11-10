@@ -66,8 +66,8 @@
 //!
 //! What stays here is skillwright's own: `/[[call]]` calls and `\/[[x]]`
 //! escapes, read as a layer over `markdown-link`'s links and found in code
-//! too; the `\[[` escape; hand-written calls; where resources land; and the validation that no
-//! Obsidian syntax survives.
+//! too; the `\[[` escape; hand-written calls; where resources land; and the
+//! validation that no Obsidian syntax survives.
 
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
@@ -1207,14 +1207,12 @@ impl<'a> Renderer<'a> {
             return Ok(call);
         }
         let embed = token.kind == TokenKind::Embed;
-        let resolved = match self.resolve(token, source_path)? {
-            // A bundle skill's entry is `x/SKILL.md`, which `[[x#Steps]]`
-            // names but does not resolve to.
-            None if !embed && self.names_the_entry(&token.target) => {
-                Some((self.entry_path.clone(), token.fragment.clone()))
-            }
-            resolved => resolved,
-        };
+        // A bundle skill's entry is `x/SKILL.md`, which `[[x#Steps]]` names
+        // but does not resolve to.
+        let resolved = self.resolve(token, source_path)?.or_else(|| {
+            (!embed && self.names_the_entry(&token.target))
+                .then(|| (self.entry_path.clone(), token.fragment.clone()))
+        });
         let Some((resolved, fragment)) = resolved else {
             // The name is kept so status can see a note appearing at it later,
             // and the reader is left the words rather than a dangling
@@ -1881,6 +1879,9 @@ fn validate_frontmatter_links(
             serde_yaml::Value::Tagged(tagged) => first_link(&tagged.value),
             _ => None,
         }
+    }
+    if !yaml.contains("[[") {
+        return Ok(());
     }
     let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(yaml) else {
         return Ok(());
@@ -3465,10 +3466,7 @@ mod tests {
                 .to_string();
             assert_eq!(
                 err,
-                format!(
-                    "refused: unresolved-syntax: compiled skill demo still contains Obsidian \
-                     syntax in SKILL.md: {written} (not a link: {why}){HINT}"
-                ),
+                format!("{LEFTOVER}: {written} (not a link: {why}){HINT}"),
                 "{body:?}"
             );
         }
@@ -3476,6 +3474,7 @@ mod tests {
 
     // --- The `\[[` escape ----------------------------------------------------
 
+    const LEFTOVER: &str = "refused: unresolved-syntax: compiled skill demo still contains Obsidian syntax in SKILL.md";
     const HINT: &str = r"; write \[[ to keep the brackets as text";
 
     #[test]
@@ -3558,10 +3557,7 @@ mod tests {
         .to_string();
         assert_eq!(
             err,
-            format!(
-                "refused: unresolved-syntax: compiled skill demo still contains Obsidian syntax \
-                 in SKILL.md: [[TODO later. (not a link: it has no closing `]]`){HINT}"
-            )
+            format!("{LEFTOVER}: [[TODO later. (not a link: it has no closing `]]`){HINT}")
         );
     }
 
@@ -3571,11 +3567,7 @@ mod tests {
             validate_no_obsidian_syntax("See [[x]].", 0, "SKILL.md", "demo", &BTreeSet::new())
                 .unwrap_err()
                 .to_string();
-        assert_eq!(
-            err,
-            "refused: unresolved-syntax: compiled skill demo still contains Obsidian syntax \
-             in SKILL.md: [[x]]"
-        );
+        assert_eq!(err, format!("{LEFTOVER}: [[x]]"));
     }
 
     #[test]
@@ -3622,10 +3614,7 @@ mod tests {
                 .to_string();
             assert_eq!(
                 err,
-                format!(
-                    "refused: unresolved-syntax: compiled skill demo still contains Obsidian \
-                     syntax in SKILL.md: {written} (not a link: its target has code in it){HINT}"
-                ),
+                format!("{LEFTOVER}: {written} (not a link: its target has code in it){HINT}"),
                 "{body:?}"
             );
         }
@@ -3642,8 +3631,16 @@ mod tests {
 
     /// A linked note `Fm.md` with `frontmatter` and `Body.`, compiled.
     fn compile_with_frontmatter(frontmatter: &str) -> Result<(String, CompiledNote), CoreError> {
+        compile_resource(frontmatter, "Body.\n")
+    }
+
+    /// A compile of a skill linking `Fm.md`, which has `frontmatter` and `body`.
+    fn compile_resource(
+        frontmatter: &str,
+        body: &str,
+    ) -> Result<(String, CompiledNote), CoreError> {
         let vfs = demo_vault();
-        let note = format!("---\n{frontmatter}\n---\nBody.\n");
+        let note = format!("---\n{frontmatter}\n---\n{body}");
         write(&vfs, "/vault/Fm.md", note.as_bytes());
         compile_note(&vfs, &source(None), "See [[Fm]].\n").map(|compiled| (note, compiled))
     }
@@ -3664,9 +3661,7 @@ mod tests {
             );
         }
         // The body is still checked.
-        let vfs = demo_vault();
-        write(&vfs, "/vault/Fm.md", b"---\ntags: [[a]]\n---\nSee [[TODO\n");
-        let err = compile_note(&vfs, &source(None), "See [[Fm]].\n")
+        let err = compile_resource("tags: [[a]]", "See [[TODO\n")
             .unwrap_err()
             .to_string();
         assert!(
