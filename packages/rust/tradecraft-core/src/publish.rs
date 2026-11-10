@@ -787,8 +787,8 @@ fn publish_onto(
 
     // The note's own unknown keys, before the cascade adds anything to it.
     let root_relative = request.skills_root.as_deref().map_or_else(
-        || vault_relative(Path::new(""), &request.skill_path),
-        |root| vault_relative(root, &request.skill_path),
+        || vault_relative(Path::new(""), &in_vault),
+        |root| vault_relative(root, &in_vault),
     );
     let own_warning = unknown_key_warning(
         &root_relative,
@@ -800,12 +800,12 @@ fn publish_onto(
     // What the note inherits, before `targets` is asked: the same answer a
     // build reaches.
     let requested = request.config.clone().unwrap_or_default();
-    let cascade = Cascade::above_with(vfs, placed, &request.skill_path, &requested, ns)?;
+    let cascade = Cascade::above_with(vfs, placed, &in_vault, &requested, ns)?;
     // The containers' own blocks first, as a build checks them, so a bad
     // value names the container that holds it, not this note.
     crate::harness::manifest::check_block_values(&cascade.config)?;
     let plugin = placed.and_then(|(patterns, root)| {
-        crate::discover::folder_placement_with(patterns, root, &request.skill_path).plugin
+        crate::discover::folder_placement_with(patterns, root, &in_vault).plugin
     });
     cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
 

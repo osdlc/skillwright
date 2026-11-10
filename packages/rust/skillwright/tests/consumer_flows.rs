@@ -2012,6 +2012,61 @@ fn publishing_an_excluded_note_by_its_real_path_through_a_linked_member_is_refus
 
 #[cfg(unix)]
 #[test]
+fn publishing_by_the_real_path_through_a_linked_member_reads_the_plugin_as_the_link_spelling_does()
+{
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", WORKSPACE),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        (
+            "marketplaces/acme/plugins/p/p.md",
+            "---\ndescription: P.\ntargets: [codex]\n---\n",
+        ),
+        ("marketplaces/acme/plugins/p/skills/s.md", SKILL),
+    ]);
+    let vault_arg = link.display().to_string();
+    let real = dir
+        .path()
+        .join("marketplaces/acme/plugins/p/skills/s.md")
+        .canonicalize()
+        .unwrap()
+        .display()
+        .to_string();
+    let spelled = link.join("plugins/p/skills/s.md").display().to_string();
+    let publish = |note: &str, to: &str| {
+        let dest = dir.home().join(to);
+        let ran = sw(
+            &dir.path(),
+            &[
+                "publish",
+                note,
+                "--vault",
+                &vault_arg,
+                "--target",
+                "claude",
+                "--to",
+                dest.to_str().unwrap(),
+                "--json",
+                "--yes",
+            ],
+        );
+        (ran, files_under(&dest).len())
+    };
+    let (through, through_files) = publish(&spelled, "through");
+    let (by_real, real_files) = publish(&real, "real");
+    assert_eq!(
+        by_real.code, through.code,
+        "{}\n{}",
+        by_real.text, through.text
+    );
+    assert_eq!(
+        real_files, through_files,
+        "{}\n{}",
+        by_real.text, through.text
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn a_linked_member_s_messages_name_the_path_as_typed() {
     let (dir, link) = linked_member(&[
         ("skillwright.md", WORKSPACE),
