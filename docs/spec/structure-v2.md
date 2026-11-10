@@ -1,6 +1,6 @@
 # skillwright vault structure, version 2 (draft)
 
-Status: draft for the owner's review. It replaces
+Status: draft, ready for final review. It replaces
 [version 1](structure-v1.md) when accepted. Nothing reads both: a vault in
 any other layout is refused (section 11).
 
@@ -12,7 +12,7 @@ It covers the folders, the root file, the notes, links, the frontmatter rules
 and the output. The frontmatter keys themselves are in the
 [field reference](../reference/fields.md), which is part of this spec.
 
-The decisions this draft leaves to the owner are in section 12. The effect on
+The decisions behind this spec are recorded in section 12. The effect on
 the code, the open PRs and issues, and the build order are in
 [v2-impact.md](v2-impact.md).
 
@@ -176,8 +176,8 @@ written there ships exactly as written (rule 12).
 | A file in another plugin | Refused. |
 | Anything outside `marketplaces/<m>/` | Refused. |
 
-A call, `/[[name]]`, is not a link and copies nothing. Its scope is decision
-D2 (rule 8).
+A call, `/[[name]]`, is not a link and copies nothing. Its scope is the whole
+marketplace (rule 8, decision D2).
 
 3. A bare `[[name]]` resolves in the linking file's component folder first.
    With no match there, it resolves among the plugin's shared folders and its
@@ -200,7 +200,7 @@ D2 (rule 8).
 7. A plain link to another skill's or command's note warns, naming the file
    and the link: `Did you mean to call /[[setup]]?`. The link still ships as a
    file link. A skill's link to its own note does not warn.
-8. `/[[name]]` is a call (decision D3, decided). The `/` counts where it starts
+8. `/[[name]]` is a call (decision D3). The `/` counts where it starts
    a line or follows whitespace or one of `` ( " ' ` * > _ | [ = ``, as in v1.
    Anywhere else, such as `dir/[[x]]` or `[[A]]/[[B]]`, the `/` is text and
    `[[x]]` is an ordinary link.
@@ -243,7 +243,7 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
 2. A note (`.md`) is inlined (rules 4 to 8). An image (`.avif`, `.bmp`,
    `.gif`, `.jpeg`, `.jpg`, `.png`, `.svg`, `.webp`) becomes a Markdown image
    link to the file's installed path. Any other text file is inlined as a
-   fenced code block (rules 9 to 14, decision D8, decided).
+   fenced code block (rules 9 to 14, decision D8).
 3. An embed whose target does not exist is an error that names the embed. An
    embed inside a code span or fenced block is not read (section 4 rule 12).
 
@@ -491,10 +491,11 @@ It is refused when:
 
 Each case is reported once, with every path it applies to.
 
-## 12. Decisions for the owner
+## 12. Decisions
 
-Each decision below can be read on its own. D3 and D8 are decided. The rest of this
-spec is written as if each other recommendation is taken.
+Every decision below is settled. Each one can be read on its own: what it
+covers, what v1 does, the rule v2 follows, why, and what changes for existing
+vaults.
 
 ### D1. `build.out` and `--out`
 
@@ -509,18 +510,14 @@ build:
   out: .        # writes plugin/.claude-plugin/, plugin/.agents/, ...
 ```
 
-**Options.**
+**Decided.** Both are dropped. Output always lands in `<root>/dist/<m>/`, such
+as `plugin/dist/osdlc/.claude-plugin/`. A repo that wants the catalog at its
+own root copies it there, for example in CI.
 
-- **Drop both.** The author writes nothing. Output always lands in
-  `<root>/dist/<m>/`, such as `plugin/dist/osdlc/.claude-plugin/`. Cost: a repo
-  that wants the catalog at its own root copies it there, for example in CI.
-- **Keep `build.out` as a folder.** The author writes `out: build`, and output
-  lands in `build/<m>/`. Cost: the output-overlaps-source checks and the
-  `stale-output` warning stay, because output can then land anywhere.
-
-**Recommendation: drop both.** The build stops at one fixed place, and
-nothing else needs a setting. `bump --changed-since` uses its own temporary
-folder.
+**Why.** The build stops at one fixed place, and nothing else needs a setting.
+Output that can land anywhere needs the output-overlaps-source checks and the
+`stale-output` warning; a fixed place needs neither. `bump --changed-since`
+uses its own temporary folder.
 
 **Existing vaults.** Remove `out:`. The repo's `plugin/` built trees move from
 `plugin/.claude-plugin/` and its siblings to `plugin/dist/osdlc/`. The
@@ -536,24 +533,20 @@ folder.
 `/skill:skillwright-setup` on Pi. If two skills share the name, v1 stops with
 `skill-call-ambiguous` and asks for the path of the one meant.
 
-**Options.**
+**Decided.** A call looks across the whole marketplace. `/[[review]]` finds
+`review` in any plugin of the marketplace. A name two plugins share is
+refused, and the error names both. Links and embeds stay within the plugin.
 
-- **Own plugin only.** `/[[review]]` works only if `review` is in the same
-  plugin. Cost: a call to another plugin's skill, such as `/sdlc:task-work`
-  from a `craft` skill, cannot be written.
-- **The whole marketplace.** `/[[review]]` finds `review` in any plugin of the
-  marketplace. A name two plugins share is refused, naming both. Cost: a call
-  can name a skill in a plugin the user did not install. The harness then
-  reports an unknown command at run time.
-
-**Recommendation: the whole marketplace.** A call copies no file, so it does
-not break containment, and calls across plugins are common. Links stay within
-the plugin.
+**Why.** A call copies no file, so it does not break containment. Calls across
+plugins are common, such as `/sdlc:task-work` from a `craft` skill, and an
+own-plugin scope could not express them. The cost is that a call can name a
+skill in a plugin the user did not install; the harness then reports an
+unknown command at run time.
 
 **Existing vaults.** None, unless a call names a skill in another marketplace
 of the same vault. That call is now refused.
 
-### D3. Calls and plain links to a skill (decided)
+### D3. Calls and plain links to a skill
 
 **What it is.** What `/[[setup]]` and `[[setup]]` mean when `setup` is a skill.
 
@@ -621,19 +614,16 @@ build:
 `LICENSE` lands at the root of the `tools` pack. `hooks.json` is translated
 into each harness's hooks file.
 
-**Options.**
+**Decided.** Both are dropped. The author puts the file in the plugin:
+`plugins/tools/assets/LICENSE` ships as `<pack>/assets/LICENSE`, and
+`plugins/tools/hooks/hooks.json` is the hooks file.
 
-- **Drop both.** The author puts the file in the plugin: `plugins/tools/assets/LICENSE`
-  ships as `<pack>/assets/LICENSE`, and `plugins/tools/hooks/hooks.json` is the
-  hooks file. That is the path Claude Code reads by default (harness-reference:
-  `Claude Code Plugin manifest fields`). Cost: a file shared by several plugins
-  is copied into each.
-- **Keep both.** `plugin: tools` becomes `plugin: <m>/tools`, because a bare
-  plugin name is ambiguous across marketplaces, and `from` must stay inside
-  that marketplace. Cost: two settings and their path checks stay.
-
-**Recommendation: drop both.** The plugin folder already says where things
-go.
+**Why.** The plugin folder already says where things go. `hooks/hooks.json` is
+the path Claude Code reads by default (harness-reference: `Claude Code Plugin
+manifest fields`). Keeping the lists would mean two settings with their own
+path checks, and `plugin: tools` would need a marketplace prefix to be
+unambiguous. The cost is that a file shared by several plugins is copied into
+each.
 
 **Existing vaults.** Move each file into its plugin. The repo's `plugin/` uses
 neither.
@@ -651,18 +641,13 @@ build:
 
 `skills/review/notes.draft.md` stays in the vault and is not shipped.
 
-**Options.**
+**Decided.** `build.exclude` is dropped. A file that must not ship goes in a
+`docs/` folder, such as `skills/review/docs/notes.md`. `docs/` never ships.
 
-- **Drop it.** The author moves drafts into a `docs/` folder, such as
-  `skills/review/docs/notes.md`. `docs/` never ships. Cost: authors move files
-  once.
-- **Keep it, root only.** The glob above works as today. Cost: an excluded file
-  must also be exempt from the folder rules of section 3, which otherwise
-  refuse `notes.draft.md` beside `review.md`. That is a second way to say what
-  a folder may hold.
-
-**Recommendation: drop it.** `docs/` already does the job, and the layout
-stays the only rule.
+**Why.** `docs/` already does the job, and the layout stays the only rule. An
+excluded file would also need an exemption from the folder rules of section 3,
+which refuse `notes.draft.md` beside `review.md`. That would be a second way to
+say what a folder may hold.
 
 **Existing vaults.** Move excluded files into `docs/`. The repo's `plugin/`
 uses no `exclude`.
@@ -674,15 +659,12 @@ uses no `exclude`.
 **Today.** A plugin folder builds without a note. Its name is the folder's
 name, and its version is `0.1.0` with a warning.
 
-**Options.**
+**Decided.** The note is required. `plugins/tools/` with no `tools.md` is an
+error that names the missing path. `init` writes the note.
 
-- **Required.** `plugins/tools/` with no `tools.md` is an error that names the
-  missing path. Cost: one small file per plugin.
-- **Optional.** As today. Cost: the version has two sources, the note or a
-  default, and `bump` needs a note to write to anyway.
-
-**Recommendation: required.** Every plugin has one place for its `version`.
-`init` writes it.
+**Why.** Every plugin has one place for its `version`. An optional note gives
+the version two sources, the note or a default, and `bump` needs a note to
+write to anyway.
 
 **Existing vaults.** Add a note to any plugin without one. The repo's
 `plugin/` already has `plugins/skillwright/skillwright.md`.
@@ -697,23 +679,18 @@ file`). Claude Code, Codex and Cursor also read an `mcpServers` manifest field.
 flat assets copy: `plugins/tools/assets/.mcp.json` lands at `<pack>/.mcp.json`
 for every harness.
 
-**Options.**
+**Decided.** `.mcp.json` has no home in v2. A `.mcp.json` in a plugin is
+refused by the folder rules. An MCP server kind comes later and writes each
+harness's own file.
 
-- **No home in v2.** A `.mcp.json` in a plugin is refused by the folder rules.
-  An MCP server kind comes later and writes each harness's own file. Cost: a
-  plugin with MCP servers cannot be built with v2.
-- **Copy a plugin-root `.mcp.json` as is.** The author writes
-  `plugins/tools/.mcp.json`, and it lands at `<pack>/.mcp.json`. Cost: it is
-  right for Claude Code and may be wrong for the other harnesses, whose files
-  and keys differ.
-
-**Recommendation: no home in v2.** A file that is right for one harness and
-wrong for others breaks installs quietly.
+**Why.** A copied `.mcp.json` is right for Claude Code and may be wrong for the
+other harnesses, whose files and keys differ. A file that is right for one
+harness and wrong for others breaks installs quietly.
 
 **Existing vaults.** A plugin that ships `.mcp.json` today cannot build with
 v2 until the MCP kind lands. The repo's `plugin/` has none.
 
-### D8. Embedding a file that is neither a note nor an image (decided)
+### D8. Embedding a file that is neither a note nor an image
 
 **What it is.** `![[name]]` where the target is, say, a script or a CSV file.
 
