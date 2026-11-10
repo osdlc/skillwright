@@ -244,7 +244,13 @@ fn a_version_in_a_nested_block_is_bumped_in_place() {
 /// skill each, building into `market/`.
 fn project(extra_config: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
+    project_in(dir.path(), extra_config);
+    dir
+}
+
+/// [`project`]'s vault, written into `root`.
+fn project_in(root: &Path, extra_config: &str) {
+    fs::create_dir_all(root).unwrap();
     fs::write(
         root.join("skillwright.md"),
         format!("---\nname: acme\nbuild:\n  out: market\n{extra_config}---\n"),
@@ -262,7 +268,6 @@ fn project(extra_config: &str) -> tempfile::TempDir {
         .unwrap();
         write_skill(root, plugin, "First draft.");
     }
-    dir
 }
 
 fn write_skill(root: &Path, plugin: &str, body: &str) {
@@ -1133,4 +1138,377 @@ fn a_nested_marketplace_never_takes_the_root_files_version() {
     assert_eq!(built_version(root, "barn"), "0.1.1");
     let outer = fs::read_to_string(root.join("skillwright.md")).unwrap();
     assert!(outer.contains("version: 9.0.0"), "{outer}");
+}
+
+// --- `--changed-since` a git ref, what the baseline build reads -------------
+
+/// Stages and commits everything in `repo`.
+fn commit_all(repo: &Path, message: &str) {
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "--quiet", "-m", message]);
+}
+
+/// A repository whose vault is `vault/`: [`project`]'s marketplace with
+/// `extra_config` in its root file, plus what `extra` writes into the
+/// repository, committed once. The repository path is canonical.
+fn repo_with_vault(extra_config: &str, extra: impl FnOnce(&Path)) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().canonicalize().unwrap();
+    project_in(&repo.join("vault"), extra_config);
+    extra(&repo);
+    git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+    commit_all(&repo, "one");
+    (dir, repo)
+}
+
+/// Writes `text` to `path`, creating its folder.
+fn write(path: &Path, text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+/// A `--json --dry-run` bump against `since`, run in `cwd` with `extra` flags.
+fn dry_bump(cwd: &Path, since: &str, extra: &[&str]) -> Run {
+    let mut argv = vec!["bump", "--changed-since", since, "--dry-run", "--json"];
+    argv.extend_from_slice(extra);
+    run(&argv, cwd)
+}
+
+/// Each plugin's status in a successful `--json` report.
+fn statuses(result: &Run) -> std::collections::BTreeMap<String, String> {
+    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
+    let report: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
+    report["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            let status = row["status"].as_str().unwrap();
+            let status = match row["reason"].as_str() {
+                Some(reason) => format!("{status} · {reason}"),
+                None => status.to_owned(),
+            };
+            (row["plugin"].as_str().unwrap().to_owned(), status)
+        })
+        .collect()
+}
+
+/// `(plugin, status)` pairs as owned strings, for comparing with [`statuses`].
+fn rows(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(plugin, status)| ((*plugin).to_owned(), (*status).to_owned()))
+        .collect()
+}
+
+const WIDGET_ASSET: &str =
+    "  assets:\n    - {from: ../tools/run.sh, to: bin/run.sh, plugin: widget}\n";
+
+#[test]
+fn an_asset_outside_the_vault_changed_since_the_ref_bumps_its_plugin() {
+    let (_dir, repo) = repo_with_vault(WIDGET_ASSET, |repo| {
+        write(&repo.join("tools/run.sh"), "echo one\n");
+    });
+    write(&repo.join("tools/run.sh"), "echo two\n");
+
+    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
+    assert_eq!(
+        statuses(&result),
+        rows(&[("widget", "dry-run"), ("gadget", "unchanged")])
+    );
+}
+
+#[test]
+fn an_unchanged_asset_outside_the_vault_bumps_nothing() {
+    let (_dir, repo) = repo_with_vault(WIDGET_ASSET, |repo| {
+        write(&repo.join("tools/run.sh"), "echo one\n");
+    });
+
+    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
+    assert_eq!(
+        statuses(&result),
+        rows(&[("widget", "unchanged"), ("gadget", "unchanged")])
+    );
+}
+
+fn hooks_json(command: &str) -> String {
+    format!(
+        "{{\"hooks\": {{\"SessionStart\": [{{\"hooks\": [{{\"type\": \"command\", \"command\": \"{command}\"}}]}}]}}}}\n"
+    )
+}
+
+#[test]
+fn a_hooks_file_outside_the_vault_changed_since_the_ref_bumps_its_plugin() {
+    let (_dir, repo) = repo_with_vault(
+        "  hooks:\n    - {from: ../hooks/hooks.json, plugin: widget}\n",
+        |repo| write(&repo.join("hooks/hooks.json"), &hooks_json("echo one")),
+    );
+    write(&repo.join("hooks/hooks.json"), &hooks_json("echo two"));
+
+    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
+    assert_eq!(
+        statuses(&result),
+        rows(&[("widget", "dry-run"), ("gadget", "unchanged")])
+    );
+}
+
+#[test]
+fn an_asset_outside_the_repository_is_read_from_disk() {
+    let outside = tempfile::tempdir().unwrap();
+    let asset = outside.path().canonicalize().unwrap().join("run.sh");
+    write(&asset, "echo one\n");
+    let config = format!(
+        "  assets:\n    - {{from: {}, to: bin/run.sh, plugin: widget}}\n",
+        asset.display()
+    );
+    let (_dir, repo) = repo_with_vault(&config, |_| {});
+
+    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
+    assert_eq!(
+        statuses(&result),
+        rows(&[("widget", "unchanged"), ("gadget", "unchanged")])
+    );
+}
+
+/// A workspace at the repository's top whose file sets `license: MIT` and
+/// `workspace_build`, with members `m1` and `m2`, each holding plugin
+/// `p1`/`p2` and one skill, committed once.
+fn workspace_repo(workspace_build: &str) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().canonicalize().unwrap();
+    write(
+        &repo.join("skillwright.md"),
+        &format!("---\nworkspace: true\nlicense: MIT\n{workspace_build}---\n"),
+    );
+    for (member, plugin) in [("m1", "p1"), ("m2", "p2")] {
+        let root = repo.join("marketplaces").join(member);
+        write(
+            &root.join("skillwright.md"),
+            &format!("---\nname: {member}\nbuild:\n  out: built\n---\n"),
+        );
+        write(
+            &root.join(format!("plugins/{plugin}/{plugin}.md")),
+            &format!("---\nname: {plugin}\ndescription: P.\nversion: 1.0.0\n---\n"),
+        );
+        member_skill(&repo, member, plugin, "One.");
+    }
+    git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+    commit_all(&repo, "one");
+    (dir, repo)
+}
+
+fn member_skill(repo: &Path, member: &str, plugin: &str, body: &str) {
+    write(
+        &repo.join(format!(
+            "marketplaces/{member}/plugins/{plugin}/skills/s.md"
+        )),
+        &format!("---\nname: s-{plugin}\ndescription: S.\n---\n\n{body}\n"),
+    );
+}
+
+#[test]
+fn changed_since_in_a_workspace_member_reads_the_workspace_file_at_the_ref() {
+    let (_dir, repo) = workspace_repo("");
+    let m1 = repo.join("marketplaces/m1");
+    let unchanged = rows(&[("p1", "unchanged")]);
+    let from_member = dry_bump(&m1, "HEAD", &[]);
+    assert_eq!(statuses(&from_member), unchanged);
+    let from_top = dry_bump(&repo, "HEAD", &["--marketplace", "m1"]);
+    assert_eq!(statuses(&from_top), unchanged);
+
+    member_skill(&repo, "m2", "p2", "Two.");
+    assert_eq!(statuses(&dry_bump(&m1, "HEAD", &[])), unchanged);
+
+    member_skill(&repo, "m1", "p1", "Two.");
+    let changed = rows(&[("p1", "dry-run")]);
+    assert_eq!(statuses(&dry_bump(&m1, "HEAD", &[])), changed);
+    assert_eq!(
+        statuses(&dry_bump(&repo, "HEAD", &["--marketplace", "m1"])),
+        changed
+    );
+}
+
+#[test]
+fn a_workspace_member_inherits_an_asset_at_the_ref() {
+    let (_dir, repo) = workspace_repo(
+        "build:\n  assets:\n    - {from: ../../shared/NOTICE, to: NOTICE, plugin: p1}\n",
+    );
+    // Committed after the fixture's own commit, so the ref holds it.
+    write(&repo.join("shared/NOTICE"), "one\n");
+    commit_all(&repo, "notice");
+    let m1 = repo.join("marketplaces/m1");
+    assert_eq!(
+        statuses(&dry_bump(&m1, "HEAD", &[])),
+        rows(&[("p1", "unchanged")])
+    );
+
+    write(&repo.join("shared/NOTICE"), "two\n");
+    assert_eq!(
+        statuses(&dry_bump(&m1, "HEAD", &[])),
+        rows(&[("p1", "dry-run")])
+    );
+}
+
+#[test]
+fn an_asset_added_since_the_ref_reads_as_it_did() {
+    let (_dir, repo) = repo_with_vault(WIDGET_ASSET, |_| {});
+    write(&repo.join("tools/run.sh"), "echo one\n");
+
+    // The ref's build cannot find the asset, as a full checkout of the ref
+    // could not.
+    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
+    assert_eq!(result.code, 2, "{}", result.stderr);
+    assert!(
+        result
+            .stderr
+            .contains("--changed-since `HEAD`: building it failed: missing-asset"),
+        "{}",
+        result.stderr
+    );
+    assert!(result.stdout.is_empty(), "{}", result.stdout);
+}
+
+#[test]
+fn a_vault_flag_naming_a_folder_the_ref_lacks_is_blocked_and_cleans_up() {
+    let dir = project("");
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    commit_all(root, "one");
+    project_in(&root.join("x"), "");
+
+    let result = run(
+        &["bump", "--changed-since", "HEAD", "--vault", "x", "--yes"],
+        root,
+    );
+    assert_eq!(result.code, 2, "{}", result.stderr);
+    assert!(
+        result.stderr.contains("holds no x/skillwright.md here"),
+        "{}",
+        result.stderr
+    );
+    assert_eq!(worktree_count(root), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_in_the_vault_reads_its_target_at_the_ref() {
+    // The current tree refuses a symlinked note, so only the ref holds one.
+    let skill = "vault/marketplaces/acme/plugins/widget/skills/widget-skill.md";
+    let note = "---\nname: widget-skill\ndescription: Use widget.\n---\n\nLinked.\n";
+    let (_dir, repo) = repo_with_vault("", |repo| {
+        write(&repo.join("notes/widget-skill.md"), note);
+        let link = repo.join(skill);
+        fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink("../../../../../../notes/widget-skill.md", &link).unwrap();
+    });
+    fs::remove_file(repo.join(skill)).unwrap();
+    write(&repo.join(skill), note);
+
+    // The ref's build refuses the link, as it refuses one on disk.
+    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
+    assert_symlink_refused(&result, skill);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_root_file_that_is_a_symlink_at_the_ref_builds_as_it_did() {
+    // The current tree refuses a symlinked root file, so only the ref holds one.
+    let (_dir, repo) = repo_with_vault("", |repo| {
+        let root_file = repo.join("vault/skillwright.md");
+        let text = fs::read_to_string(&root_file).unwrap();
+        write(&repo.join("shared/skillwright.md"), &text);
+        fs::remove_file(&root_file).unwrap();
+        std::os::unix::fs::symlink("../shared/skillwright.md", &root_file).unwrap();
+    });
+    let root_file = repo.join("vault/skillwright.md");
+    fs::remove_file(&root_file).unwrap();
+    fs::copy(repo.join("shared/skillwright.md"), &root_file).unwrap();
+
+    // The link resolves, so the ref's root file is found and read; its
+    // build then refuses the link.
+    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
+    assert_symlink_refused(&result, "vault/skillwright.md");
+}
+
+/// The ref's build was refused for the symlink at the repository path `rel`.
+fn assert_symlink_refused(result: &Run, rel: &str) {
+    assert_eq!(result.code, 2, "{}", result.stderr);
+    assert!(
+        result
+            .stderr
+            .contains("--changed-since `HEAD`: building it failed: unsafe-path:"),
+        "{}",
+        result.stderr
+    );
+    assert!(
+        result
+            .stderr
+            .contains(&format!("{rel}: a symlink in a skills source")),
+        "{}",
+        result.stderr
+    );
+}
+
+#[test]
+fn gitattributes_at_the_ref_apply_to_the_baseline() {
+    let (_dir, repo) = repo_with_vault("", |repo| {
+        write(&repo.join(".gitattributes"), "*.md text eol=crlf\n");
+    });
+
+    // The ref's notes check out with CRLF endings and the render keeps them,
+    // so every plugin reads as changed against the LF notes on disk.
+    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
+    assert_eq!(
+        statuses(&result),
+        rows(&[("widget", "dry-run"), ("gadget", "dry-run")])
+    );
+}
+
+#[test]
+fn a_shallow_clone_builds_a_ref_it_holds() {
+    let dir = project("");
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    commit_all(root, "one");
+    write_skill(root, "widget", "Second draft.");
+    commit_all(root, "two");
+    let clones = tempfile::tempdir().unwrap();
+    let url = format!("file://{}", root.display());
+    git(
+        clones.path(),
+        &["clone", "--quiet", "--depth", "1", &url, "c"],
+    );
+    let clone = clones.path().join("c");
+    write_skill(&clone, "gadget", "Third draft.");
+
+    let result = dry_bump(&clone, "HEAD", &[]);
+    assert_eq!(
+        statuses(&result),
+        rows(&[("widget", "unchanged"), ("gadget", "dry-run")])
+    );
+}
+
+#[test]
+fn a_ref_beyond_a_shallow_clone_is_blocked() {
+    let dir = project("");
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    commit_all(root, "one");
+    write_skill(root, "widget", "Second draft.");
+    commit_all(root, "two");
+    git(root, &["rev-parse", "--verify", "HEAD~1"]);
+    let clones = tempfile::tempdir().unwrap();
+    let url = format!("file://{}", root.display());
+    git(
+        clones.path(),
+        &["clone", "--quiet", "--depth", "1", &url, "c"],
+    );
+
+    let result = dry_bump(&clones.path().join("c"), "HEAD~1", &[]);
+    assert_eq!(result.code, 2, "{}", result.stderr);
+    assert!(
+        result.stderr.contains("neither a directory nor a commit"),
+        "{}",
+        result.stderr
+    );
 }
