@@ -159,9 +159,9 @@
       "line": 249,
       "title": "corpus/ departs from the corpus-schema placement guidance corpora/<name>/",
       "comment": "https://github.com/osdlc/skillwright/pull/119#pullrequestreview-5836595839",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "3e181c2fc20b5fb3a8efc04b041d289744a75bfb"
     },
     {
       "id": "r2-1",
