@@ -194,7 +194,7 @@ use crate::model::Cascade;
 use crate::model::load::{ComponentRequest, load_component, load_plugin};
 use crate::namespace::Namespace;
 use crate::projection::{ProjectedFile, RedundantOverride, file_hash};
-use crate::vault::read_vault_note;
+use crate::vault::{VaultNote, read_vault_note};
 use crate::vfs::{PreviewVfs, Vfs};
 
 /// One publish: this note, to this destination, for this target.
@@ -755,59 +755,39 @@ fn publish_onto(
     ns: &Namespace,
 ) -> Result<PublishReport, CoreError> {
     let runtime_target = runtime_target_for(&request.target);
-    // The folder holding the note decides its kind, before the read: the
-    // kind says which of the note's keys are skillwright's.
-    // Read once, and refused when malformed: an exclusion that cannot be read
-    // must not fail open.
-    let placed = crate::patterns::Patterns::load_at(vfs, request.skills_root.as_deref())?;
-    let placed = placed.as_ref();
-    let in_vault = match placed {
-        Some((_, root)) => spelled_under(vfs, root, &request.skill_path)?,
-        None => request.skill_path.clone(),
+    let NoteRead {
+        in_vault,
+        resolved,
+        note,
+        cascade,
+        own_unknown,
+    } = match read_for_publish(
+        vfs,
+        &request.skill_path,
+        request.skills_root.as_deref(),
+        request.config.as_ref(),
+        ns,
+        kind_has_renderer,
+    )? {
+        Read::Note(read) => *read,
+        // Everything a renderer cannot take is refused here, before the
+        // renderer builds the wrong file.
+        Read::Stopped(resolved) => {
+            return Err(no_renderer_for(
+                &request.skill_path,
+                resolved.kind,
+                resolved.source,
+                &request.target,
+            ));
+        }
     };
-    refuse_excluded(placed, &in_vault)?;
-    if let Some((_, root)) = placed
-        && crate::paths::is_vault_root_file(vfs, root, &request.skill_path)?
-    {
-        return Err(root_file_not_a_note(&request.skill_path));
-    }
-    let resolved = publish_kind(placed, &in_vault);
-    let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
-    // Everything a renderer cannot take is refused here, before the renderer
-    // builds the wrong file.
-    if !kind_has_renderer(resolved.kind) {
-        return Err(no_renderer_for(
-            &request.skill_path,
-            resolved.kind,
-            resolved.source,
-            &request.target,
-        ));
-    }
-
-    // The note's own unknown keys, before the cascade adds anything to it.
+    // The note's own unknown keys, read before the cascade added anything.
     let root_relative = request.skills_root.as_deref().map_or_else(
         || vault_relative(Path::new(""), &in_vault),
         |root| vault_relative(root, &in_vault),
     );
-    let own_warning = unknown_key_warning(
-        &root_relative,
-        resolved.kind,
-        &unknown_keys(&note.frontmatter, resolved.kind),
-        ns,
-    );
-
-    // What the note inherits, before `targets` is asked: the same answer a
-    // build reaches.
-    let requested = request.config.clone().unwrap_or_default();
-    let cascade = Cascade::above_with(vfs, placed, &in_vault, &requested, ns)?;
-    // The containers' own blocks first, as a build checks them, so a bad
-    // value names the container that holds it, not this note.
-    crate::harness::manifest::check_block_values(&cascade.config)?;
-    let plugin = placed.and_then(|(patterns, root)| {
-        crate::discover::folder_placement_with(patterns, root, &in_vault).plugin
-    });
-    cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
+    let own_warning = unknown_key_warning(&root_relative, resolved.kind, &own_unknown, ns);
 
     // `targets`, decided before anything is projected (see the module
     // doc). An unknown name is handed to `finish`, which stamps it on every
@@ -1011,6 +991,93 @@ fn publish_onto(
         warnings: own_warning.into_iter().collect(),
         ..report
     })
+}
+
+/// A note read the way a publish reads it, with what it inherits applied.
+struct NoteRead {
+    /// The note's path spelled under the vault root (see `spelled_under`).
+    in_vault: PathBuf,
+    resolved: ResolvedKind,
+    note: VaultNote,
+    cascade: Cascade,
+    /// The note's own unknown keys, before the cascade added any.
+    own_unknown: Vec<String>,
+}
+
+/// What [`read_for_publish`] gives back.
+enum Read {
+    /// The note, read and with its cascade applied.
+    Note(Box<NoteRead>),
+    /// The note's kind is not one the caller reads past. Nothing past the
+    /// note's own frontmatter was read.
+    Stopped(ResolvedKind),
+}
+
+/// Reads the note at `skill_path` as a publish does: placed under the vault
+/// root, refused when excluded or when it is the root file, its kind
+/// resolved by its folder, then, when `reads_past` accepts that kind, its
+/// containers' cascade checked and applied.
+///
+/// # Errors
+///
+/// * `refused: malformed-root-file` when the root file at `skills_root`, or
+///   a workspace file above it, does not parse.
+/// * `refused: unsafe-path` when the note's real path cannot be resolved
+///   safely under the vault root.
+/// * `refused: excluded-note` when `build.exclude` or a folder that never
+///   ships holds the note.
+/// * `refused: no-renderer` when the note is the vault's root file.
+/// * What [`read_vault_note`] refuses, such as `invalid-name` or a malformed
+///   note, and what the containers' cascade refuses.
+fn read_for_publish(
+    vfs: &dyn Vfs,
+    skill_path: &Path,
+    skills_root: Option<&Path>,
+    config: Option<&MarketplaceConfig>,
+    ns: &Namespace,
+    reads_past: impl FnOnce(EntityKind) -> bool,
+) -> Result<Read, CoreError> {
+    // The folder holding the note decides its kind, before the read: the
+    // kind says which of the note's keys are skillwright's.
+    // Read once, and refused when malformed: an exclusion that cannot be read
+    // must not fail open.
+    let placed = crate::patterns::Patterns::load_at(vfs, skills_root)?;
+    let placed = placed.as_ref();
+    let in_vault = match placed {
+        Some((_, root)) => spelled_under(vfs, root, skill_path)?,
+        None => skill_path.to_path_buf(),
+    };
+    refuse_excluded(placed, &in_vault)?;
+    if let Some((_, root)) = placed
+        && crate::paths::is_vault_root_file(vfs, root, skill_path)?
+    {
+        return Err(root_file_not_a_note(skill_path));
+    }
+    let resolved = publish_kind(placed, &in_vault);
+    let mut note = read_vault_note(vfs, skill_path, ns, resolved.kind)?;
+    if !reads_past(resolved.kind) {
+        return Ok(Read::Stopped(resolved));
+    }
+    let own_unknown = unknown_keys(&note.frontmatter, resolved.kind);
+
+    // What the note inherits, before `targets` is asked: the same answer a
+    // build reaches.
+    let requested = config.cloned().unwrap_or_default();
+    let cascade = Cascade::above_with(vfs, placed, &in_vault, &requested, ns)?;
+    // The containers' own blocks first, as a build checks them, so a bad
+    // value names the container that holds it, not this note.
+    crate::harness::manifest::check_block_values(&cascade.config)?;
+    let plugin = placed.and_then(|(patterns, root)| {
+        crate::discover::folder_placement_with(patterns, root, &in_vault).plugin
+    });
+    cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
+    Ok(Read::Note(Box::new(NoteRead {
+        in_vault,
+        resolved,
+        note,
+        cascade,
+        own_unknown,
+    })))
 }
 
 /// The render's redundant harness block keys as report lines.
