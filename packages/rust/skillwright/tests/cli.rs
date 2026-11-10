@@ -3483,15 +3483,17 @@ fn publish_refuses_a_missing_description() {
     );
     assert!(!dest.exists());
 
-    // Several notes by path: refused as a whole, as the vault is.
+    // Several notes by path: each is its own unit, so the undescribed one
+    // is refused and the other still publishes.
     let some = publish(&["skills/said/said.md", "skills/quiet/quiet.md"]);
-    assert_eq!(some.code, 2, "{}", some.stderr);
+    assert_eq!(some.code, 1, "{}", some.stderr);
     assert!(
-        some.stderr.contains("missing-description"),
+        some.stdout.contains("missing-description"),
         "{}",
-        some.stderr
+        some.stdout
     );
-    assert!(!dest.exists());
+    assert!(dest.join(".claude/skills/said/SKILL.md").is_file());
+    assert!(!dest.join(".claude/skills/quiet").exists());
 
     // One note by its path: refused, and nothing written for it.
     let one = publish(&["skills/quiet/quiet.md"]);

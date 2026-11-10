@@ -95,28 +95,32 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
 
     // What a build refuses, by note: each row it names is flagged, and the
     // exit says so.
-    let errors: std::collections::BTreeMap<&str, (&str, &str)> = scan
-        .warnings
-        .iter()
-        .filter(|w| w.is_error())
-        .map(|w| (w.path.as_str(), (w.reason.as_str(), w.detail.as_str())))
-        .collect();
+    let mut errors: std::collections::BTreeMap<&str, Vec<(&str, &str)>> =
+        std::collections::BTreeMap::new();
+    for w in scan.warnings.iter().filter(|w| w.is_error()) {
+        errors
+            .entry(w.path.as_str())
+            .or_default()
+            .push((w.reason.as_str(), w.detail.as_str()));
+    }
     if flags.json {
         let rows: Vec<_> = scan
             .components
             .iter()
             .map(|c| {
                 let mut row = serde_json::to_value(roster_row(c)).unwrap_or_default();
-                if let (Some((reason, detail)), Some(map)) = (
+                if let (Some(found), Some(map)) = (
                     errors.get(c.vault_relative_path.as_str()),
                     row.as_object_mut(),
                 ) {
-                    let key = if *reason == MISSING_DESCRIPTION_REASON {
-                        "missing_description"
-                    } else {
-                        "collision"
-                    };
-                    map.insert(key.to_owned(), (*detail).into());
+                    for (reason, detail) in found {
+                        let key = if *reason == MISSING_DESCRIPTION_REASON {
+                            "missing_description"
+                        } else {
+                            "collision"
+                        };
+                        map.insert(key.to_owned(), (*detail).into());
+                    }
                 }
                 row
             })
@@ -132,10 +136,12 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
             .into_iter()
             .zip(&scan.components)
         {
-            let flag = errors
+            let flag: String = errors
                 .get(c.vault_relative_path.as_str())
+                .into_iter()
+                .flatten()
                 .map(|(reason, _)| format!("  [{reason}]"))
-                .unwrap_or_default();
+                .collect();
             let _ = writeln!(ctx.out, "{line}{flag}");
         }
     }

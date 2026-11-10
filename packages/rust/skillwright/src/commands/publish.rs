@@ -304,6 +304,16 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             let _ = writeln!(ctx.err, "{line}");
             warned.insert(line);
         }
+        // A skill with no description refuses the whole run before any
+        // write, as it refuses a build. A named note is refused on its own.
+        if let Err(err) = refuse_undescribed(
+            skills
+                .iter()
+                .filter(|c| c.lacks_description())
+                .map(|c| c.vault_relative_path.as_str()),
+        ) {
+            return blocked(ctx.err, &err.to_string());
+        }
         unreadable = scan.skipped;
         if note_paths.is_empty() && unreadable.is_empty() {
             return blocked(
@@ -342,16 +352,6 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     }
     if let Some(refusal) = skill_collision(&skills, &destinations) {
         return blocked(ctx.err, &refusal);
-    }
-    // A skill with no description refuses the whole run before any write,
-    // as it refuses a build.
-    if let Err(err) = refuse_undescribed(
-        skills
-            .iter()
-            .filter(|c| c.lacks_description())
-            .map(|c| c.vault_relative_path.as_str()),
-    ) {
-        return blocked(ctx.err, &err.to_string());
     }
 
     // --- confirmation --------------------------------------------------

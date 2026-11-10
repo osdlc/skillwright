@@ -111,7 +111,8 @@ pub struct VaultNote {
 /// publish — and a note with neither is an error naming the path, so a caller
 /// holding several is told which one was not. A container's note is the
 /// exception: it reads with an empty description. A `name` alone reads with
-/// an empty description too, which a build and a publish refuse. `name`
+/// an empty description too, which a build and a publish refuse for a skill,
+/// command or agent. `name`
 /// defaults to the filename slugified — via [`crate::discover::default_name`],
 /// the one derivation the scan uses too — so the ordinary note needs no
 /// frontmatter beyond a `description`.

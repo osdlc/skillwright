@@ -663,8 +663,9 @@ export interface DiscoveredComponent {
 
   /**
    * The frontmatter `description`, ≤1024 characters. Empty when the note
-   * wrote none: a container note, or a member a build refuses with
-   * [`MISSING_DESCRIPTION_REASON`].
+   * wrote none. A build refuses a skill, command or agent with none
+   * ([`Self::lacks_description`]); a container or a hook need not have
+   * one.
    */
   description: string;
 
