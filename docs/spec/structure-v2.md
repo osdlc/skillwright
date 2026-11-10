@@ -149,13 +149,13 @@ ignored.
 
 ## 4. Links, embeds and containment
 
-A link is a `[[wikilink]]` or a relative Markdown link. A `[[name]]` that
-names a skill or a command is a call (rule 7): it is the only call form. An
-embed (`![[name]]`, section 5) resolves by the same rules: what it names must
-be in scope. The rules apply to links from a component's note and from any
-Markdown file it ships. Code is fully literal: nothing inside a code span or
-fenced block is read, so a call, link or embed written there ships exactly as
-written (rule 13).
+The syntax decides what a token is, not its target. `/[[x]]` is a call (rule
+8). `![[x]]` is an embed (section 5). Any other `[[x]]`, and a relative
+Markdown link, is an ordinary link. An embed resolves by the same rules as a
+link: what it names must be in scope. The rules apply to links from a
+component's note and from any Markdown file it ships. Code is fully literal:
+nothing inside a code span or fenced block is read, so a call, link or embed
+written there ships exactly as written (rule 12).
 
 ### Containment
 
@@ -171,66 +171,63 @@ written (rule 13).
 |---|---|
 | A file in the component's own folder | Ships as written, relative. |
 | A file in the plugin's `references/`, `scripts/` or `assets/` | Allowed. Rewritten to its installed path at the pack root. |
-| A skill's note, including the linking skill's own | A call. Renders as the harness's call string (rule 7). Its scope is decision D2: the whole marketplace. A link to a section of it is refused (rule 8). |
-| A command's note | A call where the harness carries commands. Refused for any other harness (rule 9). |
-| An agent's note | Refused. No harness's build carries an agent (rule 9). |
-| A file in another component's folder, same plugin | Allowed. Rewritten to its installed path. |
+| Another component's note, or a file in its folder, same plugin | Allowed. Rewritten to its installed path. A link to a skill's or command's note also warns (rule 7). |
+| A component the harness's build does not carry, such as any agent | Refused for that harness. |
 | A file in another plugin | Refused. |
 | Anything outside `marketplaces/<m>/` | Refused. |
 
+A call, `/[[name]]`, is not a link and copies nothing. Its scope is decision
+D2 (rule 8).
+
 3. A bare `[[name]]` resolves in the linking file's component folder first.
    With no match there, it resolves among the plugin's shared folders and its
-   components together. With no match there, a name that names a skill in
-   another plugin of the marketplace is a call to it (decision D2). It never
-   resolves to a file outside the plugin. More than one match in a step is an
-   error that names each match.
+   components together. It never resolves outside the plugin. More than one
+   match in a step is an error that names each match.
 4. A link with a path resolves relative to the linking file. Its result must
    still fall in a row the table allows.
 5. An installed path is written relative to where the linking file lands in the
    pack. From a skill's entry note, the plugin's `references/x.md` becomes
    `../../references/x.md`. Every harness built for keeps a pack whole on
    install, so the path holds after install (section 9).
-6. A link to a file in another component's folder is rewritten to where that
-   file lands in the same pack. From `skills/author/author.md`,
-   `[[setup/references/install.md]]` becomes
-   `[install.md](../setup/references/install.md)`.
-7. A link to a skill's note is a call (decision D3, decided). It renders as the
-   string that runs the skill on that harness, in backticks: `[[setup]]`
-   becomes `` `/skillwright:setup` `` on Claude Code and
-   `` `$skillwright:setup` `` on Codex. Nothing is copied. This includes a
-   skill's link to its own note. An alias keeps its words and adds the call
-   after them: `[[setup|the setup skill]]` renders as
-   ``the setup skill (`/skillwright:setup`)``. A call to a skill the harness's
-   build does not carry is refused, naming the call.
-8. A link to a section of a skill's note, `[[setup#Usage]]`, is an error,
-   because a call has no section. The message says to embed the section with
-   `![[setup#Usage]]` or to call the skill with `[[setup]]`. The same holds for
-   a command's note. A fragment on a link to any other note or file is kept in
-   the rewritten link: `[[guide#Install]]` becomes
-   `[guide](references/guide.md#Install)`.
-9. A link to a command's note follows rule 7 on a harness whose build carries
-   commands, today Claude Code only: `[[deploy]]` renders as
-   `` `/skillwright:deploy` ``. Any other harness has no command to run, so the
-   link is refused for that harness, as a call to a skill it does not carry is.
-   An agent has no call form and no build carries it, so a link to an agent's
-   note is refused.
+6. A link to another component's note, or to a file in its folder, is rewritten
+   to where that file lands in the same pack. From `skills/author/author.md`,
+   `[[setup]]` becomes `[setup](../setup/SKILL.md)` and `[[setup#Usage]]`
+   becomes `[setup](../setup/SKILL.md#Usage)`: a fragment is kept. A skill's
+   link to its own note is a file link to its own file, `[author](SKILL.md)`.
+   A component the target harness's build does not carry, such as an agent in
+   any build or a command outside Claude Code, has no installed path, and a
+   link to it is refused for that harness.
+7. A plain link to another skill's or command's note warns, naming the file
+   and the link: `Did you mean to call /[[setup]]?`. The link still ships as a
+   file link. A skill's link to its own note does not warn.
+8. `/[[name]]` is a call (decision D3, decided). The `/` counts where it starts
+   a line or follows whitespace or one of `` ( " ' ` * > _ | [ = ``, as in v1.
+   Anywhere else, such as `dir/[[x]]` or `[[A]]/[[B]]`, the `/` is text and
+   `[[x]]` is an ordinary link.
+   - A call to a skill renders as the string that runs it on that harness, in
+     backticks: `` `/skillwright:setup` `` on Claude Code,
+     `` `$skillwright:setup` `` on Codex. Nothing is copied.
+   - A call with words keeps them: `/[[setup|the setup skill]]` renders as
+     ``the setup skill (`/skillwright:setup`)``.
+   - A fragment on a call, `/[[setup#Usage]]`, is an error, because a call
+     cannot target a section. Link or embed the section instead.
+   - The name is looked up among the marketplace's skills (decision D2). A
+     name two plugins share is refused, naming both; write the path of the one
+     meant. A call to a skill the harness's build does not carry is refused.
+   - A call to a command renders the same way on Claude Code, the only harness
+     whose build carries commands, and is refused for any other harness. A
+     call to an agent is refused: no build carries one.
+9. `\/[[x]]` ships as the text `/[[x]]`, as in v1.
 10. A link into a never-ship folder is refused with the same error in every
     link form.
 11. A link to a missing file is an error that names the link.
-12. `/[[name]]` is not v2 syntax. In prose, where v1 read it as a call, it is
-    refused with an error that names the file and says to write `[[name]]`.
-    v1 read it as a call when the `/` starts a line or follows whitespace or
-    one of `` ( " ' ` * > _ | [ = ``. Anywhere else in prose, such as
-    `dir/[[x]]` or `[[A]]/[[B]]`, the `/` is ordinary text and `[[x]]` is an
-    ordinary link, as in v1. v1's escape, `\/[[x]]`, is refused the same way.
-13. Code is fully literal. Nothing inside a code span or fenced block is read:
-    no call, link or embed, and no `/[[` refusal. A call written in code ships
-    as written, so write calls in prose, where they render in backticks.
-14. After the build, no `[[` may remain in prose. A leftover is an error that
+12. Code is fully literal. Nothing inside a code span or fenced block is read:
+    no call, link or embed. A call written in code ships as written, so write
+    calls in prose, where they render in backticks.
+13. After the build, no `[[` may remain in prose. A leftover is an error that
     names the file and the text. The check skips code spans, fenced blocks and
-    `\[[`-escaped text. In prose, `\[[x]]` ships as `[[x]]`, which is how to
-    show the syntax outside code.
-15. Every error in this section names the linking file, the link as written and
+    `\[[`-escaped text. In prose, `\[[x]]` ships as `[[x]]`.
+14. Every error in this section names the linking file, the link as written and
     the rule it broke.
 
 ## 5. Transclusion
@@ -248,7 +245,7 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
    link to the file's installed path. Any other text file is inlined as a
    fenced code block (rules 9 to 14, decision D8, decided).
 3. An embed whose target does not exist is an error that names the embed. An
-   embed inside a code span or fenced block is not read (section 4 rule 13).
+   embed inside a code span or fenced block is not read (section 4 rule 12).
 
 ### Inlining a note
 
@@ -302,8 +299,7 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
 18. It is then written relative to where the text lands, the file that holds
     the outermost embed. The same note embedded into two files links
     differently in each.
-19. A call (`[[name]]` to a skill) inside embedded text renders as it would in
-    place.
+19. A call (`/[[name]]`) inside embedded text renders as it would in place.
 
 ### Differences from v1
 
@@ -316,7 +312,7 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
 22. v1 turned an embed of a file that is neither a note nor an image into a
     plain link. v2 inlines a text file as a fenced code block (rules 9 to 14).
 23. v1 read calls inside code spans and fenced blocks. v2 reads nothing there
-    (section 4 rule 13).
+    (section 4 rule 12).
 
 ## 6. Frontmatter
 
@@ -530,67 +526,82 @@ folder.
 `plugin/.claude-plugin/` and its siblings to `plugin/dist/osdlc/`. The
 `plugin` workflow diffs that folder, and `plugin-release` copies from it.
 
-### D2. The scope of a skill link
+### D2. The scope of a call
 
-**What it is.** How far `[[name]]` looks for a skill when the name matches
-nothing in the linking component's folder or its plugin. Such a link is a call
-(section 4 rule 7), so this is also the scope of a call.
+**What it is.** How far `/[[name]]` looks for the skill it calls.
 
 **Today.** v1 looks a called name up across the whole vault. The repo's
-`author` skill calls `setup` in its own plugin, which renders as
+`author` skill calls `/[[setup]]` in its own plugin, which renders as
 `/skillwright:setup` on Claude Code, `$skillwright:setup` on Codex and
 `/skill:skillwright-setup` on Pi. If two skills share the name, v1 stops with
 `skill-call-ambiguous` and asks for the path of the one meant.
 
 **Options.**
 
-- **Own plugin only.** `[[review]]` is a call only if `review` is in the same
-  plugin. Otherwise it is an unresolved link, which is an error. Cost: a call
-  to another plugin's skill, such as `/sdlc:task-work` from a `craft` skill,
-  cannot be written.
-- **The whole marketplace.** `[[review]]` finds `review` in any plugin of the
-  marketplace. A name two plugins share is refused, naming both; write the
-  path of the one meant, `[[plugins/sdlc/skills/review/review]]`. Cost: a call
+- **Own plugin only.** `/[[review]]` works only if `review` is in the same
+  plugin. Cost: a call to another plugin's skill, such as `/sdlc:task-work`
+  from a `craft` skill, cannot be written.
+- **The whole marketplace.** `/[[review]]` finds `review` in any plugin of the
+  marketplace. A name two plugins share is refused, naming both. Cost: a call
   can name a skill in a plugin the user did not install. The harness then
   reports an unknown command at run time.
 
 **Recommendation: the whole marketplace.** A call copies no file, so it does
-not break containment, and calls across plugins are common. A link to a
-file in another plugin stays refused.
+not break containment, and calls across plugins are common. Links stay within
+the plugin.
 
 **Existing vaults.** None, unless a call names a skill in another marketplace
 of the same vault. That call is now refused.
 
-### D3. A plain link to a skill (decided)
+### D3. Calls and plain links to a skill (decided)
 
-**What it is.** `[[setup]]`, written in a skill, where `setup` is a skill.
+**What it is.** What `/[[setup]]` and `[[setup]]` mean when `setup` is a skill.
 
 **Today.** v1 has two forms. `/[[setup]]` is a call: it renders as
 `/skillwright:setup` on Claude Code. `[[setup]]` without the `/` is a mention:
-it renders as the skill's name, `skillwright:setup`, and does not run it. A
-skill's link to its own note is the exception: it ships as a file link,
-`[setup](SKILL.md)` ([#53](https://github.com/osdlc/skillwright/issues/53)).
+it renders as the skill's name, `skillwright:setup`, and runs nothing. A
+skill's link to its own note ships as a file link, `[setup](SKILL.md)`
+([#53](https://github.com/osdlc/skillwright/issues/53) asked for the name).
+v1 also read calls inside code spans and fenced blocks.
 
-**Decided.** `[[setup]]` is the call. It renders as the call string, the same
-output v1's `/[[setup]]` gives on each harness, including for a skill's link to
-its own note. `/[[setup]]` is refused where v1 read it as a call, with an
-error that says to write `[[setup]]` (section 4 rule 12). A link to a section
-of a skill, `[[setup#Usage]]`, is refused: embed it with `![[setup#Usage]]` or
-call the skill with `[[setup]]` (rule 8). A command's note follows the same
-rules where the harness carries commands (rule 9). A link to a file inside a
-skill's folder, such as `[[setup/references/install.md]]`, stays an ordinary
-file link. Nothing in code is read, so a call is written in prose (rule 13).
+**Decided.** The syntax decides, not the target. v2 keeps the call and makes a
+plain link a real link (section 4 rules 6 to 8).
 
-**Existing vaults.** Every `/[[name]]` call becomes `[[name]]`. A v1 mention,
-`[[name]]` meant as the name only, now runs the skill; reword it if that is not
-meant. The repo's `plugin/` has 10 `/[[...]]` calls in four notes: three in
-headings, such as `# /[[author]]`, and seven in code spans, such as
-`` `/[[setup]]` ``. The headings become `[[...]]`. The seven code-span calls
-become plain `[[name]]` in prose, without the backticks; a call renders in
-backticks, so the output is the same. It has no v1 mentions. Its `author` skill
-documents both v1 forms in `plugins/skillwright/skills/author/author.md`
-(lines 59 to 73), and that text is rewritten in the same change. Its syntax
-examples sit in code spans, so they ship as written.
+- `/[[setup]]` is a call, as in v1, with v1's `/` positions and its `\/[[`
+  escape. A call with words keeps them. A fragment on a call is an error.
+- `[[setup]]` is a file link to the skill's installed `SKILL.md`, under the
+  normal link scope (same plugin). `[[setup#Usage]]` links to that section.
+  A skill's link to its own note is a file link to its own file, which settles
+  #53 in that form.
+- A plain link to another skill's or command's note warns
+  `Did you mean to call /[[setup]]?`. A self-link does not warn.
+- There is no mention form. Nothing renders a bare skill name.
+- Code is fully literal, so a call in a code span is not read.
+
+**Why `/` and not `@`.**
+
+- `/` matches how Claude Code runs a skill or command, `/name`, so the source
+  reads like its output.
+- v1 and existing vaults already use it, so nothing has to be rewritten.
+- Its cost is the clash with paths, such as `dir/[[x]]`. The call-position
+  rule handles that: a `/` inside a word or path is text.
+- `@` was considered and rejected. In Claude Code and Cursor it means mention
+  or attach, `@file` or `@agent`, which is what a plain link already does. It
+  also clashes with email addresses and GitHub `@user` mentions, and every
+  existing vault would have to be rewritten.
+- Codex runs skills with `$` either way. The build writes each harness's own
+  form from `/[[name]]`.
+
+**Existing vaults.** A v1 mention, `[[name]]`, now ships as a file link and
+warns; write `/[[name]]` if a call was meant, or keep the link. A call inside a
+code span or fenced block now ships as written; move it into prose. The repo's
+`plugin/` has 10 calls, all `/[[...]]`. The three heading self-calls, such as
+`# /[[author]]`, are in prose and need no change. The other seven sit in code
+spans, such as `` `/[[setup]]` ``, and v1 read them as calls. They move into
+prose, keeping the `/`: `/[[setup]]` without the backticks. A call renders in
+backticks, so the output is the same. The `author` skill's text on links and
+calls (`plugins/skillwright/skills/author/author.md`, lines 59 to 73) is
+rewritten to describe v2; its syntax examples stay in code and ship as written.
 
 ### D4. `build.assets` and `build.hooks`
 
