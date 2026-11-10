@@ -1512,3 +1512,134 @@ fn a_ref_beyond_a_shallow_clone_is_blocked() {
         result.stderr
     );
 }
+
+#[test]
+fn a_ref_baseline_never_checks_out_files_outside_what_the_build_reads() {
+    let (_dir, repo) = repo_with_vault("", |repo| {
+        write(&repo.join("junk/big.bin"), "junk\n");
+    });
+    // A filter that fails on every checkout of `junk/`: the bump succeeds
+    // only if the baseline never writes it.
+    write(&repo.join(".git/info/attributes"), "junk/** filter=boom\n");
+    git(&repo, &["config", "filter.boom.smudge", "false"]);
+    git(&repo, &["config", "filter.boom.required", "true"]);
+
+    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
+    assert_eq!(
+        statuses(&result),
+        rows(&[("widget", "unchanged"), ("gadget", "unchanged")])
+    );
+}
+
+// --- The baseline folder, seen from outside the process ---------------------
+
+/// What a run left in the repository and the temp folder.
+#[cfg(unix)]
+#[derive(Debug, PartialEq)]
+struct Leftovers {
+    status: String,
+    config: Vec<u8>,
+    worktrees: String,
+    worktrees_dir: bool,
+}
+
+#[cfg(unix)]
+fn leftovers(repo: &Path) -> Leftovers {
+    Leftovers {
+        status: git(repo, &["status", "--porcelain"]),
+        config: fs::read(repo.join(".git/config")).unwrap(),
+        worktrees: git(repo, &["worktree", "list", "--porcelain"]),
+        worktrees_dir: repo.join(".git/worktrees").exists(),
+    }
+}
+
+/// Runs the binary in `cwd` with its temp folder set to `tmp`, so the
+/// baselines folder is this test's own. Its exit code and stderr.
+#[cfg(unix)]
+fn bump_with_tmp(cwd: &Path, tmp: &Path, argv: &[&str]) -> (i32, String) {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_skillwright"))
+        .args(argv)
+        .current_dir(cwd)
+        .env("TMPDIR", tmp)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .output()
+        .unwrap();
+    (
+        output.status.code().unwrap(),
+        String::from_utf8(output.stderr).unwrap(),
+    )
+}
+
+/// What the baselines folder under `tmp` holds.
+#[cfg(unix)]
+fn baselines_in(tmp: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(tmp.join("skillwright-bump-baselines"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[cfg(unix)]
+#[test]
+fn a_successful_ref_bump_leaves_no_baseline_behind() {
+    let (_dir, repo) = repo_with_vault("", |_| {});
+    write_skill(&repo.join("vault"), "widget", "Second draft.");
+    let tmp = tempfile::tempdir().unwrap();
+    let before = leftovers(&repo);
+
+    let argv = ["bump", "--changed-since", "HEAD", "--dry-run"];
+    let (code, stderr) = bump_with_tmp(&repo.join("vault"), tmp.path(), &argv);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(baselines_in(tmp.path()), ["guard"]);
+    assert_eq!(leftovers(&repo), before);
+    assert_eq!(worktree_count(&repo), 1);
+    assert!(!before.worktrees_dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_ref_build_leaves_no_baseline_behind() {
+    let skill = "vault/marketplaces/acme/plugins/widget/skills/widget-skill.md";
+    let (_dir, repo) = repo_with_vault("", |repo| {
+        write(
+            &repo.join(skill),
+            "---\nname: [widget-skill\n---\n\nBroken.\n",
+        );
+    });
+    write_skill(&repo.join("vault"), "widget", "Fixed.");
+    let tmp = tempfile::tempdir().unwrap();
+    let before = leftovers(&repo);
+
+    let argv = ["bump", "--changed-since", "HEAD", "--dry-run"];
+    let (code, stderr) = bump_with_tmp(&repo.join("vault"), tmp.path(), &argv);
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("building it failed"), "{stderr}");
+    assert_eq!(baselines_in(tmp.path()), ["guard"]);
+    assert_eq!(leftovers(&repo), before);
+    assert!(!before.worktrees_dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_ref_without_a_root_file_leaves_no_baseline_behind() {
+    let dir = project("");
+    let root = dir.path();
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    git(root, &["add", "marketplaces"]);
+    git(root, &["commit", "--quiet", "-m", "notes only"]);
+    let tmp = tempfile::tempdir().unwrap();
+    let before = leftovers(root);
+
+    let argv = ["bump", "--changed-since", "HEAD", "--yes"];
+    let (code, stderr) = bump_with_tmp(root, tmp.path(), &argv);
+    assert_eq!(code, 2, "{stderr}");
+    assert!(
+        stderr.contains("compare against a built folder"),
+        "{stderr}"
+    );
+    assert_eq!(baselines_in(tmp.path()), ["guard"]);
+    assert_eq!(leftovers(root), before);
+}

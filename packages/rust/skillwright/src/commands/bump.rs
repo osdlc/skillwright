@@ -1260,6 +1260,240 @@ mod tests {
         assert_eq!(failures, 0);
     }
 
+    /// Runs `git` in `repo` with no system or global config and a fixed
+    /// identity. Its stdout.
+    fn git(repo: &Path, args: &[&str]) -> String {
+        let mut cmd = typed_git::git();
+        cmd.dir(repo)
+            .args(args)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "T")
+            .env("GIT_AUTHOR_EMAIL", "t@t.invalid")
+            .env("GIT_COMMITTER_NAME", "T")
+            .env("GIT_COMMITTER_EMAIL", "t@t.invalid");
+        cmd.run().unwrap()
+    }
+
+    fn write(path: &Path, text: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    /// A canonical temp folder holding a repository of `files`, committed
+    /// once, and that commit's sha.
+    fn repo_of(files: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().canonicalize().unwrap();
+        for (path, text) in files {
+            write(&repo.join(path), text);
+        }
+        git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "--quiet", "-m", "one"]);
+        let sha = git(&repo, &["rev-parse", "HEAD"]);
+        (dir, repo, sha)
+    }
+
+    /// Every file under `dir`, relative and forward-slashed, sorted.
+    fn files_under(dir: &Path) -> Vec<String> {
+        fn walk(dir: &Path, base: &Path, found: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, base, found);
+                } else {
+                    let rel = path.strip_prefix(base).unwrap();
+                    found.push(rel.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(dir, dir, &mut found);
+        found.sort();
+        found
+    }
+
+    fn strings(paths: &[&str]) -> Vec<String> {
+        paths.iter().map(|p| (*p).to_owned()).collect()
+    }
+
+    /// The run `cwd` resolves to, as `bump` resolves it.
+    fn run_at(cwd: &Path) -> ResolvedRun {
+        let flags = CommonFlags {
+            vault: None,
+            config: None,
+            namespace: None,
+        };
+        let mut err = Vec::new();
+        resolve_run(&flags, cwd, &mut err)
+            .unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&err)))
+    }
+
+    #[test]
+    fn check_out_paths_writes_only_the_named_paths() {
+        let (_dir, repo, sha) = repo_of(&[("a/x", "x\n"), ("b/y", "y\n"), ("c", "c\n")]);
+        // A modified tracked file: the repository's own index must not move.
+        std::fs::write(repo.join("c"), "changed\n").unwrap();
+        let snapshot = || {
+            (
+                git(&repo, &["status", "--porcelain"]),
+                std::fs::read(repo.join(".git/config")).unwrap(),
+                git(&repo, &["worktree", "list", "--porcelain"]),
+                std::fs::read(repo.join(".git/index")).unwrap(),
+            )
+        };
+        let before = snapshot();
+        let temp = tempfile::tempdir().unwrap();
+        let dest = temp.path().join("checkout");
+        std::fs::create_dir(&dest).unwrap();
+
+        check_out_paths(
+            &repo,
+            &sha,
+            &temp.path().join("index"),
+            &dest,
+            &strings(&["a"]),
+        )
+        .unwrap();
+
+        assert_eq!(files_under(&dest), ["a/x"]);
+        assert_eq!(snapshot(), before);
+        assert_eq!(git(&repo, &["diff", "--name-only"]), "c");
+    }
+
+    #[test]
+    fn paths_at_ref_keeps_only_what_the_ref_holds() {
+        let (_dir, repo, sha) = repo_of(&[("a/x", "x\n"), ("c", "c\n"), ("v[1]/f", "f\n")]);
+        let held = paths_at_ref(&repo, &sha, &strings(&["c", "a", "missing", "v[1]"])).unwrap();
+        assert_eq!(held, ["c", "a", "v[1]"]);
+    }
+
+    #[test]
+    fn an_empty_set_runs_no_checkout() {
+        let (_dir, repo, sha) = repo_of(&[("c", "c\n")]);
+        let head = || {
+            (
+                git(&repo, &["rev-parse", "HEAD"]),
+                git(&repo, &["symbolic-ref", "HEAD"]),
+            )
+        };
+        let before = head();
+        let temp = tempfile::tempdir().unwrap();
+        let dest = temp.path().join("checkout");
+        std::fs::create_dir(&dest).unwrap();
+
+        check_out_paths(&repo, &sha, &temp.path().join("index"), &dest, &[]).unwrap();
+
+        assert_eq!(head(), before);
+        assert!(files_under(&dest).is_empty());
+    }
+
+    #[test]
+    fn a_root_file_at_the_repo_top_gives_the_whole_tree() {
+        let (_dir, repo, sha) = repo_of(&[
+            ("skillwright.md", "---\nname: acme\n---\n"),
+            ("skills/s.md", "---\ndescription: S.\n---\n"),
+        ]);
+        let run = run_at(&repo);
+        let set = path_set(&repo, &sha, build_input_candidates(&repo, &run)).unwrap();
+        assert_eq!(set, ["."]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_folder_above_the_vault_gives_the_whole_tree() {
+        let (_dir, repo, _) =
+            repo_of(&[("real/docs/vault/skillwright.md", "---\nname: acme\n---\n")]);
+        std::os::unix::fs::symlink("real/docs", repo.join("docs")).unwrap();
+        git(&repo, &["add", "docs"]);
+        git(&repo, &["commit", "--quiet", "-m", "link"]);
+        let sha = git(&repo, &["rev-parse", "HEAD"]);
+
+        let config = repo.join("docs/vault/skillwright.md");
+        let set = path_set(&repo, &sha, root_file_candidates(&repo, &config)).unwrap();
+        assert_eq!(set, ["."]);
+    }
+
+    #[test]
+    fn the_path_set_holds_ancestor_gitattributes() {
+        let (_dir, repo, sha) = repo_of(&[
+            (".gitattributes", "*.md text\n"),
+            ("sub/.gitattributes", "*.md text\n"),
+            ("sub/vault/skillwright.md", "---\nname: acme\n---\n"),
+            ("other/.gitattributes", "*.md text\n"),
+        ]);
+        let config = repo.join("sub/vault/skillwright.md");
+        let set = path_set(&repo, &sha, root_file_candidates(&repo, &config)).unwrap();
+        assert_eq!(
+            set,
+            [
+                ".gitattributes",
+                "sub/.gitattributes",
+                "sub/vault/skillwright.md"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_baseline_path_set_names_the_vault_root_files_assets_and_hooks() {
+        let outside = tempfile::tempdir().unwrap();
+        let elsewhere = outside.path().canonicalize().unwrap().join("ELSEWHERE");
+        write(&elsewhere, "x\n");
+        let member = format!(
+            "---\nname: m1\nbuild:\n  out: built\n  assets:\n    \
+             - {{from: NOTICE, to: NOTICE}}\n    \
+             - {{from: ../../tools/run.sh, to: run.sh}}\n    \
+             - {{from: {}, to: ELSEWHERE}}\n  hooks:\n    \
+             - {{from: ../../hooks/hooks.json}}\n---\n",
+            elsewhere.display()
+        );
+        let (_dir, repo, sha) = repo_of(&[
+            ("skillwright.md", "---\nworkspace: true\n---\n"),
+            ("marketplaces/m1/skillwright.md", &member),
+            ("marketplaces/m1/NOTICE", "n\n"),
+            ("marketplaces/m1/skills/s.md", "---\ndescription: S.\n---\n"),
+            ("tools/run.sh", "echo\n"),
+            ("hooks/hooks.json", "{\"hooks\": {}}\n"),
+            ("unread/file", "u\n"),
+        ]);
+        let config = repo.join("marketplaces/m1/skillwright.md");
+        let run = run_at(&repo.join("marketplaces/m1"));
+
+        let mut set = path_set(&repo, &sha, root_file_candidates(&repo, &config)).unwrap();
+        set.extend(path_set(&repo, &sha, build_input_candidates(&repo, &run)).unwrap());
+        set.sort();
+        assert_eq!(
+            set,
+            [
+                "hooks/hooks.json",
+                "marketplaces/m1",
+                "marketplaces/m1/skillwright.md",
+                "skillwright.md",
+                "tools/run.sh",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_path_with_glob_characters_is_checked_out_literally() {
+        let (_dir, repo, sha) = repo_of(&[("v[1]/f", "f\n"), ("v1/g", "g\n")]);
+        let temp = tempfile::tempdir().unwrap();
+        let dest = temp.path().join("checkout");
+        std::fs::create_dir(&dest).unwrap();
+
+        check_out_paths(
+            &repo,
+            &sha,
+            &temp.path().join("index"),
+            &dest,
+            &strings(&["v[1]"]),
+        )
+        .unwrap();
+
+        assert_eq!(files_under(&dest), ["v[1]/f"]);
+    }
+
     const NOW: u64 = 20_261_105_143_000;
 
     #[test]
