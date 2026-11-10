@@ -93,9 +93,9 @@
       "line": null,
       "title": "Prune orphaned 30 existing study results and left 16 statements citing documents no evidence reaches",
       "comment": "https://github.com/osdlc/skillwright/pull/120#pullrequestreview-5836627868",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "b19fe5e39786db0fd4e18a87d009227b0ac80e8a"
     },
     {
       "id": "r2-1",
