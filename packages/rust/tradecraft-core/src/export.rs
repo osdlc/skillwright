@@ -2554,6 +2554,21 @@ mod tests {
     }
 
     #[test]
+    fn an_escaped_double_bracket_ships_as_written_in_each_harness() {
+        let vfs = calls_vault("# a\n\nSee \\[[TODO later.\n");
+        build(&vfs);
+        for (tree, skill) in [
+            (".claude-plugin", "a"),
+            (".agents", "a"),
+            (".cursor-plugin", "a"),
+            (".pi", "tools-a"),
+        ] {
+            let body = skill_md(&vfs, tree, skill);
+            assert!(body.contains("See \\[[TODO later.\n"), "{tree}: {body}");
+        }
+    }
+
+    #[test]
     fn a_call_naming_nothing_or_a_non_skill_is_refused() {
         let vfs = calls_vault("# a\n\nRun /[[nope]].\n");
         let err = export_refusal(&vfs);

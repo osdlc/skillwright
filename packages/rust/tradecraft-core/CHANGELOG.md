@@ -7,6 +7,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The `\[[` escape. A `[[` or `![[` right after an odd run of `\` is neither a link nor a leftover: `compile_note` ships it as written, backslash included, which CommonMark renders as `[[`. Every `unresolved-syntax` refusal of a `[[` that is not a link now ends `; write \[[ to keep the brackets as text`. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
+### Changed
+
+- `\[[note]]` is no longer a link. It compiled to `\[note.md](…)`, which is broken Markdown; it now ships as written. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
 ### Fixed
 
 - A plain `[[s]]` to the skill being compiled names the skill, as a link to any other skill does, in its entry, in a note embedded into it, in a file in its bundle and in a vault note it links in. It compiled to a link to `SKILL.md`, and for a `<s>/SKILL.md` skill to the bare text `s`, recorded unresolved. With an implicit `CallContext` it now goes through the `render` closure with `mention: true`; in a recording compile it is a `CallSite` and so a `Segment::Call`. Its id is in that file's `Closure::calls`, so renaming the skill or its plugin changes the hash; `related_of` does not list it in `calls`. A self-link with a `#fragment` stays a link to the heading in `SKILL.md`, and for a `<s>/SKILL.md` skill `[[s#Steps]]` now resolves to it. Output changes for every skill with a self-link. ([#53](https://github.com/osdlc/skillwright/issues/53))

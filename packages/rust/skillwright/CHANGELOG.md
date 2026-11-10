@@ -7,6 +7,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Write `\[[` to keep a `[[` as text, such as `\[[TODO`. The build ships it as written, backslash included, and Markdown viewers show `[[TODO`. The error for a `[[` that is not a link now says so. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
+### Changed
+
+- `\[[note]]` is no longer a link; it ships as written. It used to build to broken Markdown. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
 ### Fixed
 
 - A link from a skill to itself, such as `[[work]]` in the `work` skill or in its `references/bug-route.md`, is written as the skill's name, the way a link to any other skill is: `` `t:work` `` on Claude Code and Codex, `` `t-work` `` on Pi. It was a link to `SKILL.md`. A link with a `#heading` stays a link to that heading. Every skill with such a link builds different output, so `check` reports drift until you rebuild. ([#53](https://github.com/osdlc/skillwright/issues/53))

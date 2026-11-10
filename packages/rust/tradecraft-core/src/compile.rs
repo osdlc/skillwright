@@ -15,7 +15,8 @@
 //!    skill instead, the skill being compiled included.
 //! 3. The output is validated: any Obsidian syntax remaining in an emitted
 //!    markdown file is a refusal, because a destination has no resolver to
-//!    give it meaning.
+//!    give it meaning. A `[[` right after a `\` is escaped: it is neither a
+//!    link nor a leftover, and ships as written, backslash included.
 //!
 //! [`crate::vault::read_vault_skill`] still reads the body verbatim — the
 //! vault's bytes are canonical and a read must not rewrite them. Compilation
@@ -63,7 +64,7 @@
 //!
 //! What stays here is skillwright's own: `/[[call]]` calls and `\/[[x]]`
 //! escapes, read as a layer over `markdown-link`'s links and found in code
-//! too; hand-written calls; where resources land; and the validation that no
+//! too; the `\[[` escape; hand-written calls; where resources land; and the validation that no
 //! Obsidian syntax survives.
 
 use std::borrow::Cow;
@@ -1795,7 +1796,8 @@ type TransclusionHop = (PathBuf, Option<String>);
 /// author would only find after installing.
 ///
 /// That includes a `[[` that is not a link (see [`scan_wiki`]): it would ship
-/// as literal brackets. Only one at or after `body_start` counts, so stray
+/// as literal brackets, so its refusal says to write `\[[` for that. An
+/// escaped `\[[` is neither. Only one at or after `body_start` counts, so stray
 /// brackets in a resource's frontmatter, carried as written, are not refused.
 /// A link there still is, as before.
 ///
@@ -1834,7 +1836,9 @@ fn validate_no_obsidian_syntax(
     // An unclosed `[[` runs to the end of the text; its line is enough.
     let written = &text[start..end];
     let written = written.split('\n').next().unwrap_or(written);
-    let why = why.map_or_else(String::new, |why| format!(" (not a link: {why})"));
+    let why = why.map_or_else(String::new, |why| {
+        format!(" (not a link: {why}); write \\[[ to keep the brackets as text")
+    });
     Err(CoreError::refused(
         "unresolved-syntax",
         format!(
@@ -1987,6 +1991,7 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
 }
 
 /// A `[[` in a body that is not a link, so would ship as literal brackets.
+/// An escaped one, `\[[`, is not a leftover: it ships as written on purpose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Leftover {
     /// Byte offset of the `[[`, or of the `!` before it.
@@ -1999,13 +2004,15 @@ struct Leftover {
 
 /// [`scan_wiki_tokens`], and each `[[` that is not a token: one
 /// `markdown-link` gave up on, and a link with code in its target, which
-/// this pass leaves as written.
+/// this pass leaves as written. A `[[` or `![[` after an odd run of `\`
+/// (see [`escaped_at`]) is in neither list: it ships as written.
 fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>) {
     let bytes = markdown.as_bytes();
     let scan = scan_body_with(markdown, &SCAN);
     let mut leftovers: Vec<Leftover> = scan
         .abandoned
         .iter()
+        .filter(|abandoned| !escaped_at(bytes, abandoned.byte_start))
         // `[[WIP] Fix](url)` and `[[Note](Note.md)]` are Markdown links with
         // a `[` beside them, not wikilinks gone wrong.
         .filter(|abandoned| {
@@ -2034,6 +2041,9 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
                 BodyLinkKind::Markdown => return None,
             };
             let at = link.byte_start;
+            if escaped_at(bytes, at) {
+                return None;
+            }
             let (kind, start) = match kind {
                 TokenKind::Link
                     if calls
@@ -2284,6 +2294,17 @@ fn scan_code_calls<'a>(markdown: &'a str, from: usize, to: usize, tokens: &mut V
             None => offset += 1,
         }
     }
+}
+
+/// Whether the byte at `offset` follows an odd run of `\`: `\[[x]]` and
+/// `\![[x]]` are escaped, `\\[[x]]` is an escaped backslash before a link.
+fn escaped_at(bytes: &[u8], offset: usize) -> bool {
+    let run = bytes[..offset]
+        .iter()
+        .rev()
+        .take_while(|&&byte| byte == b'\\')
+        .count();
+    run % 2 == 1
 }
 
 /// A `/[[` or `\/[[` at `offset`, where the `/` (or `\`) starts a line or
@@ -3417,12 +3438,119 @@ mod tests {
             let err = compile_note(&vfs, &source(None), body)
                 .unwrap_err()
                 .to_string();
-            assert!(err.contains("unresolved-syntax"), "{body:?}: {err}");
-            assert!(
-                err.contains(&format!("in SKILL.md: {written} (not a link: {why})")),
-                "{body:?}: {err}"
+            assert_eq!(
+                err,
+                format!(
+                    "refused: unresolved-syntax: compiled skill demo still contains Obsidian \
+                     syntax in SKILL.md: {written} (not a link: {why}){HINT}"
+                ),
+                "{body:?}"
             );
         }
+    }
+
+    // --- The `\[[` escape ----------------------------------------------------
+
+    const HINT: &str = r"; write \[[ to keep the brackets as text";
+
+    #[test]
+    fn an_escaped_double_bracket_ships_as_written() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/note.md", b"# Note\n");
+        write(&vfs, "/vault/photo.png", b"PNG");
+        for body in [
+            "See \\[[TODO later.\n",
+            "Write \\[[note]] for a link.\n",
+            "\\![[photo.png]]\n",
+            "!\\[[x]]\n",
+            "A \\[[x]y]] B\n",
+            "A \\[[`x` y]] B\n",
+            "Back to \\[[demo]].\n",
+        ] {
+            let compiled = compile_with_calls(&vfs, &call_index("called"), body);
+            assert_eq!(compiled.body, body);
+            assert!(
+                compiled.resources.is_empty(),
+                "{body:?}: {:?}",
+                paths(&compiled)
+            );
+            let closure = &compiled.closures["SKILL.md"];
+            assert!(closure.unresolved.is_empty(), "{body:?}: {closure:?}");
+            assert!(closure.calls.is_empty(), "{body:?}: {closure:?}");
+        }
+
+        // markdown-link gives up on the first `[[` at the `[` after it and
+        // reads `[[a]]` from there: that `[[` is not escaped, so it is a link.
+        let compiled = compile_with_calls(&vfs, &call_index("called"), "A \\[[[Shared]] B\n");
+        assert_eq!(
+            compiled.body,
+            "A \\[[Shared.md](references/vault/Shared.md) B\n"
+        );
+
+        // In a bundle resource's body as well.
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"See \\[[TODO and \\[[note]].\n",
+        );
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(Some(Path::new("/vault/plugins/demo"))),
+            "# Demo\n",
+        )
+        .unwrap();
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "See \\[[TODO and \\[[note]].\n"
+        );
+        assert!(compiled.closures["references/x.md"].unresolved.is_empty());
+    }
+
+    #[test]
+    fn an_escaped_backslash_before_double_brackets_does_not_escape_them() {
+        let vfs = demo_vault();
+        let compiled = compile_note(&vfs, &source(None), "A \\\\[[Shared]] B\n").unwrap();
+        assert_eq!(
+            compiled.body,
+            "A \\\\[Shared.md](references/vault/Shared.md) B\n"
+        );
+        let err = compile_note(&vfs, &source(None), "A \\\\[[TODO\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unresolved-syntax"), "{err}");
+    }
+
+    #[test]
+    fn a_call_escape_over_a_leftover_is_refused_with_the_hint() {
+        let vfs = demo_vault();
+        let err = try_compile_with(
+            &vfs,
+            SkillSource::ready(&call_index("called")),
+            "See \\/[[TODO later.\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            err,
+            format!(
+                "refused: unresolved-syntax: compiled skill demo still contains Obsidian syntax \
+                 in SKILL.md: [[TODO later. (not a link: it has no closing `]]`){HINT}"
+            )
+        );
+    }
+
+    #[test]
+    fn a_surviving_link_is_refused_without_the_escape_hint() {
+        let err =
+            validate_no_obsidian_syntax("See [[x]].", 0, "SKILL.md", "demo", &BTreeSet::new())
+                .unwrap_err()
+                .to_string();
+        assert_eq!(
+            err,
+            "refused: unresolved-syntax: compiled skill demo still contains Obsidian syntax \
+             in SKILL.md: [[x]]"
+        );
     }
 
     #[test]
@@ -3467,11 +3595,13 @@ mod tests {
             let err = compile_note(&vfs, &source(None), body)
                 .unwrap_err()
                 .to_string();
-            assert!(
-                err.contains(&format!(
-                    "in SKILL.md: {written} (not a link: its target has code in it)"
-                )),
-                "{body:?}: {err}"
+            assert_eq!(
+                err,
+                format!(
+                    "refused: unresolved-syntax: compiled skill demo still contains Obsidian \
+                     syntax in SKILL.md: {written} (not a link: its target has code in it){HINT}"
+                ),
+                "{body:?}"
             );
         }
     }
