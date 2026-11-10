@@ -15,10 +15,10 @@
       "path": ".github/workflows/harness-knowledge.yml",
       "line": 52,
       "title": "Release tag uses the run date, so a rerun on another UTC day is not idempotent",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126437",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "608e227"
     },
     {
       "id": "r1-2",
@@ -26,10 +26,10 @@
       "path": "packages/rust/tradecraft-core/src/harness/knowledge.rs",
       "line": 770,
       "title": "Rust tests read version-cases.json but rust.yml's changes filter does not include it",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126454",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "608e227"
     },
     {
       "id": "r1-3",
@@ -37,10 +37,10 @@
       "path": "harness-reference/src/compile/embedded.test.ts",
       "line": 14,
       "title": "harness-reference.yml path filter misses the embedded data file this test guards",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126460",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "608e227"
     },
     {
       "id": "r1-4",
@@ -48,10 +48,10 @@
       "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
       "line": 852,
       "title": "plugin_format doc says a custom row is resolved once per call; it is cached",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126478",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "608e227"
     },
     {
       "id": "r1-5",
@@ -59,10 +59,10 @@
       "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
       "line": 72,
       "title": "Source::Constant doc omits the knowledge-disagrees case the codex and cursor rows use",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126487",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "608e227"
     },
     {
       "id": "r1-6",
@@ -70,10 +70,10 @@
       "path": "docs/decisions/D-QXRN-harness-facts-from-knowledge.md",
       "line": 26,
       "title": "D-QXRN lists two of the kept constants and pins them with 'today'",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126494",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "608e227"
     },
     {
       "id": "r1-7",
@@ -81,7 +81,7 @@
       "path": "packages/rust/tradecraft-core/src/harness/mod.rs",
       "line": 10,
       "title": "pub mod knowledge publishes the whole lookup API with no consumer outside the crate",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126504",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -92,7 +92,7 @@
       "path": "packages/rust/tradecraft-core/src/harness/knowledge.rs",
       "line": 533,
       "title": "semver_precedence_follows_the_spec repeats cases the shared semverOrder file should own",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126510",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -103,7 +103,7 @@
       "path": "packages/rust/tradecraft-core/src/harness/knowledge.rs",
       "line": 19,
       "title": "522 KB pretty-printed knowledge file embedded and parsed whole for five subjects",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126517",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -114,7 +114,7 @@
       "path": ".github/workflows/harness-knowledge.yml",
       "line": 13,
       "title": "Any harness-reference change cuts a release, including ones that cannot change the compiled file",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126521",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -125,18 +125,18 @@
       "path": ".github/workflows/harness-knowledge.yml",
       "line": 14,
       "title": "workflow_dispatch can release from any branch",
-      "comment": null,
-      "status": "open",
+      "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126525",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "608e227"
     },
     {
       "id": "r1-12",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 852,
       "title": "profile.rs module and HarnessProfile docs still say the rows carry a PluginFormat",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/99#pullrequestreview-5836753210",
       "status": "open",
       "reason": null,
       "fixedIn": null
@@ -144,10 +144,10 @@
     {
       "id": "r1-13",
       "round": 1,
-      "path": null,
-      "line": null,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 852,
       "title": "PluginFormat::user_skills_dir doc contradicted by the claude and cursor rows",
-      "comment": null,
+      "comment": "https://github.com/osdlc/skillwright/pull/99#pullrequestreview-5836753210",
       "status": "open",
       "reason": null,
       "fixedIn": null
