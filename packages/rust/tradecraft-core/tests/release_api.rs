@@ -1412,18 +1412,56 @@ fn a_prefixed_cursor_name_that_meets_a_bare_one_is_refused() {
     }
 }
 
+/// Only Cursor admits these skills, so Pi's default prefix cannot be what
+/// refuses them.
 #[test]
 fn two_prefixed_cursor_names_that_meet_are_refused() {
     let vfs = root_vault(
         "---\nname: house\n---\n",
         &[
-            ("plugins/a/skills/b-c.md", &note("b-c", "")),
-            ("plugins/a-b/skills/c.md", &note("c", "")),
+            (
+                "plugins/a/skills/b-c.md",
+                &note("b-c", "targets: [cursor]\n"),
+            ),
+            ("plugins/a-b/skills/c.md", &note("c", "targets: [cursor]\n")),
         ],
     );
     let err = build_root(&vfs, cursor_block("naming", "prefixed")).unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
-    assert!(err.contains("`a-b-c`"), "{err}");
+    for part in [
+        "Cursor skill `a-b-c`",
+        "`cursor.naming: prefixed` on the marketplace",
+    ] {
+        assert!(err.contains(part), "{part}: {err}");
+    }
+}
+
+/// The bare plugin sorts first, so the rule must read the second plugin's
+/// naming too.
+#[test]
+fn a_prefixed_cursor_name_after_a_bare_one_is_refused() {
+    let vfs = root_vault(
+        "---\nname: house\n---\n",
+        &[
+            (
+                "plugins/a/skills/z-hello.md",
+                &note("z-hello", "targets: [cursor]\n"),
+            ),
+            (
+                "plugins/z/skills/hello.md",
+                &note("hello", "targets: [cursor]\n"),
+            ),
+        ],
+    );
+    plugin_note(&vfs, "z", "cursor:\n  naming: prefixed\n");
+    let err = build_root(&vfs, request().config).unwrap_err();
+    assert!(err.contains("path-collision"), "{err}");
+    for part in [
+        "Cursor skill `z-hello`",
+        "`cursor.naming: prefixed` on plugin `z`",
+    ] {
+        assert!(err.contains(part), "{part}: {err}");
+    }
 }
 
 #[test]

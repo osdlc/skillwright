@@ -506,12 +506,20 @@ fn check_shape(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsError
         |refusal| SettingsError {
             key: key.to_owned(),
             what: refusal.what,
-            detail: refusal
-                .detail
-                .trim_start_matches([',', ';', ' '])
-                .to_owned(),
+            detail: settings_detail(&refusal.detail),
         },
     )
+}
+
+/// A [`crate::keys::ShapeRefusal`]'s detail as it reads after `is not <what>:`:
+/// `, not a string` becomes `it is a string`.
+fn settings_detail(detail: &str) -> String {
+    let detail = detail.trim_start_matches([',', ';', ' ']);
+    let detail = detail.strip_prefix("but ").unwrap_or(detail);
+    match detail.strip_prefix("not ") {
+        Some(found) => format!("it is {found}"),
+        None => detail.to_owned(),
+    }
 }
 
 /// One value read as `T`, its error naming `key`. Null reads as `T`'s default
@@ -810,6 +818,31 @@ impl RootFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn root_file_refusals_say_what_the_value_is() {
+        for (line, said) in [
+            (
+                "owner: {email: x}",
+                "`owner` is not a name or a `{name, email, url}` mapping: it has no string `name`",
+            ),
+            (
+                "targets: \"claude\"",
+                "`targets` is not a list: it is a string.",
+            ),
+            (
+                "repository: ftp://x",
+                "`repository` is not an http or https URL: it is `ftp://x`",
+            ),
+            (
+                "targets: [1]",
+                "`targets` is not a list of strings: one entry is a number",
+            ),
+        ] {
+            let err = parse_root_file(&format!("---\n{line}\n---\n")).unwrap_err();
+            assert!(err.to_string().starts_with(said), "{line}: {err}");
+        }
+    }
 
     #[test]
     fn marketplace_keys_are_the_table_s_marketplace_rows() {

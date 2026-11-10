@@ -81,8 +81,8 @@ pub enum Shape {
 impl Shape {
     /// Whether `value` has this shape. `null` passes only where the reader
     /// takes it as absent: a person, a harness block and the `adopted` block.
-    /// A shape with a [field type](Self::field_type) accepts what that type
-    /// does, except [`Self::Arguments`].
+    /// A shape that the bare spec-key check and a harness block also read
+    /// accepts what they accept, except [`Self::Arguments`].
     pub fn accepts(self, value: &Value) -> bool {
         match self {
             Self::Url => value.as_str().is_some_and(is_url),
@@ -153,7 +153,14 @@ impl Shape {
             Self::Bool => ("a boolean", not),
             Self::Flag => ("a boolean", format!("{not}; write `true` or `false`")),
             Self::Number => ("a number", not),
-            Self::Person => ("a name or a `{name, email, url}` mapping", not),
+            Self::Person => (
+                "a name or a `{name, email, url}` mapping",
+                if value.is_object() {
+                    ", but it has no string `name`".to_owned()
+                } else {
+                    not
+                },
+            ),
             Self::Mapping => ("a mapping", not),
             Self::Arguments => ("a list of argument objects", not),
             Self::HarnessBlock => ("a mapping of that harness's own keys", not),
@@ -322,7 +329,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::String,
         inherits: false,
-        summary: "The human-facing name, Codex's `interface.displayName` and a Cursor plugin's `displayName`. A `cursor.displayName` overrides it for Cursor.",
+        summary: "The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor.",
     },
     KeySpec {
         key: "targets",
@@ -410,7 +417,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::Words,
         inherits: false,
-        summary: "An agent's tool list.",
+        summary: "A tool list, in the form an agent's `tools` takes. `allowed-tools` is the Agent Skills field.",
     },
     KeySpec {
         key: "tools",
@@ -613,6 +620,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 - Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unquoted, it is not valid YAML.
 - An agent's `tools` mapping is OpenCode's form. Claude Code refuses it.
+- `user-invocable` and `disable-model-invocation` read their words in any case, quoted or not. A harness that gets the key receives `true` or `false`.
 "#,
     );
     for (kind, heading) in REFERENCE_KINDS {
@@ -908,6 +916,22 @@ mod tests {
                     assert_eq!(
                         unknown(key),
                         Vec::<String>::new(),
+                        "{harness} {label} {key}"
+                    );
+                }
+                // Every key another harness lists here, and this one does
+                // not, warns.
+                let others: std::collections::BTreeSet<&String> =
+                    crate::harness::with_plugin_format()
+                        .filter_map(|other| other.block_keys(kind))
+                        .flatten()
+                        .filter(|key| !keys.contains(*key))
+                        .collect();
+                assert!(!others.is_empty(), "{harness} {label}");
+                for key in others {
+                    assert_eq!(
+                        unknown(key),
+                        vec![format!("{harness}.{key}")],
                         "{harness} {label} {key}"
                     );
                 }

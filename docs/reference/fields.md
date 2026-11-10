@@ -22,6 +22,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 - Quote a hint with more than one bracket group, such as `"[file] [format]"`. Unquoted, it is not valid YAML.
 - An agent's `tools` mapping is OpenCode's form. Claude Code refuses it.
+- `user-invocable` and `disable-model-invocation` read their words in any case, quoted or not. A harness that gets the key receives `true` or `false`.
 
 ## Marketplace
 
@@ -35,7 +36,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `license` | string | skillwright | yes | The pack license, an SPDX expression. Defaults to UNLICENSED. |
 | `repository` | URL | skillwright | yes | The source repository URL, written into every manifest that has the field. |
 | `homepage` | URL | skillwright | yes | The documentation URL, written into every manifest that has the field. |
-| `display_name` | string | skillwright | no | The human-facing name, Codex's `interface.displayName` and a Cursor plugin's `displayName`. A `cursor.displayName` overrides it for Cursor. |
+| `display_name` | string | skillwright | no | The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
@@ -55,7 +56,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `homepage` | URL | skillwright | yes | The documentation URL, written into every manifest that has the field. |
 | `keywords` | list of strings | skillwright | no | Plugin keywords; also the Claude and Cursor marketplace entry's `tags`. Pi's `package.json` adds `pi-package`, the keyword its gallery lists a package by. |
 | `category` | string | skillwright | no | The plugin's category in a marketplace entry. Codex defaults it to Productivity. |
-| `display_name` | string | skillwright | no | The human-facing name, Codex's `interface.displayName` and a Cursor plugin's `displayName`. A `cursor.displayName` overrides it for Cursor. |
+| `display_name` | string | skillwright | no | The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
@@ -79,7 +80,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `context` | string | spec | no | Claude's context mode, such as `fork`. |
 | `user-invocable` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | False hides it from the slash menu. Defaults to true. |
 | `disable-model-invocation` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | True stops the model from calling it on its own. |
-| `tools` | list of strings, or one string separated by spaces or commas | spec | no | An agent's tool list. |
+| `tools` | list of strings, or one string separated by spaces or commas | spec | no | A tool list, in the form an agent's `tools` takes. `allowed-tools` is the Agent Skills field. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -126,7 +127,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `context` | string | spec | no | Claude's context mode, such as `fork`. |
 | `user-invocable` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | False hides it from the slash menu. Defaults to true. |
 | `disable-model-invocation` | boolean, or `yes`, `no`, `on`, `off`, `1`, `0` | spec | no | True stops the model from calling it on its own. |
-| `tools` | list of strings, or one string separated by spaces or commas | spec | no | An agent's tool list. |
+| `tools` | list of strings, or one string separated by spaces or commas | spec | no | A tool list, in the form an agent's `tools` takes. `allowed-tools` is the Agent Skills field. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |

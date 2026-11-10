@@ -32,8 +32,8 @@ use agent_adapt::RuntimeId;
 
 use super::manifest::packs_of;
 use super::manifest::{
-    claude_marketplace_manifest, codex_marketplace_manifest, cursor_marketplace_manifest,
-    pi_package_manifest, render_plugin_manifest,
+    NAMING_KEY, claude_marketplace_manifest, codex_marketplace_manifest,
+    cursor_marketplace_manifest, pi_package_manifest, render_plugin_manifest,
 };
 use super::profile::{CliInvocation, HarnessProfile, PluginFormat, SkillNaming};
 use crate::compile::Closure;
@@ -689,12 +689,25 @@ fn refuse_prefixed_collisions<T: HarnessTranslator + ?Sized>(
                 .into_iter()
                 .find(|g| g.prefixed_on.iter().any(|h| h == harness));
             let why = match chosen {
-                Some(plugin) => format!(
-                    "`{harness}.naming: prefixed` on plugin `{p}` makes its names unique on \
-                     {label}, so no other skill may take one. Rename one, or set \
-                     `{harness}.naming: bare` on `{p}`",
-                    p = plugin.name
-                ),
+                Some(plugin) => {
+                    let p = &plugin.name;
+                    let own = market
+                        .config
+                        .plugins
+                        .get(p)
+                        .and_then(|o| o.blocks.get(harness))
+                        .is_some_and(|block| block.contains_key(NAMING_KEY));
+                    let source = if own {
+                        format!("on plugin `{p}` makes its names")
+                    } else {
+                        format!("on the marketplace makes plugin `{p}`'s names")
+                    };
+                    format!(
+                        "`{harness}.naming: prefixed` {source} unique on {label}, so no other \
+                         skill may take one. Rename one, or set `{harness}.naming: bare` on \
+                         plugin `{p}`"
+                    )
+                }
                 None => format!(
                     "{label} has no plugin namespace and names a skill `<plugin>-<skill>` by \
                      default, so no two skills may take one name. Rename one"
