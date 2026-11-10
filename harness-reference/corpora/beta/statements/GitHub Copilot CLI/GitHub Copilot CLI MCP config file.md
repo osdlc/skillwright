@@ -15,7 +15,6 @@ hasEvidenceLines:
     description: third-party observed 2026-08-08.
   - hasEvidenceItems:
       - "[2026-11-09 GitHub Copilot CLI MCP config file docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20MCP%20config%20file%20docs.md)"
-      - "[2026-11-09 GitHub Copilot CLI MCP add writes docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20MCP%20add%20writes%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: config directory reference and the copilot mcp add description.

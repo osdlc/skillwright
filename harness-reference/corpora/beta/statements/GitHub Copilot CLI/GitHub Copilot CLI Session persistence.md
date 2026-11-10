@@ -11,7 +11,6 @@ strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 GitHub Copilot CLI Session state directory docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Session%20state%20directory%20docs.md)"
-      - "[2026-11-09 GitHub Copilot CLI Session state docs](../../study-results/GitHub%20Copilot%20CLI/2026-11-09%20GitHub%20Copilot%20CLI%20Session%20state%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: config directory reference.

@@ -24,17 +24,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source at v2.2.6.
-  - hasEvidenceItems:
-      - "[2026-11-09 OpenCode Auto mode docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Auto%20mode%20docs.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: permissions docs.
-  - hasEvidenceItems:
-      - "[2026-11-09 OpenCode Permission env docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Permission%20env%20docs.md)"
-      - "[2026-11-09 OpenCode OPENCODE_PERMISSION source v1.19.5](../../study-results/OpenCode/2026-11-09%20OpenCode%20OPENCODE_PERMISSION%20source%20v1.19.5.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: OPENCODE_PERMISSION in the env var table and in the v1.19.5 flags.
 contributions:
   - contributor:
       name: harness-reference research

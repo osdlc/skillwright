@@ -13,7 +13,6 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Session recording docs](../../study-results/Gemini%20CLI/2026-11-09%20Session%20recording%20docs.md)"
       - "[2026-11-09 Session location docs](../../study-results/Gemini%20CLI/2026-11-09%20Session%20location%20docs.md)"
-      - "[2026-11-09 Session retention docs](../../study-results/Gemini%20CLI/2026-11-09%20Session%20retention%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: session management docs.

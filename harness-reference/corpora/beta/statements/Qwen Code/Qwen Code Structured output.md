@@ -11,7 +11,6 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code Output format option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Output%20format%20option%20source.md)"
       - "[2026-11-09 Qwen Code JSON schema option source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20JSON%20schema%20option%20source.md)"
-      - "[2026-11-09 Qwen Code JSON schema headless source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20JSON%20schema%20headless%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: option source at v0.27.0.

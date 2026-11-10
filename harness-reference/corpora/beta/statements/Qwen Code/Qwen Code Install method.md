@@ -29,7 +29,6 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code README npm install](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20README%20npm%20install.md)"
       - "[2026-11-09 Qwen Code README brew install](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20README%20brew%20install.md)"
-      - "[2026-11-09 Qwen Code README curl install](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20README%20curl%20install.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: README at v0.27.0.

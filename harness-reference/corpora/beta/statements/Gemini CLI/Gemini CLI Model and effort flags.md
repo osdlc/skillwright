@@ -20,11 +20,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text for 0.65.0 agrees on -m/--model.
-  - hasEvidenceItems:
-      - "[2026-11-09 Thinking config docs](../../study-results/Gemini%20CLI/2026-11-09%20Thinking%20config%20docs.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: a thinkingBudget is a settings value, as the statement says.
 reportedIn:
   - "[gemini harness notes for a dispatcher](../../documents/skillwright/gemini%20harness%20notes%20for%20a%20dispatcher.md)"
 contributions:

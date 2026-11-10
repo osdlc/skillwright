@@ -13,7 +13,6 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code Script name source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Script%20name%20source.md)"
       - "[2026-11-09 Qwen Code Version flag source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Version%20flag%20source.md)"
-      - "[2026-11-09 Qwen Code Version enable source](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Version%20enable%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: "yargs setup: script name qwen, --version enabled with alias -v."

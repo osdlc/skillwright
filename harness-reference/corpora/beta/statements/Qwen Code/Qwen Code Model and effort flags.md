@@ -15,7 +15,6 @@ hasEvidenceLines:
     description: option source at v0.27.0.
   - hasEvidenceItems:
       - "[2026-11-09 Qwen Code Reasoning effort settings docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Reasoning%20effort%20settings%20docs.md)"
-      - "[2026-11-09 Qwen Code Reasoning effort levels docs](../../study-results/Qwen%20Code/2026-11-09%20Qwen%20Code%20Reasoning%20effort%20levels%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: settings docs.

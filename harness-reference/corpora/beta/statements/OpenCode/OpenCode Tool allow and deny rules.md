@@ -12,7 +12,6 @@ strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode Permission config docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Permission%20config%20docs.md)"
-      - "[2026-11-09 OpenCode Permission actions docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Permission%20actions%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: permissions docs.
