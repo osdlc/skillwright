@@ -618,6 +618,21 @@ fn without_url(mut person: serde_json::Value) -> serde_json::Value {
     person
 }
 
+/// A plugin's Cursor display name: its own note's `cursor.displayName` when
+/// that is a string, else its `display_name`. A marketplace's
+/// `cursor.displayName` never applies, because it names the marketplace
+/// ([`crate::keys::BLOCK_IDENTITY_KEYS`]).
+fn cursor_display_name(config: &MarketplaceConfig, plugin: &str) -> Option<String> {
+    let overrides = overrides_for(config, plugin)?;
+    overrides
+        .blocks
+        .get("cursor")
+        .and_then(|block| block.get("displayName"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| overrides.display_name.clone())
+}
+
 /// One plugin's pack manifest, `members` its skills' names.
 ///
 /// One function for every layout a pack is written in — a built marketplace
@@ -666,7 +681,9 @@ pub fn render_plugin_manifest(
     });
     let manifest = Manifest {
         name: plugin.to_owned(),
-        display_name: display_name.filter(|_| dialect == PluginDialect::Cursor),
+        display_name: (dialect == PluginDialect::Cursor)
+            .then(|| cursor_display_name(config, plugin))
+            .flatten(),
         version: plugin_version(config, plugin),
         description: plugin_description(config, plugin, members),
         author: plugin_author(config, plugin).map(|author| match dialect {
@@ -880,6 +897,10 @@ pub fn cursor_marketplace_manifest(
     #[derive(Serialize)]
     struct Entry {
         name: String,
+        /// Ours, not a documented entry field (#123): the plugin's own
+        /// `displayName`, so the catalog and `plugin.json` agree.
+        #[serde(rename = "displayName", skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
         source: String,
         description: String,
         version: String,
@@ -919,6 +940,7 @@ pub fn cursor_marketplace_manifest(
             .iter()
             .map(|(plugin, members)| Entry {
                 name: (*plugin).to_owned(),
+                display_name: cursor_display_name(config, plugin),
                 source: format!("{packs}/{plugin}"),
                 description: plugin_description(config, plugin, members),
                 version: plugin_version(config, plugin),
@@ -983,5 +1005,81 @@ mod tests {
         for key in ["owner", "name", "zz-unknown"] {
             assert!(!block.contains_key(key), "{key}");
         }
+    }
+
+    /// A config whose plugin `t` has `display_name` and a `cursor` block of
+    /// `cursor`.
+    fn display_config(display_name: Option<&str>, cursor: serde_json::Value) -> MarketplaceConfig {
+        let mut config = MarketplaceConfig::default();
+        let mut overrides = PluginOverrides {
+            display_name: display_name.map(str::to_owned),
+            ..PluginOverrides::default()
+        };
+        if let serde_json::Value::Object(block) = cursor {
+            overrides.blocks.insert("cursor".to_owned(), block);
+        }
+        config.plugins.insert("t".to_owned(), overrides);
+        config
+    }
+
+    fn cursor_entry(config: &MarketplaceConfig) -> serde_json::Map<String, serde_json::Value> {
+        let catalog: serde_json::Value = serde_json::from_str(&cursor_marketplace_manifest(
+            &[("t", vec![])],
+            ".cursor-plugin/packs",
+            "m",
+            config,
+        ))
+        .unwrap();
+        catalog["plugins"][0].as_object().unwrap().clone()
+    }
+
+    fn cursor_plugin(config: &MarketplaceConfig) -> serde_json::Value {
+        serde_json::from_str(&render_plugin_manifest(
+            PluginDialect::Cursor,
+            "t",
+            &[],
+            config,
+            None,
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_cursor_catalog_entry_carries_the_plugin_s_display_name() {
+        let config = display_config(Some("Ticket workflow"), serde_json::Value::Null);
+        let entry = cursor_entry(&config);
+        let keys: Vec<&str> = entry.keys().map(String::as_str).collect();
+        assert_eq!(keys[..2], ["name", "displayName"], "{entry:?}");
+        assert_eq!(entry["displayName"], "Ticket workflow");
+
+        let config = display_config(
+            Some("Ticket workflow"),
+            serde_json::json!({"displayName": "Ticket workflow (t)"}),
+        );
+        assert_eq!(cursor_entry(&config)["displayName"], "Ticket workflow (t)");
+        assert_eq!(cursor_plugin(&config)["displayName"], "Ticket workflow (t)");
+
+        let config = display_config(None, serde_json::Value::Null);
+        assert!(!cursor_entry(&config).contains_key("displayName"));
+    }
+
+    #[test]
+    fn a_marketplace_cursor_display_name_never_reaches_a_plugin() {
+        let mut config = display_config(None, serde_json::Value::Null);
+        config.blocks.insert(
+            "cursor".to_owned(),
+            serde_json::json!({"displayName": "Market"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        assert!(!cursor_entry(&config).contains_key("displayName"));
+        assert!(cursor_plugin(&config).get("displayName").is_none());
+    }
+
+    #[test]
+    fn cursor_source_has_no_dot_slash() {
+        let entry = cursor_entry(&display_config(None, serde_json::Value::Null));
+        assert_eq!(entry["source"], ".cursor-plugin/packs/t");
     }
 }

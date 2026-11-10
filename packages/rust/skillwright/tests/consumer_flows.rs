@@ -447,6 +447,32 @@ fn manifests_keep_to_what_each_harness_documents() {
     assert!(read(".claude-plugin/packs/p/.claude-plugin/plugin.json").contains("1.2.3"));
 }
 
+/// Issue #123: a plugin's Cursor display name reaches its catalog entry as
+/// well as its `plugin.json`.
+#[test]
+fn cursor_catalog_entry_has_the_display_name() {
+    let plugin = "---\ndescription: P.\nversion: 1.0.0\ncursor:\n  displayName: \"Ticket workflow (t)\"\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/t/t.md", plugin),
+        ("plugins/t/skills/s.md", SKILL),
+    ]);
+    let ran = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+    let json =
+        |tail: &str| -> serde_json::Value { serde_json::from_str(&built(&dir, tail)).unwrap() };
+    let manifest = json(".cursor-plugin/packs/t/.cursor-plugin/plugin.json");
+    assert_eq!(manifest["displayName"], "Ticket workflow (t)");
+    let catalog = json(".cursor-plugin/marketplace.json");
+    let entry = catalog["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "t")
+        .unwrap();
+    assert_eq!(entry["displayName"], "Ticket workflow (t)", "{catalog}");
+}
+
 #[test]
 fn a_marketplace_named_apart_from_its_folder_keeps_its_packs() {
     let note = "---\nname: bar\nclaude: {packs: alt}\n---\n";
