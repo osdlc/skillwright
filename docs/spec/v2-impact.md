@@ -6,6 +6,8 @@ for the open PRs and issues, and an order to build it in. Code was read at
 
 ## Features removed
 
+- `adopt`, with `--from`, `--from-git` and `build.scan_locations`. It returns
+  in a later milestone.
 - A vault with no root file, read with every default.
 - The walk-up search for the nearest `skillwright.md`, and its reserved-name
   rule (`reserved-name`). The root is now the first folder holding both
@@ -120,6 +122,23 @@ amendment too: its patterns layer is gone.
 - `commands/publish.rs`: the by-path branch goes.
 - `commands/harness/*`: read built marketplaces from `dist/<m>/`.
 
+### adopt
+
+All of it goes until the adopt milestone:
+
+- `tradecraft-core/src/adopt.rs`: `adopt_skills`, `AdoptRequest`,
+  `AdoptReport`, `AdoptedSkill`, `detect_format` and `rewrite_to_wikilinks`.
+- `tradecraft-core/src/scan.rs`: `scan_roots`, `scan_root` and
+  `ScanOptions`. Only `adopt` and one `publish.rs` test call them. The parts
+  of `corpus.rs` that only the scan uses go with it.
+- `tradecraft-core/src/settings.rs`: the `scan_locations` key.
+- `skillwright/src/commands/adopt.rs`: `run_adopt` and `AdoptFlags`.
+- `skillwright/src/git_source.rs`: `parse_git_source` and `fetch_git_source`.
+  Only `adopt` uses them.
+- `skillwright/src/cli.rs`: the `Adopt` command and `AdoptArgs`.
+- `tradecraft-wasm/src/lib.rs`: the `adoptSkills` export.
+- The `adopt` tests in `skillwright/tests/cli.rs`.
+
 ### tradecraft-wasm
 
 - `lib.rs`: the `out_root` argument and the pattern and workspace options of
@@ -178,7 +197,7 @@ amendment too: its patterns layer is gone.
 | [#123](https://github.com/osdlc/skillwright/issues/123) Cursor entries carry no displayName | Keep | Manifest output. [#138](https://github.com/osdlc/skillwright/pull/138) addresses it. |
 | [#118](https://github.com/osdlc/skillwright/issues/118) publish by path can overwrite a same-named skill | Moot | Publish by path is removed. |
 | [#108](https://github.com/osdlc/skillwright/issues/108) Cursor plugin-prefixed names | Keep | Naming. [#138](https://github.com/osdlc/skillwright/pull/138) addresses it. |
-| [#94](https://github.com/osdlc/skillwright/issues/94) install natively first | Keep | Install behaviour. `adopt` writes the v2 layout. |
+| [#94](https://github.com/osdlc/skillwright/issues/94) install natively first | Deferred to the adopt milestone | Its fallback translates a marketplace through `adopt`, and its other ask extends `adopt` beyond skills. Without `adopt` there is nothing to fall back to. |
 | [#91](https://github.com/osdlc/skillwright/issues/91) symlinked `--vault` loses its workspace | Moot | Workspaces and member files are removed. |
 | [#87](https://github.com/osdlc/skillwright/issues/87) rename of a bundle that half-lands | Keep | The failure mode stays. Fewer links can point at a bundle. |
 | [#83](https://github.com/osdlc/skillwright/issues/83) path-guard and globset | Changed | The output-overlap check goes. Link containment by real path is new work for path-guard. With D6 the glob half goes. |
@@ -191,7 +210,7 @@ amendment too: its patterns layer is gone.
 | [#76](https://github.com/osdlc/skillwright/issues/76) one root-file and workspace loader | Changed | No workspace fold. Parse-once still applies, in v2's first PR. |
 | [#75](https://github.com/osdlc/skillwright/issues/75) one identity struct | Changed | The workspace step goes. [#143](https://github.com/osdlc/skillwright/pull/143) does the rest. |
 | [#53](https://github.com/osdlc/skillwright/issues/53) a skill's link to itself | Keep | Rendering. [#136](https://github.com/osdlc/skillwright/pull/136) does it. |
-| [#51](https://github.com/osdlc/skillwright/issues/51) adopt in reverse | Keep | It writes notes in the v2 layout. |
+| [#51](https://github.com/osdlc/skillwright/issues/51) adopt in reverse | Deferred to the adopt milestone | It reads harness files into the model and writes notes, which is `adopt`'s job. |
 | [#50](https://github.com/osdlc/skillwright/issues/50) compile scans bodies twice | Keep | Internal. |
 | [#49](https://github.com/osdlc/skillwright/issues/49) rename reads the vault three times | Keep | Still applies. [#135](https://github.com/osdlc/skillwright/pull/135) does part. |
 | [#47](https://github.com/osdlc/skillwright/issues/47) leftover `[[` check gaps | Keep | Syntax, not scope. |
@@ -247,11 +266,11 @@ Merge [#135](https://github.com/osdlc/skillwright/pull/135),
    (`Codex CLI Relative paths in SKILL.md open`). If it is not the skill's
    folder, links up to the pack root need another form for Codex.
 5. **Verbs, docs and the repo's plugin.** `init`, `new`, `move`, `rename`,
-   `bump`, `publish` (D1), `adopt` and `harness` on the new layout; the
-   reference docs; `plugin/` moved and its two workflows updated. Test first:
-   a CLI test per verb writes the expected path; `adopt` of a skill with a
-   loose `forms.md` reports it with `references/` as its folder and moves
-   nothing; the `plugin` workflow's
-   drift check passes on the rebuilt `plugin/dist/osdlc/`.
+   `bump`, `publish` (D1) and `harness` on the new layout; `adopt` and its
+   support code deleted; the reference docs; `plugin/` moved and its two
+   workflows updated. Test first: a CLI test per verb writes the expected
+   path; `adopt` is an unknown command; `build.scan_locations` is refused;
+   the `plugin` workflow's drift check passes on the rebuilt
+   `plugin/dist/osdlc/`.
 
 PRs 1 and 2 can be one PR if the diff stays reviewable. PR 4 depends only on 1.

@@ -48,8 +48,8 @@ the code, the open PRs and issues, and the build order are in
 4. The body is not read.
 5. It is the only configuration file. There is no machine file for the build.
 6. The `build:` keys are `harnesses`, `namespace`, `launcher_path`, `bump`,
-   `destinations` and `scan_locations` (subject to the decisions in section
-   11). `out`, `patterns`, `exclude`, `assets` and `hooks` are refused
+   and `destinations` (subject to the decisions in section 11). `out`,
+   `patterns`, `exclude`, `assets`, `hooks` and `scan_locations` are refused
    (section 10). Any other key the table does not list warns.
 7. `launcher_path` names a file in each plugin's `scripts/`, such as
    `scripts/tool`, relative to the pack root.
@@ -293,10 +293,7 @@ position; the environment; a built-in default.
    and name each such link.
 6. `bump <plugin>` writes the plugin note's `version`. `bump <m>` writes the
    marketplace note's.
-7. `adopt` writes notes into a plugin in this layout. It does not move files or
-   rewrite links. It reports each file a folder may not hold, with the folder
-   it would belong in, and leaves the move to the user.
-8. `publish <note>` names a note in the vault. A path outside
+7. `publish <note>` names a note in the vault. A path outside
    `marketplaces/` is refused.
 
 ## 10. A vault not in this layout
@@ -330,7 +327,8 @@ It is refused when:
 6. A component's note is not `<name>/<name>.md`, such as `skills/x.md` or
    `skills/x/SKILL.md`.
 7. The root file has `build.out`, `build.patterns`, `build.exclude`,
-   `build.assets` or `build.hooks`, or a `packs` key in a harness block.
+   `build.assets`, `build.hooks` or `build.scan_locations`, or a `packs` key in
+   a harness block.
 8. A folder holds an entry its row in "What a folder may hold" (section 3)
    does not list, such as a plugin's `bin/` or a `notes.md` beside a skill's
    entry.
@@ -464,4 +462,5 @@ and wrong for the others.
 ## Later
 
 The layout is deliberately the recommended practice and nothing more. More
-flexible structures may come in a later version of this spec.
+flexible structures may come in a later version of this spec. `adopt`, which
+brings existing skills into a vault, returns in a later milestone.
