@@ -16,10 +16,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
   - hasEvidenceItems:
-      - "[2026-11-04 Pi Project skills and folder trust 2](../../study-results/Pi/2026-11-04%20Pi%20Project%20skills%20and%20folder%20trust%202.md)"
+      - "[2026-11-09 Pi security trust resources](../../study-results/Pi/2026-11-09%20Pi%20security%20trust%20resources.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
+    description: Security page.
 reportedIn:
   - "[Pi docs Security and project trust (main at d57c2d2)](../../documents/github.com/Pi%20docs%20Security%20and%20project%20trust%20%28main%20at%20d57c2d2%29.md)"
 contributions:
@@ -28,6 +28,11 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[Pi](../../harnesses/Pi.md)"
 subject: "[Project skills and folder trust](../../subjects/skills/Project%20skills%20and%20folder%20trust.md)"
 scope:
@@ -40,3 +45,5 @@ imported_from: fact:skills/project-trust@pi#scope-[null,null,null]
 ---
 
 Imported from `facts/pi/skills/project-trust.md`.
+
+Rechecked 2026-11-09 against the installed pi 1.5.0 and the v1.5.0 source tree.
