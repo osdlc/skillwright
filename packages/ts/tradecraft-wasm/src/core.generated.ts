@@ -616,8 +616,9 @@ export interface DiscoverRequest {
   skills_root?: string;
 
   /**
-   * Absolute path to the folder a build writes to. The scan leaves out what
-   * a build owns there. Absent means nothing is left out.
+   * Absolute path to a folder a build writes to. The scan leaves out what a
+   * build owns there too; the configured `build.out` is always left out.
+   * Absent leaves out only the configured `build.out`.
    */
   out_root?: string;
 
@@ -1255,8 +1256,9 @@ export interface LoadRequest {
   hooks?: HookFileSpec[];
 
   /**
-   * Absolute path to the folder a build writes to. The load leaves out what
-   * a build owns there. Absent means nothing is left out.
+   * Absolute path to a folder a build writes to. The load leaves out what a
+   * build owns there too; the configured `build.out` is always left out.
+   * Absent leaves out only the configured `build.out`.
    */
   out_root?: string;
 

@@ -148,7 +148,8 @@ struct WireRequest {
 /// The core's refusals throw an `Error` whose `.name` is `Refused`, its
 /// message led by the reason token. Among them is `malformed-root-file`, when
 /// the root file at `skills_root`, or the workspace file above it, cannot say
-/// what it excludes.
+/// what it excludes, and `build-output`, when the note sits in the vault's
+/// configured `build.out`, which is never read as a note.
 ///
 /// A stem the core refuses throws an `Error` whose `.name` is `InvalidStem`,
 /// carrying [`InvalidStem`]'s own message. A host should validate its
@@ -304,8 +305,9 @@ struct WireDiscoverRequest {
     /// core reads it.
     #[serde(default)]
     skills_root: Option<PathBuf>,
-    /// Absolute path to the folder a build writes to. The scan leaves out what
-    /// a build owns there. Absent means nothing is left out.
+    /// Absolute path to a folder a build writes to. The scan leaves out what a
+    /// build owns there too; the configured `build.out` is always left out.
+    /// Absent leaves out only the configured `build.out`.
     #[serde(default)]
     out_root: Option<PathBuf>,
     /// Says where the packs folders are, under what the vault's own notes say.
@@ -318,8 +320,10 @@ struct WireDiscoverRequest {
     namespace: Option<String>,
 }
 
-/// The vault as `wire` asks to scan it. Refused when the request names no
-/// config and the vault's root file or workspace file does not parse.
+/// The vault as `wire` asks to scan it, beyond what the core hides itself:
+/// the packs a wire config moves, and the output at a wire `out_root`.
+/// Refused when an `out_root` comes with no config and the vault's root file or
+/// workspace file does not parse.
 fn discovery_view<'v>(
     vfs: &'v dyn Vfs,
     wire: &WireDiscoverRequest,
@@ -327,23 +331,20 @@ fn discovery_view<'v>(
 ) -> Result<SourceView<'v>, CoreError> {
     let mut scope = VaultScope::new(&wire.vault_root);
     scope.skills_root = wire.skills_root.as_deref();
-    // The core hides the vault's output by its root file's `packs`; a wire
-    // config's `packs` is hidden here too.
+    // The core hides the configured output by the root file's `packs`; a wire
+    // config's `packs` is hidden here.
     let base = match &wire.config {
         Some(config) => notes_view(SourceView::over(vfs), scope, Some(config), ns),
         None => SourceView::over(vfs),
+    };
+    let Some(out_root) = wire.out_root.as_deref() else {
+        return Ok(base);
     };
     let config = match &wire.config {
         Some(config) => config.clone(),
         None => vault_config(vfs, &wire.vault_root)?,
     };
-    Ok(source_view(
-        base,
-        scope,
-        wire.out_root.as_deref(),
-        &config,
-        ns,
-    ))
+    Ok(source_view(base, scope, Some(out_root), &config, ns))
 }
 
 /// Every component under a vault's skills root, vetted and sorted, and every
@@ -356,7 +357,10 @@ fn discovery_view<'v>(
 /// only the roster could not tell a vault with three skills from a vault with
 /// three skills and a note nobody can read.
 ///
-/// Every other verb here is vault-wide because of this scan.
+/// Every other verb here is vault-wide because of this scan. The vault's
+/// configured `build.out` is never read as notes. A `~` in it is not
+/// resolved here, which has no home folder, so such an output is hidden only
+/// through a wire `out_root`.
 ///
 /// # Errors
 ///
@@ -451,8 +455,9 @@ struct WireLoadRequest {
     /// Flattened, not re-declared, as on [`WireExportRequest`].
     #[serde(flatten)]
     request: LoadRequest,
-    /// Absolute path to the folder a build writes to. The load leaves out what
-    /// a build owns there. Absent means nothing is left out.
+    /// Absolute path to a folder a build writes to. The load leaves out what a
+    /// build owns there too; the configured `build.out` is always left out.
+    /// Absent leaves out only the configured `build.out`.
     #[serde(default)]
     out_root: Option<PathBuf>,
     /// The vault's frontmatter namespace, as a stem. Absent means
@@ -461,19 +466,18 @@ struct WireLoadRequest {
     namespace: Option<String>,
 }
 
-/// The vault as `wire` asks to load it.
+/// The vault as `wire` asks to load it: less the output at a wire
+/// `out_root`, beyond the configured output the core hides itself.
 fn load_view<'v>(vfs: &'v dyn Vfs, wire: &WireLoadRequest, ns: &Namespace) -> SourceView<'v> {
+    let base = SourceView::over(vfs);
+    let Some(out_root) = wire.out_root.as_deref() else {
+        return base;
+    };
     let request = &wire.request;
     let mut scope = VaultScope::new(&request.vault_root);
     scope.skills_root = request.skills_root.as_deref();
     scope.marketplace = request.marketplace.as_deref();
-    source_view(
-        SourceView::over(vfs),
-        scope,
-        wire.out_root.as_deref(),
-        &request.config,
-        ns,
-    )
+    source_view(base, scope, Some(out_root), &request.config, ns)
 }
 
 /// Load the vault into the marketplace model — every plugin and its members,
@@ -483,7 +487,8 @@ fn load_view<'v>(vfs: &'v dyn Vfs, wire: &WireLoadRequest, ns: &Namespace) -> So
 /// `LoadRequest` optionally carrying a `namespace` stem. Returns a serialized
 /// `Marketplace`: the same model `exportSkills` translates into files, so a
 /// host that wants to show a vault's structure reads it here rather than
-/// re-deriving it from a built tree.
+/// re-deriving it from a built tree. The vault's configured `build.out` is
+/// never read as notes, as in `discoverComponents`.
 ///
 /// # Errors
 ///
