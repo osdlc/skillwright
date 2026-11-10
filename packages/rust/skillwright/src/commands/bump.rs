@@ -1001,27 +1001,6 @@ impl BuiltRef {
                 format!("{} is outside {}", config_path.display(), repo.display()),
             );
         };
-        // A `--vault` flag names a folder of this checkout; the ref's own copy
-        // of it is the same path inside the worktree.
-        let vault_rel = match &flags.common.vault {
-            None => None,
-            Some(_) => {
-                let vault = run.vault.canonicalize().unwrap_or(run.vault.clone());
-                match vault.strip_prefix(&repo) {
-                    Ok(rel) => Some(rel.to_path_buf()),
-                    Err(_) => {
-                        return fail(
-                            ctx,
-                            format!(
-                                "--vault {} is outside {}",
-                                run.vault.display(),
-                                repo.display()
-                            ),
-                        );
-                    }
-                }
-            }
-        };
 
         let baselines = std::env::temp_dir().join(BASELINES_DIR);
         let (id, lock_path, lock) = match claim_baseline(&baselines, &repo) {
@@ -1071,7 +1050,8 @@ impl BuiltRef {
             );
         };
         let common = CommonFlags {
-            vault: vault_rel.map(|rel| built.checkout.join(rel).display().to_string()),
+            // `--config` decides the vault, so a `--vault` would go unread.
+            vault: None,
             config: Some(base_config.display().to_string()),
             namespace: flags.common.namespace.clone(),
         };
