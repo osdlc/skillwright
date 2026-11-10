@@ -24,7 +24,7 @@ Status: in progress, updated 2026-11-09.
 | 5 tradecraft-core reads the embedded file; D-QXRN | [skillwright#99](https://github.com/osdlc/skillwright/pull/99) | draft; review converged; needs the researched data |
 | 5 `@osdlc/harness-knowledge`, agent-call and detect-harness | [osdlc#750](https://github.com/osdlc/osdlc/pull/750) | draft; needs re-sync, wiring and a first publish |
 | 6 drift loop | — | not started |
-| 7 retire alpha | done in [skillwright#TBD](https://github.com/osdlc/skillwright/pulls) | alpha corpus, validator, generator and importer deleted; the tradecraft-core tests that read alpha move with [skillwright#99](https://github.com/osdlc/skillwright/pull/99) |
+| 7 retire alpha | done in [skillwright#119](https://github.com/osdlc/skillwright/pull/119) | alpha corpus, validator, generator and importer deleted; the tradecraft-core tests that read alpha move with [skillwright#99](https://github.com/osdlc/skillwright/pull/99) |
 
 Next:
 
