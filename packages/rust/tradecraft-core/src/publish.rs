@@ -752,7 +752,7 @@ pub struct SkillClaim {
     /// matched on this.
     pub entry_path: PathBuf,
     /// The note as messages name it: relative to the vault root. For display
-    /// only: claims are matched on `entry_path`.
+    /// only.
     pub path: String,
     /// The note's `targets`, inherited ones included. `None` is every target.
     pub targets: Option<Vec<String>>,
@@ -918,8 +918,8 @@ fn publish_onto(
             ));
         }
     };
-    // From here the note is resolved and recorded by its in-vault
-    // spelling, so a real path under a linked root publishes as the link does.
+    // From here the note is recorded by its in-vault spelling, so a real
+    // path under a linked root publishes as the link does.
     let request = &PublishRequest {
         skill_path: in_vault,
         ..request.clone()
@@ -1165,15 +1165,7 @@ enum ReadOutcome {
 ///
 /// # Errors
 ///
-/// * `refused: malformed-root-file` when the root file at `skills_root`, or
-///   a workspace file above it, does not parse.
-/// * `refused: unsafe-path` when the note's real path cannot be resolved
-///   safely under the vault root.
-/// * `refused: excluded-note` when `build.exclude` or a folder that never
-///   ships holds the note.
-/// * `refused: no-renderer` when the note is the vault's root file.
-/// * What [`read_vault_note`] refuses, such as a malformed note, and what
-///   the containers' cascade refuses.
+/// The refusals [`skill_claim`] lists, apart from `invalid-name`.
 fn read_for_publish(
     vfs: &dyn Vfs,
     skill_path: &Path,

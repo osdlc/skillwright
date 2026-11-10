@@ -2522,7 +2522,7 @@ fn a_by_path_publish_of_no_skill_does_not_scan_the_vault() {
 }
 
 /// The CLI reads the root file before a publish starts, so a malformed one
-/// stops the run there, as on main, and the vault scan never runs.
+/// stops the run there, and the vault scan never runs.
 #[test]
 fn a_malformed_root_file_gives_no_scan_warning() {
     let dir = vault(&[
