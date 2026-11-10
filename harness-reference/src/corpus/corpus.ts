@@ -93,4 +93,3 @@ export function createdBy(name: string, agentType: 'person' | 'software', date: 
 
 /** A URL as documents compare it: surrounding space and trailing slashes dropped. */
 export const normalizeUrl = (url: string): string => url.trim().replace(/\/+$/u, '')
-
