@@ -131,6 +131,14 @@ fn is_reserved_note(vault: &Path, path: &Path) -> bool {
     is_flat_root_file_name(path) && !is_marketplace_entry(relative)
 }
 
+/// Whether `path` is the root config file of the vault at `vault`: its
+/// `skillwright.md`, directly under the vault root. It configures the vault;
+/// it is not a note of any kind.
+pub(crate) fn is_vault_root_file(vault: &Path, path: &Path) -> bool {
+    path.strip_prefix(vault)
+        .is_ok_and(|relative| relative == Path::new(ROOT_FILE))
+}
+
 /// Whether the vault-relative `path` is a marketplace's entry note,
 /// `marketplaces/<m>/skillwright.md`: directly inside a folder of the
 /// workspace folder, whatever `<m>` is called. No other `skillwright.md`

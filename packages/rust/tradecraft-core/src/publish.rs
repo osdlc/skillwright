@@ -751,6 +751,9 @@ fn publish_onto(
     let placed = crate::patterns::Patterns::load_at(vfs, request.skills_root.as_deref())?;
     let placed = placed.as_ref();
     refuse_excluded(placed, &request.skill_path)?;
+    if placed.is_some_and(|(_, root)| crate::paths::is_vault_root_file(root, &request.skill_path)) {
+        return Err(root_file_not_a_note(&request.skill_path));
+    }
     let resolved = publish_kind(placed, &request.skill_path);
     let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
@@ -1260,6 +1263,21 @@ fn no_renderer_for(
              skill would write a `SKILL.md` for something that is not one. Nothing was written",
             note_path.display(),
             kind.as_str(),
+        ),
+    )
+}
+
+/// The vault's root `skillwright.md` refused as a publish, by the token a
+/// marketplace note gets. It holds the vault's configuration, so publishing it
+/// would write a `SKILL.md` for something that is not a skill.
+fn root_file_not_a_note(note_path: &Path) -> CoreError {
+    CoreError::refused(
+        "no-renderer",
+        format!(
+            "{}: it is the vault's root file, which configures the vault and is not a note — \
+             publishing it as a skill would write a `SKILL.md` for something that is not one. \
+             `build` renders a marketplace. Nothing was written",
+            note_path.display(),
         ),
     )
 }
@@ -6340,5 +6358,77 @@ mod tests {
             .to_string();
         assert!(err.contains("unknown-override-key"), "{err}");
         assert!(!vfs.exists(Path::new("/dest/.claude/agents/senior-reviewer.md")));
+    }
+
+    /// A vault with a root file and the three notes a publish by path can
+    /// be pointed at, requested from the vault root.
+    fn vault_with_root_file() -> MemVfs {
+        let vfs = MemVfs::new();
+        vfs.create_dir_all(Path::new("/vault/marketplaces/m"))
+            .unwrap();
+        vfs.create_dir_all(Path::new("/vault/notes")).unwrap();
+        vfs.create_dir_all(Path::new("/dest")).unwrap();
+        vfs.write_file(
+            Path::new("/vault/skillwright.md"),
+            b"---\nname: v1\nbuild:\n  out: .\n---\n",
+        )
+        .unwrap();
+        vfs.write_file(
+            Path::new("/vault/marketplaces/m/skillwright.md"),
+            b"---\nname: m\n---\n",
+        )
+        .unwrap();
+        vfs.write_file(Path::new("/vault/notes/stray.md"), NOTE.as_bytes())
+            .unwrap();
+        vfs
+    }
+
+    fn rooted_request(skill_path: &str) -> PublishRequest {
+        PublishRequest {
+            skill_path: PathBuf::from(skill_path),
+            skills_root: Some(PathBuf::from("/vault")),
+            ..request("/dest", "claude")
+        }
+    }
+
+    #[test]
+    fn the_root_file_is_refused_and_nothing_is_written() {
+        let vfs = vault_with_root_file();
+        let err = publish_skill(&vfs, &rooted_request("/vault/skillwright.md"), &sw())
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("no-renderer"), "{err}");
+        assert!(err.contains("root file"), "{err}");
+        assert!(!vfs.exists(Path::new("/dest/.claude")));
+    }
+
+    #[test]
+    fn a_marketplace_note_is_still_refused() {
+        let vfs = vault_with_root_file();
+        let err = publish_skill(
+            &vfs,
+            &rooted_request("/vault/marketplaces/m/skillwright.md"),
+            &sw(),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("no-renderer"), "{err}");
+        assert!(!vfs.exists(Path::new("/dest/.claude")));
+    }
+
+    // Publishing a note by path outside every kind folder is intended.
+    #[test]
+    fn a_stray_note_published_by_path_still_publishes() {
+        let vfs = vault_with_root_file();
+        let report = publish_skill(&vfs, &rooted_request("/vault/notes/stray.md"), &sw()).unwrap();
+
+        assert!(!statuses(&report).is_empty());
+        assert!(
+            vfs.exists(Path::new("/dest/.claude/skills/stray/SKILL.md")),
+            "{:?}",
+            statuses(&report)
+        );
     }
 }

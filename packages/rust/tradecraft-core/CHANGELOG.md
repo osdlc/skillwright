@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `publish_skill` refuses the vault's root `skillwright.md` with `refused: no-renderer`, as it does a marketplace note. It wrote the root file out as a skill, with a filler description and its `build` block under `metadata:`. A note outside every kind folder still publishes by path.
+
 ## [0.47.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.46.0...tradecraft-core/v0.47.0) - 2026-11-09
 
 ### Breaking
