@@ -7,9 +7,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Write `\[[` to keep a `[[` as text, such as `\[[TODO`. The build ships it as written, backslash included, and Markdown viewers show `[[TODO`. The error for a `[[` that is not a link now says so. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
 ### Changed
 
 - `bump --changed-since <ref>` checks out only what the ref's build reads: the root file, the workspace file, the vault folder, the `build.assets` and `build.hooks` sources, and the `.gitattributes` above them. It wrote out the whole repository before, which in a monorepo cost as much as the repository. A symlink in or above those paths still checks out the whole tree. The checkout no longer registers a git worktree.
+- `\[[note]]` is no longer a link; it ships as written. It used to build to broken Markdown. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
+### Fixed
+
+- A link from a skill to itself, such as `[[work]]` in the `work` skill or in its `references/bug-route.md`, is written as the skill's name, the way a link to any other skill is: `` `t:work` `` on Claude Code and Codex, `` `t-work` `` on Pi. It was a link to `SKILL.md`. A link with a `#heading` stays a link to that heading. Every skill with such a link builds different output, so `check` reports drift until you rebuild. ([#53](https://github.com/osdlc/skillwright/issues/53))
+- A YAML list in a resource's frontmatter, such as `tags: [[a]]`, no longer fails the build as a link. A quoted link there, such as `related: "[[other]]"`, still fails, and the error now says to move it into the body, since frontmatter ships as written. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ## [0.11.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.11.0) - 2026-11-10
 

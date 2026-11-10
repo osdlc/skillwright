@@ -2511,6 +2511,64 @@ mod tests {
     }
 
     #[test]
+    fn a_skills_link_to_itself_names_it_in_each_harness() {
+        let vfs = MemVfs::new();
+        let folder = "/vault/marketplaces/house/plugins/tools/skills/a";
+        write(
+            &vfs,
+            &format!("{folder}/a.md"),
+            &note_with_body("a", &[], "# a\n\nPart of [[a]].\n"),
+        );
+        write(
+            &vfs,
+            &format!("{folder}/references/x.md"),
+            "Part of [[a]].\n",
+        );
+        let check = |vfs: &MemVfs, tree: &str, skill: &str, named: &str| {
+            let want = format!("Part of `{named}`.");
+            let body = skill_md(vfs, tree, skill);
+            assert!(body.contains(&want), "{tree}: {body}");
+            let reference = text_at(
+                vfs,
+                &format!("/market/{tree}/packs/tools/skills/{skill}/references/x.md"),
+            );
+            assert_eq!(reference, format!("{want}\n"), "{tree}");
+        };
+        build(&vfs);
+        for (tree, skill, named) in [
+            (".claude-plugin", "a", "tools:a"),
+            (".agents", "a", "tools:a"),
+            (".cursor-plugin", "a", "a"),
+            (".pi", "tools-a", "tools-a"),
+        ] {
+            check(&vfs, tree, skill, named);
+        }
+
+        let mut config = config();
+        config.blocks.insert(
+            "pi".to_owned(),
+            serde_json::Map::from_iter([("naming".to_owned(), json!("bare"))]),
+        );
+        build_with(&vfs, config);
+        check(&vfs, ".pi", "a", "a");
+    }
+
+    #[test]
+    fn an_escaped_double_bracket_ships_as_written_in_each_harness() {
+        let vfs = calls_vault("# a\n\nSee \\[[TODO later.\n");
+        build(&vfs);
+        for (tree, skill) in [
+            (".claude-plugin", "a"),
+            (".agents", "a"),
+            (".cursor-plugin", "a"),
+            (".pi", "tools-a"),
+        ] {
+            let body = skill_md(&vfs, tree, skill);
+            assert!(body.contains("See \\[[TODO later.\n"), "{tree}: {body}");
+        }
+    }
+
+    #[test]
     fn a_call_naming_nothing_or_a_non_skill_is_refused() {
         let vfs = calls_vault("# a\n\nRun /[[nope]].\n");
         let err = export_refusal(&vfs);
