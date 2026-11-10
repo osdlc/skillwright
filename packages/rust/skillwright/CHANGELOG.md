@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.11.0) - 2026-11-10
+
 ### Breaking
 
 - `list` exits 2 when it skips a note that `build` and `check` refuse, such as a skill with a `description` outside a kind folder (`unreadable-note`) or a note with a value of the wrong kind (`malformed`). It exited 0. In a workspace, only a note skipped inside a marketplace, or the workspace's own `skillwright.md`, counts, since a workspace build reads only those.
