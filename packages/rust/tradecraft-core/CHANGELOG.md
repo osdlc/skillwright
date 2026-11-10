@@ -7,6 +7,25 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+Behaviour:
+
+- A skill, command or agent with a `name` and no `description` is refused with `refused: missing-description`. `load`, `export_skills` (build and check), `load_component`, `load_plugin` and so `publish_skill` refuse it, on its own or in its pack, and nothing is written. They published it with the filler "No description provided." before. A scan still lists the note, now with an empty description, and its `missing-description` entry in `DiscoveryReport::warnings` says build and publish refuse it.
+- A plugin or marketplace note with a `name` and no `description` is read like one with neither: no filler and no warning. Its manifest description is the configured one, or the default (`Skills: <names>.` for a plugin). A hook with a `name` alone no longer warns.
+
+API:
+
+- Removed `MISSING_DESCRIPTION`, `DiscoveredComponent::description_filled` and `Cascade::configured`. A serialized `DiscoveredComponent` has no `description_filled` key.
+- Removed `MarketplaceConfig::require_descriptions` and `BuildSettings::require_descriptions`. The refusal is always on. A root file's `build.require_descriptions` is now an unknown key: it warns and is ignored.
+
+### Added
+
+- `refuse_undescribed(paths)`: the `missing-description` refusal for the notes named.
+- `DiscoveredComponent::lacks_description`: a skill, command or agent with no description.
+- `DiscoveryWarning::is_error`: whether a build refuses the note a warning names (`missing-description` or `path-collision`).
+- `ReasonToken::MissingDescription` (`missing-description`). It is in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`.
+
 ## [0.47.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.46.0...tradecraft-core/v0.47.0) - 2026-11-09
 
 ### Breaking

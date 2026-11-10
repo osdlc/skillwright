@@ -362,12 +362,6 @@ pub struct MarketplaceConfig {
     /// Per-plugin manifest overrides, keyed by plugin name.
     #[serde(default)]
     pub plugins: BTreeMap<String, PluginOverrides>,
-    /// Refuse the build when a note has a `name` and no `description` and
-    /// this config supplies none for it, instead of publishing
-    /// [`crate::discover::MISSING_DESCRIPTION`] and reporting it in
-    /// [`ExportReport::warnings`].
-    #[serde(default)]
-    pub require_descriptions: bool,
     /// The plugin's launcher, relative to the plugin's root (`bin/tool`).
     /// Skill bodies call it as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`. On a
     /// root whose harness does not expand that variable, the build rewrites
@@ -433,7 +427,8 @@ pub struct ExportReport {
     /// `claude`, `codex`, `cursor`, `pi` order; within a root, plugins by name, then the
     /// manifest, then stale paths, then the members that root cannot carry.
     pub units: Vec<ExportUnit>,
-    /// Notes the scan admitted with something filled in, in path order.
+    /// What the scan and the build have to say about admitted notes, in path
+    /// order.
     #[serde(default)]
     pub warnings: Vec<DiscoveryWarning>,
 }
@@ -1754,7 +1749,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::discover::{MISSING_DESCRIPTION, MISSING_DESCRIPTION_REASON};
+    use crate::discover::MISSING_DESCRIPTION_REASON;
     use crate::vfs::{MemVfs, NativeVfs};
 
     fn sw() -> Namespace {
@@ -1865,7 +1860,6 @@ mod tests {
             homepage: None,
             blocks: BTreeMap::new(),
             plugins: BTreeMap::new(),
-            require_descriptions: false,
             launcher_path: None,
         }
     }
@@ -3037,7 +3031,9 @@ mod tests {
         }
     }
 
-    fn nameonly_vault() -> MemVfs {
+    /// A plugin note with a `name` and no `description`, over one described
+    /// skill.
+    fn silent_plugin_vault() -> MemVfs {
         let vfs = MemVfs::new();
         write(
             &vfs,
@@ -3046,58 +3042,78 @@ mod tests {
         );
         write(
             &vfs,
-            "/vault/marketplaces/house/plugins/tools/skills/quiet.md",
-            "---\nname: quiet\n---\n\n# Quiet\n",
+            "/vault/marketplaces/house/plugins/tools/skills/said.md",
+            "---\nname: said\ndescription: d\n---\n",
         );
         vfs
     }
 
     #[test]
-    fn a_name_without_a_description_publishes_the_filler_and_warns() {
-        let vfs = nameonly_vault();
-        let report = build(&vfs);
-        let warned: Vec<(&str, &str)> = report
-            .warnings
-            .iter()
-            .map(|w| (w.path.as_str(), w.reason.as_str()))
-            .collect();
-        assert_eq!(
-            warned,
-            [
-                (
-                    "marketplaces/house/plugins/tools/skills/quiet.md",
-                    "missing-description"
-                ),
-                (
-                    "marketplaces/house/plugins/tools/tools.md",
-                    "missing-description"
-                ),
-                (
-                    "marketplaces/house/plugins/tools/tools.md",
-                    "missing-version"
-                ),
-            ]
-        );
-        let skill = text_at(
+    fn a_skill_with_a_name_and_no_description_refuses_the_build() {
+        let vfs = silent_plugin_vault();
+        write(
             &vfs,
-            "/market/.claude-plugin/packs/tools/skills/quiet/SKILL.md",
+            "/vault/marketplaces/house/plugins/tools/skills/quiet.md",
+            "---\nname: quiet\n---\n\n# Quiet\n",
         );
-        assert!(
-            skill.contains(&format!("description: {MISSING_DESCRIPTION}")),
-            "{skill}"
-        );
-        let manifest = text_at(
-            &vfs,
-            "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
-        );
-        assert!(manifest.contains(MISSING_DESCRIPTION), "{manifest}");
+        for mode in [ExportMode::Check, ExportMode::Build] {
+            let message = export_skills(&vfs, &request(mode), &sw())
+                .unwrap_err()
+                .to_string();
+            assert!(message.contains("missing-description"), "{message}");
+            assert!(message.contains("skills/quiet.md"), "{message}");
+            assert!(!message.contains("tools/tools.md"), "{message}");
+        }
+        assert!(!vfs.exists(Path::new("/market")));
     }
 
-    /// The filler is the vault being silent, so a plugin description the
-    /// root file sets outranks it.
+    /// An agent ships from no build, but one with no description is still
+    /// named, not hidden behind `empty-marketplace`.
+    #[test]
+    fn an_undescribed_agent_alone_is_refused_by_name() {
+        let vfs = MemVfs::new();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/tools/agents/helper.md",
+            "---\nname: helper\n---\n",
+        );
+        let message = export_skills(&vfs, &request(ExportMode::Check), &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("missing-description"), "{message}");
+        assert!(message.contains("agents/helper.md"), "{message}");
+    }
+
+    /// A container need not describe itself: a silent plugin or marketplace
+    /// note carries no warning, and its manifest takes the default.
+    #[test]
+    fn a_silent_container_note_has_no_warning() {
+        let vfs = silent_plugin_vault();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/skillwright.md",
+            "---\nname: house\n---\n",
+        );
+        let report = build(&vfs);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|w| w.reason != MISSING_DESCRIPTION_REASON),
+            "{:?}",
+            report.warnings
+        );
+        let plugin: serde_json::Value = serde_json::from_str(&text_at(
+            &vfs,
+            "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
+        ))
+        .unwrap();
+        assert_eq!(plugin["description"], "Skills: said.");
+    }
+
     #[test]
     fn a_configured_plugin_description_outranks_a_silent_plugin_note() {
-        let vfs = nameonly_vault();
+        let vfs = silent_plugin_vault();
         let mut config = config();
         config.plugins.insert(
             "tools".to_owned(),
@@ -3126,7 +3142,7 @@ mod tests {
     /// configured marketplace description in place.
     #[test]
     fn a_configured_marketplace_description_outranks_a_silent_marketplace_note() {
-        let vfs = nameonly_vault();
+        let vfs = silent_plugin_vault();
         write(
             &vfs,
             "/vault/marketplaces/house/skillwright.md",
@@ -3141,8 +3157,7 @@ mod tests {
         assert_eq!(market["description"], "Configured market description");
     }
 
-    /// A version from the note or from the config silences the warning, and
-    /// the warning alone never trips `require_descriptions`.
+    /// A version from the note or from the config silences the warning.
     #[test]
     fn a_plugin_without_a_version_warns_until_one_is_stated() {
         let vfs = MemVfs::new();
@@ -3157,7 +3172,6 @@ mod tests {
             "---\nname: said\ndescription: d\n---\n",
         );
         let mut request = request(ExportMode::Check);
-        request.config.require_descriptions = true;
         let report = export_skills(&vfs, &request, &sw()).unwrap();
         let reasons: Vec<&str> = report.warnings.iter().map(|w| w.reason.as_str()).collect();
         assert_eq!(reasons, ["missing-version"]);
@@ -3213,44 +3227,6 @@ mod tests {
         assert!(plugin.contains("\"version\": \"2.3.4\""), "{plugin}");
     }
 
-    /// A configured description is what ships for a silent plugin or
-    /// marketplace note, so that note neither warns nor trips
-    /// `require_descriptions`. A silent skill still does.
-    #[test]
-    fn a_configured_description_neither_warns_nor_refuses() {
-        let vfs = nameonly_vault();
-        write(
-            &vfs,
-            "/vault/marketplaces/house/skillwright.md",
-            "---\nname: house\n---\n",
-        );
-        let mut request = request(ExportMode::Check);
-        request.config.description = Some("Configured market description".to_owned());
-        request.config.plugins.insert(
-            "tools".to_owned(),
-            PluginOverrides {
-                description: Some("Configured description.".to_owned()),
-                ..PluginOverrides::default()
-            },
-        );
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
-        let warned: Vec<&str> = report
-            .warnings
-            .iter()
-            .filter(|w| w.reason == MISSING_DESCRIPTION_REASON)
-            .map(|w| w.path.as_str())
-            .collect();
-        assert_eq!(warned, ["marketplaces/house/plugins/tools/skills/quiet.md"]);
-
-        request.config.require_descriptions = true;
-        let message = export_skills(&vfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("skills/quiet.md"), "{message}");
-        assert!(!message.contains("tools/tools.md"), "{message}");
-        assert!(!message.contains("house/house.md"), "{message}");
-    }
-
     #[test]
     fn another_marketplaces_missing_description_neither_refuses_nor_warns() {
         let vfs = MemVfs::new();
@@ -3271,7 +3247,6 @@ mod tests {
         );
         let mut request = request(ExportMode::Build);
         request.marketplace = Some("house".to_owned());
-        request.config.require_descriptions = true;
         let report = export_skills(&vfs, &request, &sw()).unwrap();
         assert!(
             report
@@ -3281,20 +3256,6 @@ mod tests {
             "{:?}",
             report.warnings
         );
-    }
-
-    #[test]
-    fn require_descriptions_refuses_the_build_naming_each_note() {
-        let vfs = nameonly_vault();
-        let mut request = request(ExportMode::Build);
-        request.config.require_descriptions = true;
-        let message = export_skills(&vfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("missing-description"), "{message}");
-        assert!(message.contains("skills/quiet.md"), "{message}");
-        assert!(message.contains("tools/tools.md"), "{message}");
-        assert!(!vfs.exists(Path::new("/market")));
     }
 
     #[test]

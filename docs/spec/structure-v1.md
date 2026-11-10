@@ -79,7 +79,9 @@ code and is part of this spec.
    `docs/`, `tests/` and `fixtures/`, which never ship. A note in `skills/docs/` with no
    `docs` skill warns that it will not ship.
 2. Agents and commands are `<name>.md` or `<name>/<name>.md`.
-3. A note is a component only if it has a `description`, or a `name` alone.
+3. A note is a component only if it has a `description`, or a `name` alone. A skill,
+   command or agent with a `name` and no `description` is an error: `list` and `check`
+   report it, and `build` and `publish` refuse it.
 4. A name is lowercase words joined by hyphens, at most 64 characters. It defaults
    to the file or folder name.
 

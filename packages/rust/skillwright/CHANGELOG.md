@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- A skill, command or agent with a `name` and no `description` is an error. `build` and `check` refuse it and exit 2. `publish` of the whole vault refuses before writing anything and exits 2. `publish <path>` of the note, or of a plugin that holds it, reports that note refused with `missing-description`. They published it with "No description provided." before. `list` still lists the note, flags its row `[missing-description]`, prints an `error ·` line for it, and exits 2. Its `--json` row has a `missing_description` key.
+- `build.require_descriptions` is removed, since the refusal is always on. A root file that sets it gets an unknown-key warning.
+- A plugin or marketplace note with a `name` and no `description` no longer warns or ships a filler. Its manifest takes the configured description or the default.
+- `list` prints a `path-collision` line as `error ·`, not `warning ·`.
+
 ### Changed
 
 - Documented that `publish <path>` publishes a note as a skill when no kind folder or `build.patterns` glob places it. The `publish` help, the structure spec and the `skillwright.md` reference say so, and say that `list`, `check`, `build` and `publish --all` do not include such a note. No behaviour change.
