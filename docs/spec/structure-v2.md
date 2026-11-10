@@ -153,8 +153,9 @@ A link is a `[[wikilink]]` or a relative Markdown link. A `[[name]]` that
 names a skill or a command is a call (rule 7): it is the only call form. An
 embed (`![[name]]`, section 5) resolves by the same rules: what it names must
 be in scope. The rules apply to links from a component's note and from any
-Markdown file it ships. Inside a code span or fenced block, only a call is
-read (rule 7); any other `[[` there ships as written.
+Markdown file it ships. Code is fully literal: nothing inside a code span or
+fenced block is read, so a call, link or embed written there ships exactly as
+written (rule 13).
 
 ### Containment
 
@@ -170,9 +171,9 @@ read (rule 7); any other `[[` there ships as written.
 |---|---|
 | A file in the component's own folder | Ships as written, relative. |
 | A file in the plugin's `references/`, `scripts/` or `assets/` | Allowed. Rewritten to its installed path at the pack root. |
-| A skill's note, including the linking skill's own | A call. Renders as the harness's call string (rule 7). Its scope is decision D2: the whole marketplace. |
-| A command's note | A call where the harness carries commands. Refused for any other harness (rule 8). |
-| An agent's note | Refused. No harness's build carries an agent (rule 8). |
+| A skill's note, including the linking skill's own | A call. Renders as the harness's call string (rule 7). Its scope is decision D2: the whole marketplace. A link to a section of it is refused (rule 8). |
+| A command's note | A call where the harness carries commands. Refused for any other harness (rule 9). |
+| An agent's note | Refused. No harness's build carries an agent (rule 9). |
 | A file in another component's folder, same plugin | Allowed. Rewritten to its installed path. |
 | A file in another plugin | Refused. |
 | Anything outside `marketplaces/<m>/` | Refused. |
@@ -194,35 +195,42 @@ read (rule 7); any other `[[` there ships as written.
    `[[setup/references/install.md]]` becomes
    `[install.md](../setup/references/install.md)`.
 7. A link to a skill's note is a call (decision D3, decided). It renders as the
-   string that runs the skill on that harness, such as `/skillwright:setup` on
-   Claude Code and `$skillwright:setup` on Codex. In prose it is wrapped in
-   backticks. Inside a code span or fenced block it is read too, and written
-   bare, so `` `[[setup]]` `` ships as `` `/skillwright:setup` ``. v1 read
-   calls in code the same way. Nothing is copied. This includes a skill's link to its own note.
-   A fragment, `[[setup#Usage]]`, is checked and then dropped, because a call
-   has no fragment. An alias keeps its words and adds the call after them:
-   `[[setup|the setup skill]]` renders as ``the setup skill (`/skillwright:setup`)``.
-   A call to a skill the harness's build does not carry is refused, naming the
-   call.
-8. A link to a command's note follows rule 7 on a harness whose build carries
+   string that runs the skill on that harness, in backticks: `[[setup]]`
+   becomes `` `/skillwright:setup` `` on Claude Code and
+   `` `$skillwright:setup` `` on Codex. Nothing is copied. This includes a
+   skill's link to its own note. An alias keeps its words and adds the call
+   after them: `[[setup|the setup skill]]` renders as
+   ``the setup skill (`/skillwright:setup`)``. A call to a skill the harness's
+   build does not carry is refused, naming the call.
+8. A link to a section of a skill's note, `[[setup#Usage]]`, is an error,
+   because a call has no section. The message says to embed the section with
+   `![[setup#Usage]]` or to call the skill with `[[setup]]`. The same holds for
+   a command's note. A fragment on a link to any other note or file is kept in
+   the rewritten link: `[[guide#Install]]` becomes
+   `[guide](references/guide.md#Install)`.
+9. A link to a command's note follows rule 7 on a harness whose build carries
    commands, today Claude Code only: `[[deploy]]` renders as
-   `/skillwright:deploy`. Any other harness has no command to run, so the link
-   is refused for that harness, as a call to a skill it does not carry is. An
-   agent has no call form and no build carries it, so a link to an agent's
+   `` `/skillwright:deploy` ``. Any other harness has no command to run, so the
+   link is refused for that harness, as a call to a skill it does not carry is.
+   An agent has no call form and no build carries it, so a link to an agent's
    note is refused.
-9. `/[[name]]` is not v2 syntax. Where v1 read it as a call, it is refused with
-   an error that names the file and says to write `[[name]]`. v1 read it as a
-   call when the `/` starts a line or follows whitespace or one of
-   `` ( " ' ` * > _ | [ = ``, in prose and in code. That position is kept for
-   the refusal, so a v1 call is never shipped as broken text. Anywhere else,
-   such as `dir/[[x]]` or `[[A]]/[[B]]`, the `/` is ordinary text and `[[x]]`
-   is an ordinary link, as in v1. `\/[[x]]`, v1's escape, is refused the same
-   way; `\[[x]]` ships as `[[x]]`, in prose and code alike, which is how to
-   show the syntax in an example.
 10. A link into a never-ship folder is refused with the same error in every
     link form.
 11. A link to a missing file is an error that names the link.
-12. Every error in this section names the linking file, the link as written and
+12. `/[[name]]` is not v2 syntax. In prose, where v1 read it as a call, it is
+    refused with an error that names the file and says to write `[[name]]`.
+    v1 read it as a call when the `/` starts a line or follows whitespace or
+    one of `` ( " ' ` * > _ | [ = ``. Anywhere else in prose, such as
+    `dir/[[x]]` or `[[A]]/[[B]]`, the `/` is ordinary text and `[[x]]` is an
+    ordinary link, as in v1. v1's escape, `\/[[x]]`, is refused the same way.
+13. Code is fully literal. Nothing inside a code span or fenced block is read:
+    no call, link or embed, and no `/[[` refusal. A call written in code ships
+    as written, so write calls in prose, where they render in backticks.
+14. After the build, no `[[` may remain in prose. A leftover is an error that
+    names the file and the text. The check skips code spans, fenced blocks and
+    `\[[`-escaped text. In prose, `\[[x]]` ships as `[[x]]`, which is how to
+    show the syntax outside code.
+15. Every error in this section names the linking file, the link as written and
     the rule it broke.
 
 ## 5. Transclusion
@@ -235,12 +243,14 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
 1. The target resolves by the scope rules of section 4: the embedding file's
    own component folder, then the plugin's shared folders and components. An
    embed outside that scope is refused with the same error as a link.
-2. A note (`.md`) is inlined. An image (`.avif`, `.bmp`, `.gif`, `.jpeg`,
-   `.jpg`, `.png`, `.svg`, `.webp`) becomes a Markdown image link to the file's
-   installed path. Any other file is decision D8 in section 12.
-3. An embed whose target does not exist is an error that names the embed.
+2. A note (`.md`) is inlined (rules 4 to 8). An image (`.avif`, `.bmp`,
+   `.gif`, `.jpeg`, `.jpg`, `.png`, `.svg`, `.webp`) becomes a Markdown image
+   link to the file's installed path. Any other text file is inlined as a
+   fenced code block (rules 9 to 14, decision D8, decided).
+3. An embed whose target does not exist is an error that names the embed. An
+   embed inside a code span or fenced block is not read (section 4 rule 13).
 
-### What is inlined
+### Inlining a note
 
 4. `![[note]]` inlines the note's body. Its frontmatter is dropped. A note
    whose frontmatter is malformed still embeds: only the body is read.
@@ -260,32 +270,53 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
 8. The inlined text is trimmed of leading and trailing whitespace and replaces
    the embed in place. Nothing marks where it came from.
 
+### Inlining another text file
+
+9. `![[run.sh]]` inlines the file as a fenced code block. The content is never
+   escaped or changed, and nothing in it is read as a link, call or embed.
+10. The fence's info string comes from the file's extension through a fixed
+    table, such as `.sh` to `bash` and `.py` to `python`. An extension the
+    table does not list gives no info string.
+11. The fence is backticks, one more than the longest run of backticks that
+    starts any line of the file, and never fewer than three. A file holding a
+    ```` ``` ```` block is fenced with four.
+12. Inside a list item, every line of the block is indented to the item's
+    content, so the block stays in the item.
+13. A file that is not valid UTF-8 is binary, and embedding it is refused. A
+    fragment on a non-note file, such as `![[run.sh#main]]`, is refused.
+14. A plain `[[run.sh]]` is not an embed. It stays a file link to the file's
+    installed path.
+
 ### Nesting
 
-9. An embedded note may embed others. Each level is expanded the same way.
-10. A cycle is an error, `cycle`, that prints the loop from its first repeat,
+15. An embedded note may embed others. Each level is expanded the same way.
+16. A cycle is an error, `cycle`, that prints the loop from its first repeat,
     such as `a.md -> b.md#Setup -> a.md`. A hop is a file and a fragment, so
     two embeds of different sections of one note are not a cycle. A note that
     embeds itself is a cycle.
 
 ### Links inside embedded text
 
-11. A link or embed inside embedded text resolves from the embedded file: its
+17. A link or embed inside embedded text resolves from the embedded file: its
     own folder and its own component's scope, as if it were read in place.
-12. It is then written relative to where the text lands, the file that holds
+18. It is then written relative to where the text lands, the file that holds
     the outermost embed. The same note embedded into two files links
     differently in each.
-13. A call (`[[name]]` to a skill) inside embedded text renders as it would in
+19. A call (`[[name]]` to a skill) inside embedded text renders as it would in
     place.
 
 ### Differences from v1
 
-14. v1 resolved an embed vault-wide and copied a linked file from anywhere in
+20. v1 resolved an embed vault-wide and copied a linked file from anywhere in
     the vault to `references/vault/` or `assets/vault/`. v2 resolves within the
     plugin, and every file it can reach already ships (section 9), so nothing
     is copied for a link.
-15. v1 reported an embed or link to nothing and shipped its words. v2 refuses
+21. v1 reported an embed or link to nothing and shipped its words. v2 refuses
     it (section 4 rule 11).
+22. v1 turned an embed of a file that is neither a note nor an image into a
+    plain link. v2 inlines a text file as a fenced code block (rules 9 to 14).
+23. v1 read calls inside code spans and fenced blocks. v2 reads nothing there
+    (section 4 rule 13).
 
 ## 6. Frontmatter
 
@@ -466,7 +497,7 @@ Each case is reported once, with every path it applies to.
 
 ## 12. Decisions for the owner
 
-Each decision below can be read on its own. D3 is decided. The rest of this
+Each decision below can be read on its own. D3 and D8 are decided. The rest of this
 spec is written as if each other recommendation is taken.
 
 ### D1. `build.out` and `--out`
@@ -543,19 +574,23 @@ skill's link to its own note is the exception: it ships as a file link,
 **Decided.** `[[setup]]` is the call. It renders as the call string, the same
 output v1's `/[[setup]]` gives on each harness, including for a skill's link to
 its own note. `/[[setup]]` is refused where v1 read it as a call, with an
-error that says to write `[[setup]]` (section 4 rule 9). A command's note
-follows the same rule where the harness carries commands (rule 8). A link to a
-file inside a skill's folder, such as `[[setup/references/install.md]]`,
-stays an ordinary file link.
+error that says to write `[[setup]]` (section 4 rule 12). A link to a section
+of a skill, `[[setup#Usage]]`, is refused: embed it with `![[setup#Usage]]` or
+call the skill with `[[setup]]` (rule 8). A command's note follows the same
+rules where the harness carries commands (rule 9). A link to a file inside a
+skill's folder, such as `[[setup/references/install.md]]`, stays an ordinary
+file link. Nothing in code is read, so a call is written in prose (rule 13).
 
 **Existing vaults.** Every `/[[name]]` call becomes `[[name]]`. A v1 mention,
 `[[name]]` meant as the name only, now runs the skill; reword it if that is not
 meant. The repo's `plugin/` has 10 `/[[...]]` calls in four notes: three in
 headings, such as `# /[[author]]`, and seven in code spans, such as
-`` `/[[setup]]` ``. All become `[[...]]`, and the code-span ones keep working
-because calls are read in code. It has no v1 mentions. Its `author` skill
+`` `/[[setup]]` ``. The headings become `[[...]]`. The seven code-span calls
+become plain `[[name]]` in prose, without the backticks; a call renders in
+backticks, so the output is the same. It has no v1 mentions. Its `author` skill
 documents both v1 forms in `plugins/skillwright/skills/author/author.md`
-(lines 59 to 73), and that text is rewritten in the same change.
+(lines 59 to 73), and that text is rewritten in the same change. Its syntax
+examples sit in code spans, so they ship as written.
 
 ### D4. `build.assets` and `build.hooks`
 
@@ -667,28 +702,36 @@ wrong for others breaks installs quietly.
 **Existing vaults.** A plugin that ships `.mcp.json` today cannot build with
 v2 until the MCP kind lands. The repo's `plugin/` has none.
 
-### D8. Embedding a file that is neither a note nor an image
+### D8. Embedding a file that is neither a note nor an image (decided)
 
 **What it is.** `![[name]]` where the target is, say, a script or a CSV file.
 
 **Today.** `![[run.sh]]` ships as a plain link, `[run.sh](scripts/run.sh)`,
-and the file is copied.
+and the file is copied. The `!` changes nothing.
 
-**Options.**
+**Decided.** A text file is inlined as a fenced code block (section 5 rules 9
+to 14). With `scripts/run.sh` holding `echo hi`, `![[scripts/run.sh]]` ships as:
 
-- **Refuse it.** The error says to write a link, `[[run.sh]]`, instead. Cost:
-  authors change `![[` to `[[` once.
-- **A plain link, as today.** Cost: the `!` is silently ignored, so the author
-  believes the file's text is inlined when it is not.
-- **Inline a text file as a fenced code block.** `![[run.sh]]` ships as the
-  script's text inside a fenced block. Cost: new code, and the build must decide
-  which files count as text.
+````text
+```bash
+echo hi
+```
+````
 
-**Recommendation: refuse it.** An embed that does not embed misleads the
-author, and a link already says what happens.
+- The info string comes from the extension: `.sh` gives `bash`, `.py` gives
+  `python`, and an extension not in the table gives none.
+- The fence is one backtick longer than the longest backtick run that starts a
+  line in the file, and never fewer than three. The content is never escaped
+  or changed, so a file with its own ```` ``` ```` block and `[[` text ships
+  intact.
+- Inside a list item, the block is indented to match the item.
+- A binary file (not valid UTF-8) is refused. A fragment on a non-note file,
+  `![[run.sh#main]]`, is refused.
+- A plain `[[run.sh]]` stays a file link.
 
-**Existing vaults.** Change such embeds to links. The repo's `plugin/` has
-none.
+**Existing vaults.** An `![[file]]` of a text file that shipped as a link now
+ships the file's text. Write `[[file]]` to keep the link. An embed of a binary
+file is now refused. The repo's `plugin/` has none.
 
 ## Later
 

@@ -59,7 +59,10 @@ and may return in a later milestone:
   Anything else is an error.
 - An embed or link to nothing shipped as its words. It is now an error.
 - An embed of a file that is neither a note nor an image rendered as a plain
-  link (decision D8).
+  link. It is now inlined as a fenced code block (decision D8).
+- Calls read inside code spans and fenced blocks. Code is now fully literal.
+- A link to a section of a skill, `[[setup#Usage]]`, checked and then
+  dropped. It is now an error that points to `![[...]]` or `[[setup]]`.
 
 If v2 is accepted, [D-GPYR](../decisions/D-GPYR-convention-first.md) needs an
 amendment too: its patterns layer is gone.
@@ -122,12 +125,16 @@ amendment too: its patterns layer is gone.
   them. The `/[[` syntax goes: `TokenKind::Call` as a token of its own,
   `TokenKind::Escape` (`\/[[`), `TokenKind::Unconverted` with its
   `unconverted-call` warning, and the `calls` flag of `scan_wiki` and
-  `scan_wiki_tokens`. `scan_code_calls` and `code_token` are rewritten to find
-  `[[name]]` calls in code. `sigil_at` stays only to place the new `/[[`
-  refusal. `literal_skill_calls` and `literal-skill-call`, which refuse a
+  `scan_wiki_tokens`. Nothing in code is read any more, so `scan_code_calls`,
+  `code_token` and the in-code branch of `format_call` go. `sigil_at` stays
+  only to place the new `/[[` refusal, in prose. `check_call_fragment`
+  becomes the section-link refusal. The leftover-`[[` check
+  (`validate_no_obsidian_syntax`) skips code spans, fenced blocks and
+  `\[[`-escaped text. `literal_skill_calls` and `literal-skill-call`, which refuse a
   hand-written `/plugin:skill`, stay. In `replace_token`, an embed or link to
-  nothing becomes an error instead of an entry in `unresolved`, and a
-  non-note, non-image embed is refused under D8. Embed expansion,
+  nothing becomes an error instead of an entry in `unresolved`. A non-note,
+  non-image embed is inlined as a fenced block under D8: new code for the
+  extension table, the fence length, list indentation and the UTF-8 check. Embed expansion,
   `select_fragment` and the cycle check stay as they are.
 - `harness/profile.rs`: `PluginFormat::packs` stays a fixed value.
   `owned_paths_at` and the config override path go.
@@ -249,7 +256,7 @@ leaves out. It stays open.
 | [#53](https://github.com/osdlc/skillwright/issues/53) a skill's link to itself | Fixed in v2 | Under D3 a skill's link to its own note renders as the call, not a file link. [#136](https://github.com/osdlc/skillwright/pull/136) gets most of the way; commit 5 finishes it. |
 | [#50](https://github.com/osdlc/skillwright/issues/50) compile scans bodies twice | Keep | Compile stays. |
 | [#47](https://github.com/osdlc/skillwright/issues/47) leftover `[[` check gaps | Keep | Compile stays. |
-| [#46](https://github.com/osdlc/skillwright/issues/46) valid Markdown refused as leftover `[[` | Keep | Compile stays. |
+| [#46](https://github.com/osdlc/skillwright/issues/46) valid Markdown refused as leftover `[[` | Changed | v2's leftover check skips code spans, fenced blocks and `\[[` text. Indented code, math, `<pre>` and autolinks are still open. |
 | [#78](https://github.com/osdlc/skillwright/issues/78) one rule for what a `skillwright.md` path is | Closed (moot) | There is one `skillwright.md`, at the root. Position decides every other note. |
 | [#81](https://github.com/osdlc/skillwright/issues/81) core should hide build output | Closed (moot) | Output is fixed at `dist/` and only `marketplaces/` is read. |
 | [#91](https://github.com/osdlc/skillwright/issues/91) symlinked `--vault` loses its workspace | Closed (moot) | Workspaces and member files are removed. |
@@ -320,20 +327,29 @@ The commits, in order:
    marketplace is refused; a link from a skill to the plugin's
    `references/x.md` renders as `../../references/x.md`; `[[setup]]` renders
    as `` `/skillwright:setup` `` on Claude Code and `` `$skillwright:setup` ``
-   on Codex, and bare in a code span; a skill's link to its own note renders
+   on Codex; `[[setup]]` and `/[[setup]]` inside a code span or fenced block
+   ship exactly as written; a skill's link to its own note renders
    the same way ([#53](https://github.com/osdlc/skillwright/issues/53));
-   `[[setup|words]]` keeps the words; `[[setup/references/install.md]]` is a
+   `[[setup|words]]` keeps the words; `[[setup#Usage]]` is refused with a
+   message naming `![[setup#Usage]]` and `[[setup]]`; `[[guide#Install]]` to
+   a reference keeps its fragment; `[[setup/references/install.md]]` is a
    file link; `[[review]]` naming a skill in another plugin is a call, and a
    name two plugins share is refused naming both; `[[deploy]]` to a command
    renders on Claude Code and is refused for Codex; a link to an agent is
    refused; `/[[setup]]` at the start of a line or after a space is refused
    with an error that says to write `[[setup]]`, and `dir/[[x]]` is not;
-   `\[[x]]` ships as `[[x]]`; a link to a file in another plugin is refused; a heading embed inlines the section with its
+   `\[[x]]` in prose ships as `[[x]]`; a leftover `[[` in prose is refused,
+   and one in a code span, a fenced block or after `\` is not; a link to a
+   file in another plugin is refused; a heading embed inlines the section with its
    subsections; a block embed inlines the block without its marker; a missing
    heading is `fragment-unresolved`; a nested embed's link is written
    relative to the outer file; a cycle prints its loop; an embedded note's
-   frontmatter is dropped; an image embed is an image link; a script embed is
-   refused (D8).
+   frontmatter is dropped; an image embed is an image link. For D8:
+   `![[run.sh]]` ships as a `bash` fenced block; a file of unknown extension
+   gets no info string; a file holding its own ```` ``` ```` block and `[[`
+   text is fenced with four backticks and ships byte for byte, with its `[[`
+   unread; an embed inside a list item is indented to the item; a binary
+   file is refused; `![[run.sh#main]]` is refused; `[[run.sh]]` is a link.
    Before this commit, run the `plugin-layout` probe on Codex. harness-reference
    does not record where Codex resolves a skill's relative paths
    (`Codex CLI Relative paths in SKILL.md open`). If it is not the skill's
@@ -341,8 +357,11 @@ The commits, in order:
 6. **`init`, `bump`, docs and the repo's plugin.** `init` writes the skeleton;
    `bump` by name and `--changed-since` on the new layout; the reference docs
    and README; `plugin/` moved and its two workflows updated; the 10
-   `/[[...]]` calls in `plugin/` rewritten to `[[...]]`, and the `author`
-   skill's text on links and calls rewritten for D3. `plugin/` cannot build
+   `/[[...]]` calls in `plugin/` rewritten: the three in headings to
+   `[[...]]`, and the seven in code spans to plain `[[name]]` in prose, which
+   gives the same output; the `author` skill's text on links and calls
+   rewritten for D3, with its syntax examples left in code, where they ship as
+   written. `plugin/` cannot build
    from commit 2 until this commit, which is fine inside one PR. Test first:
    `init` in an empty folder writes the three notes and a `build` of it
    succeeds; `init` refuses a folder with `skillwright.md`; `bump <plugin>`
