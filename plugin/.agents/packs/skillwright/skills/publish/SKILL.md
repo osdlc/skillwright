@@ -27,8 +27,9 @@ There are two ways out of a vault:
 1. Run `skillwright publish --dry-run` to see the plan. With no note named, it publishes every
    skill on its own (`--all`), and writes no plugin manifests. Two skills that would land on one
    folder, such as `review` in two plugins, stop the run with `path-collision`, naming both notes:
-   publish one by naming its note, or rename one. Name a note by vault-relative path to
-   publish that note, or a plugin note to publish its whole pack. `--to <root>` (repeatable) picks
+   set a different `name:` in one of them. Name a note by vault-relative path to publish that
+   note, or a plugin note to publish its whole pack. A named skill note is refused the same way
+   when it would replace a vault skill or another named note of the same name. `--to <root>` (repeatable) picks
    destinations other than the configured ones, and needs `--target <target>`. `--target` alone
    narrows to one harness, such as `claude-code`, `codex`, `cursor` or `pi`. A destination inside
    the vault is refused `unsafe-root`.

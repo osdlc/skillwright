@@ -258,8 +258,10 @@ value stops `build` and `check`, as any note the scan refuses does.
 `/name`, because that needs a vault scan. `build` is the check for those.
 
 Two skills that would land on one folder, such as `review` in two plugins, stop
-the run with `path-collision`, naming both notes, and nothing is written. Name one
-note to publish it, or rename one. A bare `publish` writes skills only. A plugin's pack, an agent and a command
+every publish with `path-collision`, whether the notes are named or not. This
+includes a named note outside every kind folder, or outside the vault, that shares
+a vault skill's name. The refusal names the notes, and nothing is written. Set a
+different `name:` in one of them. A bare `publish` writes skills only. A plugin's pack, an agent and a command
 publish when their note is named.
 
 ## Publishing one note by path
@@ -272,6 +274,9 @@ what a note is".
 Such a note is not part of the vault. `list`, `check`, `build`, `publish --all` and a bare
 `publish` do not include it. A note under a kind folder or matched by a pattern takes its kind
 from there, as always, and `exclude` still refuses it.
+
+A named skill note is checked against the vault's skills and the other named notes. If it would
+replace one of them, the run is refused `path-collision`.
 
 Which route to use:
 
