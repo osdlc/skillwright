@@ -1186,10 +1186,15 @@ fn attribute_files(path: &str) -> Vec<String> {
 }
 
 /// `git` in `repo`, reading every pathspec as a literal path: a `*` or `[`
-/// in a folder name is part of the name.
+/// in a folder name is part of the name. `checkout` globs without it;
+/// `ls-tree` reads paths literally anyway.
 fn literal_git(repo: &Path) -> typed_git::GitCommand {
     let mut cmd = typed_git::git();
     cmd.dir(repo).env("GIT_LITERAL_PATHSPECS", "1");
+    // Unit tests read no machine-wide git config.
+    #[cfg(test)]
+    cmd.env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null");
     cmd
 }
 
@@ -1272,14 +1277,16 @@ fn check_out_paths(
     let mut cmd = literal_git(repo);
     // A private index, so the repository's own is never read or written.
     cmd.env("GIT_INDEX_FILE", index.to_string_lossy())
-        // LFS files stay pointers: nothing is fetched.
+        // LFS files stay pointers: nothing is fetched. Defensive; no test
+        // covers it.
         .env("GIT_LFS_SKIP_SMUDGE", "1")
         .args(&[
             "-c",
             // Runs none of the repository's hooks.
             "core.hooksPath=/dev/null",
             "-c",
-            // A sparse repository does not filter the baseline.
+            // A sparse repository does not filter the baseline. Defensive;
+            // no test covers it.
             "core.sparseCheckout=false",
         ])
         .arg(format!("--work-tree={}", dest.to_string_lossy()))
@@ -1520,43 +1527,78 @@ mod tests {
             .unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&err)))
     }
 
-    #[test]
-    fn check_out_paths_writes_only_the_named_paths() {
-        let (_dir, repo, sha) = repo_of(&[("a/x", "x\n"), ("b/y", "y\n"), ("c", "c\n")]);
-        // A modified tracked file: the repository's own index must not move.
-        std::fs::write(repo.join("c"), "changed\n").unwrap();
-        let snapshot = || {
-            (
-                git(&repo, &["status", "--porcelain"]),
-                std::fs::read(repo.join(".git/config")).unwrap(),
-                git(&repo, &["worktree", "list", "--porcelain"]),
-                std::fs::read(repo.join(".git/index")).unwrap(),
-            )
-        };
-        let before = snapshot();
+    /// A fresh `checkout` folder under a new temp folder, and the private
+    /// index path beside it.
+    fn dest() -> (tempfile::TempDir, PathBuf, PathBuf) {
         let temp = tempfile::tempdir().unwrap();
         let dest = temp.path().join("checkout");
         std::fs::create_dir(&dest).unwrap();
+        let index = temp.path().join("index");
+        (temp, dest, index)
+    }
 
-        check_out_paths(
-            &repo,
-            &sha,
-            &temp.path().join("index"),
-            &dest,
-            &strings(&["a"]),
-        )
-        .unwrap();
+    #[test]
+    fn check_out_paths_writes_only_the_named_paths() {
+        let (_dir, repo, old) = repo_of(&[("a/x", "x\n"), ("b/y", "y\n"), ("c", "c\n")]);
+        // The checkout is of an older commit than the index holds, so
+        // writing it into the repository's own index would change it.
+        std::fs::write(repo.join("a/x"), "x2\n").unwrap();
+        git(&repo, &["commit", "--quiet", "-am", "two"]);
+        // A modified tracked file: the repository's own index must not move.
+        std::fs::write(repo.join("c"), "changed\n").unwrap();
+        // The index bytes are read before any `git status` can refresh them.
+        let index_before = std::fs::read(repo.join(".git/index")).unwrap();
+        let config_before = std::fs::read(repo.join(".git/config")).unwrap();
+        let worktrees_before = git(&repo, &["worktree", "list", "--porcelain"]);
+        let (_temp, dest, index) = dest();
+
+        check_out_paths(&repo, &old, &index, &dest, &strings(&["a"])).unwrap();
+
+        assert_eq!(
+            std::fs::read(repo.join(".git/index")).unwrap(),
+            index_before
+        );
+        assert_eq!(files_under(&dest), ["a/x"]);
+        assert_eq!(std::fs::read_to_string(dest.join("a/x")).unwrap(), "x\n");
+        assert_eq!(
+            std::fs::read(repo.join(".git/config")).unwrap(),
+            config_before
+        );
+        assert_eq!(
+            git(&repo, &["worktree", "list", "--porcelain"]),
+            worktrees_before
+        );
+        assert_eq!(git(&repo, &["status", "--porcelain"]), "M c");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_out_paths_runs_no_hook() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, repo, sha) = repo_of(&[("a/x", "x\n")]);
+        let marker = repo.join("hook-ran");
+        let hook = repo.join(".git/hooks/post-checkout");
+        write(&hook, &format!("#!/bin/sh\ntouch '{}'\n", marker.display()));
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let (_temp, dest, index) = dest();
+
+        check_out_paths(&repo, &sha, &index, &dest, &strings(&["a"])).unwrap();
 
         assert_eq!(files_under(&dest), ["a/x"]);
-        assert_eq!(snapshot(), before);
-        assert_eq!(git(&repo, &["diff", "--name-only"]), "c");
+        assert!(!marker.exists(), "the post-checkout hook ran");
     }
 
     #[test]
     fn paths_at_ref_keeps_only_what_the_ref_holds() {
-        let (_dir, repo, sha) = repo_of(&[("a/x", "x\n"), ("c", "c\n"), ("v[1]/f", "f\n")]);
+        // `v[1]` as a glob would match the file `v1`; `ls-tree` reads it as a
+        // name, and so does the filter over its output.
+        let (_dir, repo, sha) = repo_of(&[("a/x", "x\n"), ("c", "c\n"), ("v1", "1\n")]);
         let held = paths_at_ref(&repo, &sha, &strings(&["c", "a", "missing", "v[1]"])).unwrap();
-        assert_eq!(held, ["c", "a", "v[1]"]);
+        assert_eq!(held, ["c", "a"]);
+        let (_dir, repo, sha) = repo_of(&[("v[1]/f", "f\n"), ("v1", "1\n")]);
+        let held = paths_at_ref(&repo, &sha, &strings(&["v[1]"])).unwrap();
+        assert_eq!(held, ["v[1]"]);
     }
 
     #[test]
@@ -1667,21 +1709,34 @@ mod tests {
 
     #[test]
     fn a_path_with_glob_characters_is_checked_out_literally() {
-        let (_dir, repo, sha) = repo_of(&[("v[1]/f", "f\n"), ("v1/g", "g\n")]);
-        let temp = tempfile::tempdir().unwrap();
-        let dest = temp.path().join("checkout");
-        std::fs::create_dir(&dest).unwrap();
+        // As a glob, `v[1]` also matches the file `v1`.
+        let (_dir, repo, sha) = repo_of(&[("v[1]/f", "f\n"), ("v1", "1\n")]);
+        let (_temp, dest, index) = dest();
 
-        check_out_paths(
-            &repo,
-            &sha,
-            &temp.path().join("index"),
-            &dest,
-            &strings(&["v[1]"]),
-        )
-        .unwrap();
+        check_out_paths(&repo, &sha, &index, &dest, &strings(&["v[1]"])).unwrap();
 
         assert_eq!(files_under(&dest), ["v[1]/f"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_inside_an_asset_folder_gives_the_whole_tree() {
+        let (_dir, repo, _) = repo_of(&[
+            (
+                "vault/skillwright.md",
+                "---\nname: acme\nbuild:\n  assets:\n    - {from: ../tools, to: tools}\n---\n",
+            ),
+            ("tools/run.sh", "echo\n"),
+            ("elsewhere/f", "f\n"),
+        ]);
+        std::os::unix::fs::symlink("../elsewhere/f", repo.join("tools/link")).unwrap();
+        git(&repo, &["add", "tools/link"]);
+        git(&repo, &["commit", "--quiet", "-m", "link"]);
+        let sha = git(&repo, &["rev-parse", "HEAD"]);
+        let run = run_at(&repo.join("vault"));
+
+        let set = path_set(&repo, &sha, build_input_candidates(&repo, &run)).unwrap();
+        assert_eq!(set, ["."]);
     }
 
     const NOW: u64 = 20_261_105_143_000;
