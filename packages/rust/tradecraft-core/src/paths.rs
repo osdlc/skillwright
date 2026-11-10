@@ -116,6 +116,27 @@ pub fn find_root_file(vfs: &dyn Vfs, start: &Path) -> Option<PathBuf> {
     None
 }
 
+/// The root file of each member of the workspace at `dir`:
+/// `marketplaces/<m>/skillwright.md` for each `<m>` that holds one, sorted.
+pub fn workspace_members(vfs: &dyn Vfs, dir: &Path) -> Vec<PathBuf> {
+    let folder = dir.join(WORKSPACE_DIR);
+    let mut members: Vec<PathBuf> = vfs
+        .read_dir(&folder)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| {
+            let file = crate::discover::entry_file(
+                crate::frontmatter::EntityKind::Marketplace,
+                &entry.name,
+            );
+            folder.join(&entry.name).join(file)
+        })
+        .filter(|file| vfs.exists(file) && !vfs.metadata(file).is_ok_and(|m| m.is_dir))
+        .collect();
+    members.sort();
+    members
+}
+
 /// Whether `path` is a root config file for the vault at `vault`: its own
 /// `skillwright.md`, directly under the vault root, or the workspace file
 /// above it when `vault` is a workspace member. Either configures the vault;
@@ -570,6 +591,27 @@ mod tests {
     use super::*;
     use crate::settings::parse_root_file;
     use crate::vfs::MemVfs;
+
+    #[test]
+    fn workspace_members_lists_member_root_files() {
+        let vfs = MemVfs::new();
+        for file in [
+            "/w/skillwright.md",
+            "/w/marketplaces/b/skillwright.md",
+            "/w/marketplaces/a/skillwright.md",
+            "/w/marketplaces/none/plugins/p/p.md",
+        ] {
+            vfs.insert(file, "---\nname: x\n---\n").unwrap();
+        }
+        assert_eq!(
+            workspace_members(&vfs, Path::new("/w")),
+            [
+                PathBuf::from("/w/marketplaces/a/skillwright.md"),
+                PathBuf::from("/w/marketplaces/b/skillwright.md"),
+            ]
+        );
+        assert!(workspace_members(&vfs, Path::new("/elsewhere")).is_empty());
+    }
 
     fn put(vfs: &MemVfs, path: &str) {
         vfs.insert(path, "---\n---\n").unwrap();

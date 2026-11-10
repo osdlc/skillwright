@@ -49,16 +49,7 @@ pub fn workspace_above(dir: &Path) -> Option<PathBuf> {
 
 /// Each `marketplaces/<m>/skillwright.md` under a workspace root, by name.
 pub fn workspace_members(workspace_dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(workspace_dir.join(WORKSPACE_DIR)) else {
-        return Vec::new();
-    };
-    let mut members: Vec<PathBuf> = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path().join(ROOT_FILE))
-        .filter(|file| file.is_file())
-        .collect();
-    members.sort();
-    members
+    tradecraft_core::workspace_members(&tradecraft_core::NativeVfs, workspace_dir)
 }
 
 /// The folder a harness loads a user's own skills from, under `$HOME`.

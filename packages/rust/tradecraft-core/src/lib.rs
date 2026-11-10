@@ -149,7 +149,7 @@ pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use paths::{
     EffectiveRoot, LoadedMarketplace, MarketplaceInputs, RootFileError, WORKSPACE_DIR,
     find_root_file, load_effective_root, load_marketplace, marketplace_inputs, resolve_path,
-    workspace_above,
+    workspace_above, workspace_members,
 };
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,
@@ -162,8 +162,8 @@ pub use settings::{
     PatchScheme, ROOT_FILE, RootFile, SettingsError, compose_root_file, parse_root_file,
 };
 pub use source_view::{
-    SourceView, VaultScope, effective_config, effective_configs, marketplace_folder, source_view,
-    vault_config,
+    SourceView, VaultScope, effective_config, effective_configs, marketplace_folder, notes_view,
+    source_view, vault_config,
 };
 pub use status::{PublishState, PublishUnitStatus, StatusRequest, status_of};
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};

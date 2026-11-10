@@ -1,10 +1,13 @@
 //! The vault as a build reads it: a [`Vfs`] that hides generated output and
 //! answers for the root file the run named.
 //!
-//! Generated output must never be read as source, and the output can sit in
-//! the vault. Hiding it here covers every reader at once (discovery, the link
-//! index, a bundle's sweep) without any of them knowing where the output is,
-//! and the same goes for `--config`, which only the host knows about.
+//! Generated output must never be read as notes, and the output can sit in
+//! the vault. [`notes_view`] hides every output the vault's root file
+//! configures, and every core function that reads notes reads through it, so
+//! no reader (discovery, the link index, a bundle's sweep) needs to know where
+//! the output is. A host says which root file is in use (`--config`) and where
+//! `~` leads, through [`SourceView::with_root_file`] and
+//! [`SourceView::with_home`].
 //!
 //! Writes pass straight through. Whoever compares or replaces the output uses
 //! the [`Vfs`] underneath, which still sees it.
@@ -26,7 +29,7 @@ use crate::model::cascade::Cascade;
 use crate::model::load::ASSETS_DIR;
 use crate::namespace::Namespace;
 use crate::patterns::Patterns;
-use crate::settings::ROOT_FILE;
+use crate::settings::{ROOT_FILE, RootFile};
 use crate::vfs::{DirEntry, Metadata, Vfs, VfsError, normalize};
 
 /// `inner`, less the hidden paths, with `<vault>/skillwright.md` standing for
@@ -36,6 +39,8 @@ pub struct SourceView<'v> {
     /// `<vault>/skillwright.md`, and the file that answers for it.
     root_file: Option<(PathBuf, PathBuf)>,
     hidden: Vec<PathBuf>,
+    /// What `~` means in a root file's `build.out`.
+    home: Option<PathBuf>,
 }
 
 impl<'v> SourceView<'v> {
@@ -45,7 +50,17 @@ impl<'v> SourceView<'v> {
             inner,
             root_file: None,
             hidden: Vec::new(),
+            home: None,
         }
+    }
+
+    /// Resolves a `~` in a root file's `build.out` against `home`, so
+    /// [`notes_view`] hides that output. With no home, it hides nothing for
+    /// such a `build.out`.
+    #[must_use]
+    pub fn with_home(mut self, home: &Path) -> Self {
+        self.home = Some(home.to_path_buf());
+        self
     }
 
     /// Reads `file` wherever `vault_root`'s root file is asked for.
@@ -55,7 +70,7 @@ impl<'v> SourceView<'v> {
         self
     }
 
-    /// Hides each of `paths` and all it holds.
+    /// Hides each of `paths` and all it holds, beside what it hides already.
     #[must_use]
     pub fn hiding(mut self, paths: Vec<PathBuf>) -> Self {
         self.hidden.extend(paths.iter().map(|path| normalize(path)));
@@ -412,11 +427,12 @@ pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> Result<MarketplaceConfi
     Ok(root.to_config(""))
 }
 
-/// The view of the vault for a run that does not build: `base`, less the
-/// output at `out_root`, for each marketplace the run may touch. A `packs` a
-/// build would refuse hides nothing, so the run sees the vault as it is and the
-/// build says what is wrong, and a moved folder that holds more than packs
-/// stays visible.
+/// `base`, less the output at `out_root` as well, for each marketplace the
+/// run may touch: for a host that hides a folder the vault does not configure.
+/// [`notes_view`] already hides what the vault's root file configures. A
+/// `packs` a build would refuse hides nothing, so the run sees the vault as it
+/// is and the build says what is wrong, and a moved folder that holds more
+/// than packs stays visible.
 pub fn source_view<'v>(
     base: SourceView<'v>,
     scope: VaultScope<'_>,
@@ -427,27 +443,301 @@ pub fn source_view<'v>(
     let Some(out_root) = out_root else {
         return base;
     };
+    let paths = output_to_hide(&base, scope, out_root, config, ns);
+    base.hiding(paths)
+}
+
+/// What [`source_view`] hides.
+fn output_to_hide(
+    vfs: &dyn Vfs,
+    scope: VaultScope<'_>,
+    out_root: &Path,
+    config: &MarketplaceConfig,
+    ns: &Namespace,
+) -> Vec<PathBuf> {
     // A root file that cannot be read hides nothing, as a `packs` a build
     // would refuse: the scan or build that reads through this view refuses it.
-    let Ok(patterns) = Patterns::load(&base, scope.vault_root) else {
+    let Ok(patterns) = Patterns::load(vfs, scope.vault_root) else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    for config in effective_configs(vfs, scope, config, ns) {
+        if check_pack_location(vfs, scope.vault_root, out_root, &config, &patterns).is_ok() {
+            let keep = |profile: &HarnessProfile, folder: &Path| {
+                holds_packs(vfs, profile, &config, folder)
+            };
+            paths.extend(output_where(vfs, scope, out_root, &config, &keep));
+        }
+    }
+    paths
+}
+
+/// `base`, less every build output the vault's root file configures: its own
+/// `build.out`, or at a workspace root each member's. `config`, when given,
+/// says where the packs folders are in place of the root file's. Writes pass
+/// through. A root file that cannot be read hides nothing: the scan that
+/// reads through this view refuses it.
+///
+/// The root file is read through `base`, so a view that answers for it with
+/// another file ([`SourceView::with_root_file`]) hides that file's output. A
+/// `~` in `build.out` resolves against [`SourceView::with_home`]; with no
+/// home, that output is not hidden. Every core function that reads notes
+/// reads through this view of the `vfs` it is given.
+pub fn notes_view<'v>(
+    base: SourceView<'v>,
+    scope: VaultScope<'_>,
+    config: Option<&MarketplaceConfig>,
+    ns: &Namespace,
+) -> SourceView<'v> {
+    let Some(root) = root_at(&base, scope.vault_root) else {
         return base;
     };
     let mut paths = Vec::new();
-    for config in effective_configs(&base, scope, config, ns) {
-        if check_pack_location(&base, scope.vault_root, out_root, &config, &patterns).is_ok() {
-            let keep = |profile: &HarnessProfile, folder: &Path| {
-                holds_packs(&base, profile, &config, folder)
-            };
-            paths.extend(output_where(&base, scope, out_root, &config, &keep));
+    if root.workspace {
+        // A workspace file's own `build.out` builds nothing: each member
+        // sets its own.
+        for file in crate::paths::workspace_members(&base, scope.vault_root) {
+            let Some(dir) = file.parent() else { continue };
+            if let Some(member) = root_at(&base, dir) {
+                let config = member.to_config(&folder_name(dir));
+                paths.extend(configured_output(
+                    &base,
+                    VaultScope::new(dir),
+                    &member,
+                    &config,
+                    ns,
+                ));
+            }
         }
+    } else {
+        let own;
+        let config = match config {
+            Some(config) => config,
+            None => {
+                own = root.to_config(&folder_name(scope.vault_root));
+                &own
+            }
+        };
+        paths = configured_output(&base, scope, &root, config, ns);
     }
     base.hiding(paths)
+}
+
+/// The root file at `vault_root`, with the workspace above it folded in.
+/// `None` when there is none or it cannot be read.
+fn root_at(vfs: &dyn Vfs, vault_root: &Path) -> Option<RootFile> {
+    let file = vault_root.join(ROOT_FILE);
+    if !vfs.exists(&file) {
+        return None;
+    }
+    crate::paths::load_effective_root(vfs, vault_root, Some(&file))
+        .ok()
+        .map(|loaded| loaded.root)
+}
+
+fn folder_name(dir: &Path) -> String {
+    dir.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// What a build into `root`'s `build.out` owns in the vault `scope` reads.
+fn configured_output(
+    base: &SourceView<'_>,
+    scope: VaultScope<'_>,
+    root: &RootFile,
+    config: &MarketplaceConfig,
+    ns: &Namespace,
+) -> Vec<PathBuf> {
+    let Some(out) = root.build.out.as_deref() else {
+        return Vec::new();
+    };
+    let home = match &base.home {
+        Some(home) => home.as_path(),
+        None if out == "~" || out.starts_with("~/") => return Vec::new(),
+        None => Path::new(""),
+    };
+    let out_root = crate::paths::resolve_path(out, scope.vault_root, home);
+    output_to_hide(base, scope, &out_root, config, ns)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::vfs::MemVfs;
+
+    const BUILT: &str = ".claude-plugin/marketplace.json";
+
+    fn vault(files: &[(&str, &str)]) -> MemVfs {
+        let vfs = MemVfs::new();
+        for (path, text) in files {
+            vfs.insert(path, text).unwrap();
+        }
+        vfs
+    }
+
+    fn notes<'v>(base: SourceView<'v>, vault_root: &str) -> SourceView<'v> {
+        notes_view(
+            base,
+            VaultScope::new(Path::new(vault_root)),
+            None,
+            &Namespace::bare(),
+        )
+    }
+
+    #[test]
+    fn notes_view_hides_the_configured_out() {
+        let vfs = vault(&[
+            (
+                "/v/skillwright.md",
+                "---\nname: v\nbuild:\n  out: dist\n---\n",
+            ),
+            ("/v/skills/a.md", "---\ndescription: A.\n---\n"),
+            (&format!("/v/dist/{BUILT}"), "{}"),
+        ]);
+        let view = notes(SourceView::over(&vfs), "/v");
+        assert!(!view.exists(&Path::new("/v/dist").join(BUILT)));
+        assert!(view.exists(Path::new("/v/skills/a.md")));
+    }
+
+    #[test]
+    fn notes_view_reads_the_root_file_the_view_answers_with() {
+        let vfs = vault(&[
+            (
+                "/v/skillwright.md",
+                "---\nname: v\nbuild:\n  out: dist\n---\n",
+            ),
+            ("/v/other.md", "---\nname: v\nbuild:\n  out: other\n---\n"),
+            (&format!("/v/dist/{BUILT}"), "{}"),
+            (&format!("/v/other/{BUILT}"), "{}"),
+        ]);
+        let base = SourceView::over(&vfs).with_root_file(Path::new("/v"), Path::new("/v/other.md"));
+        let view = notes(base, "/v");
+        assert!(!view.exists(&Path::new("/v/other").join(BUILT)));
+        assert!(view.exists(&Path::new("/v/dist").join(BUILT)));
+    }
+
+    #[test]
+    fn notes_view_hides_each_workspace_member_s_out() {
+        let vfs = vault(&[
+            ("/w/skillwright.md", "---\nworkspace: true\n---\n"),
+            (
+                "/w/marketplaces/a/skillwright.md",
+                "---\nname: a\nbuild:\n  out: dist\n---\n",
+            ),
+            (
+                "/w/marketplaces/b/skillwright.md",
+                "---\nname: b\nbuild:\n  out: built\n---\n",
+            ),
+            (&format!("/w/marketplaces/a/dist/{BUILT}"), "{}"),
+            (&format!("/w/marketplaces/b/built/{BUILT}"), "{}"),
+        ]);
+        let view = notes(SourceView::over(&vfs), "/w");
+        assert!(!view.exists(&Path::new("/w/marketplaces/a/dist").join(BUILT)));
+        assert!(!view.exists(&Path::new("/w/marketplaces/b/built").join(BUILT)));
+        assert!(view.exists(Path::new("/w/marketplaces/a/skillwright.md")));
+    }
+
+    #[test]
+    fn notes_view_at_a_workspace_root_ignores_its_own_out() {
+        let vfs = vault(&[
+            (
+                "/w/skillwright.md",
+                "---\nworkspace: true\nbuild:\n  out: dist\n---\n",
+            ),
+            (&format!("/w/dist/{BUILT}"), "{}"),
+            ("/w/dist/skills/a.md", "---\ndescription: A.\n---\n"),
+        ]);
+        let view = notes(SourceView::over(&vfs), "/w");
+        assert!(view.exists(&Path::new("/w/dist").join(BUILT)));
+        assert!(view.exists(Path::new("/w/dist/skills/a.md")));
+    }
+
+    #[test]
+    fn notes_view_with_an_unreadable_root_file_hides_nothing() {
+        let vfs = vault(&[
+            (
+                "/v/skillwright.md",
+                "---\nbuild:\n  out: dist\nworkspace: [\n---\n",
+            ),
+            (&format!("/v/dist/{BUILT}"), "{}"),
+        ]);
+        let view = notes(SourceView::over(&vfs), "/v");
+        assert!(view.exists(&Path::new("/v/dist").join(BUILT)));
+    }
+
+    #[test]
+    fn notes_view_resolves_a_home_out_only_with_home() {
+        let vfs = vault(&[
+            (
+                "/h/v/skillwright.md",
+                "---\nname: v\nbuild:\n  out: ~/v/dist\n---\n",
+            ),
+            (&format!("/h/v/dist/{BUILT}"), "{}"),
+        ]);
+        let built = Path::new("/h/v/dist").join(BUILT);
+        let homed = notes(SourceView::over(&vfs).with_home(Path::new("/h")), "/h/v");
+        assert!(!homed.exists(&built));
+        let homeless = notes(SourceView::over(&vfs), "/h/v");
+        assert!(homeless.exists(&built));
+    }
+
+    #[test]
+    fn notes_view_uses_the_given_config_for_packs() {
+        let vfs = vault(&[
+            (
+                "/v/skillwright.md",
+                "---\nname: v\nbuild:\n  out: dist\n---\n",
+            ),
+            ("/v/dist/moved/p/.claude-plugin/plugin.json", "{}"),
+            (
+                "/v/dist/.claude-plugin/packs/p/.claude-plugin/plugin.json",
+                "{}",
+            ),
+        ]);
+        let moved = Path::new("/v/dist/moved/p/.claude-plugin/plugin.json");
+        let config = crate::settings::parse_root_file("---\nclaude: {packs: moved}\n---\n")
+            .unwrap()
+            .to_config("v");
+        let view = notes_view(
+            SourceView::over(&vfs),
+            VaultScope::new(Path::new("/v")),
+            Some(&config),
+            &Namespace::bare(),
+        );
+        assert!(!view.exists(moved));
+        let own = notes(SourceView::over(&vfs), "/v");
+        assert!(own.exists(moved));
+    }
+
+    #[test]
+    fn a_double_wrap_hides_the_same_paths() {
+        let files = [
+            (
+                "/v/skillwright.md",
+                "---\nname: v\nclaude: {packs: moved}\nbuild:\n  out: dist\n---\n",
+            ),
+            ("/v/skills/a.md", "---\ndescription: A.\n---\n"),
+            ("/v/dist/moved/p/.claude-plugin/plugin.json", "{}"),
+            (
+                "/v/dist/moved/p/skills/a/SKILL.md",
+                "---\ndescription: A.\n---\n",
+            ),
+            ("/v/dist/.claude-plugin/marketplace.json", "{}"),
+        ];
+        let vfs = vault(&files);
+        let once = notes(SourceView::over(&vfs), "/v");
+        let twice = notes(notes(SourceView::over(&vfs), "/v"), "/v");
+        for (path, _) in files {
+            assert_eq!(
+                once.exists(Path::new(path)),
+                twice.exists(Path::new(path)),
+                "{path}"
+            );
+        }
+        assert!(!once.exists(Path::new("/v/dist/moved/p/skills/a/SKILL.md")));
+        assert!(once.exists(Path::new("/v/skills/a.md")));
+    }
 
     /// A relative vault cannot be compared with its output, so the pack
     /// check refuses, and a view that would refuse hides nothing.
