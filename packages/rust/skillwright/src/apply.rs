@@ -993,8 +993,8 @@ fn execute_move(
     }
 }
 
-/// The end of the advice [`half_landed`] gives, which [`OwnNames::error`]
-/// drops.
+/// The advice clause [`half_landed`] writes around the target name, which
+/// [`OwnNames::error`] drops.
 const RENAME_ADVICE: (&str, &str) = (
     ". Rename it to ",
     ": the relinked notes listed above already point there",
@@ -1089,11 +1089,8 @@ struct LoadedVault {
 /// against it, and a rename edits nothing there.
 ///
 /// A folder the walk cannot list and a note it cannot read are passed over
-/// and returned, so each gets a `skipped` row; one in or under a dot-named
-/// folder gets none. Every folder it cannot list, dot-named ones too, is also
-/// returned on its own, since a rename that writes a link refuses while there
-/// is one. One that holds `from` or `to`, or lies inside a moved bundle,
-/// stops the rename instead, with an error naming it.
+/// and returned, as [`LoadedVault`] describes. One that holds `from` or `to`,
+/// or lies inside a moved bundle, stops the rename with an error naming it.
 fn load_vault(
     vault: Vault<'_>,
     from: &str,
@@ -2191,11 +2188,9 @@ mod tests {
         }
     }
 
-    /// A folder where the relinker would rename the entry made that rename
-    /// fail after the folder moved. The move now refuses before any write,
-    /// naming no temporary path the user did not make. `OwnNames` keeps the
-    /// rows and message of a half-landed move by the entry's own name; its
-    /// unit tests cover that.
+    /// A folder at the entry's temporary name is refused before any write,
+    /// and the message names no temporary path the user did not make. The
+    /// `own_names_*` unit tests cover a half-landed move's rows and message.
     #[test]
     fn a_marketplace_rename_onto_a_folder_with_the_temp_name_is_refused() {
         let v = vault();
@@ -3349,8 +3344,7 @@ mod tests {
         refused_alike(v.path(), &vfs, &b_to_c(), TAKEN_REFUSAL);
     }
 
-    /// The listing shows only the entry's own spelling, so a case-only
-    /// rename is not taken for a clash.
+    /// The entry's own name is not a clash, so a case-only rename passes.
     #[test]
     fn a_case_only_bundle_rename_is_not_refused_as_taken() {
         let v = bundle_vault();
