@@ -3067,6 +3067,23 @@ mod tests {
         assert!(!vfs.exists(Path::new("/market")));
     }
 
+    /// An agent ships from no build, but one with no description is still
+    /// named, not hidden behind `empty-marketplace`.
+    #[test]
+    fn an_undescribed_agent_alone_is_refused_by_name() {
+        let vfs = MemVfs::new();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/tools/agents/helper.md",
+            "---\nname: helper\n---\n",
+        );
+        let message = export_skills(&vfs, &request(ExportMode::Check), &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("missing-description"), "{message}");
+        assert!(message.contains("agents/helper.md"), "{message}");
+    }
+
     /// A container need not describe itself: a silent plugin or marketplace
     /// note carries no warning, and its manifest takes the default.
     #[test]

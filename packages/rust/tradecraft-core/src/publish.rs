@@ -451,7 +451,7 @@ impl ReasonToken {
             Self::ExcludedNote => "excluded-note",
             Self::Malformed => "malformed",
             Self::MalformedRootFile => "malformed-root-file",
-            Self::MissingDescription => "missing-description",
+            Self::MissingDescription => crate::discover::MISSING_DESCRIPTION_REASON,
             Self::Claimed => "claimed",
             Self::RedundantOverride => "redundant-override",
             Self::Overwritten => "overwritten",

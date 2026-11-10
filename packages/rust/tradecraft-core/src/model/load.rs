@@ -294,6 +294,13 @@ pub fn load(
         of_kind(EntityKind::Command),
         of_kind(EntityKind::Hook),
     );
+    // Before `empty-marketplace`: a vault of undescribed agents is told why.
+    refuse_undescribed(
+        belonging
+            .iter()
+            .filter(|c| c.lacks_description())
+            .map(|c| c.vault_relative_path.as_str()),
+    )?;
     if skills.is_empty() && commands.is_empty() && hooks.is_empty() {
         return Err(CoreError::refused(
             "empty-marketplace",
@@ -314,12 +321,6 @@ pub fn load(
         ));
     }
     let name = marketplace_name(&cascade.config, market.as_deref())?;
-    refuse_undescribed(
-        belonging
-            .iter()
-            .filter(|c| c.lacks_description())
-            .map(|c| c.vault_relative_path.as_str()),
-    )?;
     let mut plugins = group_by_plugin(&skills, &commands, &hooks, &name)?;
     // The marketplace's own plugin has no folder, so its note is the
     // marketplace's and it ships the marketplace's version.
