@@ -17,6 +17,8 @@ API:
 - `settings::MARKETPLACE_KEYS` is removed. `settings::marketplace_keys()` yields the key table's marketplace rows, less the harness blocks, in table order.
 - `PluginPolicy` gains `naming_choice` and `agent_only_overrides`. `PluginFormat` gains the same two fields and a private one, so neither can be built with a struct literal outside the crate.
 - `model::Plugin` and `model::Call` gain `prefixed_on`. The serialized model and the generated TS types are unchanged for a vault that sets no `naming`: the field is skipped when empty.
+- The identity fields of `MarketplaceFields`, `MarketplaceConfig` and `PluginOverrides` (`owner`, `author`, `display_name`, `license`, `keywords`, `category`, `version`, `repository`, `homepage`) move under `.identity: ContainerIdentity`, flattened on the wire, so the JSON stays flat. Write `config.identity.license`, not `config.license`. `ContainerIdentity` gains `fill_unset_from` and `overlay`, and every inheritance step goes through them and the key table. `keys::identity_keys` is added: the key table's rows a container's identity holds. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- An unset identity field is left out of the JSON instead of written as `null`. This holds for every component's `identity` in a `DiscoveryReport`, so a skill's is `{}`, and for `MarketplaceConfig`, `PluginOverrides` and `MarketplaceFields`. In the generated TS, `ContainerIdentity`'s fields become optional (`display_name?: string`, not `display_name: string | null`), `MarketplaceConfig` and `MarketplaceFields` gain `keywords?` and `category?`, `PluginOverrides` gains `owner?`, the identity fields take `ContainerIdentity`'s doc comments, and their order follows the Rust declaration. ([#75](https://github.com/osdlc/skillwright/issues/75))
 
 ### Added
 
@@ -33,6 +35,8 @@ API:
 - The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: it is a number". Some refusals named `marketplace fields` before.
 - A marketplace block passes down to each plugin only the keys a plugin block reads. Other keys were never merged, so no output changes.
 - `\[[note]]` is no longer a link. It compiled to `\[note.md](…)`, which is broken Markdown; it now ships as written. ([#47](https://github.com/osdlc/skillwright/issues/47))
+- Under a namespace, a prefixed or nested identity key that the note's kind does not read, such as `sw-owner` on a plugin or `sw-keywords` on a marketplace, now warns as unknown. It was read and then ignored. A bare spelling already warned. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- `RootFile::inherit` asks the key table whether `targets` and each harness block inherit, as it does for the identity fields. Today every one does, so no output changes. ([#75](https://github.com/osdlc/skillwright/issues/75))
 
 ### Fixed
 

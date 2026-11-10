@@ -12,7 +12,11 @@
 //!    ([`crate::settings::RootFile::inherit`]).
 //!
 //! Which keys come down is the key table's answer ([`crate::keys::inherits`]).
-//! Names, descriptions and versions never do.
+//! Names, descriptions and versions never do. A container's identity comes
+//! down through [`crate::frontmatter::ContainerIdentity::fill_unset_from`], and
+//! a note over the request through
+//! [`crate::frontmatter::ContainerIdentity::overlay`], so neither lists the
+//! fields it moves.
 //!
 //! A container is known by its folder, as its members are. A marketplace
 //! note's `name` is only what it publishes under.

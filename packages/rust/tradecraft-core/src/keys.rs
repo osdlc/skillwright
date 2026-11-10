@@ -11,7 +11,11 @@
 //!   the wrong kind, by the check a harness block applies to the same key. On
 //!   other kinds a spec key's shape is documentation.
 //! * **The cascade.** [`KeySpec::inherits`] decides which keys come down from
-//!   a container; [`crate::model::cascade`] reads it through [`inherits`].
+//!   a container, and every inheritance step asks it through [`inherits`]:
+//!   [`crate::frontmatter::ContainerIdentity::fill_unset_from`] for a
+//!   container's identity ([`identity_keys`]), and the workspace file
+//!   ([`crate::settings::RootFile::inherit`]) and [`crate::model::cascade`]
+//!   for `targets` and the harness blocks.
 //! * **The field reference** the docs publish, generated from [`KEYS`].
 //!
 //! Keys are bare by default. Under a namespace (`build.namespace: sw`), every
