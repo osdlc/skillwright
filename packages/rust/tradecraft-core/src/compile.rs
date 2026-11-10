@@ -1727,8 +1727,9 @@ impl<'a> Renderer<'a> {
 /// entry resolves to the match in its own bundle. With exactly one match under
 /// that folder, this agrees with `markdown-link`'s `prefer_in_folder`, which the
 /// rename relinker reads links by. None there, or several, is
-/// [`ResolveError::Ambiguous`]: several names only those. There,
-/// `prefer_in_folder` returns the first match instead.
+/// [`ResolveError::Ambiguous`]: several names only those. In those cases
+/// `prefer_in_folder` still picks one: the first match under the folder, or
+/// with none there, the shortest match overall.
 fn own_folder_candidate(candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
     let Some((folder, _)) = from.rsplit_once('/') else {
         return Err(ResolveError::Ambiguous(candidates));
