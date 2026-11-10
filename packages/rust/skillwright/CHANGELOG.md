@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A link from a skill to itself, such as `[[work]]` in the `work` skill or in its `references/bug-route.md`, is written as the skill's name, the way a link to any other skill is: `` `t:work` `` on Claude Code and Codex, `` `t-work` `` on Pi. It was a link to `SKILL.md`. A link with a `#heading` stays a link to that heading. Every skill with such a link builds different output, so `check` reports drift until you rebuild. ([#53](https://github.com/osdlc/skillwright/issues/53))
+
 ## [0.11.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.11.0) - 2026-11-10
 
 ### Breaking

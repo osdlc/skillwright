@@ -11,7 +11,8 @@
 //!    file's own body is compiled the same way, and *its* references collected.
 //!    A `/[[call]]` instead becomes the target harness's invocation of the
 //!    named skill, and copies nothing — see [`CallContext`]. A plain link to
-//!    another skill in a skill or command body is read as a call too.
+//!    a skill from a skill or command, or from a file it ships, names that
+//!    skill instead, the skill being compiled included.
 //! 3. The output is validated: any Obsidian syntax remaining in an emitted
 //!    markdown file is a refusal, because a destination has no resolver to
 //!    give it meaning.
@@ -656,7 +657,8 @@ pub struct RelatedSplit {
     pub embeds: Vec<String>,
     /// Files a surviving `[[link]]` resolved to — notes and attachments both,
     /// since a non-markdown embed is rewritten as a link too. Never the entry
-    /// itself, which a self-reference resolves to.
+    /// itself: a self-link without a fragment names the skill, and one with
+    /// a fragment, or `[[#Heading]]`, is left out here.
     pub links: Vec<String>,
     /// Notes this note calls or names. With a [`CallContext`] these are skills; without
     /// one, whatever note each `/[[…]]` resolved to by path. A call copies
@@ -1062,7 +1064,8 @@ impl<'a> Renderer<'a> {
     }
 
     fn ensure_markdown_resource(&mut self, source_path: &Path) -> Result<String, CoreError> {
-        // The entry never becomes a resource of itself: a link back to it is a
+        // The entry never becomes a resource of itself. A link reaches it only
+        // with a fragment, or without an implicit context; either way it is a
         // link to SKILL.md.
         if source_path == self.entry_path {
             return Ok("SKILL.md".to_owned());
@@ -1194,7 +1197,15 @@ impl<'a> Renderer<'a> {
             return Ok(call);
         }
         let embed = token.kind == TokenKind::Embed;
-        let Some((resolved, fragment)) = self.resolve(token, source_path)? else {
+        let resolved = match self.resolve(token, source_path)? {
+            // A bundle skill's entry is `x/SKILL.md`, which `[[x#Steps]]`
+            // names but does not resolve to.
+            None if !embed && self.names_the_entry(&token.target) => {
+                Some((self.entry_path.clone(), token.fragment.clone()))
+            }
+            resolved => resolved,
+        };
+        let Some((resolved, fragment)) = resolved else {
             // The name is kept so status can see a note appearing at it later,
             // and the reader is left the words rather than a dangling
             // `[[…]]`, which step 3 would refuse as surviving Obsidian syntax.
@@ -1371,18 +1382,21 @@ impl<'a> Renderer<'a> {
         };
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
-        self.record_call(skill, output_path);
+        self.record_call(skill, output_path, true);
         render_or_mark(context, skill, token.destination, caller, false)
     }
 
-    /// A plain `[[x]]` in a skill or command body that names another skill
-    /// is written as that skill's published name: copying one skill into
-    /// another is never what was meant, and `/[[x]]` is the call. `None`
-    /// leaves the token to the link path, as does a name several skills
-    /// share, or an index that cannot be built: the reading is a heuristic,
-    /// so a fault elsewhere in the vault must not block a link. An author's
-    /// `|alias` stays as the words and the name follows in parentheses; a
-    /// `#fragment` is checked and then ignored.
+    /// A plain `[[x]]` in a skill or command body, or in a file it ships,
+    /// that names a skill is written as that skill's published name: copying
+    /// one skill into another is never what was meant, and `/[[x]]` is the
+    /// call. That holds for the skill being compiled too. `None` leaves the
+    /// token to the link path, as does a name several skills share, or an
+    /// index that cannot be built: the reading is a heuristic, so a fault
+    /// elsewhere in the vault must not block a link. An author's `|alias`
+    /// stays as the words and the name follows in parentheses; a `#fragment`
+    /// is checked and then ignored. The exception is a fragment on a link to
+    /// the skill being compiled: its heading ships in `SKILL.md`, so that
+    /// link stays a link.
     fn skill_mention(
         &mut self,
         token: &WikiToken<'_>,
@@ -1404,20 +1418,39 @@ impl<'a> Renderer<'a> {
                 NameMatch::None | NameMatch::Many(_) => (None, None),
             },
         };
-        // A link back to the entry is a link to its own SKILL.md.
-        let Some(skill) = skill.filter(|skill| skill.entry_path != self.entry_path) else {
+        let Some(skill) = skill else {
             return Ok(None);
         };
+        let self_link = skill.entry_path == self.entry_path;
+        if self_link && fragment.is_some() {
+            return Ok(None);
+        }
         let caller = self.relative_or_verbatim(source_path);
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
-        self.record_call(skill, output_path);
+        self.record_call(skill, output_path, !self_link);
         let name = render_or_mark(context, skill, token.destination, caller, true)?;
         let name = format_call(&name, false);
         Ok(Some(match text_alias(token.alias.as_deref()) {
             Some(alias) => format!("{alias} ({name})"),
             None => name,
         }))
+    }
+
+    /// Whether `target`, which resolved to no file, is the name of the skill
+    /// being compiled. Only with an implicit context, as for a mention.
+    fn names_the_entry(&self, target: &str) -> bool {
+        let Some(skills) = self
+            .call_context
+            .filter(|context| context.implicit)
+            .and_then(|context| context.skills.get_or_none())
+        else {
+            return false;
+        };
+        matches!(
+            skills.by_name(basename(target)),
+            NameMatch::One(skill) if skill.entry_path == self.entry_path
+        )
     }
 
     /// A call to a skill the destination does not carry would name a command
@@ -1462,12 +1495,17 @@ impl<'a> Renderer<'a> {
         Ok(())
     }
 
-    fn record_call(&mut self, skill: &IndexedSkill, output_path: &str) {
+    /// Records `skill` in `output_path`'s calls, which the closure hash mixes
+    /// in. `related` also lists it in [`RelatedSplit::calls`]; a skill naming
+    /// itself is not related to itself.
+    fn record_call(&mut self, skill: &IndexedSkill, output_path: &str, related: bool) {
         self.calls
             .entry(output_path.to_owned())
             .or_default()
             .insert(skill.call_id());
-        self.called_notes.insert(skill.entry_path.clone());
+        if related {
+            self.called_notes.insert(skill.entry_path.clone());
+        }
     }
 
     /// Finds the hand-written calls to known skills in `body`. Each unescaped
@@ -3871,11 +3909,300 @@ mod tests {
         );
     }
 
+    /// A compile of `source` with the test call context over `skills`.
+    fn compile_source_with_calls(
+        vfs: &MemVfs,
+        skills: &SkillIndex,
+        source: CompileSource<'_>,
+        body: &str,
+    ) -> Result<CompiledNote, CoreError> {
+        let render = |skill: &IndexedSkill, mention: bool| {
+            let sigil = if mention { "" } else { "/" };
+            Ok(format!("{sigil}{}", skill.call_id()))
+        };
+        let calls = CallContext {
+            skills: SkillSource::ready(skills),
+            render: &render,
+            target: "test",
+            implicit: true,
+            warnings: RefCell::new(Vec::new()),
+            record: None,
+        };
+        let source = CompileSource {
+            calls: Some(&calls),
+            ..source
+        };
+        compile_note(vfs, &source, body)
+    }
+
+    fn compiled_text<'a>(compiled: &'a CompiledNote, path: &str) -> &'a str {
+        std::str::from_utf8(&resource(compiled, path).1).unwrap()
+    }
+
     #[test]
-    fn a_link_to_the_entry_itself_stays_a_link() {
+    fn a_link_to_the_entry_itself_names_the_skill() {
         let vfs = demo_vault();
         write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
-        let compiled = compile_with_calls(&vfs, &call_index("called"), "Back to [[demo]].\n");
+        let body = "Back to [[demo]].\n";
+        let compiled = compile_with_calls(&vfs, &call_index("called"), body);
+        assert_eq!(compiled.body, "Back to `tools:demo`.\n");
+        assert!(!compiled.body.contains("SKILL.md"), "{}", compiled.body);
+        assert_eq!(compiled.closures["SKILL.md"].calls, vec!["tools:demo"]);
+
+        let skills = call_index("called");
+        let render = |skill: &IndexedSkill, _| Ok(skill.call_id());
+        let calls = CallContext {
+            skills: SkillSource::ready(&skills),
+            render: &render,
+            target: "the vault",
+            implicit: true,
+            warnings: RefCell::new(Vec::new()),
+            record: None,
+        };
+        let source = CompileSource {
+            calls: Some(&calls),
+            ..source(None)
+        };
+        let related = related_of(&vfs, &source, body).unwrap();
+        assert!(related.calls.is_empty(), "{:?}", related.calls);
+        assert!(related.links.is_empty(), "{:?}", related.links);
+    }
+
+    #[test]
+    fn renaming_a_skill_changes_the_hash_of_its_self_links() {
+        let vfs = demo_vault();
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"Part of [[demo]].\n",
+        );
+        let bundle = Path::new("/vault/plugins/demo");
+        let compile = |skill: IndexedSkill| {
+            let skills = SkillIndex::new([skill]);
+            compile_source_with_calls(&vfs, &skills, source(Some(bundle)), "Back to [[demo]].\n")
+                .unwrap()
+        };
+        let hash = |compiled: &CompiledNote, path: &str| {
+            compiled.closures[path]
+                .hash(&vfs, Path::new("/vault"))
+                .unwrap()
+        };
+        let before = compile(indexed("/vault/plugins/demo/demo.md", "demo"));
+        let renamed = compile(indexed("/vault/plugins/demo/demo.md", "renamed"));
+        let moved = compile(IndexedSkill {
+            plugin: Some("other".to_owned()),
+            ..indexed("/vault/plugins/demo/demo.md", "demo")
+        });
+        assert_eq!(
+            compiled_text(&before, "references/x.md"),
+            "Part of `tools:demo`.\n"
+        );
+        for path in ["SKILL.md", "references/x.md"] {
+            assert_eq!(before.closures[path].calls, vec!["tools:demo"], "{path}");
+            assert_ne!(hash(&before, path), hash(&renamed, path), "{path}");
+            assert_ne!(hash(&before, path), hash(&moved, path), "{path}");
+        }
+    }
+
+    #[test]
+    fn a_bundle_files_link_to_its_own_skill_names_the_skill() {
+        let vfs = demo_vault();
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"Part of [[demo]].\n",
+        );
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(Some(Path::new("/vault/plugins/demo"))),
+            "# Demo\n",
+        )
+        .unwrap();
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "Part of `tools:demo`.\n"
+        );
+        assert_eq!(
+            compiled.closures["references/x.md"].calls,
+            vec!["tools:demo"]
+        );
+    }
+
+    #[test]
+    fn a_self_link_names_the_skill_in_every_skill_shape() {
+        // (entry, bundle root, the link's target)
+        let shapes = [
+            ("/vault/skills/s.md", "/vault/skills/s", "s"),
+            ("/vault/skills/s/s.md", "/vault/skills/s", "s"),
+            ("/vault/skills/s/SKILL.md", "/vault/skills/s", "s"),
+        ];
+        for (entry, bundle, target) in shapes {
+            let vfs = MemVfs::new();
+            write(&vfs, entry, b"---\nname: s\ndescription: d\n---\n\n# S\n");
+            let link = format!("Part of [[{target}]].\n");
+            write(&vfs, &format!("{bundle}/references/x.md"), link.as_bytes());
+            let skills = SkillIndex::new([indexed(entry, "s")]);
+            let mut base = CompileSource::new(Path::new("/vault"), Path::new(entry), "s");
+            base.bundle_root = Some(Path::new(bundle));
+            let compiled = compile_source_with_calls(&vfs, &skills, base, &link).unwrap();
+            assert_eq!(compiled.body, "Part of `tools:s`.\n", "{entry}");
+            assert_eq!(
+                compiled_text(&compiled, "references/x.md"),
+                "Part of `tools:s`.\n",
+                "{entry}"
+            );
+            for path in ["SKILL.md", "references/x.md"] {
+                assert!(
+                    compiled.closures[path].unresolved.is_empty(),
+                    "{entry} {path}: {:?}",
+                    compiled.closures[path].unresolved
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_embedded_notes_link_to_the_embedding_skill_names_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/snippet.md", b"Part of [[demo]].\n");
+        let compiled = compile_with_calls(&vfs, &call_index("called"), "![[snippet]]\n");
+        assert_eq!(compiled.body, "Part of `tools:demo`.\n");
+    }
+
+    #[test]
+    fn a_linked_vault_notes_link_back_to_the_skill_names_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/Foo.md", b"Part of [[demo]].\n");
+        let compiled = compile_with_calls(&vfs, &call_index("called"), "See [[Foo]].\n");
+        assert_eq!(compiled.body, "See [Foo.md](references/vault/Foo.md).\n");
+        assert_eq!(
+            compiled_text(&compiled, "references/vault/Foo.md"),
+            "Part of `tools:demo`.\n"
+        );
+    }
+
+    #[test]
+    fn a_self_link_keeps_its_alias() {
+        let vfs = demo_vault();
+        let compiled =
+            compile_with_calls(&vfs, &call_index("called"), "Use [[demo|this skill]].\n");
+        assert_eq!(compiled.body, "Use this skill (`tools:demo`).\n");
+    }
+
+    #[test]
+    fn a_self_link_with_a_fragment_stays_a_link() {
+        let vfs = demo_vault();
+        write(
+            &vfs,
+            "/vault/plugins/demo/demo.md",
+            b"---\nname: demo\ndescription: d\n---\n\n## Steps\n",
+        );
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"See [[demo#Steps]].\n",
+        );
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(Some(Path::new("/vault/plugins/demo"))),
+            "See [[demo#Steps]].\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "See [demo.md](SKILL.md#Steps).\n");
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "See [demo.md](../SKILL.md#Steps).\n"
+        );
+
+        // The link path's rules, not a call's: a link's fragment is not
+        // checked, so a missing heading is not a `skill-call-*` refusal.
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(None),
+            "See [[demo#Missing]].\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "See [demo.md](SKILL.md#Missing).\n");
+
+        // A bundle skill's entry, which `[[s]]` names but does not resolve to.
+        let vfs = MemVfs::new();
+        let entry = "/vault/skills/s/SKILL.md";
+        write(
+            &vfs,
+            entry,
+            b"---\nname: s\ndescription: d\n---\n\n## Steps\n",
+        );
+        write(
+            &vfs,
+            "/vault/skills/s/references/x.md",
+            b"See [[s#Steps]].\n",
+        );
+        let skills = SkillIndex::new([indexed(entry, "s")]);
+        let mut base = CompileSource::new(Path::new("/vault"), Path::new(entry), "s");
+        base.bundle_root = Some(Path::new("/vault/skills/s"));
+        let compiled =
+            compile_source_with_calls(&vfs, &skills, base, "See [[s#Steps]].\n").unwrap();
+        assert_eq!(compiled.body, "See [SKILL.md](SKILL.md#Steps).\n");
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "See [SKILL.md](../SKILL.md#Steps).\n"
+        );
+    }
+
+    #[test]
+    fn a_self_call_still_renders_the_call() {
+        let vfs = demo_vault();
+        let compiled = compile_with_calls(&vfs, &call_index("called"), "Run /[[demo]].\n");
+        assert_eq!(compiled.body, "Run `/tools:demo`.\n");
+    }
+
+    #[test]
+    fn a_bundle_files_link_to_another_skill_names_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"See [[called]].\n",
+        );
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(Some(Path::new("/vault/plugins/demo"))),
+            "See [[called]].\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "See `tools:called`.\n");
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "See `tools:called`.\n"
+        );
+    }
+
+    #[test]
+    fn a_self_link_without_an_implicit_context_stays_a_link() {
+        let vfs = demo_vault();
+        let compiled = compile_note(&vfs, &source(None), "Back to [[demo]].\n").unwrap();
+        assert_eq!(compiled.body, "Back to [demo.md](SKILL.md).\n");
+
+        let skills = call_index("called");
+        let render = |skill: &IndexedSkill, _| Ok(skill.call_id());
+        let calls = CallContext {
+            skills: SkillSource::ready(&skills),
+            render: &render,
+            target: "test",
+            implicit: false,
+            warnings: RefCell::new(Vec::new()),
+            record: None,
+        };
+        let source = CompileSource {
+            calls: Some(&calls),
+            ..source(None)
+        };
+        let compiled = compile_note(&vfs, &source, "Back to [[demo]].\n").unwrap();
         assert_eq!(compiled.body, "Back to [demo.md](SKILL.md).\n");
         assert!(compiled.closures["SKILL.md"].calls.is_empty());
     }

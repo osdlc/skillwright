@@ -538,6 +538,33 @@ mod tests {
     }
 
     #[test]
+    fn a_self_link_is_a_mention_segment() {
+        use crate::vfs::{MemVfs, Vfs};
+        use std::path::Path;
+        let vfs = MemVfs::new();
+        let path = Path::new("/vault/marketplaces/house/plugins/tools/skills/a.md");
+        vfs.create_dir_all(path.parent().unwrap()).unwrap();
+        vfs.write_file(
+            path,
+            b"---\nname: a\ndescription: A.\n---\n\nPart of [[a]].\n",
+        )
+        .unwrap();
+        let request = LoadRequest::new("/vault", MarketplaceConfig::default());
+        let marketplace = load(&vfs, &request, &crate::Namespace::sw()).unwrap();
+        let skill = &marketplace.plugins["tools"].skills[0];
+        let body = &skill.resolved.as_ref().unwrap().body;
+        let calls: Vec<(String, bool)> = body
+            .segments
+            .iter()
+            .filter_map(|segment| match segment {
+                Segment::Call { call } => Some((call.skill.call_id(), call.mention)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(calls, vec![("tools:a".to_owned(), true)]);
+    }
+
+    #[test]
     fn a_mark_naming_nothing_stays_text() {
         let text = format!("a{MARK_OPEN}c9{MARK_CLOSE}b");
         let body = segments(&text, &record(), None);

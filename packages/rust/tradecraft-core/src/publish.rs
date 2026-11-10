@@ -4282,6 +4282,30 @@ mod tests {
     }
 
     #[test]
+    fn a_standalone_self_link_names_the_skill_bare() {
+        let vfs = vault_with_commit_body("See [[commit-helper]].\n");
+        publish_skill(&vfs, &commit_helper_request("claude"), &sw()).unwrap();
+
+        let body = text_at(&vfs, "/dest/.claude/skills/commit-helper/SKILL.md");
+        assert!(body.contains("See `commit-helper`."), "{body}");
+        let manifest = manifest_of(&vfs, "/dest");
+        let entry = manifest
+            .get(".claude/skills/commit-helper/SKILL.md")
+            .expect("the skill is recorded");
+        assert_eq!(entry.calls, vec!["commit-helper".to_owned()]);
+    }
+
+    #[test]
+    fn a_pack_self_link_names_the_skill_under_its_plugin() {
+        let vfs = vault_with_commit_body("See [[commit-helper]].\n");
+        publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
+
+        let path = ".claude/skills/git-tools/skills/commit-helper/SKILL.md";
+        let body = text_at(&vfs, &format!("/dest/{path}"));
+        assert!(body.contains("See `git-tools:commit-helper`."), "{body}");
+    }
+
+    #[test]
     fn a_pack_call_names_the_skill_under_its_plugin() {
         let vfs = vault_with_commit_body("Then run /[[rebase-guide]].\n");
         publish_skill(&vfs, &plugin_request("claude"), &sw()).unwrap();
