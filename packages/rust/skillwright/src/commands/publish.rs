@@ -321,8 +321,7 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Each warning once: a report repeats it for every destination, and a
     // whole-vault scan has already printed it.
     let mut warned: HashSet<String> = HashSet::new();
-    // The skills a whole-vault run writes, to catch two that land on one
-    // folder.
+    // The skills a whole-vault run writes, checked as a set before any write.
     let mut skills: Vec<DiscoveredComponent> = Vec::new();
     if whole_vault {
         let mut scan = match discover_components(
