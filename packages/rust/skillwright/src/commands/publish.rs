@@ -6,8 +6,12 @@
 //! bare `publish`, which means the same thing — takes its list from
 //! [`discover_components`] and narrows it to the skill notes, each classified
 //! by the core, never by a guess made here. A pack, an agent or a command
-//! publishes when its note is named. Two notes that would land on one skill
-//! folder stop the run before anything is written.
+//! publishes when its note is named.
+//!
+//! Two notes that would land on one skill folder stop the run before
+//! anything is written. A whole-vault run checks every skill it scanned. A
+//! run by path checks each named skill note against the other named notes
+//! and against the vault's skills of the same name.
 //!
 //! `--dry-run` needs nothing this file doesn't already have: the core carries
 //! a `mode` on [`PublishRequest`] ([`PublishMode::Write`], the default, or
@@ -17,15 +21,15 @@
 //! is setting the one field and skipping the confirmation prompt, which a
 //! plan must never trigger.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tradecraft_core::{
     CoreError, DiscoveredComponent, EntityKind, KNOWN_TARGETS, PublishMode, PublishOutcome,
-    PublishReason, PublishRequest, PublishStatus, PublishedFile, ReasonToken, SkippedNote,
-    canonical_target, discover_components, inherit_targets, publish_skill, refuse_invalid_names,
-    refuse_undescribed,
+    PublishReason, PublishRequest, PublishStatus, PublishedFile, ReasonToken, SkillClaim,
+    SkippedNote, canonical_target, discover_components, discover_roster, inherit_targets,
+    publish_skill, refuse_invalid_names, refuse_skill_collisions, refuse_undescribed, skill_claim,
 };
 
 use crate::config::{normalize_join, relative_path, resolve_against_cwd};
@@ -36,7 +40,7 @@ use crate::report::{
     AttributedExclusion, Attribution, has_refusal, normalize_thrown_reason, render_exclusion,
     render_file_line, render_reason, render_tally, render_unmatched_overwrite, render_warning_line,
 };
-use crate::resolve::{CommonFlags, refuse_workspace, resolve_run};
+use crate::resolve::{CommonFlags, ResolvedRun, refuse_workspace, resolve_run};
 
 /// The resolved flags of `skillwright publish`.
 pub struct PublishFlags {
@@ -134,33 +138,74 @@ struct PublishDocument<'a> {
     skipped: Option<&'a [SkippedNote]>,
 }
 
-/// The refusal of two `skills` that land on one folder of one destination:
-/// a second write would replace the first with no warning.
-fn skill_collision(skills: &[DiscoveredComponent], destinations: &[Destination]) -> Option<String> {
-    let reaches = |skill: &DiscoveredComponent, dest: &Destination| {
-        let wanted = canonical_target(&dest.target);
-        skill.targets.as_ref().is_none_or(|targets| {
-            targets
-                .iter()
-                .any(|target| canonical_target(target) == wanted)
+/// The claims a run by path must check: each named note that is a skill,
+/// read as its publish reads it, and every vault skill sharing a name with
+/// one of them. A named note the read refuses is left out: its publish
+/// refuses it again, for the same reason, on its own line.
+fn named_claims(
+    run: &ResolvedRun,
+    note_paths: &[PathBuf],
+    err: &mut dyn std::io::Write,
+) -> Vec<SkillClaim> {
+    let namespace = run.core_namespace();
+    let root_config = run.root_config();
+    let mut claims: Vec<SkillClaim> = note_paths
+        .iter()
+        .filter_map(|note_path| {
+            skill_claim(
+                &run.config_vfs(),
+                note_path,
+                &run.vault,
+                Some(&root_config),
+                namespace,
+            )
+            .ok()
+            .flatten()
         })
-    };
-    destinations.iter().find_map(|dest| {
-        let mut seen: HashMap<&str, &str> = HashMap::new();
-        skills
-            .iter()
-            .filter(|skill| reaches(skill, dest))
-            .find_map(|skill| {
-                let path = skill.vault_relative_path.as_str();
-                let first = seen.insert(skill.name.as_str(), path)?;
-                Some(format!(
-                    "path-collision: `{first}` and `{path}` both publish to the skill folder \
-                     `{}`, and the second would replace the first. Nothing was written. Name one \
-                     of the notes to publish it, or rename one",
-                    skill.name
-                ))
-            })
-    })
+        .collect();
+    if claims.is_empty() {
+        return claims;
+    }
+    // The roster, not `discover_components`, which refuses the very duplicate
+    // this looks for. Its warnings are about notes this run did not name.
+    match discover_roster(&run.source_vfs(None), &run.vault, None, namespace) {
+        Ok(mut scan) => {
+            inherit_targets(&mut scan, &root_config);
+            let same_name: Vec<SkillClaim> = scan
+                .components
+                .iter()
+                .filter(|c| {
+                    c.kind == EntityKind::Skill
+                        && claims.iter().any(|named| named.name == c.name)
+                        && !claims.iter().any(|named| named.entry_path == c.entry_path)
+                })
+                .map(SkillClaim::from)
+                .collect();
+            claims.extend(same_name);
+        }
+        // A symlink or an unlistable folder stops the scan, though not a
+        // publish by path. Said whatever `--quiet` says: a check did not run.
+        Err(scan_err) if is_unsafe_or_io(&scan_err) => {
+            let _ = writeln!(
+                err,
+                "warning: could not scan the vault for skills with the same name as a named \
+                 note: {scan_err}. Only the named notes were checked against each other"
+            );
+        }
+        // Anything else, such as a malformed root file, refuses every
+        // publish below for the same reason.
+        Err(_) => {}
+    }
+    claims
+}
+
+/// Whether a scan failed for a symlink or a folder it could not list.
+fn is_unsafe_or_io(err: &CoreError) -> bool {
+    match err {
+        CoreError::Io { .. } | CoreError::PathEscapesRoot(_) => true,
+        CoreError::Refused(message) => message.starts_with("unsafe-path"),
+        _ => false,
+    }
 }
 
 /// Which closed-set token a thrown [`CoreError`] becomes.
@@ -275,7 +320,8 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // Each warning once: a report repeats it for every destination, and a
     // whole-vault scan has already printed it.
     let mut warned: HashSet<String> = HashSet::new();
-    // The skills this run writes, to catch two that land on one folder.
+    // The skills a whole-vault run writes, to catch two that land on one
+    // folder.
     let mut skills: Vec<DiscoveredComponent> = Vec::new();
     if whole_vault {
         let mut scan = match discover_components(
@@ -337,26 +383,19 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
             }
             note_paths.push(note_path);
         }
-        // A scan that fails here is not this run's concern: each named note
-        // is read on its own below.
-        if note_paths.len() > 1
-            && let Ok(mut scan) = discover_components(
-                &run.source_vfs(None),
-                &run.vault,
-                None,
-                run.core_namespace(),
-            )
-        {
-            inherit_targets(&mut scan, &run.root_config());
-            skills = scan
-                .components
-                .into_iter()
-                .filter(|c| c.kind == EntityKind::Skill && note_paths.contains(&c.entry_path))
-                .collect();
-        }
     }
-    if let Some(refusal) = skill_collision(&skills, &destinations) {
-        return blocked(ctx.err, &refusal);
+    // Two notes on one skill folder stop the run before the prompt and
+    // before anything is written.
+    let claims = if whole_vault {
+        skills.iter().map(SkillClaim::from).collect()
+    } else {
+        named_claims(&run, &note_paths, ctx.err)
+    };
+    let targets: Vec<&str> = destinations.iter().map(|d| d.target.as_str()).collect();
+    match refuse_skill_collisions(&claims, &targets) {
+        Ok(()) => {}
+        Err(CoreError::Refused(message)) => return blocked(ctx.err, &message),
+        Err(other) => return blocked(ctx.err, &other.to_string()),
     }
 
     // --- confirmation --------------------------------------------------

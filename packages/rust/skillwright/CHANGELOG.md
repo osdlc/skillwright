@@ -17,9 +17,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - When a member's workspace file is malformed, the member file's own warnings are no longer printed before the error that blocks the run.
 - Moving a marketplace's `skillwright.md` onto a `.../skillwright.md` that is not a marketplace entry, such as `plugins/x/skillwright.md`, moves the folder as it is and leaves links into it as written. It took the marketplace-rename path before, which rewrote those links.
 - Where the pack-location check could not tell where a path leads, for example on a permission error, `build` and `check` refuse with `unsafe-path`. The check fell back to the path as written before.
+- Naming one of two skills that publish to one skill folder, such as `review` in two plugins, is refused `path-collision`. It published the named one before. Set a different `name:` in one of them.
+- The `path-collision` message for two notes on one skill folder names every note in the group and says to set a different `name:`.
 
 ### Fixed
 
+- `publish <path>` refuses, with `path-collision` and exit 2, a named skill note that would replace another skill: a vault skill of the same name, or another note named in the same run. It wrote over the other skill and exited 0. A note outside every kind folder, or outside the vault, is checked too. Nothing in the run is written ([#118](https://github.com/osdlc/skillwright/issues/118)).
 - A member reached through a symlink, as with `--vault /tmp/acme-link` pointing at `<ws>/marketplaces/acme`, gets its workspace's settings and `build.exclude`. A workspace `build.exclude` glob that matches nothing, and a `publish` refused `excluded-note` by such a glob, name the workspace file by its absolute path in that case, since `../../skillwright.md` from the link names another folder ([#91](https://github.com/osdlc/skillwright/issues/91)).
 - `publish` of a note spelled by its real path, under a vault named through a link (or the other way round), reads the note's folder and `build.exclude` as it does for the same spelling, so an excluded note is refused `excluded-note` ([#91](https://github.com/osdlc/skillwright/issues/91)).
 - A first build through a symlinked vault refuses a `packs` that lands on a folder the vault reads notes from, as a build through the real path does. The check was skipped while `build.out` did not exist yet ([#83](https://github.com/osdlc/skillwright/issues/83)).

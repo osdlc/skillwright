@@ -10,7 +10,10 @@ const ROOT: &str = "---\nname: v\nbuild:\n  out: dist\n---\n";
 
 struct Ran {
     code: i32,
+    /// Stdout, then stderr.
     text: String,
+    stdout: String,
+    stderr: String,
 }
 
 /// A vault in `<temp>/vault`, with a home beside it.
@@ -50,13 +53,13 @@ fn sw(cwd: &Path, args: &[&str]) -> Ran {
         .env("HOME", &home)
         .output()
         .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     Ran {
         code: output.status.code().unwrap_or(-1),
-        text: format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        ),
+        text: format!("{stdout}{stderr}"),
+        stdout,
+        stderr,
     }
 }
 
@@ -1253,6 +1256,11 @@ fn publish_refuses_two_plugins_writing_one_skill_folder() {
         "{}",
         bare.text
     );
+    assert!(
+        bare.text.contains("Set a different `name:`"),
+        "{}",
+        bare.text
+    );
     assert!(!dest.exists(), "nothing is written");
 
     let both = [
@@ -1264,12 +1272,8 @@ fn publish_refuses_two_plugins_writing_one_skill_folder() {
     assert_eq!(named.code, 2, "{}", named.text);
 
     let one = sw(&dir.path(), &[&both[..2], &flags[..]].concat());
-    assert_eq!(one.code, 0, "{}", one.text);
-    assert!(
-        dest.join(".claude/skills/review/SKILL.md").exists(),
-        "{}",
-        one.text
-    );
+    assert_eq!(one.code, 2, "{}", one.text);
+    assert!(!dest.join(".claude/skills/review").exists(), "{}", one.text);
 }
 
 #[test]
@@ -2216,4 +2220,376 @@ fn publishing_an_excluded_note_through_a_link_names_the_workspace_file() {
             published.text
         );
     }
+}
+
+// --- a publish by path that would replace a same-named skill ----------------
+
+const REAL: &str = "---\ndescription: The vault skill.\n---\nREAL BODY\n";
+const STRAY: &str = "---\nname: greet\ndescription: A stray.\n---\nSTRAY BODY\n";
+
+/// The refusal for the notes at `first` and `second`, both on `name`.
+fn two_note_refusal(first: &str, second: &str, name: &str) -> String {
+    format!(
+        "path-collision: `{first}` and `{second}` both publish to the skill folder `{name}`, so \
+         one would replace the other. Nothing was written. Set a different `name:` in one of them"
+    )
+}
+
+/// `publish <args> --to <home>/dest --target claude`, plus `extra`.
+fn publish_to_dest(dir: &Fixture, notes: &[&str], extra: &[&str]) -> Ran {
+    let dest = dir.home().join("dest");
+    let to = ["--to", dest.to_str().unwrap(), "--target", "claude"];
+    sw(&dir.path(), &[&["publish"], notes, &to[..], extra].concat())
+}
+
+/// Every file under `<home>/dest`, relative and sorted.
+fn dest_listing(dir: &Fixture) -> Vec<String> {
+    let dest = dir.home().join("dest");
+    let mut listed: Vec<String> = files_under(&dest)
+        .iter()
+        .map(|path| path.strip_prefix(&dest).unwrap().display().to_string())
+        .collect();
+    listed.sort();
+    listed
+}
+
+#[test]
+fn publish_by_path_refuses_a_stray_with_a_vault_skill_s_name() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("skills/greet/greet.md", REAL),
+        ("notes/greet.md", STRAY),
+    ]);
+    let first = publish_to_dest(&dir, &["skills/greet/greet.md"], &["--yes"]);
+    assert_eq!(first.code, 0, "{}", first.text);
+    let before = dest_listing(&dir);
+
+    let stray = publish_to_dest(&dir, &["notes/greet.md"], &["--yes"]);
+    assert_eq!(stray.code, 2, "{}", stray.text);
+    assert!(
+        stray.stderr.contains(&two_note_refusal(
+            "notes/greet.md",
+            "skills/greet/greet.md",
+            "greet"
+        )),
+        "{}",
+        stray.text
+    );
+    assert_eq!(dest_listing(&dir), before);
+    let skill =
+        std::fs::read_to_string(dir.home().join("dest/.claude/skills/greet/SKILL.md")).unwrap();
+    assert!(skill.contains("REAL BODY"), "{skill}");
+}
+
+#[test]
+fn publish_by_path_refuses_two_named_notes_with_one_name() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("notes/hello.md", SKILL),
+        ("drafts/hello.md", SKILL),
+    ]);
+    let ran = publish_to_dest(&dir, &["notes/hello.md", "drafts/hello.md"], &["--yes"]);
+    assert_eq!(ran.code, 2, "{}", ran.text);
+    assert!(
+        ran.stderr.contains(&two_note_refusal(
+            "notes/hello.md",
+            "drafts/hello.md",
+            "hello"
+        )),
+        "{}",
+        ran.text
+    );
+    assert_eq!(dest_listing(&dir), Vec::<String>::new());
+}
+
+#[test]
+fn publish_by_path_refuses_a_note_outside_the_vault_with_a_vault_skill_s_name() {
+    let dir = vault(&[("skillwright.md", ROOT), ("skills/greet/greet.md", REAL)]);
+    let outside = dir.0.path().join("outside/greet.md");
+    std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
+    std::fs::write(&outside, STRAY).unwrap();
+
+    let ran = publish_to_dest(&dir, &[outside.to_str().unwrap()], &["--yes"]);
+    assert_eq!(ran.code, 2, "{}", ran.text);
+    assert!(
+        ran.stderr.contains(&two_note_refusal(
+            "greet.md",
+            "skills/greet/greet.md",
+            "greet"
+        )),
+        "{}",
+        ran.text
+    );
+    assert_eq!(dest_listing(&dir), Vec::<String>::new());
+}
+
+#[test]
+fn publish_by_path_refuses_one_of_two_vault_skills_with_one_name() {
+    let named = "---\nname: greet\ndescription: D.\n---\nBody.\n";
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("skills/a/a.md", named),
+        ("skills/b/b.md", named),
+    ]);
+    let ran = publish_to_dest(&dir, &["skills/a/a.md"], &["--yes"]);
+    assert_eq!(ran.code, 2, "{}", ran.text);
+    assert!(
+        ran.stderr
+            .contains(&two_note_refusal("skills/a/a.md", "skills/b/b.md", "greet")),
+        "{}",
+        ran.text
+    );
+    assert_eq!(dest_listing(&dir), Vec::<String>::new());
+}
+
+/// A vault where `notes/greet.md` collides with the vault skill `greet` and
+/// `ok.md` collides with nothing.
+fn one_colliding_note() -> Fixture {
+    vault(&[
+        ("skillwright.md", ROOT),
+        ("ok.md", SKILL),
+        ("skills/greet/greet.md", REAL),
+        ("notes/greet.md", STRAY),
+    ])
+}
+
+/// The stderr line that refuses `notes/greet.md`.
+fn refusal_line(ran: &Ran) -> &str {
+    ran.stderr
+        .lines()
+        .find(|line| line.contains("path-collision"))
+        .unwrap_or_else(|| panic!("no refusal: {}", ran.text))
+}
+
+#[test]
+fn a_by_path_collision_writes_none_of_the_named_notes() {
+    let dir = one_colliding_note();
+    let ran = publish_to_dest(&dir, &["ok.md", "notes/greet.md"], &["--yes"]);
+    assert_eq!(ran.code, 2, "{}", ran.text);
+    assert!(
+        !dir.home().join("dest/.claude/skills/ok").exists(),
+        "{}",
+        ran.text
+    );
+    assert_eq!(dest_listing(&dir), Vec::<String>::new());
+}
+
+#[test]
+fn a_by_path_collision_refuses_a_dry_run_the_same_way() {
+    let dir = one_colliding_note();
+    let real = publish_to_dest(&dir, &["notes/greet.md"], &["--yes"]);
+    let dry = publish_to_dest(&dir, &["notes/greet.md"], &["--dry-run"]);
+    assert_eq!(dry.code, 2, "{}", dry.text);
+    assert_eq!(refusal_line(&dry), refusal_line(&real));
+    assert_eq!(dest_listing(&dir), Vec::<String>::new());
+}
+
+#[test]
+fn a_by_path_collision_refuses_before_the_prompt() {
+    let dir = one_colliding_note();
+    let ran = publish_to_dest(&dir, &["notes/greet.md"], &[]);
+    assert_eq!(ran.code, 2, "{}", ran.text);
+    assert!(ran.stderr.contains("path-collision"), "{}", ran.text);
+    assert!(!ran.text.contains("pass --yes"), "{}", ran.text);
+}
+
+#[test]
+fn a_by_path_collision_under_json_prints_no_document() {
+    let dir = one_colliding_note();
+    let ran = publish_to_dest(&dir, &["notes/greet.md"], &["--json", "--yes"]);
+    assert_eq!(ran.code, 2, "{}", ran.text);
+    assert_eq!(ran.stdout, "", "{}", ran.text);
+    assert!(
+        ran.stderr.contains(&two_note_refusal(
+            "notes/greet.md",
+            "skills/greet/greet.md",
+            "greet"
+        )),
+        "{}",
+        ran.text
+    );
+}
+
+#[test]
+fn publish_by_path_allows_one_name_on_disjoint_targets() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        (
+            "skills/greet/greet.md",
+            "---\ndescription: D.\ntargets: [codex]\n---\nBody.\n",
+        ),
+        ("notes/greet.md", STRAY),
+    ]);
+    let ran = publish_to_dest(&dir, &["notes/greet.md"], &["--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+}
+
+#[test]
+fn naming_a_pack_is_not_checked_against_standalone_skills() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", PLUGIN),
+        ("plugins/p/skills/review.md", SKILL),
+        ("skills/review/review.md", SKILL),
+    ]);
+    let ran = publish_to_dest(&dir, &["plugins/p/p.md"], &["--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+}
+
+#[test]
+fn an_excluded_named_note_is_refused_for_its_own_reason() {
+    let root = "---\nname: v\nbuild:\n  out: dist\n  exclude: [notes/greet.md]\n---\n";
+    let dir = vault(&[
+        ("skillwright.md", root),
+        ("skills/greet/greet.md", REAL),
+        ("notes/greet.md", STRAY),
+    ]);
+    let ran = publish_to_dest(&dir, &["notes/greet.md"], &["--yes"]);
+    assert_eq!(ran.code, 1, "{}", ran.text);
+    assert!(ran.text.contains("excluded-note"), "{}", ran.text);
+    assert!(!ran.text.contains("path-collision"), "{}", ran.text);
+}
+
+const SCAN_WARNING: &str =
+    "warning: could not scan the vault for skills with the same name as a named note: ";
+
+/// A vault the scan refuses: it holds a symlinked folder.
+#[cfg(unix)]
+fn vault_with_a_link() -> Fixture {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("notes/one.md", SKILL),
+        ("notes/hello.md", SKILL),
+        ("drafts/hello.md", SKILL),
+        ("agents/helper.md", SKILL),
+        ("elsewhere/x.md", SKILL),
+    ]);
+    let elsewhere = dir.0.path().join("outside");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, dir.path().join("linked")).unwrap();
+    dir
+}
+
+#[cfg(unix)]
+#[test]
+fn a_vault_the_scan_refuses_still_checks_the_named_notes() {
+    let dir = vault_with_a_link();
+    for extra in [&["--yes"][..], &["--yes", "--quiet"][..]] {
+        let ran = publish_to_dest(&dir, &["notes/one.md"], extra);
+        assert_eq!(ran.code, 0, "{extra:?}: {}", ran.text);
+        assert_eq!(
+            ran.stderr.matches(SCAN_WARNING).count(),
+            1,
+            "{extra:?}: {}",
+            ran.text
+        );
+        assert!(
+            ran.stderr
+                .contains(". Only the named notes were checked against each other"),
+            "{extra:?}: {}",
+            ran.text
+        );
+    }
+    let two = publish_to_dest(&dir, &["notes/hello.md", "drafts/hello.md"], &["--yes"]);
+    assert_eq!(two.code, 2, "{}", two.text);
+    assert!(
+        two.stderr.contains(&two_note_refusal(
+            "notes/hello.md",
+            "drafts/hello.md",
+            "hello"
+        )),
+        "{}",
+        two.text
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_by_path_publish_of_no_skill_does_not_scan_the_vault() {
+    let dir = vault_with_a_link();
+    let ran = publish_to_dest(&dir, &["agents/helper.md"], &["--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+    assert!(
+        !ran.text.contains("could not scan the vault"),
+        "{}",
+        ran.text
+    );
+}
+
+/// The CLI reads the root file before a publish starts, so a malformed one
+/// stops the run there, as on main, and the vault scan never runs.
+#[test]
+fn a_malformed_root_file_gives_no_scan_warning() {
+    let dir = vault(&[
+        (
+            "skillwright.md",
+            "---\nname: v\nbuild:\n  out: dist\n  patterns: 5\n---\n",
+        ),
+        ("notes/one.md", SKILL),
+    ]);
+    let ran = publish_to_dest(&dir, &["notes/one.md"], &["--yes"]);
+    assert_eq!(ran.code, 2, "{}", ran.text);
+    assert!(ran.text.contains("configuration malformed"), "{}", ran.text);
+    assert!(
+        !ran.text.contains("could not scan the vault"),
+        "{}",
+        ran.text
+    );
+}
+
+#[test]
+fn a_by_path_publish_prints_no_warning_about_other_notes() {
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("notes/one.md", SKILL),
+        (
+            "skills/odd/odd.md",
+            "---\ndescription: D.\nbogus: 1\n---\nBody.\n",
+        ),
+        ("plugins/x/skills/dup.md", SKILL),
+        ("plugins/y/skills/dup.md", SKILL),
+    ]);
+    let ran = publish_to_dest(&dir, &["notes/one.md"], &["--yes"]);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+    assert!(!ran.stderr.contains("odd.md"), "{}", ran.text);
+    assert!(!ran.stderr.contains("dup.md"), "{}", ran.text);
+}
+
+#[test]
+fn republishing_a_note_by_path_is_not_a_collision() {
+    let dir = vault(&[("skillwright.md", ROOT), ("skills/greet/greet.md", REAL)]);
+    let first = publish_to_dest(&dir, &["skills/greet/greet.md"], &["--yes"]);
+    assert_eq!(first.code, 0, "{}", first.text);
+    let again = publish_to_dest(&dir, &["skills/greet/greet.md"], &["--yes"]);
+    assert_eq!(again.code, 0, "{}", again.text);
+    assert!(again.text.contains("unchanged"), "{}", again.text);
+    for notes in [
+        &["skills/greet/greet.md", "skills/greet/greet.md"][..],
+        &["skills/greet/./greet.md"][..],
+    ] {
+        let ran = publish_to_dest(&dir, notes, &["--yes"]);
+        assert_eq!(ran.code, 0, "{notes:?}: {}", ran.text);
+    }
+}
+
+/// Under `--vault <link>`, a note named through the link publishes, and one
+/// named by its real path is refused `unsafe-path` by the load, as on main.
+/// Neither collides with its own scan entry.
+#[cfg(unix)]
+#[test]
+fn a_note_named_through_a_linked_vault_does_not_collide_with_itself() {
+    let dir = vault(&[("skillwright.md", ROOT), ("skills/greet/greet.md", REAL)]);
+    let link = dir.0.path().join("link");
+    std::os::unix::fs::symlink(dir.path(), &link).unwrap();
+    let vault_flag = ["--vault", link.to_str().unwrap(), "--yes"];
+
+    let through_link = link.join("skills/greet/greet.md");
+    let ran = publish_to_dest(&dir, &[through_link.to_str().unwrap()], &vault_flag);
+    assert_eq!(ran.code, 0, "{}", ran.text);
+
+    let real = dir.path().canonicalize().unwrap();
+    let by_real_path = real.join("skills/greet/greet.md");
+    let ran = publish_to_dest(&dir, &[by_real_path.to_str().unwrap()], &vault_flag);
+    assert!(!ran.text.contains("path-collision"), "{}", ran.text);
+    assert!(ran.text.contains("unsafe-path"), "{}", ran.text);
 }
