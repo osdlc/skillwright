@@ -58,10 +58,12 @@ and may return in a later milestone:
 - An embed or link to nothing shipped as its words. It is now an error.
 - An embed of a file that is neither a note nor an image rendered as a plain
   link. It is now inlined as a fenced code block (decision D8).
-- `build.launcher_path` (decision D9). Every `${CLAUDE_PLUGIN_ROOT}/<path>`
-  in a component's Markdown is now checked and rewritten, not one configured
-  path. A path that names nothing shipped, left as written in v1, is now an
-  error.
+- `build.launcher_path` (decision D9). Authors now write
+  `${PLUGIN_ROOT}/<path>`, and every such path in a component's Markdown is
+  checked and replaced, not one configured path. A path that names nothing
+  shipped, left as written in v1, is now an error.
+- `${CLAUDE_PLUGIN_ROOT}` as the source form, in notes and in hooks files.
+  It is now an error that says to write `${PLUGIN_ROOT}` (decision D9).
 - Calls read inside code spans and fenced blocks. Code is now fully literal.
 - A fragment on a call or a mention, checked and then dropped. On a call,
   `/[[setup#Usage]]`, it is now an error. On a plain link, `[[setup#Usage]]`,
@@ -144,12 +146,16 @@ amendment too: its patterns layer is gone.
   the per-harness switch, now for every plugin-root path (D9).
 - `model/mod.rs` and `harness/translator.rs` (D9): `Segment::LauncherCall`
   and `push_text`'s one-path split become a plugin-root path segment that
-  holds any path, checked against the files the pack ships. `write_body`
-  writes it relative to the folder the text lands in, so a resource under
+  holds any path after `${PLUGIN_ROOT}/`, checked against the files the pack
+  ships. A source `${CLAUDE_PLUGIN_ROOT}` and a bare `${PLUGIN_ROOT}` are
+  refused there. `write_body` writes `${CLAUDE_PLUGIN_ROOT}/<path>` for Claude
+  Code and, for the other harnesses, the path relative to the folder the text
+  lands in, so a resource under
   `references/` gets its own depth, not the skill's. `rewrite_sibling_paths`
   goes: Pi's `skills/<p>-<s>/` folder is where the rewrite lands.
   `rewrite_launcher_calls` goes with its test. `relative_path` stays.
-  `hooks_file::localize`, the variable swap for hooks, stays and gains the
+  `hooks_file::localize`, the variable swap for hooks, stays with
+  `${PLUGIN_ROOT}` as its source (`CANONICAL_ROOT` changes) and gains the
   path check.
 - `export.rs`: the `stale-output` warning and moved-packs handling go.
   `MarketplaceConfig::launcher_path` and the launcher tests go; their cases
@@ -367,17 +373,22 @@ The commits, in order:
      text is fenced with four backticks and ships byte for byte, with its `[[`
      unread; an embed inside a list item is indented to the item; a binary
      file is refused; `![[run.sh#main]]` is refused; `[[run.sh]]` is a link.
-   - Plugin-root paths (D9): `${CLAUDE_PLUGIN_ROOT}/scripts/tool` in a
-     skill's prose and in its code span ships as written on Claude Code and
-     as `../../scripts/tool` on Codex, Cursor and Pi; from the skill's
-     `references/guide.md` it is `../../../scripts/tool`; a path into
-     another skill follows Pi's `skills/<p>-<s>/`; a path naming nothing
+   - Plugin-root paths (D9): `${PLUGIN_ROOT}/scripts/tool` in a skill's
+     prose and in its code span ships as `${CLAUDE_PLUGIN_ROOT}/scripts/tool`
+     on Claude Code and as `../../scripts/tool` on Codex, Cursor and Pi; from
+     the skill's `references/guide.md` it is `../../../scripts/tool`; a path
+     into another skill follows Pi's `skills/<p>-<s>/`; a path naming nothing
      shipped fails naming the file and the reference;
-     `${CLAUDE_PLUGIN_ROOT}/scripts/tool.js` is not `scripts/tool`; a bare
-     `${CLAUDE_PLUGIN_ROOT}` is an error; a path to a command's file is
-     refused for Codex; an embedded reference is written from the embedding
-     file; a script in `scripts/` holding the variable ships byte for byte; a
-     hook command gets `PLUGIN_ROOT` on Codex and its path is checked.
+     `${PLUGIN_ROOT}/scripts/tool.js` is not `scripts/tool`; a bare
+     `${PLUGIN_ROOT}` in Markdown is an error; `${CLAUDE_PLUGIN_ROOT}` in a
+     note or a hooks file is an error that says to write `${PLUGIN_ROOT}`;
+     an unbraced `$PLUGIN_ROOT/x` ships as written; a plain `scripts/x.py`
+     in a `SKILL.md` ships as written and is not checked; a path to a
+     command's file is refused for Codex; an embedded reference is written
+     from the embedding file; a script in `scripts/` holding the variable
+     ships byte for byte; a hook command's `${PLUGIN_ROOT}` becomes
+     `${CLAUDE_PLUGIN_ROOT}` on Claude Code, stays on Codex, becomes
+     `${CURSOR_PLUGIN_ROOT}` on Cursor, and its path is checked.
    Before this commit, run the `plugin-layout` probe on Codex. harness-reference
    does not record where Codex resolves a skill's relative paths
    (`Codex CLI Relative paths in SKILL.md open`). If it is not the skill's

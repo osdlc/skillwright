@@ -156,8 +156,8 @@ link: what it names must be in scope. The rules apply to links from a
 component's note and from any Markdown file it ships. Code is fully literal:
 nothing inside a code span or fenced block is read, so a call, link or embed
 written there ships exactly as written (rule 12). A plugin-root path,
-`${CLAUDE_PLUGIN_ROOT}/<path>`, is not link syntax and is read in prose and
-code alike (rules 15 to 22).
+`${PLUGIN_ROOT}/<path>`, is not link syntax and is read in prose and
+code alike (rules 15 to 26).
 
 ### Containment
 
@@ -234,30 +234,32 @@ marketplace (rule 8, decision D2).
 
 ### Plugin-root paths
 
-A component names a file of its plugin as `${CLAUDE_PLUGIN_ROOT}/<path>`, such
-as `${CLAUDE_PLUGIN_ROOT}/scripts/tool`. Claude Code expands the variable in
-skill, command and agent text. Codex, Cursor and Pi do not, so the build
-rewrites it for them (decision D9).
+A component names a file of its plugin as `${PLUGIN_ROOT}/<path>`, such as
+`${PLUGIN_ROOT}/scripts/tool`. The build replaces the string with each
+harness's own form (decision D9).
 
-15. Every `${CLAUDE_PLUGIN_ROOT}/<path>` in a Markdown file a component ships
-    is read: its note, the Markdown files in its `references/`, the plugin's
+15. Every `${PLUGIN_ROOT}/<path>` in a Markdown file a component ships is
+    read: its note, the Markdown files in its `references/`, the plugin's
     shared Markdown files, and text an embed inlines. Prose and code alike,
-    because this is a path, not link syntax.
+    because this is a path, not link syntax. Only the braced form is read:
+    `$PLUGIN_ROOT` is text.
 16. The path runs to the first character that cannot continue a path: a
     letter, digit, `.`, `_`, `-` or `/` continues it. So
-    `${CLAUDE_PLUGIN_ROOT}/scripts/tool.js` is the path `scripts/tool.js`,
-    never `scripts/tool`.
+    `${PLUGIN_ROOT}/scripts/tool.js` is the path `scripts/tool.js`, never
+    `scripts/tool`.
 17. The path is a path in the plugin's pack, laid out as section 9 places
     files for Claude Code: `scripts/tool` is the plugin's shared
     `scripts/tool`, and `skills/setup/scripts/run.sh` is the `setup` skill's
     `scripts/run.sh`. It must name a file the build ships. If it does not, the
     build fails, and the error names the file holding the reference and the
     reference as written.
-18. In Claude Code's pack the reference is left as written.
-19. In Codex's, Cursor's and Pi's packs it is rewritten to the path of that
-    same file in that harness's pack, relative to the folder the text lands in.
-    From a skill's `SKILL.md`, `${CLAUDE_PLUGIN_ROOT}/scripts/tool` becomes
-    `../../scripts/tool`; from that skill's `references/guide.md` it becomes
+18. In Claude Code's pack it is written as `${CLAUDE_PLUGIN_ROOT}/<path>`,
+    which Claude Code expands in skill, command and agent text.
+19. In Codex's, Cursor's and Pi's packs it is written as the path of that same
+    file in that harness's pack, relative to the folder the text lands in.
+    None of the three expands a variable in skill text. From a skill's
+    `SKILL.md`, `${PLUGIN_ROOT}/scripts/tool` becomes `../../scripts/tool`;
+    from that skill's `references/guide.md` it becomes
     `../../../scripts/tool`. On Pi, a path into a skill follows the skill's
     folder name there, `skills/<p>-<s>/`. Embedded text lands in the file that
     embeds it, so the path is written from that file's folder. Files in
@@ -265,17 +267,33 @@ rewrites it for them (decision D9).
 20. If a harness's pack does not carry the target, such as a command's file
     on Codex, the reference is refused for that harness, as a link to a
     component that is not carried is (rule 6).
-21. `${CLAUDE_PLUGIN_ROOT}` not followed by `/<path>` is an error on every
-    harness. It cannot be rewritten to a path for Codex, Cursor or Pi, and a
-    vault writes one text for all harnesses.
-22. Files that are not Markdown, such as a script in `scripts/`, ship byte for
-    byte; nothing in them is rewritten. A hooks file is not rewritten to
-    relative paths either: each hook command's `${CLAUDE_PLUGIN_ROOT}` becomes
-    the harness's own variable (`PLUGIN_ROOT` for Codex, `CURSOR_PLUGIN_ROOT`
-    for Cursor), as in v1. A hook runs as a shell command from the project
-    folder, where a pack-relative path would not resolve, and each of those
-    harnesses sets its variable for hooks. The path after the variable is
-    still checked by rule 17.
+21. `${PLUGIN_ROOT}` not followed by `/<path>` is an error in Markdown. It
+    cannot be rewritten to a path for Codex, Cursor or Pi, and a vault writes
+    one text for all harnesses.
+22. `${CLAUDE_PLUGIN_ROOT}` anywhere in source, Markdown or a hooks file, is
+    an error that says to write `${PLUGIN_ROOT}`. There is one syntax.
+23. A hooks file, `hooks/hooks.json` or a hook note, also writes
+    `${PLUGIN_ROOT}`. Each hook command's `${PLUGIN_ROOT}` becomes the
+    harness's own variable, as in v1: `${CLAUDE_PLUGIN_ROOT}` for Claude Code,
+    `${PLUGIN_ROOT}` for Codex, `${CURSOR_PLUGIN_ROOT}` for Cursor. Pi carries
+    no hooks. A hook runs as a shell command from the project folder, where a
+    pack-relative path would not resolve, and each of those harnesses sets its
+    variable for hooks. A bare `${PLUGIN_ROOT}` is allowed in a hook, since
+    the variable is kept. A path after it is checked by rule 17.
+24. Files that are not Markdown or a hooks file, such as a script in
+    `scripts/`, ship byte for byte and are never rewritten. A script should
+    find its own files relative to itself, such as `$(dirname "$0")/lib.sh`,
+    not through a harness variable.
+25. A code example that shows a shell `${PLUGIN_ROOT}` is read as a
+    plugin-root path, and rewritten or refused. To show the shell variable,
+    write it unbraced, `$PLUGIN_ROOT/x`, which the shell reads the same way
+    and the build leaves alone. There is no escape form.
+26. A skill's own file named by a plain relative path, such as `scripts/x.py`
+    in its `SKILL.md`, is text. It ships as written and is not checked. The
+    Agent Skills standard, Claude Code, Cursor and Pi resolve it from the
+    skill's folder (section 9). Codex is not recorded; the Codex probe in the
+    build order covers it. Use `${PLUGIN_ROOT}/<path>` for a file the build
+    should check, and for any file outside the skill's folder.
 
 ## 5. Transclusion
 
@@ -772,8 +790,8 @@ file is now refused. The repo's `plugin/` has none.
 
 ### D9. Plugin-root paths replace `build.launcher_path`
 
-**What it is.** How a component names a file of its plugin, such as a
-launcher script, so that the path works on every harness.
+**What it is.** How a component or a hook names a file of its plugin, such as
+a launcher script, so that the path works on every harness.
 
 **Today.** `build.launcher_path` names one launcher, such as `bin/tool`,
 shipped through the flat assets copy. A skill calls it as
@@ -785,25 +803,67 @@ ship the launcher, the call is also left as written, with no warning. On Pi, a
 separate step renames `${CLAUDE_PLUGIN_ROOT}/skills/<s>` to `skills/<p>-<s>`
 but keeps the variable, which Pi does not expand. A Markdown file in a skill's
 `references/` is rewritten relative to the skill's folder, not its own, so its
-`../..` is one level short.
+`../..` is one level short. Hooks write `${CLAUDE_PLUGIN_ROOT}`, swapped for
+each harness's own variable.
 
-**Decided.** `build.launcher_path` is dropped and refused. Every
-`${CLAUDE_PLUGIN_ROOT}/<path>` in a component's Markdown, prose and code
-alike, is checked to name a file the pack ships. Claude Code's pack keeps it
-as written. Codex, Cursor and Pi get the path relative to the folder the text
-lands in (section 4 rules 15 to 22).
+**Decided.** `build.launcher_path` is dropped and refused. Authors write
+`${PLUGIN_ROOT}/<path>` (section 4 rules 15 to 26).
 
+- In a component's Markdown, prose and code alike, the path is checked to name
+  a file the pack ships. Claude Code's pack gets
+  `${CLAUDE_PLUGIN_ROOT}/<path>`. Codex, Cursor and Pi get the path relative
+  to the folder the text lands in.
 - `scripts/`, `references/` and `assets/` files are rewritten the same way,
   whether a skill's own or the plugin's shared copy. A path has one meaning,
   so it has one rule.
-- `${CLAUDE_PLUGIN_ROOT}` with no path after it is an error. There is no path
-  to rewrite it to for three harnesses.
+- `${PLUGIN_ROOT}` with no path after it is an error in Markdown. There is no
+  path to rewrite it to for three harnesses.
 - A target the harness does not carry is refused for that harness, as a link
   to it is. A dead path breaks the skill at run time with no sign at build
   time.
-- Hooks keep v1's swap to each harness's own variable, and their paths are
-  checked. A hook runs from the project folder, so a relative path would not
-  resolve.
+- Hooks write `${PLUGIN_ROOT}` too and keep v1's swap to each harness's own
+  variable. Their paths are checked. A hook runs from the project folder, so
+  a relative path would not resolve.
+- `${CLAUDE_PLUGIN_ROOT}` in source is an error that says to write
+  `${PLUGIN_ROOT}`. One syntax means one thing to search for and check.
+- Scripts ship byte for byte. A script finds its own files relative to itself.
+
+**Why a build-time string replacement.** No harness but Claude Code expands
+a plugin-root variable in skill text, so the variable cannot be left for the
+harness to fill in.
+
+- Only Claude Code substitutes a plugin-root variable in skill text
+  (harness-reference: `Claude Code Plugin root variable`).
+- Cursor expands its variables only in `mcp.json`, and it does not expand
+  `${PLUGIN_ROOT}` (harness-reference: `Cursor Plugin root variable`).
+- Codex documents `PLUGIN_ROOT` only for hooks.
+- So the build replaces the string: Claude Code gets its own variable, and the
+  other harnesses get a relative path, which each resolves from the folder
+  the text is in.
+
+**Why `${PLUGIN_ROOT}`.**
+
+- It is the open Agent Plugins standard's name (harness-reference:
+  `Agent Plugins Plugin root variable`).
+
+- It reads as the shell variable it becomes, so the source looks like a
+  working command.
+- It names no harness. The vault is written once for every harness, and its
+  text should not favour one.
+- It is the name Codex already uses for hooks, so on Codex a hook ships as
+  written.
+- Keeping `${CLAUDE_PLUGIN_ROOT}` was rejected. It names one harness, and the
+  source would read as if Claude Code were the target while three of four
+  packs get something else.
+- A template token such as `{{plugin}}` was rejected. It reads as neither a
+  path nor a variable, it is close to the `{{harness}}` and `{{event}}` hook
+  placeholders, and a source file using it is not runnable as written.
+
+**The cost.** A code example that shows a shell `${PLUGIN_ROOT}`, such as
+documentation of a Codex hook, is read as a plugin-root path. It is rewritten,
+or refused when it names no shipped file. The simplest fix needs no new
+syntax: write the variable unbraced, `$PLUGIN_ROOT`, which the shell reads the
+same way and the build leaves alone. So v2 has no escape form for it.
 
 **Why.** One setting covered one file, and every other plugin path was left
 broken on three harnesses without a word. The plugin's folders are fixed in
@@ -813,9 +873,10 @@ run time.
 
 **Existing vaults.** Remove `launcher_path`. Move the launcher from
 `assets/bin/tool` to `scripts/tool` and call it as
-`${CLAUDE_PLUGIN_ROOT}/scripts/tool`. A `${CLAUDE_PLUGIN_ROOT}/...` path that
-names nothing shipped now fails the build. The repo's `plugin/` uses neither
-the key nor the variable.
+`${PLUGIN_ROOT}/scripts/tool`. Replace every `${CLAUDE_PLUGIN_ROOT}` in notes
+and hooks files with `${PLUGIN_ROOT}`. A plugin-root path that names nothing
+shipped now fails the build. The repo's `plugin/` uses neither the key nor
+the variable.
 
 ## Later
 
