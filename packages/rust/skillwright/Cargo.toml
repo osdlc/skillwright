@@ -57,8 +57,15 @@ etag-write = { workspace = true }
 # `build --watch`'s vault watcher.
 notify = { workspace = true }
 
+[features]
+# Turns on `config::replace_machine_config_override` for this crate's own
+# integration tests. Not part of the API.
+test-support = []
+
 [dev-dependencies]
 tempfile = { workspace = true }
+# The crate itself with `test-support`, for the integration tests.
+skillwright = { path = ".", features = ["test-support"] }
 
 [lints]
 workspace = true

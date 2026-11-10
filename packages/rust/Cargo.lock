@@ -974,6 +974,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "skillwright",
  "tempfile",
  "thiserror",
  "tiered-dirs",

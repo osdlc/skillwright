@@ -1,6 +1,8 @@
 //! `skillwright <verb> [options]` — argv parsing and dispatch only.
 //!
-//! Fifteen verbs so far. Thirteen are wired end to end through the core:
+//! Sixteen verbs so far. Fourteen are wired: `author`
+//! ([`crate::commands::author`], experimental, which opens the vault in an
+//! editor and calls nothing in the core), and, end to end through the core,
 //! `build` and `check` ([`crate::commands::marketplace`], one path in two
 //! modes — `build --watch` layers [`crate::commands::watch`] over the same
 //! path, re-running it on every debounced vault change), `list`
@@ -33,6 +35,7 @@ use clap::{Args, Parser, Subcommand};
 use tradecraft_core::BumpLevel;
 
 use crate::commands::adopt::{AdoptFlags, run_adopt};
+use crate::commands::author::{AuthorFlags, run_author};
 use crate::commands::authoring::{
     ConvertFlags, DeleteFlags, MoveFlags, NewMarketplaceFlags, NewPluginFlags, NewSkillFlags,
     RenameFlags, run_convert, run_delete, run_move, run_new_marketplace, run_new_plugin,
@@ -47,6 +50,7 @@ use crate::commands::marketplace::{ExportFlags, ExportVerb, run_export};
 use crate::commands::publish::{PublishFlags, run_publish};
 use crate::commands::status::{StatusFlags, run_status};
 use crate::commands::watch::run_watch;
+use crate::config::Editor;
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_BLOCKED, EXIT_OK, EXIT_USAGE, not_implemented};
 use crate::resolve::CommonFlags;
@@ -56,8 +60,8 @@ const DESCRIPTION: &str = "Publish Obsidian-vault skill notes to every major cod
                            A thin CLI over the one Rust core.";
 
 /// The verbs the usage line for a bare `skillwright` prints, in order. Not
-/// every verb [`Verb`] declares: `bump`, `new`, `rename`, `move`, `delete`
-/// and `convert` are missing.
+/// every verb [`Verb`] declares: `bump`, `new`, `rename`, `move`, `delete`,
+/// `convert` and `author` are missing.
 const VERBS: [&str; 9] = [
     "publish",
     "build",
@@ -271,6 +275,8 @@ enum Verb {
     Convert(ConvertArgs),
     /// Wire this vault's built marketplace into a coding-agent harness.
     Harness(HarnessArgs),
+    /// Experimental. Open the vault, or a folder or note in it, in an editor.
+    Author(AuthorArgs),
 }
 
 /// `new`'s three children: which kind of note to author.
@@ -574,6 +580,41 @@ struct DeleteArgs {
     force: bool,
     #[command(flatten)]
     globals: Globals,
+}
+
+/// `author`'s surface. It writes no vault file, so it takes
+/// [`ReadOnlyGlobals`] and its own `--dry-run`. The editor question saves
+/// one key to the machine file, and the vault question can add one vault
+/// to Obsidian's `obsidian.json`; in each case the answer is the
+/// confirmation.
+#[derive(Args, Debug)]
+struct AuthorArgs {
+    /// A folder or note inside the vault: absolute, relative to the working directory, or else relative to the vault. Defaults to the vault root.
+    #[arg(value_name = "path")]
+    path: Option<String>,
+    /// The editor for this run. Overrides the saved `author.editor`.
+    #[arg(long = "with", value_enum, value_name = "editor")]
+    with: Option<Editor>,
+    #[arg(
+        long,
+        help = "Print what would be opened and how; launch nothing, save nothing and write nothing."
+    )]
+    dry_run: bool,
+    #[command(flatten)]
+    globals: ReadOnlyGlobals,
+}
+
+impl AuthorArgs {
+    fn flags(&self) -> AuthorFlags {
+        AuthorFlags {
+            path: self.path.clone(),
+            with: self.with,
+            dry_run: self.dry_run,
+            common: self.globals.common(),
+            json: self.globals.json,
+            quiet: self.globals.quiet,
+        }
+    }
 }
 
 /// `harness`'s children: `install`, `update` and `uninstall`. Nested
@@ -957,6 +998,7 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
         Verb::Delete(args) => run_delete(&args.flags(), ctx),
         Verb::Convert(args) => run_convert(&args.flags(), ctx),
         Verb::Harness(args) => dispatch_harness(args, ctx),
+        Verb::Author(args) => run_author(&args.flags(), ctx),
     }
 }
 
@@ -1002,5 +1044,34 @@ fn report_parse_error(error: &clap::Error, ctx: &mut CommandContext<'_>) -> i32 
             let _ = writeln!(ctx.err, "{rendered}");
             EXIT_USAGE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_cli_parses_author() {
+        let cli = Cli::try_parse_from([
+            PROG,
+            "author",
+            "skills/a note.md",
+            "--with",
+            "system",
+            "--dry-run",
+            "--vault",
+            "v",
+            "--json",
+        ])
+        .unwrap();
+        let Verb::Author(args) = cli.verb else {
+            panic!("not author: {:?}", cli.verb);
+        };
+        let flags = args.flags();
+        assert_eq!(flags.path.as_deref(), Some("skills/a note.md"));
+        assert_eq!(flags.with, Some(Editor::System));
+        assert!(flags.dry_run && flags.json && !flags.quiet);
+        assert_eq!(flags.common.vault.as_deref(), Some("v"));
     }
 }

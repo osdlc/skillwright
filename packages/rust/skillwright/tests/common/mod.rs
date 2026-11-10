@@ -7,6 +7,19 @@ use skillwright::cli::run_with;
 use skillwright::commands::harness::cli_runner::Runner;
 use skillwright::ctx::CommandContext;
 
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+/// Point the machine file at `path` (or back at its default), run `f`, then
+/// restore what was there.
+#[allow(dead_code)]
+pub fn with_machine_env<T>(path: Option<&Path>, f: impl FnOnce() -> T) -> T {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let saved = skillwright::config::replace_machine_config_override(path.map(Path::to_path_buf));
+    let result = f();
+    skillwright::config::replace_machine_config_override(saved);
+    result
+}
+
 #[allow(dead_code)]
 static GIT_LOCK: Mutex<()> = Mutex::new(());
 
