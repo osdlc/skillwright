@@ -589,8 +589,7 @@ fn naming<S: AsRef<str>>(profile: &HarnessProfile, bare_on: &[S]) -> SkillNaming
         return SkillNaming::Bare;
     }
     profile
-        .plugin
-        .as_ref()
+        .plugin_format()
         .map_or(SkillNaming::Bare, |f| f.naming)
 }
 

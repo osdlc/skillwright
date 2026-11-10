@@ -567,7 +567,7 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
         let component = profile.accepted_override_keys();
         let component: Vec<&str> = component.iter().map(String::as_str).collect();
         out.push_str(&format!("- Component: {}\n", list(&component)));
-        let Some(format) = profile.plugin.as_ref() else {
+        let Some(format) = profile.plugin_format() else {
             continue;
         };
         let mut plugin = component.clone();

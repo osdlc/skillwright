@@ -11,18 +11,25 @@
 //!
 //! # Two kinds of row
 //!
-//! Claude, Codex, Cursor and Pi carry a [`PluginFormat`]: they are the
+//! Claude, Codex, Cursor and Pi carry a [`PluginPolicy`]: they are the
 //! harnesses a marketplace is built for and a pack is published to. The other
 //! five — Amp, Antigravity, Copilot, OpenCode and the portable Agent Skills
 //! layout — are destinations a single note publishes to. Their rows hold only
 //! the names they answer to and the runtime they render through.
 //!
-//! # Checked, not generated
+//! # Facts from the knowledge file, policy in code
 //!
-//! The rows are written by hand and checked against `harness-reference/`'s
-//! facts by this module's tests, where a matching fact exists. Generating
-//! them would make a research note's wording a build input; checking them
-//! makes a drift between the two a failing test.
+//! A plugin row is a [`PluginPolicy`]: what this crate chooses (the packs
+//! folder, the dialect, Pi's prefixed naming, the override lists) and, for each
+//! fact (user skills folder, manifest and marketplace paths, plugin-root
+//! variable, naming rule), either [`Source::Knowledge`] or a
+//! [`Source::Constant`] with the reason. [`HarnessProfile::format`] resolves a
+//! row against the compiled harness knowledge file on first use (D-QXRN). This
+//! module's tests hold every knowledge-sourced fact to a moderate or stronger
+//! statement and to the value the row held before, so a corpus change that
+//! moves a fact is a visible test failure, not a silent change.
+
+use std::sync::{Mutex, OnceLock};
 
 use agent_adapt::RuntimeId;
 
@@ -33,7 +40,7 @@ use crate::hooks_file::PluginRootVar;
 const HOOKS_OBSERVED: &str = "2026-10-05";
 
 /// One harness: the names it answers to, the runtime it renders through and,
-/// for the four that have one, its plugin format.
+/// for the four that have one, its plugin policy.
 #[derive(Debug)]
 pub struct HarnessProfile {
     /// The canonical destination name. Every spelling folds onto it.
@@ -50,10 +57,75 @@ pub struct HarnessProfile {
     /// renders through `codex-cli` and is declared by the standards-only
     /// adapter, so the two can differ.
     pub declaration: RuntimeId,
-    /// The plugin format, for a harness a marketplace is built for.
-    pub plugin: Option<PluginFormat>,
+    /// The plugin policy, for a harness a marketplace is built for. The
+    /// facts it leaves to the knowledge file are read by [`Self::format`].
+    pub plugin: Option<PluginPolicy>,
     /// The harness's own `plugin` CLI, for one `skillwright harness` drives.
     pub install: Option<InstallCli>,
+}
+
+/// Where a profile value comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source<T> {
+    /// The compiled harness knowledge file, looked up at first use.
+    Knowledge,
+    /// A constant of the row: a policy, a fact the file does not yet carry in
+    /// a usable shape, or a value the file disagrees with. Each one says which.
+    Constant(T),
+}
+
+/// The plugin-root variable's row: which variable is a fact, the evidence note
+/// beside it is the row's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginRootPolicy {
+    /// The variable's name.
+    pub name: Source<&'static str>,
+    /// The page that documents it.
+    pub url: &'static str,
+    /// The day it was last checked.
+    pub observed_on: &'static str,
+    /// What the page adds.
+    pub note: Option<&'static str>,
+}
+
+/// A harness's plugin row as written in code: the policy, and for each fact
+/// whether the knowledge file or a constant gives it. [`HarnessProfile::format`]
+/// resolves it into a [`PluginFormat`] (D-QXRN).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginPolicy {
+    /// The project directory the projection puts a skill under. A choice
+    /// among the several a harness reads, and the knowledge file's
+    /// `skills/project-dirs` is weak or disputed for every row.
+    pub skills_dir: &'static str,
+    /// The folder under the home directory; `skills/user-dirs`.
+    pub user_skills_dir: Source<&'static str>,
+    /// The pack manifest; `plugins/manifest-fields`.
+    pub plugin_manifest: Source<&'static str>,
+    /// The marketplace manifest, `None` with no marketplace;
+    /// `plugins/marketplace-fields`.
+    pub marketplace_manifest: Source<Option<&'static str>>,
+    /// Where this harness's packs land. Policy.
+    pub packs: &'static str,
+    /// Which shape the manifests take.
+    pub dialect: PluginDialect,
+    /// How a rendered skill's body calls the launcher.
+    pub cli_invocation: CliInvocation,
+    /// The plugin-root variable; `None` when the pack carries no hooks file.
+    pub plugin_root: Option<PluginRootPolicy>,
+    /// How a published skill is named; `skills/plugin-namespace`.
+    pub naming: Source<SkillNaming>,
+    /// See [`PluginFormat::hooks_manifest_entry`].
+    pub hooks_manifest_entry: Option<&'static str>,
+    /// Whether the pack has a place for a command.
+    pub carries_commands: bool,
+    /// Whether the pack carries a hooks file.
+    pub carries_hooks: bool,
+    /// See [`PluginFormat::manifest_fields`].
+    pub manifest_fields: &'static [&'static str],
+    /// See [`PluginFormat::marketplace_fields`].
+    pub marketplace_fields: &'static [&'static str],
+    /// See [`PluginFormat::entry_fields`].
+    pub entry_fields: &'static [&'static str],
 }
 
 /// Where a harness reads a plugin from, and how its pack is shaped.
@@ -64,9 +136,9 @@ pub struct PluginFormat {
     pub skills_dir: &'static str,
     /// The folder under the home directory the harness loads a user's own
     /// skills from. `publish` writes there and `adopt` reads from there when
-    /// no destination or source is named. Recorded in harness-reference as
-    /// each harness's `skills/user-dirs` fact (Claude Code's in
-    /// `skills/live-reload`); where a harness reads several, the first.
+    /// no destination or source is named. Each row's `PluginPolicy::user_skills_dir`
+    /// says where its value comes from and which folder it keeps when the
+    /// harness reads several.
     pub user_skills_dir: &'static str,
     /// The pack manifest, relative to a pack's own directory, in this
     /// harness's dialect.
@@ -375,21 +447,22 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
     spellings: &["claude", "claude-code"],
     runtime: "claude-code",
     declaration: RuntimeId::ClaudeCode,
-    plugin: Some(PluginFormat {
+    plugin: Some(PluginPolicy {
         skills_dir: ".claude/skills",
-        user_skills_dir: ".claude/skills",
-        plugin_manifest: ".claude-plugin/plugin.json",
-        marketplace_manifest: Some(".claude-plugin/marketplace.json"),
+        // knowledge has no `skills/user-dirs` for Claude Code
+        user_skills_dir: Source::Constant(".claude/skills"),
+        plugin_manifest: Source::Knowledge,
+        marketplace_manifest: Source::Knowledge,
         packs: ".claude-plugin/packs",
         dialect: PluginDialect::Claude,
         cli_invocation: CliInvocation::PluginRootToken,
-        plugin_root_var: Some(PluginRootVar {
-            name: "CLAUDE_PLUGIN_ROOT",
+        plugin_root: Some(PluginRootPolicy {
+            name: Source::Knowledge,
             url: "https://code.claude.com/docs/en/plugins-reference",
             observed_on: "2026-09-26",
             note: None,
         }),
-        naming: SkillNaming::HostNamespaced,
+        naming: Source::Knowledge,
         hooks_manifest_entry: None,
         carries_commands: true,
         carries_hooks: true,
@@ -411,16 +484,18 @@ pub const CODEX: HarnessProfile = HarnessProfile {
     spellings: &["codex", "codex-cli"],
     runtime: "codex-cli",
     declaration: RuntimeId::CodexCli,
-    plugin: Some(PluginFormat {
+    plugin: Some(PluginPolicy {
         skills_dir: ".agents/skills",
-        user_skills_dir: ".agents/skills",
-        plugin_manifest: ".codex-plugin/plugin.json",
-        marketplace_manifest: Some(".agents/plugins/marketplace.json"),
+        user_skills_dir: Source::Knowledge,
+        // knowledge disagrees: plugins/manifest-fields names the Agent Plugins
+        // root `plugin.json`; `.codex-plugin/plugin.json` is the legacy path
+        plugin_manifest: Source::Constant(".codex-plugin/plugin.json"),
+        marketplace_manifest: Source::Knowledge,
         packs: ".agents/packs",
         dialect: PluginDialect::Codex,
         cli_invocation: CliInvocation::SkillRelativePath,
-        plugin_root_var: Some(PluginRootVar {
-            name: "PLUGIN_ROOT",
+        plugin_root: Some(PluginRootPolicy {
+            name: Source::Knowledge,
             url: "https://learn.chatgpt.com/docs/hooks",
             observed_on: HOOKS_OBSERVED,
             note: Some(
@@ -428,7 +503,7 @@ pub const CODEX: HarnessProfile = HarnessProfile {
                  the session's working directory",
             ),
         }),
-        naming: SkillNaming::HostNamespaced,
+        naming: Source::Knowledge,
         hooks_manifest_entry: None,
         carries_commands: false,
         carries_hooks: true,
@@ -450,16 +525,18 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
     spellings: &["cursor"],
     runtime: "cursor",
     declaration: RuntimeId::Cursor,
-    plugin: Some(PluginFormat {
+    plugin: Some(PluginPolicy {
         skills_dir: ".cursor/skills",
-        user_skills_dir: ".cursor/skills",
-        plugin_manifest: ".cursor-plugin/plugin.json",
-        marketplace_manifest: Some(".cursor-plugin/marketplace.json"),
+        // knowledge disagrees: skills/user-dirs lists `~/.agents/skills` first
+        // and `~/.cursor/skills` second; the row keeps the harness's own folder
+        user_skills_dir: Source::Constant(".cursor/skills"),
+        plugin_manifest: Source::Knowledge,
+        marketplace_manifest: Source::Knowledge,
         packs: ".cursor-plugin/packs",
         dialect: PluginDialect::Cursor,
         cli_invocation: CliInvocation::SkillRelativePath,
-        plugin_root_var: Some(PluginRootVar {
-            name: "CURSOR_PLUGIN_ROOT",
+        plugin_root: Some(PluginRootPolicy {
+            name: Source::Knowledge,
             url: "https://cursor.com/docs/reference/plugins",
             observed_on: HOOKS_OBSERVED,
             note: Some(
@@ -467,7 +544,7 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
                  server fields; not documented for hook commands",
             ),
         }),
-        naming: SkillNaming::Bare,
+        naming: Source::Knowledge,
         hooks_manifest_entry: Some("./hooks/hooks.json"),
         carries_commands: false,
         carries_hooks: true,
@@ -489,16 +566,19 @@ pub const PI: HarnessProfile = HarnessProfile {
     spellings: &["pi"],
     runtime: "pi",
     declaration: RuntimeId::Pi,
-    plugin: Some(PluginFormat {
+    plugin: Some(PluginPolicy {
         skills_dir: ".pi/skills",
-        user_skills_dir: ".pi/agent/skills",
-        plugin_manifest: "package.json",
-        marketplace_manifest: None,
+        user_skills_dir: Source::Knowledge,
+        plugin_manifest: Source::Knowledge,
+        marketplace_manifest: Source::Knowledge,
         packs: ".pi/packs",
         dialect: PluginDialect::Pi,
         cli_invocation: CliInvocation::SkillRelativePath,
-        plugin_root_var: None,
-        naming: SkillNaming::PluginPrefixed,
+        plugin_root: None,
+        // Policy: Pi has no plugin namespace (knowledge says bare), and the
+        // row prefixes the plugin so two plugins' skills cannot collide.
+        // D-WNTQ lets a marketplace choose `bare`.
+        naming: Source::Constant(SkillNaming::PluginPrefixed),
         hooks_manifest_entry: None,
         carries_commands: false,
         // Pi takes lifecycle events as TypeScript extensions and has no
@@ -576,6 +656,150 @@ pub const PORTABLE: HarnessProfile = HarnessProfile {
     install: None,
 };
 
+/// The harness's slug in the knowledge file.
+pub(crate) fn knowledge_slug(name: &str) -> &str {
+    match name {
+        "claude" => "claude-code",
+        "copilot" => "copilot-cli",
+        "portable" => "agent-skills",
+        other => other,
+    }
+}
+
+/// The facts a profile takes from the knowledge file, one function each. Each
+/// returns the value in the shape the profile holds it and the strength of the
+/// statement behind it, or `None` when the file has no value in that shape.
+pub(crate) mod facts {
+    use super::{SkillNaming, knowledge_slug};
+    use crate::harness::knowledge::{Found, Query, Strength, lookup};
+
+    fn found(name: &str, subject: &str) -> Option<Found<'static>> {
+        lookup(knowledge_slug(name), subject, Query::default())
+            .unwrap_or_else(|e| panic!("{name} {subject}: {e}"))
+    }
+
+    /// `skills/user-dirs`: the first directory, less its `~/`.
+    pub fn user_skills_dir(name: &str) -> Option<(&'static str, Strength)> {
+        let f = found(name, "skills/user-dirs")?;
+        let dir = f.value.get("dirs")?.get(0)?.as_str()?;
+        Some((dir.strip_prefix("~/")?, f.strength))
+    }
+
+    /// `plugins/manifest-fields`: the manifest file.
+    pub fn plugin_manifest(name: &str) -> Option<(&'static str, Strength)> {
+        let f = found(name, "plugins/manifest-fields")?;
+        Some((f.value.get("file")?.as_str()?, f.strength))
+    }
+
+    /// `plugins/marketplace-fields`: the catalog file, `Some(None)` where the
+    /// harness has none.
+    pub fn marketplace_manifest(name: &str) -> Option<(Option<&'static str>, Strength)> {
+        let f = found(name, "plugins/marketplace-fields")?;
+        if f.value.get("applicable").and_then(|a| a.as_bool()) == Some(false) {
+            return Some((None, f.strength));
+        }
+        Some((Some(f.value.get("file")?.as_str()?), f.strength))
+    }
+
+    /// `skills/plugin-root-variable`: the variable's name, less `${` and `}` where written.
+    pub fn plugin_root_var(name: &str) -> Option<(&'static str, Strength)> {
+        let f = found(name, "skills/plugin-root-variable")?;
+        let var = match f.value.get("variable") {
+            Some(v) => v.as_str()?,
+            None => f.value.get("variables")?.get(0)?.as_str()?,
+        };
+        let bare = var.strip_prefix("${").and_then(|v| v.strip_suffix('}'));
+        Some((bare.unwrap_or(var), f.strength))
+    }
+
+    /// `skills/plugin-namespace`: a runtime name with the plugin in front
+    /// (`acme-tools:review`) is host-namespaced, one without is bare.
+    pub fn naming(name: &str) -> Option<(SkillNaming, Strength)> {
+        let f = found(name, "skills/plugin-namespace")?;
+        let runtime = f.value.get("runtime_name")?.as_str()?;
+        let naming = if runtime.contains(':') {
+            SkillNaming::HostNamespaced
+        } else {
+            SkillNaming::Bare
+        };
+        Some((naming, f.strength))
+    }
+}
+
+/// A policy's value: the constant, or the knowledge file's.
+fn sourced<T>(
+    source: Source<T>,
+    name: &str,
+    subject: &str,
+    from: impl FnOnce(&str) -> Option<(T, crate::harness::knowledge::Strength)>,
+) -> T {
+    match source {
+        Source::Constant(value) => value,
+        Source::Knowledge => {
+            from(name)
+                .unwrap_or_else(|| {
+                    panic!("the harness knowledge has no usable {subject} for {name}")
+                })
+                .0
+        }
+    }
+}
+
+fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
+    let policy = profile
+        .plugin
+        .as_ref()
+        .expect("a format is resolved from a plugin policy");
+    let name = profile.name;
+    PluginFormat {
+        skills_dir: policy.skills_dir,
+        user_skills_dir: sourced(
+            policy.user_skills_dir,
+            name,
+            "skills/user-dirs",
+            facts::user_skills_dir,
+        ),
+        plugin_manifest: sourced(
+            policy.plugin_manifest,
+            name,
+            "plugins/manifest-fields",
+            facts::plugin_manifest,
+        ),
+        marketplace_manifest: sourced(
+            policy.marketplace_manifest,
+            name,
+            "plugins/marketplace-fields",
+            facts::marketplace_manifest,
+        ),
+        packs: policy.packs,
+        dialect: policy.dialect,
+        cli_invocation: policy.cli_invocation,
+        plugin_root_var: policy.plugin_root.as_ref().map(|root| PluginRootVar {
+            name: sourced(
+                root.name,
+                name,
+                "skills/plugin-root-variable",
+                facts::plugin_root_var,
+            ),
+            url: root.url,
+            observed_on: root.observed_on,
+            note: root.note,
+        }),
+        naming: sourced(
+            policy.naming,
+            name,
+            "skills/plugin-namespace",
+            facts::naming,
+        ),
+        hooks_manifest_entry: policy.hooks_manifest_entry,
+        carries_commands: policy.carries_commands,
+        carries_hooks: policy.carries_hooks,
+        manifest_fields: policy.manifest_fields,
+        marketplace_fields: policy.marketplace_fields,
+        entry_fields: policy.entry_fields,
+    }
+}
+
 /// Every harness, the four with a plugin format first and in report order
 /// (`claude`, `codex`, `cursor`, `pi`), then the spelling-only rows
 /// alphabetically.
@@ -605,16 +829,57 @@ impl HarnessProfile {
         }
     }
 
-    /// The plugin format of a harness that has one.
+    /// The plugin format of a harness that has one: its row's policy with the
+    /// facts the knowledge file gives, resolved once on first use.
     ///
     /// # Panics
     ///
     /// On a spelling-only row. Every caller holds a row from
-    /// [`with_plugin_format`], which yields no other kind.
-    pub fn format(&self) -> &PluginFormat {
-        self.plugin
-            .as_ref()
+    /// [`with_plugin_format`], which yields no other kind. Also if the
+    /// embedded knowledge lacks a fact the row takes from it. The canonical
+    /// rows cannot, and that guarantee is the
+    /// `the_resolved_formats_equal_the_constants_the_rows_held` test; a custom
+    /// row that takes a fact the file lacks panics here.
+    pub fn format(&self) -> &'static PluginFormat {
+        self.plugin_format()
             .expect("only a harness with a plugin format is asked for one")
+    }
+
+    /// [`Self::format`], or `None` for a spelling-only row.
+    ///
+    /// Resolved from this row's own policy. A row equal to a canonical one
+    /// shares its cached format; a modified or custom row is resolved once per
+    /// distinct name and policy and cached, which is bounded by how many such
+    /// rows a program makes.
+    pub fn plugin_format(&self) -> Option<&'static PluginFormat> {
+        static FORMATS: OnceLock<[(HarnessProfile, PluginFormat); 4]> = OnceLock::new();
+        let policy = self.plugin.as_ref()?;
+        let canonical = FORMATS.get_or_init(|| {
+            [CLAUDE, CODEX, CURSOR, PI].map(|profile| {
+                let format = resolve_format(&profile);
+                (profile, format)
+            })
+        });
+        if let Some((_, format)) = canonical
+            .iter()
+            .find(|(row, _)| row.name == self.name && row.plugin.as_ref() == Some(policy))
+        {
+            return Some(format);
+        }
+        static CUSTOM: Mutex<Vec<(&'static str, PluginPolicy, &'static PluginFormat)>> =
+            Mutex::new(Vec::new());
+        let mut custom = CUSTOM
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((_, _, format)) = custom
+            .iter()
+            .find(|(name, row, _)| *name == self.name && row == policy)
+        {
+            return Some(format);
+        }
+        let format: &'static PluginFormat = Box::leak(Box::new(resolve_format(self)));
+        custom.push((self.name, policy.clone(), format));
+        Some(format)
     }
 
     /// The paths this harness owns in a marketplace directory: its packs
@@ -700,7 +965,6 @@ pub fn with_plugin_format() -> impl Iterator<Item = &'static HarnessProfile> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn the_agent_only_keys_are_keys_the_harness_declares() {
@@ -778,61 +1042,154 @@ mod tests {
         }
     }
 
-    // --- Checked against harness-reference ----------------------------------
+    // --- Checked against the harness knowledge file -------------------------
 
-    /// A fact file's `observations:` values, as written. Only the YAML
-    /// frontmatter is read; the prose below it restates the same values.
-    fn observed(harness: &str, subject: &str) -> Option<String> {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../harness-reference/corpora/alpha/facts")
-            .join(harness)
-            .join(format!("{subject}.md"));
-        let text = std::fs::read_to_string(path).ok()?;
-        let frontmatter = text.split("\n---").next()?;
-        Some(
-            frontmatter
-                .lines()
-                .filter(|line| line.trim_start().starts_with("- value:"))
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
+    use crate::harness::knowledge::{Query, Strength, lookup};
+
+    /// The value `profile` has for `subject` in the knowledge file, weak and
+    /// disputed ones included.
+    fn known(profile: &HarnessProfile, subject: &str) -> Option<serde_json::Value> {
+        assert!(
+            crate::harness::knowledge::embedded()
+                .subjects
+                .contains_key(subject),
+            "{subject} is not in data/embedded-slice.json"
+        );
+        let query = Query {
+            accept_weak: true,
+            accept_disputed: true,
+            ..Query::default()
+        };
+        lookup(knowledge_slug(profile.name), subject, query)
+            .unwrap()
+            .map(|found| found.value.clone())
     }
 
-    /// The fact directory harness-reference keeps each row under.
-    fn reference_name(profile: &HarnessProfile) -> &'static str {
-        match profile.name {
-            "claude" => "claude-code",
-            "copilot" => "copilot-cli",
-            "portable" => "agent-skills",
-            other => other,
+    /// What each plugin row held as constants before its facts came from the
+    /// knowledge file: user skills dir, pack manifest, marketplace manifest,
+    /// plugin-root variable and naming.
+    type Held = (
+        &'static str,
+        &'static str,
+        Option<&'static str>,
+        Option<&'static str>,
+        SkillNaming,
+    );
+    fn held(name: &str) -> Held {
+        match name {
+            "claude" => (
+                ".claude/skills",
+                ".claude-plugin/plugin.json",
+                Some(".claude-plugin/marketplace.json"),
+                Some("CLAUDE_PLUGIN_ROOT"),
+                SkillNaming::HostNamespaced,
+            ),
+            "codex" => (
+                ".agents/skills",
+                ".codex-plugin/plugin.json",
+                Some(".agents/plugins/marketplace.json"),
+                Some("PLUGIN_ROOT"),
+                SkillNaming::HostNamespaced,
+            ),
+            "cursor" => (
+                ".cursor/skills",
+                ".cursor-plugin/plugin.json",
+                Some(".cursor-plugin/marketplace.json"),
+                Some("CURSOR_PLUGIN_ROOT"),
+                SkillNaming::Bare,
+            ),
+            "pi" => (
+                ".pi/agent/skills",
+                "package.json",
+                None,
+                None,
+                SkillNaming::PluginPrefixed,
+            ),
+            other => panic!("{other} has no plugin row"),
+        }
+    }
+
+    #[test]
+    fn the_resolved_formats_equal_the_constants_the_rows_held() {
+        for profile in with_plugin_format() {
+            let format = profile.format();
+            let (user, manifest, market, root, naming) = held(profile.name);
+            assert_eq!(format.user_skills_dir, user, "{}", profile.name);
+            assert_eq!(format.plugin_manifest, manifest, "{}", profile.name);
+            assert_eq!(format.marketplace_manifest, market, "{}", profile.name);
+            assert_eq!(
+                format.plugin_root_var.map(|var| var.name),
+                root,
+                "{}",
+                profile.name
+            );
+            assert_eq!(format.naming, naming, "{}", profile.name);
+        }
+    }
+
+    #[test]
+    fn every_lookup_a_profile_makes_resolves_at_moderate_or_better_to_the_held_value() {
+        // A guard: `Query::default()` already drops weak values, so this fails
+        // only if that default or the strength order changes.
+        let enough = |strength: Strength, what: &str| {
+            assert!(strength >= Strength::Moderate, "{what} is {strength:?}");
+        };
+        for profile in with_plugin_format() {
+            let name = profile.name;
+            let policy = profile.plugin.as_ref().unwrap();
+            let (user, manifest, market, root, naming) = held(name);
+            if matches!(policy.user_skills_dir, Source::Knowledge) {
+                let (value, strength) = facts::user_skills_dir(name)
+                    .unwrap_or_else(|| panic!("{name}: no skills/user-dirs"));
+                enough(strength, &format!("{name} skills/user-dirs"));
+                assert_eq!(value, user, "{name}");
+            }
+            if matches!(policy.plugin_manifest, Source::Knowledge) {
+                let (value, strength) = facts::plugin_manifest(name)
+                    .unwrap_or_else(|| panic!("{name}: no plugins/manifest-fields"));
+                enough(strength, &format!("{name} plugins/manifest-fields"));
+                assert_eq!(value, manifest, "{name}");
+            }
+            if matches!(policy.marketplace_manifest, Source::Knowledge) {
+                let (value, strength) = facts::marketplace_manifest(name)
+                    .unwrap_or_else(|| panic!("{name}: no plugins/marketplace-fields"));
+                enough(strength, &format!("{name} plugins/marketplace-fields"));
+                assert_eq!(value, market, "{name}");
+            }
+            if let Some(PluginRootPolicy {
+                name: Source::Knowledge,
+                ..
+            }) = &policy.plugin_root
+            {
+                let (value, strength) = facts::plugin_root_var(name)
+                    .unwrap_or_else(|| panic!("{name}: no skills/plugin-root-variable"));
+                enough(strength, &format!("{name} skills/plugin-root-variable"));
+                assert_eq!(Some(value), root, "{name}");
+            }
+            if matches!(policy.naming, Source::Knowledge) {
+                let (value, strength) = facts::naming(name)
+                    .unwrap_or_else(|| panic!("{name}: no skills/plugin-namespace"));
+                enough(strength, &format!("{name} skills/plugin-namespace"));
+                assert_eq!(value, naming, "{name}");
+            }
         }
     }
 
     #[test]
     fn every_skills_dir_is_one_the_harness_loads_skills_from() {
         for profile in with_plugin_format() {
-            let Some(values) = observed(reference_name(profile), "skills/project-dirs") else {
-                continue;
-            };
+            let dirs = known(profile, "skills/project-dirs")
+                .unwrap_or_else(|| panic!("{}: no skills/project-dirs", profile.name));
             let dir = profile.format().skills_dir;
+            let listed = dirs["dirs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|d| d.as_str())
+                .any(|d| d.strip_suffix('/').unwrap_or(d).ends_with(dir));
             assert!(
-                values.contains(dir),
-                "{}: `{dir}` is not among the observed project skill dirs:\n{values}",
-                profile.name
-            );
-        }
-    }
-
-    #[test]
-    fn every_plugin_manifest_is_the_file_the_harness_reads() {
-        for profile in with_plugin_format() {
-            let Some(values) = observed(reference_name(profile), "plugins/manifest") else {
-                continue;
-            };
-            let manifest = profile.format().plugin_manifest;
-            assert!(
-                values.contains(manifest),
-                "{}: `{manifest}` is not an observed plugin manifest:\n{values}",
+                listed,
+                "{}: `{dir}` is not among the project skill dirs:\n{dirs}",
                 profile.name
             );
         }
@@ -841,14 +1198,13 @@ mod tests {
     #[test]
     fn a_marketplace_manifest_is_written_only_where_the_harness_has_one() {
         for profile in with_plugin_format() {
-            let Some(values) = observed(reference_name(profile), "plugins/marketplace") else {
+            let Some(value) = known(profile, "plugins/marketplace") else {
                 continue;
             };
-            let supported = !values.contains("supported: false");
             assert_eq!(
                 profile.format().marketplace_manifest.is_some(),
-                supported,
-                "{}: the row and harness-reference disagree on whether it has a marketplace",
+                value["supported"] == true,
+                "{}: the row and the knowledge file disagree on whether it has a marketplace",
                 profile.name
             );
         }
@@ -856,8 +1212,50 @@ mod tests {
 
     #[test]
     fn the_facts_the_test_reads_are_there() {
-        // A moved bundle would turn every check above into a silent skip.
-        assert!(observed("claude-code", "plugins/manifest").is_some());
-        assert!(observed("pi", "skills/project-dirs").is_some());
+        // A moved or emptied file would turn every check above into a silent skip.
+        let claude = profile_named("claude").unwrap();
+        let pi = profile_named("pi").unwrap();
+        assert!(known(claude, "plugins/manifest-fields").is_some());
+        assert!(known(pi, "skills/project-dirs").is_some());
+    }
+}
+
+#[cfg(test)]
+mod custom_rows {
+    use super::*;
+
+    #[test]
+    fn a_modified_row_resolves_from_its_own_policy() {
+        let mut row = CLAUDE;
+        row.plugin.as_mut().unwrap().packs = ".other/packs";
+        row.plugin.as_mut().unwrap().plugin_manifest = Source::Constant("custom/plugin.json");
+        let format = row.plugin_format().unwrap();
+        assert_eq!(format.plugin_manifest, "custom/plugin.json");
+        assert_eq!(format.packs, ".other/packs");
+        assert_eq!(
+            CLAUDE.format().plugin_manifest,
+            ".claude-plugin/plugin.json"
+        );
+    }
+
+    #[test]
+    fn a_custom_row_of_constants_needs_no_knowledge() {
+        let mut row = PI;
+        row.name = "mine";
+        let policy = row.plugin.as_mut().unwrap();
+        policy.user_skills_dir = Source::Constant(".mine/skills");
+        policy.plugin_manifest = Source::Constant("mine.json");
+        policy.marketplace_manifest = Source::Constant(None);
+        assert_eq!(row.format().user_skills_dir, ".mine/skills");
+    }
+
+    #[test]
+    fn a_custom_row_is_resolved_once() {
+        let mut row = CLAUDE;
+        row.plugin.as_mut().unwrap().packs = ".once/packs";
+        let first = row.plugin_format().unwrap();
+        for _ in 0..100 {
+            assert!(std::ptr::eq(first, row.plugin_format().unwrap()));
+        }
     }
 }
