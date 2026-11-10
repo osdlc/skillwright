@@ -1,12 +1,178 @@
 {
   "schema": 1,
   "pr": 119,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "2a172915b893b49bcb37b10141c251d544053d53",
+  "base": "8a932fac79cdb31b6b5c7b242273274803071e2c",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-q7m2zv",
     "at": "2026-11-10T03:56:00.117Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "profile.rs tests read the deleted alpha facts: one fails, three silently skip; Rust CI does not run on this PR",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "link.rs, pi.rs and tests/harness.rs cite deleted alpha facts/ paths, one in a user-facing error",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "harness-reference/README.md",
+      "line": 15,
+      "title": "probes/ is not fully held as methods; two probes have no method and probes/ is now unchecked alpha format",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "docs/handoff/markdown-db-and-harness-reference.md",
+      "line": 51,
+      "title": "Claims profile.rs tests check facts from the corpus; they read deleted alpha paths",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "docs/planning/harness-knowledge.md",
+      "line": 27,
+      "title": "Phase 7 marked done although its first step (move the tests) is not done",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "harness-reference/corpus/documents/documents.schema.md",
+      "line": 67,
+      "title": "Nothing checks that notes/ files cited by URL exist, or their links; the alpha validator did",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "harness-reference/corpus/statements/statements.schema.md",
+      "line": 106,
+      "title": "imported_from description no longer says what the id refers to",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "docs/handoff/markdown-db-and-harness-reference.md",
+      "line": 63,
+      "title": "Next item 1 renamed to work that already shipped",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "docs/handoff/markdown-db-and-harness-reference.md",
+      "line": 33,
+      "title": "Edited line still names the old markdown-db binary",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": "harness-reference/src/corpus/corpus.ts",
+      "line": 3,
+      "title": "Module comment lists consumers and misses capture",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "canonicalJson is dead after the importer deletion",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-12",
+      "round": 1,
+      "path": "harness-reference/README.md",
+      "line": 36,
+      "title": "test comment lists suites and misses lookup",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-13",
+      "round": 1,
+      "path": "docs/planning/harness-knowledge.md",
+      "line": 243,
+      "title": "Phase 2 cell reads as a broken sentence",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-14",
+      "round": 1,
+      "path": "docs/handoff/markdown-db-and-harness-reference.md",
+      "line": 37,
+      "title": "Record counts in a doc marked historical will drift",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-15",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "corpus/ departs from the corpus-schema placement guidance corpora/<name>/",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
