@@ -6,14 +6,16 @@ proposition:
     supported: false
     note: the instructions option lists extra instruction files, and an agent config can carry a prompt
 direction: supports
-strength: moderate
+strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 OpenCode Instructions option docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Instructions%20option%20docs.md)"
       - "[2026-11-09 OpenCode Agent prompt docs](../../study-results/OpenCode/2026-11-09%20OpenCode%20Agent%20prompt%20docs.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: config docs.
+    strengthOfEvidenceProvided: weak
+    description: >-
+      The config docs list the instructions option and an agent prompt, and no system prompt flag.
+      Absence in docs is weak.
 contributions:
   - contributor:
       name: harness-reference research

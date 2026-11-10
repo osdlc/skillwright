@@ -11,7 +11,7 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Cursor help print](../../study-results/Cursor/2026-11-09%20Cursor%20help%20print.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
+    strengthOfEvidenceProvided: moderate
     description: The --print help lists no limit option; the full flag list was read.
 contributions:
   - contributor:

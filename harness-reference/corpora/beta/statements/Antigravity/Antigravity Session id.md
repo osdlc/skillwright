@@ -7,13 +7,15 @@ proposition:
     result_field: conversation_id
     note: The flag tables list no option that assigns an id. The id is reported in the json envelope and is passed back with --conversation.
 direction: supports
-strength: moderate
+strength: weak
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 headless conversation id](../../study-results/Antigravity/2026-11-09%20headless%20conversation%20id.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09.
+    strengthOfEvidenceProvided: weak
+    description: >-
+      The docs report conversation_id in the json envelope; their flag tables list no option that
+      assigns an id. Absence in docs is weak.
 reportedIn:
   - "[Antigravity docs CLI headless mode](../../documents/antigravity.google/Antigravity%20docs%20CLI%20headless%20mode.md)"
 contributions:

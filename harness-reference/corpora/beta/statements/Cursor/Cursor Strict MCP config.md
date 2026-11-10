@@ -11,12 +11,12 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Cursor help mcp](../../study-results/Cursor/2026-11-09%20Cursor%20help%20mcp.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
+    strengthOfEvidenceProvided: moderate
     description: "`agent mcp` only logs in, lists, enables and disables servers."
   - hasEvidenceItems:
       - "[2026-11-09 Cursor help approve-mcps](../../study-results/Cursor/2026-11-09%20Cursor%20help%20approve-mcps.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
+    strengthOfEvidenceProvided: moderate
     description: The only MCP flag on the root command approves servers.
 contributions:
   - contributor:

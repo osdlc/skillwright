@@ -11,7 +11,7 @@ hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-11-09 Pi help print mode](../../study-results/Pi/2026-11-09%20Pi%20help%20print%20mode.md)"
     directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
+    strengthOfEvidenceProvided: moderate
     description: The full flag list has none.
 contributions:
   - contributor:
