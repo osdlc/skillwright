@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "pr": 99,
-  "head": "a5632f8ae854f6ed50742cfe2010f09227d61ee3",
+  "head": "55c0992e4188c97cd5caa32013dd865dc2d13560",
   "base": "8a932fac79cdb31b6b5c7b242273274803071e2c",
-  "round": 1,
+  "round": 2,
   "claim": {
     "owner": "Mac.local:claude-m4t8zp",
     "at": "2026-11-10T04:46:52.157Z"
@@ -148,6 +148,94 @@
       "line": 852,
       "title": "PluginFormat::user_skills_dir doc contradicted by the claude and cursor rows",
       "comment": "https://github.com/osdlc/skillwright/pull/99#pullrequestreview-5836753210",
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-1",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/harness/knowledge.rs",
+      "line": 213,
+      "title": "Public lookup returns None for any harness or subject outside the embedded slice",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-2",
+      "round": 2,
+      "path": "harness-reference/src/compile/compile.ts",
+      "line": 199,
+      "title": "--slice without --no-schema writes a data file that fails the schema written beside it",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-3",
+      "round": 2,
+      "path": "harness-reference/src/compile/compile.ts",
+      "line": 111,
+      "title": "sliceKnowledge has no test; the staleness test runs it on both sides",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-4",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 140,
+      "title": "user_skills_dir doc still says 'the first' (Cursor keeps the second) and now pins a row roster",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-5",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/harness/knowledge.rs",
+      "line": 837,
+      "title": "Subject scan splits profile.rs on every quote, so one unpaired quote in a comment silently skips later subjects",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-6",
+      "round": 2,
+      "path": "harness-reference/src/compile/compile.ts",
+      "line": 130,
+      "title": "writeKnowledge takes two positional booleans and its doc omits compact",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-7",
+      "round": 2,
+      "path": "packages/rust/tradecraft-core/src/harness/knowledge.rs",
+      "line": 826,
+      "title": "Slice test sorts the already-sorted BTreeMap keys but not the slice list",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r2-8",
+      "round": 2,
+      "path": null,
+      "line": null,
+      "title": "Plan and README still describe the embedded copy as the full file",
+      "comment": null,
       "status": "open",
       "reason": null,
       "fixedIn": null
