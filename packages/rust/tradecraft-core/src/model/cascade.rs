@@ -93,7 +93,7 @@ impl Cascade {
             // A marketplace describes itself where a skill describes itself.
             take_description(&mut config.description, note);
             config.identity.overlay(&note.identity);
-            // `targets` sits outside the identity: every kind reads it.
+            // `targets` is not identity data: see `keys::identity_keys`.
             take(&mut config.targets, note.targets.clone());
             merge_blocks(&mut config.blocks, &note.blocks);
         }
@@ -104,8 +104,8 @@ impl Cascade {
             config.name = market.map(str::to_owned);
         }
         // `version` is not inherited: a marketplace folder's version is its
-        // own note's, never the root file's above it. So the overlay above is
-        // not enough here, and this copy stays.
+        // own note's, never the root file's above it, which the overlay above
+        // would keep.
         if market.is_some_and(|m| marketplaces_in(containers).contains(m)) {
             config.identity.version = note.and_then(|n| n.identity.version.clone());
         }

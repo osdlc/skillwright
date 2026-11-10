@@ -2806,8 +2806,8 @@ fn plugin_manifests(vfs: &dyn Vfs, plugin: &str) -> [(&'static str, serde_json::
     ]
 }
 
-/// `tools` is not the marketplace's own plugin, which takes the marketplace's
-/// `version`, so it shows every default.
+/// `tools` shows every default because it is not the marketplace's own plugin.
+/// Only that plugin takes the marketplace's `version`.
 #[test]
 fn a_plugin_takes_exactly_the_inheritable_fields_from_its_marketplace() {
     // `vault` gives the note `owner: acme`.

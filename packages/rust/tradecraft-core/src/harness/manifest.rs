@@ -503,8 +503,8 @@ pub(crate) fn plugin_identity(config: &MarketplaceConfig, plugin: &str) -> Conta
 }
 
 /// `plugin`'s `targets`: its own, else the marketplace's where the key table
-/// says a plugin inherits them. `targets` sits outside the identity, because
-/// every kind reads it.
+/// says a plugin inherits them. It is not part of [`plugin_identity`]: see
+/// [`crate::keys::identity_keys`].
 pub(crate) fn plugin_targets(config: &MarketplaceConfig, plugin: &str) -> Option<Vec<String>> {
     overrides_for(config, plugin)
         .and_then(|overrides| overrides.targets.clone())
