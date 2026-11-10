@@ -766,10 +766,10 @@ mod tests {
         }
     }
 
-    /// `harness-reference/src/beta/version-cases.json`, which the TypeScript tests read too.
+    /// `harness-reference/src/corpus/version-cases.json`, which the TypeScript tests read too.
     fn shared_cases() -> Value {
         serde_json::from_str(include_str!(
-            "../../../../../harness-reference/src/beta/version-cases.json"
+            "../../../../../harness-reference/src/corpus/version-cases.json"
         ))
         .unwrap()
     }

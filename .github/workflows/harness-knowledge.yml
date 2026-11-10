@@ -1,5 +1,5 @@
 # Publishes harness-knowledge.json, the file tools look harness values up in, as assets of a
-# GitHub release. A push to main that changes harness-reference/ compiles the beta corpus at that
+# GitHub release. A push to main that changes harness-reference/ compiles the corpus at that
 # commit and releases the result under `harness-knowledge-<YYYYMMDD>-<shortsha>`, so every
 # basis permalink in the file points at the commit the tag names.
 #
@@ -61,7 +61,7 @@ jobs:
           else
             gh release create "$tag" --draft --latest=false --target "$GITHUB_SHA" \
               --title "Harness knowledge $tag" \
-              --notes "Compiled from harness-reference/corpora/beta at $GITHUB_SHA."
+              --notes "Compiled from harness-reference/corpus at $GITHUB_SHA."
           fi
           gh release upload "$tag" "${files[@]}" --clobber
           gh release edit "$tag" --draft=false --latest=false

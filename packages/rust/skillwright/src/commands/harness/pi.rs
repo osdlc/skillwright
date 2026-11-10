@@ -4,7 +4,7 @@
 //! <path>` loads a local package in place, without copying it; the install is
 //! recorded in the `packages` list of `~/.pi/agent/settings.json`, or of the
 //! project's `.pi/settings.json` with `-l` (harness-reference
-//! beta statements `Pi Plugin install` and `Pi Plugin install location`). So:
+//! statements `Pi Plugin install` and `Pi Plugin install location`). So:
 //!
 //! - install runs `pi install <root>/.pi/packs/<plugin>` for each wanted pack
 //!   the settings file does not list yet;

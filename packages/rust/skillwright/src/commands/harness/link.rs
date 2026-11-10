@@ -8,8 +8,8 @@
 //! folder or another link already is.
 //!
 //! Only Claude Code and Codex are linked. harness-reference's
-//! beta statements `Claude Code Skill discovery walk` and `Codex CLI Skill
-//! discovery walk` (under `corpora/beta/statements/<Harness>/`) record that
+//! statements `Claude Code Skill discovery walk` and `Codex CLI Skill
+//! discovery walk` (under `corpus/statements/<Harness>/`) record that
 //! those two follow a symlinked skill folder; for Cursor and Pi it is an open
 //! question, which `probes/skill-symlink` would settle.
 //!
@@ -45,7 +45,7 @@ fn user_skills(harness: &str, home: &Path) -> Result<PathBuf, String> {
             "harness link supports claude and codex only. harness-reference does not record \
              whether {other} follows a symlinked skill folder (an open question in \
              the `{other}` statement \"Skill discovery walk\" in \
-             harness-reference/corpora/beta/statements; probes/skill-symlink would settle it)"
+             harness-reference/corpus/statements; probes/skill-symlink would settle it)"
         )),
     }
 }
@@ -55,7 +55,7 @@ fn shared_folder_warning(harness: &str) -> Option<&'static str> {
     (harness == "codex").then_some(
         "~/.agents/skills is also read by Cursor and Pi (harness-reference \
          statements `Cursor User skill directories` and `Pi User skill directories` under \
-         corpora/beta/statements), so they load these \
+         corpus/statements), so they load these \
          Codex builds too",
     )
 }
