@@ -14,13 +14,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - A bundle rename checks, before any write and in a preview too, that the entry note can take its new name inside its folder. It refuses when the folder already holds a file or folder with that exact name, and, when writing, when the folder is read-only. A marketplace rename refuses when the marketplace folder already holds a file or folder with the temporary name the move gives its entry, such as `marketplaces/m1/m2.md`.
+- A skipped row's reason is the token alone, such as `skipped · unreadable` or `skipped · drifted`. It read `skipped · skipped (unreadable)`. The `--json` row's `reason` changes the same way, from `skipped (drifted)` to `drifted`, for every authoring verb.
 
 ### Fixed
 
 - `rename` walks the vault once. It walked it three times, and read every note under a dot-named folder such as `.worktrees` only to drop its links. Such a note is now listed, so links still resolve against it, but not read. ([#49](https://github.com/osdlc/skillwright/issues/49))
 - `rename` reports a note it could list but not read as `skipped · unreadable`, as it does a folder it could not list. The note's links stay as written. It was passed over in silence. A note under a dot-named folder gets no row. ([#45](https://github.com/osdlc/skillwright/issues/45))
 - A bundle rename whose entry note could not take its new name no longer rewrites links to that name and then stops. It is refused before anything is written (see Changed). When the entry rename still fails after the folder moved, the message says where the entry note is, the name to give it, and that the relinked notes already point there. A marketplace rename leaves out that advice, since the entry already has its own name back. ([#87](https://github.com/osdlc/skillwright/issues/87))
-- A skipped row's reason is the token alone, such as `skipped · unreadable`. It read `skipped · skipped (unreadable)`, and the `--json` row's `reason` was `skipped (unreadable)`.
 
 ## [0.11.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.11.0) - 2026-11-10
 

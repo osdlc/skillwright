@@ -10,10 +10,11 @@
 //! may ship one and a link may name one. They skip `.DS_Store` (Finder drops
 //! it everywhere and it is never content) and `.git`, and never enter a
 //! folder named in `prune`. Entries come in name order within each folder,
-//! depth first, so everything keyed off a walk is the same on every host. A
-//! folder that cannot be listed, or a file that cannot be statted, fails the
-//! walk: an unreadable corner of a skills source must not under-publish
-//! silently.
+//! depth first, so everything keyed off a walk is the same on every host.
+//! Each walk takes an [`Errors`] policy from its caller. The walks that
+//! propagate errors fail on a folder that cannot be listed or a file that
+//! cannot be statted, so an unreadable corner of a skills source never
+//! under-publishes silently. The walks that skip errors pass over it.
 //!
 //! A symlinked folder is never entered. Whether a symlink is listed or
 //! refused is the caller's choice.

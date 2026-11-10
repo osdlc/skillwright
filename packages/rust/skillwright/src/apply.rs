@@ -556,6 +556,7 @@ fn unlisted_refusal(folders: &[String], path: &str, link: &str) -> String {
     let (named, it, them) = match folders {
         [one] => (one.clone(), "it", one.as_str()),
         [rest @ .., last] => (format!("{} and {last}", rest.join(", ")), "them", "them"),
+        // The caller passes at least one folder.
         [] => (String::new(), "it", "it"),
     };
     format!(
@@ -958,9 +959,10 @@ fn execute_move(
         // rewritten, and only the entry file's own rename failed. The entry
         // kept its old leaf name inside the new directory; no row names that
         // path, so the refusal does. `check_entry_rename` refuses the known
-        // causes first, so only a change between the plan and the rename gets
-        // here. `execute` uses `std::fs`, so no test reaches this branch; the
-        // unit tests of `half_landed` and `OwnNames::error` cover its message.
+        // causes first, so this is reached only by a change after the plan or
+        // by a failure those checks cannot see, such as an ACL. `execute`
+        // uses `std::fs`, so no test reaches this branch; the unit tests of
+        // `half_landed` and `OwnNames::error` cover its message.
         Some(conflict) => Err(ApplyError::partial(
             outcome.clone(),
             ApplyError::Refused(half_landed(&conflict, &landed(from, to), to)),
