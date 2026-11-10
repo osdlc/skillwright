@@ -1272,12 +1272,18 @@ fn check_out_paths(
     let mut cmd = literal_git(repo);
     // A private index, so the repository's own is never read or written.
     cmd.env("GIT_INDEX_FILE", index.to_string_lossy())
-        // LFS files stay pointers: nothing is fetched.
+        // LFS files stay pointers.
         .env("GIT_LFS_SKIP_SMUDGE", "1")
         .args(&[
             "-c",
             // Runs none of the repository's hooks.
             "core.hooksPath=/dev/null",
+            "-c",
+            // `core.hooksPath` does not cover an fsmonitor command.
+            "core.fsmonitor=false",
+            "-c",
+            // A split index writes its shared part into the repository's `.git`.
+            "core.splitIndex=false",
             "-c",
             // A sparse repository does not filter the baseline.
             "core.sparseCheckout=false",
@@ -1580,6 +1586,51 @@ mod tests {
 
         assert_eq!(files_under(&dest), ["a/x"]);
         assert!(!marker.exists(), "the post-checkout hook ran");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_out_paths_runs_no_fsmonitor() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, repo, sha) = repo_of(&[("a/x", "x\n")]);
+        let marker = repo.join("fsmonitor-ran");
+        let script = repo.join("fsmonitor.sh");
+        write(
+            &script,
+            &format!("#!/bin/sh\ntouch '{}'\n", marker.display()),
+        );
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        git(
+            &repo,
+            &["config", "core.fsmonitor", &script.to_string_lossy()],
+        );
+        let (_temp, dest, index) = dest();
+
+        check_out_paths(&repo, &sha, &index, &dest, &strings(&["a"])).unwrap();
+
+        assert_eq!(files_under(&dest), ["a/x"]);
+        assert!(!marker.exists(), "the fsmonitor hook ran");
+    }
+
+    #[test]
+    fn check_out_paths_writes_nothing_into_a_split_index_repository() {
+        let (_dir, repo, sha) = repo_of(&[("a/x", "x\n")]);
+        git(&repo, &["config", "core.splitIndex", "true"]);
+        let listing = || {
+            let mut names: Vec<String> = std::fs::read_dir(repo.join(".git"))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            names.sort();
+            names
+        };
+        let before = listing();
+        let (_temp, dest, index) = dest();
+
+        check_out_paths(&repo, &sha, &index, &dest, &strings(&["a"])).unwrap();
+
+        assert_eq!(listing(), before);
     }
 
     #[test]
