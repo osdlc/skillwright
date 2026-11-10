@@ -37,8 +37,9 @@ pub struct MarketplaceFields {
     pub description: Option<String>,
     /// The marketplace's manifest fields, flattened: `owner`, `author`,
     /// `display_name`, `license`, `version`, `repository` and `homepage` sit
-    /// at the top level, as the root file writes them.
-    #[serde(flatten)]
+    /// at the top level, as the root file writes them. Deserializing refuses
+    /// `keywords` and `category`, which a marketplace does not read.
+    #[serde(flatten, deserialize_with = "crate::export::marketplace_identity")]
     pub identity: ContainerIdentity,
     /// Which harnesses get what the marketplace holds. Inherited by every
     /// plugin and member with none of its own.

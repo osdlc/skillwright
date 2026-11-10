@@ -119,7 +119,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::discover::{DiscoveryWarning, name_refusal};
 use crate::error::CoreError;
-use crate::frontmatter::ContainerIdentity;
+use crate::frontmatter::{ContainerIdentity, EntityKind};
 use crate::guard::{assert_destination_allowed, assert_destination_allowed_for_vault, within};
 use crate::harness::manifest::{first_not_a_pack, is_os_file, overrides_for, packs_of};
 use crate::harness::translator::GENERATED_MARKER;
@@ -325,7 +325,11 @@ pub struct MarketplaceConfig {
     /// The marketplace's manifest fields, flattened, so `owner`, `author`,
     /// `license` and the rest sit at the top level on the wire. Each field
     /// the key table says a plugin inherits is each plugin's default.
-    #[serde(flatten)]
+    ///
+    /// The struct is shared with plugins, so it has `keywords` and `category`
+    /// too. A marketplace reads neither, and deserializing or building with
+    /// either set is refused.
+    #[serde(flatten, deserialize_with = "marketplace_identity")]
     pub identity: ContainerIdentity,
     /// Which harnesses get what the marketplace holds. A plugin or member
     /// with no `targets` of its own inherits it.
@@ -360,7 +364,10 @@ pub struct PluginOverrides {
     /// The plugin's manifest fields, flattened, so `version`, `author`,
     /// `license` and the rest sit at the top level on the wire. Each
     /// [`crate::keys::inherits`] key it leaves unset is the marketplace's.
-    #[serde(flatten)]
+    ///
+    /// The struct is shared with marketplaces, so it has `owner` too. A plugin
+    /// does not read it, and deserializing or building with it set is refused.
+    #[serde(flatten, deserialize_with = "plugin_identity")]
     pub identity: ContainerIdentity,
     /// Which harnesses the plugin's members go to. Default the marketplace
     /// `targets`.
@@ -371,6 +378,48 @@ pub struct PluginOverrides {
     /// its marketplace entry.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub blocks: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
+}
+
+/// Refuses a config whose identity holds a key its level does not read. The
+/// serde path refuses the same keys on the way in; this covers a config built
+/// in code.
+fn check_config_identity(config: &MarketplaceConfig) -> Result<(), CoreError> {
+    let refuse = |what: String| CoreError::refused("unknown-override-key", what);
+    config
+        .identity
+        .check_read_by(EntityKind::Marketplace)
+        .map_err(refuse)?;
+    for (name, overrides) in &config.plugins {
+        overrides
+            .identity
+            .check_read_by(EntityKind::Plugin)
+            .map_err(|why| refuse(format!("plugin `{name}`: {why}")))?;
+    }
+    Ok(())
+}
+
+/// Reads a [`ContainerIdentity`] and refuses a key `kind` does not read.
+fn identity_read_by<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+    kind: EntityKind,
+) -> Result<ContainerIdentity, D::Error> {
+    let identity = ContainerIdentity::deserialize(deserializer)?;
+    identity
+        .check_read_by(kind)
+        .map_err(serde::de::Error::custom)?;
+    Ok(identity)
+}
+
+pub(crate) fn marketplace_identity<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ContainerIdentity, D::Error> {
+    identity_read_by(deserializer, EntityKind::Marketplace)
+}
+
+fn plugin_identity<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ContainerIdentity, D::Error> {
+    identity_read_by(deserializer, EntityKind::Plugin)
 }
 
 /// What one export did, or would do — per plugin, per root.
@@ -854,6 +903,7 @@ pub fn export_skills(
 ) -> Result<ExportReport, CoreError> {
     let vault_root = normalize(&request.vault_root);
     let out_root = normalize(&request.out_root);
+    check_config_identity(&request.config)?;
 
     // Which harnesses this build renders, before anything reads or writes.
     let roots = selected_roots(request)?;
@@ -5796,5 +5846,61 @@ mod tests {
         assert!(identity_keys_in(&empty).is_empty(), "{empty}");
         let empty = serde_json::to_value(PluginOverrides::default()).unwrap();
         assert!(identity_keys_in(&empty).is_empty(), "{empty}");
+    }
+
+    #[test]
+    fn a_config_refuses_identity_keys_its_level_does_not_read() {
+        let read = |value: serde_json::Value| serde_json::from_value::<MarketplaceConfig>(value);
+        for (value, said) in [
+            (
+                json!({"keywords": ["k"]}),
+                "`keywords` at the marketplace level",
+            ),
+            (
+                json!({"category": "c"}),
+                "`category` at the marketplace level",
+            ),
+            (
+                json!({"plugins": {"p": {"owner": "Ada"}}}),
+                "`owner` at the plugin level",
+            ),
+        ] {
+            let err = read(value).unwrap_err().to_string();
+            assert!(err.contains(said), "{err}");
+        }
+        read(json!({
+            "owner": "Ada",
+            "license": "MIT",
+            "plugins": {"p": {"keywords": ["k"], "category": "c", "license": "MIT"}}
+        }))
+        .unwrap();
+    }
+
+    #[test]
+    fn a_build_refuses_identity_keys_set_where_they_are_not_read() {
+        let mut config = config();
+        config.identity.category = Some("c".to_owned());
+        let mut request = request(ExportMode::Build);
+        request.config = config;
+        let err = export_skills(&example_vault(), &request, &sw()).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown-override-key")
+                && err
+                    .to_string()
+                    .contains("`category` at the marketplace level"),
+            "{err}"
+        );
+
+        let mut config = self::config();
+        let mut plugin = PluginOverrides::default();
+        plugin.identity.owner = Some(json!("Ada"));
+        config.plugins.insert("p".to_owned(), plugin);
+        let mut request = self::request(ExportMode::Build);
+        request.config = config;
+        let err = export_skills(&example_vault(), &request, &sw()).unwrap_err();
+        assert!(
+            err.to_string().contains("`owner` at the plugin level"),
+            "{err}"
+        );
     }
 }
