@@ -16,20 +16,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
   - hasEvidenceItems:
-      - "[2026-11-04 Pi Plugin install location 2](../../study-results/Pi/2026-11-04%20Pi%20Plugin%20install%20location%202.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
-  - hasEvidenceItems:
       - "[2026-11-09 Pi packages npm git](../../study-results/Pi/2026-11-09%20Pi%20packages%20npm%20git.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: npm and git rows.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi packages settings files](../../study-results/Pi/2026-11-09%20Pi%20packages%20settings%20files.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Settings files.
 reportedIn:
   - "[Pi docs Pi Packages (main at d57c2d2)](../../documents/github.com/Pi%20docs%20Pi%20Packages%20%28main%20at%20d57c2d2%29.md)"
 contributions:

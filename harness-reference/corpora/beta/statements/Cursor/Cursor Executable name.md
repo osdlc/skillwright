@@ -18,11 +18,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: "cursor-agent --help prints its usage as `agent`: both names are one binary."
   - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs install](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20install.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The docs install script and run it as `agent`.
-  - hasEvidenceItems:
       - "[2026-11-09 Cursor version](../../study-results/Cursor/2026-11-09%20Cursor%20version.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

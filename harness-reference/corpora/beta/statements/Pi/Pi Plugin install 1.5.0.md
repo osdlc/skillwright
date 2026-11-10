@@ -23,16 +23,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: -l writes project settings.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi packages install](../../study-results/Pi/2026-11-09%20Pi%20packages%20install.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Packages page.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi packages settings files](../../study-results/Pi/2026-11-09%20Pi%20packages%20settings%20files.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Settings files.
 contributions:
   - contributor:
       name: harness-reference research

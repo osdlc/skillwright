@@ -18,11 +18,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: --help names CURSOR_API_KEY.
   - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs api key](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20api%20key.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Docs recommend the variable for CI.
-  - hasEvidenceItems:
       - "[2026-11-09 Cursor help login](../../study-results/Cursor/2026-11-09%20Cursor%20help%20login.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

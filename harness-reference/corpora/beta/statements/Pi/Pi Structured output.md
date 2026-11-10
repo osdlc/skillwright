@@ -18,11 +18,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: --mode json and rpc in --help.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi rpc commands](../../study-results/Pi/2026-11-09%20Pi%20rpc%20commands.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: RPC page.
 reportedIn:
   - "[pi harness notes for a dispatcher](../../documents/skillwright/pi%20harness%20notes%20for%20a%20dispatcher.md)"
 contributions:

@@ -16,11 +16,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: source observed 2026-10-01.
   - hasEvidenceItems:
-      - "[2026-11-04 Pi Duplicate skill names](../../study-results/Pi/2026-11-04%20Pi%20Duplicate%20skill%20names.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
-  - hasEvidenceItems:
       - "[2026-11-09 Pi skills name collisions](../../study-results/Pi/2026-11-09%20Pi%20skills%20name%20collisions.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

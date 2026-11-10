@@ -19,11 +19,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: "Source: user skills dir under the agent dir."
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi skills agents dir source](../../study-results/Pi/2026-11-09%20Pi%20skills%20agents%20dir%20source.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: "Source: ~/.agents/skills."
 reportedIn:
   - "[Pi README](../../documents/Earendil%20Inc/Pi%20README.md)"
 contributions:

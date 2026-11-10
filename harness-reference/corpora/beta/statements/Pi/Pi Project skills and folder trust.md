@@ -16,11 +16,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
   - hasEvidenceItems:
-      - "[2026-11-04 Pi Project skills and folder trust 2](../../study-results/Pi/2026-11-04%20Pi%20Project%20skills%20and%20folder%20trust%202.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
-  - hasEvidenceItems:
       - "[2026-11-09 Pi security trust resources](../../study-results/Pi/2026-11-09%20Pi%20security%20trust%20resources.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

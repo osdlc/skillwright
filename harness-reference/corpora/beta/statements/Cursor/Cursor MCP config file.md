@@ -9,11 +9,6 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-08-08 Cursor MCP config file](../../study-results/Cursor/2026-08-08%20Cursor%20MCP%20config%20file.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: weak
-    description: third-party observed 2026-08-08.
-  - hasEvidenceItems:
       - "[2026-11-09 Cursor docs mcp locations](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20mcp%20locations.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

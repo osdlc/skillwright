@@ -11,17 +11,7 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-10-01 Cursor How the agent loads a skill](../../study-results/Cursor/2026-10-01%20Cursor%20How%20the%20agent%20loads%20a%20skill.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-10-01.
-  - hasEvidenceItems:
       - "[2026-11-04 Cursor How the agent loads a skill](../../study-results/Cursor/2026-11-04%20Cursor%20How%20the%20agent%20loads%20a%20skill.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
-  - hasEvidenceItems:
-      - "[2026-11-04 Cursor How the agent loads a skill 2](../../study-results/Cursor/2026-11-04%20Cursor%20How%20the%20agent%20loads%20a%20skill%202.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.

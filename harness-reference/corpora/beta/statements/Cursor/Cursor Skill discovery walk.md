@@ -15,11 +15,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
   - hasEvidenceItems:
-      - "[2026-11-04 Cursor Skill discovery walk 2](../../study-results/Cursor/2026-11-04%20Cursor%20Skill%20discovery%20walk%202.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
-  - hasEvidenceItems:
       - "[2026-11-09 Cursor docs skill nested](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20skill%20nested.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

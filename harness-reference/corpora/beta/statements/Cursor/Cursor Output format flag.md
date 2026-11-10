@@ -27,11 +27,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: --help lists text, json and stream-json with default text.
   - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs output default](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20output%20default.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Docs state the default is text.
-  - hasEvidenceItems:
       - "[2026-11-09 Cursor help stream-partial-output](../../study-results/Cursor/2026-11-09%20Cursor%20help%20stream-partial-output.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

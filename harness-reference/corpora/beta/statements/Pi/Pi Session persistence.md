@@ -21,16 +21,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: Default store.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi sessions no-session](../../study-results/Pi/2026-11-09%20Pi%20sessions%20no-session.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Ephemeral runs.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi sessions saved by default](../../study-results/Pi/2026-11-09%20Pi%20sessions%20saved%20by%20default.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Saved by default.
 contributions:
   - contributor:
       name: harness-reference research

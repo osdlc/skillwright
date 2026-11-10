@@ -12,11 +12,6 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-10-09 Pi Model and effort flags](../../study-results/Pi/2026-10-09%20Pi%20Model%20and%20effort%20flags.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: run observed 2026-10-09.
-  - hasEvidenceItems:
       - "[2026-11-09 Pi help model thinking](../../study-results/Pi/2026-11-09%20Pi%20help%20model%20thinking.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

@@ -19,11 +19,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: --session-id in --help.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi cli session-id constraint](../../study-results/Pi/2026-11-09%20Pi%20cli%20session-id%20constraint.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Constraints.
 reportedIn:
   - "[pi harness notes for a dispatcher](../../documents/skillwright/pi%20harness%20notes%20for%20a%20dispatcher.md)"
 contributions:

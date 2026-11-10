@@ -14,15 +14,6 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-08-08 Cursor Project skill directories](../../study-results/Cursor/2026-08-08%20Cursor%20Project%20skill%20directories.md)"
-    directionOfEvidenceProvided: neutral
-    description: "third-party observed 2026-08-08; its value differs from the latest. Rechecked 2026-11-09: the 2026-08-08 third-party list names the same four directories without the primary/compatibility split; the vendor docs settle it."
-  - hasEvidenceItems:
-      - "[2026-10-01 Cursor Project skill directories](../../study-results/Cursor/2026-10-01%20Cursor%20Project%20skill%20directories.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-10-01.
-  - hasEvidenceItems:
       - "[2026-11-09 Cursor docs skill dirs](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20skill%20dirs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
@@ -32,11 +23,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: Claude and Codex directories load for compatibility.
-  - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs skill nested](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20skill%20nested.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Nested .cursor/skills and .agents/skills folders are found.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Cursor docs Agent Skills](../../documents/cursor.com/Cursor%20docs%20Agent%20Skills.md)"

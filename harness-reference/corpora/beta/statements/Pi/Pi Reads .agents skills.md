@@ -8,11 +8,6 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-08-08 Pi Reads .agents skills](../../study-results/Pi/2026-08-08%20Pi%20Reads%20.agents%20skills.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: weak
-    description: third-party observed 2026-08-08.
-  - hasEvidenceItems:
       - "[2026-11-09 Pi skills agents dir source](../../study-results/Pi/2026-11-09%20Pi%20skills%20agents%20dir%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

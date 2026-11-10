@@ -14,11 +14,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
   - hasEvidenceItems:
-      - "[2026-11-04 Pi Skill discovery walk 2](../../study-results/Pi/2026-11-04%20Pi%20Skill%20discovery%20walk%202.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
-  - hasEvidenceItems:
       - "[2026-11-09 Pi skills agents dirs](../../study-results/Pi/2026-11-09%20Pi%20skills%20agents%20dirs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

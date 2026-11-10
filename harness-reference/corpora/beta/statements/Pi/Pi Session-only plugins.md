@@ -21,25 +21,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: --extension is repeatable.
   - hasEvidenceItems:
-      - "[2026-11-09 Pi packages try once](../../study-results/Pi/2026-11-09%20Pi%20packages%20try%20once.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Packages tried for one invocation.
-  - hasEvidenceItems:
       - "[2026-11-09 Pi help no-extensions](../../study-results/Pi/2026-11-09%20Pi%20help%20no-extensions.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: --no-extensions.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi packages e cache](../../study-results/Pi/2026-11-09%20Pi%20packages%20e%20cache.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Cache location.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi packages e npm example](../../study-results/Pi/2026-11-09%20Pi%20packages%20e%20npm%20example.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: npm example.
 contributions:
   - contributor:
       name: harness-reference research

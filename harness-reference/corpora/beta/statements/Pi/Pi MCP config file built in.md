@@ -12,20 +12,10 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-11-09 Pi mcp config files](../../study-results/Pi/2026-11-09%20Pi%20mcp%20config%20files.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: mcp.md.
-  - hasEvidenceItems:
       - "[2026-11-09 Pi help mcp](../../study-results/Pi/2026-11-09%20Pi%20help%20mcp.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: "`pi mcp --help` names the files."
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi mcp servers key](../../study-results/Pi/2026-11-09%20Pi%20mcp%20servers%20key.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: mcpServers key.
   - hasEvidenceItems:
       - "[2026-11-09 Pi changelog 0.99.0 mcp](../../study-results/Pi/2026-11-09%20Pi%20changelog%200.99.0%20mcp.md)"
     directionOfEvidenceProvided: supports

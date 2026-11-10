@@ -20,16 +20,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: The skills prompt tells the model to use the read tool.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi skill relative paths](../../study-results/Pi/2026-11-09%20Pi%20skill%20relative%20paths.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: Relative-path instruction.
-  - hasEvidenceItems:
-      - "[2026-11-09 Pi skills force load](../../study-results/Pi/2026-11-09%20Pi%20skills%20force%20load.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: /skill:name forces a load.
 contributions:
   - contributor:
       name: harness-reference research

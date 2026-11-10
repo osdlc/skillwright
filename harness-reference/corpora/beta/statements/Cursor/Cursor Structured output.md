@@ -14,11 +14,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: Installed --help.
   - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs output default](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20output%20default.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: "Docs: json emits one result object; stream-json is NDJSON."
-  - hasEvidenceItems:
       - "[2026-11-09 Cursor help stream-partial-output](../../study-results/Cursor/2026-11-09%20Cursor%20help%20stream-partial-output.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

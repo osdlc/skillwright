@@ -21,11 +21,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: "`ls` and `resume` subcommands."
-  - hasEvidenceItems:
-      - "[2026-11-09 Cursor docs resume](../../study-results/Cursor/2026-11-09%20Cursor%20docs%20resume.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Docs describe the same ways.
 contributions:
   - contributor:
       name: harness-reference research
