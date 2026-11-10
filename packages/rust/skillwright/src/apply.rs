@@ -468,7 +468,7 @@ fn relink_move(
     // links to rewrite.
     let LoadedVault {
         facts,
-        unreadable_rows: unreadable,
+        unreadable_rows,
         unlisted_folders,
     } = load_vault(vault, from, to, bundle)?;
     if bundle {
@@ -500,7 +500,7 @@ fn relink_move(
                 mut outcome,
                 source,
             }) => {
-                record_unreadable(unreadable, &mut outcome);
+                record_unreadable(unreadable_rows, &mut outcome);
                 return Err(ApplyError::Partial { outcome, source });
             }
             other => other?,
@@ -508,7 +508,7 @@ fn relink_move(
     } else {
         record_planned(&plan, outcome);
     }
-    record_unreadable(unreadable, outcome);
+    record_unreadable(unreadable_rows, outcome);
     Ok(())
 }
 
@@ -532,22 +532,33 @@ fn check_entry_rename(
     if from_leaf == to_leaf {
         return Ok(());
     }
-    let dir = resolve(vault.dir, from_dir)?;
-    // An exact name: the listing shows a case-only rename's entry under its
-    // current spelling only.
-    let listing = vault.source.read_dir(&dir).unwrap_or_default();
-    if listing.iter().any(|entry| entry.name == to_leaf) {
+    if name_taken(vault, from_dir, to_leaf)? {
         return Err(ApplyError::Refused(format!(
             "{from_dir}/{to_leaf} already exists in the bundle, so the entry note cannot take \
              the name {to_leaf}. Rename or move it, then run the rename again"
         )));
     }
-    if mode.writes() && dir.metadata().is_ok_and(|m| m.permissions().readonly()) {
+    if mode.writes()
+        && resolve(vault.dir, from_dir)?
+            .metadata()
+            .is_ok_and(|m| m.permissions().readonly())
+    {
         return Err(ApplyError::Refused(format!(
             "{from_dir} is read-only, so the entry note cannot be renamed inside it"
         )));
     }
     Ok(())
+}
+
+/// Whether `vault.source` lists an entry named exactly `leaf` in the
+/// vault-relative folder `dir`. Exact, so a case-only rename passes: the
+/// listing shows the entry under its current spelling only.
+fn name_taken(vault: Vault<'_>, dir: &str, leaf: &str) -> Result<bool, ApplyError> {
+    let listing = vault
+        .source
+        .read_dir(&resolve(vault.dir, dir)?)
+        .unwrap_or_default();
+    Ok(listing.iter().any(|entry| entry.name == leaf))
 }
 
 /// Why a rename that writes `link` into `path` refuses while the walk could
@@ -611,13 +622,11 @@ fn move_marketplace(
     if let (Some((from_dir, from_leaf)), Some(to_leaf)) =
         (temp_from.rsplit_once('/'), temp_to.rsplit('/').next())
         && from_leaf != to_leaf
+        && name_taken(vault, from_dir, to_leaf)?
     {
-        let taken = format!("{from_dir}/{to_leaf}");
-        if resolve(vault.dir, &taken)?.exists() {
-            return Err(ApplyError::Refused(format!(
-                "{taken} already exists, and the move needs that name free"
-            )));
-        }
+        return Err(ApplyError::Refused(format!(
+            "{from_dir}/{to_leaf} already exists, and the move needs that name free"
+        )));
     }
     if mode.writes()
         && let Some(parent) = new_dir.parent()
