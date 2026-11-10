@@ -7,6 +7,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `ReasonToken::InvalidName` (`invalid-name`), in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`, with `INVALID_NAME_REASON`. A skill, command or agent that states no `name` and whose file name gives an empty one or one over 64 characters is refused with it by `load`, `export_skills`, `load_component`, `load_plugin` and so `publish_skill`. A scan lists the note, with an `invalid-name` entry in `DiscoveryReport::warnings`, where it skipped it as `unreadable-note`. `DiscoveryWarning::is_error` is true for it.
+- `DiscoveredComponent::invalid_name`: why a member's derived name is not admitted.
+- `refuse_invalid_names(components)`: the `invalid-name` refusal for the members named.
+- `render_plugin_manifest` writes a Cursor `displayName` from the plugin's `display_name`. A `cursor.displayName` block key still wins.
+
+### Fixed
+
+- Compile resolves a bare link that matches several files to the one match under the linking file's folder, compared without case, as `markdown-link`'s `prefer_in_folder` and so a rename read it. With none there, or several, it is still `refused: link-ambiguous`; several names only those. Every match was refused before.
+- The Codex pack manifest carries `repository` and `homepage`, inherited as for the other dialects. Codex's `PluginFormat::manifest_fields` lists both, so a `codex` block may set them.
+- The Pi `package.json` carries the plugin's `keywords`, with `pi-package` added when it is missing. A `pi.keywords` block key replaces the whole list.
+
 ## [0.48.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.47.0...tradecraft-core/v0.48.0) - 2026-11-10
 
 ### Breaking

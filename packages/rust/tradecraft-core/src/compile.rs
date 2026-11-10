@@ -1602,11 +1602,12 @@ impl<'a> Renderer<'a> {
 
     /// One destination string to one vault file, in order:
     /// vault-relative exact match, then relative to the linking file, then a
-    /// unique basename match across the vault.
+    /// unique basename match across the vault, then the one match under the
+    /// linking file's folder (see [`own_folder_candidate`]).
     ///
     /// `Ok(None)` is a link that resolved to nothing — a reportable fact, not
-    /// a refusal. Several matches are refused `link-ambiguous`: picking one
-    /// would publish bytes the author may not have meant, which is a different
+    /// a refusal. A tie is refused `link-ambiguous`: picking one would
+    /// publish bytes the author may not have meant, which is a different
     /// failure from a name that is simply not there yet.
     fn resolve(
         &self,
@@ -1632,10 +1633,15 @@ impl<'a> Renderer<'a> {
 
         // `markdown-link`'s resolver, refusing to guess: an exact path, the
         // path from the linking note's folder, or the only file the name
-        // matches. A bare name addresses a note (`[[photo]]` is not
-        // `photo.jpg`); a name with an extension addresses that file.
+        // matches; then the only match under the linking note's folder. A
+        // bare name addresses a note (`[[photo]]` is not `photo.jpg`); a name
+        // with an extension addresses that file.
         let from = self.vault_relative(from_file).unwrap_or_default();
-        match self.index.resolve_strict(target, &from) {
+        let resolved = match self.index.resolve_strict(target, &from) {
+            Err(ResolveError::Ambiguous(candidates)) => own_folder_candidate(candidates, &from),
+            other => other.map(str::to_owned),
+        };
+        match resolved {
             Ok(hit) => {
                 let path = self.vault_root.join(hit);
                 self.refuse_never_shipped(from_file, &path, destination)?;
@@ -1713,6 +1719,30 @@ impl<'a> Renderer<'a> {
     fn relative_or_verbatim(&self, path: &Path) -> String {
         self.vault_relative(path)
             .unwrap_or_else(|_| path.display().to_string())
+    }
+}
+
+/// The one of `candidates` under the folder of `from`, the linking file's
+/// vault-relative path, compared without case. So a bare link from a skill's
+/// entry resolves to the match in its own bundle. This is the folder
+/// preference `markdown-link`'s `prefer_in_folder` gives, which the rename
+/// relinker reads links by, so a rename and a build agree on what a link
+/// names. None there, or several, is [`ResolveError::Ambiguous`]: several
+/// names only those.
+fn own_folder_candidate(candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
+    let Some((folder, _)) = from.rsplit_once('/') else {
+        return Err(ResolveError::Ambiguous(candidates));
+    };
+    let prefix = format!("{}/", folder.to_lowercase());
+    let mut within: Vec<String> = candidates
+        .iter()
+        .filter(|path| path.to_lowercase().starts_with(&prefix))
+        .cloned()
+        .collect();
+    match within.len() {
+        0 => Err(ResolveError::Ambiguous(candidates)),
+        1 => Ok(within.remove(0)),
+        _ => Err(ResolveError::Ambiguous(within)),
     }
 }
 
@@ -2986,6 +3016,46 @@ mod tests {
             .to_string();
         assert!(
             message.contains("(Two/Shared2.md, Deep/er/Shared2.md)"),
+            "{message}"
+        );
+    }
+
+    /// A bare name several folders match resolves to the one match under
+    /// the linking note's folder, as a rename reads it.
+    #[test]
+    fn an_ambiguous_name_takes_the_one_match_under_the_linking_note() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/references/near.md", b"Ours.\n");
+        write(
+            &vfs,
+            "/vault/plugins/other/references/near.md",
+            b"Theirs.\n",
+        );
+        let compiled = compile_note(&vfs, &source(None), "![[near]]\n").unwrap();
+        assert_eq!(compiled.body, "Ours.\n");
+    }
+
+    /// No match under the linking note's folder, or two there, is still
+    /// refused. Two there names only those two.
+    #[test]
+    fn no_single_match_under_the_linking_note_is_refused() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/one/far.md", b"One.\n");
+        write(&vfs, "/vault/elsewhere/far.md", b"Elsewhere.\n");
+        let message = compile_note(&vfs, &source(None), "![[far]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("link-ambiguous"), "{message}");
+
+        write(&vfs, "/vault/plugins/demo/a/near.md", b"A.\n");
+        write(&vfs, "/vault/plugins/demo/b/near.md", b"B.\n");
+        write(&vfs, "/vault/plugins/other/near.md", b"Other.\n");
+        let message = compile_note(&vfs, &source(None), "![[near]]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("link-ambiguous"), "{message}");
+        assert!(
+            message.contains("(plugins/demo/a/near.md, plugins/demo/b/near.md)"),
             "{message}"
         );
     }

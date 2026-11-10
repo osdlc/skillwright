@@ -7,6 +7,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- `list` exits 2 when it skips a note that `build` and `check` refuse, such as a skill with a `description` outside a kind folder (`unreadable-note`) or a note with a value of the wrong kind (`malformed`). It exited 0. In a workspace, only a note skipped inside a marketplace, or the workspace's own `skillwright.md`, counts, since a workspace build reads only those.
+
+### Added
+
+- A plugin's `display_name` is also the `displayName` in its Cursor `plugin.json`. A `cursor.displayName` still wins for Cursor.
+
+### Fixed
+
+- A skill, command or agent that states no `name` takes one from its file name. When that name is empty, as for `日本.md`, or over 64 characters, `build`, `check` and `publish` refuse the note with `invalid-name`, saying why and to set `name:`, and nothing is written. `list` lists the note, flags its row `[invalid-name]`, prints an `error ·` line for it and exits 2; its `--json` row has an `invalid_name` key. The note was skipped as `unreadable-note`, with a message that did not say the name came from the file name. The name is never shortened or transliterated.
+- A bare link such as `[[contract]]` that matches files in several folders resolves to the one match under the linking note's own folder, such as the copy in its own skill bundle's `references/`. With no match there, or several, it is still refused `link-ambiguous`; several names only those. Every match was refused before, even one in the note's own bundle. A rename reads links by the same rule, so it rewrites such a link when it renames the file.
+- The Codex `plugin.json` carries `repository` and `homepage` from the plugin or `skillwright.md`, as the Claude and Cursor manifests do.
+- The Pi `package.json` carries the plugin's `keywords`, with `pi-package` added when it is missing, so the pi.dev gallery lists a pack published to npm. A `pi.keywords` block key replaces the whole list.
+- The author skill says how to show a call as literal text: `\/[[skill]]` ships as `/[[skill]]` in every harness, in prose and in code spans.
+
 ## [0.10.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.9.0...skillwright/v0.10.0) - 2026-11-10
 
 ### Breaking

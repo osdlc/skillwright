@@ -24,7 +24,8 @@ use serde::Serialize;
 use tradecraft_core::{
     CoreError, DiscoveredComponent, EntityKind, KNOWN_TARGETS, PublishMode, PublishOutcome,
     PublishReason, PublishRequest, PublishStatus, PublishedFile, ReasonToken, SkippedNote,
-    canonical_target, discover_components, inherit_targets, publish_skill, refuse_undescribed,
+    canonical_target, discover_components, inherit_targets, publish_skill, refuse_invalid_names,
+    refuse_undescribed,
 };
 
 use crate::config::{normalize_join, relative_path, resolve_against_cwd};
@@ -313,6 +314,9 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 .filter(|c| c.lacks_description())
                 .map(|c| c.vault_relative_path.as_str()),
         ) {
+            return blocked(ctx.err, &err.to_string());
+        }
+        if let Err(err) = refuse_invalid_names(&skills) {
             return blocked(ctx.err, &err.to_string());
         }
         unreadable = scan.skipped;

@@ -1669,9 +1669,10 @@ fn unescape_label(label: &str) -> String {
 /// link as written.
 ///
 /// The wikilink keeps the target's path as written, relative to the linking
-/// file. A bare note name would resolve vault-wide in [`crate::compile`] and
-/// be refused `link-ambiguous` once another skill bundles a file of the same
-/// name; the path resolves beside the linking note. With `entry_name`,
+/// file. A bare note name resolves vault-wide in [`crate::compile`]: once
+/// another skill bundles a file of the same name, it is refused
+/// `link-ambiguous` unless the one match sits under the linking file's
+/// folder. The path resolves beside the linking note. With `entry_name`,
 /// `SKILL.md` is the entry, which adoption renames, so a link to it names
 /// `entry_name`. The alias survives only when it says something the target
 /// does not; one holding a `[` or `]` is not a wikilink, so that link is left
@@ -3399,7 +3400,7 @@ mod tests {
 
     /// Two skills holding `references/guide.md` must each link their own:
     /// the adopted wikilink keeps the bundle path, so compile resolves it
-    /// beside the note instead of refusing `link-ambiguous` vault-wide.
+    /// beside the note, not by name across the vault.
     #[test]
     fn two_skills_sharing_a_resource_name_each_republish() {
         let vfs = MemVfs::new();
@@ -3432,8 +3433,7 @@ mod tests {
     /// A code mention inside a nested resource links relative to that
     /// resource, as compile resolves it: `guide.md` named from
     /// `references/other.md` is `[[guide]]`, not `[[references/guide]]`,
-    /// which compile would look for at `references/references/guide.md` and
-    /// then refuse `link-ambiguous` vault-wide.
+    /// which compile would look for at `references/references/guide.md`.
     #[test]
     fn a_code_mention_in_a_nested_resource_republishes_beside_it() {
         let vfs = MemVfs::new();
