@@ -4,10 +4,20 @@ What [structure v2](structure-v2.md) removes, which code shrinks, what it means
 for the open PRs and issues, and an order to build it in. Code was read at
 `c9b3321b`. Paths are under `packages/rust/`.
 
+## Commands removed
+
+v2 keeps `init`, `build`, `check` and `bump`. Every other command leaves v2
+and may return in a later milestone:
+
+- `publish` and `unpublish`, with `build.destinations`.
+- `harness install`, `update`, `uninstall`, `link` and `unlink`.
+- `adopt`, with `--from`, `--from-git` and `build.scan_locations`.
+- `new`, `rename`, `move`, `delete` and `convert`.
+- `build --watch`.
+- `list`, `status` and `author`.
+
 ## Features removed
 
-- `adopt`, with `--from`, `--from-git` and `build.scan_locations`. It returns
-  in a later milestone.
 - A vault with no root file, read with every default.
 - The walk-up search for the nearest `skillwright.md`, and its reserved-name
   rule (`reserved-name`). The root is now the first folder holding both
@@ -23,10 +33,9 @@ for the open PRs and issues, and an order to build it in. Code was read at
 - Marketplaces below the top, and components promoted to a marketplace.
 - Flat entry notes (`skills/x.md`) and `SKILL.md` entries.
 - A note `name` that differs from its folder.
-- Optional plugin notes (decision D7).
+- Optional plugin notes (decision D6).
 - `build.patterns` and every custom folder glob.
-- `build.exclude` (decision D6). A file that must not ship goes in `docs/`.
-- `publish <path>` of a note that no kind folder places.
+- `build.exclude` (decision D5). A file that must not ship goes in `docs/`.
 - `build.out`, `--out` and the "no default output" rule. Output is fixed at
   `dist/<m>/`.
 - `<harness>: {packs: <path>}`, with its overlap checks and the
@@ -37,14 +46,17 @@ for the open PRs and issues, and an order to build it in. Code was read at
   `own_folder_candidate` tiebreak, `link-ambiguous` across folders, and
   shared notes copied to `references/vault/<vault-relative>` or
   `assets/vault/<vault-relative>`.
-- A plain link to another skill read as a call (decision D4).
-- `build.assets` and `build.hooks` (decision D5).
+- A plain link to another skill read as a call (decision D3).
+- `build.assets` and `build.hooks` (decision D4).
 - The plugin `assets/` folder copied flat to the pack root (`assets/bin/tool`
   shipping as `bin/tool`). A plugin's `assets/` now ships as `assets/`. The
-  launcher moves to `scripts/`. `.mcp.json` has no home (decision D9).
+  launcher moves to `scripts/`. `.mcp.json` has no home (decision D7).
 - Loose files in a component folder. A skill holds `<s>.md`, `references/`,
   `scripts/` and `assets/`. An agent, command or hook folder holds its note.
   Anything else is an error.
+- An embed or link to nothing shipped as its words. It is now an error.
+- An embed of a file that is neither a note nor an image rendered as a plain
+  link (decision D8).
 
 If v2 is accepted, [D-GPYR](../decisions/D-GPYR-convention-first.md) needs an
 amendment too: its patterns layer is gone.
@@ -62,7 +74,7 @@ amendment too: its patterns layer is gone.
 - `patterns.rs`: almost all of it goes. `Patterns::canonical`,
   `plugin_folder`, `assets_folder`, `sibling_files`, `source_folders`,
   `warnings`, `warnings_with`, `keep_conventional` and
-  `workspace_exclude_warnings` go, and with D6 the exclude list and the glob
+  `workspace_exclude_warnings` go, and with D5 the exclude list and the glob
   matcher (`glob_match`, `glob_problem`) too. What stays is the never-ship
   rule, which can move into `discover.rs`.
 - `settings.rs`: `FolderPatterns`, `folder_patterns`, `globs`, `warn_nested`
@@ -70,21 +82,22 @@ amendment too: its patterns layer is gone.
   member) becomes the root-defaults step of the cascade. `MarketplaceFields`
   is read from `<m>.md`, not the root file. `compose_root_file` writes a root
   with no marketplace fields. `root_file_config` and `RootFile::to_config`
-  shrink. `AssetSetting` and `HookSetting` go under D5.
+  shrink. `AssetSetting` and `HookSetting` go under D4. `DestinationSetting`
+  and the `destinations` and `scan_locations` keys go with their commands.
 - `discover.rs`: `classify` becomes a fixed-depth match. `conventional`,
   `folder_placement_with`, `RESERVED_NAME_REASON`, `SKILL_ENTRY`,
   `is_skill_entry` and the `SKILL.md` branch of `is_entry` go. `placement`
   loses `container_level` (promoted components). `container_notes`,
   `container_notes_with` and `read_container` read fixed paths.
   `under_a_kind_folder` and `refuse_stray` turn into the layout check of
-  section 10.
+  section 11.
 - `model/cascade.rs`: `only_marketplace`, `sole_marketplace`,
   `marketplaces_in` and the "a note under no marketplace takes the one
   marketplace" rule go. `marketplace_note` reads `<m>.md`. `belongs_to`
   becomes a path prefix test.
-- `model/load.rs`: `standalone` (publish by path), `members_folder`,
+- `model/load.rs`: `standalone` (publish of one note), `members_folder`,
   `has_folder`, the marketplace's-own-plugin branch of `missing_versions`,
-  `load_assets`, `load_hook_files` (under D5), `folder_assets` (the flat
+  `load_assets`, `load_hook_files` (under D4), `folder_assets` (the flat
   copy; replaced by copying the three shared folders under their own names),
   `asset_covers` (only the launcher check is left) and `plugin_folder` go or
   shrink. `marketplace_name` and `resolve_marketplace` read the folder.
@@ -99,12 +112,47 @@ amendment too: its patterns layer is gone.
   and the `references/vault/` and `assets/vault/` placements go.
   `vault_link_index` indexes one plugin, not the vault. A real-path
   containment check is added beside `refuse_never_shipped`. The plain
-  link-as-call reading goes under D4.
+  link-as-call reading goes under D3. In `replace_token`, an embed or link to
+  nothing becomes an error instead of an entry in `unresolved`, and a
+  non-note, non-image embed is refused under D8. Embed expansion,
+  `select_fragment` and the cycle check stay as they are.
 - `harness/profile.rs`: `PluginFormat::packs` stays a fixed value.
   `owned_paths_at` and the config override path go.
-- `export.rs` and `publish.rs`: the `stale-output` warning, moved-packs
-  handling and the by-path publish branch go.
+- `export.rs`: the `stale-output` warning and moved-packs handling go.
 - `vault.rs`: `bundle_root` keeps only the `<name>/<name>.md` shape.
+
+### The removed commands
+
+- `tradecraft-core/src/publish.rs`: everything that writes to a destination
+  goes: `publish_skill`'s single-note arms, the destination manifest, the
+  rails, `publishes_to`, `overrides_for`, `override_states` and
+  `accepted_override_keys`. What `export.rs` and `model/cascade.rs` call
+  stays: the plugin arm, `plugin_format_carries_commands`,
+  `plugin_format_carries_hooks`, `kind_has_renderer`, `canonical_target`,
+  `KNOWN_TARGETS` and `accepted_keys`. Moving those into `export.rs` or
+  `harness/` is a follow-up, not v2.
+- `tradecraft-core/src/status.rs`: `status_of` and `units_depending_on` go.
+  `version_bump_if_unmoved`, which `export.rs` uses for `bump`, stays.
+- `tradecraft-core/src/authoring.rs`: all of it.
+- `tradecraft-core/src/adopt.rs`: `adopt_skills`, `AdoptRequest`,
+  `AdoptReport`, `AdoptedSkill`, `detect_format` and `rewrite_to_wikilinks`.
+- `tradecraft-core/src/scan.rs`: `scan_roots`, `scan_root` and
+  `ScanOptions`. Only `adopt` and one `publish.rs` test call them. The parts
+  of `corpus.rs` that only the scan uses go with it.
+- `skillwright/src/commands/`: `publish.rs`, `status.rs`, `list.rs`,
+  `authoring.rs`, `adopt.rs`, `watch.rs`, `author/` and `harness/`.
+- `skillwright/src/apply.rs` (the authoring writer), `git_source.rs` and
+  `dirs.rs` (the `--from-git` cache), and the `author.editor` machine setting
+  in `config.rs`.
+- `skillwright/src/cli.rs`: every command but `init`, `build`, `check` and
+  `bump`, with its flags, and `--watch`.
+- `tradecraft-wasm/src/lib.rs`: `publishSkill`, `adoptSkills`, `statusOf`
+  and `publishableKinds` go. `exportSkills`, `discoverComponents`,
+  `loadMarketplace`, `parseRootFile`, `rootFileConfig`,
+  `validateNamespace`, `knownTargets` and `canonicalTarget` stay.
+- Their tests: `skillwright/tests/authoring.rs`, `author.rs`, `harness.rs`,
+  and the publish, status, list and adopt cases in `cli.rs` and
+  `consumer_flows.rs`.
 
 ### skillwright (CLI)
 
@@ -113,46 +161,26 @@ amendment too: its patterns layer is gone.
   `member_workspace_warnings`, `is_workspace`, `configured_out` and
   `resolve_skills_root` go or shrink to "every marketplace, or the one named".
 - `config.rs`: `workspace_above` and `workspace_members` go.
-- `commands/init.rs`, `commands/marketplace.rs`, `commands/authoring.rs` and
-  `apply.rs`: `init`, `new`, `move`, `rename` and `convert` write fixed paths.
-  The workspace-root refusals and the "rename a marketplace in a vault but not
-  in a workspace" split go.
+- `commands/init.rs`: writes the v2 skeleton.
+- `commands/marketplace.rs` (`build` and `check`): loses `--out` and the
+  workspace runs.
 - `commands/bump.rs`: the marketplace's-own-plugin version rule goes.
   `BuiltRef::build` checks out `skillwright.md` and `marketplaces/` only.
-- `commands/publish.rs`: the by-path branch goes.
-- `commands/harness/*`: read built marketplaces from `dist/<m>/`.
-
-### adopt
-
-All of it goes until the adopt milestone:
-
-- `tradecraft-core/src/adopt.rs`: `adopt_skills`, `AdoptRequest`,
-  `AdoptReport`, `AdoptedSkill`, `detect_format` and `rewrite_to_wikilinks`.
-- `tradecraft-core/src/scan.rs`: `scan_roots`, `scan_root` and
-  `ScanOptions`. Only `adopt` and one `publish.rs` test call them. The parts
-  of `corpus.rs` that only the scan uses go with it.
-- `tradecraft-core/src/settings.rs`: the `scan_locations` key.
-- `skillwright/src/commands/adopt.rs`: `run_adopt` and `AdoptFlags`.
-- `skillwright/src/git_source.rs`: `parse_git_source` and `fetch_git_source`.
-  Only `adopt` uses them.
-- `skillwright/src/cli.rs`: the `Adopt` command and `AdoptArgs`.
-- `tradecraft-wasm/src/lib.rs`: the `adoptSkills` export.
-- The `adopt` tests in `skillwright/tests/cli.rs`.
 
 ### tradecraft-wasm
 
 - `lib.rs`: the `out_root` argument and the pattern and workspace options of
-  `discovery_view` and `load_view` go. `publishSkill` refuses a path outside
-  `marketplaces/`.
+  `discovery_view` and `load_view` go.
 
 ### Tests and docs
 
 - Tests for every removed feature are deleted, not ported: the
   `patterns.rs` and `settings.rs` workspace tests, the reserved-name tests in
-  `paths.rs`, and the by-path and workspace cases in `tests/cli.rs`,
+  `paths.rs`, and the workspace cases in `tests/cli.rs`,
   `tests/consumer_flows.rs` and `tests/release_api.rs`.
 - `docs/reference/skillwright-md.md` is rewritten. Its Patterns, Several
   marketplaces and Publishing one note by path sections go.
+- The CLI README's verb and option tables shrink to the four commands.
 - `docs/reference/fields.md` is regenerated after the key table changes.
 - The CLI README's Configuration section is rewritten.
 
@@ -178,99 +206,113 @@ All of it goes until the adopt milestone:
 
 | PR | Verdict | Reason |
 |---|---|---|
-| [#135](https://github.com/osdlc/skillwright/pull/135) rename reports what it could not read | Merge as is | Dependency bumps, one walk and unreadable-file reporting. Layout-independent, and v2's `rename` still needs it. |
-| [#136](https://github.com/osdlc/skillwright/pull/136) self-link as a skill link | Merge as is | Rendering and the leftover-`[[` check. Layout-independent. [#138](https://github.com/osdlc/skillwright/pull/138) stacks on it. |
+| [#136](https://github.com/osdlc/skillwright/pull/136) self-link as a skill link | Merge as is | Rendering and the leftover-`[[` check, which `build` keeps. [#138](https://github.com/osdlc/skillwright/pull/138) stacks on it. |
 | [#138](https://github.com/osdlc/skillwright/pull/138) key table and harness profile own their facts | Merge, v2 builds on it | v2's root-file key check and its smaller key set come from the key table this PR builds. |
-| [#143](https://github.com/osdlc/skillwright/pull/143) one identity struct | Merge, v2 builds on it | The struct and key-table inheritance carry v2's root, marketplace, plugin, component cascade. Its workspace-to-member step becomes the root-defaults step. Merge after [#138](https://github.com/osdlc/skillwright/pull/138). |
-| [#139](https://github.com/osdlc/skillwright/pull/139) bump checks out only what the build reads | Merge as is | A self-contained speed-up of `bump --changed-since`. v2 later shrinks its path set to `skillwright.md` and `marketplaces/`. |
-| [#134](https://github.com/osdlc/skillwright/pull/134) one loader and one path rule | Close as moot | It unifies the workspace loader and the `skillwright.md` path rule, which v2 deletes. v2's first PR writes the one loader for the fixed layout. |
-| [#137](https://github.com/osdlc/skillwright/pull/137) refuse a publish by path that would overwrite | Close as moot | Most of its diff is [#134](https://github.com/osdlc/skillwright/pull/134) and the by-path publish v2 removes. Names unique per plugin cover the rest. |
+| [#143](https://github.com/osdlc/skillwright/pull/143) one identity struct | Merge, v2 builds on it | The struct and key-table inheritance carry v2's root, marketplace, plugin, component cascade. Merge after [#138](https://github.com/osdlc/skillwright/pull/138). |
+| [#139](https://github.com/osdlc/skillwright/pull/139) bump checks out only what the build reads | Merge as is | `bump --changed-since` stays in v2, and this is a self-contained speed-up of it. v2 later shrinks its path set to `skillwright.md` and `marketplaces/`. |
+| [#135](https://github.com/osdlc/skillwright/pull/135) rename reports what it could not read | Close as moot for v2 | Most of it is `rename` work, and `rename` leaves v2. Its dependency bumps (markdown-vault-fs 0.6, markdown-corpus 0.3, markdown-relink 0.4) are taken in v2's first PR if `build` needs them. The rename milestone can reuse its approach. |
+| [#134](https://github.com/osdlc/skillwright/pull/134) one loader and one path rule | Close as moot | It unifies the workspace loader and the `skillwright.md` path rule, which v2 deletes. v2 writes the one loader for the fixed layout. |
+| [#137](https://github.com/osdlc/skillwright/pull/137) refuse a publish by path that would overwrite | Close as moot | `publish` leaves v2, and most of its diff is [#134](https://github.com/osdlc/skillwright/pull/134). |
 | [#140](https://github.com/osdlc/skillwright/pull/140) core hides build output | Close as moot | v2 reads only `marketplaces/` and writes only `dist/`, so output can never be read as source. It is also stacked on [#134](https://github.com/osdlc/skillwright/pull/134). |
 
 ## Open issues
 
+"Deferred" means the issue belongs to a later milestone for a command v2
+leaves out. It stays open.
+
 | Issue | Verdict | Reason |
 |---|---|---|
-| [#144](https://github.com/osdlc/skillwright/issues/144) published links: labels, shared-note paths, missing files | Changed | Shared notes outside a component are gone, so the flattening part is moot. Missing-file links become errors under section 4. The `.md` label part stays. |
-| [#142](https://github.com/osdlc/skillwright/issues/142) publish collision checks | Changed | The stray-note case goes. Cross-run ownership and agent and command collisions stay. |
-| [#141](https://github.com/osdlc/skillwright/issues/141) bump: scan once, in-memory baseline | Keep | Performance. The reads it lists get simpler. |
+| [#144](https://github.com/osdlc/skillwright/issues/144) published links: labels, shared-note paths, missing files | Changed, in v2 | The flattening part is moot: shared notes outside a plugin are gone. Missing-file links become build errors (section 4). The `.md` label part stays. |
+| [#141](https://github.com/osdlc/skillwright/issues/141) bump: scan once, in-memory baseline | Keep | `bump` stays. The reads it lists get simpler. |
+| [#82](https://github.com/osdlc/skillwright/issues/82) bump: sparse checkout, one scan | Keep | `bump` stays. [#139](https://github.com/osdlc/skillwright/pull/139) does part of it. |
 | [#123](https://github.com/osdlc/skillwright/issues/123) Cursor entries carry no displayName | Keep | Manifest output. [#138](https://github.com/osdlc/skillwright/pull/138) addresses it. |
-| [#118](https://github.com/osdlc/skillwright/issues/118) publish by path can overwrite a same-named skill | Moot | Publish by path is removed. |
 | [#108](https://github.com/osdlc/skillwright/issues/108) Cursor plugin-prefixed names | Keep | Naming. [#138](https://github.com/osdlc/skillwright/pull/138) addresses it. |
-| [#94](https://github.com/osdlc/skillwright/issues/94) install natively first | Deferred to the adopt milestone | Its fallback translates a marketplace through `adopt`, and its other ask extends `adopt` beyond skills. Without `adopt` there is nothing to fall back to. |
-| [#91](https://github.com/osdlc/skillwright/issues/91) symlinked `--vault` loses its workspace | Moot | Workspaces and member files are removed. |
-| [#87](https://github.com/osdlc/skillwright/issues/87) rename of a bundle that half-lands | Keep | The failure mode stays. Fewer links can point at a bundle. |
-| [#83](https://github.com/osdlc/skillwright/issues/83) path-guard and globset | Changed | The output-overlap check goes. Link containment by real path is new work for path-guard. With D6 the glob half goes. |
-| [#82](https://github.com/osdlc/skillwright/issues/82) bump: sparse checkout, one scan | Keep | Performance. [#139](https://github.com/osdlc/skillwright/pull/139) does part of it. |
-| [#81](https://github.com/osdlc/skillwright/issues/81) core should hide build output | Moot | Output is fixed at `dist/` and only `marketplaces/` is read. |
+| [#79](https://github.com/osdlc/skillwright/issues/79) per-harness facts in HarnessProfile | Keep | [#138](https://github.com/osdlc/skillwright/pull/138) does it. |
 | [#80](https://github.com/osdlc/skillwright/issues/80) key types and root-file checks from the key table | Changed | The root file's key set shrinks. [#138](https://github.com/osdlc/skillwright/pull/138) does the rest. |
-| [#79](https://github.com/osdlc/skillwright/issues/79) per-harness facts in HarnessProfile | Keep | Layout-independent. [#138](https://github.com/osdlc/skillwright/pull/138) does it. |
-| [#78](https://github.com/osdlc/skillwright/issues/78) one rule for what a `skillwright.md` path is | Moot | There is one `skillwright.md`, at the root. Position decides every other note. |
-| [#77](https://github.com/osdlc/skillwright/issues/77) `resolve_run` should call `load_marketplace` | Changed | Still one loader, but v2's first PR writes it fresh. Close when it lands. |
-| [#76](https://github.com/osdlc/skillwright/issues/76) one root-file and workspace loader | Changed | No workspace fold. Parse-once still applies, in v2's first PR. |
 | [#75](https://github.com/osdlc/skillwright/issues/75) one identity struct | Changed | The workspace step goes. [#143](https://github.com/osdlc/skillwright/pull/143) does the rest. |
+| [#77](https://github.com/osdlc/skillwright/issues/77) `resolve_run` should call `load_marketplace` | Changed | Still one loader, written fresh in v2. Close when it lands. |
+| [#76](https://github.com/osdlc/skillwright/issues/76) one root-file and workspace loader | Changed | No workspace fold. Parse-once still applies. |
+| [#83](https://github.com/osdlc/skillwright/issues/83) path-guard and globset | Changed | The output-overlap check goes. Link containment by real path is new work for path-guard. With D5 the glob half goes. |
 | [#53](https://github.com/osdlc/skillwright/issues/53) a skill's link to itself | Keep | Rendering. [#136](https://github.com/osdlc/skillwright/pull/136) does it. |
-| [#51](https://github.com/osdlc/skillwright/issues/51) adopt in reverse | Deferred to the adopt milestone | It reads harness files into the model and writes notes, which is `adopt`'s job. |
-| [#50](https://github.com/osdlc/skillwright/issues/50) compile scans bodies twice | Keep | Internal. |
-| [#49](https://github.com/osdlc/skillwright/issues/49) rename reads the vault three times | Keep | Still applies. [#135](https://github.com/osdlc/skillwright/pull/135) does part. |
-| [#47](https://github.com/osdlc/skillwright/issues/47) leftover `[[` check gaps | Keep | Syntax, not scope. |
-| [#46](https://github.com/osdlc/skillwright/issues/46) valid Markdown refused as leftover `[[` | Keep | Syntax, not scope. |
-| [#45](https://github.com/osdlc/skillwright/issues/45) rename misses an unreadable note | Keep | Still applies. [#135](https://github.com/osdlc/skillwright/pull/135) does it. |
-| [#43](https://github.com/osdlc/skillwright/issues/43) rename can make a link ambiguous | Changed | Bare links resolve only within a plugin with unique names, so the risk narrows to one plugin. |
-| [#42](https://github.com/osdlc/skillwright/issues/42) markdown-db and markdown-contract | Keep | Not about skillwright's layout. Already labelled to-close. |
+| [#50](https://github.com/osdlc/skillwright/issues/50) compile scans bodies twice | Keep | Compile stays. |
+| [#47](https://github.com/osdlc/skillwright/issues/47) leftover `[[` check gaps | Keep | Compile stays. |
+| [#46](https://github.com/osdlc/skillwright/issues/46) valid Markdown refused as leftover `[[` | Keep | Compile stays. |
+| [#78](https://github.com/osdlc/skillwright/issues/78) one rule for what a `skillwright.md` path is | Moot | There is one `skillwright.md`, at the root. Position decides every other note. |
+| [#81](https://github.com/osdlc/skillwright/issues/81) core should hide build output | Moot | Output is fixed at `dist/` and only `marketplaces/` is read. |
+| [#91](https://github.com/osdlc/skillwright/issues/91) symlinked `--vault` loses its workspace | Moot | Workspaces and member files are removed. |
+| [#118](https://github.com/osdlc/skillwright/issues/118) publish by path can overwrite a same-named skill | Moot | Publishing a note by path is gone for good, not deferred. |
+| [#142](https://github.com/osdlc/skillwright/issues/142) publish collision checks | Deferred: publish | All three asks are about `publish`. Inside a pack, v2's own rule refuses two sources on one path (section 9). |
+| [#87](https://github.com/osdlc/skillwright/issues/87) rename of a bundle that half-lands | Deferred: rename | `rename` leaves v2. |
+| [#49](https://github.com/osdlc/skillwright/issues/49) rename reads the vault three times | Deferred: rename | `rename` leaves v2. |
+| [#45](https://github.com/osdlc/skillwright/issues/45) rename misses an unreadable note | Deferred: rename | `rename` leaves v2. |
+| [#43](https://github.com/osdlc/skillwright/issues/43) rename can make a link ambiguous | Deferred: rename | `rename` leaves v2. When it returns, links resolve within one plugin, so the risk is smaller. |
+| [#51](https://github.com/osdlc/skillwright/issues/51) adopt in reverse | Deferred: adopt | Reading harness files into notes is `adopt`'s job. Nothing in v2 needs it. |
+| [#94](https://github.com/osdlc/skillwright/issues/94) install natively first | Deferred: install and adopt | Both halves need commands v2 leaves out: `harness install` for the native path, `adopt` for the fallback. |
+| [#42](https://github.com/osdlc/skillwright/issues/42) markdown-db and markdown-contract | Keep | Not about skillwright. Already labelled to-close. |
 | [#4](https://github.com/osdlc/skillwright/issues/4) gaps migrating a marketplace | Keep | Harness output gaps. Already labelled to-close. |
 
 ## Build order
 
-Merge [#135](https://github.com/osdlc/skillwright/pull/135),
-[#136](https://github.com/osdlc/skillwright/pull/136),
+Merge [#136](https://github.com/osdlc/skillwright/pull/136),
 [#138](https://github.com/osdlc/skillwright/pull/138),
 [#143](https://github.com/osdlc/skillwright/pull/143) and
 [#139](https://github.com/osdlc/skillwright/pull/139) first, and close
 [#134](https://github.com/osdlc/skillwright/pull/134),
+[#135](https://github.com/osdlc/skillwright/pull/135),
 [#137](https://github.com/osdlc/skillwright/pull/137) and
 [#140](https://github.com/osdlc/skillwright/pull/140). Then:
 
-1. **Layout reader.** Root discovery, the fixed-position `classify`, the
-   one loader, and the layout refusal of section 10. Delete the walk-up,
-   reserved names, workspaces, patterns, `SKILL.md` and flat entries.
-   Test first: a v2 fixture vault lists every component with its marketplace
-   and plugin; one test per case in section 10 asserts the error names the
-   path and prints the expected layout; a `skillwright` plugin's note is not
-   taken for a root.
-2. **Root file and cascade.** The root file's key set, `<m>.md` as the
+1. **Cut to four commands.** Delete every command but `init`, `build`, `check`
+   and `bump`, with their core code and tests ("The removed commands" above).
+   Do it first, so no later PR ports a command v2 drops. Test first: each
+   removed command is an unknown command with exit code 2; the existing
+   `build`, `check` and `bump` tests still pass unchanged.
+2. **Layout reader.** Root discovery, the fixed-position `classify`, the
+   one loader, the folder rules of section 3, and the refusals of section 11.
+   Delete the walk-up, reserved names, workspaces, patterns, `SKILL.md` and
+   flat entries. Test first: a v2 fixture vault lists every component with its
+   marketplace and plugin; one test per case in section 11 asserts the error
+   names the path and prints the expected layout; a loose file in a skill
+   folder is refused naming the allowed entries; a `skillwright` plugin's note
+   is not taken for a root.
+3. **Root file and cascade.** The root file's key set, `<m>.md` as the
    marketplace note, the root-marketplace-plugin-component cascade, required
    plugin notes, and name-equals-folder. Test first: one table test per
    inherited key across the four levels; a marketplace field in the root file
    is refused naming `<m>.md`; `build:` outside the root is refused.
-3. **Output.** Fixed `dist/<m>/`, default packs folders, `check` against
-   `dist/`, and the plugin's `references/`, `scripts/` and `assets/` copied
-   under their own names. Delete `build.out`, `--out`, the `packs` override,
-   the overlap checks, `stale-output` and the flat `assets/` copy. Test first:
-   a two-marketplace build writes two trees under `dist/`; `check` reports
-   drift after a hand edit there; a `packs` key is refused; a plugin's
-   `assets/logo.png` lands at `<pack>/assets/logo.png`; a script in
-   `scripts/` keeps its exec bit; a loose file in a skill folder is refused
-   naming the allowed entries.
-4. **Link scope and containment.** Scoped resolution, the link table, the
-   real-path check, the one-skill rule, calls (D3) and plain links (D4).
-   Test first, one test per table row and per rule in section 4, through the
-   build: a symlink in a skill folder pointing out of the marketplace is
-   refused; a link to a sibling skill renders as its installed path; a link
-   from a skill to the plugin's `references/x.md` renders as
-   `../../references/x.md`; the sibling link fails when publishing that skill
-   alone, naming the link; `publish` and `harness link` of a skill that
-   links into the plugin's `references/` are refused, naming the link.
+4. **Bundling and output.** Fixed `dist/<m>/`, default packs folders,
+   `check` against `dist/`, and the pack contents of section 9. Delete
+   `build.out`, `--out`, the `packs` override, the overlap checks,
+   `stale-output` and the flat `assets/` copy. Test first, one test per row of
+   the "What a pack holds" table: a plugin's `assets/logo.png` lands at
+   `<pack>/assets/logo.png`; a skill's `scripts/run.sh` keeps its exec bit; a
+   Markdown file in `references/` is compiled; an agent ships nowhere; two
+   sources on one path are refused naming both. Also: a two-marketplace build
+   writes two trees under `dist/`; `check` reports drift after a hand edit
+   there; a `packs` key is refused.
+5. **Links and transclusion.** Scoped resolution, the link table, the
+   real-path check, missing targets as errors, calls (D2), plain links (D3)
+   and the embed rules of section 5. Test first, through `build`, one test per
+   rule in sections 4 and 5: a symlink in a skill folder pointing out of the
+   marketplace is refused; a link from a skill to the plugin's
+   `references/x.md` renders as `../../references/x.md`; a link to another
+   plugin is refused; a heading embed inlines the section with its
+   subsections; a block embed inlines the block without its marker; a missing
+   heading is `fragment-unresolved`; a nested embed's link is written
+   relative to the outer file; a cycle prints its loop; an embedded note's
+   frontmatter is dropped; an image embed is an image link; a script embed is
+   refused (D8).
    Before this PR, run the `plugin-layout` probe on Codex. harness-reference
    does not record where Codex resolves a skill's relative paths
    (`Codex CLI Relative paths in SKILL.md open`). If it is not the skill's
    folder, links up to the pack root need another form for Codex.
-5. **Verbs, docs and the repo's plugin.** `init`, `new`, `move`, `rename`,
-   `bump`, `publish` (D1) and `harness` on the new layout; `adopt` and its
-   support code deleted; the reference docs; `plugin/` moved and its two
-   workflows updated. Test first: a CLI test per verb writes the expected
-   path; `adopt` is an unknown command; `build.scan_locations` is refused;
-   the `plugin` workflow's drift check passes on the rebuilt
+6. **`init`, `bump`, docs and the repo's plugin.** `init` writes the skeleton;
+   `bump` by name and `--changed-since` on the new layout; the reference docs
+   and README; `plugin/` moved and its two workflows updated. Test first:
+   `init` in an empty folder writes the three notes and a `build` of it
+   succeeds; `init` refuses a folder with `skillwright.md`; `bump <plugin>`
+   and `bump <m>` write the right note; `bump --changed-since` bumps only a
+   changed plugin; the `plugin` workflow's drift check passes on the rebuilt
    `plugin/dist/osdlc/`.
 
-PRs 1 and 2 can be one PR if the diff stays reviewable. PR 4 depends only on 1.
+PRs 2 and 3 can be one PR if the diff stays reviewable. PR 5 depends only on 2.
