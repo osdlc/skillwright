@@ -113,7 +113,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
             note_paths.push(note_path);
         }
         None => {
-            match discover_components(&run.source_vfs(None), &run.vault, None, namespace) {
+            match discover_components(&run.config_vfs(), &run.vault, None, namespace) {
                 Ok(scan) => {
                     for component in &scan.components {
                         if kind_has_renderer(component.kind) {
@@ -299,7 +299,7 @@ pub fn run_status(flags: &StatusFlags, ctx: &mut CommandContext<'_>) -> i32 {
         // In a vault of several marketplaces, `bump` needs the one named.
         // A whole-vault run scanned already; a named note's run has not.
         let scan = scanned.unwrap_or_else(|| {
-            discover_components(&run.source_vfs(None), &run.vault, None, namespace)
+            discover_components(&run.config_vfs(), &run.vault, None, namespace)
                 .map(|scan| scan.components)
                 .unwrap_or_default()
         });

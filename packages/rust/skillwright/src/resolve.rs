@@ -56,42 +56,29 @@ impl ResolvedRun {
         &self.namespace
     }
 
-    /// The filesystem as this run reads it: the root file in use answers
-    /// for the vault's, so `--config` reaches everything that reads it.
+    /// The one view this run hands the core: the root file in use answers
+    /// for the vault's, so `--config` reaches everything that reads it, and
+    /// `~` in `build.out` means the home folder. The core hides the vault's
+    /// build output from every note it reads through this view
+    /// ([`tradecraft_core::notes_view`]); output and destinations are read
+    /// through it as they are.
     pub fn config_vfs(&self) -> SourceView<'static> {
-        let view = SourceView::over(&NativeVfs);
+        let view = SourceView::over(&NativeVfs).with_home(&crate::config::home_dir());
         match &self.config_path {
             Some(file) => view.with_root_file(&self.vault, file),
             None => view,
         }
     }
 
-    /// The vault as a run that does not build reads it: [`Self::config_vfs`]
-    /// less the output at `build.out`.
-    pub fn source_vfs(&self, skills_root: Option<&Path>) -> SourceView<'static> {
-        tradecraft_core::source_view(
+    /// [`Self::config_vfs`] less the vault's build output, for a walk of the
+    /// notes the CLI does itself rather than through the core.
+    pub fn notes_vfs(&self) -> SourceView<'static> {
+        tradecraft_core::notes_view(
             self.config_vfs(),
-            self.scope(skills_root, None),
-            self.configured_out().as_deref(),
-            &self.root_config(),
+            self.scope(None, None),
+            None,
             self.core_namespace(),
         )
-    }
-
-    /// The vault as an export into `out_root` reads it. When `build.out` is
-    /// another folder, its output is hidden, so a build or comparison
-    /// elsewhere never reads it as source.
-    ///
-    /// When `build.out` is `out_root`, nothing is hidden here. The export
-    /// reads its own output through this view, to find it, compare against it
-    /// and replace it, and hides it from the scan itself. Hiding it here too
-    /// makes the export lose track of its last build.
-    pub fn export_vfs(&self, skills_root: Option<&Path>, out_root: &Path) -> SourceView<'static> {
-        let resolved = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        match self.configured_out() {
-            Some(out) if resolved(&out) != resolved(out_root) => self.source_vfs(skills_root),
-            _ => self.config_vfs(),
-        }
     }
 
     /// `build.out`, resolved against the root file's folder.
@@ -430,12 +417,7 @@ pub fn workspace_warnings(run: &ResolvedRun) -> Vec<DiscoveryWarning> {
             "`build.out` on a workspace file is not read: each marketplace sets its own",
         ));
     }
-    let scan = discover_components(
-        &run.source_vfs(None),
-        &run.vault,
-        None,
-        run.core_namespace(),
-    );
+    let scan = discover_components(&run.config_vfs(), &run.vault, None, run.core_namespace());
     let in_marketplaces = format!("{WORKSPACE_DIR}/");
     let folders: std::collections::BTreeSet<String> = scan
         .iter()

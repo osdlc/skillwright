@@ -2251,3 +2251,161 @@ fn publish_does_not_read_the_packs_inside_the_vault() {
     );
     assert!(!common::names_owned_output(&said), "{said}");
 }
+
+#[test]
+fn publish_by_path_refuses_a_note_inside_the_packs() {
+    let dir = common::built_with_moved_packs();
+    let to = tempfile::tempdir().unwrap();
+    let to = common::vault_str(to.path());
+    let built = "market/pi-packs/widget/skills/widget-widget-skill/SKILL.md";
+    let published = common::run(
+        &[
+            "publish",
+            built,
+            "--to",
+            &to,
+            "--target",
+            "claude",
+            "--dry-run",
+        ],
+        dir.path(),
+    );
+    // A refused note exits 1, as `excluded-note` does.
+    assert_eq!(
+        published.code, 1,
+        "{}{}",
+        published.stdout, published.stderr
+    );
+    let said = format!("{}{}", published.stdout, published.stderr);
+    assert!(said.contains("refused · build-output: "), "{said}");
+    assert!(said.contains("is build output, not a note"), "{said}");
+}
+
+#[test]
+fn publish_does_not_cascade_a_plugin_note_inside_the_packs() {
+    let dir = common::built_with_moved_packs();
+    let root = dir.path();
+    // A copy of the plugin note in the packs, saying the plugin is not for
+    // Claude.
+    std::fs::write(
+        root.join("market/pi-packs/widget/widget.md"),
+        "---\nname: widget\ndescription: The widget plugin.\ntargets: [codex]\n---\n",
+    )
+    .unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let to = common::vault_str(to.path());
+    let published = common::run(
+        &[
+            "publish",
+            "marketplaces/acme/plugins/widget/skills/widget-skill.md",
+            "--to",
+            &to,
+            "--target",
+            "claude",
+            "--dry-run",
+        ],
+        root,
+    );
+    assert_eq!(
+        published.code, 0,
+        "{}{}",
+        published.stdout, published.stderr
+    );
+    let said = format!("{}{}", published.stdout, published.stderr);
+    assert!(
+        said.contains(".claude/skills/widget-skill/SKILL.md  written"),
+        "{said}"
+    );
+}
+
+#[test]
+fn status_does_not_read_the_packs_inside_the_vault() {
+    let dir = common::built_with_moved_packs();
+    let root = dir.path();
+    let to = tempfile::tempdir().unwrap();
+    let to = to.path().canonicalize().unwrap();
+    // A note the skill embeds, in a folder that holds packs and that the
+    // build does not own yet.
+    std::fs::create_dir_all(root.join("market/later/widget")).unwrap();
+    std::fs::write(root.join("market/later/widget/package.json"), "{}").unwrap();
+    std::fs::write(root.join("market/later/widget/guide.md"), "Read it.\n").unwrap();
+    common::write_skill(root, "widget", "First draft.\n\n![[guide]]");
+    let config = std::fs::read_to_string(root.join("skillwright.md")).unwrap();
+    let config = config.replace(
+        "  out: market\n",
+        &format!(
+            "  out: market\n  destinations:\n    - {{root: {}, target: claude}}\n",
+            to.display()
+        ),
+    );
+    std::fs::write(root.join("skillwright.md"), &config).unwrap();
+    let skill = "marketplaces/acme/plugins/widget/skills/widget-skill.md";
+    let published = common::run(&["publish", skill, "--yes"], root);
+    assert_eq!(
+        published.code, 0,
+        "{}{}",
+        published.stdout, published.stderr
+    );
+
+    // Pi's packs move there, so the guide is now only in output.
+    std::fs::write(
+        root.join("skillwright.md"),
+        config.replace("pi: {packs: pi-packs}", "pi: {packs: later}"),
+    )
+    .unwrap();
+    let status = common::run(&["status", skill], root);
+    assert_eq!(status.code, 0, "{}{}", status.stdout, status.stderr);
+    let said = format!("{}{}", status.stdout, status.stderr);
+    assert!(
+        said.contains("is gone from the vault: market/later/widget/guide.md"),
+        "{said}"
+    );
+}
+
+/// A workspace of two members, each with a skill named `shared`. Member
+/// `one` builds into `market` inside its own folder, with Pi packs moved to
+/// `market/pi-packs`.
+fn workspace_with_member_output() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let write = |rel: &str, text: &str| {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    write("skillwright.md", "---\nworkspace: true\n---\n");
+    for member in ["one", "two"] {
+        let out = if member == "one" {
+            "pi: {packs: pi-packs}\nbuild:\n  out: market\n  harnesses: [claude, pi]\n"
+        } else {
+            "build:\n  out: market\n"
+        };
+        write(
+            &format!("marketplaces/{member}/skillwright.md"),
+            &format!("---\nname: {member}\nversion: 1.0.0\n{out}---\n"),
+        );
+        write(
+            &format!("marketplaces/{member}/plugins/p{member}/p{member}.md"),
+            "---\ndescription: P.\nversion: 1.0.0\n---\n",
+        );
+        write(
+            &format!("marketplaces/{member}/plugins/p{member}/skills/shared.md"),
+            "---\nname: shared\ndescription: Shared.\n---\nBody.\n",
+        );
+    }
+    let built = common::run(&["build", "--yes"], root);
+    assert_eq!(built.code, 0, "{}{}", built.stdout, built.stderr);
+    assert!(root.join("marketplaces/one/market/pi-packs/pone").is_dir());
+    dir
+}
+
+#[test]
+fn a_workspace_build_does_not_read_a_member_s_output() {
+    let dir = workspace_with_member_output();
+    let built = common::run(&["build", "--yes"], dir.path());
+    assert_eq!(built.code, 0, "{}{}", built.stdout, built.stderr);
+    let said = format!("{}{}", built.stdout, built.stderr);
+    assert!(!said.contains("market/"), "{said}");
+    assert!(!said.contains("warning"), "{said}");
+    assert!(!said.contains("written"), "{said}");
+}

@@ -4292,3 +4292,42 @@ fn a_home_out_inside_the_vault_is_hidden() {
         assert!(!common::names_owned_output(&said), "{verb}: {said}");
     }
 }
+
+#[test]
+fn list_at_a_workspace_root_does_not_read_a_member_s_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let write = |rel: &str, text: &str| {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    };
+    write("skillwright.md", "---\nworkspace: true\n---\n");
+    write(
+        "marketplaces/one/skillwright.md",
+        "---\nname: one\nversion: 1.0.0\npi: {packs: pi-packs}\nbuild:\n  out: market\n  harnesses: [claude, pi]\n---\n",
+    );
+    write(
+        "marketplaces/one/plugins/p/p.md",
+        "---\ndescription: P.\nversion: 1.0.0\n---\n",
+    );
+    write(
+        "marketplaces/one/plugins/p/skills/a.md",
+        "---\ndescription: A.\n---\nBody.\n",
+    );
+    let built = run(&["build", "--yes"], root);
+    assert_eq!(built.code, 0, "{}{}", built.stdout, built.stderr);
+    assert!(root.join("marketplaces/one/market/pi-packs/p").is_dir());
+
+    let listed = run(&["list"], root);
+    assert_eq!(listed.code, 0, "{}{}", listed.stdout, listed.stderr);
+    assert!(
+        listed
+            .stdout
+            .contains("marketplaces/one/plugins/p/skills/a.md"),
+        "{}",
+        listed.stdout
+    );
+    let said = format!("{}{}", listed.stdout, listed.stderr);
+    assert!(!said.contains("market/"), "{said}");
+}

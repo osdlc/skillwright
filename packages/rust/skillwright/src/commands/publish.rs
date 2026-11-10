@@ -278,19 +278,15 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
     // The skills this run writes, to catch two that land on one folder.
     let mut skills: Vec<DiscoveredComponent> = Vec::new();
     if whole_vault {
-        let mut scan = match discover_components(
-            &run.source_vfs(None),
-            &run.vault,
-            None,
-            run.core_namespace(),
-        ) {
-            Ok(scan) => scan,
-            // What discovery still refuses is run-level by construction — a
-            // duplicate name, a bundle overlap, a symlink, a missing root.
-            // None of them is a fact about one note, so none of them leaves
-            // a roster worth publishing half of.
-            Err(err) => return blocked(ctx.err, &err.to_string()),
-        };
+        let mut scan =
+            match discover_components(&run.config_vfs(), &run.vault, None, run.core_namespace()) {
+                Ok(scan) => scan,
+                // What discovery still refuses is run-level by construction — a
+                // duplicate name, a bundle overlap, a symlink, a missing root.
+                // None of them is a fact about one note, so none of them leaves
+                // a roster worth publishing half of.
+                Err(err) => return blocked(ctx.err, &err.to_string()),
+            };
         // Skills only, each once: a plugin's skills publish here on their own,
         // so its pack would write them again. A pack, an agent or a command
         // publishes when its note is named.
@@ -340,12 +336,8 @@ pub fn run_publish(flags: &PublishFlags, ctx: &mut CommandContext<'_>) -> i32 {
         // A scan that fails here is not this run's concern: each named note
         // is read on its own below.
         if note_paths.len() > 1
-            && let Ok(mut scan) = discover_components(
-                &run.source_vfs(None),
-                &run.vault,
-                None,
-                run.core_namespace(),
-            )
+            && let Ok(mut scan) =
+                discover_components(&run.config_vfs(), &run.vault, None, run.core_namespace())
         {
             inherit_targets(&mut scan, &run.root_config());
             skills = scan

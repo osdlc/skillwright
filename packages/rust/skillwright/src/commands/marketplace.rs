@@ -330,7 +330,7 @@ fn export_one(
     }
 
     // --- run ----------------------------------------------------------------
-    let vfs = run.export_vfs(request.skills_root.as_deref(), &out_root);
+    let vfs = run.config_vfs();
     let report = match export_skills(&vfs, &request, run.core_namespace()) {
         Ok(report) => report,
         // An export has no partial report: its rails fire before anything is

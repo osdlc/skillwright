@@ -223,7 +223,7 @@ pub fn run_new_marketplace(flags: &NewMarketplaceFlags, ctx: &mut CommandContext
     note.fields = &fields;
     note.placement = Some(&placement);
     note.bundled = true;
-    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, ns, &note);
+    let op_result = plan_create_note(&run.config_vfs(), &run.vault, ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
         op_result,
@@ -297,7 +297,7 @@ pub fn run_new_plugin(flags: &NewPluginFlags, ctx: &mut CommandContext<'_>) -> i
     note.fields = &fields;
     note.placement = Some(&placement);
     note.bundled = true;
-    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, ns, &note);
+    let op_result = plan_create_note(&run.config_vfs(), &run.vault, ns, &note);
     let fallback = expected_create_path(Some(&placement), &flags.name, true);
     execute(
         op_result,
@@ -377,7 +377,7 @@ pub fn run_new_skill(flags: &NewSkillFlags, ctx: &mut CommandContext<'_>) -> i32
     note.fields = &fields;
     note.placement = placement.as_ref();
     note.bundled = true;
-    let op_result = plan_create_note(&run.source_vfs(None), &run.vault, ns, &note);
+    let op_result = plan_create_note(&run.config_vfs(), &run.vault, ns, &note);
     let fallback = expected_create_path(placement.as_ref(), &flags.name, true);
     execute(
         op_result,
@@ -422,27 +422,13 @@ pub fn run_rename(flags: &RenameFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let entry = component.vault_relative_path.as_str();
 
     let op_result = match component.kind {
-        EntityKind::Plugin => plan_rename_plugin(
-            &run.source_vfs(None),
-            &run.vault,
-            ns,
-            entry,
-            &flags.new_name,
-        ),
-        EntityKind::Marketplace => plan_rename_marketplace(
-            &run.source_vfs(None),
-            &run.vault,
-            ns,
-            entry,
-            &flags.new_name,
-        ),
-        _ => plan_rename_component(
-            &run.source_vfs(None),
-            &run.vault,
-            ns,
-            entry,
-            &flags.new_name,
-        ),
+        EntityKind::Plugin => {
+            plan_rename_plugin(&run.config_vfs(), &run.vault, ns, entry, &flags.new_name)
+        }
+        EntityKind::Marketplace => {
+            plan_rename_marketplace(&run.config_vfs(), &run.vault, ns, entry, &flags.new_name)
+        }
+        _ => plan_rename_component(&run.config_vfs(), &run.vault, ns, entry, &flags.new_name),
     };
     let fallback = rename_destination(entry, &slug);
     execute(
@@ -488,7 +474,7 @@ pub fn run_move(flags: &MoveFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let plugin = Some(flags.to_plugin.clone());
 
     let op_result = plan_move_component(
-        &run.source_vfs(None),
+        &run.config_vfs(),
         &run.vault,
         ns,
         entry,
@@ -536,9 +522,9 @@ pub fn run_delete(flags: &DeleteFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let entry = component.vault_relative_path.as_str();
 
     let op_result = if flags.force && component.kind.holds_components() {
-        plan_delete_container(&run.source_vfs(None), &run.vault, ns, entry, component.kind)
+        plan_delete_container(&run.config_vfs(), &run.vault, ns, entry, component.kind)
     } else {
-        plan_delete_component(&run.source_vfs(None), &run.vault, ns, entry)
+        plan_delete_component(&run.config_vfs(), &run.vault, ns, entry)
     };
     let fallback = bundle_dir(entry).unwrap_or(entry).to_string();
     execute(
@@ -578,7 +564,7 @@ pub fn run_convert(flags: &ConvertFlags, ctx: &mut CommandContext<'_>) -> i32 {
     };
     let entry = component.vault_relative_path.as_str();
 
-    let op_result = plan_convert_kind(&run.source_vfs(None), &run.vault, ns, entry, to_kind, &[]);
+    let op_result = plan_convert_kind(&run.config_vfs(), &run.vault, ns, entry, to_kind, &[]);
     let label = label_convert(to_kind);
     execute(
         op_result,
@@ -628,8 +614,8 @@ fn execute(
         Ok(op) => op,
         Err(reason) => return refuse_row(fallback_path, &reason, flags, ctx),
     };
-    let source = run.source_vfs(None);
-    let vault = Vault::new(&run.vault, &source);
+    let notes = run.notes_vfs();
+    let vault = Vault::new(&run.vault, &notes);
 
     if flags.dry_run {
         return match apply::preview(vault, &op) {
@@ -939,7 +925,7 @@ fn scan_components(
     ns: &Namespace,
     ctx: &mut CommandContext<'_>,
 ) -> Result<Vec<DiscoveredComponent>, i32> {
-    match discover_components(&run.source_vfs(None), &run.vault, None, ns) {
+    match discover_components(&run.config_vfs(), &run.vault, None, ns) {
         Ok(scan) => Ok(scan.components),
         Err(err) => Err(blocked(
             ctx.err,
