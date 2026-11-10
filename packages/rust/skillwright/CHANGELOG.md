@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `bump --changed-since <ref>` checks out only what the ref's build reads: the root file, the workspace file, the vault folder, the `build.assets` and `build.hooks` sources, and the `.gitattributes` above them. It wrote out the whole repository before, which in a monorepo cost as much as the repository. A symlink in or above those paths still checks out the whole tree. The checkout no longer registers a git worktree.
+
 ## [0.11.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.11.0) - 2026-11-10
 
 ### Breaking

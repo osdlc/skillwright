@@ -203,8 +203,9 @@ pub(crate) fn read_workspace_above(
 }
 
 /// Where a workspace file above `dir` would be, when `dir` is
-/// `<workspace>/marketplaces/<m>/`.
-pub(crate) fn workspace_file(dir: &Path) -> Option<PathBuf> {
+/// `<workspace>/marketplaces/<m>/`. Names the path only: the file may be
+/// absent, or not say `workspace: true` ([`workspace_above`] checks both).
+pub fn workspace_file(dir: &Path) -> Option<PathBuf> {
     let parent = dir.parent()?;
     if parent.file_name()? != WORKSPACE_DIR {
         return None;
