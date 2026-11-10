@@ -457,11 +457,16 @@ pub fn render_roster(components: &[DiscoveredComponent]) -> Vec<String> {
         .collect()
 }
 
-/// `<path>  warning · <reason>: <detail>` — one note admitted with something
-/// filled in. Stderr, and printed under `--quiet`.
+/// `<path>  warning · <reason>: <detail>`, or `error ·` for a note a build
+/// refuses. Stderr, and printed under `--quiet`.
 pub fn render_warning_line(warning: &DiscoveryWarning) -> String {
+    let level = if warning.is_error() {
+        "error"
+    } else {
+        "warning"
+    };
     format!(
-        "{}  warning · {}: {}",
+        "{}  {level} · {}: {}",
         warning.path, warning.reason, warning.detail
     )
 }

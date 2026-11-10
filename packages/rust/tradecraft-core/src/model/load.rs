@@ -29,9 +29,9 @@ use crate::compile::{
 };
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
-    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION_REASON,
-    NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON, SkippedNote, UNKNOWN_KEY_REASON, discover_in,
-    load_source,
+    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, NEVER_SHIPS_REASON,
+    NO_COMPONENT_KEYS_REASON, SkippedNote, UNKNOWN_KEY_REASON, discover_in, load_source,
+    refuse_undescribed,
 };
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
@@ -177,7 +177,8 @@ pub(crate) fn selected_harnesses(
 ///   note that was deleted.
 /// * `refused: ambiguous-marketplace` / `unknown-marketplace` /
 ///   `unnamed-marketplace` — which marketplace, and what it is called.
-/// * `refused: missing-description` — `require_descriptions` is set.
+/// * `refused: missing-description` — a member with a `name` and no
+///   `description`.
 /// * `refused: empty-marketplace` — nothing publishable.
 /// * `refused: path-collision` — two members of one kind in one plugin.
 /// * `refused: unsafe-asset-dest` / `asset-over-manifest` /
@@ -293,6 +294,13 @@ pub fn load(
         of_kind(EntityKind::Command),
         of_kind(EntityKind::Hook),
     );
+    // Before `empty-marketplace`: a vault of undescribed agents is told why.
+    refuse_undescribed(
+        belonging
+            .iter()
+            .filter(|c| c.lacks_description())
+            .map(|c| c.vault_relative_path.as_str()),
+    )?;
     if skills.is_empty() && commands.is_empty() && hooks.is_empty() {
         return Err(CoreError::refused(
             "empty-marketplace",
@@ -313,27 +321,6 @@ pub fn load(
         ));
     }
     let name = marketplace_name(&cascade.config, market.as_deref())?;
-    // A silent note the config describes ships that value, so it is not
-    // missing one.
-    warnings.retain(|w| {
-        w.reason != MISSING_DESCRIPTION_REASON || !cascade.configured.contains(w.path.as_str())
-    });
-    let undescribed: Vec<&str> = warnings
-        .iter()
-        .filter(|w| w.reason == MISSING_DESCRIPTION_REASON)
-        .map(|w| w.path.as_str())
-        .collect();
-    if request.config.require_descriptions && !undescribed.is_empty() {
-        return Err(CoreError::refused(
-            MISSING_DESCRIPTION_REASON,
-            format!(
-                "`require_descriptions` is set and {} note(s) have a `name` and no \
-                 `description`: {}. Nothing was written",
-                undescribed.len(),
-                undescribed.join(", ")
-            ),
-        ));
-    }
     let mut plugins = group_by_plugin(&skills, &commands, &hooks, &name)?;
     // The marketplace's own plugin has no folder, so its note is the
     // marketplace's and it ships the marketplace's version.
@@ -496,7 +483,10 @@ impl<'a> ComponentRequest<'a> {
 ///
 /// # Errors
 ///
-/// `refused: unknown-target` from the note's harness blocks, and what [`resolve_body`] refuses.
+/// * `refused: missing-description` — the note has a `name` and no
+///   `description`.
+/// * `refused: unknown-target` from the note's harness blocks, and what
+///   [`resolve_body`] refuses.
 pub fn load_component(
     vfs: &dyn Vfs,
     request: &ComponentRequest<'_>,
@@ -517,6 +507,11 @@ pub fn load_component(
     let implicit = matches!(request.kind, EntityKind::Skill | EntityKind::Command);
     let calls = recording_context(SkillSource::lazy(&build), implicit, &record);
     let discovered = standalone(request, note);
+    refuse_undescribed(
+        discovered
+            .lacks_description()
+            .then_some(discovered.vault_relative_path.as_str()),
+    )?;
     let (mut resolved, content) = resolve_compiled(
         vfs,
         request.root,
@@ -573,6 +568,8 @@ pub struct Pack {
 /// * `refused: unreadable-note` — a member the scan could not read. A pack
 ///   must not install a subset silently.
 /// * `refused: empty-plugin` — nothing this destination admits.
+/// * `refused: missing-description` — a carried member with a `name` and no
+///   `description`.
 /// * `refused: malformed` — a container block key holding the wrong
 ///   kind of value, such as a `metadata` that is not a mapping.
 /// * What [`resolve_body`] refuses for any member.
@@ -644,6 +641,15 @@ pub fn load_plugin(
             ),
         ));
     }
+
+    refuse_undescribed(
+        plugin
+            .skills
+            .iter()
+            .chain(&plugin.commands)
+            .filter(|member| member.discovered.lacks_description())
+            .map(|member| member.discovered.vault_relative_path.as_str()),
+    )?;
 
     // A pack's calls name each skill under its own plugin, the way the
     // harness names a plugin's skills.
@@ -722,7 +728,6 @@ pub fn load_plugin(
         // A pack renders its own manifest and no marketplace's, and it ships
         // no launcher asset, so no call is rewritten.
         name: None,
-        require_descriptions: false,
         launcher_path: None,
         ..cascade.config.clone()
     };
@@ -994,7 +999,6 @@ fn standalone(request: &ComponentRequest<'_>, note: &VaultNote) -> DiscoveredCom
     DiscoveredComponent {
         name: note.projection.content.name.clone(),
         description: note.projection.content.description.clone(),
-        description_filled: false,
         kind: request.kind,
         kind_source: crate::frontmatter::KindSource::Default,
         folder_kind: None,
