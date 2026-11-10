@@ -771,7 +771,14 @@ fn publish_onto(
     {
         return Err(root_file_not_a_note(&request.skill_path));
     }
-    let resolved = publish_kind(placed, &in_vault);
+    // From here the note is read, resolved and recorded by its in-vault
+    // spelling, so a real path under a linked root publishes as the link does.
+    let request = &PublishRequest {
+        skill_path: in_vault,
+        ..request.clone()
+    };
+    let in_vault = &request.skill_path;
+    let resolved = publish_kind(placed, in_vault);
     let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
     // Everything a renderer cannot take is refused here, before the renderer
@@ -787,8 +794,8 @@ fn publish_onto(
 
     // The note's own unknown keys, before the cascade adds anything to it.
     let root_relative = request.skills_root.as_deref().map_or_else(
-        || vault_relative(Path::new(""), &in_vault),
-        |root| vault_relative(root, &in_vault),
+        || vault_relative(Path::new(""), in_vault),
+        |root| vault_relative(root, in_vault),
     );
     let own_warning = unknown_key_warning(
         &root_relative,
@@ -800,12 +807,12 @@ fn publish_onto(
     // What the note inherits, before `targets` is asked: the same answer a
     // build reaches.
     let requested = request.config.clone().unwrap_or_default();
-    let cascade = Cascade::above_with(vfs, placed, &in_vault, &requested, ns)?;
+    let cascade = Cascade::above_with(vfs, placed, in_vault, &requested, ns)?;
     // The containers' own blocks first, as a build checks them, so a bad
     // value names the container that holds it, not this note.
     crate::harness::manifest::check_block_values(&cascade.config)?;
     let plugin = placed.and_then(|(patterns, root)| {
-        crate::discover::folder_placement_with(patterns, root, &in_vault).plugin
+        crate::discover::folder_placement_with(patterns, root, in_vault).plugin
     });
     cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
 

@@ -21,7 +21,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - A member reached through a symlink, as with `--vault /tmp/acme-link` pointing at `<ws>/marketplaces/acme`, gets its workspace's settings and `build.exclude`. A workspace `build.exclude` glob that matches nothing, and a `publish` refused `excluded-note` by such a glob, name the workspace file by its absolute path in that case, since `../../skillwright.md` from the link names another folder ([#91](https://github.com/osdlc/skillwright/issues/91)).
-- `publish` of a note spelled by its real path, under a vault named through a link (or the other way round), reads the note's folder and `build.exclude` as it does for the same spelling, so an excluded note is refused `excluded-note` ([#91](https://github.com/osdlc/skillwright/issues/91)).
+- `publish` of a note spelled by its real path, under a vault named through a link (or the other way round), publishes as the same note spelled under the vault does: it reads the note's folder and `build.exclude`, so an excluded note is refused `excluded-note`, and any other note publishes the same files ([#91](https://github.com/osdlc/skillwright/issues/91)).
 - A first build through a symlinked vault refuses a `packs` that lands on a folder the vault reads notes from, as a build through the real path does. The check was skipped while `build.out` did not exist yet ([#83](https://github.com/osdlc/skillwright/issues/83)).
 
 ## [0.11.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.11.0) - 2026-11-10
