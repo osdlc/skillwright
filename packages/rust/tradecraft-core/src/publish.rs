@@ -372,6 +372,9 @@ pub enum ReasonToken {
     ExcludedNote,
     /// A member note has a `name` and no `description`.
     MissingDescription,
+    /// A member note states no `name`, and the one its file name gives is
+    /// not a name the Agent Skills spec admits.
+    InvalidName,
     /// A note or root file that parsed holds a value of the wrong kind or
     /// shape for a key it sets, bare or in a harness block.
     Malformed,
@@ -426,6 +429,7 @@ impl ReasonToken {
         Self::Malformed,
         Self::MalformedRootFile,
         Self::MissingDescription,
+        Self::InvalidName,
     ];
 
     /// The wire spelling, which prose never varies from.
@@ -452,6 +456,7 @@ impl ReasonToken {
             Self::Malformed => "malformed",
             Self::MalformedRootFile => "malformed-root-file",
             Self::MissingDescription => crate::discover::MISSING_DESCRIPTION_REASON,
+            Self::InvalidName => crate::discover::INVALID_NAME_REASON,
             Self::Claimed => "claimed",
             Self::RedundantOverride => "redundant-override",
             Self::Overwritten => "overwritten",
@@ -5094,6 +5099,7 @@ mod tests {
                 "malformed",
                 "malformed-root-file",
                 "missing-description",
+                "invalid-name",
             ]
         );
         assert!(ReasonToken::REFUSALS.iter().all(|t| t.is_refusal()));

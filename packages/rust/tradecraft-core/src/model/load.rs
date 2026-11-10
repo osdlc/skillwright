@@ -31,7 +31,7 @@ use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, NEVER_SHIPS_REASON,
     NO_COMPONENT_KEYS_REASON, SkippedNote, UNKNOWN_KEY_REASON, discover_in, load_source,
-    refuse_undescribed,
+    refuse_invalid_names, refuse_undescribed,
 };
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
@@ -301,6 +301,7 @@ pub fn load(
             .filter(|c| c.lacks_description())
             .map(|c| c.vault_relative_path.as_str()),
     )?;
+    refuse_invalid_names(belonging.iter().copied())?;
     if skills.is_empty() && commands.is_empty() && hooks.is_empty() {
         return Err(CoreError::refused(
             "empty-marketplace",
@@ -512,6 +513,7 @@ pub fn load_component(
             .lacks_description()
             .then_some(discovered.vault_relative_path.as_str()),
     )?;
+    refuse_invalid_names([&discovered])?;
     let (mut resolved, content) = resolve_compiled(
         vfs,
         request.root,
@@ -649,6 +651,13 @@ pub fn load_plugin(
             .chain(&plugin.commands)
             .filter(|member| member.discovered.lacks_description())
             .map(|member| member.discovered.vault_relative_path.as_str()),
+    )?;
+    refuse_invalid_names(
+        plugin
+            .skills
+            .iter()
+            .chain(&plugin.commands)
+            .map(|member| &member.discovered),
     )?;
 
     // A pack's calls name each skill under its own plugin, the way the

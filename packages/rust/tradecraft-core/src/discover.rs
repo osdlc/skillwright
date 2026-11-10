@@ -230,6 +230,28 @@ impl DiscoveredComponent {
         self.description.is_empty() && needs_description(self.kind)
     }
 
+    /// Why a member's name, taken from its file name because it states none,
+    /// is not one the Agent Skills spec admits, or `None` when it is. The
+    /// scan refuses a stated name that breaks the rule, so only a derived one
+    /// reaches here.
+    pub fn invalid_name(&self) -> Option<String> {
+        if !needs_description(self.kind) || name_refusal(&self.name, "name").is_none() {
+            return None;
+        }
+        // The slug holds only `a-z`, `0-9` and single inner hyphens, so it
+        // breaks the rule only by being empty or too long.
+        Some(if self.name.is_empty() {
+            "its file name has no ASCII letter or digit, so the name it gives is empty".to_owned()
+        } else {
+            format!(
+                "the name its file name gives, `{}`, is {} characters, over the {NAME_MAX_LEN} \
+                 the Agent Skills spec allows",
+                self.name,
+                self.name.len()
+            )
+        })
+    }
+
     /// The folder a container is known by: a plugin's entry note is named for
     /// it, and a marketplace's sits in it as the root file. A marketplace note's
     /// `name` is only what it publishes under.
@@ -533,6 +555,12 @@ pub struct DiscoveryReport {
 /// [`DiscoveryReport::warnings`].
 pub const MISSING_DESCRIPTION_REASON: &str = "missing-description";
 
+/// The reason naming a member note that states no `name` and whose file name
+/// gives one the Agent Skills spec does not admit: empty, or too long. A
+/// build and a publish refuse such a note; a scan lists it with this entry in
+/// [`DiscoveryReport::warnings`].
+pub const INVALID_NAME_REASON: &str = "invalid-name";
+
 /// One note the scan admitted, and what is wrong with it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -562,12 +590,17 @@ impl DiscoveryWarning {
     }
 
     /// Whether a build refuses the note this names, rather than ships it: a
-    /// member with no description, or a path collision.
+    /// member with no description or an invalid derived name, or a path
+    /// collision.
     pub fn is_error(&self) -> bool {
         use crate::publish::ReasonToken;
         matches!(
             ReasonToken::parse(&self.reason),
-            Some(ReasonToken::MissingDescription | ReasonToken::PathCollision)
+            Some(
+                ReasonToken::MissingDescription
+                    | ReasonToken::InvalidName
+                    | ReasonToken::PathCollision
+            )
         )
     }
 }
@@ -858,6 +891,15 @@ fn discover_with(
                 if component.lacks_description() {
                     warnings.push(missing_description(&component));
                 }
+                if let Some(why) = component.invalid_name() {
+                    warnings.push(DiscoveryWarning::new(
+                        component.vault_relative_path.clone(),
+                        INVALID_NAME_REASON,
+                        format!(
+                            "{why}; build and publish refuse it. Set `name:` in its frontmatter"
+                        ),
+                    ));
+                }
                 if let Some(warning) = unknown_key_warning(
                     &component.vault_relative_path,
                     component.kind,
@@ -903,7 +945,9 @@ fn discover_with(
     // two components publishing onto one directory, which is exactly this key.
     type PublishKey<'a> = (Option<&'a str>, Option<&'a str>, EntityKind, &'a str);
     let mut by_key: BTreeMap<PublishKey, Vec<&DiscoveredComponent>> = BTreeMap::new();
-    for component in &discovered {
+    // A member with an invalid derived name is refused as `invalid-name`, so
+    // two `日本.md` notes are not also told they collide on the empty name.
+    for component in discovered.iter().filter(|c| c.invalid_name().is_none()) {
         let key = (
             component.marketplace.as_deref(),
             component.plugin.as_deref(),
@@ -1022,6 +1066,39 @@ pub fn refuse_undescribed<'a>(paths: impl IntoIterator<Item = &'a str>) -> Resul
              description to decide when to load a component. Nothing was written",
             paths.len(),
             paths.join(", ")
+        ),
+    ))
+}
+
+/// Refuses with [`INVALID_NAME_REASON`] when `components` holds a member
+/// whose derived name is not one the Agent Skills spec admits
+/// ([`DiscoveredComponent::invalid_name`]). The name is not shortened or
+/// transliterated: the author sets `name:`.
+///
+/// # Errors
+///
+/// `refused: invalid-name`, naming every note and why.
+pub fn refuse_invalid_names<'a>(
+    components: impl IntoIterator<Item = &'a DiscoveredComponent>,
+) -> Result<(), CoreError> {
+    let notes: Vec<String> = components
+        .into_iter()
+        .filter_map(|c| {
+            c.invalid_name()
+                .map(|why| format!("{} ({why})", c.vault_relative_path))
+        })
+        .collect();
+    if notes.is_empty() {
+        return Ok(());
+    }
+    Err(CoreError::refused(
+        INVALID_NAME_REASON,
+        format!(
+            "{} note(s) state no `name`, and the name their file name gives is not one the \
+             Agent Skills spec admits: {}. Set `name:` in each note's frontmatter. Nothing was \
+             written",
+            notes.len(),
+            notes.join("; ")
         ),
     ))
 }
@@ -1579,7 +1656,13 @@ fn read_source(
         ns,
     )?;
 
-    validate_name(&name, "component name", entry_path)?;
+    // A stated name that breaks the rule is refused here. A derived one is
+    // kept, so the scan lists the note and a build refuses it as
+    // `invalid-name` (see [`DiscoveredComponent::invalid_name`]).
+    let derived = trimmed_string(&fields, "name").is_none();
+    if !(derived && needs_description(resolved.kind)) {
+        validate_name(&name, "component name", entry_path)?;
+    }
     // A plugin is known by its folder in every manifest and every call, so a
     // `name` that differs could not take effect.
     if resolved.kind == EntityKind::Plugin

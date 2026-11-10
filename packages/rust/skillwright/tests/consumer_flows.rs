@@ -1657,3 +1657,85 @@ fn plugin_fields_reach_the_codex_cursor_and_pi_manifests() {
     let pi = json(".pi/packs/t/package.json");
     assert_eq!(pi["keywords"], serde_json::json!(["own"]));
 }
+
+/// A note that states no `name` takes one from its file name. When that name
+/// is empty or over 64 characters, `list` lists and flags the note, and
+/// `build` and `check` refuse it with `invalid-name`, saying why and to set
+/// `name:`. The name is not shortened.
+#[test]
+fn a_derived_name_the_spec_does_not_admit_is_refused_as_invalid_name() {
+    let long = format!("plugins/p/skills/{}.md", "a".repeat(70));
+    let dir = vault(&[
+        ("skillwright.md", ROOT),
+        ("plugins/p/p.md", PLUGIN),
+        ("plugins/p/skills/ok.md", SKILL),
+        (&long, SKILL),
+        ("plugins/p/skills/日本.md", SKILL),
+        ("plugins/p/skills/中文.md", SKILL),
+    ]);
+    let list = sw(&dir.path(), &["list"]);
+    assert_eq!(list.code, 2, "{}", list.text);
+    assert_eq!(
+        list.text.matches("[invalid-name]").count(),
+        3,
+        "{}",
+        list.text
+    );
+    assert!(
+        list.text
+            .contains("is 70 characters, over the 64 the Agent Skills spec allows"),
+        "{}",
+        list.text
+    );
+    assert!(
+        list.text.contains(
+            "plugins/p/skills/日本.md  error · invalid-name: its file name has no ASCII letter \
+             or digit, so the name it gives is empty"
+        ),
+        "{}",
+        list.text
+    );
+    assert!(!list.text.contains("unreadable-note"), "{}", list.text);
+    // Two empty names are not also a collision.
+    assert!(!list.text.contains("path-collision"), "{}", list.text);
+    let json = sw(&dir.path(), &["list", "--json"]);
+    assert_eq!(json.code, 2);
+    assert_eq!(
+        json.text.matches("\"invalid_name\"").count(),
+        3,
+        "{}",
+        json.text
+    );
+
+    for verb in [&["check"][..], &["build", "--yes"][..]] {
+        let ran = sw(&dir.path(), verb);
+        assert_eq!(ran.code, 2, "{}", ran.text);
+        assert!(
+            ran.text.contains("invalid-name: 3 note(s) state no `name`"),
+            "{}",
+            ran.text
+        );
+        assert!(ran.text.contains("Set `name:`"), "{}", ran.text);
+        assert!(ran.text.contains(&long), "{}", ran.text);
+    }
+    assert!(!dir.path().join("dist").exists());
+
+    // A stated name settles each.
+    std::fs::write(
+        dir.path().join(&long),
+        "---\nname: long\ndescription: D.\n---\nBody.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("plugins/p/skills/日本.md"),
+        "---\nname: nihon\ndescription: D.\n---\nBody.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("plugins/p/skills/中文.md"),
+        "---\nname: zhongwen\ndescription: D.\n---\nBody.\n",
+    )
+    .unwrap();
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+}

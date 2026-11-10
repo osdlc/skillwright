@@ -138,7 +138,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: false,
-        summary: "The name. Defaults to the file or folder name. A plugin's must match its folder.",
+        summary: "The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder.",
     },
     KeySpec {
         key: "description",

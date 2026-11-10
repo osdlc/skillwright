@@ -22,7 +22,8 @@
 use tradecraft_core::model::load::{LoadRequest, load};
 use tradecraft_core::settings::ROOT_FILE;
 use tradecraft_core::{
-    DiscoveryReport, EntityKind, MISSING_DESCRIPTION_REASON, discover_roster, inherit_targets,
+    DiscoveryReport, EntityKind, INVALID_NAME_REASON, MISSING_DESCRIPTION_REASON, discover_roster,
+    inherit_targets,
 };
 
 use crate::commands::marketplace::marketplace_inputs;
@@ -119,10 +120,10 @@ pub fn run_list(flags: &ListFlags, ctx: &mut CommandContext<'_>) -> i32 {
                     row.as_object_mut(),
                 ) {
                     for (reason, detail) in found {
-                        let key = if *reason == MISSING_DESCRIPTION_REASON {
-                            "missing_description"
-                        } else {
-                            "collision"
+                        let key = match *reason {
+                            MISSING_DESCRIPTION_REASON => "missing_description",
+                            INVALID_NAME_REASON => "invalid_name",
+                            _ => "collision",
                         };
                         map.insert(key.to_owned(), (*detail).into());
                     }

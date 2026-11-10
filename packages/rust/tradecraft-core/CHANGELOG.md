@@ -9,6 +9,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `ReasonToken::InvalidName` (`invalid-name`), in `ReasonToken::REFUSALS` and the generated TS `ReasonToken`, with `INVALID_NAME_REASON`. A skill, command or agent that states no `name` and whose file name gives an empty one or one over 64 characters is refused with it by `load`, `export_skills`, `load_component`, `load_plugin` and so `publish_skill`. A scan lists the note, with an `invalid-name` entry in `DiscoveryReport::warnings`, where it skipped it as `unreadable-note`. `DiscoveryWarning::is_error` is true for it.
+- `DiscoveredComponent::invalid_name`: why a member's derived name is not admitted.
+- `refuse_invalid_names(components)`: the `invalid-name` refusal for the members named.
 - `render_plugin_manifest` writes a Cursor `displayName` from the plugin's `display_name`. A `cursor.displayName` block key still wins.
 
 ### Fixed
