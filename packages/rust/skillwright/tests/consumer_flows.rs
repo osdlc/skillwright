@@ -1765,3 +1765,34 @@ fn a_derived_name_the_spec_does_not_admit_is_refused_as_invalid_name() {
     let built = sw(&dir.path(), &["build", "--yes"]);
     assert_eq!(built.code, 0, "{}", built.text);
 }
+
+/// `publish <path>` of a note with no `name` whose file name gives an empty
+/// name or one over 64 characters refuses it with `invalid-name`, in a kind
+/// folder or outside every one, and writes nothing. The name is not cut to
+/// 64 characters.
+#[test]
+fn publish_by_path_refuses_an_invalid_derived_name_without_truncating() {
+    let long = "x".repeat(70);
+    let notes = [
+        format!("skills/{long}.md"),
+        "skills/日本.md".to_owned(),
+        format!("notes/{long}.md"),
+        "notes/日本.md".to_owned(),
+    ];
+    let mut files = vec![("skillwright.md", ROOT)];
+    files.extend(notes.iter().map(|note| (note.as_str(), SKILL)));
+    let dir = vault(&files);
+    for note in &notes {
+        let ran = sw(&dir.path(), &["publish", note, "--yes"]);
+        assert_eq!(ran.code, 1, "{note}: {}", ran.text);
+        assert!(
+            ran.text
+                .contains(&format!("{note}  refused · invalid-name: ")),
+            "{note}: {}",
+            ran.text
+        );
+        assert!(!ran.text.contains("no-renderer"), "{note}: {}", ran.text);
+        let written = files_under(&dir.home());
+        assert!(written.is_empty(), "{note}: {written:?}");
+    }
+}
