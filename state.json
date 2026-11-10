@@ -104,9 +104,9 @@
       "line": 19,
       "title": "522 KB pretty-printed knowledge file embedded and parsed whole for five subjects",
       "comment": "https://github.com/osdlc/skillwright/pull/99#discussion_r4521126517",
-      "status": "open",
+      "status": "fixed",
       "reason": null,
-      "fixedIn": null
+      "fixedIn": "55c0992e4188c97cd5caa32013dd865dc2d13560"
     },
     {
       "id": "r1-10",
