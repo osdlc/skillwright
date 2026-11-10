@@ -471,6 +471,9 @@ fn relink_move(
         unreadable_rows: unreadable,
         unlisted_folders,
     } = load_vault(vault, from, to, bundle)?;
+    if bundle {
+        check_entry_rename(vault, from, to, mode)?;
+    }
     let plan = if bundle {
         markdown_relink::plan_bundle(vault.source, vault_dir, &facts, from, to)?
     } else {
@@ -506,6 +509,44 @@ fn relink_move(
         record_planned(&plan, outcome);
     }
     record_unreadable(unreadable, outcome);
+    Ok(())
+}
+
+/// Refuses a bundle move whose entry could not take its new name.
+/// `execute_bundle` rewrites the links and moves the folder before it renames
+/// the entry, so a failure there would leave the links pointing at a name the
+/// entry does not have. The listing goes through `vault.source`, so a preview
+/// sees what an apply would; `Vfs` has no permissions call, so the read-only
+/// check uses `std::fs` and runs only when writing.
+fn check_entry_rename(
+    vault: Vault<'_>,
+    from: &str,
+    to: &str,
+    mode: Mode,
+) -> Result<(), ApplyError> {
+    let (Some((from_dir, from_leaf)), Some((_, to_leaf))) =
+        (from.rsplit_once('/'), to.rsplit_once('/'))
+    else {
+        return Ok(());
+    };
+    if from_leaf == to_leaf {
+        return Ok(());
+    }
+    let dir = resolve(vault.dir, from_dir)?;
+    // An exact name: the listing shows a case-only rename's entry under its
+    // current spelling only.
+    let listing = vault.source.read_dir(&dir).unwrap_or_default();
+    if listing.iter().any(|entry| entry.name == to_leaf) {
+        return Err(ApplyError::Refused(format!(
+            "{from_dir}/{to_leaf} already exists in the bundle, so the entry note cannot take \
+             the name {to_leaf}. Rename or move it, then run the rename again"
+        )));
+    }
+    if mode.writes() && dir.metadata().is_ok_and(|m| m.permissions().readonly()) {
+        return Err(ApplyError::Refused(format!(
+            "{from_dir} is read-only, so the entry note cannot be renamed inside it"
+        )));
+    }
     Ok(())
 }
 
@@ -562,6 +603,20 @@ fn move_marketplace(
         return Err(ApplyError::Refused(format!(
             "{temp_from} already exists, and the move needs that name free"
         )));
+    }
+    // The entry takes `temp_to`'s name inside the source folder, after the
+    // folder moves: the relinker would refuse it there under the temporary
+    // names.
+    if let (Some((from_dir, from_leaf)), Some(to_leaf)) =
+        (temp_from.rsplit_once('/'), temp_to.rsplit('/').next())
+        && from_leaf != to_leaf
+    {
+        let taken = format!("{from_dir}/{to_leaf}");
+        if resolve(vault.dir, &taken)?.exists() {
+            return Err(ApplyError::Refused(format!(
+                "{taken} already exists, and the move needs that name free"
+            )));
+        }
     }
     if mode.writes()
         && let Some(parent) = new_dir.parent()
@@ -669,13 +724,21 @@ impl OwnNames<'_> {
     }
 
     /// Names the entry where it is now in `err`'s message, where that names
-    /// the landed temporary path.
+    /// the landed temporary path, and drops [`half_landed`]'s advice to
+    /// rename it to the temporary name.
     fn error(&self, err: &mut ApplyError) {
         let Some(now) = self.now else {
             return;
         };
         match err {
             ApplyError::Refused(message) | ApplyError::Io { what: message, .. } => {
+                let (rename, point) = RENAME_ADVICE;
+                if let Some(at) = message.find(rename) {
+                    let end = message[at..]
+                        .find(point)
+                        .map_or(message.len(), |i| at + i + point.len());
+                    message.replace_range(at..end, "");
+                }
                 *message = replace_path(message, &self.landed, now);
             }
             _ => {}
@@ -894,16 +957,30 @@ fn execute_move(
         // `ok` with a conflict: the bundle directory moved and its links were
         // rewritten, and only the entry file's own rename failed. The entry
         // kept its old leaf name inside the new directory; no row names that
-        // path, so the refusal does.
-        Some(conflict) => {
-            let landed = landed(from, to);
-            Err(ApplyError::partial(
-                outcome.clone(),
-                ApplyError::Refused(format!("{conflict}; the entry note is now at {landed}")),
-            ))
-        }
+        // path, so the refusal does. `check_entry_rename` refuses the known
+        // causes first, so only a change between the plan and the rename gets
+        // here. `execute` uses `std::fs`, so no test reaches this branch; the
+        // unit tests of `half_landed` and `OwnNames::error` cover its message.
+        Some(conflict) => Err(ApplyError::partial(
+            outcome.clone(),
+            ApplyError::Refused(half_landed(&conflict, &landed(from, to), to)),
+        )),
         None => Ok(()),
     }
+}
+
+/// The end of the advice [`half_landed`] gives, which [`OwnNames::error`]
+/// drops.
+const RENAME_ADVICE: (&str, &str) = (
+    ". Rename it to ",
+    ": the relinked notes listed above already point there",
+);
+
+/// Why a bundle move half-landed: the folder moved and its links were
+/// rewritten, and the entry, now at `landed`, could not take the name `to`.
+fn half_landed(conflict: &str, landed: &str, to: &str) -> String {
+    let (rename, point) = RENAME_ADVICE;
+    format!("{conflict}; the entry note is now at {landed}{rename}{to}{point}")
 }
 
 /// A planned note `execute` would rewrite, and the etag its bytes will have
@@ -2084,10 +2161,13 @@ mod tests {
         }
     }
 
-    /// A marketplace rename that half-lands reports the entry by its own
-    /// name, not the temporary `<m>.md` name the move gave it.
+    /// A folder where the relinker would rename the entry made that rename
+    /// fail after the folder moved. The move now refuses before any write,
+    /// naming no temporary path the user did not make. `OwnNames` keeps the
+    /// rows and message of a half-landed move by the entry's own name; its
+    /// unit tests cover that.
     #[test]
-    fn a_partial_marketplace_rename_names_no_temporary_path() {
+    fn a_marketplace_rename_onto_a_folder_with_the_temp_name_is_refused() {
         let v = vault();
         write(
             v.path(),
@@ -2104,30 +2184,17 @@ mod tests {
             "notes.md",
             "[a](marketplaces/m1/plugins/p/skills/a.md)\n",
         );
-        // A folder where the relinker renames the entry makes that rename fail
-        // after the folder moved.
         write(v.path(), "marketplaces/m1/m2.md/keep.txt", "x");
-        let op = AuthoringOp::Rename {
-            from: "marketplaces/m1/skillwright.md".to_owned(),
-            to: "marketplaces/m2/skillwright.md".to_owned(),
-            bundle: true,
-            frontmatter: vec![],
-        };
-        let err = apply(v.path(), &op).unwrap_err();
-        let ApplyError::Partial { outcome, source } = err else {
-            panic!("expected a partial outcome, got {err:?}");
-        };
-        assert!(v.path().join("marketplaces/m2/skillwright.md").is_file());
-        assert!(v.path().join("marketplaces/m2/m2.md/keep.txt").is_file());
-        for entry in &outcome.entries {
-            assert!(!entry.path.ends_with("/m1.md"), "{outcome:?}");
-            assert!(!entry.path.ends_with("/m2.md"), "{outcome:?}");
-        }
-        let message = source.to_string();
-        assert!(!message.contains("m1.md"), "{message}");
-        assert!(
-            message.contains("marketplaces/m2/skillwright.md"),
-            "{message}"
+        let op = rename(
+            "marketplaces/m1/skillwright.md",
+            "marketplaces/m2/skillwright.md",
+            true,
+        );
+        refused_alike(
+            v.path(),
+            &NativeVfs,
+            &op,
+            "marketplaces/m1/m2.md already exists, and the move needs that name free",
         );
     }
 
@@ -2697,11 +2764,11 @@ mod tests {
         assert_eq!(outcomes(&outcome), vec![("a/b.md", "trashed")]);
     }
 
-    /// A bundle whose directory moved but whose entry file could not take
-    /// its new name reports the rewritten links and the failed rename,
-    /// rather than a bare refusal.
+    /// A folder that holds the entry's new name inside the bundle is caught
+    /// before any write: the folder would move, and the entry could not then
+    /// take its name.
     #[test]
-    fn a_bundle_move_whose_entry_rename_fails_reports_what_landed() {
+    fn a_bundle_move_whose_entry_name_is_a_folder_is_refused() {
         let v = vault();
         write(v.path(), "review/review.md", "---\nname: review\n---\n");
         write(v.path(), "review/code-review.md/keep.txt", "occupied");
@@ -2713,24 +2780,16 @@ mod tests {
             bundle: true,
             frontmatter: vec![FieldEdit::set("name", Value::Str("code-review".to_owned()))],
         };
-        assert!(preview(v.path(), &op).is_ok());
-        let err = apply(v.path(), &op).unwrap_err();
-
-        let ApplyError::Partial { outcome, source } = err else {
-            panic!("expected a partial outcome, got {err:?}");
-        };
-        let ApplyError::Refused(message) = *source else {
-            panic!("expected a refusal, got {source:?}");
-        };
-        assert!(
-            message.ends_with("the entry note is now at code-review/review.md"),
-            "{message}"
-        );
-        assert!(!v.path().join("review").exists());
-        assert!(v.path().join("code-review/review.md").exists());
-        let rows = outcomes(&outcome);
-        assert!(rows.contains(&("other.md", "relinked")), "{rows:?}");
-        assert!(rows.contains(&("review/review.md", "skipped")), "{rows:?}");
+        let before = tree(v.path());
+        for result in [preview(v.path(), &op), apply(v.path(), &op)] {
+            let err = result.unwrap_err();
+            assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
+            assert!(
+                err.to_string().contains("already exists in the bundle"),
+                "{err}"
+            );
+        }
+        assert_eq!(tree(v.path()), before);
     }
 
     /// A move whose final rename fails after the linking notes were already
@@ -3203,5 +3262,165 @@ mod tests {
         assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
         assert!(err.to_string().contains("could not be read"), "{err}");
         assert_eq!(tree(v.path()), before);
+    }
+
+    const TAKEN_REFUSAL: &str = "skills/b/c.md already exists in the bundle, so the entry note \
+        cannot take the name c.md. Rename or move it, then run the rename again";
+
+    /// The vault of #87: `skills/b/b.md`, linked from `notes.md`.
+    fn bundle_vault() -> tempfile::TempDir {
+        let v = vault();
+        write(v.path(), "skills/b/b.md", "---\nname: b\n---\n");
+        write(v.path(), "notes.md", "[b](skills/b/b.md)\n");
+        v
+    }
+
+    fn b_to_c() -> AuthoringOp {
+        rename("skills/b/b.md", "skills/c/c.md", true)
+    }
+
+    /// Both modes refuse `op` with `message`, and nothing changes.
+    fn refused_alike(dir: &Path, vfs: &dyn Vfs, op: &AuthoringOp, message: &str) {
+        let before = tree(dir);
+        for result in [
+            super::preview(Vault::new(dir, vfs), op),
+            super::apply(Vault::new(dir, vfs), op),
+        ] {
+            let err = result.unwrap_err();
+            assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
+            assert_eq!(err.to_string(), message);
+        }
+        assert_eq!(tree(dir), before);
+    }
+
+    #[test]
+    fn a_bundle_rename_onto_a_name_taken_in_the_bundle_is_refused() {
+        let v = bundle_vault();
+        write(v.path(), "skills/b/c.md/keep.txt", "a folder named c.md");
+        refused_alike(v.path(), &NativeVfs, &b_to_c(), TAKEN_REFUSAL);
+        assert_eq!(read(v.path(), "notes.md"), "[b](skills/b/b.md)\n");
+    }
+
+    #[test]
+    fn a_bundle_rename_onto_a_file_taken_in_the_bundle_is_refused() {
+        let v = bundle_vault();
+        write(v.path(), "skills/b/c.md", "a peer named c.md\n");
+        refused_alike(v.path(), &NativeVfs, &b_to_c(), TAKEN_REFUSAL);
+        assert_eq!(read(v.path(), "notes.md"), "[b](skills/b/b.md)\n");
+    }
+
+    /// The check reads the listing through the vault's `Vfs`, in apply mode
+    /// too.
+    #[test]
+    fn a_bundle_rename_onto_a_name_the_vfs_lists_is_refused() {
+        let v = bundle_vault();
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.phantom = vec![("skills/b", "c.md")];
+        refused_alike(v.path(), &vfs, &b_to_c(), TAKEN_REFUSAL);
+    }
+
+    /// The listing shows only the entry's own spelling, so a case-only
+    /// rename is not taken for a clash.
+    #[test]
+    fn a_case_only_bundle_rename_is_not_refused_as_taken() {
+        let v = bundle_vault();
+        let result = preview(v.path(), &rename("skills/b/b.md", "skills/B/B.md", true));
+        if let Err(err) = result {
+            assert!(
+                !err.to_string().contains("already exists in the bundle"),
+                "{err}"
+            );
+        }
+    }
+
+    /// A case-sensitive file system can hold `B.md` beside `b.md`.
+    #[test]
+    fn a_case_variant_beside_the_entry_is_refused_as_taken() {
+        let v = bundle_vault();
+        let mut vfs = FaultVfs::new(v.path());
+        vfs.phantom = vec![("skills/b", "B.md")];
+        let err = vfs
+            .preview(&rename("skills/b/b.md", "other/B/B.md", true))
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "skills/b/B.md already exists in the bundle, so the entry note cannot take the \
+             name B.md. Rename or move it, then run the rename again"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_bundle_rename_in_a_read_only_folder_is_refused() {
+        let v = bundle_vault();
+        let before = tree(v.path());
+        if !lock_writes(&v.path().join("skills/b")) {
+            unlock_writes(&v.path().join("skills/b"));
+            return;
+        }
+        let result = apply(v.path(), &b_to_c());
+        // Wherever the folder ended up.
+        for folder in ["skills/b", "skills/c"] {
+            if v.path().join(folder).exists() {
+                unlock_writes(&v.path().join(folder));
+            }
+        }
+        let err = result.unwrap_err();
+        assert!(matches!(err, ApplyError::Refused(_)), "{err:?}");
+        assert_eq!(
+            err.to_string(),
+            "skills/b is read-only, so the entry note cannot be renamed inside it"
+        );
+        assert_eq!(tree(v.path()), before);
+    }
+
+    #[test]
+    fn a_marketplace_rename_onto_a_taken_temp_name_is_refused() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        write(v.path(), "marketplaces/m1/m2.md", "USER\n");
+        write(v.path(), "notes.md", "[m](marketplaces/m1/m2.md)\n");
+        refused_alike(
+            v.path(),
+            &NativeVfs,
+            &rename(
+                "marketplaces/m1/skillwright.md",
+                "marketplaces/m2/skillwright.md",
+                true,
+            ),
+            "marketplaces/m1/m2.md already exists, and the move needs that name free",
+        );
+    }
+
+    #[test]
+    fn a_half_landed_bundle_message_says_what_to_rename() {
+        assert_eq!(
+            half_landed("<conflict>", "skills/c/b.md", "skills/c/c.md"),
+            "<conflict>; the entry note is now at skills/c/b.md. Rename it to skills/c/c.md: \
+             the relinked notes listed above already point there"
+        );
+    }
+
+    /// Once the entry has its own name back, the advice to rename it to the
+    /// temporary name is dropped.
+    #[test]
+    fn own_names_drop_the_rename_advice() {
+        let names = OwnNames {
+            from: "m1/skillwright.md",
+            temp_from: "m1/m1.md",
+            temp_to: "m2/m2.md",
+            landed: "m2/m1.md".to_owned(),
+            now: Some("m2/skillwright.md"),
+        };
+        let mut err = ApplyError::Refused(half_landed("<conflict>", "m2/m1.md", "m2/m2.md"));
+        names.error(&mut err);
+        assert_eq!(
+            err.to_string(),
+            "<conflict>; the entry note is now at m2/skillwright.md"
+        );
     }
 }
