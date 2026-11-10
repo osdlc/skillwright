@@ -585,14 +585,15 @@ pub fn compile_note(
         // UTF-8 by construction; the fallback only guards the invariant.
         let text = std::str::from_utf8(bytes)
             .map_err(|e| CoreError::malformed(Path::new(output_path), format!("not UTF-8: {e}")))?;
+        let split = frontmatter_lossless::split(text);
         validate_no_obsidian_syntax(
             text,
-            body_start(text),
+            text.len() - split.body.len(),
             output_path,
             source.skill_name,
             shown,
         )?;
-        if let Some(yaml) = frontmatter_lossless::split(text).yaml {
+        if let Some(yaml) = split.yaml {
             validate_frontmatter_links(yaml, output_path, source.skill_name)?;
         }
     }
@@ -1071,9 +1072,11 @@ impl<'a> Renderer<'a> {
     }
 
     fn ensure_markdown_resource(&mut self, source_path: &Path) -> Result<String, CoreError> {
-        // The entry never becomes a resource of itself. A link reaches it only
-        // with a fragment, or without an implicit context; either way it is a
-        // link to SKILL.md.
+        // The entry never becomes a resource of itself. A link reaches it when
+        // it has a fragment, or when the entry is not named as a skill: no
+        // implicit context, no skill index, or an entry outside the index (a
+        // command, or a note published by explicit path). Each is a link to
+        // SKILL.md.
         if source_path == self.entry_path {
             return Ok("SKILL.md".to_owned());
         }
@@ -1893,12 +1896,6 @@ fn validate_frontmatter_links(
             ),
         )),
     }
-}
-
-/// Where a composed file's body starts: past its frontmatter, as the strict
-/// split that carried it finds it.
-fn body_start(text: &str) -> usize {
-    text.len() - frontmatter_lossless::split(text).body.len()
 }
 
 // --- Destinations, extensions, labels ---------------------------------------
@@ -3969,18 +3966,7 @@ mod tests {
         skills: SkillSource<'_>,
         body: &str,
     ) -> Result<(CompiledNote, Vec<DiscoveryWarning>), CoreError> {
-        let render = |skill: &IndexedSkill, mention: bool| {
-            let sigil = if mention { "" } else { "/" };
-            Ok(format!("{sigil}{}", skill.call_id()))
-        };
-        let calls = CallContext {
-            skills,
-            render: &render,
-            target: "test",
-            implicit: true,
-            warnings: RefCell::new(Vec::new()),
-            record: None,
-        };
+        let calls = test_calls(skills, true);
         let source = CompileSource {
             calls: Some(&calls),
             ..source(None)
@@ -4129,6 +4115,24 @@ mod tests {
         );
     }
 
+    /// The test call context: a call renders as `/<call id>`, a mention as
+    /// `<call id>`.
+    fn test_calls(skills: SkillSource<'_>, implicit: bool) -> CallContext<'_> {
+        CallContext {
+            skills,
+            render: &render_call_id,
+            target: "test",
+            implicit,
+            warnings: RefCell::new(Vec::new()),
+            record: None,
+        }
+    }
+
+    fn render_call_id(skill: &IndexedSkill, mention: bool) -> Result<String, CoreError> {
+        let sigil = if mention { "" } else { "/" };
+        Ok(format!("{sigil}{}", skill.call_id()))
+    }
+
     /// A compile of `source` with the test call context over `skills`.
     fn compile_source_with_calls(
         vfs: &MemVfs,
@@ -4136,18 +4140,7 @@ mod tests {
         source: CompileSource<'_>,
         body: &str,
     ) -> Result<CompiledNote, CoreError> {
-        let render = |skill: &IndexedSkill, mention: bool| {
-            let sigil = if mention { "" } else { "/" };
-            Ok(format!("{sigil}{}", skill.call_id()))
-        };
-        let calls = CallContext {
-            skills: SkillSource::ready(skills),
-            render: &render,
-            target: "test",
-            implicit: true,
-            warnings: RefCell::new(Vec::new()),
-            record: None,
-        };
+        let calls = test_calls(SkillSource::ready(skills), true);
         let source = CompileSource {
             calls: Some(&calls),
             ..source
@@ -4170,15 +4163,7 @@ mod tests {
         assert_eq!(compiled.closures["SKILL.md"].calls, vec!["tools:demo"]);
 
         let skills = call_index("called");
-        let render = |skill: &IndexedSkill, _| Ok(skill.call_id());
-        let calls = CallContext {
-            skills: SkillSource::ready(&skills),
-            render: &render,
-            target: "the vault",
-            implicit: true,
-            warnings: RefCell::new(Vec::new()),
-            record: None,
-        };
+        let calls = test_calls(SkillSource::ready(&skills), true);
         let source = CompileSource {
             calls: Some(&calls),
             ..source(None)
@@ -4409,15 +4394,7 @@ mod tests {
         assert_eq!(compiled.body, "Back to [demo.md](SKILL.md).\n");
 
         let skills = call_index("called");
-        let render = |skill: &IndexedSkill, _| Ok(skill.call_id());
-        let calls = CallContext {
-            skills: SkillSource::ready(&skills),
-            render: &render,
-            target: "test",
-            implicit: false,
-            warnings: RefCell::new(Vec::new()),
-            record: None,
-        };
+        let calls = test_calls(SkillSource::ready(&skills), false);
         let source = CompileSource {
             calls: Some(&calls),
             ..source(None)
