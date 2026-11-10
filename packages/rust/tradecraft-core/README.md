@@ -53,7 +53,8 @@ The CLI does the same steps.
 
 1. `load_marketplace(&vfs, start, home)` finds the nearest `skillwright.md` at
    or above `start`, folds in the workspace above it when the file is a
-   member (`marketplaces/<m>/skillwright.md`), and checks `build.namespace`.
+   member (`marketplaces/<m>/skillwright.md`, also when `start` reaches the
+   member through a symlink), and checks `build.namespace`.
    It returns a `LoadedMarketplace`: the vault folder `dir`, the merged
    `RootFile`, the `namespace`, `out_root` (`build.out` resolved with `~`
    expanded), and `inputs`, the config, harnesses, assets and hooks. `home`
@@ -100,8 +101,11 @@ assert!(report.changed);
 ```
 
 The steps inside are public if a host needs them apart: `find_root_file`,
-`workspace_above`, `RootFile::inherit`, `marketplace_inputs` and
-`resolve_path` for any other path read from the file.
+`load_effective_root` (read the root file and fold in its workspace, with
+each file's warnings), `marketplace_inputs` and `resolve_path` for any other
+path read from the file. `path_role` says what a vault-relative path such as
+`marketplaces/m/skillwright.md` is, and `entry_file` gives the entry file a
+component of a kind is written as.
 
 To rename or delete a marketplace folder, plan it with
 `plan_rename_marketplace` or `plan_delete_container(…, EntityKind::Marketplace)`,
