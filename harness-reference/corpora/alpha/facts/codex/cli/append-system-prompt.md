@@ -12,7 +12,7 @@ open:
     source: codex-noninteractive
 sources:
   - id: codex-noninteractive
-    resource: "https://developers.openai.com/codex/noninteractive"
+    resource: "https://learn.chatgpt.com/docs/non-interactive-mode"
     title: "Codex docs: non-interactive mode"
 ---
 
