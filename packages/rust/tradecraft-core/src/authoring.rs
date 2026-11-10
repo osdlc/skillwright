@@ -29,6 +29,7 @@ use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::namespace::Namespace;
 use crate::paths::WORKSPACE_DIR;
+use crate::source_view::notes_over;
 use crate::vault::read_vault_skill;
 use crate::vfs::{MemVfs, Vfs};
 
@@ -494,9 +495,11 @@ pub fn move_destination(
 /// entry note — what [`plan_delete_component`] refuses to discard silently.
 /// Walked directly rather than through [`discover_components`]: this only
 /// needs to know "is anything else in here", not each member's resolved key.
+/// The vault's build output is hidden ([`crate::notes_view`]).
 pub fn container_members(vfs: &dyn Vfs, vault_dir: &Path, dir: &str, entry: &str) -> Vec<String> {
+    let notes = notes_over(vfs, vault_dir, None, None, &Namespace::default());
     let mut members: Vec<String> =
-        crate::walk::readable_vault_files(vfs, &vault_dir.join(dir), vault_dir)
+        crate::walk::readable_vault_files(&notes, &vault_dir.join(dir), vault_dir)
             .into_iter()
             .filter(|abs| {
                 abs.extension()
@@ -1223,9 +1226,10 @@ pub fn plan_create_note(
     ns: &Namespace,
     note: &NewNote<'_>,
 ) -> Result<AuthoringOp, String> {
+    let notes = notes_over(vfs, vault, None, None, ns);
     let (path, edits) = derive_create(note.placement, note.name, note.bundled, note.fields)?;
     let bytes = compose_note(None, &edits, note.body).map_err(|e| e.to_string())?;
-    if let Some(refusal) = refusal_for(vfs, &bytes, &path, vault, ns) {
+    if let Some(refusal) = refusal_for(&notes, &bytes, &path, vault, ns) {
         return Err(refusal);
     }
     let scaffold = create_scaffold(&path, placement_kind(note.placement));
@@ -1245,12 +1249,13 @@ pub fn plan_rename_component(
     entry: &str,
     new_name: &str,
 ) -> Result<AuthoringOp, String> {
+    let notes = notes_over(vfs, vault, None, None, ns);
     let slug = slugify(new_name);
     if let Some(refusal) = slug_refusal(&slug, "component name") {
         return Err(refusal);
     }
     let to = rename_destination(entry, &slug);
-    if let Some(refusal) = rename_collision(vfs, vault, ns, entry, &to, &slug) {
+    if let Some(refusal) = rename_collision(&notes, vault, ns, entry, &to, &slug) {
         return Err(refusal);
     }
     Ok(AuthoringOp::Rename {
@@ -1273,14 +1278,15 @@ pub fn plan_move_component(
     marketplace: Option<&str>,
     plugin: Option<&str>,
 ) -> Result<AuthoringOp, String> {
-    let Some(component) = find_component(vfs, vault, entry, ns) else {
+    let notes = notes_over(vfs, vault, None, None, ns);
+    let Some(component) = find_component(&notes, vault, entry, ns) else {
         return Err(format!(
             "`{entry}` is not a component the vault's scan lists"
         ));
     };
     let to = move_destination(entry, component.kind, marketplace, plugin)?;
     if let Some(refusal) = key_collision(
-        vfs,
+        &notes,
         vault,
         ns,
         &PublishKey {
@@ -1313,10 +1319,11 @@ pub fn plan_delete_component(
     ns: &Namespace,
     entry: &str,
 ) -> Result<AuthoringOp, String> {
+    let notes = notes_over(vfs, vault, None, None, ns);
     let may_hold_members =
-        resolved_kind(vfs, vault, ns, entry).is_none_or(EntityKind::holds_components);
+        resolved_kind(&notes, vault, ns, entry).is_none_or(EntityKind::holds_components);
     if may_hold_members && let Some(dir) = bundle_dir(entry) {
-        let members = container_members(vfs, vault, dir, entry);
+        let members = container_members(&notes, vault, dir, entry);
         if !members.is_empty() {
             return Err(format!(
                 "`{}` still holds {}: {}",
@@ -1345,7 +1352,8 @@ pub fn plan_delete_container(
     entry: &str,
     expected_kind: EntityKind,
 ) -> Result<AuthoringOp, String> {
-    if resolved_kind(vfs, vault, ns, entry) != Some(expected_kind) {
+    let notes = notes_over(vfs, vault, None, None, ns);
+    if resolved_kind(&notes, vault, ns, entry) != Some(expected_kind) {
         return Err(format!(
             "`{}` is not a {}'s own entry note",
             entry,
@@ -1381,11 +1389,12 @@ pub fn plan_rename_plugin(
     entry: &str,
     new_name: &str,
 ) -> Result<AuthoringOp, String> {
+    let notes = notes_over(vfs, vault, None, None, ns);
     let slug = slugify(new_name);
     if let Some(refusal) = slug_refusal(&slug, "plugin name") {
         return Err(refusal);
     }
-    let components = discover_components(vfs, vault, None, ns)
+    let components = discover_components(&notes, vault, None, ns)
         .map_err(|e| e.to_string())?
         .components;
     let Some(component) = components.iter().find(|c| c.vault_relative_path == entry) else {
@@ -1397,7 +1406,7 @@ pub fn plan_rename_plugin(
         return Err(format!("`{entry}` is not a plugin's own entry note"));
     }
     let to = rename_destination(entry, &slug);
-    if let Some(refusal) = rename_collision(vfs, vault, ns, entry, &to, &slug) {
+    if let Some(refusal) = rename_collision(&notes, vault, ns, entry, &to, &slug) {
         return Err(refusal);
     }
     if bundle_dir(entry).is_none() {
@@ -1424,12 +1433,13 @@ pub fn plan_rename_marketplace(
     entry: &str,
     new_name: &str,
 ) -> Result<AuthoringOp, String> {
-    if let Some(component) = find_component(vfs, vault, entry, ns)
+    let notes = notes_over(vfs, vault, None, None, ns);
+    if let Some(component) = find_component(&notes, vault, entry, ns)
         && component.kind != EntityKind::Marketplace
     {
         return Err(format!("`{entry}` is not a marketplace's own entry note"));
     }
-    plan_rename_component(vfs, vault, ns, entry, new_name)
+    plan_rename_component(&notes, vault, ns, entry, new_name)
 }
 
 /// Convert a note to another kind: move it into the new kind's folder, remove
@@ -1448,6 +1458,7 @@ pub fn plan_convert_kind(
     to_kind: EntityKind,
     drop_keys: &[String],
 ) -> Result<AuthoringOp, String> {
+    let notes = notes_over(vfs, vault, None, None, ns);
     // Trimmed, because the edit loop below trims before it emits a removal:
     // an untrimmed guard lets `" name"` through and then drops the real
     // `name` key, which is the one the vault's discovery scan reads.
@@ -1469,7 +1480,7 @@ pub fn plan_convert_kind(
             ns.key("<field>")
         ));
     }
-    let target = convert_target(vfs, vault, ns, entry, to_kind)?;
+    let target = convert_target(&notes, vault, ns, entry, to_kind)?;
     // The folder carries the new kind. Our own fields go in whichever shape
     // the note uses, flat or nested; any other key is removed as spelled.
     let mut changes: Vec<(&str, Option<yaml_splice::Value>)> = Vec::new();
@@ -1485,7 +1496,7 @@ pub fn plan_convert_kind(
             _ => others.push(key),
         }
     }
-    let mut frontmatter = note_ns_edits(vfs, vault, entry, ns, &changes)?;
+    let mut frontmatter = note_ns_edits(&notes, vault, entry, ns, &changes)?;
     frontmatter.extend(others.into_iter().map(FieldEdit::remove));
     Ok(AuthoringOp::ConvertKind {
         from: entry.to_owned(),
@@ -1502,6 +1513,66 @@ mod tests {
     use yaml_splice::Value;
 
     const VAULT: &str = "/vault";
+
+    fn vault_of(files: &[(&str, &str)]) -> crate::vfs::MemVfs {
+        let vfs = crate::vfs::MemVfs::new();
+        for (path, text) in files {
+            vfs.insert(path, text).unwrap();
+        }
+        vfs
+    }
+
+    const USE_IT: &str = "---\ndescription: Use it.\n---\nBody.\n";
+
+    #[test]
+    fn plan_rename_component_leaves_output_unedited() {
+        let vfs = vault_of(&[
+            (
+                "/vault/skillwright.md",
+                "---\nname: v\nclaude: {packs: moved}\nbuild:\n  out: dist\n---\n",
+            ),
+            ("/vault/plugins/rev/skills/a.md", USE_IT),
+            ("/vault/dist/moved/rev/.claude-plugin/plugin.json", "{}"),
+            ("/vault/dist/moved/rev/skills/b/SKILL.md", USE_IT),
+        ]);
+        let op = plan_rename_component(
+            &vfs,
+            Path::new(VAULT),
+            &sw(),
+            "plugins/rev/skills/a.md",
+            "b",
+        )
+        .unwrap();
+        let AuthoringOp::Rename { from, to, .. } = op else {
+            panic!("{op:?}");
+        };
+        assert_eq!(from, "plugins/rev/skills/a.md");
+        assert_eq!(to, "plugins/rev/skills/b.md");
+    }
+
+    #[test]
+    fn container_members_skips_output() {
+        // An earlier build left its output in the plugin's folder.
+        let vfs = vault_of(&[
+            (
+                "/vault/skillwright.md",
+                "---\nname: v\nbuild:\n  out: plugins/rev/market\n---\n",
+            ),
+            ("/vault/plugins/rev/rev.md", "---\ndescription: Rev.\n---\n"),
+            (
+                "/vault/plugins/rev/market/.claude-plugin/marketplace.json",
+                "{}",
+            ),
+            (
+                "/vault/plugins/rev/market/.claude-plugin/packs/rev/skills/a/SKILL.md",
+                USE_IT,
+            ),
+        ]);
+        let vault = Path::new(VAULT);
+        let members = container_members(&vfs, vault, "plugins/rev", "plugins/rev/rev.md");
+        assert!(members.is_empty(), "{members:?}");
+        assert!(plan_delete_component(&vfs, vault, &sw(), "plugins/rev/rev.md").is_ok());
+    }
 
     fn ns_rewrite(source: &str, changes: &[(&str, Option<Value>)]) -> (Vec<FieldEdit>, String) {
         let edits = ns_field_edits(source, &sw(), changes).unwrap();
