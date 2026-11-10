@@ -198,6 +198,9 @@ pub struct PluginFormat {
     block_keys: BlockKeys,
 }
 
+/// The block keys of a row with no plugin format.
+static NO_KEYS: BTreeSet<String> = BTreeSet::new();
+
 /// The keys a harness's blocks accept, by the kind of note they sit on,
 /// worked out once from the row.
 #[derive(Debug)]
@@ -940,10 +943,10 @@ impl HarnessProfile {
 
     /// [`Self::format`], or `None` for a spelling-only row.
     ///
-    /// Resolved from this row's own policy. A row equal to a canonical one
-    /// shares its cached format; a modified or custom row is resolved once per
-    /// distinct name and policy and cached, which is bounded by how many such
-    /// rows a program makes.
+    /// Resolved from this row's own policy and declaration. A row equal to a
+    /// canonical one shares its cached format; a modified or custom row is
+    /// resolved once per distinct name, declaration and policy and cached,
+    /// which is bounded by how many such rows a program makes.
     pub fn plugin_format(&self) -> Option<&'static PluginFormat> {
         static FORMATS: OnceLock<Vec<(&'static HarnessProfile, PluginFormat)>> = OnceLock::new();
         let policy = self.plugin.as_ref()?;
@@ -952,25 +955,25 @@ impl HarnessProfile {
                 .map(|profile| (profile, resolve_format(profile)))
                 .collect()
         });
-        if let Some((_, format)) = canonical
-            .iter()
-            .find(|(row, _)| row.name == self.name && row.plugin.as_ref() == Some(policy))
-        {
+        if let Some((_, format)) = canonical.iter().find(|(row, _)| {
+            row.name == self.name
+                && row.declaration == self.declaration
+                && row.plugin.as_ref() == Some(policy)
+        }) {
             return Some(format);
         }
-        static CUSTOM: Mutex<Vec<(&'static str, PluginPolicy, &'static PluginFormat)>> =
+        static CUSTOM: Mutex<Vec<(&'static str, RuntimeId, PluginPolicy, &'static PluginFormat)>> =
             Mutex::new(Vec::new());
         let mut custom = CUSTOM
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((_, _, format)) = custom
-            .iter()
-            .find(|(name, row, _)| *name == self.name && row == policy)
-        {
+        if let Some((_, _, _, format)) = custom.iter().find(|(name, declaration, row, _)| {
+            *name == self.name && *declaration == self.declaration && row == policy
+        }) {
             return Some(format);
         }
         let format: &'static PluginFormat = Box::leak(Box::new(resolve_format(self)));
-        custom.push((self.name, policy.clone(), format));
+        custom.push((self.name, self.declaration, policy.clone(), format));
         Some(format)
     }
 
@@ -1050,18 +1053,16 @@ impl HarnessProfile {
     /// read and those the harness reads on a subagent alone. No keys for a
     /// row with no plugin format.
     pub(crate) fn member_block_keys(&self, kind: EntityKind) -> &'static BTreeSet<String> {
-        static NONE: BTreeSet<String> = BTreeSet::new();
         self.plugin_format()
             .and_then(|format| format.block_keys.member.get(&kind))
-            .unwrap_or(&NONE)
+            .unwrap_or(&NO_KEYS)
     }
 
     /// The keys of a marketplace's block that pass down to each plugin's
     /// block. No keys for a row with no plugin format.
     pub(crate) fn passed_down_keys(&self) -> &'static BTreeSet<String> {
-        static NONE: BTreeSet<String> = BTreeSet::new();
         self.plugin_format()
-            .map_or(&NONE, |format| &format.block_keys.passed_down)
+            .map_or(&NO_KEYS, |format| &format.block_keys.passed_down)
     }
 }
 
@@ -1438,6 +1439,18 @@ mod custom_rows {
         policy.plugin_manifest = Source::Constant("mine.json");
         policy.marketplace_manifest = Source::Constant(None);
         assert_eq!(row.format().user_skills_dir, ".mine/skills");
+    }
+
+    #[test]
+    fn a_row_with_another_declaration_gets_that_declaration_s_keys() {
+        use crate::frontmatter::EntityKind::Skill;
+        let mut row = CLAUDE;
+        row.declaration = CODEX.declaration;
+        assert_ne!(
+            CLAUDE.accepted_override_keys(),
+            CODEX.accepted_override_keys()
+        );
+        assert_eq!(row.block_keys(Skill), Some(&CODEX.accepted_override_keys()));
     }
 
     #[test]

@@ -683,46 +683,63 @@ fn refuse_prefixed_collisions<T: HarnessTranslator + ?Sized>(
             {
                 continue;
             }
-            let harness = profile.name;
-            let label = profile.label;
-            let chosen = [group, first_group]
-                .into_iter()
-                .find(|g| g.prefixed_on.iter().any(|h| h == harness));
-            let why = match chosen {
-                Some(plugin) => {
-                    let p = &plugin.name;
-                    let own = market
-                        .config
-                        .plugins
-                        .get(p)
-                        .and_then(|o| o.blocks.get(harness))
-                        .is_some_and(|block| block.contains_key(NAMING_KEY));
-                    let source = if own {
-                        format!("on plugin `{p}` makes its names")
-                    } else {
-                        format!("on the marketplace makes plugin `{p}`'s names")
-                    };
-                    format!(
-                        "`{harness}.naming: prefixed` {source} unique on {label}, so no other \
-                         skill may take one. Rename one, or set `{harness}.naming: bare` on \
-                         plugin `{p}`"
-                    )
-                }
-                None => format!(
-                    "{label} has no plugin namespace and names a skill `<plugin>-<skill>` by \
-                     default, so no two skills may take one name. Rename one"
-                ),
-            };
+            let why = collision_reason(profile, market, [group, first_group]);
             return Err(CoreError::refused(
                 "path-collision",
                 format!(
-                    "`{}` and `{}` both publish as {label} skill `{name}`: {why}",
-                    first.path, skill.path
+                    "`{}` and `{}` both publish as {} skill `{name}`: {why}",
+                    first.path, skill.path, profile.label
                 ),
             ));
         }
     }
     Ok(())
+}
+
+/// Why two skills of one published name on `profile` are refused: the
+/// `naming: prefixed` of one of `plugins`, and where it was set; else the
+/// profile's prefixing default; else, both names bare, `naming: bare`.
+fn collision_reason(
+    profile: &HarnessProfile,
+    market: &Marketplace,
+    plugins: [&Plugin; 2],
+) -> String {
+    let harness = profile.name;
+    let label = profile.label;
+    let Some(plugin) = plugins
+        .into_iter()
+        .find(|g| g.prefixed_on.iter().any(|h| h == harness))
+    else {
+        let prefixed = plugins
+            .into_iter()
+            .any(|g| naming(profile, &g.bare_on, &g.prefixed_on) == SkillNaming::PluginPrefixed);
+        if !prefixed {
+            return format!(
+                "`{harness}.naming: bare` names both bare, and {label} has no plugin namespace, \
+                 so no two skills may take one name. Rename one"
+            );
+        }
+        return format!(
+            "{label} has no plugin namespace and names a skill `<plugin>-<skill>` by default, \
+             so no two skills may take one name. Rename one"
+        );
+    };
+    let p = &plugin.name;
+    let own = market
+        .config
+        .plugins
+        .get(p)
+        .and_then(|o| o.blocks.get(harness))
+        .is_some_and(|block| block.contains_key(NAMING_KEY));
+    let source = if own {
+        format!("on plugin `{p}` makes its names")
+    } else {
+        format!("on the marketplace makes plugin `{p}`'s names")
+    };
+    format!(
+        "`{harness}.naming: prefixed` {source} unique on {label}, so no other skill may take \
+         one. Rename one, or set `{harness}.naming: bare` on plugin `{p}`"
+    )
 }
 
 /// A resolved component as a projection: its content, its body and

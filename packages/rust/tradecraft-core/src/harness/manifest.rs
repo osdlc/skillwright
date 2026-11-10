@@ -623,14 +623,11 @@ fn without_url(mut person: serde_json::Value) -> serde_json::Value {
 /// `cursor.displayName` never applies, because it names the marketplace
 /// ([`crate::keys::BLOCK_IDENTITY_KEYS`]).
 fn cursor_display_name(config: &MarketplaceConfig, plugin: &str) -> Option<String> {
-    let overrides = overrides_for(config, plugin)?;
-    overrides
-        .blocks
-        .get("cursor")
-        .and_then(|block| block.get("displayName"))
+    plugin_block(config, plugin, "cursor")
+        .get("displayName")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
-        .or_else(|| overrides.display_name.clone())
+        .or_else(|| overrides_for(config, plugin)?.display_name.clone())
 }
 
 /// One plugin's pack manifest, `members` its skills' names.

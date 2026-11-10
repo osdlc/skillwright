@@ -175,7 +175,8 @@ impl Shape {
 
 /// Checks `value` against the shape the table gives `key` on a note of
 /// `kind`. Only skillwright's own keys are checked: a key the table does not
-/// list, and a spec key, pass.
+/// list, and a spec key, pass. A `null` is checked like any value; a reader
+/// that reads it as unset, as the root file does, skips it first.
 ///
 /// # Errors
 ///
