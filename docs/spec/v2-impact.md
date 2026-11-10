@@ -23,8 +23,7 @@ for the open PRs and issues, and an order to build it in. Code was read at
 - A note `name` that differs from its folder.
 - Optional plugin notes (decision D7).
 - `build.patterns` and every custom folder glob.
-- `build.exclude` layering across a workspace and its members (decision D6
-  keeps a root-only list).
+- `build.exclude` (decision D6). A file that must not ship goes in `docs/`.
 - `publish <path>` of a note that no kind folder places.
 - `build.out`, `--out` and the "no default output" rule. Output is fixed at
   `dist/<m>/`.
@@ -38,6 +37,12 @@ for the open PRs and issues, and an order to build it in. Code was read at
   `assets/vault/<vault-relative>`.
 - A plain link to another skill read as a call (decision D4).
 - `build.assets` and `build.hooks` (decision D5).
+- The plugin `assets/` folder copied flat to the pack root (`assets/bin/tool`
+  shipping as `bin/tool`). A plugin's `assets/` now ships as `assets/`. The
+  launcher moves to `scripts/`. `.mcp.json` has no home (decision D9).
+- Loose files in a component folder. A skill holds `<s>.md`, `references/`,
+  `scripts/` and `assets/`. An agent, command or hook folder holds its note.
+  Anything else is an error.
 
 If v2 is accepted, [D-GPYR](../decisions/D-GPYR-convention-first.md) needs an
 amendment too: its patterns layer is gone.
@@ -55,8 +60,9 @@ amendment too: its patterns layer is gone.
 - `patterns.rs`: almost all of it goes. `Patterns::canonical`,
   `plugin_folder`, `assets_folder`, `sibling_files`, `source_folders`,
   `warnings`, `warnings_with`, `keep_conventional` and
-  `workspace_exclude_warnings` go. What stays is the never-ship rule and,
-  under D6, one root-relative exclude list.
+  `workspace_exclude_warnings` go, and with D6 the exclude list and the glob
+  matcher (`glob_match`, `glob_problem`) too. What stays is the never-ship
+  rule, which can move into `discover.rs`.
 - `settings.rs`: `FolderPatterns`, `folder_patterns`, `globs`, `warn_nested`
   and the `patterns` and `out` keys go. `RootFile::inherit` (workspace into
   member) becomes the root-defaults step of the cascade. `MarketplaceFields`
@@ -76,14 +82,18 @@ amendment too: its patterns layer is gone.
   becomes a path prefix test.
 - `model/load.rs`: `standalone` (publish by path), `members_folder`,
   `has_folder`, the marketplace's-own-plugin branch of `missing_versions`,
-  `load_assets`, `load_hook_files` (under D5) and `plugin_folder` go or
+  `load_assets`, `load_hook_files` (under D5), `folder_assets` (the flat
+  copy; replaced by copying the three shared folders under their own names),
+  `asset_covers` (only the launcher check is left) and `plugin_folder` go or
   shrink. `marketplace_name` and `resolve_marketplace` read the folder.
 - `source_view.rs`: `output_overlaps_vault`, `output_in`, `output_paths`,
   `check_pack_location` and the workspace folding in `effective_config`,
   `effective_configs`, `marketplace_folder` and `marketplace_notes` go.
   Output cannot overlap source when only `marketplaces/` is read.
 - `compile.rs`: `CompileSource::resolve` changes from vault-wide to scoped
-  resolution: own folder, then the plugin's components. `own_folder_candidate`
+  resolution: own folder, then the plugin's shared folders and components.
+  A shared file lands at the pack root, and its link is written relative to
+  where the linking file lands. `own_folder_candidate`
   and the `references/vault/` and `assets/vault/` placements go.
   `vault_link_index` indexes one plugin, not the vault. A real-path
   containment check is added beside `refuse_never_shipped`. The plain
@@ -171,7 +181,7 @@ amendment too: its patterns layer is gone.
 | [#94](https://github.com/osdlc/skillwright/issues/94) install natively first | Keep | Install behaviour. `adopt` writes the v2 layout. |
 | [#91](https://github.com/osdlc/skillwright/issues/91) symlinked `--vault` loses its workspace | Moot | Workspaces and member files are removed. |
 | [#87](https://github.com/osdlc/skillwright/issues/87) rename of a bundle that half-lands | Keep | The failure mode stays. Fewer links can point at a bundle. |
-| [#83](https://github.com/osdlc/skillwright/issues/83) path-guard and globset | Changed | The output-overlap check goes. Link containment by real path is new work for path-guard. The glob half shrinks to the root exclude list (D6). |
+| [#83](https://github.com/osdlc/skillwright/issues/83) path-guard and globset | Changed | The output-overlap check goes. Link containment by real path is new work for path-guard. With D6 the glob half goes. |
 | [#82](https://github.com/osdlc/skillwright/issues/82) bump: sparse checkout, one scan | Keep | Performance. [#139](https://github.com/osdlc/skillwright/pull/139) does part of it. |
 | [#81](https://github.com/osdlc/skillwright/issues/81) core should hide build output | Moot | Output is fixed at `dist/` and only `marketplaces/` is read. |
 | [#80](https://github.com/osdlc/skillwright/issues/80) key types and root-file checks from the key table | Changed | The root file's key set shrinks. [#138](https://github.com/osdlc/skillwright/pull/138) does the rest. |
@@ -215,16 +225,27 @@ Merge [#135](https://github.com/osdlc/skillwright/pull/135),
    inherited key across the four levels; a marketplace field in the root file
    is refused naming `<m>.md`; `build:` outside the root is refused.
 3. **Output.** Fixed `dist/<m>/`, default packs folders, `check` against
-   `dist/`. Delete `build.out`, `--out`, the `packs` override, the overlap
-   checks and `stale-output`. Test first: a two-marketplace build writes two
-   trees under `dist/`; `check` reports drift after a hand edit there; a
-   `packs` key is refused.
+   `dist/`, and the plugin's `references/`, `scripts/` and `assets/` copied
+   under their own names. Delete `build.out`, `--out`, the `packs` override,
+   the overlap checks, `stale-output` and the flat `assets/` copy. Test first:
+   a two-marketplace build writes two trees under `dist/`; `check` reports
+   drift after a hand edit there; a `packs` key is refused; a plugin's
+   `assets/logo.png` lands at `<pack>/assets/logo.png`; a script in
+   `scripts/` keeps its exec bit; a loose file in a skill folder is refused
+   naming the allowed entries.
 4. **Link scope and containment.** Scoped resolution, the link table, the
    real-path check, the one-skill rule, calls (D3) and plain links (D4).
    Test first, one test per table row and per rule in section 4, through the
    build: a symlink in a skill folder pointing out of the marketplace is
-   refused; a link to a sibling skill renders as its installed path; the same
-   link fails when publishing that skill alone, naming the link.
+   refused; a link to a sibling skill renders as its installed path; a link
+   from a skill to the plugin's `references/x.md` renders as
+   `../../references/x.md`; the sibling link fails when publishing that skill
+   alone, naming the link; under D8 the shared file is copied into the
+   published skill and `harness link` refuses it.
+   Before this PR, run the `plugin-layout` probe on Codex. harness-reference
+   does not record where Codex resolves a skill's relative paths
+   (`Codex CLI Relative paths in SKILL.md open`). If it is not the skill's
+   folder, links up to the pack root need another form for Codex.
 5. **Verbs, docs and the repo's plugin.** `init`, `new`, `move`, `rename`,
    `bump`, `publish` (D1), `adopt` and `harness` on the new layout; the
    reference docs; `plugin/` moved and its two workflows updated. Test first:

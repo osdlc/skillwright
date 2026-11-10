@@ -48,9 +48,11 @@ the code, the open PRs and issues, and the build order are in
 4. The body is not read.
 5. It is the only configuration file. There is no machine file for the build.
 6. The `build:` keys are `harnesses`, `namespace`, `launcher_path`, `bump`,
-   `destinations`, `scan_locations` and `exclude` (subject to the decisions in
-   section 11). `out`, `patterns`, `assets` and `hooks` are not keys. A key the
-   table does not list warns.
+   `destinations` and `scan_locations` (subject to the decisions in section
+   11). `out`, `patterns`, `exclude`, `assets` and `hooks` are refused
+   (section 10). Any other key the table does not list warns.
+7. `launcher_path` names a file in each plugin's `scripts/`, such as
+   `scripts/tool`, relative to the pack root.
 
 ## 3. Folders and notes
 
@@ -65,12 +67,28 @@ the code, the open PRs and issues, and the build order are in
             └── <p>/
                 ├── <p>.md          the plugin's note
                 ├── CHANGELOG.md    optional, rendered into each pack
-                ├── assets/         copied to the plugin's root as is
-                ├── skills/<s>/<s>.md
+                ├── references/     shared docs, ship as references/
+                ├── scripts/        shared code, ship as scripts/
+                ├── assets/         shared output files, ship as assets/
+                ├── skills/<s>/
+                │   ├── <s>.md
+                │   ├── references/
+                │   ├── scripts/
+                │   └── assets/
                 ├── agents/<a>/<a>.md
                 ├── commands/<c>/<c>.md
-                └── hooks/<h>/<h>.md
+                └── hooks/
+                    ├── hooks.json  optional (decision D5)
+                    └── <h>/<h>.md
 ```
+
+The layout follows the recommended practice of the Agent Skills standard: a
+skill is a folder with its entry note and optional `references/`, `scripts/`
+and `assets/` folders, and relative paths resolve from the skill's folder
+(harness-reference: `Agent Skills Agent Skills format`,
+`Agent Skills Relative paths in SKILL.md`).
+
+### Containers and components
 
 1. Every note is `<name>.md` in a folder of the same name. There is no other
    entry form: no flat `<name>.md` in a kind folder, and no `SKILL.md`.
@@ -86,34 +104,56 @@ the code, the open PRs and issues, and the build order are in
 6. Names are unique within a plugin, across all kinds. A skill and a command
    with one name in one plugin are refused, naming both. The same name in two
    plugins, or two marketplaces, is allowed.
-7. Every file in a component's folder belongs to that component. Inside it,
-   `docs/`, `tests/` and `fixtures/` never ship.
-8. `assets/bin/tool` ships as `bin/tool`.
-9. These never ship anywhere: `docs/`, `tests/`, `fixtures/`, `.git`,
-   `.obsidian`, `.trash` and `node_modules`. A plugin or component named `docs`
-   or `tests` ships normally.
-10. A file in a plugin folder that is not listed above is not read. A note
-    there with a `description` warns that it will not ship. The same holds for
-    a marketplace folder, beside `<m>.md` and `plugins/`.
-11. A component is a note with a `description`, or a `name` alone. A skill,
-    command or agent with a `name` and no `description` is an error: `list` and
-    `check` report it, and `build` and `publish` refuse it.
-12. A component exists only inside a plugin, and a plugin only inside a
-    marketplace. A `skills/`, `plugins/` or other kind folder anywhere else is
-    an error (section 10).
-13. One skill may be copied into two marketplaces. Each copy is its own
-    component. There is no shared folder.
-14. `check` warns when a plugin's `version` has no entry in its `CHANGELOG.md`.
+7. A component is a note with a `description`, or a `name` alone. A skill,
+   command or agent with a `name` and no `description` is an error: `list` and
+   `check` report it, and `build` and `publish` refuse it.
+8. A component exists only inside a plugin, and a plugin only inside a
+   marketplace. A `skills/`, `plugins/` or other kind folder anywhere else is
+   an error (section 10).
+9. One skill may be copied into two marketplaces. Each copy is its own
+   component. There is no shared folder across plugins.
+10. `check` warns when a plugin's `version` has no entry in its `CHANGELOG.md`.
+
+### What a folder may hold
+
+Below the root, each folder holds a fixed set of entries. Anything else is an
+error that names the file and lists what the folder may hold. OS files such as `.DS_Store` are
+ignored.
+
+| Folder | May hold |
+|---|---|
+| The root | `skillwright.md`, `marketplaces/`, `dist/`. Anything else is left alone, not read. |
+| `marketplaces/<m>/` | `<m>.md`, `plugins/`. |
+| `plugins/<p>/` | `<p>.md`, `CHANGELOG.md`, `references/`, `scripts/`, `assets/`, the four kind folders. |
+| `skills/<s>/` | `<s>.md`, `references/`, `scripts/`, `assets/`. |
+| `agents/<a>/`, `commands/<c>/`, `hooks/<h>/` | Their note only. |
+| `hooks/` | `hooks.json` and hook folders. |
+
+11. In a skill, `references/` holds docs the agent reads into context when it
+    needs them. `scripts/` holds code the agent runs. `assets/` holds files used
+    in output, such as templates, images and fonts. Each ships inside the
+    skill's folder under the same name.
+12. An agent, command or hook installs as a single file, so it has no folder of
+    its own to ship. It uses the plugin's shared folders.
+13. A plugin's `references/`, `scripts/` and `assets/` are shared by every
+    component in the plugin. Each ships under the same name at the pack root.
+    Nothing is flattened: `assets/x` ships as `assets/x`.
+14. `docs/`, `tests/` and `fixtures/` may sit in any plugin or component folder.
+    They never ship, and nothing may link into them. `.git`, `.obsidian`,
+    `.trash` and `node_modules` are skipped wherever they are.
+15. Files inside `references/`, `scripts/` and `assets/` may be laid out in any
+    folders below them. `scripts/` keeps each file's exec bit.
 
 ## 4. Links, embeds and containment
 
 A link is a `[[wikilink]]`, a `![[embed]]` or a relative Markdown link. An
-embed is read the same way as a link: what it names must be in scope.
+embed is read the same way as a link: what it names must be in scope. The rules
+apply to links from a component's note and from any file it ships.
 
 ### Containment
 
-1. Each marketplace builds self-contained. A link, an embed or an asset that
-   resolves outside `marketplaces/<m>/` is a build error.
+1. Each marketplace builds self-contained. A link, an embed or a shipped file
+   that resolves outside `marketplaces/<m>/` is a build error.
 2. Every path is checked by its real path, with symlinks resolved. A symlink
    whose target lies outside the scope it is checked against is refused, in
    the same way as a link that spells that target.
@@ -123,29 +163,36 @@ embed is read the same way as a link: what it names must be in scope.
 | Link target | Rule |
 |---|---|
 | A file in the component's own folder | Ships as written, relative. |
+| A file in the plugin's `references/`, `scripts/` or `assets/` | Allowed. Rewritten to its installed path at the pack root. |
 | Another component in the same plugin | Allowed. Rewritten to that component's installed path. |
 | Another plugin in the same marketplace | Refused. |
 | Anything outside `marketplaces/<m>/` | Refused. |
 
-3. A bare `[[name]]` resolves in the component's own folder first, then among
-   the components of its plugin. It never resolves across the plugin or the
-   vault. Because names are unique per plugin (section 3), the second step
-   finds at most one.
+3. A bare `[[name]]` resolves in the linking file's component folder first.
+   With no match there, it resolves among the plugin's shared folders and its
+   components together. It never resolves across the plugin or the vault. More
+   than one match in a step is an error that names each match.
 4. A link with a path resolves relative to the linking file. Its result must
    still fall in a row the table allows.
-5. A link to another component points at that component's entry note or at a
+5. An installed path is written relative to where the linking file lands in the
+   pack. From a skill's entry note, the plugin's `references/x.md` becomes
+   `../../references/x.md`. Every harness built for keeps a pack whole on
+   install, so the path holds after install (section 8).
+6. A link to another component points at that component's entry note or at a
    file in its folder. It is rewritten to where that file lands in the same
    pack. A component the target harness's pack does not carry, such as an
    agent in any build, has no installed path, and a link to it is refused for
    that harness.
-6. A link into a never-ship folder, or to a file `build.exclude` holds, is
-   refused with the same error in every link form.
-7. A link to a missing file is an error that names the link.
-8. Building or publishing one skill alone allows only links inside the skill's
-   own folder. Any other link is an error that names it.
-9. `/[[name]]` is a call: it renders as the target harness's invocation of the
-   named skill and copies nothing. Its scope is decision D3 in section 11.
-10. Every error in this section names the linking file, the link as written and
+7. A link into a never-ship folder is refused with the same error in every
+   link form.
+8. A link to a missing file is an error that names the link.
+9. A skill installed alone, by `publish` or `harness link`, has no pack root
+   around it. Decision D8 in section 11 says what each does with links into the
+   plugin's shared folders. A link to another component is an error that names
+   it.
+10. `/[[name]]` is a call: it renders as the target harness's invocation of the
+    named skill and copies nothing. Its scope is decision D3 in section 11.
+11. Every error in this section names the linking file, the link as written and
     the rule it broke.
 
 ## 5. Frontmatter
@@ -213,6 +260,22 @@ position; the environment; a built-in default.
 6. The build stops at `dist/`. Copying the output to a repository root,
    committing it or publishing a marketplace from it is the consumer's job.
 7. `publish` is a separate step. What it keeps is decision D1 in section 11.
+8. A pack holds the plugin's `references/`, `scripts/` and `assets/` at its
+   root, beside the harness's own folders, and each skill's own folders inside
+   the skill.
+9. Links up to the pack root rely on the harness keeping a pack whole on
+   install and resolving a skill's relative paths from the skill's folder.
+   harness-reference records this for each harness built for:
+
+   | Harness | Pack kept whole | Relative paths resolve from |
+   |---|---|---|
+   | Claude Code | Yes: a marketplace plugin is copied whole to `~/.claude/plugins/cache/<m>/<p>/<version>`, and nothing outside the plugin folder is copied (`Claude Code Plugin install copy`, `Claude Code Plugin install location`) | The skill's folder (`Claude Code Relative paths in SKILL.md`) |
+   | Codex CLI | Yes: the plugin is copied whole to `~/.codex/plugins/cache/<m>/<p>/<version>` (`Codex CLI Plugin install copy`, `Codex CLI Plugin install location`) | Not recorded (`Codex CLI Relative paths in SKILL.md open`) |
+   | Cursor | Yes: plugin files are copied to `~/.cursor/plugins/local`, and a symlink loads only when its target is inside that folder (`Cursor Plugin install copy`, `Cursor Plugin install location`) | The skill's root (`Cursor Relative paths in SKILL.md`) |
+   | Pi | Yes: a local package loads in place, a git package is cloned, an npm package is installed whole (`Pi Plugin install copy`, `Pi Plugin install location`, `Pi Plugin install 1.5.0`) | The skill's folder, and the model is told it (`Pi Relative paths in SKILL.md`) |
+
+10. A pack holds no symlinks. Every shipped file is a copy, so Cursor's symlink
+    rule never applies.
 
 ## 9. Commands and the layout
 
@@ -229,7 +292,10 @@ position; the environment; a built-in default.
    and name each such link.
 6. `bump <plugin>` writes the plugin note's `version`. `bump <m>` writes the
    marketplace note's.
-7. `adopt` writes notes into a plugin in this layout.
+7. `adopt` writes notes into a plugin in this layout. A file beside an adopted
+   `SKILL.md` that is not in `references/`, `scripts/` or `assets/` moves into
+   `references/` (a document) or `assets/` (anything else), and links to it are
+   rewritten. `adopt` reports each move.
 8. `publish <note>` names a note in the vault. A path outside
    `marketplaces/` is refused.
 
@@ -263,8 +329,11 @@ It is refused when:
 5. A `marketplaces/` folder is anywhere below the top.
 6. A component's note is not `<name>/<name>.md`, such as `skills/x.md` or
    `skills/x/SKILL.md`.
-7. The root file has `build.patterns`, `build.out`, or a `packs` key in a
-   harness block.
+7. The root file has `build.out`, `build.patterns`, `build.exclude`,
+   `build.assets` or `build.hooks`, or a `packs` key in a harness block.
+8. A folder holds an entry its row in "What a folder may hold" (section 3)
+   does not list, such as a plugin's `bin/` or a `notes.md` beside a skill's
+   entry.
 
 Each case is reported once, with every path it applies to.
 
@@ -282,7 +351,7 @@ harness whose build does not carry it, because a build carries no agents.
 
 - Keep it as a separate step, reduced. It renders a note from the vault with
   the same code as `build`. It drops publishing a note by a path no folder
-  places. One skill alone follows section 4 rule 8.
+  places. One skill alone follows section 4 rule 9 and decision D8.
 - Reduce it further, to copy from `dist/<m>/`. This gives one render path, but
   it cannot publish agents, which no build carries.
 - Remove it, and rely on `harness install` and `harness link`, which read
@@ -327,21 +396,27 @@ Both name a plugin by its bare name, which is ambiguous with several
 marketplaces, and both point at files the containment rule already confines to
 one marketplace.
 
-- Drop both. A plugin's `assets/` covers assets. A `hooks.json` directly in a
-  plugin's `hooks/` folder is its canonical hooks file.
+- Drop both. A plugin's shared `references/`, `scripts/` and `assets/` cover
+  what `build.assets` copied. A `hooks.json` directly in a plugin's `hooks/`
+  folder is its canonical hooks file. That is the path Claude Code reads by
+  default (harness-reference: `Claude Code Plugin manifest fields`, the
+  `hooks` field: "loaded together with hooks/hooks.json").
 - Keep both, with `plugin: <m>/<p>` and a `from` checked by section 4.
 
 Recommendation: drop both.
 
 ### D6. `build.exclude`
 
-It is a glob list of what never ships. It does not change the layout.
+It is a glob list of what never ships. Under the strict folder rules in
+section 3, an excluded file would still be a file the folder may not hold.
 
-- Keep it, read from the root folder only. The per-member layering of v1 goes.
-- Drop it. Authors move drafts out of `marketplaces/`.
+- Drop it. A draft or a note that must not ship goes in a `docs/` folder,
+  which never ships.
+- Keep it, read from the root folder only, and let it also exempt a file from
+  the folder rules.
 
-Recommendation: keep it, root only. Drafts beside a skill are a common need,
-and the cost is one glob list.
+Recommendation: drop it. `docs/` already does the job, and one fewer setting
+keeps the layout the only rule.
 
 ### D7. Plugin notes are required
 
@@ -349,3 +424,52 @@ v1 lets a plugin folder stand without a note. v2 requires `<p>.md`, so every
 plugin has one place for its `version` and fields.
 
 Recommendation: require it. `new plugin` and `init` write it.
+
+### D8. A skill installed alone
+
+`publish` writes one skill into a harness's skill folder, such as
+`~/.claude/skills/<s>/`. `harness link` symlinks one built skill folder there.
+Neither has a pack root around the skill, so a link up to the plugin's
+`references/`, `scripts/` or `assets/` does not resolve.
+
+- `publish` copies each shared file the skill links to into the skill's own
+  folder, under the same top folder (`references/x.md` lands at
+  `<s>/references/x.md`), and rewrites the link. A file the skill already has
+  at that path is an error that names both.
+- `publish` refuses the skill and names the link.
+- `harness link` cannot copy, because it links the built folder in place. It
+  refuses a skill that links into the plugin's shared folders, names the link,
+  and points at `harness install`.
+
+Recommendation: `publish` copies, and `harness link` refuses. A shared file is
+small, and copying keeps one-skill publishing useful.
+
+### D9. Plugin-root files with no folder
+
+v1 copied a plugin's `assets/` flat to the pack root, so `assets/bin/tool`
+shipped as `bin/tool`. In the code and the tests that serves two things: the
+launcher script (`build.launcher_path`, as in the `plugin-layout` probe) and
+any file an author wanted at the pack root.
+
+- `bin/`: harness-reference records no harness that reads a plugin's `bin/`.
+  It is skillwright's own convention for the launcher. v2 moves the launcher to
+  `scripts/`, which ships at the pack root under its own name.
+- `.mcp.json`: Claude Code reads it at the plugin root
+  (`Claude Code MCP config file`), and Claude Code, Codex and Cursor read an
+  `mcpServers` manifest field (`<harness> Plugin manifest fields`). skillwright
+  has no MCP kind; the flattening was the only way to ship one. The file and
+  its keys differ per harness.
+
+Options for `.mcp.json`:
+
+- No home in v2. An MCP server kind comes later and renders each harness's own
+  file.
+- A plugin-root `.mcp.json` copied as is to the harnesses that read that name.
+
+Recommendation: no home in v2. A copied file would be right for one harness
+and wrong for the others.
+
+## Later
+
+The layout is deliberately the recommended practice and nothing more. More
+flexible structures may come in a later version of this spec.
