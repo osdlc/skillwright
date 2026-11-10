@@ -4079,6 +4079,7 @@ fn a_convention_member_folder_inherits_its_workspace() {
 
     // From inside the member, the walk up finds the workspace file instead.
     let walked = run(&["list"], &member);
+    assert_eq!(walked.code, 2, "{}", walked.stderr);
     assert!(
         walked
             .stderr

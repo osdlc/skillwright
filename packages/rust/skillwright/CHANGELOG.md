@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- Library API: `config::RootLoad`, `config::read_root_file` and `config::print_warnings` are removed. The CLI reads the root file through `tradecraft_core::load_effective_root`, which returns the merged root file and each file's warnings; use it directly.
+
 ### Changed
 
 - A root file that is not UTF-8 is reported as `configuration malformed: <file> (it is not UTF-8)`. It was `configuration unreadable`.
@@ -16,7 +20,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- A member reached through a symlink, as with `--vault /tmp/acme-link` pointing at `<ws>/marketplaces/acme`, gets its workspace's settings and `build.exclude`. A workspace `build.exclude` glob that matches nothing is named by the workspace file's absolute path in that case, since `../../skillwright.md` from the link names another folder ([#91](https://github.com/osdlc/skillwright/issues/91)).
+- A member reached through a symlink, as with `--vault /tmp/acme-link` pointing at `<ws>/marketplaces/acme`, gets its workspace's settings and `build.exclude`. A workspace `build.exclude` glob that matches nothing, and a `publish` refused `excluded-note` by such a glob, name the workspace file by its absolute path in that case, since `../../skillwright.md` from the link names another folder ([#91](https://github.com/osdlc/skillwright/issues/91)).
 - A first build through a symlinked vault refuses a `packs` that lands on a folder the vault reads notes from, as a build through the real path does. The check was skipped while `build.out` did not exist yet ([#83](https://github.com/osdlc/skillwright/issues/83)).
 
 ## [0.11.0](https://github.com/osdlc/skillwright/compare/skillwright/v0.10.0...skillwright/v0.11.0) - 2026-11-10

@@ -153,12 +153,24 @@ pub struct Patterns {
     folders: FolderPatterns,
     /// This root file's own `build.exclude`, read from the vault root.
     exclude: Vec<String>,
-    /// The workspace file's `build.exclude`, read from the workspace folder,
-    /// and the vault root from that folder, `marketplaces/<m>`. `None` when
-    /// no workspace holds this marketplace or it excludes nothing.
-    workspace_exclude: Option<(String, Vec<String>)>,
+    /// The workspace file's `build.exclude`, read from the workspace folder.
+    /// `None` when no workspace holds this marketplace or it excludes nothing.
+    workspace_exclude: Option<WorkspaceExclude>,
     /// The folder-pattern globs a workspace file gave this marketplace.
     inherited: BTreeSet<String>,
+}
+
+/// A workspace's `build.exclude`, as a member reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkspaceExclude {
+    /// The vault root from the workspace folder, `marketplaces/<m>`.
+    member: String,
+    /// The globs, read from the workspace folder.
+    globs: Vec<String>,
+    /// The workspace file as a refusal names it: `../../skillwright.md`, or
+    /// its absolute path when it was found through a link, where `../../`
+    /// names another folder.
+    file: String,
 }
 
 impl Patterns {
@@ -184,8 +196,16 @@ impl Patterns {
         {
             root.inherit(&shared);
             if !shared.build.exclude.is_empty() {
-                let member = format!("{WORKSPACE_DIR}/{}", at.member);
-                workspace_exclude = Some((member, shared.build.exclude));
+                let file = if at.through_link {
+                    at.file.display().to_string()
+                } else {
+                    format!("../../{ROOT_FILE}")
+                };
+                workspace_exclude = Some(WorkspaceExclude {
+                    member: format!("{WORKSPACE_DIR}/{}", at.member),
+                    globs: shared.build.exclude,
+                    file,
+                });
             }
         }
         let inherited = root
@@ -305,7 +325,7 @@ impl Patterns {
         let files = files.as_slice();
         let mut sibling_files: Option<Vec<String>> = None;
         let mut warnings = Vec::new();
-        if let Some((member, globs)) = &self.workspace_exclude {
+        if let Some(WorkspaceExclude { member, globs, .. }) = &self.workspace_exclude {
             let here: Vec<String> = files.iter().map(|f| format!("{member}/{f}")).collect();
             for glob in globs {
                 if !matches_some(&here, glob) && matches_some(files, glob) {
@@ -423,16 +443,17 @@ impl Patterns {
         self.excluded_by(rel).is_some()
     }
 
-    /// The root file whose `build.exclude` excludes `rel`, by its path from
-    /// the vault root: this one's, else the workspace's above it.
+    /// The root file whose `build.exclude` excludes `rel`: this one's, by its
+    /// path from the vault root, else the workspace's above it, as
+    /// [`WorkspaceExclude::file`] names it.
     pub(crate) fn excluded_by(&self, rel: &str) -> Option<String> {
         if matches_any(&self.exclude, rel) {
             return Some(ROOT_FILE.to_owned());
         }
         self.workspace_exclude
             .as_ref()
-            .filter(|(member, globs)| matches_any(globs, &format!("{member}/{rel}")))
-            .map(|_| format!("../../{ROOT_FILE}"))
+            .filter(|ws| matches_any(&ws.globs, &format!("{}/{rel}", ws.member)))
+            .map(|ws| ws.file.clone())
     }
 
     /// Whether a folder that never ships holds `rel`.
@@ -636,9 +657,9 @@ mod tests {
         let link = tmp.path().join("acme-link");
         std::os::unix::fs::symlink(&member, &link).unwrap();
         let patterns = Patterns::load(&crate::vfs::NativeVfs, &link).unwrap();
-        let (prefix, globs) = patterns.workspace_exclude.unwrap();
-        assert_eq!(prefix, "marketplaces/acme");
-        assert_eq!(globs, vec!["skills/a.md".to_owned()]);
+        let exclude = patterns.workspace_exclude.unwrap();
+        assert_eq!(exclude.member, "marketplaces/acme");
+        assert_eq!(exclude.globs, vec!["skills/a.md".to_owned()]);
     }
 
     fn patterns(folders: FolderPatterns) -> Patterns {

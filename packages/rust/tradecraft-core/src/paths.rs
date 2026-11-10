@@ -122,20 +122,33 @@ pub fn find_root_file(vfs: &dyn Vfs, start: &Path) -> Option<PathBuf> {
 /// neither is a note of any kind.
 ///
 /// Both sides are compared by their real paths, so a spelling through a link
-/// and the real spelling are one file. A path the host cannot resolve is
-/// compared as written.
-pub(crate) fn is_vault_root_file(vfs: &dyn Vfs, vault: &Path, path: &Path) -> bool {
-    let real =
-        |p: &Path| crate::guard::real_path(vfs, p).unwrap_or_else(|_| crate::vfs::normalize(p));
-    let path = real(path);
-    path == real(&vault.join(ROOT_FILE))
-        || workspace_at(vfs, vault).is_some_and(|at| path == real(&at.file))
+/// and the real spelling are one file.
+///
+/// # Errors
+///
+/// `refused: unsafe-path` when a path is relative or the host cannot tell
+/// where it leads, as [`crate::guard::real_path`]: the check fails closed.
+pub(crate) fn is_vault_root_file(
+    vfs: &dyn Vfs,
+    vault: &Path,
+    path: &Path,
+) -> Result<bool, CoreError> {
+    let real = |p: &Path| crate::guard::real_path(vfs, p);
+    let path = real(path)?;
+    if path == real(&vault.join(ROOT_FILE))? {
+        return Ok(true);
+    }
+    match workspace_at(vfs, vault) {
+        Some(at) => Ok(path == real(&at.file)?),
+        None => Ok(false),
+    }
 }
 
 /// The workspace root file above the marketplace whose root is `dir`, when
 /// `dir` is `<workspace>/marketplaces/<m>/`, as given or by its real path,
-/// and that file says `workspace: true`. A file that cannot be read is returned too: an exclusion
-/// it holds must not fail open, so loading it refuses the run.
+/// and that file says `workspace: true`. A file that cannot be read is
+/// returned too: an exclusion it holds must not fail open, so loading it
+/// refuses the run.
 pub fn workspace_above(vfs: &dyn Vfs, dir: &Path) -> Option<PathBuf> {
     let file = workspace_at(vfs, dir)?.file;
     match read_root(vfs, &file, RootRead::Full) {
@@ -583,6 +596,18 @@ mod tests {
             find_root_file(&vfs, Path::new("/v/marketplaces/skillwright")),
             Some(PathBuf::from("/v/marketplaces/skillwright/skillwright.md"))
         );
+    }
+
+    /// A path the guard cannot resolve is refused, never answered as written.
+    #[test]
+    fn the_root_file_check_fails_closed() {
+        let vfs = MemVfs::new();
+        put(&vfs, "/v/skillwright.md");
+        assert!(is_vault_root_file(&vfs, Path::new("/v"), Path::new("/v/skillwright.md")).unwrap());
+        let err = is_vault_root_file(&vfs, Path::new("v"), Path::new("v/skillwright.md"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.starts_with("refused: unsafe-path: "), "{err}");
     }
 
     #[test]

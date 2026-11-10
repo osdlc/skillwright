@@ -1919,40 +1919,39 @@ fn lists_secret(text: &str) -> bool {
         .any(|line| line.contains("secret") && !line.contains("unmatched-glob"))
 }
 
+/// A shared `build.patterns` glob need only match in one member. A build
+/// checks it against the siblings' files, and through a link it finds the
+/// same siblings as through the real path.
 #[cfg(unix)]
 #[test]
 fn a_shared_glob_reads_siblings_the_same_through_a_link() {
-    let shared = "---\nworkspace: true\nbuild:\n  patterns:\n    skills: notes/*\n---\n";
+    let shared =
+        "---\nworkspace: true\nbuild:\n  patterns:\n    skills: [skills/*, notes/*]\n---\n";
     let (dir, link) = linked_member(&[
         ("skillwright.md", shared),
         ("marketplaces/acme/skillwright.md", &member("acme", "")),
-        ("marketplaces/acme/plugins/p/p.md", PLUGIN),
-        ("marketplaces/acme/plugins/p/skills/s.md", SKILL),
+        ("marketplaces/acme/skills/s.md", SKILL),
         ("marketplaces/two/skillwright.md", &member("two", "")),
         ("marketplaces/two/notes/n.md", SKILL),
     ]);
     let real = dir.path().join("marketplaces/acme");
-    let through_real = sw(
-        &dir.path(),
-        &["list", "--vault", &real.display().to_string()],
-    );
-    let through_link = sw(
-        &dir.path(),
-        &["list", "--vault", &link.display().to_string()],
-    );
-    assert_eq!(through_real.code, 0, "{}", through_real.text);
-    assert_eq!(through_link.code, 0, "{}", through_link.text);
-    assert!(
-        !through_real.text.contains("unmatched-glob"),
-        "{}",
-        through_real.text
-    );
-    assert_eq!(
-        through_link
-            .text
-            .replace(&link.display().to_string(), &real.display().to_string()),
-        through_real.text
-    );
+    for vault_arg in [real.display().to_string(), link.display().to_string()] {
+        let built = sw(&dir.path(), &["build", "--vault", &vault_arg, "--yes"]);
+        assert_eq!(built.code, 0, "{vault_arg}: {}", built.text);
+        assert!(
+            built.text.contains("1 skill"),
+            "{vault_arg}: {}",
+            built.text
+        );
+        assert!(
+            !built
+                .text
+                .lines()
+                .any(|line| line.contains("unmatched-glob") && line.contains("notes/*")),
+            "{vault_arg}: {}",
+            built.text
+        );
+    }
 }
 
 #[cfg(unix)]
@@ -2089,4 +2088,45 @@ fn a_first_build_through_a_linked_vault_with_clear_packs_builds() {
         "{}",
         built.text
     );
+}
+
+/// A note a workspace glob excludes is refused naming that workspace file:
+/// `../../skillwright.md` from the member, its real path through a link,
+/// where `../../` names another folder.
+#[cfg(unix)]
+#[test]
+fn publishing_an_excluded_note_through_a_link_names_the_workspace_file() {
+    let shared =
+        "---\nworkspace: true\nbuild:\n  exclude: [marketplaces/acme/skills/secret.md]\n---\n";
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", shared),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        ("marketplaces/acme/skills/secret.md", SKILL),
+    ]);
+    let real = dir.path().join("marketplaces/acme");
+    let workspace_file = dir.path().join("skillwright.md").canonicalize().unwrap();
+    for (vault, named) in [
+        (real, "../../skillwright.md".to_owned()),
+        (link, workspace_file.display().to_string()),
+    ] {
+        let note = vault.join("skills/secret.md").display().to_string();
+        let vault_arg = vault.display().to_string();
+        let published = sw(
+            &dir.path(),
+            &["publish", &note, "--vault", &vault_arg, "--yes"],
+        );
+        assert_ne!(published.code, 0, "{vault_arg}: {}", published.text);
+        assert!(
+            published.text.contains("excluded-note"),
+            "{vault_arg}: {}",
+            published.text
+        );
+        assert!(
+            published
+                .text
+                .contains(&format!("matches `build.exclude` in {named}, so")),
+            "{vault_arg}: {}",
+            published.text
+        );
+    }
 }
