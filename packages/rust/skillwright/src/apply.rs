@@ -532,9 +532,9 @@ fn check_entry_rename(
     if from_leaf == to_leaf {
         return Ok(());
     }
-    if name_taken(vault, from_dir, to_leaf)? {
+    if let Some(taken) = name_taken(vault, from_dir, to_leaf, from_leaf)? {
         return Err(ApplyError::Refused(format!(
-            "{from_dir}/{to_leaf} already exists in the bundle, so the entry note cannot take \
+            "{from_dir}/{taken} already exists in the bundle, so the entry note cannot take \
              the name {to_leaf}. Rename or move it, then run the rename again"
         )));
     }
@@ -550,15 +550,25 @@ fn check_entry_rename(
     Ok(())
 }
 
-/// Whether `vault.source` lists an entry named exactly `leaf` in the
-/// vault-relative folder `dir`. Exact, so a case-only rename passes: the
-/// listing shows the entry under its current spelling only.
-fn name_taken(vault: Vault<'_>, dir: &str, leaf: &str) -> Result<bool, ApplyError> {
+/// The entry `vault.source` lists in the vault-relative folder `dir` whose
+/// name is `leaf` up to case, other than `own`. Up to case, since renaming
+/// onto `C.md` as `c.md` replaces it on a case-insensitive file system; `own`
+/// is the entry being renamed, so a case-only rename passes.
+fn name_taken(
+    vault: Vault<'_>,
+    dir: &str,
+    leaf: &str,
+    own: &str,
+) -> Result<Option<String>, ApplyError> {
+    let leaf = leaf.to_lowercase();
     let listing = vault
         .source
         .read_dir(&resolve(vault.dir, dir)?)
         .unwrap_or_default();
-    Ok(listing.iter().any(|entry| entry.name == leaf))
+    Ok(listing
+        .into_iter()
+        .map(|entry| entry.name)
+        .find(|name| name != own && name.to_lowercase() == leaf))
 }
 
 /// Why a rename that writes `link` into `path` refuses while the walk could
@@ -618,14 +628,17 @@ fn move_marketplace(
     }
     // The entry takes `temp_to`'s name inside the source folder, after the
     // folder moves: the relinker would refuse it there under the temporary
-    // names.
-    if let (Some((from_dir, from_leaf)), Some(to_leaf)) =
-        (temp_from.rsplit_once('/'), temp_to.rsplit('/').next())
-        && from_leaf != to_leaf
-        && name_taken(vault, from_dir, to_leaf)?
+    // names. The entry itself, still under its own name here, frees its name
+    // when it takes `temp_from`'s.
+    if let (Some((from_dir, from_leaf)), Some(to_leaf), Some(own)) = (
+        temp_from.rsplit_once('/'),
+        temp_to.rsplit('/').next(),
+        from.rsplit('/').next(),
+    ) && from_leaf != to_leaf
+        && let Some(taken) = name_taken(vault, from_dir, to_leaf, own)?
     {
         return Err(ApplyError::Refused(format!(
-            "{from_dir}/{to_leaf} already exists, and the move needs that name free"
+            "{from_dir}/{taken} already exists, and the move needs that name free"
         )));
     }
     if mode.writes()
@@ -1106,7 +1119,13 @@ fn load_vault(
     };
     let mut unreadable_rows = Vec::new();
     let mut unlisted_folders = Vec::new();
-    for err in graph.unreadable() {
+    let unreadable = graph.unreadable();
+    let listed: std::collections::HashSet<&str> = if unreadable.is_empty() {
+        std::collections::HashSet::new()
+    } else {
+        facts.paths.iter().map(String::as_str).collect()
+    };
+    for err in unreadable {
         let relative = err.path().strip_prefix(vault_dir).unwrap_or(err.path());
         if from.starts_with(relative) || to.starts_with(relative) || relative.starts_with(moved) {
             return Err(ApplyError::Io {
@@ -1117,7 +1136,7 @@ fn load_vault(
         let relative = relative.to_string_lossy().replace('\\', "/");
         // A path the graph lists is a file or note; any other is a folder,
         // and every file in it sits under its own name too.
-        let edits_nothing = if facts.paths.contains(&relative) {
+        let edits_nothing = if listed.contains(relative.as_str()) {
             in_dot_folder(&relative)
         } else {
             unlisted_folders.push(relative.clone());
@@ -3404,6 +3423,51 @@ mod tests {
                 true,
             ),
             "marketplaces/m1/m2.md already exists, and the move needs that name free",
+        );
+    }
+
+    /// On a case-insensitive file system the entry's rename would replace
+    /// `C.md`, so a case variant of the new name is taken too.
+    #[test]
+    fn a_bundle_rename_onto_a_case_variant_of_the_new_name_is_refused() {
+        let v = bundle_vault();
+        write(v.path(), "skills/b/C.md", "a peer named C.md\n");
+        refused_alike(
+            v.path(),
+            &NativeVfs,
+            &b_to_c(),
+            "skills/b/C.md already exists in the bundle, so the entry note cannot take the \
+             name c.md. Rename or move it, then run the rename again",
+        );
+        assert_eq!(read(v.path(), "skills/b/C.md"), "a peer named C.md\n");
+    }
+
+    /// The entry's own `skillwright.md` takes its temporary name before the
+    /// move, so it does not hold the temporary name `skillwright.md` itself.
+    #[test]
+    fn a_marketplace_renamed_to_skillwright_is_not_refused_by_its_own_entry() {
+        let v = vault();
+        write(
+            v.path(),
+            "marketplaces/m1/skillwright.md",
+            "---\nname: m1\n---\n",
+        );
+        write(
+            v.path(),
+            "notes.md",
+            "[m](marketplaces/m1/skillwright.md)\n",
+        );
+        let op = rename(
+            "marketplaces/m1/skillwright.md",
+            "marketplaces/skillwright/skillwright.md",
+            true,
+        );
+        preview(v.path(), &op).unwrap();
+        apply(v.path(), &op).unwrap();
+        assert!(
+            v.path()
+                .join("marketplaces/skillwright/skillwright.md")
+                .is_file()
         );
     }
 

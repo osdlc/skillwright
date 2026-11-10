@@ -10,11 +10,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Breaking
 
 - A rename that would rewrite a link while some folder in the vault could not be listed is refused, in a preview too, before anything is written. Such a folder could hold a note with the new name, so no link the rename writes is proven unambiguous. The message names every such folder, dot-named ones included, and one link the rename would write. A rename that rewrites no link still goes on and reports the folder as `skipped · unreadable`. This applies to `apply::apply` and `apply::preview`. The CLI's authoring verbs already stop earlier, at the vault scan, on such a folder. ([#43](https://github.com/osdlc/skillwright/issues/43))
+- A skipped row's reason is the token alone, such as `skipped · unreadable` or `skipped · drifted`. It read `skipped · skipped (unreadable)`. The `--json` row's `reason` changes the same way, from `skipped (drifted)` to `drifted`, for every authoring verb.
 
 ### Changed
 
-- A bundle rename checks, before any write and in a preview too, that the entry note can take its new name inside its folder. It refuses when the folder already holds a file or folder with that exact name, and, when writing, when the folder is read-only. A marketplace rename refuses when the marketplace folder already holds a file or folder with the temporary name the move gives its entry, such as `marketplaces/m1/m2.md`.
-- A skipped row's reason is the token alone, such as `skipped · unreadable` or `skipped · drifted`. It read `skipped · skipped (unreadable)`. The `--json` row's `reason` changes the same way, from `skipped (drifted)` to `drifted`, for every authoring verb.
+- A bundle rename checks, before any write and in a preview too, that the entry note can take its new name inside its folder. It refuses when the folder already holds another file or folder with that name, in any case, and, when writing, when the folder is read-only. Any case, because on a case-insensitive file system the rename would replace that file. A marketplace rename refuses the same way when the marketplace folder already holds the temporary name the move gives its entry, such as `marketplaces/m1/m2.md`.
 
 ### Fixed
 
