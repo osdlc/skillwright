@@ -148,7 +148,7 @@ pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use paths::{
     LoadedMarketplace, MarketplaceInputs, WORKSPACE_DIR, find_root_file, is_marketplace_entry,
-    load_marketplace, marketplace_inputs, resolve_path, workspace_above,
+    load_marketplace, marketplace_inputs, resolve_path, workspace_above, workspace_file,
 };
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,

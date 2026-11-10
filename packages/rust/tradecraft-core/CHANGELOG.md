@@ -9,6 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `workspace_file(dir)` is public and re-exported: where the workspace file above a marketplace folder would be, without reading it.
 - The `\[[` escape. A `[[` or `![[` right after an odd run of `\` is neither a link nor a leftover: `compile_note` ships it as written, backslash included, which CommonMark renders as `[[`. Every `unresolved-syntax` refusal of a `[[` that is not a link now ends `; write \[[ to keep the brackets as text`. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ### Changed
