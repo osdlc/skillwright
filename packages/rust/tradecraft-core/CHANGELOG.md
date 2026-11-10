@@ -7,6 +7,28 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- Removed `is_marketplace_entry`. Use `path_role(path)`, which gives `PathRole::MarketplaceEntry` for exactly the paths it accepted.
+
+### Added
+
+- `load_effective_root(vfs, dir, file)`: the root file at `file` with the workspace above `dir` folded in, unless it is a workspace itself. It returns an `EffectiveRoot` with the merged `root`, the `workspace` file folded in, and every warning tagged with its file. It fails with `RootFileError::Unreadable` (also for a `file` that is not there) or `RootFileError::Malformed`; each converts to the `CoreError` the loader gave before. `load_marketplace` is built on it.
+- `path_role(rel)` and `PathRole`: what a vault-relative path is by its shape: the root file, a workspace member's entry, a component's entry, a reserved `<kind>/skillwright.md`, or something else.
+- `entry_file(kind, name)`: the entry file a bundled component is written as, `skillwright.md` for a marketplace and `<name>.md` otherwise.
+- `patterns::member_workspace_exclude_warnings(vfs, member_root)`: `workspace_exclude_warnings` for the workspace above a member, each named as the member names the workspace file (`../../skillwright.md`, or its absolute path when found through a link).
+
+### Changed
+
+- `publish_skill`'s check for a root config file compares real paths through `path-guard`, and fails closed: a path it cannot resolve, or a relative one, is refused `unsafe-path`.
+- The pack-location check compares the vault and the output with `path-guard` and fails closed: a path the host cannot resolve, as on a permission error, is refused `unsafe-path` where the check fell back to the path as written. A relative vault root is refused `unsafe-path` by this check, one step before the output check refused it with the same token. `source_view` hides nothing for such a vault.
+
+### Fixed
+
+- A member reached through a symlink, such as a host given `/tmp/acme-link` that points at `<ws>/marketplaces/acme`, gets its workspace's settings and `build.exclude` in `load_marketplace`, `export_skills`, `publish_skill`, `vault_config` and `source_view`. The workspace is looked up by the member path as given, then by its real path. An `excluded-note` refusal names the workspace file by its absolute path when it was found through a link ([#91](https://github.com/osdlc/skillwright/issues/91)).
+- `publish_skill` places a `skill_path` spelled through a different link than `skills_root` by its real path, so its folder kind and `build.exclude` apply ([#91](https://github.com/osdlc/skillwright/issues/91)).
+- The pack-location check runs on a first build through a symlinked vault, where `build.out` does not exist yet. It was skipped, so `packs` could land on a folder the vault reads notes from ([#83](https://github.com/osdlc/skillwright/issues/83)).
+
 ## [0.49.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.48.0...tradecraft-core/v0.49.0) - 2026-11-10
 
 ### Added

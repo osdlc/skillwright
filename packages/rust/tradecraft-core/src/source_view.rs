@@ -17,6 +17,7 @@ use crate::discover::{DiscoveredComponent, Source, discover_in};
 use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, STAGE_DIR};
 use crate::frontmatter::EntityKind;
+use crate::guard::{real_path, within};
 use crate::harness::manifest::{
     check_packs, check_packs_against_sources, first_not_a_pack, packs_of,
 };
@@ -235,7 +236,10 @@ fn marketplace_notes(
     let folder = root.join(crate::paths::WORKSPACE_DIR);
     let mut files = Vec::new();
     for entry in vfs.read_dir(&folder).unwrap_or_default() {
-        let note = folder.join(&entry.name).join(ROOT_FILE);
+        let note = folder.join(&entry.name).join(crate::discover::entry_file(
+            EntityKind::Marketplace,
+            &entry.name,
+        ));
         if entry.is_dir && vfs.exists(&note) {
             files.push(note);
         }
@@ -255,20 +259,11 @@ fn marketplace_notes(
         .collect()
 }
 
-/// `path` with its links resolved, as far as it exists.
-fn resolved(vfs: &dyn Vfs, path: &Path) -> PathBuf {
-    let path = normalize(path);
-    vfs.canonicalize(&path).unwrap_or(path)
-}
-
-/// Whether the output and the vault share a folder: one holds the other.
-pub(crate) fn output_overlaps_vault(vfs: &dyn Vfs, vault_root: &Path, out_root: &Path) -> bool {
-    let (vault, out) = (resolved(vfs, vault_root), resolved(vfs, out_root));
-    vault.starts_with(&out) || out.starts_with(&vault)
-}
-
 /// What a build owns under `out_root`, for each harness, that sits in `root`,
 /// spelled from `root`. `keep` says whether a packs folder counts.
+///
+/// A path the host cannot resolve is taken as written: this builds a list to
+/// hide, and the build refuses such a path on its own.
 fn output_in(
     vfs: &dyn Vfs,
     root: &Path,
@@ -276,7 +271,8 @@ fn output_in(
     config: &MarketplaceConfig,
     keep: &dyn Fn(&HarnessProfile, &Path) -> bool,
 ) -> Vec<PathBuf> {
-    let (inside, out) = (resolved(vfs, root), resolved(vfs, out_root));
+    let resolved = |path: &Path| real_path(vfs, path).unwrap_or_else(|_| normalize(path));
+    let (inside, out) = (resolved(root), resolved(out_root));
     with_plugin_format()
         .flat_map(|profile| {
             let packs = packs_of(config, profile);
@@ -351,12 +347,15 @@ fn holds_packs(
 }
 
 /// Every check on `config`'s `packs` that needs no destination on disk:
-/// [`check_packs`], and, when the output overlaps the vault, that a moved
-/// folder is clear of the folders the vault reads notes from.
+/// [`check_packs`], and, when the output and the vault share a folder (one
+/// holds the other, once links are resolved), that a moved folder is clear of
+/// the folders the vault reads notes from.
 ///
 /// # Errors
 ///
-/// As [`check_packs`] and [`check_packs_against_sources`].
+/// As [`check_packs`] and [`check_packs_against_sources`], and
+/// `refused: unsafe-path` when either path is relative or the host cannot
+/// tell where it leads.
 pub(crate) fn check_pack_location(
     vfs: &dyn Vfs,
     vault_root: &Path,
@@ -365,7 +364,7 @@ pub(crate) fn check_pack_location(
     patterns: &Patterns,
 ) -> Result<(), CoreError> {
     check_packs(config)?;
-    if !output_overlaps_vault(vfs, vault_root, out_root) {
+    if !within(vfs, vault_root, out_root)? && !within(vfs, out_root, vault_root)? {
         return Ok(());
     }
     let mut sources: BTreeSet<String> = patterns.source_folders();
@@ -375,7 +374,7 @@ pub(crate) fn check_pack_location(
             .map(|(dir, _)| (*dir).to_owned()),
     );
     sources.extend([ASSETS_DIR.to_owned(), ROOT_FILE.to_owned()]);
-    let (vault, out) = (resolved(vfs, vault_root), resolved(vfs, out_root));
+    let (vault, out) = (real_path(vfs, vault_root)?, real_path(vfs, out_root)?);
     check_packs_against_sources(config, &sources, |packs| {
         normalize(&out.join(packs))
             .strip_prefix(&vault)
@@ -396,12 +395,12 @@ pub(crate) fn check_pack_location(
 /// excludes, as [`crate::patterns::Patterns::load`] refuses it: the scan this
 /// configures would refuse it too.
 pub fn vault_config(vfs: &dyn Vfs, vault_root: &Path) -> Result<MarketplaceConfig, CoreError> {
-    use crate::paths::{read_root_both, workspace_file};
+    use crate::paths::{read_root_both, workspace_at};
     let Some((layout, full)) = read_root_both(vfs, &vault_root.join(ROOT_FILE))? else {
         return Ok(MarketplaceConfig::default());
     };
-    let shared = match workspace_file(vault_root).filter(|_| !layout.workspace) {
-        Some(file) => read_root_both(vfs, &file)?.filter(|(layout, _)| layout.workspace),
+    let shared = match workspace_at(vfs, vault_root).filter(|_| !layout.workspace) {
+        Some(at) => read_root_both(vfs, &at.file)?.filter(|(layout, _)| layout.workspace),
         None => None,
     };
     let Ok(mut root) = full else {
@@ -449,6 +448,25 @@ pub fn source_view<'v>(
 mod tests {
     use super::*;
     use crate::vfs::MemVfs;
+
+    /// A relative vault cannot be compared with its output, so the pack
+    /// check refuses, and a view that would refuse hides nothing.
+    #[test]
+    fn a_relative_vault_hides_nothing() {
+        let vfs = MemVfs::new();
+        vfs.insert("v/skillwright.md", "---\nname: v\n---\n")
+            .unwrap();
+        let built = Path::new("v/dist/.claude-plugin/marketplace.json");
+        vfs.insert(built, "{}").unwrap();
+        let view = source_view(
+            SourceView::over(&vfs),
+            VaultScope::new(Path::new("v")),
+            Some(Path::new("v/dist")),
+            &MarketplaceConfig::default(),
+            &Namespace::bare(),
+        );
+        assert!(view.exists(built));
+    }
 
     #[test]
     fn vault_config_folds_in_the_workspace_above() {

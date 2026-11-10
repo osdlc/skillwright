@@ -1,13 +1,15 @@
 //! Loading a vault's root file: find it, fold in its workspace, and resolve
 //! what it names into a build's inputs. [`load_marketplace`] does all of it
-//! in one call. The pieces it is made of are public.
+//! in one call. The pieces it is made of are public: [`find_root_file`],
+//! [`load_effective_root`] for the read and the fold, and
+//! [`marketplace_inputs`].
 //!
 //! Nothing here reads the environment. A host passes the home directory.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::discover::KIND_DIRS;
+use crate::discover::{PathRole, path_role, tail};
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
 use crate::namespace::Namespace;
@@ -84,21 +86,29 @@ pub fn resolve_path(path: &str, base: &Path, home: &Path) -> PathBuf {
 /// A `skillwright.md` that sits where a component note sits —
 /// `<kind>/skillwright/skillwright.md`, a plugin or skill named
 /// `skillwright` — is that component's note, not a root file, and the walk
-/// goes past it.
+/// goes past it. So does a reserved `<kind>/skillwright.md` inside a vault.
 pub fn find_root_file(vfs: &dyn Vfs, start: &Path) -> Option<PathBuf> {
     let mut dir = Some(start);
     while let Some(here) = dir {
         let candidate = here.join(ROOT_FILE);
         let is_file = vfs.exists(&candidate) && !vfs.metadata(&candidate).is_ok_and(|m| m.is_dir);
-        // A flat `<kind>/skillwright.md` inside a vault is a refused note,
-        // not a root file; the vault's root file is further up.
-        let note_inside = is_flat_root_file_name(&candidate)
-            && here
-                .parent()
-                .and_then(|up| find_root_file(vfs, up))
-                .and_then(|above| above.parent().map(Path::to_path_buf))
-                .is_some_and(|vault| is_reserved_note(&vault, &candidate));
-        if is_file && !is_component_note(&candidate) && !note_inside {
+        let component = matches!(
+            path_role(&tail(&candidate, 3)),
+            PathRole::ComponentEntry { .. }
+        );
+        // Reserved is decided from the vault root, the root file further up:
+        // the last parts alone cannot show it, as `marketplaces/skills/` is a
+        // member's folder only from there.
+        let reserved = || {
+            path_role(&tail(&candidate, 2)) == PathRole::Reserved
+                && here
+                    .parent()
+                    .and_then(|up| find_root_file(vfs, up))
+                    .and_then(|above| above.parent().map(Path::to_path_buf))
+                    .and_then(|vault| candidate.strip_prefix(vault).ok().map(path_role))
+                    .is_some_and(|role| role == PathRole::Reserved)
+        };
+        if is_file && !component && !reserved() {
             return Some(candidate);
         }
         dir = here.parent();
@@ -106,66 +116,41 @@ pub fn find_root_file(vfs: &dyn Vfs, start: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Whether `path` is `<kind>/skillwright/skillwright.md`, a component note
-/// and not a root file. `marketplaces/skillwright/skillwright.md` is not one:
-/// that is the root file of a workspace member named `skillwright`.
-fn is_component_note(path: &Path) -> bool {
-    let folder = path.parent();
-    let named = folder
-        .and_then(Path::file_name)
-        .is_some_and(|name| name == "skillwright");
-    let in_kind = folder
-        .and_then(Path::parent)
-        .and_then(Path::file_name)
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name != WORKSPACE_DIR && KIND_DIRS.iter().any(|(dir, _)| *dir == name));
-    named && in_kind
-}
-
-/// Whether `path`, under the vault at `vault`, is a reserved note: a
-/// `skillwright.md` directly inside a kind folder, such as
-/// `skills/skillwright.md`. `marketplaces/<m>/skillwright.md` is never one,
-/// even when `<m>` is a kind folder's name: that is a marketplace's own file.
-fn is_reserved_note(vault: &Path, path: &Path) -> bool {
-    let relative = path.strip_prefix(vault).unwrap_or(path);
-    is_flat_root_file_name(path) && !is_marketplace_entry(relative)
-}
-
 /// Whether `path` is a root config file for the vault at `vault`: its own
 /// `skillwright.md`, directly under the vault root, or the workspace file
 /// above it when `vault` is a workspace member. Either configures the vault;
 /// neither is a note of any kind.
-pub(crate) fn is_vault_root_file(vault: &Path, path: &Path) -> bool {
-    path == vault.join(ROOT_FILE) || workspace_file(vault).is_some_and(|file| path == file)
-}
-
-/// Whether the vault-relative `path` is a marketplace's entry note,
-/// `marketplaces/<m>/skillwright.md`: directly inside a folder of the
-/// workspace folder, whatever `<m>` is called. No other `skillwright.md`
-/// below the vault root is one.
-pub fn is_marketplace_entry(path: &Path) -> bool {
-    let parts: Vec<_> = path.components().collect();
-    parts.len() == 3 && parts[0].as_os_str() == WORKSPACE_DIR && parts[2].as_os_str() == ROOT_FILE
-}
-
-/// Whether `path` is a `skillwright.md` directly inside a folder named after a
-/// kind folder. Discovery refuses it unless it is a marketplace's file, which
-/// discovery places as one before it gets here.
-pub(crate) fn is_flat_root_file_name(path: &Path) -> bool {
-    path.file_name().is_some_and(|name| name == ROOT_FILE)
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| KIND_DIRS.iter().any(|(dir, _)| *dir == name))
+///
+/// Both sides are compared by their real paths, so a spelling through a link
+/// and the real spelling are one file.
+///
+/// # Errors
+///
+/// `refused: unsafe-path` when a path is relative or the host cannot tell
+/// where it leads, as [`crate::guard::real_path`]: the check fails closed.
+pub(crate) fn is_vault_root_file(
+    vfs: &dyn Vfs,
+    vault: &Path,
+    path: &Path,
+) -> Result<bool, CoreError> {
+    let real = |p: &Path| crate::guard::real_path(vfs, p);
+    let path = real(path)?;
+    if path == real(&vault.join(ROOT_FILE))? {
+        return Ok(true);
+    }
+    match workspace_at(vfs, vault) {
+        Some(at) => Ok(path == real(&at.file)?),
+        None => Ok(false),
+    }
 }
 
 /// The workspace root file above the marketplace whose root is `dir`, when
-/// `dir` is `<workspace>/marketplaces/<m>/` and that file says
-/// `workspace: true`. A file that cannot be read is returned too: an exclusion
-/// it holds must not fail open, so loading it refuses the run.
+/// `dir` is `<workspace>/marketplaces/<m>/`, as given or by its real path,
+/// and that file says `workspace: true`. A file that cannot be read is
+/// returned too: an exclusion it holds must not fail open, so loading it
+/// refuses the run.
 pub fn workspace_above(vfs: &dyn Vfs, dir: &Path) -> Option<PathBuf> {
-    let file = workspace_file(dir)?;
+    let file = workspace_at(vfs, dir)?.file;
     match read_root(vfs, &file, RootRead::Full) {
         Ok(None) => None,
         Ok(Some(root)) if !root.workspace => None,
@@ -186,44 +171,87 @@ pub(crate) enum RootRead {
 
 /// The workspace file above the marketplace at `dir`, read as `read` says,
 /// when `dir` is `<workspace>/marketplaces/<m>/` and the file says
-/// `workspace: true`.
+/// `workspace: true`, with where it was found.
 ///
 /// # Errors
 ///
-/// `refused: malformed-root-file`, as [`read_root`].
+/// As [`read_root`].
 pub(crate) fn read_workspace_above(
     vfs: &dyn Vfs,
     dir: &Path,
     read: RootRead,
-) -> Result<Option<RootFile>, CoreError> {
-    let Some(file) = workspace_file(dir) else {
+) -> Result<Option<(WorkspaceAt, RootFile)>, RootFileError> {
+    let Some(at) = workspace_at(vfs, dir) else {
         return Ok(None);
     };
-    Ok(read_root(vfs, &file, read)?.filter(|root| root.workspace))
+    Ok(read_root(vfs, &at.file, read)?
+        .filter(|root| root.workspace)
+        .map(|root| (at, root)))
 }
 
-/// Where a workspace file above `dir` would be, when `dir` is
-/// `<workspace>/marketplaces/<m>/`.
-pub(crate) fn workspace_file(dir: &Path) -> Option<PathBuf> {
-    let parent = dir.parent()?;
-    if parent.file_name()? != WORKSPACE_DIR {
-        return None;
+/// Where the workspace above the member at `dir` sits, by its shape:
+/// `<ws>/marketplaces/<m>/`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkspaceAt {
+    /// `<ws>/skillwright.md`.
+    pub file: PathBuf,
+    /// `<m>`, from the spelling that matched.
+    pub member: String,
+    /// Whether the match came from the real path, not `dir` as given.
+    pub through_link: bool,
+}
+
+impl WorkspaceAt {
+    /// The workspace file as a member's messages name it: `../../skillwright.md`,
+    /// or its absolute path when found through a link, where `../../` names
+    /// another folder.
+    pub(crate) fn label(&self) -> String {
+        if self.through_link {
+            self.file.display().to_string()
+        } else {
+            format!("../../{ROOT_FILE}")
+        }
     }
-    Some(parent.parent()?.join(ROOT_FILE))
+}
+
+/// The workspace above the member at `dir`: `dir` as given first, then its
+/// real path through [`Vfs::canonicalize`]. The first spelling whose
+/// `<ws>/skillwright.md` exists wins, so a member folder that is itself a
+/// link inside `marketplaces/` keeps its workspace, and a link to a member
+/// from elsewhere finds the one it leads to.
+pub(crate) fn workspace_at(vfs: &dyn Vfs, dir: &Path) -> Option<WorkspaceAt> {
+    let by_shape = |dir: &Path, through_link: bool| {
+        let parent = dir.parent()?;
+        if parent.file_name()? != WORKSPACE_DIR {
+            return None;
+        }
+        let file = parent.parent()?.join(ROOT_FILE);
+        let member = dir.file_name()?.to_string_lossy().into_owned();
+        vfs.exists(&file).then_some(WorkspaceAt {
+            file,
+            member,
+            through_link,
+        })
+    };
+    if let Some(at) = by_shape(dir, false) {
+        return Some(at);
+    }
+    let real = vfs.canonicalize(dir).ok()?;
+    (real != dir).then(|| by_shape(&real, true))?
 }
 
 /// The root file at `file`, read as `read` says, `None` when there is none.
 ///
 /// # Errors
 ///
-/// `refused: malformed-root-file` when it is not UTF-8, its frontmatter is
-/// not a YAML mapping, or a key `read` checks holds a value of the wrong
-/// shape.
+/// [`RootFileError::Malformed`] when it is not UTF-8, its frontmatter is not
+/// a YAML mapping, or a key `read` checks holds a value of the wrong shape.
+/// [`RootFileError::Unreadable`] when it is there but cannot be read.
 pub(crate) fn read_root(
     vfs: &dyn Vfs,
     file: &Path,
     read: RootRead,
-) -> Result<Option<RootFile>, CoreError> {
+) -> Result<Option<RootFile>, RootFileError> {
     let Some(text) = root_text(vfs, file)? else {
         return Ok(None);
     };
@@ -233,7 +261,7 @@ pub(crate) fn read_root(
     };
     parsed
         .map(Some)
-        .map_err(|err| malformed_root(file, &err.to_string()))
+        .map_err(|err| RootFileError::malformed(file, err.to_string()))
 }
 
 /// A root file's layout and its full reading, which may have failed.
@@ -255,27 +283,142 @@ pub(crate) fn read_root_both(
         return Ok(None);
     };
     let layout = crate::settings::parse_root_layout(&text)
-        .map_err(|err| malformed_root(file, &err.to_string()))?;
-    let full = parse_root_file(&text).map_err(|err| malformed_root(file, &err.to_string()));
+        .map_err(|err| RootFileError::malformed(file, err.to_string()))?;
+    let full = parse_root_file(&text)
+        .map_err(|err| RootFileError::malformed(file, err.to_string()).into());
     Ok(Some((layout, full)))
 }
 
 /// The text of the root file at `file`, `None` when there is none.
-fn root_text(vfs: &dyn Vfs, file: &Path) -> Result<Option<String>, CoreError> {
+fn root_text(vfs: &dyn Vfs, file: &Path) -> Result<Option<String>, RootFileError> {
     if !vfs.exists(file) {
         return Ok(None);
     }
-    String::from_utf8(vfs.read_file(file)?)
+    let bytes = vfs
+        .read_file(file)
+        .map_err(|err| RootFileError::Unreadable {
+            file: file.to_path_buf(),
+            source: err.into_io_error(),
+        })?;
+    String::from_utf8(bytes)
         .map(Some)
-        .map_err(|_| malformed_root(file, "it is not UTF-8"))
+        .map_err(|_| RootFileError::malformed(file, "it is not UTF-8"))
 }
 
-/// The refusal for a root file at `file` that cannot be read.
-fn malformed_root(file: &Path, detail: &str) -> CoreError {
-    CoreError::refused(
-        crate::publish::ReasonToken::MalformedRootFile.as_str(),
-        format!("{}: {detail}. Nothing was written", file.display()),
-    )
+/// Why a root file could not be loaded.
+#[non_exhaustive]
+#[derive(Debug, thiserror::Error)]
+pub enum RootFileError {
+    /// The file could not be read: missing, a folder, permissions.
+    #[error("reading {}: {source}", file.display())]
+    Unreadable {
+        /// The file.
+        file: PathBuf,
+        /// The host's error.
+        #[source]
+        source: std::io::Error,
+    },
+    /// The file was read but is not a root file: not UTF-8, frontmatter not
+    /// a mapping, or a key of the wrong shape.
+    #[error("{}: {detail}", file.display())]
+    Malformed {
+        /// The file.
+        file: PathBuf,
+        /// What is wrong with it.
+        detail: String,
+    },
+}
+
+impl RootFileError {
+    fn malformed(file: &Path, detail: impl Into<String>) -> Self {
+        Self::Malformed {
+            file: file.to_path_buf(),
+            detail: detail.into(),
+        }
+    }
+}
+
+/// `Unreadable` is [`CoreError::Io`]. `Malformed` is
+/// `refused: malformed-root-file`.
+impl From<RootFileError> for CoreError {
+    fn from(err: RootFileError) -> Self {
+        match err {
+            RootFileError::Unreadable { file, source } => CoreError::io(file, source),
+            RootFileError::Malformed { file, detail } => CoreError::refused(
+                crate::publish::ReasonToken::MalformedRootFile.as_str(),
+                format!("{}: {detail}. Nothing was written", file.display()),
+            ),
+        }
+    }
+}
+
+/// A root file with the workspace above it folded in.
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct EffectiveRoot {
+    /// The root file with the workspace's shared settings folded in.
+    /// `root.warnings` holds the root file's own warnings only, as
+    /// [`RootFile::inherit`] leaves it.
+    pub root: RootFile,
+    /// The workspace file folded in, if any.
+    pub workspace: Option<PathBuf>,
+    /// Every warning to show, each with the file it came from: the root
+    /// file's first, then the workspace file's.
+    pub warnings: Vec<(PathBuf, String)>,
+}
+
+/// The root file at `file`, when given, with the workspace above `dir`
+/// folded in, unless that root file is itself a workspace.
+///
+/// `dir` is the vault. `file` is the root file the caller chose; `None` means
+/// the vault has none, and it reads as every default before the fold. This
+/// is the one place a workspace is folded into a full root file.
+///
+/// # Errors
+///
+/// [`RootFileError::Unreadable`] when `file` is missing or cannot be read,
+/// [`RootFileError::Malformed`] when it is not a root file. The same for a
+/// workspace file that is there: an exclusion it holds must not fail open.
+pub fn load_effective_root(
+    vfs: &dyn Vfs,
+    dir: &Path,
+    file: Option<&Path>,
+) -> Result<EffectiveRoot, RootFileError> {
+    let mut root = match file {
+        Some(file) => {
+            read_root(vfs, file, RootRead::Full)?.ok_or_else(|| RootFileError::Unreadable {
+                file: file.to_path_buf(),
+                source: std::io::Error::from(std::io::ErrorKind::NotFound),
+            })?
+        }
+        None => RootFile::default(),
+    };
+    let mut warnings: Vec<(PathBuf, String)> = file
+        .map(|file| {
+            root.warnings
+                .iter()
+                .map(|warning| (file.to_path_buf(), warning.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut workspace = None;
+    if !root.workspace
+        && let Some((at, shared)) = read_workspace_above(vfs, dir, RootRead::Full)?
+    {
+        root.inherit(&shared);
+        warnings.extend(
+            shared
+                .warnings
+                .into_iter()
+                .map(|warning| (at.file.clone(), warning)),
+        );
+        workspace = Some(at.file);
+    }
+    Ok(EffectiveRoot {
+        root,
+        workspace,
+        warnings,
+    })
 }
 
 /// What a marketplace load reads from the root file besides the vault: the
@@ -391,12 +534,7 @@ pub fn load_marketplace(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let mut root = read_root(vfs, &root_file, RootRead::Full)?.unwrap_or_default();
-    if !root.workspace
-        && let Some(shared) = read_workspace_above(vfs, &dir, RootRead::Full)?
-    {
-        root.inherit(&shared);
-    }
+    let root = load_effective_root(vfs, &dir, Some(&root_file))?.root;
     let namespace = match &root.build.namespace {
         Some(stem) => Namespace::new(stem).map_err(|invalid| {
             CoreError::refused(
@@ -470,6 +608,43 @@ mod tests {
         assert_eq!(
             find_root_file(&vfs, Path::new("/v/marketplaces/skillwright")),
             Some(PathBuf::from("/v/marketplaces/skillwright/skillwright.md"))
+        );
+    }
+
+    /// A path the guard cannot resolve is refused, never answered as written.
+    #[test]
+    fn the_root_file_check_fails_closed() {
+        let vfs = MemVfs::new();
+        put(&vfs, "/v/skillwright.md");
+        assert!(is_vault_root_file(&vfs, Path::new("/v"), Path::new("/v/skillwright.md")).unwrap());
+        let err = is_vault_root_file(&vfs, Path::new("v"), Path::new("v/skillwright.md"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.starts_with("refused: unsafe-path: "), "{err}");
+    }
+
+    #[test]
+    fn the_walk_up_passes_a_reserved_note() {
+        let vfs = MemVfs::new();
+        put(&vfs, "/v/skills/skillwright.md");
+        put(&vfs, "/v/skillwright.md");
+        assert_eq!(
+            find_root_file(&vfs, Path::new("/v/skills")),
+            Some(PathBuf::from("/v/skillwright.md"))
+        );
+    }
+
+    #[test]
+    fn a_nested_marketplace_file_is_a_root_file_to_the_walk() {
+        let vfs = MemVfs::new();
+        put(&vfs, "/v/skillwright.md");
+        put(&vfs, "/v/marketplaces/a/skillwright.md");
+        put(&vfs, "/v/marketplaces/a/marketplaces/b/skillwright.md");
+        assert_eq!(
+            find_root_file(&vfs, Path::new("/v/marketplaces/a/marketplaces/b")),
+            Some(PathBuf::from(
+                "/v/marketplaces/a/marketplaces/b/skillwright.md"
+            ))
         );
     }
 

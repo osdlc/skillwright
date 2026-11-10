@@ -29,7 +29,6 @@ use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::namespace::Namespace;
 use crate::paths::WORKSPACE_DIR;
-use crate::settings::ROOT_FILE;
 use crate::vault::read_vault_skill;
 use crate::vfs::{MemVfs, Vfs};
 
@@ -370,10 +369,13 @@ pub fn derive_create(
     // said: `marketplaces/house.md` is a note the reader would find as a loose
     // component rather than as a marketplace.
     let kind = placement_kind(placement);
-    let path = if kind == Some(EntityKind::Marketplace) {
-        format!("{dir}/{slug}/{ROOT_FILE}")
-    } else if bundled || kind.is_some_and(EntityKind::holds_components) {
-        format!("{dir}/{slug}/{slug}.md")
+    let bundled = bundled || kind.is_some_and(EntityKind::holds_components);
+    let path = if bundled {
+        let entry = kind.map_or_else(
+            || format!("{slug}.md"),
+            |kind| crate::discover::entry_file(kind, &slug),
+        );
+        format!("{dir}/{slug}/{entry}")
     } else {
         format!("{dir}/{slug}.md")
     };
@@ -387,6 +389,8 @@ pub fn derive_create(
 /// Outside every kind folder, a note shaped `<dir>/<dir>.md` or
 /// `<dir>/SKILL.md` (extension case-insensitive) owns `<dir>`. The shape and
 /// nothing else: the plans here decide what moves, never how a host moves it.
+/// [`crate::discover::path_role`] answers the same question for
+/// `skillwright.md` paths under kind folders.
 pub fn bundle_dir(entry: &str) -> Option<&str> {
     let (dir, file) = entry.rsplit_once('/')?;
     let bundled = match crate::discover::is_bundle_entry(entry) {
@@ -407,12 +411,10 @@ pub fn bundle_dir(entry: &str) -> Option<&str> {
 /// take its folder's name or discovery cannot read it back.
 fn bundle_entry_file(entry: &str, name: &str, to_kind: EntityKind) -> String {
     let file = entry.rsplit('/').next().unwrap_or(entry);
-    if to_kind == EntityKind::Marketplace {
-        ROOT_FILE.to_owned()
-    } else if to_kind == EntityKind::Skill && crate::discover::is_skill_entry(file) {
+    if to_kind == EntityKind::Skill && crate::discover::is_skill_entry(file) {
         file.to_owned()
     } else {
-        format!("{name}.md")
+        crate::discover::entry_file(to_kind, name)
     }
 }
 

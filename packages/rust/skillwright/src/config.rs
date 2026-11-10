@@ -3,8 +3,9 @@
 //! The root file is a note at the top of the vault. Its frontmatter's
 //! top-level keys are the marketplace's fields; settings for how skillwright
 //! runs sit under `build:`. The folder holding it is the vault. The core
-//! parses the file ([`tradecraft_core::parse_root_file`]); this module finds
-//! it.
+//! reads the file and folds in its workspace
+//! ([`tradecraft_core::load_effective_root`]); this module and
+//! [`crate::resolve`] find it.
 //!
 //! It is found by walking up from the working directory, the way git finds a
 //! repository, or named with `--config`. `--vault` names the folder instead,
@@ -34,39 +35,6 @@ pub use tradecraft_core::{
 
 /// The folders whose presence makes a folder a vault with no root file.
 const CONVENTION_DIRS: &[&str] = &["plugins", "skills"];
-
-/// The result of reading one root file.
-#[non_exhaustive]
-#[derive(Debug)]
-pub enum RootLoad {
-    /// The file was read.
-    Loaded(Box<RootFile>),
-    /// The file exists but could not be read.
-    Unreadable {
-        /// What went wrong.
-        detail: String,
-    },
-    /// The file was read but is not a valid root file.
-    Malformed {
-        /// What went wrong.
-        detail: String,
-    },
-}
-
-/// Read and parse the root file at `path`.
-pub fn read_root_file(path: &Path) -> RootLoad {
-    match std::fs::read_to_string(path) {
-        Ok(text) => match tradecraft_core::parse_root_file(&text) {
-            Ok(root) => RootLoad::Loaded(Box::new(root)),
-            Err(err) => RootLoad::Malformed {
-                detail: err.to_string(),
-            },
-        },
-        Err(err) => RootLoad::Unreadable {
-            detail: err.to_string(),
-        },
-    }
-}
 
 /// Whether `dir` holds a folder the convention reads (`plugins/`,
 /// `skills/`), so it builds with no root file.
@@ -112,13 +80,6 @@ pub(crate) fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
-}
-
-/// Print each warning the root file at `path` carries to `err`.
-pub fn print_warnings(root: &RootFile, path: &Path, err: &mut dyn std::io::Write) {
-    for warning in &root.warnings {
-        let _ = writeln!(err, "warning: {}: {warning}", path.display());
-    }
 }
 
 /// The editors `author` can open the vault in.

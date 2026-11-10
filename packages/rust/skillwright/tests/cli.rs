@@ -3983,3 +3983,162 @@ fn a_nested_marketplace_named_after_a_kind_folder_is_not_reserved() {
         list.stderr
     );
 }
+
+// --- the root file, read and folded ------------------------------------------
+
+/// A workspace at `<tmp>/ws` with `workspace_text`, and a member `m` with
+/// `member_text` and one skill.
+fn workspace_member(
+    workspace_text: &str,
+    member_text: Option<&str>,
+) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = dir.path().join("ws");
+    let member = ws.join("marketplaces/m");
+    fs::create_dir_all(member.join("skills")).unwrap();
+    fs::write(ws.join("skillwright.md"), workspace_text).unwrap();
+    if let Some(text) = member_text {
+        fs::write(member.join("skillwright.md"), text).unwrap();
+    }
+    fs::write(
+        member.join("skills/a.md"),
+        "---\nname: a\ndescription: A.\n---\nX\n",
+    )
+    .unwrap();
+    (dir, ws)
+}
+
+#[test]
+fn a_malformed_workspace_file_names_the_workspace_file_and_blocks() {
+    let (_dir, ws) = workspace_member("---\nworkspace: [\n---\n", Some("---\nname: m\n---\n"));
+    let member = ws.join("marketplaces/m");
+    let run = run(&["list"], &member);
+    assert_eq!(run.code, 2, "{}", run.stderr);
+    let expected = format!(
+        "configuration malformed: {} (",
+        ws.join("skillwright.md").display()
+    );
+    assert!(run.stderr.contains(&expected), "{}", run.stderr);
+}
+
+#[test]
+fn a_non_utf8_root_file_is_malformed() {
+    let (_dir, vault) = fixture();
+    fs::write(vault.join("skillwright.md"), b"---\nname: caf\xe9\n---\n").unwrap();
+    let run = run(&["list"], &vault);
+    assert_eq!(run.code, 2, "{}", run.stderr);
+    assert!(
+        run.stderr.contains("configuration malformed: "),
+        "{}",
+        run.stderr
+    );
+    assert!(run.stderr.contains("it is not UTF-8"), "{}", run.stderr);
+}
+
+#[test]
+fn root_file_warnings_name_their_own_file() {
+    let (_dir, ws) = workspace_member(
+        "---\nworkspace: true\nshared_extra: 1\n---\n",
+        Some("---\nname: m\nmember_extra: 1\n---\n"),
+    );
+    let member = ws.join("marketplaces/m");
+    let run = run(&["list"], &member);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let lines: Vec<&str> = run
+        .stderr
+        .lines()
+        .filter(|line| line.contains("_extra"))
+        .collect();
+    assert_eq!(lines.len(), 2, "{}", run.stderr);
+    let member_file = member.join("skillwright.md").display().to_string();
+    let ws_file = ws.join("skillwright.md").display().to_string();
+    assert!(
+        lines[0].starts_with(&format!("warning: {member_file}: "))
+            && lines[0].contains("member_extra"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        lines[1].starts_with(&format!("warning: {ws_file}: ")) && lines[1].contains("shared_extra"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn a_convention_member_folder_inherits_its_workspace() {
+    let (_dir, ws) = workspace_member("---\nworkspace: true\nlicense: MIT\n---\n", None);
+    let member = ws.join("marketplaces/m");
+    let model = run(&["list", "--model", "--vault", &vault_str(&member)], &ws);
+    assert_eq!(model.code, 0, "{}", model.stderr);
+    assert!(
+        model.stdout.contains("\"license\": \"MIT\""),
+        "{}",
+        model.stdout
+    );
+
+    // From inside the member, the walk up finds the workspace file instead.
+    let walked = run(&["list"], &member);
+    assert_eq!(walked.code, 2, "{}", walked.stderr);
+    assert!(
+        walked
+            .stderr
+            .contains(&format!("the workspace at {}", ws.display())),
+        "{}",
+        walked.stderr
+    );
+}
+
+#[test]
+fn config_flag_reads_the_named_file_and_its_folder_is_the_vault() {
+    let dir = tempfile::tempdir().unwrap();
+    let other = dir.path().join("other");
+    fs::create_dir_all(other.join("skills")).unwrap();
+    fs::write(other.join("sw.md"), "---\nname: named\nlicense: ISC\n---\n").unwrap();
+    fs::write(
+        other.join("skills/a.md"),
+        "---\nname: a\ndescription: A.\n---\nX\n",
+    )
+    .unwrap();
+    let model = run(&["list", "--model", "--config", "other/sw.md"], dir.path());
+    assert_eq!(model.code, 0, "{}", model.stderr);
+    assert!(
+        model.stdout.contains("\"name\": \"named\""),
+        "{}",
+        model.stdout
+    );
+    assert!(
+        model.stdout.contains("\"license\": \"ISC\""),
+        "{}",
+        model.stdout
+    );
+    assert!(
+        model.stdout.contains("\"path\": \"skills/a.md\""),
+        "{}",
+        model.stdout
+    );
+
+    // Under a workspace, the workspace above the file's folder is folded in.
+    let (_ws_dir, ws) = workspace_member("---\nworkspace: true\nlicense: MIT\n---\n", None);
+    fs::write(ws.join("marketplaces/m/sw.md"), "---\nname: m\n---\n").unwrap();
+    let model = run(
+        &["list", "--model", "--config", "marketplaces/m/sw.md"],
+        &ws,
+    );
+    assert_eq!(model.code, 0, "{}", model.stderr);
+    assert!(
+        model.stdout.contains("\"license\": \"MIT\""),
+        "{}",
+        model.stdout
+    );
+
+    let missing = run(&["list", "--config", "other/none.md"], dir.path());
+    assert_eq!(missing.code, 4, "{}", missing.stderr);
+    assert!(
+        missing
+            .stderr
+            .contains("--config names a file that is not there"),
+        "{}",
+        missing.stderr
+    );
+}

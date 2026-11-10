@@ -34,7 +34,7 @@ use crate::compile::EXCLUDED_BUNDLE_DIRECTORIES;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
-use crate::paths::{RootRead, WORKSPACE_DIR, read_root, read_workspace_above};
+use crate::paths::{RootRead, WORKSPACE_DIR, read_root, read_workspace_above, workspace_at};
 use crate::settings::{FolderPatterns, ROOT_FILE};
 use crate::vfs::Vfs;
 
@@ -153,12 +153,22 @@ pub struct Patterns {
     folders: FolderPatterns,
     /// This root file's own `build.exclude`, read from the vault root.
     exclude: Vec<String>,
-    /// The workspace file's `build.exclude`, read from the workspace folder,
-    /// and the vault root from that folder, `marketplaces/<m>`. `None` when
-    /// no workspace holds this marketplace or it excludes nothing.
-    workspace_exclude: Option<(String, Vec<String>)>,
+    /// The workspace file's `build.exclude`, read from the workspace folder.
+    /// `None` when no workspace holds this marketplace or it excludes nothing.
+    workspace_exclude: Option<WorkspaceExclude>,
     /// The folder-pattern globs a workspace file gave this marketplace.
     inherited: BTreeSet<String>,
+}
+
+/// A workspace's `build.exclude`, as a member reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkspaceExclude {
+    /// The vault root from the workspace folder, `marketplaces/<m>`.
+    member: String,
+    /// The globs, read from the workspace folder.
+    globs: Vec<String>,
+    /// The workspace file as a refusal names it ([`crate::paths::WorkspaceAt::label`]).
+    file: String,
 }
 
 impl Patterns {
@@ -180,12 +190,15 @@ impl Patterns {
         let written: BTreeSet<String> = root.build.patterns.globs().cloned().collect();
         let mut workspace_exclude = None;
         if !root.workspace
-            && let Some(shared) = read_workspace_above(vfs, vault_root, RootRead::Layout)?
+            && let Some((at, shared)) = read_workspace_above(vfs, vault_root, RootRead::Layout)?
         {
             root.inherit(&shared);
             if !shared.build.exclude.is_empty() {
-                let name = vault_root.file_name().unwrap_or_default().to_string_lossy();
-                workspace_exclude = Some((format!("{WORKSPACE_DIR}/{name}"), shared.build.exclude));
+                workspace_exclude = Some(WorkspaceExclude {
+                    member: format!("{WORKSPACE_DIR}/{}", at.member),
+                    globs: shared.build.exclude,
+                    file: at.label(),
+                });
             }
         }
         let inherited = root
@@ -231,14 +244,21 @@ impl Patterns {
     /// The files of the other marketplaces beside the one at `vault_root`, for
     /// a glob a workspace shares among them. Empty when this one inherits none.
     pub(crate) fn sibling_files(&self, vfs: &dyn Vfs, vault_root: &Path) -> Vec<String> {
-        let Some(folder) = vault_root.parent().filter(|_| !self.inherited.is_empty()) else {
+        if self.inherited.is_empty() {
+            return Vec::new();
+        }
+        let Some(at) = workspace_at(vfs, vault_root) else {
             return Vec::new();
         };
-        vfs.read_dir(folder)
+        let Some(folder) = at.file.parent().map(|ws| ws.join(WORKSPACE_DIR)) else {
+            return Vec::new();
+        };
+        vfs.read_dir(&folder)
             .unwrap_or_default()
             .iter()
+            .filter(|entry| entry.name != at.member)
             .map(|entry| folder.join(&entry.name))
-            .filter(|path| path != vault_root && vfs.exists(&path.join(ROOT_FILE)))
+            .filter(|path| vfs.exists(&path.join(ROOT_FILE)))
             .flat_map(|path| crate::walk::glob_files(vfs, &path))
             .collect()
     }
@@ -298,7 +318,7 @@ impl Patterns {
         let files = files.as_slice();
         let mut sibling_files: Option<Vec<String>> = None;
         let mut warnings = Vec::new();
-        if let Some((member, globs)) = &self.workspace_exclude {
+        if let Some(WorkspaceExclude { member, globs, .. }) = &self.workspace_exclude {
             let here: Vec<String> = files.iter().map(|f| format!("{member}/{f}")).collect();
             for glob in globs {
                 if !matches_some(&here, glob) && matches_some(files, glob) {
@@ -416,16 +436,17 @@ impl Patterns {
         self.excluded_by(rel).is_some()
     }
 
-    /// The root file whose `build.exclude` excludes `rel`, by its path from
-    /// the vault root: this one's, else the workspace's above it.
+    /// The root file whose `build.exclude` excludes `rel`: this one's, by its
+    /// path from the vault root, else the workspace's above it, as
+    /// [`WorkspaceExclude::file`] names it.
     pub(crate) fn excluded_by(&self, rel: &str) -> Option<String> {
         if matches_any(&self.exclude, rel) {
             return Some(ROOT_FILE.to_owned());
         }
         self.workspace_exclude
             .as_ref()
-            .filter(|(member, globs)| matches_any(globs, &format!("{member}/{rel}")))
-            .map(|_| format!("../../{ROOT_FILE}"))
+            .filter(|ws| matches_any(&ws.globs, &format!("{}/{rel}", ws.member)))
+            .map(|ws| ws.file.clone())
     }
 
     /// Whether a folder that never ships holds `rel`.
@@ -602,6 +623,30 @@ pub fn workspace_exclude_warnings(vfs: &dyn Vfs, workspace_root: &Path) -> Vec<D
         .collect()
 }
 
+/// [`workspace_exclude_warnings`] for the workspace above the member at
+/// `member_root`, each named as the member's messages name the workspace
+/// file: `../../skillwright.md`, or its absolute path when the workspace was
+/// found through a link. Nothing outside a workspace.
+pub fn member_workspace_exclude_warnings(
+    vfs: &dyn Vfs,
+    member_root: &Path,
+) -> Vec<DiscoveryWarning> {
+    let Some(at) = workspace_at(vfs, member_root) else {
+        return Vec::new();
+    };
+    let Some(workspace_root) = at.file.parent() else {
+        return Vec::new();
+    };
+    let label = at.label();
+    workspace_exclude_warnings(vfs, workspace_root)
+        .into_iter()
+        .map(|mut warning| {
+            warning.path.clone_from(&label);
+            warning
+        })
+        .collect()
+}
+
 /// Each `/`-bounded prefix of `rel`, shortest first, `rel` itself last.
 fn prefixes(rel: &str) -> impl Iterator<Item = &str> {
     rel.match_indices('/')
@@ -612,6 +657,27 @@ fn prefixes(rel: &str) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_exclude_reads_the_member_name_not_the_link_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = tmp.path().join("ws");
+        let member = ws.join("marketplaces/acme");
+        std::fs::create_dir_all(&member).unwrap();
+        std::fs::write(
+            ws.join(ROOT_FILE),
+            "---\nworkspace: true\nbuild:\n  exclude: [skills/a.md]\n---\n",
+        )
+        .unwrap();
+        std::fs::write(member.join(ROOT_FILE), "---\nname: acme\n---\n").unwrap();
+        let link = tmp.path().join("acme-link");
+        std::os::unix::fs::symlink(&member, &link).unwrap();
+        let patterns = Patterns::load(&crate::vfs::NativeVfs, &link).unwrap();
+        let exclude = patterns.workspace_exclude.unwrap();
+        assert_eq!(exclude.member, "marketplaces/acme");
+        assert_eq!(exclude.globs, vec!["skills/a.md".to_owned()]);
+    }
 
     fn patterns(folders: FolderPatterns) -> Patterns {
         Patterns {

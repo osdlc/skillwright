@@ -2468,3 +2468,220 @@ fn a_publish_refuses_a_member_with_no_description() {
     }
     assert!(!vfs.exists(Path::new("/dest")));
 }
+
+// --- the root loader -------------------------------------------------------
+
+/// A member under a workspace, both with an unknown key.
+fn member_and_workspace() -> MemVfs {
+    let vfs = MemVfs::new();
+    write(
+        &vfs,
+        "/w/skillwright.md",
+        "---\nworkspace: true\nlicense: MIT\nshared_extra: 1\nbuild:\n  harnesses: [claude]\n---\n",
+    );
+    write(
+        &vfs,
+        "/w/marketplaces/m/skillwright.md",
+        "---\nname: m\nmember_extra: 1\n---\n",
+    );
+    vfs
+}
+
+#[test]
+fn load_effective_root_folds_the_workspace_and_names_each_file_s_warnings() {
+    let vfs = member_and_workspace();
+    let file = PathBuf::from("/w/marketplaces/m/skillwright.md");
+    let loaded =
+        tradecraft_core::load_effective_root(&vfs, Path::new("/w/marketplaces/m"), Some(&file))
+            .unwrap();
+    assert_eq!(loaded.root.marketplace.license.as_deref(), Some("MIT"));
+    assert_eq!(
+        loaded.root.build.harnesses.as_deref(),
+        Some(&["claude".to_owned()][..])
+    );
+    assert_eq!(loaded.workspace, Some(PathBuf::from("/w/skillwright.md")));
+    assert_eq!(loaded.warnings.len(), 2, "{:?}", loaded.warnings);
+    assert_eq!(loaded.warnings[0].0, file);
+    assert!(loaded.warnings[0].1.contains("member_extra"));
+    assert_eq!(loaded.warnings[1].0, PathBuf::from("/w/skillwright.md"));
+    assert!(loaded.warnings[1].1.contains("shared_extra"));
+    assert_eq!(loaded.root.warnings.len(), 1);
+    assert!(loaded.root.warnings[0].contains("member_extra"));
+}
+
+#[test]
+fn load_effective_root_with_no_file_still_folds_the_workspace() {
+    let vfs = member_and_workspace();
+    vfs.remove(Path::new("/w/marketplaces/m/skillwright.md"))
+        .unwrap();
+    let loaded =
+        tradecraft_core::load_effective_root(&vfs, Path::new("/w/marketplaces/m"), None).unwrap();
+    assert_eq!(loaded.root.marketplace.license.as_deref(), Some("MIT"));
+    assert_eq!(loaded.workspace, Some(PathBuf::from("/w/skillwright.md")));
+}
+
+#[test]
+fn a_workspace_root_file_folds_nothing() {
+    let vfs = MemVfs::new();
+    write(
+        &vfs,
+        "/outer/skillwright.md",
+        "---\nworkspace: true\nlicense: MIT\n---\n",
+    );
+    write(
+        &vfs,
+        "/outer/marketplaces/ws/skillwright.md",
+        "---\nworkspace: true\n---\n",
+    );
+    let file = PathBuf::from("/outer/marketplaces/ws/skillwright.md");
+    let loaded = tradecraft_core::load_effective_root(
+        &vfs,
+        Path::new("/outer/marketplaces/ws"),
+        Some(&file),
+    )
+    .unwrap();
+    assert_eq!(loaded.workspace, None);
+    assert_eq!(loaded.root.marketplace.license, None);
+}
+
+#[test]
+fn load_effective_root_tells_unreadable_from_malformed() {
+    use tradecraft_core::{CoreError, RootFileError};
+    let vfs = MemVfs::new();
+    vfs.create_dir_all(Path::new("/v/folder.md")).unwrap();
+    write(&vfs, "/v/bad.md", "---\nworkspace: [\n---\n");
+    vfs.write_file(Path::new("/v/latin1.md"), b"---\nname: caf\xe9\n---\n")
+        .unwrap();
+    let load = |name: &str| {
+        let file = PathBuf::from(format!("/v/{name}"));
+        tradecraft_core::load_effective_root(&vfs, Path::new("/v"), Some(&file)).unwrap_err()
+    };
+
+    let folder = load("folder.md");
+    assert!(
+        matches!(folder, RootFileError::Unreadable { .. }),
+        "{folder:?}"
+    );
+    let missing = load("missing.md");
+    match &missing {
+        RootFileError::Unreadable { source, .. } => {
+            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+        }
+        other => panic!("{other:?}"),
+    }
+    let bad = load("bad.md");
+    assert!(matches!(bad, RootFileError::Malformed { .. }), "{bad:?}");
+    let latin1 = load("latin1.md");
+    assert!(
+        matches!(latin1, RootFileError::Malformed { .. }),
+        "{latin1:?}"
+    );
+
+    let core = |err: RootFileError| CoreError::from(err).to_string();
+    assert!(core(folder).starts_with("reading /v/folder.md: "));
+    assert!(core(missing).starts_with("reading /v/missing.md: "));
+    let bad = core(bad);
+    assert!(
+        bad.starts_with("refused: malformed-root-file: /v/bad.md: "),
+        "{bad}"
+    );
+    assert_eq!(
+        core(latin1),
+        "refused: malformed-root-file: /v/latin1.md: it is not UTF-8. Nothing was written"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn load_marketplace_through_a_linked_member_folds_its_workspace() {
+    use tradecraft_core::NativeVfs;
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path().join("ws");
+    let member = ws.join("marketplaces/acme");
+    std::fs::create_dir_all(member.join("skills")).unwrap();
+    std::fs::write(
+        ws.join("skillwright.md"),
+        "---\nworkspace: true\nlicense: MIT\n---\n",
+    )
+    .unwrap();
+    std::fs::write(member.join("skillwright.md"), "---\nname: acme\n---\n").unwrap();
+    let link = tmp.path().join("acme-link");
+    std::os::unix::fs::symlink(&member, &link).unwrap();
+
+    let loaded = tradecraft_core::load_marketplace(&NativeVfs, &link, Path::new("/home"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(loaded.dir, link);
+    assert_eq!(loaded.root.marketplace.license.as_deref(), Some("MIT"));
+}
+
+/// Discovery's reserved-name refusal reads the folder a `skillwright.md`
+/// sits in: a marketplace named `skillwright` is a marketplace, and a
+/// pattern-mapped folder is not a kind folder.
+#[test]
+fn a_skillwright_md_is_reserved_only_directly_in_a_kind_folder() {
+    let reserved = |scan: &tradecraft_core::DiscoveryReport| {
+        scan.skipped
+            .iter()
+            .filter(|s| s.reason.contains("reserved-name"))
+            .map(|s| s.path.clone())
+            .collect::<Vec<_>>()
+    };
+    let vfs = MemVfs::new();
+    write(&vfs, "/vault/skillwright.md", "---\nname: v\n---\n");
+    write(
+        &vfs,
+        "/vault/marketplaces/skillwright/skillwright.md",
+        "---\nname: skillwright\n---\n",
+    );
+    write(
+        &vfs,
+        "/vault/marketplaces/skillwright/skills/a.md",
+        "---\ndescription: A.\n---\n",
+    );
+    let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    assert!(reserved(&scan).is_empty(), "{:?}", scan.skipped);
+    assert!(
+        scan.components.iter().any(|c| c.vault_relative_path
+            == "marketplaces/skillwright/skillwright.md"
+            && c.kind == tradecraft_core::EntityKind::Marketplace),
+        "{:?}",
+        scan.components
+    );
+
+    let vfs = MemVfs::new();
+    write(
+        &vfs,
+        "/vault/skillwright.md",
+        "---\nname: v\nbuild:\n  patterns:\n    skills: my-skills/*\n---\n",
+    );
+    write(
+        &vfs,
+        "/vault/my-skills/skillwright.md",
+        "---\ndescription: Named skillwright.\n---\n",
+    );
+    write(&vfs, "/vault/my-skills/b.md", "---\ndescription: B.\n---\n");
+    let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    let paths: Vec<&str> = scan
+        .components
+        .iter()
+        .map(|c| c.vault_relative_path.as_str())
+        .collect();
+    assert!(reserved(&scan).is_empty(), "{:?}", scan.skipped);
+    assert!(paths.contains(&"my-skills/skillwright.md"), "{paths:?}");
+}
+
+/// A host that passes a relative vault root is refused `unsafe-path`: the
+/// pack check cannot compare a relative path.
+#[test]
+fn a_relative_vault_root_is_refused_unsafe_path() {
+    let vfs = vault("", "", "");
+    let mut build = request();
+    build.vault_root = PathBuf::from("vault");
+    build.out_root = PathBuf::from("vault/dist");
+    let err = export_skills(&vfs, &build, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.starts_with("refused: unsafe-path: "), "{err}");
+    assert!(!vfs.exists(Path::new("vault/dist")));
+}

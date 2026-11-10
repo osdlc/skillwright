@@ -124,9 +124,9 @@ pub use content::{SkillContent, SkillProjection};
 pub use corpus::*;
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, INVALID_NAME_REASON, KIND_DIRS,
-    MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON, default_name,
-    discover_components, discover_roster, folder_kind, in_plugin_folder, is_skill_entry,
-    plugin_folder_in, refuse_invalid_names, refuse_undescribed,
+    MISSING_DESCRIPTION_REASON, PathRole, SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON,
+    default_name, discover_components, discover_roster, entry_file, folder_kind, in_plugin_folder,
+    is_skill_entry, path_role, plugin_folder_in, refuse_invalid_names, refuse_undescribed,
 };
 pub use error::*;
 pub use export::{
@@ -147,8 +147,9 @@ pub use markdown_link::LinkIndex;
 pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use paths::{
-    LoadedMarketplace, MarketplaceInputs, WORKSPACE_DIR, find_root_file, is_marketplace_entry,
-    load_marketplace, marketplace_inputs, resolve_path, workspace_above,
+    EffectiveRoot, LoadedMarketplace, MarketplaceInputs, RootFileError, WORKSPACE_DIR,
+    find_root_file, load_effective_root, load_marketplace, marketplace_inputs, resolve_path,
+    workspace_above,
 };
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,

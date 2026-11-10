@@ -375,7 +375,7 @@ fn compute_member_block_keys(
 fn marketplace_note(root: &Path, folder: &str) -> PathBuf {
     root.join(crate::paths::WORKSPACE_DIR)
         .join(folder)
-        .join(crate::settings::ROOT_FILE)
+        .join(crate::discover::entry_file(EntityKind::Marketplace, folder))
 }
 
 /// The vault's one marketplace, or `None` when it holds none or several. Counted

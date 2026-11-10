@@ -1796,3 +1796,424 @@ fn publish_by_path_refuses_an_invalid_derived_name_without_truncating() {
         assert!(written.is_empty(), "{note}: {written:?}");
     }
 }
+
+// --- a member reached through a symlink --------------------------------------
+
+/// A workspace at `<temp>/vault` holding `files`, with `<temp>/acme-link`
+/// pointing at its `marketplaces/acme`.
+#[cfg(unix)]
+fn linked_member(files: &[(&str, &str)]) -> (Fixture, PathBuf) {
+    let dir = vault(files);
+    let link = dir.0.path().join("acme-link");
+    std::os::unix::fs::symlink(dir.path().join("marketplaces/acme"), &link).unwrap();
+    (dir, link)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_member_reached_through_a_link_keeps_its_workspace_exclusions() {
+    let shared =
+        "---\nworkspace: true\nbuild:\n  exclude: [marketplaces/acme/skills/secret.md]\n---\n";
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", shared),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        ("marketplaces/acme/skills/secret.md", SKILL),
+        ("marketplaces/acme/skills/open.md", SKILL),
+    ]);
+    let link_arg = link.display().to_string();
+    let listed = sw(&dir.path(), &["list", "--vault", &link_arg]);
+    assert_eq!(listed.code, 0, "{}", listed.text);
+    assert!(listed.text.contains("open"), "{}", listed.text);
+    assert!(!listed.text.contains("secret"), "{}", listed.text);
+
+    let built = sw(&dir.path(), &["build", "--vault", &link_arg, "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    let out = dir.path().join("marketplaces/acme/built");
+    let files = files_under(&out);
+    assert!(
+        files.iter().any(|f| f.to_string_lossy().contains("/open/")),
+        "{files:?}"
+    );
+    assert!(
+        !files.iter().any(|f| f.to_string_lossy().contains("secret")),
+        "{files:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_member_reached_through_a_link_inherits_workspace_settings() {
+    let shared = "---\nworkspace: true\nlicense: MIT\n---\n";
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", shared),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        ("marketplaces/acme/plugins/p/p.md", PLUGIN),
+        ("marketplaces/acme/plugins/p/skills/s.md", SKILL),
+    ]);
+    let built = sw(
+        &dir.path(),
+        &["build", "--vault", &link.display().to_string(), "--yes"],
+    );
+    assert_eq!(built.code, 0, "{}", built.text);
+    let manifests: Vec<PathBuf> = files_under(&dir.path().join("marketplaces/acme/built"))
+        .into_iter()
+        .filter(|f| f.ends_with(".claude-plugin/plugin.json"))
+        .collect();
+    assert!(!manifests.is_empty(), "{}", built.text);
+    for manifest in manifests {
+        let text = std::fs::read_to_string(&manifest).unwrap();
+        assert!(text.contains("\"license\": \"MIT\""), "{text}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_member_folder_that_is_a_link_keeps_its_workspace() {
+    let shared =
+        "---\nworkspace: true\nbuild:\n  exclude: [marketplaces/acme/skills/secret.md]\n---\n";
+    let dir = vault(&[("skillwright.md", shared)]);
+    let elsewhere = dir.0.path().join("elsewhere/acme");
+    for (path, text) in [
+        ("skillwright.md", member("acme", "")),
+        ("skills/secret.md", SKILL.to_owned()),
+        ("skills/open.md", SKILL.to_owned()),
+    ] {
+        let path = elsewhere.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    std::fs::create_dir_all(dir.path().join("marketplaces")).unwrap();
+    let member_dir = dir.path().join("marketplaces/acme");
+    std::os::unix::fs::symlink(&elsewhere, &member_dir).unwrap();
+
+    for vault_arg in [member_dir.display().to_string(), "marketplaces/acme".into()] {
+        let listed = sw(&dir.path(), &["list", "--vault", &vault_arg]);
+        assert_eq!(listed.code, 0, "{vault_arg}: {}", listed.text);
+        assert!(listed.text.contains("open"), "{vault_arg}: {}", listed.text);
+        assert!(!lists_secret(&listed.text), "{vault_arg}: {}", listed.text);
+    }
+
+    // Run from inside the member, spelled through the workspace. A shell's
+    // working directory is the physical path, so this goes in-process.
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = {
+        let mut ctx = skillwright::ctx::CommandContext::new(&member_dir, &mut out, &mut err);
+        skillwright::cli::run_with(&["list".to_owned()], &mut ctx)
+    };
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out),
+        String::from_utf8_lossy(&err)
+    );
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("open"), "{text}");
+    assert!(!lists_secret(&text), "{text}");
+}
+
+/// Whether a roster lists `secret`. The workspace's own glob check does not
+/// walk into a linked member, so it may name the glob as unmatched.
+#[cfg(unix)]
+fn lists_secret(text: &str) -> bool {
+    text.lines()
+        .any(|line| line.contains("secret") && !line.contains("unmatched-glob"))
+}
+
+/// A shared `build.patterns` glob need only match in one member. A build
+/// checks it against the siblings' files, and through a link it finds the
+/// same siblings as through the real path.
+#[cfg(unix)]
+#[test]
+fn a_shared_glob_reads_siblings_the_same_through_a_link() {
+    let shared =
+        "---\nworkspace: true\nbuild:\n  patterns:\n    skills: [skills/*, notes/*]\n---\n";
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", shared),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        ("marketplaces/acme/skills/s.md", SKILL),
+        ("marketplaces/two/skillwright.md", &member("two", "")),
+        ("marketplaces/two/notes/n.md", SKILL),
+    ]);
+    let real = dir.path().join("marketplaces/acme");
+    for vault_arg in [real.display().to_string(), link.display().to_string()] {
+        let built = sw(&dir.path(), &["build", "--vault", &vault_arg, "--yes"]);
+        assert_eq!(built.code, 0, "{vault_arg}: {}", built.text);
+        assert!(
+            built.text.contains("1 skill"),
+            "{vault_arg}: {}",
+            built.text
+        );
+        assert!(
+            !built
+                .text
+                .lines()
+                .any(|line| line.contains("unmatched-glob") && line.contains("notes/*")),
+            "{vault_arg}: {}",
+            built.text
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn publishing_the_workspace_file_through_a_linked_member_is_refused() {
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", WORKSPACE),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        ("marketplaces/acme/skills/s.md", SKILL),
+    ]);
+    let workspace_file = dir.path().join("skillwright.md").display().to_string();
+    let real = dir.path().join("marketplaces/acme").display().to_string();
+    for vault_arg in [real, link.display().to_string()] {
+        let published = sw(
+            &dir.path(),
+            &["publish", &workspace_file, "--vault", &vault_arg, "--yes"],
+        );
+        assert_ne!(published.code, 0, "{vault_arg}: {}", published.text);
+        assert!(
+            published.text.contains("it is a root config file"),
+            "{vault_arg}: {}",
+            published.text
+        );
+    }
+}
+
+/// A note spelled by its real path is the same note under a vault named
+/// through a link: its exclusion still holds.
+#[cfg(unix)]
+#[test]
+fn publishing_an_excluded_note_by_its_real_path_through_a_linked_member_is_refused() {
+    let shared =
+        "---\nworkspace: true\nbuild:\n  exclude: [marketplaces/acme/skills/secret.md]\n---\n";
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", shared),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        ("marketplaces/acme/skills/secret.md", SKILL),
+    ]);
+    let note = dir
+        .path()
+        .join("marketplaces/acme/skills/secret.md")
+        .canonicalize()
+        .unwrap()
+        .display()
+        .to_string();
+    let vault_arg = link.display().to_string();
+    let published = sw(
+        &dir.path(),
+        &["publish", &note, "--vault", &vault_arg, "--yes"],
+    );
+    assert_ne!(published.code, 0, "{}", published.text);
+    assert!(
+        published.text.contains("excluded-note"),
+        "{}",
+        published.text
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn publishing_by_the_real_path_through_a_linked_member_reads_the_plugin_as_the_link_spelling_does()
+{
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", WORKSPACE),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        (
+            "marketplaces/acme/plugins/p/p.md",
+            "---\ndescription: P.\ntargets: [codex]\n---\n",
+        ),
+        ("marketplaces/acme/plugins/p/skills/s.md", SKILL),
+    ]);
+    let vault_arg = link.display().to_string();
+    let real = dir
+        .path()
+        .join("marketplaces/acme/plugins/p/skills/s.md")
+        .canonicalize()
+        .unwrap()
+        .display()
+        .to_string();
+    let spelled = link.join("plugins/p/skills/s.md").display().to_string();
+    let publish = |note: &str, to: &str| {
+        let dest = dir.home().join(to);
+        let ran = sw(
+            &dir.path(),
+            &[
+                "publish",
+                note,
+                "--vault",
+                &vault_arg,
+                "--target",
+                "claude",
+                "--to",
+                dest.to_str().unwrap(),
+                "--json",
+                "--yes",
+            ],
+        );
+        (ran, files_under(&dest).len())
+    };
+    let (through, through_files) = publish(&spelled, "through");
+    let (by_real, real_files) = publish(&real, "real");
+    assert_eq!(
+        by_real.code, through.code,
+        "{}\n{}",
+        by_real.text, through.text
+    );
+    assert_eq!(
+        real_files, through_files,
+        "{}\n{}",
+        by_real.text, through.text
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_linked_member_s_messages_name_the_path_as_typed() {
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", WORKSPACE),
+        (
+            "marketplaces/acme/skillwright.md",
+            "---\nbuild:\n  harnesses: claude\n---\n",
+        ),
+        ("marketplaces/acme/skills/s.md", SKILL),
+    ]);
+    let listed = sw(
+        &dir.path(),
+        &["list", "--vault", &link.display().to_string()],
+    );
+    assert_eq!(listed.code, 2, "{}", listed.text);
+    let expected = format!(
+        "configuration malformed: {} (",
+        link.join("skillwright.md").display()
+    );
+    assert!(listed.text.contains(&expected), "{}", listed.text);
+}
+
+#[cfg(unix)]
+#[test]
+fn member_workspace_warnings_name_a_reachable_workspace_file() {
+    let shared = "---\nworkspace: true\nbuild:\n  exclude: ['**/nothing-here/**']\n---\n";
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", shared),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        ("marketplaces/acme/skills/s.md", SKILL),
+    ]);
+    let glob_line = |ran: &Ran| -> String {
+        let said: Vec<&str> = ran
+            .text
+            .lines()
+            .filter(|line| line.contains("`**/nothing-here/**`"))
+            .collect();
+        let [line] = said[..] else {
+            panic!("{}", ran.text);
+        };
+        line.to_owned()
+    };
+    let inside = sw(&dir.path().join("marketplaces/acme"), &["list"]);
+    assert_eq!(inside.code, 0, "{}", inside.text);
+    assert!(
+        glob_line(&inside).starts_with("../../skillwright.md"),
+        "{}",
+        inside.text
+    );
+
+    let linked = sw(
+        &dir.path(),
+        &["list", "--vault", &link.display().to_string()],
+    );
+    assert_eq!(linked.code, 0, "{}", linked.text);
+    let line = glob_line(&linked);
+    // Found by the link's real path, so named by it.
+    let workspace_file = dir.path().join("skillwright.md").canonicalize().unwrap();
+    assert!(
+        line.starts_with(&format!("{}  ", workspace_file.display())),
+        "{line}"
+    );
+}
+
+// --- the pack check on a first build through a link --------------------------
+
+/// A vault at `<temp>/vault` whose `build.patterns` read skills from
+/// `dist/notes/`, under its own `build.out: dist`, which is not built yet,
+/// with `claude` set as given. `<temp>/link` points at the vault.
+#[cfg(unix)]
+fn linked_vault(claude: &str) -> (Fixture, PathBuf) {
+    let root = format!(
+        "---\nname: v\n{claude}build:\n  out: dist\n  harnesses: [claude]\n  patterns:\n    skills: [skills/*, dist/notes/*]\n---\n"
+    );
+    let dir = vault(&[("skillwright.md", &root), ("skills/s.md", SKILL)]);
+    let link = dir.0.path().join("link");
+    std::os::unix::fs::symlink(dir.path(), &link).unwrap();
+    (dir, link)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_first_build_through_a_linked_vault_refuses_colliding_packs() {
+    let (dir, link) = linked_vault("claude: {packs: notes}\n");
+    let built = sw(
+        &dir.path(),
+        &["build", "--vault", &link.display().to_string(), "--yes"],
+    );
+    assert_eq!(built.code, 2, "{}", built.text);
+    assert!(built.text.contains("path-collision"), "{}", built.text);
+    assert!(!dir.path().join("dist").exists(), "{}", built.text);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_first_build_through_a_linked_vault_with_clear_packs_builds() {
+    let (dir, link) = linked_vault("");
+    let built = sw(
+        &dir.path(),
+        &["build", "--vault", &link.display().to_string(), "--yes"],
+    );
+    assert_eq!(built.code, 0, "{}", built.text);
+    assert!(
+        dir.path()
+            .join("dist/.claude-plugin/marketplace.json")
+            .is_file(),
+        "{}",
+        built.text
+    );
+}
+
+/// A note a workspace glob excludes is refused naming that workspace file:
+/// `../../skillwright.md` from the member, its real path through a link,
+/// where `../../` names another folder.
+#[cfg(unix)]
+#[test]
+fn publishing_an_excluded_note_through_a_link_names_the_workspace_file() {
+    let shared =
+        "---\nworkspace: true\nbuild:\n  exclude: [marketplaces/acme/skills/secret.md]\n---\n";
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", shared),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        ("marketplaces/acme/skills/secret.md", SKILL),
+    ]);
+    let real = dir.path().join("marketplaces/acme");
+    let workspace_file = dir.path().join("skillwright.md").canonicalize().unwrap();
+    for (vault, named) in [
+        (real, "../../skillwright.md".to_owned()),
+        (link, workspace_file.display().to_string()),
+    ] {
+        let note = vault.join("skills/secret.md").display().to_string();
+        let vault_arg = vault.display().to_string();
+        let published = sw(
+            &dir.path(),
+            &["publish", &note, "--vault", &vault_arg, "--yes"],
+        );
+        assert_ne!(published.code, 0, "{vault_arg}: {}", published.text);
+        assert!(
+            published.text.contains("excluded-note"),
+            "{vault_arg}: {}",
+            published.text
+        );
+        assert!(
+            published
+                .text
+                .contains(&format!("matches `build.exclude` in {named}, so")),
+            "{vault_arg}: {}",
+            published.text
+        );
+    }
+}

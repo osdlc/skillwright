@@ -761,11 +761,17 @@ fn publish_onto(
     // must not fail open.
     let placed = crate::patterns::Patterns::load_at(vfs, request.skills_root.as_deref())?;
     let placed = placed.as_ref();
-    refuse_excluded(placed, &request.skill_path)?;
-    if placed.is_some_and(|(_, root)| crate::paths::is_vault_root_file(root, &request.skill_path)) {
+    let in_vault = match placed {
+        Some((_, root)) => spelled_under(vfs, root, &request.skill_path)?,
+        None => request.skill_path.clone(),
+    };
+    refuse_excluded(placed, &in_vault)?;
+    if let Some((_, root)) = placed
+        && crate::paths::is_vault_root_file(vfs, root, &request.skill_path)?
+    {
         return Err(root_file_not_a_note(&request.skill_path));
     }
-    let resolved = publish_kind(placed, &request.skill_path);
+    let resolved = publish_kind(placed, &in_vault);
     let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
     // Everything a renderer cannot take is refused here, before the renderer
@@ -781,8 +787,8 @@ fn publish_onto(
 
     // The note's own unknown keys, before the cascade adds anything to it.
     let root_relative = request.skills_root.as_deref().map_or_else(
-        || vault_relative(Path::new(""), &request.skill_path),
-        |root| vault_relative(root, &request.skill_path),
+        || vault_relative(Path::new(""), &in_vault),
+        |root| vault_relative(root, &in_vault),
     );
     let own_warning = unknown_key_warning(
         &root_relative,
@@ -794,12 +800,12 @@ fn publish_onto(
     // What the note inherits, before `targets` is asked: the same answer a
     // build reaches.
     let requested = request.config.clone().unwrap_or_default();
-    let cascade = Cascade::above_with(vfs, placed, &request.skill_path, &requested, ns)?;
+    let cascade = Cascade::above_with(vfs, placed, &in_vault, &requested, ns)?;
     // The containers' own blocks first, as a build checks them, so a bad
     // value names the container that holds it, not this note.
     crate::harness::manifest::check_block_values(&cascade.config)?;
     let plugin = placed.and_then(|(patterns, root)| {
-        crate::discover::folder_placement_with(patterns, root, &request.skill_path).plugin
+        crate::discover::folder_placement_with(patterns, root, &in_vault).plugin
     });
     cascade.apply(&mut note, resolved.kind, plugin.as_deref(), ns);
 
@@ -1180,6 +1186,26 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
         redundant_overrides: Vec::new(),
         warnings: Vec::new(),
     }
+}
+
+/// `path` spelled under `root`: as given when it already is, else by its
+/// real path under `root`'s, so a note named through a link and its real
+/// spelling place the same. As given when it is outside `root` either way.
+///
+/// # Errors
+///
+/// `refused: unsafe-path`, as [`crate::guard::real_path`].
+fn spelled_under(vfs: &dyn Vfs, root: &Path, path: &Path) -> Result<PathBuf, CoreError> {
+    if path.starts_with(root) {
+        return Ok(path.to_path_buf());
+    }
+    let real_root = crate::guard::real_path(vfs, root)?;
+    Ok(
+        match crate::guard::real_path(vfs, path)?.strip_prefix(&real_root) {
+            Ok(rest) => root.join(rest),
+            Err(_) => path.to_path_buf(),
+        },
+    )
 }
 
 /// Refuses a note `build.exclude` or a folder that never ships holds, named or
