@@ -186,10 +186,11 @@ apply to links from a component's note and from any file it ships.
 7. A link into a never-ship folder is refused with the same error in every
    link form.
 8. A link to a missing file is an error that names the link.
-9. A skill installed alone, by `publish` or `harness link`, has no pack root
-   around it. Decision D8 in section 11 says what each does with links into the
-   plugin's shared folders. A link to another component is an error that names
-   it.
+9. A skill installed on its own, by `publish` to a skills folder or by
+   `harness link`, may use only files from its own folder. Both commands refuse
+   a skill that links anywhere else, including the plugin's shared folders and
+   other components, with an error that names the link. Nothing is copied into
+   the skill to make such a link work.
 10. `/[[name]]` is a call: it renders as the target harness's invocation of the
     named skill and copies nothing. Its scope is decision D3 in section 11.
 11. Every error in this section names the linking file, the link as written and
@@ -292,10 +293,9 @@ position; the environment; a built-in default.
    and name each such link.
 6. `bump <plugin>` writes the plugin note's `version`. `bump <m>` writes the
    marketplace note's.
-7. `adopt` writes notes into a plugin in this layout. A file beside an adopted
-   `SKILL.md` that is not in `references/`, `scripts/` or `assets/` moves into
-   `references/` (a document) or `assets/` (anything else), and links to it are
-   rewritten. `adopt` reports each move.
+7. `adopt` writes notes into a plugin in this layout. It does not move files or
+   rewrite links. It reports each file a folder may not hold, with the folder
+   it would belong in, and leaves the move to the user.
 8. `publish <note>` names a note in the vault. A path outside
    `marketplaces/` is refused.
 
@@ -339,8 +339,8 @@ Each case is reported once, with every path it applies to.
 
 ## 11. Decisions for the owner
 
-Each has a recommendation. The rest of this spec is written as if each
-recommendation is taken.
+Each open decision has a recommendation. The rest of this spec is written as
+if each recommendation is taken. D8 is decided.
 
 ### D1. What `publish` becomes
 
@@ -351,7 +351,7 @@ harness whose build does not carry it, because a build carries no agents.
 
 - Keep it as a separate step, reduced. It renders a note from the vault with
   the same code as `build`. It drops publishing a note by a path no folder
-  places. One skill alone follows section 4 rule 9 and decision D8.
+  places. One skill alone follows section 4 rule 9.
 - Reduce it further, to copy from `dist/<m>/`. This gives one render path, but
   it cannot publish agents, which no build carries.
 - Remove it, and rely on `harness install` and `harness link`, which read
@@ -425,24 +425,16 @@ plugin has one place for its `version` and fields.
 
 Recommendation: require it. `new plugin` and `init` write it.
 
-### D8. A skill installed alone
+### D8. A skill installed on its own (decided)
 
-`publish` writes one skill into a harness's skill folder, such as
+`publish` writes one skill into a harness's skills folder, such as
 `~/.claude/skills/<s>/`. `harness link` symlinks one built skill folder there.
-Neither has a pack root around the skill, so a link up to the plugin's
-`references/`, `scripts/` or `assets/` does not resolve.
+Neither has a pack root around the skill.
 
-- `publish` copies each shared file the skill links to into the skill's own
-  folder, under the same top folder (`references/x.md` lands at
-  `<s>/references/x.md`), and rewrites the link. A file the skill already has
-  at that path is an error that names both.
-- `publish` refuses the skill and names the link.
-- `harness link` cannot copy, because it links the built folder in place. It
-  refuses a skill that links into the plugin's shared folders, names the link,
-  and points at `harness install`.
-
-Recommendation: `publish` copies, and `harness link` refuses. A shared file is
-small, and copying keeps one-skill publishing useful.
+Decided: such a skill may use only files from its own folder. Both commands
+refuse a skill that links anywhere else, including the plugin's shared folders
+and other components, with an error that names the link. Nothing is copied
+into the skill. Section 4 rule 9 states the rule.
 
 ### D9. Plugin-root files with no folder
 

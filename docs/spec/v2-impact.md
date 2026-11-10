@@ -240,8 +240,8 @@ Merge [#135](https://github.com/osdlc/skillwright/pull/135),
    refused; a link to a sibling skill renders as its installed path; a link
    from a skill to the plugin's `references/x.md` renders as
    `../../references/x.md`; the sibling link fails when publishing that skill
-   alone, naming the link; under D8 the shared file is copied into the
-   published skill and `harness link` refuses it.
+   alone, naming the link; `publish` and `harness link` of a skill that
+   links into the plugin's `references/` are refused, naming the link.
    Before this PR, run the `plugin-layout` probe on Codex. harness-reference
    does not record where Codex resolves a skill's relative paths
    (`Codex CLI Relative paths in SKILL.md open`). If it is not the skill's
@@ -249,7 +249,9 @@ Merge [#135](https://github.com/osdlc/skillwright/pull/135),
 5. **Verbs, docs and the repo's plugin.** `init`, `new`, `move`, `rename`,
    `bump`, `publish` (D1), `adopt` and `harness` on the new layout; the
    reference docs; `plugin/` moved and its two workflows updated. Test first:
-   a CLI test per verb writes the expected path; the `plugin` workflow's
+   a CLI test per verb writes the expected path; `adopt` of a skill with a
+   loose `forms.md` reports it with `references/` as its folder and moves
+   nothing; the `plugin` workflow's
    drift check passes on the rebuilt `plugin/dist/osdlc/`.
 
 PRs 1 and 2 can be one PR if the diff stays reviewable. PR 4 depends only on 1.
