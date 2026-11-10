@@ -89,18 +89,14 @@ fn in_plugin_assets(patterns: &crate::patterns::Patterns, rel: &str) -> bool {
 ///
 /// [`vault_walk_errors`] repeats this walk's skips and prunes as a plain walk;
 /// a change to what this walk enters must change that one too.
-fn vault_options(
-    prune: &[&str],
-    refuse_symlinks: bool,
-    propagate_errors: bool,
-) -> vault::WalkOptions {
+fn vault_options(prune: &[&str], refuse_symlinks: bool, errors: Errors) -> vault::WalkOptions {
     vault::WalkOptions {
         visibility: Visibility::Everything,
         notes: true,
         attachments: true,
         hide: Hide::Off,
         refuse_symlinks,
-        propagate_errors,
+        errors,
         skip_names: vec![SKIPPED[0].to_owned()],
         prune_dirs: prune.iter().map(|name| (*name).to_owned()).collect(),
         exclude: built_paths(),
@@ -163,7 +159,7 @@ pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Vec<
 
 /// The options of [`vault_files`]'s walk.
 pub(crate) fn vault_walk(prune: &[&str]) -> vault::WalkOptions {
-    vault_options(prune, false, true)
+    vault_options(prune, false, Errors::Propagate)
 }
 
 /// What [`vault_walk`]'s walk under `root` cannot read: each folder it
@@ -232,7 +228,7 @@ pub(crate) fn vault_files_refusing_symlinks(
     prune: &[&str],
     refuse: impl Fn(&Path) -> CoreError,
 ) -> Result<Vec<PathBuf>, CoreError> {
-    vault::walk(vfs, root, &vault_options(prune, true, true))
+    vault::walk(vfs, root, &vault_options(prune, true, Errors::Propagate))
         .map(|entries| notes_and_resources(patterns, vault_root, root, entries))
         .map_err(|err| core_error(err, refuse))
 }
@@ -240,7 +236,7 @@ pub(crate) fn vault_files_refusing_symlinks(
 /// Every file under `root` a vault walk meets, vault-relative, plugin assets
 /// included, without failing. What a glob can name.
 pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
-    vault::walk(vfs, root, &vault_options(&[], false, false))
+    vault::walk(vfs, root, &vault_options(&[], false, Errors::Skip))
         .unwrap_or_default()
         .into_iter()
         .map(|entry| entry.rel)
@@ -251,7 +247,8 @@ pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
 /// can read, without failing: a folder that cannot be listed is skipped.
 /// Plugin assets are left out, matched by their path from the vault root.
 pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path, vault_root: &Path) -> Vec<PathBuf> {
-    let entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
+    let entries =
+        vault::walk(vfs, root, &vault_options(&[], false, Errors::Skip)).unwrap_or_default();
     // Without failing, as promised: a root file that cannot be read keeps
     // every entry, which lists more than it should rather than less.
     let patterns = crate::patterns::Patterns::load(vfs, vault_root).unwrap_or_default();

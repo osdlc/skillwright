@@ -560,9 +560,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-corpus"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98f41b185c9b7b6cd859920377f854714f35229f92d06f82cd7db5bb07899e0a"
+checksum = "61cdd361a43829a9e15fb4fc02575f27dec5307e4255afdd595fbf8c15fdcb50"
 dependencies = [
  "frontmatter-lossless",
  "markdown-link",
@@ -574,9 +574,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-link"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70578cf8c4bb6c593943a8330bbdac1c2b29cf9fa25b36ccca2edb2429c29365"
+checksum = "53a20309bea47b479cd28c4fdc2876d87dd5d13435b27839564d4d8ed345317a"
 dependencies = [
  "slug-collate",
  "yaml-splice",
@@ -584,9 +584,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-relink"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f96ed05b1bec82829b5cd16e2293a31db8903f170954abb31360da42fca4896"
+checksum = "977217252f5154aa9928b0500f26ff2ce0119f84851e02b18c2964261d20e629"
 dependencies = [
  "etag-write",
  "markdown-corpus",
@@ -600,9 +600,9 @@ dependencies = [
 
 [[package]]
 name = "markdown-vault-fs"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20e01ebb088ba2abfa09093419234ca0b6db4f57f8ce296f4017c766efaebe7d"
+checksum = "f104a64bc6c11e80e462cfcefbfc48e4cd18ffc01722ea91886553c2c5ecc4eb"
 dependencies = [
  "path-guard",
  "regex",
@@ -1253,18 +1253,18 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vfs-seam"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23639d4340fded7ca3c23a53ef8e8d6bdd4c97880d6863e952d7e1eb6aae6891"
+checksum = "962c534c3d406e4288918237b1791eef8f23aa5d4783131eb199d699b67c731b"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "vfs-walk"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9661061db069f0cb29d03736987d5b731a4ba637dfb05b024e95727f180eccec"
+checksum = "843e11cabcdab38250b9a2a2044b78296a882cd0510d03eed5ea7424eab379d4"
 dependencies = [
  "thiserror",
  "vfs-seam",

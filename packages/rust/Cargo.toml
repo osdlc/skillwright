@@ -60,15 +60,15 @@ agent-adapt = "0.19.2"
 etag-write = "0.2.4"
 frontmatter-lossless = "1.1.2"
 markdown-contract = { version = "0.4.1", default-features = false }
-markdown-corpus = "0.2.0"
-markdown-link = "0.8.0"
-markdown-relink = "0.3.0"
-markdown-vault-fs = { version = "0.5.0", default-features = false }
+markdown-corpus = "0.3.0"
+markdown-link = "0.8.1"
+markdown-relink = "0.4.0"
+markdown-vault-fs = { version = "0.6.0", default-features = false }
 path-guard = "0.3.3"
 tiered-dirs = "0.3.7"
 typed-git = "0.4.0"
-vfs-seam = { version = "0.2.0", default-features = false }
-vfs-walk = "0.2.0"
+vfs-seam = { version = "0.2.1", default-features = false }
+vfs-walk = "0.2.1"
 yaml-splice = "0.3.3"
 
 # The member crate others depend on, also named by version so a published

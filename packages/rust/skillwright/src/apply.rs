@@ -985,7 +985,7 @@ fn load_vault(
         }
     }
     let mut walk = tradecraft_core::compile::vault_walk_options();
-    walk.propagate_errors = false;
+    walk.errors = markdown_corpus::Errors::Skip;
     let options = LoadOptions::default()
         .with_link_walk(walk.clone())
         .with_frontmatter_walk(walk)
