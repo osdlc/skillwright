@@ -2043,3 +2043,50 @@ fn member_workspace_warnings_name_a_reachable_workspace_file() {
         "{line}"
     );
 }
+
+// --- the pack check on a first build through a link --------------------------
+
+/// A vault at `<temp>/vault` whose `build.patterns` read skills from
+/// `dist/notes/`, under its own `build.out: dist`, which is not built yet,
+/// with `claude` set as given. `<temp>/link` points at the vault.
+#[cfg(unix)]
+fn linked_vault(claude: &str) -> (Fixture, PathBuf) {
+    let root = format!(
+        "---\nname: v\n{claude}build:\n  out: dist\n  harnesses: [claude]\n  patterns:\n    skills: [skills/*, dist/notes/*]\n---\n"
+    );
+    let dir = vault(&[("skillwright.md", &root), ("skills/s.md", SKILL)]);
+    let link = dir.0.path().join("link");
+    std::os::unix::fs::symlink(dir.path(), &link).unwrap();
+    (dir, link)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_first_build_through_a_linked_vault_refuses_colliding_packs() {
+    let (dir, link) = linked_vault("claude: {packs: notes}\n");
+    let built = sw(
+        &dir.path(),
+        &["build", "--vault", &link.display().to_string(), "--yes"],
+    );
+    assert_eq!(built.code, 2, "{}", built.text);
+    assert!(built.text.contains("path-collision"), "{}", built.text);
+    assert!(!dir.path().join("dist").exists(), "{}", built.text);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_first_build_through_a_linked_vault_with_clear_packs_builds() {
+    let (dir, link) = linked_vault("");
+    let built = sw(
+        &dir.path(),
+        &["build", "--vault", &link.display().to_string(), "--yes"],
+    );
+    assert_eq!(built.code, 0, "{}", built.text);
+    assert!(
+        dir.path()
+            .join("dist/.claude-plugin/marketplace.json")
+            .is_file(),
+        "{}",
+        built.text
+    );
+}

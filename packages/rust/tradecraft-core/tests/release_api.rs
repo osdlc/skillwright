@@ -2670,3 +2670,18 @@ fn a_skillwright_md_is_reserved_only_directly_in_a_kind_folder() {
     assert!(reserved(&scan).is_empty(), "{:?}", scan.skipped);
     assert!(paths.contains(&"my-skills/skillwright.md"), "{paths:?}");
 }
+
+/// A host that passes a relative vault root is refused `unsafe-path`: the
+/// pack check cannot compare a relative path.
+#[test]
+fn a_relative_vault_root_is_refused_unsafe_path() {
+    let vfs = vault("", "", "");
+    let mut build = request();
+    build.vault_root = PathBuf::from("vault");
+    build.out_root = PathBuf::from("vault/dist");
+    let err = export_skills(&vfs, &build, &Namespace::bare())
+        .unwrap_err()
+        .to_string();
+    assert!(err.starts_with("refused: unsafe-path: "), "{err}");
+    assert!(!vfs.exists(Path::new("vault/dist")));
+}
