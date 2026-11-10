@@ -70,10 +70,18 @@ A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-v
   `plugin-skill` for Pi and `skill` for Cursor. Nothing of the named skill is copied.
   `[[skill|words]]` keeps your words and adds the name after them: words (`plugin:skill`).
   A `#fragment` is checked, then ignored.
+- A link to the skill's own note, from its body or from a file in its folder, is written as the
+  skill's name too, like a link to any other skill. With a `#heading` it stays a link to that
+  heading.
 - To show a call as literal text, such as in a usage example, put a backslash right before its
   slash. The build drops the backslash and keeps the rest as written, in every harness, in prose
   and in code alike. Code alone does not escape a call: in a code span or a fenced block, the
   build still resolves it.
+- A `[[` that is not a link, such as `[[TODO`, is an error, `unresolved-syntax`. Write `\[[` to
+  keep the brackets as text. The backslash ships too, and CommonMark shows `\[[` as `[[`. Code
+  needs no escape.
+- A resource's frontmatter ships as written, so a link there is not resolved. A quoted
+  `"[[link]]"` there is an error; move the link into the body.
 - A bare `[[name]]` that matches files in several folders resolves to the one match under the
   note's own folder, such as a file in the skill's `references/`. Otherwise it is an error,
   `link-ambiguous`; write more of the path to choose one.
