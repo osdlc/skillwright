@@ -1645,4 +1645,15 @@ fn plugin_fields_reach_the_codex_cursor_and_pi_manifests() {
     assert_eq!(cursor["displayName"], "Ticket workflow (t)");
     let pi = json(".pi/packs/t/package.json");
     assert_eq!(pi["keywords"], serde_json::json!(["pi-package", "sdlc"]));
+
+    // A `pi.keywords` block key replaces the whole list, as any block key does.
+    std::fs::write(
+        dir.path().join("plugins/t/t.md"),
+        "---\ndescription: T.\nversion: 1.0.0\nkeywords: [sdlc]\npi:\n  keywords: [own]\n---\n",
+    )
+    .unwrap();
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    let pi = json(".pi/packs/t/package.json");
+    assert_eq!(pi["keywords"], serde_json::json!(["own"]));
 }
