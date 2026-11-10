@@ -1096,7 +1096,7 @@ fn build_root(vfs: &dyn Vfs, config: MarketplaceConfig) -> Result<ExportReport, 
     named.marketplace = None;
     named.config = config;
     named.config.name = Some("house".to_owned());
-    named.config.owner = Some(serde_json::json!("acme"));
+    named.config.identity.owner = Some(serde_json::json!("acme"));
     export_skills(vfs, &named, &Namespace::bare()).map_err(|err| err.to_string())
 }
 
@@ -1536,7 +1536,7 @@ fn an_explicit_default_naming_records_nothing() {
     );
     let mut config = request().config;
     config.name = Some("house".to_owned());
-    config.owner = Some(serde_json::json!("acme"));
+    config.identity.owner = Some(serde_json::json!("acme"));
     let market = tradecraft_core::model::load(
         &vfs,
         &tradecraft_core::model::LoadRequest::new("/vault", config),

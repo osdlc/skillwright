@@ -463,7 +463,7 @@ mod tests {
         vfs.write_file(&member.join(ROOT_FILE), b"---\nname: m\n---\n")
             .unwrap();
         let config = vault_config(&vfs, member).unwrap();
-        assert_eq!(config.license.as_deref(), Some("MIT"));
+        assert_eq!(config.identity.license.as_deref(), Some("MIT"));
         assert!(config.blocks.contains_key("claude"));
     }
 

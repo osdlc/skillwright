@@ -604,7 +604,10 @@ mod tests {
         let mut err: Vec<u8> = Vec::new();
         let run = resolve_run(&CommonFlags::default(), &member.join("skills"), &mut err).unwrap();
         assert_eq!(run.vault, member);
-        assert_eq!(run.config.marketplace.license.as_deref(), Some("MIT"));
+        assert_eq!(
+            run.config.marketplace.identity.license.as_deref(),
+            Some("MIT")
+        );
 
         let top = resolve_run(&CommonFlags::default(), dir.path(), &mut err).unwrap();
         assert!(top.is_workspace());

@@ -88,14 +88,23 @@ impl Cascade {
             config.name = Some(note.name.clone());
             // A marketplace describes itself where a skill describes itself.
             take_description(&mut config.description, note);
-            take(&mut config.display_name, note.identity.display_name.clone());
-            take(&mut config.owner, note.identity.owner.clone());
-            take(&mut config.author, note.identity.author.clone());
-            take(&mut config.license, note.identity.license.clone());
-            take(&mut config.version, note.identity.version.clone());
+            take(
+                &mut config.identity.display_name,
+                note.identity.display_name.clone(),
+            );
+            take(&mut config.identity.owner, note.identity.owner.clone());
+            take(&mut config.identity.author, note.identity.author.clone());
+            take(&mut config.identity.license, note.identity.license.clone());
+            take(&mut config.identity.version, note.identity.version.clone());
             take(&mut config.targets, note.targets.clone());
-            take(&mut config.repository, note.identity.repository.clone());
-            take(&mut config.homepage, note.identity.homepage.clone());
+            take(
+                &mut config.identity.repository,
+                note.identity.repository.clone(),
+            );
+            take(
+                &mut config.identity.homepage,
+                note.identity.homepage.clone(),
+            );
             merge_blocks(&mut config.blocks, &note.blocks);
         }
         // Failing a note, the marketplace's own name is what it is called: the
@@ -107,7 +116,7 @@ impl Cascade {
         // `version` is not inherited: a marketplace folder's version is its
         // own note's, never the root file's above it.
         if market.is_some_and(|m| marketplaces_in(containers).contains(m)) {
-            config.version = note.and_then(|n| n.identity.version.clone());
+            config.identity.version = note.and_then(|n| n.identity.version.clone());
         }
 
         // Each plugin note fills its own override block. A block the request
@@ -123,18 +132,36 @@ impl Cascade {
             // A plugin note describes its pack in the same place a skill note
             // describes itself.
             take_description(&mut overrides.description, note);
-            take(&mut overrides.version, note.identity.version.clone());
-            take(&mut overrides.author, note.identity.author.clone());
-            take(&mut overrides.license, note.identity.license.clone());
-            take(&mut overrides.keywords, note.identity.keywords.clone());
-            take(&mut overrides.category, note.identity.category.clone());
             take(
-                &mut overrides.display_name,
+                &mut overrides.identity.version,
+                note.identity.version.clone(),
+            );
+            take(&mut overrides.identity.author, note.identity.author.clone());
+            take(
+                &mut overrides.identity.license,
+                note.identity.license.clone(),
+            );
+            take(
+                &mut overrides.identity.keywords,
+                note.identity.keywords.clone(),
+            );
+            take(
+                &mut overrides.identity.category,
+                note.identity.category.clone(),
+            );
+            take(
+                &mut overrides.identity.display_name,
                 note.identity.display_name.clone(),
             );
             take(&mut overrides.targets, note.targets.clone());
-            take(&mut overrides.repository, note.identity.repository.clone());
-            take(&mut overrides.homepage, note.identity.homepage.clone());
+            take(
+                &mut overrides.identity.repository,
+                note.identity.repository.clone(),
+            );
+            take(
+                &mut overrides.identity.homepage,
+                note.identity.homepage.clone(),
+            );
             merge_blocks(&mut overrides.blocks, &note.blocks);
         }
 
@@ -267,8 +294,8 @@ impl Cascade {
                 &self.config,
                 plugin,
                 "license",
-                |own| &own.license,
-                |market| &market.license,
+                |own| &own.identity.license,
+                |market| &market.identity.license,
             );
         }
         let own_metadata = crate::projection::skill_metadata(&note.projection.content, ns);
