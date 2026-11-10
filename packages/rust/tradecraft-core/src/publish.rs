@@ -923,11 +923,18 @@ fn publish_onto(
             ));
         }
     };
+    // From here the note is resolved and recorded by its in-vault
+    // spelling, so a real path under a linked root publishes as the link does.
+    let request = &PublishRequest {
+        skill_path: in_vault,
+        ..request.clone()
+    };
+    let in_vault = &request.skill_path;
 
     // The note's own unknown keys, read before the cascade added anything.
     let root_relative = request.skills_root.as_deref().map_or_else(
-        || vault_relative(Path::new(""), &in_vault),
-        |root| vault_relative(root, &in_vault),
+        || vault_relative(Path::new(""), in_vault),
+        |root| vault_relative(root, in_vault),
     );
     let own_warning = unknown_key_warning(&root_relative, resolved.kind, &own_unknown, ns);
 
@@ -1197,7 +1204,7 @@ fn read_for_publish(
         return Err(root_file_not_a_note(skill_path));
     }
     let resolved = publish_kind(placed, &in_vault);
-    let mut note = read_vault_note(vfs, skill_path, ns, resolved.kind)?;
+    let mut note = read_vault_note(vfs, &in_vault, ns, resolved.kind)?;
     if !reads_past(resolved.kind) {
         return Ok(Read::Stopped(resolved));
     }

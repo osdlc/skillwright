@@ -2014,28 +2014,19 @@ fn publishing_an_excluded_note_by_its_real_path_through_a_linked_member_is_refus
     );
 }
 
+/// A note named by its real path under a vault named through a link
+/// publishes the same files as the note named through the link.
 #[cfg(unix)]
 #[test]
-fn publishing_by_the_real_path_through_a_linked_member_reads_the_plugin_as_the_link_spelling_does()
-{
+fn publishing_by_the_real_path_through_a_linked_member_publishes_as_the_link_spelling_does() {
     let (dir, link) = linked_member(&[
         ("skillwright.md", WORKSPACE),
         ("marketplaces/acme/skillwright.md", &member("acme", "")),
-        (
-            "marketplaces/acme/plugins/p/p.md",
-            "---\ndescription: P.\ntargets: [codex]\n---\n",
-        ),
+        ("marketplaces/acme/plugins/p/p.md", PLUGIN),
         ("marketplaces/acme/plugins/p/skills/s.md", SKILL),
+        ("marketplaces/acme/skills/t.md", SKILL),
     ]);
     let vault_arg = link.display().to_string();
-    let real = dir
-        .path()
-        .join("marketplaces/acme/plugins/p/skills/s.md")
-        .canonicalize()
-        .unwrap()
-        .display()
-        .to_string();
-    let spelled = link.join("plugins/p/skills/s.md").display().to_string();
     let publish = |note: &str, to: &str| {
         let dest = dir.home().join(to);
         let ran = sw(
@@ -2049,24 +2040,43 @@ fn publishing_by_the_real_path_through_a_linked_member_reads_the_plugin_as_the_l
                 "claude",
                 "--to",
                 dest.to_str().unwrap(),
-                "--json",
                 "--yes",
             ],
         );
-        (ran, files_under(&dest).len())
+        // Each file relative to the destination, with its bytes. The manifest
+        // records where the note was read from, so it is named, not compared.
+        let mut files: Vec<_> = files_under(&dest)
+            .into_iter()
+            .map(|file| {
+                let relative = file.strip_prefix(&dest).unwrap().to_path_buf();
+                let bytes = if relative.ends_with("manifest.json") {
+                    Vec::new()
+                } else {
+                    std::fs::read(&file).unwrap()
+                };
+                (relative, bytes)
+            })
+            .collect();
+        files.sort();
+        (ran, files)
     };
-    let (through, through_files) = publish(&spelled, "through");
-    let (by_real, real_files) = publish(&real, "real");
-    assert_eq!(
-        by_real.code, through.code,
-        "{}\n{}",
-        by_real.text, through.text
-    );
-    assert_eq!(
-        real_files, through_files,
-        "{}\n{}",
-        by_real.text, through.text
-    );
+    for (n, inside) in ["plugins/p/skills/s.md", "skills/t.md"].iter().enumerate() {
+        let real = dir
+            .path()
+            .join("marketplaces/acme")
+            .join(inside)
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string();
+        let spelled = link.join(inside).display().to_string();
+        let (through, through_files) = publish(&spelled, &format!("through{n}"));
+        let (by_real, real_files) = publish(&real, &format!("real{n}"));
+        assert_eq!(through.code, 0, "{inside}: {}", through.text);
+        assert_eq!(by_real.code, 0, "{inside}: {}", by_real.text);
+        assert!(!real_files.is_empty(), "{inside}: {}", by_real.text);
+        assert_eq!(real_files, through_files, "{inside}: {}", by_real.text);
+    }
 }
 
 #[cfg(unix)]
@@ -2572,9 +2582,9 @@ fn republishing_a_note_by_path_is_not_a_collision() {
     }
 }
 
-/// Under `--vault <link>`, a note named through the link publishes, and one
-/// named by its real path is refused `unsafe-path` by the load, as on main.
-/// Neither collides with its own scan entry.
+/// Under `--vault <link>`, a note named through the link and the same note
+/// named by its real path both publish. Neither collides with its own scan
+/// entry.
 #[cfg(unix)]
 #[test]
 fn a_note_named_through_a_linked_vault_does_not_collide_with_itself() {
@@ -2590,6 +2600,7 @@ fn a_note_named_through_a_linked_vault_does_not_collide_with_itself() {
     let real = dir.path().canonicalize().unwrap();
     let by_real_path = real.join("skills/greet/greet.md");
     let ran = publish_to_dest(&dir, &[by_real_path.to_str().unwrap()], &vault_flag);
+    assert_eq!(ran.code, 0, "{}", ran.text);
     assert!(!ran.text.contains("path-collision"), "{}", ran.text);
-    assert!(ran.text.contains("unsafe-path"), "{}", ran.text);
+    assert!(ran.text.contains("unchanged"), "{}", ran.text);
 }
