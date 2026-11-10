@@ -4,15 +4,15 @@ proposition:
   predicate: skills/agent-loading
   object:
     mechanism: skill tool
-    loads: "on demand: the model calls skill with the exact name; a /name token in user input injects the body without a tool call"
+    loads: "on demand: the model calls skill with the exact skill name"
+    user_activation: a /name token in direct user input that names a user-invocable skill injects the body
 direction: supports
-strength: moderate
+strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
       - "[2026-10-08 DeepSeek Harness How the agent loads a skill](../../study-results/DeepSeek%20Harness/2026-10-08%20DeepSeek%20Harness%20How%20the%20agent%20loads%20a%20skill.md)"
-    directionOfEvidenceProvided: disputes
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-10-08; its value differs from the latest.
+    directionOfEvidenceProvided: neutral
+    description: source observed 2026-10-08; its locator (skill-filesystem/README.md at 5badb150) does not state the mechanism, so it is neutral.
   - hasEvidenceItems:
       - "[2026-11-04 DeepSeek Harness How the agent loads a skill](../../study-results/DeepSeek%20Harness/2026-11-04%20DeepSeek%20Harness%20How%20the%20agent%20loads%20a%20skill.md)"
     directionOfEvidenceProvided: supports
@@ -27,6 +27,16 @@ contributions:
       agentType: software
     activityType: created
     date: 2026-11-04T00:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
+  - contributor:
+      name: harness-reference research
+      agentType: software
+    activityType: verified
+    date: 2026-11-09T12:00:00Z
 harness: "[DeepSeek Harness](../../harnesses/DeepSeek%20Harness.md)"
 subject: "[How the agent loads a skill](../../subjects/skills/How%20the%20agent%20loads%20a%20skill.md)"
 scope:
@@ -34,10 +44,6 @@ scope:
   until: null
   platform: []
   model: null
-status: disputed
+status: current
 imported_from: fact:skills/agent-loading@dsh#scope-[null,null,null]
 ---
-
-Imported from `facts/dsh/skills/agent-loading.md`.
-
-The observations disagree on: mechanism. The latest value is kept.
