@@ -878,7 +878,8 @@ mod tests {
     /// The root file and a workspace's marketplace note read one value of
     /// ours alike, and a refusal names the key. The spec keys, `name` and
     /// `description`, are left out: the root file reads them into strings and
-    /// refuses `name: 5`, while a note does not check their shape.
+    /// refuses `name: 5`, while a note does not check their shape. So is a key
+    /// set to nothing, which the root file reads as unset and a note refuses.
     #[test]
     fn root_file_and_marketplace_note_refuse_the_same_values() {
         use crate::frontmatter::{EntityKind, VaultFrontmatter};

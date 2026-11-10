@@ -945,8 +945,8 @@ impl HarnessProfile {
     ///
     /// Resolved from this row's own policy and declaration. A row equal to a
     /// canonical one shares its cached format; a modified or custom row is
-    /// resolved once per distinct name, declaration and policy and cached, which is bounded by how many such
-    /// rows a program makes.
+    /// resolved once per distinct name, declaration and policy and cached,
+    /// which is bounded by how many such rows a program makes.
     pub fn plugin_format(&self) -> Option<&'static PluginFormat> {
         static FORMATS: OnceLock<Vec<(&'static HarnessProfile, PluginFormat)>> = OnceLock::new();
         let policy = self.plugin.as_ref()?;
