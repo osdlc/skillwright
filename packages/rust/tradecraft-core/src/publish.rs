@@ -761,13 +761,17 @@ fn publish_onto(
     // must not fail open.
     let placed = crate::patterns::Patterns::load_at(vfs, request.skills_root.as_deref())?;
     let placed = placed.as_ref();
-    refuse_excluded(placed, &request.skill_path)?;
+    let in_vault = match placed {
+        Some((_, root)) => spelled_under(vfs, root, &request.skill_path)?,
+        None => request.skill_path.clone(),
+    };
+    refuse_excluded(placed, &in_vault)?;
     if let Some((_, root)) = placed
         && crate::paths::is_vault_root_file(vfs, root, &request.skill_path)?
     {
         return Err(root_file_not_a_note(&request.skill_path));
     }
-    let resolved = publish_kind(placed, &request.skill_path);
+    let resolved = publish_kind(placed, &in_vault);
     let mut note = read_vault_note(vfs, &request.skill_path, ns, resolved.kind)?;
 
     // Everything a renderer cannot take is refused here, before the renderer
@@ -1186,6 +1190,26 @@ fn not_published(frontmatter: &VaultFrontmatter, target: &str, ns: &Namespace) -
 
 /// Refuses a note `build.exclude` or a folder that never ships holds, named or
 /// not: what never ships from a build does not ship from a publish either.
+/// `path` spelled under `root`: as given when it already is, else by its
+/// real path under `root`'s, so a note named through a link and its real
+/// spelling place the same. As given when it is outside `root` either way.
+///
+/// # Errors
+///
+/// `refused: unsafe-path`, as [`crate::guard::real_path`].
+fn spelled_under(vfs: &dyn Vfs, root: &Path, path: &Path) -> Result<PathBuf, CoreError> {
+    if path.starts_with(root) {
+        return Ok(path.to_path_buf());
+    }
+    let real_root = crate::guard::real_path(vfs, root)?;
+    Ok(
+        match crate::guard::real_path(vfs, path)?.strip_prefix(&real_root) {
+            Ok(rest) => root.join(rest),
+            Err(_) => path.to_path_buf(),
+        },
+    )
+}
+
 fn refuse_excluded(
     placed: Option<&crate::patterns::Placed<'_>>,
     skill_path: &Path,

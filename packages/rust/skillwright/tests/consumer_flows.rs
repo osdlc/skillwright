@@ -1978,6 +1978,38 @@ fn publishing_the_workspace_file_through_a_linked_member_is_refused() {
     }
 }
 
+/// A note spelled by its real path is the same note under a vault named
+/// through a link: its exclusion still holds.
+#[cfg(unix)]
+#[test]
+fn publishing_an_excluded_note_by_its_real_path_through_a_linked_member_is_refused() {
+    let shared =
+        "---\nworkspace: true\nbuild:\n  exclude: [marketplaces/acme/skills/secret.md]\n---\n";
+    let (dir, link) = linked_member(&[
+        ("skillwright.md", shared),
+        ("marketplaces/acme/skillwright.md", &member("acme", "")),
+        ("marketplaces/acme/skills/secret.md", SKILL),
+    ]);
+    let note = dir
+        .path()
+        .join("marketplaces/acme/skills/secret.md")
+        .canonicalize()
+        .unwrap()
+        .display()
+        .to_string();
+    let vault_arg = link.display().to_string();
+    let published = sw(
+        &dir.path(),
+        &["publish", &note, "--vault", &vault_arg, "--yes"],
+    );
+    assert_ne!(published.code, 0, "{}", published.text);
+    assert!(
+        published.text.contains("excluded-note"),
+        "{}",
+        published.text
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_linked_member_s_messages_name_the_path_as_typed() {
