@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 
 import { CORPUS_ROOT, loadCorpus } from '../corpus/corpus.ts'
-import { compile, dirtyFiles, permalink, writeKnowledge } from './compile.ts'
+import { compile, dirtyFiles, permalink, sliceKnowledge, writeKnowledge } from './compile.ts'
 import { KNOWLEDGE_SCHEMA } from './knowledge.ts'
 import { lookup } from './lookup.ts'
 
@@ -23,6 +23,32 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
+describe('sliceKnowledge', () => {
+  test('keeps only the listed harnesses and subjects, without valueSchema', () => {
+    const full = compile(loadCorpus(CORPUS_ROOT), SHA)
+    const sliced = sliceKnowledge(full, { harnesses: ['claude-code'], subjects: ['cli/fork'] })
+    assert.deepEqual(Object.keys(sliced.harnesses), ['claude-code'])
+    assert.deepEqual(Object.keys(sliced.subjects), ['cli/fork'])
+    assert.ok(sliced.values.length > 0)
+    for (const v of sliced.values)
+      assert.deepEqual([v.harness, v.subject], ['claude-code', 'cli/fork'])
+    assert.ok(!('valueSchema' in sliced.subjects['cli/fork']!))
+    assert.equal(sliced.corpus.commit, SHA)
+  })
+
+  test('writes compact JSON on request', () => {
+    const sliced = sliceKnowledge(compile(loadCorpus(CORPUS_ROOT), SHA), {
+      harnesses: ['claude-code'],
+      subjects: ['cli/fork'],
+    })
+    const [file, ...rest] = writeKnowledge(dir, sliced, { schema: false, compact: true })
+    assert.deepEqual(rest, [])
+    const text = readFileSync(file!, 'utf8')
+    assert.equal(text.trimEnd().includes('\n'), false)
+    assert.deepEqual(JSON.parse(text), sliced)
+  })
+})
+
 describe('compile', () => {
   test('writes the cli slice, validated against its own schema', () => {
     const k = compile(loadCorpus(CORPUS_ROOT), SHA)
@@ -33,7 +59,7 @@ describe('compile', () => {
       commit: SHA,
     })
     assert.ok(k.values.length >= 30)
-    assert.equal(Object.keys(k.harnesses).length, 16)
+    assert.equal(Object.keys(k.harnesses).length, 17)
     assert.equal(k.harnesses['claude-code']?.kind, 'harness')
     assert.equal(k.harnesses['agent-skills']?.kind, 'standard')
     assert.equal(k.harnesses['claude-code']?.title, 'Claude Code')

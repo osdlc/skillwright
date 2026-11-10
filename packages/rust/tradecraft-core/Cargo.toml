@@ -12,6 +12,7 @@ keywords = ["agent", "skills", "markdown", "claude", "codex"]
 categories = ["development-tools", "filesystem"]
 include = [
   "src/**/*.rs",
+  "data/harness-knowledge.json",
   "examples/**/*.rs",
   "README.md",
   "CHANGELOG.md",

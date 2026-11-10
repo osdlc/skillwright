@@ -55,6 +55,9 @@ CI runs `pnpm run check` when anything under `harness-reference/`, the workflow 
 - `harness-knowledge.schema.json`: the JSON Schema of that file.
 
 `--commit <sha>` sets the commit the permalinks point at; it defaults to `git rev-parse HEAD`.
+`--no-schema` skips the schema file. `--slice <file>` keeps only the harnesses and subjects the
+JSON file lists, drops `valueSchema`, writes compact JSON and no schema file; `pnpm run
+compile:embed` uses it to write the copy tradecraft-core embeds.
 `compile` refuses a corpus that fails validation or lint.
 
 `lookup(knowledge, harness, subject, { version, platform, model, accept })` in

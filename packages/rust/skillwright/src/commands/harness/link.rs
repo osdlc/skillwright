@@ -7,15 +7,16 @@
 //! folder, are never touched. `link` refuses to put a symlink where a real
 //! folder or another link already is.
 //!
-//! Only Claude Code and Codex are linked. harness-reference
-//! `facts/<harness>/skills/discovery-walk.md` records that those two follow a
-//! symlinked skill folder; for Cursor and Pi it is an open question, which
-//! `probes/skill-symlink` would settle.
+//! Only Claude Code and Codex are linked. harness-reference's
+//! statements `Claude Code Skill discovery walk` and `Codex CLI Skill
+//! discovery walk` (under `corpus/statements/<Harness>/`) record that
+//! those two follow a symlinked skill folder; for Cursor and Pi it is an open
+//! question, which `probes/skill-symlink` would settle.
 //!
 //! The user skill folders: Codex reads `~/.agents/skills`
-//! (`facts/codex/skills/user-dirs.md`), which Cursor and Pi read as well, so
+//! (statement `Codex CLI User skill directories`), which Cursor and Pi read as well, so
 //! `link codex` warns. Claude Code reads `.claude/skills`
-//! (`project-dirs.md`) under `~/.claude`, the user destination `publish`
+//! (statement `Claude Code Project skill directories`) under `~/.claude`, the user destination `publish`
 //! already writes to.
 //!
 //! A linked skill loads on its own, not inside its plugin, so the harness
@@ -43,7 +44,8 @@ fn user_skills(harness: &str, home: &Path) -> Result<PathBuf, String> {
         other => Err(format!(
             "harness link supports claude and codex only. harness-reference does not record \
              whether {other} follows a symlinked skill folder (an open question in \
-             facts/{other}/skills/discovery-walk.md; probes/skill-symlink would settle it)"
+             the `{other}` statement \"Skill discovery walk\" in \
+             harness-reference/corpus/statements; probes/skill-symlink would settle it)"
         )),
     }
 }
@@ -52,7 +54,8 @@ fn user_skills(harness: &str, home: &Path) -> Result<PathBuf, String> {
 fn shared_folder_warning(harness: &str) -> Option<&'static str> {
     (harness == "codex").then_some(
         "~/.agents/skills is also read by Cursor and Pi (harness-reference \
-         facts/cursor/skills/user-dirs.md, facts/pi/skills/user-dirs.md), so they load these \
+         statements `Cursor User skill directories` and `Pi User skill directories` under \
+         corpus/statements), so they load these \
          Codex builds too",
     )
 }

@@ -7,6 +7,7 @@
 //! translators choose between.
 
 pub(crate) mod field_types;
+pub mod knowledge;
 pub mod manifest;
 pub mod profile;
 pub mod translator;

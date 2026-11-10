@@ -4,7 +4,7 @@
 //! <path>` loads a local package in place, without copying it; the install is
 //! recorded in the `packages` list of `~/.pi/agent/settings.json`, or of the
 //! project's `.pi/settings.json` with `-l` (harness-reference
-//! `facts/pi/plugins/install.md` and `install-location.md`). So:
+//! statements `Pi Plugin install` and `Pi Plugin install location`). So:
 //!
 //! - install runs `pi install <root>/.pi/packs/<plugin>` for each wanted pack
 //!   the settings file does not list yet;
@@ -15,12 +15,12 @@
 //!   record.
 //!
 //! `--git-url` and `--git-ref` are refused: Pi installs a git package from
-//! its repository root (`facts/pi/plugins/marketplace.md`), and a built
+//! its repository root (statement `Pi Marketplace`), and a built
 //! marketplace's packs sit below that root.
 //!
-//! Whether a pack is installed is read from the settings file. The facts do
-//! not record the shape of a `packages` entry, nor what a relative entry is
-//! read against (an open question in `facts/pi/plugins/install.md`), and
+//! Whether a pack is installed is read from the settings file. The statements
+//! do not record the shape of a `packages` entry, nor what a relative entry is
+//! read against (an open question in `Pi Plugin install`), and
 //! they do not record the output of `pi list` either. So the check assumes an
 //! entry is a source string, or an object with a `source` or `path`, and
 //! reads a relative one against the project folder `pi install` runs in. If

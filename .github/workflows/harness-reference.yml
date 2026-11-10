@@ -11,12 +11,14 @@ on:
   pull_request:
     paths:
       - 'harness-reference/**'
+      - 'packages/rust/tradecraft-core/data/**'
       - '.github/workflows/harness-reference.yml'
       - 'pnpm-lock.yaml'
   push:
     branches: [main]
     paths:
       - 'harness-reference/**'
+      - 'packages/rust/tradecraft-core/data/**'
       - '.github/workflows/harness-reference.yml'
       - 'pnpm-lock.yaml'
   workflow_dispatch:

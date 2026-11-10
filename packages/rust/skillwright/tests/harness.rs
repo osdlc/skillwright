@@ -1357,9 +1357,9 @@ fn link_refuses_cursor_and_pi_naming_the_open_fact() {
             );
             assert_eq!(result.code, EXIT_USAGE, "{harness}: {}", result.stderr);
             assert!(
-                result
-                    .stderr
-                    .contains(&format!("facts/{harness}/skills/discovery-walk.md")),
+                result.stderr.contains(&format!(
+                    "the `{harness}` statement \"Skill discovery walk\""
+                )),
                 "{}",
                 result.stderr
             );
