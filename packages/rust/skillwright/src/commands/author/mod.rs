@@ -486,11 +486,15 @@ pub fn run_author_with(
 
     let launch = launch.unwrap_or_else(|| plan_launch(editor, &probe, &vault, &target));
     flush_notes(&mut notes, flags.quiet, ctx.err);
+    // `--json` states the outcome, so launch before reporting. Otherwise
+    // report first: a terminal editor holds the terminal until it exits.
+    let early = (flags.json && !flags.dry_run).then(|| host.launch(&launch));
     report(
         flags,
         editor,
         (!picker).then_some(target.as_path()),
         &launch,
+        early.as_ref(),
         ctx,
     );
     if picker {
@@ -504,7 +508,7 @@ pub fn run_author_with(
         }
         return EXIT_OK;
     }
-    match host.launch(&launch) {
+    match early.unwrap_or_else(|| host.launch(&launch)) {
         Ok(()) => EXIT_OK,
         Err(message) => blocked(ctx.err, &format!("could not open the editor: {message}")),
     }
@@ -600,7 +604,10 @@ fn pick_editor(
             ),
         ));
     }
-    let saved = MachineAuthor::read(&machine_config_path());
+    let saved = match machine_config_path() {
+        Ok(path) => MachineAuthor::read(&path),
+        Err(message) => MachineAuthor::unavailable(message),
+    };
     notes.extend(saved.warnings.iter().map(|w| format!("warning: {w}")));
     match saved.editor {
         Some(editor) if probe.has(editor) => return Ok(editor),
@@ -771,20 +778,26 @@ fn shell_word(arg: &str) -> String {
 }
 
 /// `target` is `None` when the launch does not open it (the vault picker).
+/// `outcome` is the launch result, or `None` when nothing was launched
+/// (a dry run) or the launch comes after the report.
 fn report(
     flags: &AuthorFlags,
     editor: Editor,
     target: Option<&Path>,
     launch: &Launch,
+    outcome: Option<&Result<(), String>>,
     ctx: &mut CommandContext<'_>,
 ) {
     if flags.json {
-        let doc = serde_json::json!({
+        let mut doc = serde_json::json!({
             "editor": editor.as_str(),
             "path": target.map(Path::to_string_lossy),
             "command": launch.argv,
-            "launched": !flags.dry_run,
+            "launched": matches!(outcome, Some(Ok(()))),
         });
+        if let Some(Err(message)) = outcome {
+            doc["error"] = message.as_str().into();
+        }
         let _ = writeln!(ctx.out, "{doc}");
         return;
     }

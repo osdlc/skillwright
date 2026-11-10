@@ -24,6 +24,8 @@ struct FakeHost {
     /// Answers to the running check, in order; once used up, "running".
     running: RefCell<Vec<bool>>,
     checks: Cell<usize>,
+    /// Makes `launch` fail with this message.
+    launch_error: RefCell<Option<String>>,
     /// Runs while the person is "thinking" at a question.
     while_asking: RefCell<Option<Hook>>,
 }
@@ -37,6 +39,7 @@ impl FakeHost {
             launched: RefCell::new(Vec::new()),
             running: RefCell::new(Vec::new()),
             checks: Cell::new(0),
+            launch_error: RefCell::new(None),
             while_asking: RefCell::new(None),
         }
     }
@@ -64,7 +67,10 @@ impl AuthorHost for FakeHost {
 
     fn launch(&self, launch: &Launch) -> Result<(), String> {
         self.launched.borrow_mut().push(launch.clone());
-        Ok(())
+        match self.launch_error.borrow().clone() {
+            Some(message) => Err(message),
+            None => Ok(()),
+        }
     }
 
     fn obsidian_running(&self, os: Os) -> bool {
@@ -674,6 +680,45 @@ fn json_reports_the_command() {
     assert_eq!(doc["editor"], "system");
     assert_eq!(doc["launched"], false);
     assert_eq!(doc["command"][0], "open");
+}
+
+#[test]
+fn json_reports_a_failed_launch() {
+    let world = World::new("vault");
+    let host = FakeHost::new(world.probe(false));
+    *host.launch_error.borrow_mut() = Some("xdg-open: not found".to_string());
+    let mut f = flags(&world, None, Some(Editor::System), false);
+    f.json = true;
+    let r = run(&world, &f, &host);
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(
+        r.stderr
+            .contains("could not open the editor: xdg-open: not found")
+    );
+    let doc: serde_json::Value = serde_json::from_str(&r.stdout).unwrap();
+    assert_eq!(doc["launched"], false);
+    assert_eq!(doc["error"], "xdg-open: not found");
+}
+
+#[test]
+fn json_reports_a_launch_that_worked() {
+    let world = World::new("vault");
+    let host = FakeHost::new(world.probe(false));
+    let mut f = flags(&world, None, Some(Editor::System), false);
+    f.json = true;
+    let r = run(&world, &f, &host);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    let doc: serde_json::Value = serde_json::from_str(&r.stdout).unwrap();
+    assert_eq!(doc["launched"], true);
+    assert!(doc.get("error").is_none());
+}
+
+#[test]
+fn a_machine_file_that_cannot_be_located_saves_nothing() {
+    let author = MachineAuthor::unavailable("cannot resolve the machine directories".into());
+    assert!(author.editor.is_none());
+    assert_eq!(author.warnings.len(), 1);
+    assert!(author.save(Editor::Code).is_err());
 }
 
 #[test]

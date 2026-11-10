@@ -172,27 +172,27 @@ pub fn replace_machine_config_override(path: Option<PathBuf>) -> Option<PathBuf>
 /// when set and not blank, else `config.yaml` in the standalone config home
 /// of [`crate::dirs`].
 ///
-/// # Panics
+/// # Errors
 ///
 /// When the base directories cannot be resolved (no home directory and no
 /// override).
-pub fn machine_config_path() -> PathBuf {
+pub fn machine_config_path() -> Result<PathBuf, String> {
     if let Some(over) = MACHINE_CONFIG_OVERRIDE
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone()
     {
-        return over;
+        return Ok(over);
     }
     if let Some(over) = std::env::var_os(MACHINE_CONFIG_ENV)
         && !over.to_string_lossy().trim().is_empty()
     {
-        return PathBuf::from(over);
+        return Ok(PathBuf::from(over));
     }
     crate::dirs::system()
         .and_then(|dirs| Ok(dirs.standalone("skillwright")?.config().into_path()))
-        .unwrap_or_else(|err| panic!("skillwright: cannot resolve the machine directories: {err}"))
-        .join("config.yaml")
+        .map(|dir| dir.join("config.yaml"))
+        .map_err(|err| format!("cannot resolve the machine directories: {err}"))
 }
 
 /// The machine file's `author:` block, read leniently, and what saving a
@@ -215,6 +215,19 @@ pub struct MachineAuthor {
 }
 
 impl MachineAuthor {
+    /// No saved editor, and nowhere to save one: `reason` is the warning,
+    /// and the error from [`MachineAuthor::save`].
+    pub fn unavailable(reason: String) -> Self {
+        Self {
+            editor: None,
+            warnings: vec![reason.clone()],
+            path: PathBuf::new(),
+            source: Vec::new(),
+            etag: None,
+            unreadable: Some(reason),
+        }
+    }
+
     /// Read the `author:` block of the machine file at `path`. Never fails: a
     /// file that cannot be read, or a bad value, is a warning and reads as
     /// no saved editor.
