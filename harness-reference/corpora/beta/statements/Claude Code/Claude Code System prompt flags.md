@@ -26,25 +26,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: Help text lists --system-prompt.
   - hasEvidenceItems:
-      - "[2026-11-09 help append system prompt](../../study-results/Claude%20Code/2026-11-09%20help%20append%20system%20prompt.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: Help text lists --append-system-prompt.
-  - hasEvidenceItems:
       - "[2026-11-09 docs cli system prompt](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20system%20prompt.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference says --system-prompt replaces the entire default prompt.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs cli system prompt file](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20system%20prompt%20file.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The reference lists --system-prompt-file.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs cli append system prompt file](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20append%20system%20prompt%20file.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The reference lists --append-system-prompt-file.
 contributions:
   - contributor:
       name: harness-reference research

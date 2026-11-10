@@ -20,26 +20,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: docs observed 2026-11-04.
-  - hasEvidenceItems:
-      - "[2026-11-04 Claude Code How the agent loads a skill 2](../../study-results/Claude%20Code/2026-11-04%20Claude%20Code%20How%20the%20agent%20loads%20a%20skill%202.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
-  - hasEvidenceItems:
-      - "[2026-11-04 Claude Code How the agent loads a skill 3](../../study-results/Claude%20Code/2026-11-04%20Claude%20Code%20How%20the%20agent%20loads%20a%20skill%203.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-04.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs skills skill tool](../../study-results/Claude%20Code/2026-11-09%20docs%20skills%20skill%20tool.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: weak
-    description: "Partial: the skills page names the Skill tool as the way Claude invokes a skill; the excerpt covers the mechanism only."
-  - hasEvidenceItems:
-      - "[2026-11-09 docs skills deny skill tool](../../study-results/Claude%20Code/2026-11-09%20docs%20skills%20deny%20skill%20tool.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: weak
-    description: "Partial: denying the Skill tool disables Claude-invoked skills; the excerpt covers the mechanism only."
 reportedIn:
   - "[Claude Code docs skills](../../documents/code.claude.com/Claude%20Code%20docs%20skills.md)"
   - "[Claude Code docs skills](../../documents/code.claude.com/Claude%20Code%20docs%20skills.md)"

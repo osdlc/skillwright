@@ -21,11 +21,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: --mcp-config loads servers from JSON files or strings.
   - hasEvidenceItems:
-      - "[2026-11-09 help strict mcp](../../study-results/Claude%20Code/2026-11-09%20help%20strict%20mcp.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: --strict-mcp-config uses only the --mcp-config servers.
-  - hasEvidenceItems:
       - "[2026-11-09 docs cli strict mcp](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20strict%20mcp.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

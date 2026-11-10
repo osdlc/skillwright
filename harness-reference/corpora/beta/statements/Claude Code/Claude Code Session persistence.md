@@ -23,11 +23,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference names the environment variable that does the same in any mode.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs env SKIP_PROMPT_HISTORY](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20SKIP_PROMPT_HISTORY.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The variable skips writing prompt history and transcripts.
 contributions:
   - contributor:
       name: harness-reference research

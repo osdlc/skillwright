@@ -16,11 +16,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: "`claude plugin install` takes --scope user, project or local."
   - hasEvidenceItems:
-      - "[2026-11-09 help install marketplace](../../study-results/Claude%20Code/2026-11-09%20help%20install%20marketplace.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: --marketplace installs a bare plugin name from the marketplace at a source, adding it first.
-  - hasEvidenceItems:
       - "[2026-11-09 docs pinstall user scope](../../study-results/Claude%20Code/2026-11-09%20docs%20pinstall%20user%20scope.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

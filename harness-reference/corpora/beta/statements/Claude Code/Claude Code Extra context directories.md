@@ -25,11 +25,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference describes file access and the permissions.additionalDirectories setting.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs env ADDITIONAL_DIRS](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20ADDITIONAL_DIRS.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: An env var turns on memory file loading from added directories.
 contributions:
   - contributor:
       name: harness-reference research

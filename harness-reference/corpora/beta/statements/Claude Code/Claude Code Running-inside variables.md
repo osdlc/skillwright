@@ -19,11 +19,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: moderate
     description: The environment variable reference documents CLAUDECODE as the way to detect a script running in a subprocess spawned by Claude Code.
   - hasEvidenceItems:
-      - "[2026-11-09 docs env CHILD_SESSION](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20CHILD_SESSION.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The reference documents CLAUDE_CODE_CHILD_SESSION for direct tool and hook launches.
-  - hasEvidenceItems:
       - "[2026-11-09 changelog session id mcp](../../study-results/Claude%20Code/2026-11-09%20changelog%20session%20id%20mcp.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

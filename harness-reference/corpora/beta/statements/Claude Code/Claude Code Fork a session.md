@@ -18,11 +18,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: --fork-session creates a new session id when resuming.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs cli fork](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20fork.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The CLI reference describes --fork-session.
 reportedIn:
   - "[Claude Code harness notes for a dispatcher](../../documents/skillwright/Claude%20Code%20harness%20notes%20for%20a%20dispatcher.md)"
 contributions:

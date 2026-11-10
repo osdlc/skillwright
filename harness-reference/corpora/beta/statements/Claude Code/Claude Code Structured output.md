@@ -19,21 +19,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: Help text lists --output-format json and stream-json.
-  - hasEvidenceItems:
-      - "[2026-11-09 help input format](../../study-results/Claude%20Code/2026-11-09%20help%20input%20format.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: Help text lists --input-format stream-json.
-  - hasEvidenceItems:
-      - "[2026-11-09 help stream flags](../../study-results/Claude%20Code/2026-11-09%20help%20stream%20flags.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: Help text lists --include-partial-messages.
-  - hasEvidenceItems:
-      - "[2026-11-09 help json schema](../../study-results/Claude%20Code/2026-11-09%20help%20json%20schema.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: Help text lists --json-schema.
 reportedIn:
   - "[Claude Code harness notes for a dispatcher](../../documents/skillwright/Claude%20Code%20harness%20notes%20for%20a%20dispatcher.md)"
 contributions:

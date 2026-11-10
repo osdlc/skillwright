@@ -31,11 +31,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference lists the same three formats.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs cli stream flags](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20stream%20flags.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The docs say --include-partial-messages requires --print and --output-format stream-json.
 contributions:
   - contributor:
       name: harness-reference research

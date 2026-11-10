@@ -18,11 +18,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: Project instructions live in ./CLAUDE.md or ./.claude/CLAUDE.md.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs memory user instructions](../../study-results/Claude%20Code/2026-11-09%20docs%20memory%20user%20instructions.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: User instructions live in ~/.claude/CLAUDE.md.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

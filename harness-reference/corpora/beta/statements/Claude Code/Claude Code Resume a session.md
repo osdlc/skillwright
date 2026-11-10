@@ -20,16 +20,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: -r, --resume takes an id or name, or opens a picker.
-  - hasEvidenceItems:
-      - "[2026-11-09 help from-pr](../../study-results/Claude%20Code/2026-11-09%20help%20from-pr.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: --from-pr resumes a session linked to a PR.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs cli resume](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20resume.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The CLI reference describes --resume.
 reportedIn:
   - "[Claude Code harness notes for a dispatcher](../../documents/skillwright/Claude%20Code%20harness%20notes%20for%20a%20dispatcher.md)"
 contributions:

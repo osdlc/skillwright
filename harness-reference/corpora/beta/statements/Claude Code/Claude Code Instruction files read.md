@@ -19,16 +19,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: Project CLAUDE.md or .claude/CLAUDE.md.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs memory user instructions](../../study-results/Claude%20Code/2026-11-09%20docs%20memory%20user%20instructions.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: User ~/.claude/CLAUDE.md.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs memory rules](../../study-results/Claude%20Code/2026-11-09%20docs%20memory%20rules.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Rules sit in .claude/rules.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

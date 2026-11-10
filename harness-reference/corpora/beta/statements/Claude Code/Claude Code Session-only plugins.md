@@ -23,16 +23,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference repeats it.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs pinstall plugin-dir](../../study-results/Claude%20Code/2026-11-09%20docs%20pinstall%20plugin-dir.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The plugin install page says --plugin-dir loads a plugin for one session instead of installing it.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs pinstall user scope](../../study-results/Claude%20Code/2026-11-09%20docs%20pinstall%20user%20scope.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: enabledPlugins in settings.json holds enable state.
 contributions:
   - contributor:
       name: harness-reference research

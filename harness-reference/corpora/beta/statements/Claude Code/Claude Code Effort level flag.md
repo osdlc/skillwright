@@ -31,11 +31,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The CLI reference adds ultracode and names the effortLevel setting.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs env EFFORT](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20EFFORT.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: CLAUDE_CODE_EFFORT_LEVEL sets the level and wins over --effort.
 contributions:
   - contributor:
       name: harness-reference research

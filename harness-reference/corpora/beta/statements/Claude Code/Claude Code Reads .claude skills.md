@@ -18,11 +18,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: Personal skills are read from ~/.claude/skills.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs skills project](../../study-results/Claude%20Code/2026-11-09%20docs%20skills%20project.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Project skills are read from .claude/skills.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
 contributions:

@@ -41,27 +41,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: "`claude install` installs the native build."
   - hasEvidenceItems:
-      - "[2026-11-09 help update](../../study-results/Claude%20Code/2026-11-09%20help%20update.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: "`claude update` installs updates; package-manager installs update through the package manager."
-  - hasEvidenceItems:
       - "[2026-11-09 docs setup native installer](../../study-results/Claude%20Code/2026-11-09%20docs%20setup%20native%20installer.md)"
-      - "[2026-11-09 docs setup brew](../../study-results/Claude%20Code/2026-11-09%20docs%20setup%20brew.md)"
-      - "[2026-11-09 docs setup winget](../../study-results/Claude%20Code/2026-11-09%20docs%20setup%20winget.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: The setup page lists the install commands.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs setup auto update](../../study-results/Claude%20Code/2026-11-09%20docs%20setup%20auto%20update.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: Native installations update in the background.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs setup uninstall](../../study-results/Claude%20Code/2026-11-09%20docs%20setup%20uninstall.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The setup page gives the native uninstall commands.
 contributions:
   - contributor:
       name: harness-reference research

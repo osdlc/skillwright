@@ -15,24 +15,10 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: run observed 2026-10-10.
   - hasEvidenceItems:
-      - "[2026-11-09 docs env SESSION_ID](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20SESSION_ID.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The environment variable reference documents CLAUDE_CODE_SESSION_ID in tool, hook and stdio MCP subprocesses.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs env PID](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20PID.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The reference documents CLAUDE_PID in Bash, PowerShell and hook subprocesses.
-  - hasEvidenceItems:
       - "[2026-11-09 changelog session id bash](../../study-results/Claude%20Code/2026-11-09%20changelog%20session%20id%20bash.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate
     description: CLAUDE_CODE_SESSION_ID was added to the Bash tool environment in 2.1.132.
-  - hasEvidenceItems:
-      - "[2026-11-09 docs env CLAUDECODE](../../study-results/Claude%20Code/2026-11-09%20docs%20env%20CLAUDECODE.md)"
-    directionOfEvidenceProvided: neutral
-    description: CLAUDECODE=1 is also exported to the same subprocesses.
 reportedIn:
   - "[Claude Code harness notes for a dispatcher](../../documents/skillwright/Claude%20Code%20harness%20notes%20for%20a%20dispatcher.md)"
 contributions:

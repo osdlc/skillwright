@@ -18,11 +18,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: "`-p, --print` prints the response and exits."
-  - hasEvidenceItems:
-      - "[2026-11-09 docs cli print](../../study-results/Claude%20Code/2026-11-09%20docs%20cli%20print.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: The CLI reference describes --print.
 reportedIn:
   - "[Claude Code harness notes for a dispatcher](../../documents/skillwright/Claude%20Code%20harness%20notes%20for%20a%20dispatcher.md)"
 contributions:
