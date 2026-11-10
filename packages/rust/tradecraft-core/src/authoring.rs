@@ -29,7 +29,7 @@ use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::namespace::Namespace;
 use crate::paths::WORKSPACE_DIR;
-use crate::source_view::notes_over;
+use crate::source_view::{SourceView, notes_over};
 use crate::vault::read_vault_skill;
 use crate::vfs::{MemVfs, Vfs};
 
@@ -496,8 +496,14 @@ pub fn move_destination(
 /// Walked directly rather than through [`discover_components`]: this only
 /// needs to know "is anything else in here", not each member's resolved key.
 /// The vault's build output is hidden ([`crate::notes_view`]).
-pub fn container_members(vfs: &dyn Vfs, vault_dir: &Path, dir: &str, entry: &str) -> Vec<String> {
-    let notes = notes_over(vfs, vault_dir, None, None, &Namespace::default());
+pub fn container_members(
+    vfs: &dyn Vfs,
+    vault_dir: &Path,
+    dir: &str,
+    entry: &str,
+    ns: &Namespace,
+) -> Vec<String> {
+    let notes = notes_over(vfs, vault_dir, None, None, ns);
     let mut members: Vec<String> =
         crate::walk::readable_vault_files(&notes, &vault_dir.join(dir), vault_dir)
             .into_iter()
@@ -932,7 +938,7 @@ fn convert_target(
     if component.kind.holds_components()
         && let Some(dir) = bundle_dir(entry)
     {
-        let members = container_members(vfs, vault_dir, dir, entry);
+        let members = container_members(vfs, vault_dir, dir, entry, ns);
         if !members.is_empty() {
             return Err(format!(
                 "`{entry}` still holds {}: {}",
@@ -1214,6 +1220,14 @@ impl<'a> NewNote<'a> {
     }
 }
 
+/// The vault as a planner reads it, less its build output. Redundant today:
+/// each planner reads the vault only through functions that hide the output
+/// themselves ([`discover_components`], [`container_members`]). It stays so a
+/// direct read added to a planner later cannot see the output.
+fn planner_notes<'v>(vfs: &'v dyn Vfs, vault: &Path, ns: &Namespace) -> SourceView<'v> {
+    notes_over(vfs, vault, None, None, ns)
+}
+
 /// Write a new note: its derived path, its composed bytes, and the member
 /// folders a container kind gets. The path comes from [`derive_create`].
 ///
@@ -1226,7 +1240,7 @@ pub fn plan_create_note(
     ns: &Namespace,
     note: &NewNote<'_>,
 ) -> Result<AuthoringOp, String> {
-    let notes = notes_over(vfs, vault, None, None, ns);
+    let notes = planner_notes(vfs, vault, ns);
     let (path, edits) = derive_create(note.placement, note.name, note.bundled, note.fields)?;
     let bytes = compose_note(None, &edits, note.body).map_err(|e| e.to_string())?;
     if let Some(refusal) = refusal_for(&notes, &bytes, &path, vault, ns) {
@@ -1249,7 +1263,7 @@ pub fn plan_rename_component(
     entry: &str,
     new_name: &str,
 ) -> Result<AuthoringOp, String> {
-    let notes = notes_over(vfs, vault, None, None, ns);
+    let notes = planner_notes(vfs, vault, ns);
     let slug = slugify(new_name);
     if let Some(refusal) = slug_refusal(&slug, "component name") {
         return Err(refusal);
@@ -1278,7 +1292,7 @@ pub fn plan_move_component(
     marketplace: Option<&str>,
     plugin: Option<&str>,
 ) -> Result<AuthoringOp, String> {
-    let notes = notes_over(vfs, vault, None, None, ns);
+    let notes = planner_notes(vfs, vault, ns);
     let Some(component) = find_component(&notes, vault, entry, ns) else {
         return Err(format!(
             "`{entry}` is not a component the vault's scan lists"
@@ -1319,11 +1333,11 @@ pub fn plan_delete_component(
     ns: &Namespace,
     entry: &str,
 ) -> Result<AuthoringOp, String> {
-    let notes = notes_over(vfs, vault, None, None, ns);
+    let notes = planner_notes(vfs, vault, ns);
     let may_hold_members =
         resolved_kind(&notes, vault, ns, entry).is_none_or(EntityKind::holds_components);
     if may_hold_members && let Some(dir) = bundle_dir(entry) {
-        let members = container_members(&notes, vault, dir, entry);
+        let members = container_members(&notes, vault, dir, entry, ns);
         if !members.is_empty() {
             return Err(format!(
                 "`{}` still holds {}: {}",
@@ -1352,7 +1366,7 @@ pub fn plan_delete_container(
     entry: &str,
     expected_kind: EntityKind,
 ) -> Result<AuthoringOp, String> {
-    let notes = notes_over(vfs, vault, None, None, ns);
+    let notes = planner_notes(vfs, vault, ns);
     if resolved_kind(&notes, vault, ns, entry) != Some(expected_kind) {
         return Err(format!(
             "`{}` is not a {}'s own entry note",
@@ -1389,7 +1403,7 @@ pub fn plan_rename_plugin(
     entry: &str,
     new_name: &str,
 ) -> Result<AuthoringOp, String> {
-    let notes = notes_over(vfs, vault, None, None, ns);
+    let notes = planner_notes(vfs, vault, ns);
     let slug = slugify(new_name);
     if let Some(refusal) = slug_refusal(&slug, "plugin name") {
         return Err(refusal);
@@ -1433,7 +1447,7 @@ pub fn plan_rename_marketplace(
     entry: &str,
     new_name: &str,
 ) -> Result<AuthoringOp, String> {
-    let notes = notes_over(vfs, vault, None, None, ns);
+    let notes = planner_notes(vfs, vault, ns);
     if let Some(component) = find_component(&notes, vault, entry, ns)
         && component.kind != EntityKind::Marketplace
     {
@@ -1458,7 +1472,7 @@ pub fn plan_convert_kind(
     to_kind: EntityKind,
     drop_keys: &[String],
 ) -> Result<AuthoringOp, String> {
-    let notes = notes_over(vfs, vault, None, None, ns);
+    let notes = planner_notes(vfs, vault, ns);
     // Trimmed, because the edit loop below trims before it emits a removal:
     // an untrimmed guard lets `" name"` through and then drops the real
     // `name` key, which is the one the vault's discovery scan reads.
@@ -1524,6 +1538,9 @@ mod tests {
 
     const USE_IT: &str = "---\ndescription: Use it.\n---\nBody.\n";
 
+    /// A guard: it passes without the planner's own wrap too, since the
+    /// planner reads the vault only through [`discover_components`], which
+    /// hides the output itself.
     #[test]
     fn plan_rename_component_leaves_output_unedited() {
         let vfs = vault_of(&[
@@ -1550,28 +1567,27 @@ mod tests {
         assert_eq!(to, "plugins/rev/skills/b.md");
     }
 
+    /// The note at `notes/x/x.md` is in no kind folder, so a delete checks
+    /// its folder as a container's. An earlier build left Pi packs, moved out
+    /// of a dot folder, in that folder.
     #[test]
     fn container_members_skips_output() {
-        // An earlier build left its output in the plugin's folder.
         let vfs = vault_of(&[
             (
                 "/vault/skillwright.md",
-                "---\nname: v\nbuild:\n  out: plugins/rev/market\n---\n",
+                "---\nname: v\npi: {packs: pi-packs}\nbuild:\n  out: notes/x/market\n---\n",
             ),
-            ("/vault/plugins/rev/rev.md", "---\ndescription: Rev.\n---\n"),
+            ("/vault/notes/x/x.md", "Notes.\n"),
+            ("/vault/notes/x/market/pi-packs/rev/package.json", "{}"),
             (
-                "/vault/plugins/rev/market/.claude-plugin/marketplace.json",
-                "{}",
-            ),
-            (
-                "/vault/plugins/rev/market/.claude-plugin/packs/rev/skills/a/SKILL.md",
+                "/vault/notes/x/market/pi-packs/rev/skills/rev-a/SKILL.md",
                 USE_IT,
             ),
         ]);
         let vault = Path::new(VAULT);
-        let members = container_members(&vfs, vault, "plugins/rev", "plugins/rev/rev.md");
+        let members = container_members(&vfs, vault, "notes/x", "notes/x/x.md", &sw());
         assert!(members.is_empty(), "{members:?}");
-        assert!(plan_delete_component(&vfs, vault, &sw(), "plugins/rev/rev.md").is_ok());
+        assert!(plan_delete_component(&vfs, vault, &sw(), "notes/x/x.md").is_ok());
     }
 
     fn ns_rewrite(source: &str, changes: &[(&str, Option<Value>)]) -> (Vec<FieldEdit>, String) {
@@ -2923,7 +2939,8 @@ mod tests {
             vfs.create_dir_all(path.parent().unwrap()).unwrap();
             vfs.write_file(path, text.as_bytes()).unwrap();
         }
-        let members = container_members(&vfs, Path::new("/v"), "plugins/p", "plugins/p/p.md");
+        let members =
+            container_members(&vfs, Path::new("/v"), "plugins/p", "plugins/p/p.md", &sw());
         assert_eq!(members, vec!["plugins/p/skills/s.md".to_owned()]);
     }
 }

@@ -9,6 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Breaking
 
+- `container_members` takes the vault's namespace, `ns`, as its last argument. It hides the vault's build output, and reads the marketplace notes that say where the packs are under that namespace ([#81](https://github.com/osdlc/skillwright/issues/81)).
 - Removed `is_marketplace_entry`. Use `path_role(path)`, which gives `PathRole::MarketplaceEntry` for exactly the paths it accepted.
 
 ### Added
