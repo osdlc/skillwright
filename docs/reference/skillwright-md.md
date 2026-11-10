@@ -56,7 +56,6 @@ are also defaults for every plugin and component below. See
 | `namespace` | stem | Restores prefixed keys: `sw` reads `sw-version` or a `sw:` block. Absent means bare keys. |
 | `launcher_path` | path | The plugin's launcher, relative to the plugin's root. |
 | `bump` | `{patch}` | How `bump` writes a version. `patch` is `increment`, the default, or `timestamp`, which sets the patch to the UTC time as `YYYYMMDDHHMMSS`, or to one more than the current patch when that is larger. An unknown key under it gets a warning; a wrong `patch` value and a top-level `bump:` are refused. |
-| `require_descriptions` | boolean | Refuse a note with a `name` and no `description`, instead of publishing a filler. |
 | `destinations` | list of `{root, target, scope}` | Where `publish` writes when `--to` is not given. Empty means each harness's user skill folder, such as `~/.claude/skills`. `scope` is `project` or `user`, and is informational. |
 | `scan_locations` | list of paths | Folders a bare `adopt` reads. Empty means each harness's user skill folder. |
 | `assets` | list of `{from, to, plugin}` | Files copied into a plugin's root, besides each plugin's `assets/`. |
@@ -260,6 +259,23 @@ Two skills that would land on one folder, such as `review` in two plugins, stop
 the run with `path-collision`, naming both notes, and nothing is written. Name one
 note to publish it, or rename one. A bare `publish` writes skills only. A plugin's pack, an agent and a command
 publish when their note is named.
+
+## Publishing one note by path
+
+`publish <path>` publishes the named note as a skill even when no kind folder and no
+`build.patterns` glob places it. This lets an author publish a single skill from anywhere,
+without moving it into a kind folder first. It is the one exception to "the folder alone decides
+what a note is".
+
+Such a note is not part of the vault. `list`, `check`, `build`, `publish --all` and a bare
+`publish` do not include it. A note under a kind folder or matched by a pattern takes its kind
+from there, as always, and `exclude` still refuses it.
+
+Which route to use:
+
+- `build.patterns` brings a folder into the vault for every command. Use it for notes you keep
+  and want listed, checked, built and published with the rest.
+- An explicit path publishes one note once. Nothing about the vault changes.
 
 ## What a manifest holds
 

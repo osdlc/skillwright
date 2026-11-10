@@ -225,7 +225,6 @@ mod roster_row_tests {
         serde_json::from_value(serde_json::json!({
             "name": "code-review",
             "description": "reviews code",
-            "description_filled": false,
             "kind": "skill",
             "kind_source": "directory",
             "folder_kind": "command",

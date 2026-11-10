@@ -2449,3 +2449,22 @@ fn a_pattern_never_places_the_vaults_root_file() {
         scan.warnings
     );
 }
+
+/// A member with a `name` and no `description` is refused on every publish
+/// path: on its own, and inside its pack.
+#[test]
+fn a_publish_refuses_a_member_with_no_description() {
+    let vfs = vault("", "", "");
+    let quiet = "/vault/marketplaces/house/plugins/tools/skills/quiet.md";
+    write(&vfs, quiet, "---\nname: quiet\n---\n\n# Quiet\n");
+    write(&vfs, AGENT, "---\nname: helper\n---\n\n# Helper\n");
+    for path in [quiet, AGENT, TOOLS] {
+        let mut request = PublishRequest::new(path, "/dest", "claude");
+        request.skills_root = Some(PathBuf::from("/vault"));
+        let err = publish_skill(&vfs, &request, &Namespace::default())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("missing-description"), "{path}: {err}");
+    }
+    assert!(!vfs.exists(Path::new("/dest")));
+}
