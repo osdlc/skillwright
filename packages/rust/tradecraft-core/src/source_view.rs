@@ -55,8 +55,9 @@ impl<'v> SourceView<'v> {
     }
 
     /// Resolves a `~` in a root file's `build.out` against `home`, so
-    /// [`notes_view`] hides that output. With no home, it hides nothing for
-    /// such a `build.out`.
+    /// [`notes_view`] hides that output. It holds for a view built over this
+    /// one too, as every core function builds one over the `vfs` it is given.
+    /// With no home, it hides nothing for such a `build.out`.
     #[must_use]
     pub fn with_home(mut self, home: &Path) -> Self {
         self.home = Some(home.to_path_buf());
@@ -91,6 +92,20 @@ impl<'v> SourceView<'v> {
             _ => path,
         }
     }
+}
+
+/// The path a [`SourceView`] answers with its home when asked to
+/// canonicalize it. The [`Vfs`] trait has no way to ask for a home, and a view
+/// over the host's view must still find it. No host resolves this path: it
+/// holds a NUL, which a native filesystem refuses and a lexical one leaves
+/// relative.
+const HOME_PROBE: &str = "\0home";
+
+/// The home a [`SourceView`] in `vfs`, at any depth, was given.
+fn home_of(vfs: &dyn Vfs) -> Option<PathBuf> {
+    vfs.canonicalize(Path::new(HOME_PROBE))
+        .ok()
+        .filter(|home| home.is_absolute())
 }
 
 fn not_found(path: &Path) -> VfsError {
@@ -143,7 +158,10 @@ impl Vfs for SourceView<'_> {
         self.inner.is_symlink(path)
     }
     fn canonicalize(&self, path: &Path) -> Result<PathBuf, VfsError> {
-        self.inner.canonicalize(path)
+        match &self.home {
+            Some(home) if path == Path::new(HOME_PROBE) => Ok(home.clone()),
+            _ => self.inner.canonicalize(path),
+        }
     }
     fn sees_links(&self) -> bool {
         self.inner.sees_links()
@@ -566,7 +584,8 @@ fn configured_output(
     let Some(out) = root.build.out.as_deref() else {
         return Vec::new();
     };
-    let home = match &base.home {
+    let home = home_of(base);
+    let home = match &home {
         Some(home) => home.as_path(),
         None if out == "~" || out.starts_with("~/") => return Vec::new(),
         None => Path::new(""),
@@ -694,6 +713,10 @@ mod tests {
         assert!(!homed.exists(&built));
         let homeless = notes(SourceView::over(&vfs), "/h/v");
         assert!(homeless.exists(&built));
+        // A view over the host's view, as a core function builds one.
+        let host = SourceView::over(&vfs).with_home(Path::new("/h"));
+        let over = notes(SourceView::over(&host), "/h/v");
+        assert!(!over.exists(&built));
     }
 
     #[test]
