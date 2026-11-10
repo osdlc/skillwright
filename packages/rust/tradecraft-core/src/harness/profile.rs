@@ -198,6 +198,9 @@ pub struct PluginFormat {
     block_keys: BlockKeys,
 }
 
+/// The block keys of a row with no plugin format.
+static NO_KEYS: BTreeSet<String> = BTreeSet::new();
+
 /// The keys a harness's blocks accept, by the kind of note they sit on,
 /// worked out once from the row.
 #[derive(Debug)]
@@ -1050,18 +1053,16 @@ impl HarnessProfile {
     /// read and those the harness reads on a subagent alone. No keys for a
     /// row with no plugin format.
     pub(crate) fn member_block_keys(&self, kind: EntityKind) -> &'static BTreeSet<String> {
-        static NONE: BTreeSet<String> = BTreeSet::new();
         self.plugin_format()
             .and_then(|format| format.block_keys.member.get(&kind))
-            .unwrap_or(&NONE)
+            .unwrap_or(&NO_KEYS)
     }
 
     /// The keys of a marketplace's block that pass down to each plugin's
     /// block. No keys for a row with no plugin format.
     pub(crate) fn passed_down_keys(&self) -> &'static BTreeSet<String> {
-        static NONE: BTreeSet<String> = BTreeSet::new();
         self.plugin_format()
-            .map_or(&NONE, |format| &format.block_keys.passed_down)
+            .map_or(&NO_KEYS, |format| &format.block_keys.passed_down)
     }
 }
 
