@@ -2468,3 +2468,125 @@ fn a_publish_refuses_a_member_with_no_description() {
     }
     assert!(!vfs.exists(Path::new("/dest")));
 }
+
+// --- the root loader -------------------------------------------------------
+
+/// A member under a workspace, both with an unknown key.
+fn member_and_workspace() -> MemVfs {
+    let vfs = MemVfs::new();
+    write(
+        &vfs,
+        "/w/skillwright.md",
+        "---\nworkspace: true\nlicense: MIT\nshared_extra: 1\nbuild:\n  harnesses: [claude]\n---\n",
+    );
+    write(
+        &vfs,
+        "/w/marketplaces/m/skillwright.md",
+        "---\nname: m\nmember_extra: 1\n---\n",
+    );
+    vfs
+}
+
+#[test]
+fn load_effective_root_folds_the_workspace_and_names_each_file_s_warnings() {
+    let vfs = member_and_workspace();
+    let file = PathBuf::from("/w/marketplaces/m/skillwright.md");
+    let loaded =
+        tradecraft_core::load_effective_root(&vfs, Path::new("/w/marketplaces/m"), Some(&file))
+            .unwrap();
+    assert_eq!(loaded.root.marketplace.license.as_deref(), Some("MIT"));
+    assert_eq!(
+        loaded.root.build.harnesses.as_deref(),
+        Some(&["claude".to_owned()][..])
+    );
+    assert_eq!(loaded.workspace, Some(PathBuf::from("/w/skillwright.md")));
+    assert_eq!(loaded.warnings.len(), 2, "{:?}", loaded.warnings);
+    assert_eq!(loaded.warnings[0].0, file);
+    assert!(loaded.warnings[0].1.contains("member_extra"));
+    assert_eq!(loaded.warnings[1].0, PathBuf::from("/w/skillwright.md"));
+    assert!(loaded.warnings[1].1.contains("shared_extra"));
+    assert_eq!(loaded.root.warnings.len(), 1);
+    assert!(loaded.root.warnings[0].contains("member_extra"));
+}
+
+#[test]
+fn load_effective_root_with_no_file_still_folds_the_workspace() {
+    let vfs = member_and_workspace();
+    vfs.remove(Path::new("/w/marketplaces/m/skillwright.md"))
+        .unwrap();
+    let loaded =
+        tradecraft_core::load_effective_root(&vfs, Path::new("/w/marketplaces/m"), None).unwrap();
+    assert_eq!(loaded.root.marketplace.license.as_deref(), Some("MIT"));
+    assert_eq!(loaded.workspace, Some(PathBuf::from("/w/skillwright.md")));
+}
+
+#[test]
+fn a_workspace_root_file_folds_nothing() {
+    let vfs = MemVfs::new();
+    write(
+        &vfs,
+        "/outer/skillwright.md",
+        "---\nworkspace: true\nlicense: MIT\n---\n",
+    );
+    write(
+        &vfs,
+        "/outer/marketplaces/ws/skillwright.md",
+        "---\nworkspace: true\n---\n",
+    );
+    let file = PathBuf::from("/outer/marketplaces/ws/skillwright.md");
+    let loaded = tradecraft_core::load_effective_root(
+        &vfs,
+        Path::new("/outer/marketplaces/ws"),
+        Some(&file),
+    )
+    .unwrap();
+    assert_eq!(loaded.workspace, None);
+    assert_eq!(loaded.root.marketplace.license, None);
+}
+
+#[test]
+fn load_effective_root_tells_unreadable_from_malformed() {
+    use tradecraft_core::{CoreError, RootFileError};
+    let vfs = MemVfs::new();
+    vfs.create_dir_all(Path::new("/v/folder.md")).unwrap();
+    write(&vfs, "/v/bad.md", "---\nworkspace: [\n---\n");
+    vfs.write_file(Path::new("/v/latin1.md"), b"---\nname: caf\xe9\n---\n")
+        .unwrap();
+    let load = |name: &str| {
+        let file = PathBuf::from(format!("/v/{name}"));
+        tradecraft_core::load_effective_root(&vfs, Path::new("/v"), Some(&file)).unwrap_err()
+    };
+
+    let folder = load("folder.md");
+    assert!(
+        matches!(folder, RootFileError::Unreadable { .. }),
+        "{folder:?}"
+    );
+    let missing = load("missing.md");
+    match &missing {
+        RootFileError::Unreadable { source, .. } => {
+            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+        }
+        other => panic!("{other:?}"),
+    }
+    let bad = load("bad.md");
+    assert!(matches!(bad, RootFileError::Malformed { .. }), "{bad:?}");
+    let latin1 = load("latin1.md");
+    assert!(
+        matches!(latin1, RootFileError::Malformed { .. }),
+        "{latin1:?}"
+    );
+
+    let core = |err: RootFileError| CoreError::from(err).to_string();
+    assert!(core(folder).starts_with("reading /v/folder.md: "));
+    assert!(core(missing).starts_with("reading /v/missing.md: "));
+    let bad = core(bad);
+    assert!(
+        bad.starts_with("refused: malformed-root-file: /v/bad.md: "),
+        "{bad}"
+    );
+    assert_eq!(
+        core(latin1),
+        "refused: malformed-root-file: /v/latin1.md: it is not UTF-8. Nothing was written"
+    );
+}

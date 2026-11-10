@@ -13,13 +13,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    DiscoveryWarning, MarketplaceConfig, Namespace, NativeVfs, SourceView, VaultScope,
-    discover_components,
+    DiscoveryWarning, MarketplaceConfig, Namespace, NativeVfs, RootFileError, SourceView,
+    VaultScope, discover_components, load_effective_root,
 };
 
 use crate::config::{
-    ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, is_convention_vault, print_warnings,
-    read_root_file, resolve_against_cwd, user_skills_dir, workspace_above, workspace_members,
+    ROOT_FILE, RootFile, WORKSPACE_DIR, is_convention_vault, resolve_against_cwd, user_skills_dir,
+    workspace_above, workspace_members,
 };
 use crate::exit::{blocked, no_config};
 
@@ -288,16 +288,7 @@ pub fn resolve_run(
         ));
     };
 
-    let mut config = match &file {
-        Some(path) => load_root(path, err)?,
-        None => RootFile::default(),
-    };
-    if !config.workspace
-        && let Some(shared) = workspace_above(&vault)
-    {
-        let workspace = load_root(&shared, err)?;
-        config.inherit(&workspace);
-    }
+    let config = load_config(&vault, file.as_deref(), err)?;
 
     // The flag overrides the file for this run and is never written back —
     // the same precedence `--vault` and `--config` already follow.
@@ -339,22 +330,26 @@ pub fn resolve_run(
     })
 }
 
-/// Read one root file, printing its warnings. A file that cannot be read or
-/// parsed is a run-level blocker.
-fn load_root(path: &Path, err: &mut dyn Write) -> Result<RootFile, i32> {
-    match read_root_file(path) {
-        RootLoad::Loaded(root) => {
-            print_warnings(&root, path, err);
-            Ok(*root)
+/// The root file at `file`, with the workspace above `vault` folded in,
+/// printing each file's warnings. A file that cannot be read or parsed is a
+/// run-level blocker.
+fn load_config(vault: &Path, file: Option<&Path>, err: &mut dyn Write) -> Result<RootFile, i32> {
+    match load_effective_root(&NativeVfs, vault, file) {
+        Ok(loaded) => {
+            for (path, warning) in &loaded.warnings {
+                let _ = writeln!(err, "warning: {}: {warning}", path.display());
+            }
+            Ok(loaded.root)
         }
-        RootLoad::Unreadable { detail } => Err(blocked(
+        Err(RootFileError::Unreadable { file, source }) => Err(blocked(
             err,
-            &format!("configuration unreadable: {} ({detail})", path.display()),
+            &format!("configuration unreadable: {} ({source})", file.display()),
         )),
-        RootLoad::Malformed { detail } => Err(blocked(
+        Err(RootFileError::Malformed { file, detail }) => Err(blocked(
             err,
-            &format!("configuration malformed: {} ({detail})", path.display()),
+            &format!("configuration malformed: {} ({detail})", file.display()),
         )),
+        Err(other) => Err(blocked(err, &format!("configuration unreadable: {other}"))),
     }
 }
 
@@ -498,9 +493,13 @@ mod tests {
     use super::*;
     use crate::exit::{EXIT_BLOCKED, EXIT_NO_CONFIG};
 
-    /// `load_marketplace` is the library's copy of what `resolve_run` does for
-    /// a CLI run. They must give one answer, or a consumer builds something
-    /// other than `skillwright build` does.
+    /// `load_marketplace` and `resolve_run` must give one answer, or a
+    /// consumer builds something other than `skillwright build` does. Both
+    /// read and fold the root file through `load_effective_root`. The rest is
+    /// still computed on each side, and this test guards it: the folder name
+    /// (`ResolvedRun::folder_name` against `load_marketplace`'s canonicalize),
+    /// `out_root` (`resolve_against_cwd` against `resolve_path`), the
+    /// namespace and the inputs.
     #[test]
     fn load_marketplace_agrees_with_resolve_run() {
         let tmp = tempfile::tempdir().unwrap();
@@ -614,6 +613,24 @@ mod tests {
         assert_eq!(
             refuse_workspace("publish", &top, &mut err).unwrap_err(),
             EXIT_BLOCKED
+        );
+    }
+
+    #[test]
+    fn an_invalid_namespace_from_the_file_names_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("skills")).unwrap();
+        let file = dir.path().join(ROOT_FILE);
+        std::fs::write(&file, "---\nbuild:\n  namespace: my-vault\n---\n").unwrap();
+        let mut err: Vec<u8> = Vec::new();
+        let code = resolve_run(&CommonFlags::default(), dir.path(), &mut err).unwrap_err();
+        assert_eq!(code, EXIT_BLOCKED);
+        let message = String::from_utf8(err).unwrap();
+        assert!(
+            message
+                .trim_end()
+                .ends_with(&format!("set by `build.namespace` in {}", file.display())),
+            "{message}"
         );
     }
 

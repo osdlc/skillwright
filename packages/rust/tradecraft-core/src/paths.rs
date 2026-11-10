@@ -1,6 +1,8 @@
 //! Loading a vault's root file: find it, fold in its workspace, and resolve
 //! what it names into a build's inputs. [`load_marketplace`] does all of it
-//! in one call. The pieces it is made of are public.
+//! in one call. The pieces it is made of are public: [`find_root_file`],
+//! [`load_effective_root`] for the read and the fold, and
+//! [`marketplace_inputs`].
 //!
 //! Nothing here reads the environment. A host passes the home directory.
 
@@ -196,10 +198,21 @@ pub(crate) fn read_workspace_above(
     dir: &Path,
     read: RootRead,
 ) -> Result<Option<RootFile>, CoreError> {
+    Ok(read_workspace(vfs, dir, read)?.map(|(_, root)| root))
+}
+
+/// [`read_workspace_above`], with the workspace file's path.
+fn read_workspace(
+    vfs: &dyn Vfs,
+    dir: &Path,
+    read: RootRead,
+) -> Result<Option<(PathBuf, RootFile)>, RootFileError> {
     let Some(file) = workspace_file(dir) else {
         return Ok(None);
     };
-    Ok(read_root(vfs, &file, read)?.filter(|root| root.workspace))
+    Ok(read_root(vfs, &file, read)?
+        .filter(|root| root.workspace)
+        .map(|root| (file, root)))
 }
 
 /// Where a workspace file above `dir` would be, when `dir` is
@@ -216,14 +229,14 @@ pub(crate) fn workspace_file(dir: &Path) -> Option<PathBuf> {
 ///
 /// # Errors
 ///
-/// `refused: malformed-root-file` when it is not UTF-8, its frontmatter is
-/// not a YAML mapping, or a key `read` checks holds a value of the wrong
-/// shape.
+/// [`RootFileError::Malformed`] when it is not UTF-8, its frontmatter is not
+/// a YAML mapping, or a key `read` checks holds a value of the wrong shape.
+/// [`RootFileError::Unreadable`] when it is there but cannot be read.
 pub(crate) fn read_root(
     vfs: &dyn Vfs,
     file: &Path,
     read: RootRead,
-) -> Result<Option<RootFile>, CoreError> {
+) -> Result<Option<RootFile>, RootFileError> {
     let Some(text) = root_text(vfs, file)? else {
         return Ok(None);
     };
@@ -233,7 +246,7 @@ pub(crate) fn read_root(
     };
     parsed
         .map(Some)
-        .map_err(|err| malformed_root(file, &err.to_string()))
+        .map_err(|err| RootFileError::malformed(file, err.to_string()))
 }
 
 /// A root file's layout and its full reading, which may have failed.
@@ -255,27 +268,142 @@ pub(crate) fn read_root_both(
         return Ok(None);
     };
     let layout = crate::settings::parse_root_layout(&text)
-        .map_err(|err| malformed_root(file, &err.to_string()))?;
-    let full = parse_root_file(&text).map_err(|err| malformed_root(file, &err.to_string()));
+        .map_err(|err| RootFileError::malformed(file, err.to_string()))?;
+    let full = parse_root_file(&text)
+        .map_err(|err| RootFileError::malformed(file, err.to_string()).into());
     Ok(Some((layout, full)))
 }
 
 /// The text of the root file at `file`, `None` when there is none.
-fn root_text(vfs: &dyn Vfs, file: &Path) -> Result<Option<String>, CoreError> {
+fn root_text(vfs: &dyn Vfs, file: &Path) -> Result<Option<String>, RootFileError> {
     if !vfs.exists(file) {
         return Ok(None);
     }
-    String::from_utf8(vfs.read_file(file)?)
+    let bytes = vfs
+        .read_file(file)
+        .map_err(|err| RootFileError::Unreadable {
+            file: file.to_path_buf(),
+            source: err.into_io_error(),
+        })?;
+    String::from_utf8(bytes)
         .map(Some)
-        .map_err(|_| malformed_root(file, "it is not UTF-8"))
+        .map_err(|_| RootFileError::malformed(file, "it is not UTF-8"))
 }
 
-/// The refusal for a root file at `file` that cannot be read.
-fn malformed_root(file: &Path, detail: &str) -> CoreError {
-    CoreError::refused(
-        crate::publish::ReasonToken::MalformedRootFile.as_str(),
-        format!("{}: {detail}. Nothing was written", file.display()),
-    )
+/// Why a root file could not be loaded.
+#[non_exhaustive]
+#[derive(Debug, thiserror::Error)]
+pub enum RootFileError {
+    /// The file could not be read: missing, a folder, permissions.
+    #[error("reading {}: {source}", file.display())]
+    Unreadable {
+        /// The file.
+        file: PathBuf,
+        /// The host's error.
+        #[source]
+        source: std::io::Error,
+    },
+    /// The file was read but is not a root file: not UTF-8, frontmatter not
+    /// a mapping, or a key of the wrong shape.
+    #[error("{}: {detail}", file.display())]
+    Malformed {
+        /// The file.
+        file: PathBuf,
+        /// What is wrong with it.
+        detail: String,
+    },
+}
+
+impl RootFileError {
+    fn malformed(file: &Path, detail: impl Into<String>) -> Self {
+        Self::Malformed {
+            file: file.to_path_buf(),
+            detail: detail.into(),
+        }
+    }
+}
+
+/// `Unreadable` is [`CoreError::Io`]. `Malformed` is
+/// `refused: malformed-root-file`.
+impl From<RootFileError> for CoreError {
+    fn from(err: RootFileError) -> Self {
+        match err {
+            RootFileError::Unreadable { file, source } => CoreError::io(file, source),
+            RootFileError::Malformed { file, detail } => CoreError::refused(
+                crate::publish::ReasonToken::MalformedRootFile.as_str(),
+                format!("{}: {detail}. Nothing was written", file.display()),
+            ),
+        }
+    }
+}
+
+/// A root file with the workspace above it folded in.
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct EffectiveRoot {
+    /// The root file with the workspace's shared settings folded in.
+    /// `root.warnings` holds the root file's own warnings only, as
+    /// [`RootFile::inherit`] leaves it.
+    pub root: RootFile,
+    /// The workspace file folded in, if any.
+    pub workspace: Option<PathBuf>,
+    /// Every warning to show, each with the file it came from: the root
+    /// file's first, then the workspace file's.
+    pub warnings: Vec<(PathBuf, String)>,
+}
+
+/// The root file at `file`, when given, with the workspace above `dir`
+/// folded in, unless that root file is itself a workspace.
+///
+/// `dir` is the vault. `file` is the root file the caller chose; `None` means
+/// the vault has none, and it reads as every default before the fold. This
+/// is the one place a workspace is folded into a full root file.
+///
+/// # Errors
+///
+/// [`RootFileError::Unreadable`] when `file` is missing or cannot be read,
+/// [`RootFileError::Malformed`] when it is not a root file. The same for a
+/// workspace file that is there: an exclusion it holds must not fail open.
+pub fn load_effective_root(
+    vfs: &dyn Vfs,
+    dir: &Path,
+    file: Option<&Path>,
+) -> Result<EffectiveRoot, RootFileError> {
+    let mut root = match file {
+        Some(file) => {
+            read_root(vfs, file, RootRead::Full)?.ok_or_else(|| RootFileError::Unreadable {
+                file: file.to_path_buf(),
+                source: std::io::Error::from(std::io::ErrorKind::NotFound),
+            })?
+        }
+        None => RootFile::default(),
+    };
+    let mut warnings: Vec<(PathBuf, String)> = file
+        .map(|file| {
+            root.warnings
+                .iter()
+                .map(|warning| (file.to_path_buf(), warning.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut workspace = None;
+    if !root.workspace
+        && let Some((shared_file, shared)) = read_workspace(vfs, dir, RootRead::Full)?
+    {
+        root.inherit(&shared);
+        warnings.extend(
+            shared
+                .warnings
+                .into_iter()
+                .map(|warning| (shared_file.clone(), warning)),
+        );
+        workspace = Some(shared_file);
+    }
+    Ok(EffectiveRoot {
+        root,
+        workspace,
+        warnings,
+    })
 }
 
 /// What a marketplace load reads from the root file besides the vault: the
@@ -391,12 +519,7 @@ pub fn load_marketplace(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let mut root = read_root(vfs, &root_file, RootRead::Full)?.unwrap_or_default();
-    if !root.workspace
-        && let Some(shared) = read_workspace_above(vfs, &dir, RootRead::Full)?
-    {
-        root.inherit(&shared);
-    }
+    let root = load_effective_root(vfs, &dir, Some(&root_file))?.root;
     let namespace = match &root.build.namespace {
         Some(stem) => Namespace::new(stem).map_err(|invalid| {
             CoreError::refused(
