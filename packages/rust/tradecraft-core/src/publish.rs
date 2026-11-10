@@ -176,7 +176,7 @@ use std::collections::BTreeMap;
 
 use crate::compile::Closure;
 use crate::content::SkillProjection;
-use crate::discover::{DiscoveryWarning, unknown_key_warning, unknown_keys};
+use crate::discover::{DiscoveredComponent, DiscoveryWarning, unknown_key_warning, unknown_keys};
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::{
@@ -743,6 +743,148 @@ pub fn publish_skill(
     }
 }
 
+/// The skill folder a note publishes to, and where it publishes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillClaim {
+    /// The folder name: the skill's published name.
+    pub name: String,
+    /// The note's absolute path, spelled under the vault root. Claims are
+    /// matched on this.
+    pub entry_path: PathBuf,
+    /// The note as messages name it: relative to the vault root. For display
+    /// only, because a note outside the vault falls back to its file name.
+    pub path: String,
+    /// The note's `targets`, inherited ones included. `None` is every target.
+    pub targets: Option<Vec<String>>,
+}
+
+impl From<&DiscoveredComponent> for SkillClaim {
+    fn from(component: &DiscoveredComponent) -> Self {
+        Self {
+            name: component.name.clone(),
+            entry_path: component.entry_path.clone(),
+            path: component.vault_relative_path.clone(),
+            targets: component.targets.clone(),
+        }
+    }
+}
+
+/// The claim [`publish_skill`] would make for the note at `skill_path`, read
+/// the way it reads it, with `skills_root` and `config` as the request's.
+/// `None` when the note's kind is not [`EntityKind::Skill`].
+///
+/// # Errors
+///
+/// What [`publish_skill`] refuses while reading the note, before it renders:
+///
+/// * `refused: malformed-root-file` when the root file at `skills_root`, or
+///   a workspace file above it, does not parse.
+/// * `refused: unsafe-path` when the note's real path cannot be resolved
+///   safely under the vault root.
+/// * `refused: excluded-note` when `build.exclude` or a folder that never
+///   ships holds the note.
+/// * `refused: no-renderer` when the note is the vault's root file.
+/// * `refused: invalid-name` when the note's name is not one the Agent
+///   Skills spec admits.
+/// * What reading the note refuses, such as a malformed note, and what its
+///   containers' cascade refuses.
+pub fn skill_claim(
+    vfs: &dyn Vfs,
+    skill_path: &Path,
+    skills_root: &Path,
+    config: Option<&MarketplaceConfig>,
+    ns: &Namespace,
+) -> Result<Option<SkillClaim>, CoreError> {
+    let read = match read_for_publish(vfs, skill_path, Some(skills_root), config, ns, |kind| {
+        kind == EntityKind::Skill
+    })? {
+        Read::Note(read) => read,
+        Read::Stopped(_) => return Ok(None),
+    };
+    let path = vault_relative(skills_root, &read.in_vault);
+    // The load refuses such a name, so the note claims no folder.
+    let name = &read.note.projection.content.name;
+    if let Some(why) = crate::discover::name_refusal(name, "name") {
+        return Err(CoreError::refused(
+            crate::discover::INVALID_NAME_REASON,
+            format!("{path}: {why}. Set `name:` in its frontmatter"),
+        ));
+    }
+    Ok(Some(SkillClaim {
+        path,
+        name: read.note.projection.content.name,
+        targets: read.note.frontmatter.targets,
+        entry_path: read.in_vault,
+    }))
+}
+
+/// Refuses when two of `claims` publish onto one skill folder at one of
+/// `targets`. One `entry_path` listed twice is one claim.
+///
+/// Checking target names, not destinations, is the same check per
+/// destination: two claims meet at a destination only through its target.
+/// A claim reaches a target when its `targets` is `None` or holds a name
+/// with the same [`canonical_target`].
+///
+/// # Errors
+///
+/// `refused: path-collision`, naming every note in the first group found.
+pub fn refuse_skill_collisions(claims: &[SkillClaim], targets: &[&str]) -> Result<(), CoreError> {
+    let mut unique: Vec<&SkillClaim> = Vec::new();
+    for claim in claims {
+        if !unique
+            .iter()
+            .any(|seen| seen.entry_path == claim.entry_path)
+        {
+            unique.push(claim);
+        }
+    }
+    for target in targets {
+        let wanted = canonical_target(target).unwrap_or(target);
+        let reaching: Vec<&SkillClaim> = unique
+            .iter()
+            .copied()
+            .filter(|claim| {
+                claim.targets.as_ref().is_none_or(|names| {
+                    names
+                        .iter()
+                        .any(|name| canonical_target(name) == Some(wanted))
+                })
+            })
+            .collect();
+        for (at, first) in reaching.iter().enumerate() {
+            let group: Vec<&str> = reaching[at..]
+                .iter()
+                .filter(|claim| claim.name == first.name)
+                .map(|claim| claim.path.as_str())
+                .collect();
+            if group.len() > 1 {
+                return Err(collision(&first.name, &group));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The `path-collision` refusal for the notes at `paths`, which all publish
+/// to the skill folder `name`.
+fn collision(name: &str, paths: &[&str]) -> CoreError {
+    let quoted: Vec<String> = paths.iter().map(|path| format!("`{path}`")).collect();
+    let message = match quoted.as_slice() {
+        [first, second] => format!(
+            "{first} and {second} both publish to the skill folder `{name}`, so one would \
+             replace the other. Nothing was written. Set a different `name:` in one of them"
+        ),
+        [rest @ .., last] => format!(
+            "{} and {last} all publish to the skill folder `{name}`, so one would replace \
+             another. Nothing was written. Set a different `name:` in all but one of them",
+            rest.join(", ")
+        ),
+        [] => unreachable!("a collision names at least two notes"),
+    };
+    CoreError::refused("path-collision", message)
+}
+
 /// The publish itself, blind to the mode.
 ///
 /// It cannot tell whether it is writing onto a real destination or into a
@@ -1016,7 +1158,8 @@ enum Read {
 /// Reads the note at `skill_path` as a publish does: placed under the vault
 /// root, refused when excluded or when it is the root file, its kind
 /// resolved by its folder, then, when `reads_past` accepts that kind, its
-/// containers' cascade checked and applied.
+/// containers' cascade checked and applied. [`publish_skill`] and
+/// [`skill_claim`] both read through here, so the two cannot disagree.
 ///
 /// # Errors
 ///
@@ -1027,8 +1170,8 @@ enum Read {
 /// * `refused: excluded-note` when `build.exclude` or a folder that never
 ///   ships holds the note.
 /// * `refused: no-renderer` when the note is the vault's root file.
-/// * What [`read_vault_note`] refuses, such as `invalid-name` or a malformed
-///   note, and what the containers' cascade refuses.
+/// * What [`read_vault_note`] refuses, such as a malformed note, and what
+///   the containers' cascade refuses.
 fn read_for_publish(
     vfs: &dyn Vfs,
     skill_path: &Path,
@@ -6550,5 +6693,219 @@ mod tests {
             "{:?}",
             statuses(&report)
         );
+    }
+
+    /// The claim `skill_claim` makes for `path`, read with `rooted_request`'s
+    /// vault root and no root config.
+    fn claim_of(vfs: &dyn Vfs, path: &str) -> Result<Option<SkillClaim>, CoreError> {
+        skill_claim(vfs, Path::new(path), Path::new("/vault"), None, &sw())
+    }
+
+    /// A claim on the folder `name`, for the note at `entry` shown as `path`.
+    fn claim(name: &str, entry: &str, path: &str, targets: Option<&[&str]>) -> SkillClaim {
+        SkillClaim {
+            name: name.to_owned(),
+            entry_path: PathBuf::from(entry),
+            path: path.to_owned(),
+            targets: targets.map(|t| t.iter().map(|&n| n.to_owned()).collect()),
+        }
+    }
+
+    #[test]
+    fn skill_claim_names_the_folder_publish_writes() {
+        let vfs = vault_with_root_file();
+        vfs.write_file(
+            Path::new("/vault/notes/hello.md"),
+            b"---\nname: greeter\ndescription: greets\n---\nHi.\n",
+        )
+        .unwrap();
+        vfs.create_dir_all(Path::new("/vault/skills/greet"))
+            .unwrap();
+        vfs.write_file(Path::new("/vault/skills/greet/SKILL.md"), NOTE.as_bytes())
+            .unwrap();
+
+        for (note, folder) in [
+            ("/vault/notes/hello.md", "greeter"),
+            ("/vault/skills/greet/SKILL.md", "greet"),
+        ] {
+            let claim = claim_of(&vfs, note)
+                .unwrap()
+                .expect("a skill makes a claim");
+            assert_eq!(claim.name, folder, "{note}");
+            publish_skill(&vfs, &rooted_request(note), &sw()).unwrap();
+            let written = format!("/dest/.claude/skills/{}/SKILL.md", claim.name);
+            assert!(vfs.exists(Path::new(&written)), "{note}: {written}");
+        }
+    }
+
+    #[test]
+    fn skill_claim_is_none_for_a_note_that_is_not_a_skill() {
+        let vfs = vault_with_root_file();
+        vfs.create_dir_all(Path::new("/vault/agents")).unwrap();
+        vfs.create_dir_all(Path::new("/vault/commands")).unwrap();
+        vfs.create_dir_all(Path::new("/vault/plugins/p/skills"))
+            .unwrap();
+        vfs.write_file(Path::new("/vault/agents/rev.md"), AGENT_NOTE.as_bytes())
+            .unwrap();
+        vfs.write_file(
+            Path::new("/vault/commands/go.md"),
+            b"---\ndescription: goes\n---\nGo.\n",
+        )
+        .unwrap();
+        vfs.write_file(
+            Path::new("/vault/plugins/p/p.md"),
+            b"---\ndescription: a pack\n---\n",
+        )
+        .unwrap();
+        vfs.write_file(Path::new("/vault/plugins/p/skills/a.md"), NOTE.as_bytes())
+            .unwrap();
+
+        for note in [
+            "/vault/agents/rev.md",
+            "/vault/commands/go.md",
+            "/vault/plugins/p/p.md",
+        ] {
+            assert_eq!(claim_of(&vfs, note).unwrap(), None, "{note}");
+        }
+    }
+
+    #[test]
+    fn skill_claim_carries_inherited_targets() {
+        let vfs = vault_with_root_file();
+        let config = MarketplaceConfig {
+            targets: Some(vec!["codex".to_owned()]),
+            ..MarketplaceConfig::default()
+        };
+        let claim = skill_claim(
+            &vfs,
+            Path::new("/vault/notes/stray.md"),
+            Path::new("/vault"),
+            Some(&config),
+            &sw(),
+        )
+        .unwrap()
+        .expect("a skill makes a claim");
+
+        assert_eq!(claim.targets, Some(vec!["codex".to_owned()]));
+    }
+
+    #[test]
+    fn skill_claim_refuses_what_publish_refuses() {
+        let vfs = vault_with_root_file();
+        vfs.write_file(
+            Path::new("/vault/skillwright.md"),
+            b"---\nname: v1\nbuild:\n  out: .\n  exclude: [notes/stray.md]\n---\n",
+        )
+        .unwrap();
+
+        let claimed = claim_of(&vfs, "/vault/notes/stray.md")
+            .unwrap_err()
+            .to_string();
+        let published = publish_skill(&vfs, &rooted_request("/vault/notes/stray.md"), &sw())
+            .unwrap_err()
+            .to_string();
+
+        assert!(claimed.contains("excluded-note"), "{claimed}");
+        assert_eq!(claimed, published);
+
+        // A name the spec does not admit claims no folder: publish refuses it.
+        vfs.write_file(Path::new("/vault/notes/日本.md"), NOTE.as_bytes())
+            .unwrap();
+        let claimed = claim_of(&vfs, "/vault/notes/日本.md")
+            .unwrap_err()
+            .to_string();
+        let published = publish_skill(&vfs, &rooted_request("/vault/notes/日本.md"), &sw())
+            .unwrap_err()
+            .to_string();
+        assert!(claimed.contains("invalid-name"), "{claimed}");
+        assert!(published.contains("invalid-name"), "{published}");
+    }
+
+    #[test]
+    fn two_claims_on_one_folder_are_refused_naming_both() {
+        let claims = [
+            claim("greet", "/vault/notes/greet.md", "notes/greet.md", None),
+            claim(
+                "greet",
+                "/vault/skills/greet/greet.md",
+                "skills/greet/greet.md",
+                None,
+            ),
+        ];
+        let err = refuse_skill_collisions(&claims, &["claude"])
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            err,
+            "refused: path-collision: `notes/greet.md` and `skills/greet/greet.md` both publish \
+             to the skill folder `greet`, so one would replace the other. Nothing was written. \
+             Set a different `name:` in one of them"
+        );
+    }
+
+    #[test]
+    fn a_three_way_collision_names_every_note() {
+        let claims = [
+            claim("greet", "/vault/a.md", "a.md", None),
+            claim("greet", "/vault/b.md", "b.md", None),
+            claim("other", "/vault/o.md", "o.md", None),
+            claim("greet", "/vault/c.md", "c.md", None),
+        ];
+        let err = refuse_skill_collisions(&claims, &["claude"])
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            err,
+            "refused: path-collision: `a.md`, `b.md` and `c.md` all publish to the skill folder \
+             `greet`, so one would replace another. Nothing was written. Set a different \
+             `name:` in all but one of them"
+        );
+    }
+
+    #[test]
+    fn one_name_on_disjoint_targets_is_not_a_collision() {
+        let claims = [
+            claim("greet", "/vault/a.md", "a.md", Some(&["codex"])),
+            claim("greet", "/vault/b.md", "b.md", Some(&["claude"])),
+        ];
+
+        refuse_skill_collisions(&claims, &["claude", "codex"]).unwrap();
+    }
+
+    #[test]
+    fn target_aliases_reach_one_folder() {
+        let claims = [
+            claim("greet", "/vault/a.md", "a.md", Some(&["claude"])),
+            claim("greet", "/vault/b.md", "b.md", Some(&["claude-code"])),
+        ];
+
+        for target in ["claude", "claude-code"] {
+            let err = refuse_skill_collisions(&claims, &[target])
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("path-collision"), "{target}: {err}");
+        }
+    }
+
+    #[test]
+    fn one_note_listed_twice_is_not_a_collision() {
+        let one = claim("greet", "/vault/notes/greet.md", "notes/greet.md", None);
+
+        refuse_skill_collisions(&[one.clone(), one], &["claude"]).unwrap();
+    }
+
+    #[test]
+    fn two_outside_notes_with_one_file_name_are_two_claims() {
+        let claims = [
+            claim("greet", "/tmp/a/greet.md", "greet.md", None),
+            claim("greet", "/tmp/b/greet.md", "greet.md", None),
+        ];
+        let err = refuse_skill_collisions(&claims, &["claude"])
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("path-collision"), "{err}");
     }
 }

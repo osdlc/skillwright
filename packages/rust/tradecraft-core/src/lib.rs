@@ -153,8 +153,8 @@ pub use paths::{
 };
 pub use publish::{
     KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,
-    PublishStatus, PublishedFile, ReasonToken, canonical_target, canonical_targets, publish_skill,
-    publishes_to,
+    PublishStatus, PublishedFile, ReasonToken, SkillClaim, canonical_target, canonical_targets,
+    publish_skill, publishes_to, refuse_skill_collisions, skill_claim,
 };
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
