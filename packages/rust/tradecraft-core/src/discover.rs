@@ -1468,7 +1468,8 @@ pub(crate) fn is_entry(file: &str, name: &str, kind: EntityKind) -> bool {
 
 /// The entry file a bundled component of `kind` named `name` is written as:
 /// `skillwright.md` for a marketplace, `<name>.md` otherwise. This is the one
-/// way to write an entry path. Reading accepts more ([`path_role`]).
+/// way to write an entry path. Reading accepts more spellings, such as
+/// `SKILL.md` for a skill.
 pub fn entry_file(kind: EntityKind, name: &str) -> String {
     if kind == EntityKind::Marketplace {
         crate::settings::ROOT_FILE.to_owned()
