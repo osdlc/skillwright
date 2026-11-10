@@ -38,26 +38,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09 at 0.162.0.
   - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Install method README npm](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Install%20method%20README%20npm.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Install method README brew](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Install%20method%20README%20brew.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Install method README platforms](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Install%20method%20README%20platforms.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Install method README windows](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Install%20method%20README%20windows.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Install method help](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Install%20method%20help.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

@@ -23,26 +23,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Instruction files read budget](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Instruction%20files%20read%20budget.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Instruction files read global](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Instruction%20files%20read%20global.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Instruction files read one per directory](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Instruction%20files%20read%20one%20per%20directory.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Instruction files read fallback](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Instruction%20files%20read%20fallback.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
 contributions:
   - contributor:
       name: harness-reference research

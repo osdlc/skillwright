@@ -12,11 +12,6 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-08-08 Codex CLI User skill directories](../../study-results/Codex%20CLI/2026-08-08%20Codex%20CLI%20User%20skill%20directories.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: weak
-    description: third-party observed 2026-08-08.
-  - hasEvidenceItems:
       - "[2026-10-01 Codex CLI User skill directories](../../study-results/Codex%20CLI/2026-10-01%20Codex%20CLI%20User%20skill%20directories.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
@@ -26,11 +21,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI User skill directories docs](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20User%20skill%20directories%20docs.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
 reportedIn:
   - "[Harness comparison](../../documents/skillwright/Harness%20comparison.md)"
   - "[Codex README](../../documents/OpenAI/Codex%20README.md)"

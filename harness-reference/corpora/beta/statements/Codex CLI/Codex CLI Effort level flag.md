@@ -18,11 +18,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09 at 0.162.0.
   - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Effort level flag docs](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Effort%20level%20flag%20docs.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Effort level flag config override](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Effort%20level%20flag%20config%20override.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

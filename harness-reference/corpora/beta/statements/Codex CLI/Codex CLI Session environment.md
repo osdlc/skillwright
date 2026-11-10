@@ -17,22 +17,7 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09 at 0.162.0.
   - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Session environment thread](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Session%20environment%20thread.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Session environment version](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Session%20environment%20version.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Session environment profile](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Session%20environment%20profile.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Session environment injection](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Session%20environment%20injection.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09 at 0.162.0.

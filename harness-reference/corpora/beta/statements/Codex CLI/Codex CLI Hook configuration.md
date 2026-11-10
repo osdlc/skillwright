@@ -9,11 +9,6 @@ direction: supports
 strength: moderate
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-08-08 Codex CLI Hook configuration](../../study-results/Codex%20CLI/2026-08-08%20Codex%20CLI%20Hook%20configuration.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: weak
-    description: third-party observed 2026-08-08.
-  - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Hook configuration docs](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Hook%20configuration%20docs.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: moderate

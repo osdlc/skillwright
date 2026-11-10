@@ -20,11 +20,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Config directory variable docs](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Config%20directory%20variable%20docs.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
 contributions:
   - contributor:
       name: harness-reference research

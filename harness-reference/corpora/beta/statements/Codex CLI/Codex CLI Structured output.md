@@ -10,11 +10,6 @@ direction: supports
 strength: strong
 hasEvidenceLines:
   - hasEvidenceItems:
-      - "[2026-09-25 Codex CLI Structured output](../../study-results/Codex%20CLI/2026-09-25%20Codex%20CLI%20Structured%20output.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: strong
-    description: help-text observed 2026-09-25.
-  - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Structured output help](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Structured%20output%20help.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
@@ -24,11 +19,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Structured output docs](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Structured%20output%20docs.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
 reportedIn:
   - "[Codex harness notes for a dispatcher](../../documents/skillwright/Codex%20harness%20notes%20for%20a%20dispatcher.md)"
 contributions:

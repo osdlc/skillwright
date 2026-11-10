@@ -101,11 +101,6 @@ hasEvidenceLines:
     strengthOfEvidenceProvided: strong
     description: source observed 2026-11-05.
   - hasEvidenceItems:
-      - "[2026-11-05 Codex CLI Marketplace fields 2](../../study-results/Codex%20CLI/2026-11-05%20Codex%20CLI%20Marketplace%20fields%202.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-05.
-  - hasEvidenceItems:
       - "[2026-11-09 Codex CLI Marketplace fields source](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Marketplace%20fields%20source.md)"
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong

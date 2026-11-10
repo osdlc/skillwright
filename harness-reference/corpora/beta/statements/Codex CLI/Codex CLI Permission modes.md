@@ -43,16 +43,6 @@ hasEvidenceLines:
     directionOfEvidenceProvided: supports
     strengthOfEvidenceProvided: strong
     description: help-text observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Permission modes sandbox mode](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Permission%20modes%20sandbox%20mode.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
-  - hasEvidenceItems:
-      - "[2026-11-09 Codex CLI Permission modes approval policy](../../study-results/Codex%20CLI/2026-11-09%20Codex%20CLI%20Permission%20modes%20approval%20policy.md)"
-    directionOfEvidenceProvided: supports
-    strengthOfEvidenceProvided: moderate
-    description: docs observed 2026-11-09 at 0.162.0.
 contributions:
   - contributor:
       name: harness-reference research
