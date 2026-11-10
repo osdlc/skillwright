@@ -499,17 +499,7 @@ impl VaultFrontmatter {
         };
 
         let identity = if kind.holds_components() {
-            ContainerIdentity {
-                owner: ours.remove(&ns.key("owner")).filter(|v| !v.is_null()),
-                author: ours.remove(&ns.key("author")).filter(|v| !v.is_null()),
-                display_name: take_string(&mut ours, &ns.key("display_name"), path)?,
-                license: take_string(&mut ours, &ns.key("license"), path)?,
-                keywords: take_string_list(&mut ours, &ns.key("keywords"), path)?,
-                category: take_string(&mut ours, &ns.key("category"), path)?,
-                version: take_string(&mut ours, &ns.key("version"), path)?,
-                repository: take_string(&mut ours, &ns.key("repository"), path)?,
-                homepage: take_string(&mut ours, &ns.key("homepage"), path)?,
-            }
+            take_identity(&mut ours, path, ns, kind)?
         } else {
             ContainerIdentity::default()
         };
@@ -534,6 +524,37 @@ impl VaultFrontmatter {
             own_keys,
         })
     }
+}
+
+/// Removes the identity keys the key table lists for `kind` from `ours` and
+/// reads them. A key set to `null` is unset. A key the kind does not read
+/// stays in `ours`, to be reported as unknown.
+///
+/// [`check_shapes`] has already refused a value of the wrong shape, so a key
+/// fails to read here only when the table's shape and the Rust type disagree.
+fn take_identity(
+    ours: &mut Map<String, Value>,
+    path: &Path,
+    ns: &Namespace,
+    kind: EntityKind,
+) -> Result<ContainerIdentity, CoreError> {
+    let mut read = Map::new();
+    for key in crate::keys::identity_keys().filter(|key| crate::keys::lookup(kind, key).is_some()) {
+        let spelled = ns.key(key);
+        let Some(value) = ours.remove(&spelled).filter(|value| !value.is_null()) else {
+            continue;
+        };
+        let one = Map::from_iter([(key.to_owned(), value.clone())]);
+        if let Err(err) = serde_json::from_value::<ContainerIdentity>(Value::Object(one)) {
+            return Err(CoreError::wrong_kind(
+                path,
+                format!("`{spelled}` cannot be read: {err}"),
+            ));
+        }
+        read.insert(key.to_owned(), value);
+    }
+    serde_json::from_value(Value::Object(read))
+        .map_err(|err| CoreError::wrong_kind(path, format!("the identity cannot be read: {err}")))
 }
 
 /// Splits skillwright's keys off `fields` and normalises them onto the flat
@@ -1666,20 +1687,21 @@ mod tests {
             ("repository", [Read, Refused, Refused]),
             ("homepage", [Read, Refused, Refused]),
         ];
-        // Under a namespace every prefixed or nested key reaches the read.
+        // Under a namespace every prefixed or nested key is claimed, and one
+        // the kind does not read warns, whatever its value.
         let sw_market: &[Row] = &[
             ("owner", [Read, Unset, Read]),
             ("author", [Read, Unset, Read]),
             ("display_name", [Read, Refused, Read]),
             ("license", [Read, Refused, Read]),
-            ("keywords", [Read, Refused, Refused]),
-            ("category", [Read, Refused, Read]),
+            ("keywords", [Unknown, Unknown, Unknown]),
+            ("category", [Unknown, Unknown, Unknown]),
             ("version", [Read, Refused, Read]),
             ("repository", [Read, Refused, Refused]),
             ("homepage", [Read, Refused, Refused]),
         ];
         let sw_plugin: &[Row] = &[
-            ("owner", [Read, Unset, Read]),
+            ("owner", [Unknown, Unknown, Unknown]),
             ("author", [Read, Unset, Read]),
             ("display_name", [Read, Refused, Read]),
             ("license", [Read, Refused, Read]),

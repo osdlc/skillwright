@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, PluginOverrides, STAGE_DIR};
-use crate::frontmatter::EntityKind;
+use crate::frontmatter::{ContainerIdentity, EntityKind};
 use crate::harness::{HarnessProfile, PluginDialect, SkillNaming};
 use unicode_normalization::UnicodeNormalization;
 
@@ -419,27 +419,10 @@ fn insert_after(map: &mut Block, after: &str, key: &str, value: serde_json::Valu
 /// added after `license` when the dialect's manifest has the field.
 fn add_links(map: &mut Block, config: &MarketplaceConfig, plugin: &str, harness: &str) {
     let fields = format_of(harness).manifest_fields;
+    let identity = plugin_identity(config, plugin);
     let links = [
-        (
-            "repository",
-            inherited(
-                config,
-                plugin,
-                "repository",
-                |own| &own.identity.repository,
-                |market| &market.identity.repository,
-            ),
-        ),
-        (
-            "homepage",
-            inherited(
-                config,
-                plugin,
-                "homepage",
-                |own| &own.identity.homepage,
-                |market| &market.identity.homepage,
-            ),
-        ),
+        ("repository", identity.repository),
+        ("homepage", identity.homepage),
     ];
     let mut after = "license".to_owned();
     for (key, value) in links {
@@ -508,20 +491,26 @@ pub(crate) fn overrides_for<'a>(
     config.plugins.get(plugin)
 }
 
-/// `plugin`'s value for `key`: its own, then the marketplace's where the key
-/// table says the key inherits. The one reading of a plugin's inherited field.
-pub(crate) fn inherited<T: Clone>(
-    config: &MarketplaceConfig,
-    plugin: &str,
-    key: &str,
-    own: impl Fn(&PluginOverrides) -> &Option<T>,
-    market: impl Fn(&MarketplaceConfig) -> &Option<T>,
-) -> Option<T> {
+/// `plugin`'s identity: its own fields, then the marketplace's where the key
+/// table says a plugin inherits them. The one reading of a plugin's inherited
+/// identity.
+pub(crate) fn plugin_identity(config: &MarketplaceConfig, plugin: &str) -> ContainerIdentity {
+    let mut identity = overrides_for(config, plugin)
+        .map(|overrides| overrides.identity.clone())
+        .unwrap_or_default();
+    identity.fill_unset_from(&config.identity, EntityKind::Plugin);
+    identity
+}
+
+/// `plugin`'s `targets`: its own, else the marketplace's where the key table
+/// says a plugin inherits them. `targets` sits outside the identity, because
+/// every kind reads it.
+pub(crate) fn plugin_targets(config: &MarketplaceConfig, plugin: &str) -> Option<Vec<String>> {
     overrides_for(config, plugin)
-        .and_then(|overrides| own(overrides).clone())
+        .and_then(|overrides| overrides.targets.clone())
         .or_else(|| {
-            crate::keys::inherits(EntityKind::Plugin, key)
-                .then(|| market(config).clone())
+            crate::keys::inherits(EntityKind::Plugin, "targets")
+                .then(|| config.targets.clone())
                 .flatten()
         })
 }
@@ -576,25 +565,13 @@ fn plugin_category(config: &MarketplaceConfig, plugin: &str) -> String {
 }
 
 fn plugin_license(config: &MarketplaceConfig, plugin: &str) -> String {
-    inherited(
-        config,
-        plugin,
-        "license",
-        |own| &own.identity.license,
-        |market| &market.identity.license,
-    )
-    .unwrap_or_else(|| "UNLICENSED".to_owned())
+    plugin_identity(config, plugin)
+        .license
+        .unwrap_or_else(|| "UNLICENSED".to_owned())
 }
 
 fn plugin_author(config: &MarketplaceConfig, plugin: &str) -> Option<serde_json::Value> {
-    inherited(
-        config,
-        plugin,
-        "author",
-        |own| &own.identity.author,
-        |market| &market.identity.author,
-    )
-    .map(normalize_author)
+    plugin_identity(config, plugin).author.map(normalize_author)
 }
 
 /// Claude's plugin schema requires `author` as `{ name, email? }`, but a
