@@ -371,6 +371,8 @@ pub enum ReasonToken {
     MixedFrontmatterShape,
     /// `build.exclude` or a folder that never ships holds the note.
     ExcludedNote,
+    /// The note sits in the vault's build output, which is not a note.
+    BuildOutput,
     /// A member note has a `name` and no `description`.
     MissingDescription,
     /// A member note states no `name`, and the one its file name gives is
@@ -427,6 +429,7 @@ impl ReasonToken {
         Self::EmptyPlugin,
         Self::MixedFrontmatterShape,
         Self::ExcludedNote,
+        Self::BuildOutput,
         Self::Malformed,
         Self::MalformedRootFile,
         Self::MissingDescription,
@@ -454,6 +457,7 @@ impl ReasonToken {
             Self::EmptyPlugin => "empty-plugin",
             Self::MixedFrontmatterShape => "mixed-frontmatter-shape",
             Self::ExcludedNote => "excluded-note",
+            Self::BuildOutput => "build-output",
             Self::Malformed => "malformed",
             Self::MalformedRootFile => "malformed-root-file",
             Self::MissingDescription => crate::discover::MISSING_DESCRIPTION_REASON,
@@ -1329,7 +1333,7 @@ fn no_renderer_for(
 /// `refused: build-output`: the note sits in what a build of the vault owns.
 fn build_output_not_a_note(note_path: &Path) -> CoreError {
     CoreError::refused(
-        "build-output",
+        ReasonToken::BuildOutput.as_str(),
         format!(
             "{} is build output, not a note. Publish the note it was built from. \
              Nothing was written",
@@ -5153,6 +5157,7 @@ mod tests {
                 "empty-plugin",
                 "mixed-frontmatter-shape",
                 "excluded-note",
+                "build-output",
                 "malformed",
                 "malformed-root-file",
                 "missing-description",
