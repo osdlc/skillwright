@@ -2782,3 +2782,75 @@ fn export_into_its_configured_out_still_finds_its_last_build() {
     let again = build_to(&vfs, "/vault/dist", OUT_DIST).unwrap();
     assert!(!again.changed, "{}", as_json(&again));
 }
+
+/// [`OUT_DIST`]'s vault, its skill linking a guide that sits only in the
+/// output, as a note the vault once held.
+fn vault_linking_into_output() -> MemVfs {
+    root_vault(
+        OUT_DIST,
+        &[
+            (
+                "plugins/rev/skills/a.md",
+                "---\ndescription: Use a.\n---\n\nSee [[guide]].\n",
+            ),
+            BUILT_MANIFEST,
+            (BUILT_SKILL, USE_IT),
+            ("dist/moved/rev/guide.md", "Read the diff.\n"),
+        ],
+    )
+}
+
+#[test]
+fn read_notes_hides_the_configured_out() {
+    let vfs = root_vault(
+        OUT_DIST,
+        &[TOOL_SKILL, BUILT_MANIFEST, (BUILT_SKILL, USE_IT)],
+    );
+    let (report, _) =
+        tradecraft_core::model::read_notes(&vfs, Path::new("/vault"), None, &Namespace::bare())
+            .unwrap();
+    let said = as_json(&report);
+    assert!(said.contains("plugins/rev/skills/a.md"), "{said}");
+    assert!(!said.contains("dist/"), "{said}");
+}
+
+#[test]
+fn load_component_hides_the_configured_out() {
+    use tradecraft_core::model::{Cascade, ComponentRequest, load_component};
+    let vfs = vault_linking_into_output();
+    let ns = Namespace::bare();
+    let path = Path::new("/vault/plugins/rev/skills/a.md");
+    let root = Path::new("/vault");
+    let note =
+        tradecraft_core::read_vault_note(&vfs, path, &ns, tradecraft_core::EntityKind::Skill)
+            .unwrap();
+    let cascade =
+        Cascade::above(&vfs, Some(root), path, &MarketplaceConfig::default(), &ns).unwrap();
+    let request = ComponentRequest::new(
+        path,
+        root,
+        tradecraft_core::EntityKind::Skill,
+        "claude",
+        "claude",
+    );
+    let component = load_component(&vfs, &request, &note, &cascade, &ns).unwrap();
+    let said = as_json(&component);
+    assert!(said.contains("plugins/rev/skills/a.md"), "{said}");
+    assert!(!said.contains("dist/"), "{said}");
+}
+
+#[test]
+fn load_plugin_hides_the_configured_out() {
+    use tradecraft_core::model::{Cascade, load_plugin};
+    let vfs = vault_linking_into_output();
+    let ns = Namespace::bare();
+    let root = Path::new("/vault");
+    let note = Path::new("/vault/plugins/rev/rev.md");
+    let cascade =
+        Cascade::above(&vfs, Some(root), note, &MarketplaceConfig::default(), &ns).unwrap();
+    let profile = tradecraft_core::harness::profile_named("claude").unwrap();
+    let pack = load_plugin(&vfs, root, "rev", &cascade, profile, &ns).unwrap();
+    let said = as_json(&pack.plugin);
+    assert!(said.contains("plugins/rev/skills/a.md"), "{said}");
+    assert!(!said.contains("dist/"), "{said}");
+}
