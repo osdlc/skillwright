@@ -703,6 +703,8 @@ pub struct PublishReport {
 ///
 /// # Errors
 ///
+/// * `refused: no-renderer` when the note is the vault's root file or its
+///   workspace file, which configure the vault and are not notes.
 /// * `refused: no-renderer` when the note's resolved kind is none of
 ///   [`EntityKind::Skill`], [`EntityKind::Command`], [`EntityKind::Agent`]
 ///   and [`EntityKind::Plugin`]. Nothing is read past, projected, or written.
@@ -1274,9 +1276,9 @@ fn root_file_not_a_note(note_path: &Path) -> CoreError {
     CoreError::refused(
         "no-renderer",
         format!(
-            "{}: it is the vault's root file, which configures the vault and is not a note — \
+            "{}: it is a root config file, which configures the vault and is not a note — \
              publishing it as a skill would write a `SKILL.md` for something that is not one. \
-             `build` renders a marketplace. Nothing was written",
+             `skillwright build` renders a marketplace. Nothing was written",
             note_path.display(),
         ),
     )
@@ -6399,7 +6401,22 @@ mod tests {
             .to_string();
 
         assert!(err.contains("no-renderer"), "{err}");
-        assert!(err.contains("root file"), "{err}");
+        assert!(err.contains("root config file"), "{err}");
+        assert!(!vfs.exists(Path::new("/dest/.claude")));
+    }
+
+    #[test]
+    fn a_workspace_file_is_refused_when_publishing_from_a_member() {
+        let vfs = vault_with_root_file();
+        let request = PublishRequest {
+            skills_root: Some(PathBuf::from("/vault/marketplaces/m")),
+            ..rooted_request("/vault/skillwright.md")
+        };
+        let err = publish_skill(&vfs, &request, &sw())
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("no-renderer"), "{err}");
         assert!(!vfs.exists(Path::new("/dest/.claude")));
     }
 
