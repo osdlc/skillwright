@@ -1529,7 +1529,7 @@ fn a_ref_baseline_never_checks_out_files_outside_what_the_build_reads() {
 
 // --- The baseline folder, seen from outside the process ---------------------
 
-/// What a run left in the repository and the temp folder.
+/// What a run can leave in the repository.
 #[cfg(unix)]
 #[derive(Debug, PartialEq)]
 struct Leftovers {

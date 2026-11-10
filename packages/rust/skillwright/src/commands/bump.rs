@@ -552,7 +552,7 @@ fn run_changed(
     since: &str,
     scheme: PatchScheme,
 ) -> i32 {
-    // Compares into the baseline, once it is known.
+    // Its `out_root` becomes the baseline once that resolves.
     let mut request = configured_request(run, market, run.vault.clone(), ExportMode::Check);
     // The build's own `packs` check, before a ref is built and its packs are
     // moved to where this config keeps them.
@@ -1029,7 +1029,6 @@ impl BuiltRef {
             );
         }
         let index = built.temp.join("index");
-        // Checks out the path set of `candidates` and returns it.
         let check_out = |candidates| {
             let set = path_set(&repo, &sha, candidates)?;
             check_out_paths(&repo, &sha, &index, &built.checkout, &set).map(|()| set)
@@ -1273,16 +1272,14 @@ fn check_out_paths(
     let mut cmd = literal_git(repo);
     // A private index, so the repository's own is never read or written.
     cmd.env("GIT_INDEX_FILE", index.to_string_lossy())
-        // LFS files stay pointers: nothing is fetched. Defensive; no test
-        // covers it.
+        // LFS files stay pointers: nothing is fetched.
         .env("GIT_LFS_SKIP_SMUDGE", "1")
         .args(&[
             "-c",
             // Runs none of the repository's hooks.
             "core.hooksPath=/dev/null",
             "-c",
-            // A sparse repository does not filter the baseline. Defensive;
-            // no test covers it.
+            // A sparse repository does not filter the baseline.
             "core.sparseCheckout=false",
         ])
         .arg(format!("--work-tree={}", dest.to_string_lossy()))
