@@ -254,7 +254,7 @@ fn held_marketplace(
         .vault
         .join(WORKSPACE_DIR)
         .join(name)
-        .join(ROOT_FILE)
+        .join(tradecraft_core::entry_file(EntityKind::Marketplace, name))
         .is_file()
     {
         return Ok(Some(name.to_owned()));

@@ -425,7 +425,6 @@ fn move_note(
     mode: Mode,
     outcome: &mut Outcome,
 ) -> Result<(), ApplyError> {
-    let root_file = |path: &str| path.rsplit('/').next() == Some(tradecraft_core::ROOT_FILE);
     // The vault's own root file is no folder's entry: moving it would move
     // the vault, and moving a note onto it would replace the vault's config.
     // Compared without case: on a case-insensitive file system, as macOS's
@@ -439,13 +438,18 @@ fn move_note(
     }
     // A marketplace's entry is exactly `marketplaces/<m>/skillwright.md`. Any
     // other `<dir>/skillwright.md`, such as a bundle named `skillwright`, is an
-    // ordinary `<dir>/<dir>.md` bundle entry the relinker moves.
-    let marketplace_entry = |path: &str| tradecraft_core::is_marketplace_entry(Path::new(path));
-    if bundle && (marketplace_entry(from) || marketplace_entry(to)) {
-        if root_file(from) && root_file(to) {
-            return move_marketplace(vault, from, to, mode, outcome);
-        }
-        return move_folder(vault.dir, from, to, mode, outcome);
+    // ordinary `<dir>/<dir>.md` bundle entry the relinker moves. When only one
+    // side is a marketplace entry, the folder moves as it is.
+    let marketplace_entry = |path: &str| {
+        matches!(
+            tradecraft_core::path_role(Path::new(path)),
+            tradecraft_core::PathRole::MarketplaceEntry { .. }
+        )
+    };
+    match (marketplace_entry(from), marketplace_entry(to)) {
+        (true, true) if bundle => return move_marketplace(vault, from, to, mode, outcome),
+        (true, _) | (_, true) if bundle => return move_folder(vault.dir, from, to, mode, outcome),
+        _ => {}
     }
     relink_move(vault, from, to, bundle, mode, outcome)
 }

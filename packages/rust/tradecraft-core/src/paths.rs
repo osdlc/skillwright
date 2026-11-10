@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::discover::KIND_DIRS;
+use crate::discover::{PathRole, path_role, tail};
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
 use crate::namespace::Namespace;
@@ -86,51 +86,34 @@ pub fn resolve_path(path: &str, base: &Path, home: &Path) -> PathBuf {
 /// A `skillwright.md` that sits where a component note sits —
 /// `<kind>/skillwright/skillwright.md`, a plugin or skill named
 /// `skillwright` — is that component's note, not a root file, and the walk
-/// goes past it.
+/// goes past it. So does a reserved `<kind>/skillwright.md` inside a vault.
 pub fn find_root_file(vfs: &dyn Vfs, start: &Path) -> Option<PathBuf> {
     let mut dir = Some(start);
     while let Some(here) = dir {
         let candidate = here.join(ROOT_FILE);
         let is_file = vfs.exists(&candidate) && !vfs.metadata(&candidate).is_ok_and(|m| m.is_dir);
-        // A flat `<kind>/skillwright.md` inside a vault is a refused note,
-        // not a root file; the vault's root file is further up.
-        let note_inside = is_flat_root_file_name(&candidate)
-            && here
-                .parent()
-                .and_then(|up| find_root_file(vfs, up))
-                .and_then(|above| above.parent().map(Path::to_path_buf))
-                .is_some_and(|vault| is_reserved_note(&vault, &candidate));
-        if is_file && !is_component_note(&candidate) && !note_inside {
+        let component = matches!(
+            path_role(&tail(&candidate, 3)),
+            PathRole::ComponentEntry { .. }
+        );
+        // Reserved is decided from the vault root, the root file further up:
+        // the last parts alone cannot show it, as `marketplaces/skills/` is a
+        // member's folder only from there.
+        let reserved = || {
+            path_role(&tail(&candidate, 2)) == PathRole::Reserved
+                && here
+                    .parent()
+                    .and_then(|up| find_root_file(vfs, up))
+                    .and_then(|above| above.parent().map(Path::to_path_buf))
+                    .and_then(|vault| candidate.strip_prefix(vault).ok().map(path_role))
+                    .is_some_and(|role| role == PathRole::Reserved)
+        };
+        if is_file && !component && !reserved() {
             return Some(candidate);
         }
         dir = here.parent();
     }
     None
-}
-
-/// Whether `path` is `<kind>/skillwright/skillwright.md`, a component note
-/// and not a root file. `marketplaces/skillwright/skillwright.md` is not one:
-/// that is the root file of a workspace member named `skillwright`.
-fn is_component_note(path: &Path) -> bool {
-    let folder = path.parent();
-    let named = folder
-        .and_then(Path::file_name)
-        .is_some_and(|name| name == "skillwright");
-    let in_kind = folder
-        .and_then(Path::parent)
-        .and_then(Path::file_name)
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name != WORKSPACE_DIR && KIND_DIRS.iter().any(|(dir, _)| *dir == name));
-    named && in_kind
-}
-
-/// Whether `path`, under the vault at `vault`, is a reserved note: a
-/// `skillwright.md` directly inside a kind folder, such as
-/// `skills/skillwright.md`. `marketplaces/<m>/skillwright.md` is never one,
-/// even when `<m>` is a kind folder's name: that is a marketplace's own file.
-fn is_reserved_note(vault: &Path, path: &Path) -> bool {
-    let relative = path.strip_prefix(vault).unwrap_or(path);
-    is_flat_root_file_name(path) && !is_marketplace_entry(relative)
 }
 
 /// Whether `path` is a root config file for the vault at `vault`: its own
@@ -147,27 +130,6 @@ pub(crate) fn is_vault_root_file(vfs: &dyn Vfs, vault: &Path, path: &Path) -> bo
     let path = real(path);
     path == real(&vault.join(ROOT_FILE))
         || workspace_at(vfs, vault).is_some_and(|at| path == real(&at.file))
-}
-
-/// Whether the vault-relative `path` is a marketplace's entry note,
-/// `marketplaces/<m>/skillwright.md`: directly inside a folder of the
-/// workspace folder, whatever `<m>` is called. No other `skillwright.md`
-/// below the vault root is one.
-pub fn is_marketplace_entry(path: &Path) -> bool {
-    let parts: Vec<_> = path.components().collect();
-    parts.len() == 3 && parts[0].as_os_str() == WORKSPACE_DIR && parts[2].as_os_str() == ROOT_FILE
-}
-
-/// Whether `path` is a `skillwright.md` directly inside a folder named after a
-/// kind folder. Discovery refuses it unless it is a marketplace's file, which
-/// discovery places as one before it gets here.
-pub(crate) fn is_flat_root_file_name(path: &Path) -> bool {
-    path.file_name().is_some_and(|name| name == ROOT_FILE)
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| KIND_DIRS.iter().any(|(dir, _)| *dir == name))
 }
 
 /// The workspace root file above the marketplace whose root is `dir`, when
@@ -620,6 +582,31 @@ mod tests {
         assert_eq!(
             find_root_file(&vfs, Path::new("/v/marketplaces/skillwright")),
             Some(PathBuf::from("/v/marketplaces/skillwright/skillwright.md"))
+        );
+    }
+
+    #[test]
+    fn the_walk_up_passes_a_reserved_note() {
+        let vfs = MemVfs::new();
+        put(&vfs, "/v/skills/skillwright.md");
+        put(&vfs, "/v/skillwright.md");
+        assert_eq!(
+            find_root_file(&vfs, Path::new("/v/skills")),
+            Some(PathBuf::from("/v/skillwright.md"))
+        );
+    }
+
+    #[test]
+    fn a_nested_marketplace_file_is_a_root_file_to_the_walk() {
+        let vfs = MemVfs::new();
+        put(&vfs, "/v/skillwright.md");
+        put(&vfs, "/v/marketplaces/a/skillwright.md");
+        put(&vfs, "/v/marketplaces/a/marketplaces/b/skillwright.md");
+        assert_eq!(
+            find_root_file(&vfs, Path::new("/v/marketplaces/a/marketplaces/b")),
+            Some(PathBuf::from(
+                "/v/marketplaces/a/marketplaces/b/skillwright.md"
+            ))
         );
     }
 

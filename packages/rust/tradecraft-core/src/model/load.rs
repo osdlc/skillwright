@@ -211,7 +211,9 @@ pub fn load(
     let skipped: Vec<&SkippedNote> = scan
         .skipped
         .iter()
-        .filter(|note| note.path != crate::settings::ROOT_FILE)
+        .filter(|note| {
+            crate::discover::path_role(Path::new(&note.path)) != crate::discover::PathRole::RootFile
+        })
         .collect();
     if !skipped.is_empty() {
         let (token, which) = skipped_wording(skipped.iter().copied());
@@ -1156,7 +1158,10 @@ fn missing_versions(
         .map(|name| {
             if implicit(name) {
                 let file = match market {
-                    Some(m) => format!("{WORKSPACE_DIR}/{m}/{}", crate::settings::ROOT_FILE),
+                    Some(m) => format!(
+                        "{WORKSPACE_DIR}/{m}/{}",
+                        crate::discover::entry_file(EntityKind::Marketplace, m)
+                    ),
                     None => crate::settings::ROOT_FILE.to_owned(),
                 };
                 return DiscoveryWarning {

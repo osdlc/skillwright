@@ -235,7 +235,10 @@ fn marketplace_notes(
     let folder = root.join(crate::paths::WORKSPACE_DIR);
     let mut files = Vec::new();
     for entry in vfs.read_dir(&folder).unwrap_or_default() {
-        let note = folder.join(&entry.name).join(ROOT_FILE);
+        let note = folder.join(&entry.name).join(crate::discover::entry_file(
+            EntityKind::Marketplace,
+            &entry.name,
+        ));
         if entry.is_dir && vfs.exists(&note) {
             files.push(note);
         }

@@ -995,7 +995,7 @@ fn plan_one(
     // The entry note lands at `<name>.md` beside the resources, so a resource
     // already there would be overwritten. Compared case-insensitively for
     // case-folding filesystems.
-    let entry_rel = format!("{name}.md");
+    let entry_rel = crate::discover::entry_file(EntityKind::Skill, &name);
     let entry_rel_lower = entry_rel.to_lowercase();
     if let Some(clash) = resource_paths
         .iter()

@@ -876,7 +876,9 @@ fn discover_with(
             }
             continue;
         };
-        if placement.dir.is_none() && crate::paths::is_flat_root_file_name(entry_path) {
+        // The real folder decides, not the one a pattern maps it to: a
+        // `my-skills/skillwright.md` read as a skill is not reserved.
+        if placement.dir.is_none() && path_role(&tail(entry_path, 2)) == PathRole::Reserved {
             let err = CoreError::refused(
                 RESERVED_NAME_REASON,
                 "`skillwright.md` is reserved for the root file and marketplace notes. For a \
@@ -1455,11 +1457,113 @@ pub const RESERVED_NAME_REASON: &str = "reserved-name";
 pub const SKILL_ENTRY: &str = "SKILL.md";
 
 /// Is `file` the entry note of the folder `name`, for a component of `kind`?
+/// It reads every spelling [`entry_file`] writes, and more: `review.MD`, and
+/// `SKILL.md` for a skill.
 pub(crate) fn is_entry(file: &str, name: &str, kind: EntityKind) -> bool {
     if kind == EntityKind::Marketplace {
-        return file == crate::settings::ROOT_FILE;
+        return file == entry_file(kind, name);
     }
     md_stem(file) == Some(name) || (kind == EntityKind::Skill && is_skill_entry(file))
+}
+
+/// The entry file a bundled component of `kind` named `name` is written as:
+/// `skillwright.md` for a marketplace, `<name>.md` otherwise. This is the one
+/// way to write an entry path. Reading accepts more ([`path_role`]).
+pub fn entry_file(kind: EntityKind, name: &str) -> String {
+    if kind == EntityKind::Marketplace {
+        crate::settings::ROOT_FILE.to_owned()
+    } else {
+        format!("{name}.md")
+    }
+}
+
+/// What a vault-relative path is, by its shape.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathRole {
+    /// `skillwright.md` at the vault root.
+    RootFile,
+    /// `marketplaces/<name>/skillwright.md` at the vault root: a workspace
+    /// member.
+    MarketplaceEntry {
+        /// The marketplace's folder.
+        name: String,
+    },
+    /// A component's entry at any depth the scan reads: `<kind>/<name>.md`
+    /// (`bundled: false`) or `<kind>/<name>/<entry>` (`bundled: true`). A
+    /// marketplace placed below the top, such as
+    /// `plugins/p/marketplaces/m/skillwright.md`, is this, with
+    /// `kind: Marketplace`.
+    ComponentEntry {
+        /// What the kind folder holds.
+        kind: EntityKind,
+        /// The component's folder or file stem.
+        name: String,
+        /// Whether the component owns its folder.
+        bundled: bool,
+    },
+    /// A `skillwright.md` directly in a kind folder: refused as a note, never
+    /// a root file.
+    Reserved,
+    /// Anything else.
+    Other,
+}
+
+/// What the vault-relative, conventional `rel` is: the one answer to "what is
+/// this `skillwright.md`". Lexical; reads nothing, and no `build.patterns`.
+/// It follows the scan's shape rule, except that a marketplace entry is a
+/// [`PathRole::MarketplaceEntry`] only at the top.
+pub fn path_role(rel: &Path) -> PathRole {
+    use std::path::Component;
+    let root_file = crate::settings::ROOT_FILE;
+    let mut parts = Vec::new();
+    for component in rel.components() {
+        match component {
+            Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
+            Component::CurDir => {}
+            _ => return PathRole::Other,
+        }
+    }
+    let file = parts.last().map(String::as_str);
+    if parts.len() == 1 && file == Some(root_file) {
+        return PathRole::RootFile;
+    }
+    if let Some(Placement {
+        name,
+        kind: Some(kind),
+        dir,
+        ..
+    }) = classify(Path::new(""), &parts)
+    {
+        return if kind == EntityKind::Marketplace && parts.len() == 3 {
+            PathRole::MarketplaceEntry { name }
+        } else if dir.is_none() && file == Some(root_file) {
+            PathRole::Reserved
+        } else {
+            PathRole::ComponentEntry {
+                kind,
+                name,
+                bundled: dir.is_some(),
+            }
+        };
+    }
+    let in_kind_folder = parts
+        .len()
+        .checked_sub(2)
+        .is_some_and(|i| kind_dir(&parts[i]).is_some());
+    if file == Some(root_file) && in_kind_folder {
+        return PathRole::Reserved;
+    }
+    PathRole::Other
+}
+
+/// The last `n` named parts of `path`, as a relative path.
+pub(crate) fn tail(path: &Path, n: usize) -> PathBuf {
+    let parts: Vec<_> = path
+        .components()
+        .filter(|c| matches!(c, std::path::Component::Normal(_)))
+        .collect();
+    parts[parts.len().saturating_sub(n)..].iter().collect()
 }
 
 /// `SKILL.md`, case-insensitively, as `md_stem` reads every other note.
@@ -1471,6 +1575,7 @@ pub fn is_skill_entry(file: &str) -> bool {
 /// component that owns its directory, by the same shape rule the scan reads
 /// (`classify`). A note directly inside a kind folder travels alone, whatever
 /// it is named. `None` for a path the rule gives no shape at all.
+/// [`path_role`] answers the same question for `skillwright.md` paths.
 pub(crate) fn is_bundle_entry(rel: &str) -> Option<bool> {
     let parts: Vec<String> = rel.split('/').map(str::to_owned).collect();
     classify(Path::new(""), &parts).map(|placement| placement.dir.is_some())
@@ -1771,10 +1876,8 @@ pub(crate) fn container_notes(root: &Path, entry: &Path) -> Vec<PathBuf> {
             break;
         };
         dir = dir.join(folder).join(name);
-        if kind == EntityKind::Marketplace {
-            notes.push(dir.join(crate::settings::ROOT_FILE));
-        } else if kind.holds_components() {
-            notes.push(dir.join(format!("{name}.md")));
+        if kind == EntityKind::Marketplace || kind.holds_components() {
+            notes.push(dir.join(entry_file(kind, name)));
         }
     }
     notes
@@ -2005,6 +2108,79 @@ mod tests {
     // Only the tests that need a real filesystem (unix: symlinks) use it.
     #[cfg(unix)]
     use crate::vfs::NativeVfs;
+
+    #[test]
+    fn path_role_reads_every_shape() {
+        use EntityKind::{Marketplace, Plugin, Skill};
+        let entry = |kind, name: &str, bundled| PathRole::ComponentEntry {
+            kind,
+            name: name.to_owned(),
+            bundled,
+        };
+        let market = |name: &str| PathRole::MarketplaceEntry {
+            name: name.to_owned(),
+        };
+        let table = [
+            ("skillwright.md", PathRole::RootFile),
+            ("marketplaces/acme/skillwright.md", market("acme")),
+            (
+                "marketplaces/skillwright/skillwright.md",
+                market("skillwright"),
+            ),
+            ("marketplaces/skills/skillwright.md", market("skills")),
+            (
+                "plugins/skillwright/skillwright.md",
+                entry(Plugin, "skillwright", true),
+            ),
+            (
+                "marketplaces/a/plugins/p/skills/skillwright/skillwright.md",
+                entry(Skill, "skillwright", true),
+            ),
+            ("skills/s/SKILL.md", entry(Skill, "s", true)),
+            ("skills/s.md", entry(Skill, "s", false)),
+            (
+                "plugins/p/marketplaces/m/skillwright.md",
+                entry(Marketplace, "m", true),
+            ),
+            (
+                "marketplaces/a/marketplaces/b/skillwright.md",
+                entry(Marketplace, "b", true),
+            ),
+            ("skills/skillwright.md", PathRole::Reserved),
+            ("plugins/skillwright.md", PathRole::Reserved),
+            ("marketplaces/skillwright.md", PathRole::Reserved),
+            ("docs/skillwright.md", PathRole::Other),
+            ("skillwright/skillwright.md", PathRole::Other),
+            ("notes/a.md", PathRole::Other),
+        ];
+        for (rel, role) in table {
+            assert_eq!(path_role(Path::new(rel)), role, "{rel}");
+        }
+    }
+
+    #[test]
+    fn entry_file_round_trips_through_path_role() {
+        for (dir, kind) in KIND_DIRS {
+            let file = entry_file(*kind, "n");
+            let rel = format!("{dir}/n/{file}");
+            let role = path_role(Path::new(&rel));
+            let expected = if *kind == EntityKind::Marketplace {
+                PathRole::MarketplaceEntry {
+                    name: "n".to_owned(),
+                }
+            } else {
+                PathRole::ComponentEntry {
+                    kind: *kind,
+                    name: "n".to_owned(),
+                    bundled: true,
+                }
+            };
+            assert_eq!(role, expected, "{rel}");
+            assert!(is_entry(&file, "n", *kind), "{rel}");
+        }
+        assert!(is_entry("review.MD", "review", EntityKind::Skill));
+        assert!(is_entry("SKILL.md", "review", EntityKind::Skill));
+    }
 
     fn sw() -> Namespace {
         Namespace::sw()

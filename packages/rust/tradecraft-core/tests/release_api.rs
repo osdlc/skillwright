@@ -2614,3 +2614,59 @@ fn load_marketplace_through_a_linked_member_folds_its_workspace() {
     assert_eq!(loaded.dir, link);
     assert_eq!(loaded.root.marketplace.license.as_deref(), Some("MIT"));
 }
+
+/// Discovery's reserved-name refusal reads the folder a `skillwright.md`
+/// sits in: a marketplace named `skillwright` is a marketplace, and a
+/// pattern-mapped folder is not a kind folder.
+#[test]
+fn a_skillwright_md_is_reserved_only_directly_in_a_kind_folder() {
+    let reserved = |scan: &tradecraft_core::DiscoveryReport| {
+        scan.skipped
+            .iter()
+            .filter(|s| s.reason.contains("reserved-name"))
+            .map(|s| s.path.clone())
+            .collect::<Vec<_>>()
+    };
+    let vfs = MemVfs::new();
+    write(&vfs, "/vault/skillwright.md", "---\nname: v\n---\n");
+    write(
+        &vfs,
+        "/vault/marketplaces/skillwright/skillwright.md",
+        "---\nname: skillwright\n---\n",
+    );
+    write(
+        &vfs,
+        "/vault/marketplaces/skillwright/skills/a.md",
+        "---\ndescription: A.\n---\n",
+    );
+    let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    assert!(reserved(&scan).is_empty(), "{:?}", scan.skipped);
+    assert!(
+        scan.components.iter().any(|c| c.vault_relative_path
+            == "marketplaces/skillwright/skillwright.md"
+            && c.kind == tradecraft_core::EntityKind::Marketplace),
+        "{:?}",
+        scan.components
+    );
+
+    let vfs = MemVfs::new();
+    write(
+        &vfs,
+        "/vault/skillwright.md",
+        "---\nname: v\nbuild:\n  patterns:\n    skills: my-skills/*\n---\n",
+    );
+    write(
+        &vfs,
+        "/vault/my-skills/skillwright.md",
+        "---\ndescription: Named skillwright.\n---\n",
+    );
+    write(&vfs, "/vault/my-skills/b.md", "---\ndescription: B.\n---\n");
+    let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
+    let paths: Vec<&str> = scan
+        .components
+        .iter()
+        .map(|c| c.vault_relative_path.as_str())
+        .collect();
+    assert!(reserved(&scan).is_empty(), "{:?}", scan.skipped);
+    assert!(paths.contains(&"my-skills/skillwright.md"), "{paths:?}");
+}
