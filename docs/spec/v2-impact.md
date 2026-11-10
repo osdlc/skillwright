@@ -110,8 +110,9 @@ amendment too: its patterns layer is gone.
   where the linking file lands. `own_folder_candidate`
   and the `references/vault/` and `assets/vault/` placements go.
   `vault_link_index` indexes one plugin, not the vault. A real-path
-  containment check is added beside `refuse_never_shipped`. The skill
-  mention (`skill_mention`) stays under D3. In `replace_token`, an embed or link to
+  containment check is added beside `refuse_never_shipped`. `skill_mention`
+  goes (D3): a plain link to a skill's note is an ordinary link, plus a
+  "Did you mean to call" warning. In `replace_token`, an embed or link to
   nothing becomes an error instead of an entry in `unresolved`, and a
   non-note, non-image embed is refused under D8. Embed expansion,
   `select_fragment` and the cycle check stay as they are.
@@ -205,7 +206,7 @@ amendment too: its patterns layer is gone.
 
 | PR | Verdict | Reason |
 |---|---|---|
-| [#136](https://github.com/osdlc/skillwright/pull/136) self-link as a skill link | Merge as is | Rendering and the leftover-`[[` check, which `build` keeps. [#138](https://github.com/osdlc/skillwright/pull/138) stacks on it. |
+| [#136](https://github.com/osdlc/skillwright/pull/136) self-link as a skill link | Merge as is | Its `\[[` escape and leftover-`[[` checks stay in v2. Its self-link-as-name rendering does not survive D3, and commit 5 replaces it. [#138](https://github.com/osdlc/skillwright/pull/138) stacks on it. |
 | [#138](https://github.com/osdlc/skillwright/pull/138) key table and harness profile own their facts | Merge, v2 builds on it | v2's root-file key check and its smaller key set come from the key table this PR builds. |
 | [#143](https://github.com/osdlc/skillwright/pull/143) one identity struct | Merge, v2 builds on it | The struct and key-table inheritance carry v2's root, marketplace, plugin, component cascade. Merge after [#138](https://github.com/osdlc/skillwright/pull/138). |
 | [#139](https://github.com/osdlc/skillwright/pull/139) bump checks out only what the build reads | Merge as is | `bump --changed-since` stays in v2, and this is a self-contained speed-up of it. v2 later shrinks its path set to `skillwright.md` and `marketplaces/`. |
@@ -232,7 +233,7 @@ leaves out. It stays open.
 | [#77](https://github.com/osdlc/skillwright/issues/77) `resolve_run` should call `load_marketplace` | Changed | Still one loader, written fresh in v2. Close when it lands. |
 | [#76](https://github.com/osdlc/skillwright/issues/76) one root-file and workspace loader | Changed | No workspace fold. Parse-once still applies. |
 | [#83](https://github.com/osdlc/skillwright/issues/83) path-guard and globset | Changed | The output-overlap check goes. Link containment by real path is new work for path-guard. With D5 the glob half goes. |
-| [#53](https://github.com/osdlc/skillwright/issues/53) a skill's link to itself | Keep | Rendering. [#136](https://github.com/osdlc/skillwright/pull/136) does it. |
+| [#53](https://github.com/osdlc/skillwright/issues/53) a skill's link to itself | Moot under D3 | It asks for the skill's name in place of a file link. Under D3 a plain link stays a link. |
 | [#50](https://github.com/osdlc/skillwright/issues/50) compile scans bodies twice | Keep | Compile stays. |
 | [#47](https://github.com/osdlc/skillwright/issues/47) leftover `[[` check gaps | Keep | Compile stays. |
 | [#46](https://github.com/osdlc/skillwright/issues/46) valid Markdown refused as leftover `[[` | Keep | Compile stays. |
@@ -304,8 +305,9 @@ The commits, in order:
    and the embed rules of section 5. Test first, through `build`, one test per
    rule in sections 4 and 5: a symlink in a skill folder pointing out of the
    marketplace is refused; a link from a skill to the plugin's
-   `references/x.md` renders as `../../references/x.md`; a link to a sibling
-   skill's note renders as that skill's name per harness (D3); a link to
+   `references/x.md` renders as `../../references/x.md`; `[[setup]]` from a
+   sibling skill renders as `[setup](../setup/SKILL.md)` and warns
+   `Did you mean to call /[[setup]]?` (D3); a link to
    another plugin is refused; a heading embed inlines the section with its
    subsections; a block embed inlines the block without its marker; a missing
    heading is `fragment-unresolved`; a nested embed's link is written
@@ -318,7 +320,8 @@ The commits, in order:
    folder, links up to the pack root need another form for Codex.
 6. **`init`, `bump`, docs and the repo's plugin.** `init` writes the skeleton;
    `bump` by name and `--changed-since` on the new layout; the reference docs
-   and README; `plugin/` moved and its two workflows updated. Test first:
+   and README; `plugin/` moved and its two workflows updated; the `author`
+   skill's text on plain skill links rewritten for D3. Test first:
    `init` in an empty folder writes the three notes and a `build` of it
    succeeds; `init` refuses a folder with `skillwright.md`; `bump <plugin>`
    and `bump <m>` write the right note; `bump --changed-since` bumps only a
