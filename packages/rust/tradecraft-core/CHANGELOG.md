@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.48.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.47.0...tradecraft-core/v0.48.0) - 2026-11-10
+
 ### Breaking
 
 Behaviour:
