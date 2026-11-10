@@ -76,8 +76,8 @@ A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-v
 - A `[[` that is not a link, such as `[[TODO`, is an error, `unresolved-syntax`. Write `\[[` to
   keep the brackets as text. The backslash ships too, and CommonMark shows `\[[` as `[[`. Code
   needs no escape.
-- A resource's frontmatter ships as written, so a link there is not resolved. A quoted
-  `"[[link]]"` there is an error; move the link into the body.
+- A resource's frontmatter ships as written, so a link there is not resolved. A link in a
+  frontmatter string, such as `related: "[[link]]"`, is an error; move the link into the body.
 - A bare `[[name]]` that matches files in several folders resolves to the one match under the
   note's own folder, such as a file in the skill's `references/`. Otherwise it is an error,
   `link-ambiguous`; write more of the path to choose one.
