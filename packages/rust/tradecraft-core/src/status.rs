@@ -31,7 +31,7 @@ use crate::publish::{
     PublishMode, PublishOutcome, PublishRequest, PublishStatus, PublishedFile, publish_kind,
     publish_skill,
 };
-use crate::source_view::{SourceView, VaultScope, notes_view};
+use crate::source_view::notes_over;
 use crate::vault::read_vault_note;
 use crate::vfs::Vfs;
 
@@ -249,12 +249,7 @@ pub fn status_of(
     // no note any more.
     let missing_notes: Vec<String> = match request.skills_root.as_deref() {
         Some(root) => {
-            let notes = notes_view(
-                SourceView::over(vfs),
-                VaultScope::new(root),
-                request.config.as_ref(),
-                ns,
-            );
+            let notes = notes_over(vfs, root, None, request.config.as_ref(), ns);
             contributing_notes
                 .iter()
                 .filter(|note| !notes.exists(&root.join(note)))

@@ -194,7 +194,7 @@ use crate::model::Cascade;
 use crate::model::load::{ComponentRequest, load_component, load_plugin};
 use crate::namespace::Namespace;
 use crate::projection::{ProjectedFile, RedundantOverride, file_hash};
-use crate::source_view::{SourceView, VaultScope, notes_view};
+use crate::source_view::{SourceView, notes_over};
 use crate::vault::read_vault_note;
 use crate::vfs::{PreviewVfs, Vfs};
 
@@ -766,12 +766,7 @@ fn publish_onto(
     // Notes are read through `notes`, which hides the vault's build output.
     // The destination is read and written through `vfs`.
     let notes = match request.skills_root.as_deref() {
-        Some(root) => notes_view(
-            SourceView::over(vfs),
-            VaultScope::new(root),
-            request.config.as_ref(),
-            ns,
-        ),
+        Some(root) => notes_over(vfs, root, None, request.config.as_ref(), ns),
         None => SourceView::over(vfs),
     };
     let runtime_target = runtime_target_for(&request.target);

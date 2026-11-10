@@ -527,11 +527,10 @@ pub fn load_component(
     ns: &Namespace,
 ) -> Result<Component, CoreError> {
     let notes = notes_over(vfs, request.root, None, None, ns);
-    let vfs: &dyn Vfs = &notes;
     let blocks = crate::publish::overrides_for(&note.frontmatter, request.path, request.kind, ns)?;
     let targets: OnceCell<BTreeMap<PathBuf, Option<Vec<String>>>> = OnceCell::new();
     let build = || -> Result<SkillIndex, CoreError> {
-        let (mut scan, _) = read_notes_in(vfs, request.root, None, ns)?;
+        let (mut scan, _) = read_notes_in(&notes, request.root, None, ns)?;
         cascade.resolve_targets(&mut scan.components);
         let built = skill_index(scan.components.iter().map(|c| (c, None)), None);
         let _ = targets.set(built.targets);
@@ -548,7 +547,7 @@ pub fn load_component(
     )?;
     refuse_invalid_names([&discovered])?;
     let (mut resolved, content) = resolve_compiled(
-        vfs,
+        &notes,
         request.root,
         &discovered,
         note,
@@ -619,10 +618,9 @@ pub fn load_plugin(
 ) -> Result<Pack, CoreError> {
     crate::harness::manifest::check_block_values(&cascade.config)?;
     let notes = notes_over(vfs, vault_root, None, None, ns);
-    let vfs: &dyn Vfs = &notes;
     let canonical = profile.name;
     let carries_commands = profile.format().carries_commands;
-    let (mut scan, links) = read_notes_in(vfs, vault_root, None, ns)?;
+    let (mut scan, links) = read_notes_in(&notes, vault_root, None, ns)?;
     cascade.resolve_targets(&mut scan.components);
     // A note elsewhere in the vault that does not parse is not this pack's
     // problem, and a shared vault always holds one. A note this pack holds
@@ -708,11 +706,11 @@ pub fn load_plugin(
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for member in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
-        let mut note = read_vault_note(vfs, &member.discovered.entry_path, ns, member.kind)?;
+        let mut note = read_vault_note(&notes, &member.discovered.entry_path, ns, member.kind)?;
         cascade.apply(&mut note, member.kind, Some(plugin_name), ns);
         member.extensions = extensions(&note.frontmatter, &member.discovered, ns)?;
         let (resolved, content) = resolve_body(
-            vfs,
+            &notes,
             vault_root,
             &member.discovered,
             &note,
@@ -747,8 +745,8 @@ pub fn load_plugin(
                 .unwrap_or(relative);
             plugin.assets.push(Asset {
                 dest: dest.to_owned(),
-                bytes: vfs.read_file(&from)?,
-                executable: vfs.is_executable(&from),
+                bytes: notes.read_file(&from)?,
+                executable: notes.is_executable(&from),
             });
         }
     }
