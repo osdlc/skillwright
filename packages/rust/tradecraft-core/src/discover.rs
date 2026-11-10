@@ -563,11 +563,11 @@ impl DiscoveryWarning {
     /// Whether a build refuses the note this names, rather than ships it: a
     /// member with no description, or a path collision.
     pub fn is_error(&self) -> bool {
-        [
-            MISSING_DESCRIPTION_REASON,
-            crate::publish::ReasonToken::PathCollision.as_str(),
-        ]
-        .contains(&self.reason.as_str())
+        use crate::publish::ReasonToken;
+        matches!(
+            ReasonToken::parse(&self.reason),
+            Some(ReasonToken::MissingDescription | ReasonToken::PathCollision)
+        )
     }
 }
 

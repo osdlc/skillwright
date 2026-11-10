@@ -3483,6 +3483,16 @@ fn publish_refuses_a_missing_description() {
     );
     assert!(!dest.exists());
 
+    // Several notes by path: refused as a whole, as the vault is.
+    let some = publish(&["skills/said/said.md", "skills/quiet/quiet.md"]);
+    assert_eq!(some.code, 2, "{}", some.stderr);
+    assert!(
+        some.stderr.contains("missing-description"),
+        "{}",
+        some.stderr
+    );
+    assert!(!dest.exists());
+
     // One note by its path: refused, and nothing written for it.
     let one = publish(&["skills/quiet/quiet.md"]);
     assert_eq!(one.code, 1, "{}", one.stderr);

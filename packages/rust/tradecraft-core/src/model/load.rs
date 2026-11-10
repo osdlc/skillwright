@@ -31,7 +31,7 @@ use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, KIND_DIRS, MISSING_DESCRIPTION_REASON,
     NEVER_SHIPS_REASON, NO_COMPONENT_KEYS_REASON, SkippedNote, UNKNOWN_KEY_REASON, discover_in,
-    load_source, needs_description, refuse_undescribed,
+    load_source, refuse_undescribed,
 };
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
@@ -493,9 +493,6 @@ pub fn load_component(
     cascade: &Cascade,
     ns: &Namespace,
 ) -> Result<Component, CoreError> {
-    if note.projection.content.description.is_empty() && needs_description(request.kind) {
-        refuse_undescribed([vault_relative(request.root, request.path).as_str()])?;
-    }
     let blocks = crate::publish::overrides_for(&note.frontmatter, request.path, request.kind, ns)?;
     let targets: OnceCell<BTreeMap<PathBuf, Option<Vec<String>>>> = OnceCell::new();
     let build = || -> Result<SkillIndex, CoreError> {
@@ -509,6 +506,9 @@ pub fn load_component(
     let implicit = matches!(request.kind, EntityKind::Skill | EntityKind::Command);
     let calls = recording_context(SkillSource::lazy(&build), implicit, &record);
     let discovered = standalone(request, note);
+    if discovered.lacks_description() {
+        refuse_undescribed([discovered.vault_relative_path.as_str()])?;
+    }
     let (mut resolved, content) = resolve_compiled(
         vfs,
         request.root,
