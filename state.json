@@ -1,12 +1,156 @@
 {
   "schema": 1,
   "pr": 99,
-  "head": null,
-  "base": null,
-  "round": 0,
+  "head": "a5632f8ae854f6ed50742cfe2010f09227d61ee3",
+  "base": "8a932fac79cdb31b6b5c7b242273274803071e2c",
+  "round": 1,
   "claim": {
     "owner": "Mac.local:claude-r7q2vm",
     "at": "2026-11-10T04:21:27.707Z"
   },
-  "findings": []
+  "findings": [
+    {
+      "id": "r1-1",
+      "round": 1,
+      "path": ".github/workflows/harness-knowledge.yml",
+      "line": 52,
+      "title": "Release tag uses the run date, so a rerun on another UTC day is not idempotent",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-2",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/knowledge.rs",
+      "line": 770,
+      "title": "Rust tests read version-cases.json but rust.yml's changes filter does not include it",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-3",
+      "round": 1,
+      "path": "harness-reference/src/compile/embedded.test.ts",
+      "line": 14,
+      "title": "harness-reference.yml path filter misses the embedded data file this test guards",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-4",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 852,
+      "title": "plugin_format doc says a custom row is resolved once per call; it is cached",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-5",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/profile.rs",
+      "line": 72,
+      "title": "Source::Constant doc omits the knowledge-disagrees case the codex and cursor rows use",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-6",
+      "round": 1,
+      "path": "docs/decisions/D-QXRN-harness-facts-from-knowledge.md",
+      "line": 26,
+      "title": "D-QXRN lists two of the kept constants and pins them with 'today'",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-7",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/mod.rs",
+      "line": 10,
+      "title": "pub mod knowledge publishes the whole lookup API with no consumer outside the crate",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-8",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/knowledge.rs",
+      "line": 533,
+      "title": "semver_precedence_follows_the_spec repeats cases the shared semverOrder file should own",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-9",
+      "round": 1,
+      "path": "packages/rust/tradecraft-core/src/harness/knowledge.rs",
+      "line": 19,
+      "title": "522 KB pretty-printed knowledge file embedded and parsed whole for five subjects",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-10",
+      "round": 1,
+      "path": ".github/workflows/harness-knowledge.yml",
+      "line": 13,
+      "title": "Any harness-reference change cuts a release, including ones that cannot change the compiled file",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-11",
+      "round": 1,
+      "path": ".github/workflows/harness-knowledge.yml",
+      "line": 14,
+      "title": "workflow_dispatch can release from any branch",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-12",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "profile.rs module and HarnessProfile docs still say the rows carry a PluginFormat",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    },
+    {
+      "id": "r1-13",
+      "round": 1,
+      "path": null,
+      "line": null,
+      "title": "PluginFormat::user_skills_dir doc contradicted by the claude and cursor rows",
+      "comment": null,
+      "status": "open",
+      "reason": null,
+      "fixedIn": null
+    }
+  ]
 }
