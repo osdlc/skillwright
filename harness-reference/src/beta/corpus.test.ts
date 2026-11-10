@@ -117,4 +117,38 @@ describe('documents.schema.md doi', () => {
     ])
       assert.ok(!pattern.test(bad), bad)
   })
+
+  test('kind: a standard has no surfaces or cli, and a harness needs surfaces', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-reference-beta-'))
+    try {
+      cpSync(beta, dir, { recursive: true })
+      const edit = (rel: string, from: string, to: string): void => {
+        const file = join(dir, rel)
+        const text = readFileSync(file, 'utf8')
+        assert.ok(text.includes(from), `${rel} has no "${from}"`)
+        writeFileSync(file, text.replace(from, to))
+      }
+      const errors = (): string[] => validateCorpus(dir).errors
+      assert.deepEqual(errors(), [])
+      edit('harnesses/Agent Skills.md', 'status: current', 'status: current\nsurfaces: [cli]')
+      assert.ok(
+        errors().some((e) => e.includes('harnesses/Agent Skills.md')),
+        'surfaces on a standard',
+      )
+      edit('harnesses/Agent Skills.md', 'surfaces: [cli]', 'cli: skills')
+      assert.ok(
+        errors().some((e) => e.includes('harnesses/Agent Skills.md')),
+        'cli on a standard',
+      )
+      edit('harnesses/Agent Skills.md', 'cli: skills\n', '')
+      assert.deepEqual(errors(), [])
+      edit('harnesses/Pi.md', 'surfaces: [cli]\n', '')
+      assert.ok(
+        errors().some((e) => e.includes('harnesses/Pi.md')),
+        'harness without surfaces',
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

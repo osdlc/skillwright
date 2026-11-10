@@ -26,13 +26,13 @@ A vault is a folder of markdown notes. Where a note sits decides what it is:
 
 The folder alone decides what a note is and which plugin it joins. A `skills/` folder at the top is
 a plugin named after the marketplace. A note under no kind folder is a resource or the author's own
-writing, and is never published. `docs/`, `tests/` and `fixtures/` never ship. A plugin named `docs` or `tests` ships normally, and a plugin note's `name` must match its folder.
+writing, and is not part of the vault: only `publish <path>` publishes it, as a skill. `docs/`, `tests/` and `fixtures/` never ship. A plugin named `docs` or `tests` ships normally, and a plugin note's `name` must match its folder.
 
 ## Frontmatter
 
-- `description` opts a note in. A note with neither `name` nor `description` is skipped. One with a
-  `name` only is published with a filler and a warning, or refused under
-  `build.require_descriptions`. Write it in the third person: what
+- `description` opts a note in. A note with neither `name` nor `description` is skipped. A
+  skill, command or agent with a `name` only is an error, and `build` and `publish` refuse it.
+  Write it in the third person: what
   the skill does and when to use it. The limit is 1024 characters.
 - `name` is optional and defaults to the file name. Names are lowercase words joined by hyphens,
   at most 64 characters.

@@ -123,10 +123,6 @@ pub struct BuildSettings {
     /// How `bump` writes a version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bump: Option<BumpSettings>,
-    /// Refuse a note with a `name` and no `description` instead of
-    /// publishing a filler.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub require_descriptions: Option<bool>,
     /// Where `publish` writes when `--to` is not given. Empty means each
     /// harness's user skill folder.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -325,7 +321,6 @@ pub const BUILD_KEYS: &[&str] = &[
     "namespace",
     "launcher_path",
     "bump",
-    "require_descriptions",
     "destinations",
     "scan_locations",
     "assets",
@@ -727,8 +722,8 @@ impl RootFile {
     /// The marketplace fields every plugin inherits (`author`, `license`,
     /// `targets`, `repository`, `homepage` and the harness blocks, key by key)
     /// inherit from the workspace too. So do `harnesses`, `namespace`,
-    /// `launcher_path`, `bump`, `require_descriptions`, `destinations`,
-    /// `scan_locations`, `assets`, `hooks` and each key of `patterns`. Their
+    /// `launcher_path`, `bump`, `destinations`, `scan_locations`, `assets`,
+    /// `hooks` and each key of `patterns`. Their
     /// paths and globs read from each marketplace's own folder. `out` is each
     /// marketplace's own. `exclude` is not inherited: a workspace's globs add
     /// to a member's, read from the workspace folder
@@ -777,9 +772,6 @@ impl RootFile {
         if build.bump.is_none() {
             build.bump.clone_from(&shared.bump);
         }
-        if build.require_descriptions.is_none() {
-            build.require_descriptions = shared.require_descriptions;
-        }
         if build.destinations.is_empty() {
             build.destinations.clone_from(&shared.destinations);
         }
@@ -817,7 +809,6 @@ impl RootFile {
             homepage: fields.homepage.clone(),
             blocks: fields.blocks.clone(),
             plugins: BTreeMap::new(),
-            require_descriptions: self.build.require_descriptions.unwrap_or(false),
             launcher_path: self.build.launcher_path.clone(),
         }
     }
@@ -893,18 +884,14 @@ mod tests {
     fn a_member_s_build_value_overrides_the_workspace_key_by_key() {
         let workspace = parse_root_file(
             "---\nworkspace: true\nlicense: MIT\nbuild:\n  harnesses: [claude]\n  \
-             namespace: sw\n  launcher_path: bin/ws\n  require_descriptions: true\n  \
-             out: dist\n---\n",
+             namespace: sw\n  launcher_path: bin/ws\n  out: dist\n---\n",
         )
         .unwrap();
-        let mut member =
-            parse_root_file("---\nbuild:\n  namespace: acme\n  require_descriptions: false\n---\n")
-                .unwrap();
+        let mut member = parse_root_file("---\nbuild:\n  namespace: acme\n---\n").unwrap();
         member.inherit(&workspace);
 
-        // What the member sets wins, a `false` included.
+        // What the member sets wins.
         assert_eq!(member.build.namespace.as_deref(), Some("acme"));
-        assert_eq!(member.build.require_descriptions, Some(false));
         // Every other key still comes down.
         assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
         assert_eq!(member.build.launcher_path.as_deref(), Some("bin/ws"));
@@ -930,7 +917,6 @@ mod tests {
              build:\n  \
                out: dist\n  \
                harnesses: [claude]\n  \
-               require_descriptions: true\n  \
                launcher_path: bin/tool\n\
              ---\n\
              # osdlc\n\nThe body is not read.\n",
@@ -942,7 +928,6 @@ mod tests {
         assert_eq!(config.name.as_deref(), Some("osdlc"));
         assert_eq!(config.owner, Some(serde_json::json!({"name": "Ada"})));
         assert_eq!(config.license.as_deref(), Some("MIT"));
-        assert!(config.require_descriptions);
         assert_eq!(config.launcher_path.as_deref(), Some("bin/tool"));
         assert_eq!(root.harness_set(), BTreeSet::from(["claude".to_owned()]));
     }
@@ -953,7 +938,6 @@ mod tests {
         assert_eq!(root, RootFile::default());
         let config = root.to_config("My Tools");
         assert_eq!(config.name.as_deref(), Some("my-tools"));
-        assert!(!config.require_descriptions);
         assert_eq!(config.launcher_path, None);
     }
 

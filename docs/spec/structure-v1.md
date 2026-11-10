@@ -66,6 +66,11 @@ code and is part of this spec.
    and `node_modules`. A plugin named `docs` or `tests` ships normally.
 7. A note with a `description` in a never-ship folder under a kind folder warns
    that it will not ship.
+8. One exception to rule 2: `publish <path>` publishes a note that no kind
+   folder and no `build.patterns` glob places as a skill, when the path is named.
+   The note is not part of the vault. `list`, `check`, `build` and
+   `publish --all` do not include it. Use `build.patterns` to bring a folder in
+   for every command, and an explicit path to publish one note once.
 
 ## 3. Components
 
@@ -74,7 +79,9 @@ code and is part of this spec.
    `docs/`, `tests/` and `fixtures/`, which never ship. A note in `skills/docs/` with no
    `docs` skill warns that it will not ship.
 2. Agents and commands are `<name>.md` or `<name>/<name>.md`.
-3. A note is a component only if it has a `description`, or a `name` alone.
+3. A note is a component only if it has a `description`, or a `name` alone. A skill,
+   command or agent with a `name` and no `description` is an error: `list` and `check`
+   report it, and `build` and `publish` refuse it.
 4. A name is lowercase words joined by hyphens, at most 64 characters. It defaults
    to the file or folder name.
 

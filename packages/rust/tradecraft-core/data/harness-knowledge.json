@@ -8,79 +8,95 @@
   "harnesses": {
     "agent-plugins": {
       "title": "Agent Plugins",
+      "kind": "standard",
       "versioning": "semver"
     },
     "agent-skills": {
       "title": "Agent Skills",
+      "kind": "standard",
       "versioning": "date"
     },
     "amp": {
       "title": "Amp",
+      "kind": "harness",
       "versioning": "unknown",
       "cli": "amp"
     },
     "antigravity": {
       "title": "Antigravity",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "agy"
     },
     "claude-code": {
       "title": "Claude Code",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "claude"
     },
     "codex": {
       "title": "Codex CLI",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "codex"
     },
     "copilot-cli": {
       "title": "GitHub Copilot CLI",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "copilot"
     },
     "cursor": {
       "title": "Cursor",
+      "kind": "harness",
       "versioning": "unknown",
       "cli": "agent"
     },
     "dsh": {
       "title": "DeepSeek Harness",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "dsh"
     },
     "gemini-cli": {
       "title": "Gemini CLI",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "gemini"
     },
     "goose": {
       "title": "goose",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "goose"
     },
     "grok-build": {
       "title": "Grok Build",
+      "kind": "harness",
       "versioning": "unknown",
       "cli": "grok"
     },
     "kiro": {
       "title": "Kiro",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "kiro-cli"
     },
     "opencode": {
       "title": "OpenCode",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "opencode"
     },
     "pi": {
       "title": "Pi",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "pi"
     },
     "qwen-code": {
       "title": "Qwen Code",
+      "kind": "harness",
       "versioning": "semver",
       "cli": "qwen"
     }
@@ -630,7 +646,7 @@
       "title": "Output format flag",
       "category": "cli",
       "valueSchema": {
-        "description": "The output format flag.",
+        "description": "The output formats a non-interactive run can print, and the arguments that select each.",
         "type": "object",
         "properties": {
           "supported": {
@@ -645,32 +661,53 @@
               "partial"
             ]
           },
-          "flag": {
-            "description": "The flag, such as --output-format.",
-            "type": "string"
-          },
           "formats": {
-            "description": "Values the flag takes, mapped to what they print.",
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "default": {
-            "description": "The format used when the flag is absent.",
-            "type": "string"
-          },
-          "stream_flag_extra": {
-            "description": "Further arguments a stream format needs, such as [\"--verbose\"].",
+            "description": "The formats the harness can print, each with the full arguments that select it.",
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "object",
+              "properties": {
+                "name": {
+                  "description": "The format, such as text, json, stream-json or jsonl.",
+                  "type": "string"
+                },
+                "argv": {
+                  "description": "The full arguments to add for this format, such as [\"--output-format\",\"stream-json\",\"--verbose\"] or the standalone switch [\"--json\"]. Empty when it is the default and needs no argument.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "argv"
+              ],
+              "additionalProperties": true
             }
           },
           "note": {
             "description": "A caveat the other keys do not carry.",
             "type": "string"
           }
+        },
+        "if": {
+          "properties": {
+            "supported": {
+              "enum": [
+                true,
+                "partial"
+              ]
+            }
+          },
+          "required": [
+            "supported"
+          ]
+        },
+        "then": {
+          "required": [
+            "formats"
+          ]
         },
         "additionalProperties": true
       }

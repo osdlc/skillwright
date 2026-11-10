@@ -257,9 +257,15 @@ export function plan(ctx: Context): Plan {
       if (notes.length > 0) dropped.set(fact, notes)
       return fact
     })
-  const latest = new Set<string>(LATEST_SEEDS)
-  for (const { data } of beta.all('subjects'))
+  // An existing subject record decides (no field means one); a seed applies only to a subject
+  // with no record yet.
+  const latest = new Set<string>()
+  const recorded = new Set<string>()
+  for (const { data } of beta.all('subjects')) {
+    recorded.add(String(data['slug']))
     if (data['cardinality'] === 'latest') latest.add(String(data['slug']))
+  }
+  for (const slug of LATEST_SEEDS) if (!recorded.has(slug)) latest.add(slug)
   /** A latest-cardinality fact has one statement per sighting; any other, one per scope. */
   const stmtIdentity = (
     f: { subject: string; harness: string },
@@ -566,7 +572,7 @@ export function plan(ctx: Context): Plan {
 
     // A latest-cardinality subject: one statement per sighting, oldest first. The newest is
     // current; each older one is superseded and linked from the one that replaced it.
-    if (latest.has(fact.subject)) {
+    if (latest.has(fact.subject) && fact.observations.length > 0) {
       const chain = [...made].sort(
         (a, b) =>
           (a.obs.observed < b.obs.observed ? -1 : a.obs.observed > b.obs.observed ? 1 : 0) ||
@@ -809,33 +815,58 @@ export function plan(ctx: Context): Plan {
 
 // ---- disk -----------------------------------------------------------------------------------
 
-/**
- * Write the plan under `root`, leaving files whose text is already right, then delete what it
- * retires. Returns the paths written; `p.removed` lists the deletions.
- */
-export function writePlan(root: string, p: Plan): string[] {
-  const changed: string[] = []
-  const put = (rel: string, write: () => void, same: boolean): void => {
-    if (same) return
-    mkdirSync(dirname(join(root, rel)), { recursive: true })
-    write()
-    changed.push(rel)
-  }
-  for (const [rel, text] of [...p.files].sort(([a], [b]) => (a < b ? -1 : 1))) {
+/** What a plan would do to a corpus on disk. All paths are corpus-relative. */
+export interface Diff {
+  /** Files that do not exist yet. */
+  add: string[]
+  /** Existing files whose text differs from what the plan writes. */
+  overwrite: string[]
+  /** Records the plan retires. */
+  remove: string[]
+}
+
+export function diffPlan(root: string, p: Plan): Diff {
+  const add: string[] = []
+  const overwrite: string[] = []
+  const check = (rel: string, same: (file: string) => boolean): void => {
     const file = join(root, rel)
-    put(
-      rel,
-      () => writeFileSync(file, text),
-      existsSync(file) && readFileSync(file, 'utf8') === text,
-    )
+    if (!existsSync(file)) add.push(rel)
+    else if (!same(file)) overwrite.push(rel)
   }
+  for (const [rel, text] of [...p.files].sort(([a], [b]) => (a < b ? -1 : 1)))
+    check(rel, (file) => readFileSync(file, 'utf8') === text)
   for (const [rel, from] of [...p.copies].sort(([a], [b]) => (a < b ? -1 : 1)))
-    put(
-      rel,
-      () => copyFileSync(from, join(root, rel)),
-      existsSync(join(root, rel)) && readFileSync(join(root, rel)).equals(readFileSync(from)),
-    )
-  for (const rel of p.removed) rmSync(join(root, rel), { recursive: true, force: true })
+    check(rel, (file) => readFileSync(file).equals(readFileSync(from)))
+  return {
+    add,
+    overwrite,
+    remove: existsSync(root) ? p.removed.filter((r) => existsSync(join(root, r))) : [],
+  }
+}
+
+/**
+ * Write the plan under `root`. By default only files that do not exist yet are written: an
+ * existing file is never touched, and nothing is removed. With `force`, every file is written
+ * and every retired record removed. Returns the paths written.
+ */
+export function writePlan(root: string, p: Plan, options: { force?: boolean } = {}): string[] {
+  const force = options.force === true
+  const d = diffPlan(root, p)
+  const todo = new Set(force ? [...d.add, ...d.overwrite] : d.add)
+  const changed: string[] = []
+  for (const [rel, text] of [...p.files].sort(([a], [b]) => (a < b ? -1 : 1)))
+    if (todo.has(rel)) {
+      mkdirSync(dirname(join(root, rel)), { recursive: true })
+      writeFileSync(join(root, rel), text)
+      changed.push(rel)
+    }
+  for (const [rel, from] of [...p.copies].sort(([a], [b]) => (a < b ? -1 : 1)))
+    if (todo.has(rel)) {
+      mkdirSync(dirname(join(root, rel)), { recursive: true })
+      copyFileSync(from, join(root, rel))
+      changed.push(rel)
+    }
+  if (force) for (const rel of p.removed) rmSync(join(root, rel), { recursive: true, force: true })
   return changed
 }
 
@@ -898,15 +929,24 @@ function loadDataset(): Dataset {
   return dataset
 }
 
-/** Plan and write the import. Fixture copy sources resolve against the probes folder. */
+/**
+ * Plan the import and compare it with the corpus. It writes only when asked: `write` adds files
+ * that do not exist yet, `force` also overwrites and removes.
+ */
 export function importAlpha(
   categories: Set<string>,
   betaRoot: string = BETA,
   dataset?: Dataset,
-): { plan: Plan; changed: string[] } {
+  options: { write?: boolean; force?: boolean } = {},
+): { plan: Plan; diff: Diff; changed: string[] } {
   const p = plan(defaultContext(categories, betaRoot, dataset))
   for (const [rel, from] of p.copies) p.copies.set(rel, join(ROOT, 'probes', from))
-  return { plan: p, changed: writePlan(betaRoot, p) }
+  const diff = diffPlan(betaRoot, p)
+  const changed =
+    options.write === true || options.force === true
+      ? writePlan(betaRoot, p, { force: options.force === true })
+      : []
+  return { plan: p, diff, changed }
 }
 
 function main(argv: string[]): number {
@@ -916,6 +956,8 @@ function main(argv: string[]): number {
       category: { type: 'string', multiple: true },
       all: { type: 'boolean' },
       beta: { type: 'string' },
+      write: { type: 'boolean' },
+      force: { type: 'boolean' },
     },
   })
   const dataset = loadDataset()
@@ -924,26 +966,46 @@ function main(argv: string[]): number {
   const unknown = [...chosen].filter((c) => !known.has(c))
   if (chosen.size === 0 || unknown.length > 0) {
     console.error(
-      `usage: import-alpha (--category <id>)... | --all [--beta <dir>]\ncategories: ${[...known].join(', ')}${unknown.length > 0 ? `\nunknown: ${unknown.join(', ')}` : ''}`,
+      `usage: import-alpha (--category <id>)... | --all [--beta <dir>] [--write | --force]\ncategories: ${[...known].join(', ')}${unknown.length > 0 ? `\nunknown: ${unknown.join(', ')}` : ''}`,
     )
     return 2
   }
-  const { plan: p, changed } = importAlpha(
-    chosen,
-    values.beta === undefined ? BETA : resolve(values.beta),
-    dataset,
-  )
-  for (const w of p.warnings) console.error(`warning: ${w}`)
-  for (const r of p.removed) console.log(`removed ${r}`)
+  const force = values.force === true
+  const {
+    plan: p,
+    diff,
+    changed,
+  } = importAlpha(chosen, values.beta === undefined ? BETA : resolve(values.beta), dataset, {
+    write: values.write === true,
+    force,
+  })
+  for (const w of p.warnings) console.warn(`warning: ${w}`)
   console.log(
     Object.entries(p.counts)
       .map(([k, n]) => `${n} ${k}`)
       .join(', '),
   )
+  const written = new Set(changed)
+  const removed = force ? diff.remove : []
+  const left = {
+    add: diff.add.filter((r) => !written.has(r)),
+    overwrite: diff.overwrite.filter((r) => !written.has(r)),
+    remove: diff.remove.filter((r) => !removed.includes(r)),
+  }
+  const verb = changed.length > 0 || removed.length > 0 ? 'wrote' : 'would write'
+  for (const r of changed) console.log(`wrote ${r}`)
+  for (const r of removed) console.log(`removed ${r}`)
+  for (const r of left.add) console.log(`${verb === 'wrote' ? 'not written' : 'would write'}: ${r}`)
+  for (const r of left.overwrite)
+    console.log(`edited since import, left alone (--force overwrites): ${r}`)
+  for (const r of left.remove) console.log(`would remove (needs --force): ${r}`)
+  // A record that merely differs has been edited since the import, which is expected: it is
+  // listed and does not fail the run.
+  const pending = left.add.length + left.remove.length
   console.log(
-    `${changed.length} file(s) written, ${p.files.size + p.copies.size - changed.length} unchanged`,
+    `${changed.length} written, ${removed.length} removed, ${pending} pending, ${left.overwrite.length} edited`,
   )
-  return 0
+  return pending === 0 ? 0 : 1
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
