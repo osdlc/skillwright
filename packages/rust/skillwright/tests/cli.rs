@@ -3984,8 +3984,8 @@ fn a_nested_marketplace_named_after_a_kind_folder_is_not_reserved() {
     );
 }
 
-// `cursor.naming` is a key Cursor's block reads on a marketplace and a
-// plugin; Claude's and Codex's blocks do not read `naming`.
+/// `cursor.naming` is a key Cursor's block reads on a marketplace and a
+/// plugin; Claude's and Codex's blocks do not read `naming`.
 #[test]
 fn check_accepts_cursor_naming() {
     let checked = |harness: &str| {

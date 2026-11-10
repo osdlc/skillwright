@@ -1452,8 +1452,8 @@ mod tests {
             && crate::vault::check_spec_kinds(&mut map, Path::new(NOTE), kind).is_ok()
     }
 
-    /// Today's accept and refuse answers for the component keys whose type
-    /// the check widens past the key table's shape.
+    /// The accept and refuse answers for the component keys whose type the
+    /// check widens past the key table's shape.
     #[test]
     fn component_key_values_keep_their_verdicts() {
         use EntityKind::{Agent, Command, Plugin, Skill};
@@ -1511,7 +1511,7 @@ mod tests {
         }
     }
 
-    /// Today's accept and refuse answers for the root file's marketplace keys.
+    /// The accept and refuse answers for the root file's marketplace keys.
     #[test]
     fn root_file_values_keep_their_verdicts() {
         let cases: &[(&str, bool)] = &[
