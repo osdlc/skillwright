@@ -9,10 +9,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Breaking
 
+- Library API: `ResolvedRun::source_vfs` and `ResolvedRun::export_vfs` are removed. `ResolvedRun::config_vfs` is the one view handed to the core, which hides the vault's build output itself. `ResolvedRun::notes_vfs` is for a walk of the notes the CLI does itself ([#81](https://github.com/osdlc/skillwright/issues/81)).
 - Library API: `config::RootLoad`, `config::read_root_file` and `config::print_warnings` are removed. The CLI reads the root file through `tradecraft_core::load_effective_root`, which returns the merged root file and each file's warnings; use it directly.
 
 ### Changed
 
+- `publish <path>` of a note inside build output is refused `build-output` ("`<path>` is build output, not a note"). It was published before ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `publish` and `status` no longer read a container note above a note when that container note sits inside build output ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `status` counts a contributing note that now sits only inside build output as gone from the vault ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- A scan at a workspace root hides each member's build output. Before, a member's output inside `marketplaces/<m>/` could be read as notes there ([#81](https://github.com/osdlc/skillwright/issues/81)).
 - A root file that is not UTF-8 is reported as `configuration malformed: <file> (it is not UTF-8)`. It was `configuration unreadable`.
 - When a member's workspace file is malformed, the member file's own warnings are no longer printed before the error that blocks the run.
 - Moving a marketplace's `skillwright.md` onto a `.../skillwright.md` that is not a marketplace entry, such as `plugins/x/skillwright.md`, moves the folder as it is and leaves links into it as written. It took the marketplace-rename path before, which rewrote those links.

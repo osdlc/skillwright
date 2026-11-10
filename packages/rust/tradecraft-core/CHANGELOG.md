@@ -17,9 +17,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `path_role(rel)` and `PathRole`: what a vault-relative path is by its shape: the root file, a workspace member's entry, a component's entry, a reserved `<kind>/skillwright.md`, or something else.
 - `entry_file(kind, name)`: the entry file a bundled component is written as, `skillwright.md` for a marketplace and `<name>.md` otherwise.
 - `patterns::member_workspace_exclude_warnings(vfs, member_root)`: `workspace_exclude_warnings` for the workspace above a member, each named as the member names the workspace file (`../../skillwright.md`, or its absolute path when found through a link).
+- `notes_view(base, scope, config, ns)`: `base` less every build output the vault's root file configures: its own `build.out`, or at a workspace root each member's. It reads the root file through `base`, so a view that answers for it with another file hides that file's output. `config`, when given, says where the packs are in place of the root file's. A root file that cannot be read hides nothing ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `SourceView::with_home(home)`: a `~` in `build.out` resolves against `home`, through this view and any view built over it. With no home, such an output is not hidden ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `workspace_members(vfs, dir)`: the root file of each workspace member, `marketplaces/<m>/skillwright.md`, sorted ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `ReasonToken::BuildOutput`, spelled `build-output` ([#81](https://github.com/osdlc/skillwright/issues/81)).
 
 ### Changed
 
+- Every core function that reads notes hides the vault's build output itself, through `notes_view` over the `vfs` it is given: `discover_components`, `discover_roster`, `read_notes`, `load`, `load_component`, `load_plugin`, `export_skills`, `publish_skill`, `status_of`, `find_component`, `container_members` and the `plan_*` authoring planners. A host no longer hides it. `source_view` stays for a folder the vault does not configure. Writes, the export's compare and swap, and a destination's manifest still go through the given `vfs` ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `publish_skill` refuses a note inside the vault's build output with `refused: build-output` ("`<path>` is build output, not a note"). It published it before. It no longer reads a container note inside build output ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `status_of` counts a contributing note that now sits only inside build output as missing ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- At a workspace root, each member's build output is hidden. The workspace file's own `build.out` builds nothing and is not hidden ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `export_skills` into a folder other than `build.out` hides the output at `build.out` too ([#81](https://github.com/osdlc/skillwright/issues/81)).
 - `publish_skill`'s check for a root config file compares real paths through `path-guard`, and fails closed: a path it cannot resolve, or a relative one, is refused `unsafe-path`.
 - The pack-location check compares the vault and the output with `path-guard` and fails closed: a path the host cannot resolve, as on a permission error, is refused `unsafe-path` where the check fell back to the path as written. A relative vault root is refused `unsafe-path` by this check, one step before the output check refused it with the same token. `source_view` hides nothing for such a vault.
 

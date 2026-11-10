@@ -1,5 +1,12 @@
 # @osdlc/tradecraft-wasm
 
+## Unreleased
+
+- `discoverComponents` and `loadMarketplace` with no `out_root` hide the vault's configured `build.out`. Before, they read it as notes. An `out_root` hides that folder too. A `~` in `build.out` is not hidden, since there is no home folder here; pass it as `out_root` instead ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `exportSkills` hides the configured `build.out` when it is not `out_root`. A wire `config` still says where the packs are ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `publishSkill` throws `Refused` with `build-output` for a note inside the configured `build.out`, and no longer reads a container note there. `statusOf` counts a contributing note that now sits only inside build output as missing ([#81](https://github.com/osdlc/skillwright/issues/81)).
+- `ReasonToken` gains `"build-output"` ([#81](https://github.com/osdlc/skillwright/issues/81)).
+
 ## 0.2.0
 
 ### Minor Changes
