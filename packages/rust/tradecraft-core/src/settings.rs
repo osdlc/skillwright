@@ -273,7 +273,9 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
                             "`{unknown}` reaches no file that harness reads; it is ignored"
                         ));
                     }
-                    let block = crate::harness::field_types::without_unset(&key, block, &unknown);
+                    let block = crate::harness::field_types::with_author_shorthand(
+                        crate::harness::field_types::without_unset(&key, block, &unknown),
+                    );
                     root.defaults.blocks.insert(key, block);
                 }
             }

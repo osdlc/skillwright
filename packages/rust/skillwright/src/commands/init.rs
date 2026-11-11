@@ -15,9 +15,8 @@ use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
-use tradecraft_core::discover::slug_refusal;
 use tradecraft_core::layout::{MARKETPLACES_DIR, PLUGINS_DIR};
-use tradecraft_core::{RESERVED_NAMES, ROOT_FILE, compose_root_file};
+use tradecraft_core::{ROOT_FILE, compose_root_file, name_problem};
 
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
@@ -28,16 +27,6 @@ pub struct InitFlags {
     pub marketplace: String,
     /// The plugin's name.
     pub plugin: String,
-}
-
-/// Why `name` cannot name a `what`, or `None`.
-fn name_problem(name: &str, what: &str) -> Option<String> {
-    if RESERVED_NAMES.contains(&name) {
-        return Some(format!(
-            "`{name}` is a structure folder's name and cannot be a {what}"
-        ));
-    }
-    slug_refusal(name, what)
 }
 
 /// Run `skillwright init` and return the exit code.

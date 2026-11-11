@@ -173,11 +173,21 @@ pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreErr
     // Pass 1.
     let (scan, links) = read_notes(vfs, &vault_root)?;
     // The root file's own entry is configuration, not a note, and
-    // `check_block_values` below refuses it naming the marketplace.
+    // `check_block_values` below refuses it naming the marketplace. A note in
+    // another marketplace does not stop a build of this one.
+    let market_prefix = request
+        .marketplace
+        .as_deref()
+        .map(|m| format!("{}/{m}/", crate::layout::MARKETPLACES_DIR));
     let skipped: Vec<&SkippedNote> = scan
         .skipped
         .iter()
         .filter(|note| note.path != crate::settings::ROOT_FILE)
+        .filter(|note| {
+            market_prefix
+                .as_deref()
+                .is_none_or(|prefix| note.path.starts_with(prefix))
+        })
         .collect();
     if !skipped.is_empty() {
         let (token, which) = skipped_wording(skipped.iter().copied());
@@ -250,10 +260,10 @@ pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreErr
             .filter(|c| c.lacks_description())
             .map(|c| c.vault_relative_path.as_str()),
     )?;
-    let plugin_notes: Vec<&str> = belonging
+    let plugin_notes: Vec<&DiscoveredComponent> = belonging
         .iter()
-        .filter(|c| c.kind == EntityKind::Plugin)
-        .filter_map(|c| c.plugin.as_deref())
+        .copied()
+        .filter(|c| c.kind == EntityKind::Plugin && c.plugin.is_some())
         .collect();
     if plugin_notes.is_empty() && skills.is_empty() && commands.is_empty() {
         return Err(CoreError::refused(
@@ -802,7 +812,7 @@ fn named(names: &BTreeSet<&str>) -> String {
 /// `refused: path-collision` — two members of the same kind landing on one
 /// directory.
 fn group_by_plugin(
-    notes: &[&str],
+    notes: &[&DiscoveredComponent],
     skills: &[&DiscoveredComponent],
     commands: &[&DiscoveredComponent],
 ) -> Result<BTreeMap<String, Plugin>, CoreError> {
@@ -814,12 +824,14 @@ fn group_by_plugin(
     // Every plugin note, so a plugin with no component still builds.
     let mut plugins: BTreeMap<String, Plugin> = notes
         .iter()
-        .map(|name| {
+        .filter_map(|note| {
+            let name = note.plugin.clone()?;
             let plugin = Plugin {
-                name: (*name).to_owned(),
+                name: name.clone(),
+                targets: note.targets.clone(),
                 ..Plugin::default()
             };
-            ((*name).to_owned(), plugin)
+            Some((name, plugin))
         })
         .collect();
     for (members, pick) in kinds {
@@ -1168,7 +1180,7 @@ fn load_hook_files(
             .map(|root| {
                 let runtime = parse_runtime_target(root.runtime)?;
                 let carries = root.format().carries_hooks
-                    && group.carried_by(|c| admits(&c.discovered, root))
+                    && group.carried_by(root.name, |c| admits(&c.discovered, root))
                     && !crate::hooks_file::carried_hooks(&hooks, runtime).is_empty();
                 Ok(crate::hooks_file::GapHarness {
                     name: root.name,

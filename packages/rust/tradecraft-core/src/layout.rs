@@ -52,6 +52,18 @@ pub const RESERVED_NAMES: [&str; 6] = [
     HOOKS_DIR,
 ];
 
+/// Why `name` cannot name a `what` (a marketplace, plugin or component
+/// folder), or `None`: a [`RESERVED_NAMES`] entry, or a name the Agent Skills
+/// name rule refuses.
+pub fn name_problem(name: &str, what: &str) -> Option<String> {
+    if RESERVED_NAMES.contains(&name) {
+        return Some(format!(
+            "`{name}` is a structure folder's name and cannot be a {what}"
+        ));
+    }
+    crate::discover::name_refusal(name, what)
+}
+
 /// The folder of a plugin that holds each component kind.
 pub const KIND_DIRS: [(&str, EntityKind); 3] = [
     ("skills", EntityKind::Skill),
@@ -506,9 +518,9 @@ impl Walk<'_> {
     }
 
     /// Whether the folder `rel` may take the name `name`; a problem is added
-    /// when it may not. A reserved name breaks the name rule.
+    /// when it may not.
     fn named(&mut self, rel: &str, name: &str) -> bool {
-        if RESERVED_NAMES.contains(&name) || crate::discover::name_refusal(name, "name").is_some() {
+        if name_problem(name, "name").is_some() {
             self.problems.add(Case::BadName, format!("{rel}/"));
             return false;
         }
@@ -742,6 +754,15 @@ fn is_kind(vfs: &dyn Vfs, path: &Path, dir: bool) -> Result<bool, CoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn name_problem_refuses_a_structure_name_and_a_bad_slug() {
+        assert!(name_problem("tools", "plugin name").is_none());
+        let reserved = name_problem("skills", "plugin name").unwrap();
+        assert!(reserved.contains("structure folder"), "{reserved}");
+        assert!(name_problem("Tools", "plugin name").is_some());
+        assert!(name_problem("", "plugin name").is_some());
+    }
 
     #[test]
     fn classify_reads_the_position_alone() {

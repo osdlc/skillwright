@@ -107,7 +107,7 @@ pub use harness::manifest::{check_packs, packs_of};
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, Shape};
 pub use layout::{
     KIND_DIRS, Layout, MARKETPLACES_DIR, Position, RESERVED_NAMES, check_vault_root, classify,
-    find_vault_root, is_vault_root, read_layout,
+    find_vault_root, is_vault_root, name_problem, read_layout,
 };
 /// The vault's file index, for [`CompileSource::links`]: re-exported so a
 /// consumer needs no `markdown-link` dependency of its own.

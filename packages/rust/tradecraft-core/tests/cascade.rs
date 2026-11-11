@@ -282,7 +282,7 @@ fn harness_blocks_inherit_key_by_key() {
 /// Claude Code only. Codex, Cursor and Pi get the plain one.
 #[test]
 fn a_plugin_s_claude_author_beats_its_plain_author_for_claude_only() {
-    let vfs = vault(&[(PLUGIN, "author: Ada\nclaude: {author: {name: Bob}}")]);
+    let vfs = vault(&[(PLUGIN, "author: Ada\nclaude: {author: Bob}")]);
     build(&vfs);
     let author = |h| str_at(&json(&vfs, plugin_manifest(h)), "/author/name");
     assert_eq!(author("claude"), "Bob");
@@ -313,7 +313,7 @@ fn a_nearer_plain_key_beats_a_farther_block() {
         );
     }
     // A farther block still beats a farther plain key on its own level.
-    let vfs = vault(&[(ROOT, "author: Plain\nclaude: {author: {name: Block}}")]);
+    let vfs = vault(&[(ROOT, "author: Plain\nclaude: {author: Block}")]);
     build(&vfs);
     let author = |h| str_at(&json(&vfs, plugin_manifest(h)), "/author/name");
     assert_eq!(author("claude"), "Block");

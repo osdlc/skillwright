@@ -460,10 +460,12 @@ impl VaultFrontmatter {
         let unknown_in_blocks = crate::discover::unknown_block_keys(&overrides, kind);
         for (harness, block) in &mut overrides {
             if let Value::Object(block) = block {
-                *block = crate::harness::field_types::without_unset(
-                    harness,
-                    std::mem::take(block),
-                    &unknown_in_blocks,
+                *block = crate::harness::field_types::with_author_shorthand(
+                    crate::harness::field_types::without_unset(
+                        harness,
+                        std::mem::take(block),
+                        &unknown_in_blocks,
+                    ),
                 );
             }
         }

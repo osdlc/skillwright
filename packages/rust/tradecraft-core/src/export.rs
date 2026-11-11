@@ -1313,7 +1313,7 @@ fn admitted_plugins<'m>(
         .plugins
         .iter()
         .filter_map(|(name, plugin)| {
-            let carried = plugin.carried_by(|c| translator.admits(c));
+            let carried = plugin.carried_by(translator.profile().name, |c| translator.admits(c));
             let skills = plugin
                 .skills
                 .iter()
@@ -5105,6 +5105,67 @@ mod tests {
                 "{root} holds no skills"
             );
         }
+    }
+
+    /// A plugin with no component builds its manifest only for the harnesses
+    /// its `targets` name.
+    #[test]
+    fn an_empty_plugin_builds_only_for_its_targets() {
+        let vfs = MemVfs::new();
+        write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/draft/draft.md",
+            "---\ntargets: [claude]\n---\n",
+        );
+
+        build(&vfs);
+        assert!(vfs.exists(Path::new(
+            "/market/.claude-plugin/packs/draft/.claude-plugin/plugin.json"
+        )));
+        for root in [".agents", ".cursor-plugin", ".pi"] {
+            assert!(
+                !vfs.exists(Path::new(&format!("/market/{root}/packs/draft"))),
+                "{root} carries no pack for a claude-only plugin"
+            );
+        }
+        let codex = "/market/.agents/plugins/marketplace.json";
+        if vfs.exists(Path::new(codex)) {
+            assert!(!text_at(&vfs, codex).contains("\"draft\""), "{codex}");
+        }
+    }
+
+    /// A plugin holding only agents is an empty pack, so it too builds only
+    /// for its `targets`.
+    #[test]
+    fn an_agents_only_plugin_builds_only_for_its_targets() {
+        let vfs = MemVfs::new();
+        write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/crew/crew.md",
+            "---\ntargets: [claude]\n---\n",
+        );
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/crew/agents/reviewer/reviewer.md",
+            &note("reviewer", &[]),
+        );
+
+        let report = build(&vfs);
+        assert!(vfs.exists(Path::new(
+            "/market/.claude-plugin/packs/crew/.claude-plugin/plugin.json"
+        )));
+        for root in [".agents", ".cursor-plugin", ".pi"] {
+            assert!(
+                !vfs.exists(Path::new(&format!("/market/{root}/packs/crew"))),
+                "{root} carries no pack for a claude-only plugin"
+            );
+        }
+        assert!(report.units.iter().any(|unit| matches!(
+            unit,
+            ExportUnit::NotCarried { path, .. } if path.ends_with("agents/reviewer/reviewer.md")
+        )));
     }
 
     /// A marketplace with no plugin folder has nothing to write.

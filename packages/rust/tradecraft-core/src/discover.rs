@@ -744,22 +744,6 @@ pub const DESCRIPTION_MAX_LEN: usize = 1024;
 /// Maximum length of a `compatibility` note, per the Agent Skills spec.
 pub const COMPATIBILITY_MAX_LEN: usize = 500;
 
-/// Why a name with nothing sluggable in it is refused, stated once. `what` is
-/// the level being named — a component name, a plugin name, a note name — so
-/// the refusal says which one had nothing to slug.
-fn nameless(what: &str) -> String {
-    format!("a {what} needs at least one letter or digit, so a filename can be slugged from it")
-}
-
-/// Why `slug` cannot be a `what`: nothing sluggable in the name it came from,
-/// or a slug the skills-spec grammar refuses. `None` means it is usable.
-pub fn slug_refusal(slug: &str, what: &str) -> Option<String> {
-    if slug.is_empty() {
-        return Some(nameless(what));
-    }
-    name_refusal(slug, what)
-}
-
 /// Why `value` is not a `what` the Agent Skills spec admits — the name rule
 /// `^[a-z0-9]+(-[a-z0-9]+)*$`, at most [`NAME_MAX_LEN`] characters, spelled
 /// as segment checks rather than a regex dependency — or `None` when it is.

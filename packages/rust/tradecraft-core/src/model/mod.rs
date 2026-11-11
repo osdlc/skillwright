@@ -123,6 +123,9 @@ pub struct Plugin {
     /// the default is bare.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prefixed_on: Vec<String>,
+    /// The plugin note's `targets`, cascaded. `None` is every harness.
+    #[serde(skip)]
+    pub targets: Option<Vec<String>>,
 }
 
 impl Plugin {
@@ -131,12 +134,15 @@ impl Plugin {
         self.skills.iter().chain(&self.commands).chain(&self.hooks)
     }
 
-    /// Whether a harness that `admits` what it admits carries this plugin:
-    /// it admits one of its components, or the plugin has none, and every
-    /// harness carries its manifests.
-    pub fn carried_by(&self, admits: impl FnMut(&Component) -> bool) -> bool {
+    /// Whether `harness`, admitting what `admits` admits, carries this
+    /// plugin: it admits one of its components, or the plugin has none (an
+    /// agent is not one) and its `targets` name the harness.
+    pub fn carried_by(&self, harness: &str, admits: impl FnMut(&Component) -> bool) -> bool {
         let mut components = self.components().peekable();
-        components.peek().is_none() || components.any(admits)
+        if components.peek().is_none() {
+            return load::targets_name(self.targets.as_deref(), harness);
+        }
+        components.any(admits)
     }
 }
 

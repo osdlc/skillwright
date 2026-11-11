@@ -621,6 +621,37 @@ fn the_root_files_license_reaches_the_pack_manifest() {
 // --- output ------------------------------------------------------------------
 
 #[test]
+fn a_bad_note_in_another_marketplace_does_not_block_marketplace() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    write_all(&vault, &[("skillwright.md", "---\n---\n")]);
+    for (m, p) in [("acme", "tools"), ("labs", "spike")] {
+        for (rel, text) in plugin_files(m, p) {
+            write_all(&vault, &[(&rel, &text)]);
+        }
+    }
+    write_all(
+        &vault,
+        &[(
+            "marketplaces/labs/plugins/spike/skills/broken/broken.md",
+            "---\ndescription: [unclosed\n---\nBody.\n",
+        )],
+    );
+
+    let one = run(&["build", "--yes", "--marketplace", "acme"], &vault);
+    assert_eq!(one.code, 0, "{}", one.stderr);
+    assert!(
+        vault
+            .join("dist/acme/.claude-plugin/marketplace.json")
+            .is_file()
+    );
+
+    let all = run(&["build", "--yes"], &vault);
+    assert_ne!(all.code, 0, "{}", all.stderr);
+    assert!(all.stderr.contains("broken.md"), "{}", all.stderr);
+}
+
+#[test]
 fn a_two_marketplace_build_writes_two_trees_and_marketplace_builds_one() {
     let dir = tempfile::tempdir().unwrap();
     let vault = dir.path().join("vault");

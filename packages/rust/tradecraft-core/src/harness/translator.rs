@@ -298,7 +298,8 @@ pub trait HarnessTranslator: Sync {
     /// manifest. Returns the carried skills' names, or `None` when this
     /// harness carries nothing of the plugin — a plugin whose every member is
     /// narrowed away is absent entirely: no directory, no manifest, no
-    /// listing. A plugin with no member is carried, as its manifest alone.
+    /// listing. A plugin with no member is carried, as its manifest alone,
+    /// by the harnesses its `targets` name.
     ///
     /// # Errors
     ///
@@ -314,7 +315,7 @@ pub trait HarnessTranslator: Sync {
         let skills: Vec<&Component> = plugin.skills.iter().filter(|c| self.admits(c)).collect();
         let commands: Vec<&Component> = plugin.commands.iter().filter(|c| self.admits(c)).collect();
         let hooks: Vec<&Component> = plugin.hooks.iter().filter(|c| self.admits(c)).collect();
-        if !plugin.carried_by(|c| self.admits(c)) {
+        if !plugin.carried_by(self.profile().name, |c| self.admits(c)) {
             return Ok(None);
         }
         let siblings: BTreeSet<&str> = plugin.skills.iter().map(|s| s.name.as_str()).collect();
