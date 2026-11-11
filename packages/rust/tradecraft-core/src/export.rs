@@ -3500,6 +3500,21 @@ mod tests {
         assert_eq!(vfs.read_file(Path::new(hand)).unwrap(), b"{}\n");
     }
 
+    #[test]
+    fn check_refuses_packs_this_vault_did_not_build_and_writes_nothing() {
+        let vfs = MemVfs::new();
+        let request = repo_vault(&vfs);
+        let hand = "/repo/dist/house/.claude-plugin/packs/hand/plugin.json";
+        write(&vfs, hand, "{}\n");
+        let before = files_under(&vfs, Path::new("/repo"));
+
+        let err = export_skills(&vfs, &check_of(&request)).unwrap_err();
+        let message = err.to_string();
+        assert!(matches!(err, CoreError::Refused(_)), "{message}");
+        assert!(message.contains("foreign-tree"), "{message}");
+        assert_eq!(files_under(&vfs, Path::new("/repo")), before);
+    }
+
     /// The case the fixture above does not reach, and the one that matters:
     /// a repository that already *is* a marketplace. Its manifest sits at the
     /// path this build renders one to, so every rendered-path test says
