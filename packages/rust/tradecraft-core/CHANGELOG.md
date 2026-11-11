@@ -23,6 +23,7 @@ API:
 - `KindSource`, `ResolvedKind`, `KindHints` and `resolve_kind` are removed, with `DiscoveredComponent::kind_source` and `folder_kind`. The layout alone decides a note's kind.
 - `layout::classify`, `walk::in_plugin_assets`, `folder_assets` and `EXCLUDED_BUNDLE_DIRECTORIES` are removed. `rewrite_sibling_paths` is removed.
 - `model::Segment` gains `Literal` and `PluginRoot`. `SkillId` gains `kind`. A plain link to a skill is a `Link`, not a mention.
+- `SkillId::plugin` and `IndexedSkill::plugin` are `String`, not `Option<String>`: every component sits in a plugin. A call id is always `plugin:name`.
 - The `model` types no longer implement `Serialize`, except `Asset` and `SkillId`. `SkillContent`, `SkillProjection`, `VaultNote` and `VaultFrontmatter` no longer implement `Serialize` or `Deserialize`.
 - `Closure::hash` is removed.
 - `Shape` gains `Words`, `AgentTools`, `Hint` and `Flag`, the types the check already took for `allowed-tools`, `tools`, `argument-hint`, `user-invocable` and `disable-model-invocation`. `Shape` is an exhaustive public enum, so a match on it needs the new arms.
@@ -45,10 +46,11 @@ Behaviour:
 - Cursor names a plugin's skill `<p>-<s>` by default. `cursor: {naming: bare}` keeps plain names.
 - A plugin's `references/`, `scripts/` and `assets/` ship under their own names. The Cursor pack ships no hooks for now, and packs no longer ship `hooks/gap-report.json`.
 - `targets` accepts only `claude`, `codex`, `cursor` and `pi`. `name` is refused on every note, and a prefixed key such as `sw-version` is an unknown key.
+- The build's internal marks are the noncharacters U+FDD0 to U+FDD2, not private-use code points, so private-use text such as icon-font glyphs ships unchanged. A Markdown body or embedded file that holds one of them is refused (`noncharacter`).
 
 ### Added
 
-- `build_vault` and `plan_vault`, with `VaultRequest`, `VaultPlan`, `VaultReport` and `MarketplaceReport`: every marketplace of a vault planned, then all written or none. A failed swap rolls back every marketplace already swapped. `ExportPlan::owned_paths` and `read_root_file` are added.
+- `build_vault` and `plan_vault`, with `VaultRequest`, `VaultPlan`, `VaultReport` and `MarketplaceReport`: every marketplace of a vault planned, then all written or none. A failed swap rolls back every marketplace already swapped. A check returns every marketplace's report, and lists each marketplace that refused in `VaultReport::refused` (`MarketplaceRefusal`). `ExportPlan::owned_paths` and `read_root_file` are added.
 - `cursor: {naming: bare | prefixed}` on a marketplace or a plugin. The default is `prefixed`: a plugin's Cursor skills are `<plugin>-<skill>`, in their folders, their frontmatter `name` and every call to them. The plugin's value overrides the marketplace's.
 - `plan_loaded`: `plan_vault` for a vault the caller has already loaded. `load_vault` normalizes its root.
 - A Cursor catalog entry in `.cursor-plugin/marketplace.json` carries the plugin's `displayName`, right after `name`: its `cursor.displayName`, else its `display_name`. It is absent when neither is set.
@@ -57,7 +59,7 @@ Behaviour:
 
 ### Changed
 
-- The field reference states the types the check accepts. Its harness block lists drop the keys the check warns on, such as `permissionMode` on a `claude:` plugin or marketplace and `description` and `version` on a `codex:`, `cursor:` or `pi:` marketplace. Its component line reads "Skill and command", followed by "Agent: not checked.".
+- The field reference states the types the check accepts. Its harness block lists drop the keys the check warns on, such as `permissionMode` on a `claude:` plugin or marketplace and `description` and `version` on a `codex:`, `cursor:` or `pi:` marketplace. Its component line reads "Skill and command", followed by "Agent: not checked.". It also lists, per harness, the block keys a plugin keeps from its skills and commands and a marketplace keeps from its plugins.
 - A cross-plugin name collision on Cursor or Pi names both notes, the published name, the harness and the `<harness>.naming` setting that prefixed the name. The token stays `path-collision`.
 - The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: it is a number". Some refusals named `marketplace fields` before.
 - A marketplace block passes down to each plugin only the keys a plugin block reads. Other keys were never merged, so no output changes.

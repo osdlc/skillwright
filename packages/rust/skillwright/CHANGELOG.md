@@ -23,6 +23,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Hooks come only from a plugin's `hooks/hooks.json`, which writes `${PLUGIN_ROOT}`. A `${CLAUDE_PLUGIN_ROOT}` there is refused. The Cursor pack ships no hooks for now, and the build warns ([#152](https://github.com/osdlc/skillwright/issues/152)). Packs no longer ship `hooks/gap-report.json`.
 - A link resolves inside its plugin. A link that leaves the plugin, reaches a never-ship folder or names nothing is an error. A plain `[[skill]]` is a file link that warns `Did you mean to call /[[skill]]?`; it is not a mention. Nothing is copied to `references/vault/` or `assets/vault/`.
 - A call, `/[[name]]`, names a skill or command of the marketplace. A name two plugins share, a fragment on a call and a call to an agent are errors. Code spans and fenced blocks are literal: no call, link or embed is read in them. A call string written by hand in prose is an error. `\[[x]]` ships as `[[x]]`, and the `\/` escape is gone.
+- A note or embedded file that holds a noncharacter U+FDD0 to U+FDD2 is refused (`noncharacter`): the build uses them as internal marks.
 - An embed of a text file that is neither a note nor an image ships as a fenced code block. An embed of a binary file is refused. Malformed frontmatter in an embedded note is an error that names both notes.
 - `${PLUGIN_ROOT}/<path>` in a component's Markdown is checked against what each pack ships, and written for each harness. A path that names nothing shipped is an error. `${CLAUDE_PLUGIN_ROOT}` in a note is an error.
 - `init` takes `<m> <p>` and writes the root file, the marketplace note and the plugin note. `bump` names a plugin, or bumps `<m>.md` with `--marketplace`.
@@ -35,8 +36,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- `docs/reference/fields.md` states the types `check` accepts, and lists only the harness block keys `check` accepts.
+- `docs/reference/fields.md` states the types `check` accepts, and lists only the harness block keys `check` accepts. It also lists, per harness, the block keys that stay with a plugin or marketplace and never reach its members.
 - A root file value of the wrong shape is refused with the words a note gets, naming the key.
+
+### Fixed
+
+- Private-use characters, such as icon-font glyphs, ship unchanged. U+E002 shipped as `[[`.
 
 ## [0.11.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.11.0...skillwright/v0.11.1) - 2026-11-10
 
