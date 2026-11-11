@@ -50,7 +50,7 @@ pub struct LoadRequest {
     #[serde(default)]
     pub marketplace: Option<String>,
     /// Which harnesses the model is for, by canonical name. Empty means every
-    /// harness with a plugin format. A body no harness here admits is read
+    /// harness. A body no harness here admits is read
     /// but not resolved.
     #[serde(default)]
     pub harnesses: BTreeSet<String>,
@@ -84,7 +84,7 @@ pub fn read_notes(vfs: &dyn Vfs, layout: &Layout) -> Result<DiscoveryReport, Cor
     discover_in(vfs, layout)
 }
 
-/// The harnesses `names` selects, every one with a plugin format when empty.
+/// The harnesses `names` selects, every one when empty.
 ///
 /// # Errors
 ///

@@ -612,8 +612,7 @@ pub fn plan_in(
     let mut rendered: Vec<BTreeMap<String, PreviewWrite>> = Vec::with_capacity(roots.len());
     let mut translators: Vec<&dyn HarnessTranslator> = Vec::with_capacity(roots.len());
     for spec in &roots {
-        let translator =
-            translator_for(spec.name).expect("every harness with a plugin format translates");
+        let translator = translator_for(spec.name).expect("every harness translates");
         let tree = translator.translate(&market)?;
         rendered.push(
             tree.files

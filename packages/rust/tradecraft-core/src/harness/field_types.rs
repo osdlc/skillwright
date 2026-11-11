@@ -329,9 +329,9 @@ impl Shape {
 
 /// The type of `key` in a marketplace's or plugin's block for `profile`: the
 /// facts' type, or for a key that passes to members, [`component_type`].
-/// `None` for a row with no plugin format.
+/// `None` for a key neither gives a type.
 pub(crate) fn container_type(profile: &HarnessProfile, key: &str) -> Option<FieldType> {
-    facts_for(profile.plugin_format()?.dialect)
+    facts_for(profile.format().dialect)
         .iter()
         .find(|(name, _)| *name == key)
         .map(|(_, ty)| *ty)

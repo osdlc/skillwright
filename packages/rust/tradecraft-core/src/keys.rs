@@ -214,7 +214,7 @@ const COMPONENTS: &[EntityKind] = &[Skill, Agent, Command];
 const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command];
 
 /// The harnesses that take a block of their own keys: `claude:`, `codex:`,
-/// `cursor:` and `pi:`, the rows with a plugin format. A test holds this list
+/// `cursor:` and `pi:`, every harness row. A test holds this list
 /// to [`crate::harness::with_plugin_format`] and to the [`Shape::HarnessBlock`]
 /// rows of [`KEYS`].
 pub const HARNESS_BLOCKS: &[&str] = &[CLAUDE.name, CODEX.name, CURSOR.name, PI.name];

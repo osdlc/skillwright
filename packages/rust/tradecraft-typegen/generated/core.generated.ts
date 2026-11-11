@@ -538,7 +538,7 @@ export interface LoadRequest {
 
   /**
    * Which harnesses the model is for, by canonical name. Empty means every
-   * harness with a plugin format. A body no harness here admits is read
+   * harness. A body no harness here admits is read
    * but not resolved.
    */
   harnesses?: string[];

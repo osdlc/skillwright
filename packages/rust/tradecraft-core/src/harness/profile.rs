@@ -19,7 +19,7 @@
 //! moves a fact is a visible test failure, not a silent change.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use agent_adapt::RuntimeId;
 
@@ -44,11 +44,9 @@ pub struct HarnessProfile {
     /// The runtime whose capability declaration answers for this
     /// destination: which keys an override block may carry.
     pub declaration: RuntimeId,
-    /// The plugin policy, for a harness a marketplace is built for. The
-    /// facts it leaves to the knowledge file are read by [`Self::format`].
-    pub plugin: Option<PluginPolicy>,
-    /// The harness's own `plugin` CLI, for one `skillwright harness` drives.
-    pub install: Option<InstallCli>,
+    /// The plugin policy. The facts it leaves to the knowledge file are read
+    /// by [`Self::format`].
+    pub plugin: PluginPolicy,
 }
 
 /// Where a profile value comes from.
@@ -179,9 +177,6 @@ pub struct PluginFormat {
     /// The keys each kind of note's block for this harness accepts.
     block_keys: BlockKeys,
 }
-
-/// The block keys of a row with no plugin format.
-static NO_KEYS: BTreeSet<String> = BTreeSet::new();
 
 /// The keys a harness's blocks accept, by the kind of note they sit on,
 /// worked out once from the row.
@@ -421,19 +416,6 @@ const PI_MANIFEST_FIELDS: &[&str] = &[
     "pi",
 ];
 
-/// What `skillwright harness` needs to know about a harness's own CLI that
-/// is a fact rather than an argv builder. The builders stay in the CLI crate,
-/// which is the only one that runs them.
-#[derive(Debug)]
-pub struct InstallCli {
-    /// The scopes a registration can take, by the name the CLI prints.
-    pub scopes: &'static [&'static str],
-    /// The harness registers a marketplace only from a git URL.
-    pub needs_git_url: bool,
-    /// The harness's add command takes a git ref.
-    pub takes_git_ref: bool,
-}
-
 /// Which dialect a pack manifest is rendered in.
 ///
 /// Claude, Codex and Cursor differ in the display name: Codex carries it in
@@ -494,7 +476,7 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
     label: "Claude Code",
     runtime: "claude-code",
     declaration: RuntimeId::ClaudeCode,
-    plugin: Some(PluginPolicy {
+    plugin: PluginPolicy {
         skills_dir: ".claude/skills",
         user_skills_dir: Source::Knowledge,
         plugin_manifest: Source::Knowledge,
@@ -517,12 +499,7 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
         entry_fields: CLAUDE_ENTRY_FIELDS,
         naming_choice: false,
         agent_only_overrides: CLAUDE_AGENT_ONLY_OVERRIDES,
-    }),
-    install: Some(InstallCli {
-        scopes: &["user", "project", "local"],
-        needs_git_url: false,
-        takes_git_ref: false,
-    }),
+    },
 };
 
 /// The Codex row.
@@ -531,7 +508,7 @@ pub const CODEX: HarnessProfile = HarnessProfile {
     label: "Codex",
     runtime: "codex-cli",
     declaration: RuntimeId::CodexCli,
-    plugin: Some(PluginPolicy {
+    plugin: PluginPolicy {
         skills_dir: ".agents/skills",
         user_skills_dir: Source::Knowledge,
         // knowledge disagrees: plugins/manifest-fields names the Agent Plugins
@@ -559,12 +536,7 @@ pub const CODEX: HarnessProfile = HarnessProfile {
         entry_fields: CODEX_ENTRY_FIELDS,
         naming_choice: false,
         agent_only_overrides: &[],
-    }),
-    install: Some(InstallCli {
-        scopes: &["user"],
-        needs_git_url: false,
-        takes_git_ref: true,
-    }),
+    },
 };
 
 /// The Cursor row.
@@ -573,7 +545,7 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
     label: "Cursor",
     runtime: "cursor",
     declaration: RuntimeId::Cursor,
-    plugin: Some(PluginPolicy {
+    plugin: PluginPolicy {
         skills_dir: ".cursor/skills",
         // knowledge disagrees: skills/user-dirs lists `~/.agents/skills` first
         // and `~/.cursor/skills` second; the row keeps the harness's own folder
@@ -599,12 +571,7 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         entry_fields: CURSOR_ENTRY_FIELDS,
         naming_choice: true,
         agent_only_overrides: &[],
-    }),
-    install: Some(InstallCli {
-        scopes: &["user"],
-        needs_git_url: true,
-        takes_git_ref: true,
-    }),
+    },
 };
 
 /// The Pi row.
@@ -613,7 +580,7 @@ pub const PI: HarnessProfile = HarnessProfile {
     label: "Pi",
     runtime: "pi",
     declaration: RuntimeId::Pi,
-    plugin: Some(PluginPolicy {
+    plugin: PluginPolicy {
         skills_dir: ".pi/skills",
         user_skills_dir: Source::Knowledge,
         plugin_manifest: Source::Knowledge,
@@ -636,14 +603,7 @@ pub const PI: HarnessProfile = HarnessProfile {
         entry_fields: &[],
         naming_choice: true,
         agent_only_overrides: &[],
-    }),
-    // `pi install <path>` records a package in the user's settings, or with
-    // `-l` the project's. Pi has no marketplace, so packs install by path.
-    install: Some(InstallCli {
-        scopes: &["user", "project"],
-        needs_git_url: false,
-        takes_git_ref: false,
-    }),
+    },
 };
 
 /// The harness's slug in the knowledge file.
@@ -734,10 +694,7 @@ fn sourced<T>(
 }
 
 fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
-    let policy = profile
-        .plugin
-        .as_ref()
-        .expect("a format is resolved from a plugin policy");
+    let policy = &profile.plugin;
     let name = profile.name;
     PluginFormat {
         skills_dir: policy.skills_dir,
@@ -820,69 +777,23 @@ pub(crate) fn unknown_targets_detail(unknown: &[&str]) -> String {
 pub const PLUGIN_HOOKS_PATH: &str = "hooks/hooks.json";
 
 impl HarnessProfile {
-    /// The install facts of a harness `skillwright harness` drives, readable
-    /// in a `const` so the CLI's adapter table can be built from them.
+    /// The plugin format: this row's policy with the facts the knowledge
+    /// file gives, resolved once on first use.
     ///
     /// # Panics
     ///
-    /// At compile time, on a row with none.
-    pub const fn install_cli(&self) -> &InstallCli {
-        match &self.install {
-            Some(install) => install,
-            None => panic!("this harness has no install CLI"),
-        }
-    }
-
-    /// The plugin format of a harness that has one: its row's policy with the
-    /// facts the knowledge file gives, resolved once on first use.
-    ///
-    /// # Panics
-    ///
-    /// On a spelling-only row. Every caller holds a row from
-    /// [`with_plugin_format`], which yields no other kind. Also if the
-    /// embedded knowledge lacks a fact the row takes from it. The canonical
-    /// rows cannot, and that guarantee is the
-    /// `the_resolved_formats_equal_the_constants_the_rows_held` test; a custom
-    /// row that takes a fact the file lacks panics here.
+    /// On a row that is not one of [`PROFILES`], or if the embedded knowledge
+    /// lacks a fact the row takes from it. The canonical rows cannot, and
+    /// that guarantee is the
+    /// `the_resolved_formats_equal_the_constants_the_rows_held` test.
     pub fn format(&self) -> &'static PluginFormat {
-        self.plugin_format()
-            .expect("only a harness with a plugin format is asked for one")
-    }
-
-    /// [`Self::format`], or `None` for a spelling-only row.
-    ///
-    /// Resolved from this row's own policy and declaration. A row equal to a
-    /// canonical one shares its cached format; a modified or custom row is
-    /// resolved once per distinct name, declaration and policy and cached,
-    /// which is bounded by how many such rows a program makes.
-    pub fn plugin_format(&self) -> Option<&'static PluginFormat> {
-        static FORMATS: OnceLock<Vec<(&'static HarnessProfile, PluginFormat)>> = OnceLock::new();
-        let policy = self.plugin.as_ref()?;
-        let canonical = FORMATS.get_or_init(|| {
-            with_plugin_format()
-                .map(|profile| (profile, resolve_format(profile)))
-                .collect()
-        });
-        if let Some((_, format)) = canonical.iter().find(|(row, _)| {
-            row.name == self.name
-                && row.declaration == self.declaration
-                && row.plugin.as_ref() == Some(policy)
-        }) {
-            return Some(format);
-        }
-        static CUSTOM: Mutex<Vec<(&'static str, RuntimeId, PluginPolicy, &'static PluginFormat)>> =
-            Mutex::new(Vec::new());
-        let mut custom = CUSTOM
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((_, _, _, format)) = custom.iter().find(|(name, declaration, row, _)| {
-            *name == self.name && *declaration == self.declaration && row == policy
-        }) {
-            return Some(format);
-        }
-        let format: &'static PluginFormat = Box::leak(Box::new(resolve_format(self)));
-        custom.push((self.name, self.declaration, policy.clone(), format));
-        Some(format)
+        static FORMATS: OnceLock<Vec<PluginFormat>> = OnceLock::new();
+        let formats = FORMATS.get_or_init(|| PROFILES.iter().map(resolve_format).collect());
+        let at = PROFILES
+            .iter()
+            .position(|row| row.name == self.name)
+            .unwrap_or_else(|| panic!("`{}` is not a harness row", self.name));
+        &formats[at]
     }
 
     /// The paths this harness owns in a marketplace directory: its packs
@@ -930,19 +841,17 @@ impl HarnessProfile {
     /// its row's [`PluginPolicy::agent_only_overrides`].
     pub fn agent_override_keys(&self) -> std::collections::BTreeSet<String> {
         self.plugin
+            .agent_only_overrides
             .iter()
-            .flat_map(|policy| policy.agent_only_overrides)
             .map(|key| (*key).to_owned())
             .collect()
     }
 
     /// The keys this harness's block accepts on a note of `kind`.
     ///
-    /// `None` for an agent, whose blocks are not checked, and for a
-    /// row with no plugin format, which no note can carry a block for
-    /// ([`crate::keys::HARNESS_BLOCKS`] lists only plugin rows).
+    /// `None` for an agent, whose blocks are not checked.
     pub fn block_keys(&self, kind: EntityKind) -> Option<&'static BTreeSet<String>> {
-        let keys = &self.plugin_format()?.block_keys;
+        let keys = &self.format().block_keys;
         match kind {
             EntityKind::Skill | EntityKind::Command => Some(&keys.component),
             EntityKind::Plugin => Some(&keys.plugin),
@@ -953,19 +862,15 @@ impl HarnessProfile {
 
     /// The keys of this harness's block a member of `kind` takes from its
     /// plugin: the keys `kind` accepts, less those a plugin's own manifests
-    /// read and those the harness reads on a subagent alone. No keys for a
-    /// row with no plugin format.
+    /// read and those the harness reads on a subagent alone.
     pub(crate) fn member_block_keys(&self, kind: EntityKind) -> &'static BTreeSet<String> {
-        self.plugin_format()
-            .and_then(|format| format.block_keys.member.get(&kind))
-            .unwrap_or(&NO_KEYS)
+        &self.format().block_keys.member[&kind]
     }
 
     /// The keys of a marketplace's block that pass down to each plugin's
-    /// block. No keys for a row with no plugin format.
+    /// block.
     pub(crate) fn passed_down_keys(&self) -> &'static BTreeSet<String> {
-        self.plugin_format()
-            .map_or(&NO_KEYS, |format| &format.block_keys.passed_down)
+        &self.format().block_keys.passed_down
     }
 }
 
@@ -984,7 +889,7 @@ pub fn profile_named(canonical: &str) -> Option<&'static HarnessProfile> {
 
 /// The harnesses a marketplace is built for, in report order.
 pub fn with_plugin_format() -> impl Iterator<Item = &'static HarnessProfile> {
-    PROFILES.iter().filter(|p| p.plugin.is_some())
+    PROFILES.iter()
 }
 
 #[cfg(test)]
@@ -1028,7 +933,6 @@ mod tests {
     fn every_row_has_a_plugin_format_and_is_a_known_target() {
         let names: Vec<&str> = with_plugin_format().map(|p| p.name).collect();
         assert_eq!(names, KNOWN_TARGETS);
-        assert!(PROFILES.iter().all(|p| p.plugin.is_some()));
         assert!(profile_named("claude-code").is_none());
     }
 
@@ -1139,7 +1043,7 @@ mod tests {
         };
         for profile in with_plugin_format() {
             let name = profile.name;
-            let policy = profile.plugin.as_ref().unwrap();
+            let policy = &profile.plugin;
             let (user, manifest, market, root, naming) = held(name);
             if matches!(policy.user_skills_dir, Source::Knowledge) {
                 let (value, strength) = facts::user_skills_dir(name)
@@ -1218,7 +1122,7 @@ mod tests {
         use crate::frontmatter::EntityKind::{Agent, Marketplace, Plugin};
         for profile in with_plugin_format() {
             let format = profile.format();
-            let policy = profile.plugin.as_ref().unwrap();
+            let policy = &profile.plugin;
             let market = profile.block_keys(Marketplace).unwrap();
             for key in format.marketplace_fields {
                 assert!(market.contains(*key), "{} {key}", profile.name);
@@ -1247,7 +1151,7 @@ mod tests {
     #[test]
     fn only_claude_has_agent_only_overrides() {
         for profile in with_plugin_format() {
-            let keys = profile.plugin.as_ref().unwrap().agent_only_overrides;
+            let keys = &profile.plugin.agent_only_overrides;
             assert_eq!(
                 !keys.is_empty(),
                 profile.name == "claude",
@@ -1255,10 +1159,7 @@ mod tests {
                 profile.name
             );
         }
-        assert_eq!(
-            CLAUDE.plugin.as_ref().unwrap().agent_only_overrides,
-            ["permissionMode"]
-        );
+        assert_eq!(CLAUDE.plugin.agent_only_overrides, ["permissionMode"]);
     }
 
     #[test]
@@ -1280,70 +1181,5 @@ mod tests {
         let pi = profile_named("pi").unwrap();
         assert!(known(claude, "plugins/manifest-fields").is_some());
         assert!(known(pi, "skills/project-dirs").is_some());
-    }
-}
-
-#[cfg(test)]
-mod custom_rows {
-    use super::*;
-
-    #[test]
-    fn a_modified_row_resolves_from_its_own_policy() {
-        let mut row = CLAUDE;
-        row.plugin.as_mut().unwrap().packs = ".other/packs";
-        row.plugin.as_mut().unwrap().plugin_manifest = Source::Constant("custom/plugin.json");
-        let format = row.plugin_format().unwrap();
-        assert_eq!(format.plugin_manifest, "custom/plugin.json");
-        assert_eq!(format.packs, ".other/packs");
-        assert_eq!(
-            CLAUDE.format().plugin_manifest,
-            ".claude-plugin/plugin.json"
-        );
-    }
-
-    #[test]
-    fn a_custom_row_of_constants_needs_no_knowledge() {
-        let mut row = PI;
-        row.name = "mine";
-        let policy = row.plugin.as_mut().unwrap();
-        policy.user_skills_dir = Source::Constant(".mine/skills");
-        policy.plugin_manifest = Source::Constant("mine.json");
-        policy.marketplace_manifest = Source::Constant(None);
-        assert_eq!(row.format().user_skills_dir, ".mine/skills");
-    }
-
-    #[test]
-    fn a_row_with_another_declaration_gets_that_declaration_s_keys() {
-        use crate::frontmatter::EntityKind::Skill;
-        let mut row = CLAUDE;
-        row.declaration = CODEX.declaration;
-        assert_ne!(
-            CLAUDE.accepted_override_keys(),
-            CODEX.accepted_override_keys()
-        );
-        assert_eq!(row.block_keys(Skill), Some(&CODEX.accepted_override_keys()));
-    }
-
-    #[test]
-    fn a_custom_row_gets_its_own_block_keys() {
-        use crate::frontmatter::EntityKind::Plugin;
-        let mut row = CURSOR;
-        let policy = row.plugin.as_mut().unwrap();
-        policy.manifest_fields = &["name", "zz-extra"];
-        policy.naming_choice = false;
-        let keys = row.block_keys(Plugin).unwrap();
-        assert!(keys.contains("zz-extra"));
-        assert!(!keys.contains(crate::harness::manifest::NAMING_KEY));
-        assert!(!CURSOR.block_keys(Plugin).unwrap().contains("zz-extra"));
-    }
-
-    #[test]
-    fn a_custom_row_is_resolved_once() {
-        let mut row = CLAUDE;
-        row.plugin.as_mut().unwrap().packs = ".once/packs";
-        let first = row.plugin_format().unwrap();
-        for _ in 0..100 {
-            assert!(std::ptr::eq(first, row.plugin_format().unwrap()));
-        }
     }
 }

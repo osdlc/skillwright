@@ -138,8 +138,7 @@ pub(crate) trait HarnessTranslator: Sync {
     /// The harness's row.
     fn profile(&self) -> &'static HarnessProfile;
 
-    /// The harness's plugin format. Only a harness with one has a translator
-    /// that writes packs.
+    /// The harness's plugin format.
     fn format(&self) -> &'static PluginFormat {
         self.profile().format()
     }
@@ -574,16 +573,12 @@ fn render_call(
 }
 
 /// How a harness names a published skill of a plugin that is bare on the
-/// harnesses in `bare_on`, or else the profile's default;
-/// [`SkillNaming::Bare`] for a row with no plugin format, where no skill has a
-/// plugin.
+/// harnesses in `bare_on`, or else the profile's default.
 fn naming(profile: &HarnessProfile, bare_on: &[String]) -> SkillNaming {
     if bare_on.iter().any(|name| name == profile.name) {
         return SkillNaming::Bare;
     }
-    profile
-        .plugin_format()
-        .map_or(SkillNaming::Bare, |f| f.naming)
+    profile.format().naming
 }
 
 /// A body's segments as text: each call through `call`, each link through
