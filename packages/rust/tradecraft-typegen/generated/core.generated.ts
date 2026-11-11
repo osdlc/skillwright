@@ -572,62 +572,52 @@ export interface LoadRequest {
   harnesses?: string[];
 }
 
-/** A vault, loaded as the one marketplace a build renders. */
+/** A vault's marketplace, as `loadMarketplace` returns it. */
 export interface Marketplace {
   /** The name the marketplace publishes under. */
   name: string;
 
-  /** The vault's marketplace folder this was loaded from. Always set. */
-  folder: string | null;
-
   /** Every plugin, by name. */
   plugins: Record<string, Plugin>;
 
-  /**
-   * Components no pack has a place for, such as agents — named, never
-   * dropped. In path order.
-   */
+  /** Components no plugin has a place for, such as agents. In path order. */
   uncarried: Component[];
 
-  /** What the scan and the resolve pass filled in or noticed, in path order. */
+  /** What the scan and the load noticed, in path order. */
   warnings: DiscoveryWarning[];
 
   /** How many skills the marketplace holds. */
   checked: number;
 }
 
-/** One plugin and everything it carries. */
+/** One plugin and what it carries. */
 export interface Plugin {
   /** The plugin's name. */
   name: string;
 
-  /** Its skills, in discovery's name order. */
+  /** Its skills, in name order. */
   skills: Component[];
 
-  /** Its commands. */
+  /** Its commands, in name order. */
   commands: Component[];
 
-  /** Files copied verbatim into the built pack. */
+  /** Files copied verbatim into the built plugin. */
   assets: Asset[];
 
   /**
-   * The Markdown in its shared `references/`, compiled, each at its path
-   * from the pack root.
+   * The paths of the Markdown files in its shared `references/`, from the
+   * plugin root.
    */
-  references: Resource[];
+  references: string[];
 
   /**
-   * The harnesses that name this plugin's skills bare against their
-   * profile's default: `<harness>: {naming: bare}` where the default
-   * prefixes.
+   * The harnesses that name this plugin's skills without the plugin
+   * prefix their default adds.
    */
-  bare_on?: string[];
+  bare_on?: Target[];
 }
 
-/**
- * A skill, a command, an agent or a container note, read and — when
- * a requested harness admits it — resolved.
- */
+/** A skill, a command or an agent. */
 export interface Component {
   /** What it is. */
   kind: EntityKind;
@@ -639,310 +629,29 @@ export interface Component {
   path: string;
 
   /** Its `targets`, as written. `None` publishes everywhere. */
-  targets: string[] | null;
+  targets: Target[] | null;
 
-  /** Its harness-only fields, by harness. */
-  extensions: Extensions;
-
-  /**
-   * Its content: name, description, the modeled fields and the
-   * annotations every harness receives, with `arguments` applied for a
-   * skill or a command. The body is the note's own; the resolved one is
-   * [`Self::resolved`]. `None` until the note is read in full, which a load
-   * does only for what some requested harness admits.
-   */
-  content: SkillContent | null;
-
-  /**
-   * The body and its files, resolved. `None` when no harness this load is
-   * for admits the component.
-   */
-  resolved: Resolved | null;
-}
-
-/**
- * A node's harness-only fields: harness blocks, folded onto canonical
- * harness names (D-ISOU).
- */
-export interface Extensions {
-  /** Each harness's block, as written. */
+  /** Its harness blocks, by harness. */
   blocks: Record<string, Record<string, unknown>>;
-}
-
-/**
- * The content plane shared by drafts and version snapshots. Fields are the
- * skill's modeled set plus `annotations` (frontmatter keys
- * outside the modeled set, preserved verbatim).
- */
-export interface SkillContent {
-  /** The skill's name. */
-  name: string;
-
-  /** What the skill does and when to use it. */
-  description: string;
-
-  /** Hint shown for the arguments the skill takes. */
-  argument_hint: string | null;
 
   /**
-   * Claude Code's own `arguments:` frontmatter key — see
-   * [`agent_adapt::Skill::argument_names`]. Hand-written (read from the
-   * note's literal `arguments:` key, never `sw-arguments`), or derived by
-   * [`SkillContent::apply_arguments`] the same way [`Self::argument_hint`]
-   * is.
-   */
-  argument_names: string[] | null;
-
-  /**
-   * What this skill or command's invocation takes.
-   *
-   * The one field here sourced from skillwright's own keys rather than from
-   * the standard's own frontmatter — see
-   * [`crate::frontmatter::VaultFrontmatter::arguments`] for why that is
-   * not the contradiction it looks like. `Vec::new()` by construction
-   * whenever this `SkillContent` comes from
-   * [`crate::vault::read_vault_skill`]; only [`SkillContent::apply_arguments`]
-   * fills it in, called by `export` after the read, before
-   * the projection.
-   */
-  arguments: Argument[];
-
-  /** The markdown body, without frontmatter. */
-  body: string;
-
-  /** Tools the skill may use without asking. */
-  allowed_tools: string[];
-
-  /**
-   * The Agent Skills spec's `license:` — a licence name, or a reference to a bundled
-   * licence file. Not `sw-license`, which is a container note's package
-   * identity and never travels.
-   */
-  license: string | null;
-
-  /**
-   * The Agent Skills spec's `compatibility:` — what environment this needs, capped at
-   * 500 characters by [`crate::discover`].
-   */
-  compatibility: string | null;
-
-  /**
-   * The Agent Skills spec's `metadata:`. Only the entries the note wrote under that key;
-   * the unmodeled top-level keys in [`Self::annotations`] join them in one block at render
-   * time, as YAML, so an unquoted `true` publishes as a boolean.
-   */
-  metadata: Record<string, string>;
-
-  /** Model the skill asks to run on, when it names one. */
-  model_override: string | null;
-
-  /** Context mode the skill asks for, when it names one. */
-  context_mode: string | null;
-
-  /** Whether a user can invoke the skill directly. */
-  user_invocable: boolean;
-
-  /** Whether the model is barred from invoking the skill on its own. */
-  disable_model_invocation: boolean;
-
-  /** Free-form tags. */
-  tags: string[];
-
-  /** Unmodeled frontmatter, preserved as-is. A JSON object. */
-  annotations: Record<string, unknown>;
-
-  /**
-   * harness blocks, keyed by **canonical** destination name — what one
-   * harness receives that the shared model cannot say.
-   *
-   * The second field here sourced from skillwright's own keys, and it is
-   * here for the same reason [`Self::arguments`] is: a renderer needs it.
-   * `BTreeMap::new()` by construction from
-   * [`crate::vault::read_vault_skill`]; only
-   * [`SkillContent::apply_overrides`] fills it in, and only after
-   * [`crate::model::cascade::fold_harness_blocks`] has folded the target names and
-   * checked every key against the harness that will receive it.
-   *
-   * The raw harness block key still reaches no destination — the strip
-   * is unaffected, because this is not `annotations`.
-   */
-  overrides: Record<string, Record<string, unknown>>;
-}
-
-/**
- * One argument a [`crate::Skill`] or [`crate::Command`] declares.
- *
- * Rendered two ways: [`crate::render::derive_argument_hint`] folds the list
- * into a single hint string for a dialect that has one field for it
- * (Claude Code's `argument-hint`), and
- * [`crate::render::render_arguments_section`] writes the whole list into the
- * body as prose, in the syntax the target runtime's invocation mechanism
- * uses — or as a plain description when it has none.
- */
-export interface Argument {
-  /** A slug: unique among the arguments on the same skill or command. */
-  name: string;
-
-  /**
-   * What the argument is for, shown beside its name wherever the list is
-   * rendered.
+   * Its `description`. `None` when no harness the load is for admits the
+   * component, because the load does not read such a note in full.
    */
   description: string | null;
 
-  /** Whether the caller must supply this argument. Defaults to `false`. */
-  required: boolean;
-
   /**
-   * The closed set of values this argument accepts, when it is an enum.
-   * `None` means any value; `Some` is never empty — an argument with no
-   * allowed values is not an enum, and authoring that is refused before
-   * this struct exists.
+   * Every skill or command its body calls, in body order. Empty when no
+   * harness the load is for admits the component.
    */
-  values: string[] | null;
+  calls: SkillId[];
 
-  /**
-   * The value assumed when the caller supplies none. When `values` is
-   * `Some`, this is one of them — also enforced before this struct exists,
-   * not here.
-   */
-  default: string | null;
+  /** The paths of the files it carries, relative to its own directory. */
+  resources: string[];
 }
 
-/** A body and the files it reaches, every link and call pointed at its node. */
-export interface Resolved {
-  /** The entry's body. */
-  body: Body;
-
-  /** Every file that travels with it, by output path. */
-  resources: Resource[];
-}
-
-/**
- * A body as a sequence of segments.
- *
- * A named field rather than a newtype so it crosses the wasm boundary as an
- * object, which is the only struct shape the TypeScript generator emits.
- */
-export interface Body {
-  /** The segments, in order. */
-  segments: Segment[];
-}
-
-/** One piece of a resolved body. */
-export type Segment =
-  /** Text, written as is. */
-  | {
-      type: "text";
-      /** The text. */
-      text: string;
-    }
-  /** A link to a file that travels with the component. */
-  | {
-      type: "link";
-      /** Where it points. */
-      target: ResolvedRef;
-    }
-  /**
-   * A call to a skill or command. The surrounding text already holds the
-   * backticks the call is written in.
-   */
-  | {
-      type: "call";
-      /** The call. */
-      call: Call;
-    }
-  /**
-   * An embedded file as a fenced block, written as is: nothing in it is
-   * interpreted (spec section 5 rule 9).
-   */
-  | {
-      type: "literal";
-      /** The block, fences included. */
-      text: string;
-    }
-  /**
-   * A `${PLUGIN_ROOT}/<path>`, which each harness writes its own way
-   * (spec section 4 rules 15 to 20).
-   */
-  | {
-      type: "plugin-root";
-      /** The path. */
-      path: PluginRootPath;
-    };
-
-/**
- * A resolved link: where it is written, the file it reaches, and how it is
- * written. Both paths are paths in a pack laid out as Claude Code's
- * (`skills/<s>/…`, `commands/<c>.md`, shared files at the root); a translator
- * maps them to its own folders.
- */
-export interface ResolvedRef {
-  /** The linked file, vault-relative. */
-  path: string;
-
-  /** The link text, escaped. Empty for a Markdown link's destination. */
-  label: string;
-
-  /** Where the text holding the link lands. */
-  from: string;
-
-  /** Where the linked file lands. */
-  to: string;
-
-  /**
-   * What follows the path: a fragment, encoded, with its `#`, or a
-   * Markdown link's own `#…` or `?…` as written. Empty for none.
-   */
-  suffix: string;
-
-  /** How the link is written. */
-  form: LinkForm;
-
-  /**
-   * The component whose folder holds the linked file. A pack that does
-   * not contain it cannot hold the link (spec section 4 rule 6).
-   */
-  component: LinkedComponent | null;
-
-  /** The link as written, for an error. */
-  written: string;
-
-  /** The file the link is in, vault-relative, for an error. */
-  caller: string;
-}
-
-/** How a link is written. */
-export type LinkForm = "link" | "image" | "href";
-
-/** A component a link reaches into. */
-export interface LinkedComponent {
-  /** Its kind. */
-  kind: EntityKind;
-
-  /** Its source name. */
-  name: string;
-}
-
-/** A resolved call. */
-export interface Call {
-  /** The skill or command it names. */
-  skill: SkillId;
-
-  /** Its `targets`, which decide whether a harness ships it. */
-  targets: string[] | null;
-
-  /**
-   * The harnesses that name the skill bare against their profile's
-   * default, as its plugin's [`Plugin::bare_on`].
-   */
-  bare_on?: string[];
-
-  /** The call's target as written, without `/[[` and `]]`, for a refusal. */
-  destination: string;
-
-  /** The note the call is in, for a refusal. */
-  caller: string;
-}
+/** A harness name: one of `KNOWN_TARGETS`. */
+export type Target = "claude" | "codex" | "cursor" | "pi";
 
 /** A skill or command as a call names it. */
 export interface SkillId {
@@ -955,49 +664,6 @@ export interface SkillId {
   /** A skill or a command. */
   kind: EntityKind;
 }
-
-/**
- * A `${PLUGIN_ROOT}/<path>` in text. Both paths are paths in a pack laid
- * out as Claude Code's, as a [`ResolvedRef`]'s are.
- */
-export interface PluginRootPath {
-  /** The file it names. */
-  path: string;
-
-  /** Where the text holding it lands. */
-  from: string;
-
-  /** The reference as written, for an error. */
-  written: string;
-
-  /** The file it is in, vault-relative, for an error. */
-  caller: string;
-}
-
-/** One file a component carries. */
-export interface Resource {
-  /** Where it lands, relative to the component's directory. */
-  path: string;
-
-  /** Its content. */
-  content: ResourceContent;
-
-  /** Whether it is executable. */
-  executable: boolean;
-}
-
-/** A resource's content: a compiled markdown file, or bytes as found. */
-export type ResourceContent =
-  /** A markdown file, whose links and calls a translator writes. */
-  | {
-      type: "body";
-      /** The file, frontmatter and all. */
-      body: Body;
-    }
-  /** Anything else, copied byte for byte. */
-  | {
-      type: "bytes";
-    };
 
 /** A file copied verbatim into a pack. */
 export interface Asset {

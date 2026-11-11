@@ -205,9 +205,6 @@ pub enum ResourceContent {
 }
 
 /// A body as a sequence of segments.
-///
-/// A named field rather than a newtype so it crosses the wasm boundary as an
-/// object, which is the only struct shape the TypeScript generator emits.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Body {
     /// The segments, in order.

@@ -18,7 +18,7 @@
  * | `discoverComponents` | the vault scan | `build`, `check`, and whatever needs a roster |
  * | `buildVault` | every marketplace, planned then written all or none | `build`, and `check` through `mode` |
  * | `exportSkills` | the marketplace renderer, one marketplace | `build`, and `check` through `mode` |
- * | `loadMarketplace` | the marketplace model, loaded and resolved | a host that wants structure rather than files |
+ * | `loadMarketplace` | the marketplace, loaded and resolved, in the binding's own narrow shape | a host that wants structure rather than files |
  * | `knownTargets` | the target vocabulary | every verb that takes a target name |
  * | `parseRootFile` | the `skillwright.md` reader | a host reading the root file |
  *
@@ -43,13 +43,15 @@ import {
 import type { Vfs } from './node-vfs.ts'
 
 import type {
+  DiscoveredComponent as GeneratedDiscoveredComponent,
   DiscoverRequest,
-  DiscoveryReport,
+  DiscoveryReport as GeneratedDiscoveryReport,
   ExportReport,
   ExportRequest as GeneratedExportRequest,
   LoadRequest as GeneratedLoadRequest,
   Marketplace,
   RootFile,
+  Target,
   VaultReport,
   VaultRequest as GeneratedVaultRequest,
 } from './core.generated.ts'
@@ -59,18 +61,19 @@ import type {
  * `tradecraft-typegen` and re-exported here so this file stays the package's
  * one door to the core.
  *
- * Re-exported, never re-declared, except for `Target` and the `harnesses` of
- * the three requests, below. Everything else here is exactly what
+ * Re-exported, never re-declared, except for the `harnesses` of the three
+ * requests and discovery's `targets`, below, typed as {@link Target}s.
+ * Everything else here is exactly what
  * `tradecraft-typegen` read off the Rust source.
  * Regenerate with `cargo run -p tradecraft-typegen`; `cargo test -p tradecraft-typegen`
  * fails when the committed file is behind the Rust source, and a test in this
  * package fails when src/core.generated.ts differs from the crate's copy.
  */
 export type {
+  Asset,
   ContainerIdentity,
-  DiscoveredComponent,
   DiscoverRequest,
-  DiscoveryReport,
+  DiscoveryWarning,
   EntityKind,
   ExportMode,
   ExportReport,
@@ -79,11 +82,12 @@ export type {
   MarketplaceReport,
   Plugin,
   Component,
-  Segment,
   RootFile,
   SharedDefaults,
   BuildSettings,
+  SkillId,
   SkippedNote,
+  Target,
   UnitStatus,
   VaultReport,
   VersionBumpSuggestion,
@@ -92,12 +96,15 @@ export type {
   WasmResponses,
 } from './core.generated.ts'
 
-/**
- * The four harness names the core accepts: `KNOWN_TARGETS` in
- * `tradecraft_core::harness`. The core types a target as a `String`, so this
- * is kept by hand; a test checks it equals {@link knownTargets}.
- */
-export type Target = 'claude' | 'codex' | 'cursor' | 'pi'
+/** The generated `DiscoveredComponent`, with `targets` typed as {@link Target}s. */
+export type DiscoveredComponent = Omit<GeneratedDiscoveredComponent, 'targets'> & {
+  targets: Target[] | null
+}
+
+/** The generated `DiscoveryReport`, with its components' `targets` typed. */
+export type DiscoveryReport = Omit<GeneratedDiscoveryReport, 'components'> & {
+  components: DiscoveredComponent[]
+}
 
 /** The generated `ExportRequest`, with `harnesses` typed as {@link Target}s. */
 export type ExportRequest = Omit<GeneratedExportRequest, 'harnesses'> & {
@@ -227,13 +234,14 @@ export function buildVault(vfs: Vfs, request: VaultRequest): VaultReport {
 }
 
 /**
- * Load one marketplace of the vault into the model and write nothing: every
- * plugin and its members, each body as segments with its links and calls
- * resolved. `marketplace` names it, and is required when the vault holds
- * more than one.
+ * Load one marketplace of the vault and write nothing: every plugin and its
+ * members, each with its description, the skills it calls and the files it
+ * carries. `marketplace` names it, and is required when the vault holds more
+ * than one.
  *
- * The same model `exportSkills` translates into files, so a host that wants
- * a vault's structure reads it here rather than parsing a built tree.
+ * The structure of the model `exportSkills` translates into files, so a host
+ * that wants a vault's structure reads it here rather than parsing a built
+ * tree. The rendered bodies do not cross.
  *
  * Throws {@link CoreError} for everything the load refuses — a vault outside
  * the layout, no `marketplace` on a vault of several, an unreadable member

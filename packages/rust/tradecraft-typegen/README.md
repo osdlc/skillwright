@@ -43,8 +43,8 @@ registered anywhere:
 |---|---|
 | Which exports are there? | `#[wasm_bindgen(js_name = …)]` in `tradecraft-wasm/src/lib.rs` |
 | What does an export deserialize? | its `let wire: T = serde_json::from_str(request_json)` |
-| What does it hand back? | the return type of the core function its body calls — or, for an export with no function to call, the type of the core constant it hands back (`knownTargets` -> `KNOWN_TARGETS: &[&str]`) |
-| What do those types look like? | the public structs and enums of `tradecraft-core` |
+| What does it hand back? | the return type of the function its body calls, in the core or in a module of the wrapper (`loadMarketplace` -> `wire::marketplace`) — or, for an export with no function to call, the type of the core constant it hands back (`knownTargets` -> `KNOWN_TARGETS: &[&str]`) |
+| What do those types look like? | the public structs and enums of `tradecraft-core`, and every struct and enum in the wrapper's own files, which win over a core type of the same name |
 
 A new export is covered the day it is written. `tests/every_export_is_covered.rs`
 asserts that the exports the wrapper declares and the exports the generator

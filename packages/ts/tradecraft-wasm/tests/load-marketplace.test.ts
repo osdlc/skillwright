@@ -7,8 +7,8 @@ import { expect, test } from 'vitest'
 import { CoreError, loadMarketplace, parseRootFile } from '../src/core.ts'
 import { createNodeVfs } from '../src/node-vfs.ts'
 
-// The model crosses the boundary as the generated `Marketplace` shape: plugins
-// by name, each body as segments, a call resolved to the skill it names.
+// The marketplace crosses as the generated `Marketplace` shape: plugins by
+// name, each skill with the skills it calls.
 test('loadMarketplace returns the model with calls resolved', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'tradecraft-load-'))
   try {
@@ -24,7 +24,7 @@ test('loadMarketplace returns the model with calls resolved', () => {
     writeFileSync(path.join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
     writeFileSync(
       path.join(skills, 'review/review.md'),
-      '---\ndescription: Reviews a diff.\n---\n\nRun /[[lint]] first.\n',
+      '---\ndescription: Reviews a diff.\ntargets: [claude, pi]\n---\n\nRun /[[lint]] first.\n',
     )
     writeFileSync(path.join(skills, 'lint/lint.md'), '---\ndescription: Lints.\n---\n\nLint it.\n')
 
@@ -33,8 +33,37 @@ test('loadMarketplace returns the model with calls resolved', () => {
     const tools = market.plugins['tools']
     expect(tools?.skills.map((s) => s.name)).toEqual(['lint', 'review'])
     const review = tools?.skills.find((s) => s.name === 'review')
-    const kinds = review?.resolved?.body.segments.map((s) => s.type)
-    expect(kinds).toContain('call')
+    expect(review?.calls).toEqual([{ plugin: 'tools', name: 'lint', kind: 'skill' }])
+    expect(review?.description).toBe('Reviews a diff.')
+    expect(review?.targets).toEqual(['claude', 'pi'])
+
+    // Only the narrow shape crosses: no body segments, no model folder, no
+    // agent-adapt content.
+    expect(Object.keys(market).sort()).toEqual([
+      'checked',
+      'name',
+      'plugins',
+      'uncarried',
+      'warnings',
+    ])
+    expect(Object.keys(tools ?? {}).sort()).toEqual([
+      'assets',
+      'commands',
+      'name',
+      'references',
+      'skills',
+    ])
+    expect(Object.keys(review ?? {}).sort()).toEqual([
+      'blocks',
+      'calls',
+      'description',
+      'kind',
+      'name',
+      'path',
+      'resources',
+      'targets',
+    ])
+    expect(JSON.stringify(market)).not.toMatch(/"(segments|folder|resolved|content)"/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

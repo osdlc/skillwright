@@ -10,8 +10,11 @@ import {
   exportSkills,
   knownTargets,
   loadMarketplace,
+  type Component,
+  type DiscoveredComponent,
   type ExportRequest,
   type LoadRequest,
+  type Plugin,
   type Target,
   type VaultRequest,
 } from '../src/core.ts'
@@ -117,7 +120,6 @@ test('loadMarketplace loads the marketplace it names', () => {
   marketplace('labs')
   const market = loadMarketplace(createNodeVfs(), { vault_root: vault, marketplace: 'acme' })
   expect(market.name).toBe('acme')
-  expect(market.folder).toBe('acme')
   expect(Object.keys(market.plugins)).toEqual(['tools'])
 })
 
@@ -146,4 +148,7 @@ test('Target is the four names knownTargets() returns', () => {
   expectTypeOf<NonNullable<ExportRequest['harnesses']>>().toEqualTypeOf<Target[]>()
   expectTypeOf<NonNullable<LoadRequest['harnesses']>>().toEqualTypeOf<Target[]>()
   expectTypeOf<NonNullable<VaultRequest['harnesses']>>().toEqualTypeOf<Target[]>()
+  expectTypeOf<Component['targets']>().toEqualTypeOf<Target[] | null>()
+  expectTypeOf<NonNullable<Plugin['bare_on']>>().toEqualTypeOf<Target[]>()
+  expectTypeOf<DiscoveredComponent['targets']>().toEqualTypeOf<Target[] | null>()
 })

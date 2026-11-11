@@ -13,7 +13,7 @@
 //! | `discoverComponents` | `discover::discover_components` | the vault scan every other verb needs |
 //! | `buildVault` | `export::build_vault` | `build` and `check` of every marketplace, through `mode` |
 //! | `exportSkills` | `export::export_skills` | `build`, and `check` through `mode`, of one marketplace |
-//! | `loadMarketplace` | `model::load::load` | any host that wants the model rather than files |
+//! | `loadMarketplace` | `model::load::load`, through `wire::marketplace` | any host that wants the structure rather than files |
 //! | `knownTargets` | `harness::KNOWN_TARGETS` | every verb that takes a target name |
 //! | `parseRootFile` | `settings::parse_root_file` | a host reading `skillwright.md` |
 //!
@@ -36,9 +36,13 @@
 //!   the core's own derives. `buildVault`, `exportSkills` and
 //!   `loadMarketplace` read the core's `VaultRequest`, `ExportRequest` and
 //!   `LoadRequest` directly. `WireDiscoverRequest`
-//!   is the one shape this crate owns, because `discover_components` takes
-//!   loose parameters rather than a struct. Every request refuses an unknown
-//!   key.
+//!   is the one request shape this crate owns, because `discover_components`
+//!   takes loose parameters rather than a struct. Every request refuses an
+//!   unknown key.
+//! - **`loadMarketplace` answers in this crate's own types** (`wire`), not
+//!   the core's model. The model carries what the translators work from, such
+//!   as each body as segments; the wire form carries the structure a host
+//!   shows, and nothing it would have to depend on beyond that.
 //! - **The vault is read in the v2 layout** (`skillwright.md`, `marketplaces/`):
 //!   discovery and the load read only `marketplaces/`, so nothing a build
 //!   writes to `dist/` is ever read back.
@@ -51,6 +55,7 @@
 //! staged, so every refusal it can produce is a throw.
 
 mod js_vfs;
+mod wire;
 
 use std::path::PathBuf;
 
@@ -62,9 +67,10 @@ use tradecraft_core::export::{
     export_skills as core_export_skills,
 };
 use tradecraft_core::harness::KNOWN_TARGETS;
-use tradecraft_core::model::load::{LoadRequest, load as core_load};
+use tradecraft_core::model::load::LoadRequest;
 use tradecraft_core::settings::parse_root_file as core_parse_root_file;
 use wasm_bindgen::prelude::*;
+use wire::marketplace as wire_marketplace;
 
 pub use js_vfs::{HostVfs, JsVfs};
 
@@ -214,16 +220,16 @@ pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> 
     report_json("vault report", &report)
 }
 
-/// Load one marketplace of the vault into the model — every plugin and its
-/// members, with each body's links and calls resolved — and write nothing.
-/// The request's `marketplace` names it, and is required when the vault holds
-/// more than one.
+/// Load one marketplace of the vault — every plugin and its members, with
+/// each body's links and calls resolved — and write nothing. The request's
+/// `marketplace` names it, and is required when the vault holds more than
+/// one.
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a serialized
-/// `LoadRequest`. Returns a serialized
-/// `Marketplace`: the same model `exportSkills` translates into files, so a
-/// host that wants to show a vault's structure reads it here rather than
-/// re-deriving it from a built tree.
+/// `LoadRequest`. Returns a serialized `wire::WireMarketplace`: the
+/// structure of the model `exportSkills` translates into files, so a host
+/// that wants to show a vault reads it here rather than re-deriving it from a
+/// built tree.
 ///
 /// # Errors
 ///
@@ -236,9 +242,9 @@ pub fn load_marketplace(vfs: JsValue, request_json: &str) -> Result<String, JsVa
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
     let request: LoadRequest = serde_json::from_str(request_json)
         .map_err(|e| throwable(&format!("request is not a valid LoadRequest: {e}")))?;
-    let market = core_load(&vfs, &request).map_err(|e| core_error_to_js(&e))?;
+    let market = wire_marketplace(&vfs, &request).map_err(|e| core_error_to_js(&e))?;
 
-    report_json("marketplace model", &market)
+    report_json("marketplace", &market)
 }
 
 // --- the shared half of every export ---------------------------------------
@@ -385,9 +391,40 @@ mod tests {
         assert!(!found.contains("stale"), "{found}");
 
         let request: LoadRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
-        let market = core_load(&vfs, &request).unwrap();
+        let market = wire_marketplace(&vfs, &request).unwrap();
         let loaded = serde_json::to_string(&market).unwrap();
         assert!(loaded.contains("rev"), "{loaded}");
         assert!(!loaded.contains("stale"), "{loaded}");
+    }
+
+    /// The load answers in the wire types: no body segments, no folder, no
+    /// agent-adapt content.
+    #[test]
+    fn the_loaded_marketplace_carries_the_wire_shape_only() {
+        let vfs = vault();
+        let request: LoadRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
+        let market = wire_marketplace(&vfs, &request).unwrap();
+        let json = serde_json::to_value(&market).unwrap();
+        let keys =
+            |v: &serde_json::Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+        assert_eq!(
+            keys(&json),
+            ["name", "plugins", "uncarried", "warnings", "checked"]
+        );
+        let skill = &json["plugins"]["rev"]["skills"][0];
+        assert_eq!(
+            keys(skill),
+            [
+                "kind",
+                "name",
+                "path",
+                "targets",
+                "blocks",
+                "description",
+                "calls",
+                "resources"
+            ]
+        );
+        assert_eq!(skill["description"], "Use it.");
     }
 }

@@ -10,9 +10,9 @@
 //!
 //! Question 2 is answered without a registry: an export's request type is the
 //! one its own body names in `serde_json::from_str`, and its response type is
-//! the return type of the core function its body calls — or, for an export
-//! with no core function to call (`knownTargets` hands back a constant), the
-//! constant's own type. A new export is covered the day it is written.
+//! the return type of the function its body calls (the core's, or one in the
+//! wrapper's own modules) — or, for an export with no function to call
+//! (`knownTargets` hands back a constant), the constant's own type. A new export is covered the day it is written.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -183,14 +183,34 @@ pub fn read(core_src: &Path, wasm_lib: &Path, extra_files: &[PathBuf]) -> Result
         );
     }
 
+    // The wrapper's own files: `lib.rs` and its modules beside it. Their
+    // types are the wire types, read at any visibility, and replace a core
+    // type of the same name, because the wrapper's is the one that crosses.
+    // Their functions join the core's, so an export may answer through one
+    // (`loadMarketplace` calls `wire::marketplace`).
     let wasm = parse_file(wasm_lib)?;
-    // The wrapper's own wire structs are private, so `collect_items` (which
-    // takes pub items only) does not see them. They are the request roots, so
-    // read them directly.
-    for item in &wasm.items {
-        if let syn::Item::Struct(s) = item {
-            let def = read_struct(s);
-            types.insert(def.name.clone(), TypeDef::Struct(def));
+    let wasm_dir = wasm_lib.parent().unwrap_or(Path::new("."));
+    for path in rust_files(wasm_dir)? {
+        let file = if path == wasm_lib {
+            wasm.clone()
+        } else {
+            parse_file(&path)?
+        };
+        for item in &file.items {
+            match item {
+                syn::Item::Struct(s) => {
+                    let def = read_struct(s);
+                    types.insert(def.name.clone(), TypeDef::Struct(def));
+                }
+                syn::Item::Enum(e) => {
+                    let def = read_enum(e);
+                    types.insert(def.name.clone(), TypeDef::Enum(def));
+                }
+                syn::Item::Fn(f) if path != wasm_lib => {
+                    fn_returns.insert(f.sig.ident.to_string(), f.sig.output.clone());
+                }
+                _ => {}
+            }
         }
     }
 
@@ -434,7 +454,7 @@ fn meta_str(meta: &syn::meta::ParseNestedMeta<'_>) -> Option<String> {
 }
 
 /// Local names in the wrapper that stand for a public function or constant of
-/// the core.
+/// the core, or a function of the wrapper's own modules.
 ///
 /// `use tradecraft_core::export::{ExportRequest, export_skills as
 /// core_export_skills}` gives `core_export_skills -> export_skills`. Imported
@@ -523,7 +543,8 @@ fn read_exports(
             let core_item = called_core_item(f, aliases).ok_or_else(|| {
                 format!(
                     "`{js_name}` returns a JSON string but its body does not call exactly \
-                     one function, and names no constant, imported from `tradecraft_core`. \
+                     one function, and names no constant, imported from `tradecraft_core` or \
+                     a module of the wrapper. \
                      The generator reads the response type off that function's return type, \
                      or off a referenced constant's own type."
                 )
