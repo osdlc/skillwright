@@ -12,8 +12,8 @@ compiled from the `harness-reference` claims corpus and embedded in
 
 - **Facts move:** the user skills folder, the pack manifest path, the
   marketplace manifest path, the plugin-root variable and the naming rule.
-- **Policy stays in code:** the packs folder, the dialect, Pi's prefixed
-  naming, the override lists, runtime mappings, and the config overrides of
+- **Policy stays in code:** the packs folder, the dialect, Cursor's and Pi's
+  prefixed naming, the override lists, runtime mappings, and the config overrides of
   [D-WNTQ](D-WNTQ-harness-profile-values-from-config.md). The translator trait
   is unchanged. The profile's shape changes in one place, a breaking change to
   `tradecraft-core`: `HarnessProfile::plugin` is an `Option<PluginPolicy>`

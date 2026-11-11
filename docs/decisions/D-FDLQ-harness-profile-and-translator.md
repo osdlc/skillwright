@@ -8,8 +8,8 @@ Accepted 2026-11-04. [Review](../parley/discuss-architecture.json). Part of
 ## Decision
 
 - A **harness profile** is one row of data per harness in `tradecraft-core`:
-  paths, manifest locations, naming rule, which kinds a plugin carries,
-  accepted override keys, name spellings, install CLI. Tests check it
+  paths, manifest locations, naming rule, which kinds a pack carries and
+  accepted harness-block keys. Tests check it
   against `harness-reference/`.
 - A **harness translator** implements one shared trait. Its default methods
   do the common work from the profile. Each harness overrides only what

@@ -23,6 +23,10 @@ and may return in a later milestone:
 A removed command is now an unknown command: a usage error, exit 3, with no
 hint that it was removed.
 
+The `adopted` key, the provenance `adopt` wrote, goes with `adopt`. A v1
+`adopted:` block is now an unknown key: it warns. On a skill it ships under
+`metadata:`; on a plugin or marketplace note it is ignored.
+
 These flags go too:
 
 | Flag | Why |

@@ -101,6 +101,42 @@ fn a_prefixed_key_is_an_unknown_key() {
 }
 
 #[test]
+fn an_adopted_block_is_an_unknown_key() {
+    let skill = "---\ndescription: D.\nadopted:\n  from: git\n---\nBody.\n";
+    let plugin = "---\ndescription: A plugin.\nversion: 1.2.3\nadopted:\n  from: git\n---\n";
+    let dir = vault(ROOT, &[("p/p.md", plugin), ("p/skills/s/s.md", skill)]);
+    let built = sw(&dir.path(), &["build", "--yes"]);
+    assert_eq!(built.code, 0, "{}", built.text);
+    assert!(
+        built
+            .text
+            .contains("`adopted` is not a key skillwright reads on a skill"),
+        "{}",
+        built.text
+    );
+    assert!(
+        built
+            .text
+            .contains("`adopted` is not a key skillwright reads on a plugin"),
+        "{}",
+        built.text
+    );
+    let skill_md =
+        std::fs::read_to_string(dir.dist().join(".claude-plugin/packs/p/skills/s/SKILL.md"))
+            .unwrap();
+    assert!(
+        skill_md.contains("metadata:\n  adopted:\n    from: git"),
+        "{skill_md}"
+    );
+    let manifest = std::fs::read_to_string(
+        dir.dist()
+            .join(".claude-plugin/packs/p/.claude-plugin/plugin.json"),
+    )
+    .unwrap();
+    assert!(!manifest.contains("adopted"), "{manifest}");
+}
+
+#[test]
 fn a_never_ship_folder_in_a_skill_folder_does_not_ship() {
     let dir = vault(
         ROOT,
