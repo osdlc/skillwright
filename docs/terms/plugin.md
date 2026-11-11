@@ -2,11 +2,11 @@
 
 Status: current.
 
-A group of skills, commands and hooks that installs as one unit. A component's plugin comes from its folder.
+A group of skills, commands and hooks that installs as one unit: a folder `marketplaces/<m>/plugins/<p>/` and its note `<p>.md`. A component's plugin comes from its folder.
 
 ## In code
 
-`PluginGroup` in `export.rs`.
+`Plugin` in `model/mod.rs`.
 
 ## Not to be confused with
 

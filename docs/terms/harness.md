@@ -2,11 +2,11 @@
 
 Status: current.
 
-A coding-agent tool skillwright writes for: Claude Code, Codex, Cursor, Pi, and others planned.
+A coding-agent tool skillwright builds for: Claude Code, Codex, Cursor and Pi.
 
 ## In code
 
-`ROOTS` in `export.rs`; `canonical_target` in `publish.rs`.
+`PROFILES` in `harness/profile.rs`, one row per harness; `KNOWN_TARGETS` holds their names.
 
 ## Not to be confused with
 

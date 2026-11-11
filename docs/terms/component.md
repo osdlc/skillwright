@@ -2,7 +2,7 @@
 
 Status: current.
 
-Anything a note defines: a [marketplace](marketplace.md), [plugin](plugin.md), [skill](skill.md), [command](command.md), [hook](hook.md) or agent. Each has a [kind](kind.md).
+A [skill](skill.md), [command](command.md) or agent: a note at a component position inside a [plugin](plugin.md). Each has a [kind](kind.md). A [marketplace](marketplace.md) or plugin is a container, not a component.
 
 ## In code
 
@@ -10,4 +10,4 @@ Anything a note defines: a [marketplace](marketplace.md), [plugin](plugin.md), [
 
 ## Not to be confused with
 
-A model node. In the planned model each component becomes a node; see [marketplace-model](marketplace-model.md).
+A model node. Each component the build reads becomes a node of the [marketplace-model](marketplace-model.md).

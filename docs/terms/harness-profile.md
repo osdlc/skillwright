@@ -2,12 +2,12 @@
 
 Status: current.
 
-One row of data per [harness](harness.md): paths, manifest locations, naming rule, which kinds a plugin carries, accepted override keys, alias spellings, install CLI. Tied to `harness-reference/` by tests ([D-FDLQ](../decisions/D-FDLQ-harness-profile-and-translator.md)).
+One row of data per [harness](harness.md): paths, manifest locations, naming rule, which kinds a pack carries, accepted harness-block keys and the plugin-root variable. Tied to `harness-reference/` by tests ([D-FDLQ](../decisions/D-FDLQ-harness-profile-and-translator.md)).
 
 ## In code
 
-`HarnessProfile`, `PluginFormat` and `PROFILES` in `harness/profile.rs`; looked up with `profile_for` (any spelling) and `profile_named` (canonical name).
+`HarnessProfile`, `PluginFormat` and `PROFILES` in `harness/profile.rs`; looked up by name with `profile_named`.
 
 ## Not to be confused with
 
-A spec. The repo uses "spec" for its rule sets (publish spec, vault spec), never for this.
+A spec. The repo uses "spec" for its rule sets, such as the vault structure spec, never for this.

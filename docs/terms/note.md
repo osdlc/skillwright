@@ -2,7 +2,7 @@
 
 Status: current.
 
-One markdown file in the vault. A note named for a component (`code-review.md`, or `code-review/code-review.md` with peer files beside it) defines that component.
+One markdown file in the vault. Every note is `<name>.md` in a folder of the same name, such as `skills/code-review/code-review.md`. Its position decides what it defines.
 
 ## In code
 
@@ -10,4 +10,4 @@ One markdown file in the vault. A note named for a component (`code-review.md`, 
 
 ## Not to be confused with
 
-A published `SKILL.md`. That is the output shape, never the vault's.
+A built `SKILL.md`. That is the output shape, never the vault's.

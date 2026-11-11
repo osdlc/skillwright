@@ -2,7 +2,7 @@
 
 Status: current.
 
-What a component is: marketplace, plugin, skill, command, hook or agent. Decided by the kind folder it sits in (`skills/`, `plugins/`, ...).
+What a note is: marketplace, plugin, skill, command or agent. Decided by its position in the layout (`marketplaces/<m>/`, `plugins/<p>/`, `skills/<s>/`, ...). Hooks are a plugin's `hooks/hooks.json`, not a kind of note.
 
 ## In code
 
