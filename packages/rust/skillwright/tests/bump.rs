@@ -1155,3 +1155,21 @@ fn a_ref_without_a_root_file_leaves_no_baseline_behind() {
     assert_eq!(baselines_in(tmp.path()), ["guard"]);
     assert_eq!(leftovers(root), before);
 }
+
+/// Appendix A6, the marketplace half: `--marketplace osdlc` bumps the
+/// marketplace and leaves its plugin `osdlc` alone.
+#[test]
+fn a_marketplace_named_like_its_plugin_bumps_with_marketplace() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    vault(root, "", &[("osdlc", &[("osdlc", Some("1.0.0"))])]);
+    write(&market_path(root, "osdlc"), "---\nversion: 3.0.0\n---\n");
+
+    let result = run(&["bump", "--marketplace", "osdlc", "--yes"], root);
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert_eq!(
+        read(&market_path(root, "osdlc")),
+        "---\nversion: 3.0.1\n---\n"
+    );
+    assert!(read(&plugin_path(root, "osdlc", "osdlc")).contains("version: 1.0.0"));
+}

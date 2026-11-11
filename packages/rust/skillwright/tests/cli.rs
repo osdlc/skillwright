@@ -1343,3 +1343,18 @@ fn check_accepts_cursor_naming() {
         assert!(out.contains(&format!("{harness}.naming")), "{out}");
     }
 }
+
+/// Appendix A1, the nested half: a vault inside another vault's `notes/`
+/// is its own root. A walk from inside it stops at the inner root.
+#[test]
+fn a_walk_from_inside_a_nested_vault_stops_at_the_inner_root() {
+    let (_dir, outer) = fixture();
+    let (_inner_dir, inner_src) = fixture();
+    let inner = outer.join("notes/inner");
+    copy_tree(&inner_src, &inner);
+    let from = inner.join("marketplaces/acme/plugins/tools/skills/review");
+    let ran = run(&["build", "--yes", "--quiet"], &from);
+    assert_eq!(ran.code, 0, "{}", ran.stderr);
+    assert!(inner.join("dist/acme").is_dir());
+    assert!(!outer.join("dist").exists());
+}
