@@ -1,6 +1,6 @@
 //! Links and calls (spec section 4): scope, containment, Markdown links,
-//! plain links, calls, hand-written calls, code and leftovers, built through
-//! the core's public API. Every vault has marketplace
+//! plain links, calls, hand-written calls, code and leftovers; and embeds
+//! (section 5, D8). All built through the core's public API. Every vault has marketplace
 //! `acme` and plugin `tools`.
 
 use std::path::Path;
@@ -392,11 +392,9 @@ fn a_link_to_an_agent_fails_the_build() {
 // --- Missing targets --------------------------------------------------------
 
 #[test]
-fn a_link_or_embed_to_nothing_is_an_error() {
-    for link in ["[[nothing]]", "![[nothing]]"] {
-        let vfs = vault(&[(AUTHOR, &skill(&format!("See {link}.")))]);
-        names(&refusal(&vfs), AUTHOR, link, "rule 11");
-    }
+fn a_link_to_nothing_is_an_error() {
+    let vfs = vault(&[(AUTHOR, &skill("See [[nothing]]."))]);
+    names(&refusal(&vfs), AUTHOR, "[[nothing]]", "section 4 rule 11");
 }
 
 // --- Calls ------------------------------------------------------------------
@@ -812,4 +810,257 @@ fn a_leftover_in_prose_is_refused() {
 fn a_leftover_in_code_or_after_a_backslash_is_not() {
     let vfs = with_setup("See `[[ this` and \\[[ that.");
     ships(&vfs, "See `[[ this` and [[ that.");
+}
+
+// --- Embeds (section 5) -----------------------------------------------------
+
+const GUIDE: &str = "skills/author/references/guide.md";
+
+/// `author` holding `body`, `setup` and `deploy`, plus `files`.
+fn with_files(body: &str, files: &[(&str, &str)]) -> MemVfs {
+    let vfs = with_setup(body);
+    for (path, text) in files {
+        put(&vfs, &format!("{PLUGIN}/{path}"), text);
+    }
+    vfs
+}
+
+#[test]
+fn the_worked_example_ships_as_shown() {
+    let vfs = vault(&[
+        (
+            "skills/review/review.md",
+            &skill("## Steps\n\n![[guide#Usage]]\n\nThen run this:\n\n![[run.sh]]"),
+        ),
+        (
+            "skills/review/references/guide.md",
+            "# Guide\n\n## Usage\n\nRun the check before each commit.\n\n## History\n\nOld notes.\n",
+        ),
+        (
+            "skills/review/scripts/run.sh",
+            "#!/bin/sh\ncargo test --workspace\n",
+        ),
+    ]);
+    build(&vfs).unwrap();
+    let shipped = author_in(&vfs, CLAUDE, "review");
+    assert!(
+        shipped.contains(
+            "## Steps\n\n## Usage\n\nRun the check before each commit.\n\nThen run this:\n\n\
+             ```bash\n#!/bin/sh\ncargo test --workspace\n```\n"
+        ),
+        "{shipped}"
+    );
+    assert!(!shipped.contains("History"), "{shipped}");
+}
+
+#[test]
+fn a_heading_embed_inlines_the_section_with_its_subsections() {
+    let vfs = with_files(
+        "![[guide#Usage]]",
+        &[(
+            GUIDE,
+            "## Usage\n\nU.\n\n### Detail\n\nD.\n\n## History\n\nH.\n",
+        )],
+    );
+    ships(&vfs, "## Usage\n\nU.\n\n### Detail\n\nD.\n");
+    assert!(!author(&vfs).contains("History"), "{}", author(&vfs));
+}
+
+#[test]
+fn a_block_embed_inlines_the_block_without_its_marker() {
+    let vfs = with_files(
+        "Before.\n\n![[guide#^b1]]\n\nAfter.",
+        &[(GUIDE, "One.\n\nTwo. ^b1\n\nThree.\n")],
+    );
+    ships(&vfs, "Before.\n\nTwo.\n\nAfter.");
+}
+
+#[test]
+fn a_missing_heading_is_fragment_unresolved() {
+    let vfs = with_files("![[guide#Nope]]", &[(GUIDE, "## Usage\n\nU.\n")]);
+    let err = refusal(&vfs);
+    assert!(err.contains("fragment-unresolved"), "{err}");
+    assert!(err.contains("references/guide.md"), "{err}");
+    assert!(err.contains("Nope"), "{err}");
+}
+
+#[test]
+fn a_nested_embeds_link_is_written_from_the_outer_file() {
+    let vfs = with_files(
+        "![[outer]]",
+        &[
+            ("skills/author/references/outer.md", "![[inner]]\n"),
+            (
+                "skills/author/references/deep/inner.md",
+                "See [[deep/far]].\n",
+            ),
+            ("skills/author/references/deep/deep/far.md", "Far.\n"),
+        ],
+    );
+    ships(&vfs, "See [deep/far](references/deep/deep/far.md).");
+}
+
+#[test]
+fn a_cycle_prints_its_loop() {
+    let vfs = with_files(
+        "![[a]]",
+        &[
+            ("skills/author/references/a.md", "![[b#Two]]\n"),
+            ("skills/author/references/b.md", "## Two\n\n![[a]]\n"),
+        ],
+    );
+    let err = refusal(&vfs);
+    let refs = format!("{PLUGIN}/skills/author/references");
+    assert!(err.contains("cycle"), "{err}");
+    assert!(
+        err.contains(&format!("{refs}/a.md -> {refs}/b.md#Two -> {refs}/a.md")),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_note_that_embeds_itself_is_a_cycle() {
+    let vfs = vault(&[(AUTHOR, &skill("![[author]]"))]);
+    let err = refusal(&vfs);
+    let note = format!("{PLUGIN}/{AUTHOR}");
+    assert!(err.contains(&format!("{note} -> {note}")), "{err}");
+}
+
+#[test]
+fn two_sections_of_one_note_are_not_a_cycle() {
+    let vfs = with_files(
+        "![[guide#A]]",
+        &[(GUIDE, "## A\n\n![[guide#B]]\n\n## B\n\nBee.\n")],
+    );
+    ships(&vfs, "## A\n\n## B\n\nBee.");
+}
+
+#[test]
+fn a_call_in_embedded_text_renders_as_in_place() {
+    let vfs = with_files("![[guide]]", &[(GUIDE, "Run /[[setup]].\n")]);
+    ships(&vfs, "Run `/tools:setup`.");
+    let cursor = author_in(&vfs, CURSOR, "tools-author");
+    assert!(cursor.contains("Run `/tools-setup`."), "{cursor}");
+}
+
+#[test]
+fn an_embedded_notes_frontmatter_is_dropped() {
+    let vfs = with_files("![[guide]]", &[(GUIDE, "---\ntitle: G\n---\nBody.\n")]);
+    ships(&vfs, "Body.");
+    assert!(!author(&vfs).contains("title: G"), "{}", author(&vfs));
+}
+
+#[test]
+fn malformed_frontmatter_in_an_embedded_note_names_both_notes() {
+    for guide in ["---\ntitle: G\nBody.\n", "---\ntitle: [\n---\nBody.\n"] {
+        let vfs = with_files("![[guide]]", &[(GUIDE, guide)]);
+        let err = refusal(&vfs);
+        names(&err, AUTHOR, "![[guide]]", "section 5 rule 4");
+        assert!(err.contains(GUIDE), "{err}");
+    }
+}
+
+#[test]
+fn an_embed_of_a_missing_file_names_the_embed() {
+    let vfs = with_setup("![[nope]]");
+    names(&refusal(&vfs), AUTHOR, "![[nope]]", "section 5 rule 3");
+}
+
+#[test]
+fn inlined_text_is_trimmed_of_blank_lines() {
+    let vfs = with_files(
+        "Before.\n\n![[guide]]\n\nAfter.",
+        &[(GUIDE, "\n\n\nBody.\n\n\n")],
+    );
+    ships(&vfs, "Before.\n\nBody.\n\nAfter.");
+}
+
+#[test]
+fn an_image_embed_is_an_image_link() {
+    let vfs = with_files("![[logo.png]]", &[("skills/author/assets/logo.png", "png")]);
+    ships(&vfs, "![logo.png](assets/logo.png)");
+}
+
+// --- Files inlined as fenced blocks (D8) ------------------------------------
+
+const RUN: &str = "skills/author/scripts/run.sh";
+
+#[test]
+fn a_script_ships_as_a_fenced_block_named_by_its_extension() {
+    let vfs = with_files(
+        "![[run.sh]]\n\n![[data.xyz]]",
+        &[
+            (RUN, "echo hi\n"),
+            ("skills/author/scripts/data.xyz", "raw\n"),
+        ],
+    );
+    ships(&vfs, "```bash\necho hi\n```\n\n```\nraw\n```");
+}
+
+#[test]
+fn a_file_holding_a_fence_and_brackets_ships_byte_for_byte() {
+    let text = "```md\n[[x]] /[[y]] ![[z]]\n```\n";
+    let vfs = with_files(
+        "![[notes.txt]]",
+        &[("skills/author/scripts/notes.txt", text)],
+    );
+    ships(&vfs, &format!("````\n{text}````"));
+}
+
+#[test]
+fn a_fence_indented_three_spaces_counts_and_four_does_not() {
+    let three = "   ```\n[[x]]\n   ```\n";
+    let four = "    ````\n";
+    let vfs = with_files(
+        "![[three.txt]]\n\n![[four.txt]]",
+        &[
+            ("skills/author/scripts/three.txt", three),
+            ("skills/author/scripts/four.txt", four),
+        ],
+    );
+    ships(&vfs, &format!("````\n{three}````\n\n```\n{four}```"));
+}
+
+#[test]
+fn an_embed_in_a_list_item_is_indented_to_the_item() {
+    let vfs = with_files(
+        "1. Run this:\n\n   ![[run.sh]]\n2. Then:\n- ![[run.sh]]",
+        &[(RUN, "echo hi\n\necho bye\n")],
+    );
+    ships(
+        &vfs,
+        "1. Run this:\n\n   ```bash\n   echo hi\n\n   echo bye\n   ```\n2. Then:\n\
+         - ```bash\n  echo hi\n\n  echo bye\n  ```",
+    );
+}
+
+#[test]
+fn a_binary_file_is_refused() {
+    let vfs = with_files("![[blob.bin]]", &[("skills/author/scripts/blob.bin", "")]);
+    vfs.write_file(
+        &Path::new("/v")
+            .join(PLUGIN)
+            .join("skills/author/scripts/blob.bin"),
+        &[0xff, 0xfe, 0x00],
+    )
+    .unwrap();
+    let err = refusal(&vfs);
+    names(&err, AUTHOR, "![[blob.bin]]", "section 5 rule 13");
+}
+
+#[test]
+fn a_fragment_on_a_file_is_refused() {
+    let vfs = with_files("![[run.sh#main]]", &[(RUN, "echo hi\n")]);
+    names(
+        &refusal(&vfs),
+        AUTHOR,
+        "![[run.sh#main]]",
+        "section 5 rule 13",
+    );
+}
+
+#[test]
+fn a_plain_link_to_a_file_stays_a_link() {
+    let vfs = with_files("See [[run.sh]].", &[(RUN, "echo hi\n")]);
+    ships(&vfs, "See [run.sh](scripts/run.sh).");
 }

@@ -2,7 +2,9 @@
 //!
 //! 1. `![[embed]]` of a markdown note expands to that note's *body* in place,
 //!    recursively, with a `#heading` or `#^block` fragment selecting the
-//!    addressed slice. A cycle is refused naming the cycle path.
+//!    addressed slice. A cycle is refused naming the cycle path. An image
+//!    embed is an image link; any other file is inlined as a fenced block,
+//!    held behind a mark so nothing in it is read again.
 //! 2. Every surviving `[[link]]`, and every relative Markdown link, is
 //!    resolved in the scope of spec section 4 and pointed at where its file
 //!    lands in the pack. Nothing is copied for a link: every file a link may
@@ -241,6 +243,10 @@ pub struct Recorded {
     pub calls: Vec<CallSite>,
     /// Every surviving link, resolved to where its file lands.
     pub links: Vec<ResolvedRef>,
+    /// Every file inlined as a fenced block (spec section 5 rules 9 to 14),
+    /// fence and indent included. Its text ships as is: nothing in it is
+    /// interpreted.
+    pub literals: Vec<String>,
 }
 
 /// One call, resolved: the skill it names, and what a refusal about it
@@ -260,7 +266,8 @@ pub struct CallSite {
 pub(crate) const MARK_OPEN: char = '\u{E000}';
 pub(crate) const MARK_CLOSE: char = '\u{E001}';
 
-/// The mark for the `index`th call (`kind` `c`) or link (`l`).
+/// The mark for the `index`th call (`kind` `c`), link (`l`) or literal
+/// (`v`).
 fn mark(kind: char, index: usize) -> String {
     format!("{MARK_OPEN}{kind}{index}{MARK_CLOSE}")
 }
@@ -481,9 +488,14 @@ pub fn compile_note(
         if let Some(yaml) = split.yaml {
             validate_frontmatter_links(yaml, output_path, source.skill_name)?;
         }
-        *bytes = unescape(text).into_owned().into_bytes();
+        *bytes = renderer
+            .restore_literals(&unescape(text))
+            .into_owned()
+            .into_bytes();
     }
-    let compiled_body = unescape(&compiled_body).into_owned();
+    let compiled_body = renderer
+        .restore_literals(&unescape(&compiled_body))
+        .into_owned();
     for (source_path, output_path) in &renderer.binary_resources {
         let bytes = vfs.read_file(source_path)?;
         let executable = vfs.is_executable(source_path);
@@ -551,13 +563,12 @@ pub fn compile_note(
 /// there is no file to name them after.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RelatedSplit {
-    /// Notes whose bodies this note's own output consumed: everything it
+    /// Files whose text this note's own output consumed: everything it
     /// embeds, transitively, because an embedded note's embeds expand into the
     /// same output. Never the entry itself.
     pub embeds: Vec<String>,
-    /// Files a surviving `[[link]]` resolved to — notes and attachments both,
-    /// since a non-markdown embed is rewritten as a link too. Never the entry
-    /// itself.
+    /// Files a surviving `[[link]]` or image embed resolved to. Never the
+    /// entry itself.
     pub links: Vec<String>,
     /// Skills this note calls. A call copies nothing, so a called note is
     /// never also in [`Self::links`] for that call.
@@ -672,11 +683,168 @@ pub fn compile_projection(
 
 // --- Extension vocabularies -------------------------------------------------
 
-/// Embeds of these render as images (`![label](path)`); everything else a
-/// non-markdown embed reaches renders as an ordinary link.
+/// Embeds of these render as images (`![label](path)`); any other file
+/// that is not a note is inlined as a fenced block.
 const IMAGE_EXTENSIONS: &[&str] = &[
     ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp",
 ];
+
+/// The info string of a file inlined as a fenced block, by extension (spec
+/// section 5 rule 10). An extension not listed gives none.
+const INFO_STRINGS: &[(&str, &str)] = &[
+    (".bash", "bash"),
+    (".c", "c"),
+    (".cjs", "javascript"),
+    (".cpp", "cpp"),
+    (".cs", "csharp"),
+    (".css", "css"),
+    (".csv", "csv"),
+    (".diff", "diff"),
+    (".fish", "fish"),
+    (".go", "go"),
+    (".h", "c"),
+    (".hpp", "cpp"),
+    (".html", "html"),
+    (".ini", "ini"),
+    (".java", "java"),
+    (".js", "javascript"),
+    (".json", "json"),
+    (".jsonc", "jsonc"),
+    (".jsx", "jsx"),
+    (".kt", "kotlin"),
+    (".lua", "lua"),
+    (".mjs", "javascript"),
+    (".patch", "diff"),
+    (".php", "php"),
+    (".pl", "perl"),
+    (".ps1", "powershell"),
+    (".py", "python"),
+    (".rb", "ruby"),
+    (".rs", "rust"),
+    (".sh", "bash"),
+    (".sql", "sql"),
+    (".swift", "swift"),
+    (".toml", "toml"),
+    (".ts", "typescript"),
+    (".tsx", "tsx"),
+    (".xml", "xml"),
+    (".yaml", "yaml"),
+    (".yml", "yaml"),
+    (".zsh", "zsh"),
+];
+
+/// The text on a token's line: before it, and whether text follows it.
+#[derive(Clone, Copy)]
+struct Line<'t> {
+    before: &'t str,
+    text_after: bool,
+}
+
+impl<'t> Line<'t> {
+    fn around(body: &'t str, start: usize, end: usize) -> Self {
+        let line_start = body[..start].rfind('\n').map_or(0, |at| at + 1);
+        let rest = &body[end..];
+        let after = &rest[..rest.find('\n').unwrap_or(rest.len())];
+        Line {
+            before: &body[line_start..start],
+            text_after: !after.trim().is_empty(),
+        }
+    }
+
+    /// The indent that keeps a block in the containers that open the line,
+    /// list items and block quotes, and whether text before the token means
+    /// the block must start on a line of its own.
+    fn container(self) -> (String, bool) {
+        let bytes = self.before.as_bytes();
+        let mut at = 0;
+        loop {
+            while bytes.get(at).is_some_and(|b| *b == b' ' || *b == b'\t') {
+                at += 1;
+            }
+            let marker = match bytes.get(at) {
+                Some(b'>') => 1,
+                Some(b'-' | b'*' | b'+') => 1,
+                Some(b'0'..=b'9') => {
+                    let digits = bytes[at..]
+                        .iter()
+                        .take_while(|b| b.is_ascii_digit())
+                        .count();
+                    match bytes.get(at + digits) {
+                        Some(b'.' | b')') if digits <= 9 => digits + 1,
+                        _ => 0,
+                    }
+                }
+                _ => 0,
+            };
+            let ends = matches!(bytes.get(at + marker), None | Some(b' ' | b'\t'));
+            if marker == 0 || !ends {
+                break;
+            }
+            at += marker;
+        }
+        let indent = self.before[..at]
+            .chars()
+            .map(|c| {
+                if matches!(c, ' ' | '\t' | '>') {
+                    c
+                } else {
+                    ' '
+                }
+            })
+            .collect();
+        (indent, !self.before[at..].trim().is_empty())
+    }
+}
+
+/// `content` as a fenced code block (spec section 5 rules 9 to 12): backticks
+/// one longer than the longest run that opens a line after up to three
+/// spaces, never fewer than three, and every line after the first indented to
+/// the containers `line` opens. The content itself is not changed.
+fn fenced_block(content: &str, extension: Option<&str>, line: Line<'_>) -> String {
+    let longest = content
+        .lines()
+        .map(|text| {
+            let indent = text.len() - text.trim_start_matches(' ').len();
+            if indent > 3 {
+                0
+            } else {
+                text[indent..].bytes().take_while(|b| *b == b'`').count()
+            }
+        })
+        .max()
+        .unwrap_or(0);
+    let fence = "`".repeat((longest + 1).max(3));
+    let info = extension
+        .and_then(|extension| INFO_STRINGS.iter().find(|(ext, _)| *ext == extension))
+        .map_or("", |(_, info)| info);
+    let (indent, break_before) = line.container();
+    let mut out = String::new();
+    if break_before {
+        out.push('\n');
+        out.push_str(&indent);
+    }
+    out.push_str(&fence);
+    out.push_str(info);
+    out.push('\n');
+    for text in content.split_inclusive('\n') {
+        if text.trim_end_matches(['\r', '\n']).is_empty() {
+            out.push_str(text);
+        } else {
+            out.push_str(&indent);
+            out.push_str(text);
+        }
+    }
+    if !content.is_empty() && !content.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&indent);
+    out.push_str(&fence);
+    if line.text_after {
+        out.push('\n');
+        out.push_str(&indent);
+    }
+    out
+}
 
 // --- The renderer -----------------------------------------------------------
 
@@ -738,6 +906,9 @@ struct Renderer<'a> {
     markdown_resources: BTreeMap<PathBuf, String>,
     /// Source path → output path, for files copied verbatim.
     binary_resources: BTreeMap<PathBuf, String>,
+    /// Without a record, the literals the marks name, written back once the
+    /// built text is validated.
+    literals: Vec<String>,
 }
 
 impl<'a> Renderer<'a> {
@@ -799,6 +970,7 @@ impl<'a> Renderer<'a> {
             literal_calls: Vec::new(),
             markdown_resources: BTreeMap::new(),
             binary_resources: BTreeMap::new(),
+            literals: Vec::new(),
         })
     }
 
@@ -904,18 +1076,27 @@ impl<'a> Renderer<'a> {
         for token in tokens {
             out.push_str(&body[cursor..token.start]);
             let raw = &body[token.start..token.end];
-            out.push_str(&self.replace_token(&token, raw, source_path, output_path, stack)?);
+            let line = Line::around(body, token.start, token.end);
+            out.push_str(&self.replace_token(
+                &token,
+                raw,
+                line,
+                source_path,
+                output_path,
+                stack,
+            )?);
             cursor = token.end;
         }
         out.push_str(&body[cursor..]);
         Ok(out)
     }
 
-    /// `raw` is the token's text as written.
+    /// `raw` is the token's text as written, and `line` the text around it.
     fn replace_token(
         &mut self,
         token: &WikiToken<'_>,
         raw: &str,
+        line: Line<'_>,
         source_path: &Path,
         output_path: &str,
         stack: &mut Vec<TransclusionHop>,
@@ -960,11 +1141,8 @@ impl<'a> Renderer<'a> {
                     ),
                 ));
             }
-            let raw = read_utf8(self.vfs, &resolved)?;
-            // The lenient split: embedding pulls a note's *body*, and a note
-            // whose frontmatter is slightly off should still embed — this is
-            // a read, not a rewrite, so strictness buys nothing here.
-            let (_, note_body) = split_frontmatter(&raw);
+            let text = read_utf8(self.vfs, &resolved)?;
+            let note_body = self.embedded_body(&text, &resolved, raw, source_path)?;
             let label = self.vault_relative(&resolved)?;
             // The closure grows here and nowhere else: a *linked* file has
             // its own emitted file, so its edits are caught by that file's
@@ -981,11 +1159,24 @@ impl<'a> Renderer<'a> {
             return Ok(expanded.trim().to_owned());
         }
 
+        let image = IMAGE_EXTENSIONS.contains(&extension.as_str());
+        if embed && fragment.is_some() {
+            return Err(self.link_error(
+                "embed-fragment",
+                source_path,
+                raw,
+                "has a fragment, and only a note's sections can be embedded",
+                "section 5 rule 13",
+            ));
+        }
+        if embed && !image {
+            return self.inline_file(&resolved, raw, line, source_path, output_path);
+        }
         let suffix = fragment
             .as_deref()
             .map(|fragment| format!("#{}", markdown_link::encode_uri_fragment(fragment)))
             .unwrap_or_default();
-        let form = if embed && IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+        let form = if embed {
             LinkForm::Image
         } else {
             LinkForm::Link
@@ -1001,6 +1192,96 @@ impl<'a> Renderer<'a> {
             form,
             label,
         )
+    }
+
+    /// An embedded note's body. Its frontmatter is dropped, and frontmatter
+    /// that does not close or is not YAML is an error naming both notes
+    /// (spec section 5 rule 4): with a broken fence the body's start is
+    /// unknown.
+    fn embedded_body<'t>(
+        &self,
+        text: &'t str,
+        note: &Path,
+        written: &str,
+        from_file: &Path,
+    ) -> Result<&'t str, CoreError> {
+        let split = frontmatter_lossless::split(text);
+        let problem = if split.unterminated {
+            Some("its `---` block never closes".to_owned())
+        } else {
+            split.yaml.and_then(|yaml| {
+                serde_yaml::from_str::<serde_yaml::Value>(yaml)
+                    .err()
+                    .map(|err| format!("it is not YAML: {err}"))
+            })
+        };
+        match problem {
+            None => Ok(split.body),
+            Some(problem) => Err(self.link_error(
+                "embed-frontmatter",
+                from_file,
+                written,
+                format!(
+                    "embeds {}, whose frontmatter is malformed: {problem}",
+                    self.relative_or_verbatim(note)
+                ),
+                "section 5 rule 4",
+            )),
+        }
+    }
+
+    /// A text file inlined as a fenced code block (spec section 5 rules 9
+    /// to 14). The block is held behind a literal mark, so nothing in it is
+    /// read again: not as a link, a call, a leftover or a plugin-root path.
+    fn inline_file(
+        &mut self,
+        file: &Path,
+        written: &str,
+        line: Line<'_>,
+        source_path: &Path,
+        output_path: &str,
+    ) -> Result<String, CoreError> {
+        let bytes = self.vfs.read_file(file)?;
+        let Ok(content) = String::from_utf8(bytes) else {
+            return Err(self.link_error(
+                "embed-binary",
+                source_path,
+                written,
+                "embeds a file that is not UTF-8 text",
+                "section 5 rule 13",
+            ));
+        };
+        let label = self.vault_relative(file)?;
+        self.contributing
+            .entry(output_path.to_owned())
+            .or_default()
+            .insert(label);
+        let block = fenced_block(&content, extension_of_path(file).as_deref(), line);
+        let index = match self.call_context.and_then(|context| context.record) {
+            Some(record) => {
+                let mut record = record.borrow_mut();
+                record.literals.push(block);
+                record.literals.len() - 1
+            }
+            None => {
+                self.literals.push(block);
+                self.literals.len() - 1
+            }
+        };
+        Ok(mark('v', index))
+    }
+
+    /// `text` with each literal mark written back as its block, for a
+    /// compile that keeps no record.
+    fn restore_literals<'t>(&self, text: &'t str) -> Cow<'t, str> {
+        if self.literals.is_empty() || !text.contains(MARK_OPEN) {
+            return Cow::Borrowed(text);
+        }
+        let mut out = text.to_owned();
+        for (index, block) in self.literals.iter().enumerate() {
+            out = out.replace(&mark('v', index), block);
+        }
+        Cow::Owned(out)
     }
 
     /// A Markdown link's destination, `written`: a relative path is resolved
@@ -1513,15 +1794,15 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// A link to nothing (section 4 rule 11).
+    /// A link to nothing (section 4 rule 11), or an embed of nothing
+    /// (section 5 rule 3).
     fn missing(&self, from_file: &Path, written: &str) -> CoreError {
-        self.link_error(
-            "link-unresolved",
-            from_file,
-            written,
-            "links to nothing",
-            "section 4 rule 11",
-        )
+        let (what, rule) = if written.starts_with("![[") {
+            ("embeds nothing", "section 5 rule 3")
+        } else {
+            ("links to nothing", "section 4 rule 11")
+        };
+        self.link_error("link-unresolved", from_file, written, what, rule)
     }
 
     /// A link error naming the linking file, the link as written and the
@@ -2298,7 +2579,7 @@ mod tests {
     }
 
     /// The demo entry body.
-    const DEMO_BODY: &str = "# Demo\n\n![[Shared]]\n\n![[Sections#Chosen]]\n\n![[Blocks#^example]]\n\nRead [[references/local|Local reference]].\n\n![[manual.pdf#page=2]]\n\n![[pic.png|100]]\n\nKeep `![[Missing inline example]]` unchanged.\n\n```md\n![[Missing fenced example]]\n```\n";
+    const DEMO_BODY: &str = "# Demo\n\n![[Shared]]\n\n![[Sections#Chosen]]\n\n![[Blocks#^example]]\n\nRead [[references/local|Local reference]].\n\n[[manual.pdf#page=2]]\n\n![[pic.png|100]]\n\nKeep `![[Missing inline example]]` unchanged.\n\n```md\n![[Missing fenced example]]\n```\n";
 
     /// What the layout seeds for the demo skill.
     const SEEDED: [&str; 2] = ["references/local.md", "scripts/tool.sh"];
@@ -2518,7 +2799,7 @@ mod tests {
                 .body
                 .contains("[Local reference](references/local.md)")
         );
-        // A binary embed with a fragment becomes a link carrying it.
+        // A link to a file keeps its fragment.
         assert!(
             compiled
                 .body
@@ -3899,7 +4180,7 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(
-            err.contains("`![[missing.png|100]]` links to nothing"),
+            err.contains("`![[missing.png|100]]` embeds nothing"),
             "{err}"
         );
     }

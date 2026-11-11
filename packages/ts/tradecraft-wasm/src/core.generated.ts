@@ -850,6 +850,15 @@ export type Segment =
       type: "call";
       /** The call. */
       call: Call;
+    }
+  /**
+   * An embedded file as a fenced block, written as is: nothing in it is
+   * interpreted (spec section 5 rule 9).
+   */
+  | {
+      type: "literal";
+      /** The block, fences included. */
+      text: string;
     };
 
 /**

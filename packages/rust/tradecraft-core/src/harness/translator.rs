@@ -602,7 +602,7 @@ fn write_body(
     let mut out = String::new();
     for segment in &body.segments {
         match segment {
-            Segment::Text { text } => out.push_str(text),
+            Segment::Text { text } | Segment::Literal { text } => out.push_str(text),
             Segment::Link { target } => out.push_str(&link(target)?),
             Segment::Call { call: site } => out.push_str(&call(site)?),
         }

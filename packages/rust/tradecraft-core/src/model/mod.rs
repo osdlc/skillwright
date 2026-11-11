@@ -234,6 +234,12 @@ pub enum Segment {
         /// The call.
         call: Call,
     },
+    /// An embedded file as a fenced block, written as is: nothing in it is
+    /// interpreted (spec section 5 rule 9).
+    Literal {
+        /// The block, fences included.
+        text: String,
+    },
 }
 
 /// A resolved link: where it is written, the file it reaches, and how it is
@@ -433,6 +439,9 @@ pub(crate) fn segments(text: &str, record: &Recorded) -> Body {
                 'l' => Segment::Link {
                     target: record.links.get(index).cloned()?,
                 },
+                'v' => Segment::Literal {
+                    text: record.literals.get(index).cloned()?,
+                },
                 _ => return None,
             };
             Some((segment, close + MARK_CLOSE.len_utf8()))
@@ -520,7 +529,15 @@ mod tests {
                 written: "[[x]]".into(),
                 caller: "b.md".into(),
             }],
+            literals: vec!["```\n[[y]]\n```".into()],
         }
+    }
+
+    #[test]
+    fn a_literal_mark_is_a_literal_segment() {
+        let text = format!("a{MARK_OPEN}v0{MARK_CLOSE}b");
+        let body = segments(&text, &record());
+        assert!(matches!(&body.segments[1], Segment::Literal { text } if text.contains("[[y]]")));
     }
 
     #[test]
