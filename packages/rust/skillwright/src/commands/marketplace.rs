@@ -7,11 +7,12 @@
 //! file's whole contribution is which mode goes on the request, and what a
 //! drifted report means for the exit code.
 //!
-//! Nothing about the marketplace is decided here. Which skills ship, how they group into plugins, what each manifest says, which
-//! root a skill's `targets` admits it to, what counts as stale, and
-//! whether the swap is safe all live in [`tradecraft_core::export`]. This
-//! file plans every marketplace there once, asks, writes the plan, and
-//! renders.
+//! Nothing about the marketplace is decided here. Which skills ship, how they
+//! group into plugins, what each manifest says, which harness a skill's
+//! `targets` admits it to, what counts as stale, and whether the swap is safe
+//! all live in [`tradecraft_core::export`]. This file has the core plan every
+//! marketplace once, asks the user, has the core write the plan, and renders
+//! the report.
 //!
 //! # `--dry-run` on `build` is not `check`
 //!

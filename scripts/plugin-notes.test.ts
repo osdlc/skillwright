@@ -1,6 +1,6 @@
 // node --test scripts/plugin-notes.test.ts
 //
-// The plugin's source notes teach only the v2 CLI. A removed command, flag,
+// The plugin's source notes teach only the current CLI. A removed command, flag,
 // key or diagnostic may appear only in a clause that says it is gone.
 // The Rust test `skillwright/tests/repo_plugin.rs` checks that the plugin
 // builds with no warning and matches `plugin/dist/`.

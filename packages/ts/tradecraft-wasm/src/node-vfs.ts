@@ -75,9 +75,9 @@ export interface BaseVfs {
 
 /**
  * The link questions. With all three the core can see symlinks, so it runs its
- * symlink-aware checks and the narrowed rails that rely on them (an export
+ * symlink-aware checks and the narrowed ones that rely on them (an export
  * whose out root holds the vault, for one). A host without real filesystem
- * access leaves them out and gets the strict rails. The throws are part of the
+ * access leaves them out and gets the strict checks. The throws are part of the
  * contract — see `packages/rust/tradecraft-wasm/src/js_vfs.rs`.
  */
 export interface LinkMethods {

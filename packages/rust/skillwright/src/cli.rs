@@ -1,6 +1,6 @@
 //! `skillwright <verb> [options]`: argv parsing and dispatch only.
 //!
-//! Four verbs: `init` ([`crate::commands::init`]), `build` and `check`
+//! The verbs: `init` ([`crate::commands::init`]), `build` and `check`
 //! ([`crate::commands::marketplace`], one path in two modes) and `bump`
 //! ([`crate::commands::bump`]). Any other verb is clap's unknown-command
 //! error, a usage error.
@@ -29,10 +29,11 @@ const DESCRIPTION: &str = "Build a vault of markdown skill notes into plugin mar
 /// The verbs the usage line for a bare `skillwright` prints, in order.
 const VERBS: [&str; 4] = ["init", "build", "check", "bump"];
 
-/// The three globals that mean something to a verb writing nothing.
+/// The globals that mean something to a verb writing nothing.
 ///
 /// A verb that writes has no separate copy: [`Globals`] flattens this one and
-/// adds the two below it, so the three cannot drift between the two surfaces.
+/// adds `--dry-run` and `--yes`, so these cannot drift between the two
+/// surfaces.
 ///
 /// Each help string is spelled out rather than taken from a doc comment,
 /// because clap strips a doc comment's trailing period and [`root_help`]
@@ -59,7 +60,7 @@ impl ReadOnlyGlobals {
     }
 }
 
-/// The five globals a verb that writes declares.
+/// The globals a verb that writes declares.
 ///
 /// `--dry-run` and `--yes` are here and not in [`ReadOnlyGlobals`] because a
 /// verb that writes nothing has no plan to preview and nothing to accept, so
@@ -80,8 +81,8 @@ const GLOBAL_OPTIONS: [&str; 5] = ["vault", "json", "dry-run", "yes", "quiet"];
 /// The globals a verb that never writes does not declare.
 const WRITE_ONLY_GLOBALS: [&str; 2] = ["dry-run", "yes"];
 
-/// What the root `--help` adds under the verb list: the five globals, and
-/// the three nouns the verbs use.
+/// What the root `--help` adds under the verb list: the globals, and the
+/// nouns the verbs use.
 ///
 /// The globals are declared per verb, not on the root — see the module note —
 /// and that is a parsing constraint, not a documentation one. A user reading

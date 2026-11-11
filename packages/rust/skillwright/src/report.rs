@@ -53,8 +53,6 @@ pub fn print_json(ctx: &mut CommandContext<'_>, value: &impl serde::Serialize) -
     }
 }
 
-// --- the marketplace ---------------------------------------------------------
-
 /// One export unit as `path  status` — the same `path  outcome` column order
 /// every other line in this file uses, so one `awk '{print $2}'` reads a
 /// build and a check alike.

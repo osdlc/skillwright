@@ -43,7 +43,7 @@
 //!   the core's model. The model carries what the translators work from, such
 //!   as each body as segments; the wire form carries the structure a host
 //!   shows, and nothing it would have to depend on beyond that.
-//! - **The vault is read in the v2 layout** (`skillwright.md`, `marketplaces/`):
+//! - **The vault is read in its layout** (`skillwright.md`, `marketplaces/`):
 //!   discovery and the load read only `marketplaces/`, so nothing a build
 //!   writes to `dist/` is ever read back.
 //! - **A `CoreError` becomes a thrown JS `Error`** whose `.name` is the variant,
@@ -51,8 +51,8 @@
 //!   a guard working, and a caller that wants to tell it from a genuine I/O
 //!   failure reads `.name` rather than pattern-matching on a message.
 //!
-//! An export has no per-unit refusal: its rails fire before anything is
-//! staged, so every refusal it can produce is a throw.
+//! An export has no per-unit refusal: it refuses before anything is staged,
+//! so every refusal is a throw.
 
 mod js_vfs;
 mod wire;
@@ -183,8 +183,8 @@ pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, J
 ///   rollback restored. Its own `.name`, because a host has to be able to tell
 ///   "nothing happened" from "something happened and was undone".
 ///
-/// There is no per-unit refusal to look for inside the report: an export's
-/// rails all fire before anything is staged.
+/// There is no per-unit refusal to look for inside the report: an export
+/// refuses before anything is staged.
 #[wasm_bindgen(js_name = exportSkills)]
 pub fn export_skills(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
@@ -326,9 +326,9 @@ mod tests {
         assert!(err.to_string().contains("vault_root"), "{err}");
     }
 
-    /// An unknown key is refused, not dropped: a v1 `config` key, the
-    /// removed `defaults` key, or a typo of an optional key, would otherwise
-    /// parse and be lost.
+    /// An unknown key is refused, not dropped: a removed key such as `config`
+    /// or `defaults`, or a typo of an optional key, would otherwise parse and
+    /// be lost.
     #[test]
     fn every_request_refuses_an_unknown_key() {
         for key in ["config", "defaults"] {
@@ -344,7 +344,7 @@ mod tests {
         }
     }
 
-    /// A v2 vault: one marketplace `m`, one plugin `rev`, one skill `a`, and
+    /// A vault: one marketplace `m`, one plugin `rev`, one skill `a`, and
     /// a built tree in `dist/m/` holding a stale note.
     fn vault() -> MemVfs {
         let vfs = MemVfs::new();

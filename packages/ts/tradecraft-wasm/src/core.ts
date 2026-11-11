@@ -11,7 +11,7 @@
  * `CoreError` into a typed one, exactly mirroring what
  * `@osdlc/yaml-splice`'s `index.ts` does for `yaml-splice-wasm`.
  *
- * The binding exports six functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
+ * The binding's exports (`packages/rust/tradecraft-wasm/src/lib.rs`):
  *
  * | Export | Reaches | Serves |
  * |---|---|---|
@@ -196,8 +196,9 @@ export function knownTargets(): Target[] {
  * A bad note stops itself, not the scan: one half-written draft in a shared
  * vault must not block everybody else's build. What still throws is what is
  * not a fact about one note — a vault outside the layout (every problem in
- * one message), a duplicate name, a symlink. A caller that ignores `skipped` is claiming the vault holds
- * nothing but what it listed, so every one of them reports it.
+ * one message), a duplicate name, a symlink. A caller that ignores `skipped`
+ * would treat the vault as holding only what was listed, so report `skipped`
+ * too.
  */
 export function discoverComponents(vfs: Vfs, request: DiscoverRequest): DiscoveryReport {
   return callCore<DiscoveryReport>(() => discoverComponentsWasm(vfs, JSON.stringify(request)))
@@ -208,8 +209,8 @@ export function discoverComponents(vfs: Vfs, request: DiscoverRequest): Discover
 /**
  * Render one marketplace of the vault into `<vault_root>/dist/<m>/`, one tree
  * per harness, written through `vfs` — and, per `mode`, either swap the
- * drifted roots into place or report the drift and write nothing. `marketplace`
- * names it, and is required when the vault holds more than one.
+ * drifted harness trees into place or report the drift and write nothing.
+ * `marketplace` names it, and is required when the vault holds more than one.
  *
  * `build` and `check` are this one call with one key different, because in the
  * core they are one render and one comparison. That is the whole reason their
@@ -217,8 +218,9 @@ export function discoverComponents(vfs: Vfs, request: DiscoverRequest): Discover
  * keep pointed at the first.
  *
  * Throws {@link CoreError} for everything an export refuses — no
- * `marketplace` on a vault of several, an empty marketplace, a failed swap. There is no per-unit refusal to look for
- * inside the report: an export's rails all fire before anything is staged.
+ * `marketplace` on a vault of several, an empty marketplace, a failed swap.
+ * There is no per-unit refusal to look for inside the report: an export
+ * refuses before anything is staged.
  */
 export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
   return callCore<ExportReport>(() => exportSkillsWasm(vfs, JSON.stringify(request)))

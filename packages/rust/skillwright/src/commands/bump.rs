@@ -1463,7 +1463,7 @@ mod tests {
         assert!(files_under(&dest).is_empty());
     }
 
-    /// A v2 vault: the root file, one marketplace and one plugin, under
+    /// A vault: the root file, one marketplace and one plugin, under
     /// `prefix`, with `root` as the root file.
     fn vault_files(prefix: &str, root: &str) -> Vec<(String, String)> {
         vec![

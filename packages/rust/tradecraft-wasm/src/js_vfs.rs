@@ -87,11 +87,11 @@
 //! They map to `Vfs::canonicalize`, `Vfs::read_link` and `Vfs::is_symlink`,
 //! which `path-guard`'s containment checks and discovery's symlink refusal
 //! use. [`JsVfs::adopt`] checks for all three once. With all three,
-//! `Vfs::sees_links` is `true`, and the core takes the narrowed rails that
+//! `Vfs::sees_links` is `true`, and the core runs the narrowed checks that
 //! need an honest answer about links. With fewer, the bridge uses none of
 //! them: `canonicalize` folds `.` and `..` and asks nothing, `is_symlink`
 //! answers `false`, `sees_links` is `false`, and the core keeps its strict
-//! rails. A host with part of the set gets the strict answer, never a mix.
+//! checks. A host with part of the set gets the strict answer, never a mix.
 //!
 //! # A thrown exception is an error, never a panic
 //!
