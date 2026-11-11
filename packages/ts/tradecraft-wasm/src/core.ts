@@ -41,8 +41,8 @@ import type {
   DiscoverRequest,
   DiscoveryReport,
   ExportReport,
-  ExportRequest,
-  LoadRequest,
+  ExportRequest as GeneratedExportRequest,
+  LoadRequest as GeneratedLoadRequest,
   Marketplace,
   RootFile,
 } from './core.generated.ts'
@@ -52,9 +52,9 @@ import type {
  * `tradecraft-typegen` and re-exported here so this file stays the package's
  * one door to the core.
  *
- * Re-exported, never re-declared — except for `Target`, widened below.
- * Everything else here is exactly what `tradecraft-typegen` read off
- * the Rust source.
+ * Re-exported, never re-declared, except for `Target` and the `harnesses` of
+ * the two requests, below. Everything else here is exactly what
+ * `tradecraft-typegen` read off the Rust source.
  * Regenerate with `cargo run -p tradecraft-typegen`; `cargo test -p tradecraft-typegen`
  * fails when the committed file is behind the Rust source, and a test in this
  * package fails when src/core.generated.ts differs from the crate's copy.
@@ -67,10 +67,8 @@ export type {
   EntityKind,
   ExportMode,
   ExportReport,
-  ExportRequest,
   ExportUnit,
   KindSource,
-  LoadRequest,
   Marketplace,
   Plugin,
   Component,
@@ -87,15 +85,21 @@ export type {
 } from './core.generated.ts'
 
 /**
- * The four harness names the core accepts, for completion. Mirrors
- * `KNOWN_TARGETS` in `tradecraft_core::publish`; hand-maintained, so update
- * both together.
- *
- * The core types a target as a plain `String`, so a generated declaration
- * is `string`. The `(string & {})` tail keeps the union
- * open so an editor still completes the known names; the core rejects a name it does not know.
+ * The four harness names the core accepts: `KNOWN_TARGETS` in
+ * `tradecraft_core::harness`. The core types a target as a `String`, so this
+ * is kept by hand; a test checks it equals {@link knownTargets}.
  */
-export type Target = 'claude' | 'codex' | 'cursor' | 'pi' | (string & {})
+export type Target = 'claude' | 'codex' | 'cursor' | 'pi'
+
+/** The generated `ExportRequest`, with `harnesses` typed as {@link Target}s. */
+export type ExportRequest = Omit<GeneratedExportRequest, 'harnesses'> & {
+  harnesses?: Target[]
+}
+
+/** The generated `LoadRequest`, with `harnesses` typed as {@link Target}s. */
+export type LoadRequest = Omit<GeneratedLoadRequest, 'harnesses'> & {
+  harnesses?: Target[]
+}
 
 /**
  * The `CoreError` variant names, exhaustively — see
@@ -152,14 +156,11 @@ function toCoreError(raw: unknown): CoreError {
 
 /**
  * Every target name this build knows — `tradecraft_core::harness::KNOWN_TARGETS`,
- * verbatim and in report order.
- *
- * The one list. A `--target` typed on the command line and a name in a note's
- * targets key are checked against the same values, so a target added to the
- * core is accepted by both without a second edit here.
+ * verbatim and in report order. A name typed on a command line and a name in
+ * a note's `targets` are checked against the same values.
  */
-export function knownTargets(): string[] {
-  return callCore<string[]>(() => knownTargetsWasm())
+export function knownTargets(): Target[] {
+  return callCore<Target[]>(() => knownTargetsWasm())
 }
 
 // --- discovery ---------------------------------------------------------------
@@ -181,16 +182,18 @@ export function discoverComponents(vfs: Vfs, request: DiscoverRequest): Discover
 // --- the marketplace ---------------------------------------------------------
 
 /**
- * Render the vault into one marketplace tree per harness — and, per `mode`, either
- * swap the drifted roots into place or report the drift and write nothing.
+ * Render one marketplace of the vault into `<vault_root>/dist/<m>/`, one tree
+ * per harness, written through `vfs` — and, per `mode`, either swap the
+ * drifted roots into place or report the drift and write nothing. `marketplace`
+ * names it, and is required when the vault holds more than one.
  *
  * `build` and `check` are this one call with one key different, because in the
  * core they are one render and one comparison. That is the whole reason their
  * verdicts cannot disagree, and it is why there is no second function here to
  * keep pointed at the first.
  *
- * Throws {@link CoreError} for everything an export refuses — the rail, an
- * empty marketplace, a failed swap. There is no per-unit refusal to look for
+ * Throws {@link CoreError} for everything an export refuses — no
+ * `marketplace` on a vault of several, an empty marketplace, a failed swap. There is no per-unit refusal to look for
  * inside the report: an export's rails all fire before anything is staged.
  */
 export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
@@ -198,15 +201,17 @@ export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
 }
 
 /**
- * Load the vault into the marketplace model and write nothing: every plugin
- * and its members, each body as segments with its links and calls resolved.
+ * Load one marketplace of the vault into the model and write nothing: every
+ * plugin and its members, each body as segments with its links and calls
+ * resolved. `marketplace` names it, and is required when the vault holds
+ * more than one.
  *
  * The same model `exportSkills` translates into files, so a host that wants
  * a vault's structure reads it here rather than parsing a built tree.
  *
  * Throws {@link CoreError} for everything the load refuses — a vault outside
- * the layout, an unreadable member note, a call that names no skill, an override key a requested
- * harness does not read, an empty marketplace.
+ * the layout, no `marketplace` on a vault of several, an unreadable member
+ * note, a call that names no skill, an empty marketplace.
  */
 export function loadMarketplace(vfs: Vfs, request: LoadRequest): Marketplace {
   return callCore<Marketplace>(() => loadMarketplaceWasm(vfs, JSON.stringify(request)))

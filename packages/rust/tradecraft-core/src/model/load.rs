@@ -780,8 +780,7 @@ fn resolve_marketplace(
         (None, _) => Err(CoreError::refused(
             "ambiguous-marketplace",
             format!(
-                "this vault holds {} and one output root holds one of them — name the one to \
-                 build",
+                "this vault holds {}: name the marketplace to use",
                 named(&present)
             ),
         )),

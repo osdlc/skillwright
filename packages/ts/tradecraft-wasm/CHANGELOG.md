@@ -5,6 +5,8 @@
 ### Breaking
 
 - `publishSkill`, `adoptSkills`, `statusOf` and `publishableKinds` are removed, with their request and report types (`PublishRequest`, `PublishReport`, `AdoptRequest`, `AdoptReport`, `StatusRequest`, `PublishUnitStatus`, `PublishedFile`, `PublishReason`, `ReasonToken` and the types they use). Use `exportSkills`.
+- `Target` is closed to `'claude' | 'codex' | 'cursor' | 'pi'`, with no open `string` tail. `knownTargets()` returns `Target[]`, and `ExportRequest` and `LoadRequest` type `harnesses` as `Target[]`.
+- `exportSkills` writes `<vault_root>/dist/<m>/` through the given `Vfs`; there is no output-root field. `exportSkills` and `loadMarketplace` take the marketplace's folder name as `marketplace`, which is required on a vault of several: without it the call throws `Refused`, naming them.
 - `rootFileConfig` is removed, with the `MarketplaceConfig` and `PluginOverrides` types. An `ExportRequest` or `LoadRequest` takes the root file's shared defaults as `defaults` (a `SharedDefaults`, optional), in place of `config`. Pass `parseRootFile(text).defaults`. A marketplace's name, `owner` and every plugin field come only from the vault's notes.
 - `Plugin` and `Call` lose `prefixed_on`.
 - An unset identity field is absent instead of `null`: every component's `identity` in `discoverComponents`, so a skill's is `{}`, and the config `rootFileConfig` returns. `parseRootFile` already left unset fields out. Test for `undefined`, not `null`. ([#75](https://github.com/osdlc/skillwright/issues/75))

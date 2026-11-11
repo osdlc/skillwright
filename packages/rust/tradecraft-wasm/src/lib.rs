@@ -151,9 +151,11 @@ struct WireExportRequest {
     request: ExportRequest,
 }
 
-/// Render the vault into one marketplace tree per harness under
-/// `<vault_root>/dist/<m>/`, and, per the request's `mode`, either swap the
-/// drifted roots into place or report the drift and write nothing.
+/// Render one marketplace of the vault into one tree per harness under
+/// `<vault_root>/dist/<m>/`, written through `vfs`, and, per the request's
+/// `mode`, either swap the drifted roots into place or report the drift and
+/// write nothing. The request's `marketplace` names it, and is required when
+/// the vault holds more than one.
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a serialized
 /// `ExportRequest`. Returns a serialized `ExportReport`.
@@ -172,9 +174,9 @@ struct WireExportRequest {
 ///
 /// # Errors
 ///
-/// * `Refused` — `empty-marketplace` (a marketplace with no plugin),
-///   `compare-with` on a build, and everything discovery and compilation
-///   refuse.
+/// * `Refused` — `ambiguous-marketplace` (several and none named),
+///   `empty-marketplace` (a marketplace with no plugin), `compare-with` on a
+///   build, and everything discovery and compilation refuse.
 /// * `SwapFailed` — the commit failed part-way; the message says what the
 ///   rollback restored. Its own `.name`, because a host has to be able to tell
 ///   "nothing happened" from "something happened and was undone".
@@ -200,8 +202,10 @@ struct WireLoadRequest {
     request: LoadRequest,
 }
 
-/// Load the vault into the marketplace model — every plugin and its members,
-/// with each body's links and calls resolved — and write nothing.
+/// Load one marketplace of the vault into the model — every plugin and its
+/// members, with each body's links and calls resolved — and write nothing.
+/// The request's `marketplace` names it, and is required when the vault holds
+/// more than one.
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a serialized
 /// `LoadRequest`. Returns a serialized
@@ -212,8 +216,9 @@ struct WireLoadRequest {
 /// # Errors
 ///
 /// Everything the load refuses, thrown as on `exportSkills`: a vault outside
-/// the layout, an unreadable member note, a call or link that does not resolve, an override key a
-/// requested harness does not read, an empty marketplace.
+/// the layout, `ambiguous-marketplace` (several and none named), an
+/// unreadable member note, a call or link that does not resolve, an empty
+/// marketplace.
 #[wasm_bindgen(js_name = loadMarketplace)]
 pub fn load_marketplace(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
