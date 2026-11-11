@@ -57,7 +57,7 @@ use crate::frontmatter::EntityKind;
 pub use load::{LoadRequest, load, load_in, read_notes, resolve_body};
 
 /// A vault, loaded as the one marketplace a build renders.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Marketplace {
     /// The name the marketplace publishes under.
     pub name: String,
@@ -65,7 +65,6 @@ pub struct Marketplace {
     pub folder: Option<String>,
     /// The marketplace's identity and every plugin's manifest fields, the
     /// vault's notes folded over the root file's shared defaults.
-    #[serde(skip)]
     pub(crate) config: MarketplaceConfig,
     /// Every plugin, by name.
     pub plugins: BTreeMap<String, Plugin>,
@@ -77,7 +76,6 @@ pub struct Marketplace {
     /// How many skills the marketplace holds.
     pub checked: usize,
     /// The vault this was loaded from.
-    #[serde(skip)]
     pub vault_root: PathBuf,
 }
 
@@ -92,7 +90,7 @@ impl Marketplace {
 }
 
 /// One plugin and everything it carries.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default)]
 pub struct Plugin {
     /// The plugin's name.
     pub name: String,
@@ -106,15 +104,12 @@ pub struct Plugin {
     /// from the pack root.
     pub references: Vec<Resource>,
     /// The plugin's `hooks/hooks.json`, parsed.
-    #[serde(skip)]
     pub hooks_file: Option<HooksFile>,
     /// The harnesses that name this plugin's skills bare against their
     /// profile's default: `<harness>: {naming: bare}` where the default
     /// prefixes.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bare_on: Vec<String>,
     /// The plugin note's `targets`, cascaded. `None` is every harness.
-    #[serde(skip)]
     pub targets: Option<Vec<String>>,
 }
 
@@ -138,7 +133,7 @@ impl Plugin {
 
 /// A skill, a command, an agent or a container note, read and — when
 /// a requested harness admits it — resolved.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Component {
     /// What it is.
     pub kind: EntityKind,
@@ -160,24 +155,22 @@ pub struct Component {
     /// for admits the component.
     pub resolved: Option<Resolved>,
     /// What the scan found.
-    #[serde(skip)]
     pub discovered: DiscoveredComponent,
 }
 
 /// A body and the files it reaches, every link and call pointed at its node.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Resolved {
     /// The entry's body.
     pub body: Body,
     /// Every file that travels with it, by output path.
     pub resources: Vec<Resource>,
     /// Per emitted file, what fed it — the manifest's staleness record.
-    #[serde(skip)]
     pub closures: BTreeMap<String, Closure>,
 }
 
 /// One file a component carries.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Resource {
     /// Where it lands, relative to the component's directory.
     pub path: String,
@@ -188,8 +181,7 @@ pub struct Resource {
 }
 
 /// A resource's content: a compiled markdown file, or bytes as found.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[derive(Debug, Clone)]
 pub enum ResourceContent {
     /// A markdown file, whose links and calls a translator writes.
     Body {
@@ -199,21 +191,19 @@ pub enum ResourceContent {
     /// Anything else, copied byte for byte.
     Bytes {
         /// The bytes.
-        #[serde(skip)]
         bytes: Vec<u8>,
     },
 }
 
 /// A body as a sequence of segments.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Body {
     /// The segments, in order.
     pub segments: Vec<Segment>,
 }
 
 /// One piece of a resolved body.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Segment {
     /// Text, written as is.
     Text {
@@ -247,7 +237,7 @@ pub enum Segment {
 
 /// A `${PLUGIN_ROOT}/<path>` in text. Both paths are paths in a pack laid
 /// out as Claude Code's, as a [`ResolvedRef`]'s are.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginRootPath {
     /// The file it names.
     pub path: String,
@@ -263,7 +253,7 @@ pub struct PluginRootPath {
 /// written. Both paths are paths in a pack laid out as Claude Code's
 /// (`skills/<s>/…`, `commands/<c>.md`, shared files at the root); a translator
 /// maps them to its own folders.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedRef {
     /// The linked file, vault-relative.
     pub path: String,
@@ -313,8 +303,7 @@ impl ResolvedRef {
 }
 
 /// How a link is written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkForm {
     /// `[label](href)`.
     Link,
@@ -325,7 +314,7 @@ pub enum LinkForm {
 }
 
 /// A component a link reaches into.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkedComponent {
     /// Its kind.
     pub kind: EntityKind,
@@ -334,7 +323,7 @@ pub struct LinkedComponent {
 }
 
 /// A resolved call.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Call {
     /// The skill or command it names.
     pub skill: SkillId,
@@ -342,7 +331,6 @@ pub struct Call {
     pub targets: Option<Vec<String>>,
     /// The harnesses that name the skill bare against their profile's
     /// default, as its plugin's [`Plugin::bare_on`].
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bare_on: Vec<String>,
     /// The call's target as written, without `/[[` and `]]`, for a refusal.
     pub destination: String,
@@ -402,7 +390,7 @@ impl SkillId {
 
 /// A node's harness-only fields: harness blocks, folded onto canonical
 /// harness names (D-ISOU).
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Extensions {
     /// Each harness's block, as written.
     pub blocks: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,

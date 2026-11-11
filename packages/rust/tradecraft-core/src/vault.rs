@@ -63,7 +63,6 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::content::{SkillContent, SkillProjection};
@@ -72,16 +71,16 @@ use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vfs::Vfs;
 
-/// One vault note, read: what publishing renders, and what our own keys
+/// One vault note, read: what a build renders, and what our own keys
 /// said about it.
 ///
 /// The two halves are separate types rather than one flat struct because the
 /// separation is the strip. [`SkillProjection`] is everything that may reach a
-/// destination, and it has nowhere to put a key of ours —
+/// harness, and it has nowhere to put a key of ours —
 /// [`crate::projection::project_skill`] takes only that half, so our fields
 /// cannot travel by accident. [`VaultNote::frontmatter`] is everything that
 /// must not travel.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VaultNote {
     /// The content and peers, ready to project. Carries no key of ours by
     /// construction.

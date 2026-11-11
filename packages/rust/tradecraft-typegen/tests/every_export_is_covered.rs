@@ -160,11 +160,10 @@ fn a_diagnostic_export_emits() {
     }
 }
 
-/// The marketplace model is declared in `tradecraft-core/src/model/`, a module
-/// directory, and holds fields marked `#[serde(skip)]` that never reach the
-/// wire. Both must hold for `loadMarketplace` to emit at all: the directory is
-/// read, and a skipped field — `Marketplace::config`, here — is left out of the
-/// interface rather than described.
+/// `loadMarketplace` answers with `WireMarketplace`, declared in
+/// `tradecraft-wasm/src/wire.rs` beside `lib.rs`. The file is read, the `Wire`
+/// prefix is dropped, and none of the core model's own fields, such as
+/// `config` and `vault_root`, cross.
 #[test]
 fn the_marketplace_model_emits_without_its_skipped_fields() {
     let ts = tradecraft_typegen::generate(&crates()).expect("generating");

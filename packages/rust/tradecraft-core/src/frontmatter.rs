@@ -272,10 +272,10 @@ impl ContainerIdentity {
 /// Deliberately **not** part of [`crate::SkillContent`]: these keys are
 /// configuration about *this* vault, and keeping them off the type
 /// [`crate::projection::project_skill`] renders makes the strip structural.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct VaultFrontmatter {
     /// `targets`. **Three outcomes, not two:** `None` is absent and means
-    /// every destination (or what the plugin says); `Some(vec![])` is an
+    /// every harness (or what the plugin says); `Some(vec![])` is an
     /// empty list and means nowhere; `Some(names)` narrows to those.
     pub targets: Option<Vec<String>>,
     /// `arguments` — what this skill or command's invocation takes,
@@ -284,7 +284,7 @@ pub struct VaultFrontmatter {
     /// `values` is present. Empty when the key is absent.
     ///
     /// [`crate::content::SkillContent::apply_arguments`] carries it onto the
-    /// published content; the raw key never reaches a destination.
+    /// built content; the raw key never reaches a harness.
     pub arguments: Vec<Argument>,
     /// The manifest fields a container note publishes under. Empty on any
     /// other note.
@@ -300,11 +300,9 @@ pub struct VaultFrontmatter {
     /// Every key on the note that the key table does not list for its kind,
     /// sorted. Each gets a warning. On a skill they publish under
     /// `metadata:`; on a container they are ignored.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown: Vec<String>,
     /// Every key the note sets to a value, in its bare spelling. An inherited
     /// block key yields to these (`Cascade::apply`).
-    #[serde(skip)]
     pub own_keys: std::collections::BTreeSet<String>,
 }
 
