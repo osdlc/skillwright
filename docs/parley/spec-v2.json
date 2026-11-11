@@ -5,7 +5,7 @@
   "created": "2026-11-10",
   "repo": {
     "remote": "https://github.com/osdlc/skillwright",
-    "commit": "05074ff08c88985590e7c1bd19a474898afe0642"
+    "commit": "991b62829d78d086939494c13a7968439f178dc5"
   },
   "blocks": [
     {
@@ -87,7 +87,7 @@
     {
       "id": "spec-1-the-root-p-3",
       "type": "prose",
-      "text": "3. v2 does not support a vault inside a larger notes vault. At the root, only\n   `skillwright.md` and `marketplaces/` are read, and `dist/` is written\n   (section 9). Anything else at the root is left alone."
+      "text": "3. v2 does not support a vault inside a larger notes vault. At the root, only\n   `skillwright.md` and `marketplaces/` are read, and `dist/` is written\n   (section 9). Only the root's direct children are checked. A `skills/`,\n   `agents/`, `commands/`, `hooks/` or `plugins/` folder there is refused\n   (section 11 case 4). Anything else at the root is left alone and not read,\n   at any depth, such as `notes/` or `notes/marketplaces/`."
     },
     {
       "id": "spec-2-the-root-file",
@@ -239,7 +239,7 @@
     {
       "id": "spec-what-a-folder-may-hold-p-4",
       "type": "prose",
-      "text": "| Folder | May hold |\n|---|---|\n| The root | `skillwright.md`, `marketplaces/`, `dist/`. Anything else is left alone, not read. |\n| `marketplaces/` | Marketplace folders only. |\n| `marketplaces/<m>/` | `<m>.md`, `plugins/`. |\n| `plugins/` | Plugin folders only. |\n| `plugins/<p>/` | `<p>.md`, `CHANGELOG.md`, `references/`, `scripts/`, `assets/`, `skills/`, `agents/`, `commands/`, `hooks/`, and the never-ship folders `src/`, `docs/`, `tests/`, `fixtures/` (rule 15). |\n| `skills/`, `agents/`, `commands/` | Component folders only. |\n| `hooks/` | `hooks.json` only. A folder or any other file in it is an error. |\n| `skills/<s>/` | `<s>.md`, `references/`, `scripts/`, `assets/`, and the never-ship folders `src/`, `docs/`, `tests/`, `fixtures/`. |\n| `agents/<a>/`, `commands/<c>/` | Their note, and the never-ship folders `docs/`, `tests/`, `fixtures/`. |"
+      "text": "| Folder | May hold |\n|---|---|\n| The root | `skillwright.md`, `marketplaces/`, `dist/`. Anything else is left alone and not read, except the refused names of section 11 case 4. |\n| `marketplaces/` | Marketplace folders only. |\n| `marketplaces/<m>/` | `<m>.md`, `plugins/`. |\n| `plugins/` | Plugin folders only. |\n| `plugins/<p>/` | `<p>.md`, `CHANGELOG.md`, `references/`, `scripts/`, `assets/`, `skills/`, `agents/`, `commands/`, `hooks/`, and the never-ship folders `src/`, `docs/`, `tests/`, `fixtures/` (rule 15). |\n| `skills/`, `agents/`, `commands/` | Component folders only. |\n| `hooks/` | `hooks.json` only. A folder or any other file in it is an error. |\n| `skills/<s>/` | `<s>.md`, `references/`, `scripts/`, `assets/`, and the never-ship folders `src/`, `docs/`, `tests/`, `fixtures/`. |\n| `agents/<a>/`, `commands/<c>/` | Their note, and the never-ship folders `docs/`, `tests/`, `fixtures/`. |"
     },
     {
       "id": "spec-what-a-folder-may-hold-p-5",
@@ -437,7 +437,7 @@
     {
       "id": "spec-scope-of-a-link-from-a-component-p-11",
       "type": "prose",
-      "text": "8. `/[[name]]` is a call (decision D3).\n   - The `/` counts where it starts a line, or follows whitespace or one of\n     `( \" ' * > _ | [ =`. Anywhere else, such as `dir/[[x]]` or\n     `[[A]]/[[B]]`, the `/` is text and `[[x]]` is an ordinary link.\n   - A call to a skill renders as the string that runs it on that harness, in\n     backticks. Nothing is copied. For the `setup` skill of plugin `tools`:\n\n     | Harness | Default | With `naming: bare` (section 8 rule 6) |\n     |---|---|---|\n     | Claude Code | `` `/tools:setup` `` | same |\n     | Codex | `` `$tools:setup` `` | same |\n     | Cursor | `` `/tools-setup` `` | `` `/setup` `` |\n     | Pi | `` `/skill:tools-setup` `` | `` `/skill:setup` `` |\n\n   - A call with words keeps them: `/[[setup|the setup skill]]` renders as\n     ``the setup skill (`/tools:setup`)``.\n   - A fragment on a call, `/[[setup#Usage]]`, is an error, because a call\n     cannot target a section. Link or embed the section instead.\n   - The name is looked up among the marketplace's skills and commands\n     (decision D2). A name found in no plugin of the marketplace is an error,\n     even if another marketplace in the vault has it. A name two plugins\n     share is an error that names both plugins. Rename one to fix it.\n   - A call's result per target:\n\n     | Call to | Claude Code | Codex, Cursor, Pi |\n     |---|---|---|\n     | a skill the pack contains | the call string above | the call string above |\n     | a skill the pack does not contain (`targets`) | an error for that harness | an error for that harness |\n     | a command | `` `/tools:deploy` `` | an error: their packs contain no commands |\n     | an agent | an error: no pack contains agents | an error |\n   - A call string written by hand in prose is an error that says to write\n     `/[[setup]]`. One harness's form is wrong for the others. A string counts\n     when it is one harness's call form for a skill or command of this\n     marketplace, and its sigil does not continue a word or path. For the\n     `setup` skill of plugin `tools`:\n\n     | Written in prose | Checked? |\n     |---|---|\n     | `/tools:setup` (Claude Code) | Yes: an error |\n     | `$tools:setup` (Codex) | Yes: an error |\n     | `/tools-setup` (Cursor) | Yes: an error |\n     | `/skill:tools-setup` (Pi) | Yes: an error |\n     | `/setup` or `/skill:setup` (a bare name) | No. A bare name is too often other text, such as a path. |\n     | any of these in a code span or fenced block | No. It ships as written (rule 12). |\n\n     There is no escape form. To show a call string, put it in code."
+      "text": "8. `/[[name]]` is a call (decision D3).\n   - The `/` counts where it starts a line, or follows whitespace or one of\n     `( \" ' * > _ | [ =`. Anywhere else, such as `dir/[[x]]` or\n     `[[A]]/[[B]]`, the `/` is text and `[[x]]` is an ordinary link.\n   - A call to a skill renders as the string that runs it on that harness, in\n     backticks. Nothing is copied. For the `setup` skill of plugin `tools`:\n\n     | Harness | Default | With `naming: bare` (section 8 rule 6) |\n     |---|---|---|\n     | Claude Code | `` `/tools:setup` `` | same |\n     | Codex | `` `$tools:setup` `` | same |\n     | Cursor | `` `/tools-setup` `` | `` `/setup` `` |\n     | Pi | `` `/skill:tools-setup` `` | `` `/skill:setup` `` |\n\n   - A call with words keeps them: `/[[setup|the setup skill]]` renders as\n     ``the setup skill (`/tools:setup`)``.\n   - A fragment on a call, `/[[setup#Usage]]`, is an error, because a call\n     cannot target a section. Link or embed the section instead.\n   - The name is looked up among the marketplace's skills and commands\n     (decision D2). A name found in no plugin of the marketplace is an error,\n     even if another marketplace in the vault has it. A name two plugins\n     share is an error that names both plugins. Rename one to fix it.\n   - A call's result per target:\n\n     | Call to | Claude Code | Codex, Cursor, Pi |\n     |---|---|---|\n     | a skill the pack contains | the call string above | the call string above |\n     | a skill the pack does not contain (`targets`) | an error for that harness | an error for that harness |\n     | a command | `` `/tools:deploy` `` | an error: their packs contain no commands |\n     | an agent | an error: no pack contains agents | an error |\n   - A call string written by hand in prose is an error that says to write\n     `/[[setup]]`. One harness's form is wrong for the others. A string is\n     checked in these steps:\n     1. Take the call forms of every harness being built, with that\n        harness's naming in effect for the plugin. For a command, take only\n        the forms of harnesses whose packs contain commands.\n     2. Keep only the forms that name the plugin. For the `setup` skill of\n        plugin `tools`:\n\n        | Form | Harness | Checked? |\n        |---|---|---|\n        | `/tools:setup` | Claude Code | Yes |\n        | `$tools:setup` | Codex | Yes |\n        | `/tools-setup` | Cursor, prefixed | Yes |\n        | `/skill:tools-setup` | Pi, prefixed | Yes |\n        | `/setup`, `/skill:setup` | Cursor or Pi with `naming: bare` | No. A bare name is too often other text, such as a path. |\n\n     3. A form matches in prose when its sigil does not continue a word or\n        path, and the character after it is not a letter `a` to `z`, a digit\n        or `-`. So `/tools:setup-x` is not `/tools:setup`, and\n        `/tools:setup.md` is.\n     4. A match is an error. A match in a code span or fenced block is not\n        checked and ships as written (rule 12).\n\n     There is no escape form. To show a call string, put it in code."
     },
     {
       "id": "spec-scope-of-a-link-from-a-component-p-12",
@@ -518,12 +518,12 @@
     {
       "id": "spec-plugin-root-paths-p-9",
       "type": "prose",
-      "text": "22. `${CLAUDE_PLUGIN_ROOT}` anywhere in source, Markdown or a hooks file, code\n    included, is an error that says to write `${PLUGIN_ROOT}`. There is one\n    syntax. To show Claude Code's variable in an example, write it unbraced,\n    `$CLAUDE_PLUGIN_ROOT`."
+      "text": "22. `${CLAUDE_PLUGIN_ROOT}` in interpreted text, code included, is an error\n    that says to write `${PLUGIN_ROOT}`. Interpreted text is the files of rule\n    15 (a component's note, the Markdown in its own and the plugin's\n    `references/`, and text a note embed inlines) and `hooks/hooks.json`. A\n    file that ships byte for byte, a never-ship folder and a container note's\n    body are not checked. There is one syntax. To show Claude Code's variable\n    in an example, write it unbraced, `$CLAUDE_PLUGIN_ROOT`."
     },
     {
       "id": "spec-plugin-root-paths-p-10",
       "type": "prose",
-      "text": "23. A hooks file, `hooks/hooks.json`, also writes `${PLUGIN_ROOT}`. Each hook\n    command's `${PLUGIN_ROOT}` becomes the harness's own variable:\n\n    | Harness | Ships hooks? | `${PLUGIN_ROOT}` in a hook becomes |\n    |---|---|---|\n    | Claude Code | Yes | `${CLAUDE_PLUGIN_ROOT}` |\n    | Codex | Yes | `${PLUGIN_ROOT}`, unchanged |\n    | Cursor | No, for now. The build leaves hooks out of the Cursor pack and warns, naming `hooks/hooks.json`. | nothing |\n    | Pi | No: Pi has no shell hooks | nothing |\n\n    - A hook runs as a shell command from the project folder, where a\n      pack-relative path would not resolve. So hooks keep a variable.\n    - Cursor documents `${CURSOR_PLUGIN_ROOT}` only in `mcp.json`, not for\n      hook commands (harness-reference: `Cursor Plugin root variable`). A hook\n      that relied on it could fail at run time with no sign at build time. So\n      the Cursor pack ships no hooks until that is confirmed (see \"Later\").\n    - A lone `${PLUGIN_ROOT}` is allowed in a hook, since the variable is\n      kept. A path after it is checked by rule 17."
+      "text": "23. A hooks file, `hooks/hooks.json`, also writes `${PLUGIN_ROOT}`. Each hook\n    command's `${PLUGIN_ROOT}` becomes the harness's own variable:\n\n    | Harness | Ships hooks? | `${PLUGIN_ROOT}` in a hook becomes |\n    |---|---|---|\n    | Claude Code | Yes | `${CLAUDE_PLUGIN_ROOT}` |\n    | Codex | Yes | `${PLUGIN_ROOT}`, unchanged |\n    | Cursor | No, for now. The build leaves hooks out of the Cursor pack and warns, naming `hooks/hooks.json`. It warns only when it builds that plugin's Cursor pack: Cursor is in `build.harnesses` and in the plugin's `targets`. | nothing |\n    | Pi | No: Pi has no shell hooks | nothing |\n\n    - A hook runs as a shell command from the project folder, where a\n      pack-relative path would not resolve. So hooks keep a variable.\n    - Cursor documents `${CURSOR_PLUGIN_ROOT}` only in `mcp.json`, not for\n      hook commands (harness-reference: `Cursor Plugin root variable`). A hook\n      that relied on it could fail at run time with no sign at build time. So\n      the Cursor pack ships no hooks until that is confirmed (see \"Later\").\n    - A lone `${PLUGIN_ROOT}` is allowed in a hook, since the variable is\n      kept. A path after it is checked by rule 17."
     },
     {
       "id": "spec-plugin-root-paths-p-11",
@@ -953,7 +953,7 @@
     {
       "id": "spec-what-a-pack-holds-p-8",
       "type": "prose",
-      "text": "12. Two sources that would land on one path in a pack are an error that names\n    both."
+      "text": "12. `targets` and `build.harnesses` accept only `claude`, `codex`, `cursor`\n    and `pi`. Any other value is refused, and the error names the four."
     },
     {
       "id": "spec-install-keeps-a-pack-whole",
@@ -1074,7 +1074,7 @@
     {
       "id": "spec-11-a-vault-not-in-this-layout-p-6",
       "type": "prose",
-      "text": "4. A kind folder (`skills/`, `agents/`, `commands/`), a `hooks/` folder or a\n   `plugins/` folder is anywhere other than its place in section 3, such as at the root or\n   directly in a marketplace."
+      "text": "4. A kind folder (`skills/`, `agents/`, `commands/`), a `hooks/` folder or a\n   `plugins/` folder is directly in the root, or anywhere in `marketplaces/`\n   other than its place in section 3, such as directly in a marketplace."
     },
     {
       "id": "spec-11-a-vault-not-in-this-layout-code-2",
@@ -1085,7 +1085,7 @@
     {
       "id": "spec-11-a-vault-not-in-this-layout-p-7",
       "type": "prose",
-      "text": "5. A `marketplaces/` folder is anywhere below the top."
+      "text": "5. A `marketplaces/` folder is anywhere inside `marketplaces/`."
     },
     {
       "id": "spec-11-a-vault-not-in-this-layout-p-8",
@@ -1662,7 +1662,7 @@
     {
       "id": "spec-d8-embedding-a-file-that-is-neither-46",
       "type": "prose",
-      "text": "   The six structure names are reserved (section 3 rule 6), so a component\n   named `marketplaces` cannot hold a `marketplaces/` folder.\n\n   A whole vault copied inside another vault's tree is a different case. A\n   walk up that starts inside the inner vault stops at the inner root. A\n   build of the outer vault refuses the inner `marketplaces/` (section 11\n   rule 5). v2 does not support nested vaults (section 1 rule 3)."
+      "text": "   The six structure names are reserved (section 3 rule 6), so a component\n   named `marketplaces` cannot hold a `marketplaces/` folder.\n\n   A whole vault copied inside another vault's tree is a different case. A\n   walk up that starts inside the inner vault stops at the inner root, so the\n   build reads the inner vault. A build started outside it reads only the\n   outer root's `skillwright.md` and `marketplaces/` (section 1 rule 3). v2\n   does not support nested vaults."
     },
     {
       "id": "spec-d8-embedding-a-file-that-is-neither-47",
@@ -1931,15 +1931,20 @@
     {
       "id": "changes-output-p-6",
       "type": "prose",
-      "text": "- Hooks in the Cursor pack. The build now leaves them out and warns, until a\n  probe confirms that Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands\n  (section 4 rule 23, [#152](https://github.com/osdlc/skillwright/issues/152))."
+      "text": "- `targets` values other than `claude`, `codex`, `cursor` and `pi`. The\n  publish targets (`amp`, `antigravity`, `copilot`, `opencode`, `portable`)\n  and the aliases (`claude-code`, `codex-cli`, `github-copilot`) are now\n  refused (section 9 rule 12)."
     },
     {
       "id": "changes-output-p-7",
       "type": "prose",
-      "text": "- New: `check` with no `dist/<m>/` reports drift (exit 1)."
+      "text": "- Hooks in the Cursor pack. The build now leaves them out and warns, until a\n  probe confirms that Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands\n  (section 4 rule 23, [#152](https://github.com/osdlc/skillwright/issues/152))."
     },
     {
       "id": "changes-output-p-8",
+      "type": "prose",
+      "text": "- New: `check` with no `dist/<m>/` reports drift (exit 1)."
+    },
+    {
+      "id": "changes-output-p-9",
       "type": "prose",
       "text": "- New: `build` with no `--marketplace` builds every marketplace. The working\n  directory no longer picks one."
     },
@@ -2414,7 +2419,7 @@
     {
       "id": "plan-settled-and-open-p-3",
       "type": "prose",
-      "text": "| Decision | Where written | Commit |\n|---|---|---|\n| A removed command is clap's own unknown-command error: a usage error, exit 3 (`EXIT_USAGE`), with no \"removed in v2\" hint. | Spec section 10 | 1 |\n| The flags are `--vault`, `--marketplace`, `--json`, `--quiet`, `--dry-run` and `--yes`, plus `bump`'s own. `--config` and `--namespace` go. | Spec section 10 rule 5 | 1 to 3 |\n| `--yes` stays. On `origin/main`, `build` and `bump` both ask before writing (`confirm_write` in `commands/marketplace.rs` and `commands/bump.rs`), and off a terminal without `--yes` they exit 3. So the `plugin` workflow keeps `build --yes` and only drops `--config`. | Spec section 10 rule 6 | 2 |\n| The wasm exports of removed features go: `publishSkill`, `adoptSkills`, `statusOf`, `publishableKinds` and `validateNamespace`. | This plan | 1 and 3 |\n| Hooks come only from `hooks/hooks.json`. Hook notes are removed; richer hook authoring is [#152](https://github.com/osdlc/skillwright/issues/152). | Spec section 3 | 2 and 4 |\n| The Cursor pack ships no hooks, with a warning, until a probe confirms Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands. That probe is tracked in [#152](https://github.com/osdlc/skillwright/issues/152) and is not part of v2. | Spec section 4 rule 23 | 4 |\n| Cursor's default naming becomes prefixed through a constant in its profile row, as Pi's is, not through an edit to harness knowledge. Knowledge records what Cursor allows (plain names); the default is skillwright's choice. | This plan | 4 |\n| `\\[[x]]` ships as `[[x]]`, with the backslash removed. Today's code keeps it. | Spec section 4 rule 13 | 5 |\n| A hand-written call is detected in the four forms that name the plugin: `/p:s`, `$p:s`, `/p-s` and `/skill:p-s`, for a skill or command of the marketplace. A bare `/s` or `/skill:s` is not detected. There is no escape form; code ships as written. | Spec section 4 rule 8 | 5 |"
+      "text": "| Decision | Where written | Commit |\n|---|---|---|\n| A removed command is clap's own unknown-command error: a usage error, exit 3 (`EXIT_USAGE`), with no \"removed in v2\" hint. | Spec section 10 | 1 |\n| The flags are `--vault`, `--marketplace`, `--json`, `--quiet`, `--dry-run` and `--yes`, plus `bump`'s own. `--config` and `--namespace` go. | Spec section 10 rule 5 | 1 to 3 |\n| `--yes` stays. On `origin/main`, `build` and `bump` both ask before writing (`confirm_write` in `commands/marketplace.rs` and `commands/bump.rs`), and off a terminal without `--yes` they exit 3. So the `plugin` workflow keeps `build --yes` and only drops `--config`. | Spec section 10 rule 6 | 2 |\n| The wasm exports of removed features go: `publishSkill`, `adoptSkills`, `statusOf`, `publishableKinds` and `validateNamespace`. | This plan | 1 and 3 |\n| Hooks come only from `hooks/hooks.json`. Hook notes are removed; richer hook authoring is [#152](https://github.com/osdlc/skillwright/issues/152). | Spec section 3 | 2 and 4 |\n| The Cursor pack ships no hooks, with a warning, until a probe confirms Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands. That probe is tracked in [#152](https://github.com/osdlc/skillwright/issues/152) and is not part of v2. | Spec section 4 rule 23 | 4 |\n| Cursor's default naming becomes prefixed through a constant in its profile row, as Pi's is, not through an edit to harness knowledge. Knowledge records what Cursor allows (plain names); the default is skillwright's choice. | This plan | 4 |\n| `check` takes no `--dry-run` and no `--yes`. Today it takes both. | Spec section 10 rule 5 | 1 |\n| Output is fixed at `dist/<m>/` from commit 2, so `build` works on the new layout as soon as `init` writes it. `build.out` and `--out` go there. | Spec section 9 rule 1 | 2 |\n| Only the root's direct children are checked. `skills/`, `agents/`, `commands/`, `hooks/` and `plugins/` there are refused; anything else, at any depth, is not read. | Spec section 1 rule 3, section 11 cases 4 and 5 | 2 |\n| `targets` and `build.harnesses` accept only `claude`, `codex`, `cursor` and `pi`. The publish targets and the aliases are refused. `KNOWN_TARGETS` shrinks to the four. | Spec section 9 rule 12 | 3 |\n| `build.launcher_path` is refused and deleted together with `build.assets`, because the launcher is found through `asset_covers`. | Spec section 11 case 7 | 4 |\n| `exportSkills` writes `<root>/dist/<m>/` in the host's filesystem object. `loadMarketplace` takes a marketplace name, required when the vault has more than one; without it such a vault is an error. | This plan | 4 |\n| The Cursor hooks warning fires only when the plugin's Cursor pack is built (Cursor in `build.harnesses` and in the plugin's `targets`) and the plugin has `hooks/hooks.json`. | Spec section 4 rule 23 | 4 |\n| `\\[[x]]` ships as `[[x]]`, with the backslash removed. Today's code keeps it. | Spec section 4 rule 13 | 5 |\n| A hand-written call is checked in the forms that name the plugin, for the harnesses being built, with each harness's naming in effect: `/p:s`, `$p:s`, `/p-s` and `/skill:p-s`. For a command, only the forms of harnesses whose packs contain commands. A match ends before a character outside `a-z`, `0-9` and `-`. A bare `/s` or `/skill:s` is not checked. There is no escape form; code ships as written. | Spec section 4 rule 8 | 5 |\n| `${CLAUDE_PLUGIN_ROOT}` is refused only in interpreted text and `hooks/hooks.json`, not in byte-for-byte files, never-ship folders or container note bodies. | Spec section 4 rule 22 | 4 and 5 |\n| The `publish` skill is dropped. `author` gains a short section on what to do with `dist/`, and the `/[[publish]]` calls in `author` and `setup` are replaced. | This plan | 6 |\n| The decisions v2 amends (D-WNTQ, D-KVMB, D-GPYR) are edited in place to match v2. No superseding decision is written. | This plan | 6 |"
     },
     {
       "id": "plan-probes",
@@ -2475,30 +2480,43 @@
     {
       "id": "plan-the-gates-p-2",
       "type": "prose",
-      "text": "Rust, from `packages/rust` (the `rust` workflow):"
+      "text": "To run them locally you need:"
     },
     {
       "id": "plan-the-gates-p-3",
       "type": "prose",
-      "text": "- `cargo fmt --all --check`"
+      "text": "| Tool | Version |\n|---|---|\n| Rust | the toolchain in `packages/rust/rust-toolchain.toml`, with the `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`) |\n| `wasm-bindgen` CLI | `0.2.126`, equal to the `wasm-bindgen` crate pin (`packages/rust/tradecraft-wasm/build.sh`) |\n| `wasm-opt` (binaryen) | `version_131` |\n| Node | 24 or newer (`engines` in the root `package.json`) |\n| pnpm | `10.28.0` (`packageManager` in the root `package.json`) |",
+      "source": {
+        "uri": "packages/rust/rust-toolchain.toml"
+      }
     },
     {
       "id": "plan-the-gates-p-4",
       "type": "prose",
-      "text": "- `cargo clippy --workspace --all-targets --locked -- -D warnings`. This\n  builds the examples too."
+      "text": "Rust, from `packages/rust` (the `rust` workflow):"
     },
     {
       "id": "plan-the-gates-p-5",
       "type": "prose",
-      "text": "- `cargo test --workspace --locked`"
+      "text": "- `cargo fmt --all --check`"
     },
     {
       "id": "plan-the-gates-p-6",
       "type": "prose",
-      "text": "- `RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps --locked`"
+      "text": "- `cargo clippy --workspace --all-targets --locked -- -D warnings`. This\n  builds the examples too."
     },
     {
       "id": "plan-the-gates-p-7",
+      "type": "prose",
+      "text": "- `cargo test --workspace --locked`"
+    },
+    {
+      "id": "plan-the-gates-p-8",
+      "type": "prose",
+      "text": "- `RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps --locked`"
+    },
+    {
+      "id": "plan-the-gates-p-9",
       "type": "prose",
       "text": "- `cargo run --locked -q -p tradecraft-typegen -- --check`, and\n  `packages/ts/tradecraft-wasm/src/core.generated.ts` equals\n  `tradecraft-typegen/generated/core.generated.ts`.",
       "source": {
@@ -2506,32 +2524,32 @@
       }
     },
     {
-      "id": "plan-the-gates-p-8",
+      "id": "plan-the-gates-p-10",
       "type": "prose",
       "text": "TypeScript, from the repository root (the `ts` workflow):"
     },
     {
-      "id": "plan-the-gates-p-9",
+      "id": "plan-the-gates-p-11",
       "type": "prose",
       "text": "- `pnpm install --frozen-lockfile`"
     },
     {
-      "id": "plan-the-gates-p-10",
+      "id": "plan-the-gates-p-12",
       "type": "prose",
       "text": "- `pnpm run format:check`. Prettier checks these docs too."
     },
     {
-      "id": "plan-the-gates-p-11",
+      "id": "plan-the-gates-p-13",
       "type": "prose",
       "text": "- `pnpm run typecheck:scripts` and `pnpm run test:scripts`"
     },
     {
-      "id": "plan-the-gates-p-12",
+      "id": "plan-the-gates-p-14",
       "type": "prose",
       "text": "- `pnpm run build:wasm` in `packages/ts/tradecraft-wasm`, then\n  `pnpm run build`, `pnpm run typecheck`, `pnpm run lint` and\n  `pnpm run test` from the root."
     },
     {
-      "id": "plan-the-gates-p-13",
+      "id": "plan-the-gates-p-15",
       "type": "prose",
       "text": "The repo's plugin (the `plugin` workflow): the build of `plugin/` matches\nwhat is committed, and `check` passes."
     },
@@ -2606,7 +2624,7 @@
     {
       "id": "plan-1-cut-to-four-commands-p-4",
       "type": "prose",
-      "text": "- `build --watch` is an unknown flag, exit 3."
+      "text": "- `build --watch` is an unknown flag, exit 3. So are `check --dry-run` and\n  `check --yes`."
     },
     {
       "id": "plan-1-cut-to-four-commands-p-5",
@@ -2619,51 +2637,76 @@
       "text": "- The existing `build`, `check` and `bump` tests still pass unchanged."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump",
+      "id": "plan-1-cut-to-four-commands-p-7",
+      "type": "prose",
+      "text": "Also in this commit, so the gates pass:"
+    },
+    {
+      "id": "plan-1-cut-to-four-commands-p-8",
+      "type": "prose",
+      "text": "- `tradecraft-core/README.md` is compiled as a doctest (`lib.rs` includes it).\n  Its quick start calls `publish_skill`; rewrite it around `export_skills`.\n  Its \"Load a vault and build it\" and \"Launcher path\" sections describe\n  workspaces, the namespace and `out_root`; commits 2 to 4 update them as\n  those go."
+    },
+    {
+      "id": "plan-1-cut-to-four-commands-p-9",
+      "type": "prose",
+      "text": "- The intra-doc links to `crate::publish::publish_skill` in `export.rs`\n  (its module doc and the `emit` doc) fail `cargo doc -D warnings`. Reword\n  them."
+    },
+    {
+      "id": "plan-1-cut-to-four-commands-p-10",
+      "type": "prose",
+      "text": "- The TypeScript tests that call the removed exports:\n  `tests/core-errors.test.ts`, `tests/node-vfs.test.ts` and\n  `tests/windows-host.test.ts` lose those cases; `tests/status-of.test.ts`\n  and `examples/publish-a-skill.test.ts` go. `tests/smoke.mjs` (run by\n  `pnpm smoke`, not in CI) calls `publishSkill` and `validateNamespace`;\n  rewrite it around `exportSkills`."
+    },
+    {
+      "id": "plan-2-layout-reader-fixed-output-init-a",
       "type": "heading",
-      "title": "2. Layout reader, `init` and `bump`",
+      "title": "2. Layout reader, fixed output, `init` and `bump`",
       "level": 3
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p",
+      "id": "plan-2-layout-reader-fixed-output-init-a-2",
       "type": "prose",
-      "text": "Root discovery, the fixed-position `classify`, the one loader, the\nmarketplace note `<m>.md`, required plugin notes (D6), the folder rules of\nsection 3, and `init` and `bump` on the new layout. Delete the\nnearest-`skillwright.md` walk-up, `--config`, `--skills-root`, reserved notes,\nworkspaces, patterns and `build.exclude` (D5), `SKILL.md` and flat entries,\nand hook notes."
+      "text": "Root discovery, the fixed-position `classify`, the one loader, the\nmarketplace note `<m>.md`, required plugin notes (D6), the folder rules of\nsection 3, the fixed output folder `dist/<m>/` (D1), and `init` and `bump` on\nthe new layout. Delete the nearest-`skillwright.md` walk-up, `--config`,\n`--skills-root`, reserved notes, workspaces, patterns and `build.exclude`\n(D5), `SKILL.md` and flat entries, hook notes, `build.out` and `--out`."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-2",
+      "id": "plan-2-layout-reader-fixed-output-init-a-3",
+      "type": "prose",
+      "text": "The output moves here because `init` no longer writes an output path, and a\nbuild of several marketplaces needs one folder each."
+    },
+    {
+      "id": "plan-2-layout-reader-fixed-output-init-a-4",
       "type": "prose",
       "text": "The root file's marketplace fields stop being read here; commit 3 refuses\nthem."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-3",
+      "id": "plan-2-layout-reader-fixed-output-init-a-5",
       "type": "prose",
       "text": "Tests first, layout:"
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-4",
+      "id": "plan-2-layout-reader-fixed-output-init-a-6",
       "type": "prose",
       "text": "- A v2 fixture vault lists every component with its marketplace and plugin."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-5",
+      "id": "plan-2-layout-reader-fixed-output-init-a-7",
       "type": "prose",
-      "text": "- A root holding `README.md` and `notes/` beside `skillwright.md` and\n  `marketplaces/` loads; neither is read (section 1 rule 3).",
+      "text": "- A root holding `README.md`, `notes/` and `notes/marketplaces/` beside\n  `skillwright.md` and `marketplaces/` loads; none of them is read, and a\n  build leaves them unchanged (section 1 rule 3). The root file's body is not\n  read (section 2 rule 1).",
       "source": {
         "uri": "README.md"
       }
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-6",
+      "id": "plan-2-layout-reader-fixed-output-init-a-8",
       "type": "prose",
       "text": "- `--vault` on a folder with `skillwright.md` but no `marketplaces/` is\n  refused."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-7",
+      "id": "plan-2-layout-reader-fixed-output-init-a-9",
       "type": "prose",
       "text": "- A `skillwright` skill's note is not taken for a root (Appendix A1). A\n  component named `skills` is refused."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-8",
+      "id": "plan-2-layout-reader-fixed-output-init-a-10",
       "type": "prose",
       "text": "- A loose file in a skill folder is refused, naming the allowed entries. A\n  `README.md` in `marketplaces/` is refused.",
       "source": {
@@ -2671,107 +2714,132 @@
       }
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-9",
+      "id": "plan-2-layout-reader-fixed-output-init-a-11",
       "type": "prose",
       "text": "- `src/` in a command or agent folder is refused; in a skill or plugin folder\n  it is accepted."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-10",
+      "id": "plan-2-layout-reader-fixed-output-init-a-12",
       "type": "prose",
       "text": "- A `.mcp.json` in a plugin is an error. `assets/.eslintrc.json` is skipped."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-11",
+      "id": "plan-2-layout-reader-fixed-output-init-a-13",
       "type": "prose",
       "text": "- `references/docs/x.md` is accepted; `skills/review/docs/x.md` is a\n  never-ship folder (commit 4 tests what ships)."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-12",
+      "id": "plan-2-layout-reader-fixed-output-init-a-14",
       "type": "prose",
-      "text": "- A name with digits, `v2-tools`, is accepted; `a--b` is refused."
+      "text": "- A name with digits, `v2-tools`, is accepted; `a--b` is refused. So is a\n  plain name of 65 characters (section 3 rule 5)."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-13",
+      "id": "plan-2-layout-reader-fixed-output-init-a-15",
+      "type": "prose",
+      "text": "- One skill copied into two marketplaces loads as two components (section 3\n  rule 10)."
+    },
+    {
+      "id": "plan-2-layout-reader-fixed-output-init-a-16",
       "type": "prose",
       "text": "- A skill and a command named `deploy` in one plugin are refused, naming\n  both. The same name in two plugins is accepted (section 3 rule 7)."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-14",
+      "id": "plan-2-layout-reader-fixed-output-init-a-17",
       "type": "prose",
       "text": "- `hooks/hooks.json` is accepted. A folder such as `hooks/lint/`, or any\n  other file in `hooks/`, is an error."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-15",
+      "id": "plan-2-layout-reader-fixed-output-init-a-18",
       "type": "prose",
       "text": "Section 11, one test per case, each error naming the path and printing the\nexpected layout:"
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-16",
+      "id": "plan-2-layout-reader-fixed-output-init-a-19",
       "type": "prose",
-      "text": "| Case | Test |\n|---|---|\n| 1 | No root at or above the working directory; the error names a `skillwright.md` passed over. |\n| 3 | A marketplace folder with no `<m>.md`; with a `skillwright.md` in it, the error says the note is now `<m>.md`. Also a plugin folder with no `<p>.md` (section 3 rule 3). |\n| 4 | `skills/` at the root, and directly in a marketplace. |\n| 5 | `marketplaces/` below the top. |\n| 6 | `skills/x.md` and `skills/x/SKILL.md`. |\n| 7 | `build.patterns` and `build.exclude`. |\n| 8 | A plugin's `bin/`, and a `notes.md` beside a skill's entry. |\n| all | Two flat notes are reported once, listing both paths. |"
+      "text": "| Case | Test |\n|---|---|\n| 1 | No root at or above the working directory; the error names a `skillwright.md` passed over. |\n| 3 | A marketplace folder with no `<m>.md`; with a `skillwright.md` in it, the error says the note is now `<m>.md`. Also a plugin folder with no `<p>.md` (section 3 rule 3). |\n| 4 | `skills/`, `agents/`, `commands/`, `hooks/` and `plugins/` directly in the root; `skills/` directly in a marketplace. |\n| 5 | `marketplaces/` inside `marketplaces/acme/plugins/tools/`. |\n| 6 | `skills/x.md` and `skills/x/SKILL.md`. |\n| 7 | `build.patterns`, `build.exclude` and `build.out`. |\n| 8 | A plugin's `bin/`, and a `notes.md` beside a skill's entry. |\n| all | Two flat notes are reported once, listing both paths. |"
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-17",
+      "id": "plan-2-layout-reader-fixed-output-init-a-20",
       "type": "prose",
       "text": "Tests first, `init` and `bump`:"
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-18",
+      "id": "plan-2-layout-reader-fixed-output-init-a-21",
       "type": "prose",
       "text": "- `init acme tools` in an empty folder writes the three notes, and a `build`\n  of it succeeds."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-19",
+      "id": "plan-2-layout-reader-fixed-output-init-a-22",
       "type": "prose",
       "text": "- `init` refuses a folder with `skillwright.md`, and a name such as `Tools`."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-20",
+      "id": "plan-2-layout-reader-fixed-output-init-a-23",
       "type": "prose",
       "text": "- `bump tools` writes `tools.md`. `bump --marketplace acme` writes `acme.md`.\n  With plugin `osdlc` in marketplace `osdlc`, `bump osdlc` bumps the plugin."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-21",
+      "id": "plan-2-layout-reader-fixed-output-init-a-24",
       "type": "prose",
       "text": "- `bump` with a plugin name two marketplaces share asks for\n  `--marketplace`."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-22",
+      "id": "plan-2-layout-reader-fixed-output-init-a-25",
       "type": "prose",
       "text": "- `build.bump.patch: timestamp` sets the patch to the UTC time. A patch\n  already larger than that time becomes one more than itself (section 10\n  rule 4)."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-23",
+      "id": "plan-2-layout-reader-fixed-output-init-a-26",
       "type": "prose",
       "text": "- `bump --changed-since` bumps only a changed plugin."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-24",
+      "id": "plan-2-layout-reader-fixed-output-init-a-27",
+      "type": "prose",
+      "text": "Tests first, output:"
+    },
+    {
+      "id": "plan-2-layout-reader-fixed-output-init-a-28",
+      "type": "prose",
+      "text": "- A two-marketplace build writes two trees under `dist/`. `--marketplace`\n  builds one."
+    },
+    {
+      "id": "plan-2-layout-reader-fixed-output-init-a-29",
+      "type": "prose",
+      "text": "- `--out` is an unknown flag."
+    },
+    {
+      "id": "plan-2-layout-reader-fixed-output-init-a-30",
+      "type": "prose",
+      "text": "`skillwright/tests/build_golden.rs` passes `--out` today. From this commit it\ncopies each fixture vault to a temporary folder, builds there and reads\n`dist/<m>/`."
+    },
+    {
+      "id": "plan-2-layout-reader-fixed-output-init-a-31",
       "type": "prose",
       "text": "The repo's `plugin/`:"
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-25",
+      "id": "plan-2-layout-reader-fixed-output-init-a-32",
       "type": "prose",
-      "text": "- Its marketplace fields move from `plugin/skillwright.md` to\n  `plugin/marketplaces/osdlc/osdlc.md`. `build.out` stays until commit 4.",
+      "text": "- Its marketplace fields move from `plugin/skillwright.md` to\n  `plugin/marketplaces/osdlc/osdlc.md`. `build.out` goes, and the built\n  trees move from `plugin/.claude-plugin/`, `plugin/.agents/`,\n  `plugin/.cursor-plugin/` and `plugin/.pi/` to `plugin/dist/osdlc/`.",
       "source": {
         "uri": "plugin/skillwright.md"
       }
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-26",
+      "id": "plan-2-layout-reader-fixed-output-init-a-33",
       "type": "prose",
       "text": "- `plugin/plugins/skillwright/` moves to\n  `plugin/marketplaces/osdlc/plugins/skillwright/`. Its skills are already\n  `skills/<s>/<s>.md`; only the parent folders move."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-27",
+      "id": "plan-2-layout-reader-fixed-output-init-a-34",
       "type": "prose",
-      "text": "- Both workflows run `--vault ../../plugin` in place of\n  `--config ../../plugin/skillwright.md`. `build` keeps `--yes`."
+      "text": "- Both workflows run `--vault ../../plugin` in place of\n  `--config ../../plugin/skillwright.md`. `build` keeps `--yes`. The drift\n  check covers `plugin/dist/osdlc/`."
     },
     {
-      "id": "plan-2-layout-reader-init-and-bump-p-28",
+      "id": "plan-2-layout-reader-fixed-output-init-a-35",
       "type": "prose",
-      "text": "- `scripts/plugin-marketplace.ts` reads the plugin's version from\n  `marketplaces/osdlc/plugins/skillwright/skillwright.md`. Today it reads\n  `vault/plugins/skillwright/skillwright.md`, which does not exist, so the\n  release's version step is already broken. Its test changes with it.",
+      "text": "- `scripts/plugin-marketplace.ts` reads the plugin's version from\n  `marketplaces/osdlc/plugins/skillwright/skillwright.md`. Today it reads\n  `vault/plugins/skillwright/skillwright.md`, which does not exist, so the\n  release's version step is already broken. It copies from\n  `plugin/dist/osdlc/`, so its `HARNESSES` roots change. Its test changes\n  with it.",
       "source": {
         "uri": "scripts/plugin-marketplace.ts"
       }
@@ -2785,7 +2853,7 @@
     {
       "id": "plan-3-root-file-keys-and-cascade-p",
       "type": "prose",
-      "text": "The root file's key set, the closed key table, the\nroot-marketplace-plugin-component cascade, and the `name` key. Delete\n`build.namespace`, `--namespace`, prefixed keys and the `validateNamespace`\nexport."
+      "text": "The root file's key set, the closed key table, the\nroot-marketplace-plugin-component cascade, the `name` key, and the four\n`targets` values. Delete `build.namespace`, `--namespace`, prefixed keys and\nthe `validateNamespace` export."
     },
     {
       "id": "plan-3-root-file-keys-and-cascade-p-2",
@@ -2860,15 +2928,25 @@
     {
       "id": "plan-3-root-file-keys-and-cascade-p-16",
       "type": "prose",
-      "text": "Section 11:"
+      "text": "- `targets: [opencode]` and `targets: [claude-code]` are refused, naming\n  `claude`, `codex`, `cursor` and `pi`. So is `build.harnesses: [amp]`."
     },
     {
       "id": "plan-3-root-file-keys-and-cascade-p-17",
       "type": "prose",
-      "text": "| Case | Test |\n|---|---|\n| 2 | `workspace: true` in the root file is refused. So is `owner`. |\n| 7 | `build.namespace` is refused. |"
+      "text": "- `build.harnesses: [claude, pi]` writes only those two trees."
     },
     {
       "id": "plan-3-root-file-keys-and-cascade-p-18",
+      "type": "prose",
+      "text": "Section 11:"
+    },
+    {
+      "id": "plan-3-root-file-keys-and-cascade-p-19",
+      "type": "prose",
+      "text": "| Case | Test |\n|---|---|\n| 2 | `workspace: true` in the root file is refused. So is `owner`. |\n| 7 | `build.namespace` is refused. |"
+    },
+    {
+      "id": "plan-3-root-file-keys-and-cascade-p-20",
       "type": "prose",
       "text": "The repo's `plugin/`: its notes lose their `name` keys."
     },
@@ -2881,7 +2959,7 @@
     {
       "id": "plan-4-bundling-and-output-p",
       "type": "prose",
-      "text": "Fixed `dist/<m>/`, default packs folders, `check` against `dist/`, the pack\ncontents of section 9, Cursor's naming default, and hooks. Delete\n`build.out`, `--out`, the `packs` override, the overlap checks,\n`stale-output`, `build.assets` and `build.hooks` (D4), and the flat `assets/`\ncopy."
+      "text": "Default packs folders, `check` against `dist/`, the pack contents of\nsection 9, Cursor's naming default, hooks, and the wasm API. Delete the\n`packs` override, the overlap checks, `stale-output`, `build.assets` and\n`build.hooks` (D4), the flat `assets/` copy, and `build.launcher_path` with\n`asset_covers`, through which the launcher is found."
     },
     {
       "id": "plan-4-bundling-and-output-p-2",
@@ -2934,111 +3012,112 @@
     {
       "id": "plan-4-bundling-and-output-p-11",
       "type": "prose",
-      "text": "- Two sources on one path are refused, naming both."
+      "text": "- `scripts/src/main.js` ships (Appendix A8)."
     },
     {
       "id": "plan-4-bundling-and-output-p-12",
       "type": "prose",
-      "text": "Hooks:"
+      "text": "- A Markdown file in `scripts/` holding `${CLAUDE_PLUGIN_ROOT}` ships byte for\n  byte, with no error (section 4 rule 22)."
     },
     {
       "id": "plan-4-bundling-and-output-p-13",
       "type": "prose",
-      "text": "| Harness | `hooks/hooks.json` with `${PLUGIN_ROOT}/scripts/hook.sh` |\n|---|---|\n| Claude Code | its hooks file, with `${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh` |\n| Codex | its hooks file, with `${PLUGIN_ROOT}/scripts/hook.sh` |\n| Cursor | no hooks file and no manifest hooks entry; one warning naming `hooks/hooks.json` |\n| Pi | nothing |"
+      "text": "Hooks:"
     },
     {
       "id": "plan-4-bundling-and-output-p-14",
       "type": "prose",
-      "text": "Also: no source but `hooks/hooks.json` adds hooks. `${CLAUDE_PLUGIN_ROOT}` in\na hooks file is an error that says to write `${PLUGIN_ROOT}`."
+      "text": "| Harness | `hooks/hooks.json` with `${PLUGIN_ROOT}/scripts/hook.sh` |\n|---|---|\n| Claude Code | its hooks file, with `${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh` |\n| Codex | its hooks file, with `${PLUGIN_ROOT}/scripts/hook.sh` |\n| Cursor | no hooks file and no manifest hooks entry; one warning naming `hooks/hooks.json` |\n| Pi | nothing |"
     },
     {
       "id": "plan-4-bundling-and-output-p-15",
       "type": "prose",
-      "text": "Output tests:"
+      "text": "Also:"
     },
     {
       "id": "plan-4-bundling-and-output-p-16",
       "type": "prose",
-      "text": "- A two-marketplace build writes two trees under `dist/`. `--marketplace`\n  builds one."
+      "text": "- No source but `hooks/hooks.json` adds hooks."
     },
     {
       "id": "plan-4-bundling-and-output-p-17",
       "type": "prose",
-      "text": "- A file in `dist/acme/` beside the packs folders survives a build (section\n  9 rule 4). A `README.md` at the root is untouched.",
-      "source": {
-        "uri": "README.md"
-      }
+      "text": "- `${CLAUDE_PLUGIN_ROOT}` in a hooks file is an error that says to write\n  `${PLUGIN_ROOT}`."
     },
     {
       "id": "plan-4-bundling-and-output-p-18",
       "type": "prose",
-      "text": "- `check` reports drift after a hand edit there, and when `dist/` is missing."
+      "text": "- The Cursor warning is not printed when `build.harnesses` leaves Cursor out,\n  when the plugin's `targets` leave it out, or when the plugin has no\n  `hooks/hooks.json`."
     },
     {
       "id": "plan-4-bundling-and-output-p-19",
       "type": "prose",
-      "text": "- A skill with `targets: [claude]` is only in the Claude Code pack."
+      "text": "Output tests:"
     },
     {
       "id": "plan-4-bundling-and-output-p-20",
       "type": "prose",
-      "text": "Naming tests, for the `tools` plugin's `review` skill:"
+      "text": "- A file in `dist/acme/` beside the packs folders survives a build (section\n  9 rule 4)."
     },
     {
       "id": "plan-4-bundling-and-output-p-21",
       "type": "prose",
-      "text": "| Setting | Cursor and Pi | Claude Code and Codex |\n|---|---|---|\n| none | `skills/tools-review/SKILL.md`, `name: tools-review` | `skills/review/` |\n| `cursor: {naming: bare}`, `pi: {naming: bare}` | `skills/review/` | `skills/review/` |\n| marketplace `pi: {naming: bare}` | `skills/review/` on Pi, for every plugin | unchanged |\n| that, plus the plugin's `pi: {naming: prefixed}` | `skills/tools-review/` on Pi | unchanged |\n| another `naming` value | refused | refused |\n| `naming` on the skill | refused | refused |"
+      "text": "- `check` reports drift after a hand edit there, and when `dist/` is missing."
     },
     {
       "id": "plan-4-bundling-and-output-p-22",
       "type": "prose",
-      "text": "Also: a prefixed name over 64 characters is refused. With `bare`, a `review`\nskill in two plugins fails the build for that harness, naming both plugins.\nPlugin `a-b`'s skill `c` and plugin `a`'s skill `b-c` fail for Cursor and Pi."
+      "text": "- A skill with `targets: [claude]` is only in the Claude Code pack."
     },
     {
       "id": "plan-4-bundling-and-output-p-23",
       "type": "prose",
-      "text": "Section 11:"
+      "text": "Naming tests, for the `tools` plugin's `review` skill:"
     },
     {
       "id": "plan-4-bundling-and-output-p-24",
       "type": "prose",
-      "text": "| Case | Test |\n|---|---|\n| 7 | `build.out`, `build.assets` and `build.hooks` are refused, and so is `packs` in a harness block. |"
+      "text": "| Setting | Cursor and Pi | Claude Code and Codex |\n|---|---|---|\n| none | `skills/tools-review/SKILL.md`, `name: tools-review` | `skills/review/` |\n| `cursor: {naming: bare}`, `pi: {naming: bare}` | `skills/review/` | `skills/review/` |\n| marketplace `pi: {naming: bare}` | `skills/review/` on Pi, for every plugin | unchanged |\n| that, plus the plugin's `pi: {naming: prefixed}` | `skills/tools-review/` on Pi | unchanged |\n| another `naming` value | refused | refused |\n| `naming` on the skill | refused | refused |"
     },
     {
       "id": "plan-4-bundling-and-output-p-25",
       "type": "prose",
-      "text": "The repo's `plugin/`:"
+      "text": "Also: a prefixed name over 64 characters is refused. With `bare`, a `review`\nskill in two plugins fails the build for that harness, naming both plugins.\nPlugin `a-b`'s skill `c` and plugin `a`'s skill `b-c` fail for Cursor and Pi."
     },
     {
       "id": "plan-4-bundling-and-output-p-26",
       "type": "prose",
-      "text": "- `plugin/skillwright.md` drops `build:`. It keeps `author` and `license`.",
-      "source": {
-        "uri": "plugin/skillwright.md"
-      }
+      "text": "Section 11:"
     },
     {
       "id": "plan-4-bundling-and-output-p-27",
       "type": "prose",
-      "text": "- The built trees move from `plugin/.claude-plugin/`, `plugin/.agents/`,\n  `plugin/.cursor-plugin/` and `plugin/.pi/` to `plugin/dist/osdlc/`."
+      "text": "| Case | Test |\n|---|---|\n| 7 | `build.assets`, `build.hooks` and `build.launcher_path` are refused, and so is `packs` in a harness block. |"
     },
     {
       "id": "plan-4-bundling-and-output-p-28",
       "type": "prose",
-      "text": "- The rebuild renames the Cursor pack's skills to `skills/skillwright-author/`\n  and so on, with matching `name` fields and call strings. Nothing is renamed\n  by hand. The Pi pack already uses these names."
+      "text": "wasm (TypeScript tests through the package):"
     },
     {
       "id": "plan-4-bundling-and-output-p-29",
       "type": "prose",
-      "text": "- The `plugin` workflow's drift check covers `plugin/dist/osdlc/`."
+      "text": "- `exportSkills` over a vault writes `<root>/dist/acme/` in the filesystem\n  object."
     },
     {
       "id": "plan-4-bundling-and-output-p-30",
       "type": "prose",
-      "text": "- `scripts/plugin-marketplace.ts` copies from `plugin/dist/osdlc/`. Its\n  `HARNESSES` roots and its test change with it.",
-      "source": {
-        "uri": "scripts/plugin-marketplace.ts"
-      }
+      "text": "- `loadMarketplace` with `marketplace: \"acme\"` loads it. On a vault with two\n  marketplaces and no name, it is an error naming both."
+    },
+    {
+      "id": "plan-4-bundling-and-output-p-31",
+      "type": "prose",
+      "text": "The launcher tests in `export.rs` move to plugin-root path tests in commit 5."
+    },
+    {
+      "id": "plan-4-bundling-and-output-p-32",
+      "type": "prose",
+      "text": "The repo's `plugin/`: the rebuild renames the Cursor pack's skills to\n`skills/skillwright-author/` and so on, with matching `name` fields and call\nstrings. Nothing is renamed by hand. The Pi pack already uses these names."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo",
@@ -3049,7 +3128,7 @@
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-2",
       "type": "prose",
-      "text": "Scoped resolution, the link table, the real-path check, missing targets as\nerrors, calls and plain links (D2, D3), hand-written calls, literal code, the\nleftover check, the embed rules of section 5, and plugin-root paths (D9).\nDelete `build.launcher_path`."
+      "text": "Scoped resolution, the link table, the real-path check, missing targets as\nerrors, calls and plain links (D2, D3), hand-written calls, literal code, the\nleftover check, the embed rules of section 5, and plugin-root paths (D9)."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-3",
@@ -3109,260 +3188,265 @@
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-14",
       "type": "prose",
-      "text": "Markdown links (the table at the top of section 4):"
+      "text": "- Every error in section 4 names the linking file, the link as written and\n  the rule (section 4 rule 14): one assertion per error test above."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-15",
       "type": "prose",
-      "text": "| Source | Result |\n|---|---|\n| `[t](references/x.md)` | checked, and rewritten to its installed path |\n| `[t](references/missing.md)` | an error naming the link |\n| `[t](/abs/x.md)`, `[t](file:x.md)` | refused |\n| `[t](https://x.io)`, `<https://x.io>`, `[t](mailto:a@b)` | shipped as written, not checked |\n| `[t](#usage)` | shipped as written, not checked |"
+      "text": "Markdown links (the table at the top of section 4):"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-16",
       "type": "prose",
-      "text": "Plain links:"
+      "text": "| Source | Result |\n|---|---|\n| `[t](references/x.md)` | checked, and rewritten to its installed path |\n| `[t](references/missing.md)` | an error naming the link |\n| `[t](/abs/x.md)`, `[t](file:x.md)` | refused |\n| `[t](https://x.io)`, `<https://x.io>`, `[t](mailto:a@b)` | shipped as written, not checked |\n| `[t](#usage)` | shipped as written, not checked |"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-17",
       "type": "prose",
-      "text": "- `[[setup]]` from `author` renders as `[setup](../setup/SKILL.md)` on Claude\n  Code and `[setup](../tools-setup/SKILL.md)` on Cursor and Pi, and warns\n  `Did you mean to call /[[setup]]?`."
+      "text": "Plain links:"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-18",
       "type": "prose",
-      "text": "- `[[setup#Usage]]` keeps its fragment."
+      "text": "- `[[setup]]` from `author` renders as `[setup](../setup/SKILL.md)` on Claude\n  Code and `[setup](../tools-setup/SKILL.md)` on Cursor and Pi, and warns\n  `Did you mean to call /[[setup]]?`."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-19",
       "type": "prose",
-      "text": "- A skill's link to its own note is `[author](SKILL.md)`, with no warning."
+      "text": "- `[[setup#Usage]]` keeps its fragment."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-20",
       "type": "prose",
-      "text": "- A link to a command is a file link on Claude Code and fails the build for\n  Codex, Cursor and Pi. A link to an agent fails the build."
+      "text": "- A skill's link to its own note is `[author](SKILL.md)`, with no warning."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-21",
       "type": "prose",
-      "text": "Calls:"
+      "text": "- A link to a command is a file link on Claude Code and fails the build for\n  Codex, Cursor and Pi. A link to an agent fails the build."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-22",
       "type": "prose",
-      "text": "| Source | Claude Code | Codex | Cursor | Pi |\n|---|---|---|---|---|\n| `/[[setup]]` | `` `/tools:setup` `` | `` `$tools:setup` `` | `` `/tools-setup` `` | `` `/skill:tools-setup` `` |\n| `/[[setup]]`, `naming: bare` | same | same | `` `/setup` `` | `` `/skill:setup` `` |\n| `/[[setup\\|words]]` | ``words (`/tools:setup`)`` | ``words (`$tools:setup`)`` | ``words (`/tools-setup`)`` | ``words (`/skill:tools-setup`)`` |\n| `/[[deploy]]`, a command | `` `/tools:deploy` `` | error | error | error |\n| `/[[helper]]`, an agent | error | error | error | error |\n| `/[[deploy]]`, `deploy` with `targets: [claude]` (Appendix A5) | `` `/tools:deploy` `` | error naming the file and the call | the same | the same |"
+      "text": "Calls:"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-23",
       "type": "prose",
-      "text": "Also:"
+      "text": "| Source | Claude Code | Codex | Cursor | Pi |\n|---|---|---|---|---|\n| `/[[setup]]` | `` `/tools:setup` `` | `` `$tools:setup` `` | `` `/tools-setup` `` | `` `/skill:tools-setup` `` |\n| `/[[setup]]`, `naming: bare` | same | same | `` `/setup` `` | `` `/skill:setup` `` |\n| `/[[setup\\|words]]` | ``words (`/tools:setup`)`` | ``words (`$tools:setup`)`` | ``words (`/tools-setup`)`` | ``words (`/skill:tools-setup`)`` |\n| `/[[deploy]]`, a command | `` `/tools:deploy` `` | error | error | error |\n| `/[[helper]]`, an agent | error | error | error | error |\n| `/[[deploy]]`, `deploy` with `targets: [claude]` (Appendix A5) | `` `/tools:deploy` `` | error naming the file and the call | the same | the same |"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-24",
       "type": "prose",
-      "text": "- `/[[setup#Usage]]` is an error."
+      "text": "Also:"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-25",
       "type": "prose",
-      "text": "- `/[[review]]` finds a skill in another plugin; a name two plugins share is\n  an error naming both plugins. A name found only in another marketplace is\n  an error."
+      "text": "- `/[[setup#Usage]]` is an error."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-26",
       "type": "prose",
-      "text": "- A `/` that starts a line, or follows whitespace or one of\n  `( \" ' * > _ | [ =`, starts a call: one test per character."
+      "text": "- `/[[review]]` finds a skill in another plugin; a name two plugins share is\n  an error naming both plugins. A name found only in another marketplace is\n  an error."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-27",
       "type": "prose",
-      "text": "- `dir/[[x]]` is a link, not a call. In `[[A]]/[[B]]`, `[[B]]` is a link."
+      "text": "- A `/` that starts a line, or follows whitespace or one of\n  `( \" ' * > _ | [ =`, starts a call: one test per character."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-28",
       "type": "prose",
-      "text": "- `` `/[[x]]` `` in a code span ships as written. `\\/[[x]]` ships as\n  `/[[x]]` and passes the leftover check."
+      "text": "- `dir/[[x]]` is a link, not a call. In `[[A]]/[[B]]`, `[[B]]` is a link."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-29",
       "type": "prose",
-      "text": "- A call in a container note's body does nothing (Appendix A12)."
+      "text": "- `` `/[[x]]` `` in a code span ships as written. `\\/[[x]]` ships as\n  `/[[x]]` and passes the leftover check."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-30",
       "type": "prose",
-      "text": "Hand-written calls (section 4 rule 8):"
+      "text": "- A call in a container note's body does nothing (Appendix A12)."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-31",
       "type": "prose",
-      "text": "| In prose | Result |\n|---|---|\n| `/tools:setup`, `$tools:setup`, `/tools-setup`, `/skill:tools-setup` | an error that says to write `/[[setup]]`, one test per form |\n| `/tools:deploy`, a command | the same error |\n| `/setup`, `/skill:setup` | shipped as written |\n| any of the four forms in a code span or fenced block | shipped as written |\n| `\\/tools:setup` | not an escape; the same error |\n| `a/tools:setup`, `x$tools:setup` | not a call: the sigil continues a word or path |"
+      "text": "Hand-written calls (section 4 rule 8):"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-32",
       "type": "prose",
-      "text": "Code and leftovers:"
+      "text": "| In prose | Result |\n|---|---|\n| `/tools:setup`, `$tools:setup`, `/tools-setup`, `/skill:tools-setup` | an error that says to write `/[[setup]]`, one test per form |\n| `/tools:deploy`, a command | the same error |\n| `/setup`, `/skill:setup` | shipped as written |\n| `/tools:setup-x` | shipped as written: the match must end before a character outside `a-z`, `0-9` and `-` |\n| `/tools:setup.md`, `/tools:setup,` | the error |\n| `$tools:deploy`, `/tools-deploy`, a command | shipped as written: Codex and Cursor packs contain no commands |\n| `/tools-setup` with `cursor: {naming: bare}` | shipped as written: that is not Cursor's form then |\n| `/tools-setup` with `build.harnesses: [claude]` | shipped as written: Cursor is not built |\n| any of the forms in a code span or fenced block | shipped as written |\n| `\\/tools:setup` | not an escape; the same error |\n| `a/tools:setup`, `x$tools:setup` | not a call: the sigil continues a word or path |"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-33",
       "type": "prose",
-      "text": "- `[[x]]`, `/[[x]]` and `![[x]]` in a code span or fenced block ship as\n  written."
+      "text": "Code and leftovers:"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-34",
       "type": "prose",
-      "text": "- `\\[[x]]` in prose ships as `[[x]]`, and `\\/[[x]]` ships as `/[[x]]`. Today's\n  code keeps the backslash in `\\[[x]]`, so this commit changes it."
+      "text": "- `[[x]]`, `/[[x]]` and `![[x]]` in a code span or fenced block ship as\n  written."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-35",
       "type": "prose",
-      "text": "- A leftover `[[` in prose is refused. One in code or after `\\` is not."
+      "text": "- `\\[[x]]` in prose ships as `[[x]]`, and `\\/[[x]]` ships as `/[[x]]`. Today's\n  code keeps the backslash in `\\[[x]]`, so this commit changes it."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-36",
       "type": "prose",
-      "text": "Embeds:"
+      "text": "- A leftover `[[` in prose is refused. One in code or after `\\` is not."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-37",
       "type": "prose",
-      "text": "- The worked example of section 5 ships as shown."
+      "text": "Embeds:"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-38",
       "type": "prose",
-      "text": "- A heading embed inlines the section with its subsections."
+      "text": "- The worked example of section 5 ships as shown."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-39",
       "type": "prose",
-      "text": "- A block embed inlines the block without its marker."
+      "text": "- A heading embed inlines the section with its subsections."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-40",
       "type": "prose",
-      "text": "- A missing heading is `fragment-unresolved`."
+      "text": "- A block embed inlines the block without its marker."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-41",
       "type": "prose",
-      "text": "- A nested embed's link is written relative to the outer file."
+      "text": "- A missing heading is `fragment-unresolved`."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-42",
       "type": "prose",
-      "text": "- A cycle prints its loop. A note that embeds itself is a cycle. Two embeds\n  of different sections of one note are not."
+      "text": "- A nested embed's link is written relative to the outer file."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-43",
       "type": "prose",
-      "text": "- A call inside embedded text renders as it would in place (section 5 rule\n  19)."
+      "text": "- A cycle prints its loop. A note that embeds itself is a cycle. Two embeds\n  of different sections of one note are not."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-44",
       "type": "prose",
-      "text": "- An embedded note's frontmatter is dropped. Malformed frontmatter is an error\n  naming both notes."
+      "text": "- A call inside embedded text renders as it would in place (section 5 rule\n  19)."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-45",
       "type": "prose",
-      "text": "- An image embed is an image link."
+      "text": "- An embedded note's frontmatter is dropped. Malformed frontmatter is an error\n  naming both notes."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-46",
       "type": "prose",
-      "text": "D8:"
+      "text": "- An embed of a missing file is an error naming the embed (section 5 rule 3)."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-47",
       "type": "prose",
-      "text": "- `![[run.sh]]` ships as a `bash` fenced block. An unknown extension gets no\n  info string."
+      "text": "- Inlined text is trimmed of leading and trailing blank lines (section 5\n  rule 8)."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-48",
       "type": "prose",
-      "text": "- A file holding its own ```` ``` ```` block and `[[` text is fenced with four\n  backticks and ships byte for byte, with its `[[` not interpreted. So is a\n  file whose fence is indented three spaces."
+      "text": "- An image embed is an image link."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-49",
       "type": "prose",
-      "text": "- An embed inside a list item is indented to the item."
+      "text": "D8:"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-50",
       "type": "prose",
-      "text": "- A binary file is refused. `![[run.sh#main]]` is refused. `[[run.sh]]` is a\n  link."
+      "text": "- `![[run.sh]]` ships as a `bash` fenced block. An unknown extension gets no\n  info string."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-51",
       "type": "prose",
-      "text": "Plugin-root paths (D9):"
+      "text": "- A file holding its own ```` ``` ```` block and `[[` text is fenced with four\n  backticks and ships byte for byte, with its `[[` not interpreted. So is a\n  file whose fence is indented three spaces."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-52",
       "type": "prose",
-      "text": "| Source | Claude Code | Codex, Cursor, Pi |\n|---|---|---|\n| `${PLUGIN_ROOT}/scripts/tool` in a skill's prose or code span | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../../scripts/tool` |\n| the same, from the skill's `references/guide.md` | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../../../scripts/tool` |\n| `Run ${PLUGIN_ROOT}/scripts/tool.` | path `scripts/tool`, full stop kept | the same |\n| `${PLUGIN_ROOT}/commands/deploy.md` | `${CLAUDE_PLUGIN_ROOT}/commands/deploy.md` | error |\n| `$PLUGIN_ROOT/x` | as written | as written |"
+      "text": "- An embed inside a list item is indented to the item."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-53",
       "type": "prose",
-      "text": "Also:"
+      "text": "- A binary file is refused. `![[run.sh#main]]` is refused. `[[run.sh]]` is a\n  link."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-54",
       "type": "prose",
-      "text": "- A path into another skill follows `skills/<p>-<s>/` on Cursor and Pi."
+      "text": "Plugin-root paths (D9):"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-55",
       "type": "prose",
-      "text": "- `${PLUGIN_ROOT}/scripts/tool.js` is not `scripts/tool`."
+      "text": "| Source | Claude Code | Codex, Cursor, Pi |\n|---|---|---|\n| `${PLUGIN_ROOT}/scripts/tool` in a skill's prose or code span | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../../scripts/tool` |\n| the same, from the skill's `references/guide.md` | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../../../scripts/tool` |\n| the same, from the plugin's shared `references/style.md` | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../scripts/tool` |\n| `Run ${PLUGIN_ROOT}/scripts/tool.` | path `scripts/tool`, full stop kept | the same |\n| `${PLUGIN_ROOT}/commands/deploy.md` | `${CLAUDE_PLUGIN_ROOT}/commands/deploy.md` | error |\n| `$PLUGIN_ROOT/x` | as written | as written |"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-56",
       "type": "prose",
-      "text": "- A path naming nothing shipped fails, naming the file and the reference."
+      "text": "Also:"
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-57",
       "type": "prose",
-      "text": "- A lone `${PLUGIN_ROOT}` in Markdown is an error. `${CLAUDE_PLUGIN_ROOT}` in\n  a note or a code span is an error that says to write `${PLUGIN_ROOT}`."
+      "text": "- A path into another skill follows `skills/<p>-<s>/` on Cursor and Pi."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-58",
       "type": "prose",
-      "text": "- A plain `scripts/x.py` in a `SKILL.md` ships as written and is not checked."
+      "text": "- `${PLUGIN_ROOT}/scripts/tool.js` is not `scripts/tool`."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-59",
       "type": "prose",
-      "text": "- An embedded reference is written from the embedding file."
+      "text": "- A path naming nothing shipped fails, naming the file and the reference."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-60",
       "type": "prose",
-      "text": "- A script in `scripts/` holding the variable ships byte for byte."
+      "text": "- A lone `${PLUGIN_ROOT}` in Markdown is an error. `${CLAUDE_PLUGIN_ROOT}` in\n  a note or a code span is an error that says to write `${PLUGIN_ROOT}`. In a\n  file under `docs/`, or in a plugin note's body, it is not checked."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-61",
       "type": "prose",
-      "text": "- `![[run.sh]]`, where `run.sh` holds `${PLUGIN_ROOT}/scripts/tool`, a lone\n  `${PLUGIN_ROOT}` and a `${CLAUDE_PLUGIN_ROOT}`, inlines the file unchanged\n  with no error."
+      "text": "- A plain `scripts/x.py` in a `SKILL.md` ships as written and is not checked."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-62",
       "type": "prose",
-      "text": "- A hook command's `${PLUGIN_ROOT}/scripts/missing.sh` fails the build. A\n  lone `${PLUGIN_ROOT}` in a hook is allowed."
+      "text": "- An embedded reference is written from the embedding file."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-63",
       "type": "prose",
-      "text": "Section 11:"
+      "text": "- A script in `scripts/` holding the variable ships byte for byte."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-64",
       "type": "prose",
-      "text": "| Case | Test |\n|---|---|\n| 7 | `build.launcher_path` is refused. |"
+      "text": "- `![[run.sh]]`, where `run.sh` holds `${PLUGIN_ROOT}/scripts/tool`, a lone\n  `${PLUGIN_ROOT}` and a `${CLAUDE_PLUGIN_ROOT}`, inlines the file unchanged\n  with no error."
     },
     {
       "id": "plan-5-links-transclusion-and-plugin-roo-65",
+      "type": "prose",
+      "text": "- A hook command's `${PLUGIN_ROOT}/scripts/missing.sh` fails the build. A\n  lone `${PLUGIN_ROOT}` in a hook is allowed."
+    },
+    {
+      "id": "plan-5-links-transclusion-and-plugin-roo-66",
       "type": "prose",
       "text": "The repo's `plugin/`: code is now literal, so the six `/[[...]]` calls in\ncode spans in the skill notes move into prose, keeping the `/`\n(`` `/[[setup]]` `` becomes `/[[setup]]`). The output is the same. The three\nheading self-calls, such as `# /[[author]]`, stay. The plugin note's\n`` `/[[setup]]` `` stays too: a container note's body is not read."
     },
@@ -3401,7 +3485,7 @@
     {
       "id": "plan-6-docs-and-the-repo-s-plugin-skills-6",
       "type": "prose",
-      "text": "4. `plugin/README.md` describes the v2 layout, `plugin/dist/osdlc/` and the\n   v2 build commands.",
+      "text": "4. `plugin/README.md` describes the v2 layout, `plugin/dist/osdlc/` and the\n   v2 build commands. `plugin/skillwright.md`'s body drops `--config`.",
       "source": {
         "uri": "plugin/README.md"
       }
@@ -3409,15 +3493,46 @@
     {
       "id": "plan-6-docs-and-the-repo-s-plugin-skills-7",
       "type": "prose",
-      "text": "5. The `publish`, `setup` and `author` skills rewritten for v2 (the table in\n   \"The repo's own `plugin/`\"). The `author` skill's syntax examples stay in\n   code, where they ship as written."
+      "text": "5. `docs/guide/getting-started.md` (today `init --out`, `list`, `publish`,\n   `harness install`) and `site/index.html` (today `publish`, `list`,\n   `adopt`) describe the four commands.",
+      "source": {
+        "uri": "docs/guide/getting-started.md"
+      }
     },
     {
       "id": "plan-6-docs-and-the-repo-s-plugin-skills-8",
       "type": "prose",
-      "text": "Tests first:"
+      "text": "6. `docs/terms/`: the entries for removed ideas (`destination`,\n   `destination-manifest`, `rail`, `adopt`, `namespace`) go or are rewritten,\n   and `docs/terms/README.md` with them.",
+      "source": {
+        "uri": "docs/terms/README.md"
+      }
     },
     {
       "id": "plan-6-docs-and-the-repo-s-plugin-skills-9",
+      "type": "prose",
+      "text": "7. The decisions v2 amends, `docs/decisions/D-WNTQ-*`, `D-KVMB-*` and\n   `D-GPYR-*`, are edited in place to match v2 (the amendments in\n   v2-changes.md)."
+    },
+    {
+      "id": "plan-6-docs-and-the-repo-s-plugin-skills-10",
+      "type": "prose",
+      "text": "8. The plugin's skills are rewritten for v2 (the table in \"The repo's own\n   `plugin/`\"). The `publish` skill is dropped. The `author` skill's syntax\n   examples stay in code, where they ship as written, except plugin-root\n   paths: rule 25 interprets `${PLUGIN_ROOT}/\u2026` in code, and rule 22 refuses\n   `${CLAUDE_PLUGIN_ROOT}`, so those examples are written unbraced,\n   `$PLUGIN_ROOT` and `$CLAUDE_PLUGIN_ROOT`."
+    },
+    {
+      "id": "plan-6-docs-and-the-repo-s-plugin-skills-11",
+      "type": "prose",
+      "text": "Tests first:"
+    },
+    {
+      "id": "plan-6-docs-and-the-repo-s-plugin-skills-12",
+      "type": "prose",
+      "text": "- A test over the plugin's source notes: no note names a removed command or\n  flag (`publish`, `status`, `list`, `adopt`, `harness`, `--config`, `--out`,\n  `--namespace` and the rest of v2-changes.md's lists) outside a line that\n  says it is gone."
+    },
+    {
+      "id": "plan-6-docs-and-the-repo-s-plugin-skills-13",
+      "type": "prose",
+      "text": "- Every `/[[...]]` call in `author` and `setup` resolves: the build of\n  `plugin/` succeeds with no warning, and `/[[publish]]` appears nowhere."
+    },
+    {
+      "id": "plan-6-docs-and-the-repo-s-plugin-skills-14",
       "type": "prose",
       "text": "- The `plugin` workflow's drift check passes on the rebuilt\n  `plugin/dist/osdlc/`."
     },
@@ -3450,10 +3565,15 @@
     {
       "id": "plan-definition-of-done-p-5",
       "type": "prose",
-      "text": "- [ ] `docs/reference/skillwright-md.md`, `docs/reference/fields.md`, the CLI\n      README and the wasm package README describe v2.",
+      "text": "- [ ] `docs/reference/skillwright-md.md`, `docs/reference/fields.md`, the CLI\n      README, the wasm package README, `tradecraft-core/README.md`,\n      `docs/guide/getting-started.md`, `site/index.html`, `docs/terms/` and\n      `plugin/skillwright.md`'s body describe v2.",
       "source": {
         "uri": "docs/reference/skillwright-md.md"
       }
+    },
+    {
+      "id": "plan-definition-of-done-p-6",
+      "type": "prose",
+      "text": "- [ ] D-WNTQ, D-KVMB and D-GPYR are edited in place to match v2."
     },
     {
       "id": "plan-code-inventory",
@@ -3485,7 +3605,7 @@
     {
       "id": "plan-tradecraft-core-p-3",
       "type": "prose",
-      "text": "- `settings.rs`:\n  - Go: `FolderPatterns`, `folder_patterns`, `globs`, `warn_nested` [2];\n    `DestinationSetting` and the `destinations` and `scan_locations` keys\n    [1]; the `patterns` key [2]; `namespace` [3]; `out` [4], `AssetSetting`\n    and `HookSetting` (D4) [4]; `launcher_path` [5]. Each removed key joins\n    the refused list in its commit.\n  - Change [3]: `RootFile::inherit` becomes the root-defaults step of the\n    cascade. `compose_root_file` writes a root with no marketplace fields.\n    `root_file_config` and `RootFile::to_config` shrink. An unknown root-file\n    key warns. A key that is not inherited, and `workspace`, are refused.\n  - Change [2]: `MarketplaceFields` is read from `<m>.md`, not the root file."
+      "text": "- `settings.rs`:\n  - Go: `FolderPatterns`, `folder_patterns`, `globs`, `warn_nested` [2];\n    `DestinationSetting` and the `destinations` and `scan_locations` keys\n    [1]; the `patterns` and `out` keys [2]; `namespace` [3]; `AssetSetting`\n    and `HookSetting` (D4) and `launcher_path` [4]. Each removed key joins the\n    refused list in its commit.\n  - Change [3]: `RootFile::inherit` becomes the root-defaults step of the\n    cascade. `compose_root_file` writes a root with no marketplace fields.\n    `root_file_config` and `RootFile::to_config` shrink. An unknown root-file\n    key warns. A key that is not inherited, and `workspace`, are refused.\n  - Change [2]: `MarketplaceFields` is read from `<m>.md`, not the root file."
     },
     {
       "id": "plan-tradecraft-core-p-4",
@@ -3520,7 +3640,7 @@
     {
       "id": "plan-tradecraft-core-p-10",
       "type": "prose",
-      "text": "- `model/load.rs`:\n  - Go or shrink [2]: `standalone` (publish of one note), `members_folder`,\n    `has_folder`, the marketplace's-own-plugin branch of `missing_versions`,\n    the loading of hook notes (`hooks/<h>/<h>.md`), and `plugin_folder`.\n  - Go [4]: `load_assets`, `load_hook_files` (D4), `folder_assets` (the flat\n    copy; replaced by copying the three shared folders under their own\n    names), `asset_covers` (its last use was the launcher check).\n  - Go [5]: the `plugin.launcher` set from `build.launcher_path`.\n  - [2]: `marketplace_name` and `resolve_marketplace` read the folder.\n    Container note bodies are no longer read.\n  - `apply_naming` already fills `bare_on` and `prefixed_on` from the\n    `cursor` and `pi` blocks; it needs no change. New [4]: a `naming` key on\n    a component is refused, saying to set it on the plugin."
+      "text": "- `model/load.rs`:\n  - Go or shrink [2]: `standalone` (publish of one note), `members_folder`,\n    `has_folder`, the marketplace's-own-plugin branch of `missing_versions`,\n    the loading of hook notes (`hooks/<h>/<h>.md`), and `plugin_folder`.\n  - Go [4]: `load_assets`, `load_hook_files` (D4), `folder_assets` (the flat\n    copy; replaced by copying the three shared folders under their own\n    names), `asset_covers` (its last use was the launcher check).\n  - Go [4]: the `plugin.launcher` set from `build.launcher_path`, which only\n    `asset_covers` fills.\n  - [2]: `marketplace_name` and `resolve_marketplace` read the folder.\n    Container note bodies are no longer read.\n  - `apply_naming` already fills `bare_on` and `prefixed_on` from the\n    `cursor` and `pi` blocks; it needs no change. New [4]: a `naming` key on\n    a component is refused, saying to set it on the plugin."
     },
     {
       "id": "plan-tradecraft-core-p-11",
@@ -3555,7 +3675,7 @@
     {
       "id": "plan-tradecraft-core-p-17",
       "type": "prose",
-      "text": "- `export.rs` [4, 5]: the `stale-output` warning and moved-packs handling go\n  [4]. `MarketplaceConfig::launcher_path` and the launcher tests go [5]; their\n  cases move to commit 5's plugin-root path tests."
+      "text": "- `export.rs` [2, 4]: the output root becomes `dist/<m>/` [2]. The\n  `stale-output` warning, moved-packs handling, `MarketplaceConfig::launcher_path`\n  and the launcher tests go [4]; their cases become commit 5's plugin-root\n  path tests."
     },
     {
       "id": "plan-tradecraft-core-p-18",
@@ -3571,65 +3691,75 @@
     {
       "id": "plan-the-removed-commands-1-p",
       "type": "prose",
-      "text": "- `tradecraft-core/src/publish.rs`:\n  - Go: everything that writes to a destination: `publish_skill`'s\n    single-note arms, the destination manifest, the rails, `publishes_to`,\n    `overrides_for`, `override_states` and `accepted_override_keys`.\n  - Stay, because `export.rs` and `model/cascade.rs` call them: the plugin\n    arm, `plugin_format_carries_commands`, `plugin_format_carries_hooks`,\n    `kind_has_renderer`, `canonical_target`, `KNOWN_TARGETS` and\n    `accepted_keys`. Moving those into `export.rs` or `harness/` is a\n    follow-up, not v2."
+      "text": "- `tradecraft-core/src/publish.rs`:\n  - Go: everything that writes to a destination: `publish_skill`'s\n    single-note arms, the destination manifest, the rails, `publishes_to`,\n    `overrides_for`, `override_states` and `accepted_override_keys`.\n  - Stay, because `export.rs` and `model/cascade.rs` call them: the plugin\n    arm, `plugin_format_carries_commands`, `plugin_format_carries_hooks`,\n    `kind_has_renderer`, `canonical_target`, `KNOWN_TARGETS` and\n    `accepted_keys`. `KNOWN_TARGETS` and `canonical_target` shrink to\n    `claude`, `codex`, `cursor` and `pi` in commit 3, with no aliases. Moving those into `export.rs` or `harness/` is a\n    follow-up, not v2."
     },
     {
       "id": "plan-the-removed-commands-1-p-2",
       "type": "prose",
-      "text": "- `tradecraft-core/src/status.rs`: `status_of` and `units_depending_on` go.\n  `version_bump_if_unmoved`, which `export.rs` uses for `bump`, stays."
+      "text": "- `tradecraft-core/src/manifest.rs`, the destination manifest: all of it.\n  Only `publish.rs`, `status.rs` and `lib.rs` use it. (`harness/manifest.rs`\n  is a different file and stays.)"
     },
     {
       "id": "plan-the-removed-commands-1-p-3",
       "type": "prose",
-      "text": "- `tradecraft-core/src/authoring.rs`: all of it."
+      "text": "- `tradecraft-core/src/guard.rs`, the rails: the publish-only rails go [1].\n  `within`, which `compile.rs` uses, stays. The destination rails that\n  `export.rs` calls (`assert_destination_allowed`,\n  `assert_destination_allowed_for_vault`) go when output is fixed at\n  `dist/<m>/` [2], since output can no longer land in the source."
     },
     {
       "id": "plan-the-removed-commands-1-p-4",
       "type": "prose",
-      "text": "- `tradecraft-core/src/adopt.rs`: `adopt_skills`, `AdoptRequest`,\n  `AdoptReport`, `AdoptedSkill`, `detect_format` and `rewrite_to_wikilinks`."
+      "text": "- `tradecraft-core/src/status.rs`: `status_of` and `units_depending_on` go.\n  `version_bump_if_unmoved`, which `export.rs` uses for `bump`, stays."
     },
     {
       "id": "plan-the-removed-commands-1-p-5",
       "type": "prose",
-      "text": "- `tradecraft-core/src/scan.rs`: `scan_roots`, `scan_root` and\n  `ScanOptions`. Only `adopt` and one `publish.rs` test call them. The parts\n  of `corpus.rs` that only the scan uses go with it."
+      "text": "- `tradecraft-core/src/authoring.rs`: all of it."
     },
     {
       "id": "plan-the-removed-commands-1-p-6",
       "type": "prose",
-      "text": "- `skillwright/src/commands/`: `publish.rs`, `status.rs`, `list.rs`,\n  `authoring.rs`, `adopt.rs`, `watch.rs`, `author/` and `harness/`."
+      "text": "- `tradecraft-core/src/adopt.rs`: `adopt_skills`, `AdoptRequest`,\n  `AdoptReport`, `AdoptedSkill`, `detect_format` and `rewrite_to_wikilinks`."
     },
     {
       "id": "plan-the-removed-commands-1-p-7",
       "type": "prose",
-      "text": "- `skillwright/src/apply.rs` (the authoring writer), `git_source.rs` and\n  `dirs.rs` (the `--from-git` cache), and the `author.editor` machine setting\n  in `config.rs`."
+      "text": "- `tradecraft-core/src/scan.rs`: `scan_roots`, `scan_root` and\n  `ScanOptions`. Only `adopt` and one `publish.rs` test call them. The parts\n  of `corpus.rs` that only the scan uses go with it."
     },
     {
       "id": "plan-the-removed-commands-1-p-8",
       "type": "prose",
-      "text": "- `skillwright/src/cli.rs`: every command but `init`, `build`, `check` and\n  `bump`, with its flags, `--watch`, the `unpublish` stub and `WAITS_ON_CORE`."
+      "text": "- `skillwright/src/commands/`: `publish.rs`, `status.rs`, `list.rs`,\n  `authoring.rs`, `adopt.rs`, `watch.rs`, `author/` and `harness/`."
     },
     {
       "id": "plan-the-removed-commands-1-p-9",
       "type": "prose",
-      "text": "- `skillwright/Cargo.toml` and `Cargo.lock`: dependencies only the removed\n  commands use, such as `notify` (the watcher), `tiered-dirs` (the\n  `--from-git` cache), `markdown-relink` and `markdown-corpus` (the authoring\n  writer). Check each against what stays before removing it."
+      "text": "- `skillwright/src/apply.rs` (the authoring writer), `git_source.rs` and\n  `dirs.rs` (the `--from-git` cache), and the `author.editor` machine setting\n  in `config.rs`."
     },
     {
       "id": "plan-the-removed-commands-1-p-10",
       "type": "prose",
-      "text": "- `tradecraft-wasm/src/lib.rs`: `publishSkill`, `adoptSkills`, `statusOf`\n  and `publishableKinds` go. `exportSkills`, `discoverComponents`,\n  `loadMarketplace`, `parseRootFile`, `rootFileConfig`, `knownTargets` and\n  `canonicalTarget` stay. `validateNamespace` goes in commit 3."
+      "text": "- `skillwright/src/cli.rs`: every command but `init`, `build`, `check` and\n  `bump`, with its flags, `--watch`, the `unpublish` stub and `WAITS_ON_CORE`."
     },
     {
       "id": "plan-the-removed-commands-1-p-11",
       "type": "prose",
-      "text": "- `packages/ts/tradecraft-wasm` (repository root): the wrappers in\n  `src/core.ts` and the re-exports in `src/index.ts` for those exports,\n  `tests/status-of.test.ts` and `examples/publish-a-skill.test.ts`.\n  `InvalidNamespaceError` and `validateNamespace` go in commit 3."
+      "text": "- `skillwright/Cargo.toml` and `Cargo.lock`: dependencies only the removed\n  commands use, such as `notify` (the watcher), `tiered-dirs` (the\n  `--from-git` cache), `markdown-relink` and `markdown-corpus` (the authoring\n  writer). Check each against what stays before removing it."
     },
     {
       "id": "plan-the-removed-commands-1-p-12",
       "type": "prose",
-      "text": "- Examples: `tradecraft-core/examples/publish.rs` and\n  `skillwright/examples/list.rs`. `cargo clippy --all-targets` builds them,\n  so they go with their commands."
+      "text": "- `tradecraft-wasm/src/lib.rs`: `publishSkill`, `adoptSkills`, `statusOf`\n  and `publishableKinds` go. `exportSkills`, `discoverComponents`,\n  `loadMarketplace`, `parseRootFile`, `rootFileConfig`, `knownTargets` and\n  `canonicalTarget` stay. `validateNamespace` goes in commit 3."
     },
     {
       "id": "plan-the-removed-commands-1-p-13",
+      "type": "prose",
+      "text": "- `packages/ts/tradecraft-wasm` (repository root): the wrappers in\n  `src/core.ts` and the re-exports in `src/index.ts` for those exports,\n  `tests/status-of.test.ts` and `examples/publish-a-skill.test.ts`.\n  `InvalidNamespaceError` and `validateNamespace` go in commit 3."
+    },
+    {
+      "id": "plan-the-removed-commands-1-p-14",
+      "type": "prose",
+      "text": "- Examples: `tradecraft-core/examples/publish.rs` and\n  `skillwright/examples/list.rs`. `cargo clippy --all-targets` builds them,\n  so they go with their commands."
+    },
+    {
+      "id": "plan-the-removed-commands-1-p-15",
       "type": "prose",
       "text": "- Tests, deleted:\n  - `skillwright/tests/`: `authoring.rs`, `author.rs`, `harness.rs`,\n    `apply_api.rs`, `git_source.rs` and `user_folders.rs` (publish to the\n    user's skill folders).\n  - The publish, status, list, adopt and authoring cases in\n    `skillwright/tests/cli.rs` and `consumer_flows.rs`.\n  - The publish, adopt and status cases in\n    `tradecraft-core/tests/release_api.rs`, and the constructors of removed\n    types in `tradecraft-core/tests/constructors.rs`."
     },
@@ -3647,7 +3777,7 @@
     {
       "id": "plan-skillwright-cli-p-2",
       "type": "prose",
-      "text": "- `cli.rs`: `ReadOnlyGlobals` loses `config` [2] and `namespace` [3]. The\n  root help's `GLOBAL_OPTIONS` list shrinks with them. `--marketplace`\n  stays on `build`, `check` and `bump`. Unknown commands keep going through\n  `report_parse_error`, which maps clap's errors to `EXIT_USAGE`."
+      "text": "- `cli.rs`: `ReadOnlyGlobals` loses `config` [2] and `namespace` [3]. The\n  root help's `GLOBAL_OPTIONS` list shrinks with them. `check` moves from\n  `Globals` to `ReadOnlyGlobals`, losing `--dry-run` and `--yes` [1]. `--marketplace`\n  stays on `build`, `check` and `bump`. Unknown commands keep going through\n  `report_parse_error`, which maps clap's errors to `EXIT_USAGE`."
     },
     {
       "id": "plan-skillwright-cli-p-3",
@@ -3662,7 +3792,7 @@
     {
       "id": "plan-skillwright-cli-p-5",
       "type": "prose",
-      "text": "- `commands/marketplace.rs` (`build` and `check`): loses the workspace runs\n  [2] and `--out` [4]. `check` treats a missing `dist/<m>/` as drift [4]. The\n  `confirm_write` prompt and `--yes` stay."
+      "text": "- `commands/marketplace.rs` (`build` and `check`): loses the workspace runs\n  and `--out` [2]. `check` treats a missing `dist/<m>/` as drift [4]. The\n  `confirm_write` prompt and `--yes` stay."
     },
     {
       "id": "plan-skillwright-cli-p-6",
@@ -3683,7 +3813,7 @@
     {
       "id": "plan-tradecraft-wasm-p",
       "type": "prose",
-      "text": "- `lib.rs`: the pattern and workspace options of `discovery_view` and\n  `load_view` go [2]. `rootFileConfig` reads no marketplace fields [2, 3].\n  The `out_root` argument of `exportSkills` goes [4]."
+      "text": "- `lib.rs`: the pattern and workspace options of `discovery_view` and\n  `load_view` go [2]. `rootFileConfig` reads no marketplace fields [2, 3].\n  The `out_root` argument of `exportSkills` goes, and it writes\n  `<root>/dist/<m>/` in the filesystem object [4]. `loadMarketplace` takes a\n  marketplace name, required when the vault has more than one [4]."
     },
     {
       "id": "plan-tradecraft-typegen",
@@ -3728,12 +3858,12 @@
     {
       "id": "plan-tests-and-fixtures-still-in-use-p-5",
       "type": "prose",
-      "text": "- `skillwright/tests/marketplace_parity.rs`: its fixture moves [2] and its\n  output root becomes `dist/<m>/` [4]."
+      "text": "- `skillwright/tests/marketplace_parity.rs`: its fixture moves and its\n  output root becomes `dist/<m>/` [2]."
     },
     {
       "id": "plan-tests-and-fixtures-still-in-use-p-6",
       "type": "prose",
-      "text": "- `skillwright/tests/build_golden.rs`: unchanged, re-blessed."
+      "text": "- `skillwright/tests/build_golden.rs` [2]: it passes `--out` today. It now\n  copies each fixture vault to a temporary folder, builds there and reads\n  `dist/<m>/`. Re-blessed whenever output changes."
     },
     {
       "id": "plan-tests-and-fixtures-still-in-use-p-7",
@@ -3799,7 +3929,7 @@
     {
       "id": "plan-the-repo-s-own-plugin-p-2",
       "type": "prose",
-      "text": "| File | Change | Commit |\n|---|---|---|\n| `plugin/skillwright.md` | Marketplace fields (`name`, `owner`) move out; `build.out` goes. It keeps `author` and `license`. | 2, 4 |\n| `plugin/marketplaces/osdlc/osdlc.md` | New: the marketplace note. | 2 |\n| `plugin/plugins/skillwright/` | Moves to `plugin/marketplaces/osdlc/plugins/skillwright/`. Its skills are already `skills/<s>/<s>.md`. | 2 |\n| `plugin/.claude-plugin/`, `plugin/.agents/`, `plugin/.cursor-plugin/`, `plugin/.pi/` | Move to `plugin/dist/osdlc/`, rebuilt. | 4 |\n| `.github/workflows/plugin.yml` | `build --yes --vault ../../plugin` and `check --vault ../../plugin`, in place of `--config ../../plugin/skillwright.md`. The drift check covers `plugin/dist/osdlc/`. | 2, 4 |\n| `.github/workflows/plugin-release.yml` | The same build command. It copies the pack and manifest entry from `plugin/dist/osdlc/` into `osdlc/marketplace`. | 2, 4 |\n| `scripts/plugin-marketplace.ts` and `scripts/plugin-marketplace.test.ts` | The version path (broken on `origin/main`) [2]; the `HARNESSES` roots under `plugin/dist/osdlc/` [4]. | 2, 4 |\n| `plugin/README.md` | The build commands [2]; the layout and output [4]; the text [6]. The `plugin` workflow's error points here. | 2, 4, 6 |\n| The skill notes | Code-span calls move into prose [5]; the skills are rewritten for v2 [6]. | 5, 6 |",
+      "text": "| File | Change | Commit |\n|---|---|---|\n| `plugin/skillwright.md` | Marketplace fields (`name`, `owner`) move out; `build.out` goes. It keeps `author` and `license` [2]. Its body drops `--config` [6]. | 2, 6 |\n| `plugin/marketplaces/osdlc/osdlc.md` | New: the marketplace note. | 2 |\n| `plugin/plugins/skillwright/` | Moves to `plugin/marketplaces/osdlc/plugins/skillwright/`. Its skills are already `skills/<s>/<s>.md`. | 2 |\n| `plugin/.claude-plugin/`, `plugin/.agents/`, `plugin/.cursor-plugin/`, `plugin/.pi/` | Move to `plugin/dist/osdlc/`, rebuilt. Rebuilt again in every later commit that changes output. | 2 |\n| `.github/workflows/plugin.yml` | `build --yes --vault ../../plugin` and `check --vault ../../plugin`, in place of `--config ../../plugin/skillwright.md`. The drift check covers `plugin/dist/osdlc/`. Its `paths` triggers already include `packages/rust/tradecraft-core/**`. | 2 |\n| `.github/workflows/plugin-release.yml` | The same build command. It copies the pack and manifest entry from `plugin/dist/osdlc/` into `osdlc/marketplace`. | 2 |\n| `scripts/plugin-marketplace.ts` and `scripts/plugin-marketplace.test.ts` | The version path (broken on `origin/main`) and the `HARNESSES` roots under `plugin/dist/osdlc/`. | 2 |\n| `plugin/README.md` | The build commands, layout and output [2]; the text [6]. The `plugin` workflow's error points here. | 2, 6 |\n| The skill notes | Code-span calls move into prose [5]; the skills are rewritten for v2 [6]. | 5, 6 |",
       "source": {
         "uri": "plugin/skillwright.md"
       }
@@ -3817,7 +3947,7 @@
     {
       "id": "plan-the-repo-s-own-plugin-p-5",
       "type": "prose",
-      "text": "| Skill | Teaches today | v2 |\n|---|---|---|\n| `publish` | `publish`, `status --check`, `harness install`, `update`, `uninstall`, `link`, `unlink` | Rewrite around `build`, `check` and `bump`, or drop the skill and fold `build` and `check` into `author`. |\n| `setup` | `init --out`, \"the nearest `skillwright.md`\", `build.destinations`, `skillwright list` | `init <m> <p>`, the two-file root test, no destinations, `check` to verify. |\n| `author` | `skillwright list` in its steps, `build.namespace`, v1 links and mentions, \"the backslash ships too\" for `\\[[` | `check` in its steps, no namespace, the v2 link, call and embed rules (D3). |"
+      "text": "| Skill | Teaches today | v2 |\n|---|---|---|\n| `publish` | `publish`, `status --check`, `harness install`, `update`, `uninstall`, `link`, `unlink` | Dropped. Its folder goes. |\n| `setup` | `init --out`, \"the nearest `skillwright.md`\", `build.destinations`, `skillwright list`, calls to `/[[publish]]` | `init <m> <p>`, the two-file root test, no destinations, `check` to verify. Its `/[[publish]]` calls point to `/[[author]]`. |\n| `author` | `skillwright list` in its steps, `build.namespace`, v1 links and mentions, \"the backslash ships too\" for `\\[[`, calls to `/[[publish]]` | `check` in its steps, no namespace, the v2 link, call and embed rules (D3). A short section on what to do with `dist/`: `build`, `check`, `bump`, and copying or committing the output. Plugin-root examples written unbraced, `$PLUGIN_ROOT` and `$CLAUDE_PLUGIN_ROOT` (spec section 4 rules 22 and 25). No `/[[publish]]` call. |"
     },
     {
       "id": "plan-tracking",
@@ -3855,7 +3985,7 @@
     {
       "id": "plan-open-issues-p-3",
       "type": "prose",
-      "text": "| Issue | Verdict | Reason |\n|---|---|---|\n| [#152](https://github.com/osdlc/skillwright/issues/152) richer hook authoring | Later | Hook notes, and Cursor's hook variable. v2 reads only `hooks/hooks.json` and ships no Cursor hooks. |\n| [#148](https://github.com/osdlc/skillwright/issues/148) plugin-layout probe | Evidence | Not in the definition of done. A failure reopens section 4 rule 19 in a follow-up. |\n| [#144](https://github.com/osdlc/skillwright/issues/144) published links: labels, shared-note paths, missing files | Changed, in v2 | The flattening part is moot: shared notes outside a plugin are gone. Missing-file links become build errors (section 4). The `.md` label part stays. |\n| [#141](https://github.com/osdlc/skillwright/issues/141) bump: scan once, in-memory baseline | Keep | `bump` stays. The reads it lists get simpler. |\n| [#77](https://github.com/osdlc/skillwright/issues/77) `resolve_run` should call `load_marketplace` | Changed | Still one loader, written fresh in v2. Close when it lands. |\n| [#76](https://github.com/osdlc/skillwright/issues/76) one root-file and workspace loader | Changed | No workspace fold. Parse-once still applies. |\n| [#83](https://github.com/osdlc/skillwright/issues/83) path-guard and globset | Changed | The output-overlap check goes. Link containment by real path is new work for path-guard. With D5 the glob half goes. |\n| [#50](https://github.com/osdlc/skillwright/issues/50) compile scans bodies twice | Keep | Compile stays. |\n| [#47](https://github.com/osdlc/skillwright/issues/47) leftover `[[` check gaps | Keep | Compile stays. |\n| [#46](https://github.com/osdlc/skillwright/issues/46) valid Markdown refused as leftover `[[` | Changed | v2's leftover check skips code spans, fenced blocks and escaped text. Indented code, math, `<pre>` and autolinks are still open. |\n| [#142](https://github.com/osdlc/skillwright/issues/142) publish collision checks | Deferred: publish | All three asks are about `publish`. Inside a pack, v2's own rule refuses two sources on one path (section 9). |\n| [#87](https://github.com/osdlc/skillwright/issues/87) rename of a bundle that half-lands | Deferred: rename | `rename` leaves v2. |\n| [#49](https://github.com/osdlc/skillwright/issues/49) rename reads the vault three times | Deferred: rename | `rename` leaves v2. |\n| [#45](https://github.com/osdlc/skillwright/issues/45) rename misses an unreadable note | Deferred: rename | `rename` leaves v2. |\n| [#43](https://github.com/osdlc/skillwright/issues/43) rename can make a link ambiguous | Deferred: rename | `rename` leaves v2. When it returns, links resolve within one plugin, so the risk is smaller. |\n| [#51](https://github.com/osdlc/skillwright/issues/51) adopt in reverse | Deferred: adopt | Reading harness files into notes is `adopt`'s job. Nothing in v2 needs it. |\n| [#94](https://github.com/osdlc/skillwright/issues/94) install natively first | Deferred: install and adopt | Both halves need commands v2 leaves out: `harness install` for the native path, `adopt` for the fallback. |\n| [#42](https://github.com/osdlc/skillwright/issues/42) markdown-db and markdown-contract | Keep | Not about skillwright. Already labelled to-close. |\n| [#4](https://github.com/osdlc/skillwright/issues/4) gaps migrating a marketplace | Keep | Harness output gaps. Already labelled to-close. |"
+      "text": "| Issue | Verdict | Reason |\n|---|---|---|\n| [#152](https://github.com/osdlc/skillwright/issues/152) richer hook authoring | Later | Hook notes, and Cursor's hook variable. v2 reads only `hooks/hooks.json` and ships no Cursor hooks. |\n| [#148](https://github.com/osdlc/skillwright/issues/148) plugin-layout probe | Evidence | Not in the definition of done. A failure reopens section 4 rule 19 in a follow-up. |\n| [#144](https://github.com/osdlc/skillwright/issues/144) published links: labels, shared-note paths, missing files | Changed, in v2 | The flattening part is moot: shared notes outside a plugin are gone. Missing-file links become build errors (section 4). The `.md` label part stays. |\n| [#141](https://github.com/osdlc/skillwright/issues/141) bump: scan once, in-memory baseline | Keep | `bump` stays. The reads it lists get simpler. |\n| [#77](https://github.com/osdlc/skillwright/issues/77) `resolve_run` should call `load_marketplace` | Changed | Still one loader, written fresh in v2. Close when it lands. |\n| [#76](https://github.com/osdlc/skillwright/issues/76) one root-file and workspace loader | Changed | No workspace fold. Parse-once still applies. |\n| [#83](https://github.com/osdlc/skillwright/issues/83) path-guard and globset | Changed | The output-overlap check goes. Link containment by real path is new work for path-guard. With D5 the glob half goes. |\n| [#50](https://github.com/osdlc/skillwright/issues/50) compile scans bodies twice | Keep | Compile stays. |\n| [#47](https://github.com/osdlc/skillwright/issues/47) leftover `[[` check gaps | Keep | Compile stays. |\n| [#46](https://github.com/osdlc/skillwright/issues/46) valid Markdown refused as leftover `[[` | Changed | v2's leftover check skips code spans, fenced blocks and escaped text. Indented code, math, `<pre>` and autolinks are still open. |\n| [#142](https://github.com/osdlc/skillwright/issues/142) publish collision checks | Deferred: publish | All three asks are about `publish`. |\n| [#87](https://github.com/osdlc/skillwright/issues/87) rename of a bundle that half-lands | Deferred: rename | `rename` leaves v2. |\n| [#49](https://github.com/osdlc/skillwright/issues/49) rename reads the vault three times | Deferred: rename | `rename` leaves v2. |\n| [#45](https://github.com/osdlc/skillwright/issues/45) rename misses an unreadable note | Deferred: rename | `rename` leaves v2. |\n| [#43](https://github.com/osdlc/skillwright/issues/43) rename can make a link ambiguous | Deferred: rename | `rename` leaves v2. When it returns, links resolve within one plugin, so the risk is smaller. |\n| [#51](https://github.com/osdlc/skillwright/issues/51) adopt in reverse | Deferred: adopt | Reading harness files into notes is `adopt`'s job. Nothing in v2 needs it. |\n| [#94](https://github.com/osdlc/skillwright/issues/94) install natively first | Deferred: install and adopt | Both halves need commands v2 leaves out: `harness install` for the native path, `adopt` for the fallback. |\n| [#42](https://github.com/osdlc/skillwright/issues/42) markdown-db and markdown-contract | Keep | Not about skillwright. Already labelled to-close. |\n| [#4](https://github.com/osdlc/skillwright/issues/4) gaps migrating a marketplace | Keep | Harness output gaps. Already labelled to-close. |"
     }
   ]
 }
