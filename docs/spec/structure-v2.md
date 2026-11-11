@@ -52,21 +52,41 @@ the code, the open PRs and issues, and the build order are in
 
 ## 2. The root file
 
-1. `skillwright.md` exists only at the root.
-2. It holds tool settings under `build:`, and shared defaults. A shared
-   default is a key the key table marks as inherited: `author`, `license`,
-   `repository`, `homepage`, `targets` and the harness blocks (`claude:`,
-   `codex:`, `cursor:`, `pi:`). Nothing else.
-3. It is never a marketplace. A container key the key table does not mark as
-   inherited belongs to one marketplace, so it is refused here. That covers
-   `name`, `description`, `owner`, `version`, `display_name`, `keywords` and
-   `category`. The error names the marketplace note the field belongs in.
-4. The body is not read.
-5. It is the only configuration file. There is no machine file for the build.
-6. The `build:` keys are `harnesses`, `namespace` and `bump`. `out`,
-   `patterns`, `exclude`, `assets`, `hooks`, `destinations`, `scan_locations`
-   and `launcher_path` are refused (section 11). Any other key the table does
-   not list warns.
+A complete root file, with every key it may hold:
+
+```yaml
+---
+# Shared defaults. Every marketplace and plugin inherits these unless it
+# sets its own.
+author: Ada Lovelace            # or {name, email, url}
+license: MIT                    # an SPDX expression
+repository: https://github.com/acme/skills
+homepage: https://acme.dev/skills
+targets: [claude, codex]        # which harnesses get each component; absent means all
+claude: {}                      # harness blocks: fields only that harness reads (section 8)
+codex: {}
+cursor: {}
+pi: {naming: bare}
+
+# Tool settings.
+build:
+  harnesses: [claude, codex, cursor, pi]   # which harnesses to build; absent means all
+  namespace: sw                            # read sw-prefixed keys; absent means bare keys
+  bump:
+    patch: increment                       # or timestamp
+---
+```
+
+1. `skillwright.md` exists only at the root. Its body is not read, and it is the
+   only configuration file.
+2. Only the keys above are allowed. The shared defaults are the keys the key
+   table marks as inherited.
+3. A key that belongs to one marketplace, such as `name`, `description`,
+   `owner`, `version`, `display_name`, `keywords` or `category`, is refused.
+   The error names the marketplace note it belongs in.
+4. These v1 `build:` keys are refused (section 11): `out`, `patterns`,
+   `exclude`, `assets`, `hooks`, `destinations`, `scan_locations` and
+   `launcher_path`. Any other unknown `build:` key warns.
 
 ## 3. Folders and notes
 
