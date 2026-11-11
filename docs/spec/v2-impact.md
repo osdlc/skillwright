@@ -34,7 +34,7 @@ and may return in a later milestone:
 - A root `plugins/` as the plugins of a single marketplace.
 - Marketplaces below the top, and components promoted to a marketplace.
 - Flat entry notes (`skills/x.md`) and `SKILL.md` entries.
-- A note `name` that differs from its folder.
+- The `name` key on any note. The folder name is the name, and a `name` key is refused.
 - Optional plugin notes (decision D6).
 - `build.patterns` and every custom folder glob.
 - `build.exclude` (decision D5). A file that must not ship goes in `docs/`.
