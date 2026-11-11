@@ -56,7 +56,8 @@ export function syncPlugin(pluginDir: string, target: string): string[] {
   const touched: string[] = []
   for (const { root, manifest } of HARNESSES) {
     const pack = `${root}/packs/${PLUGIN_NAME}`
-    if (!existsSync(join(pluginDir, DIST, pack))) throw new Error(`the build has no ${pack}`)
+    if (!existsSync(join(pluginDir, DIST, pack)))
+      throw new Error(`the build has no ${DIST}/${pack}`)
     rmSync(join(target, pack), { recursive: true, force: true })
     mkdirSync(join(target, root, 'packs'), { recursive: true })
     cpSync(join(pluginDir, DIST, pack), join(target, pack), { recursive: true })
@@ -65,7 +66,7 @@ export function syncPlugin(pluginDir: string, target: string): string[] {
     const entry = readJson(join(pluginDir, DIST, manifest)).plugins.find(
       (p) => p.name === PLUGIN_NAME,
     )
-    if (entry === undefined) throw new Error(`${manifest} lists no ${PLUGIN_NAME} entry`)
+    if (entry === undefined) throw new Error(`${DIST}/${manifest} lists no ${PLUGIN_NAME} entry`)
     const dest = join(target, manifest)
     if (!existsSync(dest)) throw new Error(`the target has no ${manifest}`)
     writeFileSync(dest, `${JSON.stringify(upsertEntry(readJson(dest), entry), null, 2)}\n`)

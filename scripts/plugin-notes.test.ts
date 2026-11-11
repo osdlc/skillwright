@@ -1,7 +1,7 @@
 // node --test scripts/plugin-notes.test.ts
 //
 // The plugin's source notes teach only the v2 CLI. A removed command, flag,
-// key or diagnostic may appear only on a line that says it is gone.
+// key or diagnostic may appear only in a clause that says it is gone.
 // The Rust test `skillwright/tests/repo_plugin.rs` checks that the plugin
 // builds with no warning and matches `plugin/dist/`.
 import { strict as assert } from 'node:assert'
@@ -45,7 +45,8 @@ const commands = [
 // Words in command position, so ordinary English is not flagged.
 const removed: RegExp[] = [
   new RegExp(`\\bskillwright (${commands})\\b`),
-  /`(publish|unpublish|status|list|adopt|harness|rename|move|delete|convert)\b/,
+  // In code with an argument after it, as a command is written.
+  /`(publish|unpublish|status|list|adopt|harness|rename|move|delete|convert) [^`]+`/,
   /--(config|out|namespace|skills-root|watch|name|from|from-git|target|all|into)\b/,
   /\bbuild\.(out|destinations|namespace|hooks|assets|exclude|patterns|launcher_path|scan_locations)\b/,
   /\b(destinations|scan_locations|launcher_path|workspace):/,
@@ -55,17 +56,36 @@ const removed: RegExp[] = [
 
 const gone = /\b(gone|removed|no longer)\b/i
 
+/** Each removed word in `line`, less one in a clause that says it is gone. */
+function removedIn(line: string): string[] {
+  const hits: string[] = []
+  for (const clause of line.split(/(?<=[.;!?])(?:\s|$)/)) {
+    if (gone.test(clause)) continue
+    for (const re of removed) {
+      const m = re.exec(clause)
+      if (m) hits.push(m[0])
+    }
+  }
+  return hits
+}
+
+test('the rules flag a command, not a word, and exempt only the clause that says gone', () => {
+  assert.deepEqual(removedIn('the `status` of each unit'), [])
+  assert.deepEqual(removedIn('Run skillwright publish; the old flag is removed.'), [
+    'skillwright publish',
+  ])
+  assert.deepEqual(removedIn('`skillwright publish` is gone.'), [])
+  assert.deepEqual(removedIn('Run `publish tools` first.'), ['`publish tools`'])
+  assert.deepEqual(removedIn('Set destinations: x.'), ['destinations:'])
+})
+
 test('no note teaches a removed command, flag, key or diagnostic', () => {
   const hits: string[] = []
   for (const path of notes()) {
     readFileSync(path, 'utf8')
       .split('\n')
       .forEach((line, i) => {
-        if (gone.test(line)) return
-        for (const re of removed) {
-          const m = re.exec(line)
-          if (m) hits.push(`${relative(repo, path)}:${i + 1}: ${m[0]}`)
-        }
+        for (const m of removedIn(line)) hits.push(`${relative(repo, path)}:${i + 1}: ${m}`)
       })
   }
   assert.deepEqual(hits, [])

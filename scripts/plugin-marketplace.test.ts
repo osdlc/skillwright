@@ -78,3 +78,18 @@ test('syncPlugin refuses a target without a manifest', () => {
   rmSync(join(target, HARNESSES[1]!.manifest!))
   assert.throws(() => syncPlugin(plugin, target), /has no/)
 })
+
+test('syncPlugin names the build folder it looked in', () => {
+  const { plugin, target } = fixture()
+  rmSync(join(plugin, 'dist/osdlc/.claude-plugin/packs/skillwright'), { recursive: true })
+  assert.throws(
+    () => syncPlugin(plugin, target),
+    /dist\/osdlc\/\.claude-plugin\/packs\/skillwright/,
+  )
+  const other = fixture()
+  write(other.plugin, 'dist/osdlc/.claude-plugin/marketplace.json', '{"plugins":[]}')
+  assert.throws(
+    () => syncPlugin(other.plugin, other.target),
+    /dist\/osdlc\/\.claude-plugin\/marketplace\.json lists no skillwright/,
+  )
+})
