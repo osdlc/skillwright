@@ -240,7 +240,8 @@ pub fn localize(mut hook: Hook, harness: &str, plugin_root_var: Option<&str>) ->
     hook
 }
 
-/// The hooks `runtime` carries, in file order. The others are left out.
+/// The hooks `runtime` carries, in file order. The others are left out; the
+/// load warns for each (`hook-left-out`).
 pub fn carried_hooks(hooks: &[Hook], runtime: RuntimeId) -> Vec<Hook> {
     hooks
         .iter()

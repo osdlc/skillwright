@@ -312,3 +312,31 @@ fn an_unknown_event_fails_the_build() {
     assert!(err.contains("OnBoot"), "{err}");
     assert!(!vfs.exists(Path::new("/vault/dist/house/.claude-plugin")));
 }
+
+/// A hook a harness that carries hooks cannot carry is left out of its pack
+/// with one warning per hook, naming the harness and the event.
+#[test]
+fn each_hook_a_harness_cannot_carry_is_a_warning() {
+    let vfs = vault(
+        r#"{"hooks": {
+            "Stop": [{"hooks": [{"command": "stop"}]}],
+            "Notification": [{"hooks": [{"command": "a"}, {"command": "b"}]}]
+        }}"#,
+    );
+    let mut request = request(ExportMode::Build);
+    request.harnesses = BTreeSet::from(["claude".to_owned(), "codex".to_owned()]);
+    let report = export_skills(&vfs, &request).unwrap();
+    let left_out: Vec<_> = report
+        .warnings
+        .iter()
+        .filter(|w| w.reason == "hook-left-out")
+        .collect();
+    assert_eq!(left_out.len(), 2, "{:?}", report.warnings);
+    for warning in &left_out {
+        assert_eq!(warning.path, HOOKS_REL);
+        assert!(warning.detail.contains("Codex"), "{warning:?}");
+        assert!(warning.detail.contains("Notification"), "{warning:?}");
+    }
+    let codex = text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[1].1));
+    assert!(!codex.contains("Notification"), "{codex}");
+}

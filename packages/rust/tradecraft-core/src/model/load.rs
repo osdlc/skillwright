@@ -947,7 +947,8 @@ fn heading_names(line: &str, version: &str) -> bool {
 
 /// Each plugin's `hooks/hooks.json`, read and parsed into the plugin, and a
 /// warning for each one whose Cursor pack this build writes, since that pack
-/// ships no hooks (spec section 4 rule 23).
+/// ships no hooks (spec section 4 rule 23). A pack that ships hooks leaves out
+/// each one its harness cannot carry, with a warning per hook.
 ///
 /// # Errors
 ///
@@ -971,6 +972,24 @@ fn load_hooks_files(
             CoreError::refused("malformed-hooks-file", format!("{}: not UTF-8", file.rel))
         })?;
         let hooks = crate::hooks_file::parse_hooks_file(&text, &file.rel)?;
+        for root in roots.iter().filter(|root| root.format().carries_hooks) {
+            if !group.carried_by(root.name, |c| admits(&c.discovered, root)) {
+                continue;
+            }
+            let runtime = crate::projection::parse_runtime_target(root.runtime)?;
+            for hook in &hooks {
+                if let Some(why) = agent_adapt::render::hook_refusal(hook, runtime) {
+                    warnings.push(DiscoveryWarning {
+                        path: file.rel.clone(),
+                        reason: "hook-left-out".to_owned(),
+                        detail: format!(
+                            "plugin `{plugin}`'s {} pack leaves out a `{}` hook: {why}",
+                            root.label, hook.event
+                        ),
+                    });
+                }
+            }
+        }
         group.hooks_file = Some(HooksFile { hooks });
         let cursor_built = roots.iter().any(|root| {
             root.name == "cursor" && group.carried_by(root.name, |c| admits(&c.discovered, root))
