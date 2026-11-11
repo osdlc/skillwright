@@ -108,9 +108,7 @@ use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
 use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
 use crate::layout::Layout;
-use crate::model::load::{
-    LoadRequest, built_harnesses, kind_carried, load_for, read_notes, targets_admit,
-};
+use crate::model::load::{built_harnesses, kind_carried, load_for, targets_admit};
 use crate::model::{Component, Marketplace};
 use crate::paths::{LoadedVault, VaultMarketplace, load_vault, read_root_file};
 use crate::settings::RootFile;
@@ -708,7 +706,7 @@ pub fn plan_loaded(
 ) -> VaultPlan {
     // Pass 1 once for every marketplace. A scan that refuses refuses each
     // marketplace the same way, so `plan_in` repeats it for each.
-    let scan = read_notes(vfs, &loaded.layout).ok();
+    let scan = crate::discover::discover_in(vfs, &loaded.layout).ok();
     let marketplaces = loaded
         .marketplaces
         .iter()
@@ -757,7 +755,7 @@ pub fn plan_in(
     let root = read_root_file(vfs, &layout.root)?;
     // Which harnesses this build renders, before the notes are read.
     built_harnesses(&root, &request.harnesses)?;
-    let scan = read_notes(vfs, layout)?;
+    let scan = crate::discover::discover_in(vfs, layout)?;
     plan_with(vfs, layout, &root, &scan, request)
 }
 
@@ -774,7 +772,7 @@ fn refuse_compare_with_on_build(request: &ExportRequest) -> Result<(), CoreError
 }
 
 /// [`plan_in`] with the root file read and pass 1 done: `scan` is
-/// [`read_notes`] over `layout`.
+/// [`crate::discover::discover_in`] over `layout`.
 fn plan_with(
     vfs: &dyn Vfs,
     layout: &Layout,
@@ -905,17 +903,6 @@ fn plan_with(
         },
         swapping,
     })
-}
-
-impl ExportRequest {
-    /// What this build loads: its vault, its marketplace and its harness
-    /// filter.
-    pub fn load_request(&self) -> LoadRequest {
-        let mut load = LoadRequest::new(self.vault_root.clone());
-        load.marketplace.clone_from(&self.marketplace);
-        load.harnesses.clone_from(&self.harnesses);
-        load
-    }
 }
 
 // --- Comparison --------------------------------------------------------------
@@ -1645,7 +1632,15 @@ mod tests {
 
     /// Every file under `root`: relative path, bytes, execute bit — sorted.
     fn files_under(vfs: &dyn Vfs, root: &Path) -> Vec<(String, Vec<u8>, bool)> {
-        let mut out: Vec<_> = crate::walk::readable_files(vfs, root, &[])
+        let options = vfs_walk::WalkOptions {
+            skip_names: vec![".DS_Store".to_owned(), ".git".to_owned()],
+            prune_dirs: Vec::new(),
+            filter: None,
+            symlinks: vfs_walk::Symlinks::List,
+            errors: vfs_walk::Errors::Skip,
+        };
+        let mut out: Vec<_> = vfs_walk::walk(vfs, root, &options)
+            .unwrap_or_default()
             .into_iter()
             .map(|entry| {
                 (

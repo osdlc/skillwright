@@ -2,7 +2,7 @@
 //!
 //! [`load`] reads the marketplace a build renders: one marketplace of the
 //! vault, every plugin, the notes folded over the root file's shared defaults.
-//! It reads through [`read_notes`] (pass 1) and resolves through
+//! It reads through [`discover_in`] (pass 1) and resolves through
 //! [`resolve_body`] (pass 2).
 
 use std::cell::RefCell;
@@ -67,17 +67,6 @@ impl LoadRequest {
             harnesses: BTreeSet::new(),
         }
     }
-}
-
-/// Pass 1: every note of the layout, read into a node — its frontmatter,
-/// kind, plugin, marketplace and files. Pass 2 resolves links in the same
-/// layout.
-///
-/// # Errors
-///
-/// What [`crate::discover::discover_components`] refuses.
-pub fn read_notes(vfs: &dyn Vfs, layout: &Layout) -> Result<DiscoveryReport, CoreError> {
-    discover_in(vfs, layout)
 }
 
 /// The harnesses `names` selects, every one when empty.
@@ -193,7 +182,7 @@ pub fn load_in(
 ) -> Result<Marketplace, CoreError> {
     let root = crate::paths::read_root_file(vfs, &layout.root)?;
     let roots = built_harnesses(&root, &request.harnesses)?;
-    let scan = read_notes(vfs, layout)?;
+    let scan = discover_in(vfs, layout)?;
     load_for(
         vfs,
         layout,
@@ -205,7 +194,7 @@ pub fn load_in(
 }
 
 /// [`load_in`] with the root file and pass 1 already done: `scan` is
-/// [`read_notes`] over `layout`, `roots` the harnesses the model is for, and
+/// [`discover_in`] over `layout`, `roots` the harnesses the model is for, and
 /// `defaults` the root file's shared defaults.
 pub(crate) fn load_for(
     vfs: &dyn Vfs,

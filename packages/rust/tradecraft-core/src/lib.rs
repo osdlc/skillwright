@@ -75,8 +75,6 @@ pub mod status;
 mod text;
 pub mod vault;
 pub mod vfs;
-#[cfg(test)]
-mod walk;
 
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
 pub use compile::{

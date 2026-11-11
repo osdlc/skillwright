@@ -48,7 +48,7 @@ path-guard = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-# The plain file walk the unit tests read folders with (`crate::walk`).
+# The plain file walk the unit tests read folders with.
 vfs-walk = { workspace = true }
 
 [lints]

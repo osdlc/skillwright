@@ -11,7 +11,7 @@
 //! [`load()`] reads each note once and resolves before translating (D-EPSA),
 //! today in two passes:
 //!
-//! 1. **Read** every note into a node — [`load::read_notes`], over the
+//! 1. **Read** every note into a node — [`crate::discover::discover_in`], over the
 //!    layout [`crate::layout::read_layout`] walked once.
 //! 2. **Resolve** every body: embeds expanded, every `[[link]]` and
 //!    `/[[call]]` checked and pointed at the node it names, and every
@@ -54,7 +54,7 @@ use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 
-pub use load::{LoadRequest, load, load_in, read_notes, resolve_body};
+pub use load::{LoadRequest, load, load_in, resolve_body};
 
 /// A vault, loaded as the one marketplace a build renders.
 #[derive(Debug, Clone)]
@@ -77,16 +77,6 @@ pub struct Marketplace {
     pub checked: usize,
     /// The vault this was loaded from.
     pub vault_root: PathBuf,
-}
-
-impl Marketplace {
-    /// The skill whose entry note is `path`, in any plugin.
-    pub fn skill_at(&self, path: &std::path::Path) -> Option<&Component> {
-        self.plugins
-            .values()
-            .flat_map(|plugin| &plugin.skills)
-            .find(|skill| skill.discovered.entry_path == path)
-    }
 }
 
 /// One plugin and everything it carries.

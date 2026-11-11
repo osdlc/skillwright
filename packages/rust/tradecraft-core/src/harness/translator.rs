@@ -42,7 +42,7 @@ use crate::model::{
     Segment,
 };
 use crate::projection::{
-    ProjectedFile, RedundantOverride, parse_runtime_target, project_command, project_plugin_hooks,
+    RedundantOverride, parse_runtime_target, project_command, project_plugin_hooks,
     project_skill_reporting,
 };
 
@@ -105,18 +105,6 @@ impl FileTree {
                 source,
             },
         );
-    }
-
-    /// The files as a projection's list, in path order.
-    pub fn projected(&self) -> Vec<ProjectedFile> {
-        self.files
-            .iter()
-            .map(|(path, file)| ProjectedFile {
-                relative_path: path.clone(),
-                content: file.bytes.clone(),
-                executable: file.executable,
-            })
-            .collect()
     }
 }
 

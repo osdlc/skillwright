@@ -371,16 +371,6 @@ impl Layout {
     pub fn file(&self, path: &Path) -> Option<&LayoutFile> {
         self.files.iter().find(|file| file.path == path)
     }
-
-    /// Whether a link from the file `from` to the file `to` goes into a
-    /// never-ship folder. A file inside that folder links within it freely.
-    pub fn links_into_never_ship(&self, from: &Path, to: &Path) -> bool {
-        let folder = |path: &Path| match self.file(path).map(|file| &file.place) {
-            Some(Place::NeverShip { folder }) => Some(folder.as_str()),
-            _ => None,
-        };
-        folder(to).is_some_and(|target| folder(from) != Some(target))
-    }
 }
 
 /// Why a link may not reach a file: the reason token, what is wrong and the
@@ -1212,26 +1202,5 @@ mod tests {
         assert_eq!(agent.kind(), EntityKind::Agent);
         assert_eq!(agent.plugin(), Some("tools"));
         assert_eq!(agent.marketplace(), "acme");
-    }
-
-    #[test]
-    fn a_link_into_a_never_ship_folder_is_caught_unless_it_starts_there() {
-        let layout = read_layout(
-            &vault(&[
-                "skills/s/s.md",
-                "skills/s/docs/x.md",
-                "skills/s/docs/y.md",
-                "skills/s/references/x.md",
-            ]),
-            Path::new("/v"),
-        )
-        .unwrap();
-        let at = |rel: &str| Path::new("/v/marketplaces/acme/plugins/tools").join(rel);
-        let to = at("skills/s/docs/x.md");
-        assert!(layout.links_into_never_ship(&at("skills/s/s.md"), &to));
-        assert!(!layout.links_into_never_ship(&at("skills/s/docs/y.md"), &to));
-        assert!(
-            !layout.links_into_never_ship(&at("skills/s/s.md"), &at("skills/s/references/x.md"))
-        );
     }
 }

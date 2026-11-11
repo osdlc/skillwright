@@ -439,12 +439,14 @@ pub fn discover_components(vfs: &dyn Vfs, vault_root: &Path) -> Result<Discovery
     discover_in(vfs, &layout)
 }
 
-/// [`discover_components`] over a layout already read.
+/// [`discover_components`] over a layout already read: every note of the
+/// layout, read into a node with its frontmatter, kind, plugin, marketplace
+/// and files. This is the model's pass 1.
 ///
 /// # Errors
 ///
 /// `refused: path-collision`, as [`discover_components`].
-pub(crate) fn discover_in(
+pub fn discover_in(
     vfs: &dyn Vfs,
     layout: &crate::layout::Layout,
 ) -> Result<DiscoveryReport, CoreError> {

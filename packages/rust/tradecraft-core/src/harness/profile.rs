@@ -842,16 +842,6 @@ impl HarnessProfile {
             .collect()
     }
 
-    /// The override keys this harness reads on a subagent and nowhere else:
-    /// its row's [`PluginPolicy::agent_only_overrides`].
-    pub fn agent_override_keys(&self) -> std::collections::BTreeSet<String> {
-        self.plugin
-            .agent_only_overrides
-            .iter()
-            .map(|key| (*key).to_owned())
-            .collect()
-    }
-
     /// The keys this harness's block accepts on a note of `kind`.
     ///
     /// `None` for an agent, whose blocks are not checked.
@@ -909,13 +899,17 @@ mod tests {
                 .overrides
                 .into_keys()
                 .collect();
-        let agent_only = claude.agent_override_keys();
+        let agent_only = claude.plugin.agent_only_overrides;
         assert_eq!(agent_only.len(), CLAUDE_AGENT_ONLY_OVERRIDES.len());
-        assert!(agent_only.is_subset(&declared), "{agent_only:?}");
+        assert!(
+            agent_only.iter().all(|key| declared.contains(*key)),
+            "{agent_only:?}"
+        );
         assert!(
             profile_named("codex")
                 .unwrap()
-                .agent_override_keys()
+                .plugin
+                .agent_only_overrides
                 .is_empty()
         );
     }

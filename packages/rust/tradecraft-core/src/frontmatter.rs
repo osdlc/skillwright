@@ -217,12 +217,6 @@ pub struct ContainerIdentity {
 }
 
 impl ContainerIdentity {
-    /// True when the note said nothing about its identity, and every manifest
-    /// field will come from a default or from configuration.
-    pub fn is_silent(&self) -> bool {
-        self == &Self::default()
-    }
-
     /// Fills each field this leaves unset from `container`, where the key
     /// table says a note of `kind` inherits that key.
     pub fn fill_unset_from(&mut self, container: &Self, kind: EntityKind) {
