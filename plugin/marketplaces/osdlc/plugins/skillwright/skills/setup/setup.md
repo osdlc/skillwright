@@ -5,7 +5,7 @@ description: "Install the skillwright CLI and set up a project for it: check `sk
 # /[[setup]]
 
 Scope: installs the binary and writes the root file. It does not author notes (see
-`/[[author]]`) or publish them (see `/[[publish]]`).
+/[[author]]) or publish them (see /[[publish]]).
 
 ## Steps
 

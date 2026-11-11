@@ -23,8 +23,8 @@
 //!
 //! # What stays harness-dependent
 //!
-//! A call is checked once — that it names a skill, one skill, and a fragment
-//! that exists — but whether the destination *ships* the skill it names is a
+//! A call is checked once — that it names one skill or command and has no
+//! fragment — but whether the destination *ships* what it names is a
 //! question about a harness, so [`Call`] carries what the translator needs
 //! to ask it. A node's harness-only fields ([`Extensions`], D-ISOU) are
 //! folded on load and checked for the harnesses a load is for.
@@ -228,8 +228,8 @@ pub enum Segment {
         /// Where it points.
         target: ResolvedRef,
     },
-    /// A call to a skill. The surrounding text already holds the backticks
-    /// a call outside code is written in.
+    /// A call to a skill or command. The surrounding text already holds the
+    /// backticks the call is written in.
     Call {
         /// The call.
         call: Call,
@@ -313,27 +313,28 @@ pub struct LinkedComponent {
 /// A resolved call.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Call {
-    /// The skill it names.
+    /// The skill or command it names.
     pub skill: SkillId,
-    /// That skill's `targets`, which decide whether a harness ships it.
+    /// Its `targets`, which decide whether a harness ships it.
     pub targets: Option<Vec<String>>,
     /// The harnesses that name the skill bare against their profile's
     /// default, as its plugin's [`Plugin::bare_on`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bare_on: Vec<String>,
-    /// The call as written, for a refusal.
+    /// The call's target as written, without `/[[` and `]]`, for a refusal.
     pub destination: String,
     /// The note the call is in, for a refusal.
     pub caller: String,
 }
 
 impl Call {
-    /// Refuses the call at a destination that does not ship the skill it
-    /// names, which would send the reader to a command that is not there.
+    /// Refuses the call at a destination that does not ship what it names,
+    /// which would send the reader to a command that is not there.
     ///
     /// # Errors
     ///
-    /// `refused: skill-call-not-shipped`.
+    /// `refused: skill-call-not-shipped`, naming the file, the call and the
+    /// rule (spec section 4 rule 8).
     pub fn check_shipped(&self, shipped: bool, target: &str) -> Result<(), CoreError> {
         if shipped {
             return Ok(());
@@ -341,22 +342,26 @@ impl Call {
         Err(CoreError::refused(
             "skill-call-not-shipped",
             format!(
-                "call `{}` in {} names skill `{}`, which {target} does not ship",
-                self.destination,
+                "{}: `/[[{}]]` calls {} `{}`, which the {target} pack does not contain \
+                 (section 4 rule 8)",
                 self.caller,
+                self.destination,
+                self.skill.kind.as_str(),
                 self.skill.call_id()
             ),
         ))
     }
 }
 
-/// A skill as a call names it.
+/// A skill or command as a call names it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SkillId {
-    /// The plugin it ships in, `None` for a skill published on its own.
+    /// The plugin it ships in, `None` for one published on its own.
     pub plugin: Option<String>,
     /// Its source name.
     pub name: String,
+    /// A skill or a command.
+    pub kind: EntityKind,
     /// Its entry note.
     #[serde(skip)]
     pub entry_path: PathBuf,
@@ -454,6 +459,7 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
         skill: SkillId {
             plugin: site.skill.plugin.clone(),
             name: site.skill.name.clone(),
+            kind: site.skill.kind,
             entry_path: site.skill.entry_path.clone(),
         },
         targets: None,
@@ -497,6 +503,7 @@ mod tests {
                     entry_path: PathBuf::from("/v/a.md"),
                     plugin: Some("p".into()),
                     name: "a".into(),
+                    kind: EntityKind::Skill,
                     shipped: true,
                 },
                 destination: "a".into(),

@@ -19,10 +19,10 @@ trigger: /pr-mermaid-comment
 
 Usage:
 
-- `/[[pr-mermaid-comment]] <PR number> <what to diagram>` — draft, verify, post.
-- `/[[pr-mermaid-comment]] <PR number> --update <comment id>` — rework an
+- /[[pr-mermaid-comment]] `<PR number> <what to diagram>` — draft, verify, post.
+- /[[pr-mermaid-comment]] `<PR number> --update <comment id>` — rework an
   existing comment in place.
-- `/[[pr-mermaid-comment]] --check <file.md>` — only render a Markdown file's
+- /[[pr-mermaid-comment]] `--check <file.md>` — only render a Markdown file's
   mermaid blocks and report.
 
 GitHub renders ```` ```mermaid ```` fences in PR bodies, comments, issues

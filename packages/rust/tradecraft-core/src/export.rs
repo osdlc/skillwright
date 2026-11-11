@@ -1814,8 +1814,8 @@ mod tests {
     #[test]
     fn a_call_renders_each_harness_spelling_and_copies_nothing() {
         let vfs = calls_vault(
-            "# a\n\nNext, run /[[b]] to finish.\n\nUsage: `/[[b|the b skill]] ISSUE-1 --flag`\n\n\
-             ```sh\n/[[b#Steps]] now\n```\n\nThen /[[c]].\n",
+            "# a\n\nNext, run /[[b]] to finish.\n\nUsage: /[[b|the b skill]] ISSUE-1 --flag\n\n\
+             ```sh\n/[[b]] now\n```\n\nThen /[[c]].\n",
         );
         let report = build(&vfs);
 
@@ -1830,13 +1830,11 @@ mod tests {
                 "{tree}: {body}"
             );
             assert!(
-                body.contains(&format!("Usage: `{b} ISSUE-1 --flag`")),
+                body.contains(&format!("Usage: the b skill (`{b}`) ISSUE-1 --flag")),
                 "{tree}: {body}"
             );
-            assert!(
-                body.contains(&format!("```sh\n{b} now\n```")),
-                "{tree}: {body}"
-            );
+            // Code is literal.
+            assert!(body.contains("```sh\n/[[b]] now\n```"), "{tree}: {body}");
             assert!(body.contains(&format!("Then `{c}`.")), "{tree}: {body}");
             assert!(!body.contains("B's own prose"), "{tree}: {body}");
             let copied: Vec<String> = paths_under(
@@ -1896,7 +1894,7 @@ mod tests {
     }
 
     #[test]
-    fn an_escaped_double_bracket_ships_as_written_in_each_harness() {
+    fn an_escaped_double_bracket_ships_without_its_backslash_in_each_harness() {
         let vfs = calls_vault("# a\n\nSee \\[[TODO later.\n");
         build(&vfs);
         for (tree, skill) in [
@@ -1906,7 +1904,7 @@ mod tests {
             (".pi", "tools-a"),
         ] {
             let body = skill_md(&vfs, tree, skill);
-            assert!(body.contains("See \\[[TODO later.\n"), "{tree}: {body}");
+            assert!(body.contains("See [[TODO later.\n"), "{tree}: {body}");
         }
     }
 
@@ -1924,15 +1922,11 @@ mod tests {
     }
 
     #[test]
-    fn a_call_fragment_is_checked_then_dropped() {
-        let vfs = calls_vault("# a\n\nRun /[[b#Missing]].\n");
-        let err = export_refusal(&vfs);
-        assert!(err.contains("fragment-unresolved"), "{err}");
-
+    fn a_call_fragment_is_refused() {
         let vfs = calls_vault("# a\n\nRun /[[b#Steps]].\n");
-        build(&vfs);
-        let body = skill_md(&vfs, ".claude-plugin", "a");
-        assert!(body.contains("Run `/tools:b`."), "{body}");
+        let err = export_refusal(&vfs);
+        assert!(err.contains("skill-call-fragment"), "{err}");
+        assert!(err.contains("`/[[b#Steps]]`"), "{err}");
     }
 
     #[test]
@@ -1942,10 +1936,10 @@ mod tests {
         );
         build(&vfs);
         let body = skill_md(&vfs, ".claude-plugin", "a");
-        // In prose and code alike the notation is written out, even when it
-        // names a skill.
+        // In prose the notation is written out, even when it names a skill.
+        // Code is literal.
         assert!(body.contains("Write /[[plain]] in prose"), "{body}");
-        assert!(body.contains("and `/[[b]]` in code."), "{body}");
+        assert!(body.contains("and `\\/[[b]]` in code."), "{body}");
         assert!(body.contains("Cite /[[b]] too."), "{body}");
         assert!(!body.contains("/tools:b"), "{body}");
     }
@@ -1966,22 +1960,18 @@ mod tests {
 
     #[test]
     fn a_literal_call_to_a_known_skill_is_refused() {
-        let vfs = calls_vault("# a\n\nRun `$other:c` now.\n");
+        let vfs = calls_vault("# a\n\nRun $other:c now.\n");
         let err = export_refusal(&vfs);
         assert!(err.contains("literal-skill-call"), "{err}");
-        assert!(err.contains("`$other:c`"), "{err}");
+        assert!(err.contains("`$other:c`, write `/[[c]]`"), "{err}");
 
-        let vfs = calls_vault("# a\n\nRun `/tools:b` now.\n");
+        let vfs = calls_vault("# a\n\nRun /tools:b now.\n");
         assert!(export_refusal(&vfs).contains("`/tools:b`"));
 
-        // Cursor's bare form, for a skill in a's own plugin.
-        let vfs = calls_vault("# a\n\nRun /b now.\n");
-        assert!(export_refusal(&vfs).contains("`/b`"));
-
         // A plugin or skill this vault does not hold is left alone: it may be
-        // another vault's. So is a bare name from another plugin, and a path.
+        // another vault's. So is a bare name, a path, and code.
         let vfs = calls_vault(
-            "# a\n\nRun `/tools:nope`, `/elsewhere:task-work`, /c, or see src/b and /b/x.\n",
+            "# a\n\nRun /tools:nope, /elsewhere:task-work, /b, `/tools:b`, or see src/b and /b/x.\n",
         );
         build(&vfs);
     }

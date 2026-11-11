@@ -511,17 +511,17 @@ fn a_bare_link_resolves_to_the_match_in_its_own_bundle() {
     }
 }
 
-/// `\/[[skill]]` shows the call's notation in every harness, in a code span
-/// as in prose, while `/[[skill]]` in the same span is the call.
+/// `\/[[skill]]` in prose shows the call's notation in every harness, a
+/// code span ships as written, and `/[[skill]]` in prose is the call.
 #[test]
-fn an_escaped_call_in_a_code_span_ships_as_the_notation() {
+fn an_escaped_call_ships_as_the_notation() {
     let dir = vault(
         "---\nbuild:\n  harnesses: [claude, codex, cursor, pi]\n---\n",
         &[
             ("tools/tools.md", PLUGIN),
             (
                 "tools/skills/create-pr/create-pr.md",
-                "---\ndescription: D.\n---\nTo call a skill, write `\\/[[create-pr]]`: `/[[create-pr]]`.\n",
+                "---\ndescription: D.\n---\nTo call a skill, write \\/[[create-pr]] or `/[[create-pr]]`: /[[create-pr]].\n",
             ),
         ],
     );
@@ -545,7 +545,7 @@ fn an_escaped_call_in_a_code_span_ships_as_the_notation() {
         let body = std::fs::read_to_string(dir.dist().join(skill).join("SKILL.md")).unwrap();
         assert!(
             body.contains(&format!(
-                "To call a skill, write `/[[create-pr]]`: `{call}`."
+                "To call a skill, write /[[create-pr]] or `/[[create-pr]]`: `{call}`."
             )),
             "{skill}: {body}"
         );

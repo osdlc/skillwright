@@ -171,10 +171,18 @@ pub(crate) trait HarnessTranslator: Sync {
         let profile = self.profile();
         render_call(
             call,
-            profile.name,
+            self.carries_call(call),
+            profile.label,
             Some(profile.declaration),
             naming(profile, &call.bare_on),
         )
+    }
+
+    /// Whether this harness's pack contains what `call` names: a skill its
+    /// `targets` admit, or such a command where the pack has commands.
+    fn carries_call(&self, call: &Call) -> bool {
+        (call.skill.kind != EntityKind::Command || self.format().carries_commands)
+            && targets_name(call.targets.as_deref(), self.profile().name)
     }
 
     /// A link of `plugin`, written from where its text lands in this
@@ -526,6 +534,7 @@ pub fn write_component(
             |call| {
                 render_call(
                     call,
+                    targets_name(call.targets.as_deref(), destination.canonical),
                     destination.canonical,
                     destination.calls,
                     SkillNaming::Bare,
@@ -552,15 +561,17 @@ pub fn write_component(
     Ok(tree)
 }
 
-/// A call at `canonical`, written in `runtime`'s syntax, a skill of a plugin
-/// named by `naming`.
+/// A call at the destination `label`, written in `runtime`'s syntax, a skill
+/// of a plugin named by `naming`. `shipped` says whether the destination
+/// contains what the call names.
 fn render_call(
     call: &Call,
-    canonical: &str,
+    shipped: bool,
+    label: &str,
     runtime: Option<RuntimeId>,
     naming: SkillNaming,
 ) -> Result<String, CoreError> {
-    call.check_shipped(targets_name(call.targets.as_deref(), canonical), canonical)?;
+    call.check_shipped(shipped, label)?;
     let Some(runtime) = runtime else {
         return Ok(call.skill.name.clone());
     };

@@ -4,8 +4,8 @@ description: "Publish and build a skillwright vault into the formats of Claude C
 
 # /[[publish]]
 
-Scope: turns vault notes into harness files and reports drift. Authoring notes is `/[[author]]`.
-If `skillwright --version` fails, run `/[[setup]]` first.
+Scope: turns vault notes into harness files and reports drift. Authoring notes is /[[author]].
+If `skillwright --version` fails, run /[[setup]] first.
 
 There are two ways out of a vault:
 

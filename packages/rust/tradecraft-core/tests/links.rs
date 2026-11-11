@@ -1,5 +1,6 @@
-//! Links (spec section 4): scope, containment, Markdown links and plain
-//! links, built through the core's public API. Every vault has marketplace
+//! Links and calls (spec section 4): scope, containment, Markdown links,
+//! plain links, calls, hand-written calls, code and leftovers, built through
+//! the core's public API. Every vault has marketplace
 //! `acme` and plugin `tools`.
 
 use std::path::Path;
@@ -51,11 +52,13 @@ fn build(vfs: &dyn Vfs) -> Result<Vec<DiscoveryWarning>, CoreError> {
     build_for(vfs, &[])
 }
 
-/// Builds `harnesses`, every one when empty.
+/// Builds `harnesses`, or what the root file names when empty.
 fn build_for(vfs: &dyn Vfs, harnesses: &[&str]) -> Result<Vec<DiscoveryWarning>, CoreError> {
     let loaded = load_vault(vfs, Path::new("/v"), None)?;
     let mut request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
-    request.harnesses = harnesses.iter().map(|h| (*h).to_owned()).collect();
+    if !harnesses.is_empty() {
+        request.harnesses = harnesses.iter().map(|h| (*h).to_owned()).collect();
+    }
     export_skills(vfs, &request).map(|report| report.warnings)
 }
 
@@ -394,4 +397,419 @@ fn a_link_or_embed_to_nothing_is_an_error() {
         let vfs = vault(&[(AUTHOR, &skill(&format!("See {link}.")))]);
         names(&refusal(&vfs), AUTHOR, link, "rule 11");
     }
+}
+
+// --- Calls ------------------------------------------------------------------
+
+/// `author`'s `SKILL.md` in each pack, under the default naming.
+fn authors(vfs: &dyn Vfs) -> [(&'static str, String); 4] {
+    [
+        ("claude", author_in(vfs, CLAUDE, "author")),
+        ("codex", author_in(vfs, CODEX, "author")),
+        ("cursor", author_in(vfs, CURSOR, "tools-author")),
+        ("pi", author_in(vfs, PI, "tools-author")),
+    ]
+}
+
+/// The call string for `setup` in each pack, under the default naming.
+const SETUP_CALLS: [&str; 4] = [
+    "/tools:setup",
+    "$tools:setup",
+    "/tools-setup",
+    "/skill:tools-setup",
+];
+
+/// `author` with `body`, the skill `setup` and the command `deploy`.
+fn with_setup(body: &str) -> MemVfs {
+    vault(&[
+        (AUTHOR, &skill(body)),
+        ("skills/setup/setup.md", &skill("## Usage\n\nSet up.")),
+        ("commands/deploy/deploy.md", &skill("Deploy.")),
+    ])
+}
+
+/// Writes the plugin note with `extra` in its frontmatter.
+fn plugin_note(vfs: &MemVfs, extra: &str) {
+    put(
+        vfs,
+        &format!("{PLUGIN}/tools.md"),
+        &format!("---\nversion: 1.0.0\n{extra}---\n"),
+    );
+}
+
+const BARE: &str = "cursor:\n  naming: bare\npi:\n  naming: bare\n";
+
+#[test]
+fn a_call_is_never_a_link_and_never_warns() {
+    let vfs = with_setup("Run /[[setup]].");
+    let warnings = build(&vfs).unwrap();
+    let claude = author(&vfs);
+    assert!(claude.contains("Run `/tools:setup`."), "{claude}");
+    assert!(!claude.contains("SKILL.md"), "{claude}");
+    assert!(
+        !warnings.iter().any(|w| w.detail.contains("Did you mean")),
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn a_call_renders_each_harness_s_string() {
+    let vfs = with_setup("Run /[[setup]].");
+    build(&vfs).unwrap();
+    for ((harness, text), call) in authors(&vfs).iter().zip(SETUP_CALLS) {
+        assert!(
+            text.contains(&format!("Run `{call}`.")),
+            "{harness}: {text}"
+        );
+    }
+}
+
+#[test]
+fn a_call_under_bare_naming_drops_the_plugin_on_cursor_and_pi() {
+    let vfs = with_setup("Run /[[setup]].");
+    plugin_note(&vfs, BARE);
+    build(&vfs).unwrap();
+    for (pack, call) in [
+        (CLAUDE, "/tools:setup"),
+        (CODEX, "$tools:setup"),
+        (CURSOR, "/setup"),
+        (PI, "/skill:setup"),
+    ] {
+        let text = author_in(&vfs, pack, "author");
+        assert!(text.contains(&format!("Run `{call}`.")), "{pack}: {text}");
+    }
+}
+
+#[test]
+fn a_call_with_words_keeps_them() {
+    let vfs = with_setup("Run /[[setup|words]].");
+    build(&vfs).unwrap();
+    for ((harness, text), call) in authors(&vfs).iter().zip(SETUP_CALLS) {
+        assert!(
+            text.contains(&format!("Run words (`{call}`).")),
+            "{harness}: {text}"
+        );
+    }
+}
+
+#[test]
+fn a_call_to_a_command_renders_on_claude_and_fails_elsewhere() {
+    let vfs = with_setup("Run /[[deploy]].");
+    build_for(&vfs, &["claude"]).unwrap();
+    assert!(author(&vfs).contains("Run `/tools:deploy`."));
+    for harness in ["codex", "cursor", "pi"] {
+        let vfs = with_setup("Run /[[deploy]].");
+        names(
+            &refusal_for(&vfs, &[harness]),
+            AUTHOR,
+            "/[[deploy]]",
+            "rule 8",
+        );
+    }
+}
+
+#[test]
+fn a_call_to_an_agent_fails_the_build() {
+    for harness in ["claude", "codex", "cursor", "pi"] {
+        let vfs = vault(&[
+            (AUTHOR, &skill("Ask /[[helper]].")),
+            ("agents/helper/helper.md", &skill("Help.")),
+        ]);
+        names(
+            &refusal_for(&vfs, &[harness]),
+            AUTHOR,
+            "/[[helper]]",
+            "rule 8",
+        );
+    }
+}
+
+/// Appendix A5.
+#[test]
+fn a_call_to_a_skill_a_harness_leaves_out_fails_for_that_harness() {
+    let files = [
+        ("skills/review/review.md", skill("Run /[[deploy]].")),
+        (
+            "skills/deploy/deploy.md",
+            "---\ndescription: Use it.\ntargets: [claude]\n---\n\nDeploy.\n".to_owned(),
+        ),
+    ];
+    let files: Vec<(&str, &str)> = files.iter().map(|(p, t)| (*p, t.as_str())).collect();
+    let vfs = vault(&files);
+    build_for(&vfs, &["claude"]).unwrap();
+    let review = read(&vfs, &format!("{CLAUDE}/skills/review/SKILL.md"));
+    assert!(review.contains("Run `/tools:deploy`."), "{review}");
+    for harness in ["codex", "cursor", "pi"] {
+        let vfs = vault(&files);
+        names(
+            &refusal_for(&vfs, &[harness]),
+            "skills/review/review.md",
+            "/[[deploy]]",
+            "rule 8",
+        );
+    }
+}
+
+#[test]
+fn a_call_with_a_fragment_is_an_error() {
+    let vfs = with_setup("Run /[[setup#Usage]].");
+    names(&refusal(&vfs), AUTHOR, "/[[setup#Usage]]", "rule 8");
+}
+
+/// Adds plugin `name` of marketplace `acme`, holding skill `skill`.
+fn other_plugin(vfs: &MemVfs, name: &str, skill_name: &str) {
+    let base = format!("marketplaces/acme/plugins/{name}");
+    put(
+        vfs,
+        &format!("{base}/{name}.md"),
+        "---\nversion: 1.0.0\n---\n",
+    );
+    put(
+        vfs,
+        &format!("{base}/skills/{skill_name}/{skill_name}.md"),
+        &skill("Review."),
+    );
+}
+
+#[test]
+fn a_call_finds_a_skill_in_another_plugin() {
+    let vfs = vault(&[(AUTHOR, &skill("Run /[[review]]."))]);
+    other_plugin(&vfs, "other", "review");
+    build(&vfs).unwrap();
+    assert!(author(&vfs).contains("Run `/other:review`."));
+    assert!(author_in(&vfs, CURSOR, "tools-author").contains("Run `/other-review`."));
+}
+
+#[test]
+fn a_name_two_plugins_share_is_an_error_naming_both() {
+    let vfs = vault(&[
+        (AUTHOR, &skill("Run /[[review]].")),
+        ("skills/review/review.md", &skill("Review.")),
+    ]);
+    other_plugin(&vfs, "other", "review");
+    let err = refusal(&vfs);
+    names(&err, AUTHOR, "/[[review]]", "rule 8");
+    assert!(err.contains("`other`"), "{err}");
+    assert!(err.contains("`tools`"), "{err}");
+}
+
+#[test]
+fn a_name_only_another_marketplace_holds_is_an_error() {
+    let vfs = vault(&[(AUTHOR, &skill("Run /[[review]]."))]);
+    put(&vfs, "marketplaces/beta/beta.md", "---\n---\n");
+    put(
+        &vfs,
+        "marketplaces/beta/plugins/x/x.md",
+        "---\nversion: 1.0.0\n---\n",
+    );
+    put(
+        &vfs,
+        "marketplaces/beta/plugins/x/skills/review/review.md",
+        &skill("Review."),
+    );
+    names(&refusal(&vfs), AUTHOR, "/[[review]]", "rule 8");
+}
+
+/// One test per place a `/` starts a call: `$text` holds `/[[setup]]`.
+macro_rules! call_position {
+    ($($name:ident: $text:expr,)*) => {$(
+        #[test]
+        fn $name() {
+            let vfs = with_setup($text);
+            build(&vfs).unwrap();
+            let expected = $text.replace("/[[setup]]", "`/tools:setup`");
+            let claude = author(&vfs);
+            assert!(claude.contains(&expected), "{claude}");
+        }
+    )*};
+}
+
+call_position! {
+    a_call_starts_a_line: "/[[setup]] first.",
+    a_call_follows_a_space: "Run /[[setup]].",
+    a_call_follows_a_tab: "Run\t/[[setup]].",
+    a_call_follows_a_parenthesis: "Run (/[[setup]]).",
+    a_call_follows_a_double_quote: "Run \"/[[setup]]\".",
+    a_call_follows_a_single_quote: "Run '/[[setup]]'.",
+    a_call_follows_an_asterisk: "Run */[[setup]]*.",
+    a_call_follows_a_greater_than_sign: ">/[[setup]]",
+    a_call_follows_an_underscore: "Run _/[[setup]]_.",
+    a_call_follows_a_pipe: "| a |/[[setup]]|",
+    a_call_follows_a_bracket: "Run [/[[setup]]].",
+    a_call_follows_an_equals_sign: "Run --with=/[[setup]].",
+}
+
+#[test]
+fn a_slash_inside_a_path_or_after_a_link_is_text() {
+    let vfs = with_setup("See dir/[[setup]] and [[author]]/[[setup]].");
+    build(&vfs).unwrap();
+    assert!(
+        author(&vfs).contains(
+            "See dir/[setup](../setup/SKILL.md) and [author](SKILL.md)/[setup](../setup/SKILL.md)."
+        ),
+        "{}",
+        author(&vfs)
+    );
+}
+
+#[test]
+fn a_call_in_a_code_span_ships_as_written() {
+    let vfs = with_setup("Write `/[[setup]]` or `/[[nothing]]`.");
+    build(&vfs).unwrap();
+    assert!(author(&vfs).contains("Write `/[[setup]]` or `/[[nothing]]`."));
+}
+
+#[test]
+fn an_escaped_call_ships_as_the_notation() {
+    let vfs = with_setup("Write \\/[[nothing]] to call.");
+    build(&vfs).unwrap();
+    assert!(author(&vfs).contains("Write /[[nothing]] to call."));
+}
+
+/// Appendix A12.
+#[test]
+fn a_call_in_a_container_note_does_nothing() {
+    let vfs = with_setup("Body.");
+    put(
+        &vfs,
+        &format!("{PLUGIN}/tools.md"),
+        "---\nversion: 1.0.0\n---\n\nRun `/[[setup]]` first, then /[[nothing]] and [[nothing]].\n",
+    );
+    build(&vfs).unwrap();
+}
+
+// --- Hand-written calls -----------------------------------------------------
+
+/// The build fails, saying to write `/[[call]]` for `written`.
+fn hand_written(body: &str, written: &str, call: &str) {
+    let vfs = with_setup(body);
+    let err = refusal(&vfs);
+    names(&err, AUTHOR, written, "rule 8");
+    assert!(err.contains(&format!("write `/[[{call}]]`")), "{err}");
+}
+
+/// The build succeeds and `author` holds `body` as written.
+fn ships(vfs: &MemVfs, body: &str) {
+    build(vfs).unwrap();
+    assert!(
+        author_in(vfs, CLAUDE, "author").contains(body),
+        "{}",
+        author(vfs)
+    );
+}
+
+#[test]
+fn a_hand_written_claude_call_is_an_error() {
+    hand_written("Run /tools:setup now.", "/tools:setup", "setup");
+}
+
+#[test]
+fn a_hand_written_codex_call_is_an_error() {
+    hand_written("Run $tools:setup now.", "$tools:setup", "setup");
+}
+
+#[test]
+fn a_hand_written_cursor_call_is_an_error() {
+    hand_written("Run /tools-setup now.", "/tools-setup", "setup");
+}
+
+#[test]
+fn a_hand_written_pi_call_is_an_error() {
+    hand_written("Run /skill:tools-setup now.", "/skill:tools-setup", "setup");
+}
+
+#[test]
+fn a_hand_written_command_call_is_an_error() {
+    hand_written("Run /tools:deploy now.", "/tools:deploy", "deploy");
+}
+
+#[test]
+fn a_bare_hand_written_call_ships_as_written() {
+    let body = "Run /setup or /skill:setup now.";
+    ships(&with_setup(body), body);
+}
+
+#[test]
+fn a_hand_written_call_must_end_at_the_name() {
+    let body = "Run /tools:setup-x now.";
+    ships(&with_setup(body), body);
+}
+
+#[test]
+fn a_hand_written_call_before_a_dot_or_comma_is_an_error() {
+    hand_written("Read /tools:setup.md now.", "/tools:setup", "setup");
+    hand_written("Run /tools:setup, then go.", "/tools:setup", "setup");
+}
+
+#[test]
+fn a_command_in_a_form_whose_pack_has_no_commands_ships_as_written() {
+    let body = "Run $tools:deploy or /tools-deploy now.";
+    ships(&with_setup(body), body);
+}
+
+#[test]
+fn a_cursor_form_under_bare_naming_ships_as_written() {
+    let body = "Run /tools-setup now.";
+    let vfs = with_setup(body);
+    plugin_note(&vfs, "cursor:\n  naming: bare\n");
+    ships(&vfs, body);
+}
+
+#[test]
+fn a_form_of_a_harness_not_built_ships_as_written() {
+    let body = "Run /tools-setup now.";
+    let vfs = with_setup(body);
+    put(
+        &vfs,
+        "skillwright.md",
+        "---\nbuild:\n  harnesses: [claude]\n---\n",
+    );
+    ships(&vfs, body);
+}
+
+#[test]
+fn a_hand_written_call_in_code_ships_as_written() {
+    let body =
+        "Run `/tools:setup` or `$tools:setup`.\n\n```sh\n/tools-setup\n/skill:tools-setup\n```";
+    ships(&with_setup(body), body);
+}
+
+#[test]
+fn a_backslash_does_not_escape_a_hand_written_call() {
+    hand_written("Run \\/tools:setup now.", "/tools:setup", "setup");
+}
+
+#[test]
+fn a_sigil_inside_a_word_or_path_is_not_a_call() {
+    let body = "See a/tools:setup and x$tools:setup.";
+    ships(&with_setup(body), body);
+}
+
+// --- Code and leftovers -----------------------------------------------------
+
+#[test]
+fn links_calls_and_embeds_in_code_ship_as_written() {
+    let body = "See `[[x]]`, `/[[x]]` and `![[x]]`.\n\n```md\n[[x]] /[[x]] ![[x]]\n```";
+    ships(&with_setup(body), body);
+}
+
+#[test]
+fn an_escape_ships_without_its_backslash() {
+    let vfs = with_setup("Write \\[[x]] for a link and \\/[[x]] for a call.");
+    ships(&vfs, "Write [[x]] for a link and /[[x]] for a call.");
+}
+
+#[test]
+fn a_leftover_in_prose_is_refused() {
+    let vfs = with_setup("See [[ this.");
+    let err = refusal(&vfs);
+    assert!(err.contains("unresolved-syntax"), "{err}");
+    assert!(err.contains(AUTHOR), "{err}");
+    assert!(err.contains("[[ this."), "{err}");
+}
+
+#[test]
+fn a_leftover_in_code_or_after_a_backslash_is_not() {
+    let vfs = with_setup("See `[[ this` and \\[[ that.");
+    ships(&vfs, "See `[[ this` and [[ that.");
 }

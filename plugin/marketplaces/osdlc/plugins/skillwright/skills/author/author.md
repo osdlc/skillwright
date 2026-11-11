@@ -4,8 +4,8 @@ description: "Author coding-agent skills, plugins and marketplaces as markdown n
 
 # /[[author]]
 
-Scope: writes and reorganises vault notes. Publishing and building are `/[[publish]]`. If
-`skillwright --version` fails, run `/[[setup]]` first.
+Scope: writes and reorganises vault notes. Publishing and building are /[[publish]]. If
+`skillwright --version` fails, run /[[setup]] first.
 
 ## The vault
 

@@ -283,18 +283,21 @@ pub fn load_in(
         &mut plugins,
     )?);
 
-    // Pass 2. One index for every call, over every skill in the marketplace
-    // under the plugin it ships in, whether or not a given harness ships it:
-    // which harness ships what is asked when the call is written.
+    // Pass 2. One index for every call, over every skill, command and agent
+    // in the marketplace under the plugin it ships in, whether or not a given
+    // harness ships it: which harness ships what is asked when the call is
+    // written.
     let checked = skills.len();
-    let index = skill_index(plugins.values().flat_map(|plugin| {
-        plugin
-            .skills
-            .iter()
-            .map(|skill| (&skill.discovered, Some(plugin.name.as_str())))
-    }));
+    let index = skill_index(
+        plugins
+            .values()
+            .flat_map(|plugin| plugin.components())
+            .chain(&uncarried)
+            .map(|c| (&c.discovered, c.discovered.plugin.as_deref())),
+    );
+    let hand_written = hand_written_forms(&plugins, &roots, config)?;
     let record = RefCell::new(Recorded::default());
-    let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
+    let calls = recording_context(SkillSource::ready(&index.skills), hand_written, &record);
     for plugin in plugins.values_mut() {
         let plugin_name = plugin.name.clone();
         for component in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
@@ -340,14 +343,13 @@ pub fn load_in(
 
 /// Pass 2 for one component: its body compiled once for every harness —
 /// embeds expanded, links pointed at the files that travel with it, calls at
-/// the skills they name — and split into segments.
+/// the skills and commands they name — and split into segments.
 ///
 /// # Errors
 ///
 /// Everything [`crate::compile::compile_note`] refuses except
 /// `skill-call-not-shipped`, which depends on the harness and is asked when
-/// the call is written. `refused: no-renderer` for a command carrying peers:
-/// a command projects to one file, with nowhere for a peer to travel.
+/// the call is written.
 pub fn resolve_body(
     vfs: &dyn Vfs,
     layout: &Layout,
@@ -366,7 +368,7 @@ pub fn resolve_body(
     Ok((resolved, content))
 }
 
-/// The skills a call may name, and each one's `targets`.
+/// The components a call may name, and each one's `targets`.
 #[derive(Debug, Clone, Default)]
 pub struct Index {
     skills: SkillIndex,
@@ -379,13 +381,19 @@ fn skill_index<'a>(
     let mut targets = BTreeMap::new();
     let skills = SkillIndex::new(
         skills
-            .filter(|(c, _)| c.kind == EntityKind::Skill)
+            .filter(|(c, _)| {
+                matches!(
+                    c.kind,
+                    EntityKind::Skill | EntityKind::Command | EntityKind::Agent
+                )
+            })
             .map(|(c, plugin)| {
                 targets.insert(normalize(&c.entry_path), c.targets.clone());
                 IndexedSkill {
                     entry_path: c.entry_path.clone(),
                     plugin: plugin.map(str::to_owned),
                     name: c.name.clone(),
+                    kind: c.kind,
                     shipped: true,
                 }
             })
@@ -394,9 +402,50 @@ fn skill_index<'a>(
     Index { skills, targets }
 }
 
+/// The call strings a body may not write by hand, each with the name to
+/// write as `/[[name]]` (spec section 4 rule 8): every built harness's form
+/// for each skill, and for each command where the harness's pack contains
+/// commands, with that harness's naming for the plugin. A form without the
+/// plugin in it, such as Cursor's `/setup` under `naming: bare`, is left out:
+/// a bare name is too often other text.
+///
+/// # Errors
+///
+/// What [`crate::harness::manifest::naming_of`] refuses.
+fn hand_written_forms(
+    plugins: &BTreeMap<String, Plugin>,
+    roots: &[&'static HarnessProfile],
+    config: &MarketplaceConfig,
+) -> Result<BTreeMap<String, String>, CoreError> {
+    let mut forms = BTreeMap::new();
+    for root in roots {
+        for plugin in plugins.values() {
+            let naming = crate::harness::manifest::naming_of(config, &plugin.name, root)?;
+            if naming == SkillNaming::Bare {
+                continue;
+            }
+            let commands = plugin
+                .commands
+                .iter()
+                .filter(|_| root.format().carries_commands);
+            for member in plugin.skills.iter().chain(commands) {
+                if let Ok(form) = crate::export::rendered_skill_call(
+                    root.declaration,
+                    naming,
+                    &plugin.name,
+                    &member.name,
+                ) {
+                    forms.insert(form, member.name.clone());
+                }
+            }
+        }
+    }
+    Ok(forms)
+}
+
 fn recording_context<'a>(
     skills: SkillSource<'a>,
-    implicit: bool,
+    hand_written: BTreeMap<String, String>,
     record: &'a RefCell<Recorded>,
 ) -> CallContext<'a> {
     CallContext {
@@ -405,33 +454,10 @@ fn recording_context<'a>(
         // Read only by the not-shipped refusal, which a recording compile
         // never raises.
         target: "",
-        implicit,
+        hand_written,
         warnings: RefCell::new(Vec::new()),
         record: Some(record),
     }
-}
-
-/// Refuses a single-file kind that carries peer resources. An agent and a
-/// command are one file each, so peers would be dropped; naming them lets
-/// the author move them, or publish the note as a skill.
-fn refuse_carried_peers(projection: &SkillProjection, kind: &str) -> Result<(), CoreError> {
-    if projection.resources.is_empty() {
-        return Ok(());
-    }
-    let carried: Vec<&str> = projection
-        .resources
-        .iter()
-        .map(|(path, _, _)| path.as_str())
-        .collect();
-    Err(CoreError::refused(
-        "no-renderer",
-        format!(
-            "a {kind} publishes as a single file and carries no peers, but {} travels with \
-             this note: {}. Move them, or publish this as a skill",
-            carried.len(),
-            carried.join(", ")
-        ),
-    ))
 }
 
 /// The renderer a recording compile never calls.
@@ -469,14 +495,6 @@ fn resolve_compiled(
         },
         &mut projection,
     )?;
-    // After the compile, not before: compiling adds what the body's links and
-    // embeds reach to the resources, and a single-file kind has nowhere to
-    // put those either.
-    match kind {
-        EntityKind::Command => refuse_carried_peers(&projection, "command")?,
-        EntityKind::Agent => refuse_carried_peers(&projection, "agent")?,
-        _ => {}
-    }
     let record = record.borrow();
     let body = segments(&projection.content.body, &record);
     let mut content = projection.content;

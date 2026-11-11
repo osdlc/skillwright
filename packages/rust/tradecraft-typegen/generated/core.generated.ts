@@ -821,8 +821,8 @@ export type Segment =
       target: ResolvedRef;
     }
   /**
-   * A call to a skill. The surrounding text already holds the backticks
-   * a call outside code is written in.
+   * A call to a skill or command. The surrounding text already holds the
+   * backticks the call is written in.
    */
   | {
       type: "call";
@@ -885,10 +885,10 @@ export interface LinkedComponent {
 
 /** A resolved call. */
 export interface Call {
-  /** The skill it names. */
+  /** The skill or command it names. */
   skill: SkillId;
 
-  /** That skill's `targets`, which decide whether a harness ships it. */
+  /** Its `targets`, which decide whether a harness ships it. */
   targets: string[] | null;
 
   /**
@@ -897,20 +897,23 @@ export interface Call {
    */
   bare_on?: string[];
 
-  /** The call as written, for a refusal. */
+  /** The call's target as written, without `/[[` and `]]`, for a refusal. */
   destination: string;
 
   /** The note the call is in, for a refusal. */
   caller: string;
 }
 
-/** A skill as a call names it. */
+/** A skill or command as a call names it. */
 export interface SkillId {
-  /** The plugin it ships in, `None` for a skill published on its own. */
+  /** The plugin it ships in, `None` for one published on its own. */
   plugin: string | null;
 
   /** Its source name. */
   name: string;
+
+  /** A skill or a command. */
+  kind: EntityKind;
 }
 
 /** One file a component carries. */

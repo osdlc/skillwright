@@ -245,9 +245,9 @@ agent layout. A kind a harness cannot carry shows as `n/a` in `status`, and
 An agent note is still read by every build. One whose keys hold the wrong kind of
 value stops `build` and `check`, as any note the scan refuses does.
 
-`build` refuses a hand-written call to a known skill with `literal-skill-call`.
-`publish` refuses `/plugin:name` too, but publishing one skill does not check a bare
-`/name`, because that needs a vault scan. `build` is the check for those.
+`build` refuses a call string written by hand in prose, such as `/tools:setup`,
+with `literal-skill-call`, and says to write `/[[setup]]`. A call string in code
+ships as written.
 
 Two skills that would land on one folder, such as `review` in two plugins, stop
 the run with `path-collision`, naming both notes, and nothing is written. Name one

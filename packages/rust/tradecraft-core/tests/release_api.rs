@@ -698,11 +698,12 @@ fn a_body_link_into_a_bundles_docs_is_refused() {
 /// Two plugins, each with a `review`-calling or `review` skill. The call
 /// names its path, so a second `review` does not make it ambiguous.
 fn pi_vault() -> MemVfs {
-    let caller = "---\ndescription: Use lead.\n---\n\nRun /[[tools/skills/review/review]].\n";
+    let caller = "---\ndescription: Use lead.\n---\n\nRun /[[audit]].\n";
     root_vault(
         "---\n---\n",
         &[
             ("plugins/tools/skills/review/review.md", &note("review", "")),
+            ("plugins/tools/skills/audit/audit.md", &note("audit", "")),
             ("plugins/tools/skills/lead/lead.md", caller),
         ],
     )
@@ -729,8 +730,8 @@ fn pi_prefixes_a_skill_with_its_plugin_unless_told_bare() {
     assert!(vfs.exists(Path::new(&format!("{pack}/review/SKILL.md"))));
     let lead = text_at(&vfs, &format!("{pack}/lead/SKILL.md"));
     assert!(lead.contains("name: lead"), "{lead}");
-    assert!(lead.contains("/skill:review"), "{lead}");
-    assert!(!lead.contains("tools-review"), "{lead}");
+    assert!(lead.contains("/skill:audit"), "{lead}");
+    assert!(!lead.contains("tools-audit"), "{lead}");
 }
 
 #[test]
@@ -772,18 +773,23 @@ fn a_bare_pi_collision_names_the_bare_setting() {
     assert!(!err.contains("by default"), "{err}");
 }
 
-/// Plugins `p1` and `p2`, each holding `hello`. `p2` also holds `lead`, which
-/// calls and mentions its own `hello` and calls `p1`'s, each by path.
+/// Plugins `p1` and `p2`, each holding `hello`. `p1` also holds `greet`.
+/// `p2` also holds `lead`, which calls itself, links its own `hello` and
+/// calls `p1`'s `greet`.
 fn cursor_vault() -> MemVfs {
-    let lead = "---\ndescription: Use lead.\n---\n\n\
-                Run /[[p2/skills/hello/hello]]. See [[hello]]. \
-                Then /[[p1/skills/hello/hello]].\n";
+    cursor_vault_with("Run /[[lead]]. See [[hello]]. Then /[[greet]].")
+}
+
+/// [`cursor_vault`] with `body` as `lead`'s body.
+fn cursor_vault_with(body: &str) -> MemVfs {
+    let lead = format!("---\ndescription: Use lead.\n---\n\n{body}\n");
     root_vault(
         "---\n---\n",
         &[
             ("plugins/p1/skills/hello/hello.md", &note("hello", "")),
+            ("plugins/p1/skills/greet/greet.md", &note("greet", "")),
             ("plugins/p2/skills/hello/hello.md", &note("hello", "")),
-            ("plugins/p2/skills/lead/lead.md", lead),
+            ("plugins/p2/skills/lead/lead.md", &lead),
         ],
     )
 }
@@ -857,19 +863,30 @@ fn a_body_names_the_prefixed_cursor_skill() {
     build_root(&vfs, SharedDefaults::default()).unwrap();
     let lead = cursor_skill(&vfs, "p2", "p2-lead").unwrap();
     assert!(
-        lead.contains("Run `/p2-hello`. See [hello](../p2-hello/SKILL.md). Then `/p1-hello`."),
+        lead.contains("Run `/p2-lead`. See [hello](../p2-hello/SKILL.md). Then `/p1-greet`."),
         "{lead}"
     );
     let claude = text_at(
         &vfs,
         "/vault/dist/house/.claude-plugin/packs/p2/skills/lead/SKILL.md",
     );
-    assert!(claude.contains("Run `/p2:hello`."), "{claude}");
+    assert!(claude.contains("Run `/p2:lead`."), "{claude}");
+    assert!(claude.contains("Then `/p1:greet`."), "{claude}");
     let codex = text_at(
         &vfs,
         "/vault/dist/house/.agents/packs/p2/skills/lead/SKILL.md",
     );
-    assert!(codex.contains("p2:hello"), "{codex}");
+    assert!(codex.contains("Then `$p1:greet`."), "{codex}");
+}
+
+#[test]
+fn a_call_to_a_name_two_plugins_share_is_refused_naming_both() {
+    let vfs = cursor_vault_with("Run /[[hello]].");
+    let err = build_root(&vfs, SharedDefaults::default()).unwrap_err();
+    assert!(err.contains("skill-call-ambiguous"), "{err}");
+    for part in ["plugin `p1`", "plugin `p2`", "`/[[hello]]`", "lead.md"] {
+        assert!(err.contains(part), "{part}: {err}");
+    }
 }
 
 #[test]
