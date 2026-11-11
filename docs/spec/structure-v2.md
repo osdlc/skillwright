@@ -1001,8 +1001,9 @@ It is refused when:
 1. No folder at or above the working directory holds both `skillwright.md` and
    `marketplaces/`, and no `--vault` is given. If a `skillwright.md` was passed
    over on the walk, the error names it.
-2. The root file has `workspace`, or a key the table does not mark as
-   inherited (section 2 rule 4).
+2. The root file has `workspace`, or a key the table lists but does not mark
+   as inherited (section 2 rule 4). An unlisted key only warns (section 2
+   rule 3).
 3. A marketplace folder has no `<m>.md`. If it holds a `skillwright.md`, the
    error says the marketplace note is now `<m>.md`.
 4. A kind folder (`skills/`, `agents/`, `commands/`), a `hooks/` folder or a

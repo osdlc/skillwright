@@ -112,8 +112,9 @@ To pin a model, add the harness's model flag to the run command, and record it.
 ## Outcome codes
 
 - `resolved`: the first attempt reached the right file and its marker.
-- `verbatim-failed`: the first attempt used the path as written, from the project folder or another
-  wrong folder, and found no file.
+- `verbatim-failed`: the first attempt used the path as written from a folder where no file sits at
+  that path, such as the plugin root for cases 2 and 4, and found nothing. A path used as written
+  from the project folder reaches a decoy, so it is `decoy-project`.
 - `decoy-project`: the first attempt reached a project-folder decoy.
 - `decoy-plugin-root`: the first attempt reached a plugin-root decoy.
 - `other`: anything else, such as a skipped step or a search. Say what happened.
