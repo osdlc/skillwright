@@ -5,7 +5,7 @@
   "created": "2026-11-10",
   "repo": {
     "remote": "https://github.com/osdlc/skillwright",
-    "commit": "e636e7392ec6eb49506345063b92f37931fcc306"
+    "commit": "a0c9f08f36734dbd157dfb5eab60d15c63474cb9"
   },
   "blocks": [
     {
@@ -119,7 +119,7 @@
     {
       "id": "spec-2-the-root-file-p-4",
       "type": "prose",
-      "text": "3. A key the key table does not list warns and is ignored, as\n   [[docs/decisions/D-KVMB-bare-keys-by-default|D-KVMB]] says.",
+      "text": "3. A key the key table does not list warns and is ignored, as\n   [[docs/decisions/D-KVMB-bare-keys-by-default|D-KVMB]] says. There is one\n   exception: `workspace` is a removed key and is refused (section 11).",
       "source": {
         "uri": "docs/decisions/D-KVMB-bare-keys-by-default.md"
       }
@@ -127,7 +127,7 @@
     {
       "id": "spec-2-the-root-file-p-5",
       "type": "prose",
-      "text": "4. A key the table lists only for a marketplace is refused. These are\n   `description`, `owner`, `version`, `display_name`, `keywords` and\n   `category`. The error names the marketplace note the key belongs in."
+      "text": "4. A key the table lists but does not mark as inherited is refused here. The\n   error names the note kinds that accept it:\n\n   | Key | Belongs in |\n   |---|---|\n   | `owner` | a marketplace note, `<m>.md` |\n   | `keywords`, `category` | a plugin note, `<p>.md` |\n   | `description`, `version`, `display_name` | a marketplace or plugin note |"
     },
     {
       "id": "spec-2-the-root-file-p-6",
@@ -384,7 +384,7 @@
     {
       "id": "spec-scope-of-a-link-from-a-component-p-4",
       "type": "prose",
-      "text": "   - It never resolves outside the plugin.\n   - A name matches a file at any depth below the folders searched.\n   - `[[guide]]` matches `guide.md`. A name with an extension,\n     `[[run.sh]]`, matches that exact file name.\n   - `[[setup]]` matches the component `setup` in step 2.\n   - A file that belongs to no component, such as one in the plugin's shared\n     `references/`, has no step 1. It starts at step 2.\n\n   An example. `author.md` contains:"
+      "text": "   - It never resolves outside the plugin.\n   - What each step matches:\n\n     | Step | Matches |\n     |---|---|\n     | 1 | a file at any depth in the linking file's component folder |\n     | 2 | a file at any depth in the plugin's shared `references/`, `scripts/` and `assets/`, and another component by its name only |\n\n   - A file inside another component's folder is never found by name. Link it\n     with a path (rule 4), such as `[[../setup/references/notes.md]]`.\n   - `[[guide]]` matches `guide.md`. A name with an extension,\n     `[[run.sh]]`, matches that exact file name.\n   - `[[setup]]` matches the component `setup` in step 2.\n   - A file that belongs to no component, such as one in the plugin's shared\n     `references/`, has no step 1. It starts at step 2.\n\n   An example. `author.md` contains:"
     },
     {
       "id": "spec-scope-of-a-link-from-a-component-co-2",
@@ -483,7 +483,7 @@
     {
       "id": "spec-plugin-root-paths-p-2",
       "type": "prose",
-      "text": "15. Every `${PLUGIN_ROOT}/<path>` in a Markdown file a component ships is\n    interpreted, in prose and code alike, because it is a path, not link\n    syntax. The files are:\n    - the component's note;\n    - the Markdown files in its `references/`;\n    - the Markdown files in the plugin's shared `references/`;\n    - text an embed inlines.\n\n    Only the braced form is interpreted. `$PLUGIN_ROOT` is text."
+      "text": "15. Every `${PLUGIN_ROOT}/<path>` in a Markdown file a component ships is\n    interpreted, in prose and code alike, because it is a path, not link\n    syntax. The files are:\n    - the component's note;\n    - the Markdown files in its `references/`;\n    - the Markdown files in the plugin's shared `references/`;\n    - text a note embed inlines. An embedded non-note file, such as\n      `![[run.sh]]`, is not interpreted (section 5 rule 9).\n\n    Only the braced form is interpreted. `$PLUGIN_ROOT` is text."
     },
     {
       "id": "spec-plugin-root-paths-p-3",
@@ -667,7 +667,7 @@
     {
       "id": "spec-inlining-another-text-file-p",
       "type": "prose",
-      "text": "9. `![[run.sh]]` inlines the file as a fenced code block. The content is never\n   escaped or changed, and nothing in it is interpreted as a link, call or\n   embed."
+      "text": "9. `![[run.sh]]` inlines the file as a fenced code block. The content is never\n   escaped or changed. Nothing in it is interpreted: no link, call, embed or\n   `${PLUGIN_ROOT}`, and a `${CLAUDE_PLUGIN_ROOT}` in it is not an error."
     },
     {
       "id": "spec-inlining-another-text-file-p-2",
@@ -807,7 +807,7 @@
     {
       "id": "spec-7-the-cascade-p-6",
       "type": "prose",
-      "text": "5. For one key that a harness reads on a component, the build takes the first\n   value in this order:\n   1. the note's own harness block;\n   2. the note's frontmatter;\n   3. for each container, nearest first: its harness block, then its own\n      frontmatter;\n   4. a generated value.\n\n   An example. The plugin note sets `author: Ada` and `claude: {author: Bob}`,\n   and the skill sets neither. The skill's Claude Code `author` is `Bob`, and\n   its Codex `author` is `Ada`."
+      "text": "5. For an inherited key (rule 1) that a harness reads on a component, the\n   build takes the first value in this order:\n   1. the note's own harness block;\n   2. the note's frontmatter;\n   3. for each container, nearest first: its harness block, then its own\n      frontmatter;\n   4. a generated value.\n\n   An example. The plugin note sets `author: Ada` and `claude: {author: Bob}`,\n   and the skill sets neither. The skill's Claude Code `author` is `Bob`, and\n   its Codex `author` is `Ada`. A key that is not inherited, such as\n   `description`, comes only from the note itself."
     },
     {
       "id": "spec-7-the-cascade-p-7",
@@ -833,7 +833,7 @@
     {
       "id": "spec-8-harness-blocks-p-2",
       "type": "prose",
-      "text": "2. A block is checked against the keys that harness accepts. An unknown key\n   warns and is left out of what that harness gets, on a component and on a\n   container. A known key with a wrong value is refused."
+      "text": "2. A block is checked against the keys that harness accepts. An unknown key\n   warns and is left out of what that harness gets, on a component and on a\n   container. There is one exception: `packs` is a removed key and is refused\n   (rule 5, section 11). A known key with a wrong value is refused."
     },
     {
       "id": "spec-8-harness-blocks-p-3",
@@ -848,7 +848,7 @@
     {
       "id": "spec-8-harness-blocks-p-5",
       "type": "prose",
-      "text": "5. `packs` is not a block key. Each harness's packs folder is fixed (section 9)."
+      "text": "5. `packs` is refused in a block. Each harness's packs folder is fixed (section 9)."
     },
     {
       "id": "spec-8-harness-blocks-p-6",
@@ -925,7 +925,7 @@
     {
       "id": "spec-what-a-pack-holds-p-3",
       "type": "prose",
-      "text": "7. Compiled means these steps, in order:\n   1. embeds are inlined (section 5);\n   2. links are rewritten (section 4);\n   3. calls are rendered;\n   4. plugin-root paths are rewritten;\n   5. the frontmatter is reduced to what that harness reads.\n\n   For example, a plugin's source and its Claude Code pack:"
+      "text": "7. Compiled means these steps, in order:\n   1. calls, links, embeds and plugin-root paths are tokenized in one pass,\n      before any of them is rewritten. So `/[[setup]]` is a call, never a\n      link with a `/` before it;\n   2. embeds are inlined (section 5), and a note embed's text is tokenized\n      the same way;\n   3. calls are rendered, links rewritten and plugin-root paths rewritten;\n   4. the frontmatter is reduced to what that harness reads.\n\n   For example, a plugin's source and its Claude Code pack:"
     },
     {
       "id": "spec-what-a-pack-holds-code",
@@ -1057,7 +1057,7 @@
     {
       "id": "spec-11-a-vault-not-in-this-layout-p-4",
       "type": "prose",
-      "text": "2. The root file has `workspace: true`, or a marketplace-only key (section 2\n   rule 4)."
+      "text": "2. The root file has `workspace`, or a key the table does not mark as\n   inherited (section 2 rule 4)."
     },
     {
       "id": "spec-11-a-vault-not-in-this-layout-p-5",
@@ -1685,7 +1685,7 @@
     {
       "id": "spec-d8-embedding-a-file-that-is-neither-52",
       "type": "prose",
-      "text": "3. **A link from a plugin's shared reference.**\n   - Input: `plugins/tools/references/style.md` contains `[[guide]]`, and the\n     plugin has `references/guide.md`.\n   - Result: step 1 is skipped, since the file belongs to no component. Step\n     2 finds `references/guide.md`. It ships as `[guide](guide.md)`."
+      "text": "3. **A link from a plugin's shared reference.**\n   - Input: `plugins/tools/references/style.md` contains `[[guide]]`, and the\n     plugin has `references/guide.md`.\n   - Result: step 1 is skipped, since the file belongs to no component. Step\n     2 searches the shared folders and component names. It finds\n     `references/guide.md` and not `skills/author/references/guide.md`, which\n     sits inside a component. It ships as `[guide](guide.md)`."
     },
     {
       "id": "spec-d8-embedding-a-file-that-is-neither-53",
@@ -1962,7 +1962,7 @@
     {
       "id": "changes-decisions-amended-p",
       "type": "prose",
-      "text": "| Decision | Amendment |\n|---|---|\n| [[docs/decisions/D-WNTQ-harness-profile-values-from-config|D-WNTQ]] | `pi: {naming}` stays settable, `cursor: {naming}` is added, and `packs` is not settable. |\n| [[docs/decisions/D-KVMB-bare-keys-by-default|D-KVMB]] | `build.namespace` and prefixed keys are gone. An unknown key still warns and is never refused. A key the table lists is refused where it does not belong: a marketplace-only key in the root file, `name` on any note, `build:` outside the root file, and the removed `build:` keys. |\n| [[docs/decisions/D-GPYR-convention-first|D-GPYR]] | Its patterns layer is gone. |",
+      "text": "| Decision | Amendment |\n|---|---|\n| [[docs/decisions/D-WNTQ-harness-profile-values-from-config|D-WNTQ]] | `pi: {naming}` stays settable, `cursor: {naming}` is added, and `packs` is not settable. |\n| [[docs/decisions/D-KVMB-bare-keys-by-default|D-KVMB]] | `build.namespace` and prefixed keys are gone. An unknown key still warns, with two exceptions: the removed keys `workspace` (root file) and `packs` (harness block) are refused. A key the table lists is refused where it does not belong: a key that is not inherited in the root file, `name` on any note, `build:` outside the root file, and the removed `build:` keys. |\n| [[docs/decisions/D-GPYR-convention-first|D-GPYR]] | Its patterns layer is gone. |",
       "source": {
         "uri": "docs/decisions/D-WNTQ-harness-profile-values-from-config.md"
       }
@@ -2563,10 +2563,15 @@
     {
       "id": "plan-3-root-file-and-cascade-p-5",
       "type": "prose",
-      "text": "- A marketplace-only key in the root file is refused, naming `<m>.md`. An\n  unknown root key warns. `build:` outside the root is refused."
+      "text": "- A key that is not inherited is refused in the root file, and the error\n  names the note kinds that accept it: `owner` names `<m>.md`, `keywords`\n  names `<p>.md`, `version` names both. An unknown root key warns.\n  `workspace` in the root file and `packs` in a harness block are refused.\n  `build:` outside the root is refused."
     },
     {
       "id": "plan-3-root-file-and-cascade-p-6",
+      "type": "prose",
+      "text": "- A skill with no `description` is an error even when its plugin note has\n  one (section 7 rule 5 covers inherited keys only)."
+    },
+    {
+      "id": "plan-3-root-file-and-cascade-p-7",
       "type": "prose",
       "text": "- A plugin with no `version` builds as `0.1.0` with a warning. A marketplace\n  with no `version` writes none, with no warning."
     },
@@ -2700,190 +2705,210 @@
     {
       "id": "plan-5-links-and-transclusion-p-9",
       "type": "prose",
-      "text": "- A link to a file in another plugin is refused."
+      "text": "- `[[guide]]` in the shared `references/style.md` finds the shared\n  `references/guide.md`, not `skills/author/references/guide.md`."
     },
     {
       "id": "plan-5-links-and-transclusion-p-10",
       "type": "prose",
-      "text": "Plain links:"
+      "text": "- `[[notes]]` naming a file inside another component is a link to nothing;\n  `[[../setup/references/notes.md]]` works."
     },
     {
       "id": "plan-5-links-and-transclusion-p-11",
       "type": "prose",
-      "text": "- `[[setup]]` from `author` renders as `[setup](../setup/SKILL.md)` on Claude\n  Code and `[setup](../tools-setup/SKILL.md)` on Cursor and Pi, and warns\n  `Did you mean to call /[[setup]]?`."
+      "text": "- `/[[setup]]` is tokenized as a call: it never becomes a link and never\n  fires the \"Did you mean to call\" warning."
     },
     {
       "id": "plan-5-links-and-transclusion-p-12",
       "type": "prose",
-      "text": "- `[[setup#Usage]]` keeps its fragment."
+      "text": "- A link to a file in another plugin is refused."
     },
     {
       "id": "plan-5-links-and-transclusion-p-13",
       "type": "prose",
-      "text": "- A skill's link to its own note is `[author](SKILL.md)`, with no warning."
+      "text": "Plain links:"
     },
     {
       "id": "plan-5-links-and-transclusion-p-14",
       "type": "prose",
-      "text": "- A link to a command is a file link on Claude Code and fails the build for\n  Codex. A link to an agent fails the build."
+      "text": "- `[[setup]]` from `author` renders as `[setup](../setup/SKILL.md)` on Claude\n  Code and `[setup](../tools-setup/SKILL.md)` on Cursor and Pi, and warns\n  `Did you mean to call /[[setup]]?`."
     },
     {
       "id": "plan-5-links-and-transclusion-p-15",
       "type": "prose",
-      "text": "Calls:"
+      "text": "- `[[setup#Usage]]` keeps its fragment."
     },
     {
       "id": "plan-5-links-and-transclusion-p-16",
       "type": "prose",
-      "text": "| Source | Claude Code | Codex | Cursor | Pi |\n|---|---|---|---|---|\n| `/[[setup]]` | `` `/tools:setup` `` | `` `$tools:setup` `` | `` `/tools-setup` `` | `` `/skill:tools-setup` `` |\n| `/[[setup]]`, `naming: bare` | same | same | `` `/setup` `` | `` `/skill:setup` `` |\n| `/[[setup\\|words]]` | ``words (`/tools:setup`)`` | ``words (`$tools:setup`)`` | ``words (`/tools-setup`)`` | ``words (`/skill:tools-setup`)`` |\n| `/[[deploy]]`, a command | `` `/tools:deploy` `` | error | error | error |"
+      "text": "- A skill's link to its own note is `[author](SKILL.md)`, with no warning."
     },
     {
       "id": "plan-5-links-and-transclusion-p-17",
       "type": "prose",
-      "text": "Also: `/[[setup#Usage]]` is an error. `/[[review]]` finds a skill in another\nplugin; a name two plugins share is an error naming both plugins.\n`dir/[[x]]` is a link, not a call. `` `/[[x]]` `` in a code span ships as\nwritten. `\\/[[x]]` ships as `/[[x]]` and passes the leftover check.\n`/tools:setup` written in prose is an error; in a code span it ships as\nwritten."
+      "text": "- A link to a command is a file link on Claude Code and fails the build for\n  Codex. A link to an agent fails the build."
     },
     {
       "id": "plan-5-links-and-transclusion-p-18",
       "type": "prose",
-      "text": "Code and leftovers:"
+      "text": "Calls:"
     },
     {
       "id": "plan-5-links-and-transclusion-p-19",
       "type": "prose",
-      "text": "- `[[x]]`, `/[[x]]` and `![[x]]` in a code span or fenced block ship as\n  written."
+      "text": "| Source | Claude Code | Codex | Cursor | Pi |\n|---|---|---|---|---|\n| `/[[setup]]` | `` `/tools:setup` `` | `` `$tools:setup` `` | `` `/tools-setup` `` | `` `/skill:tools-setup` `` |\n| `/[[setup]]`, `naming: bare` | same | same | `` `/setup` `` | `` `/skill:setup` `` |\n| `/[[setup\\|words]]` | ``words (`/tools:setup`)`` | ``words (`$tools:setup`)`` | ``words (`/tools-setup`)`` | ``words (`/skill:tools-setup`)`` |\n| `/[[deploy]]`, a command | `` `/tools:deploy` `` | error | error | error |"
     },
     {
       "id": "plan-5-links-and-transclusion-p-20",
       "type": "prose",
-      "text": "- `\\[[x]]` in prose ships as `[[x]]`, as open question 2 recommends."
+      "text": "Also: `/[[setup#Usage]]` is an error. `/[[review]]` finds a skill in another\nplugin; a name two plugins share is an error naming both plugins.\n`dir/[[x]]` is a link, not a call. `` `/[[x]]` `` in a code span ships as\nwritten. `\\/[[x]]` ships as `/[[x]]` and passes the leftover check.\n`/tools:setup` written in prose is an error; in a code span it ships as\nwritten."
     },
     {
       "id": "plan-5-links-and-transclusion-p-21",
       "type": "prose",
-      "text": "- A leftover `[[` in prose is refused. One in code or after `\\` is not."
+      "text": "Code and leftovers:"
     },
     {
       "id": "plan-5-links-and-transclusion-p-22",
       "type": "prose",
-      "text": "Embeds:"
+      "text": "- `[[x]]`, `/[[x]]` and `![[x]]` in a code span or fenced block ship as\n  written."
     },
     {
       "id": "plan-5-links-and-transclusion-p-23",
       "type": "prose",
-      "text": "- The worked example of section 5 ships as shown."
+      "text": "- `\\[[x]]` in prose ships as `[[x]]`, as open question 2 recommends."
     },
     {
       "id": "plan-5-links-and-transclusion-p-24",
       "type": "prose",
-      "text": "- A heading embed inlines the section with its subsections."
+      "text": "- A leftover `[[` in prose is refused. One in code or after `\\` is not."
     },
     {
       "id": "plan-5-links-and-transclusion-p-25",
       "type": "prose",
-      "text": "- A block embed inlines the block without its marker."
+      "text": "Embeds:"
     },
     {
       "id": "plan-5-links-and-transclusion-p-26",
       "type": "prose",
-      "text": "- A missing heading is `fragment-unresolved`."
+      "text": "- The worked example of section 5 ships as shown."
     },
     {
       "id": "plan-5-links-and-transclusion-p-27",
       "type": "prose",
-      "text": "- A nested embed's link is written relative to the outer file."
+      "text": "- A heading embed inlines the section with its subsections."
     },
     {
       "id": "plan-5-links-and-transclusion-p-28",
       "type": "prose",
-      "text": "- A cycle prints its loop."
+      "text": "- A block embed inlines the block without its marker."
     },
     {
       "id": "plan-5-links-and-transclusion-p-29",
       "type": "prose",
-      "text": "- An embedded note's frontmatter is dropped. Malformed frontmatter is an error\n  naming both notes."
+      "text": "- A missing heading is `fragment-unresolved`."
     },
     {
       "id": "plan-5-links-and-transclusion-p-30",
       "type": "prose",
-      "text": "- An image embed is an image link."
+      "text": "- A nested embed's link is written relative to the outer file."
     },
     {
       "id": "plan-5-links-and-transclusion-p-31",
       "type": "prose",
-      "text": "D8:"
+      "text": "- A cycle prints its loop."
     },
     {
       "id": "plan-5-links-and-transclusion-p-32",
       "type": "prose",
-      "text": "- `![[run.sh]]` ships as a `bash` fenced block. An unknown extension gets no\n  info string."
+      "text": "- An embedded note's frontmatter is dropped. Malformed frontmatter is an error\n  naming both notes."
     },
     {
       "id": "plan-5-links-and-transclusion-p-33",
       "type": "prose",
-      "text": "- A file holding its own ```` ``` ```` block and `[[` text is fenced with four\n  backticks and ships byte for byte, with its `[[` not interpreted. So is a\n  file whose fence is indented three spaces."
+      "text": "- An image embed is an image link."
     },
     {
       "id": "plan-5-links-and-transclusion-p-34",
       "type": "prose",
-      "text": "- An embed inside a list item is indented to the item."
+      "text": "D8:"
     },
     {
       "id": "plan-5-links-and-transclusion-p-35",
       "type": "prose",
-      "text": "- A binary file is refused. `![[run.sh#main]]` is refused. `[[run.sh]]` is a\n  link."
+      "text": "- `![[run.sh]]` ships as a `bash` fenced block. An unknown extension gets no\n  info string."
     },
     {
       "id": "plan-5-links-and-transclusion-p-36",
       "type": "prose",
-      "text": "Plugin-root paths (D9):"
+      "text": "- A file holding its own ```` ``` ```` block and `[[` text is fenced with four\n  backticks and ships byte for byte, with its `[[` not interpreted. So is a\n  file whose fence is indented three spaces."
     },
     {
       "id": "plan-5-links-and-transclusion-p-37",
       "type": "prose",
-      "text": "| Source | Claude Code | Codex, Cursor, Pi |\n|---|---|---|\n| `${PLUGIN_ROOT}/scripts/tool` in a skill's prose or code span | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../../scripts/tool` |\n| the same, from the skill's `references/guide.md` | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../../../scripts/tool` |\n| `Run ${PLUGIN_ROOT}/scripts/tool.` | path `scripts/tool`, full stop kept | the same |\n| `${PLUGIN_ROOT}/commands/deploy.md` | `${CLAUDE_PLUGIN_ROOT}/commands/deploy.md` | error |\n| `$PLUGIN_ROOT/x` | as written | as written |"
+      "text": "- An embed inside a list item is indented to the item."
     },
     {
       "id": "plan-5-links-and-transclusion-p-38",
       "type": "prose",
-      "text": "Also:"
+      "text": "- A binary file is refused. `![[run.sh#main]]` is refused. `[[run.sh]]` is a\n  link."
     },
     {
       "id": "plan-5-links-and-transclusion-p-39",
       "type": "prose",
-      "text": "- A path into another skill follows `skills/<p>-<s>/` on Cursor and Pi."
+      "text": "Plugin-root paths (D9):"
     },
     {
       "id": "plan-5-links-and-transclusion-p-40",
       "type": "prose",
-      "text": "- `${PLUGIN_ROOT}/scripts/tool.js` is not `scripts/tool`."
+      "text": "| Source | Claude Code | Codex, Cursor, Pi |\n|---|---|---|\n| `${PLUGIN_ROOT}/scripts/tool` in a skill's prose or code span | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../../scripts/tool` |\n| the same, from the skill's `references/guide.md` | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../../../scripts/tool` |\n| `Run ${PLUGIN_ROOT}/scripts/tool.` | path `scripts/tool`, full stop kept | the same |\n| `${PLUGIN_ROOT}/commands/deploy.md` | `${CLAUDE_PLUGIN_ROOT}/commands/deploy.md` | error |\n| `$PLUGIN_ROOT/x` | as written | as written |"
     },
     {
       "id": "plan-5-links-and-transclusion-p-41",
       "type": "prose",
-      "text": "- A path naming nothing shipped fails, naming the file and the reference."
+      "text": "Also:"
     },
     {
       "id": "plan-5-links-and-transclusion-p-42",
       "type": "prose",
-      "text": "- A lone `${PLUGIN_ROOT}` in Markdown is an error. `${CLAUDE_PLUGIN_ROOT}` in\n  a note, a code span or a hooks file is an error that says to write\n  `${PLUGIN_ROOT}`."
+      "text": "- A path into another skill follows `skills/<p>-<s>/` on Cursor and Pi."
     },
     {
       "id": "plan-5-links-and-transclusion-p-43",
       "type": "prose",
-      "text": "- A plain `scripts/x.py` in a `SKILL.md` ships as written and is not checked."
+      "text": "- `${PLUGIN_ROOT}/scripts/tool.js` is not `scripts/tool`."
     },
     {
       "id": "plan-5-links-and-transclusion-p-44",
       "type": "prose",
-      "text": "- An embedded reference is written from the embedding file."
+      "text": "- A path naming nothing shipped fails, naming the file and the reference."
     },
     {
       "id": "plan-5-links-and-transclusion-p-45",
       "type": "prose",
-      "text": "- A script in `scripts/` holding the variable ships byte for byte."
+      "text": "- A lone `${PLUGIN_ROOT}` in Markdown is an error. `${CLAUDE_PLUGIN_ROOT}` in\n  a note, a code span or a hooks file is an error that says to write\n  `${PLUGIN_ROOT}`."
     },
     {
       "id": "plan-5-links-and-transclusion-p-46",
+      "type": "prose",
+      "text": "- A plain `scripts/x.py` in a `SKILL.md` ships as written and is not checked."
+    },
+    {
+      "id": "plan-5-links-and-transclusion-p-47",
+      "type": "prose",
+      "text": "- An embedded reference is written from the embedding file."
+    },
+    {
+      "id": "plan-5-links-and-transclusion-p-48",
+      "type": "prose",
+      "text": "- A script in `scripts/` holding the variable ships byte for byte."
+    },
+    {
+      "id": "plan-5-links-and-transclusion-p-49",
+      "type": "prose",
+      "text": "- `![[run.sh]]`, where `run.sh` holds `${PLUGIN_ROOT}/scripts/tool`, a lone\n  `${PLUGIN_ROOT}` and a `${CLAUDE_PLUGIN_ROOT}`, inlines the file unchanged\n  with no error."
+    },
+    {
+      "id": "plan-5-links-and-transclusion-p-50",
       "type": "prose",
       "text": "- A hook command's `${PLUGIN_ROOT}` becomes `${CLAUDE_PLUGIN_ROOT}` on Claude\n  Code, stays on Codex, and becomes `${CURSOR_PLUGIN_ROOT}` on Cursor. Its\n  path is checked."
     },
@@ -3052,7 +3077,7 @@
     {
       "id": "plan-tradecraft-core-p-3",
       "type": "prose",
-      "text": "- `settings.rs`:\n  - Go: `FolderPatterns`, `folder_patterns`, `globs`, `warn_nested`, the\n    `patterns`, `out`, `namespace` and `launcher_path` keys (now refused),\n    `AssetSetting` and `HookSetting` (D4), `DestinationSetting` and the\n    `destinations` and `scan_locations` keys.\n  - Change: `RootFile::inherit` becomes the root-defaults step of the cascade.\n    `MarketplaceFields` is read from `<m>.md`, not the root file.\n    `compose_root_file` writes a root with no marketplace fields.\n    `root_file_config` and `RootFile::to_config` shrink.\n  - Change: an unknown root-file key warns. A marketplace-only key is refused."
+      "text": "- `settings.rs`:\n  - Go: `FolderPatterns`, `folder_patterns`, `globs`, `warn_nested`, the\n    `patterns`, `out`, `namespace` and `launcher_path` keys (now refused),\n    `AssetSetting` and `HookSetting` (D4), `DestinationSetting` and the\n    `destinations` and `scan_locations` keys.\n  - Change: `RootFile::inherit` becomes the root-defaults step of the cascade.\n    `MarketplaceFields` is read from `<m>.md`, not the root file.\n    `compose_root_file` writes a root with no marketplace fields.\n    `root_file_config` and `RootFile::to_config` shrink.\n  - Change: an unknown root-file key warns. A key that is not inherited, and `workspace`, are refused."
     },
     {
       "id": "plan-tradecraft-core-p-4",
