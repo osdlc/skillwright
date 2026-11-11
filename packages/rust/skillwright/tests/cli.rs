@@ -697,6 +697,72 @@ fn a_two_marketplace_build_writes_two_trees_and_marketplace_builds_one() {
     assert_eq!(checked.code, 0, "{}", checked.stderr);
 }
 
+/// A vault in `<temp>/vault` with two marketplaces, `a` and `b`, each with
+/// plugin `p`.
+fn two_marketplaces() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    write_all(&vault, &[("skillwright.md", "---\n---\n")]);
+    for m in ["a", "b"] {
+        for (rel, text) in plugin_files(m, "p") {
+            write_all(&vault, &[(&rel, &text)]);
+        }
+    }
+    (dir, vault)
+}
+
+#[test]
+fn the_working_directory_never_picks_a_marketplace() {
+    let (_dir, vault) = two_marketplaces();
+    let inside = vault.join("marketplaces/a/plugins/p");
+    let built = run(&["build", "--yes"], &inside);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    for m in ["a", "b"] {
+        assert!(
+            vault
+                .join(format!("dist/{m}/.claude-plugin/marketplace.json"))
+                .is_file(),
+            "{m}"
+        );
+    }
+}
+
+#[test]
+fn quiet_drops_progress_and_the_tally_from_stderr() {
+    let (_dir, vault) = two_marketplaces();
+    let loud = run(&["build", "--yes"], &vault);
+    assert_eq!(loud.code, 0, "{}", loud.stderr);
+    assert!(loud.stderr.contains("marketplace a:"), "{}", loud.stderr);
+    assert!(loud.stderr.contains("written"), "{}", loud.stderr);
+    for argv in [
+        &["build", "--yes", "--quiet"][..],
+        &["check", "--quiet"],
+        &["bump", "p", "--marketplace", "a", "--yes", "--quiet"],
+    ] {
+        let quiet = run(argv, &vault);
+        assert_eq!(quiet.code, 0, "{argv:?}: {}", quiet.stderr);
+        assert_eq!(quiet.stderr, "", "{argv:?}");
+        assert_ne!(quiet.stdout, "", "{argv:?}");
+    }
+    let check = run(&["check"], &vault);
+    assert!(check.stderr.contains("marketplace a:"), "{}", check.stderr);
+    assert!(check.stderr.contains("checked"), "{}", check.stderr);
+}
+
+#[test]
+fn bump_major_raises_the_major_version() {
+    let (_dir, vault) = fixture();
+    let bumped = run(&["bump", "tools", "--major", "--yes"], &vault);
+    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
+    assert!(
+        bumped.stdout.contains("1.0.0 -> 2.0.0"),
+        "{}",
+        bumped.stdout
+    );
+    let note = fs::read_to_string(vault.join("marketplaces/acme/plugins/tools/tools.md")).unwrap();
+    assert!(note.contains("version: 2.0.0"), "{note}");
+}
+
 /// A build renders and checks every marketplace before it writes any, so a
 /// failure in the second leaves the first unwritten.
 #[test]
