@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use tradecraft_core::vfs::{DirEntry, Metadata, VfsError};
 use tradecraft_core::{
     CoreError, ExportMode, ExportRequest, MemVfs, VaultRequest, Vfs, build_vault, export_skills,
-    model::LoadRequest,
+    load_vault, model::LoadRequest, plan_loaded,
 };
 
 const SKILL: &str = "---\ndescription: Use it.\n---\n\nBody.\n";
@@ -148,6 +148,21 @@ fn build_vault_builds_every_marketplace() {
     check.mode = ExportMode::Check;
     let report = build_vault(&vfs, &check).unwrap();
     assert!(report.marketplaces.iter().all(|m| !m.report.changed));
+}
+
+/// A caller that has already loaded the vault plans it without a second load.
+#[test]
+fn a_loaded_vault_plans_each_of_its_marketplaces() {
+    let vfs = vault("", &["acme", "shop"]);
+    let loaded = load_vault(&vfs, Path::new("/v"), Some("shop")).unwrap();
+    let plan = plan_loaded(&vfs, &loaded, ExportMode::Check, &BTreeSet::new());
+    let names: Vec<&str> = plan
+        .marketplaces
+        .iter()
+        .map(|(market, _)| market.name.as_str())
+        .collect();
+    assert_eq!(names, ["shop"]);
+    assert!(plan.marketplaces.iter().all(|(_, planned)| planned.is_ok()));
 }
 
 #[test]

@@ -148,6 +148,7 @@ pub fn load_vault(
     root: &Path,
     marketplace: Option<&str>,
 ) -> Result<LoadedVault, CoreError> {
+    let root = &crate::vfs::normalize(root);
     let layout = read_layout(vfs, root)?;
     let root_file = root.join(ROOT_FILE);
     let settings = read_root_file(vfs, root)?;
@@ -258,6 +259,17 @@ mod tests {
         let request = loaded.export_request(house, ExportMode::Build);
         assert_eq!(request.marketplace.as_deref(), Some("house"));
         assert_eq!(request.vault_root, Path::new("/v"));
+    }
+
+    #[test]
+    fn a_root_with_dot_dot_loads_normalized() {
+        let vfs = vault();
+        let loaded = load_vault(&vfs, Path::new("/v/marketplaces/.."), None).unwrap();
+        assert_eq!(loaded.root, Path::new("/v"));
+        assert_eq!(
+            loaded.marketplace("shop").unwrap().dist,
+            Path::new("/v/dist/shop")
+        );
     }
 
     #[test]

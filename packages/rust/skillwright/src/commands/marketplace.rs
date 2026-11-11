@@ -2,13 +2,12 @@
 //! into `<root>/dist/<m>/`, and the drift check over it.
 //!
 //! One function for both verbs, because in the core they are one path: a
-//! single render into a capturing overlay, compared once against the
-//! destination. `build` acts on that comparison and `check` returns it. This
+//! single render into a capturing overlay, compared once against
+//! `dist/<m>/`. `build` acts on that comparison and `check` returns it. This
 //! file's whole contribution is which mode goes on the request, and what a
 //! drifted report means for the exit code.
 //!
-//! Nothing about the marketplace is decided here. Which skills are
-//! publishable, how they group into plugins, what each manifest says, which
+//! Nothing about the marketplace is decided here. Which skills ship, how they group into plugins, what each manifest says, which
 //! root a skill's `targets` admits it to, what counts as stale, and
 //! whether the swap is safe all live in [`tradecraft_core::export`]. This
 //! file plans every marketplace there once, asks, writes the plan, and
@@ -22,8 +21,10 @@
 //! the drift and exits 0, exactly as the build it previews would. `check` is
 //! the CI verb: the same render, the same report, and exit 1 on any drift.
 
+use std::collections::BTreeSet;
+
 use tradecraft_core::{
-    CoreError, ExportMode, ExportReport, ExportUnit, NativeVfs, VaultPlan, VaultRequest, plan_vault,
+    CoreError, ExportMode, ExportReport, ExportUnit, NativeVfs, VaultPlan, plan_loaded,
 };
 
 use crate::ctx::CommandContext;
@@ -93,17 +94,12 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     // module doc). So the only run that reaches `ExportMode::Build` is a
     // plain `build`.
     let writes = verb == ExportVerb::Build && !flags.dry_run;
-    let mut request = VaultRequest::new(run.vault.clone());
-    request.marketplace.clone_from(&flags.marketplace);
-    request.mode = if writes {
+    let mode = if writes {
         ExportMode::Build
     } else {
         ExportMode::Check
     };
-    let plan = match plan_vault(&NativeVfs, &request) {
-        Ok(plan) => plan,
-        Err(err) => return failed_run(verb, &err, ctx),
-    };
+    let plan = plan_loaded(&NativeVfs, &run.loaded, mode, &BTreeSet::new());
     let several = plan.marketplaces.len() > 1;
     // `bump` needs `--marketplace` only when the vault holds several, but
     // naming it always runs.

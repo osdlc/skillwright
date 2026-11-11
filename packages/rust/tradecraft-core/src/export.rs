@@ -110,7 +110,7 @@ use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plu
 use crate::layout::Layout;
 use crate::model::load::{LoadRequest, built_harnesses, kind_carried, load_for, targets_admit};
 use crate::model::{Component, Marketplace};
-use crate::paths::{VaultMarketplace, load_vault, read_root_file};
+use crate::paths::{LoadedVault, VaultMarketplace, load_vault, read_root_file};
 use crate::skill::forward_slashed;
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
 use crate::vfs::{PreviewWrite, Vfs, normalize};
@@ -680,24 +680,29 @@ impl VaultPlan {
 /// What [`load_vault`] refuses: the layout, the root file, an unknown
 /// marketplace. Each marketplace's own refusal is in its entry.
 pub fn plan_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultPlan, CoreError> {
-    let loaded = load_vault(
-        vfs,
-        &normalize(&request.vault_root),
-        request.marketplace.as_deref(),
-    )?;
+    let loaded = load_vault(vfs, &request.vault_root, request.marketplace.as_deref())?;
+    Ok(plan_loaded(vfs, &loaded, request.mode, &request.harnesses))
+}
+
+/// [`plan_vault`] for a vault already loaded with [`load_vault`]: plans each
+/// marketplace the load lists. `harnesses` narrows the root file's
+/// `build.harnesses`, as [`VaultRequest::harnesses`] does.
+pub fn plan_loaded(
+    vfs: &dyn Vfs,
+    loaded: &LoadedVault,
+    mode: ExportMode,
+    harnesses: &BTreeSet<String>,
+) -> VaultPlan {
     let marketplaces = loaded
         .marketplaces
         .iter()
         .map(|market| {
-            let mut export = loaded.export_request(market, request.mode);
-            export.harnesses.clone_from(&request.harnesses);
+            let mut export = loaded.export_request(market, mode);
+            export.harnesses.clone_from(harnesses);
             (market.clone(), plan_in(vfs, &loaded.layout, &export))
         })
         .collect();
-    Ok(VaultPlan {
-        mode: request.mode,
-        marketplaces,
-    })
+    VaultPlan { mode, marketplaces }
 }
 
 /// Builds or checks every marketplace of the vault: [`plan_vault`], then
