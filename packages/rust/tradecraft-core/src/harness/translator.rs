@@ -16,13 +16,9 @@
 //! tree is the emitting verb's: `build` diffs it against a marketplace
 //! directory and swaps it in.
 //!
-//! # Two layouts
-//!
-//! A pack is written in one of two [`Layout`]s. In a built marketplace each
-//! harness's packs sit under its own tree beside its marketplace manifest,
-//! and every emitted skill carries the provenance marker `check` reads back.
-//! At a destination a pack sits in the harness's own skills directory, where
-//! the runtime reads it, beside the container's own files.
+//! Each harness's packs sit under its own tree beside its marketplace
+//! manifest, and every emitted skill and command carries the provenance
+//! marker `check` reads back.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -46,8 +42,8 @@ use crate::model::{
     Segment,
 };
 use crate::projection::{
-    ProjectedFile, RedundantOverride, parse_runtime_target, project_agent, project_command,
-    project_plugin_hooks, project_skill_reporting,
+    ProjectedFile, RedundantOverride, parse_runtime_target, project_command, project_plugin_hooks,
+    project_skill_reporting,
 };
 
 /// The provenance marker every `SKILL.md` and command a built marketplace
@@ -124,16 +120,6 @@ impl FileTree {
     }
 }
 
-/// Where a pack is written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Layout {
-    /// A built marketplace: packs under the harness's own tree, beside its
-    /// marketplace manifest, every emitted body marked as generated.
-    Marketplace,
-    /// A destination: the pack in the harness's skills directory.
-    Destination,
-}
-
 /// One harness's way of writing the marketplace model.
 pub(crate) trait HarnessTranslator: Sync {
     /// The harness's row.
@@ -174,7 +160,7 @@ pub(crate) trait HarnessTranslator: Sync {
             call,
             self.carries_call(call),
             profile.label,
-            Some(profile.declaration),
+            profile.declaration,
             naming(profile, &call.bare_on),
         )
     }
@@ -378,7 +364,6 @@ pub(crate) trait HarnessTranslator: Sync {
                 plugin,
                 &market.config,
                 &format!("{}/{name}", self.format().packs),
-                Layout::Marketplace,
                 &mut tree,
             )?
             else {
@@ -410,7 +395,6 @@ pub(crate) trait HarnessTranslator: Sync {
         plugin: &'p Plugin,
         config: &MarketplaceConfig,
         base: &str,
-        layout: Layout,
         tree: &mut FileTree,
     ) -> Result<Option<Vec<&'p str>>, CoreError> {
         let skills: Vec<&Component> = plugin.skills.iter().filter(|c| self.admits(c)).collect();
@@ -419,10 +403,10 @@ pub(crate) trait HarnessTranslator: Sync {
             return Ok(None);
         }
         for skill in &skills {
-            self.write_pack_skill(plugin, skill, base, layout, tree)?;
+            self.write_pack_skill(plugin, skill, base, tree)?;
         }
         for command in &commands {
-            self.write_pack_command(plugin, command, base, layout, tree)?;
+            self.write_pack_command(plugin, command, base, tree)?;
         }
         for reference in &plugin.references {
             let bytes = match &reference.content {
@@ -463,7 +447,6 @@ pub(crate) trait HarnessTranslator: Sync {
         plugin: &Plugin,
         skill: &Component,
         base: &str,
-        layout: Layout,
         tree: &mut FileTree,
     ) -> Result<(), CoreError> {
         let profile = self.profile();
@@ -471,9 +454,7 @@ pub(crate) trait HarnessTranslator: Sync {
         let published = self.published_name(plugin, &skill.name)?;
         let mut projection = projection_of(skill, |body| self.render_body(plugin, body))?;
         projection.content.name = published.clone();
-        if layout == Layout::Marketplace {
-            mark_generated(&mut projection, &skill.path);
-        }
+        mark_generated(&mut projection, &skill.path);
         let (files, redundant) = project_skill_reporting(
             &projection,
             &[profile.runtime.to_owned()],
@@ -523,14 +504,11 @@ pub(crate) trait HarnessTranslator: Sync {
         plugin: &Plugin,
         command: &Component,
         base: &str,
-        layout: Layout,
         tree: &mut FileTree,
     ) -> Result<(), CoreError> {
         let profile = self.profile();
         let mut projection = projection_of(command, |body| self.render_body(plugin, body))?;
-        if layout == Layout::Marketplace {
-            mark_generated(&mut projection, &command.path);
-        }
+        mark_generated(&mut projection, &command.path);
         // A command projects to exactly one file, so the file's own name is
         // all that travels onto `commands/`.
         let files = project_command(
@@ -565,79 +543,17 @@ pub(crate) trait HarnessTranslator: Sync {
     }
 }
 
-/// A destination a single note is published to, named by any spelling — a
-/// harness's row, or a runtime name no row holds, which renders through as
-/// given.
-#[derive(Debug, Clone, Copy)]
-pub struct Destination<'a> {
-    /// The canonical name, or the name as requested when no row holds it.
-    pub canonical: &'a str,
-    /// The runtime the note renders through.
-    pub runtime: &'a str,
-    /// The runtime whose syntax a call is written in. `None` writes a call as
-    /// the skill's bare name.
-    pub calls: Option<RuntimeId>,
-}
-
-/// One note on its own at `destination`, through the renderer for its kind.
-///
-/// # Errors
-///
-/// What the runtime's renderer refuses, and what writing a call refuses.
-pub fn write_component(
-    component: &Component,
-    destination: &Destination<'_>,
-) -> Result<FileTree, CoreError> {
-    let projection = projection_of(component, |body| {
-        // A skill published on its own has no plugin, so a call to another
-        // skill is the runtime's form without a namespace.
-        write_body(
-            body,
-            |call| {
-                render_call(
-                    call,
-                    targets_name(call.targets.as_deref(), destination.canonical),
-                    destination.canonical,
-                    destination.calls,
-                    SkillNaming::Bare,
-                )
-            },
-            |link| Ok(link.markdown()),
-            |root| Ok(root.written.clone()),
-        )
-    })?;
-    let runtime = [destination.runtime.to_owned()];
-    let mut tree = FileTree::default();
-    let files = match component.kind {
-        EntityKind::Command => project_command(&projection, &runtime, Some(destination.canonical))?,
-        EntityKind::Agent => project_agent(&projection, &runtime)?,
-        _ => {
-            let (files, redundant) =
-                project_skill_reporting(&projection, &runtime, Some(destination.canonical))?;
-            tree.redundant_overrides = redundant;
-            files
-        }
-    };
-    for file in files {
-        tree.insert(&file.relative_path, file.content, file.executable);
-    }
-    Ok(tree)
-}
-
-/// A call at the destination `label`, written in `runtime`'s syntax, a skill
-/// of a plugin named by `naming`. `shipped` says whether the destination
+/// A call in the pack of the harness `label`, written in `runtime`'s syntax,
+/// a skill of a plugin named by `naming`. `shipped` says whether the pack
 /// contains what the call names.
 fn render_call(
     call: &Call,
     shipped: bool,
     label: &str,
-    runtime: Option<RuntimeId>,
+    runtime: RuntimeId,
     naming: SkillNaming,
 ) -> Result<String, CoreError> {
     call.check_shipped(shipped, label)?;
-    let Some(runtime) = runtime else {
-        return Ok(call.skill.name.clone());
-    };
     match &call.skill.plugin {
         Some(plugin) => {
             crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)

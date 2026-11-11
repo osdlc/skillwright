@@ -16,5 +16,5 @@ pub use profile::{
     CliInvocation, HarnessProfile, KNOWN_TARGETS, PLUGIN_HOOKS_PATH, PROFILES, PluginDialect,
     PluginFormat, SkillNaming, profile_named, with_plugin_format,
 };
-pub use translator::{Destination, FileSource, FileTree, Layout, TreeFile, write_component};
+pub use translator::{FileSource, FileTree, TreeFile};
 pub(crate) use translator::{HarnessTranslator, translator_for};
