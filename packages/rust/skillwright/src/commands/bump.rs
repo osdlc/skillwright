@@ -1216,7 +1216,6 @@ fn prune_stale_baselines(baselines: &Path, repo: &Path) {
     let Ok(entries) = std::fs::read_dir(baselines) else {
         return;
     };
-    let mut pruned = false;
     for path in entries.flatten().map(|entry| entry.path()) {
         if path.extension().is_none_or(|ext| ext != "lock") {
             continue;
@@ -1228,26 +1227,14 @@ fn prune_stale_baselines(baselines: &Path, repo: &Path) {
             continue;
         }
         let dir = path.with_extension("");
-        // Fails on a checkout that is not a worktree, as every new one is;
-        // `remove_dir_all` does the work then.
+        // Removes an older run's worktree and its registration, and only that
+        // one. Fails on a checkout that is not a worktree, as every new one
+        // is; `remove_dir_all` does the work then.
         let _ = typed_git::worktree::remove(repo, &dir.join("checkout"));
         let _ = std::fs::remove_dir_all(&dir);
         drop(file);
         let _ = std::fs::remove_file(&path);
-        pruned = true;
     }
-    if pruned {
-        prune_worktrees(repo);
-    }
-}
-
-/// `git worktree prune`: drop the registration of every worktree whose
-/// folder is gone. Best-effort.
-fn prune_worktrees(repo: &Path) {
-    let _ = typed_git::git()
-        .dir(repo)
-        .args(&["worktree", "prune"])
-        .run();
 }
 
 impl Drop for BuiltRef {
@@ -1588,6 +1575,34 @@ mod tests {
         assert!(!baselines.join("stale.lock").exists());
         assert!(baselines.join("live").exists());
         assert!(baselines.join("live.lock").exists());
+    }
+
+    /// A prune removes only its own baselines: a worktree of the user's whose
+    /// folder is missing stays registered.
+    #[test]
+    fn a_prune_leaves_the_users_worktrees_registered() {
+        let (_dir, repo, _sha) = repo_of(&[("f", "f\n")]);
+        let other = repo.join("away");
+        git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                other.to_str().unwrap(),
+            ],
+        );
+        std::fs::remove_dir_all(&other).unwrap();
+        let baselines = repo.join("baselines");
+        std::fs::create_dir_all(baselines.join("stale/out")).unwrap();
+        std::fs::write(baselines.join("stale.lock"), "").unwrap();
+
+        prune_stale_baselines(&baselines, &repo);
+
+        assert!(!baselines.join("stale").exists());
+        let listed = git(&repo, &["worktree", "list", "--porcelain"]);
+        assert!(listed.contains("away"), "{listed}");
     }
 
     #[test]
