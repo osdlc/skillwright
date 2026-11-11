@@ -304,8 +304,8 @@ Run `${PLUGIN_ROOT}/scripts/tool.js --check`.
 | Claude Code | ``Run `${CLAUDE_PLUGIN_ROOT}/scripts/tool.js --check`.`` |
 | Codex, Cursor, Pi | ``Run `../../scripts/tool.js --check`.`` |
 
-Open question (owner): does the relative form work when the agent runs it?
-See "Open questions", item 1.
+On Codex, Cursor and Pi the model resolves the relative path before it runs
+the command (rule 19).
 
 An external link is never fetched or checked, so a dead URL is not an error.
 An embed resolves by the same scope rules as a link. The rules apply to a
@@ -472,7 +472,7 @@ marketplace (rule 8, decision D2).
 13. After the build, no unescaped `[[` may remain in prose.
     - Write `\[[` to keep the brackets as text: `\[[x]]` is not interpreted
       and ships as `[[x]]`. Open question (owner): see "Open questions",
-      item 2.
+      item 1.
     - A leftover `[[` is an error that names the file and the text.
     - Code spans and fenced blocks are not checked. Neither is text an escape
       produced.
@@ -529,6 +529,21 @@ harness's own form (decision D9).
     On Cursor and Pi, a path into a skill follows the skill's folder name
     there, `skills/<p>-<s>/` by default (section 8 rule 6). Only the path is
     rewritten. The file it names is copied as is.
+
+    How the path is used:
+
+    | Harness | The path in skill text | Who resolves it |
+    |---|---|---|
+    | Claude Code | `${CLAUDE_PLUGIN_ROOT}/<path>`, an absolute path once expanded | Claude Code |
+    | Codex, Cursor, Pi | relative to the file it is written in | the model, before it uses the path |
+
+    - The shell never reads `SKILL.md`. The model reads it and writes the
+      command, so it turns the relative path into one it can run.
+    - This holds for every relative path in skill text, to a reference or to a
+      script, in the skill's own folders or the plugin's shared ones. A skill
+      may run a plugin-shared script, such as `../../scripts/tool.js`.
+    - The known risk: a model may paste the command as written. It then runs
+      from the project folder, and the path does not resolve.
 20. A path to a file the harness's pack does not contain is an error for that harness,
     the same as a link to it (rule 6). An example, in steps:
     1. `skills/review/review.md` contains
@@ -569,15 +584,18 @@ harness's own form (decision D9).
     write it unbraced, `$PLUGIN_ROOT/x`. The shell reads it the same way, and
     the build leaves it alone. There is no escape form.
 26. A skill's own file named by a plain relative path, such as `scripts/x.py`
-    in its `SKILL.md`, is text. It ships as written and is not checked. Where
-    such a path resolves from:
+    in its `SKILL.md`, is text. It ships as written and is not checked. Like
+    every relative path in skill text, it is relative to the file it is written
+    in, and the model resolves it before using it (rule 19). The model may
+    paste it as written, which runs it from the project folder. What each
+    source records:
 
-    | Source | Resolves from |
+    | Source | Records |
     |---|---|
-    | The Agent Skills standard | the skill's folder (`Agent Skills Relative paths in SKILL.md`) |
-    | Cursor, Pi | the skill's folder (section 9 rule 14) |
+    | The Agent Skills standard | relative to the skill's folder (`Agent Skills Relative paths in SKILL.md`) |
+    | Cursor, Pi | relative to the skill's folder (section 9 rule 14) |
     | Claude Code | not recorded for plain paths; `${CLAUDE_SKILL_DIR}` names the skill's folder |
-    | Codex | not recorded; not verified (see [the plan](v2-plan.md)) |
+    | Codex | not recorded; see [the plan](v2-plan.md) for the evidence probe |
 
     Use `${PLUGIN_ROOT}/<path>` for a file the build should check, and for any
     file outside the skill's folder.
@@ -1266,24 +1284,10 @@ the same way, and the build leaves it alone. So v2 has no escape form for it.
 
 These are not yet decided. Each gives the options and a recommendation.
 
-1. **Open question (owner): a shell command that runs a plugin-shared
-   script.** On Codex, Cursor and Pi, `${PLUGIN_ROOT}/scripts/tool.js` becomes
-   `../../scripts/tool.js`. A shell resolves a relative path from its working
-   directory, which is the project, not the skill's folder. The command works
-   only if the model turns the path into one from the skill's folder.
-   Options:
-   1. Keep the relative path, and rely on the model.
-   2. Write the absolute install path. It depends on the harness's cache
-      layout and the plugin's version.
-   3. In v2, a skill runs only its own `scripts/x`. A plugin-shared script is
-      not called from a command until
-      [#148](https://github.com/osdlc/skillwright/issues/148) is answered.
-
-   Recommendation: option 3.
-2. **Open question (owner): the `\[[` escape.** This spec says `\[[x]]` ships
+1. **Open question (owner): the `\[[` escape.** This spec says `\[[x]]` ships
    as `[[x]]`, with the backslash removed (section 4 rule 13). Today's tool keeps
    the backslash ([#136](https://github.com/osdlc/skillwright/pull/136)). Recommendation: remove it, as this spec says.
-3. **Open question (owner): hook notes.** The layout has hook notes,
+2. **Open question (owner): hook notes.** The layout has hook notes,
    `hooks/<h>/<h>.md`, but their format and how they become a hooks file are
    not defined here. Options: define them, or keep only `hooks/hooks.json` in
    v2. Recommendation: `hooks/hooks.json` only.

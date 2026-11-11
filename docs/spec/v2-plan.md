@@ -26,20 +26,18 @@ and each blocks a commit:
 
 | Item | Where | Blocks |
 |---|---|---|
-| A shell command that runs a plugin-shared script | Spec, [Open questions](structure-v2.md#open-questions) item 1 | Commit 5 (plugin-root path tests) and the `sdlc` consumer migration |
-| The `\[[` escape: drop the backslash or keep it | Spec, Open questions item 2 | Commit 5 (leftover tests) |
-| Hook notes, or `hooks/hooks.json` only | Spec, Open questions item 3 | Commit 2 (which entries `hooks/` may hold) and commit 4 (the hooks file) |
-| Codex relative paths | Probes, below | Commit 5 |
+| The `\[[` escape: drop the backslash or keep it | Spec, [Open questions](structure-v2.md#open-questions) item 1 | Commit 5 (leftover tests) |
+| Hook notes, or `hooks/hooks.json` only | Spec, Open questions item 2 | Commit 2 (which entries `hooks/` may hold) and commit 4 (the hooks file) |
 | Cursor's hook variable | Probes, below | Commit 5 (hook tests) |
 
 ## Probes
 
-Run these before commit 5. harness-reference does not record the answers.
+harness-reference does not record these answers.
 
-| Probe | Question | If the answer is no |
+| Probe | Question | Role |
 |---|---|---|
-| `plugin-layout` on Codex | Does Codex resolve a skill's relative paths from the skill's folder (`Codex CLI Relative paths in SKILL.md open`, [#148](https://github.com/osdlc/skillwright/issues/148))? | Links up to the pack root need another form on Codex. |
-| Cursor hooks | Does Cursor set `${CURSOR_PLUGIN_ROOT}` for hook commands? | Cursor hooks need another way to reach the pack. |
+| `plugin-layout` ([#148](https://github.com/osdlc/skillwright/issues/148)) | Do models on Codex, Cursor and Pi resolve relative paths in skill text from the file they are written in, for references and scripts, both skill-local (`scripts/x`) and plugin-shared (`../../scripts/x`)? | Evidence for section 4 rule 19. It does not block a commit. Record the result in harness-reference. |
+| Cursor hooks | Does Cursor set `${CURSOR_PLUGIN_ROOT}` for hook commands? | Run before commit 5. If not, Cursor hooks need another way to reach the pack. |
 
 ## Build order
 
@@ -153,7 +151,7 @@ Scoped resolution, the link table, the real-path check, missing targets as
 errors, calls and plain links (D2, D3), literal code, the leftover check, and
 the embed rules of section 5.
 
-Run the probes first (see "Probes").
+Run the Cursor hooks probe first (see "Probes").
 
 Tests first, through `build`, one test per rule in sections 4 and 5. All use
 plugin `tools`.
@@ -204,7 +202,7 @@ Code and leftovers:
 
 - `[[x]]`, `/[[x]]` and `![[x]]` in a code span or fenced block ship as
   written.
-- `\[[x]]` in prose ships as `[[x]]`, as open question 2 recommends.
+- `\[[x]]` in prose ships as `[[x]]`, as open question 1 recommends.
 - A leftover `[[` in prose is refused. One in code or after `\` is not.
 
 Embeds:
@@ -305,7 +303,7 @@ The PR is done when all of these hold:
       `cargo test --workspace`.
 - [ ] Every numbered rule in the spec, and every case in its Appendix A, is
       covered by at least one test.
-- [ ] The three open questions are answered, and the spec says the answer.
+- [ ] The two open questions are answered, and the spec says the answer.
 - [ ] Both probes have run, and the spec's "not verified" notes are updated.
 - [ ] `plugin/` is moved to the v2 layout and rebuilt to
       `plugin/dist/osdlc/`, and the `plugin` workflow's drift check passes.

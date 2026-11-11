@@ -297,6 +297,6 @@ from outside the vault to arbitrary pack paths, such as `cli/sdlc`,
 3. Its runtime path lookups, and its skills' `${PLUGIN_ROOT}/...` paths,
    change to the new pack paths.
 
-This is work in the dev repo, not in skillwright. It also depends on open
-question 1 in the spec: how a skill's shell command reaches a plugin-shared
-script.
+This is work in the dev repo, not in skillwright. A skill may run a
+plugin-shared script through `${PLUGIN_ROOT}/scripts/...` (spec section 4
+rule 19).
