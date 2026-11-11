@@ -279,6 +279,16 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
     root.defaults.blocks = blocks;
     check_harness_names("targets", root.defaults.targets.as_deref())?;
     check_harness_names("build.harnesses", root.build.harnesses.as_deref())?;
+    // The spec does not say what an empty list builds, so it is refused.
+    if root.build.harnesses.as_ref().is_some_and(Vec::is_empty) {
+        return Err(SettingsError {
+            key: "build.harnesses".to_owned(),
+            what: "a list of harnesses",
+            detail: "it is empty, which would build nothing. List the harnesses to build, \
+                     or remove the key to build all four"
+                .to_owned(),
+        });
+    }
     Ok(root)
 }
 
@@ -808,6 +818,15 @@ mod tests {
     fn a_wrong_build_bump_is_named() {
         let err = parse_root_file("---\nbuild:\n  bump:\n    patch: weekly\n---\n").unwrap_err();
         assert_eq!(err.key, "build.bump");
+    }
+
+    /// An empty `build.harnesses` would build nothing, or read as absent and
+    /// build everything. The spec says neither, so it is refused.
+    #[test]
+    fn an_empty_build_harnesses_is_refused() {
+        let err = parse_root_file("---\nbuild:\n  harnesses: []\n---\n").unwrap_err();
+        assert_eq!(err.key, "build.harnesses");
+        assert!(err.to_string().contains("remove the key"), "{err}");
     }
 
     #[test]
