@@ -3,58 +3,40 @@
 This guide takes you from an empty folder to a built marketplace. It needs the
 `skillwright` command. See the [README](../../README.md#install) to install it.
 
-## 1. Lay out the folder
+## 1. Make the vault
 
-The folders decide what each note is. A small marketplace looks like this:
-
-```text
-my-marketplace/
-├── skillwright.md            the root file
-└── plugins/
-    └── review/
-        ├── review.md         optional plugin note
-        └── skills/
-            ├── lint/SKILL.md
-            └── triage.md
-```
-
-- A folder under `plugins/` is a plugin, named after the folder.
-- A note under `skills/` is a skill. Agents go in `agents/`, commands in
-  `commands/` and hooks in `hooks/`.
-- A `skills/` folder at the top is a plugin named after the marketplace. It
-  takes its `version` from `skillwright.md`.
-
-See the [structure spec](../spec/structure-v1.md) for every rule.
-
-## 2. Write the root file
-
-Run this in the folder:
+Run this in an empty folder:
 
 ```sh
-skillwright init --out dist
+skillwright init my-marketplace review
 ```
 
-It writes a `skillwright.md` with the marketplace's name and its output folder:
+It writes a vault with one marketplace, `my-marketplace`, and one plugin,
+`review`:
 
-```markdown
----
-name: my-marketplace
-build:
-  out: dist
----
+```text
+./
+├── skillwright.md                        the root file
+└── marketplaces/
+    └── my-marketplace/
+        ├── my-marketplace.md             the marketplace note
+        └── plugins/
+            └── review/
+                └── review.md             the plugin note
 ```
 
-The name defaults to the folder's name; `--name` sets another. On a terminal,
-`init` asks for the output folder when `--out` is missing. It refuses to replace
-an existing `skillwright.md`.
+- Each marketplace, plugin and component is a folder with a note of the same
+  name. The folder's name is its name.
+- A plugin's skills go in `skills/<s>/<s>.md`. Agents go in
+  `agents/<a>/<a>.md`, commands in `commands/<c>/<c>.md` and hooks in
+  `hooks/hooks.json`.
+- `init` refuses a folder that already holds `skillwright.md`.
 
-The output folder is required, here or as `--out` on each run. There is no
-default. `out: .` builds beside `skillwright.md`, which makes the repository
-installable as a marketplace.
+See the [structure spec](../spec/structure-v2.md) for every rule.
 
-## 3. Write a skill
+## 2. Write a skill
 
-Create `plugins/review/skills/triage.md`:
+Create `marketplaces/my-marketplace/plugins/review/skills/triage/triage.md`:
 
 ```markdown
 ---
@@ -64,70 +46,59 @@ description: Sort new bug reports by severity. Use when asked to triage issues.
 Read each open issue and label it low, medium or high.
 ```
 
-`description` is what opts a note in. `name` defaults to the file's name. Every
-other key is optional; see the [field reference](../reference/fields.md).
+`description` is required. Every other key is optional; see the
+[field reference](../reference/fields.md).
 
-Give the plugin a version in `plugins/review/review.md`. A harness compares
-versions to decide whether an installed plugin is out of date, so a plugin with
-none is published as `0.1.0` with a `missing-version` warning:
+The plugin note, `review.md`, holds the plugin's `version`, which `init` sets
+to `0.1.0`. A harness compares versions to decide whether an installed plugin
+is out of date.
 
-```markdown
----
-description: Review helpers.
-version: 0.1.0
----
-```
-
-Fields you want on every plugin can go in `skillwright.md`, and each plugin and
-skill inherits them:
+Fields you want on every plugin can go in `skillwright.md`, and each plugin
+and skill inherits them:
 
 ```markdown
 ---
-name: my-marketplace
 license: MIT
 repository: https://github.com/me/my-marketplace
-build:
-  out: dist
 ---
 ```
 
-## 4. Build
+## 3. Build
 
 ```sh
-skillwright list           # what the vault holds
 skillwright build --yes    # write the output
 skillwright check          # exits 1 if the output differs from the vault
 ```
 
-`build` writes one tree per harness under the output folder: `.claude-plugin/`
-(Claude Code), `.agents/` (Codex), `.cursor-plugin/` (Cursor) and `.pi/` (Pi).
-It replaces only each harness's packs folder and the manifests it writes.
+`build` writes `dist/my-marketplace/`, with one tree per harness:
+`.claude-plugin/` (Claude Code), `.agents/` (Codex), `.cursor-plugin/`
+(Cursor) and `.pi/` (Pi). It replaces only each harness's packs folder and
+the manifests it writes. Without `--yes`, `build` shows what it will write and
+asks first.
 
-Use `build.harnesses` to build for fewer harnesses, and `targets` on a note to
-limit that note.
+Set `build.harnesses` in `skillwright.md` to build for fewer harnesses, and
+`targets` on a note to limit that note.
 
-## 5. Install
+## 4. Release a change
+
+After you change a plugin, raise its version and build again:
 
 ```sh
-skillwright harness install claude --yes
+skillwright bump review --yes
+skillwright build --yes
 ```
 
-`codex` works the same way. Cursor also needs `--git-url <url>`, because it only
-registers a marketplace from git. `harness install pi` runs `pi install` for each
-built pack under `.pi/packs/`.
+`bump --minor` and `bump --major` raise the other parts.
+`bump --changed-since <ref>` bumps every plugin that changed since a git ref.
 
-To write skills straight into a harness's user folder instead of building a
-marketplace, run `skillwright publish --yes`. It writes each skill on its own and
-no plugin manifests. `publish --to <root> --target <harness>` writes to one
-folder instead, which must sit outside the vault.
+## 5. Ship the output
 
-`publish <path>` also publishes a note inside the vault that sits outside every kind folder, as a skill. Only that
-command does: `list`, `check`, `build` and `publish --all` leave it out. To bring a folder in for
-every command, add a `build.patterns` glob. See
-[Publishing one note by path](../reference/skillwright-md.md#publishing-one-note-by-path).
+The build stops at `dist/`. Copy `dist/my-marketplace/` to the repository a
+harness installs from, or commit it there, and run `skillwright check` in CI
+so the committed output never drifts from the notes.
 
 ## Next
 
 - [`skillwright.md` reference](../reference/skillwright-md.md)
 - [Field reference](../reference/fields.md)
-- [Structure spec](../spec/structure-v1.md)
+- [Structure spec](../spec/structure-v2.md)
