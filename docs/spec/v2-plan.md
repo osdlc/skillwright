@@ -89,6 +89,14 @@ Rust, from `packages/rust` (the `rust` workflow):
 - `cargo run --locked -q -p tradecraft-typegen -- --check`, and
   `packages/ts/tradecraft-wasm/src/core.generated.ts` equals
   `tradecraft-typegen/generated/core.generated.ts`.
+- `cargo package --workspace --locked`, excluding the crates with
+  `publish = false`, so a file missing from a crate's `include` list fails.
+- msrv: `cargo test --workspace --locked` on the `rust-version` in
+  `Cargo.toml`, after resolving a fresh lockfile.
+- minimal-versions: `cargo update -Z direct-minimal-versions` on the nightly
+  the `rust` workflow pins, then `cargo test --workspace --locked` on the
+  pinned toolchain. A dependency removed or added in v2 can change what
+  these two jobs resolve.
 
 TypeScript, from the repository root (the `ts` workflow):
 
@@ -134,7 +142,12 @@ Tests first:
   `check --yes`.
 - `build.destinations` and `build.scan_locations` in the root file are
   refused (section 11 case 7).
-- The existing `build`, `check` and `bump` tests still pass unchanged.
+- The `build`, `check` and `bump` tests still pass, except two in
+  `skillwright/tests/cli.rs` that change:
+  `the_root_help_names_every_verb_this_binary_declares` is rewritten for the
+  four verbs, and
+  `dry_run_on_check_says_it_is_redundant_rather_than_silently_doing_nothing`
+  is deleted, since `check --dry-run` is now an unknown flag.
 
 Also in this commit, so the gates pass:
 
@@ -152,6 +165,9 @@ Also in this commit, so the gates pass:
   and `examples/publish-a-skill.test.ts` go. `tests/smoke.mjs` (run by
   `pnpm smoke`, not in CI) calls `publishSkill` and `validateNamespace`;
   rewrite it around `exportSkills`.
+- `src/core.ts` keeps a hand-written `ReasonToken` that mirrors
+  `publish::ReasonToken`, with `PublishReason` and `PublishedFile`. They go
+  with publish.
 
 ### 2. Layout reader, fixed output, `init` and `bump`
 
@@ -160,10 +176,15 @@ marketplace note `<m>.md`, required plugin notes (D6), the folder rules of
 section 3, the fixed output folder `dist/<m>/` (D1), and `init` and `bump` on
 the new layout. Delete the nearest-`skillwright.md` walk-up, `--config`,
 `--skills-root`, reserved notes, workspaces, patterns and `build.exclude`
-(D5), `SKILL.md` and flat entries, hook notes, `build.out` and `--out`.
+(D5), Obsidian's "Excluded files" (`userIgnoreFilters` in
+`.obsidian/app.json`), `SKILL.md` and flat entries, hook notes, `build.out`
+and `--out`.
 
 The output moves here because `init` no longer writes an output path, and a
-build of several marketplaces needs one folder each.
+build of several marketplaces needs one folder each. The core keeps
+`ExportRequest::out_root` in this commit, and the CLI passes
+`<root>/dist/<m>/` as it. Commit 4 removes `out_root` from the core, the wasm
+`exportSkills`, `core.generated.ts` and the TypeScript tests together.
 
 The root file's marketplace fields stop being read here; commit 3 refuses
 them.
@@ -184,6 +205,8 @@ Tests first, layout:
 - `src/` in a command or agent folder is refused; in a skill or plugin folder
   it is accepted.
 - A `.mcp.json` in a plugin is an error. `assets/.eslintrc.json` is skipped.
+- A vault whose `.obsidian/app.json` lists a skill folder in
+  `userIgnoreFilters` still loads that skill: `.obsidian/` is never read.
 - `references/docs/x.md` is accepted; `skills/review/docs/x.md` is a
   never-ship folder (commit 4 tests what ships).
 - A name with digits, `v2-tools`, is accepted; `a--b` is refused. So is a
@@ -245,6 +268,10 @@ The repo's `plugin/`:
 - Both workflows run `--vault ../../plugin` in place of
   `--config ../../plugin/skillwright.md`. `build` keeps `--yes`. The drift
   check covers `plugin/dist/osdlc/`.
+- The root `.gitignore` ignores `dist/`, so `plugin/dist/osdlc/` would be
+  invisible to the drift check (`git status --porcelain -- plugin`). Add
+  `!/plugin/dist/` after `dist/`. `.prettierignore`'s `dist/` stays, which
+  keeps the generated JSON out of `format:check`.
 - `scripts/plugin-marketplace.ts` reads the plugin's version from
   `marketplaces/osdlc/plugins/skillwright/skillwright.md`. Today it reads
   `vault/plugins/skillwright/skillwright.md`, which does not exist, so the
@@ -257,7 +284,8 @@ The repo's `plugin/`:
 The root file's key set, the closed key table, the
 root-marketplace-plugin-component cascade, the `name` key, and the four
 `targets` values. Delete `build.namespace`, `--namespace`, prefixed keys and
-the `validateNamespace` export.
+the `validateNamespace` export. The wasm package's hand-kept `Target` union in
+`src/core.ts` shrinks to the four names.
 
 Tests first:
 
@@ -301,8 +329,13 @@ The repo's `plugin/`: its notes lose their `name` keys.
 Default packs folders, `check` against `dist/`, the pack contents of
 section 9, Cursor's naming default, hooks, and the wasm API. Delete the
 `packs` override, the overlap checks, `stale-output`, `build.assets` and
-`build.hooks` (D4), the flat `assets/` copy, and `build.launcher_path` with
-`asset_covers`, through which the launcher is found.
+`build.hooks` (D4), the flat `assets/` copy, `build.launcher_path` with
+`asset_covers`, through which the launcher is found, and
+`ExportRequest::out_root`.
+
+With the launcher gone, `Segment::LauncherCall`, `push_text`'s one-path
+split and `rewrite_launcher_calls` go here too. Nothing rewrites a
+plugin-root path until commit 5 adds the plugin-root path segment.
 
 This commit owns hooks translation. Its hook fixtures write `${PLUGIN_ROOT}`,
 the source form from here on, and `${CLAUDE_PLUGIN_ROOT}` in a hooks file is
@@ -741,11 +774,12 @@ tests and the gates above hold. The number in brackets is the commit.
   - `refuse_prefixed_collisions` already refuses every duplicate, bare ones
     too, where the profile's default prefixes. With Cursor's default changed,
     it covers Cursor with no new code. Its 64-character check does too.
-- `model/mod.rs` and `harness/translator.rs` (D9) [5]:
-  - `Segment::LauncherCall` and `push_text`'s one-path split become a
-    plugin-root path segment that holds any path after `${PLUGIN_ROOT}/`,
-    checked against the files the pack ships. A trailing `.` is not part of
-    the path.
+- `model/mod.rs` and `harness/translator.rs` (D9):
+  - `Segment::LauncherCall`, `push_text`'s one-path split and
+    `rewrite_launcher_calls` go [4].
+  - New [5]: a plugin-root path segment that holds any path after
+    `${PLUGIN_ROOT}/`, checked against the files the pack ships. A trailing
+    `.` is not part of the path.
   - A source `${CLAUDE_PLUGIN_ROOT}` and a lone `${PLUGIN_ROOT}` are refused
     there.
   - `write_body` writes `${CLAUDE_PLUGIN_ROOT}/<path>` for Claude Code. For
@@ -753,15 +787,18 @@ tests and the gates above hold. The number in brackets is the commit.
     lands in, so a resource under `references/` gets its own depth, not the
     skill's.
   - `rewrite_sibling_paths` goes: Pi's `skills/<p>-<s>/` folder is where the
-    rewrite lands. `rewrite_launcher_calls` goes with its test.
-    `relative_path` stays.
+    rewrite lands. `relative_path` stays.
 - `hooks_file.rs` [4, 5]: `localize`, the variable swap, stays. Its
   `CANONICAL_ROOT` becomes `${PLUGIN_ROOT}`, and a source
   `${CLAUDE_PLUGIN_ROOT}` is refused [4]. It gains the path check [5].
-- `export.rs` [2, 4]: the output root becomes `dist/<m>/` [2]. The
+- `export.rs` [2, 4]: the CLI passes `<root>/dist/<m>/` as
+  `ExportRequest::out_root` [2], and `out_root` goes [4]. The
   `stale-output` warning, moved-packs handling, `MarketplaceConfig::launcher_path`
   and the launcher tests go [4]; their cases become commit 5's plugin-root
   path tests.
+- `walk.rs` and `discover.rs` [2]: `walk::excluded_files` and its use in
+  `discover.rs` go, with the `userIgnoreFilters` tests, and
+  `markdown_vault_fs::hide` where only that filter uses it.
 - `vault.rs` [2]: `bundle_root` keeps only the `<name>/<name>.md` shape.
 
 ### The removed commands [1]
@@ -807,6 +844,8 @@ tests and the gates above hold. The number in brackets is the commit.
   and `publishableKinds` go. `exportSkills`, `discoverComponents`,
   `loadMarketplace`, `parseRootFile`, `rootFileConfig`, `knownTargets` and
   `canonicalTarget` stay. `validateNamespace` goes in commit 3.
+  `src/core.ts`'s hand-kept `Target` union shrinks to the four names in
+  commit 3.
 - `packages/ts/tradecraft-wasm` (repository root): the wrappers in
   `src/core.ts` and the re-exports in `src/index.ts` for those exports,
   `tests/status-of.test.ts` and `examples/publish-a-skill.test.ts`.
@@ -874,7 +913,8 @@ tests and the gates above hold. The number in brackets is the commit.
 - `skillwright/tests/fixtures/`: `vault`, `identity-vault`,
   `agent-skills-vault` and `freeform-vault` move to the v2 layout [2].
   `freeform-vault` holds flat notes (`skills/review.md`), so keep only what
-  is still valid. `excluded-vault` tests `build.exclude` (D5) and goes [2].
+  is still valid. `excluded-vault` tests Obsidian's `userIgnoreFilters`;
+  it becomes the test that the filter is not read [2].
   `golden/` is re-blessed in each commit that changes output.
 - `tradecraft-core/tests/fixtures/agent-skills-vault` moves to the v2
   layout [2].
@@ -916,6 +956,7 @@ Files, all from the repository root:
 |---|---|---|
 | `plugin/skillwright.md` | Marketplace fields (`name`, `owner`) move out; `build.out` goes. It keeps `author` and `license` [2]. Its body drops `--config` [6]. | 2, 6 |
 | `plugin/marketplaces/osdlc/osdlc.md` | New: the marketplace note. | 2 |
+| `.gitignore` | `!/plugin/dist/` after `dist/`, so the drift check sees the built trees. `.prettierignore` keeps `dist/`. | 2 |
 | `plugin/plugins/skillwright/` | Moves to `plugin/marketplaces/osdlc/plugins/skillwright/`. Its skills are already `skills/<s>/<s>.md`. | 2 |
 | `plugin/.claude-plugin/`, `plugin/.agents/`, `plugin/.cursor-plugin/`, `plugin/.pi/` | Move to `plugin/dist/osdlc/`, rebuilt. Rebuilt again in every later commit that changes output. | 2 |
 | `.github/workflows/plugin.yml` | `build --yes --vault ../../plugin` and `check --vault ../../plugin`, in place of `--config ../../plugin/skillwright.md`. The drift check covers `plugin/dist/osdlc/`. Its `paths` triggers already include `packages/rust/tradecraft-core/**`. | 2 |

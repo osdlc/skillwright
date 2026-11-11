@@ -66,6 +66,8 @@ is still needed off a terminal.
 - Optional plugin notes (decision D6).
 - `build.patterns` and every custom folder glob.
 - `build.exclude` (decision D5). A file that must not ship goes in `docs/`.
+- Obsidian's "Excluded files" (`userIgnoreFilters` in `.obsidian/app.json`).
+  `.obsidian/` is never read, so a skill listed there now builds.
 - Loose files in a component folder. Each folder now holds only the entries
   its row in section 3's "What a folder may hold" table lists. Anything else
   is an error.
