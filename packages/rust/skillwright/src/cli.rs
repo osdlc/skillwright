@@ -159,7 +159,7 @@ enum Verb {
 /// things to do with the comparison.
 #[derive(Args, Debug)]
 struct ExportArgs {
-    /// The one marketplace under `marketplaces/` to build. Absent means every one.
+    /// The one marketplace under `marketplaces/` to build or check. Absent means every one.
     #[arg(long, value_name = "name")]
     marketplace: Option<String>,
 }

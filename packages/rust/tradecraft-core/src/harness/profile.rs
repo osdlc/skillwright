@@ -41,8 +41,8 @@ pub struct HarnessProfile {
     pub label: &'static str,
     /// The `agent-adapt` runtime a note renders through for this harness.
     pub runtime: &'static str,
-    /// The runtime whose capability declaration answers for this
-    /// destination: which keys an override block may carry.
+    /// The runtime whose capability declaration answers for this harness:
+    /// which keys an override block may carry.
     pub declaration: RuntimeId,
     /// The plugin policy. The facts it leaves to the knowledge file are read
     /// by [`Self::format`].
