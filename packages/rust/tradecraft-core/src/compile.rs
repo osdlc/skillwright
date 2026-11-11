@@ -66,7 +66,6 @@ use std::path::{Path, PathBuf};
 
 use markdown_link::code::{CodeRules, FenceLine, Fences, Spans};
 use markdown_link::{AbandonReason, BodyLinkKind, ScanOptions, scan_body_with};
-use sha2::{Digest, Sha256};
 
 use crate::content::SkillProjection;
 use crate::discover::DiscoveryWarning;
@@ -76,7 +75,7 @@ use crate::guard::within;
 use crate::hooks_file::{CANONICAL_ROOT, RootKind, plugin_root_refs};
 use crate::layout::{Layout, LayoutFile, MARKETPLACES_DIR, PLUGINS_DIR, Place, SharedDir};
 use crate::model::{LinkForm, LinkedComponent, PluginRootPath, ResolvedRef};
-use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
+use crate::skill::{forward_slashed, read_utf8};
 use crate::vfs::{Vfs, normalize};
 
 /// Where a compile reads from: the vault, the note being compiled, and the
@@ -311,10 +310,9 @@ pub struct CompiledNote {
     /// Per emitted file, what fed it. Keyed by the same relative path the
     /// resources use, with the entry's own output under `SKILL.md`.
     ///
-    /// This is what makes staleness computable. The bytes at a destination can
-    /// change because an embedded note changed, without the owning note moving
-    /// at all, so a hash over the owner alone would report a skill current
-    /// while its published copy was wrong.
+    /// The bytes of an emitted file can change because an embedded note
+    /// changed, without the owning note moving at all, so the owner alone
+    /// does not say what fed it.
     pub closures: BTreeMap<String, Closure>,
 }
 
@@ -328,62 +326,15 @@ pub struct Closure {
     /// The vault-relative path of the note this file was rendered from: the
     /// entry note for `SKILL.md`, and the resource's own source otherwise.
     /// One of `contributing_notes`, not necessarily the first, since they are
-    /// sorted. [`Closure::hash`] reads the whole file for this note.
+    /// sorted.
     pub owner: String,
     /// Call targets in this file that named no skill, as written and sorted:
     /// only where calls are not refused. A skill appearing at one of these
-    /// names later changes the output while leaving the hash over
-    /// `contributing_notes` identical.
+    /// names later changes the output without changing `contributing_notes`.
     pub unresolved: Vec<String>,
     /// Skills this file calls, as `plugin:name` (or `name`), sorted. Nothing
     /// of a called skill is copied, so its identity is what can go stale.
     pub calls: Vec<String>,
-}
-
-impl Closure {
-    /// The hash that answers *did the source move*.
-    ///
-    /// Over the bytes the compiler **consumed**, member by member: the whole
-    /// file for the note that owns the emitted file, the body only for a note
-    /// reached by an embed — embedding pulls a body and never frontmatter, so
-    /// a snippet's frontmatter cannot reach the output and must not move this
-    /// hash. Hashing whole files throughout would be simpler and would mark
-    /// skills stale for edits that cannot change a byte, which trains people
-    /// to distrust the status view.
-    ///
-    /// The unresolved names are folded in too, so one comparison covers the
-    /// whole closure: a note appearing at a name that resolved to nothing
-    /// changes this hash even before it changes the member list. So are the
-    /// calls, so renaming or moving a called skill changes the caller's hash.
-    /// Both add nothing when empty.
-    pub fn hash(&self, vfs: &dyn Vfs, vault_root: &Path) -> Result<String, CoreError> {
-        let mut hasher = Sha256::new();
-        for note in &self.contributing_notes {
-            let bytes = vfs.read_file(&vault_root.join(note))?;
-            let text = String::from_utf8_lossy(&bytes);
-            let consumed = if *note == self.owner {
-                text.as_ref()
-            } else {
-                split_frontmatter(&text).1
-            };
-            // Length-delimited, so two members cannot be confused for one.
-            hasher.update(note.as_bytes());
-            hasher.update(b"\0");
-            hasher.update(consumed.as_bytes());
-            hasher.update(b"\0");
-        }
-        for name in &self.unresolved {
-            hasher.update(b"unresolved\0");
-            hasher.update(name.as_bytes());
-            hasher.update(b"\0");
-        }
-        for call in &self.calls {
-            hasher.update(b"call\0");
-            hasher.update(call.as_bytes());
-            hasher.update(b"\0");
-        }
-        Ok(format!("{:x}", hasher.finalize()))
-    }
 }
 
 /// Compiles one note body against its vault.
@@ -1155,9 +1106,8 @@ impl<'a> Renderer<'a> {
             let note_body = self.embedded_body(&text, &resolved, raw, source_path)?;
             let label = self.vault_relative(&resolved)?;
             // The closure grows here and nowhere else: a *linked* file has
-            // its own emitted file, so its edits are caught by that file's
-            // own comparison. Only embedding folds one note's bytes into
-            // another's output and hides them behind the other's hash.
+            // its own emitted file. Only embedding folds one note's bytes
+            // into another's output.
             self.contributing
                 .entry(output_path.to_owned())
                 .or_default()
@@ -1579,8 +1529,7 @@ impl<'a> Renderer<'a> {
         self.link_error(token, source_path, written, what, "section 4 rule 8")
     }
 
-    /// Records `skill` in `output_path`'s calls, which the closure hash mixes
-    /// in. `related` also lists it in [`RelatedSplit::calls`]; a skill naming
+    /// Records `skill` in `output_path`'s calls. `related` also lists it in [`RelatedSplit::calls`]; a skill naming
     /// itself is not related to itself.
     fn record_call(&mut self, skill: &IndexedSkill, output_path: &str, related: bool) {
         self.calls
@@ -2763,8 +2712,8 @@ mod tests {
         );
     }
 
-    // A closure is never empty, so a hash over it always covers something —
-    // including for a peer resource, whose closure is itself.
+    // A closure is never empty, even for a peer resource, whose closure is
+    // itself.
     #[test]
     fn every_emitted_file_has_a_closure_holding_at_least_its_own_owner() {
         let vfs = demo_vault();
@@ -2923,7 +2872,7 @@ mod tests {
         let layout = crate::layout::read_layout(&vfs, &root).unwrap();
 
         let raw = read_utf8(&vfs, &entry).unwrap();
-        let (_, body) = split_frontmatter(&raw);
+        let (_, body) = crate::skill::split_frontmatter(&raw);
         let compile_source = {
             let mut value = CompileSource::new(&root, &entry, "workflow-checklist");
             value.layout = Some(&layout);
@@ -3910,7 +3859,7 @@ mod tests {
     }
 
     #[test]
-    fn renaming_a_called_skill_changes_the_callers_hash() {
+    fn a_closure_records_the_skills_it_calls() {
         let vfs = demo_vault();
         write(
             &vfs,
@@ -3925,14 +3874,6 @@ mod tests {
         assert_eq!(before.body, "Run `/tools:called`.\n");
         assert_eq!(before.closures["SKILL.md"].calls, vec!["tools:called"]);
         assert_eq!(after.closures["SKILL.md"].calls, vec!["tools:renamed"]);
-        assert_ne!(
-            before.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"))
-                .unwrap(),
-            after.closures["SKILL.md"]
-                .hash(&vfs, Path::new("/vault"))
-                .unwrap(),
-        );
     }
 
     /// Each harness's form for `called` of plugin `tools`.
