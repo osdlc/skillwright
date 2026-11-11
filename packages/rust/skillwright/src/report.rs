@@ -1,10 +1,13 @@
-//! Rendering a run's report: the export's unit lines and tally, and the
-//! discovery warnings.
+//! Rendering a run's report: the export's unit lines and tally, the
+//! discovery warnings, and the `--json` document.
 //!
 //! These functions bind directly to the core's native structs, with no
 //! `--json` round trip in between.
 
-use tradecraft_core::{DiscoveryWarning, ExportMode, ExportUnit, StaleKind, UnitStatus};
+use tradecraft_core::{DiscoveryWarning, ExportMode, ExportUnit, StaleKind};
+
+use crate::ctx::CommandContext;
+use crate::exit::blocked;
 
 /// `N word` for each word in `words`, counted: the `order` words first, as
 /// listed, then any other word in the order it first appears. A status the
@@ -35,11 +38,22 @@ pub fn normalize_thrown_reason(message: &str) -> &str {
     message.strip_prefix("refused: ").unwrap_or(message)
 }
 
-// --- the marketplace ---------------------------------------------------------
-
-fn unit_status_str(status: UnitStatus) -> &'static str {
-    status.as_str()
+/// Writes `value` to stdout as one pretty JSON document. `Err` is the exit
+/// code of a report that would not serialize.
+pub fn print_json(ctx: &mut CommandContext<'_>, value: &impl serde::Serialize) -> Result<(), i32> {
+    match serde_json::to_string_pretty(value) {
+        Ok(document) => {
+            let _ = writeln!(ctx.out, "{document}");
+            Ok(())
+        }
+        Err(err) => Err(blocked(
+            ctx.err,
+            &format!("the report would not serialize: {err}"),
+        )),
+    }
 }
+
+// --- the marketplace ---------------------------------------------------------
 
 /// One export unit as `path  status` — the same `path  outcome` column order
 /// every other line in this file uses, so one `awk '{print $2}'` reads a
@@ -54,14 +68,11 @@ pub fn render_unit_line(unit: &ExportUnit, mode: ExportMode) -> String {
             ..
         } => format!(
             "{root}/{name}  {} · {skills} skill{}",
-            unit_status_str(*status),
+            status.as_str(),
             if *skills == 1 { "" } else { "s" }
         ),
         ExportUnit::Manifest { root, status } => {
-            format!(
-                "{root}  {} · marketplace manifest",
-                unit_status_str(*status)
-            )
+            format!("{root}  {} · marketplace manifest", status.as_str())
         }
         // What is going is worth naming: a whole pack leaving the
         // marketplace and a leftover file both read as `stale` otherwise,

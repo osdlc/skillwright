@@ -31,8 +31,8 @@ use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked};
 use crate::prompt::{confirm_write, plan_flow};
 use crate::report::{
-    count_checked_units, normalize_thrown_reason, render_export_tally, render_unit_line,
-    render_warning_line,
+    count_checked_units, normalize_thrown_reason, print_json, render_export_tally,
+    render_unit_line, render_warning_line,
 };
 use crate::resolve::{CommonFlags, ResolvedRun, resolve_run};
 
@@ -192,11 +192,11 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
             exit = code;
         }
     }
-    if let Some(document) = document {
-        let code = print_json(&document, ctx);
-        if exit == EXIT_OK {
-            exit = code;
-        }
+    if let Some(document) = document
+        && let Err(code) = print_json(ctx, &document)
+        && exit == EXIT_OK
+    {
+        exit = code;
     }
     exit
 }
@@ -219,17 +219,6 @@ struct Market {
 struct Refusal {
     marketplace: String,
     error: String,
-}
-
-/// Writes `value` to stdout as one JSON document.
-fn print_json(value: &impl serde::Serialize, ctx: &mut CommandContext<'_>) -> i32 {
-    match serde_json::to_string_pretty(value) {
-        Ok(document) => {
-            let _ = writeln!(ctx.out, "{document}");
-            EXIT_OK
-        }
-        Err(err) => blocked(ctx.err, &format!("the report would not serialize: {err}")),
-    }
 }
 
 /// Report a run-level failure: an export has no partial report, since its
@@ -289,11 +278,8 @@ fn export_one(
     ctx: &mut CommandContext<'_>,
 ) -> i32 {
     if flags.json {
-        if own_json {
-            let code = print_json(report, ctx);
-            if code != EXIT_OK {
-                return code;
-            }
+        if own_json && let Err(code) = print_json(ctx, report) {
+            return code;
         }
     } else {
         for unit in &report.units {

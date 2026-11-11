@@ -31,7 +31,7 @@ use tradecraft_core::{
 use crate::ctx::CommandContext;
 use crate::exit::{EXIT_OK, EXIT_REFUSED, blocked, usage_error};
 use crate::prompt::confirm_write;
-use crate::report::normalize_thrown_reason;
+use crate::report::{normalize_thrown_reason, print_json};
 use crate::resolve::{CommonFlags, ResolvedRun, resolve_at, resolve_run};
 
 /// The resolved flags of `skillwright bump`.
@@ -94,19 +94,6 @@ fn write_row(ctx: &mut CommandContext<'_>, json: bool, row: &Row) -> Result<(), 
     } else {
         let _ = writeln!(ctx.out, "{}", row.line());
         Ok(())
-    }
-}
-
-fn print_json(ctx: &mut CommandContext<'_>, value: &impl Serialize) -> Result<(), i32> {
-    match serde_json::to_string_pretty(value) {
-        Ok(document) => {
-            let _ = writeln!(ctx.out, "{document}");
-            Ok(())
-        }
-        Err(err) => Err(blocked(
-            ctx.err,
-            &format!("the report would not serialize: {err}"),
-        )),
     }
 }
 
