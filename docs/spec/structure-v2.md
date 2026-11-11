@@ -65,8 +65,8 @@ homepage: https://acme.dev/skills
 targets: [claude, codex]        # which harnesses get each component; absent means all
 claude: {}                      # harness blocks: fields only that harness reads (section 8)
 codex: {}
-cursor: {}
-pi: {naming: bare}
+cursor: {}                      # {naming: bare} keeps plain skill names (section 8)
+pi: {}                          # {naming: bare} likewise
 
 # Tool settings.
 build:
@@ -314,7 +314,11 @@ elsewhere, has it. A name two plugins share is an error that names both.
    `[[x]]` is an ordinary link.
    - A call to a skill renders as the string that runs it on that harness, in
      backticks: `` `/skillwright:setup` `` on Claude Code,
-     `` `$skillwright:setup` `` on Codex. Nothing is copied.
+     `` `$skillwright:setup` `` on Codex, `` `/skillwright-setup` `` on Cursor
+     and `` `/skill:skillwright-setup` `` on Pi. Cursor and Pi use the
+     skill's prefixed name, or `` `/setup` `` and `` `/skill:setup` `` when the
+     called skill's plugin sets `naming: bare` there (section 8 rule 6).
+     Nothing is copied.
    - A call with words keeps them: `/[[setup|the setup skill]]` renders as
      ``the setup skill (`/skillwright:setup`)``.
    - A fragment on a call, `/[[setup#Usage]]`, is an error, because a call
@@ -367,8 +371,8 @@ harness's own form (decision D9).
     None of the three expands a variable in skill text. From a skill's
     `SKILL.md`, `${PLUGIN_ROOT}/scripts/tool` becomes `../../scripts/tool`;
     from that skill's `references/guide.md` it becomes
-    `../../../scripts/tool`. On Pi, a path into a skill follows the skill's
-    folder name there, `skills/<p>-<s>/`. Embedded text lands in the file that
+    `../../../scripts/tool`. On Cursor and Pi, a path into a skill follows the
+    skill's folder name there, `skills/<p>-<s>/` by default (section 8 rule 6). Embedded text lands in the file that
     embeds it, so the path is written from that file's folder. Files in
     `scripts/`, `references/` and `assets/` are all rewritten this way.
 20. If a harness's pack does not carry the target, such as a command's file
@@ -535,7 +539,20 @@ position; the environment; a built-in default.
    the note's own.
 4. A block is emitted only for its harness.
 5. `packs` is not a block key. Each harness's packs folder is fixed (section 9).
-   `pi: {naming: bare}` stays.
+6. On Cursor and Pi, a plugin's skill is written as `<p>-<s>`, both its folder
+   and its `name`: the `review` skill of plugin `tools` is
+   `skills/tools-review/` with `name: tools-review`. `cursor: {naming: bare}`
+   or `pi: {naming: bare}` on the plugin or a container above it keeps the
+   plain `<s>`. The only values are `bare` and `prefixed`. A prefixed name over
+   64 characters is an error. Claude Code and Codex always keep the plain
+   `<s>`, because they put the plugin name in front themselves
+   (`tools:review`).
+
+   Pi and Cursor have no plugin namespace, so two plugins' skills of one name
+   would collide there (harness-reference:
+   `corpus/notes/skill-naming-across-harnesses.md`). The prefix avoids that by
+   default. `bare` stays available because Cursor's own first-party plugins
+   use plain names, such as `deslop`.
 
 ## 9. Bundling and output
 
@@ -584,7 +601,7 @@ pack folder from the table above.
 | The plugin's manifest, from `<p>.md` | The harness's manifest path in `<pack>` | All |
 | `plugins/<p>/CHANGELOG.md` | `<pack>/CHANGELOG.md` | All |
 | `plugins/<p>/references/`, `scripts/`, `assets/` | `<pack>/references/`, `<pack>/scripts/`, `<pack>/assets/` | All |
-| `skills/<s>/<s>.md` | `<pack>/skills/<s>/SKILL.md`, compiled | All. Pi names the folder `<p>-<s>` unless `pi: {naming: bare}`. |
+| `skills/<s>/<s>.md` | `<pack>/skills/<s>/SKILL.md`, compiled | All. Cursor and Pi name the folder `<p>-<s>` unless `naming: bare` is set for them (section 8 rule 6). |
 | `skills/<s>/references/`, `scripts/`, `assets/` | The same names inside the skill's folder | All |
 | `commands/<c>/<c>.md` | `<pack>/commands/<c>.md`, compiled | Claude Code only |
 | `hooks/hooks.json` and hook notes | The harness's hooks file in `<pack>` | Claude Code, Codex, Cursor |

@@ -43,7 +43,12 @@ and may return in a later milestone:
 - `<harness>: {packs: <path>}`, with its overlap checks and the
   `stale-output` warning. This amends
   [D-WNTQ](../decisions/D-WNTQ-harness-profile-values-from-config.md):
-  `pi: {naming}` stays settable, `packs` does not.
+  `pi: {naming}` stays settable, `cursor: {naming}` is added, and `packs`
+  is not settable.
+- Bare skill names as Cursor's default. Cursor now writes a plugin's skill as
+  `<p>-<s>`, folder and `name`, as Pi already does; `cursor: {naming: bare}`
+  keeps today's plain names (structure-v2 section 8 rule 6). A call to a
+  Cursor skill renders `/<p>-<s>`, not `/<s>`.
 - Vault-wide link resolution: the basename match across the vault, the
   `own_folder_candidate` tiebreak, `link-ambiguous` across folders, and
   shared notes copied to `references/vault/<vault-relative>` or
@@ -143,7 +148,14 @@ amendment too: its patterns layer is gone.
   `select_fragment` and the cycle check stay as they are.
 - `harness/profile.rs`: `PluginFormat::packs` stays a fixed value.
   `owned_paths_at` and the config override path go. `CliInvocation` stays as
-  the per-harness switch, now for every plugin-root path (D9).
+  the per-harness switch, now for every plugin-root path (D9). Cursor's
+  naming changes from `SkillNaming::Bare` (taken from harness knowledge,
+  `skills/plugin-namespace`) to `Source::Constant(SkillNaming::PluginPrefixed)`,
+  as Pi's row is. `held("cursor")`'s expected value changes with it.
+- `harness/manifest.rs` and `model/load.rs`: `bare_on_pi` becomes one check
+  for `cursor` and `pi` blocks, filling `bare_on` with each harness that sets
+  `naming: bare`. `refuse_prefixed_collisions` and the 64-character check then
+  cover Cursor too.
 - `model/mod.rs` and `harness/translator.rs` (D9): `Segment::LauncherCall`
   and `push_text`'s one-path split become a plugin-root path segment that
   holds any path after `${PLUGIN_ROOT}/`, checked against the files the pack
@@ -358,7 +370,13 @@ The commits, in order:
    Markdown file in `references/` is compiled; an agent ships nowhere; two
    sources on one path are refused naming both. Also: a two-marketplace build
    writes two trees under `dist/`; `check` reports drift after a hand edit
-   there; a `packs` key is refused.
+   there; a `packs` key is refused. Naming: the `tools` plugin's `review`
+   skill lands at `skills/tools-review/SKILL.md` with `name: tools-review` on
+   Cursor and Pi and at `skills/review/` on Claude Code and Codex;
+   `cursor: {naming: bare}` and `pi: {naming: bare}` keep `skills/review/`;
+   another `naming` value is refused; a prefixed name over 64 characters is
+   refused. In commit 5, a call to it renders `` `/tools-review` `` on Cursor
+   and `` `/review` `` with `bare`.
 5. **Links and transclusion.** Scoped resolution, the link table, the
    real-path check, missing targets as errors, calls and plain links (D2,
    D3), literal code, the leftover check, and the embed rules of section 5.
@@ -413,7 +431,10 @@ The commits, in order:
    folder, links up to the pack root need another form for Codex.
 6. **`init`, `bump`, docs and the repo's plugin.** `init` writes the skeleton;
    `bump` by name and `--changed-since` on the new layout; the reference docs
-   and README; `plugin/` moved and its two workflows updated; the seven
+   and README; `plugin/` moved and its two workflows updated; the Cursor
+   pack's skills renamed, from `skills/author/`, `skills/publish/` and
+   `skills/setup/` to `skills/skillwright-author/` and so on, with matching
+   `name` fields and call strings (the Pi pack already uses these names); the seven
    `/[[...]]` calls that sit in code spans in `plugin/` moved into prose,
    keeping the `/` (`` `/[[setup]]` `` becomes `/[[setup]]`), which gives the
    same output; the three heading self-calls, such as `# /[[author]]`, stay as
