@@ -69,23 +69,29 @@ pub fn run_init(flags: &InitFlags, ctx: &mut CommandContext<'_>) -> i32 {
             &format!("{} was not created: {err}", plugin_dir.display()),
         );
     }
-    for (path, text) in &notes {
+    for (at, (path, text)) in notes.iter().enumerate() {
         // `create_new` never follows a link, and closes the gap after the check.
-        let written = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .and_then(|mut opened| opened.write_all(text.as_bytes()));
-        match written {
-            Ok(()) => {}
-            Err(err) if err.kind() == ErrorKind::AlreadyExists => return already_exists(path, ctx),
-            Err(err) => {
-                return blocked(
-                    ctx.err,
-                    &format!("{} was not written: {err}", path.display()),
-                );
+        let opened = OpenOptions::new().write(true).create_new(true).open(path);
+        let written = opened.and_then(|mut file| {
+            file.write_all(text.as_bytes()).inspect_err(|_| {
+                let _ = std::fs::remove_file(path);
+            })
+        });
+        if let Err(err) = written {
+            // Take back the notes this run wrote, so nothing was written.
+            for (done, _) in &notes[..at] {
+                let _ = std::fs::remove_file(done);
             }
+            if err.kind() == ErrorKind::AlreadyExists {
+                return already_exists(path, ctx);
+            }
+            return blocked(
+                ctx.err,
+                &format!("{} was not written, so nothing was: {err}", path.display()),
+            );
         }
+    }
+    for (path, _) in &notes {
         let rel = path.strip_prefix(&ctx.cwd).unwrap_or(path);
         let _ = writeln!(ctx.out, "wrote {}", rel.display());
     }

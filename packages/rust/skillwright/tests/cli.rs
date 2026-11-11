@@ -407,6 +407,26 @@ fn init_does_not_write_through_a_dangling_link() {
     assert!(!target.exists());
 }
 
+/// A note that cannot be written takes back the notes written before it,
+/// so a second run is not refused for them.
+#[cfg(unix)]
+#[test]
+fn init_that_fails_leaves_no_notes_behind() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let plugin_dir = dir.path().join("marketplaces/acme/plugins/tools");
+    fs::create_dir_all(&plugin_dir).unwrap();
+    fs::set_permissions(&plugin_dir, fs::Permissions::from_mode(0o555)).unwrap();
+    let ran = run(&["init", "acme", "tools"], dir.path());
+    fs::set_permissions(&plugin_dir, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_ne!(ran.code, 0, "{}", ran.stderr);
+    assert!(!dir.path().join("skillwright.md").exists());
+    assert!(!dir.path().join("marketplaces/acme/acme.md").exists());
+
+    let again = run(&["init", "acme", "tools"], dir.path());
+    assert_eq!(again.code, 0, "{}", again.stderr);
+}
+
 #[test]
 fn an_unknown_option_is_a_usage_error() {
     let dir = tempfile::tempdir().unwrap();
