@@ -1,0 +1,1232 @@
+{
+  "doc": "spec-v2",
+  "updated": "2026-11-11T05:46:20.679Z",
+  "verdict": "reviewing",
+  "comments": [
+    {
+      "id": "c5c7ce9f136ff98b617029900",
+      "node": "spec-1-the-root-p-2",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "This is the simplest rule that needs no reserved names: a component named    skillwright has its note at .../skillwright/skillwright.md, and its    folder never holds marketplaces/, because a marketplaces/ folder below    the top is refused (section 11).",
+        "prefix": "e it is passed over.    "
+      },
+      "text": "what is a 'component' in this sentence? this sentence is confusing in general I feel like. Lets add diagrams of folder structures as appropriate to explain things.",
+      "at": "2026-11-11T04:54:04.942Z",
+      "sent": "2026-11-11T04:54:04.942Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "f2c19220-acd4-4e08-9586-d255e3d3c6d1",
+          "from": "agent",
+          "text": "Rewrote rule 2. It now says what a component is (a skill, agent, command or hook, defined in section 3), and adds a folder diagram that shows the root's skillwright.md beside marketplaces/ and a skill named skillwright whose note has no marketplaces/ beside it. I'm doing a pass over the whole spec to add folder diagrams where a rule describes a layout.",
+          "at": "2026-11-11T04:54:39.719Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:29:29.087Z"
+    },
+    {
+      "id": "cac12047e976afbcb3509e60b",
+      "node": "spec-1-the-root-p-3",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": ". skillwright owns the root. It is not meant to sit inside a larger notes    vault. Only skillwright.md and marketplaces/ are read. dist/ is    written (section 9). Anything else at the root is left alone.",
+        "prefix": "3"
+      },
+      "text": "can we just specify that v2 is not intended to sit inside a larger vault?",
+      "at": "2026-11-11T04:54:32.476Z",
+      "sent": "2026-11-11T04:54:32.476Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "a067c515-8213-4178-ba95-c06ae1865b36",
+          "from": "agent",
+          "text": "Rule 3 now reads: v2 does not support a vault inside a larger notes vault. At the root, only skillwright.md and marketplaces/ are read, and dist/ is written (section 9). Anything else at the root is left alone. Also new on the page: folder diagrams in sections 3, 4, 9 and 11.",
+          "at": "2026-11-11T04:56:20.889Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:06:27.245Z"
+    },
+    {
+      "id": "c12093212caeae789da30bee4",
+      "node": "spec-1-the-root-p-2",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "A skill, agent, command or hook is called a component (section 3). A    component named skillwright has a note called skillwright.md, so the    walk up can meet a second skillwright.md. It is never taken for the root,    because only the root has marketplaces/ beside it:",
+        "prefix": "de it is passed over.   ",
+        "suffix": "   ``text    <root>/    "
+      },
+      "text": "is using an example of a component called 'skillwright' necessary to call out here? it seems somewhat confusing to introduce so early. Let's add an appendix with examples or odd cases like this perhaps? I'd rather just see a simple text 'diagram' of the folder structure that defines a skillwright vault.",
+      "at": "2026-11-11T04:55:55.189Z",
+      "sent": "2026-11-11T04:55:55.189Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "e3755f6a-6aa8-4568-85ba-324c745a25b1",
+          "from": "agent",
+          "text": "Done. Rule 1 now opens with a simple diagram of a whole vault (root file, dist/, marketplaces/<m>/<m>.md, plugins/<p>/<p>.md, skills/<s>/<s>.md). Rule 2 just says how the root is found, and points to a new Appendix A: Edge cases at the end, which now holds the skill-named-skillwright case and its diagram. Odd cases found later will go there too.",
+          "at": "2026-11-11T04:57:00.953Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:06:20.680Z"
+    },
+    {
+      "id": "c50c21cb376b006c231f96e7a",
+      "node": "spec-3-folders-and-notes-p",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "text <root>/ ├── skillwright.md                  tool settings (build:) and shared defaults ├── dist/                           output, written by build (section 9) └── marketplaces/     └── <m>/         ├── <m>.md                  the marketplace's note         └── plugins/             └── <p>/                 ├── <p>.md          the plugin's note                 ├── CHANGELOG.md    optional, rendered into each pack                 ├── references/     shared docs, ship as references/                 ├── scripts/        shared code, ship as scripts/                 ├── assets/         shared output files, ship as assets/                 ├── skills/<s>/                 │   ├── <s>.md                 │   ├── references/                 │   ├── scripts/                 │   └── assets/                 ├── agents/<a>/<a>.md                 ├── commands/<c>/<c>.md                 └── hooks/                     ├── hooks.json  optional (decision D4)                     └── <h>/<h>.md",
+        "suffix": " "
+      },
+      "text": "can we use a parley code block here? this does not format correctly",
+      "at": "2026-11-11T04:57:23.402Z",
+      "sent": "2026-11-11T04:57:23.402Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "359d245e-f258-4706-8bda-d4d626e78ea0",
+          "from": "agent",
+          "text": "Done for the whole page: every fenced block in the spec, including the folder diagrams and the ones nested inside rules, is now a parley code block placed right after its rule, so the trees render with their alignment. 16 code blocks in all. Reload to see it.",
+          "at": "2026-11-11T04:58:23.459Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:06:11.788Z"
+    },
+    {
+      "id": "cf652abface77de1c0d5c4b91",
+      "node": "spec-2-the-root-file-p-6",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "keys are harnesses, namespace and bump. out,    patterns, exclude, assets, hooks, destinations, scan_locations    and launcher_path are refused (section 11). Any other key the table does    not list warns.",
+        "prefix": "6. The build: "
+      },
+      "text": "again - let's just show the config itself.",
+      "at": "2026-11-11T04:58:41.393Z",
+      "sent": "2026-11-11T04:58:41.393Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "dc9efc6c-6fc8-437c-9de3-7ac34f604dca",
+          "from": "agent",
+          "text": "Section 2 now opens with a complete example skillwright.md: the shared defaults (author, license, repository, homepage, targets, the four harness blocks) and build: (harnesses, namespace, bump.patch), each with a short comment. The rules under it shrank to four: root only, only these keys, marketplace-only keys refused, and the v1 build keys that are refused.",
+          "at": "2026-11-11T04:59:21.490Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:42:26.451Z"
+    },
+    {
+      "id": "c9b3026b958c94634e95b3a46",
+      "node": "spec-containers-and-components-p-7",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": ", or a name alone",
+        "prefix": " note with a description",
+        "suffix": ". A skill,    command or"
+      },
+      "text": "or a name alone? is there any point in having name - is the name of the file the name harnesses use?",
+      "at": "2026-11-11T05:01:05.290Z",
+      "sent": "2026-11-11T05:01:05.290Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "60d5f2af-198c-4091-aa28-05bfc1d1b591",
+          "from": "agent",
+          "text": "No point in v2. Harnesses read the name field in SKILL.md (Agent Skills requires it to equal the folder name), and the build writes it from the folder. So: rule 4 now says the folder name is the name and authors don't write name; a name equal to the folder is accepted so a copied SKILL.md still works, any other value is refused. Rule 7 drops 'or a name alone': every note at a component position is a component, and a skill, command or agent needs a description, since harnesses use it to pick the component. If you'd rather refuse any name key outright, say so.",
+          "at": "2026-11-11T05:01:39.852Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "b08b2c7faab1eba026b25939",
+          "from": "reviewer",
+          "text": "ok - dropped right?",
+          "at": "2026-11-11T05:26:29.376Z",
+          "sent": "2026-11-11T05:26:29.376Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "d0a24758-7a14-43a9-8701-9fa174baea62",
+          "from": "agent",
+          "text": "Now it is. Before, a name equal to the folder was still accepted. Now there is no name key at all: a note that sets one is refused, and the error says to delete it. That covers marketplace, plugin and component notes. The impact doc lists it as removed, and the repo's plugin/ notes drop their name keys in the last commit.",
+          "at": "2026-11-11T05:26:55.425Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:28:07.867Z"
+    },
+    {
+      "id": "c725f507e29626307c96d5807",
+      "node": "spec-what-a-folder-may-hold-p-2",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "gins/<p>/<p>.md, CHANGELOG.md, references/, scripts/, assets/, the four kind folders.skills/<s>/<s>.md, references/, scripts/, assets/.",
+        "prefix": "<m>/<m>.md, plugins/.plu",
+        "suffix": "agents/<a>/, commands/<c"
+      },
+      "text": "one thing I wonder about is giving space for script building. so like with sdlc we have a lib/ I think that is where sdlc source lives then gets compiled",
+      "at": "2026-11-11T05:02:57.494Z",
+      "sent": "2026-11-11T05:02:57.494Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "9ff1381e-becd-4680-b56b-010aed9b6ba7",
+          "from": "agent",
+          "text": "Good catch, and it is bigger than lib/. I checked solutions/ontological/agent-pants.yaml in the dev repo: the sdlc plugin ships ~25 build.assets entries from outside the vault (cli/sdlc, the bundled cli/sdlc.js and its wasm, dashboard-spa/dist, conventions/, lib/model/entities, lib/services/docs/*.eta ...) to arbitrary pack paths. v2 as written (containment to marketplaces/<m>, only scripts/ references/ assets/, build.assets dropped by D4) cannot build it.\n\nProposal, keeping v2 simple:\n1. A plugin (and a skill) may hold a src/ folder that never ships, like docs/ and tests/. Script sources live there, or anywhere outside the vault.\n2. skillwright does not run builds. Your own build step (bun build, moon task) writes its output into the plugin's scripts/, references/ or assets/ before skillwright build, and those built files are committed or generated in CI.\n3. Pack paths follow the three folders: cli/sdlc becomes scripts/sdlc, lib/services/docs/*.eta becomes assets/..., and sdlc's runtime path lookups and the skills' plugin-root paths change to match.\n\nThe alternative is keeping a narrow build.assets (from a path outside the vault into one of the three folders). That fits sdlc without moving its source, but it reopens containment. I'd take the src/ + external build route. Which do you want?",
+          "at": "2026-11-11T05:03:38.015Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "385bf2687c00d7ce7cb8c047",
+          "from": "reviewer",
+          "text": "ok - so we allow a src folder in a plugin and in a skill? \n\nshould we allow specification of build steps in skillwright.md so a user can just run the skillwright step and it will build it's dist first?",
+          "at": "2026-11-11T05:05:24.839Z",
+          "sent": "2026-11-11T05:05:24.839Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "2d6d8070-8b00-491b-8c8a-024c14872688",
+          "from": "agent",
+          "text": "Yes: a src/ folder in a plugin and in a skill, never shipped and never linkable, like docs/ and tests/.\n\nOn build steps in skillwright.md (say build.before: [commands], run from the root before the build): it's convenient, but it has costs:\n- check must not write to the source tree, yet the steps write into scripts/ and assets/. So check would either skip them (and then compare against stale output) or start writing.\n- Running check on a vault you cloned would run its shell commands.\n- skillwright would own shell, platform and error handling for other tools.\n\nI'd leave it out of v2: your task runner (moon, just, an npm script) runs the build and then skillwright build. I'd add it as a backlog item for later, with build only, never check. OK with that, or do you want it in v2?",
+          "at": "2026-11-11T05:05:42.951Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "9fd3bb00765caaf1a6b6256f",
+          "from": "reviewer",
+          "text": "ok",
+          "at": "2026-11-11T05:07:09.940Z",
+          "sent": "2026-11-11T05:07:09.940Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "372a7a4c-6643-45e4-a1aa-61f9a5e39425",
+          "from": "agent",
+          "text": "In the spec now: src/ in plugins and skills (never ships, never linkable; listed in the folder table and the never-ship list); new section 3 rule 15, skillwright runs no builds, with a diagram of src/cli.ts built to scripts/tool.js and called as ${PLUGIN_ROOT}/scripts/tool.js; build steps in skillwright.md added to the Later note and filed as #151; D4 and the impact doc name the sdlc plugin as a consumer that moves to this pattern.",
+          "at": "2026-11-11T05:08:53.210Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:28:25.505Z"
+    },
+    {
+      "id": "c109cd89f9dc6abd144c9a2eb",
+      "node": "spec-2-the-root-file-code",
+      "text": "it just says YAML and then '---'",
+      "at": "2026-11-11T05:07:34.741Z",
+      "sent": "2026-11-11T05:07:34.741Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "62f548ba-47ec-4e82-854d-e15ebaf1da1b",
+          "from": "agent",
+          "text": "Fixed. The '#' comment lines inside the YAML were being read as headings, which split the block. The converter now ignores headings inside code, so the whole root file is one YAML block again.",
+          "at": "2026-11-11T05:09:41.253Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:12:08.586Z"
+    },
+    {
+      "id": "c94474863632f507ca301defc",
+      "node": "spec-sets-its-own-p",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "author: Ada Lovelace            # or {name, email, url} license: MIT                    # an SPDX expression repository: https://github.com/acme/skills homepage: https://acme.dev/skills targets: [claude, codex]        # which harnesses get each component; absent means all claude: {}                      # harness blocks: fields only that harness reads (section 8) codex: {} cursor: {} pi: {naming: bare}"
+      },
+      "text": "use a script block again",
+      "at": "2026-11-11T05:07:49.197Z",
+      "sent": "2026-11-11T05:07:49.197Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "b31757a2-debd-4c7e-aeb9-d1c6bc0ce437",
+          "from": "agent",
+          "text": "Fixed with the same change: the shared-defaults lines are back inside the one YAML code block.",
+          "at": "2026-11-11T05:09:41.361Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "c8d548f41ff402602b8b65f18",
+      "node": "spec-tool-settings-p",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "build:   harnesses: [claude, codex, cursor, pi]   # which harnesses to build; absent means all   namespace: sw                            # read sw-prefixed keys; absent means bare keys   bump:     patch: increment                       # or timestamp ---"
+      },
+      "text": "script block",
+      "at": "2026-11-11T05:07:59.226Z",
+      "sent": "2026-11-11T05:07:59.226Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "25500801-77bb-423a-bcc3-38a9b6792aae",
+          "from": "agent",
+          "text": "Fixed with the same change: build: is back inside the one YAML code block.",
+          "at": "2026-11-11T05:09:41.470Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "cda27277b66a94d5a821dafff",
+      "node": "spec-what-a-folder-may-hold-p-6",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "docs/, tests/ and fixtures/ may sit in any plugin or component folder.     They never ship, and nothing may link into them. .git, .obsidian,     .trash and node_modules are skipped wherever they a",
+        "prefix": "14. ",
+        "suffix": "re."
+      },
+      "text": "are all . folders skipped?",
+      "at": "2026-11-11T05:08:46.452Z",
+      "sent": "2026-11-11T05:08:46.452Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "56202394-6e21-4396-aa4c-df76ba4563e0",
+          "from": "agent",
+          "text": "Yes, now: any file or folder whose name starts with '.', plus node_modules/, is skipped everywhere. It is never read, never shipped and never an error. Before, only .git, .obsidian, .trash and .DS_Store were named. One cost: a template that must keep a dot name, such as assets/.eslintrc.json, can't ship. I added that to Appendix A, with the workaround: name it without the dot and have the script copy it.",
+          "at": "2026-11-11T05:09:41.572Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:26:46.722Z"
+    },
+    {
+      "id": "cf82f956e93a9938d83e066c4",
+      "node": "spec-4-links-embeds-and-containment-p",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "The syntax decides what a token is, not its target. /[[x]] is a call (rule 8). ![[x]] is an embed (section 5). Any other [[x]], and a relative Markdown link, is an ordinary link. An embed resolves by the same rules as a link: what it names must be in scope. The rules apply to links from a component's note and from any Markdown file it ships. Code is fully literal: nothing inside a code span or fenced block is read, so a call, link or embed written there ships exactly as written (rule 12). A plugin-root path, ${PLUGIN_ROOT}/<path>, is not link syntax and is read in prose and code alike (rules 15 to 26)."
+      },
+      "text": "for completeness should we specify normal external links as well?",
+      "at": "2026-11-11T05:09:20.086Z",
+      "sent": "2026-11-11T05:09:20.086Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "f920d64b-8de9-4da4-960f-0e203e0dc9f2",
+          "from": "agent",
+          "text": "Yes. Section 4 now opens with one table of every link form: call, embed, link, external link (any URL with a scheme, autolinks, mailto: ship as written, never fetched or checked, so a dead URL is not an error), same-file #heading links (ship as written), absolute or file: paths (refused: they leave the vault), ${PLUGIN_ROOT} paths, and code (literal). The paragraph under it is shorter now that the table carries it.",
+          "at": "2026-11-11T05:10:19.916Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "4668d97d815a7fc96631480c",
+          "from": "reviewer",
+          "text": "also I think the last sentence explaining a plugin-root path could be explained better. what does 'read in code alike' mean? a code block?",
+          "at": "2026-11-11T05:10:21.556Z",
+          "sent": "2026-11-11T05:10:21.556Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "fef04908-fb6a-4932-b6ec-d11de7aa4f84",
+          "from": "agent",
+          "text": "Yes, it meant inside code spans and fenced code blocks. That sentence is gone (reload if you still see it); the table now says it directly: a plugin-root path is rewritten everywhere, inside code too, and is the one exception to 'code is literal'. Under the table there's a short example: Run `${PLUGIN_ROOT}/scripts/tool.js --check` becomes ${CLAUDE_PLUGIN_ROOT}/... in the Claude Code pack and ../../scripts/tool.js in the Codex pack.",
+          "at": "2026-11-11T05:10:44.837Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:28:43.533Z"
+    },
+    {
+      "id": "c6692663d2518793b740d973d",
+      "node": "spec-scope-of-a-link-from-a-component-p-2",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "A call, /[[name]], is not a link and copies nothing. Its scope is the whole marketplace (rule 8, decision D2)."
+      },
+      "text": "do we clarify you can't call a plugin/component that isn't part of the marketplace?",
+      "at": "2026-11-11T05:11:21.212Z",
+      "sent": "2026-11-11T05:11:21.212Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "384869a1-c2fe-4b2a-8b81-4a6526229e63",
+          "from": "agent",
+          "text": "It was only implied. Now explicit: a call may name a skill or command in any plugin of the same marketplace. A name found in no plugin of that marketplace is an error, even if another marketplace in the vault, or a plugin installed elsewhere, has it. A name two plugins share is an error that names both.",
+          "at": "2026-11-11T05:11:42.802Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:11:58.189Z"
+    },
+    {
+      "id": "ce4f935a24279acf48fa286ca",
+      "node": "spec-2-the-root-file-code",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "namespace: sw                            # read sw-prefixed keys; absent means bare keys",
+        "prefix": "ild; absent means all\n  ",
+        "suffix": "\n  bump:\n    patch: incr"
+      },
+      "text": "wait - what is the prefix for? we only needed to use a plugin name as the prefix for the case where harnesses don't automatically namespace skills by plugin name. like cursor and pi.\n\nI guess it's helpful, so we can leave it. just clarifying behavior elsewhere \n\n<plugin>/<skill>\nshould make a skill called plugin-skill in cursor and pi",
+      "at": "2026-11-11T05:13:59.059Z",
+      "sent": "2026-11-11T05:13:59.059Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "338080d9-4009-4a15-8847-814de35ff861",
+          "from": "agent",
+          "text": "Two different things here.\n\n1. build.namespace is not about harness names. It makes skillwright read its own frontmatter keys with a prefix (sw-version, an sw: block) so they don't collide with other tools' keys when the notes sit in a shared Obsidian vault. v2 no longer supports living inside a larger vault, so I think namespace has no job left. I'd drop it, unless you know a vault that uses it. Drop it?\n\n2. Plugin-skill naming: agreed, and harness-reference backs it (skill-naming-across-harnesses: Pi and Cursor have no plugin namespace). The spec had Pi as <p>-<s> by default but Cursor as bare. I'm changing it so Cursor and Pi both write <p>-<s> by default, with cursor/pi: {naming: bare} to opt out. Claude Code and Codex keep <s>, since they prefix the plugin themselves. Calls rendered for Cursor and Pi will use the prefixed name. I'll update this thread when it lands.",
+          "at": "2026-11-11T05:14:31.172Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "66782fd5-b9a6-43ea-b509-62b43528e494",
+          "from": "agent",
+          "text": "Naming is in (section 8 rule 6): Cursor and Pi write <p>-<s> for the folder and name by default, naming: bare opts out, and the setting inherits from the root or marketplace down to plugins. With bare, two same-named skills in one marketplace are an error for that harness. Calls render /skillwright-setup on Cursor and /skill:skillwright-setup on Pi. The namespace question (drop build.namespace?) is still open for you.",
+          "at": "2026-11-11T05:16:55.922Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "f60dd5e8b496df6b23d19787",
+          "from": "reviewer",
+          "text": "lets drop it for now. Yagni",
+          "at": "2026-11-11T05:27:15.469Z",
+          "sent": "2026-11-11T05:27:15.469Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "7890fc68-c51c-4d3b-a067-d0903eb570a2",
+          "from": "agent",
+          "text": "Dropped. Keys are always bare; build.namespace is gone from the example and from section 6, and it is now in the list of refused v1 build keys. A prefixed key such as sw-version is just an unknown key and warns.",
+          "at": "2026-11-11T05:27:56.513Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:28:02.623Z"
+    },
+    {
+      "id": "c22da7d71e871c79eb3b20ff8",
+      "node": "spec-scope-of-a-link-from-a-component-co",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "Copymarketplaces/acme/plugins/tools/\n├── references/style.md          reached second: a shared folder\n└── skills/\n    ├── author/\n    │   ├── author.md            the linking note\n    │   └── references/guide.md  reached first: its own folder\n    └── setup/setup.md           reached second: another component\nmarketplaces/acme/plugins/other/\n└── skills/x/x.md                refused: another plugin",
+        "prefix": "text"
+      },
+      "text": "this example needs to be expressed better - should show the markdown snippet and the link and then show the resolution order. \n\nthe resolution order in the example has different file names so it's confusing. author.md is the note - but then it says it reaches guide.md first then setup.md reached second then style.md reached second? \n\nplease examine this and look for errors throughout the the docuemnt",
+      "at": "2026-11-11T05:19:56.420Z",
+      "sent": "2026-11-11T05:19:56.420Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "e5d13cd3-ee5f-481f-8990-7c0f38351d49",
+          "from": "agent",
+          "text": "You're right, the old example mixed different file names in one tree. It's rewritten in three parts: the plugin's folder tree, the markdown in author.md ([[guide]], [[style]], [[setup]], [[x]]), and a table that follows each link through step 1 (author's own folder) and step 2 (the plugin's shared folders and components) to its result. guide.md now exists in both places, so the table shows author's own copy winning. A fresh reviewer agent is now checking the whole spec and impact doc for errors like this. I'll fix what it finds and post a summary here.",
+          "at": "2026-11-11T05:20:36.130Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "74e104d7-9055-4f8e-a43b-e6cf891d1e6d",
+          "from": "agent",
+          "text": "An independent review found 36 errors; all fixed (none judged wrong). The link example is now snippet, tree, then a lookup table with consistent names. Main fixes: .mcp.json is an explicit error; unknown root keys warn; paths are rewritten, not the scripts/assets files; Cursor hook variable marked unverified; examples use plugin tools throughout; six reserved folder names stated; container note bodies do not ship; a harness error fails the whole build. A new Appendix A lists 15 edge cases with input and result. Three owner questions are in a new Open questions section.",
+          "at": "2026-11-11T05:42:13.635Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:42:35.121Z"
+    },
+    {
+      "id": "c0cbaf56449915e3dc4a73ef1",
+      "node": "spec-scope-of-a-link-from-a-component-p-14",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "fenced block is read",
+        "prefix": "g inside a code span or ",
+        "suffix": ":     no call, link or e"
+      },
+      "text": "is there a better term than 'read'. processed or interpreted? I keep seeing this, and I forget that we're implicitly stating 'read by skillwright'",
+      "at": "2026-11-11T05:22:00.287Z",
+      "sent": "2026-11-11T05:22:00.287Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "998b3772-e260-4cb1-9caf-50e844dcfc80",
+          "from": "agent",
+          "text": "Agreed, 'read' was doing two jobs. The intro now defines both: skillwright reads a file when it loads it as source, and interprets text when it acts on a link, call, embed or plugin-root path in it. Text that is not interpreted ships exactly as written. The 12 places that meant the second sense now say 'interpreted', e.g. 'Nothing inside a code span or fenced block is interpreted'. 'Read' stays where it means loading files (e.g. 'only skillwright.md and marketplaces/ are read').",
+          "at": "2026-11-11T05:22:36.465Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:26:12.669Z"
+    },
+    {
+      "id": "ccb543fbaf750d1ec824e7ddc",
+      "node": "spec-scope-of-a-link-from-a-component-p-15",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "o [[ may remain in pros",
+        "prefix": "13. After the build, n",
+        "suffix": "e. A leftover is an erro"
+      },
+      "text": "unless escaped",
+      "at": "2026-11-11T05:22:59.653Z",
+      "sent": "2026-11-11T05:22:59.653Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "50286f96-748c-4482-ad61-19ec4a696f56",
+          "from": "agent",
+          "text": "Rule 13 now leads with it: after the build no unescaped [[ may remain in prose; write \\[[ to keep the brackets as text, and \\[[x]] ships as [[x]]. One thing to decide: today's code (from #136) ships the backslash too, so the file holds \\[[x]] and a Markdown viewer shows [[x]]. The spec says the backslash is removed. Models read SKILL.md raw, so removing it gives them clean text. I'd keep the spec's version and change the code. OK?",
+          "at": "2026-11-11T05:23:23.689Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:28:48.468Z"
+    },
+    {
+      "id": "c9e8ed44715b15397a5c5a593",
+      "node": "spec-plugin-root-paths-p-6",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "19. In Codex's, Cursor's and Pi's packs it is written as the path of that same     file in that harness's pack, relative to the folder the text lands in.     None of the three expands a variable in skill text. From a skill's     SKILL.md, ${PLUGIN_ROOT}/scripts/tool becomes ../../scripts/tool;     from that skill's references/guide.md it becomes     ../../../scripts/tool. On Cursor and Pi, a path into a skill follows the     skill's folder name there, skills/<p>-<s>/ by default (section 8 rule 6). Embedded text lands in the file that     embeds it, so the path is written from that file's folder. Files in     scripts/, references/ and assets/ are all rewritten this way."
+      },
+      "text": "throughout this document favor showing stepped examples - with script blocks, or paragraphs, or text/mermaid diagrams etc.\n\nhaving several steps and long file paths in a long prose paragraph like this is hard to read and understand.\n\napply this rule to the entire document - both parley and the document",
+      "at": "2026-11-11T05:26:05.849Z",
+      "sent": "2026-11-11T05:26:05.849Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "c6fea80f-a2be-4841-b77b-863c0af2c68b",
+          "from": "agent",
+          "text": "Agreed. I'll do it as one pass over the whole spec once the error review that's running now reports back, so both land together. Rules with several steps or long paths become a short rule sentence followed by a stepped example: numbered steps, a code block or folder tree, or a table. The page is generated from the markdown, so it changes too. I'll post here when it's up.",
+          "at": "2026-11-11T05:26:20.405Z",
+          "revision": 1,
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "cf4b4d1d-df02-4c4f-b342-44772bdf2926",
+          "from": "agent",
+          "text": "Done in 5d6de17b and 10c996c9, page rebuilt (reload). Both docs now use numbered steps, file trees as text blocks, config as YAML, source/output pairs, and tables for per-harness or per-case results (calls, naming, hooks, skip and never-ship lists, path resolution, collisions). Link lookup and the frontmatter cascade are mermaid flows. Some comments may now sit on moved blocks.",
+          "at": "2026-11-11T05:42:13.564Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:42:41.275Z"
+    },
+    {
+      "id": "c3860d3cf59cefb7a91ae93f6",
+      "node": "spec-plugin-root-paths-p-7",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "20. If a harness's pack does not carry the target, such as a command's file     on Codex, the reference is refused for that harness, as a link to a     component that is not carried is (rule 6)."
+      },
+      "text": "what does this even mean?",
+      "at": "2026-11-11T05:30:34.071Z",
+      "sent": "2026-11-11T05:30:34.071Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "6b94291e-80d3-421e-8d44-ae4682736bd4",
+          "from": "agent",
+          "text": "It means: some files only exist in some packs. Example: Codex has no commands, so the Codex pack has no commands/ folder.\n\n1. A skill says: Run `${PLUGIN_ROOT}/commands/deploy/deploy.md`.\n2. Claude pack: becomes `${CLAUDE_PLUGIN_ROOT}/commands/deploy/deploy.md`. Fine.\n3. Codex pack: that file is not there. The path would point at nothing.\n4. So the build fails for Codex (and, per the \"refused fails the build\" default, the whole build stops) with an error naming the path.\n\nSame as a [[link]] to a component a harness does not carry (rule 6). I am having the rule rewritten as these steps in the revision now in progress.",
+          "at": "2026-11-11T05:31:08.050Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "3b148dbb43bc36731c15344f",
+          "from": "reviewer",
+          "text": "is 'contain' a better word than 'carry'?",
+          "at": "2026-11-11T05:34:38.587Z",
+          "sent": "2026-11-11T05:34:38.587Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "5ac0f747-3e5f-4f64-baab-0a1469f6335d",
+          "from": "agent",
+          "text": "Yes, plainer. Switching \"carry\" to \"contain\" throughout both docs in the current revision: \"the Codex pack does not contain commands/deploy/deploy.md\".",
+          "at": "2026-11-11T05:34:51.238Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "5cdd0bc1-e73e-45eb-9cdb-e1dddac71d67",
+          "from": "agent",
+          "text": "Done: rule 20 is a four-step example, and \"carry\" is \"contain\" throughout. The path is ${PLUGIN_ROOT}/commands/deploy.md, since paths name the pack layout, where a command is one file.",
+          "at": "2026-11-11T05:42:13.845Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:42:52.793Z"
+    },
+    {
+      "id": "c79eecce2f6df7a6ff5795d29",
+      "node": "spec-plugin-root-paths-p-10",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "3. A hooks file, hooks/hooks.json or a hook note, also writes     ${PLUGIN_ROOT}. Each hook command's ${PLUGIN_ROOT} becomes the     harness's own variable, as in v1: ${CLAUDE_PLUGIN_ROOT} for Claude Code,     ${PLUGIN_ROOT} for Codex, ${CURSOR_PLUGIN_ROOT} for Cursor. Pi carries     no hooks. A hook runs as a shell command from the project folder, where a     pack-relative path would not resolve, and each of those harnesses sets its     variable for hooks. A bare ${PLUGIN_ROOT} is allowed in a hook, since     the variable is kept. A path after it is checked by rule 17.",
+        "prefix": "2"
+      },
+      "text": "are we supporting hooks file deployment?",
+      "at": "2026-11-11T05:31:05.171Z",
+      "sent": "2026-11-11T05:31:05.171Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "a0775eea-f19a-46bc-91d8-aa6eeab8ccc4",
+          "from": "agent",
+          "text": "Yes, as the spec stands. v1 already ships hooks, and v2 keeps it:\n\n1. Source: plugins/<p>/hooks/hooks.json (D4 replaced build.hooks with this fixed spot).\n2. Build: translated into each harness hooks file, with ${PLUGIN_ROOT} swapped for that harness variable.\n3. Ships on Claude Code, Codex and Cursor. Pi has no shell hooks, so none there.\n\nProblem the review found: the spec also allows \"hook notes\" (hooks/<h>/<h>.md) but never says what they contain or how they become a hooks file. My recommendation: v2 supports hooks.json only and drops hook notes (one way to do it; add notes later). Your options: (a) hooks.json only, (b) drop hooks from v2 entirely, (c) keep both and define the note format. Reply here and I will apply it.",
+          "at": "2026-11-11T05:31:31.725Z",
+          "revision": 1,
+          "action": "answered",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "2706b97dfdebe95fccaaee58",
+          "from": "reviewer",
+          "text": "this is another example where you keep putting lists in prose. Why not make a small table of the examples",
+          "at": "2026-11-11T05:35:51.940Z",
+          "sent": "2026-11-11T05:35:51.940Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "60e8945d-de56-4632-93b9-2e10939a29f2",
+          "from": "agent",
+          "text": "Fair. As a table:\n\n| Harness | Ships hooks? | ${PLUGIN_ROOT} in a hook becomes |\n|---|---|---|\n| Claude Code | yes | ${CLAUDE_PLUGIN_ROOT} |\n| Codex | yes | ${PLUGIN_ROOT} (unchanged) |\n| Cursor | yes | ${CURSOR_PLUGIN_ROOT} (unverified for hooks) |\n| Pi | no (no shell hooks) | n/a |\n\nSource is always plugins/<p>/hooks/hooks.json. I am having the spec section rewritten as this table too.\n\nStill open for you: keep hook notes (hooks/<h>/<h>.md) or ship hooks.json only? I recommend hooks.json only.",
+          "at": "2026-11-11T05:36:09.505Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "c8a01715-2bbf-445a-9f63-a7fe49d5e25e",
+          "from": "agent",
+          "text": "Done: the hooks rule is now the table. Hook notes vs hooks.json only is listed under Open questions.",
+          "at": "2026-11-11T05:42:13.983Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:42:57.701Z"
+    },
+    {
+      "id": "cf872700c5d61696456487c51",
+      "node": "spec-5-transclusion",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": "Transclusion",
+        "prefix": "5. "
+      },
+      "text": "Lets give a quick example of what transclusion and what the results would look like",
+      "at": "2026-11-11T05:31:49.946Z",
+      "sent": "2026-11-11T05:31:49.946Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "5eb9d52e-8c28-4b52-8b8c-4801b4e2bb26",
+          "from": "agent",
+          "text": "Adding one at the top of section 5 in the revision now in progress. Short version:\n\nSource note:\n  ## Usage\n  ![[guide#Usage]]\n  ![[run.sh]]\n\nguide.md has a \"## Usage\" section with two lines; run.sh has `echo hi`.\n\nShipped SKILL.md:\n  ## Usage\n  <the two lines from guide.md Usage>\n  ```sh\n  echo hi\n  ```\n\nThe embed is replaced by the content. A text file becomes a fenced code block (with a longer fence if the file itself has fences).",
+          "at": "2026-11-11T05:32:03.716Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "e7017d72-e5b5-4268-8b17-1c89eed81b6d",
+          "from": "agent",
+          "text": "Done: section 5 opens with the worked example. Note: run.sh ships as a bash block, since the extension table maps .sh to bash.",
+          "at": "2026-11-11T05:42:13.776Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:42:23.132Z"
+    },
+    {
+      "id": "c8f004829890984cbbd0090a6",
+      "node": "spec-inlining-a-note-p",
+      "text": "I wonder if we should error on malformed frontmatter, bc malformed frontmatter could lead to bad prose being transcluded right?",
+      "at": "2026-11-11T05:33:00.882Z",
+      "sent": "2026-11-11T05:33:00.882Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "32684575-6e88-4a21-9149-f21e90dec1e9",
+          "from": "agent",
+          "text": "Agreed. With a broken frontmatter fence the body boundary is unknown:\n\n1. Note starts `---`, YAML lines, but the closing `---` is missing.\n2. Treat it all as body: the YAML gets inlined as prose.\n3. Guess a boundary: real prose may get dropped.\n\nEither way the shipped skill is wrong with no signal. So the rule becomes: embedding a note with malformed frontmatter (unclosed fence or invalid YAML) is an error naming both notes. Being applied in the current revision.",
+          "at": "2026-11-11T05:33:20.144Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "c8a4725c-86ae-4367-a1d4-28dae3876aa1",
+          "from": "agent",
+          "text": "Done: embedding a note with malformed frontmatter is an error naming both notes. Section 6 and the appendix agree.",
+          "at": "2026-11-11T05:42:13.914Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ],
+      "reviewerAck": "2026-11-11T05:43:06.857Z"
+    },
+    {
+      "id": "cc473f7b0d6065c75d0486b19",
+      "node": "spec-inlining-another-text-file-p-15",
+      "selector": {
+        "type": "TextQuoteSelector",
+        "exact": ". v1 resolved an emb",
+        "prefix": "20",
+        "suffix": "ed vault-wide and copied"
+      },
+      "text": "any point in reference v1 throughout this document?",
+      "at": "2026-11-11T05:34:16.748Z",
+      "sent": "2026-11-11T05:34:16.748Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      },
+      "replies": [
+        {
+          "id": "139e4cda-e0a2-48f7-9f8f-0d67427faa8c",
+          "from": "agent",
+          "text": "No. The spec should say what v2 does, nothing more. Removing v1 references throughout in the current revision; any v1-to-v2 difference worth keeping moves to v2-impact.md, which exists for that.",
+          "at": "2026-11-11T05:34:30.503Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "87caf8e25f4084921c8b5fd7",
+          "from": "reviewer",
+          "text": "please do so",
+          "at": "2026-11-11T05:35:03.715Z",
+          "sent": "2026-11-11T05:35:03.715Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "f74d51b3-c129-47ea-8d5a-84922156672f",
+          "from": "agent",
+          "text": "On it. The spec agent has the instruction; the page will be rebuilt once its revision is pushed, and I will reply here when the v1 references are gone.",
+          "at": "2026-11-11T05:35:15.220Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "ff53d587-05d5-4ad2-88f2-ecb4388c48be",
+          "from": "agent",
+          "text": "Done. The spec has no v1 references now. Each decision keeps What it is / Decided / Why; the v1 history moved to the impact doc, section \"What each decision changes\".",
+          "at": "2026-11-11T05:42:13.706Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "cf2efa94805fbe9c649eb43ea",
+      "node": "spec-v2",
+      "text": "can you update the PR with everything we have done so far please, and dispatch a @claude review on it via comment",
+      "at": "2026-11-11T05:46:20.679Z",
+      "sent": "2026-11-11T05:46:20.679Z",
+      "who": {
+        "id": "u-bPQvjVPjzsqF",
+        "name": "sksizer"
+      }
+    }
+  ],
+  "choices": {},
+  "seenReplies": {
+    "f2c19220-acd4-4e08-9586-d255e3d3c6d1": "2026-11-11T04:55:55.189Z",
+    "60d5f2af-198c-4091-aa28-05bfc1d1b591": "2026-11-11T05:02:57.494Z",
+    "9ff1381e-becd-4680-b56b-010aed9b6ba7": "2026-11-11T05:05:24.839Z",
+    "e3755f6a-6aa8-4568-85ba-324c745a25b1": "2026-11-11T05:06:06.777Z",
+    "a067c515-8213-4178-ba95-c06ae1865b36": "2026-11-11T05:06:06.777Z",
+    "359d245e-f258-4706-8bda-d4d626e78ea0": "2026-11-11T05:06:11.954Z",
+    "2d6d8070-8b00-491b-8c8a-024c14872688": "2026-11-11T05:07:09.940Z",
+    "f920d64b-8de9-4da4-960f-0e203e0dc9f2": "2026-11-11T05:10:21.556Z",
+    "fef04908-fb6a-4932-b6ec-d11de7aa4f84": "2026-11-11T05:11:21.212Z",
+    "372a7a4c-6643-45e4-a1aa-61f9a5e39425": "2026-11-11T05:11:58.361Z",
+    "56202394-6e21-4396-aa4c-df76ba4563e0": "2026-11-11T05:11:58.361Z",
+    "384869a1-c2fe-4b2a-8b81-4a6526229e63": "2026-11-11T05:11:58.361Z",
+    "62f548ba-47ec-4e82-854d-e15ebaf1da1b": "2026-11-11T05:12:08.772Z",
+    "338080d9-4009-4a15-8847-814de35ff861": "2026-11-11T05:19:56.420Z",
+    "66782fd5-b9a6-43ea-b509-62b43528e494": "2026-11-11T05:19:56.420Z",
+    "e5d13cd3-ee5f-481f-8990-7c0f38351d49": "2026-11-11T05:22:00.287Z",
+    "50286f96-748c-4482-ad61-19ec4a696f56": "2026-11-11T05:26:05.849Z",
+    "998b3772-e260-4cb1-9caf-50e844dcfc80": "2026-11-11T05:26:12.847Z",
+    "c6fea80f-a2be-4841-b77b-863c0af2c68b": "2026-11-11T05:26:33.753Z",
+    "7890fc68-c51c-4d3b-a067-d0903eb570a2": "2026-11-11T05:28:02.800Z",
+    "d0a24758-7a14-43a9-8701-9fa174baea62": "2026-11-11T05:28:08.048Z",
+    "5eb9d52e-8c28-4b52-8b8c-4801b4e2bb26": "2026-11-11T05:33:00.882Z",
+    "32684575-6e88-4a21-9149-f21e90dec1e9": "2026-11-11T05:34:16.748Z",
+    "6b94291e-80d3-421e-8d44-ae4682736bd4": "2026-11-11T05:34:38.587Z",
+    "a0775eea-f19a-46bc-91d8-aa6eeab8ccc4": "2026-11-11T05:34:50.958Z",
+    "139e4cda-e0a2-48f7-9f8f-0d67427faa8c": "2026-11-11T05:35:03.715Z",
+    "5ac0f747-3e5f-4f64-baab-0a1469f6335d": "2026-11-11T05:35:51.940Z",
+    "60e8945d-de56-4632-93b9-2e10939a29f2": "2026-11-11T05:42:23.314Z",
+    "c8a01715-2bbf-445a-9f63-a7fe49d5e25e": "2026-11-11T05:42:23.314Z",
+    "e7017d72-e5b5-4268-8b17-1c89eed81b6d": "2026-11-11T05:42:23.314Z",
+    "c8a4725c-86ae-4367-a1d4-28dae3876aa1": "2026-11-11T05:42:23.314Z",
+    "dc9efc6c-6fc8-437c-9de3-7ac34f604dca": "2026-11-11T05:42:26.630Z",
+    "74e104d7-9055-4f8e-a43b-e6cf891d1e6d": "2026-11-11T05:42:35.303Z",
+    "cf4b4d1d-df02-4c4f-b342-44772bdf2926": "2026-11-11T05:42:41.449Z",
+    "5cdd0bc1-e73e-45eb-9cdb-e1dddac71d67": "2026-11-11T05:42:52.975Z"
+  },
+  "settings": {
+    "intro": "2026-11-11T05:06:06.614Z"
+  }
+}
