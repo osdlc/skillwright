@@ -100,7 +100,7 @@ use std::path::{Path, PathBuf};
 use agent_adapt::RuntimeId;
 use serde::{Deserialize, Serialize};
 
-use crate::discover::{DiscoveryWarning, name_refusal};
+use crate::discover::{DiscoveryReport, DiscoveryWarning, name_refusal};
 use crate::error::CoreError;
 use crate::frontmatter::ContainerIdentity;
 use crate::harness::manifest::{is_os_file, overrides_for};
@@ -108,9 +108,12 @@ use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
 use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
 use crate::layout::Layout;
-use crate::model::load::{LoadRequest, built_harnesses, kind_carried, load_for, targets_admit};
+use crate::model::load::{
+    LoadRequest, built_harnesses, kind_carried, load_for, read_notes, targets_admit,
+};
 use crate::model::{Component, Marketplace};
 use crate::paths::{LoadedVault, VaultMarketplace, load_vault, read_root_file};
+use crate::settings::RootFile;
 use crate::skill::forward_slashed;
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
 use crate::vfs::{PreviewWrite, Vfs, normalize};
@@ -703,13 +706,20 @@ pub fn plan_loaded(
     mode: ExportMode,
     harnesses: &BTreeSet<String>,
 ) -> VaultPlan {
+    // Pass 1 once for every marketplace. A scan that refuses refuses each
+    // marketplace the same way, so `plan_in` repeats it for each.
+    let scan = read_notes(vfs, &loaded.layout).ok();
     let marketplaces = loaded
         .marketplaces
         .iter()
         .map(|market| {
             let mut export = loaded.export_request(market, mode);
             export.harnesses.clone_from(harnesses);
-            (market.clone(), plan_in(vfs, &loaded.layout, &export))
+            let plan = match &scan {
+                Some(scan) => plan_with(vfs, &loaded.layout, &loaded.settings, scan, &export),
+                None => plan_in(vfs, &loaded.layout, &export),
+            };
+            (market.clone(), plan)
         })
         .collect();
     VaultPlan { mode, marketplaces }
@@ -743,6 +753,16 @@ pub fn plan_in(
     layout: &Layout,
     request: &ExportRequest,
 ) -> Result<ExportPlan, CoreError> {
+    refuse_compare_with_on_build(request)?;
+    let root = read_root_file(vfs, &layout.root)?;
+    // Which harnesses this build renders, before the notes are read.
+    built_harnesses(&root, &request.harnesses)?;
+    let scan = read_notes(vfs, layout)?;
+    plan_with(vfs, layout, &root, &scan, request)
+}
+
+/// A build always writes `dist/<m>/`.
+fn refuse_compare_with_on_build(request: &ExportRequest) -> Result<(), CoreError> {
     if request.mode == ExportMode::Build && request.compare_with.is_some() {
         return Err(CoreError::refused(
             "compare-with",
@@ -750,17 +770,28 @@ pub fn plan_in(
              written",
         ));
     }
+    Ok(())
+}
 
-    // Which harnesses this build renders, before the notes are read.
-    let root = read_root_file(vfs, &layout.root)?;
-    let roots = built_harnesses(&root, &request.harnesses)?;
+/// [`plan_in`] with the root file read and pass 1 done: `scan` is
+/// [`read_notes`] over `layout`.
+fn plan_with(
+    vfs: &dyn Vfs,
+    layout: &Layout,
+    root: &RootFile,
+    scan: &DiscoveryReport,
+    request: &ExportRequest,
+) -> Result<ExportPlan, CoreError> {
+    refuse_compare_with_on_build(request)?;
+    let roots = built_harnesses(root, &request.harnesses)?;
 
-    // Load once, for every harness this build renders: the vault read, the
-    // marketplace chosen and validated, every body resolved. Everything a
-    // build refuses before it renders, it refuses here.
+    // Load once, for every harness this build renders: the marketplace
+    // chosen and validated, every body resolved. Everything a build refuses
+    // before it renders, it refuses here.
     let market = load_for(
         vfs,
         layout,
+        scan,
         request.marketplace.as_deref(),
         &roots,
         &root.defaults,

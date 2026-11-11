@@ -193,28 +193,29 @@ pub fn load_in(
 ) -> Result<Marketplace, CoreError> {
     let root = crate::paths::read_root_file(vfs, &layout.root)?;
     let roots = built_harnesses(&root, &request.harnesses)?;
+    let scan = read_notes(vfs, layout)?;
     load_for(
         vfs,
         layout,
+        &scan,
         request.marketplace.as_deref(),
         &roots,
         &root.defaults,
     )
 }
 
-/// [`load_in`] with the root file already read: `roots` are the harnesses
-/// the model is for, and `defaults` the root file's shared defaults.
+/// [`load_in`] with the root file and pass 1 already done: `scan` is
+/// [`read_notes`] over `layout`, `roots` the harnesses the model is for, and
+/// `defaults` the root file's shared defaults.
 pub(crate) fn load_for(
     vfs: &dyn Vfs,
     layout: &Layout,
+    scan: &DiscoveryReport,
     marketplace: Option<&str>,
     roots: &[&'static HarnessProfile],
     defaults: &SharedDefaults,
 ) -> Result<Marketplace, CoreError> {
     let vault_root = layout.root.clone();
-
-    // Pass 1.
-    let scan = read_notes(vfs, layout)?;
     // The root file's own entry is configuration, not a note, and
     // `check_block_values` below refuses it naming the marketplace. A note in
     // another marketplace does not stop a build of this one.
@@ -253,7 +254,7 @@ pub(crate) fn load_for(
             ),
         ));
     }
-    let mut discovered = scan.components;
+    let mut discovered = scan.components.clone();
     // Which marketplaces the vault holds is read from every kind, not from the
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing to build rather than that it is not there.
@@ -274,8 +275,9 @@ pub(crate) fn load_for(
         .collect();
     let mut warnings: Vec<DiscoveryWarning> = scan
         .warnings
-        .into_iter()
+        .iter()
         .filter(|w| ours.contains(w.path.as_str()))
+        .cloned()
         .collect();
     // Named, never dropped: a pack has a place for skills and commands and
     // for nothing else, and a build that quietly omitted an agent would be
