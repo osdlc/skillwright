@@ -8,7 +8,7 @@
 //! bytes, and two builds of one vault are identical.
 //!
 //! The functions here are the shapes; which harness writes which is its
-//! translator's choice ([`crate::harness::HarnessTranslator`]).
+//! translator's choice (`HarnessTranslator`).
 
 use serde::Serialize;
 
@@ -438,7 +438,7 @@ fn cursor_display_name(config: &MarketplaceConfig, plugin: &str) -> Option<Strin
 ///
 /// `hooks` is the manifest's `hooks` entry, written as given; `None` writes
 /// none.
-pub fn render_plugin_manifest(
+pub(crate) fn render_plugin_manifest(
     dialect: PluginDialect,
     plugin: &str,
     members: &[&str],
@@ -546,7 +546,7 @@ pub(crate) fn pi_package_manifest(
 
 /// Codex's index: a `interface.displayName` beside the name, and an entry
 /// carrying an installation policy rather than a description and a version.
-pub fn codex_marketplace_manifest(
+pub(crate) fn codex_marketplace_manifest(
     listed: &[(&str, Vec<&str>)],
     packs: &str,
     name: &str,
@@ -627,7 +627,7 @@ pub fn codex_marketplace_manifest(
 /// backward compatibility, and the documentation recommends the top level
 /// (<https://code.claude.com/docs/en/plugin-marketplaces> retrieved
 /// 2026-09-20).
-pub fn claude_marketplace_manifest(
+pub(crate) fn claude_marketplace_manifest(
     listed: &[(&str, Vec<&str>)],
     packs: &str,
     name: &str,
@@ -688,7 +688,7 @@ pub fn claude_marketplace_manifest(
 /// `description`, where Claude accepts one. When the configuration names no
 /// owner, the marketplace's own name stands in — a manifest Cursor loads beats
 /// a field-perfect one it rejects, and there is no other name to reach for.
-pub fn cursor_marketplace_manifest(
+pub(crate) fn cursor_marketplace_manifest(
     listed: &[(&str, Vec<&str>)],
     packs: &str,
     name: &str,

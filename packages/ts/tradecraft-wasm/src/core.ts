@@ -11,7 +11,7 @@
  * `CoreError` into a typed one, exactly mirroring what
  * `@osdlc/yaml-splice`'s `index.ts` does for `yaml-splice-wasm`.
  *
- * The binding exports seven functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
+ * The binding exports five functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
  *
  * | Export | Reaches | Serves |
  * |---|---|---|
@@ -20,7 +20,6 @@
  * | `loadMarketplace` | the marketplace model, loaded and resolved | a host that wants structure rather than files |
  * | `knownTargets` | the target vocabulary | every verb that takes a target name |
  * | `parseRootFile` | the `skillwright.md` reader | a host reading the root file |
- * | `rootFileConfig` | the root file's build config | a host building from the root file |
  *
  * A mode is a key on a request, never an export of its own — `check` is
  * `exportSkills` with `mode: "check"`. This file never predicts what it would
@@ -34,7 +33,6 @@ import {
   loadMarketplace as loadMarketplaceWasm,
   knownTargets as knownTargetsWasm,
   parseRootFile as parseRootFileWasm,
-  rootFileConfig as rootFileConfigWasm,
 } from '#wasm'
 
 import type { Vfs } from './node-vfs.ts'
@@ -46,7 +44,6 @@ import type {
   ExportRequest,
   LoadRequest,
   Marketplace,
-  MarketplaceConfig,
   RootFile,
 } from './core.generated.ts'
 
@@ -75,11 +72,9 @@ export type {
   KindSource,
   LoadRequest,
   Marketplace,
-  MarketplaceConfig,
   Plugin,
   Component,
   Segment,
-  PluginOverrides,
   RootFile,
   SharedDefaults,
   BuildSettings,
@@ -221,28 +216,14 @@ export function loadMarketplace(vfs: Vfs, request: LoadRequest): Marketplace {
 
 /**
  * Read a `skillwright.md`'s text, with the reader the CLI uses. Finding the
- * file is the caller's; an unknown key comes back in `warnings`.
+ * file is the caller's; an unknown key comes back in `warnings`. Its
+ * `defaults` are what an {@link ExportRequest} or {@link LoadRequest} takes.
  *
  * @throws {CoreError} on frontmatter that is not a mapping, or a known key of
  * the wrong shape.
  */
 export function parseRootFile(text: string): RootFile {
   return callCore<RootFile>(() => parseRootFileWasm(text))
-}
-
-/**
- * The {@link MarketplaceConfig} a `skillwright.md`'s text describes, ready for
- * an {@link ExportRequest}: the shared defaults only. It names no
- * marketplace; each marketplace's note `<m>.md` does.
- *
- * @throws {CoreError} as {@link parseRootFile}.
- */
-export function rootFileConfig(text: string): MarketplaceConfig {
-  try {
-    return rootFileConfigWasm(text) as MarketplaceConfig
-  } catch (raw) {
-    throw toCoreError(raw)
-  }
 }
 
 /**

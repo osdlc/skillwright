@@ -7,9 +7,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::error::CoreError;
-use crate::export::{ExportMode, ExportRequest, MarketplaceConfig};
+use crate::export::{ExportMode, ExportRequest};
 use crate::layout::{DIST_DIR, Layout, MARKETPLACES_DIR, read_layout};
-use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
+use crate::settings::{ROOT_FILE, RootFile, SharedDefaults, parse_root_file};
 use crate::vfs::Vfs;
 
 /// Join `rel` onto `base` and lexically collapse `.` and `..`, without
@@ -79,17 +79,17 @@ pub fn resolve_path(path: &str, base: &Path, home: &Path) -> PathBuf {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct MarketplaceInputs {
-    /// The build config: the root file's shared defaults.
-    pub config: MarketplaceConfig,
+    /// The root file's shared defaults.
+    pub defaults: SharedDefaults,
     /// The harnesses to build for. Empty is every one the export supports.
     pub harnesses: BTreeSet<String>,
 }
 
-/// The root file as the inputs of an [`crate::ExportRequest`]: config and
-/// harnesses.
+/// The root file as the inputs of an [`crate::ExportRequest`]: shared
+/// defaults and harnesses.
 pub fn marketplace_inputs(root: &RootFile) -> MarketplaceInputs {
     MarketplaceInputs {
-        config: root.to_config(),
+        defaults: root.defaults.clone(),
         harnesses: root.harness_set(),
     }
 }
@@ -118,7 +118,7 @@ pub struct LoadedVault {
     pub root_file: PathBuf,
     /// The root file, parsed.
     pub settings: RootFile,
-    /// Config and harnesses for each [`ExportRequest`].
+    /// Shared defaults and harnesses for each [`ExportRequest`].
     pub inputs: MarketplaceInputs,
     /// The marketplaces the load was asked for, by folder name: every one, or
     /// the one named.
@@ -140,7 +140,7 @@ impl LoadedVault {
         marketplace: &VaultMarketplace,
         mode: ExportMode,
     ) -> ExportRequest {
-        let mut request = ExportRequest::new(self.root.clone(), self.inputs.config.clone());
+        let mut request = ExportRequest::new(self.root.clone(), self.inputs.defaults.clone());
         request.marketplace = Some(marketplace.name.clone());
         request.mode = mode;
         request.harnesses.clone_from(&self.inputs.harnesses);

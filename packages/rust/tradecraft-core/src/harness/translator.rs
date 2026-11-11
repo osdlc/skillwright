@@ -1,7 +1,7 @@
 //! The code half of a harness: the marketplace model written as one
 //! harness's files (D-FDLQ).
 //!
-//! [`HarnessTranslator`]'s default methods do the work every harness shares,
+//! `HarnessTranslator`'s default methods do the work every harness shares,
 //! reading the harness's [`HarnessProfile`] for what differs as data:
 //! admission by kind and `targets`, how a published skill is named, how a
 //! call is spelled, where a pack's files land, and a skill's files through
@@ -132,7 +132,7 @@ pub enum Layout {
 }
 
 /// One harness's way of writing the marketplace model.
-pub trait HarnessTranslator: Sync {
+pub(crate) trait HarnessTranslator: Sync {
     /// The harness's row.
     fn profile(&self) -> &'static HarnessProfile;
 
@@ -156,7 +156,7 @@ pub trait HarnessTranslator: Sync {
     /// `refused: published-name-invalid` — a prefixed name the Agent Skills
     /// spec does not admit.
     fn published_name(&self, plugin: &Plugin, skill: &str) -> Result<String, CoreError> {
-        let naming = naming(self.profile(), &plugin.bare_on, &plugin.prefixed_on);
+        let naming = naming(self.profile(), &plugin.bare_on);
         crate::export::published_skill_name(naming, &plugin.name, skill)
     }
 
@@ -172,7 +172,7 @@ pub trait HarnessTranslator: Sync {
             call,
             profile.name,
             Some(profile.declaration),
-            naming(profile, &call.bare_on, &call.prefixed_on),
+            naming(profile, &call.bare_on),
         )
     }
 
@@ -254,23 +254,6 @@ pub trait HarnessTranslator: Sync {
         Ok(tree)
     }
 
-    /// One note published on its own, paths relative to the destination root.
-    ///
-    /// # Errors
-    ///
-    /// What the runtime's renderer refuses.
-    fn translate_component(&self, component: &Component) -> Result<FileTree, CoreError> {
-        let profile = self.profile();
-        write_component(
-            component,
-            &Destination {
-                canonical: profile.name,
-                runtime: profile.runtime,
-                calls: Some(profile.declaration),
-            },
-        )
-    }
-
     /// One plugin's pack into `tree` under `base`: its skills, its commands
     /// where the pack has a place for one, its hooks, its assets and its
     /// manifest. Returns the carried skills' names, or `None` when this
@@ -340,7 +323,7 @@ pub trait HarnessTranslator: Sync {
         let published = self.published_name(plugin, &skill.name)?;
         let mut projection = projection_of(skill, |body| self.render_body(body))?;
         projection.content.name = published.clone();
-        if naming(profile, &plugin.bare_on, &plugin.prefixed_on) == SkillNaming::PluginPrefixed {
+        if naming(profile, &plugin.bare_on) == SkillNaming::PluginPrefixed {
             projection.content.body =
                 rewrite_sibling_paths(&projection.content.body, &plugin.name, siblings);
         }
@@ -523,20 +506,12 @@ fn render_call(
 }
 
 /// How a harness names a published skill of a plugin that is bare on the
-/// harnesses in `bare_on` and prefixed on those in `prefixed_on`, or else the
-/// profile's default; [`SkillNaming::Bare`] for a row with no plugin format,
-/// where no skill has a plugin.
-fn naming<S: AsRef<str>>(
-    profile: &HarnessProfile,
-    bare_on: &[S],
-    prefixed_on: &[S],
-) -> SkillNaming {
-    let lists = |names: &[S]| names.iter().any(|name| name.as_ref() == profile.name);
-    if lists(bare_on) {
+/// harnesses in `bare_on`, or else the profile's default;
+/// [`SkillNaming::Bare`] for a row with no plugin format, where no skill has a
+/// plugin.
+fn naming(profile: &HarnessProfile, bare_on: &[String]) -> SkillNaming {
+    if bare_on.iter().any(|name| name == profile.name) {
         return SkillNaming::Bare;
-    }
-    if lists(prefixed_on) {
-        return SkillNaming::PluginPrefixed;
     }
     profile
         .plugin_format()
@@ -609,7 +584,7 @@ fn collision_reason(profile: &HarnessProfile, plugins: [&Plugin; 2]) -> String {
     let label = profile.label;
     let bare = plugins
         .into_iter()
-        .all(|g| naming(profile, &g.bare_on, &g.prefixed_on) == SkillNaming::Bare);
+        .all(|g| naming(profile, &g.bare_on) == SkillNaming::Bare);
     if bare {
         format!(
             "`{harness}.naming: bare` names both bare, and {label} has no plugin namespace, \
@@ -811,7 +786,7 @@ impl HarnessTranslator for Pi {
 }
 
 /// The translator for a harness name.
-pub fn translator_for(name: &str) -> Option<&'static dyn HarnessTranslator> {
+pub(crate) fn translator_for(name: &str) -> Option<&'static dyn HarnessTranslator> {
     Some(match name {
         "claude" => &Claude,
         "codex" => &Codex,
@@ -826,31 +801,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn naming_reads_both_override_lists_then_the_default() {
+    fn naming_reads_the_bare_list_then_the_default() {
         use crate::harness::profile::{CLAUDE, CODEX, CURSOR, PI};
-        let none: [&str; 0] = [];
         for (profile, default) in [
             (&CLAUDE, SkillNaming::HostNamespaced),
             (&CODEX, SkillNaming::HostNamespaced),
             (&CURSOR, SkillNaming::PluginPrefixed),
             (&PI, SkillNaming::PluginPrefixed),
         ] {
-            let name = [profile.name];
-            assert_eq!(naming(profile, &none, &none), default, "{}", profile.name);
+            assert_eq!(naming(profile, &[]), default, "{}", profile.name);
+            let name = [profile.name.to_owned()];
             assert_eq!(
-                naming(profile, &name, &none),
+                naming(profile, &name),
                 SkillNaming::Bare,
                 "{}",
                 profile.name
             );
-            assert_eq!(
-                naming(profile, &none, &name),
-                SkillNaming::PluginPrefixed,
-                "{}",
-                profile.name
-            );
-            let other = ["elsewhere"];
-            assert_eq!(naming(profile, &other, &other), default, "{}", profile.name);
+            let other = ["elsewhere".to_owned()];
+            assert_eq!(naming(profile, &other), default, "{}", profile.name);
         }
     }
 

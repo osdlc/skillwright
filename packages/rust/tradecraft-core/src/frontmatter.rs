@@ -320,27 +320,6 @@ impl ContainerIdentity {
         *self = Self::from_fields(own);
     }
 
-    /// Refuses a field this sets that a container of `kind` does not read, by
-    /// the key table's rule: the same one that leaves such a key in a note's
-    /// frontmatter to be reported as unknown.
-    ///
-    /// # Errors
-    ///
-    /// The message names the key and the level.
-    pub fn check_read_by(&self, kind: EntityKind) -> Result<(), String> {
-        match self
-            .set_fields()
-            .keys()
-            .find(|key| !crate::keys::is_owned(kind, key))
-        {
-            Some(key) => Err(format!(
-                "`{key}` at the {} level is not read there. Remove it",
-                kind.as_str()
-            )),
-            None => Ok(()),
-        }
-    }
-
     /// The fields this sets, by key. A `null` is unset: `Some(Value::Null)`
     /// would otherwise block a fill and then read back as `None`.
     pub(crate) fn set_fields(&self) -> Map<String, Value> {
@@ -395,7 +374,7 @@ pub struct VaultFrontmatter {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown: Vec<String>,
     /// Every key the note sets to a value, in its bare spelling. An inherited
-    /// block key yields to these ([`crate::model::Cascade::apply`]).
+    /// block key yields to these (`Cascade::apply`).
     #[serde(skip)]
     pub own_keys: std::collections::BTreeSet<String>,
 }

@@ -34,7 +34,6 @@ try {
   const report = exportSkills(createNodeVfs(), {
     vault_root: vault,
     mode: 'build',
-    config: { name: 'house' },
   })
   assert.equal(report.changed, true)
   assert.match(readFileSync(join(out, '.claude-plugin/marketplace.json'), 'utf-8'), /house/)
@@ -44,7 +43,6 @@ try {
       exportSkills(createNodeVfs(), {
         vault_root: join(root, 'missing'),
         mode: 'build',
-        config: { name: 'house' },
       }),
     (error) => error instanceof CoreError,
   )

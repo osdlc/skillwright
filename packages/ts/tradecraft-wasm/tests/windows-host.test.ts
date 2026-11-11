@@ -49,7 +49,6 @@ function build(vault: string, host: Vfs = vfs) {
   return exportSkills(host, {
     vault_root: core(vault),
     mode: 'build',
-    config: { name: 'core' },
   })
 }
 

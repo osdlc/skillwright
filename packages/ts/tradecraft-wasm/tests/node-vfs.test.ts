@@ -100,7 +100,6 @@ function build(vfs: Vfs, vault: string) {
   return exportSkills(vfs, {
     vault_root: vault,
     mode: 'build',
-    config: { name: 'core' },
   })
 }
 

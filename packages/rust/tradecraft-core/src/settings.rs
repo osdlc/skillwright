@@ -6,7 +6,7 @@
 //! vault root.
 //!
 //! The CLI and other hosts read the file through [`parse_root_file`], so they
-//! share one shape and one mapping onto a build's [`MarketplaceConfig`].
+//! share one shape, and pass its [`SharedDefaults`] to a build.
 //! Finding the file stays with the caller: this module parses text and never
 //! touches a filesystem.
 //!
@@ -20,8 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::export::MarketplaceConfig;
-use crate::frontmatter::{ContainerIdentity, EntityKind};
+use crate::frontmatter::EntityKind;
 use crate::keys::{KEYS, Shape};
 use crate::skill::split_frontmatter;
 
@@ -508,38 +507,7 @@ fn warn_bump_keys(value: &serde_yaml::Value, warnings: &mut Vec<String>) {
     }
 }
 
-/// The build config a root file's text describes: [`parse_root_file`], then
-/// [`RootFile::to_config`], for a host that wants the config and not the file.
-///
-/// # Errors
-///
-/// As [`parse_root_file`].
-pub fn root_file_config(text: &str) -> Result<MarketplaceConfig, SettingsError> {
-    Ok(parse_root_file(text)?.to_config())
-}
-
 impl RootFile {
-    /// The build config this file describes: its shared defaults, with no
-    /// marketplace's own fields. Each marketplace's note gives those.
-    pub fn to_config(&self) -> MarketplaceConfig {
-        let defaults = &self.defaults;
-        let identity = ContainerIdentity {
-            author: defaults.author.clone(),
-            license: defaults.license.clone(),
-            repository: defaults.repository.clone(),
-            homepage: defaults.homepage.clone(),
-            ..ContainerIdentity::default()
-        };
-        MarketplaceConfig {
-            name: None,
-            description: None,
-            identity,
-            targets: defaults.targets.clone(),
-            blocks: defaults.blocks.clone(),
-            plugins: BTreeMap::new(),
-        }
-    }
-
     /// The harnesses to build. Empty means every one the export supports.
     pub fn harness_set(&self) -> BTreeSet<String> {
         self.build.harnesses.iter().flatten().cloned().collect()
@@ -722,7 +690,7 @@ mod tests {
         )
         .unwrap();
         assert!(root.warnings.is_empty(), "{:?}", root.warnings);
-        let config = root.to_config();
+        let config = crate::model::cascade::root_config(&root.defaults);
         assert_eq!(config.name, None);
         assert_eq!(config.description, None);
         assert_eq!(config.identity.author, Some(serde_json::json!("Ada")));
@@ -735,7 +703,6 @@ mod tests {
     fn a_file_with_no_frontmatter_takes_every_default() {
         let root = parse_root_file("# Just a README\n").unwrap();
         assert_eq!(root, RootFile::default());
-        assert_eq!(root.to_config().name, None);
     }
 
     #[test]
@@ -866,10 +833,13 @@ mod tests {
     }
 
     #[test]
-    fn to_config_carries_every_shared_default() {
+    fn every_shared_default_reaches_the_cascade() {
         let root = parse_root_file(&format!("---\n{EVERY_KEY}---\n")).unwrap();
         assert!(root.warnings.is_empty(), "{:?}", root.warnings);
-        let config = set_keys(&root.to_config());
+        let folded = crate::model::cascade::root_config(&root.defaults);
+        let mut config = set_keys(&folded.identity);
+        config.insert("targets".to_owned(), serde_json::json!(folded.targets));
+        config.insert("blocks".to_owned(), serde_json::json!(folded.blocks));
         let defaults = set_keys(&root.defaults);
         for (key, value) in &defaults {
             assert_eq!(config.get(key), Some(value), "{key}");

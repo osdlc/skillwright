@@ -15,7 +15,6 @@
 //! | `loadMarketplace` | `model::load::load` | any host that wants the model rather than files |
 //! | `knownTargets` | `harness::KNOWN_TARGETS` | every verb that takes a target name |
 //! | `parseRootFile` | `settings::parse_root_file` | a host reading `skillwright.md` |
-//! | `rootFileConfig` | `settings::root_file_config` | a host building from `skillwright.md` |
 //!
 //! `build` and `check` share an export, because a mode is a key on the
 //! request rather than an export of its own. There is deliberately no
@@ -56,9 +55,7 @@ use tradecraft_core::discover::discover_components as core_discover_components;
 use tradecraft_core::export::{ExportRequest, export_skills as core_export_skills};
 use tradecraft_core::harness::KNOWN_TARGETS;
 use tradecraft_core::model::load::{LoadRequest, load as core_load};
-use tradecraft_core::settings::{
-    parse_root_file as core_parse_root_file, root_file_config as core_root_file_config,
-};
+use tradecraft_core::settings::parse_root_file as core_parse_root_file;
 use wasm_bindgen::prelude::*;
 
 pub use js_vfs::{HostVfs, JsVfs};
@@ -82,7 +79,8 @@ pub fn known_targets() -> Result<String, JsValue> {
 // --- the root file -----------------------------------------------------------
 
 /// Read a `skillwright.md`'s text into a serialized `RootFile`, the reader the
-/// CLI uses. It takes text and no vfs: finding the file is the host's.
+/// CLI uses. It takes text and no vfs: finding the file is the host's. Its
+/// `defaults` are what an `exportSkills` or `loadMarketplace` request takes.
 ///
 /// # Errors
 ///
@@ -93,22 +91,6 @@ pub fn known_targets() -> Result<String, JsValue> {
 pub fn parse_root_file(text: &str) -> Result<String, JsValue> {
     let root = core_parse_root_file(text).map_err(|e| throwable(&e.to_string()))?;
     report_json("root file", &root)
-}
-
-/// The `MarketplaceConfig` a `skillwright.md`'s text describes: its shared
-/// defaults. It names no marketplace; each marketplace's note `<m>.md` does.
-///
-/// Returns a JS object, not a JSON string. `MarketplaceConfig` is a request
-/// type, and the generator spells each type for one direction, so this stays
-/// outside it. `core.ts` types the result, which goes back in as a request.
-///
-/// # Errors
-///
-/// As [`parse_root_file`].
-#[wasm_bindgen(js_name = rootFileConfig)]
-pub fn root_file_config(text: &str) -> Result<JsValue, JsValue> {
-    let config = core_root_file_config(text).map_err(|e| throwable(&e.to_string()))?;
-    js_sys::JSON::parse(&report_json("marketplace config", &config)?)
 }
 
 // --- discovery ---------------------------------------------------------------
@@ -288,18 +270,23 @@ mod tests {
         let wire: WireExportRequest = serde_json::from_str(
             r#"{
                 "vault_root": "/vault",
-                "config": { "name": "market" }
+                "defaults": { "license": "MIT" }
             }"#,
         )
         .unwrap();
 
         assert_eq!(wire.request.vault_root, PathBuf::from("/vault"));
-        assert_eq!(wire.request.config.name.as_deref(), Some("market"));
+        assert_eq!(wire.request.defaults.license.as_deref(), Some("MIT"));
         // Every absence, at its documented default.
+        let wire: WireExportRequest =
+            serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
         assert_eq!(wire.request.mode, ExportMode::Build);
         assert_eq!(wire.request.marketplace, None);
         assert_eq!(wire.request.compare_with, None);
-        assert!(wire.request.config.plugins.is_empty());
+        assert_eq!(
+            wire.request.defaults,
+            tradecraft_core::SharedDefaults::default()
+        );
     }
 
     #[test]
@@ -308,8 +295,7 @@ mod tests {
             r#"{
                 "vault_root": "/vault",
                 "marketplace": "house",
-                "mode": "check",
-                "config": { "name": "market" }
+                "mode": "check"
             }"#,
         )
         .unwrap();
@@ -374,8 +360,7 @@ mod tests {
         assert!(found.contains("plugins/rev/skills/a/a.md"), "{found}");
         assert!(!found.contains("stale"), "{found}");
 
-        let wire: WireLoadRequest =
-            serde_json::from_str(r#"{ "vault_root": "/vault", "config": {} }"#).unwrap();
+        let wire: WireLoadRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
         let market = core_load(&vfs, &wire.request).unwrap();
         let loaded = serde_json::to_string(&market).unwrap();
         assert!(loaded.contains("rev"), "{loaded}");

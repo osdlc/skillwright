@@ -2,7 +2,7 @@
 //!
 //! A harness differs from another in the values of its row (D-FDLQ), and
 //! what cannot be said as a value is code in its
-//! [`crate::harness::HarnessTranslator`]. The rows are Claude Code, Codex,
+//! `HarnessTranslator`. The rows are Claude Code, Codex,
 //! Cursor and Pi, each with a [`PluginPolicy`].
 //!
 //! # Facts from the knowledge file, policy in code

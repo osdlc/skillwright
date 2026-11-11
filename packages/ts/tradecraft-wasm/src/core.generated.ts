@@ -395,199 +395,15 @@ export interface ExportRequest {
    */
   compare_with?: string;
 
-  /** The marketplace's own identity and per-plugin overrides. */
-  config: MarketplaceConfig;
+  /**
+   * The root file's shared defaults, which every marketplace and plugin
+   * takes where its note is silent. Absent on the wire means none.
+   */
+  defaults?: SharedDefaults;
 }
 
 /** Whether an export writes the marketplace, or only reports its drift. */
 export type ExportMode = "build" | "check";
-
-/**
- * What the *build* says about the marketplace and its plugins — the fallback
- * under what the vault's own container notes say.
- *
- * [`crate::model::Cascade`] folds the two, note over request, field by field: a
- * marketplace note is the marketplace, and a build flag is one invocation of
- * it.
- */
-export interface MarketplaceConfig {
-  /**
-   * The name both manifests publish under, **when the vault does not supply
-   * one**. A marketplace note names itself, and that name wins.
-   *
-   * A fallback, not an assertion. Which marketplace to build has its own
-   * field ([`ExportRequest::marketplace`]), validated against what the vault
-   * actually holds; one selector is enough.
-   *
-   * `None` with no marketplace note is the one case with no answer, and it
-   * is refused rather than defaulted: a distribution nobody named is a
-   * configuration fault, not a marketplace called `default`.
-   */
-  name?: string;
-
-  /**
-   * The marketplace's own one-line description, from its note. Optional in
-   * every dialect, and placed differently by each — see
-   * `claude_marketplace_manifest` and `cursor_marketplace_manifest`.
-   */
-  description?: string;
-
-  /**
-   * `owner`, a marketplace's only: a name or `{name, email, url}`. A string
-   * is normalised to `{name: …}` in a manifest, because Claude and Cursor
-   * require an object. Absent, the marketplace's name stands in.
-   */
-  owner?: unknown;
-
-  /**
-   * `author`: a name or `{name, email, url}`. A string is normalised to
-   * `{name: …}`; Cursor drops `url`. A marketplace's is the default for
-   * each plugin.
-   */
-  author?: unknown;
-
-  /**
-   * `display_name`: Codex's `interface.displayName`, the name when absent.
-   * On a plugin, also Cursor's `displayName` on its manifest and its
-   * catalog entry, absent by default; `cursor.displayName` overrides it.
-   * Never inherited.
-   */
-  display_name?: string;
-
-  /**
-   * `license`, an SPDX expression, passed through. A plugin's defaults to
-   * the marketplace's, then `UNLICENSED`.
-   */
-  license?: string;
-
-  /**
-   * `keywords`, a plugin's only. Default empty. Also the Claude and Cursor
-   * marketplace entry's `tags`; Pi's `package.json` adds `pi-package`.
-   */
-  keywords?: string[];
-
-  /**
-   * `category`, a plugin's only. Codex always writes it, default
-   * `Productivity`; Claude and Cursor write it on the marketplace entry
-   * only when it is set.
-   */
-  category?: string;
-
-  /**
-   * `version`, the container's own. A plugin's defaults to `0.1.0`, with a
-   * warning.
-   */
-  version?: string;
-
-  /**
-   * `repository`, the source repository URL, written into every manifest
-   * that has the field. A marketplace's is the default for each plugin.
-   */
-  repository?: string;
-
-  /**
-   * `homepage`, the documentation URL, written into every manifest that
-   * has the field. A marketplace's is the default for each plugin.
-   */
-  homepage?: string;
-
-  /**
-   * Which harnesses get what the marketplace holds. A plugin or member
-   * with no `targets` of its own inherits it.
-   */
-  targets?: string[];
-
-  /**
-   * The marketplace's harness blocks, keyed by harness (`codex`, …), each
-   * a map of that harness's own manifest keys. Merged over the generated
-   * marketplace manifest, and inherited by every plugin key by key.
-   */
-  blocks?: Record<string, Record<string, unknown>>;
-
-  /** Per-plugin manifest overrides, keyed by plugin name. */
-  plugins?: Record<string, PluginOverrides>;
-}
-
-/**
- * Manifest fields one plugin overrides. Every absence has a documented
- * default, so an empty override block means the defaults wholesale.
- */
-export interface PluginOverrides {
-  /** Default `Skills: <names>.` over the root's own member list. */
-  description?: string;
-
-  /**
-   * `owner`, a marketplace's only: a name or `{name, email, url}`. A string
-   * is normalised to `{name: …}` in a manifest, because Claude and Cursor
-   * require an object. Absent, the marketplace's name stands in.
-   */
-  owner?: unknown;
-
-  /**
-   * `author`: a name or `{name, email, url}`. A string is normalised to
-   * `{name: …}`; Cursor drops `url`. A marketplace's is the default for
-   * each plugin.
-   */
-  author?: unknown;
-
-  /**
-   * `display_name`: Codex's `interface.displayName`, the name when absent.
-   * On a plugin, also Cursor's `displayName` on its manifest and its
-   * catalog entry, absent by default; `cursor.displayName` overrides it.
-   * Never inherited.
-   */
-  display_name?: string;
-
-  /**
-   * `license`, an SPDX expression, passed through. A plugin's defaults to
-   * the marketplace's, then `UNLICENSED`.
-   */
-  license?: string;
-
-  /**
-   * `keywords`, a plugin's only. Default empty. Also the Claude and Cursor
-   * marketplace entry's `tags`; Pi's `package.json` adds `pi-package`.
-   */
-  keywords?: string[];
-
-  /**
-   * `category`, a plugin's only. Codex always writes it, default
-   * `Productivity`; Claude and Cursor write it on the marketplace entry
-   * only when it is set.
-   */
-  category?: string;
-
-  /**
-   * `version`, the container's own. A plugin's defaults to `0.1.0`, with a
-   * warning.
-   */
-  version?: string;
-
-  /**
-   * `repository`, the source repository URL, written into every manifest
-   * that has the field. A marketplace's is the default for each plugin.
-   */
-  repository?: string;
-
-  /**
-   * `homepage`, the documentation URL, written into every manifest that
-   * has the field. A marketplace's is the default for each plugin.
-   */
-  homepage?: string;
-
-  /**
-   * Which harnesses the plugin's members go to. Default the marketplace
-   * `targets`.
-   */
-  targets?: string[];
-
-  /**
-   * The plugin note's harness blocks, keyed by harness. Merged over the
-   * marketplace's blocks key by key, then over the plugin's manifest and
-   * its marketplace entry.
-   */
-  blocks?: Record<string, Record<string, unknown>>;
-}
 
 /** What one export did, or would do — per plugin, per root. */
 export interface ExportReport {
@@ -749,10 +565,10 @@ export interface LoadRequest {
   harnesses?: string[];
 
   /**
-   * The marketplace's identity and per-plugin overrides, under what the
-   * vault's own notes say.
+   * The root file's shared defaults, under what the vault's own notes say.
+   * Absent on the wire means none.
    */
-  config: MarketplaceConfig;
+  defaults?: SharedDefaults;
 }
 
 /** A vault, loaded as the one marketplace a build renders. */
@@ -799,13 +615,6 @@ export interface Plugin {
    * prefixes.
    */
   bare_on?: string[];
-
-  /**
-   * The harnesses that name this plugin's skills `<plugin>-<skill>`
-   * against their profile's default: `<harness>: {naming: prefixed}` where
-   * the default is bare.
-   */
-  prefixed_on?: string[];
 }
 
 /**
@@ -1065,12 +874,6 @@ export interface Call {
    */
   bare_on?: string[];
 
-  /**
-   * The harnesses that prefix the skill with its plugin against their
-   * profile's default, as its plugin's [`Plugin::prefixed_on`].
-   */
-  prefixed_on?: string[];
-
   /** The call as written, for a refusal. */
   destination: string;
 
@@ -1150,4 +953,4 @@ export interface WasmResponses {
 /**
  * Exports with no JSON on either side, so nothing here can drift for them.
  */
-export type WasmExportsWithoutJson = "rootFileConfig";
+export type WasmExportsWithoutJson = never;

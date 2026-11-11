@@ -842,8 +842,9 @@ tests and the gates above hold. The number in brackets is the commit.
   writer). Check each against what stays before removing it.
 - `tradecraft-wasm/src/lib.rs`: `publishSkill`, `adoptSkills`, `statusOf`
   and `publishableKinds` go. `exportSkills`, `discoverComponents`,
-  `loadMarketplace`, `parseRootFile`, `rootFileConfig` and `knownTargets`
-  stay. `validateNamespace` goes in commit 3, `canonicalTarget` in commit 4.
+  `loadMarketplace`, `parseRootFile` and `knownTargets` stay.
+  `validateNamespace` goes in commit 3, `canonicalTarget` and
+  `rootFileConfig` in commit 4.
   `src/core.ts`'s hand-kept `Target` union shrinks to the four names in
   commit 3.
 - `packages/ts/tradecraft-wasm` (repository root): the wrappers in
@@ -896,7 +897,8 @@ tests and the gates above hold. The number in brackets is the commit.
 ### tradecraft-wasm
 
 - `lib.rs`: the pattern and workspace options of `discovery_view` and
-  `load_view` go [2]. `rootFileConfig` reads no marketplace fields [2, 3].
+  `load_view` go [2]. `rootFileConfig` reads no marketplace fields [2, 3],
+  and goes [4]: a request takes the root file's `SharedDefaults`.
   The `out_root` argument of `exportSkills` goes, and it writes
   `<root>/dist/<m>/` in the filesystem object [4]. `loadMarketplace` takes a
   marketplace name, required when the vault has more than one [4].

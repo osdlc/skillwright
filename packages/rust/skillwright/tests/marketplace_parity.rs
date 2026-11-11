@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use skillwright::cli::run_with;
 use skillwright::ctx::CommandContext;
-use tradecraft_core::{ExportRequest, NativeVfs, RootFile, export_skills};
+use tradecraft_core::{ExportRequest, NativeVfs, SharedDefaults, export_skills};
 
 fn fixture_vault() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -102,10 +102,8 @@ fn the_cli_and_a_host_request_render_identical_trees() {
     assert!(!copy.join("dist/labs").exists());
 
     export_skills(&NativeVfs, &{
-        // The root file sets nothing, so the host asks the core for the
-        // same defaults.
-        let config = RootFile::default().to_config();
-        let mut request = ExportRequest::new(host_copy.clone(), config);
+        // The root file sets nothing, so the host passes no defaults.
+        let mut request = ExportRequest::new(host_copy.clone(), SharedDefaults::default());
         request.marketplace = Some("acme".to_string());
         request
     })

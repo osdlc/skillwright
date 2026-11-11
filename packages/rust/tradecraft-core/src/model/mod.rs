@@ -3,7 +3,7 @@
 //!
 //! The vault is read into one object graph, marketplace → plugins → skills,
 //! commands, the hooks file and assets, and each harness's
-//! [`crate::harness::HarnessTranslator`] writes that graph out. What a note means is decided once; how a harness spells it is the
+//! `HarnessTranslator` writes that graph out. What a note means is decided once; how a harness spells it is the
 //! translator's.
 //!
 //! # Two passes, then validation
@@ -54,7 +54,6 @@ use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 
-pub use cascade::Cascade;
 pub use load::{LoadRequest, load, load_in, read_notes, resolve_body};
 
 /// A vault, loaded as the one marketplace a build renders.
@@ -65,9 +64,9 @@ pub struct Marketplace {
     /// The vault's marketplace folder this was loaded from. Always set.
     pub folder: Option<String>,
     /// The marketplace's identity and every plugin's manifest fields, the
-    /// vault's notes folded over the request's configuration.
+    /// vault's notes folded over the root file's shared defaults.
     #[serde(skip)]
-    pub config: MarketplaceConfig,
+    pub(crate) config: MarketplaceConfig,
     /// Every plugin, by name.
     pub plugins: BTreeMap<String, Plugin>,
     /// Components no pack has a place for, such as agents — named, never
@@ -111,11 +110,6 @@ pub struct Plugin {
     /// prefixes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bare_on: Vec<String>,
-    /// The harnesses that name this plugin's skills `<plugin>-<skill>`
-    /// against their profile's default: `<harness>: {naming: prefixed}` where
-    /// the default is bare.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub prefixed_on: Vec<String>,
     /// The plugin note's `targets`, cascaded. `None` is every harness.
     #[serde(skip)]
     pub targets: Option<Vec<String>>,
@@ -285,10 +279,6 @@ pub struct Call {
     /// default, as its plugin's [`Plugin::bare_on`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bare_on: Vec<String>,
-    /// The harnesses that prefix the skill with its plugin against their
-    /// profile's default, as its plugin's [`Plugin::prefixed_on`].
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub prefixed_on: Vec<String>,
     /// The call as written, for a refusal.
     pub destination: String,
     /// A plain `[[skill]]`: written as the skill's published name, with no
@@ -429,7 +419,6 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
         },
         targets: None,
         bare_on: Vec::new(),
-        prefixed_on: Vec::new(),
         destination: site.destination.clone(),
         mention: site.mention,
         caller: site.caller.clone(),
@@ -514,7 +503,7 @@ mod tests {
         }
         vfs.write_file(path, b"---\ndescription: A.\n---\n\nPart of [[a]].\n")
             .unwrap();
-        let request = LoadRequest::new("/vault", MarketplaceConfig::default());
+        let request = LoadRequest::new("/vault", crate::settings::SharedDefaults::default());
         let marketplace = load(&vfs, &request).unwrap();
         let skill = &marketplace.plugins["tools"].skills[0];
         let body = &skill.resolved.as_ref().unwrap().body;

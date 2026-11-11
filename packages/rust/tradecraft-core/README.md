@@ -39,7 +39,7 @@ marketplace, plugin and component is a folder with a note of the same name:
 ```rust
 use std::path::Path;
 use tradecraft_core::{
-    ExportRequest, MarketplaceConfig, MemVfs, Vfs, export_skills,
+    ExportRequest, MemVfs, SharedDefaults, Vfs, export_skills,
 };
 
 let vfs = MemVfs::new();
@@ -58,9 +58,10 @@ for (path, text) in [
     vfs.write_file(path, text.as_bytes())?;
 }
 
-// The vault and the marketplace config are required. The other fields
-// start empty; set any of them on the value. A build writes `dist/<m>/`.
-let mut request = ExportRequest::new("/vault", MarketplaceConfig::default());
+// The vault and the root file's shared defaults are required. The other
+// fields start empty; set any of them on the value. A build writes
+// `dist/<m>/`. Everything else comes from the vault's notes.
+let mut request = ExportRequest::new("/vault", SharedDefaults::default());
 request.harnesses.insert("claude".to_owned());
 let report = export_skills(&vfs, &request)?;
 assert!(report.changed);
@@ -80,7 +81,7 @@ The CLI does the same steps.
 2. `load_vault(&vfs, root, marketplace)` checks the layout, parses the
    root file, and reads each marketplace's note.
    `Some(name)` loads one marketplace. It returns a `LoadedVault`: the root
-   file as `settings`, `inputs` (the config and harnesses) and one
+   file as `settings`, `inputs` (the shared defaults and harnesses) and one
    `VaultMarketplace` per marketplace.
 3. `loaded.export_request(&marketplace, mode)` is the build or check of one
    marketplace into `<root>/dist/<m>/`. Pass it to
@@ -181,8 +182,8 @@ breaking change:
   Build one with
   its `new` constructor, which takes the required inputs, and set the other
   fields on the value.
-- The config and settings types (`MarketplaceConfig`, `PluginOverrides`,
-  `RootFile`, `SharedDefaults`, `BuildSettings`). Build one with
+- The settings types (`RootFile`, `SharedDefaults`, `BuildSettings`).
+  Build one with
   `Default::default()` and set its fields.
 - The output types (`ExportReport`, `DiscoveryReport`,
   `DiscoveredComponent`, `DiscoveryWarning`, `SkippedNote`, `LoadedVault`,

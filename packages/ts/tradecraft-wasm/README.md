@@ -36,7 +36,6 @@ const report = exportSkills(vfs, {
   vault_root: '/work/vault', // absolute: holds skillwright.md and marketplaces/
   marketplace: 'house', // marketplaces/house/, built into dist/house/
   mode: 'build', // 'check' reports drift and writes nothing
-  config: {},
 })
 console.log(report.changed)
 ```

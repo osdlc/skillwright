@@ -10,8 +10,11 @@
 //! A request is DESERIALIZED, so a field serde can default is one the caller
 //! may omit — `mode?: ExportMode`. A response is SERIALIZED, so an
 //! `Option<T>` is on the wire as `null` unless the field carries
-//! `skip_serializing_if`, which makes it optional. A type reached in both directions would need two spellings, so it
-//! is refused rather than emitted under one of them.
+//! `skip_serializing_if`, which makes it optional. A struct reached in both
+//! directions is emitted once when it spells the same both ways, such as
+//! `SharedDefaults`, whose every field serde defaults and skips when empty.
+//! One that would need two spellings is refused rather than emitted under one
+//! of them.
 
 use std::collections::BTreeMap;
 
@@ -44,6 +47,7 @@ pub fn emit(model: &Model) -> Result<String, Error> {
         model,
         order: Vec::new(),
         seen: BTreeMap::new(),
+        both: std::collections::BTreeSet::new(),
     };
 
     for export in &model.exports {
@@ -104,20 +108,34 @@ struct Walk<'a> {
     /// Emission order: the type, then everything it reaches.
     order: Vec<(String, Direction)>,
     seen: BTreeMap<String, Direction>,
+    /// The structs reached in both directions, each spelled the same both
+    /// ways.
+    both: std::collections::BTreeSet<String>,
 }
 
 impl Walk<'_> {
     fn visit(&mut self, rust_name: &str, direction: Direction) -> Result<(), Error> {
-        if let Some(previous) = self.seen.get(rust_name) {
-            let def = &self.model.types[rust_name];
-            if *previous != direction && matches!(def, TypeDef::Struct(_)) {
+        if let Some(&previous) = self.seen.get(rust_name) {
+            let TypeDef::Struct(s) = &self.model.types[rust_name] else {
+                return Ok(());
+            };
+            if previous == direction || !self.both.insert(rust_name.to_string()) {
+                return Ok(());
+            }
+            if emit_struct(self.model, s, previous)? != emit_struct(self.model, s, direction)? {
                 return Err(format!(
-                    "`{rust_name}` is reached as {} and as {}. Optionality differs by \
-                     direction, so one TypeScript interface cannot describe both. Split \
+                    "`{rust_name}` is reached as {} and as {}, and its optionality differs \
+                     by direction, so one TypeScript interface cannot describe both. Split \
                      the Rust type, or give the two uses separate types.",
                     previous.label(),
                     direction.label()
                 ));
+            }
+            // What it reaches must hold in this direction too.
+            let mut deps = Vec::new();
+            self.struct_deps(s, &mut deps)?;
+            for dep in deps {
+                self.visit(&dep, direction)?;
             }
             return Ok(());
         }
@@ -332,8 +350,7 @@ fn ts_type(model: &Model, ty: &syn::Type) -> Result<String, Error> {
 /// `WireExportRequest` splices `ExportRequest`, and the wire
 /// it describes IS an export request. A wrapper that flattens nothing loses
 /// its leading `Wire`. Both rules are mechanical, so a new export needs no
-/// entry anywhere. Any other struct keeps its own name, whatever it flattens:
-/// `MarketplaceConfig` splices `ContainerIdentity` and is still a config.
+/// entry anywhere. Any other struct keeps its own name, whatever it flattens.
 fn ts_name(model: &Model, rust_name: &str) -> Result<String, Error> {
     let Some(TypeDef::Struct(s)) = model.types.get(rust_name) else {
         return Ok(rust_name.to_string());

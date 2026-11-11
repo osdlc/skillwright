@@ -224,7 +224,9 @@ fn check_root_blocks(vfs: &dyn Vfs, vault_root: &Path) -> Result<(), CoreError> 
     let Ok(root) = crate::settings::parse_root_file(&text) else {
         return Ok(());
     };
-    crate::harness::manifest::check_block_values(&root.to_config())
+    crate::harness::manifest::check_block_values(&crate::model::cascade::root_config(
+        &root.defaults,
+    ))
 }
 
 /// Refuses a value of the wrong kind on a component note: a bare spec key, a

@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import { expect, test } from 'vitest'
 
-import { CoreError, loadMarketplace, parseRootFile, rootFileConfig } from '../src/core.ts'
+import { CoreError, loadMarketplace, parseRootFile } from '../src/core.ts'
 import { createNodeVfs } from '../src/node-vfs.ts'
 
 // The model crosses the boundary as the generated `Marketplace` shape: plugins
@@ -28,10 +28,7 @@ test('loadMarketplace returns the model with calls resolved', () => {
     )
     writeFileSync(path.join(skills, 'lint/lint.md'), '---\ndescription: Lints.\n---\n\nLint it.\n')
 
-    const market = loadMarketplace(createNodeVfs(), {
-      vault_root: vault,
-      config: { name: 'house' },
-    })
+    const market = loadMarketplace(createNodeVfs(), { vault_root: vault })
 
     const tools = market.plugins['tools']
     expect(tools?.skills.map((s) => s.name)).toEqual(['lint', 'review'])
@@ -59,11 +56,4 @@ test('parseRootFile reads a root file with the core reader', () => {
   expect(() => parseRootFile('---\ntargets: [opencode]\n---\n')).toThrow(
     /`claude`, `codex`, `cursor` and `pi`/,
   )
-})
-
-test('rootFileConfig gives the shared defaults and no name', () => {
-  const config = rootFileConfig('---\nlicense: MIT\n---\n')
-  expect(config.name ?? null).toBeNull()
-  expect(config.license).toBe('MIT')
-  expect(() => rootFileConfig('---\nbuild: 1\n---\n')).toThrow(CoreError)
 })

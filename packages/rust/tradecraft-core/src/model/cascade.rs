@@ -6,7 +6,7 @@
 //! 1. the note's own frontmatter;
 //! 2. its plugin note;
 //! 3. its marketplace note, `marketplaces/<m>/<m>.md`;
-//! 4. the root file's shared defaults, which the request's config carries.
+//! 4. the root file's shared defaults, which the request carries.
 //!
 //! Which keys come down is the key table's answer ([`crate::keys::inherits`]).
 //! Names, descriptions and versions never do. A container's identity comes
@@ -49,14 +49,15 @@ use crate::export::MarketplaceConfig;
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::manifest::{plugin_block, plugin_identity, plugin_targets};
 use crate::keys;
+use crate::settings::SharedDefaults;
 use crate::vault::VaultNote;
 
 /// The containers above some notes, folded into one config.
 #[derive(Debug, Clone)]
-pub struct Cascade {
+pub(crate) struct Cascade {
     /// The root's shared defaults with the marketplace note over them, and
     /// each plugin note in [`MarketplaceConfig::plugins`].
-    pub config: MarketplaceConfig,
+    pub(crate) config: MarketplaceConfig,
     /// The marketplace folded in.
     market: Option<String>,
     /// The root's own `targets`, for a component of another marketplace.
@@ -66,12 +67,12 @@ pub struct Cascade {
 impl Cascade {
     /// Folds the marketplace `market` and the plugin notes under it, out of a
     /// scan, over `root`, the root file's shared defaults.
-    pub fn over(
+    pub(crate) fn over(
         containers: &[DiscoveredComponent],
         market: Option<&str>,
-        root: &MarketplaceConfig,
+        root: &SharedDefaults,
     ) -> Self {
-        let mut config = root.clone();
+        let mut config = root_config(root);
 
         // A marketplace's own note belongs to no marketplace, so its folder
         // finds it.
@@ -85,7 +86,9 @@ impl Cascade {
             take_description(&mut config.description, note);
             drop_shadowed(&mut config.blocks, &note.identity, EntityKind::Marketplace);
             config.identity.overlay(&note.identity);
-            take(&mut config.targets, note.targets.clone());
+            if note.targets.is_some() {
+                config.targets.clone_from(&note.targets);
+            }
             merge_blocks(&mut config.blocks, &note.blocks);
         }
         if config.name.is_none() {
@@ -106,7 +109,7 @@ impl Cascade {
             let overrides = config.plugins.entry(note.folder().to_owned()).or_default();
             take_description(&mut overrides.description, note);
             overrides.identity.overlay(&note.identity);
-            take(&mut overrides.targets, note.targets.clone());
+            overrides.targets.clone_from(&note.targets);
             merge_blocks(&mut overrides.blocks, &note.blocks);
         }
 
@@ -119,7 +122,7 @@ impl Cascade {
 
     /// Gives every scanned component with no `targets` of its own what its
     /// containers say.
-    pub fn resolve_targets(&self, components: &mut [DiscoveredComponent]) {
+    pub(crate) fn resolve_targets(&self, components: &mut [DiscoveredComponent]) {
         let from_plugins: BTreeMap<(Option<String>, String), Vec<String>> = components
             .iter()
             .filter(|c| c.kind == EntityKind::Plugin)
@@ -161,7 +164,7 @@ impl Cascade {
 
     /// Gives one read note what it leaves out: `targets`, a skill's `license`,
     /// and each harness block key by key. `plugin` is the plugin holding it.
-    pub fn apply(&self, note: &mut VaultNote, kind: EntityKind, plugin: Option<&str>) {
+    pub(crate) fn apply(&self, note: &mut VaultNote, kind: EntityKind, plugin: Option<&str>) {
         let plugin = plugin.unwrap_or_default();
         if note.frontmatter.targets.is_none() {
             note.frontmatter.targets = plugin_targets(&self.config, plugin);
@@ -283,17 +286,24 @@ fn merge_blocks(slot: &mut BTreeMap<String, Map<String, Value>>, from: &Map<Stri
     }
 }
 
-/// Writes `from` into `slot` when the note supplied it, leaving a request-only
-/// value in place. The vault outranks the request where both spoke; where the
-/// vault is silent the request is all there is.
-fn take<T>(slot: &mut Option<T>, from: Option<T>) {
-    if let Some(value) = from {
-        *slot = Some(value);
+/// The root file's shared defaults as the config a marketplace note folds
+/// over. They name no marketplace and no plugin.
+pub(crate) fn root_config(root: &SharedDefaults) -> MarketplaceConfig {
+    MarketplaceConfig {
+        identity: ContainerIdentity {
+            author: root.author.clone(),
+            license: root.license.clone(),
+            repository: root.repository.clone(),
+            homepage: root.homepage.clone(),
+            ..ContainerIdentity::default()
+        },
+        targets: root.targets.clone(),
+        blocks: root.blocks.clone(),
+        ..MarketplaceConfig::default()
     }
 }
 
-/// [`take`] for a note's `description`. A container note that writes none
-/// is silent and leaves the request's value in place.
+/// Sets `slot` to a note's `description` when it writes one.
 fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) {
     if !note.description.is_empty() {
         *slot = Some(note.description.clone());

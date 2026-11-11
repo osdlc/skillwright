@@ -1,7 +1,7 @@
 //! Loading — a vault read into the marketplace model, in two passes.
 //!
 //! [`load`] reads the marketplace a build renders: one marketplace of the
-//! vault, every plugin, the request's configuration folded under the notes'.
+//! vault, every plugin, the notes folded over the root file's shared defaults.
 //! It reads through [`read_notes`] (pass 1) and resolves through
 //! [`resolve_body`] (pass 2).
 
@@ -31,6 +31,7 @@ use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
+use crate::settings::SharedDefaults;
 use crate::vault::{VaultNote, read_vault_note};
 
 pub use crate::layout::CHANGELOG_FILE;
@@ -38,7 +39,7 @@ use crate::layout::{Layout, Place, SharedDir};
 use crate::vfs::{Vfs, normalize};
 
 /// What a marketplace load reads: this vault, this marketplace of it, for
-/// these harnesses, under this configuration.
+/// these harnesses, under the root file's shared defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct LoadRequest {
@@ -53,20 +54,21 @@ pub struct LoadRequest {
     /// but not resolved.
     #[serde(default)]
     pub harnesses: BTreeSet<String>,
-    /// The marketplace's identity and per-plugin overrides, under what the
-    /// vault's own notes say.
-    pub config: MarketplaceConfig,
+    /// The root file's shared defaults, under what the vault's own notes say.
+    /// Absent on the wire means none.
+    #[serde(default)]
+    pub defaults: SharedDefaults,
 }
 
 impl LoadRequest {
-    /// A load of the vault at `vault_root` under `config`. Every other field
-    /// starts empty; set it after.
-    pub fn new(vault_root: impl Into<PathBuf>, config: MarketplaceConfig) -> Self {
+    /// A load of the vault at `vault_root` under the root file's `defaults`.
+    /// Every other field starts empty; set it after.
+    pub fn new(vault_root: impl Into<PathBuf>, defaults: SharedDefaults) -> Self {
         Self {
             vault_root: vault_root.into(),
             marketplace: None,
             harnesses: BTreeSet::new(),
-            config,
+            defaults,
         }
     }
 }
@@ -227,7 +229,7 @@ pub fn load_in(
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing publishable rather than that it is not there.
     let market = resolve_marketplace(&discovered, request.marketplace.as_deref())?;
-    let cascade = Cascade::over(&discovered, Some(&market), &request.config);
+    let cascade = Cascade::over(&discovered, Some(&market), &request.defaults);
     // Before members inherit a block, so a wrong value names its container.
     crate::harness::manifest::check_block_values(&cascade.config)?;
     cascade.resolve_targets(&mut discovered);
@@ -571,49 +573,43 @@ fn bodies_of(resolved: &mut Resolved) -> impl Iterator<Item = &mut Body> {
     ))
 }
 
-/// Marks each plugin whose `<harness>: {naming: …}` names its skills against
-/// that harness's default, and every call to one of its skills, wherever the
-/// call sits. Only a harness whose profile allows the choice is read.
+/// Marks each plugin whose `<harness>: {naming: bare}` names its skills bare
+/// against that harness's prefixing default, and every call to one of its
+/// skills, wherever the call sits. Only a harness whose profile allows the
+/// choice is read.
 fn apply_naming(
     plugins: &mut BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Result<(), CoreError> {
-    // Per plugin, the harnesses that name it bare and those that prefix it,
-    // each against that harness's default.
-    let mut chosen: BTreeMap<String, (Vec<String>, Vec<String>)> = BTreeMap::new();
+    // Per plugin, the harnesses that name it bare.
+    let mut bare_on: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for profile in crate::harness::with_plugin_format().filter(|p| p.format().naming_choice) {
         let default = profile.format().naming;
         for name in plugins.keys() {
             let naming = crate::harness::manifest::naming_of(config, name, profile)?;
-            if naming == default {
-                continue;
-            }
-            let (bare, prefixed) = chosen.entry(name.clone()).or_default();
-            match naming {
-                SkillNaming::Bare => bare.push(profile.name.to_owned()),
-                SkillNaming::PluginPrefixed => prefixed.push(profile.name.to_owned()),
-                SkillNaming::HostNamespaced => {}
+            if naming == SkillNaming::Bare && naming != default {
+                bare_on
+                    .entry(name.clone())
+                    .or_default()
+                    .push(profile.name.to_owned());
             }
         }
     }
-    if chosen.is_empty() {
+    if bare_on.is_empty() {
         return Ok(());
     }
     for plugin in plugins.values_mut() {
-        if let Some((bare, prefixed)) = chosen.get(&plugin.name) {
+        if let Some(bare) = bare_on.get(&plugin.name) {
             plugin.bare_on.clone_from(bare);
-            plugin.prefixed_on.clone_from(prefixed);
         }
         let members = plugin.skills.iter_mut().chain(&mut plugin.commands);
         for resolved in members.filter_map(|member| member.resolved.as_mut()) {
             for body in bodies_of(resolved) {
                 for segment in &mut body.segments {
                     if let Segment::Call { call } = segment
-                        && let Some((bare, prefixed)) =
-                            call.skill.plugin.as_ref().and_then(|p| chosen.get(p))
+                        && let Some(bare) = call.skill.plugin.as_ref().and_then(|p| bare_on.get(p))
                     {
                         call.bare_on.clone_from(bare);
-                        call.prefixed_on.clone_from(prefixed);
                     }
                 }
             }

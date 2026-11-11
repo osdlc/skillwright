@@ -11,7 +11,6 @@ export {
   knownTargets,
   loadMarketplace,
   parseRootFile,
-  rootFileConfig,
 } from './core.ts'
 export type {
   CoreErrorName,
@@ -30,8 +29,6 @@ export type {
   ExportRequest,
   ExportUnit,
   ContainerIdentity,
-  MarketplaceConfig,
-  PluginOverrides,
   RootFile,
   SharedDefaults,
   BuildSettings,

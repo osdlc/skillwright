@@ -1,6 +1,6 @@
 //! Every `#[non_exhaustive]` type, used from outside the crate the documented
 //! way: a request from `new` with the required inputs, then fields set on the
-//! value; a config from `Default`; an output read by field; an enum matched
+//! value; a settings type from `Default`; an output read by field; an enum matched
 //! with a `_` arm.
 
 use std::path::Path;
@@ -8,8 +8,8 @@ use std::path::Path;
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
     BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportRequest,
-    ExportUnit, LinkIndex, MarketplaceConfig, MemVfs, PluginOverrides, RootFile, SharedDefaults,
-    StaleKind, UnitStatus, Vfs, discover_components, export_skills,
+    ExportUnit, LinkIndex, MemVfs, RootFile, SharedDefaults, StaleKind, UnitStatus, Vfs,
+    discover_components, export_skills,
 };
 
 const PLUGIN: &str = "/vault/marketplaces/house/plugins/tools";
@@ -31,14 +31,11 @@ fn vault() -> MemVfs {
 }
 
 #[test]
-fn an_export_request_builds_from_a_default_config() {
+fn an_export_request_builds_from_default_shared_defaults() {
     let vfs = vault();
-    let mut config = MarketplaceConfig::default();
-    config.name = Some("house".to_owned());
-    let mut overrides = PluginOverrides::default();
-    overrides.identity.version = Some("1.0.0".to_owned());
-    config.plugins.insert("tools".to_owned(), overrides);
-    let mut request = ExportRequest::new("/vault", config);
+    let mut defaults = SharedDefaults::default();
+    defaults.license = Some("MIT".to_owned());
+    let mut request = ExportRequest::new("/vault", defaults);
     assert_eq!(request.mode, ExportMode::Build);
     request.harnesses.insert("claude".to_owned());
     let report = export_skills(&vfs, &request).unwrap();
@@ -50,7 +47,7 @@ fn an_export_request_builds_from_a_default_config() {
 
 #[test]
 fn a_load_request_takes_its_inputs() {
-    let mut load = LoadRequest::new("/vault", MarketplaceConfig::default());
+    let mut load = LoadRequest::new("/vault", SharedDefaults::default());
     load.marketplace = Some("house".to_owned());
     assert!(load.harnesses.is_empty());
 }
@@ -76,9 +73,8 @@ fn the_settings_types_build_from_default() {
     let mut root = RootFile::default();
     root.defaults = fields;
     root.build = build;
-    let config = root.to_config();
-    assert_eq!(config.name, None);
-    assert_eq!(config.targets, Some(vec!["claude".to_owned()]));
+    assert_eq!(root.defaults.targets, Some(vec!["claude".to_owned()]));
+    assert_eq!(root.harness_set().len(), 1);
 }
 
 #[test]
@@ -100,9 +96,7 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
     let warning = DiscoveryWarning::new("review.md", "missing-version", "detail");
     assert_eq!(warning.reason, "missing-version");
 
-    let mut config = MarketplaceConfig::default();
-    config.name = Some("house".to_owned());
-    let request = ExportRequest::new("/vault", config);
+    let request = ExportRequest::new("/vault", SharedDefaults::default());
     let report = export_skills(&vfs, &request).unwrap();
     assert_eq!(report.mode, ExportMode::Build);
     for unit in &report.units {
