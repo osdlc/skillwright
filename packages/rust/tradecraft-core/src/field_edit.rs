@@ -17,10 +17,32 @@ struct FieldEdit {
 ///
 /// # Errors
 ///
-/// `refused: frontmatter-read` when the frontmatter is not a YAML mapping.
+/// * `refused: frontmatter-read` when the frontmatter is not a YAML mapping.
+/// * `refused: malformed` when the `version` is not a string, as the build
+///   refuses it.
 pub fn read_version(source: &str) -> Result<Option<String>, CoreError> {
-    Ok(frontmatter_mapping(source)?
-        .and_then(|mapping| mapping.get("version").map(ToString::to_string)))
+    use yaml_splice::Value;
+    let Some(mapping) = frontmatter_mapping(source)? else {
+        return Ok(None);
+    };
+    // Only the kind matters to the refusal, so a list or mapping stands in
+    // empty.
+    let found = match mapping.get("version") {
+        None => return Ok(None),
+        Some(Value::Str(version)) => return Ok(Some(version.clone())),
+        Some(Value::Null) => serde_json::Value::Null,
+        Some(Value::Bool(b)) => serde_json::Value::Bool(*b),
+        Some(Value::Int(_) | Value::Float(_)) => serde_json::Value::from(0),
+        Some(Value::Seq(_)) => serde_json::Value::Array(Vec::new()),
+        Some(Value::Map(_)) => serde_json::Value::Object(serde_json::Map::new()),
+    };
+    let refusal = crate::keys::check_shape(crate::EntityKind::Plugin, "version", &found)
+        .err()
+        .map_or_else(
+            || "`version` must be a string".to_owned(),
+            |r| r.sentence("version"),
+        );
+    Err(CoreError::refused("malformed", refusal))
 }
 
 /// The note with its `version` set to `version`, every other byte kept.
@@ -129,6 +151,28 @@ mod tests {
         let out = compose_note(Some("Body.\n"), &[set("version", "1.0.0")], "Body.\n").unwrap();
         assert!(!out.contains("name"), "{out}");
         assert!(out.contains("version: 1.0.0"), "{out}");
+    }
+
+    /// The version is read as the note wrote it, and only a string is a
+    /// version, as the build reads it.
+    #[test]
+    fn only_a_string_reads_as_a_version() {
+        let read = |yaml: &str| read_version(&format!("---\n{yaml}\n---\n"));
+        assert_eq!(read("version: '1.10'").unwrap().as_deref(), Some("1.10"));
+        assert_eq!(read("version: 1.2.3").unwrap().as_deref(), Some("1.2.3"));
+        assert_eq!(read("description: d").unwrap(), None);
+        for (yaml, found) in [
+            ("version:", "nothing"),
+            ("version: 1.10", "a number — quote it"),
+            ("version: 2", "a number — quote it"),
+            ("version: [1]", "a list"),
+        ] {
+            let err = read(yaml).unwrap_err().to_string();
+            assert!(
+                err.contains(&format!("`version` must be a string, not {found}")),
+                "{yaml}: {err}"
+            );
+        }
     }
 
     #[test]
