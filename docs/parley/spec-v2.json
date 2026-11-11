@@ -5,7 +5,7 @@
   "created": "2026-11-10",
   "repo": {
     "remote": "https://github.com/osdlc/skillwright",
-    "commit": "8a259407f08a85af6eef9cb3ed1aa83654efc693"
+    "commit": "453069cfe9dadb40220f548026a53ee504aa1aba"
   },
   "blocks": [
     {
@@ -1057,7 +1057,7 @@
     {
       "id": "spec-11-a-vault-not-in-this-layout-p-4",
       "type": "prose",
-      "text": "2. The root file has `workspace`, or a key the table does not mark as\n   inherited (section 2 rule 4)."
+      "text": "2. The root file has `workspace`, or a key the table lists but does not mark\n   as inherited (section 2 rule 4). An unlisted key only warns (section 2\n   rule 3)."
     },
     {
       "id": "spec-11-a-vault-not-in-this-layout-p-5",
