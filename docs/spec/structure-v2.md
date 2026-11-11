@@ -27,26 +27,25 @@ the code, the open PRs and issues, and the build order are in
 ## 1. The root
 
 1. The vault is the folder that holds both `skillwright.md` and a
-   `marketplaces/` folder. That folder is the root.
-2. `--vault <path>` names the root. Without it, skillwright walks up from the
-   working directory and stops at the first folder that holds both. A
-   `skillwright.md` with no `marketplaces/` beside it is passed over.
-
-   A skill, agent, command or hook is called a component (section 3). A
-   component named `skillwright` has a note called `skillwright.md`, so the
-   walk up can meet a second `skillwright.md`. It is never taken for the root,
-   because only the root has `marketplaces/` beside it:
+   `marketplaces/` folder. That folder is the root. A vault looks like this:
 
    ```text
    <root>/
-   ├── skillwright.md                      the root file: marketplaces/ is beside it
-   └── marketplaces/acme/plugins/tools/
-       └── skills/skillwright/
-           └── skillwright.md              a skill's note: no marketplaces/ beside it
+   ├── skillwright.md                  the root file: shared settings
+   ├── dist/                           build output
+   └── marketplaces/
+       └── <m>/
+           ├── <m>.md                  the marketplace
+           └── plugins/
+               └── <p>/
+                   ├── <p>.md          the plugin
+                   └── skills/<s>/<s>.md
    ```
 
-   A `marketplaces/` folder anywhere below the root is refused (section 11), so
-   this test needs no reserved names.
+2. `--vault <path>` names the root. Without it, skillwright walks up from the
+   working directory and stops at the first folder that holds both
+   `skillwright.md` and `marketplaces/`. Any other `skillwright.md` is passed
+   over (see Appendix A).
 3. v2 does not support a vault inside a larger notes vault. At the root, only
    `skillwright.md` and `marketplaces/` are read, and `dist/` is written
    (section 9). Anything else at the root is left alone.
@@ -977,3 +976,20 @@ a skills folder, `harness install`, `update`, `uninstall`, `link` and
 `unlink`, `adopt`, `new`, `rename`, `move`, `build --watch`, and the other
 current commands (`list`, `status`, `delete`, `convert`, `author`,
 `unpublish`).
+
+## Appendix A: Edge cases
+
+1. **A component named `skillwright`.** A skill, agent, command or hook is a
+   component (section 3). A skill named `skillwright` has a note called
+   `skillwright.md`, so the walk up from inside it meets a second
+   `skillwright.md`. It is never taken for the root, because only the root has
+   `marketplaces/` beside it. A `marketplaces/` folder anywhere below the root
+   is refused (section 11), so the test needs no reserved names.
+
+   ```text
+   <root>/
+   ├── skillwright.md                      the root file: marketplaces/ is beside it
+   └── marketplaces/acme/plugins/tools/
+       └── skills/skillwright/
+           └── skillwright.md              a skill's note: no marketplaces/ beside it
+   ```
