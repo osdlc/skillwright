@@ -28,6 +28,7 @@ API:
 - `SkillId::plugin` and `IndexedSkill::plugin` are `String`, not `Option<String>`: every component sits in a plugin. A call id is always `plugin:name`.
 - The `model` types no longer implement `Serialize`, except `Asset` and `SkillId`. `SkillContent`, `SkillProjection`, `VaultNote` and `VaultFrontmatter` no longer implement `Serialize` or `Deserialize`.
 - `Closure::hash` is removed.
+- `VaultNote` holds `content: SkillContent` in place of `projection`; the build reads a note's folder in the compile pass only. `compile_projection`, `vault::bundle_root`, `related_of`, `RelatedSplit` and `SkillSource` are removed, and `CallContext::skills` is a `&SkillIndex`. `model::read_notes` is removed; call `discover::discover_in`. `ExportRequest::load_request`, `ContainerIdentity::is_silent`, `Marketplace::skill_at`, `Layout::links_into_never_ship` and `HarnessProfile::agent_override_keys` are removed.
 - `Shape` gains `Words`, `AgentTools`, `Hint` and `Flag`, the types the check already took for `allowed-tools`, `tools`, `argument-hint`, `user-invocable` and `disable-model-invocation`. `Shape` is an exhaustive public enum, so a match on it needs the new arms.
 - `Shape::StringMap` is renamed `Shape::Mapping`, and accepts any mapping, as `metadata` always did.
 - `tools` is two `KEYS` rows: `Words` on a skill and a command, `AgentTools` on an agent.

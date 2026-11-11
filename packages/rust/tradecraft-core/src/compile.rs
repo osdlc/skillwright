@@ -59,7 +59,7 @@
 //! survives.
 
 use std::borrow::Cow;
-use std::cell::{OnceCell, RefCell};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -168,52 +168,10 @@ impl SkillIndex {
     }
 }
 
-/// Where a compile's [`SkillIndex`] comes from: built by the caller, or built
-/// on first use, so a body with no call or link never pays for a vault scan.
-pub struct SkillSource<'a> {
-    ready: Option<&'a SkillIndex>,
-    build: Option<&'a dyn Fn() -> Result<SkillIndex, CoreError>>,
-    built: OnceCell<SkillIndex>,
-}
-
-impl<'a> SkillSource<'a> {
-    /// A source over an index the caller already built.
-    pub fn ready(index: &'a SkillIndex) -> Self {
-        SkillSource {
-            ready: Some(index),
-            build: None,
-            built: OnceCell::new(),
-        }
-    }
-
-    /// A source that builds its index on first use.
-    pub fn lazy(build: &'a dyn Fn() -> Result<SkillIndex, CoreError>) -> Self {
-        SkillSource {
-            ready: None,
-            build: Some(build),
-            built: OnceCell::new(),
-        }
-    }
-
-    fn get(&self) -> Result<&SkillIndex, CoreError> {
-        if let Some(index) = self.ready {
-            return Ok(index);
-        }
-        if let Some(index) = self.built.get() {
-            return Ok(index);
-        }
-        let index = match self.build {
-            Some(build) => build()?,
-            None => SkillIndex::default(),
-        };
-        Ok(self.built.get_or_init(|| index))
-    }
-}
-
 /// What a compile needs to render skill calls for one target.
 pub struct CallContext<'a> {
-    /// Where the skills a body may name come from.
-    pub skills: SkillSource<'a>,
+    /// The skills a body may name.
+    pub skills: &'a SkillIndex,
     /// What this target writes for a call to a skill, without backticks.
     pub render: &'a dyn Fn(&IndexedSkill) -> Result<String, CoreError>,
     /// The harness's name, for a refusal about what it does not ship.
@@ -510,113 +468,6 @@ pub fn compile_note(
     })
 }
 
-/// What one note reaches, split the way the compile pass resolves it.
-///
-/// Every list is vault-relative, forward-slashed and sorted, except
-/// [`Self::unresolved`], which carries link targets as they were written —
-/// there is no file to name them after.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct RelatedSplit {
-    /// Files whose text this note's own output consumed: everything it
-    /// embeds, transitively, because an embedded note's embeds expand into the
-    /// same output. Never the entry itself.
-    pub embeds: Vec<String>,
-    /// Files a surviving `[[link]]` or image embed resolved to. Never the
-    /// entry itself.
-    pub links: Vec<String>,
-    /// Skills this note calls. A call copies nothing, so a called note is
-    /// never also in [`Self::links`] for that call.
-    pub calls: Vec<String>,
-    /// Call targets that named no skill, as written.
-    pub unresolved: Vec<String>,
-    /// The skill's own files the layout seeds, whether or not the body
-    /// mentions them. Empty without a [`CompileSource::layout`].
-    pub resources: Vec<String>,
-}
-
-/// What [`compile_note`] would reach, without emitting anything.
-///
-/// The same `Renderer` walk, stopped before the resource queue drains: the
-/// entry's body is transformed (and the result thrown away) so the embed
-/// expansion, the link collection and the unresolved names are the compiler's
-/// own, not a second scanner's answer to the same question. Transitivity comes
-/// free with that — an embed expands inside the walk, so a note two hops deep
-/// is in [`RelatedSplit::embeds`] for the same reason it is in the closure.
-///
-/// Calls are tolerant here. A call that names nothing, several skills or an
-/// agent, or has a fragment, is in [`RelatedSplit::unresolved`]. A call to a
-/// skill the harness does not ship is a call like any other. Hand-written
-/// calls are not refused. The view shows what a note reaches; a broken call
-/// is a row to fix.
-///
-/// # Errors
-///
-/// The subset of [`compile_note`]'s refusals the walk itself can raise:
-/// `cycle`, `fragment-unresolved` (from an embed), the `link-*` tokens,
-/// `excluded-link`, `unsafe-path` and `path-collision`. `unresolved-syntax` and the
-/// `skill-call-*` tokens cannot appear.
-pub fn related_of(
-    vfs: &dyn Vfs,
-    source: &CompileSource<'_>,
-    body: &str,
-) -> Result<RelatedSplit, CoreError> {
-    let mut renderer = Renderer::new(vfs, source)?;
-    renderer.tolerant_calls = true;
-    renderer.seed_bundle_resources();
-    // Snapshotted before the walk: after it, the two resource maps also hold
-    // everything the body linked to, and a bundle peer is not a link.
-    let seeded: Vec<PathBuf> = renderer
-        .markdown_resources
-        .keys()
-        .chain(renderer.binary_resources.keys())
-        .cloned()
-        .collect();
-
-    let entry_path = renderer.entry_path.clone();
-    let mut stack = vec![(entry_path.clone(), None)];
-    renderer.transform_body(body, &entry_path, "SKILL.md", &mut stack)?;
-
-    let mut links = Vec::new();
-    for path in &renderer.linked {
-        // `[[#Heading]]` resolves to the note it appears in; a note does not
-        // link itself.
-        if *path == entry_path {
-            continue;
-        }
-        links.push(renderer.vault_relative(path)?);
-    }
-    let mut calls = Vec::new();
-    for path in &renderer.called_notes {
-        calls.push(renderer.vault_relative(path)?);
-    }
-    let mut resources = Vec::new();
-    for path in &seeded {
-        resources.push(renderer.vault_relative(path)?);
-    }
-    resources.sort();
-    resources.dedup();
-
-    Ok(RelatedSplit {
-        embeds: renderer
-            .contributing
-            .get("SKILL.md")
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .collect(),
-        links,
-        calls,
-        unresolved: renderer
-            .unresolved
-            .get("SKILL.md")
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .collect(),
-        resources,
-    })
-}
-
 // --- Extension vocabularies -------------------------------------------------
 
 /// Embeds of these render as images (`![label](path)`); any other file
@@ -824,17 +675,9 @@ struct Renderer<'a> {
     /// knows either.
     contributing: BTreeMap<String, BTreeSet<String>>,
     unresolved: BTreeMap<String, BTreeSet<String>>,
-    /// Every file a surviving link resolved to, as the walk met it. Read only
-    /// by [`related_of`].
-    linked: BTreeSet<PathBuf>,
     call_context: Option<&'a CallContext<'a>>,
-    /// [`related_of`]'s mode: a call that fails a `skill-call-*` check is
-    /// recorded instead of refused, and hand-written calls are not refused.
-    tolerant_calls: bool,
     /// Per emitted file, the [`IndexedSkill::call_id`]s it calls.
     calls: BTreeMap<String, BTreeSet<String>>,
-    /// Every note a call resolved to. Read only by [`related_of`].
-    called_notes: BTreeSet<PathBuf>,
     /// Hand-written calls found in any text this compile builds, each as
     /// the refusal names it, refused together once every file is built.
     literal_calls: Vec<String>,
@@ -898,11 +741,8 @@ impl<'a> Renderer<'a> {
             skill_base,
             contributing: BTreeMap::new(),
             unresolved: BTreeMap::new(),
-            linked: BTreeSet::new(),
             call_context: source.calls,
-            tolerant_calls: false,
             calls: BTreeMap::new(),
-            called_notes: BTreeSet::new(),
             literal_calls: Vec::new(),
             markdown_resources: BTreeMap::new(),
             binary_resources: BTreeMap::new(),
@@ -1342,7 +1182,6 @@ impl<'a> Renderer<'a> {
         form: LinkForm,
         label: String,
     ) -> Result<String, CoreError> {
-        self.linked.insert(resolved.to_path_buf());
         let caller = self.relative_or_verbatim(source_path);
         if let (Some(context), Some(component), true) =
             (self.call_context, &target.component, target.note)
@@ -1393,19 +1232,10 @@ impl<'a> Renderer<'a> {
     ) -> Result<String, CoreError> {
         let target = token.target.as_str();
         let call = match self.call_context {
-            Some(context) => match self.render_call(context, token, source_path, output_path) {
-                Ok(call) => Some(call),
-                Err(CoreError::Refused(reason))
-                    if self.tolerant_calls && reason.starts_with("skill-call-") =>
-                {
-                    None
-                }
-                Err(e) => return Err(e),
-            },
+            Some(context) => Some(self.render_call(context, token, source_path, output_path)?),
             None => None,
         };
-        // Without a context, or in the related view, a call that names no
-        // skill is still a row: the name as written.
+        // Without a context, a call is still a row: the name as written.
         let call = call.unwrap_or_else(|| {
             self.unresolved
                 .entry(output_path.to_owned())
@@ -1438,8 +1268,7 @@ impl<'a> Renderer<'a> {
                  section instead",
             ));
         }
-        let skills = context.skills.get()?;
-        let skill = match skills.by_name(&token.target).as_slice() {
+        let skill = match context.skills.by_name(&token.target).as_slice() {
             [] => {
                 return Err(self.call_error(
                     "skill-call-unresolved",
@@ -1478,7 +1307,7 @@ impl<'a> Renderer<'a> {
             ));
         }
         self.check_call_shipped(context, skill, source_path, &written)?;
-        self.record_call(skill, output_path, skill.entry_path != self.entry_path);
+        self.record_call(skill, output_path);
         let caller = self.relative_or_verbatim(source_path);
         render_or_mark(context, skill, token.destination, caller)
     }
@@ -1492,7 +1321,7 @@ impl<'a> Renderer<'a> {
         source_path: &Path,
         written: &str,
     ) -> Result<(), CoreError> {
-        if skill.shipped || self.tolerant_calls || context.record.is_some() {
+        if skill.shipped || context.record.is_some() {
             return Ok(());
         }
         Err(self.call_error(
@@ -1520,16 +1349,12 @@ impl<'a> Renderer<'a> {
         self.link_error(token, source_path, written, what, "section 4 rule 8")
     }
 
-    /// Records `skill` in `output_path`'s calls. `related` also lists it in [`RelatedSplit::calls`]; a skill naming
-    /// itself is not related to itself.
-    fn record_call(&mut self, skill: &IndexedSkill, output_path: &str, related: bool) {
+    /// Records `skill` in `output_path`'s calls.
+    fn record_call(&mut self, skill: &IndexedSkill, output_path: &str) {
         self.calls
             .entry(output_path.to_owned())
             .or_default()
             .insert(skill.call_id());
-        if related {
-            self.called_notes.insert(skill.entry_path.clone());
-        }
     }
 
     /// Holds each hand-written call in `body`'s prose for
@@ -1552,7 +1377,7 @@ impl<'a> Renderer<'a> {
     /// Refuses every hand-written call [`Self::check_literal_calls`] held: its
     /// spelling is right for one harness only.
     fn refuse_literal_calls(&self) -> Result<(), CoreError> {
-        if self.literal_calls.is_empty() || self.tolerant_calls {
+        if self.literal_calls.is_empty() {
             return Ok(());
         }
         Err(CoreError::refused(
@@ -2796,79 +2621,6 @@ mod tests {
     }
 
     #[test]
-    fn related_separates_an_embed_from_a_link_and_keeps_the_name_that_resolved_to_nothing() {
-        let vfs = demo_vault();
-        let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
-        let related = related_of(
-            &vfs,
-            &bundled(&vfs, bundle),
-            "# Demo\n\n![[Shared]]\n\nRead [[references/local]] and [[Sections]], then /[[Missing]].\n",
-        )
-        .unwrap();
-
-        assert_eq!(
-            related.embeds,
-            vec!["marketplaces/m/plugins/p/references/Shared.md".to_owned()]
-        );
-        assert_eq!(
-            related.links,
-            vec![
-                "marketplaces/m/plugins/p/references/Sections.md".to_owned(),
-                "marketplaces/m/plugins/p/skills/demo/references/local.md".to_owned()
-            ]
-        );
-        assert_eq!(related.unresolved, vec!["Missing".to_owned()]);
-    }
-
-    // AC-2's property, and the reason this reuses the compiler's walk rather
-    // than scanning the body once: the second hop is only visible from inside
-    // the expansion.
-    #[test]
-    fn related_embeds_reach_two_hops_deep() {
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/marketplaces/m/plugins/p/references/Deep.md",
-            b"Deepest.\n",
-        );
-        write(
-            &vfs,
-            "/vault/marketplaces/m/plugins/p/references/Middle.md",
-            b"Middle.\n\n![[Deep]]\n",
-        );
-
-        let related = related_of(&vfs, &source(None), "# Demo\n\n![[Middle]]\n").unwrap();
-
-        assert_eq!(
-            related.embeds,
-            vec![
-                "marketplaces/m/plugins/p/references/Deep.md".to_owned(),
-                "marketplaces/m/plugins/p/references/Middle.md".to_owned()
-            ]
-        );
-    }
-
-    // The bundle peers are the walk's seed, not something the body reached, so
-    // they stay out of `links` — and a peer nothing mentions is still shipped.
-    #[test]
-    fn related_lists_bundle_peers_as_resources_and_never_as_links() {
-        let vfs = demo_vault();
-        let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
-        let related = related_of(&vfs, &bundled(&vfs, bundle), "# Demo\n").unwrap();
-
-        assert_eq!(
-            related.resources,
-            vec![
-                "marketplaces/m/plugins/p/skills/demo/references/local.md".to_owned(),
-                "marketplaces/m/plugins/p/skills/demo/scripts/tool.sh".to_owned()
-            ]
-        );
-        assert!(related.links.is_empty(), "{:?}", related.links);
-    }
-
-    // --- Exporter tests -----------------------------------------------------
-
-    #[test]
     fn a_demo_skill_compiles_end_to_end() {
         let vfs = demo_vault();
         let bundle = Path::new("/vault/marketplaces/m/plugins/p/skills/demo");
@@ -3362,12 +3114,8 @@ mod tests {
     #[test]
     fn a_call_escape_over_a_leftover_ships_the_brackets() {
         let vfs = demo_vault();
-        let compiled = try_compile_with(
-            &vfs,
-            SkillSource::ready(&call_index("called")),
-            "See \\/[[TODO later.\n",
-        )
-        .unwrap();
+        let compiled =
+            try_compile_with(&vfs, &call_index("called"), "See \\/[[TODO later.\n").unwrap();
         assert_eq!(compiled.0.body, "See /[[TODO later.\n");
     }
 
@@ -3783,7 +3531,7 @@ mod tests {
 
     fn try_compile_with(
         vfs: &MemVfs,
-        skills: SkillSource<'_>,
+        skills: &SkillIndex,
         body: &str,
     ) -> Result<(CompiledNote, Vec<DiscoveryWarning>), CoreError> {
         let calls = test_calls(skills);
@@ -3796,9 +3544,7 @@ mod tests {
     }
 
     fn compile_with_calls(vfs: &MemVfs, skills: &SkillIndex, body: &str) -> CompiledNote {
-        try_compile_with(vfs, SkillSource::ready(skills), body)
-            .unwrap()
-            .0
+        try_compile_with(vfs, skills, body).unwrap().0
     }
 
     fn call_refusal(skills: &SkillIndex, body: &str) -> String {
@@ -3812,9 +3558,7 @@ mod tests {
     }
 
     fn call_refusal_in(vfs: &MemVfs, skills: &SkillIndex, body: &str) -> String {
-        try_compile_with(vfs, SkillSource::ready(skills), body)
-            .unwrap_err()
-            .to_string()
+        try_compile_with(vfs, skills, body).unwrap_err().to_string()
     }
 
     #[test]
@@ -3827,7 +3571,7 @@ mod tests {
         );
         let (compiled, warnings) = try_compile_with(
             &vfs,
-            SkillSource::ready(&call_index("called")),
+            &call_index("called"),
             "Esc \\/[[called]] here, `\\/[[called|alias]]` there.\n",
         )
         .unwrap();
@@ -3870,30 +3614,6 @@ mod tests {
         assert!(err.contains("skill-call-not-shipped"), "{err}");
         assert!(err.contains("tools:called"), "{err}");
         assert!(err.contains("test does not ship"), "{err}");
-    }
-
-    #[test]
-    fn the_index_is_built_only_for_a_body_that_needs_it() {
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
-            b"# called\n",
-        );
-        let build = || -> Result<SkillIndex, CoreError> {
-            Err(CoreError::refused(
-                "path-collision",
-                "elsewhere in the vault",
-            ))
-        };
-        let plain = "No calls, no links, `/[[not-known]]` in code.\n";
-        let (compiled, _) = try_compile_with(&vfs, SkillSource::lazy(&build), plain).unwrap();
-        assert_eq!(compiled.body, plain);
-
-        let err = try_compile_with(&vfs, SkillSource::lazy(&build), "Run /[[called]].\n")
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("path-collision"), "{err}");
     }
 
     #[test]
@@ -3949,7 +3669,7 @@ mod tests {
     }
 
     /// The test call context: a call renders as `/<call id>`.
-    fn test_calls(skills: SkillSource<'_>) -> CallContext<'_> {
+    fn test_calls(skills: &SkillIndex) -> CallContext<'_> {
         CallContext {
             skills,
             render: &render_call_id,
@@ -3971,7 +3691,7 @@ mod tests {
         source: CompileSource<'_>,
         body: &str,
     ) -> Result<CompiledNote, CoreError> {
-        let calls = test_calls(SkillSource::ready(skills));
+        let calls = test_calls(skills);
         let source = CompileSource {
             calls: Some(&calls),
             ..source
@@ -3991,7 +3711,7 @@ mod tests {
     }
 
     #[test]
-    fn without_a_context_a_call_renders_its_target_and_is_related() {
+    fn without_a_context_a_call_renders_its_target() {
         let vfs = demo_vault();
         write(
             &vfs,
@@ -4004,10 +3724,6 @@ mod tests {
         assert_eq!(compiled.body, "Run `called` and `/[[missing]] now`.\n");
         assert_eq!(paths(&compiled), SEEDED);
         assert_eq!(compiled.closures["SKILL.md"].unresolved, vec!["called"]);
-
-        let related = related_of(&vfs, &source(None), body).unwrap();
-        assert!(related.calls.is_empty(), "{:?}", related.calls);
-        assert!(related.links.is_empty(), "{:?}", related.links);
     }
 
     #[test]
@@ -4070,7 +3786,7 @@ mod tests {
         let vfs = demo_vault();
         let (compiled, warnings) = try_compile_with(
             &vfs,
-            SkillSource::ready(&call_index("called")),
+            &call_index("called"),
             "Run `x/[[called]]` or `/[[nothing]]`.\n",
         )
         .unwrap();
@@ -4126,70 +3842,20 @@ mod tests {
     }
 
     #[test]
-    fn a_plain_link_does_not_need_the_index() {
+    fn a_plain_link_to_a_skill_stays_a_link() {
         let vfs = demo_vault();
         write(
             &vfs,
             "/vault/marketplaces/m/plugins/p/skills/called/called.md",
             b"# called\n",
         );
-        let build = || -> Result<SkillIndex, CoreError> {
-            Err(CoreError::refused(
-                "path-collision",
-                "two `dup` skills elsewhere",
-            ))
-        };
         let (compiled, warnings) =
-            try_compile_with(&vfs, SkillSource::lazy(&build), "See [[called]].\n").unwrap();
+            try_compile_with(&vfs, &call_index("called"), "See [[called]].\n").unwrap();
         assert_eq!(compiled.body, "See [called](../called/SKILL.md).\n");
         assert!(
             warnings.iter().all(|w| w.reason == "link-not-call"),
             "{warnings:?}"
         );
-
-        let err = try_compile_with(
-            &vfs,
-            SkillSource::lazy(&build),
-            "See [[called]], run /[[called]].\n",
-        )
-        .unwrap_err()
-        .to_string();
-        assert!(err.contains("path-collision"), "{err}");
-    }
-
-    #[test]
-    fn the_related_view_records_a_broken_call_instead_of_refusing() {
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/marketplaces/m/plugins/p/skills/called/called.md",
-            b"# called\n",
-        );
-        let skills = call_index("called");
-        let render = |skill: &IndexedSkill| Ok(skill.name.clone());
-        let calls = CallContext {
-            skills: SkillSource::ready(&skills),
-            render: &render,
-            target: "the vault",
-            hand_written: BTreeMap::new(),
-            warnings: RefCell::new(Vec::new()),
-            record: None,
-        };
-        let source = CompileSource {
-            calls: Some(&calls),
-            ..source(None)
-        };
-        let body = "Run /[[called]], /[[nope]] and /[[Shared]].\n";
-        let related = related_of(&vfs, &source, body).unwrap();
-        assert_eq!(
-            related.calls,
-            vec!["marketplaces/m/plugins/p/skills/called/called.md"]
-        );
-        assert_eq!(related.unresolved, vec!["Shared", "nope"]);
-
-        // A build still refuses.
-        let err = compile_note(&vfs, &source, body).unwrap_err().to_string();
-        assert!(err.contains("skill-call-unresolved"), "{err}");
     }
 
     #[test]

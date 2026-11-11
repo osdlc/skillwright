@@ -78,8 +78,7 @@ pub mod vfs;
 
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
 pub use compile::{
-    CallContext, CompileSource, CompiledNote, IndexedSkill, RelatedSplit, SkillIndex, SkillSource,
-    compile_note, related_of,
+    CallContext, CompileSource, CompiledNote, IndexedSkill, SkillIndex, compile_note,
 };
 pub use content::{SkillContent, SkillProjection};
 pub use discover::{

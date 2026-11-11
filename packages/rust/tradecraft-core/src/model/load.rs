@@ -17,7 +17,7 @@ use super::{
     ResourceContent, Segment, pack_kind, segments,
 };
 use crate::compile::{
-    CallContext, CompileSource, IndexedSkill, Recorded, SkillIndex, SkillSource, compile_note,
+    CallContext, CompileSource, IndexedSkill, Recorded, SkillIndex, compile_note,
 };
 use crate::content::SkillContent;
 use crate::discover::{
@@ -334,7 +334,7 @@ pub(crate) fn load_for(
     );
     let hand_written = hand_written_forms(&plugins, roots, config)?;
     let record = RefCell::new(Recorded::default());
-    let calls = recording_context(SkillSource::ready(&index.skills), hand_written, &record);
+    let calls = recording_context(&index.skills, hand_written, &record);
     for plugin in plugins.values_mut() {
         let plugin_name = plugin.name.clone();
         for component in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
@@ -529,7 +529,7 @@ fn hand_written_forms(
 }
 
 fn recording_context<'a>(
-    skills: SkillSource<'a>,
+    skills: &'a SkillIndex,
     hand_written: BTreeMap<String, String>,
     record: &'a RefCell<Recorded>,
 ) -> CallContext<'a> {
