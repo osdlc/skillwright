@@ -18,6 +18,8 @@ import {
   type Target,
   type VaultRequest,
 } from '../src/core.ts'
+import { toCorePath } from '../src/host-path.ts'
+import type { BumpSettings, PatchScheme, StaleKind } from '../src/index.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
 let root: string
@@ -72,8 +74,10 @@ test("exportSkills writes the vault's dist/<m>/ through the host's vfs", () => {
   expect(report.changed).toBe(true)
   expect(existsSync(path.join(vault, 'dist/acme/.claude-plugin/marketplace.json'))).toBe(true)
   expect(writes.length).toBeGreaterThan(0)
+  // The vfs sees the core's spelling of each path, not the host's.
+  const dist = `${toCorePath(vault)}/dist/`
   for (const file of writes) {
-    expect(file.startsWith(`${vault}/dist/`)).toBe(true)
+    expect(file.startsWith(dist)).toBe(true)
   }
 })
 
@@ -165,4 +169,10 @@ test('Target is the four names knownTargets() returns', () => {
   expectTypeOf<Component['targets']>().toEqualTypeOf<Target[] | null>()
   expectTypeOf<NonNullable<Plugin['bare_on']>>().toEqualTypeOf<Target[]>()
   expectTypeOf<DiscoveredComponent['targets']>().toEqualTypeOf<Target[] | null>()
+})
+
+test('the package names the types its exported types use', () => {
+  expectTypeOf<StaleKind>().toEqualTypeOf<'plugin' | 'file' | 'empty-dir'>()
+  expectTypeOf<PatchScheme>().toEqualTypeOf<'increment' | 'timestamp'>()
+  expectTypeOf<BumpSettings['patch']>().toEqualTypeOf<PatchScheme>()
 })

@@ -1,5 +1,5 @@
 {
-  // Typechecks src/, tests/ and examples/. The build has its own include.
+  // Typechecks src/ and tests/. The build has its own include.
   // The package's own name resolves through `exports` to the built `dist/`, so
   // run the build before the typecheck.
   "extends": "@osdlc/tsconfig/node-lib",
@@ -7,5 +7,5 @@
     // The tests and node-vfs.ts use Node's fs.
     "types": ["node"]
   },
-  "include": ["src", "tests", "examples", "vitest.config.ts"]
+  "include": ["src", "tests", "vitest.config.ts"]
 }
