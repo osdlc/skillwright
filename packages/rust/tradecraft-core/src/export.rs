@@ -2538,6 +2538,29 @@ mod tests {
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     }
 
+    /// YAML reads `version: 0.3` as a number. Check and build refuse it and
+    /// say to quote it, rather than ship the marketplace without the plugin.
+    #[test]
+    fn a_plugin_with_an_unquoted_float_version_is_refused() {
+        let vfs = MemVfs::new();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/tools/tools.md",
+            "---\ndescription: Tools.\nversion: 0.3\n---\n",
+        );
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/tools/skills/said/said.md",
+            "---\ndescription: d\n---\n",
+        );
+        for mode in [ExportMode::Check, ExportMode::Build] {
+            let err = export_skills(&vfs, &request(mode)).unwrap_err().to_string();
+            assert!(err.contains("version"), "{err}");
+            assert!(err.contains("quote it"), "{err}");
+        }
+        assert!(!vfs.exists(Path::new("/vault/dist")));
+    }
+
     #[test]
     fn another_marketplaces_missing_description_neither_refuses_nor_warns() {
         let vfs = MemVfs::new();
