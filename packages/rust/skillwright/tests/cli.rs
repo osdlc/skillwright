@@ -711,6 +711,45 @@ fn two_marketplaces() -> (tempfile::TempDir, PathBuf) {
     (dir, vault)
 }
 
+/// With several marketplaces, `--json` writes one document: each
+/// marketplace's report under its name, and a check's refusals.
+#[test]
+fn json_over_several_marketplaces_is_one_document() {
+    let (_dir, vault) = two_marketplaces();
+    let built = run(&["build", "--yes", "--json"], &vault);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    let document: serde_json::Value = serde_json::from_str(&built.stdout).unwrap();
+    let names: Vec<_> = document["marketplaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["marketplace"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(names, ["a", "b"]);
+    assert_eq!(document["marketplaces"][0]["report"]["mode"], "build");
+
+    write_all(
+        &vault,
+        &[(
+            "marketplaces/b/plugins/p/skills/broken/broken.md",
+            "---\ndescription: [unclosed\n---\nBody.\n",
+        )],
+    );
+    let checked = run(&["check", "--json"], &vault);
+    assert_ne!(checked.code, 0, "{}", checked.stderr);
+    let document: serde_json::Value = serde_json::from_str(&checked.stdout).unwrap();
+    assert_eq!(document["marketplaces"][0]["marketplace"], "a");
+    assert_eq!(document["marketplaces"][0]["report"]["mode"], "check");
+    assert_eq!(document["refused"][0]["marketplace"], "b");
+    assert!(
+        document["refused"][0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("broken.md"),
+        "{document}"
+    );
+}
+
 #[test]
 fn the_working_directory_never_picks_a_marketplace() {
     let (_dir, vault) = two_marketplaces();

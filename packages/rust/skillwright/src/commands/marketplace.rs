@@ -160,21 +160,76 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
             .collect()
     };
 
+    // With several marketplaces, `--json` gathers every report into one
+    // document, the shape of the core's `VaultReport`.
+    let mut document = (flags.json && several).then(VaultDocument::default);
     let mut exit = EXIT_OK;
     for (name, report) in reports {
         header(&name, ctx);
         let code = match report {
-            Err(err) => failed_run(verb, &err, ctx),
+            Err(err) => {
+                if let Some(document) = &mut document {
+                    document.refused.push(Refusal {
+                        marketplace: name.clone(),
+                        error: err.to_string(),
+                    });
+                }
+                failed_run(verb, &err, ctx)
+            }
             Ok(report) => {
                 let advise = name_market.then(|| name.clone());
-                export_one(verb, flags, &report, advise, ctx)
+                let code = export_one(verb, flags, &report, advise, document.is_none(), ctx);
+                if let Some(document) = &mut document {
+                    document.marketplaces.push(Market {
+                        marketplace: name,
+                        report,
+                    });
+                }
+                code
             }
         };
         if exit == EXIT_OK {
             exit = code;
         }
     }
+    if let Some(document) = document {
+        let code = print_json(&document, ctx);
+        if exit == EXIT_OK {
+            exit = code;
+        }
+    }
     exit
+}
+
+/// `--json`'s one document over several marketplaces.
+#[derive(Default, serde::Serialize)]
+struct VaultDocument {
+    marketplaces: Vec<Market>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    refused: Vec<Refusal>,
+}
+
+#[derive(serde::Serialize)]
+struct Market {
+    marketplace: String,
+    report: ExportReport,
+}
+
+#[derive(serde::Serialize)]
+struct Refusal {
+    marketplace: String,
+    error: String,
+}
+
+/// Writes `value` to stdout as one JSON document.
+fn print_json(value: &impl serde::Serialize, ctx: &mut CommandContext<'_>) -> i32 {
+    match serde_json::to_string_pretty(value) {
+        Ok(document) => {
+            let _ = writeln!(ctx.out, "{document}");
+            EXIT_OK
+        }
+        Err(err) => blocked(ctx.err, &format!("the report would not serialize: {err}")),
+    }
 }
 
 /// Report a run-level failure: an export has no partial report, since its
@@ -223,20 +278,22 @@ fn confirm_build(run: &ResolvedRun, plan: &VaultPlan, ctx: &mut CommandContext<'
 }
 
 /// Print one marketplace's report. `advise` is the `--marketplace` a `bump`
-/// advised by `check` names.
+/// advised by `check` names. `own_json` is false when the report goes into
+/// one document over several marketplaces instead.
 fn export_one(
     verb: ExportVerb,
     flags: &ExportFlags,
     report: &ExportReport,
     advise: Option<String>,
+    own_json: bool,
     ctx: &mut CommandContext<'_>,
 ) -> i32 {
     if flags.json {
-        match serde_json::to_string_pretty(report) {
-            Ok(document) => {
-                let _ = writeln!(ctx.out, "{document}");
+        if own_json {
+            let code = print_json(report, ctx);
+            if code != EXIT_OK {
+                return code;
             }
-            Err(err) => return blocked(ctx.err, &format!("the report would not serialize: {err}")),
         }
     } else {
         for unit in &report.units {
