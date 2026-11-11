@@ -1,21 +1,9 @@
 //! Every harness this crate knows, as one row of data each.
 //!
-//! Harness facts used to live in about eight places — the build's roots
-//! table, publish's plugin layouts and its `plugin_format_carries_*`
-//! predicates, the destination-name folds, the runtime maps, the CLI's
-//! install adapters — and each covered a different set of harnesses. A fact
-//! two of them disagreed on was a bug nobody could see from either side.
-//! This table is the one place now (D-FDLQ): a harness differs from another
-//! in the values of its row, and what cannot be said as a value is code in
-//! its [`crate::harness::HarnessTranslator`].
-//!
-//! # Two kinds of row
-//!
-//! Claude, Codex, Cursor and Pi carry a [`PluginPolicy`]: they are the
-//! harnesses a marketplace is built for and a pack is published to. The other
-//! five — Amp, Antigravity, Copilot, OpenCode and the portable Agent Skills
-//! layout — are destinations a single note publishes to. Their rows hold only
-//! the names they answer to and the runtime they render through.
+//! A harness differs from another in the values of its row (D-FDLQ), and
+//! what cannot be said as a value is code in its
+//! [`crate::harness::HarnessTranslator`]. The rows are Claude Code, Codex,
+//! Cursor and Pi, each with a [`PluginPolicy`].
 //!
 //! # Facts from the knowledge file, policy in code
 //!
@@ -43,23 +31,18 @@ use crate::hooks_file::PluginRootVar;
 /// each harness's docs.
 const HOOKS_OBSERVED: &str = "2026-10-05";
 
-/// One harness: the names it answers to, the runtime it renders through and,
-/// for the four that have one, its plugin policy.
+/// One harness: its name, the runtime it renders through and its plugin
+/// policy.
 #[derive(Debug)]
 pub struct HarnessProfile {
-    /// The canonical destination name. Every spelling folds onto it.
+    /// The harness's name, one of [`KNOWN_TARGETS`].
     pub name: &'static str,
     /// The harness's product name, for messages.
     pub label: &'static str,
-    /// Every name [`profile_for`] finds this row by, the canonical one first.
-    /// `targets` takes only [`crate::publish::KNOWN_TARGETS`].
-    pub spellings: &'static [&'static str],
     /// The `agent-adapt` runtime a note renders through for this destination.
     pub runtime: &'static str,
     /// The runtime whose capability declaration answers for this
-    /// destination — which keys an override block may carry. `portable`
-    /// renders through `codex-cli` and is declared by the standards-only
-    /// adapter, so the two can differ.
+    /// destination: which keys an override block may carry.
     pub declaration: RuntimeId,
     /// The plugin policy, for a harness a marketplace is built for. The
     /// facts it leaves to the knowledge file are read by [`Self::format`].
@@ -174,7 +157,7 @@ pub struct PluginFormat {
     /// Whether the pack has a place for a command.
     pub carries_commands: bool,
     /// Whether the pack carries a hooks file at
-    /// [`crate::publish::PLUGIN_HOOKS_PATH`].
+    /// [`PLUGIN_HOOKS_PATH`].
     pub carries_hooks: bool,
     /// The keys this harness reads in a pack manifest. A container note's
     /// harness block may set these, and the build merges them over what it
@@ -509,7 +492,6 @@ pub enum CliInvocation {
 pub const CLAUDE: HarnessProfile = HarnessProfile {
     name: "claude",
     label: "Claude Code",
-    spellings: &["claude", "claude-code"],
     runtime: "claude-code",
     declaration: RuntimeId::ClaudeCode,
     plugin: Some(PluginPolicy {
@@ -547,7 +529,6 @@ pub const CLAUDE: HarnessProfile = HarnessProfile {
 pub const CODEX: HarnessProfile = HarnessProfile {
     name: "codex",
     label: "Codex",
-    spellings: &["codex", "codex-cli"],
     runtime: "codex-cli",
     declaration: RuntimeId::CodexCli,
     plugin: Some(PluginPolicy {
@@ -590,7 +571,6 @@ pub const CODEX: HarnessProfile = HarnessProfile {
 pub const CURSOR: HarnessProfile = HarnessProfile {
     name: "cursor",
     label: "Cursor",
-    spellings: &["cursor"],
     runtime: "cursor",
     declaration: RuntimeId::Cursor,
     plugin: Some(PluginPolicy {
@@ -633,7 +613,6 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
 pub const PI: HarnessProfile = HarnessProfile {
     name: "pi",
     label: "Pi",
-    spellings: &["pi"],
     runtime: "pi",
     declaration: RuntimeId::Pi,
     plugin: Some(PluginPolicy {
@@ -669,71 +648,10 @@ pub const PI: HarnessProfile = HarnessProfile {
     }),
 };
 
-/// The Amp row.
-pub const AMP: HarnessProfile = HarnessProfile {
-    name: "amp",
-    label: "Amp",
-    spellings: &["amp"],
-    runtime: "amp",
-    declaration: RuntimeId::Amp,
-    plugin: None,
-    install: None,
-};
-
-/// The Antigravity row.
-pub const ANTIGRAVITY: HarnessProfile = HarnessProfile {
-    name: "antigravity",
-    label: "Antigravity",
-    spellings: &["antigravity"],
-    runtime: "antigravity",
-    declaration: RuntimeId::Antigravity,
-    plugin: None,
-    install: None,
-};
-
-/// The GitHub Copilot row.
-pub const COPILOT: HarnessProfile = HarnessProfile {
-    name: "copilot",
-    label: "GitHub Copilot",
-    spellings: &["copilot", "github-copilot"],
-    runtime: "github-copilot",
-    declaration: RuntimeId::GithubCopilot,
-    plugin: None,
-    install: None,
-};
-
-/// The OpenCode row.
-pub const OPENCODE: HarnessProfile = HarnessProfile {
-    name: "opencode",
-    label: "OpenCode",
-    spellings: &["opencode"],
-    runtime: "opencode",
-    declaration: RuntimeId::OpenCode,
-    plugin: None,
-    install: None,
-};
-
-// `codex` and `portable` are the same layout, and that is the finding,
-// not a shortcut — Codex reads the neutral `.agents/skills/` convention,
-// which *is* the portable target. The portable target's `AGENTS.md` half
-// is not emitted yet; it is an instructions file, not a skill.
-/// The Agent Skills (portable) row.
-pub const PORTABLE: HarnessProfile = HarnessProfile {
-    name: "portable",
-    label: "Agent Skills (portable)",
-    spellings: &["portable"],
-    runtime: "codex-cli",
-    declaration: RuntimeId::Portable,
-    plugin: None,
-    install: None,
-};
-
 /// The harness's slug in the knowledge file.
 pub(crate) fn knowledge_slug(name: &str) -> &str {
     match name {
         "claude" => "claude-code",
-        "copilot" => "copilot-cli",
-        "portable" => "agent-skills",
         other => other,
     }
 }
@@ -875,20 +793,33 @@ fn resolve_format(profile: &HarnessProfile) -> PluginFormat {
     }
 }
 
-/// Every harness, the four with a plugin format first and in report order
-/// (`claude`, `codex`, `cursor`, `pi`), then the spelling-only rows
-/// alphabetically.
-pub const PROFILES: [HarnessProfile; 9] = [
-    CLAUDE,
-    CODEX,
-    CURSOR,
-    PI,
-    AMP,
-    ANTIGRAVITY,
-    COPILOT,
-    OPENCODE,
-    PORTABLE,
-];
+/// Every harness, in report order.
+pub const PROFILES: [HarnessProfile; 4] = [CLAUDE, CODEX, CURSOR, PI];
+
+/// Every name `targets` and `build.harnesses` accept, in report order: the
+/// list a refusal prints so the fix is on screen. There are no aliases.
+pub const KNOWN_TARGETS: &[&str] = &["claude", "codex", "cursor", "pi"];
+
+/// What a refusal of the names in `unknown` says after naming the key:
+/// which names are not harnesses, and the four that are.
+pub(crate) fn unknown_targets_detail(unknown: &[&str]) -> String {
+    let names: Vec<String> = unknown.iter().map(|name| format!("`{name}`")).collect();
+    let known: Vec<String> = KNOWN_TARGETS
+        .iter()
+        .map(|name| format!("`{name}`"))
+        .collect();
+    let (last, rest) = known.split_last().expect("four names");
+    format!(
+        "names {}, which {} not a harness. The harnesses are {} and {last}",
+        names.join(", "),
+        if unknown.len() == 1 { "is" } else { "are" },
+        rest.join(", ")
+    )
+}
+
+/// Where a plugin's hooks land inside its pack, for the formats that carry
+/// them.
+pub const PLUGIN_HOOKS_PATH: &str = "hooks/hooks.json";
 
 impl HarnessProfile {
     /// The install facts of a harness `skillwright harness` drives, readable
@@ -1048,12 +979,7 @@ const CLAUDE_AGENT_ONLY_OVERRIDES: &[&str] = &["permissionMode"];
 /// `SKILL.md`.
 const UNREAD_OVERRIDES: &[&str] = &["policy.allow_implicit_invocation"];
 
-/// The row a name answers to, by any of its spellings.
-pub fn profile_for(name: &str) -> Option<&'static HarnessProfile> {
-    PROFILES.iter().find(|p| p.spellings.contains(&name))
-}
-
-/// The row for a canonical name, and only a canonical one.
+/// The row for a harness name.
 pub fn profile_named(canonical: &str) -> Option<&'static HarnessProfile> {
     PROFILES.iter().find(|p| p.name == canonical)
 }
@@ -1069,7 +995,7 @@ mod tests {
 
     #[test]
     fn the_agent_only_keys_are_keys_the_harness_declares() {
-        let claude = profile_for("claude").unwrap();
+        let claude = profile_named("claude").unwrap();
         let declared: std::collections::BTreeSet<String> =
             agent_adapt::runtimes::declaration_for(claude.declaration)
                 .overrides
@@ -1079,7 +1005,7 @@ mod tests {
         assert_eq!(agent_only.len(), CLAUDE_AGENT_ONLY_OVERRIDES.len());
         assert!(agent_only.is_subset(&declared), "{agent_only:?}");
         assert!(
-            profile_for("codex")
+            profile_named("codex")
                 .unwrap()
                 .agent_override_keys()
                 .is_empty()
@@ -1088,27 +1014,8 @@ mod tests {
 
     #[test]
     fn a_key_no_fact_backs_is_not_accepted() {
-        let codex = profile_for("codex").unwrap();
+        let codex = profile_named("codex").unwrap();
         assert!(!codex.accepted_override_keys().contains(UNREAD_OVERRIDES[0]));
-    }
-
-    #[test]
-    fn every_spelling_has_exactly_one_row() {
-        let mut spellings: Vec<&str> = PROFILES
-            .iter()
-            .flat_map(|p| p.spellings.iter().copied())
-            .collect();
-        spellings.sort_unstable();
-        let before = spellings.len();
-        spellings.dedup();
-        assert_eq!(before, spellings.len(), "a spelling names two rows");
-    }
-
-    #[test]
-    fn the_canonical_name_is_each_rows_first_spelling() {
-        for profile in &PROFILES {
-            assert_eq!(profile.spellings.first(), Some(&profile.name));
-        }
     }
 
     #[test]
@@ -1120,13 +1027,11 @@ mod tests {
     }
 
     #[test]
-    fn the_plugin_rows_come_first_in_report_order() {
+    fn every_row_has_a_plugin_format_and_is_a_known_target() {
         let names: Vec<&str> = with_plugin_format().map(|p| p.name).collect();
-        assert_eq!(names, ["claude", "codex", "cursor", "pi"]);
-        assert!(
-            PROFILES[..4].iter().all(|p| p.plugin.is_some()),
-            "a spelling row sits among the plugin rows"
-        );
+        assert_eq!(names, KNOWN_TARGETS);
+        assert!(PROFILES.iter().all(|p| p.plugin.is_some()));
+        assert!(profile_named("claude-code").is_none());
     }
 
     #[test]

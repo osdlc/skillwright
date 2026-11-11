@@ -16,9 +16,8 @@
 //! | [`content`] | The skill shape projection renders, and its peer resources |
 //! | [`compile`] | Embeds expanded, links rewritten, references collected |
 //! | [`projection`] | One skill to one target's files, via `agent-adapt` |
-//! | [`publish`] | The target names and per-harness plugin facts a build shares |
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
-//! | [`harness`] | Each harness as a profile row (data) and a translator (code) |
+//! | [`harness`] | Each harness as a profile row (data) and a translator (code), and the target names |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
 //! | [`paths`] | Load a vault: its root file and its marketplaces ([`load_vault`]) |
 //! | [`field_edit`] | Frontmatter field edits that keep every other byte |
@@ -33,7 +32,7 @@
 //!
 //! | Name | Rule set | Where |
 //! |---|---|---|
-//! | refusal tokens | The reason word a refusal leads with, `targets` exclusion, output overlap | [`publish`], [`export`], [`guard`] |
+//! | refusal tokens | The reason word a refusal leads with, `targets` exclusion, output overlap | [`export`], [`guard`] |
 //! | vault spec | A skill is a folder `<s>/` holding its note `<s>.md` and the files it ships; building is five steps (embeds, links, references, peers, target dialect) | [`vault`], [`export`] |
 //! | compile spec | Embeds are expanded and links rewritten; a link to nothing is an error | [`compile`] |
 //! | marketplace layout spec | How one marketplace tree per harness is laid out and checked | [`export`] |
@@ -69,7 +68,6 @@ pub mod layout;
 pub mod model;
 pub mod paths;
 pub mod projection;
-pub mod publish;
 pub mod semver;
 pub mod settings;
 pub mod skill;
@@ -102,6 +100,7 @@ pub use frontmatter::{
     ContainerIdentity, EntityKind, KindHints, KindSource, ResolvedKind, VaultFrontmatter,
     resolve_kind,
 };
+pub use harness::KNOWN_TARGETS;
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, Shape};
 pub use layout::{
     KIND_DIRS, Layout, LayoutFile, MARKETPLACES_DIR, Place, Position, RESERVED_NAMES, SharedDir,
@@ -114,7 +113,6 @@ pub use paths::{
     LoadedVault, MarketplaceInputs, VaultMarketplace, dist_dir, load_vault, marketplace_inputs,
     resolve_path,
 };
-pub use publish::{KNOWN_TARGETS, canonical_target};
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
     BuildSettings, BumpSettings, HookSetting, PatchScheme, ROOT_FILE, RootFile, SettingsError,

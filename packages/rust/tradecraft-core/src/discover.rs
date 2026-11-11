@@ -46,7 +46,7 @@ use crate::error::CoreError;
 use crate::frontmatter::{
     ContainerIdentity, EntityKind, KindHints, KindSource, VaultFrontmatter, resolve_kind,
 };
-use crate::publish::KNOWN_TARGETS;
+use crate::harness::KNOWN_TARGETS;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vault::frontmatter_map;
 use crate::vfs::Vfs;
@@ -137,7 +137,7 @@ impl DiscoveredComponent {
 fn unknown_key_fate(kind: EntityKind, key: &str) -> &'static str {
     let in_a_block = key
         .split_once('.')
-        .is_some_and(|(block, _)| crate::publish::canonical_target(block).is_some());
+        .is_some_and(|(block, _)| KNOWN_TARGETS.contains(&block));
     match kind {
         EntityKind::Plugin | EntityKind::Marketplace | EntityKind::Hook => "ignored",
         _ if in_a_block => "ignored",
@@ -261,7 +261,7 @@ fn check_values(
 pub(crate) fn unknown_component_block_keys(blocks: &Map<String, Value>) -> Vec<String> {
     let mut unknown = Vec::new();
     for (declared, block) in blocks {
-        let Some(accepted) = crate::harness::profile_for(declared)
+        let Some(accepted) = crate::harness::profile_named(declared)
             .and_then(|profile| profile.block_keys(EntityKind::Skill))
         else {
             continue;
@@ -661,7 +661,7 @@ fn read_source(
                 format!(
                     "{}: `targets` {}",
                     entry_path.display(),
-                    crate::publish::unknown_targets_detail(&unknown)
+                    crate::harness::profile::unknown_targets_detail(&unknown)
                 ),
             ));
         }

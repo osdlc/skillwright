@@ -229,10 +229,9 @@ export interface DiscoveredComponent {
  *
  * # A kind in the vocabulary need not be publishable
  *
- * Entering the vocabulary makes a note *discoverable* — the workbench can
- * list it and say what it is — while [`crate::publish`]'s kind gate refuses it
- * `no-renderer` until a projection exists. `Marketplace` and `Hook` are the
- * kinds sitting there now. Outside the vocabulary a note is `unknown-kind`: a typo.
+ * Entering the vocabulary makes a note *discoverable*: a scan can list it and
+ * say what it is. A build ships only the kinds a pack has a place for.
+ * Outside the vocabulary a note is `unknown-kind`: a typo.
  */
 export type EntityKind = "skill" | "plugin" | "command" | "agent" | "hook" | "marketplace";
 
@@ -717,8 +716,8 @@ export type ExportUnit =
    * dropped.
    *
    * A pack has a place for skills, for commands on a root whose
-   * [`crate::publish::plugin_format_carries_commands`] is `true`, and for
-   * hooks on a root whose [`crate::publish::plugin_format_carries_hooks`]
+   * [`crate::harness::PluginFormat::carries_commands`] is `true`, and for
+   * hooks on a root whose [`crate::harness::PluginFormat::carries_hooks`]
    * is. Everything else is named here rather than dropped; what a build
    * must not do is leave silently.
    *
@@ -1203,4 +1202,4 @@ export interface WasmResponses {
 /**
  * Exports with no JSON on either side, so nothing here can drift for them.
  */
-export type WasmExportsWithoutJson = "canonicalTarget" | "rootFileConfig";
+export type WasmExportsWithoutJson = "rootFileConfig";

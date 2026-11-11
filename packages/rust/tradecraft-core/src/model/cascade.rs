@@ -300,8 +300,8 @@ fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) {
     }
 }
 
-/// A component's harness blocks, folded onto canonical harness names and
-/// checked against the harness that will receive each block. Every block is
+/// A component's harness blocks, each checked against the harness that will
+/// receive it. Every block is
 /// folded and checked, whichever harnesses are being built. A container's
 /// blocks are checked where its manifests are written.
 ///
@@ -313,8 +313,6 @@ fn take_description(slot: &mut Option<String>, note: &DiscoveredComponent) {
 ///
 /// # Errors
 ///
-/// * `refused: unknown-target` — a block is keyed by a name outside
-///   [`crate::publish::canonical_target`].
 /// * `refused: malformed` — a key a block's harness reads holds the wrong
 ///   kind of value, such as `metadata` that is not a mapping. Not when
 ///   `kind` is an agent: an agent's blocks never ship.
@@ -324,27 +322,12 @@ pub fn fold_harness_blocks(
     kind: EntityKind,
 ) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
     let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
-    for (declared, block) in &note.blocks {
-        let Some(canonical) = crate::publish::canonical_target(declared) else {
-            return Err(CoreError::refused(
-                "unknown-target",
-                format!(
-                    "{}: a harness block names `{declared}`, which this build does not know \
-                     (known: {}). An unrecognised name is never read as \"every destination\"",
-                    note_path.display(),
-                    crate::publish::KNOWN_TARGETS.join(", ")
-                ),
-            ));
-        };
-        // `VaultFrontmatter::take_from` refused anything else, so this cannot
-        // lose a block the author wrote.
+    for (harness, block) in &note.blocks {
+        // `VaultFrontmatter::take_from` keeps only the four harness blocks,
+        // each a mapping.
+        debug_assert!(crate::harness::KNOWN_TARGETS.contains(&harness.as_str()));
         let block = block.as_object().cloned().unwrap_or_default();
-        // Two spellings of one destination merge rather than one winning
-        // silently.
-        folded
-            .entry(canonical.to_owned())
-            .or_default()
-            .extend(block);
+        folded.insert(harness.clone(), block);
     }
 
     // A key a harness does not read warns at discovery and is dropped here,
@@ -391,34 +374,4 @@ fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<String>
     crate::harness::profile_named(canonical)
         .map(|p| p.accepted_override_keys())
         .unwrap_or_default()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A harness with no plugin format has no container block to take keys
-    /// from, so it gives a member none, whatever its kind.
-    #[test]
-    fn a_harness_with_no_plugin_format_gives_a_member_no_block_keys() {
-        let without: Vec<&crate::harness::HarnessProfile> = crate::harness::PROFILES
-            .iter()
-            .filter(|profile| profile.plugin.is_none())
-            .collect();
-        assert!(!without.is_empty());
-        for profile in without {
-            for kind in EntityKind::ALL {
-                assert!(
-                    profile.member_block_keys(kind).is_empty(),
-                    "{} {kind:?}",
-                    profile.name
-                );
-            }
-        }
-        assert!(
-            !crate::harness::profile::CLAUDE
-                .member_block_keys(EntityKind::Skill)
-                .is_empty()
-        );
-    }
 }

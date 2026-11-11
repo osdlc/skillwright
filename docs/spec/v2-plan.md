@@ -807,12 +807,12 @@ tests and the gates above hold. The number in brackets is the commit.
   - Go: everything that writes to a destination: `publish_skill`'s
     single-note arms, the destination manifest, the rails, `publishes_to`,
     `overrides_for`, `override_states` and `accepted_override_keys`.
-  - Stay, because `export.rs` and `model/cascade.rs` call them: the plugin
-    arm, `plugin_format_carries_commands`, `plugin_format_carries_hooks`,
-    `kind_has_renderer`, `canonical_target`, `KNOWN_TARGETS` and
-    `accepted_keys`. `KNOWN_TARGETS` and `canonical_target` shrink to
-    `claude`, `codex`, `cursor` and `pi` in commit 3, with no aliases. Moving those into `export.rs` or `harness/` is a
-    follow-up, not v2.
+  - The rest goes in commit 4. `kind_has_renderer` and
+    `plugin_format_carries_commands`/`_hooks` have no callers, and
+    `canonical_target` is only a membership test of `KNOWN_TARGETS`.
+    `KNOWN_TARGETS` (the four names, no aliases), `PLUGIN_HOOKS_PATH` and
+    the unknown-target message move to `harness/profile.rs`, and
+    `refuse_carried_peers` to `model/load.rs`. The module is deleted.
 - `tradecraft-core/src/manifest.rs`, the destination manifest: all of it.
   Only `publish.rs`, `status.rs` and `lib.rs` use it. (`harness/manifest.rs`
   is a different file and stays.)
@@ -842,8 +842,8 @@ tests and the gates above hold. The number in brackets is the commit.
   writer). Check each against what stays before removing it.
 - `tradecraft-wasm/src/lib.rs`: `publishSkill`, `adoptSkills`, `statusOf`
   and `publishableKinds` go. `exportSkills`, `discoverComponents`,
-  `loadMarketplace`, `parseRootFile`, `rootFileConfig`, `knownTargets` and
-  `canonicalTarget` stay. `validateNamespace` goes in commit 3.
+  `loadMarketplace`, `parseRootFile`, `rootFileConfig` and `knownTargets`
+  stay. `validateNamespace` goes in commit 3, `canonicalTarget` in commit 4.
   `src/core.ts`'s hand-kept `Target` union shrinks to the four names in
   commit 3.
 - `packages/ts/tradecraft-wasm` (repository root): the wrappers in

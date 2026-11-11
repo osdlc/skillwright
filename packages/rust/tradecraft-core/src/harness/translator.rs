@@ -33,6 +33,7 @@ use super::manifest::{
     NAMING_KEY, claude_marketplace_manifest, codex_marketplace_manifest,
     cursor_marketplace_manifest, pi_package_manifest, render_plugin_manifest,
 };
+use super::profile::PLUGIN_HOOKS_PATH;
 use super::profile::{HarnessProfile, PluginFormat, SkillNaming};
 use crate::compile::Closure;
 use crate::content::SkillProjection;
@@ -45,7 +46,6 @@ use crate::projection::{
     ProjectedFile, RedundantOverride, parse_runtime_target, project_agent, project_command,
     project_plugin_hooks, project_skill_reporting, to_adapt_hook,
 };
-use crate::publish::PLUGIN_HOOKS_PATH;
 
 /// The provenance marker every `SKILL.md` and command a built marketplace
 /// emits opens its body with. `check` reads it back to tell a tree this tool
@@ -902,37 +902,14 @@ impl HarnessTranslator for Pi {
     }
 }
 
-/// A destination with no plugin format — Amp, Antigravity, Copilot,
-/// OpenCode, the portable layout. It takes a note published on its own and
-/// nothing else, so every default it uses is the profile's.
-pub struct Standard(pub &'static HarnessProfile);
-
-impl HarnessTranslator for Standard {
-    fn profile(&self) -> &'static HarnessProfile {
-        self.0
-    }
-}
-
-static STANDARD: [Standard; 5] = [
-    Standard(&super::profile::PROFILES[4]),
-    Standard(&super::profile::PROFILES[5]),
-    Standard(&super::profile::PROFILES[6]),
-    Standard(&super::profile::PROFILES[7]),
-    Standard(&super::profile::PROFILES[8]),
-];
-
-/// The translator for a harness, by any of its spellings.
+/// The translator for a harness name.
 pub fn translator_for(name: &str) -> Option<&'static dyn HarnessTranslator> {
-    let profile = super::profile_for(name)?;
-    Some(match profile.name {
+    Some(match name {
         "claude" => &Claude,
         "codex" => &Codex,
         "cursor" => &Cursor,
         "pi" => &Pi,
-        other => STANDARD
-            .iter()
-            .find(|t| t.0.name == other)
-            .map(|t| t as &dyn HarnessTranslator)?,
+        _ => return None,
     })
 }
 
@@ -972,10 +949,8 @@ mod tests {
     #[test]
     fn every_profile_has_a_translator_answering_with_it() {
         for profile in &super::super::PROFILES {
-            for spelling in profile.spellings {
-                let translator = translator_for(spelling).expect("a translator");
-                assert_eq!(translator.profile().name, profile.name);
-            }
+            let translator = translator_for(profile.name).expect("a translator");
+            assert_eq!(translator.profile().name, profile.name);
         }
     }
 

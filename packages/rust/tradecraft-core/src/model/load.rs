@@ -28,10 +28,10 @@ use crate::discover::{
 use crate::error::CoreError;
 use crate::export::{HookFileSpec, MarketplaceConfig};
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
+use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
 use crate::projection::parse_runtime_target;
-use crate::publish::{PLUGIN_HOOKS_PATH, canonical_target, refuse_carried_peers};
 use crate::vault::{VaultNote, read_vault_note};
 
 pub use crate::layout::CHANGELOG_FILE;
@@ -469,6 +469,29 @@ fn recording_context<'a>(
     }
 }
 
+/// Refuses a single-file kind that carries peer resources. An agent and a
+/// command are one file each, so peers would be dropped; naming them lets
+/// the author move them, or publish the note as a skill.
+fn refuse_carried_peers(projection: &SkillProjection, kind: &str) -> Result<(), CoreError> {
+    if projection.resources.is_empty() {
+        return Ok(());
+    }
+    let carried: Vec<&str> = projection
+        .resources
+        .iter()
+        .map(|(path, _, _)| path.as_str())
+        .collect();
+    Err(CoreError::refused(
+        "no-renderer",
+        format!(
+            "a {kind} publishes as a single file and carries no peers, but {} travels with \
+             this note: {}. Move them, or publish this as a skill",
+            carried.len(),
+            carried.join(", ")
+        ),
+    ))
+}
+
 /// The renderer a recording compile never calls.
 fn no_render(_: &IndexedSkill, _: bool) -> Result<String, CoreError> {
     Ok(String::new())
@@ -712,9 +735,7 @@ pub(crate) fn targets_admit(component: &DiscoveredComponent, canonical: &str) ->
 pub(crate) fn targets_name(targets: Option<&[String]>, canonical: &str) -> bool {
     match targets {
         None => true,
-        Some(names) => names
-            .iter()
-            .any(|name| canonical_target(name) == Some(canonical)),
+        Some(names) => names.iter().any(|name| name == canonical),
     }
 }
 

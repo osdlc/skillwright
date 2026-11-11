@@ -8,9 +8,8 @@
 //!
 //! The seam itself lives in the `vfs-seam` crate, shared with the osdlc vault
 //! crates (`markdown-vault-fs`, `markdown-corpus`, `markdown-relink`), so a
-//! vault walk and a publish read through one trait. This module re-exports
-//! it under the paths this crate has always used. What it means to a publish
-//! that [`PreviewVfs`] captures writes is [`crate::publish`]'s doc.
+//! vault walk and a build read through one trait. This module re-exports
+//! it under the paths this crate has always used.
 //!
 //! A [`Vfs`] method fails with [`VfsError`]. A `?` in a function returning
 //! [`crate::CoreError`] turns it into [`crate::CoreError::Io`], with the same

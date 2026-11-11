@@ -4,9 +4,7 @@
 
 use std::path::Path;
 
-use tradecraft_core::{
-    ExportMode, MemVfs, Vfs, canonical_target, load_vault, parse_root_file, read_layout,
-};
+use tradecraft_core::{ExportMode, MemVfs, Vfs, load_vault, parse_root_file, read_layout};
 
 const SKILL: &str = "---\ndescription: Use it.\n---\n\nBody.\n";
 
@@ -225,7 +223,7 @@ fn targets_accept_only_the_four_harness_names() {
         ["claude", "codex", "cursor", "pi"]
     );
     for alias in ["claude-code", "codex-cli", "opencode", "amp"] {
-        assert_eq!(canonical_target(alias), None, "{alias}");
+        assert!(!tradecraft_core::KNOWN_TARGETS.contains(&alias), "{alias}");
     }
     for value in ["opencode", "claude-code"] {
         let line = format!("targets: [{value}]");

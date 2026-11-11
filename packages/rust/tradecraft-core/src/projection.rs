@@ -206,10 +206,8 @@ pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError>
 /// refuses `no-renderer` instead of being written to a path the harness does
 /// not define.
 ///
-/// `portable` is not a runtime target here. [`crate::publish`] maps it to
-/// `codex-cli` before projecting, so a `portable` agent is written in Codex's
-/// agent layout. A direct call with `"portable"` returns the
-/// unsupported-runtime-target error, not `no-renderer`. Every target is
+/// `portable` is not a runtime target here: a call with `"portable"` returns
+/// the unsupported-runtime-target error, not `no-renderer`. Every target is
 /// checked before the note is.
 ///
 /// Claude Code's own `tools:` and a numeric `temperature` become the agent's
@@ -284,8 +282,7 @@ pub fn project_agent(
 /// `no-renderer` instead of landing somewhere the harness never looks.
 /// `portable` and `npm-package` are not runtime targets here: a direct call
 /// with either returns the unsupported-runtime-target error, not
-/// `no-renderer`. [`crate::publish`] maps `portable` to `codex-cli` first, so a
-/// `portable` command is written in Codex's command layout.
+/// `no-renderer`.
 ///
 /// `overrides_target` is the canonical destination whose harness block
 /// this render applies, or `None` for a snapshot that carries none.

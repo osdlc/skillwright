@@ -19,7 +19,6 @@
  * | `exportSkills` | the marketplace renderer | `build`, and `check` through `mode` |
  * | `loadMarketplace` | the marketplace model, loaded and resolved | a host that wants structure rather than files |
  * | `knownTargets` | the target vocabulary | every verb that takes a target name |
- * | `canonicalTarget` | the target-name fold | a host narrowing a run by target |
  * | `parseRootFile` | the `skillwright.md` reader | a host reading the root file |
  * | `rootFileConfig` | the root file's build config | a host building from the root file |
  *
@@ -30,7 +29,6 @@
  */
 
 import {
-  canonicalTarget as canonicalTargetWasm,
   discoverComponents as discoverComponentsWasm,
   exportSkills as exportSkillsWasm,
   loadMarketplace as loadMarketplaceWasm,
@@ -158,8 +156,8 @@ function toCoreError(raw: unknown): CoreError {
 }
 
 /**
- * Every target name this build knows — `tradecraft_core::publish::KNOWN_TARGETS`,
- * verbatim and sorted.
+ * Every target name this build knows — `tradecraft_core::harness::KNOWN_TARGETS`,
+ * verbatim and in report order.
  *
  * The one list. A `--target` typed on the command line and a name in a note's
  * targets key are checked against the same values, so a target added to the
@@ -167,15 +165,6 @@ function toCoreError(raw: unknown): CoreError {
  */
 export function knownTargets(): string[] {
   return callCore<string[]>(() => knownTargetsWasm())
-}
-
-/**
- * `name` when it is one of {@link knownTargets}, or `null`. There are no
- * aliases. `tradecraft_core::publish::canonical_target`, asked rather than
- * reproduced.
- */
-export function canonicalTarget(name: string): string | null {
-  return canonicalTargetWasm(name) ?? null
 }
 
 // --- discovery ---------------------------------------------------------------

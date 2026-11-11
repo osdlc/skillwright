@@ -5,7 +5,6 @@
  */
 
 export {
-  canonicalTarget,
   CoreError,
   discoverComponents,
   exportSkills,

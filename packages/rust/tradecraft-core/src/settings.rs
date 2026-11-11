@@ -293,7 +293,7 @@ fn check_harness_names(key: &str, names: Option<&[String]>) -> Result<(), Settin
         .into_iter()
         .flatten()
         .map(String::as_str)
-        .filter(|name| crate::publish::canonical_target(name).is_none())
+        .filter(|name| !crate::harness::KNOWN_TARGETS.contains(name))
         .collect();
     if unknown.is_empty() {
         return Ok(());
@@ -301,7 +301,10 @@ fn check_harness_names(key: &str, names: Option<&[String]>) -> Result<(), Settin
     Err(SettingsError {
         key: key.to_owned(),
         what: "a list of harnesses",
-        detail: format!("it {}", crate::publish::unknown_targets_detail(&unknown)),
+        detail: format!(
+            "it {}",
+            crate::harness::profile::unknown_targets_detail(&unknown)
+        ),
     })
 }
 

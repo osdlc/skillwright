@@ -48,10 +48,9 @@ use crate::error::CoreError;
 ///
 /// # A kind in the vocabulary need not be publishable
 ///
-/// Entering the vocabulary makes a note *discoverable* — the workbench can
-/// list it and say what it is — while [`crate::publish`]'s kind gate refuses it
-/// `no-renderer` until a projection exists. `Marketplace` and `Hook` are the
-/// kinds sitting there now. Outside the vocabulary a note is `unknown-kind`: a typo.
+/// Entering the vocabulary makes a note *discoverable*: a scan can list it and
+/// say what it is. A build ships only the kinds a pack has a place for.
+/// Outside the vocabulary a note is `unknown-kind`: a typo.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EntityKind {
@@ -68,16 +67,13 @@ pub enum EntityKind {
     /// matcher, and a body that is the script or the prompt.
     ///
     /// A hook reaches a harness through its plugin's `hooks/hooks.json`
-    /// rather than through a file of its own, so [`crate::publish`] refuses
-    /// a standalone hook publish `no-renderer` while [`crate::export`]
-    /// renders it into the pack.
+    /// rather than through a file of its own.
     Hook,
     /// A distribution: the plugins beneath it, built into one marketplace.
     ///
     /// The level above [`Self::Plugin`], and the only kind with no
     /// per-destination layout at all — a runtime reads skills, never
-    /// marketplaces. [`crate::export`] renders one; [`crate::publish`] refuses
-    /// it `no-renderer`, and says where to go.
+    /// marketplaces. [`crate::export`] renders one.
     Marketplace,
 }
 

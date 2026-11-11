@@ -256,7 +256,7 @@ pub fn load_vault(
     })
 }
 
-/// The reason a root file, or the workspace file above it, cannot be read.
+/// The reason a root file cannot be read.
 const MALFORMED_ROOT_FILE_REASON: &str = "malformed-root-file";
 
 /// The refusal for a root file at `file` that cannot be read.

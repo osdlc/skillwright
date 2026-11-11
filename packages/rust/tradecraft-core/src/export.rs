@@ -32,8 +32,8 @@
 //!
 //! A plugin's commands render alongside its skills, at
 //! `<packs>/<plugin>/commands/<name>.<ext>`, on the one harness whose plugin
-//! format has a place for one — see
-//! [`crate::publish::plugin_format_carries_commands`] for which. A command
+//! format has a place for one ([`crate::harness::PluginFormat::carries_commands`]).
+//! A command
 //! narrowed out this way has no file and no manifest mention there, and the
 //! report names it as [`ExportUnit::NotCarried`] for that root. One narrowed
 //! out by `targets` is absent with no report line: the author asked.
@@ -411,8 +411,8 @@ pub enum ExportUnit {
     /// dropped.
     ///
     /// A pack has a place for skills, for commands on a root whose
-    /// [`crate::publish::plugin_format_carries_commands`] is `true`, and for
-    /// hooks on a root whose [`crate::publish::plugin_format_carries_hooks`]
+    /// [`crate::harness::PluginFormat::carries_commands`] is `true`, and for
+    /// hooks on a root whose [`crate::harness::PluginFormat::carries_hooks`]
     /// is. Everything else is named here rather than dropped; what a build
     /// must not do is leave silently.
     ///
@@ -1055,7 +1055,7 @@ impl<'v> DestTree<'v> {
     /// built carry it and packs someone wrote by hand do not.
     ///
     /// A marker is not always available: only one plugin format carries
-    /// commands ([`crate::publish::plugin_format_carries_commands`]), so a
+    /// commands ([`crate::harness::PluginFormat::carries_commands`]), so a
     /// commands-only plugin leaves the other harness manifests and nothing
     /// else. The second clause covers that — holding nothing but paths this
     /// render also produces is holding what this render owns. It also answers

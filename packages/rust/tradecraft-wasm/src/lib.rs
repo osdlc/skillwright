@@ -13,8 +13,7 @@
 //! | `discoverComponents` | `discover::discover_components` | the vault scan every other verb needs |
 //! | `exportSkills` | `export::export_skills` | `build`, and `check` through `mode` |
 //! | `loadMarketplace` | `model::load::load` | any host that wants the model rather than files |
-//! | `knownTargets` | `publish::KNOWN_TARGETS` | every verb that takes a target name |
-//! | `canonicalTarget` | `publish::canonical_target` | a host narrowing a run by target |
+//! | `knownTargets` | `harness::KNOWN_TARGETS` | every verb that takes a target name |
 //! | `parseRootFile` | `settings::parse_root_file` | a host reading `skillwright.md` |
 //! | `rootFileConfig` | `settings::root_file_config` | a host building from `skillwright.md` |
 //!
@@ -55,8 +54,8 @@ use serde::{Deserialize, Serialize};
 use tradecraft_core::CoreError;
 use tradecraft_core::discover::discover_components as core_discover_components;
 use tradecraft_core::export::{ExportRequest, export_skills as core_export_skills};
+use tradecraft_core::harness::KNOWN_TARGETS;
 use tradecraft_core::model::load::{LoadRequest, load as core_load};
-use tradecraft_core::publish::{KNOWN_TARGETS, canonical_target as core_canonical_target};
 use tradecraft_core::settings::{
     parse_root_file as core_parse_root_file, root_file_config as core_root_file_config,
 };
@@ -64,8 +63,8 @@ use wasm_bindgen::prelude::*;
 
 pub use js_vfs::{HostVfs, JsVfs};
 
-/// Every name `targets` and `build.harnesses` accept, sorted:
-/// `tradecraft_core::publish::KNOWN_TARGETS`, verbatim.
+/// Every name `targets` and `build.harnesses` accept, in report order:
+/// `tradecraft_core::harness::KNOWN_TARGETS`, verbatim.
 ///
 /// Exported so a host validating a name off a command line checks the same
 /// list the core checks a note's frontmatter against. Without it a host has to
@@ -78,22 +77,6 @@ pub use js_vfs::{HostVfs, JsVfs};
 #[wasm_bindgen(js_name = knownTargets)]
 pub fn known_targets() -> Result<String, JsValue> {
     report_json("known targets", &KNOWN_TARGETS)
-}
-
-/// `name` when it is one of [`KNOWN_TARGETS`], or `undefined`:
-/// `tradecraft_core::publish::canonical_target`, verbatim. There are no
-/// aliases.
-///
-/// # Why this one does not cross as JSON
-///
-/// Exports that return a core structure serialize it, because that is the
-/// only way a struct crosses. This answers with one name out of a
-/// compile-time vocabulary — there is no structure, and no error either, so
-/// there is nothing for a `Result<String, JsValue>` to carry. Wrapping it
-/// would add a `JSON.parse` to a value that is already a string.
-#[wasm_bindgen(js_name = canonicalTarget)]
-pub fn canonical_target(name: &str) -> Option<String> {
-    core_canonical_target(name).map(ToOwned::to_owned)
 }
 
 // --- the root file -----------------------------------------------------------
