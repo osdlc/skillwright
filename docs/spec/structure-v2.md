@@ -9,7 +9,7 @@ rules and the output. The frontmatter keys themselves are in the
 [field reference](../reference/fields.md), which is part of this spec.
 
 The decisions behind this spec are in section 12. Edge cases are in
-Appendix A. The questions not yet decided are in "Open questions". What v2
+Appendix A. What v2
 changes for a vault built with today's tool is in
 [v2-changes.md](v2-changes.md).
 
@@ -19,7 +19,7 @@ changes for a vault built with today's tool is in
 |---|---|
 | reads | skillwright loads a file as source. |
 | interprets | skillwright acts on a link, call, embed or plugin-root path in some text. Text that is not interpreted ships exactly as written. |
-| component | A skill, agent, command or hook (section 3). |
+| component | A skill, agent or command (section 3). |
 | container | A marketplace or a plugin. |
 | pack | The folder a harness installs for one plugin (section 9). |
 | an error | The build or check stops and exits non-zero. Nothing is written. |
@@ -138,8 +138,7 @@ build:
                 ├── agents/<a>/<a>.md
                 ├── commands/<c>/<c>.md
                 └── hooks/
-                    ├── hooks.json  optional (decision D4)
-                    └── <h>/<h>.md  see "Open questions"
+                    └── hooks.json  optional: the plugin's hooks (decision D4)
 ```
 
 The layout follows the recommended practice of the Agent Skills standard. A
@@ -152,14 +151,15 @@ and `assets/` folders. Relative paths resolve from the skill's folder
 
 1. Every note is `<name>.md` in a folder of the same name. There is no other
    entry form. A flat `<name>.md` directly in a kind folder (`skills/`,
-   `agents/`, `commands/`, `hooks/`) is refused, and so is `SKILL.md`.
+   `agents/`, `commands/`) is refused, and so is `SKILL.md`.
 2. Position alone decides what a note is:
 
    | Folder | It is |
    |---|---|
    | `marketplaces/<m>/` | a marketplace |
    | `marketplaces/<m>/plugins/<p>/` | a plugin |
-   | `<p>/skills/<s>/`, `<p>/agents/<a>/`, `<p>/commands/<c>/`, `<p>/hooks/<h>/` | a component of that kind |
+   | `<p>/skills/<s>/`, `<p>/agents/<a>/`, `<p>/commands/<c>/` | a component of that kind |
+   | `<p>/hooks/` | the plugin's hooks folder: `hooks.json` only, no components |
 
    Frontmatter never decides kind, plugin or marketplace.
 3. Each marketplace folder must hold `<m>.md`, and each plugin folder `<p>.md`.
@@ -212,11 +212,11 @@ Some entries are skipped everywhere, and one is an error:
 | `marketplaces/` | Marketplace folders only. |
 | `marketplaces/<m>/` | `<m>.md`, `plugins/`. |
 | `plugins/` | Plugin folders only. |
-| `plugins/<p>/` | `<p>.md`, `CHANGELOG.md`, `references/`, `scripts/`, `assets/`, the four kind folders, and the never-ship folders `src/`, `docs/`, `tests/`, `fixtures/` (rule 15). |
+| `plugins/<p>/` | `<p>.md`, `CHANGELOG.md`, `references/`, `scripts/`, `assets/`, `skills/`, `agents/`, `commands/`, `hooks/`, and the never-ship folders `src/`, `docs/`, `tests/`, `fixtures/` (rule 15). |
 | `skills/`, `agents/`, `commands/` | Component folders only. |
-| `hooks/` | `hooks.json` and hook folders. |
+| `hooks/` | `hooks.json` only. A folder or any other file in it is an error. |
 | `skills/<s>/` | `<s>.md`, `references/`, `scripts/`, `assets/`, and the never-ship folders `src/`, `docs/`, `tests/`, `fixtures/`. |
-| `agents/<a>/`, `commands/<c>/`, `hooks/<h>/` | Their note, and the never-ship folders `docs/`, `tests/`, `fixtures/`. |
+| `agents/<a>/`, `commands/<c>/` | Their note, and the never-ship folders `docs/`, `tests/`, `fixtures/`. |
 
 So a `README.md` in `marketplaces/` or in `skills/` is an error.
 
@@ -229,7 +229,7 @@ So a `README.md` in `marketplaces/` or in `skills/` is an error.
     | `scripts/` | Code the agent runs. |
     | `assets/` | Files used in output, such as templates, images and fonts. |
 
-13. An agent, command or hook installs as a single file, so it has no folder of
+13. An agent or command installs as a single file, so it has no folder of
     its own to ship. It uses the plugin's shared folders.
 14. A plugin's `references/`, `scripts/` and `assets/` are shared by every
     component in the plugin. Each ships under the same name at the pack root.
@@ -471,8 +471,7 @@ marketplace (rule 8, decision D2).
     | `${CLAUDE_PLUGIN_ROOT}` | An error (rule 22) |
 13. After the build, no unescaped `[[` may remain in prose.
     - Write `\[[` to keep the brackets as text: `\[[x]]` is not interpreted
-      and ships as `[[x]]`. Open question (owner): see "Open questions",
-      item 1.
+      and ships as `[[x]]`.
     - A leftover `[[` is an error that names the file and the text.
     - Code spans and fenced blocks are not checked. Neither is text an escape
       produced.
@@ -888,7 +887,7 @@ pack folder from the table above.
 | `skills/<s>/<s>.md` | `<pack>/skills/<s>/SKILL.md`, compiled | All. Cursor and Pi name the folder `<p>-<s>` unless `naming: bare` is set for them (section 8 rule 6). |
 | `skills/<s>/references/`, `scripts/`, `assets/` | The same names inside the skill's folder | All |
 | `commands/<c>/<c>.md` | `<pack>/commands/<c>.md`, compiled | Claude Code only |
-| `hooks/hooks.json` and hook notes | The harness's hooks file in `<pack>` | Claude Code, Codex, Cursor |
+| `hooks/hooks.json` | The harness's hooks file in `<pack>` | Claude Code, Codex, Cursor |
 | `agents/<a>/<a>.md` | Nothing. No pack contains an agent. | None |
 
 7. Compiled means these steps, in order:
@@ -993,7 +992,8 @@ and prints the expected layout:
     ├── <m>.md
     └── plugins/<p>/
         ├── <p>.md
-        └── skills/<s>/<s>.md   (also agents/, commands/, hooks/)
+        ├── skills/<s>/<s>.md   (also agents/, commands/)
+        └── hooks/hooks.json
 ```
 
 It is refused when:
@@ -1005,8 +1005,8 @@ It is refused when:
    inherited (section 2 rule 4).
 3. A marketplace folder has no `<m>.md`. If it holds a `skillwright.md`, the
    error says the marketplace note is now `<m>.md`.
-4. A kind folder (`skills/`, `agents/`, `commands/`, `hooks/`) or a `plugins/`
-   folder is anywhere other than its place in section 3, such as at the root or
+4. A kind folder (`skills/`, `agents/`, `commands/`), a `hooks/` folder or a
+   `plugins/` folder is anywhere other than its place in section 3, such as at the root or
    directly in a marketplace.
 
    ```text
@@ -1280,18 +1280,6 @@ the same way, and the build leaves it alone. So v2 has no escape form for it.
 - The check turns a typo or a moved file into a build error instead of a
   failure at run time.
 
-## Open questions
-
-These are not yet decided. Each gives the options and a recommendation.
-
-1. **Open question (owner): the `\[[` escape.** This spec says `\[[x]]` ships
-   as `[[x]]`, with the backslash removed (section 4 rule 13). Today's tool keeps
-   the backslash ([#136](https://github.com/osdlc/skillwright/pull/136)). Recommendation: remove it, as this spec says.
-2. **Open question (owner): hook notes.** The layout has hook notes,
-   `hooks/<h>/<h>.md`, but their format and how they become a hooks file are
-   not defined here. Options: define them, or keep only `hooks/hooks.json` in
-   v2. Recommendation: `hooks/hooks.json` only.
-
 ## Later
 
 The layout is deliberately the recommended practice and nothing more. More
@@ -1305,6 +1293,10 @@ current commands (`list`, `status`, `delete`, `convert`, `author`,
 
 Build steps declared in `skillwright.md`, such as `build.before:`, may come
 later. `build` would run them; `check` never would.
+
+Richer hook authoring (hook notes) may come later; see
+[#152](https://github.com/osdlc/skillwright/issues/152). v2 reads hooks only
+from `hooks/hooks.json`.
 
 ## Appendix A: Edge cases
 

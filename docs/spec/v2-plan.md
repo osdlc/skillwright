@@ -21,13 +21,18 @@ implementor's choice.
 
 ## Settled and open
 
-Sections 1 to 12 of the spec and its Appendix A are settled. These are not,
-and each blocks a commit:
+The whole spec is settled, with no open questions. Two decisions change
+today's behaviour in ways the commits must cover:
+
+| Decision | Where | Commit |
+|---|---|---|
+| `\[[x]]` ships as `[[x]]`, with the backslash removed. Today's code keeps it. | Spec section 4 rule 13 | Commit 5 |
+| Hooks come only from `hooks/hooks.json`. Hook notes are removed; richer hook authoring is [#152](https://github.com/osdlc/skillwright/issues/152). | Spec section 3 | Commits 2 and 4 |
+
+One item is still open and blocks a commit:
 
 | Item | Where | Blocks |
 |---|---|---|
-| The `\[[` escape: drop the backslash or keep it | Spec, [Open questions](structure-v2.md#open-questions) item 1 | Commit 5 (leftover tests) |
-| Hook notes, or `hooks/hooks.json` only | Spec, Open questions item 2 | Commit 2 (which entries `hooks/` may hold) and commit 4 (the hooks file) |
 | Cursor's hook variable | Probes, below | Commit 5 (hook tests) |
 
 ## Probes
@@ -85,6 +90,8 @@ Tests first:
 - A `.mcp.json` in a plugin is an error. `assets/.eslintrc.json` is skipped.
 - `references/docs/x.md` ships; `skills/review/docs/x.md` does not.
 - A name with digits, `v2-tools`, is accepted; `a--b` is refused.
+- `hooks/hooks.json` is accepted. A folder such as `hooks/lint/`, or any
+  other file in `hooks/`, is an error.
 
 ### 3. Root file and cascade
 
@@ -120,6 +127,8 @@ Tests first, one test per row of the "What a pack holds" table:
 - A Markdown file in `references/` is compiled. `CHANGELOG.md` is copied
   byte for byte.
 - An agent ships nowhere.
+- `hooks/hooks.json` becomes each harness's hooks file on Claude Code, Codex
+  and Cursor, and nothing on Pi. No other source adds hooks.
 - Two sources on one path are refused, naming both.
 
 Output tests:
@@ -202,7 +211,8 @@ Code and leftovers:
 
 - `[[x]]`, `/[[x]]` and `![[x]]` in a code span or fenced block ship as
   written.
-- `\[[x]]` in prose ships as `[[x]]`, as open question 1 recommends.
+- `\[[x]]` in prose ships as `[[x]]`, and `\/[[x]]` ships as `/[[x]]`. Today's
+  code keeps the backslash in `\[[x]]`, so this commit changes it.
 - A leftover `[[` in prose is refused. One in code or after `\` is not.
 
 Embeds:
@@ -303,7 +313,6 @@ The PR is done when all of these hold:
       `cargo test --workspace`.
 - [ ] Every numbered rule in the spec, and every case in its Appendix A, is
       covered by at least one test.
-- [ ] The two open questions are answered, and the spec says the answer.
 - [ ] Both probes have run, and the spec's "not verified" notes are updated.
 - [ ] `plugin/` is moved to the v2 layout and rebuilt to
       `plugin/dist/osdlc/`, and the `plugin` workflow's drift check passes.
@@ -365,7 +374,8 @@ tests and the gates above hold.
 - `model/load.rs`:
   - Go or shrink: `standalone` (publish of one note), `members_folder`,
     `has_folder`, the marketplace's-own-plugin branch of `missing_versions`,
-    `load_assets`, `load_hook_files` (D4), `folder_assets` (the flat copy;
+    `load_assets`, `load_hook_files` (D4), the loading of hook notes
+    (`hooks/<h>/<h>.md`), `folder_assets` (the flat copy;
     replaced by copying the three shared folders under their own names),
     `asset_covers` (its last use was the launcher check), `plugin_folder`, and
     the `plugin.launcher` set from `build.launcher_path`.

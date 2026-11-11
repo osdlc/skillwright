@@ -56,6 +56,8 @@ and may return in a later milestone:
 - New: a `.mcp.json` in a plugin folder is an error (decision D7), not a
   shipped asset.
 - New: the body of `<m>.md` and `<p>.md` is not interpreted and does not ship.
+- Hook notes, `hooks/<h>/<h>.md`. Hooks come only from `hooks/hooks.json`. A
+  folder or any other file in `hooks/` is an error.
 
 ### Output
 
@@ -88,6 +90,7 @@ and may return in a later milestone:
 | A fragment on a call or a mention was checked and then dropped. | On a call, `/[[setup#Usage]]`, an error. On a plain link it is kept. |
 | A note with malformed frontmatter embedded its body. | An error that names both notes (section 5 rule 4). |
 | A hand-written call string was refused in prose and code. | Refused in prose only. In code it ships as written. |
+| `\[[x]]` shipped with its backslash, as `\[[x]]`. | It ships as `[[x]]`: the backslash is removed (section 4 rule 13). |
 | Two skills sharing a called name: `skill-call-ambiguous`, with the path of the one meant as the fix. | An error that names both plugins. There is no path form of a call; rename one. |
 
 ### Plugin-root paths
