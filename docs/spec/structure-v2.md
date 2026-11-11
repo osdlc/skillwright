@@ -542,9 +542,14 @@ position; the environment; a built-in default.
 6. On Cursor and Pi, a plugin's skill is written as `<p>-<s>`, both its folder
    and its `name`: the `review` skill of plugin `tools` is
    `skills/tools-review/` with `name: tools-review`. `cursor: {naming: bare}`
-   or `pi: {naming: bare}` on the plugin or a container above it keeps the
-   plain `<s>`. The only values are `bare` and `prefixed`. A prefixed name over
-   64 characters is an error. Claude Code and Codex always keep the plain
+   or `pi: {naming: bare}` keeps the plain `<s>`. `naming` inherits key by key,
+   like other harness-block keys (section 7), so a marketplace's or the root
+   file's `pi: {naming: bare}` reaches every plugin below it unless a plugin
+   sets its own. The only values are `bare` and `prefixed`. A prefixed name
+   over 64 characters is an error. With `bare`, two skills of one name in one
+   marketplace would load under one name on that harness. That is an error for
+   that harness, naming both plugins and saying to remove `bare` from one or
+   rename one skill. Claude Code and Codex always keep the plain
    `<s>`, because they put the plugin name in front themselves
    (`tools:review`).
 

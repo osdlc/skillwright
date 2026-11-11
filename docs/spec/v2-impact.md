@@ -155,7 +155,11 @@ amendment too: its patterns layer is gone.
 - `harness/manifest.rs` and `model/load.rs`: `bare_on_pi` becomes one check
   for `cursor` and `pi` blocks, filling `bare_on` with each harness that sets
   `naming: bare`. `refuse_prefixed_collisions` and the 64-character check then
-  cover Cursor too.
+  cover Cursor too. Inheritance needs no change: `plugin_block` already starts
+  from the marketplace's block, which holds the root file's defaults, and
+  overlays the plugin's. New code: a collision check for `bare`. Today two
+  bare skills of one name across plugins on Pi are not refused; v2 refuses
+  them per harness, naming both plugins.
 - `model/mod.rs` and `harness/translator.rs` (D9): `Segment::LauncherCall`
   and `push_text`'s one-path split become a plugin-root path segment that
   holds any path after `${PLUGIN_ROOT}/`, checked against the files the pack
@@ -375,7 +379,10 @@ The commits, in order:
    Cursor and Pi and at `skills/review/` on Claude Code and Codex;
    `cursor: {naming: bare}` and `pi: {naming: bare}` keep `skills/review/`;
    another `naming` value is refused; a prefixed name over 64 characters is
-   refused. In commit 5, a call to it renders `` `/tools-review` `` on Cursor
+   refused; a marketplace-level `pi: {naming: bare}` gives every plugin's
+   skills plain names on Pi, and a plugin's own `pi: {naming: prefixed}`
+   overrides it; with `bare`, a `review` skill in two plugins is refused for
+   that harness naming both plugins, and builds for Claude Code and Codex. In commit 5, a call to it renders `` `/tools-review` `` on Cursor
    and `` `/review` `` with `bare`.
 5. **Links and transclusion.** Scoped resolution, the link table, the
    real-path check, missing targets as errors, calls and plain links (D2,
