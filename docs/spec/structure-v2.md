@@ -819,6 +819,12 @@ flowchart LR
      warning.
    - A marketplace's `version` is its note's. Without one, the marketplace
      manifests hold no version, and there is no warning.
+8. Some keys in a container's harness block describe the container. They
+   stay with it, even where the member's kind accepts them:
+   - its identity keys: `name`, `description`, `version`, `displayName` and
+     `source`;
+   - on a marketplace, the keys of that harness's marketplace manifest, such
+     as Codex's `interface` and Claude Code's `metadata`.
 
 ## 8. Harness blocks
 

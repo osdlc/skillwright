@@ -358,6 +358,47 @@ fn a_plugin_block_key_a_skill_does_not_accept_stays_with_the_plugin() {
     assert!(front.get("metadata").is_none(), "{front}");
 }
 
+/// Section 7 rule 8: a marketplace block's identity keys and the keys of its
+/// own marketplace manifest stay with it, though a plugin accepts them.
+#[test]
+fn a_marketplace_s_identity_and_manifest_keys_do_not_pass_down() {
+    let vfs = vault(&[(
+        MARKET,
+        "claude: {metadata: {from: market}, version: '9.9.9'}\n\
+         codex: {interface: {displayName: Acme}}",
+    )]);
+    let warnings = build(&vfs);
+    assert!(
+        warnings.iter().all(|w| w.reason != "unknown-key"),
+        "{warnings:?}"
+    );
+    let manifest = |harness| {
+        json(
+            &vfs,
+            tradecraft_core::marketplace_manifest_path(harness).unwrap(),
+        )
+    };
+    let claude = manifest("claude");
+    assert_eq!(str_at(&claude, "/metadata/from"), "market", "{claude}");
+    assert_eq!(str_at(&claude, "/version"), "9.9.9", "{claude}");
+    let codex = manifest("codex");
+    assert_eq!(str_at(&codex, "/interface/displayName"), "Acme", "{codex}");
+
+    let plugin = json(&vfs, plugin_manifest("claude"));
+    assert_eq!(str_at(&plugin, "/version"), "1.0.0", "{plugin}");
+    assert!(plugin.pointer("/metadata/from").is_none(), "{plugin}");
+    let entry = &claude["plugins"][0];
+    assert!(entry.pointer("/metadata/from").is_none(), "{entry}");
+    assert_ne!(str_at(entry, "/version"), "9.9.9", "{entry}");
+    let plugin = json(&vfs, plugin_manifest("codex"));
+    assert!(
+        plugin.pointer("/interface/displayName") != Some(&Value::from("Acme")),
+        "{plugin}"
+    );
+    let front = skill_front(&vfs, "claude");
+    assert!(front.pointer("/metadata/from").is_none(), "{front}");
+}
+
 /// Section 8 rule 2: an unknown key in a block warns and is left out of that
 /// harness's output, on a component and on a container.
 #[test]
