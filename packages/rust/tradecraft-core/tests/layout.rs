@@ -276,6 +276,20 @@ fn an_mcp_json_is_an_error_and_a_dot_file_in_assets_is_skipped() {
         "{names:?}"
     );
     assert!(!names.iter().any(|f| f.contains(".eslintrc")), "{names:?}");
+    // Appendix A2: skipped with no warning, and it does not ship.
+    let (warnings, shipped) = build(&vault_of(&files));
+    assert!(
+        !warnings.iter().any(|w| w.contains("eslintrc")),
+        "{warnings:?}"
+    );
+    assert!(
+        shipped.iter().any(|f| f.ends_with("assets/logo.png")),
+        "{shipped:?}"
+    );
+    assert!(
+        !shipped.iter().any(|f| f.contains("eslintrc")),
+        "{shipped:?}"
+    );
 }
 
 #[test]
@@ -318,15 +332,117 @@ fn names_follow_the_name_rule() {
     assert_eq!(listed(&vault_of(&ok)), ["acme/v2-tools/Skill/v2-review"]);
 
     let long = "a".repeat(65);
-    for name in ["a--b", long.as_str()] {
-        let files = plugin(
-            "acme",
-            "tools",
-            &[(&format!("skills/{name}/{name}.md"), SKILL)],
-        );
-        let said = refusal(&vault_of(&files));
-        assert!(said.contains(&format!("skills/{name}/")), "{said}");
+    for name in ["a--b", "-x", "x-", long.as_str()] {
+        for (files, path) in named_everywhere(name) {
+            let said = refusal(&vault_of(&files));
+            assert!(said.contains("name rule"), "{name}: {said}");
+            assert!(said.contains(&path), "{name}: {said}");
+        }
     }
+}
+
+#[test]
+fn the_six_structure_names_are_refused_for_every_name() {
+    for name in [
+        "marketplaces",
+        "plugins",
+        "skills",
+        "agents",
+        "commands",
+        "hooks",
+    ] {
+        for (files, path) in named_everywhere(name) {
+            let said = refusal(&vault_of(&files));
+            assert!(said.contains("name rule"), "{name}: {said}");
+            assert!(said.contains(&path), "{name}: {said}");
+        }
+    }
+}
+
+/// Three vaults that each give `name` to one thing (a skill, a plugin, a
+/// marketplace), each with the folder path the refusal must name.
+fn named_everywhere(name: &str) -> Vec<(Vec<(String, String)>, String)> {
+    vec![
+        (
+            plugin(
+                "acme",
+                "tools",
+                &[(&format!("skills/{name}/{name}.md"), SKILL)],
+            ),
+            format!("marketplaces/acme/plugins/tools/skills/{name}/"),
+        ),
+        (
+            plugin("acme", name, &[("skills/review/review.md", SKILL)]),
+            format!("marketplaces/acme/plugins/{name}/"),
+        ),
+        (
+            plugin(name, "tools", &[("skills/review/review.md", SKILL)]),
+            format!("marketplaces/{name}/"),
+        ),
+    ]
+}
+
+#[test]
+fn node_modules_is_skipped_in_a_plugin_and_a_skill() {
+    let files = plugin(
+        "acme",
+        "tools",
+        &[
+            ("skills/review/review.md", SKILL),
+            ("node_modules/x.js", "x"),
+            ("skills/review/node_modules/x.js", "x"),
+        ],
+    );
+    let vfs = vault_of(&files);
+    let layout = read_layout(&vfs, Path::new("/v")).unwrap();
+    assert!(
+        !layout.files.iter().any(|f| f.rel.contains("node_modules")),
+        "{:?}",
+        layout.files.iter().map(|f| &f.rel).collect::<Vec<_>>()
+    );
+    let (warnings, shipped) = build(&vfs);
+    assert!(
+        !warnings.iter().any(|w| w.contains("node_modules")),
+        "{warnings:?}"
+    );
+    assert!(
+        shipped
+            .iter()
+            .any(|f| f.ends_with("skills/review/SKILL.md")),
+        "{shipped:?}"
+    );
+    assert!(
+        !shipped.iter().any(|f| f.contains("node_modules")),
+        "{shipped:?}"
+    );
+}
+
+/// Builds the first marketplace of the vault at `/v`. Returns each warning
+/// as `path: reason: detail`, and every file written under `dist/`.
+fn build(vfs: &MemVfs) -> (Vec<String>, Vec<String>) {
+    let loaded = load_vault(vfs, Path::new("/v"), None).unwrap();
+    let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
+    let report = export_skills(vfs, &request).unwrap();
+    let warnings = report
+        .warnings
+        .iter()
+        .map(|w| format!("{}: {}: {}", w.path, w.reason, w.detail))
+        .collect();
+    (warnings, files_under(vfs, Path::new("/v/dist")))
+}
+
+/// Every file under `dir`, as a full path.
+fn files_under(vfs: &MemVfs, dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for entry in vfs.read_dir(dir).unwrap_or_default() {
+        let path = dir.join(&entry.name);
+        if entry.is_dir {
+            out.extend(files_under(vfs, &path));
+        } else {
+            out.push(path.to_string_lossy().into_owned());
+        }
+    }
+    out
 }
 
 #[test]
