@@ -132,7 +132,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
             return gate;
         }
     }
-    if flags.dry_run {
+    if flags.dry_run && !flags.quiet {
         let _ = writeln!(
             ctx.err,
             "dry run — reporting the drift a build would act on; nothing will be written"

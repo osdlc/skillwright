@@ -795,7 +795,9 @@ fn quiet_drops_progress_and_the_tally_from_stderr() {
     assert!(loud.stderr.contains("written"), "{}", loud.stderr);
     for argv in [
         &["build", "--yes", "--quiet"][..],
+        &["build", "--dry-run", "--quiet"],
         &["check", "--quiet"],
+        &["bump", "p", "--marketplace", "a", "--dry-run", "--quiet"],
         &["bump", "p", "--marketplace", "a", "--yes", "--quiet"],
     ] {
         let quiet = run(argv, &vault);

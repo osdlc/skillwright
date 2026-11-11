@@ -342,10 +342,12 @@ fn run_one(
         if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
         }
-        let _ = writeln!(
-            ctx.err,
-            "dry run — reporting the bump this run would make; nothing will be written"
-        );
+        if !flags.quiet {
+            let _ = writeln!(
+                ctx.err,
+                "dry run — reporting the bump this run would make; nothing will be written"
+            );
+        }
         return EXIT_OK;
     }
 
@@ -643,7 +645,7 @@ fn run_changed(
             let _ = writeln!(ctx.out, "{}", row.line());
         }
     }
-    if flags.dry_run {
+    if flags.dry_run && !flags.quiet {
         let _ = writeln!(
             ctx.err,
             "dry run — reporting the bumps this run would make; nothing will be written"
