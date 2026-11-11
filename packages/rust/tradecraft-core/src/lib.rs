@@ -96,10 +96,7 @@ pub use export::{
     plan_in, plugin_manifest_path, published_skill_name, rendered_skill_call,
 };
 pub use field_edit::{read_version, set_version};
-pub use frontmatter::{
-    ContainerIdentity, EntityKind, KindHints, KindSource, ResolvedKind, VaultFrontmatter,
-    resolve_kind,
-};
+pub use frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 pub use harness::KNOWN_TARGETS;
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, Shape};
 pub use layout::{

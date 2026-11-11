@@ -68,7 +68,6 @@ export type {
   ExportMode,
   ExportReport,
   ExportUnit,
-  KindSource,
   Marketplace,
   Plugin,
   Component,

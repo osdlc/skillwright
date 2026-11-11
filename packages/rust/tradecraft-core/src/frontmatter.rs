@@ -24,8 +24,8 @@
 //!
 //! # The kind comes from the folder
 //!
-//! [`resolve_kind`] ranks a caller's request over the kind folder a note sits
-//! in.
+//! A note never says its own kind: the layout decides it
+//! ([`crate::layout::Position::kind`]).
 
 use std::fmt;
 use std::path::Path;
@@ -149,77 +149,6 @@ impl FromStr for EntityKind {
                 value: other.to_owned(),
             }),
         }
-    }
-}
-
-/// Which layer decided a note's kind.
-///
-/// Carried alongside the kind because the answer to "why is this a plugin"
-/// is a different sentence per layer, and a report that only had the kind
-/// could not write any of them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum KindSource {
-    /// The caller said so explicitly.
-    Override,
-    /// The kind folder the note sits in (`skills/`, `plugins/` and so on;
-    /// see [`crate::discover`]).
-    Directory,
-    /// No layer applied. Absent means `skill`.
-    Default,
-}
-
-impl KindSource {
-    /// The spelling a report prints, matching the serialized form so a caller
-    /// that renders this and a caller that deserializes it cannot disagree.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Override => "override",
-            Self::Directory => "directory",
-            Self::Default => "default",
-        }
-    }
-}
-
-/// A kind and the layer that decided it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ResolvedKind {
-    /// The resolved kind.
-    pub kind: EntityKind,
-    /// The layer that decided the kind.
-    pub source: KindSource,
-}
-
-/// What the caller knows about a note's kind. A note never says its own kind:
-/// the folder decides.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct KindHints {
-    /// An explicit instruction — "treat this note as a skill" — from a flag
-    /// or a conversion. Wins outright.
-    pub requested: Option<EntityKind>,
-    /// What the note's kind folder said, already resolved by the caller
-    /// against the note's path. `None` when no folder matched.
-    pub folder: Option<EntityKind>,
-}
-
-/// Resolves a note's kind: the caller's request, then the kind folder, then
-/// [`EntityKind::Skill`].
-pub fn resolve_kind(hints: KindHints) -> ResolvedKind {
-    if let Some(kind) = hints.requested {
-        return ResolvedKind {
-            kind,
-            source: KindSource::Override,
-        };
-    }
-    if let Some(kind) = hints.folder {
-        return ResolvedKind {
-            kind,
-            source: KindSource::Directory,
-        };
-    }
-    ResolvedKind {
-        kind: EntityKind::default(),
-        source: KindSource::Default,
     }
 }
 
@@ -986,25 +915,6 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("`codex`"), "{err}");
-    }
-
-    #[test]
-    fn the_kind_layers_rank_the_request_then_the_folder_then_skill() {
-        let resolved = resolve_kind(KindHints {
-            requested: Some(EntityKind::Agent),
-            folder: Some(EntityKind::Plugin),
-        });
-        assert_eq!(resolved.kind, EntityKind::Agent);
-        assert_eq!(resolved.source, KindSource::Override);
-        let resolved = resolve_kind(KindHints {
-            requested: None,
-            folder: Some(EntityKind::Plugin),
-        });
-        assert_eq!(resolved.kind, EntityKind::Plugin);
-        assert_eq!(resolved.source, KindSource::Directory);
-        let resolved = resolve_kind(KindHints::default());
-        assert_eq!(resolved.kind, EntityKind::Skill);
-        assert_eq!(resolved.source, KindSource::Default);
     }
 
     #[test]

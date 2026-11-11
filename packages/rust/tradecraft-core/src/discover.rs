@@ -43,9 +43,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::CoreError;
-use crate::frontmatter::{
-    ContainerIdentity, EntityKind, KindHints, KindSource, VaultFrontmatter, resolve_kind,
-};
+use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::KNOWN_TARGETS;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vault::frontmatter_map;
@@ -71,11 +69,6 @@ pub struct DiscoveredComponent {
     pub description: String,
     /// What this component is, from its position.
     pub kind: EntityKind,
-    /// Which layer produced [`Self::kind`], straight from
-    /// [`crate::frontmatter::resolve_kind`].
-    pub kind_source: KindSource,
-    /// What the position said this was. Always the same as [`Self::kind`].
-    pub folder_kind: Option<EntityKind>,
     /// `targets` exactly as [`VaultFrontmatter::targets`] read it, every
     /// name checked against [`KNOWN_TARGETS`]. `None` is absent — every
     /// destination; `Some(vec![])` is nowhere.
@@ -629,10 +622,6 @@ fn read_source(
     let (frontmatter, _body) = split_frontmatter(&source);
     let mut fields = frontmatter_map(frontmatter, entry_path)?;
     let kind = position.kind();
-    let resolved = resolve_kind(KindHints {
-        requested: None,
-        folder: Some(kind),
-    });
     let ours = VaultFrontmatter::take_from(&mut fields, entry_path, kind)?;
     let unknown_keys = unknown_keys(&ours, kind);
     crate::vault::check_spec_kinds(&mut fields, entry_path, kind)?;
@@ -681,9 +670,7 @@ fn read_source(
     Ok(DiscoveredComponent {
         name,
         description,
-        kind: resolved.kind,
-        kind_source: resolved.source,
-        folder_kind: Some(kind),
+        kind,
         targets: ours.targets,
         plugin: position.plugin().map(str::to_owned),
         marketplace: (kind != EntityKind::Marketplace).then(|| position.marketplace().to_owned()),

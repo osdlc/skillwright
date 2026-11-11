@@ -6,4 +6,4 @@ What a component is: marketplace, plugin, skill, command, hook or agent. Decided
 
 ## In code
 
-`EntityKind`, `resolve_kind` in `frontmatter.rs`; `KIND_DIRS` in `discover.rs`.
+`EntityKind` in `frontmatter.rs`; `KIND_DIRS` and `Position::kind` in `layout.rs`.

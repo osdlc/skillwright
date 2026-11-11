@@ -18,7 +18,6 @@ export type {
   DiscoverRequest,
   DiscoveryReport,
   EntityKind,
-  KindSource,
   Component,
   LoadRequest,
   Marketplace,

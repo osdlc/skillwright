@@ -131,15 +131,6 @@ export interface DiscoveredComponent {
   kind: EntityKind;
 
   /**
-   * Which layer produced [`Self::kind`], straight from
-   * [`crate::frontmatter::resolve_kind`].
-   */
-  kind_source: KindSource;
-
-  /** What the position said this was. Always the same as [`Self::kind`]. */
-  folder_kind: EntityKind | null;
-
-  /**
    * `targets` exactly as [`VaultFrontmatter::targets`] read it, every
    * name checked against [`KNOWN_TARGETS`]. `None` is absent — every
    * destination; `Some(vec![])` is nowhere.
@@ -219,15 +210,6 @@ export interface DiscoveredComponent {
  * Outside the vocabulary a note is `unknown-kind`: a typo.
  */
 export type EntityKind = "skill" | "plugin" | "command" | "agent" | "marketplace";
-
-/**
- * Which layer decided a note's kind.
- *
- * Carried alongside the kind because the answer to "why is this a plugin"
- * is a different sentence per layer, and a report that only had the kind
- * could not write any of them.
- */
-export type KindSource = "override" | "directory" | "default";
 
 /**
  * What a container note says about the thing it names: the manifest fields
