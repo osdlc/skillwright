@@ -1,3 +1,3 @@
 ---
-description: Skills adopted into the dev-agent plugin.
+description: Skills for the dev-agent plugin.
 ---

@@ -178,7 +178,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
 }
 
 /// Report a run-level failure: an export has no partial report, since its
-/// rails fire before anything is staged and a failed swap rolls back.
+/// checks run before anything is staged and a failed swap rolls back.
 fn failed_run(verb: ExportVerb, err: &CoreError, ctx: &mut CommandContext<'_>) -> i32 {
     blocked(
         ctx.err,

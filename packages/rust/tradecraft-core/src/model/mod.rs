@@ -24,7 +24,7 @@
 //! # What stays harness-dependent
 //!
 //! A call is checked once — that it names one skill or command and has no
-//! fragment — but whether the destination *ships* what it names is a
+//! fragment — but whether a pack *ships* what it names is a
 //! question about a harness, so [`Call`] carries what the translator needs
 //! to ask it. A node's harness-only fields ([`Extensions`], D-ISOU) are
 //! folded on load and checked for the harnesses a load is for.
@@ -339,7 +339,7 @@ pub struct Call {
 }
 
 impl Call {
-    /// Refuses the call at a destination that does not ship what it names,
+    /// Refuses the call in a pack that does not ship what it names,
     /// which would send the reader to a command that is not there.
     ///
     /// # Errors
@@ -367,7 +367,7 @@ impl Call {
 /// A skill or command as a call names it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SkillId {
-    /// The plugin it ships in, `None` for one published on its own.
+    /// The plugin it ships in.
     pub plugin: Option<String>,
     /// Its source name.
     pub name: String,

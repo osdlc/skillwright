@@ -11,7 +11,7 @@
 //!    reach ships on its own. A `/[[call]]` becomes the target harness's
 //!    invocation of the named skill or command — see [`CallContext`].
 //! 3. The output is validated: any Obsidian syntax remaining in an emitted
-//!    markdown file is a refusal, because a destination has no resolver to
+//!    markdown file is a refusal, because a harness has no resolver to
 //!    give it meaning. A `[[` after an odd run of `\` is escaped: it is neither a
 //!    link nor a leftover, and ships without the `\`. A resource's
 //!    frontmatter ships as written; it is read as YAML, and a string in it
@@ -116,20 +116,20 @@ impl<'a> CompileSource<'a> {
     }
 }
 
-/// One component a call can name: its entry note, its kind and who publishes
-/// it.
+/// One component a call can name: its entry note, its kind and the plugin
+/// that ships it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedSkill {
     /// Absolute path of the component's entry note.
     pub entry_path: PathBuf,
-    /// The plugin publishing it, or `None` for one published on its own.
+    /// The plugin that ships it.
     pub plugin: Option<String>,
     /// The source `name`, never prefixed.
     pub name: String,
     /// A skill, a command or an agent. A call to an agent is refused: no
     /// pack contains agents.
     pub kind: EntityKind,
-    /// Whether the destination being compiled for carries this component. A
+    /// Whether the harness being compiled for carries this component. A
     /// call to one it does not carry is refused.
     pub shipped: bool,
 }
@@ -221,7 +221,7 @@ pub struct CallContext<'a> {
     pub skills: SkillSource<'a>,
     /// What this target writes for a call to a skill, without backticks.
     pub render: &'a dyn Fn(&IndexedSkill) -> Result<String, CoreError>,
-    /// The destination's name, for a refusal about what it does not ship.
+    /// The harness's name, for a refusal about what it does not ship.
     pub target: &'a str,
     /// The call strings a body may not write by hand, each mapped to the
     /// name to write as `/[[name]]` instead (spec section 4 rule 8). Empty
@@ -367,7 +367,7 @@ pub struct Closure {
 /// * `refused: skill-call-unresolved` / `skill-call-ambiguous` /
 ///   `skill-call-not-shipped` / `skill-call-fragment` — with a
 ///   [`CallContext`], a call named no skill or command, several, an agent or
-///   one the destination does not carry, or had a fragment. A broken call
+///   one the harness does not carry, or had a fragment. A broken call
 ///   sends the reader to a command that does not exist, so it blocks.
 /// * `refused: literal-skill-call` — prose spells one of
 ///   [`CallContext::hand_written`]'s call strings by hand, which is right
@@ -548,7 +548,7 @@ pub struct RelatedSplit {
 ///
 /// Calls are tolerant here. A call that names nothing, several skills or an
 /// agent, or has a fragment, is in [`RelatedSplit::unresolved`]. A call to a
-/// skill the destination does not ship is a call like any other. Hand-written
+/// skill the harness does not ship is a call like any other. Hand-written
 /// calls are not refused. The view shows what a note reaches; a broken call
 /// is a row to fix.
 ///
@@ -1502,7 +1502,7 @@ impl<'a> Renderer<'a> {
         render_or_mark(context, skill, token.destination, caller)
     }
 
-    /// A call to a component the destination does not carry would name a
+    /// A call to a component the harness does not carry would name a
     /// command that is not there, so it is refused rather than rendered.
     fn check_call_shipped(
         &self,
@@ -1823,7 +1823,7 @@ impl<'a> Renderer<'a> {
 /// expand different slices and only an exact repeat can loop.
 type TransclusionHop = (PathBuf, Option<String>);
 
-/// No Obsidian syntax may survive into emitted markdown: a destination has no
+/// No Obsidian syntax may survive into emitted markdown: a harness has no
 /// vault to resolve it against, so anything left is a broken reference the
 /// author would only find after installing (spec section 4 rule 13).
 ///

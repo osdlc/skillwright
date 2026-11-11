@@ -12,4 +12,4 @@ arguments:
     default: quick
 ---
 
-Narrowed to one destination, and carrying a foreign key the model does not own.
+Narrowed to one harness, and carrying a foreign key the model does not own.

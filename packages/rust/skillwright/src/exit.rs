@@ -32,7 +32,7 @@ pub fn blocked(err: &mut dyn Write, message: &str) -> i32 {
     EXIT_BLOCKED
 }
 
-/// An unknown flag, a missing argument, an unknown target or destination.
+/// An unknown flag, a missing argument, an unknown target.
 pub fn usage_error(err: &mut dyn Write, message: &str) -> i32 {
     let _ = writeln!(err, "usage error: {message}");
     EXIT_USAGE

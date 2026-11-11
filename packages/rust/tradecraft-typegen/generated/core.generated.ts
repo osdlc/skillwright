@@ -91,12 +91,12 @@ export interface DiscoverRequest {
  * What one scan found, and what it could not read.
  *
  * Two lists rather than a `Result`, because a vault is a shared tree and a
- * note nobody else owns must not decide whether everybody else's publish
+ * note nobody else owns must not decide whether everybody else's build
  * runs. Every caller reads both: the components are the roster, and
  * [`Self::skipped`] is the part of the vault this answer does not cover.
  */
 export interface DiscoveryReport {
-  /** Every publishable note, sorted by name. */
+  /** Every note the scan read, sorted by name. */
   components: DiscoveredComponent[];
 
   /** Every note the scan could not read, in path order. */
@@ -114,7 +114,7 @@ export interface DiscoveryReport {
  *
  * `targets` keeps the three-outcome `targets` reading instead of being
  * expanded to an explicit all-targets list, so the layer that knows what
- * "every destination" means today is the one that decides it.
+ * "every harness" means today is the one that decides it.
  */
 export interface DiscoveredComponent {
   /** The folder's name, which the layout has checked against the name rule. */
@@ -133,7 +133,7 @@ export interface DiscoveredComponent {
   /**
    * `targets` exactly as [`VaultFrontmatter::targets`] read it, every
    * name checked against [`KNOWN_TARGETS`]. `None` is absent — every
-   * destination; `Some(vec![])` is nowhere.
+   * harness; `Some(vec![])` is nowhere.
    */
   targets: string[] | null;
 
@@ -194,16 +194,16 @@ export interface DiscoveredComponent {
 }
 
 /**
- * Which publishable unit a note is: what the folder it sits in names.
+ * Which kind of unit a note is: what the folder it sits in names.
  *
  * default is for **absence only**. An unrecognised value is a typo, and
- * defaulting it would publish a `SKILL.md` at every destination for something
+ * defaulting it would build a `SKILL.md` for every harness for something
  * that is not a skill — silently, and as a write.
  *
  * `mcp-server` is named by the decision as a later kind and is deliberately
  * not a variant yet.
  *
- * # A kind in the vocabulary need not be publishable
+ * # A kind in the vocabulary need not ship
  *
  * Entering the vocabulary makes a note *discoverable*: a scan can list it and
  * say what it is. A build ships only the kinds a pack has a place for.
@@ -386,7 +386,7 @@ export interface ExportReport {
    */
   mode: ExportMode;
 
-  /** How many publishable skills discovery found. */
+  /** How many skills discovery found. */
   checked: number;
 
   /** Check: anything drifted or stale. Build: anything was swapped. */
@@ -655,7 +655,7 @@ export type Target = "claude" | "codex" | "cursor" | "pi";
 
 /** A skill or command as a call names it. */
 export interface SkillId {
-  /** The plugin it ships in, `None` for one published on its own. */
+  /** The plugin it ships in. */
   plugin: string | null;
 
   /** Its source name. */

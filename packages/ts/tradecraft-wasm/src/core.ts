@@ -186,11 +186,11 @@ export function knownTargets(): Target[] {
 // --- discovery ---------------------------------------------------------------
 
 /**
- * Every publishable note under the vault's `marketplaces/`, vetted and sorted
+ * Every note under the vault's `marketplaces/`, vetted and sorted
  * by name, and every note the scan could not read.
  *
  * A bad note stops itself, not the scan: one half-written draft in a shared
- * vault must not block everybody else's publish. What still throws is what is
+ * vault must not block everybody else's build. What still throws is what is
  * not a fact about one note — a vault outside the layout (every problem in
  * one message), a duplicate name, a symlink. A caller that ignores `skipped` is claiming the vault holds
  * nothing but what it listed, so every one of them reports it.

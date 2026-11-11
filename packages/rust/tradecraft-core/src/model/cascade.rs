@@ -375,7 +375,7 @@ pub fn fold_harness_blocks(
     Ok(folded)
 }
 
-/// Every key one destination reads in an override block, from that runtime's
+/// Every key one harness reads in an override block, from that runtime's
 /// own capability declaration.
 ///
 /// Empty for a name this build maps to no runtime, which is what makes every

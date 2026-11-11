@@ -85,7 +85,7 @@ pub fn read_notes(vfs: &dyn Vfs, layout: &Layout) -> Result<DiscoveryReport, Cor
 /// # Errors
 ///
 /// `refused: unknown-harness` — a name no such harness answers to. Refused
-/// rather than ignored: silently publishing less than was asked for is the
+/// rather than ignored: silently building less than was asked for is the
 /// failure this crate is built around.
 pub(crate) fn selected_harnesses(
     names: &BTreeSet<String>,
@@ -256,7 +256,7 @@ pub(crate) fn load_for(
     let mut discovered = scan.components;
     // Which marketplaces the vault holds is read from every kind, not from the
     // skills alone: one holding only commands still exists, and naming it must
-    // say it holds nothing publishable rather than that it is not there.
+    // say it holds nothing to build rather than that it is not there.
     let market = resolve_marketplace(&discovered, marketplace)?;
     let cascade = Cascade::over(&discovered, Some(&market), defaults);
     // Before members inherit a block, so a wrong value names its container.
@@ -701,7 +701,7 @@ fn extensions(
 
 // --- What the build used to decide before it rendered ------------------------
 
-/// Does this member publish to this harness? Two gates: the harness's pack
+/// Does this harness's pack carry this member? Two gates: the harness's pack
 /// has a place for the member's kind, and its `targets` names the harness.
 pub(crate) fn admits(component: &DiscoveredComponent, spec: &HarnessProfile) -> bool {
     kind_carried(component, spec) && targets_admit(component, spec.name)
@@ -717,7 +717,7 @@ pub(crate) fn kind_carried(component: &DiscoveredComponent, spec: &HarnessProfil
 }
 
 /// Gate 2 of [`admits`]: whether the member's `targets` names this
-/// destination. Absent is every destination, empty is none.
+/// harness. Absent is every harness, empty is none.
 pub(crate) fn targets_admit(component: &DiscoveredComponent, canonical: &str) -> bool {
     targets_name(component.targets.as_deref(), canonical)
 }

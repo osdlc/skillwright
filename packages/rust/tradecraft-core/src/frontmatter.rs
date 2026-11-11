@@ -2,7 +2,7 @@
 //!
 //! A note's frontmatter splits three ways:
 //!
-//! | Class | Where it goes | At publish |
+//! | Class | Where it goes | At build |
 //! |---|---|---|
 //! | skillwright's — the [`crate::keys`] table's owned keys for the note's kind | [`VaultFrontmatter`], typed | **dropped** |
 //! | The spec's and the harness's fields | [`crate::SkillContent`]'s modeled fields | emitted |
@@ -20,7 +20,7 @@
 //! skillwright's keys are stripped at emit, so carrying a wrong-shaped one
 //! verbatim would lose it. An absent key and a present-but-wrong key must not
 //! share an outcome: `targets: claude` (a scalar where a list belongs) read
-//! as "publish everywhere" would push files where the author meant not to.
+//! as "every harness" would push files where the author meant not to.
 //!
 //! # The kind comes from the folder
 //!
@@ -37,16 +37,16 @@ use serde_json::{Map, Value};
 
 use crate::error::CoreError;
 
-/// Which publishable unit a note is: what the folder it sits in names.
+/// Which kind of unit a note is: what the folder it sits in names.
 ///
 /// default is for **absence only**. An unrecognised value is a typo, and
-/// defaulting it would publish a `SKILL.md` at every destination for something
+/// defaulting it would build a `SKILL.md` for every harness for something
 /// that is not a skill — silently, and as a write.
 ///
 /// `mcp-server` is named by the decision as a later kind and is deliberately
 /// not a variant yet.
 ///
-/// # A kind in the vocabulary need not be publishable
+/// # A kind in the vocabulary need not ship
 ///
 /// Entering the vocabulary makes a note *discoverable*: a scan can list it and
 /// say what it is. A build ships only the kinds a pack has a place for.
@@ -66,7 +66,7 @@ pub enum EntityKind {
     /// A distribution: the plugins beneath it, built into one marketplace.
     ///
     /// The level above [`Self::Plugin`], and the only kind with no
-    /// per-destination layout at all — a runtime reads skills, never
+    /// per-harness layout at all — a runtime reads skills, never
     /// marketplaces. [`crate::export`] renders one.
     Marketplace,
 }
@@ -550,7 +550,7 @@ fn take_harness_block(ours: &mut Map<String, Value>, key: &str) -> Option<Map<St
 }
 
 /// Removes `key` and returns it as a list of strings, refusing any other
-/// shape — including a bare scalar, which would otherwise be one destination
+/// shape — including a bare scalar, which would otherwise be one harness
 /// misread as none.
 fn take_string_list(
     ours: &mut Map<String, Value>,

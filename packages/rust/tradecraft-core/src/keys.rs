@@ -2,8 +2,8 @@
 //!
 //! One table drives these things:
 //!
-//! * **The publish strip.** A key skillwright owns ([`Owner::Skillwright`])
-//!   is read into the model and never reaches a destination as written.
+//! * **The strip.** A key skillwright owns ([`Owner::Skillwright`]) is read
+//!   into the model and never reaches a pack as written.
 //! * **Validation.** A key outside the table for a note's kind is unknown,
 //!   and gets a warning. A key of ours with the wrong [`Shape`] is refused
 //!   when the note is read. An [`Owner::Spec`] key on a
@@ -27,10 +27,10 @@ use crate::harness::profile::{CLAUDE, CODEX, CURSOR, PI};
 /// Who a key belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Owner {
-    /// The Agent Skills spec's, or a harness's own: published as the
-    /// harness reads it.
+    /// The Agent Skills spec's, or a harness's own: built as the harness
+    /// reads it.
     Spec,
-    /// skillwright's: read into the model and stripped at publish.
+    /// skillwright's: read into the model and stripped at build.
     Skillwright,
 }
 

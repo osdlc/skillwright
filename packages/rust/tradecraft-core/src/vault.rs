@@ -13,7 +13,7 @@
 //! Three classes of key, not two. **Ours** — what [`crate::keys`] lists for the
 //! note's kind — is lifted into [`VaultNote::frontmatter`] by [`crate::frontmatter`] and
 //! never reaches [`SkillContent`] *through this function* — it is
-//! configuration about *this vault* and a destination has no business reading
+//! configuration about *this vault* and a harness has no business reading
 //! it. `arguments` is the one exception, and it is not this function's:
 //! `SkillContent::arguments` stays empty here, and `export` is
 //! the one that carries it over, once, after this read — see
@@ -31,7 +31,7 @@
 //!
 //! * **`tags` is carried, not modeled**, even though [`SkillContent`] has a
 //!   `tags` field. `agent-adapt`'s skill renderer emits no `tags:` key, so
-//!   lifting it out of the frontmatter would delete it from every published
+//!   lifting it out of the frontmatter would delete it from every built
 //!   `SKILL.md`. Left in `annotations` it survives the round trip.
 //! * **A spec key holding the wrong kind of value is refused.** `model: [a]` or
 //!   `user-invocable: yes-please` stops the read, naming the key, by the same
@@ -167,7 +167,7 @@ pub fn read_vault_note(
         user_invocable: take_bool(&mut fields, "user-invocable").unwrap_or(true),
         disable_model_invocation: take_bool(&mut fields, "disable-model-invocation")
             .unwrap_or(false),
-        // See the module doc: modeling this would delete it at publish.
+        // See the module doc: modeling this would delete it at build.
         tags: Vec::new(),
         // Genuinely foreign keys only. Not an Agent Skills spec field, not ours.
         annotations: fields,
@@ -196,12 +196,12 @@ pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
 ///
 /// The note is excluded because it is *inside* what it owns: the renderer
 /// writes it as `SKILL.md`, and carrying it a second time under its vault name
-/// would publish the same content twice, once with the frontmatter this crate
+/// would ship the same content twice, once with the frontmatter this crate
 /// exists to strip.
 ///
 /// Unlike [`crate::skill`]'s supporting-file listing — an aid to a view, which
-/// skips what it cannot read — this feeds a publish, so an unreadable peer is
-/// raised rather than dropped: under-publishing silently is what the
+/// skips what it cannot read — this feeds a build, so an unreadable peer is
+/// raised rather than dropped: shipping less, silently, is what the
 /// verbatim-carry rule exists to prevent.
 ///
 /// The walk is unbounded in depth on purpose. [`crate::vfs::Vfs::read_dir`]
@@ -258,8 +258,8 @@ fn read_resources(
 /// one line later against the same path.
 ///
 /// `pub(crate)` for [`crate::discover`], which reads the same notes to a
-/// different question — one reader, so a note cannot parse for the publish
-/// path and fail for the scan.
+/// different question — one reader, so a note cannot parse for the build
+/// and fail for the scan.
 pub(crate) fn frontmatter_map(
     frontmatter: &str,
     path: &Path,
@@ -552,7 +552,7 @@ mod tests {
 
         assert_eq!(annotations["owner"], serde_json::json!("kelly"));
         // `tags` rides in annotations because agent-adapt renders no `tags:`
-        // key — modeling it would delete it at publish.
+        // key — modeling it would delete it at build.
         assert_eq!(annotations["tags"], serde_json::json!(["review"]));
         // Modeled keys are consumed, not doubled.
         assert!(!annotations.contains_key("description"));

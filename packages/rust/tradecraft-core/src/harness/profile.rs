@@ -39,7 +39,7 @@ pub struct HarnessProfile {
     pub name: &'static str,
     /// The harness's product name, for messages.
     pub label: &'static str,
-    /// The `agent-adapt` runtime a note renders through for this destination.
+    /// The `agent-adapt` runtime a note renders through for this harness.
     pub runtime: &'static str,
     /// The runtime whose capability declaration answers for this
     /// destination: which keys an override block may carry.
@@ -120,8 +120,9 @@ pub struct PluginPolicy {
 /// Where a harness reads a plugin from, and how its pack is shaped.
 #[derive(Debug)]
 pub struct PluginFormat {
-    /// The project directory the runtime's projection puts a skill under,
-    /// and so where a pack published to a destination lands.
+    /// The project directory the runtime's projection puts a skill under.
+    /// The translator strips it and writes the skill under the pack's
+    /// `skills/`.
     pub skills_dir: &'static str,
     /// The folder under the home directory the harness loads a user's own
     /// skills from. Each row's `PluginPolicy::user_skills_dir`

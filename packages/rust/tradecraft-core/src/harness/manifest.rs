@@ -433,9 +433,6 @@ fn cursor_display_name(config: &MarketplaceConfig, plugin: &str) -> Option<Strin
 
 /// One plugin's pack manifest, `members` its skills' names.
 ///
-/// One function for every layout a pack is written in — a built marketplace
-/// and a destination — so there is one answer to "what is a pack manifest".
-///
 /// `hooks` is the manifest's `hooks` entry, written as given; `None` writes
 /// none.
 pub(crate) fn render_plugin_manifest(

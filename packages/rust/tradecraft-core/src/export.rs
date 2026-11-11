@@ -1,4 +1,4 @@
-//! The marketplace renderer — every publishable note built into one
+//! The marketplace renderer — every note a pack ships, built into one
 //! marketplace directory serving every harness, and the drift check over it.
 //!
 //! The engine behind the `build` and `check` verbs.
@@ -221,7 +221,7 @@ pub struct ExportReport {
     /// The mode the report describes, so `ok`/`drift` and
     /// `written`/`unchanged` read against the right verb.
     pub mode: ExportMode,
-    /// How many publishable skills discovery found.
+    /// How many skills discovery found.
     pub checked: usize,
     /// Check: anything drifted or stale. Build: anything was swapped.
     pub changed: bool,
@@ -1533,7 +1533,7 @@ mod tests {
         vfs.write_file(path, content.as_bytes()).unwrap();
     }
 
-    /// A publishable note in this vault's vocabulary, with a caller-supplied
+    /// A skill note, with a caller-supplied
     /// body — for a test that needs to control what a skill's rendered text
     /// actually says (e.g. whether it calls the CLI at all).
     fn note_with_body(name: &str, targets: &[&str], body: &str) -> String {
@@ -1549,7 +1549,7 @@ mod tests {
         out
     }
 
-    /// A publishable note in this vault's vocabulary.
+    /// A skill note.
     fn note(name: &str, targets: &[&str]) -> String {
         note_with_body(name, targets, &format!("# {name}\n"))
     }
@@ -4368,8 +4368,7 @@ mod tests {
             serde_json::to_string(&report).unwrap(),
             r#"{"mode":"check","checked":3,"changed":true,"units":[{"unit":"plugin","root":"claude","name":"tools","skills":2,"status":"drift","version_bump_suggestion":null},{"unit":"manifest","root":"codex","status":"ok"},{"unit":"stale","root":"claude","path":"plugins/old","kind":"plugin"}],"warnings":[]}"#
         );
-        // And a request with no mode means build — the write, as with
-        // `PublishMode`.
+        // And a request with no mode means build, the write.
         let request: ExportRequest = serde_json::from_str(r#"{"vault_root":"/v"}"#).unwrap();
         assert_eq!(request.mode, ExportMode::Build);
     }

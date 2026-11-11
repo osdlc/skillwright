@@ -8,7 +8,7 @@
  * passes in is converted to the host's spelling before an `fs` call, and each
  * path an `fs` call answers with is converted back (see `host-path.ts`).
  *
- * Synchronous by design: the core (`tradecraft-core::publish_skill`) is
+ * Synchronous by design: the core (`tradecraft-core`) is
  * synchronous end to end, so every host bridge is too — see
  * `packages/rust/tradecraft-wasm/src/js_vfs.rs`.
  */

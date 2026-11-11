@@ -69,8 +69,8 @@ pub struct TreeFile {
     pub bytes: Vec<u8>,
     /// Whether the file is executable.
     pub executable: bool,
-    /// The note the file came from and what fed it, where a destination's
-    /// manifest records one.
+    /// The note the file came from and what fed it, for the provenance
+    /// `check` reads back.
     pub source: Option<FileSource>,
 }
 
@@ -130,7 +130,7 @@ pub(crate) trait HarnessTranslator: Sync {
         self.profile().format()
     }
 
-    /// Does this member publish here? Its kind has a place in the pack, and
+    /// Does this pack carry this member? Its kind has a place in the pack, and
     /// its `targets` names this harness.
     fn admits(&self, component: &Component) -> bool {
         admits(&component.discovered, self.profile())
@@ -883,9 +883,9 @@ mod tests {
 
     #[test]
     fn a_host_namespaced_harness_writes_the_plugin_into_every_call() {
-        // A pack at a destination used to spell its calls from the runtime's
-        // own `namespaced` flag; a build spells them from the profile's
-        // naming. The two agree, or packs and builds would call differently.
+        // A build spells calls from the profile's naming. It must agree with
+        // the runtime's own `namespaced` flag, or a call would not match how
+        // the runtime names the skill.
         for profile in super::super::with_plugin_format() {
             let namespaced = profile.declaration.skill_call_syntax().namespaced;
             if profile.format().naming == SkillNaming::HostNamespaced {

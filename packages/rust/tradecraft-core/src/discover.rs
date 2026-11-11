@@ -53,7 +53,7 @@ use crate::vfs::Vfs;
 ///
 /// `targets` keeps the three-outcome `targets` reading instead of being
 /// expanded to an explicit all-targets list, so the layer that knows what
-/// "every destination" means today is the one that decides it.
+/// "every harness" means today is the one that decides it.
 // No `Eq`: `identity` carries JSON for the two manifest fields
 // whose dialects allow an object, and `serde_json::Value` is only `PartialEq`
 // because it can hold a float. Nothing keys a map or a set on a whole
@@ -71,7 +71,7 @@ pub struct DiscoveredComponent {
     pub kind: EntityKind,
     /// `targets` exactly as [`VaultFrontmatter::targets`] read it, every
     /// name checked against [`KNOWN_TARGETS`]. `None` is absent — every
-    /// destination; `Some(vec![])` is nowhere.
+    /// harness; `Some(vec![])` is nowhere.
     pub targets: Option<Vec<String>>,
     /// The plugin folder holding this note. `None` for a marketplace's note.
     pub plugin: Option<String>,
@@ -300,13 +300,13 @@ pub const UNKNOWN_KEY_REASON: &str = "unknown-key";
 /// What one scan found, and what it could not read.
 ///
 /// Two lists rather than a `Result`, because a vault is a shared tree and a
-/// note nobody else owns must not decide whether everybody else's publish
+/// note nobody else owns must not decide whether everybody else's build
 /// runs. Every caller reads both: the components are the roster, and
 /// [`Self::skipped`] is the part of the vault this answer does not cover.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct DiscoveryReport {
-    /// Every publishable note, sorted by name.
+    /// Every note the scan read, sorted by name.
     pub components: Vec<DiscoveredComponent>,
     /// Every note the scan could not read, in path order.
     pub skipped: Vec<SkippedNote>,
@@ -317,7 +317,7 @@ pub struct DiscoveryReport {
 }
 
 /// The reason naming a component note with no `description`. A
-/// build and a publish refuse such a note; a scan lists it with this entry in
+/// build refuses such a note; a scan lists it with this entry in
 /// [`DiscoveryReport::warnings`].
 pub const MISSING_DESCRIPTION_REASON: &str = "missing-description";
 

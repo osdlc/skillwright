@@ -1,10 +1,10 @@
-//! Projection — a version snapshot rendered into per-runtime files.
+//! Projection — one note rendered into per-runtime files.
 //!
 //! Rendering is delegated entirely to `agent-adapt` (the crate used for
 //! projection): per-runtime `skills_dir`, frontmatter dialect,
 //! tool-name translation, annotations passthrough, and peer-resource
-//! emission are its contract. This module maps the store
-//! snapshot into `agent_adapt::Skill` and hashes what comes back.
+//! emission are its contract. This module maps a
+//! [`SkillProjection`] into `agent_adapt::Skill` and hashes what comes back.
 //!
 //! # The strip, again
 //!
@@ -19,10 +19,10 @@ use agent_adapt::RuntimeId;
 use crate::content::SkillProjection;
 use crate::error::CoreError;
 
-/// One file projection wants on disk, relative to a destination root.
+/// One file projection wants on disk, relative to a pack root.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectedFile {
-    /// Forward-slashed, destination-root-relative.
+    /// Forward-slashed, relative to the pack root.
     pub relative_path: String,
     /// The file's bytes.
     pub content: Vec<u8>,
@@ -34,12 +34,12 @@ pub struct ProjectedFile {
 ///
 /// Output is sorted by path — the stable order the hash, the manifest, and
 /// the tests all rely on. Unknown target names are refused, not skipped: a
-/// destination pointing at a target this build cannot render is a
-/// configuration error, and skipping would under-publish silently.
+/// target this build cannot render is a configuration error, and skipping
+/// would ship less, silently.
 ///
-/// Carries no per-target override block: the callers that hold one publish
-/// through [`project_skill_reporting`], which takes the destination to look
-/// one up by.
+/// Carries no per-target override block: the callers that hold one render
+/// through [`project_skill_reporting`], which takes the harness to look one
+/// up by.
 pub fn project_skill(
     snapshot: &SkillProjection,
     targets: &[String],
@@ -47,15 +47,15 @@ pub fn project_skill(
     project_skill_reporting(snapshot, targets, None).map(|(files, _)| files)
 }
 
-/// One harness block key that changed nothing at the destination it was
-/// written for.
+/// One harness block key that changed nothing in the render for the harness
+/// it was written for.
 ///
-/// A diagnostic, never a refusal: the note publishes exactly as it would
+/// A diagnostic, never a refusal: the note builds exactly as it would
 /// have, and the report says the key is spending an author's attention on
 /// something the projection already emits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RedundantOverride {
-    /// The destination, canonically named.
+    /// The harness, canonically named.
     pub target: String,
     /// The key, spelled as the block spells it.
     pub key: String,
@@ -77,9 +77,9 @@ impl std::fmt::Display for RedundantOverride {
 /// Two entry points rather than one because the diagnostic is not a file and
 /// most callers want files. Whichever is called, the render happens once.
 ///
-/// `overrides_target` is the canonical destination whose harness block
-/// this render applies — the publish path's own destination, not the runtime
-/// target, which several destinations share. `None` renders no override block.
+/// `overrides_target` is the canonical harness whose harness block this
+/// render applies, which need not be the runtime target it renders with.
+/// `None` renders no override block.
 ///
 /// # Errors
 ///
@@ -122,12 +122,12 @@ pub fn project_skill_reporting(
 /// Which of one snapshot's override keys for `target` the render already
 /// writes byte for byte.
 ///
-/// Empty when the note carries no block for this destination, which is the
+/// Empty when the note carries no block for this harness, which is the
 /// ordinary note, and empty when the runtime renders no skills — there is no
 /// render for a key to be redundant against.
 ///
 /// `target` is a runtime target name, the vocabulary [`project_skill`] takes;
-/// `overrides_target` is the canonical destination whose block to score, or
+/// `overrides_target` is the canonical harness whose block to score, or
 /// `None` for a snapshot that carries none.
 ///
 /// # Errors
@@ -284,7 +284,7 @@ pub fn project_agent(
 /// with either returns the unsupported-runtime-target error, not
 /// `no-renderer`.
 ///
-/// `overrides_target` is the canonical destination whose harness block
+/// `overrides_target` is the canonical harness whose harness block
 /// this render applies, or `None` for a snapshot that carries none.
 ///
 /// A key the command has no field for (`disable-model-invocation`,
@@ -375,8 +375,8 @@ pub fn project_plugin_hooks(
 /// skips the renderer's omit list, so a key `id`'s dialect omits is dropped
 /// here, the same answer the override roster gives for it. A foreign key has
 /// no roster entry and passes, as on the skill path. The author's own
-/// harness block, already checked by [`crate::publish`],
-/// merges over them.
+/// harness block, already checked by
+/// [`crate::model::cascade::fold_harness_blocks`], merges over them.
 ///
 /// # Errors
 ///
@@ -709,7 +709,7 @@ fn to_adapt_skill(
             },
         )
         .collect();
-    // An invariant, not an oversight: nothing an override says for one destination is visible to the render of another.
+    // An invariant, not an oversight: nothing an override says for one harness is visible to the render of another.
     skill.overrides = overrides_target
         .and_then(|dest| content.overrides.get(dest))
         .cloned()
@@ -1264,7 +1264,7 @@ mod tests {
             assert_eq!(fm.get(key), Some(&value), "{key}: {text}");
         }
 
-        // The author's own override for this destination still has the last
+        // The author's own override for this harness still has the last
         // word over a carried key.
         snap.content.overrides.insert(
             "claude-code".into(),
