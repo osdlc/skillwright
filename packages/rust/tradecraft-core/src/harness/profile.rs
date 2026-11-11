@@ -587,7 +587,10 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         // hook commands, so the pack ships no hooks until a probe confirms it
         // (spec section 4 rule 23; issue #152).
         plugin_root: None,
-        naming: Source::Knowledge,
+        // Policy, as Pi's: knowledge records what Cursor allows (plain
+        // names); prefixing the plugin is skillwright's default, so two
+        // plugins' skills cannot collide (spec section 8 rule 6).
+        naming: Source::Constant(SkillNaming::PluginPrefixed),
         hooks_manifest_entry: None,
         carries_commands: false,
         carries_hooks: false,
@@ -1096,7 +1099,7 @@ mod tests {
                 ".cursor-plugin/plugin.json",
                 Some(".cursor-plugin/marketplace.json"),
                 None,
-                SkillNaming::Bare,
+                SkillNaming::PluginPrefixed,
             ),
             "pi" => (
                 ".pi/agent/skills",

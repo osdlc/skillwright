@@ -17,10 +17,10 @@ acme/.claude-plugin/packs/core/skills/review/SKILL.md  3854fad7b7326901bd4fd370c
 acme/.cursor-plugin/marketplace.json  d3e122aa7adb028f9a4fd65d337ce60495cbdaee73b224fe9d6b5b9f82399f3f
 acme/.cursor-plugin/packs/core/.cursor-plugin/plugin.json  1a6f5706529fb13937113e860ca8d3e02aa40d142ee2a9ba78ca4fdfb6ef5e6a
 acme/.cursor-plugin/packs/core/references/tone.md  46f00692995a3c4c20ca826034261c00a7904dd52185f1351ee11ebec2f94255
-acme/.cursor-plugin/packs/core/skills/bundled/SKILL.md  8528440df52010d7b6a3b627315c2d488e5640846280595b0850c849008b57b8
-acme/.cursor-plugin/packs/core/skills/bundled/references/vault/marketplaces/acme/plugins/core/commands/ship/ship.md  6fea323e6ad04540ea53eec07be3b71339e47f2c3fae8654ed413f3f17a044ee
-acme/.cursor-plugin/packs/core/skills/bundled/references/vault/marketplaces/acme/plugins/core/references/tone.md  46f00692995a3c4c20ca826034261c00a7904dd52185f1351ee11ebec2f94255
-acme/.cursor-plugin/packs/core/skills/bundled/scripts/run.sh  b4d644d4279594903f1a9911956432d9473041f2984fc6014c14d7402c7d126c
+acme/.cursor-plugin/packs/core/skills/core-bundled/SKILL.md  e275052113cb994ad90c458f6af53c5fe2f9088d45687011bb8ee9fb1cd4adf6
+acme/.cursor-plugin/packs/core/skills/core-bundled/references/vault/marketplaces/acme/plugins/core/commands/ship/ship.md  6fea323e6ad04540ea53eec07be3b71339e47f2c3fae8654ed413f3f17a044ee
+acme/.cursor-plugin/packs/core/skills/core-bundled/references/vault/marketplaces/acme/plugins/core/references/tone.md  46f00692995a3c4c20ca826034261c00a7904dd52185f1351ee11ebec2f94255
+acme/.cursor-plugin/packs/core/skills/core-bundled/scripts/run.sh  b4d644d4279594903f1a9911956432d9473041f2984fc6014c14d7402c7d126c
 acme/.pi/packs/core/package.json  71e61b590e644e49c9137c59ba008dff8b33c30888b88b866307ea79a2b76621
 acme/.pi/packs/core/references/tone.md  46f00692995a3c4c20ca826034261c00a7904dd52185f1351ee11ebec2f94255
 acme/.pi/packs/core/skills/core-bundled/SKILL.md  e275052113cb994ad90c458f6af53c5fe2f9088d45687011bb8ee9fb1cd4adf6
@@ -35,6 +35,6 @@ labs/.claude-plugin/packs/spike/.claude-plugin/plugin.json  f2cf9620bc9dca83df43
 labs/.claude-plugin/packs/spike/skills/probe/SKILL.md  c35fb7ce77627eb9b34402af45ebc5f8b6d905742694191f013f39c97997ccec
 labs/.cursor-plugin/marketplace.json  5de429c437d5201f9e63cb22f19dd0d0f6a15a41f5289c022ddedb9bebeaa6d4
 labs/.cursor-plugin/packs/spike/.cursor-plugin/plugin.json  f2cf9620bc9dca83df43f6242e09be5ade0c8a322a747e187e1744ce7601e1ec
-labs/.cursor-plugin/packs/spike/skills/probe/SKILL.md  c35fb7ce77627eb9b34402af45ebc5f8b6d905742694191f013f39c97997ccec
+labs/.cursor-plugin/packs/spike/skills/spike-probe/SKILL.md  23ff37753ecf0b398ed50296ee344bcb103ddee54bae0cfb1fb3310a87bee75e
 labs/.pi/packs/spike/package.json  1673edb37efee9a78a05eeafa38da7fec2edae1b4cb672280b127b32f1481ddb
 labs/.pi/packs/spike/skills/spike-probe/SKILL.md  23ff37753ecf0b398ed50296ee344bcb103ddee54bae0cfb1fb3310a87bee75e

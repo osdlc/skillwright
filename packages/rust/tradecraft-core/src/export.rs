@@ -1636,9 +1636,9 @@ mod tests {
                 ".claude-plugin/packs/tools/skills/review-guide/SKILL.md",
                 ".cursor-plugin/marketplace.json",
                 ".cursor-plugin/packs/git-tools/.cursor-plugin/plugin.json",
-                ".cursor-plugin/packs/git-tools/skills/commit-helper/SKILL.md",
+                ".cursor-plugin/packs/git-tools/skills/git-tools-commit-helper/SKILL.md",
                 ".cursor-plugin/packs/tools/.cursor-plugin/plugin.json",
-                ".cursor-plugin/packs/tools/skills/review-guide/SKILL.md",
+                ".cursor-plugin/packs/tools/skills/tools-review-guide/SKILL.md",
                 ".pi/packs/git-tools/package.json",
                 ".pi/packs/git-tools/skills/git-tools-commit-helper/SKILL.md",
                 ".pi/packs/tools/package.json",
@@ -1904,12 +1904,18 @@ mod tests {
         );
         let report = build(&vfs);
 
-        for (tree, b, named, c) in [
-            (".claude-plugin", "/tools:b", "tools:b", "/other:c"),
-            (".agents", "$tools:b", "tools:b", "$other:c"),
-            (".cursor-plugin", "/b", "b", "/c"),
+        for (tree, a, b, named, c) in [
+            (".claude-plugin", "a", "/tools:b", "tools:b", "/other:c"),
+            (".agents", "a", "$tools:b", "tools:b", "$other:c"),
+            (
+                ".cursor-plugin",
+                "tools-a",
+                "/tools-b",
+                "tools-b",
+                "/other-c",
+            ),
         ] {
-            let body = skill_md(&vfs, tree, "a");
+            let body = skill_md(&vfs, tree, a);
             assert!(
                 body.contains(&format!("Next, run `{b}` to finish.")),
                 "{tree}: {body}"
@@ -1931,7 +1937,7 @@ mod tests {
             assert!(!body.contains("B's own prose"), "{tree}: {body}");
             let copied: Vec<String> = paths_under(
                 &vfs,
-                Path::new(&format!("/vault/dist/house/{tree}/packs/tools/skills/a")),
+                Path::new(&format!("/vault/dist/house/{tree}/packs/tools/skills/{a}")),
             );
             assert_eq!(copied, vec!["SKILL.md".to_owned()], "{tree}");
         }
@@ -1952,10 +1958,10 @@ mod tests {
         for (tree, named) in [
             (".claude-plugin", "tools:b"),
             (".agents", "tools:b"),
-            (".cursor-plugin", "b"),
+            (".cursor-plugin", "tools-b"),
             (".pi", "tools-b"),
         ] {
-            let skill = if tree == ".pi" { "tools-a" } else { "a" };
+            let skill = if named == "tools-b" { "tools-a" } else { "a" };
             let body = skill_md(&vfs, tree, skill);
             let want = format!(
                 "Use the b skill (`{named}`) next, see `{named}` and the steps (`{named}`)."
@@ -1996,7 +2002,7 @@ mod tests {
         for (tree, skill, named) in [
             (".claude-plugin", "a", "tools:a"),
             (".agents", "a", "tools:a"),
-            (".cursor-plugin", "a", "a"),
+            (".cursor-plugin", "tools-a", "tools-a"),
             (".pi", "tools-a", "tools-a"),
         ] {
             check(&vfs, tree, skill, named);
@@ -2041,19 +2047,20 @@ mod tests {
         let mut config = config();
         config.blocks.insert(
             "cursor".to_owned(),
-            serde_json::Map::from_iter([("naming".to_owned(), json!("prefixed"))]),
+            serde_json::Map::from_iter([("naming".to_owned(), json!("bare"))]),
         );
         build_with(&vfs, config);
-        check(&vfs, ".cursor-plugin", "tools-a", "tools-a");
+        check(&vfs, ".cursor-plugin", "a", "a");
+        check(&vfs, ".pi", "tools-a", "tools-a");
 
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/tools.md",
             "---\ndescription: Tools.\npi:\n  naming: bare\n\
-             cursor:\n  naming: prefixed\n---\n",
+             cursor:\n  naming: bare\n---\n",
         );
         build(&vfs);
-        check(&vfs, ".cursor-plugin", "tools-a", "tools-a");
+        check(&vfs, ".cursor-plugin", "a", "a");
         check(&vfs, ".pi", "a", "a");
     }
 
@@ -2064,7 +2071,7 @@ mod tests {
         for (tree, skill) in [
             (".claude-plugin", "a"),
             (".agents", "a"),
-            (".cursor-plugin", "a"),
+            (".cursor-plugin", "tools-a"),
             (".pi", "tools-a"),
         ] {
             let body = skill_md(&vfs, tree, skill);

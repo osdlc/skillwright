@@ -94,7 +94,7 @@ fn skill_file(harness: &str) -> &'static str {
     match harness {
         "claude" => ".claude-plugin/packs/tools/skills/review/SKILL.md",
         "codex" => ".agents/packs/tools/skills/review/SKILL.md",
-        "cursor" => ".cursor-plugin/packs/tools/skills/review/SKILL.md",
+        "cursor" => ".cursor-plugin/packs/tools/skills/tools-review/SKILL.md",
         "pi" => ".pi/packs/tools/skills/tools-review/SKILL.md",
         _ => unreachable!(),
     }

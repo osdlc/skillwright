@@ -10,9 +10,9 @@ guild/.claude-plugin/packs/full/.claude-plugin/plugin.json  733ad99f296d3494b875
 guild/.claude-plugin/packs/full/skills/full-skill/SKILL.md  7a468bd6e12d88e12563d8fd55f830cc53de5772a4474def61586a314d56caa7
 guild/.cursor-plugin/marketplace.json  24b079a9912ca18dcdc51b8e3d2038cdba0050fe7ae774f1a927401e0baec96a
 guild/.cursor-plugin/packs/bare/.cursor-plugin/plugin.json  cb0cbb2383ccf15d4b9ee477ebdaf7fa3106db9cd327e1b3a78bc7636aee7be8
-guild/.cursor-plugin/packs/bare/skills/bare-skill/SKILL.md  fbb163eb845dc402ff93a26cde796be9cd11e6d24b2584bb546f2ed0163bdedf
+guild/.cursor-plugin/packs/bare/skills/bare-bare-skill/SKILL.md  df11a847f7d3d3bd306d2e973affe0e806adacddce196c05a78247e2822511d2
 guild/.cursor-plugin/packs/full/.cursor-plugin/plugin.json  8cbb82232632feb62534dd890661f2be41ba3f4dbfa59fc06d343568c29c89d4
-guild/.cursor-plugin/packs/full/skills/full-skill/SKILL.md  7a468bd6e12d88e12563d8fd55f830cc53de5772a4474def61586a314d56caa7
+guild/.cursor-plugin/packs/full/skills/full-full-skill/SKILL.md  5eadbeb76e84d0415feaf7eaa0b21e83cba12433ca107e853e3ba70406151f17
 guild/.pi/packs/bare/package.json  e756a228f134cd715673dcf66044b94b6eb7c6b057e380075caca504f510139d
 guild/.pi/packs/bare/skills/bare-bare-skill/SKILL.md  df11a847f7d3d3bd306d2e973affe0e806adacddce196c05a78247e2822511d2
 guild/.pi/packs/full/package.json  a589173dba78626024aaf25cc0e39c288704203213f8e9c2d4fb97cb3e64f1e4

@@ -410,7 +410,8 @@ impl VaultFrontmatter {
     /// # Errors
     ///
     /// A content error naming the key and the path when one of skillwright's
-    /// keys is the wrong shape, or the note sets `name` or `build`.
+    /// keys is the wrong shape, the note sets `name` or `build`, or a
+    /// component sets `naming` in a harness block.
     pub fn take_from(
         fields: &mut Map<String, Value>,
         path: &Path,
@@ -552,8 +553,9 @@ fn is_claude_arguments(value: &Value) -> bool {
 }
 
 /// Refuses a key no note may set: a [`crate::keys::Shape::Refused`] row
-/// (`name`), `build`, which only the root file reads, and `packs` in a
-/// harness block.
+/// (`name`), `build`, which only the root file reads, `packs` in a harness
+/// block, and `naming` in a component's harness block (spec section 8
+/// rule 6).
 fn refuse_keys(
     fields: &Map<String, Value>,
     ours: &Map<String, Value>,
@@ -577,6 +579,24 @@ fn refuse_keys(
                 "`{}` is a removed key: {}",
                 removed.join("`, `"),
                 crate::settings::PACKS_REFUSAL
+            ),
+        ));
+    }
+    if matches!(
+        kind,
+        EntityKind::Skill | EntityKind::Agent | EntityKind::Command
+    ) && let Some(harness) = crate::keys::HARNESS_BLOCKS.iter().find(|harness| {
+        [ours, fields].iter().any(|map| {
+            map.get(**harness)
+                .and_then(Value::as_object)
+                .is_some_and(|block| block.contains_key(crate::harness::manifest::NAMING_KEY))
+        })
+    }) {
+        return Err(CoreError::wrong_kind(
+            path,
+            format!(
+                "`{harness}.naming` is refused on a {}: set it on the plugin",
+                kind.as_str()
             ),
         ));
     }

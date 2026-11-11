@@ -334,11 +334,9 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
   `<plugin>-<skill>`, in its folder, its frontmatter `name` and every call and
   mention of it. A plugin's value overrides the marketplace's. Claude and Codex
   name skills by plugin already, so `claude.naming` and `codex.naming` warn.
-  - `pi: {naming: bare}` publishes Pi skills under their bare names. `prefixed`
-    is Pi's default.
-  - `cursor: {naming: prefixed}` publishes Cursor skills as `<plugin>-<skill>`.
-    `bare` is Cursor's default.
-  - A prefixed name must be unique on its harness. A skill of another plugin
-    that publishes under the same name stops the build with `path-collision`.
-    On Pi, where names are prefixed by default, two bare skills of one name stop
-    it too. On Cursor, two bare skills of one name still build.
+  - `prefixed` is the default on both. `cursor: {naming: bare}` or
+    `pi: {naming: bare}` publishes that harness's skills under their bare
+    names. A component's own `naming` is refused: set it on the plugin.
+  - Two skills of different plugins that publish under one name on a harness
+    stop the build with `path-collision`, bare or prefixed. A prefixed name
+    over 64 characters is refused.

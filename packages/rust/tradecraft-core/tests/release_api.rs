@@ -379,7 +379,7 @@ fn a_block_key_goes_where_its_harness_reads_it_or_warns() {
     let report = build(&vfs);
     let cursor = text_at(
         &vfs,
-        "/vault/dist/house/.cursor-plugin/packs/tools/skills/review/SKILL.md",
+        "/vault/dist/house/.cursor-plugin/packs/tools/skills/tools-review/SKILL.md",
     );
     assert!(cursor.contains("team: core"), "{cursor}");
     assert!(!text_at(&vfs, CLAUDE_REVIEW).contains("team: core"));
@@ -770,19 +770,9 @@ fn cursor_skill(vfs: &dyn Vfs, plugin: &str, folder: &str) -> Option<String> {
 }
 
 #[test]
-fn cursor_names_are_bare_by_default() {
+fn cursor_names_are_prefixed_by_default() {
     let vfs = cursor_vault();
     build_root(&vfs, request().config).unwrap();
-    for plugin in ["p1", "p2"] {
-        let hello = cursor_skill(&vfs, plugin, "hello").expect(plugin);
-        assert!(hello.contains("name: hello\n"), "{hello}");
-    }
-}
-
-#[test]
-fn a_marketplace_can_prefix_cursor_names() {
-    let vfs = cursor_vault();
-    build_root(&vfs, cursor_block("naming", "prefixed")).unwrap();
     for plugin in ["p1", "p2"] {
         let hello = cursor_skill(&vfs, plugin, &format!("{plugin}-hello")).expect(plugin);
         assert!(
@@ -790,6 +780,16 @@ fn a_marketplace_can_prefix_cursor_names() {
             "{hello}"
         );
         assert!(cursor_skill(&vfs, plugin, "hello").is_none(), "{plugin}");
+    }
+}
+
+#[test]
+fn a_marketplace_s_bare_cursor_naming_refuses_duplicates() {
+    let vfs = cursor_vault();
+    let err = build_root(&vfs, cursor_block("naming", "bare")).unwrap_err();
+    assert!(err.contains("path-collision"), "{err}");
+    for part in ["plugin `p1`", "plugin `p2`", "`cursor.naming: bare`"] {
+        assert!(err.contains(part), "{part}: {err}");
     }
 }
 
@@ -803,7 +803,7 @@ fn a_plugin_s_cursor_naming_overrides_the_marketplace_s() {
 
     let vfs = cursor_vault();
     plugin_note(&vfs, "p2", "cursor:\n  naming: prefixed\n");
-    build_root(&vfs, request().config).unwrap();
+    build_root(&vfs, cursor_block("naming", "bare")).unwrap();
     assert!(cursor_skill(&vfs, "p1", "hello").is_some());
     assert!(cursor_skill(&vfs, "p2", "p2-hello").is_some());
 }
@@ -815,7 +815,7 @@ fn a_body_names_the_prefixed_cursor_skill() {
     build_root(&vfs, request().config).unwrap();
     let lead = cursor_skill(&vfs, "p2", "p2-lead").unwrap();
     assert!(
-        lead.contains("Run `/p2-hello`. See `p2-hello`. Then `/hello`."),
+        lead.contains("Run `/p2-hello`. See `p2-hello`. Then `/p1-hello`."),
         "{lead}"
     );
     let claude = text_at(
@@ -893,21 +893,20 @@ fn a_prefixed_cursor_name_that_meets_a_bare_one_is_refused() {
             ("plugins/x/skills/p-hello/p-hello.md", &note("p-hello", "")),
         ],
     );
-    plugin_note(&vfs, "p", "cursor:\n  naming: prefixed\n");
+    plugin_note(&vfs, "x", "cursor:\n  naming: bare\n");
     let err = build_root(&vfs, request().config).unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
     for part in [
         "plugins/p/skills/hello/hello.md",
         "plugins/x/skills/p-hello/p-hello.md",
         "`p-hello`",
-        "cursor.naming",
+        "unless `cursor.naming: bare` is set",
     ] {
         assert!(err.contains(part), "{part}: {err}");
     }
 }
 
-/// Only Cursor admits these skills, so Pi's default prefix cannot be what
-/// refuses them.
+/// Only Cursor admits these skills, so Pi cannot be what refuses them.
 #[test]
 fn two_prefixed_cursor_names_that_meet_are_refused() {
     let vfs = root_vault(
@@ -923,18 +922,15 @@ fn two_prefixed_cursor_names_that_meet_are_refused() {
             ),
         ],
     );
-    let err = build_root(&vfs, cursor_block("naming", "prefixed")).unwrap_err();
+    let err = build_root(&vfs, request().config).unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
-    for part in [
-        "Cursor skill `a-b-c`",
-        "`cursor.naming: prefixed` on the marketplace",
-    ] {
+    for part in ["Cursor skill `a-b-c`", "plugin `a`", "plugin `a-b`"] {
         assert!(err.contains(part), "{part}: {err}");
     }
 }
 
-/// The bare plugin sorts first, so the rule must read the second plugin's
-/// naming too.
+/// The prefixed plugin sorts last, so the rule must read the second
+/// plugin's naming too.
 #[test]
 fn a_prefixed_cursor_name_after_a_bare_one_is_refused() {
     let vfs = root_vault(
@@ -950,26 +946,24 @@ fn a_prefixed_cursor_name_after_a_bare_one_is_refused() {
             ),
         ],
     );
-    plugin_note(&vfs, "z", "cursor:\n  naming: prefixed\n");
+    plugin_note(&vfs, "a", "cursor:\n  naming: bare\n");
     let err = build_root(&vfs, request().config).unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
-    for part in [
-        "Cursor skill `z-hello`",
-        "`cursor.naming: prefixed` on plugin `z`",
-    ] {
-        assert!(err.contains(part), "{part}: {err}");
-    }
+    assert!(err.contains("Cursor skill `z-hello`"), "{err}");
 }
 
 #[test]
-fn bare_cursor_duplicates_stay_allowed_beside_a_prefixed_plugin() {
+fn bare_cursor_duplicates_are_refused() {
     let vfs = cursor_vault();
     add(&vfs, "plugins/p3/skills/hello/hello.md", &note("hello", ""));
-    plugin_note(&vfs, "p2", "cursor:\n  naming: prefixed\n");
-    build_root(&vfs, request().config).unwrap();
-    assert!(cursor_skill(&vfs, "p1", "hello").is_some());
-    assert!(cursor_skill(&vfs, "p3", "hello").is_some());
-    assert!(cursor_skill(&vfs, "p2", "p2-hello").is_some());
+    for plugin in ["p1", "p3"] {
+        plugin_note(&vfs, plugin, "cursor:\n  naming: bare\n");
+    }
+    let err = build_root(&vfs, request().config).unwrap_err();
+    assert!(err.contains("path-collision"), "{err}");
+    for part in ["plugin `p1`", "plugin `p3`", "`cursor.naming: bare`"] {
+        assert!(err.contains(part), "{part}: {err}");
+    }
 }
 
 #[test]
@@ -994,7 +988,7 @@ fn an_explicit_default_naming_records_nothing() {
     plugin_note(
         &vfs,
         "p1",
-        "pi:\n  naming: prefixed\ncursor:\n  naming: bare\n",
+        "pi:\n  naming: prefixed\ncursor:\n  naming: prefixed\n",
     );
     let mut config = request().config;
     config.name = Some("house".to_owned());

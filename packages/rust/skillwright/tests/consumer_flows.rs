@@ -333,7 +333,7 @@ fn a_word_flag_ships_as_a_boolean_to_every_harness() {
     let dir = vault(ROOT, &[("p/p.md", PLUGIN), ("p/skills/s/s.md", skill)]);
     let ran = sw(&dir.path(), &["build", "--yes"]);
     assert_eq!(ran.code, 0, "{}", ran.text);
-    let cursor = built(&dir, ".cursor-plugin/packs/p/skills/s/SKILL.md");
+    let cursor = built(&dir, ".cursor-plugin/packs/p/skills/p-s/SKILL.md");
     assert!(
         cursor.contains("disable-model-invocation: true"),
         "{cursor}"
@@ -533,7 +533,10 @@ fn an_escaped_call_in_a_code_span_ships_as_the_notation() {
             "/tools:create-pr",
         ),
         (".agents/packs/tools/skills/create-pr", "$tools:create-pr"),
-        (".cursor-plugin/packs/tools/skills/create-pr", "/create-pr"),
+        (
+            ".cursor-plugin/packs/tools/skills/tools-create-pr",
+            "/tools-create-pr",
+        ),
         (
             ".pi/packs/tools/skills/tools-create-pr",
             "/skill:tools-create-pr",
