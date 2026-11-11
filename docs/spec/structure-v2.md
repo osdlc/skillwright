@@ -905,7 +905,10 @@ flowchart LR
    plugin-root path to a component a pack does not contain is an error for
    that harness (Appendix A5).
 4. A build replaces only what skillwright owns in `dist/<m>/`: each harness's
-   packs folder and the manifests it writes.
+   packs folder and the manifests it writes. When one of those paths holds
+   files this build does not produce and none carries skillwright's
+   generated-file marker, `build` and `check` refuse (`foreign-tree`) and
+   write nothing.
 5. Output is never written inside `marketplaces/`, and it is never read as
    source. Since only `marketplaces/` is read, this needs no check.
 6. The build stops at `dist/`. Copying the output to a repository root,

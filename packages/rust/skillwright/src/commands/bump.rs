@@ -1,6 +1,5 @@
 //! `skillwright bump` — raise a `version` by a semver level, rewriting only
-//! that frontmatter key (or, for a note that uses the nested `sw:` block,
-//! only that block). Contract: spec section 10 rule 4.
+//! that frontmatter key. Contract: spec section 10 rule 4.
 //!
 //! Three forms. `bump <p>` raises the plugin `<p>` in `<p>.md`; when plugins
 //! in two marketplaces share the name, `--marketplace` picks one. `bump
