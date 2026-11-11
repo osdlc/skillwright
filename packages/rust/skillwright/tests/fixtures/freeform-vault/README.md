@@ -13,7 +13,7 @@ marketplaces/
 │     ├─ references/tone.md        shared by the plugin, reached by wikilink
 │     ├─ skills/
 │     │  ├─ review/review.md       narrowed to one target · foreign `license` key
-│     │  ├─ secret/secret.md       `targets: []` — publishes nowhere
+│     │  ├─ secret/secret.md       `targets: []` — built for no harness
 │     │  └─ bundled/               owns a directory · embeds, links, dangles
 │     │     ├─ bundled.md
 │     │     └─ scripts/run.sh      the execute bit travels
@@ -42,5 +42,5 @@ the shared reference `tone`, and names `house-rules`, which nothing answers
 to.
 
 **Frontmatter the model does not own.** `review` carries `license: MIT`, which
-survives a round trip untouched and is re-emitted at publish. skillwright's own
+survives a round trip untouched and is re-emitted by the build. skillwright's own
 keys are what gets stripped, not everything unrecognised.

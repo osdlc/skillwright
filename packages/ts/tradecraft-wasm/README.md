@@ -56,7 +56,7 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 
 | Export                        | Does                                                                            |
 | ----------------------------- | ------------------------------------------------------------------------------- |
-| `discoverComponents(vfs, request)` | Scans a vault's `marketplaces/` for publishable notes, and reports the notes it could not read. |
+| `discoverComponents(vfs, request)` | Scans a vault's `marketplaces/` for components, and reports the notes it could not read. |
 | `loadMarketplace(vfs, request)` | Loads one marketplace of the vault and writes nothing: its plugins, and each component's description, targets, harness blocks, calls and files. The rendered bodies do not cross. |
 | `buildVault(vfs, request)`    | Renders every marketplace into its `<vault_root>/dist/<m>/`, and writes all of them or none. `mode: 'check'` reports drift and writes nothing. |
 | `exportSkills(vfs, request)`  | Renders one marketplace into `<vault_root>/dist/<m>/`, one tree per agent. `mode: 'check'` reports drift and writes nothing. |

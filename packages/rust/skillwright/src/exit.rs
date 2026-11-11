@@ -6,7 +6,7 @@
 //! | 1 | The run completed and something was refused, or `check` found drift |
 //! | 2 | A run-level blocker. Nothing was attempted |
 //! | 3 | Usage error |
-//! | 4 | No configuration, and none supplied |
+//! | 4 | No vault root at or above the working directory, and no `--vault` |
 //!
 //! The helpers below each write their message to the caller's error
 //! sink — never stdout — and return the matching code, so a command's
@@ -23,7 +23,7 @@ pub const EXIT_REFUSED: i32 = 1;
 pub const EXIT_BLOCKED: i32 = 2;
 /// Usage error.
 pub const EXIT_USAGE: i32 = 3;
-/// No configuration, and none supplied.
+/// No vault root at or above the working directory, and no `--vault`.
 pub const EXIT_NO_CONFIG: i32 = 4;
 
 /// A run-level blocker: nothing was attempted, the report is empty.
@@ -32,13 +32,14 @@ pub fn blocked(err: &mut dyn Write, message: &str) -> i32 {
     EXIT_BLOCKED
 }
 
-/// An unknown flag, a missing argument, an unknown target.
+/// An unknown command or flag, a missing argument, or a write off a terminal
+/// without `--yes`.
 pub fn usage_error(err: &mut dyn Write, message: &str) -> i32 {
     let _ = writeln!(err, "usage error: {message}");
     EXIT_USAGE
 }
 
-/// No configuration found, and none supplied on the command line.
+/// No vault root found, and no `--vault` given.
 pub fn no_config(err: &mut dyn Write, message: &str) -> i32 {
     let _ = writeln!(err, "{message}");
     EXIT_NO_CONFIG

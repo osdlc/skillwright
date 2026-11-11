@@ -84,16 +84,16 @@ parsed model, and `the_emit_is_deterministic` asserts it.
 | `#[serde(flatten)]` field | the target's fields, spliced in |
 
 Optionality follows direction. A request is deserialized, so anything serde can
-default is optional — `mode?: PublishMode`. A response is serialized, so an
+default is optional — `mode?: ExportMode`. A response is serialized, so an
 `Option<T>` is `T | null` unless the field carries `skip_serializing_if`, which
 makes it optional instead. A struct reached in both directions is emitted once
 when it spells the same both ways, and refused when it does not.
 
-A wire wrapper is named for the type it flattens: `WireExportRequest` splices
-`ExportRequest`, and the wire it describes is an export
-request. A wrapper that flattens nothing loses a leading `Wire`, which is how
-`WireDiscoverRequest` becomes `DiscoverRequest`. Any other struct keeps its own
-name, whatever it flattens.
+A wire wrapper is named for the type it flattens, so its TypeScript name is
+that type's. A wrapper that flattens nothing loses a leading `Wire`, which is
+how `WireDiscoverRequest` becomes `DiscoverRequest` and `WireMarketplace`
+becomes `Marketplace`. Any other struct keeps its own name, whatever it
+flattens.
 
 ## What it refuses
 

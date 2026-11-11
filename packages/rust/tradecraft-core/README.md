@@ -118,8 +118,8 @@ assert!(vfs.exists(Path::new("/vault/dist/house/.claude-plugin/marketplace.json"
 ```
 
 The steps inside are public if a host needs them apart: `read_layout`,
-`classify`, `read_root_file`, `parse_root_file`, `dist_dir` and `resolve_path` for any other path read
-from the root file.
+`read_root_file`, `parse_root_file` and `dist_dir`. `resolve_path` resolves a
+path a user typed, as a shell would.
 
 ## What it covers
 
@@ -185,14 +185,13 @@ breaking change:
   `DiscoveredComponent`, `DiscoveryWarning`, `SkippedNote`, `LoadedVault`,
   `VaultMarketplace`, `Layout`). Read them by
   field. `DiscoveryWarning::new` builds a line for a host's own report.
-- The enums (`CoreError`, `ExportUnit`, `UnitStatus`, `StaleKind`,
-  `ReasonToken`). A `match` on one needs a `_` arm. The status enums have
-  `as_str`, the word they serialize as.
-  `CoreError::variant_name` names an error's variant, and
-  `CoreError::reason_token` gives the reason token a host reports for it.
+- The enums (`CoreError`, `ExportUnit`, `UnitStatus`, `StaleKind`). A
+  `match` on one needs a `_` arm. `UnitStatus` and `StaleKind` have `as_str`,
+  the word they serialize as. `CoreError::variant_name` names an error's
+  variant.
 
-`FieldValue` (for `FieldEdit::set`) is re-exported, so a consumer needs no
-`yaml-splice` dependency of its own.
+`read_version` and `set_version` read and edit a note's `version` and keep
+every other byte.
 
 ## Platforms
 
