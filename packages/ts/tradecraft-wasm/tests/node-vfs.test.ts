@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -69,7 +77,7 @@ describe('stat', () => {
   })
 })
 
-/** A repository holding its vault at `src/`, the out root being the repository. */
+/** A repository holding its vault at `src/`. */
 function repoWithVault(name: string): { repo: string; vault: string } {
   const repo = path.join(tmp, name)
   const vault = path.join(repo, 'src')
@@ -88,26 +96,19 @@ function repoWithVault(name: string): { repo: string; vault: string } {
   return { repo, vault }
 }
 
-function build(vfs: Vfs, repo: string, vault: string) {
+function build(vfs: Vfs, vault: string) {
   return exportSkills(vfs, {
     vault_root: vault,
-    out_root: repo,
     mode: 'build',
     config: { name: 'core' },
   })
 }
 
-describe('export at a repository root that holds its vault', () => {
-  test('builds when the host can see links', () => {
-    const { repo, vault } = repoWithVault('repo')
-    expect(build(createNodeVfs(), repo, vault).changed).toBe(true)
-  })
-
-  test('is refused when a tree it replaces is a link into marketplaces/', () => {
-    const { repo, vault } = repoWithVault('linked')
-    symlinkSync(path.join(vault, 'marketplaces/house'), path.join(repo, '.claude-plugin'))
-
-    expect(() => build(createNodeVfs(), repo, vault)).toThrow(/which a build reads as source/)
+describe('export', () => {
+  test("builds into the vault's dist/<m>/ when the host can see links", () => {
+    const { vault } = repoWithVault('repo')
+    expect(build(createNodeVfs(), vault).changed).toBe(true)
+    expect(existsSync(path.join(vault, 'dist/house/.claude-plugin/marketplace.json'))).toBe(true)
   })
 })
 
@@ -136,34 +137,29 @@ describe('a host whose link answers fail', () => {
   const failure = (code: string) => Object.assign(new Error(`host failed: ${code}`), { code })
 
   test('a realpath error other than a missing path refuses the check', () => {
-    const { repo, vault } = repoWithVault('denied')
+    const { vault } = repoWithVault('denied')
     const base = createNodeVfs()
     const denied: Vfs = {
       ...base,
       realpath: (p: string) => {
-        if (p.includes('locked')) throw failure('EACCES')
+        if (p.endsWith('review.md')) throw failure('EACCES')
         return base.realpath(p)
       },
     }
-    expect(() => build(denied, path.join(repo, 'locked'), vault)).toThrow(
-      /cannot tell where this path leads/,
-    )
+    expect(() => build(denied, vault)).toThrow(/cannot tell where this path leads/)
   })
 
   test('a realpath answer that is not absolute refuses the check', () => {
-    const { repo, vault } = repoWithVault('relative')
-    mkdirSync(path.join(repo, 'elsewhere'))
+    const { vault } = repoWithVault('relative')
     const base = createNodeVfs()
     const relative: Vfs = {
       ...base,
       realpath: (p: string) => {
         const answer = base.realpath(p)
-        return p.includes('elsewhere') ? path.relative('/', answer) : answer
+        return p.endsWith('review.md') ? path.relative('/', answer) : answer
       },
     }
-    expect(() => build(relative, path.join(repo, 'elsewhere'), vault)).toThrow(
-      /realpath must return an absolute path/,
-    )
+    expect(() => build(relative, vault)).toThrow(/realpath must return an absolute path/)
   })
 
   test('isSymlink that throws counts as a link, checked by its real path', () => {

@@ -81,7 +81,10 @@ fn the_cli_and_a_host_request_render_identical_trees() {
     let copy = dir.path().join("freeform-vault");
     copy_tree(&vault, &copy);
     let cli_out = copy.join("dist/acme");
-    let host_out = dir.path().join("host");
+    // The host builds its own copy: a build always writes `<root>/dist/<m>/`.
+    let host_copy = dir.path().join("host/freeform-vault");
+    copy_tree(&vault, &host_copy);
+    let host_out = host_copy.join("dist/acme");
 
     let argv: Vec<String> = ["build", "--marketplace", "acme", "--yes"]
         .iter()
@@ -102,7 +105,7 @@ fn the_cli_and_a_host_request_render_identical_trees() {
         // The root file sets nothing, so the host asks the core for the
         // same defaults.
         let config = RootFile::default().to_config();
-        let mut request = ExportRequest::new(vault.clone(), host_out.clone(), config);
+        let mut request = ExportRequest::new(host_copy.clone(), config);
         request.marketplace = Some("acme".to_string());
         request
     })

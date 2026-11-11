@@ -376,29 +376,16 @@ export interface DiscoveryWarning {
  */
 export interface ExportRequest {
   /**
-   * Absolute path to the vault root. Discovery, compilation, and the
-   * provenance markers all resolve against it.
+   * Absolute path to the vault root. Discovery, compilation, the output
+   * folder and the provenance markers all resolve against it.
    */
   vault_root: string;
 
   /**
    * Which marketplace this build renders, by folder. `None` names the
-   * vault's only one; a vault holding more than one is refused rather than
-   * flattened, because one `out_root` holds one marketplace.
+   * vault's only one; a vault holding more than one is refused.
    */
   marketplace?: string;
-
-  /**
-   * The marketplace directory: one directory holding one marketplace,
-   * which every harness this build renders reads from. A host writes
-   * `<root>/dist/<m>/` ([`crate::paths::dist_dir`]).
-   *
-   * Each harness owns exactly one top-level entry under it, its own tree,
-   * and nothing else here is read, compared or replaced. So this may be a
-   * directory holding other things, including a repository's own root,
-   * which is what lets a repository be its own marketplace.
-   */
-  out_root: string;
 
   /**
    * Which harnesses to render, by name. Empty means every harness this
@@ -412,6 +399,13 @@ export interface ExportRequest {
 
   /** Build, or check. Absent on the wire means [`ExportMode::Build`]. */
   mode?: ExportMode;
+
+  /**
+   * Check only: the built marketplace to compare the render with, in place
+   * of `<root>/dist/<m>/`. `bump --changed-since` compares with a baseline
+   * this way. A build refuses it: a build always writes `dist/<m>/`.
+   */
+  compare_with?: string;
 
   /** The marketplace's own identity and per-plugin overrides. */
   config: MarketplaceConfig;

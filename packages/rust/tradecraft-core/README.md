@@ -58,14 +58,14 @@ for (path, text) in [
     vfs.write_file(path, text.as_bytes())?;
 }
 
-// The vault, the output folder and the marketplace config are required.
-// The other fields start empty; set any of them on the value.
-let mut request = ExportRequest::new("/vault", "/market", MarketplaceConfig::default());
+// The vault and the marketplace config are required. The other fields
+// start empty; set any of them on the value. A build writes `dist/<m>/`.
+let mut request = ExportRequest::new("/vault", MarketplaceConfig::default());
 request.harnesses.insert("claude".to_owned());
 let report = export_skills(&vfs, &request)?;
 assert!(report.changed);
 assert!(vfs.exists(Path::new(
-    "/market/.claude-plugin/packs/tools/skills/code-review/SKILL.md"
+    "/vault/dist/house/.claude-plugin/packs/tools/skills/code-review/SKILL.md"
 )));
 # Ok::<(), tradecraft_core::CoreError>(())
 ```
@@ -85,7 +85,9 @@ The CLI does the same steps.
    home directory; the library reads no environment.
 3. `loaded.export_request(&marketplace, mode)` is the build or check of one
    marketplace into `<root>/dist/<m>/`. Pass it to
-   `export_skills(&vfs, &request)`.
+   `export_skills(&vfs, &request)`. To build several marketplaces with
+   nothing written unless all succeed, call `plan_in` for each, then
+   `ExportPlan::write` for each.
 
 ```rust
 use std::path::Path;
@@ -161,18 +163,6 @@ replaced on every build. `HarnessProfile::owned_paths` names them, for example
 `.agents/packs/` and `.agents/plugins/marketplace.json`. A build leaves
 everything else in `.agents/`, `.pi/`, `.claude-plugin/` and `.cursor-plugin/`
 alone.
-
-## Launcher path
-
-A plugin may ship a launcher script as an asset and name it in
-`MarketplaceConfig::launcher_path` (`build.launcher_path` in
-`skillwright.md`), for example `bin/tool`. A skill body calls it as
-`${CLAUDE_PLUGIN_ROOT}/bin/tool`. The Claude Code tree keeps that call, since
-Claude Code expands the variable. The Codex, Cursor and Pi trees get the
-launcher's path relative to the skill's folder instead, such as
-`../../bin/tool` from `skills/<name>/SKILL.md`, the way a skill names its own
-files. With no `launcher_path`, nothing is rewritten. The build adds no `PATH`
-fallback: a skill that needs a tool on `PATH` says so in its own text.
 
 ## WebAssembly
 

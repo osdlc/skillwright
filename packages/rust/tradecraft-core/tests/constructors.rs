@@ -38,12 +38,14 @@ fn an_export_request_builds_from_a_default_config() {
     let mut overrides = PluginOverrides::default();
     overrides.identity.version = Some("1.0.0".to_owned());
     config.plugins.insert("tools".to_owned(), overrides);
-    let mut request = ExportRequest::new("/vault", "/market", config);
+    let mut request = ExportRequest::new("/vault", config);
     assert_eq!(request.mode, ExportMode::Build);
     request.harnesses.insert("claude".to_owned());
     let report = export_skills(&vfs, &request).unwrap();
     assert!(report.changed);
-    assert!(vfs.exists(Path::new("/market/.claude-plugin/marketplace.json")));
+    assert!(vfs.exists(Path::new(
+        "/vault/dist/house/.claude-plugin/marketplace.json"
+    )));
 }
 
 #[test]
@@ -106,7 +108,7 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
 
     let mut config = MarketplaceConfig::default();
     config.name = Some("house".to_owned());
-    let request = ExportRequest::new("/vault", "/market", config);
+    let request = ExportRequest::new("/vault", config);
     let report = export_skills(&vfs, &request).unwrap();
     assert_eq!(report.mode, ExportMode::Build);
     for unit in &report.units {

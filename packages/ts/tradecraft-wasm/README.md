@@ -34,8 +34,7 @@ import { createNodeVfs, exportSkills } from '@osdlc/tradecraft-wasm'
 const vfs = createNodeVfs()
 const report = exportSkills(vfs, {
   vault_root: '/work/vault', // absolute: holds skillwright.md and marketplaces/
-  marketplace: 'house', // marketplaces/house/
-  out_root: '/work/vault/dist/house', // absolute
+  marketplace: 'house', // marketplaces/house/, built into dist/house/
   mode: 'build', // 'check' reports drift and writes nothing
   config: {},
 })
@@ -51,7 +50,7 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 | ----------------------------- | ------------------------------------------------------------------------------- |
 | `discoverComponents(vfs, request)` | Scans a vault's `marketplaces/` for publishable notes, and reports the notes it could not read. |
 | `loadMarketplace(vfs, request)` | Loads one marketplace of the vault as a model and writes nothing. |
-| `exportSkills(vfs, request)`  | Renders the vault into one marketplace tree per agent. `mode: 'check'` reports drift and writes nothing. |
+| `exportSkills(vfs, request)`  | Renders a marketplace into `<vault_root>/dist/<m>/`, one tree per agent. `mode: 'check'` reports drift and writes nothing. |
 | `knownTargets()`              | The target names the core accepts.                                              |
 | `createNodeVfs(options?)`     | The `Vfs` over `node:fs`.                                                       |
 | `toCorePath`, `toHostPath`    | Convert a host path to the core's `/` form and back. They matter on Windows.    |

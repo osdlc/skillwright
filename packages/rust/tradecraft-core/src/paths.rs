@@ -131,7 +131,7 @@ pub struct VaultMarketplace {
     /// `<root>/marketplaces/<m>/<m>.md`.
     pub note: PathBuf,
     /// Where a build writes it: `<root>/dist/<m>/`.
-    pub out_root: PathBuf,
+    pub dist: PathBuf,
 }
 
 /// A vault as a build needs it: its root file and its marketplaces.
@@ -160,17 +160,13 @@ impl LoadedVault {
         self.marketplaces.iter().find(|m| m.name == name)
     }
 
-    /// The build or check of `marketplace` into its `dist/<m>/` folder.
+    /// The build or check of `marketplace`, against its `dist/<m>/` folder.
     pub fn export_request(
         &self,
         marketplace: &VaultMarketplace,
         mode: ExportMode,
     ) -> ExportRequest {
-        let mut request = ExportRequest::new(
-            self.root.clone(),
-            marketplace.out_root.clone(),
-            self.inputs.config.clone(),
-        );
+        let mut request = ExportRequest::new(self.root.clone(), self.inputs.config.clone());
         request.marketplace = Some(marketplace.name.clone());
         request.mode = mode;
         request.harnesses.clone_from(&self.inputs.harnesses);
@@ -242,7 +238,7 @@ pub fn load_vault(
             name: name.clone(),
             dir,
             note,
-            out_root: dist_dir(root, name),
+            dist: dist_dir(root, name),
         });
     }
     let inputs = marketplace_inputs(&settings, root, home);
@@ -301,9 +297,9 @@ mod tests {
         assert_eq!(names, ["house", "shop"]);
         let house = loaded.marketplace("house").unwrap();
         assert_eq!(house.note, Path::new("/v/marketplaces/house/house.md"));
-        assert_eq!(house.out_root, Path::new("/v/dist/house"));
+        assert_eq!(house.dist, Path::new("/v/dist/house"));
         let request = loaded.export_request(house, ExportMode::Build);
-        assert_eq!(request.out_root, Path::new("/v/dist/house"));
+        assert_eq!(request.marketplace.as_deref(), Some("house"));
         assert_eq!(request.vault_root, Path::new("/v"));
     }
 

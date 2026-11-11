@@ -169,9 +169,9 @@ struct WireExportRequest {
     request: ExportRequest,
 }
 
-/// Render the vault into one marketplace tree per harness — and, per the request's
-/// `mode`, either swap the drifted roots into place or report the drift and
-/// write nothing.
+/// Render the vault into one marketplace tree per harness under
+/// `<vault_root>/dist/<m>/`, and, per the request's `mode`, either swap the
+/// drifted roots into place or report the drift and write nothing.
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a serialized
 /// `ExportRequest`. Returns a serialized `ExportReport`.
@@ -190,9 +190,9 @@ struct WireExportRequest {
 ///
 /// # Errors
 ///
-/// * `Refused` — an output root inside `marketplaces/`, `empty-marketplace`
-///   (a marketplace with no plugin), and everything discovery and
-///   compilation refuse.
+/// * `Refused` — `empty-marketplace` (a marketplace with no plugin),
+///   `compare-with` on a build, and everything discovery and compilation
+///   refuse.
 /// * `SwapFailed` — the commit failed part-way; the message says what the
 ///   rollback restored. Its own `.name`, because a host has to be able to tell
 ///   "nothing happened" from "something happened and was undone".
@@ -288,18 +288,17 @@ mod tests {
         let wire: WireExportRequest = serde_json::from_str(
             r#"{
                 "vault_root": "/vault",
-                "out_root": "/out",
                 "config": { "name": "market" }
             }"#,
         )
         .unwrap();
 
         assert_eq!(wire.request.vault_root, PathBuf::from("/vault"));
-        assert_eq!(wire.request.out_root, PathBuf::from("/out"));
         assert_eq!(wire.request.config.name.as_deref(), Some("market"));
         // Every absence, at its documented default.
         assert_eq!(wire.request.mode, ExportMode::Build);
         assert_eq!(wire.request.marketplace, None);
+        assert_eq!(wire.request.compare_with, None);
         assert!(wire.request.config.plugins.is_empty());
     }
 
@@ -309,7 +308,6 @@ mod tests {
             r#"{
                 "vault_root": "/vault",
                 "marketplace": "house",
-                "out_root": "/vault/dist/house",
                 "mode": "check",
                 "config": { "name": "market" }
             }"#,

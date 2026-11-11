@@ -90,10 +90,10 @@ pub use discover::{
 };
 pub use error::*;
 pub use export::{
-    ExportMode, ExportReport, ExportRequest, ExportUnit, HookFileSpec, MarketplaceConfig,
-    PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_in, export_skills,
-    marketplace_manifest_path, owned_paths, packs_path, plugin_manifest_path, published_skill_name,
-    rendered_skill_call,
+    ExportMode, ExportPlan, ExportReport, ExportRequest, ExportUnit, HookFileSpec,
+    MarketplaceConfig, PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_in,
+    export_skills, marketplace_manifest_path, owned_paths, packs_path, plan_in,
+    plugin_manifest_path, published_skill_name, rendered_skill_call,
 };
 pub use field_edit::{read_version, set_version};
 pub use frontmatter::{

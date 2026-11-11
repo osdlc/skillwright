@@ -13,10 +13,10 @@ use tradecraft_core::{
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/hooks-file");
 
 const PACKS: [(&str, &str); 4] = [
-    ("claude", "/market/.claude-plugin/packs/core"),
-    ("codex", "/market/.agents/packs/core"),
-    ("cursor", "/market/.cursor-plugin/packs/core"),
-    ("pi", "/market/.pi/packs/core"),
+    ("claude", "/vault/dist/house/.claude-plugin/packs/core"),
+    ("codex", "/vault/dist/house/.agents/packs/core"),
+    ("cursor", "/vault/dist/house/.cursor-plugin/packs/core"),
+    ("pi", "/vault/dist/house/.pi/packs/core"),
 ];
 
 fn write(vfs: &dyn Vfs, path: &str, content: &str) {
@@ -47,7 +47,7 @@ fn vault(hooks: &str) -> MemVfs {
 }
 
 fn request(mode: ExportMode) -> ExportRequest {
-    let mut request = ExportRequest::new("/vault", "/market", MarketplaceConfig::default());
+    let mut request = ExportRequest::new("/vault", MarketplaceConfig::default());
     request.mode = mode;
     let mut hooks = HookFileSpec::new("/project/plugin/hooks.json", "plugin/hooks.json");
     hooks.plugin = Some("core".to_owned());
@@ -135,7 +135,7 @@ fn an_unknown_placeholder_fails_the_build() {
     assert!(err.contains("plugin/hooks.json"), "{err}");
     assert!(err.contains("hooks.Stop[0].hooks[0]"), "{err}");
     assert!(err.contains("{{foo}}"), "{err}");
-    assert!(!vfs.exists(Path::new("/market/.claude-plugin")));
+    assert!(!vfs.exists(Path::new("/vault/dist/house/.claude-plugin")));
 }
 
 #[test]
@@ -275,7 +275,7 @@ fn an_unknown_event_fails_the_build() {
         .to_string();
     assert!(err.contains("plugin/hooks.json"), "{err}");
     assert!(err.contains("OnBoot"), "{err}");
-    assert!(!vfs.exists(Path::new("/market/.claude-plugin")));
+    assert!(!vfs.exists(Path::new("/vault/dist/house/.claude-plugin")));
 }
 
 #[test]

@@ -24,9 +24,9 @@ use serde::Serialize;
 use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
     BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit, NativeVfs,
-    PatchScheme, ROOT_FILE, UnitStatus, Vfs, discover_components, export_skills, is_vault_root,
-    next_version, owned_paths, packs_path, parse_semver, plugin_manifest_path, read_version,
-    set_version,
+    PatchScheme, ROOT_FILE, UnitStatus, Vfs, discover_components, dist_dir, export_skills,
+    is_vault_root, next_version, owned_paths, packs_path, parse_semver, plugin_manifest_path,
+    read_version, set_version,
 };
 
 use crate::ctx::CommandContext;
@@ -465,7 +465,7 @@ fn run_changed(
     since: &str,
     scheme: PatchScheme,
 ) -> i32 {
-    // Each request's `out_root` becomes its baseline once that resolves.
+    // Each request compares with its baseline once that resolves.
     let requests: Vec<(&str, ExportRequest)> = run
         .marketplaces()
         .iter()
@@ -484,7 +484,7 @@ fn run_changed(
     let now = utc_now_stamp();
     let mut rows: Vec<Row> = Vec::new();
     for (market, mut request) in requests {
-        request.out_root = baseline.root(market);
+        request.compare_with = Some(baseline.root(market));
         let mut roots: Vec<&str> = match owned_paths(&request) {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
             Err(err) => return blocked(ctx.err, normalize_thrown_reason(&err.to_string())),
@@ -566,7 +566,12 @@ fn run_changed(
             let row = if !verdict.drift {
                 Row::plain(name, &planned, "unchanged", None)
             } else if !changed {
-                let skip = Skip::of(&request.out_root, &verdict.roots, name, &planned.current);
+                let skip = Skip::of(
+                    &baseline.root(market),
+                    &verdict.roots,
+                    name,
+                    &planned.current,
+                );
                 let mut row = Row::plain(name, &planned, "skipped", Some(skip.token().to_owned()));
                 row.explain = Some(skip.text());
                 row
@@ -799,7 +804,7 @@ impl Baseline {
     fn root(&self, market: &str) -> PathBuf {
         match self {
             Baseline::Dir(dir) => dir.clone(),
-            Baseline::Built(built) => built.out.join(market),
+            Baseline::Built(built) => dist_dir(&built.base_root, market),
         }
     }
 
@@ -839,12 +844,13 @@ const GUARD_FILE: &str = "guard";
 static NEXT_CLAIM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// A git ref's build inputs checked out into a temporary folder, and built
-/// there: each marketplace into `out/<m>/`. No worktree is registered and
-/// the repository's own index is not touched.
+/// there: each marketplace into the checkout's `dist/<m>/`. No worktree is
+/// registered and the repository's own index is not touched.
 struct BuiltRef {
     temp: PathBuf,
     checkout: PathBuf,
-    out: PathBuf,
+    /// The ref's vault root inside `checkout`.
+    base_root: PathBuf,
     lock_path: PathBuf,
     /// Held until drop, so a concurrent run's prune leaves this one alone.
     _lock: std::fs::File,
@@ -907,7 +913,7 @@ impl BuiltRef {
         let temp = temp.canonicalize().unwrap_or(temp);
         let built = BuiltRef {
             checkout: temp.join("checkout"),
-            out: temp.join("out"),
+            base_root: temp.join("checkout").join(&vault_rel),
             temp,
             lock_path,
             _lock: lock,
@@ -931,8 +937,8 @@ impl BuiltRef {
             Err(err) => return fail(ctx, format!("checking it out failed: {err}")),
         };
 
-        let base_root = built.checkout.join(&vault_rel);
-        if !is_vault_root(&NativeVfs, &base_root) {
+        let base_root = &built.base_root;
+        if !is_vault_root(&NativeVfs, base_root) {
             return fail(
                 ctx,
                 format!(
@@ -949,7 +955,7 @@ impl BuiltRef {
         // The ref's refusal names the temporary checkout, so it is said as
         // this flag's failure.
         let mut said: Vec<u8> = Vec::new();
-        let base_run = match resolve_at(&base_root, None, &mut said) {
+        let base_run = match resolve_at(base_root, None, &mut said) {
             Ok(base_run) => base_run,
             Err(_) => {
                 let said = String::from_utf8_lossy(&said);
@@ -962,7 +968,7 @@ impl BuiltRef {
             return fail(ctx, format!("checking it out failed: {err}"));
         }
         for market in run.marketplaces() {
-            let out = built.out.join(&market.name);
+            let out = dist_dir(base_root, &market.name);
             // A marketplace the ref does not hold has an empty baseline.
             let Some(base_market) = base_run.loaded.marketplace(&market.name) else {
                 if let Err(err) = std::fs::create_dir_all(&out) {
@@ -970,10 +976,9 @@ impl BuiltRef {
                 }
                 continue;
             };
-            let mut request = base_run
+            let request = base_run
                 .loaded
                 .export_request(base_market, ExportMode::Build);
-            request.out_root = out.clone();
             if let Err(err) = export_skills(&NativeVfs, &request) {
                 return fail(
                     ctx,

@@ -16,7 +16,7 @@ const REVIEW: &str = "/vault/marketplaces/house/plugins/tools/skills/review/revi
 const OTHER: &str = "/vault/marketplaces/house/plugins/other/other.md";
 const DRAFT: &str = "/vault/marketplaces/house/plugins/other/skills/draft/draft.md";
 
-const CLAUDE_REVIEW: &str = "/market/.claude-plugin/packs/tools/skills/review/SKILL.md";
+const CLAUDE_REVIEW: &str = "/vault/dist/house/.claude-plugin/packs/tools/skills/review/SKILL.md";
 
 fn write(vfs: &MemVfs, path: &str, content: &str) {
     vfs.insert(path, content).unwrap();
@@ -52,7 +52,7 @@ fn vault(market: &str, tools: &str, review: &str) -> MemVfs {
 }
 
 fn request() -> ExportRequest {
-    let mut request = ExportRequest::new("/vault", "/market", MarketplaceConfig::default());
+    let mut request = ExportRequest::new("/vault", MarketplaceConfig::default());
     request.marketplace = Some("house".to_owned());
     request
 }
@@ -77,7 +77,7 @@ fn a_bare_note_needs_no_prefix_and_none_of_its_keys_reach_a_harness() {
     let skill = text_at(&vfs, CLAUDE_REVIEW);
     assert!(!skill.contains("targets"), "{skill}");
     assert!(!vfs.exists(Path::new(
-        "/market/.agents/packs/tools/skills/review/SKILL.md"
+        "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md"
     )));
 }
 
@@ -115,7 +115,7 @@ fn an_unknown_key_on_a_container_warns_and_goes_nowhere() {
     assert!(
         !text_at(
             &vfs,
-            "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json"
+            "/vault/dist/house/.claude-plugin/packs/tools/.claude-plugin/plugin.json"
         )
         .contains("flavour")
     );
@@ -132,12 +132,12 @@ fn repository_and_homepage_reach_every_manifest_with_the_field() {
 
     let claude = json_at(
         &vfs,
-        "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
+        "/vault/dist/house/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
     );
     assert_eq!(claude["repository"], "https://example.com/house");
     assert_eq!(claude["homepage"], "https://example.com");
 
-    let pi = json_at(&vfs, "/market/.pi/packs/tools/package.json");
+    let pi = json_at(&vfs, "/vault/dist/house/.pi/packs/tools/package.json");
     assert_eq!(pi["repository"], "https://example.com/house");
     assert_eq!(pi["homepage"], "https://example.com");
 }
@@ -152,12 +152,12 @@ fn a_plugins_own_link_outranks_the_one_it_would_inherit() {
     build(&vfs);
     let tools = json_at(
         &vfs,
-        "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
+        "/vault/dist/house/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
     );
     assert_eq!(tools["repository"], "https://example.com/tools");
     let other = json_at(
         &vfs,
-        "/market/.claude-plugin/packs/other/.claude-plugin/plugin.json",
+        "/vault/dist/house/.claude-plugin/packs/other/.claude-plugin/plugin.json",
     );
     assert_eq!(other["repository"], "https://example.com/house");
 }
@@ -169,7 +169,7 @@ fn a_license_inherits_down_to_the_skill_and_stops_at_a_plugins_own() {
     assert!(text_at(&vfs, CLAUDE_REVIEW).contains("license: MIT"));
     let draft = text_at(
         &vfs,
-        "/market/.claude-plugin/packs/other/skills/draft/SKILL.md",
+        "/vault/dist/house/.claude-plugin/packs/other/skills/draft/SKILL.md",
     );
     assert!(draft.contains("license: Apache-2.0"), "{draft}");
 }
@@ -190,10 +190,10 @@ fn targets_inherit_and_a_nearer_list_replaces_them() {
     );
     build(&vfs);
     assert!(vfs.exists(Path::new(
-        "/market/.agents/packs/tools/skills/review/SKILL.md"
+        "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md"
     )));
     assert!(!vfs.exists(Path::new(
-        "/market/.agents/packs/other/skills/draft/SKILL.md"
+        "/vault/dist/house/.agents/packs/other/skills/draft/SKILL.md"
     )));
 }
 
@@ -204,10 +204,10 @@ fn the_root_files_targets_reach_a_plugin_that_sets_none() {
     narrowed.config.targets = Some(vec!["claude".to_owned()]);
     export_skills(&vfs, &narrowed).unwrap();
     assert!(vfs.exists(Path::new(
-        "/market/.agents/packs/tools/skills/review/SKILL.md"
+        "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md"
     )));
     assert!(!vfs.exists(Path::new(
-        "/market/.agents/packs/other/skills/draft/SKILL.md"
+        "/vault/dist/house/.agents/packs/other/skills/draft/SKILL.md"
     )));
 }
 
@@ -216,7 +216,10 @@ fn a_harness_block_reaches_that_harness_alone() {
     let vfs = vault("", "", "claude:\n  permissionMode: plan\n");
     build(&vfs);
     assert!(text_at(&vfs, CLAUDE_REVIEW).contains("permissionMode: plan"));
-    let codex = text_at(&vfs, "/market/.agents/packs/tools/skills/review/SKILL.md");
+    let codex = text_at(
+        &vfs,
+        "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md",
+    );
     assert!(!codex.contains("permissionMode"), "{codex}");
 }
 
@@ -228,7 +231,7 @@ fn a_plugin_block_merges_over_the_generated_entry_and_manifest() {
         "",
     );
     build(&vfs);
-    let market = json_at(&vfs, "/market/.agents/plugins/marketplace.json");
+    let market = json_at(&vfs, "/vault/dist/house/.agents/plugins/marketplace.json");
     let tools = entry(&market, "tools");
     assert_eq!(tools["policy"]["installation"], "INSTALLED_BY_DEFAULT");
     assert_eq!(tools["category"], "Writing");
@@ -243,13 +246,13 @@ fn a_marketplace_block_inherits_key_by_key_and_keeps_its_own_top_keys() {
         "",
     );
     build(&vfs);
-    let market = json_at(&vfs, "/market/.agents/plugins/marketplace.json");
+    let market = json_at(&vfs, "/vault/dist/house/.agents/plugins/marketplace.json");
     assert_eq!(market["interface"]["displayName"], "The House");
     assert_eq!(entry(&market, "tools")["category"], "Mine");
     assert_eq!(entry(&market, "other")["category"], "Shared");
     let pack = text_at(
         &vfs,
-        "/market/.agents/packs/other/.codex-plugin/plugin.json",
+        "/vault/dist/house/.agents/packs/other/.codex-plugin/plugin.json",
     );
     assert!(!pack.contains("The House"), "{pack}");
 }
@@ -291,7 +294,10 @@ fn a_container_block_never_sets_a_members_name_or_description() {
     assert!(skill.contains("name: review"), "{skill}");
     assert!(skill.contains("description: Use review."), "{skill}");
     assert!(!skill.contains("Claude's plugin blurb"), "{skill}");
-    let command = text_at(&vfs, "/market/.claude-plugin/packs/tools/commands/ship.md");
+    let command = text_at(
+        &vfs,
+        "/vault/dist/house/.claude-plugin/packs/tools/commands/ship.md",
+    );
     assert!(!command.contains("Claude's plugin blurb"), "{command}");
     assert!(!command.contains("renamed"), "{command}");
 
@@ -299,7 +305,7 @@ fn a_container_block_never_sets_a_members_name_or_description() {
     // reads still travels.
     let manifest = json_at(
         &vfs,
-        "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
+        "/vault/dist/house/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
     );
     assert_eq!(manifest["description"], "Claude's plugin blurb.");
     assert!(skill.contains("model: opus"), "{skill}");
@@ -323,12 +329,12 @@ fn a_marketplace_block_never_sets_a_plugins_identity() {
     build(&vfs);
     let cursor = json_at(
         &vfs,
-        "/market/.cursor-plugin/packs/tools/.cursor-plugin/plugin.json",
+        "/vault/dist/house/.cursor-plugin/packs/tools/.cursor-plugin/plugin.json",
     );
     assert_eq!(cursor["description"], "Use tools.");
     let codex = json_at(
         &vfs,
-        "/market/.agents/packs/tools/.codex-plugin/plugin.json",
+        "/vault/dist/house/.agents/packs/tools/.codex-plugin/plugin.json",
     );
     assert_eq!(codex["version"], "1.0.0");
 }
@@ -345,11 +351,11 @@ fn a_marketplace_is_matched_and_published_by_its_folder() {
         ),
     );
     build(&vfs);
-    let market = json_at(&vfs, "/market/.claude-plugin/marketplace.json");
+    let market = json_at(&vfs, "/vault/dist/house/.claude-plugin/marketplace.json");
     assert_eq!(market["name"], "house");
     assert!(text_at(&vfs, CLAUDE_REVIEW).contains("license: ISC"));
     assert!(!vfs.exists(Path::new(
-        "/market/.agents/packs/tools/skills/review/SKILL.md"
+        "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md"
     )));
 }
 
@@ -373,7 +379,7 @@ fn a_block_key_goes_where_its_harness_reads_it_or_warns() {
     let report = build(&vfs);
     let cursor = text_at(
         &vfs,
-        "/market/.cursor-plugin/packs/tools/skills/review/SKILL.md",
+        "/vault/dist/house/.cursor-plugin/packs/tools/skills/review/SKILL.md",
     );
     assert!(cursor.contains("team: core"), "{cursor}");
     assert!(!text_at(&vfs, CLAUDE_REVIEW).contains("team: core"));
@@ -434,7 +440,7 @@ fn a_blank_author_is_unset_in_a_note_as_in_the_root_file() {
     build(&vfs);
     let manifest = json_at(
         &vfs,
-        "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
+        "/vault/dist/house/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
     );
     // Unset everywhere, and `owner` is not inherited, so there is none.
     assert!(manifest.get("author").is_none(), "{manifest}");
@@ -518,19 +524,19 @@ fn a_marketplace_note_outranks_the_root_file_for_every_identity_key() {
     assert!(!vfs.exists(Path::new(CLAUDE_REVIEW)));
     let codex = json_at(
         &vfs,
-        "/market/.agents/packs/tools/.codex-plugin/plugin.json",
+        "/vault/dist/house/.agents/packs/tools/.codex-plugin/plugin.json",
     );
     assert_eq!(codex["license"], "ISC");
     assert_eq!(codex["author"], serde_json::json!({"name": "Note Author"}));
     let cursor = json_at(
         &vfs,
-        "/market/.cursor-plugin/packs/tools/.cursor-plugin/plugin.json",
+        "/vault/dist/house/.cursor-plugin/packs/tools/.cursor-plugin/plugin.json",
     );
     assert_eq!(cursor["repository"], "https://note.example/repo");
     assert_eq!(cursor["homepage"], "https://note.example");
-    let codex_index = json_at(&vfs, "/market/.agents/plugins/marketplace.json");
+    let codex_index = json_at(&vfs, "/vault/dist/house/.agents/plugins/marketplace.json");
     assert_eq!(codex_index["interface"]["displayName"], "Note House");
-    let cursor_index = json_at(&vfs, "/market/.cursor-plugin/marketplace.json");
+    let cursor_index = json_at(&vfs, "/vault/dist/house/.cursor-plugin/marketplace.json");
     assert_eq!(cursor_index["owner"], serde_json::json!({"name": "acme"}));
     assert_eq!(cursor_index["metadata"]["version"], "2.0.0");
 }
@@ -582,8 +588,8 @@ fn claude_and_cursor_entries_list_category_and_tags() {
     let vfs = vault("", "category: Testing\nkeywords: [lint, ci]\n", "");
     build(&vfs);
     for manifest in [
-        "/market/.claude-plugin/marketplace.json",
-        "/market/.cursor-plugin/marketplace.json",
+        "/vault/dist/house/.claude-plugin/marketplace.json",
+        "/vault/dist/house/.cursor-plugin/marketplace.json",
     ] {
         let manifest = json_at(&vfs, manifest);
         let tools = entry(&manifest, "tools");
@@ -672,12 +678,12 @@ fn pi_prefixes_a_skill_with_its_plugin_unless_told_bare() {
     let vfs = pi_vault();
     build_root(&vfs, request().config).unwrap();
     assert!(vfs.exists(Path::new(
-        "/market/.pi/packs/tools/skills/tools-review/SKILL.md"
+        "/vault/dist/house/.pi/packs/tools/skills/tools-review/SKILL.md"
     )));
 
     let vfs = pi_vault();
     build_root(&vfs, pi_block("naming", "bare")).unwrap();
-    let pack = "/market/.pi/packs/tools/skills";
+    let pack = "/vault/dist/house/.pi/packs/tools/skills";
     assert!(vfs.exists(Path::new(&format!("{pack}/review/SKILL.md"))));
     let lead = text_at(&vfs, &format!("{pack}/lead/SKILL.md"));
     assert!(lead.contains("name: lead"), "{lead}");
@@ -690,7 +696,9 @@ fn a_plugin_can_ask_for_bare_names_alone_and_a_bad_value_is_refused() {
     let vfs = pi_vault();
     plugin_note(&vfs, "tools", "pi:\n  naming: bare\n");
     build_root(&vfs, request().config).unwrap();
-    assert!(vfs.exists(Path::new("/market/.pi/packs/tools/skills/review/SKILL.md")));
+    assert!(vfs.exists(Path::new(
+        "/vault/dist/house/.pi/packs/tools/skills/review/SKILL.md"
+    )));
 
     let vfs = pi_vault();
     let err = build_root(&vfs, pi_block("naming", "short")).unwrap_err();
@@ -754,7 +762,7 @@ fn plugin_note(vfs: &MemVfs, plugin: &str, extra: &str) {
     );
 }
 
-const CURSOR_PACKS: &str = "/market/.cursor-plugin/packs";
+const CURSOR_PACKS: &str = "/vault/dist/house/.cursor-plugin/packs";
 
 fn cursor_skill(vfs: &dyn Vfs, plugin: &str, folder: &str) -> Option<String> {
     let path = format!("{CURSOR_PACKS}/{plugin}/skills/{folder}/SKILL.md");
@@ -810,9 +818,15 @@ fn a_body_names_the_prefixed_cursor_skill() {
         lead.contains("Run `/p2-hello`. See `p2-hello`. Then `/hello`."),
         "{lead}"
     );
-    let claude = text_at(&vfs, "/market/.claude-plugin/packs/p2/skills/lead/SKILL.md");
+    let claude = text_at(
+        &vfs,
+        "/vault/dist/house/.claude-plugin/packs/p2/skills/lead/SKILL.md",
+    );
     assert!(claude.contains("Run `/p2:hello`."), "{claude}");
-    let codex = text_at(&vfs, "/market/.agents/packs/p2/skills/lead/SKILL.md");
+    let codex = text_at(
+        &vfs,
+        "/vault/dist/house/.agents/packs/p2/skills/lead/SKILL.md",
+    );
     assert!(codex.contains("p2:hello"), "{codex}");
 }
 
@@ -865,7 +879,7 @@ fn cursor_naming_never_reaches_a_manifest() {
         &format!("{CURSOR_PACKS}/p2/.cursor-plugin/plugin.json"),
     );
     assert!(manifest.get("naming").is_none(), "{manifest}");
-    let catalog = json_at(&vfs, "/market/.cursor-plugin/marketplace.json");
+    let catalog = json_at(&vfs, "/vault/dist/house/.cursor-plugin/marketplace.json");
     assert!(catalog.get("naming").is_none(), "{catalog}");
     assert!(entry(&catalog, "p2").get("naming").is_none(), "{catalog}");
 }
@@ -998,12 +1012,10 @@ fn an_explicit_default_naming_records_nothing() {
 
 // --- pack location, once resolved ------------------------------------------
 
-/// A build of the vault's one marketplace into `out`, configured by
-/// `root_file`.
-fn build_to(vfs: &dyn Vfs, out: &str, root_file: &str) -> Result<ExportReport, String> {
+/// A build of the vault's one marketplace, configured by `root_file`.
+fn build_with(vfs: &dyn Vfs, root_file: &str) -> Result<ExportReport, String> {
     let mut request = request();
     request.marketplace = None;
-    request.out_root = PathBuf::from(out);
     request.config = tradecraft_core::settings::root_file_config(root_file).unwrap();
     export_skills(vfs, &request).map_err(|err| err.to_string())
 }
@@ -1040,7 +1052,7 @@ fn every_spelling_of_a_link_to_what_never_ships_is_refused_alike() {
                 ("plugins/rev/skills/a/docs/in a.png", "png"),
             ],
         );
-        let err = build_to(&vfs, "/market", "---\n---\n").unwrap_err();
+        let err = build_with(&vfs, "---\n---\n").unwrap_err();
         assert!(err.contains("excluded-link"), "{body}: {err}");
         assert!(err.contains(&format!("links to {target}")), "{body}: {err}");
     }
@@ -1059,7 +1071,7 @@ fn a_link_that_is_not_one_or_that_ships_is_left_alone() {
             ("plugins/rev/skills/a/docs/in.md", "# In\n"),
         ],
     );
-    build_to(&vfs, "/market", "---\n---\n").unwrap();
+    build_with(&vfs, "---\n---\n").unwrap();
 }
 
 #[test]
@@ -1082,7 +1094,7 @@ fn a_skill_or_plugin_named_for_a_never_ship_folder_links_inside_itself() {
             ("plugins/rev/skills/tests/references/r.md", "# R\n"),
         ],
     );
-    build_to(&vfs, "/market", "---\n---\n").unwrap();
+    build_with(&vfs, "---\n---\n").unwrap();
 }
 
 const USE_IT: &str = "---\ndescription: Use it.\n---\n\nbody\n";
@@ -1108,7 +1120,7 @@ fn a_link_to_a_component_named_for_a_never_ship_folder_builds() {
             ("plugins/rev/skills/tests/tests.md", USE_IT),
         ],
     );
-    build_to(&vfs, "/market", "---\n---\n").unwrap();
+    build_with(&vfs, "---\n---\n").unwrap();
 }
 
 // --- marketplaces and the root file ---------------------------------------
@@ -1131,25 +1143,17 @@ fn a_build_of_one_marketplace_ships_only_that_marketplace() {
     build.marketplace = Some("b".to_owned());
     export_skills(&vfs, &build).unwrap();
     assert!(vfs.exists(Path::new(
-        "/market/.claude-plugin/packs/own/.claude-plugin/plugin.json"
+        "/vault/dist/b/.claude-plugin/packs/own/.claude-plugin/plugin.json"
     )));
-    assert!(!vfs.exists(Path::new("/market/.claude-plugin/packs/rev")));
+    assert!(!vfs.exists(Path::new("/vault/dist/b/.claude-plugin/packs/rev")));
 
     build.marketplace = Some("a".to_owned());
-    build.out_root = PathBuf::from("/market-a");
     export_skills(&vfs, &build).unwrap();
-    let manifest = "/market-a/.claude-plugin/packs/rev/.claude-plugin/plugin.json";
+    let manifest = "/vault/dist/a/.claude-plugin/packs/rev/.claude-plugin/plugin.json";
     assert!(vfs.exists(Path::new(manifest)));
     // The marketplace note's `targets` reach the plugin.
-    let codex = "/market-a/.agents/plugins/marketplace.json";
+    let codex = "/vault/dist/a/.agents/plugins/marketplace.json";
     assert!(!vfs.exists(Path::new(codex)) || !text_at(&vfs, codex).contains("rev"));
-}
-
-#[test]
-fn an_output_inside_marketplaces_is_refused() {
-    let vfs = root_vault("---\n---\n", &[TOOL_SKILL]);
-    let err = build_to(&vfs, "/vault/marketplaces/house/plugins/rev", "---\n---\n").unwrap_err();
-    assert!(err.contains("unsafe-root"), "{err}");
 }
 
 /// A marketplace named `skillwright` holds a note named `skillwright.md`,
@@ -1171,7 +1175,7 @@ fn a_marketplace_named_skillwright_loads_and_builds() {
         tradecraft_core::load_vault(&vfs, Path::new("/w"), None, Path::new("/home")).unwrap();
     let found = loaded.marketplace("skillwright").unwrap();
     assert_eq!(found.dir, PathBuf::from(market));
-    assert_eq!(found.out_root, PathBuf::from("/w/dist/skillwright"));
+    assert_eq!(found.dist, PathBuf::from("/w/dist/skillwright"));
     let request = loaded.export_request(found, ExportMode::Build);
     export_skills(&vfs, &request).unwrap();
     assert!(vfs.exists(Path::new(
@@ -1202,26 +1206,33 @@ fn plugin_manifests(vfs: &dyn Vfs, plugin: &str) -> [(&'static str, serde_json::
             "claude",
             json_at(
                 vfs,
-                &format!("/market/.claude-plugin/packs/{plugin}/.claude-plugin/plugin.json"),
+                &format!(
+                    "/vault/dist/house/.claude-plugin/packs/{plugin}/.claude-plugin/plugin.json"
+                ),
             ),
         ),
         (
             "codex",
             json_at(
                 vfs,
-                &format!("/market/.agents/packs/{plugin}/.codex-plugin/plugin.json"),
+                &format!("/vault/dist/house/.agents/packs/{plugin}/.codex-plugin/plugin.json"),
             ),
         ),
         (
             "cursor",
             json_at(
                 vfs,
-                &format!("/market/.cursor-plugin/packs/{plugin}/.cursor-plugin/plugin.json"),
+                &format!(
+                    "/vault/dist/house/.cursor-plugin/packs/{plugin}/.cursor-plugin/plugin.json"
+                ),
             ),
         ),
         (
             "pi",
-            json_at(vfs, &format!("/market/.pi/packs/{plugin}/package.json")),
+            json_at(
+                vfs,
+                &format!("/vault/dist/house/.pi/packs/{plugin}/package.json"),
+            ),
         ),
     ]
 }

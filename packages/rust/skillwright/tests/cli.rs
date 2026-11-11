@@ -697,6 +697,120 @@ fn a_two_marketplace_build_writes_two_trees_and_marketplace_builds_one() {
     assert_eq!(checked.code, 0, "{}", checked.stderr);
 }
 
+/// A build renders and checks every marketplace before it writes any, so a
+/// failure in the second leaves the first unwritten.
+#[test]
+fn a_build_that_fails_in_one_marketplace_writes_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("vault");
+    write_all(&vault, &[("skillwright.md", "---\n---\n")]);
+    for (m, p) in [("acme", "tools"), ("labs", "spike")] {
+        for (rel, text) in plugin_files(m, p) {
+            write_all(&vault, &[(&rel, &text)]);
+        }
+    }
+    write_all(
+        &vault,
+        &[(
+            "marketplaces/labs/plugins/spike/skills/broken/broken.md",
+            "---\ndescription: [unclosed\n---\nBody.\n",
+        )],
+    );
+
+    let all = run(&["build", "--yes"], &vault);
+    assert_ne!(all.code, 0, "{}", all.stderr);
+    assert!(all.stderr.contains("broken.md"), "{}", all.stderr);
+    assert!(all.stderr.contains("Nothing was written"), "{}", all.stderr);
+    assert!(
+        !vault.join("dist").exists(),
+        "{:?}",
+        tree(&vault.join("dist"))
+    );
+}
+
+/// A build replaces only each harness's packs folder and the manifests it
+/// writes (section 9 rule 4).
+#[test]
+fn a_file_beside_the_packs_folders_survives_a_build() {
+    let (_dir, vault) = fixture();
+    assert_eq!(run(&["build", "--yes"], &vault).code, 0);
+    let market = vault.join("dist/acme");
+    write_all(
+        &market,
+        &[
+            ("README.md", "mine\n"),
+            (".claude-plugin/notes.txt", "mine too\n"),
+        ],
+    );
+
+    let rebuilt = run(&["build", "--yes"], &vault);
+    assert_eq!(rebuilt.code, 0, "{}", rebuilt.stderr);
+    assert_eq!(
+        fs::read_to_string(market.join("README.md")).unwrap(),
+        "mine\n"
+    );
+    assert_eq!(
+        fs::read_to_string(market.join(".claude-plugin/notes.txt")).unwrap(),
+        "mine too\n"
+    );
+    let checked = run(&["check"], &vault);
+    assert_eq!(checked.code, 0, "{}", checked.stdout);
+}
+
+/// A missing `dist/<m>/` is drift (section 9 rule 15).
+#[test]
+fn check_with_no_dist_is_drift() {
+    let (_dir, vault) = fixture();
+    let checked = run(&["check"], &vault);
+    assert_eq!(checked.code, 1, "{}{}", checked.stdout, checked.stderr);
+    assert!(checked.stdout.contains("drift"), "{}", checked.stdout);
+    assert!(!vault.join("dist").exists());
+}
+
+/// A hand edit inside a pack is drift, and `check` leaves it there.
+#[test]
+fn check_reports_a_hand_edit_inside_a_pack() {
+    let (_dir, vault) = fixture();
+    assert_eq!(run(&["build", "--yes"], &vault).code, 0);
+    let skill = vault.join("dist/acme/.agents/packs/tools/skills/review/SKILL.md");
+    fs::write(&skill, "hand-edited\n").unwrap();
+
+    let checked = run(&["check"], &vault);
+    assert_eq!(checked.code, 1, "{}{}", checked.stdout, checked.stderr);
+    assert!(
+        checked.stdout.contains("codex/tools  drift"),
+        "{}",
+        checked.stdout
+    );
+    assert_eq!(fs::read_to_string(&skill).unwrap(), "hand-edited\n");
+}
+
+/// A skill whose `targets` name one harness ships in that harness's pack
+/// alone.
+#[test]
+fn a_skill_targeting_claude_is_only_in_the_claude_pack() {
+    let (_dir, vault) = fixture();
+    write_all(
+        &vault,
+        &[(
+            "marketplaces/acme/plugins/tools/skills/solo/solo.md",
+            "---\ndescription: Claude only.\ntargets: [claude]\n---\nBody.\n",
+        )],
+    );
+    let built = run(&["build", "--yes"], &vault);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    let solo: Vec<PathBuf> = tree(&vault.join("dist/acme"))
+        .into_iter()
+        .filter(|path| path.to_string_lossy().contains("solo"))
+        .collect();
+    assert_eq!(
+        solo,
+        [PathBuf::from(
+            ".claude-plugin/packs/tools/skills/solo/SKILL.md"
+        )]
+    );
+}
+
 #[test]
 fn a_build_off_a_tty_without_yes_is_a_usage_error_not_a_silent_write() {
     let (dir, vault) = fixture();

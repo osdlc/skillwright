@@ -29,12 +29,10 @@ try {
   )
   writeFileSync(join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
   writeFileSync(join(folder, 'review.md'), '---\ndescription: Reviews a diff.\n---\n\n# Review\n')
-  const out = join(root, 'project')
-  mkdirSync(out)
+  const out = join(vault, 'dist/house')
 
   const report = exportSkills(createNodeVfs(), {
     vault_root: vault,
-    out_root: out,
     mode: 'build',
     config: { name: 'house' },
   })
@@ -45,7 +43,6 @@ try {
     () =>
       exportSkills(createNodeVfs(), {
         vault_root: join(root, 'missing'),
-        out_root: out,
         mode: 'build',
         config: { name: 'house' },
       }),
