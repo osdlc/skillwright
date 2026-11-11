@@ -133,15 +133,18 @@ and `assets/` folders, and relative paths resolve from the skill's folder
    of that kind. Frontmatter never decides kind, plugin or marketplace.
 3. Each marketplace folder must hold `<m>.md`, and each plugin folder `<p>.md`.
    A missing note is an error that names the path it expects.
-4. A note's `name`, when set, must equal its folder's name, or it is refused.
-   Without it, the name is the folder's name.
+4. The folder's name is the note's name. The build writes it as the `name`
+   each harness reads, such as the `name` in `SKILL.md`. Authors do not write
+   `name`. A `name` key that equals the folder's name is accepted, so a copied
+   `SKILL.md` still works; any other value is refused.
 5. A name is lowercase words joined by hyphens, at most 64 characters.
 6. Names are unique within a plugin, across all kinds. A skill and a command
    with one name in one plugin are refused, naming both. The same name in two
    plugins, or two marketplaces, is allowed.
-7. A component is a note with a `description`, or a `name` alone. A skill,
-   command or agent with a `name` and no `description` is an error that
-   `build` and `check` report.
+7. Every note at a component position is a component. A skill, command or
+   agent needs a `description`, because harnesses use it to pick the
+   component. A missing `description` is an error that `build` and `check`
+   report.
 8. A component exists only inside a plugin, and a plugin only inside a
    marketplace. A `skills/`, `plugins/` or other kind folder anywhere else is
    an error (section 11).
