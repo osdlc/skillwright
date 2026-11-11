@@ -18,7 +18,9 @@ API:
 - `ReasonToken`, `reason_token()`, `CoreError::Conflict` and `CoreError::SkillNotFound` are removed.
 - `RootFile` holds `defaults: SharedDefaults` and `build`. `MarketplaceFields`, `parse_marketplace_note` and `VaultMarketplace::fields` are removed. `BuildSettings` loses `out`, `namespace`, `launcher_path`, `destinations`, `scan_locations`, `assets`, `hooks`, `exclude` and `patterns`; each is now a refused key.
 - `ExportRequest` loses `out_root`, `skills_root`, `namespace`, `assets` and `hooks`, and gains `compare_with` for a check. `LoadRequest` and `DiscoverRequest` lose the same input fields. `ExportRequest` and `LoadRequest` refuse unknown keys. `HookSetting`, `HookFileSpec`, `AssetSetting`, `AssetSpec`, `DestinationSetting` and `FolderPatterns` are removed.
-- `export_in` is split into `plan_in`, which writes nothing, and `ExportPlan::write`.
+- `export_in` is removed. Call `plan_in`, which writes nothing, then `ExportPlan::write`.
+- `discover_roster` is removed. `DiscoveryWarning::is_error` no longer counts `path-collision`: a collision is always a refusal.
+- `projection::project_agent` is removed: no pack holds an agent. The projection functions take only the four harnesses' runtime names, `claude-code`, `codex-cli`, `cursor` and `pi`.
 - `EntityKind::Hook` is removed, with hook notes: `Plugin::hooks`, `Component::source` and `DiscoveredComponent::hook`. Hooks come from a plugin's `hooks/hooks.json`.
 - `KindSource`, `ResolvedKind`, `KindHints` and `resolve_kind` are removed, with `DiscoveredComponent::kind_source` and `folder_kind`. The layout alone decides a note's kind.
 - `layout::classify`, `walk::in_plugin_assets`, `folder_assets` and `EXCLUDED_BUNDLE_DIRECTORIES` are removed. `rewrite_sibling_paths` is removed.

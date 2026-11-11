@@ -100,7 +100,7 @@ pub struct LoadedVault {
     /// The marketplaces the load was asked for, by folder name: every one, or
     /// the one named.
     pub marketplaces: Vec<VaultMarketplace>,
-    /// The vault's layout, read once: pass it to [`crate::export_in`] for
+    /// The vault's layout, read once: pass it to [`crate::plan_in`] for
     /// each marketplace.
     pub layout: Layout,
 }

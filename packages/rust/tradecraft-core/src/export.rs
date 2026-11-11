@@ -485,25 +485,12 @@ pub fn packs_path(root: &str) -> Option<&'static str> {
 ///
 /// # Errors
 ///
-/// What [`crate::layout::read_layout`] and [`export_in`] refuse.
+/// What [`crate::layout::read_layout`], [`plan_in`] and
+/// [`ExportPlan::write`] refuse.
 pub fn export_skills(vfs: &dyn Vfs, request: &ExportRequest) -> Result<ExportReport, CoreError> {
     let vault_root = normalize(&request.vault_root);
     let layout = crate::layout::read_layout(vfs, &vault_root)?;
-    export_in(vfs, &layout, request)
-}
-
-/// [`export_skills`] over a layout already read: [`plan_in`], then
-/// [`ExportPlan::write`].
-///
-/// # Errors
-///
-/// What [`plan_in`] and [`ExportPlan::write`] refuse.
-pub fn export_in(
-    vfs: &dyn Vfs,
-    layout: &Layout,
-    request: &ExportRequest,
-) -> Result<ExportReport, CoreError> {
-    plan_in(vfs, layout, request)?.write(vfs)
+    plan_in(vfs, &layout, request)?.write(vfs)
 }
 
 /// One marketplace rendered and compared with its output folder, with

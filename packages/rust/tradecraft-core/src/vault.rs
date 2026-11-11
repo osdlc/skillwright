@@ -587,8 +587,7 @@ mod tests {
         let note = read_vault_skill(&vfs, &path).unwrap();
         // A dialect that omits every Claude Code extension key, so what is
         // left is the Agent Skills spec's six and nothing else.
-        let files = crate::projection::project_skill(&note.projection, &["antigravity".to_owned()])
-            .unwrap();
+        let files = crate::projection::project_skill(&note.projection, &["pi".to_owned()]).unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         assert_eq!(text.matches("license:").count(), 1, "{text}");

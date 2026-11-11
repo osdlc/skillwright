@@ -353,9 +353,9 @@ impl DiscoveryWarning {
     }
 
     /// Whether a build refuses the note this names, rather than ships it: a
-    /// member with no description, or a path collision.
+    /// member with no description.
     pub fn is_error(&self) -> bool {
-        [MISSING_DESCRIPTION_REASON, PATH_COLLISION_REASON].contains(&self.reason.as_str())
+        self.reason == MISSING_DESCRIPTION_REASON
     }
 }
 
@@ -439,19 +439,6 @@ pub fn discover_components(vfs: &dyn Vfs, vault_root: &Path) -> Result<Discovery
     discover_in(vfs, &layout)
 }
 
-/// [`discover_components`] for a roster: a duplicate name is not an error.
-/// Every component stays, and each note involved gets a `path-collision`
-/// entry in [`DiscoveryReport::warnings`] naming the other party. A host that
-/// builds from the result must refuse on those warnings.
-///
-/// # Errors
-///
-/// As [`discover_components`], less `path-collision`.
-pub fn discover_roster(vfs: &dyn Vfs, vault_root: &Path) -> Result<DiscoveryReport, CoreError> {
-    let layout = crate::layout::read_layout(vfs, vault_root)?;
-    discover_with(vfs, &layout, true)
-}
-
 /// [`discover_components`] over a layout already read.
 ///
 /// # Errors
@@ -460,16 +447,6 @@ pub fn discover_roster(vfs: &dyn Vfs, vault_root: &Path) -> Result<DiscoveryRepo
 pub(crate) fn discover_in(
     vfs: &dyn Vfs,
     layout: &crate::layout::Layout,
-) -> Result<DiscoveryReport, CoreError> {
-    discover_with(vfs, layout, false)
-}
-
-/// [`discover_in`], with `roster` turning each path collision into warnings
-/// instead of a refusal.
-fn discover_with(
-    vfs: &dyn Vfs,
-    layout: &crate::layout::Layout,
-    roster: bool,
 ) -> Result<DiscoveryReport, CoreError> {
     let vault_root = layout.root.as_path();
     let files: Vec<PathBuf> = layout.files.iter().map(|file| file.path.clone()).collect();
@@ -523,8 +500,7 @@ fn discover_with(
         );
         by_key.entry(key).or_default().push(component);
     }
-    // Every note of a duplicate gets one warning, naming all of them.
-    for ((_, plugin, name), group) in by_key.iter().filter(|(_, g)| g.len() > 1) {
+    if let Some(((_, plugin, name), group)) = by_key.iter().find(|(_, g)| g.len() > 1) {
         let paths: Vec<String> = group
             .iter()
             .map(|c| format!("{} {}", c.kind.as_str(), c.vault_relative_path))
@@ -535,16 +511,10 @@ fn discover_with(
             plugin.unwrap_or_default(),
             paths.join(", ")
         );
-        if !roster {
-            return Err(CoreError::refused(PATH_COLLISION_REASON, detail));
-        }
-        for component in group {
-            warnings.push(collision_warning(&component.vault_relative_path, &detail));
-        }
+        return Err(CoreError::refused(PATH_COLLISION_REASON, detail));
     }
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
-    // Keys are unique by the check above, so this order is total (a roster
-    // keeps colliding keys, and then sorts by path too).
+    // Keys are unique by the check above, so this order is total.
     discovered.sort_by(|a, b| {
         (&a.name, a.kind.as_str(), &a.plugin, &a.vault_relative_path).cmp(&(
             &b.name,
@@ -600,15 +570,6 @@ pub fn refuse_undescribed<'a>(paths: impl IntoIterator<Item = &'a str>) -> Resul
             paths.join(", ")
         ),
     ))
-}
-
-/// The warning a roster carries for one note in a path collision.
-fn collision_warning(path: &str, detail: &str) -> DiscoveryWarning {
-    DiscoveryWarning {
-        path: path.to_owned(),
-        reason: PATH_COLLISION_REASON.to_owned(),
-        detail: detail.to_owned(),
-    }
 }
 
 /// Reads the note at `position` into a component, or refuses it.
