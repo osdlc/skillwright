@@ -995,6 +995,19 @@ The PRs this work depended on are done:
 [#140](https://github.com/osdlc/skillwright/pull/140) are closed. v2 itself
 is one PR, built as the six commits of the build order.
 
+### Extras in commits 4 and 5
+
+Changes the build order did not list:
+
+- `build_vault` and `plan_vault` plan every marketplace, then write all of
+  them or none. A failed swap rolls back every marketplace already swapped.
+  A check reports each marketplace, and each refusal in
+  `VaultReport::refused`. The wasm crate exports this as `buildVault`.
+- `loadMarketplace` returns a narrow wire shape of its own (`wire.rs`), not
+  the core's model. Body segments and resolved content do not cross.
+- `Closure::hash` is dropped. Only tests called it, and the core no longer
+  needs `sha2`.
+
 ### Open issues
 
 Issues still open that v2 touches. These are closed and need nothing:

@@ -170,7 +170,8 @@ and `assets/` folders. Relative paths resolve from the skill's folder
    container note is not interpreted and does not ship. It is for the author.
 4. The folder's name is the note's name. The build writes it as the `name`
    each harness reads, such as the `name` in `SKILL.md`. There is no `name`
-   key: a note that sets one is refused, and the error says to delete it.
+   key: a note that sets one, including in a harness block, is refused, and
+   the error says to delete it.
 5. A name follows the Agent Skills `name` rule:
    - lowercase letters `a` to `z`, digits and hyphens;
    - no hyphen at the start or end, and no two hyphens in a row;
@@ -493,12 +494,18 @@ marketplace (rule 8, decision D2).
     |---|---|
     | `${PLUGIN_ROOT}/<path>` | Rewritten (rule 15) |
     | `${CLAUDE_PLUGIN_ROOT}` | An error (rule 22) |
+
+    A link, embed or call inside an HTML comment, `<!-- … -->`, is skipped
+    too. It ships as written, and the leftover check of rule 13 skips it.
 13. After the build, no unescaped `[[` may remain in prose.
     - Write `\[[` to keep the brackets as text: `\[[x]]` is not interpreted
-      and ships as `[[x]]`.
+      and ships as `[[x]]`. `\![[x]]` likewise ships as `![[x]]`.
     - A leftover `[[` is an error that names the file and the text.
     - Code spans and fenced blocks are not checked. Neither is text an escape
       produced.
+    - The build marks escapes and other text internally with the Unicode
+      noncharacters U+FDD0, U+FDD1 and U+FDD2. A Markdown body or an
+      embedded file that holds one is refused (`noncharacter`).
 14. Every error in this section names the linking file, the link as written and
     the rule it broke.
 
@@ -744,7 +751,9 @@ fenced block whose info string comes from its extension (rule 10).
 12. Inside a list item, every line of the block is indented to the item's
     content, so the block stays in the item.
 13. A file that is not valid UTF-8 is binary, and embedding it is refused. A
-    fragment on a non-note file, such as `![[run.sh#main]]`, is refused.
+    fragment on an embed that is not a note, whether a file inlined or an
+    image included, is refused: `![[run.sh#main]]` and `![[logo.png#x]]`
+    both are.
 14. A plain `[[run.sh]]` is not an embed. It stays a file link to the file's
     installed path.
 
@@ -813,10 +822,12 @@ flowchart LR
 
    The keys use the harness's own spelling, so a block holds `displayName`,
    not `display_name`. The manifest, entry and marketplace key lists of each
-   harness are closed; the field reference prints the keys each block accepts
-   (`docs/reference/fields.md`, "Harness blocks"). So a block a component
-   inherits cannot set its `description` or `version`. `name` is not among
-   these keys: section 3 rule 4 refuses it in a harness block too.
+   harness are closed. The field reference lists the keys that stay, per
+   harness, in its "kept" lines (`docs/reference/fields.md`, "Harness
+   blocks"): "Plugin, kept from skills and commands" and "Marketplace, kept
+   from plugins". So a block a component inherits cannot set its
+   `description` or `version`. `name` is not among these keys: section 3
+   rule 4 refuses it in a harness block too.
 5. For an inherited key (rule 1) that a harness reads on a component, the
    build takes the first value in this order:
    1. the note's own harness block;
@@ -914,10 +925,10 @@ flowchart LR
    plugin-root path to a component a pack does not contain is an error for
    that harness (Appendix A5).
 4. A build replaces only what skillwright owns in `dist/<m>/`: each harness's
-   packs folder and the manifests it writes. When one of those paths holds
-   files this build does not produce and none carries skillwright's
-   generated-file marker, `build` and `check` refuse (`foreign-tree`) and
-   write nothing.
+   packs folder and the manifests it writes. When a harness's owned paths
+   hold a file this build does not produce and no file there carries
+   skillwright's generated-file marker, `build` and `check` refuse
+   (`foreign-tree`) and write nothing.
 5. Output is never written inside `marketplaces/`, and it is never read as
    source. Since only `marketplaces/` is read, this needs no check.
 6. The build stops at `dist/`. Copying the output to a repository root,
@@ -1046,6 +1057,11 @@ does not say the command was removed.
 6. `build` and `bump` print what they will write and ask before they write.
    `--yes` skips the question. Without a terminal and without `--yes`, they
    stop with a usage error, exit 3, and write nothing.
+7. The core's build and check requests take a `harnesses` filter; the CLI
+   has no flag for it. The filter narrows the root file's `build.harnesses`
+   and never widens it. A harness the root file does not build is refused
+   (`harness-not-built`). With no list in the root file, every harness is
+   built, so any filter narrows.
 
 ## 11. A vault not in this layout
 
