@@ -1,6 +1,6 @@
 {
   "doc": "spec-v2",
-  "updated": "2026-11-11T05:46:20.679Z",
+  "updated": "2026-11-11T05:53:23.872Z",
   "verdict": "reviewing",
   "comments": [
     {
@@ -1185,7 +1185,54 @@
       "who": {
         "id": "u-bPQvjVPjzsqF",
         "name": "sksizer"
-      }
+      },
+      "replies": [
+        {
+          "id": "c59bbdb5-b386-435f-8b78-44b5aba8d402",
+          "from": "agent",
+          "text": "Done. PR #145 body rewritten to the current state (layout, syntax table, naming, root file, D1-D9, the three open questions, build plan). This page and its answers file are committed (704a342f). @claude review posted: https://github.com/osdlc/skillwright/pull/145#issuecomment-6788188074",
+          "at": "2026-11-11T05:47:13.440Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        },
+        {
+          "id": "bcdb54eae5793dc2a223162c",
+          "from": "reviewer",
+          "text": "could we separate out the implementation notes into a separate file? does it make sense to have that direction or should we allow implementor to make the fixes at this point? either way lets move implementation instructions and tracking information into a separate document so we have separation between spec and execution plan",
+          "at": "2026-11-11T05:52:50.637Z",
+          "sent": "2026-11-11T05:52:50.637Z",
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer"
+          }
+        },
+        {
+          "id": "5dd64993-1e6b-48f7-a656-73e8bd0bfefc",
+          "from": "agent",
+          "text": "Yes, splitting into three docs:\n\n| Doc | Holds |\n|---|---|\n| structure-v2.md | The spec: what v2 does. Open questions stay here. |\n| v2-changes.md (was v2-impact.md) | What changes for v1 users: removed commands and features, what each decision changes, sdlc plugin migration. |\n| v2-plan.md (new) | Execution and tracking: code inventory, open PRs and issues, the six-commit build order, tests, probes, gates. |\n\nOn direction vs latitude, my recommendation: the plan fixes what must hold and in what order (commit order, the tests each commit needs, gates, probes to run first). The code inventory is a starting map, not instructions; the implementor decides how. Line-level \"change X in file Z\" steps get trimmed to the outcome they serve. In progress now.",
+          "at": "2026-11-11T05:53:23.872Z",
+          "revision": 1,
+          "action": "revised",
+          "by": {
+            "model": "claude-opus-5-5",
+            "harness": "claude-code"
+          },
+          "who": {
+            "id": "u-bPQvjVPjzsqF",
+            "name": "sksizer",
+            "agent": true
+          }
+        }
+      ]
     }
   ],
   "choices": {},
@@ -1224,7 +1271,8 @@
     "dc9efc6c-6fc8-437c-9de3-7ac34f604dca": "2026-11-11T05:42:26.630Z",
     "74e104d7-9055-4f8e-a43b-e6cf891d1e6d": "2026-11-11T05:42:35.303Z",
     "cf4b4d1d-df02-4c4f-b342-44772bdf2926": "2026-11-11T05:42:41.449Z",
-    "5cdd0bc1-e73e-45eb-9cdb-e1dddac71d67": "2026-11-11T05:42:52.975Z"
+    "5cdd0bc1-e73e-45eb-9cdb-e1dddac71d67": "2026-11-11T05:42:52.975Z",
+    "c59bbdb5-b386-435f-8b78-44b5aba8d402": "2026-11-11T05:52:50.637Z"
   },
   "settings": {
     "intro": "2026-11-11T05:06:06.614Z"
