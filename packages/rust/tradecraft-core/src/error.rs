@@ -42,10 +42,10 @@ pub enum CoreError {
     Projection(String),
 
     /// The marketplace commit failed part-way through its root swaps. The
-    /// message says what failed and what the rollback restored — the
-    /// destination is back to its pre-build state unless the message says
-    /// otherwise. Its own variant because no other fits: it is not a rail
-    /// refusing and not a plain read failure, and a host has to be able to
+    /// message says what failed and what the rollback restored — `dist/<m>/`
+    /// is back to its pre-build state unless the message says otherwise. Its
+    /// own variant because no other fits: it is not a refusal and not a plain
+    /// read failure, and a host has to be able to
     /// tell "nothing happened" from "something happened and was undone".
     #[error("swap failed: {0}")]
     SwapFailed(String),
@@ -112,7 +112,7 @@ impl CoreError {
 
     /// A refusal message split into the token it leads with and the prose
     /// after it, or `None` when it leads with nothing shaped like a token:
-    /// some rails carry prose alone.
+    /// some refusals carry prose alone.
     pub(crate) fn split_refusal(message: &str) -> Option<(&str, &str)> {
         message.split_once(": ").filter(|(token, _)| {
             !token.is_empty()
