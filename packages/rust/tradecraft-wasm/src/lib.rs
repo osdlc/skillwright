@@ -200,7 +200,7 @@ pub fn export_skills(vfs: JsValue, request_json: &str) -> Result<String, JsValue
 ///
 /// `vfs` is the host's filesystem object; `request_json` is a serialized
 /// `VaultRequest`. Returns a serialized `VaultReport`: one `ExportReport` per
-/// marketplace.
+/// marketplace, and in a check, each marketplace that refused under `refused`.
 ///
 /// Every marketplace is planned before any is written, and a build writes
 /// all of them or none: a failed swap rolls back every marketplace already
@@ -208,8 +208,8 @@ pub fn export_skills(vfs: JsValue, request_json: &str) -> Result<String, JsValue
 ///
 /// # Errors
 ///
-/// As `exportSkills`: the first marketplace's refusal, with nothing written,
-/// or `SwapFailed`.
+/// A build: the first marketplace's refusal, with nothing written, or
+/// `SwapFailed`.
 #[wasm_bindgen(js_name = buildVault)]
 pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;

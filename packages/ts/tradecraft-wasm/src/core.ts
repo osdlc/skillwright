@@ -79,6 +79,7 @@ export type {
   ExportReport,
   ExportUnit,
   Marketplace,
+  MarketplaceRefusal,
   MarketplaceReport,
   Plugin,
   Component,

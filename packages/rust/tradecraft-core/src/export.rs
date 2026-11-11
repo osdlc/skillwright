@@ -610,6 +610,10 @@ impl VaultRequest {
 pub struct VaultReport {
     /// One report per marketplace, in folder order.
     pub marketplaces: Vec<MarketplaceReport>,
+    /// A check's refused marketplaces, in folder order. A build that meets a
+    /// refusal fails whole, so its report holds none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refused: Vec<MarketplaceRefusal>,
 }
 
 /// One marketplace's report in a [`VaultReport`].
@@ -620,6 +624,16 @@ pub struct MarketplaceReport {
     pub marketplace: String,
     /// Its export report.
     pub report: ExportReport,
+}
+
+/// A marketplace a check could not plan, in a [`VaultReport`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct MarketplaceRefusal {
+    /// The marketplace's folder name.
+    pub marketplace: String,
+    /// What refused it, as the error reads.
+    pub error: String,
 }
 
 /// Every marketplace of a [`VaultRequest`] planned, with nothing written.
@@ -638,18 +652,26 @@ impl VaultPlan {
         self.marketplaces.iter().any(|(_, plan)| plan.is_err())
     }
 
-    /// A check returns every report and writes nothing. A build stages every
-    /// marketplace, then swaps them all in; a failed swap rolls back every
-    /// marketplace already swapped.
+    /// A check returns every marketplace's report or refusal and writes
+    /// nothing. A build stages every marketplace, then swaps them all in; a
+    /// failed swap rolls back every marketplace already swapped.
     ///
     /// # Errors
     ///
-    /// The first marketplace's refusal, with nothing written. Then
-    /// [`CoreError::SwapFailed`] and the I/O errors of the swap.
+    /// A build only: the first marketplace's refusal, with nothing written.
+    /// Then [`CoreError::SwapFailed`] and the I/O errors of the swap.
     pub fn write(self, vfs: &dyn Vfs) -> Result<VaultReport, CoreError> {
         let mut planned = Vec::with_capacity(self.marketplaces.len());
+        let mut refused = Vec::new();
         for (market, plan) in self.marketplaces {
-            planned.push((market.name, plan?));
+            match plan {
+                Ok(plan) => planned.push((market.name, plan)),
+                Err(err) if self.mode == ExportMode::Check => refused.push(MarketplaceRefusal {
+                    marketplace: market.name,
+                    error: err.to_string(),
+                }),
+                Err(err) => return Err(err),
+            }
         }
         if self.mode == ExportMode::Build {
             let plans: Vec<&ExportPlan> = planned.iter().map(|(_, plan)| plan).collect();
@@ -667,6 +689,7 @@ impl VaultPlan {
                     },
                 })
                 .collect(),
+            refused,
         })
     }
 }
@@ -706,7 +729,8 @@ pub fn plan_loaded(
 }
 
 /// Builds or checks every marketplace of the vault: [`plan_vault`], then
-/// [`VaultPlan::write`]. A build writes every marketplace or none.
+/// [`VaultPlan::write`]. A build writes every marketplace or none. A check
+/// reports each marketplace that refused in [`VaultReport::refused`].
 ///
 /// # Errors
 ///

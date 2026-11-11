@@ -538,6 +538,12 @@ export interface VaultRequest {
 export interface VaultReport {
   /** One report per marketplace, in folder order. */
   marketplaces: MarketplaceReport[];
+
+  /**
+   * A check's refused marketplaces, in folder order. A build that meets a
+   * refusal fails whole, so its report holds none.
+   */
+  refused?: MarketplaceRefusal[];
 }
 
 /** One marketplace's report in a [`VaultReport`]. */
@@ -547,6 +553,15 @@ export interface MarketplaceReport {
 
   /** Its export report. */
   report: ExportReport;
+}
+
+/** A marketplace a check could not plan, in a [`VaultReport`]. */
+export interface MarketplaceRefusal {
+  /** The marketplace's folder name. */
+  marketplace: string;
+
+  /** What refused it, as the error reads. */
+  error: string;
 }
 
 /**

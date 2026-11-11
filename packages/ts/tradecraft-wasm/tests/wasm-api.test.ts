@@ -89,6 +89,20 @@ test('buildVault builds every marketplace', () => {
   expect(check.marketplaces.every((m) => !m.report.changed)).toBe(true)
 })
 
+test('a buildVault check reports every marketplace when one refuses', () => {
+  marketplace('acme')
+  marketplace('labs')
+  writeFile(
+    'marketplaces/acme/plugins/tools/skills/review/review.md',
+    '---\n---\n\nNo description.\n',
+  )
+  const check = buildVault(createNodeVfs(), { vault_root: vault, mode: 'check' })
+  expect(check.marketplaces.map((m) => [m.marketplace, m.report.changed])).toEqual([['labs', true]])
+  expect(check.refused?.map((r) => r.marketplace)).toEqual(['acme'])
+  expect(check.refused?.[0]?.error).toMatch(/^refused: /)
+  expect(existsSync(path.join(vault, 'dist'))).toBe(false)
+})
+
 test("the core reads the root file's defaults and harnesses", () => {
   writeFile('skillwright.md', '---\nlicense: MIT\nbuild:\n  harnesses: [claude]\n---\n')
   marketplace('acme')

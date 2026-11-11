@@ -24,6 +24,7 @@ export type {
   Component,
   LoadRequest,
   Marketplace,
+  MarketplaceRefusal,
   MarketplaceReport,
   Plugin,
   ExportMode,

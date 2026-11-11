@@ -165,6 +165,55 @@ fn a_loaded_vault_plans_each_of_its_marketplaces() {
     assert!(plan.marketplaces.iter().all(|(_, planned)| planned.is_ok()));
 }
 
+fn check() -> VaultRequest {
+    let mut check = VaultRequest::new("/v");
+    check.mode = ExportMode::Check;
+    check
+}
+
+#[test]
+fn a_check_reports_every_drifted_marketplace() {
+    let vfs = vault("", &["acme", "shop"]);
+    let report = build_vault(&vfs, &check()).unwrap();
+    let drifted: Vec<(&str, bool)> = report
+        .marketplaces
+        .iter()
+        .map(|m| (m.marketplace.as_str(), m.report.changed))
+        .collect();
+    assert_eq!(drifted, [("acme", true), ("shop", true)]);
+    assert!(report.refused.is_empty());
+    assert!(!vfs.exists(Path::new("/v/dist")));
+}
+
+#[test]
+fn a_check_reports_every_marketplace_when_two_refuse() {
+    let vfs = vault("", &["acme", "shop", "zoo"]);
+    // `acme` and `zoo` hold a skill with no description.
+    for m in ["acme", "zoo"] {
+        write(
+            &vfs,
+            &format!("/v/marketplaces/{m}/plugins/tools/skills/review/review.md"),
+            "---\n---\n\nNo description.\n",
+        );
+    }
+    let report = build_vault(&vfs, &check()).unwrap();
+    let [shop] = &report.marketplaces[..] else {
+        panic!("{report:?}");
+    };
+    assert_eq!(shop.marketplace, "shop");
+    assert!(shop.report.changed);
+    let refused: Vec<&str> = report
+        .refused
+        .iter()
+        .map(|r| r.marketplace.as_str())
+        .collect();
+    assert_eq!(refused, ["acme", "zoo"]);
+    for r in &report.refused {
+        assert!(r.error.starts_with("refused: "), "{}", r.error);
+    }
+    assert!(!vfs.exists(Path::new("/v/dist")));
+}
+
 #[test]
 fn a_marketplace_that_fails_to_plan_writes_no_marketplace() {
     let vfs = vault("", &["acme", "shop"]);

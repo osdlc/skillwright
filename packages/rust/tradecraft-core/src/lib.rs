@@ -91,10 +91,11 @@ pub use discover::{
 };
 pub use error::*;
 pub use export::{
-    ExportMode, ExportPlan, ExportReport, ExportRequest, ExportUnit, MarketplaceReport,
-    SkillNaming, StaleKind, UnitStatus, VaultPlan, VaultReport, VaultRequest, build_vault,
-    export_in, export_skills, marketplace_manifest_path, owned_paths, packs_path, plan_in,
-    plan_loaded, plan_vault, plugin_manifest_path, published_skill_name, rendered_skill_call,
+    ExportMode, ExportPlan, ExportReport, ExportRequest, ExportUnit, MarketplaceRefusal,
+    MarketplaceReport, SkillNaming, StaleKind, UnitStatus, VaultPlan, VaultReport, VaultRequest,
+    build_vault, export_in, export_skills, marketplace_manifest_path, owned_paths, packs_path,
+    plan_in, plan_loaded, plan_vault, plugin_manifest_path, published_skill_name,
+    rendered_skill_call,
 };
 pub use field_edit::{read_version, set_version};
 pub use frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
