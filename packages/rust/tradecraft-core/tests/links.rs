@@ -1010,6 +1010,14 @@ fn an_escape_ships_without_its_backslash() {
 }
 
 #[test]
+fn an_escaped_embed_ships_as_the_notation() {
+    ships(
+        &with_setup("Write \\![[x]] to embed."),
+        "Write ![[x]] to embed.",
+    );
+}
+
+#[test]
 fn a_leftover_in_prose_is_refused() {
     let vfs = with_setup("See [[ this.");
     let err = refusal(&vfs);
@@ -1193,6 +1201,23 @@ fn an_image_embed_is_an_image_link() {
 }
 
 #[test]
+fn an_image_embed_from_the_plugins_shared_assets_links_to_the_pack_root() {
+    let vfs = with_files("![[logo.png]]", &[("assets/logo.png", "png")]);
+    ships(&vfs, "![logo.png](../../assets/logo.png)");
+}
+
+#[test]
+fn a_fragment_on_an_image_embed_is_refused() {
+    let vfs = with_files(
+        "![[logo.png#x]]",
+        &[("skills/author/assets/logo.png", "png")],
+    );
+    let err = refusal(&vfs);
+    assert!(err.contains("embed-fragment"), "{err}");
+    names(&err, AUTHOR, "![[logo.png#x]]", "section 5 rule 13");
+}
+
+#[test]
 fn an_embed_into_another_plugin_is_refused_as_a_link_is() {
     let vfs = vault(&[(AUTHOR, &skill("![[../../../other/references/x.md]]"))]);
     put(
@@ -1296,6 +1321,18 @@ fn the_first_heading_that_matches_wins() {
     );
     ships(&vfs, "## Usage\n\nFirst.");
     assert!(!author(&vfs).contains("Second."), "{}", author(&vfs));
+}
+
+#[test]
+fn a_block_marker_ending_a_list_items_line_labels_that_item() {
+    let vfs = with_files(
+        "Before.\n\n![[guide#^two]]\n\nAfter.",
+        &[(GUIDE, "- one\n- two ^two\n- three\n")],
+    );
+    ships(&vfs, "Before.\n\n- two\n\nAfter.");
+    let text = author(&vfs);
+    assert!(!text.contains("- one"), "{text}");
+    assert!(!text.contains("- three"), "{text}");
 }
 
 #[test]
