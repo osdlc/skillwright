@@ -336,7 +336,7 @@ fn a_plugin_s_block_description_does_not_set_its_skills_description() {
     );
 }
 
-/// Section 7 rule 6: a block key a skill's kind does not accept stays with
+/// Section 7 rule 4: a block key a skill's kind does not accept stays with
 /// the plugin.
 #[test]
 fn a_plugin_block_key_a_skill_does_not_accept_stays_with_the_plugin() {
@@ -358,7 +358,7 @@ fn a_plugin_block_key_a_skill_does_not_accept_stays_with_the_plugin() {
     assert!(front.get("metadata").is_none(), "{front}");
 }
 
-/// Section 7 rule 8: a marketplace block's identity keys and the keys of its
+/// Section 7 rule 4: a marketplace block's identity keys and the keys of its
 /// own marketplace manifest stay with it, though a plugin accepts them.
 #[test]
 fn a_marketplace_s_identity_and_manifest_keys_do_not_pass_down() {
@@ -473,7 +473,7 @@ fn an_unknown_key_on_a_container_warns_and_is_ignored() {
     }
 }
 
-/// Section 7 rule 7: a plugin with no `version` builds as 0.1.0 and warns.
+/// Section 7 rule 6: a plugin with no `version` builds as 0.1.0 and warns.
 #[test]
 fn a_plugin_with_no_version_builds_as_0_1_0_with_a_warning() {
     let vfs = MemVfs::new();
@@ -503,7 +503,7 @@ fn a_plugin_with_no_version_builds_as_0_1_0_with_a_warning() {
     }
 }
 
-/// Section 7 rule 7: a marketplace with no `version` writes none, and does
+/// Section 7 rule 6: a marketplace with no `version` writes none, and does
 /// not warn. With one, it writes it where a manifest has the field.
 #[test]
 fn a_marketplace_with_no_version_writes_none_and_does_not_warn() {

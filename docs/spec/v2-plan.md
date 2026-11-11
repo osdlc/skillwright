@@ -306,7 +306,7 @@ Tests first:
 - A plugin's `claude: {description: x}` does not set its skills'
   `description` (section 7 rule 4).
 - A key in a plugin's block that a skill's kind does not accept stays with the
-  plugin (section 7 rule 6).
+  plugin (section 7 rule 4).
 - An unknown key in a harness block warns and is left out of that harness's
   output. A known key with a wrong value is refused (section 8 rule 2).
 - A plugin with no `version` builds as `0.1.0` with a warning. A marketplace

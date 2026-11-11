@@ -799,7 +799,24 @@ flowchart LR
 2. The order for an inherited key is component, then plugin, then marketplace,
    then root. Each container is matched by folder.
 3. Inheritance applies to every component a build reads.
-4. A block a component inherits cannot set the component's `description`.
+4. Some keys in a container's harness block stay with the container. A member
+   never takes them, even where its kind accepts them, and this rule wins over
+   rule 1. They are, per harness:
+   - in a plugin's or marketplace's block, the keys of that harness's plugin
+     manifest and of its marketplace entry for a plugin. A skill or command
+     never takes them;
+   - in a marketplace's block, the keys of that harness's marketplace
+     manifest, such as Codex's `interface` and Claude Code's `metadata`, and
+     `description`, `version`, `displayName` and `source`. A plugin never
+     takes them;
+   - in any block, a key the member's kind does not accept.
+
+   The keys use the harness's own spelling, so a block holds `displayName`,
+   not `display_name`. The manifest, entry and marketplace key lists of each
+   harness are closed; the field reference prints the keys each block accepts
+   (`docs/reference/fields.md`, "Harness blocks"). So a block a component
+   inherits cannot set its `description` or `version`. `name` is not among
+   these keys: section 3 rule 4 refuses it in a harness block too.
 5. For an inherited key (rule 1) that a harness reads on a component, the
    build takes the first value in this order:
    1. the note's own harness block;
@@ -812,19 +829,11 @@ flowchart LR
    and the skill sets neither. The skill's Claude Code `author` is `Bob`, and
    its Codex `author` is `Ada`. A key that is not inherited, such as
    `description`, comes only from the note itself.
-6. A key in an inherited block must be one the member's kind accepts. If it is
-   not, it stays with the container.
-7. Versions:
+6. Versions:
    - A plugin's `version` is its note's. Without one it is `0.1.0`, with a
      warning.
    - A marketplace's `version` is its note's. Without one, the marketplace
      manifests hold no version, and there is no warning.
-8. Some keys in a container's harness block describe the container. They
-   stay with it, even where the member's kind accepts them:
-   - its identity keys: `name`, `description`, `version`, `displayName` and
-     `source`;
-   - on a marketplace, the keys of that harness's marketplace manifest, such
-     as Codex's `interface` and Claude Code's `metadata`.
 
 ## 8. Harness blocks
 
@@ -1222,7 +1231,7 @@ error that names the missing path. `init` writes the note.
 - Every plugin has one file that holds its settings and its `version`.
 - `bump` needs a note to write the version to.
 - A note without a `version` still builds as `0.1.0`, with a warning
-  (section 7 rule 7). The warning points at the one file to fix.
+  (section 7 rule 6). The warning points at the one file to fix.
 
 ### D7. `.mcp.json`
 
