@@ -76,7 +76,6 @@ pi: {}                          # {naming: bare} likewise
 # Tool settings.
 build:
   harnesses: [claude, codex, cursor, pi]   # which harnesses to build; absent means all
-  namespace: sw                            # read sw-prefixed keys; absent means bare keys
   bump:
     patch: increment                       # or timestamp
 ---
@@ -90,8 +89,8 @@ build:
    `owner`, `version`, `display_name`, `keywords` or `category`, is refused.
    The error names the marketplace note it belongs in.
 4. These v1 `build:` keys are refused (section 11): `out`, `patterns`,
-   `exclude`, `assets`, `hooks`, `destinations`, `scan_locations` and
-   `launcher_path`. Any other unknown `build:` key warns.
+   `exclude`, `assets`, `hooks`, `destinations`, `scan_locations`,
+   `launcher_path` and `namespace`. Any other unknown `build:` key warns.
 
 ## 3. Folders and notes
 
@@ -516,19 +515,15 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
 
 ## 6. Frontmatter
 
-1. Keys are bare by default.
-2. `build.namespace: <stem>` makes every `skillwright`-owned key take a prefix,
-   flat (`<stem>-version`) or nested (`<stem>: {version: …}`). A note may not mix
-   the two forms. `spec`-owned keys are never prefixed. Keys in the root file are
-   always bare.
-3. One closed table lists the keys of each kind. It drives the build's strip,
+1. Keys are always bare. There is no key prefix: v1's `build.namespace`
+   (`sw-version`, an `sw:` block) is gone, so a prefixed key is an unknown key.
+2. One closed table lists the keys of each kind. It drives the build's strip,
    validation and the field reference.
-4. A key outside the table gets a warning. On a component it is emitted under
-   `metadata:` as YAML. On a container or in the root file it is ignored. Under a
-   namespace, the warning names the right spelling.
-5. `license` on a plugin or marketplace is the pack's licence. On a skill it is
+3. A key outside the table gets a warning. On a component it is emitted under
+   `metadata:` as YAML. On a container or in the root file it is ignored.
+4. `license` on a plugin or marketplace is the pack's licence. On a skill it is
    the spec field.
-6. `build:` is read only in the root file. In any other note it is refused.
+5. `build:` is read only in the root file. In any other note it is refused.
 
 ## 7. The cascade
 
