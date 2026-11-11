@@ -1,6 +1,6 @@
 ---
 name: skillwright-author
-description: "Author coding-agent skills, plugins and marketplaces as markdown notes in a skillwright vault: the folder layout, the frontmatter (`description`, `name`, `version`, `targets` and the harness blocks), and the verbs that create and reorganise notes (`new`, `rename`, `move`, `delete`, `convert`, `bump`, `adopt`, `list`). Use when asked to write a new skill, add a plugin or marketplace, rename or move a skill, bump a plugin version, or bring existing SKILL.md files into a vault."
+description: "Author coding-agent skills, plugins and marketplaces as markdown notes in a skillwright vault: the fixed folder layout, the frontmatter (`description`, `version`, `targets` and the harness blocks), links, calls and embeds between notes, plugin-root paths, and building, checking, bumping and shipping the `dist/` output. Use when asked to write a new skill, add a plugin or marketplace, link or embed files, bump a plugin version, or build the vault for Claude Code, Codex, Cursor and Pi."
 license: MIT OR Apache-2.0
 ---
 
@@ -9,102 +9,141 @@ license: MIT OR Apache-2.0
 
 # `/skill:skillwright-author`
 
-Scope: writes and reorganises vault notes. Publishing and building are `/skill:skillwright-publish`. If
-`skillwright --version` fails, run `/skill:skillwright-setup` first.
+Scope: writes vault notes and builds them. If `skillwright --version` fails, or there is no vault
+yet, run `/skill:skillwright-setup` first.
 
 ## The vault
 
-A vault is a folder of markdown notes. Where a note sits decides what it is:
+A vault has one fixed layout. Where a note sits decides what it is:
 
-| Path | Read as |
-|---|---|
-| `skills/<name>.md` | a skill |
-| `skills/<name>/<name>.md` | a skill that carries the files beside it (scripts, references) |
-| `skills/<name>/SKILL.md` | the same, named by its folder |
-| `plugins/<p>/` | a plugin, named after the folder; its skills go in `plugins/<p>/skills/` |
-| `plugins/<p>/<p>.md` | the plugin's optional note, for its fields |
-| `plugins/<p>/assets/` | ships as `assets/` at the pack root |
-| `plugins/<p>/CHANGELOG.md` | rendered into each pack |
-| `skillwright.md` | the marketplace: its fields, and tool settings under `build:` |
-| `marketplaces/<m>/skillwright.md` | one marketplace of several; its plugins go in `marketplaces/<m>/plugins/` |
+```text
+<root>/
+├── skillwright.md                  the root file: shared defaults and build settings
+├── dist/                           build output, one folder per marketplace
+└── marketplaces/<m>/
+    ├── <m>.md                      the marketplace
+    └── plugins/<p>/
+        ├── <p>.md                  the plugin
+        ├── CHANGELOG.md            optional, copied into each pack
+        ├── references/             shared docs
+        ├── scripts/                shared code
+        ├── assets/                 shared output files, such as templates
+        ├── skills/<s>/<s>.md       a skill, with optional references/, scripts/, assets/
+        ├── agents/<a>/<a>.md       an agent (no pack ships agents yet)
+        ├── commands/<c>/<c>.md     a command (Claude Code only)
+        └── hooks/hooks.json        the plugin's hooks
+```
 
-The folder alone decides what a note is and which plugin it joins. A `skills/` folder at the top is
-a plugin named after the marketplace. A note under no kind folder is a resource or the author's own
-writing, and is not part of the vault: only `publish <path>` publishes it, as a skill. `docs/`, `tests/` and `fixtures/` never ship. A plugin named `docs` or `tests` ships normally, and a plugin note's `name` must match its folder.
+- Every note is `<name>.md` in a folder of the same name. The folder's name is the note's name.
+- Each marketplace folder needs `<m>.md`, and each plugin folder `<p>.md`. The body of these
+  two notes is for you; it does not ship.
+- A name is lowercase letters, digits and single hyphens, at most 64 characters. `marketplaces`,
+  `plugins`, `skills`, `agents`, `commands` and `hooks` are reserved.
+- A folder holds only the entries the layout lists. Anything else, such as a `README.md` in
+  `skills/`, is an error.
+- `src/`, `docs/`, `tests/` and `fixtures/` in a plugin or component folder never ship. Put
+  source, drafts and notes for yourself there.
+- skillwright runs no build step of its own. A generated file, such as a bundled script, is made by
+  your own build step into `scripts/`, `references/` or `assets/` before `skillwright build`.
+
+To add a skill, create `marketplaces/<m>/plugins/<p>/skills/<s>/<s>.md`. To add a plugin, create
+`plugins/<p>/<p>.md` with a `description` and a `version`.
 
 ## Frontmatter
 
-- `description` opts a note in. A note with neither `name` nor `description` is skipped. A
-  skill, command or agent with a `name` only is an error, and `build` and `publish` refuse it.
-  Write it in the third person: what
-  the skill does and when to use it. The limit is 1024 characters.
-- `name` is optional and defaults to the file name. Names are lowercase words joined by hyphens,
-  at most 64 characters. If the name a file name gives is empty or longer, as for `日本.md`, the
-  note is refused with `invalid-name`: set `name:`.
-- `targets` limits a note to some harnesses, for example `[claude-code, codex]`. Absent means
-  every destination, and `[]` means none.
-- `version` is a plugin's semver. Set it on every plugin note; a build warns when it is missing.
-- `owner` goes on the marketplace; `author`, `license`, `repository` and `homepage` go on the
-  marketplace or a plugin.
-- `claude:`, `codex:`, `cursor:` and `pi:` hold fields only that harness reads, such as Codex's
-  `interface` on a plugin. A block's `metadata` merges with the note's.
+- `description` is required on a skill, command or agent. Write it in the third person: what the
+  component does and when to use it. The limit is 1024 characters.
+- There is no `name` key. A note that sets one is refused; the folder names it.
+- `version` is a plugin's semver, in `<p>.md`. Without one the plugin ships as `0.1.0`, with a
+  warning. A marketplace's `version` is optional.
+- `owner` goes in `<m>.md`. `keywords` and `category` go in `<p>.md`.
+- `targets` limits a component to some harnesses: `claude`, `codex`, `cursor` or `pi`. Absent
+  means all four.
+- `claude:`, `codex:`, `cursor:` and `pi:` hold fields only that harness reads. `cursor:` and
+  `pi:` take `naming: bare` on a plugin to keep plain skill names; by default those two harnesses
+  name a skill `<p>-<s>`.
+- `author`, `license`, `repository`, `homepage`, `targets` and the harness blocks inherit: the
+  note, then the plugin, then the marketplace, then `skillwright.md`. Set them once, high up.
+- `build:` is read only in `skillwright.md`.
+- A key skillwright does not know warns. On a skill it ships under `metadata:`; on a plugin or
+  marketplace note it is ignored. There is no key prefix: `sw-version` is an unknown key.
 
-`author`, `license`, `repository`, `homepage`, `targets` and the harness blocks inherit from the
-plugin note, then `skillwright.md`, so set them once. An inherited block cannot set a component's
-`name` or `description`.
+## Links, calls and embeds
 
-skillwright's own keys are stripped on publish. Spec keys such as `allowed-tools` pass through to
-the harness. An unknown key gets a warning: on a skill it travels under `metadata:`, and on a
-plugin note or `skillwright.md` it is ignored. There is no `kind` or `plugin` key; move the note.
-There is no key prefix: `sw-version` is an unknown key.
+The syntax decides what a token is. Each form, as you write it in a note:
 
-## Links
+| You write | It is | The build |
+|---|---|---|
+| `/[[setup]]` | a call | writes the string that runs the skill on each harness, in backticks |
+| `/[[setup\|the setup skill]]` | a call with words | keeps the words and adds the call after them |
+| `[[guide]]`, `[text](references/guide.md)` | a link | checks the target ships, rewrites the path |
+| `![[guide]]`, `![[guide#Usage]]` | an embed | inlines the note, or one section of it |
+| `![[run.sh]]` | an embed of a text file | inlines it as a fenced code block |
+| `\[[x]]` | escaped brackets | ships as `[[x]]`, not interpreted |
 
-- `[[note]]` links to another note or a file beside the skill. The build rewrites it as a plain
-  markdown link, and copies the files a skill folder holds.
-- A `/` right before `[[skill]]` calls another skill. The build writes each harness's own form, such as
-  `/plugin:skill` for Claude Code, `$plugin:skill` for Codex and `/skill:plugin-skill` for Pi.
-  Write calls this way, not in one harness's form, so one note works in every harness.
-- `[[skill]]` without the slash names another skill without calling it. The build writes the
-  skill's name as each harness knows it: `plugin:skill` for Claude Code and Codex,
-  `plugin-skill` for Pi and `skill` for Cursor. Nothing of the named skill is copied.
-  `[[skill|words]]` keeps your words and adds the name after them: words (`plugin:skill`).
-  A `#fragment` is checked, then ignored.
-- A link to the skill's own note, from its body or from a file in its folder, is written as the
-  skill's name too, like a link to any other skill. With a `#heading` it stays a link to that
-  heading.
-- To show a call as literal text, such as in a usage example, put a backslash right before its
-  slash. The build drops the backslash and keeps the rest as written, in every harness, in prose
-  and in code alike. Code alone does not escape a call: in a code span or a fenced block, the
-  build still resolves it.
-- A `[[` that is not a link, such as `[[TODO`, is an error, `unresolved-syntax`. Write `\[[` to
-  keep the brackets as text. The backslash ships too, and CommonMark shows `\[[` as `[[`. Code
-  needs no escape.
-- A resource's frontmatter ships as written, so a link there is not resolved. A link in a
-  frontmatter string, such as `related: "[[link]]"`, is an error; move the link into the body.
-- A bare `[[name]]` that matches files in several folders resolves to the one match under the
-  note's own folder, such as a file in the skill's `references/`. Otherwise it is an error,
-  `link-ambiguous`; write more of the path to choose one.
+- A call renders as `/plugin:skill` on Claude Code, `$plugin:skill` on Codex, `/plugin-skill`
+  on Cursor and `/skill:plugin-skill` on Pi. Write the call form, never one harness's string: a
+  hand-written call string in prose is an error.
+- A call looks the name up among the skills and commands of the whole marketplace. A name no
+  plugin has, or two plugins share, is an error. A call cannot take a `#fragment`.
+- A plain `[[setup]]` to another skill is a file link to its `SKILL.md`, and warns: did you mean
+  to call it? Use the `/` form to run a skill.
+- A name-only link looks first in the linking skill's own folder, then in the plugin's shared
+  `references/`, `scripts/` and `assets/` and its components. It never leaves the plugin. Two
+  matches in one step are an error; write a path, such as `[[../setup/references/notes.md]]`.
+- A link or embed to a missing file, into a never-ship folder, or outside the plugin is an error.
+  An external link (`https://…`) ships as written and is not checked.
+- Code is literal. Nothing in a code span or fenced block is a call, link or embed, so write calls
+  in prose. A call in code ships exactly as written.
+- After the build no `[[` may remain in prose. Write `\[[` for literal brackets.
+
+## Plugin-root paths
+
+To name a file of the plugin, such as a shared script, write the dollar sign, then `PLUGIN_ROOT`
+in braces, then the path: the braced form of `$PLUGIN_ROOT/scripts/tool.js`. This skill shows it
+unbraced, because the build would rewrite the braced form here.
+
+```sh
+node $PLUGIN_ROOT/scripts/tool.js --check
+```
+
+- The braced form is checked and rewritten in prose and in code alike. The path must name a file
+  the plugin ships, or the build fails.
+- Claude Code gets its own variable, `CLAUDE_PLUGIN_ROOT` in braces, then the path. Codex, Cursor
+  and Pi get a path relative to the file, such as `../../scripts/tool.js`.
+- Never write Claude Code's own variable braced, in notes or in `hooks/hooks.json`; it is an
+  error. Hooks use the braced `PLUGIN_ROOT` form too.
+- To show the shell variable as text, write it unbraced, `$PLUGIN_ROOT` or
+  `$CLAUDE_PLUGIN_ROOT`. The build leaves the unbraced form alone.
+- A script in `scripts/` ships byte for byte. It should find its own files relative to itself,
+  such as `$(dirname "$0")/lib.sh`.
 
 ## Steps
 
-1. Run `skillwright list` to see what the vault holds: path, kind, name, plugin and targets.
-2. Make the change with a verb. Run it with `--dry-run` first, then again with `--yes`:
+1. Edit the notes.
+2. Run `skillwright check`. It runs every rule `build` runs and writes nothing. It reports each
+   error and warning with the note and the rule, and exits 1 on drift between the vault and
+   `dist/`. Fix every error and warning in the notes.
+3. Build: `skillwright build --dry-run`, then `skillwright build --yes`. `--marketplace <m>`
+   builds one marketplace; without it every marketplace builds.
+4. Run `skillwright check` again. Exit 0 means `dist/` matches the vault.
 
-   | Verb | Does |
-   |---|---|
-   | `new marketplace <name> --description <text> [--owner <text>] [--author <text>]` | `marketplaces/<name>/skillwright.md`, for a workspace; add its `build.out` |
-   | `new plugin <name> --description <text> [--marketplace <name>]` | `plugins/<name>/<name>.md` |
-   | `new skill <name> --description <text> [--plugin <name>] [--marketplace <name>] [--targets <t>]` | a skill in `skills/`, or in `plugins/<name>/skills/` with `--plugin` |
-   | `rename <entry> <new-name>` | renames a note and rewrites the links to it; a link to a marketplace's `skillwright.md` itself stays as written |
-   | `move <entry> --to-plugin <p> [--to-marketplace <m>]` | moves a component to another plugin |
-   | `delete <entry> [--force]` | moves a note to the vault's trash; `--force` also trashes a non-empty container's members |
-   | `convert <entry> --kind <kind>` | changes a note's kind and moves it into that kind's folder |
-   | `bump <plugin> [--major\|--minor\|--patch] [--marketplace <name>]` | raises a plugin's `version`; patch is the default |
-   | `bump --changed-since <ref\|dir> [--marketplace <name>]` | raises every plugin whose output changed since a git ref or a built folder |
-   | `adopt [source...] [--plugin <p>] [--into <path>]` | turns SKILL.md folders already on disk into notes; `--from-git owner/repo[/path][@ref]` reads a repository |
+## The dist/ output
 
-   An `<entry>` is a note's `name`. Edit a note's body directly; no verb is needed for that.
-   `adopt --as` and `adopt --promote` exit `not implemented`.
-3. Run `skillwright list` again and confirm the note shows with the kind, plugin and targets you
-   meant. A note listed as `skipped` names the fix; `list` exits 2 when `build` would refuse one.
+`build` writes each marketplace to `dist/<m>/`, one tree per harness:
+
+| Harness | Marketplace manifest | Packs |
+|---|---|---|
+| Claude Code | `.claude-plugin/marketplace.json` | `.claude-plugin/packs/<p>/` |
+| Codex | `.agents/plugins/marketplace.json` | `.agents/packs/<p>/` |
+| Cursor | `.cursor-plugin/marketplace.json` | `.cursor-plugin/packs/<p>/` |
+| Pi | none | `.pi/packs/<p>/` |
+
+- Never edit `dist/` by hand. A hand edit is drift; change the note and build again.
+- `skillwright check` in CI fails when someone changed a note without rebuilding.
+- Before a release, raise the plugin's version: `skillwright bump <p>` (`--minor`, `--major`), or
+  `skillwright bump --changed-since <ref>` to bump every plugin whose output changed since a git
+  ref. `bump --marketplace <m>` with no plugin raises the marketplace's own version.
+- skillwright stops at `dist/`. Shipping is your step. Commit `dist/<m>/` to keep it beside the
+  notes. To publish, copy its trees to the root of a marketplace repository, or copy one pack and
+  its manifest entry into an existing marketplace repository.

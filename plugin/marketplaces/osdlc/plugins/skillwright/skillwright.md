@@ -1,5 +1,5 @@
 ---
-description: "Skills for the skillwright CLI: install it, author skills, plugins and marketplaces as markdown notes in a vault, publish and build them for Claude Code, Codex, Cursor and Pi, and check for drift."
+description: "Skills for the skillwright CLI: install it, start a vault, author skills, plugins and marketplaces as markdown notes, build them for Claude Code, Codex, Cursor and Pi, and check for drift."
 version: 0.1.0
 ---
 

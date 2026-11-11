@@ -1,6 +1,6 @@
 ---
 name: skillwright-setup
-description: "Install the skillwright CLI and set up a project for it: check `skillwright --version`, install with brew, npm, cargo or install.sh (or from source when the release is not out), and write a `skillwright.md` root file with `skillwright init`. Use when `skillwright` is not on PATH, when a repository has no `skillwright.md`, or when asked to install skillwright, configure it, or start a skill vault. The other skillwright skills send you here when the binary is missing."
+description: "Install the skillwright CLI and start a vault: check `skillwright --version`, install with brew, npm, cargo or install.sh (or from source when the release is not out), find the vault root, write a new vault with `skillwright init <marketplace> <plugin>`, and verify it with `skillwright check`. Use when `skillwright` is not on PATH, when a repository has no vault, or when asked to install skillwright, configure it, or start a skill vault. The other skillwright skills send you here when the binary is missing."
 license: MIT OR Apache-2.0
 ---
 
@@ -9,8 +9,8 @@ license: MIT OR Apache-2.0
 
 # `/skill:skillwright-setup`
 
-Scope: installs the binary and writes the root file. It does not author notes (see
-`/skill:skillwright-author`) or publish them (see `/skill:skillwright-publish`).
+Scope: installs the binary and writes a new vault. Writing skills, building and committing the
+output are `/skill:skillwright-author`.
 
 ## Steps
 
@@ -42,32 +42,43 @@ Scope: installs the binary and writes the root file. It does not author notes (s
 
    Run `skillwright --version` again. Stop and report the error if it still fails.
 
-4. Look for a root file. skillwright reads the nearest `skillwright.md` at or above the working
-   directory, or the file named with `--config`. If one exists, read it and stop.
+4. Look for a vault. The vault root is the folder that holds both `skillwright.md` and a
+   `marketplaces/` folder. skillwright finds it by walking up from the working directory, or takes
+   it from `--vault <path>`. A `skillwright.md` without `marketplaces/` beside it is not a root. If
+   a root exists, read its `skillwright.md` and go to step 6.
 
-5. Run `skillwright init --out <path>` in the folder that will hold the notes. It writes a
-   `skillwright.md` with the marketplace's name and `build.out`, the folder `build` writes to. The
-   name defaults to the folder's name; `--name` sets another. There is no default output folder:
-   `--out` is asked for on a terminal and required otherwise. `--out .` builds beside
-   `skillwright.md`, which makes the repository installable as a marketplace.
+5. In the folder that will hold the vault, run `skillwright init <marketplace> <plugin>`. Both
+   names are lowercase letters, digits and single hyphens, at most 64 characters. It refuses a
+   folder that already holds `skillwright.md`. It writes:
 
-   The result is the smallest working file. Add to it as needed:
+   ```text
+   ./
+   ├── skillwright.md
+   └── marketplaces/<marketplace>/
+       ├── <marketplace>.md
+       └── plugins/<plugin>/<plugin>.md
+   ```
+
+   `skillwright.md` is the only configuration file. Its body is not read. Add shared defaults and
+   tool settings as needed:
 
    ```markdown
    ---
-   name: house                  # the marketplace's fields are top-level keys
-   owner: me
-   license: MIT                 # plugins and skills inherit this
-   build:                       # how skillwright runs
-     out: dist
-     destinations:              # where `publish` writes; absent means each harness's user folder
-       - root: ../my-project    # must sit outside the vault, or `publish` refuses `unsafe-root`
-         target: claude-code
+   author: Ada Lovelace          # every marketplace, plugin and skill inherits this
+   license: MIT
+   targets: [claude, codex]      # which harnesses get each component; absent means all four
+   build:
+     harnesses: [claude, codex, cursor, pi]   # which harnesses to build; absent means all
+     bump:
+       patch: increment          # or timestamp
    ---
    ```
 
-   The body is ignored. Relative paths resolve against the file's own folder. A flag overrides
-   this file. There is no machine file: personal defaults come from the environment.
+   The marketplace's fields, such as `owner`, go in `<marketplace>.md`. A plugin's `description`
+   and `version` go in `<plugin>.md`. Output always goes to `dist/<marketplace>/` beside
+   `skillwright.md`; there is no setting for it.
 
-6. Verify: run `skillwright list`. Exit code 4 means no vault was found; check the file name and
-   the working directory.
+6. Verify: run `skillwright check`. It writes nothing. Exit code 0 means the vault builds and
+   matches `dist/`. Exit code 1 with drift is expected before the first build: run
+   `skillwright build --yes`, then `check` again. Exit code 4 means no vault was found; check the
+   two files and the working directory.
