@@ -16,10 +16,12 @@ test('loadMarketplace returns the model with calls resolved', () => {
     const skills = path.join(vault, 'marketplaces/house/plugins/tools/skills')
     mkdirSync(path.join(skills, 'review'), { recursive: true })
     mkdirSync(path.join(skills, 'lint'), { recursive: true })
+    writeFileSync(path.join(vault, 'skillwright.md'), '---\n---\n')
     writeFileSync(
-      path.join(vault, 'marketplaces/house/skillwright.md'),
-      '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
+      path.join(vault, 'marketplaces/house/house.md'),
+      '---\ndescription: The house marketplace.\nowner: acme\n---\n',
     )
+    writeFileSync(path.join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
     writeFileSync(
       path.join(skills, 'review/review.md'),
       '---\nname: review\ndescription: Reviews a diff.\n---\n\nRun [[lint]] first.\n',
@@ -44,21 +46,22 @@ test('loadMarketplace returns the model with calls resolved', () => {
   }
 })
 
-// One reader for the CLI and a wasm host: the root file's keys, its unknown-key
-// warnings, and the folder-name default all come from the core.
+// One reader for the CLI and a wasm host: the root file's keys and its
+// unknown-key warnings come from the core.
 test('parseRootFile reads a root file with the core reader', () => {
   const root = parseRootFile(
-    '---\nname: house\nlicense: MIT\nbuild:\n  out: dist\nodd: 1\n---\n\nThe README.\n',
+    '---\nlicense: MIT\nbuild:\n  harnesses: [claude]\nodd: 1\n---\n\nThe README.\n',
   )
-  expect(root.marketplace.name).toBe('house')
-  expect(root.build.out).toBe('dist')
+  expect(root.marketplace.license).toBe('MIT')
+  expect(root.build.harnesses).toEqual(['claude'])
   expect(root.warnings).toHaveLength(1)
   expect(() => parseRootFile('---\nbuild: 1\n---\n')).toThrow(CoreError)
+  expect(() => parseRootFile('---\nbuild:\n  out: dist\n---\n')).toThrow(/build\.out/)
 })
 
-test('rootFileConfig gives the config, named after the folder by default', () => {
-  const config = rootFileConfig('---\nlicense: MIT\n---\n', 'My House')
-  expect(config.name).toBe('my-house')
+test('rootFileConfig gives the shared defaults and no name', () => {
+  const config = rootFileConfig('---\nname: house\nlicense: MIT\n---\n')
+  expect(config.name ?? null).toBeNull()
   expect(config.license).toBe('MIT')
-  expect(() => rootFileConfig('---\nbuild: 1\n---\n', 'x')).toThrow(CoreError)
+  expect(() => rootFileConfig('---\nbuild: 1\n---\n')).toThrow(CoreError)
 })

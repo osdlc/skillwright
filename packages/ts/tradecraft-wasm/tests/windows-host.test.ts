@@ -40,10 +40,12 @@ const core = (windowsPath: string) => toCorePath(windowsPath, 'win32')
 function vaultAt(vault: string, disk: (p: string) => string = (p) => onDisk(root, p)): string {
   const skill = path.join(disk(vault), 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(skill, { recursive: true })
+  writeFileSync(path.join(disk(vault), 'skillwright.md'), '---\n---\n')
   writeFileSync(
-    path.join(disk(vault), 'marketplaces/house/skillwright.md'),
-    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
+    path.join(disk(vault), 'marketplaces/house/house.md'),
+    '---\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
+  writeFileSync(path.join(disk(vault), 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
   writeFileSync(
     path.join(skill, 'review.md'),
     '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n',
@@ -67,17 +69,21 @@ describe('a Windows host', () => {
     expect(existsSync(onDisk(root, 'C:\\repo\\.claude-plugin\\marketplace.json'))).toBe(true)
   })
 
-  test('refuses a build whose replaced tree is a link into the vault', () => {
+  test('refuses a build whose replaced tree is a link into marketplaces', () => {
     vaultAt('C:\\linked\\src')
-    mkdirSync(onDisk(root, 'C:\\linked\\src\\skills'))
-    symlinkSync(onDisk(root, 'C:\\linked\\src\\skills'), onDisk(root, 'C:\\linked\\.claude-plugin'))
-    expect(() => build('C:\\linked\\src', 'C:\\linked')).toThrow(/would write .* inside the vault/)
+    symlinkSync(
+      onDisk(root, 'C:\\linked\\src\\marketplaces\\house'),
+      onDisk(root, 'C:\\linked\\.claude-plugin'),
+    )
+    expect(() => build('C:\\linked\\src', 'C:\\linked')).toThrow(/which a build reads as source/)
   })
 
-  test('compares whole components: a sibling named like the vault is not inside it', () => {
+  test('compares whole components: a sibling named like marketplaces is not inside it', () => {
     vaultAt('C:\\vault')
-    expect(build('C:\\vault', 'C:\\vault-bee').changed).toBe(true)
-    expect(() => build('C:\\vault', 'C:\\vault\\plugins\\out')).toThrow(/inside the vault/)
+    expect(build('C:\\vault', 'C:\\vault\\marketplaces-bee').changed).toBe(true)
+    expect(() => build('C:\\vault', 'C:\\vault\\marketplaces\\out')).toThrow(
+      /which a build reads as source/,
+    )
   })
 
   test('works on a UNC share, and on a mapped drive that resolves to one', () => {

@@ -31,10 +31,12 @@ try {
   const vault = join(root, 'vault')
   const folder = join(vault, 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(folder, { recursive: true })
+  writeFileSync(join(vault, 'skillwright.md'), '---\n---\n')
   writeFileSync(
-    join(vault, 'marketplaces/house/skillwright.md'),
-    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
+    join(vault, 'marketplaces/house/house.md'),
+    '---\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
+  writeFileSync(join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
   writeFileSync(
     join(folder, 'review.md'),
     '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n',

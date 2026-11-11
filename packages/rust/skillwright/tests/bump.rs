@@ -1,6 +1,6 @@
-//! `skillwright bump` — the CLI spec's `bump` section, driven in-process the
-//! way `tests/cli.rs` drives every other verb: [`run_with`] over a temp copy
-//! of a vault, never a checked-in fixture mutated in place.
+//! `skillwright bump` — spec section 10 rule 4, driven in-process the way
+//! `tests/cli.rs` drives every other verb: [`run_with`] over a vault written
+//! into a temp folder.
 
 mod common;
 
@@ -9,35 +9,97 @@ use common::{Run, git, run, vault_str};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// One plugin note, discoverable by structure alone —
-/// `marketplaces/<mkt>/plugins/<plugin>/<plugin>.md` — the shape
-/// the shared `freeform-vault` fixture's `core.md`
-/// uses, by its folder. `version_line` is spliced in as a whole
-/// frontmatter line, or omitted for a note with no `version` at all.
+// --- Writing a vault --------------------------------------------------------
+
+/// Writes `text` to `path`, creating its folder.
+fn write(path: &Path, text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+/// The note of plugin `plugin` in marketplace `market`.
+fn plugin_path(root: &Path, market: &str, plugin: &str) -> PathBuf {
+    root.join("marketplaces")
+        .join(market)
+        .join("plugins")
+        .join(plugin)
+        .join(format!("{plugin}.md"))
+}
+
+/// The note of marketplace `market`.
+fn market_path(root: &Path, market: &str) -> PathBuf {
+    root.join("marketplaces")
+        .join(market)
+        .join(format!("{market}.md"))
+}
+
+/// Plugins by name, each with its `version` or none.
+type Plugins<'a> = &'a [(&'a str, Option<&'a str>)];
+
+/// Writes a v2 vault at `root`: the root file holding `root_fm`, and each
+/// marketplace with its plugins. A plugin note holds `description` and,
+/// when given, `version`; each plugin has one skill, `<plugin>-skill`.
+fn vault(root: &Path, root_fm: &str, markets: &[(&str, Plugins)]) {
+    write(
+        &root.join("skillwright.md"),
+        &format!("---\n{root_fm}---\n"),
+    );
+    for (market, plugins) in markets {
+        write(&market_path(root, market), "---\n---\n");
+        for (plugin, version) in *plugins {
+            let version = version
+                .map(|v| format!("version: {v}\n"))
+                .unwrap_or_default();
+            write(
+                &plugin_path(root, market, plugin),
+                &format!("---\ndescription: The {plugin} plugin.\n{version}---\n"),
+            );
+            skill_in(root, market, plugin, "First draft.");
+        }
+    }
+}
+
+/// Writes the skill `<plugin>-skill` of `plugin` in `market` with `body`.
+fn skill_in(root: &Path, market: &str, plugin: &str, body: &str) {
+    let name = format!("{plugin}-skill");
+    write(
+        &root
+            .join("marketplaces")
+            .join(market)
+            .join("plugins")
+            .join(plugin)
+            .join("skills")
+            .join(&name)
+            .join(format!("{name}.md")),
+        &format!("---\ndescription: Use {plugin}.\n---\n\n{body}\n"),
+    );
+}
+
+fn read(path: &Path) -> String {
+    fs::read_to_string(path).unwrap()
+}
+
+// --- One plugin -------------------------------------------------------------
+
+/// A vault at `<dir>/vault` with plugin `widget` in marketplace `acme`.
+/// `version_line` is spliced into its note as a whole frontmatter line, or
+/// left out for a note with no `version`.
 fn fixture(version_line: Option<&str>) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    let vault = dir.path().join("vault");
-    let plugin_dir = vault
-        .join("marketplaces")
-        .join("acme")
-        .join("plugins")
-        .join("widget");
-    fs::create_dir_all(&plugin_dir).unwrap();
+    let root = dir.path().join("vault");
+    vault(&root, "", &[("acme", &[("widget", None)])]);
     let version = version_line.map(|v| format!("{v}\n")).unwrap_or_default();
-    let note = format!(
-        "---\nname: widget\ndescription: A plugin for bump tests.\n{version}---\n\nBody text, untouched by a bump.\n"
+    write(
+        &note_path(&root),
+        &format!(
+            "---\ndescription: A plugin for bump tests.\n{version}---\n\nBody text, untouched by a bump.\n"
+        ),
     );
-    fs::write(plugin_dir.join("widget.md"), &note).unwrap();
-    (dir, vault)
+    (dir, root)
 }
 
 fn note_path(vault: &Path) -> PathBuf {
-    vault
-        .join("marketplaces")
-        .join("acme")
-        .join("plugins")
-        .join("widget")
-        .join("widget.md")
+    plugin_path(vault, "acme", "widget")
 }
 
 const REL: &str = "marketplaces/acme/plugins/widget/widget.md";
@@ -70,7 +132,7 @@ fn dry_run_prints_old_arrow_new_and_leaves_the_note_untouched() {
 fn a_real_bump_rewrites_only_the_version_line() {
     let (dir, vault) = fixture(Some("version: 0.2.1"));
     let path = note_path(&vault);
-    let before = fs::read_to_string(&path).unwrap();
+    let before = read(&path);
 
     let result = run(
         &[
@@ -90,7 +152,7 @@ fn a_real_bump_rewrites_only_the_version_line() {
         format!("{REL}  written · version 0.2.1 -> 0.3.0\n")
     );
 
-    let after = fs::read_to_string(&path).unwrap();
+    let after = read(&path);
     let before_lines: Vec<&str> = before.lines().collect();
     let after_lines: Vec<&str> = after.lines().collect();
     assert_eq!(
@@ -113,7 +175,7 @@ fn a_real_bump_rewrites_only_the_version_line() {
 fn no_version_at_all_bumps_from_the_core_default() {
     let (dir, vault) = fixture(None);
     let path = note_path(&vault);
-    let before = fs::read_to_string(&path).unwrap();
+    let before = read(&path);
     assert!(!before.contains("version"));
 
     let result = run(
@@ -134,7 +196,7 @@ fn no_version_at_all_bumps_from_the_core_default() {
         format!("{REL}  written · version 0.1.0 -> 0.1.1\n")
     );
 
-    let after = fs::read_to_string(&path).unwrap();
+    let after = read(&path);
     let before_lines: Vec<&str> = before.lines().collect();
     let after_lines: Vec<&str> = after.lines().collect();
     assert_eq!(
@@ -158,12 +220,8 @@ fn no_version_at_all_bumps_from_the_core_default() {
 
 #[test]
 fn a_non_semver_version_is_refused_and_the_note_is_untouched() {
-    // Quoted: unquoted `0.3` is a YAML float, and `version` must be a
-    // string at discovery time (`frontmatter::take_string` on
-    // `ContainerIdentity.version`) — a float there fails the whole note's
-    // discovery, not just this field, so `bump` would never even find the
-    // plugin to refuse. A quoted string is the shape that reaches `bump`'s
-    // own non-semver refusal, which is what the CLI spec's transcript shows.
+    // Quoted: an unquoted `0.3` is a YAML float, which fails the note's
+    // discovery before `bump` reaches its own non-semver refusal.
     let (dir, vault) = fixture(Some("version: \"0.3\""));
     let path = note_path(&vault);
     let before = fs::read(&path).unwrap();
@@ -230,7 +288,7 @@ fn a_version_in_a_nested_block_is_bumped_in_place() {
         result.stdout,
         format!("{REL}  written · sw.version 2.3.0 -> 2.3.1\n")
     );
-    let after = fs::read_to_string(&path).unwrap();
+    let after = read(&path);
     assert!(after.contains("sw:\n  version: 2.3.1\n"), "{after}");
     assert!(
         !after.contains("sw-version"),
@@ -238,57 +296,262 @@ fn a_version_in_a_nested_block_is_bumped_in_place() {
     );
 }
 
-// --- `--changed-since` ------------------------------------------------------
+// --- Which note a bump writes -----------------------------------------------
 
-/// A project with two plugins, `widget` (`0.2.1`) and `gadget` (`1.0.0`), one
-/// skill each, building into `market/`.
-fn project(extra_config: &str) -> tempfile::TempDir {
+#[test]
+fn bump_of_a_plugin_writes_its_note() {
     let dir = tempfile::tempdir().unwrap();
-    project_in(dir.path(), extra_config);
+    let root = dir.path();
+    vault(root, "", &[("acme", &[("tools", Some("1.2.3"))])]);
+    write(&market_path(root, "acme"), "---\nversion: 4.0.0\n---\n");
+
+    let result = run(&["bump", "tools", "--yes"], root);
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert_eq!(
+        result.stdout,
+        "marketplaces/acme/plugins/tools/tools.md  written · version 1.2.3 -> 1.2.4\n"
+    );
+    assert!(read(&plugin_path(root, "acme", "tools")).contains("version: 1.2.4"));
+    assert_eq!(
+        read(&market_path(root, "acme")),
+        "---\nversion: 4.0.0\n---\n"
+    );
+}
+
+#[test]
+fn bump_of_a_marketplace_writes_its_note() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    vault(root, "", &[("acme", &[("tools", Some("1.2.3"))])]);
+    write(&market_path(root, "acme"), "---\nversion: 4.0.0\n---\n");
+
+    let result = run(&["bump", "--marketplace", "acme", "--yes"], root);
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert_eq!(
+        result.stdout,
+        "marketplaces/acme/acme.md  written · version 4.0.0 -> 4.0.1\n"
+    );
+    assert_eq!(
+        read(&market_path(root, "acme")),
+        "---\nversion: 4.0.1\n---\n"
+    );
+    assert!(read(&plugin_path(root, "acme", "tools")).contains("version: 1.2.3"));
+}
+
+#[test]
+fn bump_of_the_marketplace_init_writes_adds_one_version_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let init = run(&["init", "acme", "tools"], root);
+    assert_eq!(init.code, 0, "{}", init.stderr);
+    skill_in(root, "acme", "tools", "One.");
+    let note = market_path(root, "acme");
+    assert!(read(&note).starts_with("---\n---\n"), "{}", read(&note));
+
+    let result = run(&["bump", "--marketplace", "acme", "--yes"], root);
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    let text = read(&note);
+    assert!(text.starts_with("---\nversion: 0.1.1\n---\n"), "{text}");
+    assert_eq!(text.matches(':').count(), 1, "{text}");
+}
+
+#[test]
+fn a_plugin_named_after_its_marketplace_is_just_a_plugin() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    vault(root, "", &[("osdlc", &[("osdlc", Some("1.0.0"))])]);
+    write(&market_path(root, "osdlc"), "---\nversion: 3.0.0\n---\n");
+
+    let result = run(&["bump", "osdlc", "--yes"], root);
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    assert!(read(&plugin_path(root, "osdlc", "osdlc")).contains("version: 1.0.1"));
+    assert_eq!(
+        read(&market_path(root, "osdlc")),
+        "---\nversion: 3.0.0\n---\n"
+    );
+}
+
+#[test]
+fn bump_of_a_plugin_note_under_a_namespace_edits_the_key_it_reads() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    vault(root, "build:\n  namespace: sw\n", &[("m", &[("p", None)])]);
+    let note = plugin_path(root, "m", "p");
+    write(&note, "---\nsw-description: P.\nsw-version: 2.0.0\n---\n");
+
+    let result = run(&["bump", "p", "--yes"], root);
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    let text = read(&note);
+    assert!(text.contains("sw-version: 2.0.1"), "{text}");
+}
+
+#[test]
+fn bump_of_a_marketplace_under_a_namespace_edits_the_bare_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    vault(
+        root,
+        "build:\n  namespace: sw\n",
+        &[("solo", &[("p", None)])],
+    );
+    write(&market_path(root, "solo"), "---\nversion: 1.0.0\n---\n");
+
+    let result = run(&["bump", "--marketplace", "solo", "--yes"], root);
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    let text = read(&market_path(root, "solo"));
+    assert!(text.contains("\nversion: 1.0.1\n"), "{text}");
+    assert!(!text.contains("sw-version"), "{text}");
+}
+
+// --- A plugin name two marketplaces share -----------------------------------
+
+/// A vault whose marketplaces `a` and `b` each hold plugin `tools` at `1.0.0`.
+fn shared_plugin(root: &Path) {
+    let tools: Plugins = &[("tools", Some("1.0.0"))];
+    vault(root, "", &[("a", tools), ("b", tools)]);
+}
+
+fn tools_note(root: &Path, market: &str) -> String {
+    read(&plugin_path(root, market, "tools"))
+}
+
+#[test]
+fn a_plugin_name_two_marketplaces_share_needs_marketplace() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    shared_plugin(root);
+
+    let flagless = run(&["bump", "tools", "--yes"], root);
+    assert_eq!(flagless.code, 3, "{}", flagless.stderr);
+    assert!(
+        flagless.stderr.contains("--marketplace"),
+        "{}",
+        flagless.stderr
+    );
+    assert!(tools_note(root, "a").contains("version: 1.0.0"));
+    assert!(tools_note(root, "b").contains("version: 1.0.0"));
+
+    let one = run(&["bump", "tools", "--marketplace", "b", "--yes"], root);
+    assert_eq!(one.code, 0, "{}", one.stderr);
+    assert!(tools_note(root, "b").contains("version: 1.0.1"));
+    assert!(tools_note(root, "a").contains("version: 1.0.0"));
+
+    let unknown = run(&["bump", "tools", "--marketplace", "nope", "--yes"], root);
+    assert_eq!(unknown.code, 2, "{}", unknown.stderr);
+    assert!(unknown.stderr.contains("nope"), "{}", unknown.stderr);
+}
+
+#[test]
+fn check_advises_a_bump_that_runs_in_a_vault_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    shared_plugin(root);
+    let built = run(&["build", "--marketplace", "b", "--yes"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    skill_in(root, "b", "tools", "Two.");
+
+    let check = run(&["check", "--marketplace", "b"], root);
+    let advised = check
+        .stderr
+        .lines()
+        .find_map(|line| {
+            line.split('`')
+                .nth(1)
+                .filter(|c| c.starts_with("skillwright bump"))
+        })
+        .unwrap_or_else(|| panic!("no bump advice: {}", check.stderr))
+        .to_owned();
+    assert_eq!(advised, "skillwright bump tools --marketplace b");
+    let mut argv: Vec<&str> = advised.split(' ').skip(1).collect();
+    argv.push("--yes");
+    let bumped = run(&argv, root);
+    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
+    assert!(tools_note(root, "b").contains("version: 1.0.1"));
+    assert!(tools_note(root, "a").contains("version: 1.0.0"));
+}
+
+// --- `build.bump.patch: timestamp` ------------------------------------------
+
+/// The UTC time as `build.bump.patch: timestamp` writes it.
+fn utc_stamp() -> u64 {
+    chrono::Utc::now()
+        .format("%Y%m%d%H%M%S")
+        .to_string()
+        .parse()
+        .unwrap()
+}
+
+/// A vault with the timestamp scheme and plugin `tools` at `version`, after
+/// `bump tools`: the new version.
+fn timestamp_bump(version: &str) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    vault(
+        root,
+        "build:\n  bump:\n    patch: timestamp\n",
+        &[("acme", &[("tools", Some(version))])],
+    );
+    let result = run(&["bump", "tools", "--yes", "--json"], root);
+    assert_eq!(result.code, 0, "{}", result.stderr);
+    let row: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
+    let new = row["new"].as_str().unwrap().to_owned();
+    assert!(tools_note(root, "acme").contains(&format!("version: {new}\n")));
+    new
+}
+
+#[test]
+fn a_timestamp_patch_is_the_utc_time() {
+    let before = utc_stamp();
+    let new = timestamp_bump("1.2.3");
+    let after = utc_stamp();
+
+    let patch = new.strip_prefix("1.2.").unwrap();
+    assert_eq!(patch.len(), 14, "YYYYMMDDHHMMSS: {new}");
+    assert!(patch.bytes().all(|b| b.is_ascii_digit()), "{new}");
+    let patch: u64 = patch.parse().unwrap();
+    assert!(
+        before <= patch && patch <= after,
+        "{before} <= {patch} <= {after}"
+    );
+}
+
+#[test]
+fn a_timestamp_patch_larger_than_now_rises_by_one() {
+    assert_eq!(timestamp_bump("1.2.99999999999999"), "1.2.100000000000000");
+}
+
+// --- `--changed-since` a built folder ---------------------------------------
+
+/// Plugins `widget` (`0.2.1`) and `gadget` (`1.0.0`) in marketplace `acme`,
+/// one skill each, with `root_fm` in the root file.
+fn project(root_fm: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    project_in(dir.path(), root_fm);
     dir
 }
 
 /// [`project`]'s vault, written into `root`.
-fn project_in(root: &Path, extra_config: &str) {
-    fs::create_dir_all(root).unwrap();
-    fs::write(
-        root.join("skillwright.md"),
-        format!("---\nname: acme\nbuild:\n  out: market\n{extra_config}---\n"),
-    )
-    .unwrap();
-    for (plugin, version) in [("widget", "0.2.1"), ("gadget", "1.0.0")] {
-        let base = root.join("marketplaces/acme/plugins").join(plugin);
-        fs::create_dir_all(base.join("skills")).unwrap();
-        fs::write(
-            base.join(format!("{plugin}.md")),
-            format!(
-                "---\nname: {plugin}\ndescription: The {plugin} plugin.\nversion: {version}\n---\n"
-            ),
-        )
-        .unwrap();
-        write_skill(root, plugin, "First draft.");
-    }
+fn project_in(root: &Path, root_fm: &str) {
+    vault(
+        root,
+        root_fm,
+        &[(
+            "acme",
+            &[("widget", Some("0.2.1")), ("gadget", Some("1.0.0"))],
+        )],
+    );
 }
 
 fn write_skill(root: &Path, plugin: &str, body: &str) {
-    fs::write(
-        root.join("marketplaces/acme/plugins")
-            .join(plugin)
-            .join("skills")
-            .join(format!("{plugin}-skill.md")),
-        format!("---\nname: {plugin}-skill\ndescription: Use {plugin}.\n---\n\n{body}\n"),
-    )
-    .unwrap();
+    skill_in(root, "acme", plugin, body);
 }
 
 fn plugin_note(root: &Path, plugin: &str) -> String {
-    fs::read_to_string(
-        root.join("marketplaces/acme/plugins")
-            .join(plugin)
-            .join(format!("{plugin}.md")),
-    )
-    .unwrap()
+    read(&plugin_path(root, "acme", plugin))
 }
+
+/// Where `build` writes marketplace `acme`.
+const BUILT: &str = "dist/acme";
 
 #[test]
 fn changed_since_a_built_folder_bumps_only_the_plugin_that_changed() {
@@ -299,12 +562,12 @@ fn changed_since_a_built_folder_bumps_only_the_plugin_that_changed() {
     write_skill(root, "widget", "Second draft.");
 
     let dry = run(
-        &["bump", "--changed-since", "market", "--dry-run", "--json"],
+        &["bump", "--changed-since", BUILT, "--dry-run", "--json"],
         root,
     );
     assert_eq!(dry.code, 0, "{}", dry.stderr);
     let report: serde_json::Value = serde_json::from_str(&dry.stdout).unwrap();
-    assert_eq!(report["baseline"], "market");
+    assert_eq!(report["baseline"], BUILT);
     let rows = report["plugins"].as_array().unwrap();
     let row = |name: &str| {
         rows.iter()
@@ -317,7 +580,7 @@ fn changed_since_a_built_folder_bumps_only_the_plugin_that_changed() {
     assert_eq!(row("gadget")["status"], "unchanged");
     assert!(plugin_note(root, "widget").contains("version: 0.2.1"));
 
-    let real = run(&["bump", "--changed-since", "market", "--yes"], root);
+    let real = run(&["bump", "--changed-since", BUILT, "--yes"], root);
     assert_eq!(real.code, 0, "{}", real.stderr);
     assert!(
         real.stdout.contains(
@@ -331,7 +594,7 @@ fn changed_since_a_built_folder_bumps_only_the_plugin_that_changed() {
 
     // The version has now moved since the baseline, so a second run leaves
     // it alone.
-    let again = run(&["bump", "--changed-since", "market", "--yes"], root);
+    let again = run(&["bump", "--changed-since", BUILT, "--yes"], root);
     assert_eq!(again.code, 0, "{}", again.stderr);
     assert!(
         again.stdout.contains("widget.md  skipped · version-moved"),
@@ -348,31 +611,23 @@ fn each_skip_names_its_own_cause() {
     let built = run(&["build", "--yes"], root);
     assert_eq!(built.code, 0, "{}", built.stderr);
     // Moved by hand since the build, and a plugin the build never held.
-    let note = root.join("marketplaces/acme/plugins/widget/widget.md");
-    let text = fs::read_to_string(&note).unwrap();
-    fs::write(&note, text.replace("0.2.1", "0.3.0")).unwrap();
+    let note = plugin_path(root, "acme", "widget");
+    fs::write(&note, read(&note).replace("0.2.1", "0.3.0")).unwrap();
     write_skill(root, "widget", "Second draft.");
-    let base = root.join("marketplaces/acme/plugins/gizmo");
-    fs::create_dir_all(base.join("skills")).unwrap();
-    fs::write(
-        base.join("gizmo.md"),
-        "---\nname: gizmo\ndescription: The gizmo plugin.\nversion: 0.1.0\n---\n",
-    )
-    .unwrap();
+    write(
+        &plugin_path(root, "acme", "gizmo"),
+        "---\ndescription: The gizmo plugin.\nversion: 0.1.0\n---\n",
+    );
     write_skill(root, "gizmo", "First draft.");
     // Only the manifest moves: a new description.
-    let note = root.join("marketplaces/acme/plugins/gadget/gadget.md");
-    let text = fs::read_to_string(&note).unwrap();
+    let note = plugin_path(root, "acme", "gadget");
     fs::write(
         &note,
-        text.replace("The gadget plugin.", "The new gadget plugin."),
+        read(&note).replace("The gadget plugin.", "The new gadget plugin."),
     )
     .unwrap();
 
-    let result = run(
-        &["bump", "--changed-since", "market", "--yes", "--json"],
-        root,
-    );
+    let result = run(&["bump", "--changed-since", BUILT, "--yes", "--json"], root);
     assert_eq!(result.code, 0, "{}", result.stderr);
     let report: serde_json::Value = serde_json::from_str(&result.stdout).unwrap();
     let rows = report["plugins"].as_array().unwrap();
@@ -405,9 +660,8 @@ fn changed_since_a_folder_with_no_plugin_manifest_is_refused() {
 fn an_unversioned_plugin_is_bumped_once_then_skipped() {
     let dir = project("");
     let root = dir.path();
-    let note = root.join("marketplaces/acme/plugins/gadget/gadget.md");
-    let text = fs::read_to_string(&note).unwrap();
-    fs::write(&note, text.replace("version: 1.0.0\n", "")).unwrap();
+    let note = plugin_path(root, "acme", "gadget");
+    fs::write(&note, read(&note).replace("version: 1.0.0\n", "")).unwrap();
     let built = run(&["build", "--yes"], root);
     assert_eq!(built.code, 0, "{}", built.stderr);
     write_skill(root, "gadget", "Second draft.");
@@ -418,18 +672,12 @@ fn an_unversioned_plugin_is_bumped_once_then_skipped() {
         let gadget = rows.iter().find(|r| r["plugin"] == "gadget").unwrap();
         gadget["status"].as_str().unwrap().to_owned()
     };
-    let first = run(
-        &["bump", "--changed-since", "market", "--yes", "--json"],
-        root,
-    );
+    let first = run(&["bump", "--changed-since", BUILT, "--yes", "--json"], root);
     assert_eq!(first.code, 0, "{}", first.stderr);
     assert_eq!(status(&first), "written", "{}", first.stdout);
     assert!(plugin_note(root, "gadget").contains("version: 0.1.1"));
 
-    let second = run(
-        &["bump", "--changed-since", "market", "--yes", "--json"],
-        root,
-    );
+    let second = run(&["bump", "--changed-since", BUILT, "--yes", "--json"], root);
     assert_eq!(second.code, 0, "{}", second.stderr);
     assert_eq!(status(&second), "skipped", "{}", second.stdout);
     assert!(plugin_note(root, "gadget").contains("version: 0.1.1"));
@@ -447,15 +695,12 @@ fn a_failed_write_is_refused_on_its_row_and_the_others_are_still_reported() {
     write_skill(root, "widget", "Second draft.");
     write_skill(root, "gadget", "Second draft.");
     // `gadget` sorts first, so its failure comes before `widget`'s write.
-    let gadget = root.join("marketplaces/acme/plugins/gadget");
-    let note = gadget.join("gadget.md");
+    let note = plugin_path(root, "acme", "gadget");
+    let gadget = note.parent().unwrap().to_path_buf();
     fs::set_permissions(&note, fs::Permissions::from_mode(0o444)).unwrap();
     fs::set_permissions(&gadget, fs::Permissions::from_mode(0o555)).unwrap();
 
-    let result = run(
-        &["bump", "--changed-since", "market", "--yes", "--json"],
-        root,
-    );
+    let result = run(&["bump", "--changed-since", BUILT, "--yes", "--json"], root);
     fs::set_permissions(&gadget, fs::Permissions::from_mode(0o755)).unwrap();
     fs::set_permissions(&note, fs::Permissions::from_mode(0o644)).unwrap();
 
@@ -476,12 +721,100 @@ fn a_failed_write_is_refused_on_its_row_and_the_others_are_still_reported() {
 }
 
 #[test]
+fn a_plugin_and_changed_since_together_are_a_usage_error() {
+    let dir = project("");
+    let result = run(
+        &["bump", "widget", "--changed-since", BUILT, "--yes"],
+        dir.path(),
+    );
+    assert_eq!(result.code, 3, "{}", result.stderr);
+}
+
+#[test]
+fn changed_since_a_built_folder_reads_moved_packs() {
+    let dir = project("claude: {packs: moved}\nbuild:\n  harnesses: [claude]\n");
+    let root = dir.path();
+    assert_eq!(run(&["build", "--yes"], root).code, 0);
+    assert!(root.join("dist/acme/moved/widget").is_dir());
+    write_skill(root, "widget", "Second draft.");
+
+    let result = run(&["bump", "--changed-since", BUILT, "--yes"], root);
+    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
+    assert!(plugin_note(root, "widget").contains("version: 0.2.2"));
+    assert!(plugin_note(root, "gadget").contains("version: 1.0.0"));
+}
+
+#[test]
+fn changed_since_works_on_one_of_several_marketplaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    shared_plugin(root);
+    let built = run(&["build", "--marketplace", "a", "--yes"], root);
+    assert_eq!(built.code, 0, "{}", built.stderr);
+    skill_in(root, "a", "tools", "Two.");
+
+    // A built folder is one marketplace, so several need `--marketplace`.
+    let flagless = run(&["bump", "--changed-since", "dist/a", "--yes"], root);
+    assert_eq!(flagless.code, 3, "{}", flagless.stderr);
+    assert!(
+        flagless.stderr.contains("--marketplace"),
+        "{}",
+        flagless.stderr
+    );
+    assert!(tools_note(root, "a").contains("version: 1.0.0"));
+
+    let argv = [
+        "bump",
+        "--changed-since",
+        "dist/a",
+        "--marketplace",
+        "a",
+        "--yes",
+    ];
+    let result = run(&argv, root);
+    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
+    assert!(tools_note(root, "a").contains("version: 1.0.1"));
+    assert!(tools_note(root, "b").contains("version: 1.0.0"));
+
+    git(root, &["init", "--quiet", "--initial-branch", "main"]);
+    git(root, &["add", "skillwright.md", "marketplaces"]);
+    git(root, &["commit", "--quiet", "-m", "one"]);
+    skill_in(root, "a", "tools", "Three.");
+    let argv = [
+        "bump",
+        "--changed-since",
+        "HEAD",
+        "--marketplace",
+        "a",
+        "--yes",
+    ];
+    let from_ref = run(&argv, root);
+    assert_eq!(from_ref.code, 0, "{}{}", from_ref.stdout, from_ref.stderr);
+    assert!(tools_note(root, "a").contains("version: 1.0.2"));
+    assert!(tools_note(root, "b").contains("version: 1.0.0"));
+}
+
+// --- `--changed-since` a git ref --------------------------------------------
+
+/// Stages and commits everything in `repo`.
+fn commit_all(repo: &Path, message: &str) {
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "--quiet", "-m", message]);
+}
+
+/// The number of worktrees `repo` has registered, its own included.
+fn worktree_count(repo: &Path) -> usize {
+    git(repo, &["worktree", "list", "--porcelain"])
+        .matches("worktree ")
+        .count()
+}
+
+#[test]
 fn changed_since_a_git_ref_builds_it_in_a_temp_folder_and_cleans_up() {
-    let dir = project("  bump:\n    patch: timestamp\n");
+    let dir = project("build:\n  bump:\n    patch: timestamp\n");
     let root = dir.path();
     git(root, &["init", "--quiet", "--initial-branch", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "--quiet", "-m", "one"]);
+    commit_all(root, "one");
     write_skill(root, "gadget", "Second draft.");
 
     let result = run(
@@ -500,17 +833,9 @@ fn changed_since_a_git_ref_builds_it_in_a_temp_folder_and_cleans_up() {
     let widget = rows.iter().find(|r| r["plugin"] == "widget").unwrap();
     assert_eq!(widget["status"], "unchanged", "{rows:?}");
 
-    // No worktree was left registered, and nothing was built into `market/`.
-    let worktrees = git(root, &["worktree", "list", "--porcelain"]);
-    assert_eq!(worktrees.matches("worktree ").count(), 1, "{worktrees}");
-    assert!(!root.join("market").exists());
-}
-
-/// The number of worktrees `repo` has registered, its own included.
-fn worktree_count(repo: &Path) -> usize {
-    git(repo, &["worktree", "list", "--porcelain"])
-        .matches("worktree ")
-        .count()
+    // No worktree was left registered, and nothing was built into `dist/`.
+    assert_eq!(worktree_count(root), 1);
+    assert!(!root.join("dist").exists());
 }
 
 #[test]
@@ -524,7 +849,7 @@ fn a_ref_without_a_root_file_is_blocked_and_cleans_up() {
     let result = run(&["bump", "--changed-since", "HEAD", "--yes"], root);
     assert_eq!(result.code, 2, "{}", result.stderr);
     assert!(
-        result.stderr.contains("compare against a built folder"),
+        result.stderr.contains("Compare against a built folder"),
         "{}",
         result.stderr
     );
@@ -536,8 +861,7 @@ fn changed_since_a_name_that_is_neither_a_folder_nor_a_ref_is_blocked() {
     let dir = project("");
     let root = dir.path();
     git(root, &["init", "--quiet", "--initial-branch", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "--quiet", "-m", "one"]);
+    commit_all(root, "one");
 
     let result = run(&["bump", "--changed-since", "no-such-ref", "--yes"], root);
     assert_eq!(result.code, 2, "{}", result.stderr);
@@ -549,232 +873,15 @@ fn changed_since_a_name_that_is_neither_a_folder_nor_a_ref_is_blocked() {
 }
 
 #[test]
-fn a_plugin_and_changed_since_together_are_a_usage_error() {
-    let dir = project("");
-    let result = run(
-        &["bump", "widget", "--changed-since", "market", "--yes"],
-        dir.path(),
-    );
-    assert_eq!(result.code, 3, "{}", result.stderr);
-}
-
-#[test]
-fn a_plugin_named_after_the_marketplace_bumps_the_root_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    fs::write(
-        root.join("skillwright.md"),
-        "---\nname: acme\nversion: 1.0.0\nbuild:\n  out: market\n---\n",
-    )
-    .unwrap();
-    let skill = root.join("skills/a.md");
-    fs::create_dir_all(skill.parent().unwrap()).unwrap();
-    fs::write(&skill, "---\ndescription: Use a.\n---\n\nOne.\n").unwrap();
-    assert_eq!(run(&["build", "--yes"], root).code, 0);
-    fs::write(&skill, "---\ndescription: Use a.\n---\n\nTwo.\n").unwrap();
-
-    let result = run(&["bump", "--changed-since", "market", "--yes"], root);
-    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
-    let text = fs::read_to_string(root.join("skillwright.md")).unwrap();
-    assert!(text.contains("version: 1.0.1"), "{text}");
-}
-
-#[test]
-fn a_changed_plugin_with_no_note_is_refused_and_says_so() {
-    let dir = project("");
-    let root = dir.path();
-    let base = root.join("marketplaces/acme/plugins/bare/skills");
-    fs::create_dir_all(&base).unwrap();
-    fs::write(base.join("b.md"), "---\ndescription: Use b.\n---\n\nOne.\n").unwrap();
-    assert_eq!(run(&["build", "--yes"], root).code, 0);
-    fs::write(base.join("b.md"), "---\ndescription: Use b.\n---\n\nTwo.\n").unwrap();
-
-    let result = run(&["bump", "--changed-since", "market", "--yes"], root);
-    assert_eq!(result.code, 1, "{}{}", result.stdout, result.stderr);
-    assert!(
-        result.stdout.contains("no note to bump"),
-        "{}",
-        result.stdout
-    );
-}
-
-#[test]
-fn changed_since_a_built_folder_reads_moved_packs() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    fs::write(
-        root.join("skillwright.md"),
-        "---\nname: acme\nclaude: {packs: moved}\nbuild:\n  out: market\n  harnesses: [claude]\n---\n",
-    )
-    .unwrap();
-    let base = root.join("plugins/widget");
-    fs::create_dir_all(base.join("skills")).unwrap();
-    fs::write(
-        base.join("widget.md"),
-        "---\ndescription: W.\nversion: 0.2.1\n---\n",
-    )
-    .unwrap();
-    fs::write(
-        base.join("skills/a.md"),
-        "---\ndescription: A.\n---\n\nOne.\n",
-    )
-    .unwrap();
-    assert_eq!(run(&["build", "--yes"], root).code, 0);
-    fs::write(
-        base.join("skills/a.md"),
-        "---\ndescription: A.\n---\n\nTwo.\n",
-    )
-    .unwrap();
-
-    let result = run(&["bump", "--changed-since", "market", "--yes"], root);
-    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
-    let note = fs::read_to_string(base.join("widget.md")).unwrap();
-    assert!(note.contains("version: 0.2.2"), "{note}");
-}
-
-/// A vault with a root `skills/hello.md` and this root file frontmatter.
-fn solo(root: &Path, frontmatter: &str) -> PathBuf {
-    fs::write(
-        root.join("skillwright.md"),
-        format!("---\n{frontmatter}---\n"),
-    )
-    .unwrap();
-    let skill = root.join("skills/hello.md");
-    fs::create_dir_all(skill.parent().unwrap()).unwrap();
-    fs::write(&skill, "---\ndescription: Hi.\n---\n\nOne.\n").unwrap();
-    skill
-}
-
-#[test]
-fn bump_of_the_marketplace_edits_the_bare_version_under_a_namespace() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let config = "name: solo\nversion: 1.0.0\nbuild:\n  out: dist\n  namespace: sw\n";
-    let skill = solo(root, config);
-
-    let one = run(&["bump", "solo", "--yes"], root);
-    assert_eq!(one.code, 0, "{}", one.stderr);
-    let text = fs::read_to_string(root.join("skillwright.md")).unwrap();
-    assert!(text.contains("\nversion: 1.0.1\n"), "{text}");
-    assert!(!text.contains("sw-version"), "{text}");
-
-    assert_eq!(run(&["build", "--yes"], root).code, 0);
-    fs::write(&skill, "---\ndescription: Hi.\n---\n\nTwo.\n").unwrap();
-    let changed = run(&["bump", "--changed-since", "dist", "--yes"], root);
-    assert_eq!(changed.code, 0, "{}{}", changed.stdout, changed.stderr);
-    let text = fs::read_to_string(root.join("skillwright.md")).unwrap();
-    assert!(text.contains("\nversion: 1.0.2\n"), "{text}");
-    assert!(!text.contains("sw-version"), "{text}");
-}
-
-#[test]
-fn bump_of_a_plugin_note_under_a_namespace_edits_the_key_it_reads() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    fs::write(
-        root.join("skillwright.md"),
-        "---\nname: m\nbuild:\n  out: dist\n  namespace: sw\n---\n",
-    )
-    .unwrap();
-    let note = root.join("plugins/p/p.md");
-    fs::create_dir_all(note.parent().unwrap()).unwrap();
-    fs::write(&note, "---\nsw-description: P.\nsw-version: 2.0.0\n---\n").unwrap();
-    let result = run(&["bump", "p", "--yes"], root);
-    assert_eq!(result.code, 0, "{}", result.stderr);
-    let text = fs::read_to_string(&note).unwrap();
-    assert!(text.contains("sw-version: 2.0.1"), "{text}");
-}
-
-/// The version `plugin` ships as in the Claude pack under `root/dist`.
-fn built_version(root: &Path, plugin: &str) -> String {
-    let manifest = root
-        .join("dist/.claude-plugin/packs")
-        .join(plugin)
-        .join(".claude-plugin/plugin.json");
-    let doc: serde_json::Value = serde_json::from_slice(&fs::read(manifest).unwrap()).unwrap();
-    doc["version"].as_str().unwrap().to_owned()
-}
-
-#[test]
-fn a_plugin_folder_named_after_the_marketplace_never_takes_the_root_version() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    fs::write(
-        root.join("skillwright.md"),
-        "---\nname: acme\nversion: 1.0.0\nbuild:\n  out: dist\n---\n",
-    )
-    .unwrap();
-    let base = root.join("plugins/acme");
-    fs::create_dir_all(base.join("skills")).unwrap();
-    let skill = base.join("skills/a.md");
-    fs::write(&skill, "---\ndescription: A.\n---\n\nOne.\n").unwrap();
-
-    // A folder with no note: the warning, the manifest and `bump` agree.
-    let built = run(&["build", "--yes"], root);
-    assert_eq!(built.code, 0, "{}", built.stderr);
-    assert_eq!(built_version(root, "acme"), "0.1.0");
-    assert!(
-        built.stderr.contains("published as `0.1.0`"),
-        "{}",
-        built.stderr
-    );
-    fs::write(&skill, "---\ndescription: A.\n---\n\nTwo.\n").unwrap();
-    let check = run(&["check"], root);
-    assert!(!check.stderr.contains("bump acme"), "{}", check.stderr);
-    let refused = run(&["bump", "acme", "--dry-run"], root);
-    assert!(
-        refused.stderr.contains("add `plugins/acme/acme.md`"),
-        "{}",
-        refused.stderr
-    );
-
-    // A note with no version: the same, and a bump moves up from there.
-    fs::write(base.join("acme.md"), "---\ndescription: A.\n---\n").unwrap();
-    let built = run(&["build", "--yes"], root);
-    assert_eq!(built.code, 0, "{}", built.stderr);
-    assert_eq!(built_version(root, "acme"), "0.1.0");
-    assert!(
-        built.stderr.contains("published as `0.1.0`"),
-        "{}",
-        built.stderr
-    );
-    assert_eq!(run(&["bump", "acme", "--yes"], root).code, 0);
-    assert_eq!(run(&["build", "--yes"], root).code, 0);
-    assert_eq!(built_version(root, "acme"), "0.1.1");
-    let text = fs::read_to_string(root.join("skillwright.md")).unwrap();
-    assert!(text.contains("version: 1.0.0"), "{text}");
-}
-
-#[test]
-fn the_marketplaces_own_plugin_takes_its_version_everywhere() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let skill = solo(root, "name: solo\nversion: 1.0.0\nbuild:\n  out: dist\n");
-    let built = run(&["build", "--yes"], root);
-    assert_eq!(built.code, 0, "{}", built.stderr);
-    assert_eq!(built_version(root, "solo"), "1.0.0");
-    assert!(!built.stderr.contains("published as"), "{}", built.stderr);
-
-    fs::write(&skill, "---\ndescription: Hi.\n---\n\nTwo.\n").unwrap();
-    let check = run(&["check"], root);
-    assert!(check.stderr.contains("bump solo"), "{}", check.stderr);
-    assert_eq!(run(&["bump", "solo", "--yes"], root).code, 0);
-    assert_eq!(run(&["build", "--yes"], root).code, 0);
-    assert_eq!(built_version(root, "solo"), "1.0.1");
-}
-
-#[test]
 fn a_ref_from_before_a_packs_move_still_finds_the_change() {
-    let dir = project("  harnesses: [claude]\n");
+    let dir = project("build:\n  harnesses: [claude]\n");
     let root = dir.path();
     git(root, &["init", "--quiet", "--initial-branch", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "--quiet", "-m", "one"]);
-    fs::write(
-        root.join("skillwright.md"),
-        "---\nname: acme\nclaude: {packs: moved}\nbuild:\n  out: market\n  harnesses: [claude]\n---\n",
-    )
-    .unwrap();
+    commit_all(root, "one");
+    write(
+        &root.join("skillwright.md"),
+        "---\nclaude: {packs: moved}\nbuild:\n  harnesses: [claude]\n---\n",
+    );
     write_skill(root, "widget", "Second draft.");
 
     let result = run(&["bump", "--changed-since", "HEAD", "--yes"], root);
@@ -791,299 +898,16 @@ fn a_ref_from_before_a_packs_move_still_finds_the_change() {
     );
 }
 
-fn copy_dir(from: &Path, to: &Path) {
-    for entry in fs::read_dir(from).unwrap().flatten() {
-        let target = to.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            fs::create_dir_all(&target).unwrap();
-            copy_dir(&entry.path(), &target);
-        } else {
-            fs::copy(entry.path(), target).unwrap();
-        }
-    }
-}
-
-/// A built `project` whose Pi packs sit in a plain folder inside `out`, which
-/// only `build.out` marks as output.
-fn built_with_moved_packs() -> tempfile::TempDir {
-    let dir = project("  harnesses: [claude, pi]\n");
-    let root = dir.path();
-    let config = fs::read_to_string(root.join("skillwright.md")).unwrap();
-    fs::write(
-        root.join("skillwright.md"),
-        config.replace("name: acme\n", "name: acme\npi: {packs: pi-packs}\n"),
-    )
-    .unwrap();
-    let built = run(&["build", "--yes"], root);
-    assert_eq!(built.code, 0, "{}", built.stderr);
-    assert!(root.join("market/pi-packs/widget").is_dir());
-    dir
-}
-
-#[test]
-fn changed_since_another_folder_does_not_read_the_moved_packs_in_out() {
-    let dir = built_with_moved_packs();
-    let root = dir.path();
-    let baseline = tempfile::tempdir().unwrap();
-    copy_dir(&root.join("market"), baseline.path());
-    write_skill(root, "widget", "Second draft.");
-
-    let since = baseline.path().display().to_string();
-    let result = run(&["bump", "--changed-since", &since, "--yes"], root);
-    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
-    assert!(plugin_note(root, "widget").contains("version: 0.2.2"));
-    assert!(plugin_note(root, "gadget").contains("version: 1.0.0"));
-}
-
-#[test]
-fn changed_since_a_ref_with_out_committed_does_not_read_its_moved_packs() {
-    let dir = built_with_moved_packs();
-    let root = dir.path();
-    git(root, &["init", "--quiet", "--initial-branch", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "--quiet", "-m", "one"]);
-    write_skill(root, "widget", "Second draft.");
-
-    let result = run(&["bump", "--changed-since", "HEAD", "--yes"], root);
-    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
-    assert!(plugin_note(root, "widget").contains("version: 0.2.2"));
-    assert!(plugin_note(root, "gadget").contains("version: 1.0.0"));
-}
-
-#[test]
-fn build_into_another_folder_does_not_read_the_moved_packs_in_out() {
-    let dir = built_with_moved_packs();
-    let root = dir.path();
-    let other = tempfile::tempdir().unwrap();
-    let out = other.path().display().to_string();
-    let result = run(&["build", "--out", &out, "--yes"], root);
-    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
-    assert!(other.path().join("pi-packs/widget").is_dir());
-}
-
-#[test]
-fn check_against_another_folder_does_not_read_the_moved_packs_in_out() {
-    let dir = built_with_moved_packs();
-    let root = dir.path();
-    let other = tempfile::tempdir().unwrap();
-    let out = other.path().display().to_string();
-    let result = run(&["check", "--out", &out], root);
-    // Drift against an empty folder, not a refusal of the packs in `out`.
-    assert_eq!(result.code, 1, "{}{}", result.stdout, result.stderr);
-    let said = format!("{}{}", result.stdout, result.stderr);
-    assert!(!said.contains("unreadable-note"), "{said}");
-}
-
-/// A vault of two marketplaces, each with a plugin `p`, building to `dist`.
-fn two_marketplaces(root: &Path) {
-    fs::write(
-        root.join("skillwright.md"),
-        "---\nname: v\nbuild:\n  out: dist\n---\n",
-    )
-    .unwrap();
-    for market in ["one", "two"] {
-        let base = root.join("marketplaces").join(market);
-        fs::create_dir_all(base.join("plugins/p/skills")).unwrap();
-        fs::write(
-            base.join("skillwright.md"),
-            format!("---\nname: {market}\ndescription: M.\n---\n"),
-        )
-        .unwrap();
-        fs::write(
-            base.join("plugins/p/p.md"),
-            "---\ndescription: P.\nversion: 1.0.0\n---\n",
-        )
-        .unwrap();
-        fs::write(
-            base.join("plugins/p/skills/a.md"),
-            "---\ndescription: A.\n---\n\nOne.\n",
-        )
-        .unwrap();
-    }
-}
-
-fn market_note(root: &Path, market: &str) -> String {
-    fs::read_to_string(
-        root.join("marketplaces")
-            .join(market)
-            .join("plugins/p/p.md"),
-    )
-    .unwrap()
-}
-
-#[test]
-fn marketplace_picks_one_of_several_for_a_bump() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    two_marketplaces(root);
-
-    let flagless = run(&["bump", "p", "--yes"], root);
-    assert_eq!(flagless.code, 3, "{}", flagless.stderr);
-    assert!(
-        flagless.stderr.contains("--marketplace"),
-        "{}",
-        flagless.stderr
-    );
-    let one = run(&["bump", "p", "--marketplace", "two", "--yes"], root);
-    assert_eq!(one.code, 0, "{}", one.stderr);
-    assert!(market_note(root, "two").contains("version: 1.0.1"));
-    assert!(market_note(root, "one").contains("version: 1.0.0"));
-
-    let unknown = run(&["bump", "p", "--marketplace", "nope", "--yes"], root);
-    assert_eq!(unknown.code, 3, "{}", unknown.stderr);
-    assert!(
-        unknown.stderr.contains("no marketplace `nope`"),
-        "{}",
-        unknown.stderr
-    );
-}
-
-#[test]
-fn changed_since_works_on_one_of_several_marketplaces() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    two_marketplaces(root);
-    let skill = root.join("marketplaces/one/plugins/p/skills/a.md");
-    let built = run(&["build", "--marketplace", "one", "--yes"], root);
-    assert_eq!(built.code, 0, "{}", built.stderr);
-    fs::write(&skill, "---\ndescription: A.\n---\n\nTwo.\n").unwrap();
-
-    let argv = [
-        "bump",
-        "--changed-since",
-        "dist",
-        "--marketplace",
-        "one",
-        "--yes",
-    ];
-    let result = run(&argv, root);
-    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
-    assert!(market_note(root, "one").contains("version: 1.0.1"));
-    assert!(market_note(root, "two").contains("version: 1.0.0"));
-
-    git(root, &["init", "--quiet", "--initial-branch", "main"]);
-    git(root, &["add", "skillwright.md", "marketplaces"]);
-    git(root, &["commit", "--quiet", "-m", "one"]);
-    fs::write(&skill, "---\ndescription: A.\n---\n\nThree.\n").unwrap();
-    let argv = [
-        "bump",
-        "--changed-since",
-        "HEAD",
-        "--marketplace",
-        "one",
-        "--yes",
-    ];
-    let from_ref = run(&argv, root);
-    assert_eq!(from_ref.code, 0, "{}{}", from_ref.stdout, from_ref.stderr);
-    assert!(market_note(root, "one").contains("version: 1.0.2"));
-}
-
-#[test]
-fn marketplace_picks_a_workspace_member_for_a_bump() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    fs::write(root.join("skillwright.md"), "---\nworkspace: true\n---\n").unwrap();
-    let member = root.join("marketplaces/one");
-    fs::create_dir_all(member.join("plugins/p")).unwrap();
-    fs::write(
-        member.join("skillwright.md"),
-        "---\nname: one\nbuild:\n  out: built\n---\n",
-    )
-    .unwrap();
-    let note = member.join("plugins/p/p.md");
-    fs::write(&note, "---\ndescription: P.\nversion: 1.0.0\n---\n").unwrap();
-
-    let bare = run(&["bump", "p", "--yes"], root);
-    assert_ne!(bare.code, 0, "{}", bare.stderr);
-    assert!(
-        bare.stderr.contains("--marketplace <name>"),
-        "{}",
-        bare.stderr
-    );
-    let one = run(&["bump", "p", "--marketplace", "one", "--yes"], root);
-    assert_eq!(one.code, 0, "{}", one.stderr);
-    let text = fs::read_to_string(&note).unwrap();
-    assert!(text.contains("version: 1.0.1"), "{text}");
-}
-
-#[test]
-fn check_advises_a_bump_that_runs_in_a_vault_of_several_marketplaces() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    two_marketplaces(root);
-    assert_eq!(
-        run(&["build", "--marketplace", "two", "--yes"], root).code,
-        0
-    );
-    fs::write(
-        root.join("marketplaces/two/plugins/p/skills/a.md"),
-        "---\ndescription: A.\n---\n\nTwo.\n",
-    )
-    .unwrap();
-
-    let check = run(&["check", "--marketplace", "two"], root);
-    let advised = check
-        .stderr
-        .lines()
-        .find_map(|line| {
-            line.split('`')
-                .nth(1)
-                .filter(|c| c.starts_with("skillwright bump"))
-        })
-        .unwrap_or_else(|| panic!("no bump advice: {}", check.stderr))
-        .to_owned();
-    assert_eq!(advised, "skillwright bump p --marketplace two");
-    let mut argv: Vec<&str> = advised.split(' ').skip(1).collect();
-    argv.push("--yes");
-    let bumped = run(&argv, root);
-    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
-    assert!(market_note(root, "two").contains("version: 1.0.1"));
-    assert!(market_note(root, "one").contains("version: 1.0.0"));
-}
-
-#[test]
-fn check_at_a_workspace_root_advises_a_bump_that_runs() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    fs::write(root.join("skillwright.md"), "---\nworkspace: true\n---\n").unwrap();
-    let member = root.join("marketplaces/one");
-    fs::create_dir_all(member.join("plugins/p/skills")).unwrap();
-    fs::write(
-        member.join("skillwright.md"),
-        "---\nname: one\nbuild:\n  out: built\n---\n",
-    )
-    .unwrap();
-    let note = member.join("plugins/p/p.md");
-    fs::write(&note, "---\ndescription: P.\nversion: 1.0.0\n---\n").unwrap();
-    let skill = member.join("plugins/p/skills/a.md");
-    fs::write(&skill, "---\ndescription: A.\n---\n\nOne.\n").unwrap();
-    assert_eq!(run(&["build", "--yes"], root).code, 0);
-    fs::write(&skill, "---\ndescription: A.\n---\n\nTwo.\n").unwrap();
-
-    let check = run(&["check"], root);
-    assert!(
-        check
-            .stderr
-            .contains("`skillwright bump p --marketplace one`"),
-        "{}",
-        check.stderr
-    );
-    let bumped = run(&["bump", "p", "--marketplace", "one", "--yes"], root);
-    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
-}
-
 #[test]
 fn changed_since_a_ref_refuses_packs_on_a_harness_path_as_build_does() {
-    let dir = project("  harnesses: [claude]\n");
+    let dir = project("build:\n  harnesses: [claude]\n");
     let root = dir.path();
     git(root, &["init", "--quiet", "--initial-branch", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "--quiet", "-m", "one"]);
-    fs::write(
-        root.join("skillwright.md"),
-        "---\nname: acme\nclaude: {packs: .claude-plugin}\nbuild:\n  out: market\n  harnesses: [claude]\n---\n",
-    )
-    .unwrap();
+    commit_all(root, "one");
+    write(
+        &root.join("skillwright.md"),
+        "---\nclaude: {packs: .claude-plugin}\nbuild:\n  harnesses: [claude]\n---\n",
+    );
 
     let build = run(&["build", "--yes"], root);
     assert!(build.stderr.contains("path-collision"), "{}", build.stderr);
@@ -1102,69 +926,19 @@ fn changed_since_a_ref_refuses_packs_on_a_harness_path_as_build_does() {
     assert_eq!(worktree_count(root), 1);
 }
 
-#[test]
-fn a_nested_marketplace_never_takes_the_root_files_version() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    fs::write(
-        root.join("skillwright.md"),
-        "---\nname: home\nversion: 9.0.0\nbuild:\n  out: dist\n---\n",
-    )
-    .unwrap();
-    let barn = root.join("marketplaces/barn");
-    fs::create_dir_all(barn.join("skills")).unwrap();
-    fs::write(
-        barn.join("skillwright.md"),
-        "---\ndescription: Barn.\n---\n",
-    )
-    .unwrap();
-    fs::write(
-        barn.join("skills/two.md"),
-        "---\ndescription: Two.\n---\n\nTwo.\n",
-    )
-    .unwrap();
-
-    let built = run(&["build", "--marketplace", "barn", "--yes"], root);
-    assert_eq!(built.code, 0, "{}", built.stderr);
-    assert!(built.stderr.contains("missing-version"), "{}", built.stderr);
-    assert_eq!(built_version(root, "barn"), "0.1.0");
-
-    let bumped = run(&["bump", "barn", "--marketplace", "barn", "--yes"], root);
-    assert_eq!(bumped.code, 0, "{}", bumped.stderr);
-    assert_eq!(
-        run(&["build", "--marketplace", "barn", "--yes"], root).code,
-        0
-    );
-    assert_eq!(built_version(root, "barn"), "0.1.1");
-    let outer = fs::read_to_string(root.join("skillwright.md")).unwrap();
-    assert!(outer.contains("version: 9.0.0"), "{outer}");
-}
-
-// --- `--changed-since` a git ref, what the baseline build reads -------------
-
-/// Stages and commits everything in `repo`.
-fn commit_all(repo: &Path, message: &str) {
-    git(repo, &["add", "."]);
-    git(repo, &["commit", "--quiet", "-m", message]);
-}
+// --- What the ref's baseline build reads ------------------------------------
 
 /// A repository whose vault is `vault/`: [`project`]'s marketplace with
-/// `extra_config` in its root file, plus what `extra` writes into the
+/// `root_fm` in its root file, plus what `extra` writes into the
 /// repository, committed once. The repository path is canonical.
-fn repo_with_vault(extra_config: &str, extra: impl FnOnce(&Path)) -> (tempfile::TempDir, PathBuf) {
+fn repo_with_vault(root_fm: &str, extra: impl FnOnce(&Path)) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().canonicalize().unwrap();
-    project_in(&repo.join("vault"), extra_config);
+    project_in(&repo.join("vault"), root_fm);
     extra(&repo);
     git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
     commit_all(&repo, "one");
     (dir, repo)
-}
-
-/// Writes `text` to `path`, creating its folder.
-fn write(path: &Path, text: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, text).unwrap();
 }
 
 /// A `--json --dry-run` bump against `since`, run in `cwd` with `extra` flags.
@@ -1202,7 +976,7 @@ fn rows(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
 }
 
 const WIDGET_ASSET: &str =
-    "  assets:\n    - {from: ../tools/run.sh, to: bin/run.sh, plugin: widget}\n";
+    "build:\n  assets:\n    - {from: ../tools/run.sh, to: bin/run.sh, plugin: widget}\n";
 
 #[test]
 fn an_asset_outside_the_vault_changed_since_the_ref_bumps_its_plugin() {
@@ -1240,7 +1014,7 @@ fn hooks_json(command: &str) -> String {
 #[test]
 fn a_hooks_file_outside_the_vault_changed_since_the_ref_bumps_its_plugin() {
     let (_dir, repo) = repo_with_vault(
-        "  hooks:\n    - {from: ../hooks/hooks.json, plugin: widget}\n",
+        "build:\n  hooks:\n    - {from: ../hooks/hooks.json, plugin: widget}\n",
         |repo| write(&repo.join("hooks/hooks.json"), &hooks_json("echo one")),
     );
     write(&repo.join("hooks/hooks.json"), &hooks_json("echo two"));
@@ -1258,7 +1032,7 @@ fn an_asset_outside_the_repository_is_read_from_disk() {
     let asset = outside.path().canonicalize().unwrap().join("run.sh");
     write(&asset, "echo one\n");
     let config = format!(
-        "  assets:\n    - {{from: {}, to: bin/run.sh, plugin: widget}}\n",
+        "build:\n  assets:\n    - {{from: {}, to: bin/run.sh, plugin: widget}}\n",
         asset.display()
     );
     let (_dir, repo) = repo_with_vault(&config, |_| {});
@@ -1267,85 +1041,6 @@ fn an_asset_outside_the_repository_is_read_from_disk() {
     assert_eq!(
         statuses(&result),
         rows(&[("widget", "unchanged"), ("gadget", "unchanged")])
-    );
-}
-
-/// A workspace at the repository's top whose file sets `license: MIT` and
-/// `workspace_build`, with members `m1` and `m2`, each holding plugin
-/// `p1`/`p2` and one skill, committed once.
-fn workspace_repo(workspace_build: &str) -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    write(
-        &repo.join("skillwright.md"),
-        &format!("---\nworkspace: true\nlicense: MIT\n{workspace_build}---\n"),
-    );
-    for (member, plugin) in [("m1", "p1"), ("m2", "p2")] {
-        let root = repo.join("marketplaces").join(member);
-        write(
-            &root.join("skillwright.md"),
-            &format!("---\nname: {member}\nbuild:\n  out: built\n---\n"),
-        );
-        write(
-            &root.join(format!("plugins/{plugin}/{plugin}.md")),
-            &format!("---\nname: {plugin}\ndescription: P.\nversion: 1.0.0\n---\n"),
-        );
-        member_skill(&repo, member, plugin, "One.");
-    }
-    git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
-    commit_all(&repo, "one");
-    (dir, repo)
-}
-
-fn member_skill(repo: &Path, member: &str, plugin: &str, body: &str) {
-    write(
-        &repo.join(format!(
-            "marketplaces/{member}/plugins/{plugin}/skills/s.md"
-        )),
-        &format!("---\nname: s-{plugin}\ndescription: S.\n---\n\n{body}\n"),
-    );
-}
-
-#[test]
-fn changed_since_in_a_workspace_member_reads_the_workspace_file_at_the_ref() {
-    let (_dir, repo) = workspace_repo("");
-    let m1 = repo.join("marketplaces/m1");
-    let unchanged = rows(&[("p1", "unchanged")]);
-    let from_member = dry_bump(&m1, "HEAD", &[]);
-    assert_eq!(statuses(&from_member), unchanged);
-    let from_top = dry_bump(&repo, "HEAD", &["--marketplace", "m1"]);
-    assert_eq!(statuses(&from_top), unchanged);
-
-    member_skill(&repo, "m2", "p2", "Two.");
-    assert_eq!(statuses(&dry_bump(&m1, "HEAD", &[])), unchanged);
-
-    member_skill(&repo, "m1", "p1", "Two.");
-    let changed = rows(&[("p1", "dry-run")]);
-    assert_eq!(statuses(&dry_bump(&m1, "HEAD", &[])), changed);
-    assert_eq!(
-        statuses(&dry_bump(&repo, "HEAD", &["--marketplace", "m1"])),
-        changed
-    );
-}
-
-#[test]
-fn a_workspace_member_inherits_an_asset_at_the_ref() {
-    let (_dir, repo) = workspace_repo(
-        "build:\n  assets:\n    - {from: ../../shared/NOTICE, to: NOTICE, plugin: p1}\n",
-    );
-    // Committed after the fixture's own commit, so the ref holds it.
-    write(&repo.join("shared/NOTICE"), "one\n");
-    commit_all(&repo, "notice");
-    let m1 = repo.join("marketplaces/m1");
-    assert_eq!(
-        statuses(&dry_bump(&m1, "HEAD", &[])),
-        rows(&[("p1", "unchanged")])
-    );
-
-    write(&repo.join("shared/NOTICE"), "two\n");
-    assert_eq!(
-        statuses(&dry_bump(&m1, "HEAD", &[])),
-        rows(&[("p1", "dry-run")])
     );
 }
 
@@ -1382,7 +1077,9 @@ fn a_vault_flag_naming_a_folder_the_ref_lacks_is_blocked_and_cleans_up() {
     );
     assert_eq!(result.code, 2, "{}", result.stderr);
     assert!(
-        result.stderr.contains("holds no x/skillwright.md here"),
+        result
+            .stderr
+            .contains("holds no `skillwright.md` and `marketplaces/` at x"),
         "{}",
         result.stderr
     );
@@ -1393,18 +1090,18 @@ fn a_vault_flag_naming_a_folder_the_ref_lacks_is_blocked_and_cleans_up() {
 #[test]
 fn a_symlink_in_the_vault_reads_its_target_at_the_ref() {
     // The current tree refuses a symlinked note, so only the ref holds one.
-    let skill = "vault/marketplaces/acme/plugins/widget/skills/widget-skill.md";
-    let note = "---\nname: widget-skill\ndescription: Use widget.\n---\n\nLinked.\n";
+    let skill = "vault/marketplaces/acme/plugins/widget/skills/widget-skill/widget-skill.md";
+    let note = "---\ndescription: Use widget.\n---\n\nLinked.\n";
     let (_dir, repo) = repo_with_vault("", |repo| {
         write(&repo.join("notes/widget-skill.md"), note);
         let link = repo.join(skill);
         fs::remove_file(&link).unwrap();
-        std::os::unix::fs::symlink("../../../../../../notes/widget-skill.md", &link).unwrap();
+        std::os::unix::fs::symlink("../../../../../../../notes/widget-skill.md", &link).unwrap();
     });
     fs::remove_file(repo.join(skill)).unwrap();
     write(&repo.join(skill), note);
 
-    // The ref's build refuses the link, as it refuses one on disk.
+    // The ref's vault is refused for the link, as one on disk is.
     let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
     assert_symlink_refused(&result, skill);
 }
@@ -1415,8 +1112,7 @@ fn a_root_file_that_is_a_symlink_at_the_ref_builds_as_it_did() {
     // The current tree refuses a symlinked root file, so only the ref holds one.
     let (_dir, repo) = repo_with_vault("", |repo| {
         let root_file = repo.join("vault/skillwright.md");
-        let text = fs::read_to_string(&root_file).unwrap();
-        write(&repo.join("shared/skillwright.md"), &text);
+        write(&repo.join("shared/skillwright.md"), &read(&root_file));
         fs::remove_file(&root_file).unwrap();
         std::os::unix::fs::symlink("../shared/skillwright.md", &root_file).unwrap();
     });
@@ -1424,29 +1120,28 @@ fn a_root_file_that_is_a_symlink_at_the_ref_builds_as_it_did() {
     fs::remove_file(&root_file).unwrap();
     fs::copy(repo.join("shared/skillwright.md"), &root_file).unwrap();
 
-    // The link resolves, so the ref's root file is found and read; its
-    // build then refuses the link.
+    // The link resolves, so the ref's root file is found; its vault is
+    // then refused for the link.
     let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
     assert_symlink_refused(&result, "vault/skillwright.md");
 }
 
-/// The ref's build was refused for the symlink at the repository path `rel`.
+/// The ref's vault was refused for the symlink at the repository path `rel`.
 fn assert_symlink_refused(result: &Run, rel: &str) {
     assert_eq!(result.code, 2, "{}", result.stderr);
     assert!(
-        result
-            .stderr
-            .contains("--changed-since `HEAD`: building it failed: unsafe-path:"),
+        result.stderr.contains("refused: unsafe-path:"),
         "{}",
         result.stderr
     );
     assert!(
         result
             .stderr
-            .contains(&format!("{rel}: a symlink in a skills source")),
+            .contains(&format!("{rel}: a symlink in a vault")),
         "{}",
         result.stderr
     );
+    assert!(result.stdout.is_empty(), "{}", result.stdout);
 }
 
 #[test]
@@ -1598,11 +1293,11 @@ fn a_successful_ref_bump_leaves_no_baseline_behind() {
 #[cfg(unix)]
 #[test]
 fn a_failed_ref_build_leaves_no_baseline_behind() {
-    let skill = "vault/marketplaces/acme/plugins/widget/skills/widget-skill.md";
+    let skill = "vault/marketplaces/acme/plugins/widget/skills/widget-skill/widget-skill.md";
     let (_dir, repo) = repo_with_vault("", |repo| {
         write(
             &repo.join(skill),
-            "---\nname: [widget-skill\n---\n\nBroken.\n",
+            "---\ndescription: [Use widget.\n---\n\nBroken.\n",
         );
     });
     write_skill(&repo.join("vault"), "widget", "Fixed.");
@@ -1633,7 +1328,7 @@ fn a_ref_without_a_root_file_leaves_no_baseline_behind() {
     let (code, stderr) = bump_with_tmp(root, tmp.path(), &argv);
     assert_eq!(code, 2, "{stderr}");
     assert!(
-        stderr.contains("compare against a built folder"),
+        stderr.contains("Compare against a built folder"),
         "{stderr}"
     );
     assert_eq!(baselines_in(tmp.path()), ["guard"]);

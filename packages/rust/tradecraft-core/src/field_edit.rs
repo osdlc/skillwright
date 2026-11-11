@@ -41,8 +41,8 @@ impl FieldEdit {
 ///
 /// `existing` is the file as it sits on disk for a rewrite, `None` for a new
 /// note. A note with no frontmatter block — or an empty one — is seeded with a
-/// throwaway `name: ''` so the document root is the mapping the edit needs;
-/// the first edit overwrites that value, so the seed never survives.
+/// throwaway `name: ''` so the document root is the mapping the edit needs.
+/// The seed is removed after the edits unless one of them sets `name`.
 ///
 /// `split` and `edit_frontmatter` agree on split form — the last line
 /// unterminated — so the block `edit_frontmatter` returns is exactly what
@@ -69,7 +69,13 @@ pub fn compose_note(
         shape.close_sep = true;
     }
 
-    let outcome = edit_frontmatter(&yaml, &splice_edits(fields)).map_err(|e| {
+    let mut edits = splice_edits(fields);
+    if seeded && !fields.iter().any(|field| field.key == "name") {
+        edits.push(yaml_splice::FieldEdit::Remove {
+            key: "name".to_owned(),
+        });
+    }
+    let outcome = edit_frontmatter(&yaml, &edits).map_err(|e| {
         CoreError::refused(
             "frontmatter-edit",
             format!("frontmatter could not be edited: {e}"),
@@ -234,6 +240,13 @@ mod tests {
 
     fn str_value(s: &str) -> Option<Value> {
         Some(Value::Str(s.to_owned()))
+    }
+
+    #[test]
+    fn an_edit_of_an_empty_block_leaves_no_seed() {
+        let edits = [FieldEdit::set("version", Value::Str("1.0.1".to_owned()))];
+        let out = apply_field_edits("---\n---\n\n# acme\n", &edits).unwrap();
+        assert_eq!(out, "---\nversion: 1.0.1\n---\n\n# acme\n");
     }
 
     #[test]

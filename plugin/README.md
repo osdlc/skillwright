@@ -11,9 +11,10 @@ The plugin ships in the `osdlc` marketplace as `skillwright@osdlc`.
 ## Layout
 
 - `skillwright.md` is the root file. The folder holding it is the vault.
-- `plugins/skillwright/` holds the plugin's notes. This is the source.
-- `.claude-plugin/`, `.agents/`, `.cursor-plugin/` and `.pi/` are the built output. They are
-  committed. Do not edit them; rebuild instead.
+- `marketplaces/osdlc/osdlc.md` is the marketplace note.
+- `marketplaces/osdlc/plugins/skillwright/` holds the plugin's notes. This is the source.
+- `dist/osdlc/` is the built output (`.claude-plugin/`, `.agents/`, `.cursor-plugin/` and
+  `.pi/`). It is committed. Do not edit it; rebuild instead.
 
 ## Build
 
@@ -21,11 +22,11 @@ The plugin is built with the skillwright CLI in this repository. From the reposi
 
 ```sh
 cd packages/rust
-cargo run -p skillwright -- build --yes --config ../../plugin/skillwright.md
-cargo run -p skillwright -- check --config ../../plugin/skillwright.md
+cargo run -p skillwright -- build --yes --vault ../../plugin
+cargo run -p skillwright -- check --vault ../../plugin
 ```
 
-Or use an installed `skillwright` and run it from `plugin/`: `skillwright build --yes`.
+Or use an installed `skillwright` and run it from `plugin/`: `skillwright build --yes`. It writes `dist/osdlc/`.
 
 The `plugin` workflow runs the same build and fails if `plugin/` differs from what is committed.
 Commit the rebuilt files with the change to the notes.
@@ -37,12 +38,12 @@ claude plugin marketplace add osdlc/marketplace
 claude plugin install skillwright@osdlc
 ```
 
-For another harness, copy the matching `packs/skillwright` folder from this directory, or install
+For another harness, copy the matching `packs/skillwright` folder from `dist/osdlc/`, or install
 from the marketplace with that harness's own tooling.
 
 ## Release
 
-1. Change the notes, rebuild, and raise `version` in `plugins/skillwright/skillwright.md`
+1. Change the notes, rebuild, and raise `version` in `marketplaces/osdlc/plugins/skillwright/skillwright.md`
    (`skillwright bump skillwright`). Merge the pull request.
 2. Push the tag `plugin/vX.Y.Z` on main, where `X.Y.Z` is that `version`.
 3. The `plugin-release` workflow opens a pull request on `osdlc/marketplace` that replaces only

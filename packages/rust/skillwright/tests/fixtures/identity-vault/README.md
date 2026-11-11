@@ -3,9 +3,10 @@
 A vault that sets every marketplace and plugin identity field, so the golden
 build in `build_golden.rs` pins how each one reaches a manifest.
 
-- `skillwright.md` at the vault root sets every marketplace key.
-- `marketplaces/guild/skillwright.md` overrides some of them, leaves the rest,
-  and carries a block for each harness.
+- `skillwright.md` at the vault root sets the shared defaults: `author`,
+  `license`, `repository` and `homepage`.
+- `marketplaces/guild/guild.md` sets every marketplace field, overrides the
+  root file's `author`, and carries a block for each harness.
 - `marketplaces/guild/plugins/full/full.md` sets every plugin key.
 - `marketplaces/guild/plugins/bare/bare.md` sets none.
 

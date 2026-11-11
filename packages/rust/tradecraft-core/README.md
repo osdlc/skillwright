@@ -23,6 +23,19 @@ Every function that reads or writes files takes a `&dyn Vfs` first.
 `PreviewVfs` wraps either one and keeps writes in memory, which is how a dry
 run works.
 
+A vault holds `skillwright.md` and `marketplaces/` at its root. Each
+marketplace, plugin and component is a folder with a note of the same name:
+
+```text
+<root>/
+├── skillwright.md
+└── marketplaces/<m>/
+    ├── <m>.md
+    └── plugins/<p>/
+        ├── <p>.md
+        └── skills/<s>/<s>.md   (also agents/, commands/)
+```
+
 ```rust
 use std::path::Path;
 use tradecraft_core::{
@@ -30,22 +43,29 @@ use tradecraft_core::{
 };
 
 let vfs = MemVfs::new();
-vfs.create_dir_all(Path::new("/vault/skills"))?;
-vfs.write_file(
-    Path::new("/vault/skills/code-review.md"),
-    b"---\ndescription: Reviews the current diff.\n---\nReview the diff.\n",
-)?;
+let plugin = "/vault/marketplaces/house/plugins/tools";
+for (path, text) in [
+    ("/vault/skillwright.md", "---\n---\n"),
+    ("/vault/marketplaces/house/house.md", "---\n---\n"),
+    (&format!("{plugin}/tools.md"), "---\nversion: 1.0.0\n---\n"),
+    (
+        &format!("{plugin}/skills/code-review/code-review.md"),
+        "---\ndescription: Reviews the current diff.\n---\nReview the diff.\n",
+    ),
+] {
+    let path = Path::new(path);
+    vfs.create_dir_all(path.parent().unwrap())?;
+    vfs.write_file(path, text.as_bytes())?;
+}
 
 // The vault, the output folder and the marketplace config are required.
 // The other fields start empty; set any of them on the value.
-let mut config = MarketplaceConfig::default();
-config.name = Some("house".to_owned());
-let mut request = ExportRequest::new("/vault", "/market", config);
+let mut request = ExportRequest::new("/vault", "/market", MarketplaceConfig::default());
 request.harnesses.insert("claude".to_owned());
 let report = export_skills(&vfs, &request, &Namespace::default())?;
 assert!(report.changed);
 assert!(vfs.exists(Path::new(
-    "/market/.claude-plugin/packs/house/skills/code-review/SKILL.md"
+    "/market/.claude-plugin/packs/tools/skills/code-review/SKILL.md"
 )));
 # Ok::<(), tradecraft_core::CoreError>(())
 ```
@@ -54,71 +74,70 @@ assert!(vfs.exists(Path::new(
 
 The CLI does the same steps.
 
-1. `load_marketplace(&vfs, start, home)` finds the nearest `skillwright.md` at
-   or above `start`, folds in the workspace above it when the file is a
-   member (`marketplaces/<m>/skillwright.md`), and checks `build.namespace`.
-   It returns a `LoadedMarketplace`: the vault folder `dir`, the merged
-   `RootFile`, the `namespace`, `out_root` (`build.out` resolved with `~`
-   expanded), and `inputs`, the config, harnesses, assets and hooks. `home`
-   is the home directory; the library reads no environment. `Ok(None)` means
-   no root file. A root file with `workspace: true` builds nothing itself;
-   load each member by passing its folder as `start`.
-2. `export_skills(&vfs, &request, &loaded.namespace)` builds, or checks, the
-   marketplace. Build the request from the result with
-   `ExportRequest::new(loaded.dir, out_root, inputs.config)`, then set
-   `harnesses`, `assets` and `hooks` from `inputs`. Leave out `inputs` and a
-   build gets no assets and no hooks. `out_root` is an `Option`, because
-   `build.out` is optional in the root file: when it is `None`, pass an
-   output folder of your own, or refuse the build as the CLI does.
+1. `find_vault_root(&vfs, start)` walks up from `start` to the first folder
+   that holds both `skillwright.md` and `marketplaces/`. For a root the user
+   names, `check_vault_root(&vfs, dir)` checks it instead.
+2. `load_vault(&vfs, root, marketplace, home)` checks the layout, parses the
+   root file and checks `build.namespace`, and reads each marketplace's note.
+   `Some(name)` loads one marketplace. It returns a `LoadedVault`: the root
+   file as `settings`, the `namespace`, `inputs` (the config, harnesses,
+   assets and hooks) and one `VaultMarketplace` per marketplace. `home` is the
+   home directory; the library reads no environment.
+3. `loaded.export_request(&marketplace, mode)` is the build or check of one
+   marketplace into `<root>/dist/<m>/`. Pass it to
+   `export_skills(&vfs, &request, &loaded.namespace)`.
 
 ```rust
 use std::path::Path;
-use tradecraft_core::{CoreError, ExportRequest, MemVfs, Vfs, export_skills, load_marketplace};
+use tradecraft_core::{
+    CoreError, ExportMode, MemVfs, Vfs, export_skills, find_vault_root, load_vault,
+};
 
 let vfs = MemVfs::new();
-vfs.create_dir_all(Path::new("/vault/skills"))?;
-vfs.write_file(
-    Path::new("/vault/skillwright.md"),
-    b"---\nname: house\nbuild:\n  out: dist\n---\n",
-)?;
-vfs.write_file(
-    Path::new("/vault/skills/review.md"),
-    b"---\ndescription: Reviews the current diff.\n---\nReview the diff.\n",
-)?;
+let plugin = "/vault/marketplaces/house/plugins/tools";
+for (path, text) in [
+    ("/vault/skillwright.md", "---\nlicense: MIT\n---\n"),
+    ("/vault/marketplaces/house/house.md", "---\n---\n"),
+    (&format!("{plugin}/tools.md"), "---\nversion: 1.0.0\n---\n"),
+    (
+        &format!("{plugin}/skills/review/review.md"),
+        "---\ndescription: Reviews the current diff.\n---\nReview the diff.\n",
+    ),
+] {
+    let path = Path::new(path);
+    vfs.create_dir_all(path.parent().unwrap())?;
+    vfs.write_file(path, text.as_bytes())?;
+}
 
-let loaded = load_marketplace(&vfs, Path::new("/vault"), Path::new("/home"))?
-    .ok_or_else(|| CoreError::Refused("no skillwright.md".to_owned()))?;
-let out_root = loaded
-    .out_root
-    .clone()
-    .ok_or_else(|| CoreError::Refused("set build.out in skillwright.md".to_owned()))?;
-let inputs = loaded.inputs;
-let mut request = ExportRequest::new(loaded.dir, out_root, inputs.config);
-request.harnesses = inputs.harnesses;
-request.assets = inputs.assets;
-request.hooks = inputs.hooks;
-let report = export_skills(&vfs, &request, &loaded.namespace)?;
-assert!(report.changed);
+let root = find_vault_root(&vfs, Path::new(plugin))?;
+let loaded = load_vault(&vfs, &root, None, Path::new("/home"))?;
+for marketplace in &loaded.marketplaces {
+    let request = loaded.export_request(marketplace, ExportMode::Build);
+    let report = export_skills(&vfs, &request, &loaded.namespace)?;
+    assert!(report.changed);
+}
+assert!(vfs.exists(Path::new("/vault/dist/house/.claude-plugin/marketplace.json")));
 # Ok::<(), CoreError>(())
 ```
 
-The steps inside are public if a host needs them apart: `find_root_file`,
-`workspace_above` (and `workspace_file`, the path it reads),
-`RootFile::inherit`, `marketplace_inputs` and `resolve_path` for any other
-path read from the file.
+The steps inside are public if a host needs them apart: `read_layout`,
+`classify`, `parse_root_file`, `parse_marketplace_note`,
+`marketplace_inputs`, `dist_dir` and `resolve_path` for any other path read
+from the root file.
 
 ## What it covers
 
 | Module | Does |
 |---|---|
-| `discover` | Walk a vault and vet every publishable note |
-| `vault` | Read a skill as the vault stores it: a note plus a sibling folder of peer files |
+| `layout` | Find the vault root, check every folder, and place a path by its position |
+| `discover` | Read every note of a vault by its position and vet it |
+| `vault` | Read a skill as the vault stores it: `<name>/<name>.md` and the folder it owns |
 | `compile` | Expand embeds, rewrite links and collect the files a skill references |
 | `projection` | Render one skill into one tool's files, through `agent-adapt` |
 | `export` | Build the vault into one marketplace tree per tool, or check the tree for drift |
-| `paths` | Load the root file with its workspace and resolve it into a build's inputs |
+| `paths` | Load a vault: its root file and its marketplaces |
 | `field_edit` | Edit frontmatter fields and keep every other byte |
-| `guard` | Refuse any write into a source root or the vault |
+| `guard` | Containment resolved through links |
 | `vfs` | The filesystem seam |
 
 The `keys` module lists the frontmatter keys this library owns, per kind.
@@ -133,7 +152,9 @@ Some names the library writes are fixed:
 - `.skillwright-stage`, the folder a build stages its output in before it
   swaps it into place;
 - the `<!-- Generated by skillwright from … -->` marker on generated files;
-- `skillwright.md`, the root file the `settings` module parses.
+- `skillwright.md`, the root file the `settings` module parses;
+- `dist/<m>/`, the folder `LoadedVault::export_request` builds marketplace
+  `<m>` into.
 
 ## Generated output
 
@@ -169,15 +190,16 @@ in the [CHANGELOG](CHANGELOG.md).
 Most public types are `#[non_exhaustive]`, so a new field or variant is not a
 breaking change:
 
-- The request types (`ExportRequest`, `LoadRequest`, `ComponentRequest`,
-  `VaultScope`, `AssetSpec`, `HookFileSpec`, `CompileSource`). Build one with
+- The request types (`ExportRequest`, `LoadRequest`, `AssetSpec`,
+  `HookFileSpec`, `CompileSource`). Build one with
   its `new` constructor, which takes the required inputs, and set the other
   fields on the value.
 - The config and settings types (`MarketplaceConfig`, `PluginOverrides`,
   `RootFile`, `BuildSettings`, `MarketplaceFields`). Build one with
   `Default::default()` and set its fields.
 - The output types (`ExportReport`, `DiscoveryReport`,
-  `DiscoveredComponent`, `DiscoveryWarning`, `SkippedNote`). Read them by
+  `DiscoveredComponent`, `DiscoveryWarning`, `SkippedNote`, `LoadedVault`,
+  `VaultMarketplace`, `Layout`). Read them by
   field. `DiscoveryWarning::new` builds a line for a host's own report.
 - The enums (`CoreError`, `ExportUnit`, `UnitStatus`, `StaleKind`,
   `ReasonToken`). A `match` on one needs a `_` arm. The status enums have

@@ -7,12 +7,13 @@
 //!
 //! | Module | Does |
 //! |---|---|
-//! | [`discover`] | Walk a vault's skills root and vet every publishable note |
+//! | [`layout`] | The vault layout: find the root, check every folder, place a path |
+//! | [`discover`] | Read every note of a vault by its position and vet it |
 //! | [`skill`] | The frontmatter split and the small readers every note path shares |
 //! | [`keys`] | The closed key table: every frontmatter key, per kind |
 //! | [`namespace`] | Which prefix skillwright's keys carry — none by default |
 //! | [`frontmatter`] | skillwright's keys read out of a note, typed |
-//! | [`vault`] | The *vault* skill: a note plus a sibling folder of peers |
+//! | [`vault`] | The *vault* skill: `<name>/<name>.md` and the folder it owns |
 //! | [`content`] | The skill shape projection renders, and its peer resources |
 //! | [`compile`] | Embeds expanded, links rewritten, references collected |
 //! | [`projection`] | One skill to one target's files, via `agent-adapt` |
@@ -20,10 +21,10 @@
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
 //! | [`harness`] | Each harness as a profile row (data) and a translator (code) |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
-//! | [`paths`] | Load the root file with its workspace folded in ([`load_marketplace`]), or its pieces |
+//! | [`paths`] | Load a vault: its root file and its marketplaces ([`load_vault`]) |
 //! | [`field_edit`] | Frontmatter field edits that keep every other byte |
 //! | [`status`] | The version-bump rule a build and `bump` share |
-//! | [`guard`] | The rails that keep a build out of a source root |
+//! | [`guard`] | Containment resolved through links |
 //! | [`vfs`] | The filesystem seam every I/O-touching function takes |
 //!
 //! # Specs named in comments
@@ -38,7 +39,7 @@
 //! | compile spec | Embeds are expanded and links rewritten; an unresolved link is not a blocker | [`compile`] |
 //! | marketplace layout spec | How one marketplace tree per harness is laid out and checked | [`export`] |
 //! | namespace spec | The keys the key table lists as skillwright's belong to this tool and are stripped on build; a configured prefix moves them under it | [`keys`], [`namespace`], [`frontmatter`] |
-//! | write-guard spec | A build never writes into the source root or the vault | [`guard`] |
+//! | write-guard spec | A build never writes into `marketplaces/` | [`export`] |
 //! | CLI spec | Exit codes, stdout versus stderr, `--dry-run`, confirmation before writes | the `skillwright` crate |
 //! | Agent Skills spec | The public Agent Skills standard: `SKILL.md` frontmatter fields, name rules, and length caps on `description` and `compatibility` | [`skill`], [`discover`] |
 //!
@@ -73,16 +74,16 @@ pub mod guard;
 pub mod harness;
 pub mod hooks_file;
 pub mod keys;
+pub mod layout;
 pub mod model;
 pub mod namespace;
 pub mod paths;
-pub mod patterns;
 pub mod projection;
 pub mod publish;
 pub mod semver;
 pub mod settings;
 pub mod skill;
-pub mod source_view;
+mod source_view;
 pub mod status;
 mod text;
 pub mod vault;
@@ -96,10 +97,9 @@ pub use compile::{
 };
 pub use content::{SkillContent, SkillProjection};
 pub use discover::{
-    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, INVALID_NAME_REASON, KIND_DIRS,
-    MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON, default_name,
-    discover_components, discover_roster, folder_kind, in_plugin_folder, is_skill_entry,
-    plugin_folder_in, refuse_invalid_names, refuse_undescribed,
+    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, INVALID_NAME_REASON,
+    MISSING_DESCRIPTION_REASON, SkippedNote, UNKNOWN_KEY_REASON, default_name, discover_components,
+    discover_roster, refuse_invalid_names, refuse_undescribed,
 };
 pub use error::*;
 pub use export::{
@@ -117,28 +117,27 @@ pub use frontmatter::{
 };
 pub use harness::manifest::{check_packs, packs_of};
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, Shape};
+pub use layout::{
+    KIND_DIRS, Layout, MARKETPLACES_DIR, Position, RESERVED_NAMES, check_vault_root, classify,
+    find_vault_root, is_vault_root, read_layout,
+};
 /// The vault's file index, for [`CompileSource::links`]: re-exported so a
 /// consumer needs no `markdown-link` dependency of its own.
 pub use markdown_link::LinkIndex;
-pub use model::inherit_targets;
 pub use namespace::{InvalidStem, Namespace, StemProblem};
 pub use paths::{
-    LoadedMarketplace, MarketplaceInputs, WORKSPACE_DIR, find_root_file, is_marketplace_entry,
-    load_marketplace, marketplace_inputs, resolve_path, workspace_above, workspace_file,
+    LoadedVault, MarketplaceInputs, VaultMarketplace, dist_dir, load_vault, marketplace_inputs,
+    resolve_path,
 };
 pub use publish::{KNOWN_TARGETS, ReasonToken, canonical_target};
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
     AssetSetting, BuildSettings, BumpSettings, HookSetting, MarketplaceFields, PatchScheme,
-    ROOT_FILE, RootFile, SettingsError, compose_root_file, parse_root_file,
-};
-pub use source_view::{
-    SourceView, VaultScope, effective_config, effective_configs, marketplace_folder, source_view,
-    vault_config,
+    ROOT_FILE, RootFile, SettingsError, compose_root_file, parse_marketplace_note, parse_root_file,
 };
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};
-pub use walk::{built_paths, built_paths_for};
+pub use walk::built_paths;
 /// The value of a frontmatter field, for [`FieldEdit::set`]: re-exported so a
 /// consumer needs no `yaml-splice` dependency of its own.
 pub use yaml_splice::Value as FieldValue;

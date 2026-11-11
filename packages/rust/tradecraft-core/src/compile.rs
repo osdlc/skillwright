@@ -895,8 +895,6 @@ struct Renderer<'a> {
     entry_path: PathBuf,
     bundle_root: Option<PathBuf>,
     skill_name: &'a str,
-    /// The root file's `build.exclude`.
-    patterns: crate::patterns::Patterns,
     /// Every file in the vault, by vault-relative path, for link
     /// resolution. Built once per compile — the vault is the resolution
     /// universe, and walking it lazily would make "not found" depend on what
@@ -965,7 +963,6 @@ impl<'a> Renderer<'a> {
         destinations.insert("SKILL.md".to_owned(), entry_path.clone());
         Ok(Renderer {
             vfs,
-            patterns: crate::patterns::Patterns::load(vfs, &vault_root)?,
             vault_root,
             entry_path,
             bundle_root,
@@ -996,7 +993,7 @@ impl<'a> Renderer<'a> {
         };
         for source_path in crate::walk::files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)?
         {
-            if source_path == self.entry_path || self.excluded_by_pattern(&source_path) {
+            if source_path == self.entry_path {
                 continue;
             }
             let relative = source_path
@@ -1709,8 +1706,8 @@ impl<'a> Renderer<'a> {
     }
 
     /// Refuses a link from `from_file` to a file that never ships, however
-    /// the link is spelled: `build.exclude` holds the file, or it is in a
-    /// folder that never ships and the linking note is not.
+    /// the link is spelled: it is in a never-ship folder and the linking note
+    /// is not ([`crate::layout::never_ships`]).
     fn refuse_never_shipped(
         &self,
         from_file: &Path,
@@ -1718,10 +1715,10 @@ impl<'a> Renderer<'a> {
         destination: &str,
     ) -> Result<(), CoreError> {
         let into_never_ship = match (self.vault_relative(from_file), self.vault_relative(path)) {
-            (Ok(from), Ok(to)) => self.patterns.links_into_never_ship(&from, &to),
+            (Ok(from), Ok(to)) => crate::layout::links_into_never_ship(&from, &to),
             _ => false,
         };
-        if into_never_ship || self.excluded_by_pattern(path) {
+        if into_never_ship {
             return Err(CoreError::refused(
                 "excluded-link",
                 format!(
@@ -1732,12 +1729,6 @@ impl<'a> Renderer<'a> {
             ));
         }
         Ok(())
-    }
-
-    /// Whether `build.exclude` holds `path`.
-    fn excluded_by_pattern(&self, path: &Path) -> bool {
-        self.vault_relative(path)
-            .is_ok_and(|relative| self.patterns.excluded(&relative))
     }
 
     /// [`Self::refuse_never_shipped`] over `body`'s relative Markdown links,

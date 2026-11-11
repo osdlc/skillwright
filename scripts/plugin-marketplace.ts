@@ -14,7 +14,10 @@ import { parseArgs } from 'node:util'
 
 export const PLUGIN_NAME = 'skillwright'
 
-/** Each harness root, and the marketplace manifest in it (Pi has none). */
+/** Where the build writes the marketplace's packs, relative to the plugin vault. */
+export const DIST = 'dist/osdlc'
+
+/** Each harness root, and the marketplace manifest in it (Pi has none). Paths are relative to `DIST` in the build and to the root of osdlc/marketplace. */
 export const HARNESSES: readonly { root: string; manifest: string | null }[] = [
   { root: '.claude-plugin', manifest: '.claude-plugin/marketplace.json' },
   { root: '.agents', manifest: '.agents/plugins/marketplace.json' },
@@ -27,7 +30,7 @@ type Manifest = { plugins: { name: string }[] } & Record<string, unknown>
 /** The `version` of the plugin note in the vault. */
 export function pluginVersion(pluginDir: string): string {
   const note = readFileSync(
-    join(pluginDir, `vault/plugins/${PLUGIN_NAME}/${PLUGIN_NAME}.md`),
+    join(pluginDir, `marketplaces/osdlc/plugins/${PLUGIN_NAME}/${PLUGIN_NAME}.md`),
     'utf8',
   )
   const front = /^---\n([\s\S]*?)\n---/.exec(note)?.[1] ?? ''
@@ -53,13 +56,15 @@ export function syncPlugin(pluginDir: string, target: string): string[] {
   const touched: string[] = []
   for (const { root, manifest } of HARNESSES) {
     const pack = `${root}/packs/${PLUGIN_NAME}`
-    if (!existsSync(join(pluginDir, pack))) throw new Error(`the build has no ${pack}`)
+    if (!existsSync(join(pluginDir, DIST, pack))) throw new Error(`the build has no ${pack}`)
     rmSync(join(target, pack), { recursive: true, force: true })
     mkdirSync(join(target, root, 'packs'), { recursive: true })
-    cpSync(join(pluginDir, pack), join(target, pack), { recursive: true })
+    cpSync(join(pluginDir, DIST, pack), join(target, pack), { recursive: true })
     touched.push(pack)
     if (manifest === null) continue
-    const entry = readJson(join(pluginDir, manifest)).plugins.find((p) => p.name === PLUGIN_NAME)
+    const entry = readJson(join(pluginDir, DIST, manifest)).plugins.find(
+      (p) => p.name === PLUGIN_NAME,
+    )
     if (entry === undefined) throw new Error(`${manifest} lists no ${PLUGIN_NAME} entry`)
     const dest = join(target, manifest)
     if (!existsSync(dest)) throw new Error(`the target has no ${manifest}`)

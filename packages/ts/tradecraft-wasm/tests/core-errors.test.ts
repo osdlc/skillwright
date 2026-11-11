@@ -3,7 +3,7 @@
  * its message names.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -14,6 +14,9 @@ let tmp: string
 
 beforeEach(() => {
   tmp = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'tradecraft-core-errors-')))
+  // A vault root, so the scan gets past the root check to the folder reads.
+  writeFileSync(path.join(tmp, 'skillwright.md'), '---\n---\n')
+  mkdirSync(path.join(tmp, 'marketplaces'))
 })
 
 afterEach(() => {

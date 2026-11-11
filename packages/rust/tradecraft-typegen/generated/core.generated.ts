@@ -18,14 +18,11 @@
 
 /** A parsed root file. */
 export interface RootFile {
-  /** The marketplace's own fields. */
-  marketplace: MarketplaceFields;
-
   /**
-   * `workspace: true`: this file holds shared defaults for every
-   * `marketplaces/<m>/skillwright.md` below it and builds them all.
+   * The top-level keys. Only the shared defaults among them are read
+   * ([`RootFile::to_config`]).
    */
-  workspace: boolean;
+  marketplace: MarketplaceFields;
 
   /** The `build:` block. */
   build: BuildSettings;
@@ -34,9 +31,12 @@ export interface RootFile {
   warnings?: string[];
 }
 
-/** The marketplace's own fields: the root file's top-level keys. */
+/**
+ * A marketplace's own fields, as its note `<m>.md` writes them, or the
+ * top-level keys of the root file.
+ */
 export interface MarketplaceFields {
-  /** The marketplace's name. Absent means the root folder's name. */
+  /** The marketplace's name. Absent means its folder's name. */
   name?: string;
 
   /** One line on what the marketplace holds. */
@@ -85,7 +85,7 @@ export interface MarketplaceFields {
 
   /**
    * `version`, the container's own. A plugin's defaults to `0.1.0`, with a
-   * warning; the marketplace's own plugin takes the marketplace's.
+   * warning.
    */
   version?: string;
 
@@ -116,12 +116,6 @@ export interface MarketplaceFields {
 
 /** The `build:` block: how skillwright runs, never what lands in a manifest. */
 export interface BuildSettings {
-  /**
-   * Where the harness trees are written, relative to the root file.
-   * Required, here or as `--out`: there is no default.
-   */
-  out?: string;
-
   /** Which harnesses to build. Absent means all of them. */
   harnesses?: string[];
 
@@ -142,16 +136,6 @@ export interface BuildSettings {
 
   /** Canonical hooks files. */
   hooks?: HookSetting[];
-
-  /**
-   * Globs of what never ships, relative to the root file. Only this
-   * file's own: a workspace's globs are not inherited into this list, but
-   * added to it, read from the workspace folder. Experimental.
-   */
-  exclude?: string[];
-
-  /** Globs that stand in for the conventional folders. Experimental. */
-  patterns?: FolderPatterns;
 }
 
 /** `build.bump`: how `bump` writes a version. */
@@ -171,7 +155,7 @@ export interface AssetSetting {
   /** Where it lands, relative to the built plugin's own root. */
   to: string;
 
-  /** Which plugin it lands in. Absent means the marketplace's own plugin. */
+  /** Which plugin it lands in. A build refuses an entry without one. */
   plugin?: string;
 }
 
@@ -180,35 +164,8 @@ export interface HookSetting {
   /** The file, relative to the root file. */
   from: string;
 
-  /**
-   * Which plugin's packs carry it. Absent means the marketplace's own
-   * plugin.
-   */
+  /** Which plugin's packs carry it. A build refuses an entry without one. */
   plugin?: string;
-}
-
-/**
- * `build.patterns`: for each conventional folder, the globs that name what
- * it holds. See [`crate::patterns`].
- */
-export interface FolderPatterns {
-  /** Each match is a plugin folder. */
-  plugins?: string[];
-
-  /** Each match is a skill: a note, or a folder holding its entry. */
-  skills?: string[];
-
-  /** Each match is an agent. */
-  agents?: string[];
-
-  /** Each match is a command. */
-  commands?: string[];
-
-  /** Each match is a hook note. */
-  hooks?: string[];
-
-  /** Each match is a plugin's assets folder. */
-  assets?: string[];
 }
 
 /**
@@ -216,31 +173,16 @@ export interface FolderPatterns {
  *
  * The one wire shape in this crate that does not `flatten` a core struct,
  * because there is no core struct to flatten: `discover_components` takes its
- * vault root and skills root as loose parameters. So this is not a second
- * copy of anything — it is the parameter list, spelled once, in the only
- * place it has to cross a wire.
+ * vault root as a loose parameter. So this is not a second copy of anything —
+ * it is the parameter list, spelled once, in the only place it has to cross a
+ * wire.
  */
 export interface DiscoverRequest {
-  /** Absolute path to the vault. */
+  /**
+   * Absolute path to the vault root, the folder holding `skillwright.md`
+   * and `marketplaces/`.
+   */
   vault_root: string;
-
-  /**
-   * The content root to scan. Absent means the vault root, exactly as the
-   * core reads it.
-   */
-  skills_root?: string;
-
-  /**
-   * Absolute path to the folder a build writes to. The scan leaves out what
-   * a build owns there. Absent means nothing is left out.
-   */
-  out_root?: string;
-
-  /**
-   * Says where the packs folders are, under what the vault's own notes say.
-   * Absent means the vault's root file.
-   */
-  config?: MarketplaceConfig;
 
   /**
    * The vault's frontmatter namespace, as a stem. Absent means
@@ -250,15 +192,352 @@ export interface DiscoverRequest {
 }
 
 /**
+ * What one scan found, and what it could not read.
+ *
+ * Two lists rather than a `Result`, because a vault is a shared tree and a
+ * note nobody else owns must not decide whether everybody else's publish
+ * runs. Every caller reads both: the components are the roster, and
+ * [`Self::skipped`] is the part of the vault this answer does not cover.
+ */
+export interface DiscoveryReport {
+  /** Every publishable note, sorted by name. */
+  components: DiscoveredComponent[];
+
+  /** Every note the scan could not read, in path order. */
+  skipped: SkippedNote[];
+
+  /**
+   * What the scan has to say about notes it admitted, in path order. An
+   * entry [`DiscoveryWarning::is_error`] names is one a build refuses.
+   */
+  warnings: DiscoveryWarning[];
+}
+
+/**
+ * One component, as discovery hands it to the verbs.
+ *
+ * `targets` keeps the three-outcome `targets` reading instead of being
+ * expanded to an explicit all-targets list, so the layer that knows what
+ * "every destination" means today is the one that decides it.
+ */
+export interface DiscoveredComponent {
+  /** The frontmatter `name`, already validated against the Agent Skills spec. */
+  name: string;
+
+  /**
+   * The frontmatter `description`, ≤1024 characters. Empty when the note
+   * wrote none. A build refuses a skill, command or agent with none
+   * ([`Self::lacks_description`]); a container need not have one.
+   */
+  description: string;
+
+  /** What this component is, from its position. */
+  kind: EntityKind;
+
+  /**
+   * Which layer produced [`Self::kind`], straight from
+   * [`crate::frontmatter::resolve_kind`].
+   */
+  kind_source: KindSource;
+
+  /** What the position said this was. Always the same as [`Self::kind`]. */
+  folder_kind: EntityKind | null;
+
+  /**
+   * `targets` exactly as [`VaultFrontmatter::targets`] read it, every
+   * name checked against [`KNOWN_TARGETS`]. `None` is absent — every
+   * destination; `Some(vec![])` is nowhere.
+   */
+  targets: string[] | null;
+
+  /** The plugin folder holding this note. `None` for a marketplace's note. */
+  plugin: string | null;
+
+  /**
+   * The marketplace folder this sits under. `None` for a marketplace's
+   * own note.
+   */
+  marketplace: string | null;
+
+  /** Absolute path of the entry note. */
+  entry_path: string;
+
+  /** The folder this note owns, the one named for it. */
+  bundle_root: string | null;
+
+  /**
+   * Files this note owns, relative to [`Self::bundle_root`] and
+   * forward-slashed, sorted. A plugin does not own its components' files.
+   */
+  resources: string[];
+
+  /**
+   * The entry's path relative to the vault root, forward-slashed — the
+   * spelling reports and provenance markers print.
+   */
+  vault_relative_path: string;
+
+  /**
+   * The manifest fields this note publishes under, read from its own
+   * frontmatter.
+   *
+   * Carried for every kind and consulted for two: a marketplace note names
+   * the distribution, a plugin note names the pack. A skill's is silent in
+   * every vault worth having, because a skill's manifest entry is derived
+   * from the skill and a second spelling of it could only disagree.
+   *
+   * Surfaced here rather than left in the note because the scan is the only
+   * pass that reads a container note at all — [`crate::export`] renders
+   * from what discovery hands it and never opens a file of its own.
+   */
+  identity: ContainerIdentity;
+
+  /**
+   * The note's harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`),
+   * keyed by harness. A container's are merged over the manifests it
+   * generates and inherited by its members.
+   */
+  blocks?: Record<string, unknown>;
+
+  /**
+   * Keys the key table does not list for this kind, sorted. The scan
+   * warns about each.
+   */
+  unknown_keys?: string[];
+}
+
+/**
+ * Which publishable unit a note is: what the folder it sits in names.
+ *
+ * default is for **absence only**. An unrecognised value is a typo, and
+ * defaulting it would publish a `SKILL.md` at every destination for something
+ * that is not a skill — silently, and as a write.
+ *
+ * `mcp-server` is named by the decision as a later kind and is deliberately
+ * not a variant yet.
+ *
+ * # A kind in the vocabulary need not be publishable
+ *
+ * Entering the vocabulary makes a note *discoverable* — the workbench can
+ * list it and say what it is — while [`crate::publish`]'s kind gate refuses it
+ * `no-renderer` until a projection exists. `Marketplace` and `Hook` are the
+ * kinds sitting there now. Outside the vocabulary a note is `unknown-kind`: a typo.
+ */
+export type EntityKind = "skill" | "plugin" | "command" | "agent" | "hook" | "marketplace";
+
+/**
+ * Which layer decided a note's kind.
+ *
+ * Carried alongside the kind because the answer to "why is this a plugin"
+ * is a different sentence per layer, and a report that only had the kind
+ * could not write any of them.
+ */
+export type KindSource = "override" | "directory" | "default";
+
+/**
+ * What a container note says about the thing it names: the manifest fields
+ * a marketplace or a plugin publishes under. Its fields are the key table's
+ * identity rows ([`crate::keys::identity_keys`]).
+ *
+ * Read only on a container: the same words on a skill are the skill's own
+ * (`license`) or unknown. A field a kind does not read stays unset.
+ *
+ * **Every field is optional and every absence has a default**, resolved by
+ * [`crate::export`] rather than here, because the defaults are a property of
+ * the manifest dialect being written and not of the note. An unset field is
+ * left out of the JSON form, so absent and unset are the same thing.
+ *
+ * `owner` and `author` are [`Value`] rather than `String` because an author
+ * may spell either as `{name, email, url}`, and narrowing them here would
+ * refuse a shape the manifest accepts.
+ *
+ * The root file, the build config and a plugin's overrides embed this struct,
+ * flattened, so its fields sit at their top level on the wire.
+ */
+export interface ContainerIdentity {
+  /**
+   * `owner`, a marketplace's only: a name or `{name, email, url}`. A string
+   * is normalised to `{name: …}` in a manifest, because Claude and Cursor
+   * require an object. Absent, the marketplace's name stands in.
+   */
+  owner?: unknown;
+
+  /**
+   * `author`: a name or `{name, email, url}`. A string is normalised to
+   * `{name: …}`; Cursor drops `url`. A marketplace's is the default for
+   * each plugin.
+   */
+  author?: unknown;
+
+  /**
+   * `display_name`: Codex's `interface.displayName`, the name when absent.
+   * On a plugin, also Cursor's `displayName` on its manifest and its
+   * catalog entry, absent by default; `cursor.displayName` overrides it.
+   * Never inherited.
+   */
+  display_name?: string;
+
+  /**
+   * `license`, an SPDX expression, passed through. A plugin's defaults to
+   * the marketplace's, then `UNLICENSED`.
+   */
+  license?: string;
+
+  /**
+   * `keywords`, a plugin's only. Default empty. Also the Claude and Cursor
+   * marketplace entry's `tags`; Pi's `package.json` adds `pi-package`.
+   */
+  keywords?: string[];
+
+  /**
+   * `category`, a plugin's only. Codex always writes it, default
+   * `Productivity`; Claude and Cursor write it on the marketplace entry
+   * only when it is set.
+   */
+  category?: string;
+
+  /**
+   * `version`, the container's own. A plugin's defaults to `0.1.0`, with a
+   * warning.
+   */
+  version?: string;
+
+  /**
+   * `repository`, the source repository URL, written into every manifest
+   * that has the field. A marketplace's is the default for each plugin.
+   */
+  repository?: string;
+
+  /**
+   * `homepage`, the documentation URL, written into every manifest that
+   * has the field. A marketplace's is the default for each plugin.
+   */
+  homepage?: string;
+}
+
+/** One note the scan could not read, and why. */
+export interface SkippedNote {
+  /**
+   * The note's path relative to the vault root, forward-slashed — the same
+   * spelling every other report prints.
+   */
+  path: string;
+
+  /**
+   * A closed-set reason token. The refusals that already carry one keep it
+   * (`unknown-target`, `unknown-kind`); everything else — frontmatter that
+   * will not parse, a name the Agent Skills spec does not admit, an unreadable file —
+   * is `unreadable-note`, the vocabulary's entry for "this note does not
+   * parse".
+   */
+  reason: string;
+
+  /** The sentence naming what is wrong, after the reason token. */
+  detail: string;
+
+  /**
+   * The plugin folder holding this note.
+   *
+   * A pack publish checks its own members against this: the publish spec
+   * forbids installing a subset silently. `None` where no plugin folder
+   * holds it: the note joins no pack, and no pack is blocked.
+   */
+  plugin: string | null;
+}
+
+/** One note the scan admitted, and what is wrong with it. */
+export interface DiscoveryWarning {
+  /** Vault-relative and forward-slashed, as [`SkippedNote::path`]. */
+  path: string;
+
+  /**
+   * A closed-set token: `missing-description` from the scan;
+   * [`crate::export`] adds `missing-version` for a plugin.
+   */
+  reason: string;
+
+  /** Extra detail for a person to read. */
+  detail: string;
+}
+
+/**
+ * What crosses as `request_json` for [`export_skills`]: the core's
+ * [`ExportRequest`], flattened, plus the namespace stem this layer adds.
+ */
+export interface ExportRequest {
+  /**
+   * Absolute path to the vault root. Discovery, compilation, and the
+   * provenance markers all resolve against it.
+   */
+  vault_root: string;
+
+  /**
+   * Which marketplace this build renders, by folder. `None` names the
+   * vault's only one; a vault holding more than one is refused rather than
+   * flattened, because one `out_root` holds one marketplace.
+   */
+  marketplace?: string;
+
+  /**
+   * The marketplace directory: one directory holding one marketplace,
+   * which every harness this build renders reads from. A host writes
+   * `<root>/dist/<m>/` ([`crate::paths::dist_dir`]).
+   *
+   * Each harness owns exactly one top-level entry under it, its own tree,
+   * and nothing else here is read, compared or replaced. So this may be a
+   * directory holding other things, including a repository's own root,
+   * which is what lets a repository be its own marketplace.
+   */
+  out_root: string;
+
+  /**
+   * Which harnesses to render, by name. Empty means every harness this
+   * build supports.
+   *
+   * A name no harness answers to is refused rather than ignored: it is a
+   * typo or a harness this build cannot produce, and silently publishing
+   * less than was asked for is the failure this crate is built around.
+   */
+  harnesses?: string[];
+
+  /** Build, or check. Absent on the wire means [`ExportMode::Build`]. */
+  mode?: ExportMode;
+
+  /** The marketplace's own identity and per-plugin overrides. */
+  config: MarketplaceConfig;
+
+  /**
+   * Files copied verbatim into a built plugin's own root — a CLI, a wasm
+   * artifact, a launcher: authored on disk, never as a vault note.
+   *
+   * Paths are absolute, resolved by the caller: this core never reads an
+   * ambient root file, so it has nothing to resolve a relative asset
+   * path against (see the crate doc's wasm-boundary note on
+   * [`MarketplaceConfig`]). The Rust helper `marketplace_inputs` resolves
+   * `build.assets` entries against the root file's own directory.
+   */
+  assets?: AssetSpec[];
+
+  /** Canonical hooks files; see [`HookFileSpec`]. */
+  hooks?: HookFileSpec[];
+
+  /**
+   * The vault's frontmatter namespace, as a stem. Absent means
+   * [`Namespace::default`].
+   */
+  namespace?: string;
+}
+
+/** Whether an export writes the marketplace, or only reports its drift. */
+export type ExportMode = "build" | "check";
+
+/**
  * What the *build* says about the marketplace and its plugins — the fallback
  * under what the vault's own container notes say.
  *
  * [`crate::model::Cascade`] folds the two, note over request, field by field: a
  * marketplace note is the marketplace, and a build flag is one invocation of
  * it.
- *
- * A member outside every plugin folder belongs to the marketplace's own
- * plugin, which is named after the marketplace.
  */
 export interface MarketplaceConfig {
   /**
@@ -325,7 +604,7 @@ export interface MarketplaceConfig {
 
   /**
    * `version`, the container's own. A plugin's defaults to `0.1.0`, with a
-   * warning; the marketplace's own plugin takes the marketplace's.
+   * warning.
    */
   version?: string;
 
@@ -419,7 +698,7 @@ export interface PluginOverrides {
 
   /**
    * `version`, the container's own. A plugin's defaults to `0.1.0`, with a
-   * warning; the marketplace's own plugin takes the marketplace's.
+   * warning.
    */
   version?: string;
 
@@ -450,424 +729,6 @@ export interface PluginOverrides {
 }
 
 /**
- * What one scan found, and what it could not read.
- *
- * Two lists rather than a `Result`, because a vault is a shared tree and a
- * note nobody else owns must not decide whether everybody else's publish
- * runs. Every caller reads both: the components are the roster, and
- * [`Self::skipped`] is the part of the vault this answer does not cover.
- */
-export interface DiscoveryReport {
-  /** Every publishable note, sorted by name. */
-  components: DiscoveredComponent[];
-
-  /** Every note the scan could not read, in path order. */
-  skipped: SkippedNote[];
-
-  /**
-   * What the scan has to say about notes it admitted, in path order. An
-   * entry [`DiscoveryWarning::is_error`] names is one a build refuses.
-   */
-  warnings: DiscoveryWarning[];
-}
-
-/**
- * One component, as discovery hands it to the verbs.
- *
- * `targets` keeps the three-outcome `targets` reading instead of being
- * expanded to an explicit all-targets list, so the layer that knows what
- * "every destination" means today is the one that decides it.
- */
-export interface DiscoveredComponent {
-  /** The frontmatter `name`, already validated against the Agent Skills spec. */
-  name: string;
-
-  /**
-   * The frontmatter `description`, ≤1024 characters. Empty when the note
-   * wrote none. A build refuses a skill, command or agent with none
-   * ([`Self::lacks_description`]); a container or a hook need not have
-   * one.
-   */
-  description: string;
-
-  /** What this component is, resolved across the layers that can decide it. */
-  kind: EntityKind;
-
-  /**
-   * Which layer produced [`Self::kind`], straight from
-   * [`crate::frontmatter::resolve_kind`].
-   */
-  kind_source: KindSource;
-
-  /**
-   * What the structure said this was, before frontmatter was read. `None`
-   * where structure said nothing — a component at the root has no folder
-   * above it naming a kind.
-   *
-   * Kept beside the resolved value rather than discarded so a caller can
-   * tell "the folder and the note agree" from "the note overruled the
-   * folder".
-   */
-  folder_kind: EntityKind | null;
-
-  /**
-   * `targets` exactly as [`VaultFrontmatter::targets`] read it, every
-   * name checked against [`KNOWN_TARGETS`]. `None` is absent — every
-   * destination; `Some(vec![])` is nowhere.
-   */
-  targets: string[] | null;
-
-  /**
-   * The plugin holding this component. `None` is a bare component, sitting
-   * at the root and belonging to no plugin.
-   *
-   * The containing folder decides it. Where a marketplace needs every
-   * skill under *some* plugin directory, [`crate::export`] supplies the
-   * plugin named after the marketplace: a publication concern, not a fact
-   * about the vault.
-   */
-  plugin: string | null;
-
-  /**
-   * The marketplace this belongs to — the directory holding the `plugins/`
-   * folder it sits under. `None` for a marketplace's own note, and for a
-   * component with no marketplace folder above it.
-   *
-   * Structural, with no frontmatter counterpart.
-   */
-  marketplace: string | null;
-
-  /** Absolute path of the entry note. */
-  entry_path: string;
-
-  /**
-   * The directory this component owns — everything under it ships with a
-   * skill. `None` for a lone note, which travels alone.
-   */
-  bundle_root: string | null;
-
-  /**
-   * Files this component owns, relative to [`Self::bundle_root`] and
-   * forward-slashed, sorted.
-   *
-   * Ownership is *deepest* directory wins, so a plugin holding
-   * `skills/code-review/scripts/check.py` does not claim it —
-   * `code-review` does. Without that rule a plugin reads as a flat dump of
-   * its own subtree.
-   */
-  resources: string[];
-
-  /**
-   * The entry's path relative to the vault root, forward-slashed — the
-   * spelling reports and provenance markers print.
-   */
-  vault_relative_path: string;
-
-  /**
-   * A hook note's routing and payload, as a reader of the tree needs them:
-   * `None` on every other kind.
-   *
-   * Carried here because a hook's file name says nothing about what fires
-   * it — a lister that only had the name would have to open each note to
-   * tell one hook from another.
-   */
-  hook: DiscoveredHook | null;
-
-  /**
-   * The manifest fields this note publishes under, read from its own
-   * frontmatter.
-   *
-   * Carried for every kind and consulted for two: a marketplace note names
-   * the distribution, a plugin note names the pack. A skill's is silent in
-   * every vault worth having, because a skill's manifest entry is derived
-   * from the skill and a second spelling of it could only disagree.
-   *
-   * Surfaced here rather than left in the note because the scan is the only
-   * pass that reads a container note at all — [`crate::export`] renders
-   * from what discovery hands it and never opens a file of its own.
-   */
-  identity: ContainerIdentity;
-
-  /**
-   * The note's harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`),
-   * keyed by harness. A container's are merged over the manifests it
-   * generates and inherited by its members.
-   */
-  blocks?: Record<string, unknown>;
-
-  /**
-   * Keys the key table does not list for this kind, sorted. The scan
-   * warns about each.
-   */
-  unknown_keys?: string[];
-}
-
-/**
- * Which publishable unit a note is: what the folder it sits in names.
- *
- * default is for **absence only**. An unrecognised value is a typo, and
- * defaulting it would publish a `SKILL.md` at every destination for something
- * that is not a skill — silently, and as a write.
- *
- * `mcp-server` is named by the decision as a later kind and is deliberately
- * not a variant yet.
- *
- * # A kind in the vocabulary need not be publishable
- *
- * Entering the vocabulary makes a note *discoverable* — the workbench can
- * list it and say what it is — while [`crate::publish`]'s kind gate refuses it
- * `no-renderer` until a projection exists. `Marketplace` and `Hook` are the
- * kinds sitting there now. Outside the vocabulary a note is `unknown-kind`: a typo.
- */
-export type EntityKind = "skill" | "plugin" | "command" | "agent" | "hook" | "marketplace";
-
-/**
- * Which layer decided a note's kind.
- *
- * Carried alongside the kind because the answer to "why is this a plugin"
- * is a different sentence per layer, and a report that only had the kind
- * could not write any of them.
- */
-export type KindSource = "override" | "directory" | "default";
-
-/**
- * What a hook note routes on and what it runs, summarised for a listing.
- *
- * A summary, not the projection: [`crate::projection::to_adapt_hook`] stays
- * the authority on what a hook renders to and on every refusal. This reads
- * the same keys with none of the refusals, because a tree has to draw a
- * half-written hook too.
- */
-export interface DiscoveredHook {
-  /**
-   * `event` — what fires the hook. `None` where the note names none, which
-   * the projection refuses and a listing still has to show.
-   */
-  event: string | null;
-
-  /** `matcher` — pipe-delimited tool names. `None` matches every tool. */
-  matcher: string | null;
-
-  /**
-   * `type`, defaulted to `command` exactly as the projection defaults it.
-   * An unrecognised spelling is carried verbatim; naming it a typo is the
-   * projection's job.
-   */
-  hook_type: string;
-
-  /**
-   * The `command`, `prompt` or `url` this hook runs, whichever its type
-   * licenses — the key when the note writes one, otherwise the body's
-   * first non-empty line, which is where a `command` or `prompt` hook may
-   * instead put it. `None` for `mcp_tool` and `agent`, which carry their
-   * payload elsewhere.
-   */
-  payload: string | null;
-}
-
-/**
- * What a container note says about the thing it names: the manifest fields
- * a marketplace or a plugin publishes under. Its fields are the key table's
- * identity rows ([`crate::keys::identity_keys`]).
- *
- * Read only on a container: the same words on a skill are the skill's own
- * (`license`) or unknown. A field a kind does not read stays unset.
- *
- * **Every field is optional and every absence has a default**, resolved by
- * [`crate::export`] rather than here, because the defaults are a property of
- * the manifest dialect being written and not of the note. An unset field is
- * left out of the JSON form, so absent and unset are the same thing.
- *
- * `owner` and `author` are [`Value`] rather than `String` because an author
- * may spell either as `{name, email, url}`, and narrowing them here would
- * refuse a shape the manifest accepts.
- *
- * The root file, the build config and a plugin's overrides embed this struct,
- * flattened, so its fields sit at their top level on the wire.
- */
-export interface ContainerIdentity {
-  /**
-   * `owner`, a marketplace's only: a name or `{name, email, url}`. A string
-   * is normalised to `{name: …}` in a manifest, because Claude and Cursor
-   * require an object. Absent, the marketplace's name stands in.
-   */
-  owner?: unknown;
-
-  /**
-   * `author`: a name or `{name, email, url}`. A string is normalised to
-   * `{name: …}`; Cursor drops `url`. A marketplace's is the default for
-   * each plugin.
-   */
-  author?: unknown;
-
-  /**
-   * `display_name`: Codex's `interface.displayName`, the name when absent.
-   * On a plugin, also Cursor's `displayName` on its manifest and its
-   * catalog entry, absent by default; `cursor.displayName` overrides it.
-   * Never inherited.
-   */
-  display_name?: string;
-
-  /**
-   * `license`, an SPDX expression, passed through. A plugin's defaults to
-   * the marketplace's, then `UNLICENSED`.
-   */
-  license?: string;
-
-  /**
-   * `keywords`, a plugin's only. Default empty. Also the Claude and Cursor
-   * marketplace entry's `tags`; Pi's `package.json` adds `pi-package`.
-   */
-  keywords?: string[];
-
-  /**
-   * `category`, a plugin's only. Codex always writes it, default
-   * `Productivity`; Claude and Cursor write it on the marketplace entry
-   * only when it is set.
-   */
-  category?: string;
-
-  /**
-   * `version`, the container's own. A plugin's defaults to `0.1.0`, with a
-   * warning; the marketplace's own plugin takes the marketplace's.
-   */
-  version?: string;
-
-  /**
-   * `repository`, the source repository URL, written into every manifest
-   * that has the field. A marketplace's is the default for each plugin.
-   */
-  repository?: string;
-
-  /**
-   * `homepage`, the documentation URL, written into every manifest that
-   * has the field. A marketplace's is the default for each plugin.
-   */
-  homepage?: string;
-}
-
-/** One note the scan could not read, and why. */
-export interface SkippedNote {
-  /**
-   * The note's path relative to the vault root, forward-slashed — the same
-   * spelling every other report prints.
-   */
-  path: string;
-
-  /**
-   * A closed-set reason token. The refusals that already carry one keep it
-   * (`unknown-target`, `unknown-kind`); everything else — frontmatter that
-   * will not parse, a name the Agent Skills spec does not admit, an unreadable file —
-   * is `unreadable-note`, the vocabulary's entry for "this note does not
-   * parse".
-   */
-  reason: string;
-
-  /** The sentence naming what is wrong, after the reason token. */
-  detail: string;
-
-  /**
-   * The plugin folder holding this note.
-   *
-   * A pack publish checks its own members against this: the publish spec
-   * forbids installing a subset silently. `None` where no plugin folder
-   * holds it: the note joins no pack, and no pack is blocked.
-   */
-  plugin: string | null;
-}
-
-/** One note the scan admitted, and what is wrong with it. */
-export interface DiscoveryWarning {
-  /** Vault-relative and forward-slashed, as [`SkippedNote::path`]. */
-  path: string;
-
-  /**
-   * A closed-set token: `missing-description` from the scan;
-   * [`crate::export`] adds `missing-version` for a plugin.
-   */
-  reason: string;
-
-  /** Extra detail for a person to read. */
-  detail: string;
-}
-
-/**
- * What crosses as `request_json` for [`export_skills`]: the core's
- * [`ExportRequest`], flattened, plus the namespace stem this layer adds.
- */
-export interface ExportRequest {
-  /**
-   * Absolute path to the vault. Discovery, compilation, and the provenance
-   * markers all resolve against it.
-   */
-  vault_root: string;
-
-  /**
-   * The content root to scan; `None` means the vault root, exactly as
-   * [`crate::discover::discover_components`] reads it.
-   */
-  skills_root?: string;
-
-  /**
-   * Which marketplace this build renders. `None` names the vault's only
-   * one; a vault holding more than one is refused rather than flattened,
-   * because one `out_root` holds one marketplace.
-   */
-  marketplace?: string;
-
-  /**
-   * The marketplace directory: one directory holding one marketplace,
-   * which every harness this build renders reads from.
-   *
-   * Each harness owns exactly one top-level entry under it, its own tree,
-   * and nothing else here is read, compared or replaced. So this may be a
-   * directory holding other things, including a repository's own root,
-   * which is what lets a repository be its own marketplace.
-   */
-  out_root: string;
-
-  /**
-   * Which harnesses to render, by name. Empty means every harness this
-   * build supports.
-   *
-   * A name no harness answers to is refused rather than ignored: it is a
-   * typo or a harness this build cannot produce, and silently publishing
-   * less than was asked for is the failure this crate is built around.
-   */
-  harnesses?: string[];
-
-  /** Build, or check. Absent on the wire means [`ExportMode::Build`]. */
-  mode?: ExportMode;
-
-  /** The marketplace's own identity and per-plugin overrides. */
-  config: MarketplaceConfig;
-
-  /**
-   * Files copied verbatim into a built plugin's own root — a CLI, a wasm
-   * artifact, a launcher: authored on disk, never as a vault note.
-   *
-   * Paths are absolute, resolved by the caller: this core never reads an
-   * ambient root file, so it has nothing to resolve a relative asset
-   * path against (see the crate doc's wasm-boundary note on
-   * [`MarketplaceConfig`]). The Rust helper `marketplace_inputs` resolves
-   * `build.assets` entries against the root file's own directory.
-   */
-  assets?: AssetSpec[];
-
-  /** Canonical hooks files; see [`HookFileSpec`]. */
-  hooks?: HookFileSpec[];
-
-  /**
-   * The vault's frontmatter namespace, as a stem. Absent means
-   * [`Namespace::default`].
-   */
-  namespace?: string;
-}
-
-/** Whether an export writes the marketplace, or only reports its drift. */
-export type ExportMode = "build" | "check";
-
-/**
  * One file, or one directory tree, an export copies verbatim into a built
  * plugin's own root, rather than rendering it from a vault note.
  *
@@ -892,10 +753,7 @@ export interface AssetSpec {
    */
   dest: string;
 
-  /**
-   * Which plugin's root this asset lands in. `None` means the
-   * marketplace's own plugin, named after the marketplace.
-   */
+  /** Which plugin's root this asset lands in. A build refuses `None`. */
   plugin?: string;
 }
 
@@ -918,11 +776,7 @@ export interface HookFileSpec {
    */
   from: string;
 
-  /**
-   * Which plugin's packs carry it. `None` means the marketplace's own
-   * plugin, which holds the members outside `plugins/` and is named after
-   * the marketplace.
-   */
+  /** Which plugin's packs carry it. A build refuses `None`. */
   plugin?: string;
 }
 
@@ -1073,10 +927,10 @@ export interface LoadRequest {
   /** Absolute path to the vault. */
   vault_root: string;
 
-  /** The content root to scan; `None` means the vault root. */
-  skills_root?: string;
-
-  /** Which marketplace to load. `None` names the vault's only one. */
+  /**
+   * Which marketplace to load, by folder. `None` names the vault's only
+   * one.
+   */
   marketplace?: string;
 
   /**
@@ -1099,12 +953,6 @@ export interface LoadRequest {
   hooks?: HookFileSpec[];
 
   /**
-   * Absolute path to the folder a build writes to. The load leaves out what
-   * a build owns there. Absent means nothing is left out.
-   */
-  out_root?: string;
-
-  /**
    * The vault's frontmatter namespace, as a stem. Absent means
    * [`Namespace::default`].
    */
@@ -1116,10 +964,7 @@ export interface Marketplace {
   /** The name the marketplace publishes under. */
   name: string;
 
-  /**
-   * The vault's marketplace folder this was loaded from, `None` for a
-   * vault that holds none.
-   */
+  /** The vault's marketplace folder this was loaded from. Always set. */
   folder: string | null;
 
   /** Every plugin, by name. */

@@ -13,8 +13,7 @@
 //! * **The cascade.** [`KeySpec::inherits`] decides which keys come down from
 //!   a container, and every inheritance step asks it through [`inherits`]:
 //!   [`crate::frontmatter::ContainerIdentity::fill_unset_from`] for a
-//!   container's identity ([`identity_keys`]), and the workspace file
-//!   ([`crate::settings::RootFile::inherit`]) and [`crate::model::cascade`]
+//!   container's identity ([`identity_keys`]), and [`crate::model::cascade`]
 //!   for `targets` and the harness blocks.
 //! * **The field reference** the docs publish, generated from [`KEYS`].
 //!
@@ -206,19 +205,17 @@ pub struct KeySpec {
     /// What its value must be.
     pub shape: Shape,
     /// Whether a note leaving it out takes it from the nearest container that
-    /// sets it: the plugin note, then `skillwright.md`,
-    /// which holds what the workspace file gave it.
+    /// sets it: the plugin note, then `skillwright.md`.
     pub inherits: bool,
     /// One line for the field reference.
     pub summary: &'static str,
 }
 
-use EntityKind::{Agent, Command, Hook, Marketplace, Plugin, Skill};
+use EntityKind::{Agent, Command, Marketplace, Plugin, Skill};
 
 const CONTAINERS: &[EntityKind] = &[Marketplace, Plugin];
 const COMPONENTS: &[EntityKind] = &[Skill, Agent, Command];
-const ALL_BUT_HOOK: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command];
-const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command, Hook];
+const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command];
 
 /// The harnesses that take a block of their own keys: `claude:`, `codex:`,
 /// `cursor:` and `pi:`, the rows with a plugin format. A test holds this list
@@ -235,7 +232,7 @@ pub const BLOCK_IDENTITY_KEYS: &[&str] =
 pub const KEYS: &[KeySpec] = &[
     KeySpec {
         key: "name",
-        kinds: &[Marketplace, Plugin, Skill, Agent, Command, Hook],
+        kinds: &[Marketplace, Plugin, Skill, Agent, Command],
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: false,
@@ -243,7 +240,7 @@ pub const KEYS: &[KeySpec] = &[
     },
     KeySpec {
         key: "description",
-        kinds: ALL_BUT_HOOK,
+        kinds: PUBLISHED,
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: false,
@@ -434,88 +431,8 @@ pub const KEYS: &[KeySpec] = &[
         summary: "An agent's sampling temperature.",
     },
     KeySpec {
-        key: "event",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::String,
-        inherits: false,
-        summary: "The event the hook runs on, in Claude Code's spelling.",
-    },
-    KeySpec {
-        key: "matcher",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::String,
-        inherits: false,
-        summary: "Which tool or source the hook matches.",
-    },
-    KeySpec {
-        key: "type",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::String,
-        inherits: false,
-        summary: "`command`, `http` or `prompt`. Defaults to `command`.",
-    },
-    KeySpec {
-        key: "command",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::String,
-        inherits: false,
-        summary: "The command a command hook runs. The body may carry it instead.",
-    },
-    KeySpec {
-        key: "prompt",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::String,
-        inherits: false,
-        summary: "The prompt a prompt hook sends. The body may carry it instead.",
-    },
-    KeySpec {
-        key: "url",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::String,
-        inherits: false,
-        summary: "The URL an http hook calls.",
-    },
-    KeySpec {
-        key: "if",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::String,
-        inherits: false,
-        summary: "A condition the hook runs under.",
-    },
-    KeySpec {
-        key: "async",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::Bool,
-        inherits: false,
-        summary: "True runs the hook without waiting for it.",
-    },
-    KeySpec {
-        key: "once",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::Bool,
-        inherits: false,
-        summary: "True runs the hook once per session.",
-    },
-    KeySpec {
-        key: "timeout",
-        kinds: &[Hook],
-        owner: Owner::Spec,
-        shape: Shape::Number,
-        inherits: false,
-        summary: "The timeout in seconds.",
-    },
-    KeySpec {
         key: CLAUDE.name,
-        kinds: ALL_BUT_HOOK,
+        kinds: PUBLISHED,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
         inherits: true,
@@ -523,7 +440,7 @@ pub const KEYS: &[KeySpec] = &[
     },
     KeySpec {
         key: CODEX.name,
-        kinds: ALL_BUT_HOOK,
+        kinds: PUBLISHED,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
         inherits: true,
@@ -531,7 +448,7 @@ pub const KEYS: &[KeySpec] = &[
     },
     KeySpec {
         key: CURSOR.name,
-        kinds: ALL_BUT_HOOK,
+        kinds: PUBLISHED,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
         inherits: true,
@@ -539,7 +456,7 @@ pub const KEYS: &[KeySpec] = &[
     },
     KeySpec {
         key: PI.name,
-        kinds: ALL_BUT_HOOK,
+        kinds: PUBLISHED,
         owner: Owner::Skillwright,
         shape: Shape::HarnessBlock,
         inherits: true,
@@ -554,7 +471,6 @@ const REFERENCE_KINDS: &[(EntityKind, &str)] = &[
     (Skill, "Skill"),
     (Agent, "Agent"),
     (Command, "Command"),
-    (Hook, "Hook"),
 ];
 
 impl Shape {
@@ -597,7 +513,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 - **Owner** says who the key belongs to:
   - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace: sw`, the key is written `sw-version`, or inside an `sw:` block. Keys in `skillwright.md` always stay bare.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written and never prefixed.
-- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`, then the workspace's `skillwright.md`.
+- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`.
 
 ## What is checked
 
@@ -738,11 +654,11 @@ mod tests {
         assert!(!is_known(Plugin, "license", &sw));
     }
 
-    /// `targets` inherits on every kind, which the cascade relies on: it asks
-    /// no kind whether `targets` inherits.
+    /// `targets` inherits on every published kind, which the cascade relies
+    /// on: it asks no kind whether `targets` inherits.
     #[test]
     fn targets_inherits_on_every_kind() {
-        for kind in EntityKind::ALL {
+        for &kind in PUBLISHED {
             assert!(inherits(kind, "targets"), "{kind:?}");
         }
     }
@@ -760,7 +676,6 @@ mod tests {
         assert_eq!(listed, decided.into_iter().collect());
         assert!(inherits(Skill, "license"));
         assert!(!inherits(Agent, "license"));
-        assert!(!inherits(Hook, "claude"));
     }
 
     #[test]
@@ -774,7 +689,7 @@ mod tests {
     #[test]
     fn every_harness_block_is_in_the_table() {
         for block in HARNESS_BLOCKS {
-            for kind in ALL_BUT_HOOK {
+            for kind in PUBLISHED {
                 assert!(is_owned(*kind, block), "{block} on {kind:?}");
             }
         }

@@ -10,7 +10,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 - **Owner** says who the key belongs to:
   - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace: sw`, the key is written `sw-version`, or inside an `sw:` block. Keys in `skillwright.md` always stay bare.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written and never prefixed.
-- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`, then the workspace's `skillwright.md`.
+- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`.
 
 ## What is checked
 
@@ -130,23 +130,6 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
 | `pi` | harness block | skillwright | yes | Fields only Pi reads, in its own key names. |
-
-## Hook
-
-| Key | Value | Owner | Inherited | Meaning |
-|---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused. |
-| `event` | string | spec | no | The event the hook runs on, in Claude Code's spelling. |
-| `matcher` | string | spec | no | Which tool or source the hook matches. |
-| `type` | string | spec | no | `command`, `http` or `prompt`. Defaults to `command`. |
-| `command` | string | spec | no | The command a command hook runs. The body may carry it instead. |
-| `prompt` | string | spec | no | The prompt a prompt hook sends. The body may carry it instead. |
-| `url` | string | spec | no | The URL an http hook calls. |
-| `if` | string | spec | no | A condition the hook runs under. |
-| `async` | boolean | spec | no | True runs the hook without waiting for it. |
-| `once` | boolean | spec | no | True runs the hook once per session. |
-| `timeout` | number | spec | no | The timeout in seconds. |
 
 ## Harness blocks
 

@@ -60,10 +60,10 @@ Rules that decide whether a diagram renders and reads:
 
 ## 2. Verify with the render script
 
-Run the script that sits next to this skill:
+Run the script in this skill's `scripts/` folder:
 
 ```text
-bun <skill dir>/render_mermaid.mjs <file.md> --github <owner/repo>
+bun <skill dir>/scripts/render_mermaid.mjs <file.md> --github <owner/repo>
 ```
 
 `--github` sends the file through GitHub's Markdown API so the blocks
@@ -110,7 +110,7 @@ private, say that the screenshot is the local render, not GitHub's page.
 
 ## Notes
 
-- **The script** is [[render_mermaid.mjs]] beside this note. It resolves
+- **The script** is [[scripts/render_mermaid.mjs]] in this skill. It resolves
   `mermaid` from any package in the repo that depends on it and
   `playwright` from the repo root, so it runs from the repo root without
   setup. `--out <png>` names the screenshot; `--json` prints the result as

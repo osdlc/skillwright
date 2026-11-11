@@ -1,7 +1,8 @@
 //! Every harness's build of the fixture vaults, pinned file by file.
 //!
-//! Each listing under `tests/fixtures/golden/` is a sorted `path  sha256`
-//! line per output file. A change to what a build writes shows here first.
+//! Each fixture vault is copied to a temporary folder and built there. Each
+//! listing under `tests/fixtures/golden/` is a sorted `path  sha256` line per
+//! file under the copy's `dist/`. A change to what a build writes shows here first.
 //! When the change is meant, refresh the listings from `packages/rust` with
 //! `TRADECRAFT_BLESS=1 cargo test -p skillwright --test build_golden`.
 
@@ -36,27 +37,32 @@ fn files(root: &Path) -> Vec<String> {
     out
 }
 
-/// `vault`'s build output as a `path  sha256` listing.
-fn listing(vault: &str, extra: &[&str]) -> String {
-    let source = fixtures().join(vault);
+/// A recursive copy. `fs::copy` keeps each file's permissions.
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
+/// `vault`'s build output as a `path  sha256` listing: a copy of the fixture
+/// built in a temporary folder, every file under its `dist/`.
+fn listing(vault: &str) -> String {
     let dir = tempfile::tempdir().unwrap();
-    let out = dir.path().join("out");
-    let mut argv = vec![
-        "build".to_owned(),
-        "--vault".to_owned(),
-        common::vault_str(&source),
-        "--out".to_owned(),
-        out.display().to_string(),
-        "--yes".to_owned(),
-        "--quiet".to_owned(),
-    ];
-    argv.extend(extra.iter().map(|arg| (*arg).to_owned()));
-    let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
-    let run = common::run(&argv, dir.path());
+    let root = dir.path().join(vault);
+    copy_tree(&fixtures().join(vault), &root);
+    let run = common::run(&["build", "--yes", "--quiet"], &root);
     assert_eq!(run.code, 0, "{vault}: {}", run.stderr);
+    let dist = root.join("dist");
     let mut text = String::new();
-    for file in files(&out) {
-        let hash = Sha256::digest(fs::read(out.join(&file)).unwrap());
+    for file in files(&dist) {
+        let hash = Sha256::digest(fs::read(dist.join(&file)).unwrap());
         writeln!(text, "{file}  {hash:x}").unwrap();
     }
     text
@@ -65,17 +71,19 @@ fn listing(vault: &str, extra: &[&str]) -> String {
 #[test]
 fn every_harness_builds_the_committed_tree() {
     let bless = std::env::var_os("TRADECRAFT_BLESS").is_some();
-    for (vault, extra) in [
-        ("freeform-vault", &["--marketplace", "acme"][..]),
-        ("vault", &[][..]),
-        ("identity-vault", &[][..]),
+    for (vault, markets) in [
+        ("freeform-vault", &["acme", "labs"][..]),
+        ("vault", &["studio"][..]),
+        ("identity-vault", &["guild"][..]),
     ] {
-        let generated = listing(vault, extra);
-        for root in [".claude-plugin/", ".agents/", ".cursor-plugin/", ".pi/"] {
-            assert!(
-                generated.contains(root),
-                "{vault} built nothing under {root}"
-            );
+        let generated = listing(vault);
+        for market in markets {
+            for root in [".claude-plugin/", ".agents/", ".cursor-plugin/", ".pi/"] {
+                assert!(
+                    generated.contains(&format!("{market}/{root}")),
+                    "{vault} built nothing under dist/{market}/{root}"
+                );
+            }
         }
         let golden = fixtures().join(format!("golden/{vault}.txt"));
         if bless {

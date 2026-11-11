@@ -30,11 +30,17 @@ fn text_at(vfs: &dyn Vfs, path: &str) -> String {
     String::from_utf8(vfs.read_file(Path::new(path)).unwrap()).unwrap()
 }
 
+/// A vault of marketplace `house` and plugin `core`, with the hooks file
+/// `hooks` outside it.
 fn vault(hooks: &str) -> MemVfs {
     let vfs = MemVfs::new();
+    write(&vfs, "/vault/skillwright.md", "---\n---\n");
+    write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
+    let plugin = "/vault/marketplaces/house/plugins/core";
+    write(&vfs, &format!("{plugin}/core.md"), "---\n---\n");
     write(
         &vfs,
-        "/vault/plugins/core/skills/review.md",
+        &format!("{plugin}/skills/review/review.md"),
         "---\nname: review\ndescription: Use review.\n---\n\n# review\n",
     );
     write(&vfs, "/project/plugin/hooks.json", hooks);
@@ -42,16 +48,11 @@ fn vault(hooks: &str) -> MemVfs {
 }
 
 fn request(mode: ExportMode) -> ExportRequest {
-    let mut config = MarketplaceConfig::default();
-    // Members outside `plugins/` land in the plugin named after the
-    // marketplace.
-    config.name = Some("core".to_owned());
-    let mut request = ExportRequest::new("/vault", "/market", config);
+    let mut request = ExportRequest::new("/vault", "/market", MarketplaceConfig::default());
     request.mode = mode;
-    request.hooks = vec![HookFileSpec::new(
-        "/project/plugin/hooks.json",
-        "plugin/hooks.json",
-    )];
+    let mut hooks = HookFileSpec::new("/project/plugin/hooks.json", "plugin/hooks.json");
+    hooks.plugin = Some("core".to_owned());
+    request.hooks = vec![hooks];
     request
 }
 

@@ -61,22 +61,10 @@ pub fn built_paths() -> Vec<String> {
     paths
 }
 
-/// [`built_paths`] and each harness's packs folder as `config` places it.
-pub fn built_paths_for(config: &crate::export::MarketplaceConfig) -> Vec<String> {
-    let mut paths = built_paths();
-    paths.extend(
-        crate::harness::with_plugin_format()
-            .map(|profile| format!("{}/", crate::harness::manifest::packs_of(config, profile))),
-    );
-    paths
-}
-
-/// Whether vault-relative `rel` sits under a plugin folder's `assets/`, by
-/// convention or by pattern. Those files are copied as they are, and are not
-/// notes. A vault walk has no hook for a folder found by shape, so each one
-/// filters its entries by this.
-fn in_plugin_assets(patterns: &crate::patterns::Patterns, rel: &str) -> bool {
-    let rel = patterns.canonical(rel);
+/// Whether vault-relative `rel` sits under a plugin folder's `assets/`.
+/// Those files are copied as they are, and are not notes. A vault walk has no
+/// hook for a folder found by shape, so each one filters its entries by this.
+pub(crate) fn in_plugin_assets(rel: &str) -> bool {
     let parts: Vec<&str> = rel.split('/').collect();
     parts[..parts.len() - 1]
         .windows(3)
@@ -84,8 +72,7 @@ fn in_plugin_assets(patterns: &crate::patterns::Patterns, rel: &str) -> bool {
 }
 
 /// A vault walk's options. `Everything` keeps dot-prefixed names (it drops
-/// only `.git`), and hides nothing: a caller that honours the vault's
-/// excluded files filters with [`excluded_files`].
+/// only `.git`), and hides nothing.
 ///
 /// [`vault_walk_errors`] repeats this walk's skips and prunes as a plain walk;
 /// a change to what this walk enters must change that one too.
@@ -136,6 +123,7 @@ pub(crate) fn files(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Result<Vec<Pa
 
 /// Every file under `root` this walk can read, without failing, a plain walk:
 /// a folder that cannot be listed is skipped, and so is each of `prune`.
+#[cfg(test)]
 pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Vec<vfs_walk::Entry> {
     vfs_walk::walk(
         vfs,
@@ -163,15 +151,10 @@ pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> V
     .map_or_else(|_| Vec::new(), |outcome| outcome.errors)
 }
 
-/// The paths of a walk of `root`'s `entries`, plugin assets left out by the
-/// patterns of the vault at `vault_root`: each entry is matched by its path
-/// relative to the vault root, wherever the walk started.
-fn notes_and_resources(
-    patterns: &crate::patterns::Patterns,
-    vault_root: &Path,
-    root: &Path,
-    entries: Vec<vault::Entry>,
-) -> Vec<PathBuf> {
+/// The paths of a walk of `root`'s `entries`, plugin assets left out. Each
+/// entry is matched by its path relative to `vault_root`, wherever the walk
+/// started.
+fn notes_and_resources(vault_root: &Path, root: &Path, entries: Vec<vault::Entry>) -> Vec<PathBuf> {
     // The walk root's own path from the vault root, once: empty for a walk of
     // the vault itself, the usual case, where an entry's path is already
     // vault-relative.
@@ -183,9 +166,9 @@ fn notes_and_resources(
         .into_iter()
         .filter(|entry| {
             if prefix.is_empty() {
-                !in_plugin_assets(patterns, &entry.rel)
+                !in_plugin_assets(&entry.rel)
             } else {
-                !in_plugin_assets(patterns, &format!("{prefix}/{}", entry.rel))
+                !in_plugin_assets(&format!("{prefix}/{}", entry.rel))
             }
         })
         .map(|entry| entry.abs)
@@ -199,26 +182,9 @@ pub(crate) fn vault_files(
     root: &Path,
     prune: &[&str],
 ) -> Result<Vec<PathBuf>, CoreError> {
-    let patterns = crate::patterns::Patterns::load(vfs, root)?;
     vault::walk(vfs, root, &vault_walk(prune))
-        .map(|entries| notes_and_resources(&patterns, root, root, entries))
+        .map(|entries| notes_and_resources(root, root, entries))
         .map_err(|err| core_error(err, not_refused))
-}
-
-/// Every file under the folder `root` of the vault at `vault_root`, whose
-/// patterns are `patterns`, refusing a symlink anywhere in it with the error
-/// `refuse` makes from its path.
-pub(crate) fn vault_files_refusing_symlinks(
-    vfs: &dyn Vfs,
-    root: &Path,
-    patterns: &crate::patterns::Patterns,
-    vault_root: &Path,
-    prune: &[&str],
-    refuse: impl Fn(&Path) -> CoreError,
-) -> Result<Vec<PathBuf>, CoreError> {
-    vault::walk(vfs, root, &vault_options(prune, true, true))
-        .map(|entries| notes_and_resources(patterns, vault_root, root, entries))
-        .map_err(|err| core_error(err, refuse))
 }
 
 /// Every file under `root` a vault walk meets, vault-relative, plugin assets
@@ -229,12 +195,4 @@ pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
         .into_iter()
         .map(|entry| entry.rel)
         .collect()
-}
-
-/// The vault's excluded files (Obsidian's `userIgnoreFilters`, read from
-/// `.obsidian/app.json` under `vault_root`), as a test on a vault-relative
-/// path. A missing or unreadable file excludes nothing.
-pub(crate) fn excluded_files(vfs: &dyn Vfs, vault_root: &Path) -> impl Fn(&str) -> bool {
-    let rules = markdown_vault_fs::hide::load(vfs, vault_root).rules;
-    move |relative: &str| !rules.is_empty() && rules.hides_path(relative, false)
 }

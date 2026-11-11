@@ -55,18 +55,15 @@ use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 
-pub use cascade::{Cascade, inherit_targets, marketplaces_in};
-pub use load::{
-    ComponentRequest, LoadRequest, load, load_component, load_plugin, read_notes, resolve_body,
-};
+pub use cascade::Cascade;
+pub use load::{LoadRequest, load, read_notes, resolve_body};
 
 /// A vault, loaded as the one marketplace a build renders.
 #[derive(Debug, Clone, Serialize)]
 pub struct Marketplace {
     /// The name the marketplace publishes under.
     pub name: String,
-    /// The vault's marketplace folder this was loaded from, `None` for a
-    /// vault that holds none.
+    /// The vault's marketplace folder this was loaded from. Always set.
     pub folder: Option<String>,
     /// The marketplace's identity and every plugin's manifest fields, the
     /// vault's notes folded over the request's configuration.
@@ -132,6 +129,14 @@ impl Plugin {
     /// Every component of every kind, skills first.
     pub fn components(&self) -> impl Iterator<Item = &Component> {
         self.skills.iter().chain(&self.commands).chain(&self.hooks)
+    }
+
+    /// Whether a harness that `admits` what it admits carries this plugin:
+    /// it admits one of its components, or the plugin has none, and every
+    /// harness carries its manifests.
+    pub fn carried_by(&self, admits: impl FnMut(&Component) -> bool) -> bool {
+        let mut components = self.components().peekable();
+        components.peek().is_none() || components.any(admits)
     }
 }
 
@@ -549,8 +554,15 @@ mod tests {
         use crate::vfs::{MemVfs, Vfs};
         use std::path::Path;
         let vfs = MemVfs::new();
-        let path = Path::new("/vault/marketplaces/house/plugins/tools/skills/a.md");
+        let path = Path::new("/vault/marketplaces/house/plugins/tools/skills/a/a.md");
         vfs.create_dir_all(path.parent().unwrap()).unwrap();
+        for note in [
+            "/vault/skillwright.md",
+            "/vault/marketplaces/house/house.md",
+            "/vault/marketplaces/house/plugins/tools/tools.md",
+        ] {
+            vfs.write_file(Path::new(note), b"---\n---\n").unwrap();
+        }
         vfs.write_file(
             path,
             b"---\nname: a\ndescription: A.\n---\n\nPart of [[a]].\n",

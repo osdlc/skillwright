@@ -227,14 +227,13 @@ export function canonicalTarget(name: string): string | null {
 // --- discovery ---------------------------------------------------------------
 
 /**
- * Every publishable note under the vault's content root, vetted and sorted by
- * name, and every note
- * the scan could not read.
+ * Every publishable note under the vault's `marketplaces/`, vetted and sorted
+ * by name, and every note the scan could not read.
  *
  * A bad note stops itself, not the scan: one half-written draft in a shared
  * vault must not block everybody else's publish. What still throws is what is
- * not a fact about one note — a duplicate name, a bundle overlap, a symlink,
- * a missing root. A caller that ignores `skipped` is claiming the vault holds
+ * not a fact about one note — a vault outside the layout (every problem in
+ * one message), a duplicate name, a symlink. A caller that ignores `skipped` is claiming the vault holds
  * nothing but what it listed, so every one of them reports it. A `namespace`
  * the core rejects throws {@link InvalidNamespaceError}.
  */
@@ -269,8 +268,8 @@ export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
  * The same model `exportSkills` translates into files, so a host that wants
  * a vault's structure reads it here rather than parsing a built tree.
  *
- * Throws {@link CoreError} for everything the load refuses — an unreadable
- * member note, a call that names no skill, an override key a requested
+ * Throws {@link CoreError} for everything the load refuses — a vault outside
+ * the layout, an unreadable member note, a call that names no skill, an override key a requested
  * harness does not read, an empty marketplace.
  */
 export function loadMarketplace(vfs: Vfs, request: LoadRequest): Marketplace {
@@ -292,14 +291,14 @@ export function parseRootFile(text: string): RootFile {
 
 /**
  * The {@link MarketplaceConfig} a `skillwright.md`'s text describes, ready for
- * an {@link ExportRequest}. `folderName` is the root file's folder, the
- * marketplace's name when the file gives none.
+ * an {@link ExportRequest}: the shared defaults only. It names no
+ * marketplace; each marketplace's note `<m>.md` does.
  *
  * @throws {CoreError} as {@link parseRootFile}.
  */
-export function rootFileConfig(text: string, folderName: string): MarketplaceConfig {
+export function rootFileConfig(text: string): MarketplaceConfig {
   try {
-    return rootFileConfigWasm(text, folderName) as MarketplaceConfig
+    return rootFileConfigWasm(text) as MarketplaceConfig
   } catch (raw) {
     throw toThrown(raw)
   }

@@ -5,28 +5,40 @@
 
 use std::path::Path;
 
-use tradecraft_core::model::{ComponentRequest, LoadRequest};
+use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
-    AssetSpec, BuildSettings, CompileSource, CoreError, DiscoveryWarning, EntityKind, ExportMode,
+    AssetSpec, BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode,
     ExportRequest, ExportUnit, FieldEdit, FieldValue, HookFileSpec, LinkIndex, MarketplaceConfig,
     MarketplaceFields, MemVfs, Namespace, PluginOverrides, ReasonToken, RootFile, StaleKind,
-    UnitStatus, VaultScope, Vfs, apply_field_edits, discover_components, export_skills,
+    UnitStatus, Vfs, apply_field_edits, discover_components, export_skills,
 };
+
+const PLUGIN: &str = "/vault/marketplaces/house/plugins/tools";
+
+/// A vault of marketplace `house`, plugin `tools` and the skill `review`.
+fn vault() -> MemVfs {
+    let vfs = MemVfs::new();
+    vfs.insert("/vault/skillwright.md", "---\n---\n").unwrap();
+    vfs.insert("/vault/marketplaces/house/house.md", "---\n---\n")
+        .unwrap();
+    vfs.insert(format!("{PLUGIN}/tools.md"), "---\n---\n")
+        .unwrap();
+    vfs.insert(
+        format!("{PLUGIN}/skills/review/review.md"),
+        "---\ndescription: Review.\n---\nReview.\n",
+    )
+    .unwrap();
+    vfs
+}
 
 #[test]
 fn an_export_request_builds_from_a_default_config() {
-    let vfs = MemVfs::new();
-    vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
-    vfs.write_file(
-        Path::new("/vault/skills/review.md"),
-        b"---\ndescription: Review.\n---\nReview.\n",
-    )
-    .unwrap();
+    let vfs = vault();
     let mut config = MarketplaceConfig::default();
     config.name = Some("house".to_owned());
     let mut overrides = PluginOverrides::default();
     overrides.identity.version = Some("1.0.0".to_owned());
-    config.plugins.insert("house".to_owned(), overrides);
+    config.plugins.insert("tools".to_owned(), overrides);
     let mut request = ExportRequest::new("/vault", "/market", config);
     assert_eq!(request.mode, ExportMode::Build);
     request.harnesses.insert("claude".to_owned());
@@ -40,7 +52,7 @@ fn an_export_request_builds_from_a_default_config() {
 }
 
 #[test]
-fn the_small_specs_default_to_the_marketplaces_own_plugin() {
+fn the_small_specs_start_with_no_plugin() {
     let mut asset = AssetSpec::new("/vault/bin/tool", "bin/tool");
     assert!(asset.plugin.is_none());
     asset.plugin = Some("tools".to_owned());
@@ -56,25 +68,14 @@ fn a_load_request_takes_its_inputs() {
 }
 
 #[test]
-fn the_borrowed_requests_take_their_inputs() {
+fn a_compile_source_takes_its_inputs() {
     let vault = Path::new("/vault");
-    let mut scope = VaultScope::new(vault);
-    scope.marketplace = Some("house");
-    assert!(scope.skills_root.is_none());
-
-    let mut component = ComponentRequest::new(
-        Path::new("/vault/skills/a.md"),
-        vault,
-        EntityKind::Skill,
-        "claude",
-        "claude-code",
-    );
-    component.bundle_root = Some(Path::new("/vault/skills/a"));
-    assert_eq!(component.kind, EntityKind::Skill);
-
-    let mut source = CompileSource::new(vault, Path::new("/vault/skills/a.md"), "a");
+    let entry = Path::new("/vault/marketplaces/house/plugins/tools/skills/a/a.md");
+    let mut source = CompileSource::new(vault, entry, "a");
     assert!(source.calls.is_none() && source.links.is_none());
-    source.bundle_root = Some(Path::new("/vault/skills/a"));
+    source.bundle_root = Some(Path::new(
+        "/vault/marketplaces/house/plugins/tools/skills/a",
+    ));
     assert_eq!(source.skill_name, "a");
 }
 
@@ -90,14 +91,15 @@ fn a_match_on_a_reason_token_needs_a_wildcard_arm() {
 #[test]
 fn the_settings_types_build_from_default() {
     let mut fields = MarketplaceFields::default();
-    fields.name = Some("house".to_owned());
+    fields.targets = Some(vec!["claude".to_owned()]);
     let mut build = BuildSettings::default();
-    build.out = Some("dist".to_owned());
+    build.harnesses = Some(vec!["claude".to_owned()]);
     let mut root = RootFile::default();
     root.marketplace = fields;
     root.build = build;
-    let config = root.to_config("house");
-    assert_eq!(config.name.as_deref(), Some("house"));
+    let config = root.to_config();
+    assert_eq!(config.name, None);
+    assert_eq!(config.targets, Some(vec!["claude".to_owned()]));
 }
 
 #[test]
@@ -112,26 +114,21 @@ fn a_field_edit_takes_a_reexported_field_value() {
 
 #[test]
 fn a_compile_source_takes_a_reexported_link_index() {
-    let index = LinkIndex::build(&["skills/a.md".to_owned()]);
-    let mut source = CompileSource::new(Path::new("/vault"), Path::new("/vault/skills/a.md"), "a");
+    let note = "marketplaces/house/plugins/tools/skills/a/a.md";
+    let index = LinkIndex::build(&[note.to_owned()]);
+    let entry = Path::new("/vault").join(note);
+    let mut source = CompileSource::new(Path::new("/vault"), &entry, "a");
     source.links = Some(&index);
     assert!(source.links.is_some());
 }
 
 #[test]
 fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
-    let vfs = MemVfs::new();
-    vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
-    vfs.write_file(
-        Path::new("/vault/skills/review.md"),
-        b"---\ndescription: Review.\n---\nReview.\n",
-    )
-    .unwrap();
-
-    let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
-    let component = &scan.components[0];
-    assert_eq!(component.name, "review");
-    let warning = DiscoveryWarning::new("skills/review.md", "missing-version", "detail");
+    let vfs = vault();
+    let scan = discover_components(&vfs, Path::new("/vault"), &Namespace::bare()).unwrap();
+    let component = scan.components.iter().find(|c| c.name == "review").unwrap();
+    assert_eq!(component.plugin.as_deref(), Some("tools"));
+    let warning = DiscoveryWarning::new("review.md", "missing-version", "detail");
     assert_eq!(warning.reason, "missing-version");
 
     let mut config = MarketplaceConfig::default();
@@ -203,19 +200,17 @@ fn a_core_error_names_its_fallback_reason_token() {
 
 #[test]
 fn a_skipped_note_reads_by_field() {
-    let vfs = MemVfs::new();
-    vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
-    vfs.write_file(
-        Path::new("/vault/skills/skillwright.md"),
-        b"---\ndescription: X.\n---\n",
+    let vfs = vault();
+    vfs.insert(
+        format!("{PLUGIN}/skills/review/review.md"),
+        "---\ndescription: [\n---\n",
     )
     .unwrap();
-    let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare()).unwrap();
-    assert!(scan.components.is_empty());
-    assert_eq!(scan.skipped[0].path, "skills/skillwright.md");
-    assert!(
-        scan.skipped[0].reason.contains("reserved-name"),
-        "{}",
-        scan.skipped[0].reason
+    let scan = discover_components(&vfs, Path::new("/vault"), &Namespace::bare()).unwrap();
+    assert!(scan.components.iter().all(|c| c.name != "review"));
+    assert_eq!(
+        scan.skipped[0].path,
+        "marketplaces/house/plugins/tools/skills/review/review.md"
     );
+    assert!(!scan.skipped[0].reason.is_empty());
 }

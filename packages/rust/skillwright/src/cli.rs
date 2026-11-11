@@ -29,10 +29,10 @@ const DESCRIPTION: &str = "Build a vault of markdown skill notes into plugin mar
 /// The verbs the usage line for a bare `skillwright` prints, in order.
 const VERBS: [&str; 4] = ["init", "build", "check", "bump"];
 
-/// The five globals that mean something to a verb writing nothing.
+/// The four globals that mean something to a verb writing nothing.
 ///
 /// A verb that writes has no separate copy: [`Globals`] flattens this one and
-/// adds the two below it, so the five cannot drift between the two surfaces.
+/// adds the two below it, so the four cannot drift between the two surfaces.
 ///
 /// Each help string is spelled out rather than taken from a doc comment,
 /// because clap strips a doc comment's trailing period and [`root_help`]
@@ -42,15 +42,9 @@ struct ReadOnlyGlobals {
     #[arg(
         long,
         value_name = "path",
-        help = "Vault root: the folder holding `skillwright.md`. Overrides the walk up from the working directory for this run."
+        help = "Vault root: the folder holding `skillwright.md` and `marketplaces/`. Overrides the walk up from the working directory for this run."
     )]
     vault: Option<String>,
-    #[arg(
-        long,
-        value_name = "path",
-        help = "Read this root file instead of the nearest `skillwright.md` at or above the working directory."
-    )]
-    config: Option<String>,
     #[arg(
         long,
         value_name = "stem",
@@ -67,13 +61,12 @@ impl ReadOnlyGlobals {
     fn common(&self) -> CommonFlags {
         CommonFlags {
             vault: self.vault.clone(),
-            config: self.config.clone(),
             namespace: self.namespace.clone(),
         }
     }
 }
 
-/// The seven globals a verb that writes declares.
+/// The six globals a verb that writes declares.
 ///
 /// `--dry-run` and `--yes` are here and not in [`ReadOnlyGlobals`] because a
 /// verb that writes nothing has no plan to preview and nothing to accept, so
@@ -89,20 +82,12 @@ struct Globals {
 }
 
 /// The globals in the order the root `--help` lists them.
-const GLOBAL_OPTIONS: [&str; 7] = [
-    "vault",
-    "config",
-    "namespace",
-    "json",
-    "dry-run",
-    "yes",
-    "quiet",
-];
+const GLOBAL_OPTIONS: [&str; 6] = ["vault", "namespace", "json", "dry-run", "yes", "quiet"];
 
 /// The globals a verb that never writes does not declare.
 const WRITE_ONLY_GLOBALS: [&str; 2] = ["dry-run", "yes"];
 
-/// What the root `--help` adds under the verb list: the seven globals, and
+/// What the root `--help` adds under the verb list: the six globals, and
 /// the three nouns the verbs use.
 ///
 /// The globals are declared per verb, not on the root — see the module note —
@@ -150,8 +135,8 @@ fn root_help() -> String {
         &globals.join("\n"),
         "",
         "The three nouns:",
-        "  vault        The folder holding `skillwright.md` and the notes.",
-        "  marketplace  What `build` writes: one plugin marketplace per harness.",
+        "  vault        The folder holding `skillwright.md` and `marketplaces/`.",
+        "  marketplace  A folder under `marketplaces/`. `build` writes each to `dist/<m>/`.",
         "  target       A harness a note is built for, e.g. `claude`.",
         "",
     ]
@@ -167,13 +152,13 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Verb {
-    /// Write a `skillwright.md` in the current folder.
+    /// Write a new vault in the current folder: the root file, one marketplace and one plugin.
     Init(InitArgs),
-    /// Render the vault into its standalone marketplaces and swap them into place.
+    /// Build every marketplace into `dist/<m>/`.
     Build(BuildArgs),
-    /// Report the marketplace's drift against the vault and exit 1 on drift. Writes nothing.
+    /// Report drift between the vault and `dist/<m>/` and exit 1 on drift. Writes nothing.
     Check(CheckArgs),
-    /// Raise a plugin's `version` by one semver level: `--major`, `--minor`, or `--patch` (default).
+    /// Raise a plugin's or a marketplace's `version`: `--major`, `--minor`, or `--patch` (default).
     Bump(BumpArgs),
 }
 
@@ -181,13 +166,7 @@ enum Verb {
 /// things to do with the comparison.
 #[derive(Args, Debug)]
 struct ExportArgs {
-    /// Where the marketplace roots land. Overrides `build.out`. One of the two is required.
-    #[arg(long, value_name = "path")]
-    out: Option<String>,
-    /// The skills root to scan. Defaults to the vault root.
-    #[arg(long, value_name = "path")]
-    skills_root: Option<String>,
-    /// In a workspace, the one marketplace under `marketplaces/<name>/` to build. Refused when there is none.
+    /// The one marketplace under `marketplaces/` to build. Absent means every one.
     #[arg(long, value_name = "name")]
     marketplace: Option<String>,
 }
@@ -211,31 +190,36 @@ struct CheckArgs {
     globals: ReadOnlyGlobals,
 }
 
-/// `init`'s flags. It reads no configuration, so it takes none of the globals.
+/// `init`'s two names. It reads no configuration, so it takes none of the
+/// globals.
 #[derive(Args, Debug)]
 struct InitArgs {
-    /// Where `build` and `check` write. Asked for on a terminal, required otherwise.
-    #[arg(long, value_name = "path")]
-    out: Option<String>,
-    /// The marketplace name. Defaults to the folder's name.
-    #[arg(long, value_name = "name")]
-    name: Option<String>,
+    /// The marketplace's name.
+    #[arg(value_name = "marketplace")]
+    marketplace: String,
+    /// The plugin's name.
+    #[arg(value_name = "plugin")]
+    plugin: String,
 }
 
-/// `bump`'s surface: the plugin to raise, or `--changed-since` for every
-/// plugin that changed, and which semver level — mutually exclusive,
-/// `--patch` the default when none is given.
+/// `bump`'s surface: the plugin to raise, the marketplace with no plugin
+/// named, or `--changed-since` for every plugin that changed, and which
+/// semver level — mutually exclusive, `--patch` the default when none is
+/// given.
 #[derive(Args, Debug)]
 struct BumpArgs {
-    /// The plugin to bump, by its frontmatter `name`.
-    #[arg(value_name = "plugin", required_unless_present = "changed_since")]
+    /// The plugin to bump, by its folder name.
+    #[arg(
+        value_name = "plugin",
+        required_unless_present_any = ["changed_since", "marketplace"]
+    )]
     plugin: Option<String>,
     /// Bump every plugin whose rendered members differ from this baseline:
     /// a built marketplace directory, or a git ref built in a temporary
     /// worktree.
     #[arg(long, value_name = "ref|dir", conflicts_with = "plugin")]
     changed_since: Option<String>,
-    /// The marketplace to work in, when the vault or workspace holds several.
+    /// The marketplace to work in. With no plugin named, bump the marketplace itself.
     #[arg(long, value_name = "name")]
     marketplace: Option<String>,
     /// Bump the major version.
@@ -254,8 +238,6 @@ struct BumpArgs {
 impl ExportArgs {
     fn flags(&self, globals: &ReadOnlyGlobals, dry_run: bool, yes: bool) -> ExportFlags {
         ExportFlags {
-            out: self.out.clone(),
-            skills_root: self.skills_root.clone(),
             marketplace: self.marketplace.clone(),
             common: globals.common(),
             json: globals.json,
@@ -316,8 +298,8 @@ pub fn run_with(argv: &[String], ctx: &mut CommandContext<'_>) -> i32 {
     match &cli.verb {
         Verb::Init(args) => run_init(
             &InitFlags {
-                out: args.out.clone(),
-                name: args.name.clone(),
+                marketplace: args.marketplace.clone(),
+                plugin: args.plugin.clone(),
             },
             ctx,
         ),

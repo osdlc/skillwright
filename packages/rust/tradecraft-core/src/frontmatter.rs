@@ -292,7 +292,7 @@ pub struct ContainerIdentity {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
     /// `version`, the container's own. A plugin's defaults to `0.1.0`, with a
-    /// warning; the marketplace's own plugin takes the marketplace's.
+    /// warning.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     /// `repository`, the source repository URL, written into every manifest

@@ -40,7 +40,7 @@ use crate::content::SkillProjection;
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
-use crate::model::load::{Pack, admits, targets_name};
+use crate::model::load::{admits, targets_name};
 use crate::model::{Body, Call, Component, Marketplace, Plugin, ResourceContent, Segment};
 use crate::namespace::Namespace;
 use crate::projection::{
@@ -278,26 +278,6 @@ pub trait HarnessTranslator: Sync {
         Ok(tree)
     }
 
-    /// One plugin as a pack at a destination, paths relative to the
-    /// destination root.
-    ///
-    /// # Errors
-    ///
-    /// What writing any member refuses.
-    fn translate_pack(&self, pack: &Pack, ns: &Namespace) -> Result<FileTree, CoreError> {
-        let mut tree = FileTree::default();
-        let base = format!("{}/{}", self.format().skills_dir, pack.plugin.name);
-        self.write_pack(
-            &pack.plugin,
-            &pack.config,
-            &base,
-            Layout::Destination,
-            ns,
-            &mut tree,
-        )?;
-        Ok(tree)
-    }
-
     /// One note published on its own, paths relative to the destination root.
     ///
     /// # Errors
@@ -325,7 +305,7 @@ pub trait HarnessTranslator: Sync {
     /// manifest. Returns the carried skills' names, or `None` when this
     /// harness carries nothing of the plugin — a plugin whose every member is
     /// narrowed away is absent entirely: no directory, no manifest, no
-    /// listing.
+    /// listing. A plugin with no member is carried, as its manifest alone.
     ///
     /// # Errors
     ///
@@ -342,7 +322,7 @@ pub trait HarnessTranslator: Sync {
         let skills: Vec<&Component> = plugin.skills.iter().filter(|c| self.admits(c)).collect();
         let commands: Vec<&Component> = plugin.commands.iter().filter(|c| self.admits(c)).collect();
         let hooks: Vec<&Component> = plugin.hooks.iter().filter(|c| self.admits(c)).collect();
-        if skills.is_empty() && commands.is_empty() && hooks.is_empty() {
+        if !plugin.carried_by(|c| self.admits(c)) {
             return Ok(None);
         }
         let siblings: BTreeSet<&str> = plugin.skills.iter().map(|s| s.name.as_str()).collect();

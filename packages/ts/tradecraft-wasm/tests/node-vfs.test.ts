@@ -75,10 +75,12 @@ function repoWithVault(name: string): { repo: string; vault: string } {
   const vault = path.join(repo, 'src')
   const skill = path.join(vault, 'marketplaces/house/plugins/tools/skills/review')
   mkdirSync(skill, { recursive: true })
+  writeFileSync(path.join(vault, 'skillwright.md'), '---\n---\n')
   writeFileSync(
-    path.join(vault, 'marketplaces/house/skillwright.md'),
-    '---\nname: house\ndescription: The house marketplace.\nowner: acme\n---\n',
+    path.join(vault, 'marketplaces/house/house.md'),
+    '---\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
+  writeFileSync(path.join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
   writeFileSync(
     path.join(skill, 'review.md'),
     '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n',
@@ -101,21 +103,11 @@ describe('export at a repository root that holds its vault', () => {
     expect(build(createNodeVfs(), repo, vault).changed).toBe(true)
   })
 
-  test('is refused when a tree it replaces is a link into the vault', () => {
+  test('is refused when a tree it replaces is a link into marketplaces/', () => {
     const { repo, vault } = repoWithVault('linked')
-    mkdirSync(path.join(vault, 'skills'))
-    symlinkSync(path.join(vault, 'skills'), path.join(repo, '.claude-plugin'))
+    symlinkSync(path.join(vault, 'marketplaces/house'), path.join(repo, '.claude-plugin'))
 
-    // The narrowed rail's own refusal, which names the write: the strict rail
-    // would refuse this out root as an ancestor of the vault instead.
-    expect(() => build(createNodeVfs(), repo, vault)).toThrow(/would write .* inside the vault/)
-  })
-
-  test('is refused when the host has no link methods', () => {
-    const { repo, vault } = repoWithVault('blind')
-    const { realpath: _r, readLink: _l, isSymlink: _s, ...blind } = createNodeVfs()
-
-    expect(() => build(blind, repo, vault)).toThrow(/unsafe-root/)
+    expect(() => build(createNodeVfs(), repo, vault)).toThrow(/which a build reads as source/)
   })
 })
 
@@ -185,8 +177,6 @@ describe('a host whose link answers fail', () => {
       },
     }
     expect(discoverComponents(base, { vault_root: vault }).components.length).toBeGreaterThan(0)
-    expect(() => discoverComponents(unsure, { vault_root: vault })).toThrow(
-      /a symlink in a skills source/,
-    )
+    expect(() => discoverComponents(unsure, { vault_root: vault })).toThrow(/a symlink in a vault/)
   })
 })

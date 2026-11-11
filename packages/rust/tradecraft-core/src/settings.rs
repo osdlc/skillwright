@@ -1,9 +1,12 @@
-//! `skillwright.md`, the root file: one note that is both the marketplace's
-//! own note and the project's configuration.
+//! `skillwright.md`, the root file: the vault's configuration.
 //!
-//! Its frontmatter's top-level keys are the marketplace's fields. Settings for
-//! how skillwright runs sit under `build:`. The body is ignored. The folder
-//! holding the file is the vault, and the build writes beside it.
+//! Its frontmatter's top-level keys are the shared defaults every marketplace
+//! and plugin inherits. Settings for how skillwright runs sit under `build:`.
+//! The body is ignored. The folder holding the file is the vault root.
+//!
+//! A marketplace's own fields are in its note, `marketplaces/<m>/<m>.md`,
+//! read by [`parse_marketplace_note`]. The root file's `name`, `owner`,
+//! `description`, `version` and `display_name` are not read.
 //!
 //! The CLI and other hosts read the file through [`parse_root_file`], so they
 //! share one shape and one mapping onto a build's [`MarketplaceConfig`].
@@ -25,11 +28,12 @@ use crate::skill::split_frontmatter;
 /// The root file's name.
 pub const ROOT_FILE: &str = "skillwright.md";
 
-/// The marketplace's own fields: the root file's top-level keys.
+/// A marketplace's own fields, as its note `<m>.md` writes them, or the
+/// top-level keys of the root file.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct MarketplaceFields {
-    /// The marketplace's name. Absent means the root folder's name.
+    /// The marketplace's name. Absent means its folder's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// One line on what the marketplace holds.
@@ -58,7 +62,7 @@ pub struct AssetSetting {
     pub from: String,
     /// Where it lands, relative to the built plugin's own root.
     pub to: String,
-    /// Which plugin it lands in. Absent means the marketplace's own plugin.
+    /// Which plugin it lands in. A build refuses an entry without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin: Option<String>,
 }
@@ -68,8 +72,7 @@ pub struct AssetSetting {
 pub struct HookSetting {
     /// The file, relative to the root file.
     pub from: String,
-    /// Which plugin's packs carry it. Absent means the marketplace's own
-    /// plugin.
+    /// Which plugin's packs carry it. A build refuses an entry without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin: Option<String>,
 }
@@ -78,10 +81,6 @@ pub struct HookSetting {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct BuildSettings {
-    /// Where the harness trees are written, relative to the root file.
-    /// Required, here or as `--out`: there is no default.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub out: Option<String>,
     /// Which harnesses to build. Absent means all of them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harnesses: Option<Vec<String>>,
@@ -101,116 +100,6 @@ pub struct BuildSettings {
     /// Canonical hooks files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<HookSetting>,
-    /// Globs of what never ships, relative to the root file. Only this
-    /// file's own: a workspace's globs are not inherited into this list, but
-    /// added to it, read from the workspace folder. Experimental.
-    #[serde(
-        default,
-        deserialize_with = "one_or_many",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub exclude: Vec<String>,
-    /// Globs that stand in for the conventional folders. Experimental.
-    #[serde(default, skip_serializing_if = "FolderPatterns::is_empty")]
-    pub patterns: FolderPatterns,
-}
-
-/// `build.patterns`: for each conventional folder, the globs that name what
-/// it holds. See [`crate::patterns`].
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct FolderPatterns {
-    /// Each match is a plugin folder.
-    #[serde(
-        deserialize_with = "one_or_many",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub plugins: Vec<String>,
-    /// Each match is a skill: a note, or a folder holding its entry.
-    #[serde(
-        deserialize_with = "one_or_many",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub skills: Vec<String>,
-    /// Each match is an agent.
-    #[serde(
-        deserialize_with = "one_or_many",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub agents: Vec<String>,
-    /// Each match is a command.
-    #[serde(
-        deserialize_with = "one_or_many",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub commands: Vec<String>,
-    /// Each match is a hook note.
-    #[serde(
-        deserialize_with = "one_or_many",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub hooks: Vec<String>,
-    /// Each match is a plugin's assets folder.
-    #[serde(
-        deserialize_with = "one_or_many",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub assets: Vec<String>,
-}
-
-impl FolderPatterns {
-    /// Whether no pattern is set.
-    pub fn is_empty(&self) -> bool {
-        self == &Self::default()
-    }
-
-    /// Each key with its globs, in the order a path is claimed.
-    pub(crate) fn kinds(&self) -> [(&'static str, &[String]); 6] {
-        [
-            ("assets", &self.assets),
-            ("skills", &self.skills),
-            ("agents", &self.agents),
-            ("commands", &self.commands),
-            ("hooks", &self.hooks),
-            ("plugins", &self.plugins),
-        ]
-    }
-
-    /// Every glob, whichever key holds it.
-    pub(crate) fn globs(&self) -> impl Iterator<Item = &String> {
-        self.kinds().into_iter().flat_map(|(_, globs)| globs)
-    }
-
-    /// Fill each key this leaves unset from `shared`.
-    fn inherit(&mut self, shared: &Self) {
-        let keys = [
-            (&mut self.plugins, &shared.plugins),
-            (&mut self.skills, &shared.skills),
-            (&mut self.agents, &shared.agents),
-            (&mut self.commands, &shared.commands),
-            (&mut self.hooks, &shared.hooks),
-            (&mut self.assets, &shared.assets),
-        ];
-        for (own, shared) in keys {
-            if own.is_empty() {
-                own.clone_from(shared);
-            }
-        }
-    }
-}
-
-/// A string or a list of strings, as a list.
-fn one_or_many<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum OneOrMany {
-        One(String),
-        Many(Vec<String>),
-    }
-    Ok(match OneOrMany::deserialize(deserializer)? {
-        OneOrMany::One(glob) => vec![glob],
-        OneOrMany::Many(globs) => globs,
-    })
 }
 
 /// `build.bump`: how `bump` writes a version.
@@ -237,13 +126,10 @@ pub enum PatchScheme {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct RootFile {
-    /// The marketplace's own fields.
+    /// The top-level keys. Only the shared defaults among them are read
+    /// ([`RootFile::to_config`]).
     #[serde(default)]
     pub marketplace: MarketplaceFields,
-    /// `workspace: true`: this file holds shared defaults for every
-    /// `marketplaces/<m>/skillwright.md` below it and builds them all.
-    #[serde(default)]
-    pub workspace: bool,
     /// The `build:` block.
     #[serde(default)]
     pub build: BuildSettings,
@@ -279,19 +165,22 @@ pub fn marketplace_keys() -> impl Iterator<Item = &'static str> {
 
 /// The keys of the `build:` block.
 pub const BUILD_KEYS: &[&str] = &[
-    "out",
     "harnesses",
     "namespace",
     "launcher_path",
     "bump",
     "assets",
     "hooks",
-    "exclude",
-    "patterns",
 ];
 
 /// The `build:` keys v2 refuses, naming the key, rather than warns about.
-pub const REFUSED_BUILD_KEYS: &[&str] = &["destinations", "scan_locations"];
+pub const REFUSED_BUILD_KEYS: &[&str] = &[
+    "destinations",
+    "scan_locations",
+    "out",
+    "patterns",
+    "exclude",
+];
 
 /// A YAML value read as `T` through its JSON equivalent, so free-shaped
 /// fields come out as the JSON a manifest carries.
@@ -299,20 +188,11 @@ fn from_yaml<T: DeserializeOwned>(value: &serde_yaml::Value) -> Result<T, serde_
     serde_json::to_value(value).and_then(serde_json::from_value)
 }
 
-/// A new root file naming the marketplace and its output folder, the file
-/// `skillwright init` writes.
+/// A new root file, the one `skillwright init` writes: no keys, so every
+/// default holds.
 #[must_use]
-pub fn compose_root_file(name: &str, out: &str) -> String {
-    use serde_yaml::{Mapping, Value};
-
-    let string = |value: &str| Value::String(value.to_owned());
-    let mut build = Mapping::new();
-    build.insert(string("out"), string(out));
-    let mut map = Mapping::new();
-    map.insert(string("name"), string(name));
-    map.insert(string("build"), Value::Mapping(build));
-    let yaml = serde_yaml::to_string(&map).expect("a mapping of strings serializes");
-    format!("---\n{yaml}---\n")
+pub fn compose_root_file() -> String {
+    "---\n---\n".to_owned()
 }
 
 /// Whether a file split into `frontmatter` and `body` opened frontmatter it
@@ -352,37 +232,6 @@ fn frontmatter_map(text: &str) -> Result<serde_yaml::Mapping, SettingsError> {
     }
 }
 
-/// Only the part of a root file that decides which files are notes and where
-/// they go: `workspace`, `build.exclude` and `build.patterns`. Every other
-/// key is left at its default and is not checked, so a bad value elsewhere
-/// in the file is for the verbs that read it to refuse.
-///
-/// # Errors
-///
-/// Frontmatter that is not a YAML mapping, and a `workspace`, `build`,
-/// `build.exclude` or `build.patterns` of the wrong shape.
-pub(crate) fn parse_root_layout(text: &str) -> Result<RootFile, SettingsError> {
-    let mut root = RootFile::default();
-    for (key, value) in frontmatter_map(text)? {
-        match key.as_str() {
-            Some("workspace") => root.workspace = field("workspace", &value, "true or false")?,
-            Some("build") => {
-                for (key, value) in build_map(&value)?.into_iter().flatten() {
-                    match key.as_str() {
-                        Some("exclude") => root.build.exclude = globs("build.exclude", value)?,
-                        Some("patterns") => {
-                            root.build.patterns = folder_patterns(value, &mut Vec::new())?;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok(root)
-}
-
 /// Read a root file's text. A file with no frontmatter is a root file with
 /// every default.
 ///
@@ -391,8 +240,22 @@ pub(crate) fn parse_root_layout(text: &str) -> Result<RootFile, SettingsError> {
 /// Frontmatter that is not a YAML mapping, and a known key whose value has
 /// the wrong shape.
 pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
-    let map = frontmatter_map(text)?;
+    read_fields(frontmatter_map(text)?, true)
+}
 
+/// Read a marketplace note's text, `marketplaces/<m>/<m>.md`, into its fields.
+/// A key that is not a marketplace field is left for the scan to warn about.
+///
+/// # Errors
+///
+/// Frontmatter that is not a YAML mapping, and a marketplace key whose value
+/// has the wrong shape.
+pub fn parse_marketplace_note(text: &str) -> Result<MarketplaceFields, SettingsError> {
+    read_fields(frontmatter_map(text)?, false).map(|root| root.marketplace)
+}
+
+/// The fields of a root file (`root_file`) or a marketplace note.
+fn read_fields(map: serde_yaml::Mapping, root_file: bool) -> Result<RootFile, SettingsError> {
     let mut root = RootFile::default();
     let mut marketplace = serde_yaml::Mapping::new();
     for (key, value) in map {
@@ -402,8 +265,7 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             continue;
         };
         match key.as_str() {
-            "workspace" => root.workspace = field(&key, &value, "true or false")?,
-            "build" => root.build = build(&value, &mut root.warnings)?,
+            "build" if root_file => root.build = build(&value, &mut root.warnings)?,
             known if marketplace_keys().any(|key| key == known) => {
                 check_shape(known, &value)?;
                 marketplace.insert(serde_yaml::Value::String(key), value);
@@ -515,20 +377,17 @@ fn build(
     let Some(map) = build_map(value)? else {
         return Ok(BuildSettings::default());
     };
+    let refused = refused_in(map);
+    if !refused.is_empty() {
+        return Err(SettingsError {
+            key: refused.join("`, `"),
+            what: "a key skillwright reads",
+            detail: "delete it".to_owned(),
+        });
+    }
     let mut kept = serde_yaml::Mapping::new();
-    let mut exclude = Vec::new();
-    let mut patterns = FolderPatterns::default();
     for (key, value) in map {
         match key.as_str() {
-            Some("exclude") => exclude = globs("build.exclude", value)?,
-            Some("patterns") => patterns = folder_patterns(value, warnings)?,
-            Some(name) if REFUSED_BUILD_KEYS.contains(&name) => {
-                return Err(SettingsError {
-                    key: format!("build.{name}"),
-                    what: "a key skillwright reads",
-                    detail: "delete it".to_owned(),
-                });
-            }
             Some(name) if BUILD_KEYS.contains(&name) => {
                 warn_nested(name, value, warnings);
                 kept.insert(key.clone(), value.clone());
@@ -545,12 +404,29 @@ fn build(
         let name = format!("build.{}", key.as_str().unwrap_or_default());
         field::<BuildSettings>(&name, &serde_yaml::Value::Mapping(one), "valid")?;
     }
-    let build: BuildSettings = field("build", &serde_yaml::Value::Mapping(kept), "a build block")?;
-    Ok(BuildSettings {
-        exclude,
-        patterns,
-        ..build
-    })
+    field("build", &serde_yaml::Value::Mapping(kept), "a build block")
+}
+
+/// The refused keys of a `build:` mapping, as `build.<key>`, in file order.
+fn refused_in(map: &serde_yaml::Mapping) -> Vec<String> {
+    map.keys()
+        .filter_map(serde_yaml::Value::as_str)
+        .filter(|name| REFUSED_BUILD_KEYS.contains(name))
+        .map(|name| format!("build.{name}"))
+        .collect()
+}
+
+/// The refused `build:` keys of a root file's text, as `build.<key>`, for the
+/// layout report (spec section 11 case 7). Empty when the text cannot be read:
+/// [`parse_root_file`] says what is wrong with it.
+pub(crate) fn refused_build_keys(text: &str) -> Vec<String> {
+    let Ok(map) = frontmatter_map(text) else {
+        return Vec::new();
+    };
+    map.get("build")
+        .and_then(serde_yaml::Value::as_mapping)
+        .map(refused_in)
+        .unwrap_or_default()
 }
 
 /// The `build:` block's keys, `None` when it is unset.
@@ -561,87 +437,9 @@ fn build_map(value: &serde_yaml::Value) -> Result<Option<&serde_yaml::Mapping>, 
         _ => Err(SettingsError {
             key: "build".to_owned(),
             what: "a mapping",
-            detail: "`build:` holds keys such as `out` and `harnesses`".to_owned(),
+            detail: "`build:` holds keys such as `harnesses` and `bump`".to_owned(),
         }),
     }
-}
-
-/// `build.patterns`, with unknown keys warned about and dropped.
-fn folder_patterns(
-    value: &serde_yaml::Value,
-    warnings: &mut Vec<String>,
-) -> Result<FolderPatterns, SettingsError> {
-    let map = match value {
-        serde_yaml::Value::Null => return Ok(FolderPatterns::default()),
-        serde_yaml::Value::Mapping(map) => map,
-        _ => {
-            return Err(SettingsError {
-                key: "build.patterns".to_owned(),
-                what: "a mapping",
-                detail: "it holds `plugins`, `skills`, `agents`, `commands`, `hooks` and `assets`"
-                    .to_owned(),
-            });
-        }
-    };
-    let mut patterns = FolderPatterns::default();
-    for (key, value) in map {
-        let Some(name) = key.as_str() else {
-            warnings.push("a `build.patterns` key that is not a string is ignored".to_owned());
-            continue;
-        };
-        let slot = match name {
-            "plugins" => &mut patterns.plugins,
-            "skills" => &mut patterns.skills,
-            "agents" => &mut patterns.agents,
-            "commands" => &mut patterns.commands,
-            "hooks" => &mut patterns.hooks,
-            "assets" => &mut patterns.assets,
-            _ => {
-                warnings.push(format!(
-                    "`build.patterns.{name}` is not a key skillwright reads; it is ignored"
-                ));
-                continue;
-            }
-        };
-        let key = format!("build.patterns.{name}");
-        *slot = globs(&key, value)?;
-        for glob in slot.iter() {
-            if crate::patterns::names_a_never_ship_folder(glob, name != "assets") {
-                warnings.push(format!(
-                    "`{key}` glob `{glob}` names a folder that never ships; it ships nothing"
-                ));
-            }
-        }
-    }
-    Ok(patterns)
-}
-
-/// A glob or a list of globs, each one checked.
-fn globs(key: &str, value: &serde_yaml::Value) -> Result<Vec<String>, SettingsError> {
-    let wrong_shape = || SettingsError {
-        key: key.to_owned(),
-        what: "a glob or a list of globs",
-        detail: format!("{value:?}"),
-    };
-    let globs: Vec<String> = match value {
-        serde_yaml::Value::Null => Vec::new(),
-        serde_yaml::Value::String(glob) => vec![glob.clone()],
-        serde_yaml::Value::Sequence(items) => items
-            .iter()
-            .map(|item| item.as_str().map(str::to_owned).ok_or_else(wrong_shape))
-            .collect::<Result<_, _>>()?,
-        _ => return Err(wrong_shape()),
-    };
-    for glob in &globs {
-        if let Some(problem) = crate::patterns::glob_problem(glob) {
-            return Err(SettingsError {
-                key: key.to_owned(),
-                what: "a valid glob",
-                detail: format!("`{glob}`: {problem}"),
-            });
-        }
-    }
-    Ok(globs)
 }
 
 /// Warn about each unknown key in an entry of a `build:` list. Each entry's
@@ -682,31 +480,25 @@ fn warn_nested(list: &str, value: &serde_yaml::Value, warnings: &mut Vec<String>
 /// # Errors
 ///
 /// As [`parse_root_file`].
-pub fn root_file_config(text: &str, folder_name: &str) -> Result<MarketplaceConfig, SettingsError> {
-    Ok(parse_root_file(text)?.to_config(folder_name))
+pub fn root_file_config(text: &str) -> Result<MarketplaceConfig, SettingsError> {
+    Ok(parse_root_file(text)?.to_config())
 }
 
 impl RootFile {
-    /// Fill what this file leaves unset from the workspace file above it.
+    /// Fill what this file leaves unset from `from`.
     ///
-    /// The marketplace fields come down where the key table says a
-    /// marketplace inherits them ([`crate::keys::inherits`]): the identity
-    /// fields it marks, `targets`, and the harness blocks key by key.
+    /// The top-level fields come down where the key table says a marketplace
+    /// inherits them ([`crate::keys::inherits`]): the identity fields it
+    /// marks, `targets`, and the harness blocks key by key. So do
+    /// `harnesses`, `namespace`, `launcher_path`, `bump`, `assets` and
+    /// `hooks`.
     ///
-    /// So do `harnesses`, `namespace`, `launcher_path`, `bump`, `assets`,
-    /// `hooks` and each key of
-    /// `patterns`. Their paths and globs read from each marketplace's own
-    /// folder. `out` is each marketplace's own. `exclude` is not inherited: a
-    /// workspace's globs add to a member's, read from the workspace folder
-    /// ([`crate::patterns::Patterns::load`]).
-    ///
-    /// Key by key: a value this file sets wins, and every other key still
-    /// comes from the workspace. The `build:` keys are not in the key table,
-    /// so their list is this function's.
-    pub fn inherit(&mut self, workspace: &RootFile) {
+    /// Key by key: a value this file sets wins. The `build:` keys are not in
+    /// the key table, so their list is this function's.
+    pub fn inherit(&mut self, from: &RootFile) {
         use crate::frontmatter::EntityKind::Marketplace;
         let fields = &mut self.marketplace;
-        let shared = &workspace.marketplace;
+        let shared = &from.marketplace;
         fields
             .identity
             .fill_unset_from(&shared.identity, Marketplace);
@@ -718,7 +510,7 @@ impl RootFile {
             crate::keys::inherits(Marketplace, harness)
         });
         let build = &mut self.build;
-        let shared = &workspace.build;
+        let shared = &from.build;
         if build.harnesses.is_none() {
             build.harnesses.clone_from(&shared.harnesses);
         }
@@ -737,22 +529,22 @@ impl RootFile {
         if build.hooks.is_empty() {
             build.hooks.clone_from(&shared.hooks);
         }
-        build.patterns.inherit(&shared.patterns);
     }
 
-    /// The build config this file describes. `folder_name` is the root
-    /// folder's name, the marketplace's name when the file gives none.
-    pub fn to_config(&self, folder_name: &str) -> MarketplaceConfig {
+    /// The build config this file describes: its shared defaults, the keys
+    /// the key table marks as inherited. Its `name`, `description` and other
+    /// marketplace fields are not read: each marketplace's note gives them.
+    pub fn to_config(&self) -> MarketplaceConfig {
         let fields = &self.marketplace;
+        let mut identity = ContainerIdentity::default();
+        identity.fill_unset_from(
+            &fields.identity,
+            crate::frontmatter::EntityKind::Marketplace,
+        );
         MarketplaceConfig {
-            name: Some(
-                fields
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| crate::discover::slugify(folder_name)),
-            ),
-            description: fields.description.clone(),
-            identity: fields.identity.clone(),
+            name: None,
+            description: None,
+            identity,
             targets: fields.targets.clone(),
             blocks: fields.blocks.clone(),
             plugins: BTreeMap::new(),
@@ -908,50 +700,14 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_patterns_key_warns_and_a_wrong_shape_is_refused_by_name() {
-        let root = parse_root_file(
-            "---\nbuild:\n  patterns:\n    skill: a/*\n    skills: [docs/*, notes/*]\n---\n",
-        )
-        .unwrap();
-        assert_eq!(root.build.patterns.skills, ["docs/*", "notes/*"]);
-        let said = root.warnings.join("\n");
-        assert!(said.contains("`build.patterns.skill`"), "{said}");
-        assert!(
-            said.contains("`docs/*` names a folder that never ships"),
-            "{said}"
-        );
-
-        for (text, key) in [
-            ("patterns: [notes]", "build.patterns"),
-            ("patterns: notes", "build.patterns"),
-            ("patterns: {skills: 3}", "build.patterns.skills"),
-            ("patterns: {skills: [1]}", "build.patterns.skills"),
-            ("exclude: {a: b}", "build.exclude"),
-        ] {
-            let err = parse_root_file(&format!("---\nbuild:\n  {text}\n---\n")).unwrap_err();
-            assert_eq!(err.key, key, "{text}");
-        }
-    }
-
-    #[test]
-    fn a_bad_glob_is_refused_naming_the_key_and_the_value() {
-        let err = parse_root_file("---\nbuild:\n  exclude: ['ok/*', '../x']\n---\n").unwrap_err();
-        assert_eq!(err.key, "build.exclude");
-        assert!(err.detail.contains("`../x`"), "{err}");
-        let err =
-            parse_root_file("---\nbuild:\n  patterns:\n    agents: '/abs/*'\n---\n").unwrap_err();
-        assert_eq!(err.key, "build.patterns.agents");
-    }
-
-    #[test]
-    fn a_member_s_build_value_overrides_the_workspace_key_by_key() {
-        let workspace = parse_root_file(
-            "---\nworkspace: true\nlicense: MIT\nbuild:\n  harnesses: [claude]\n  \
-             namespace: sw\n  launcher_path: bin/ws\n  out: dist\n---\n",
+    fn a_set_build_value_overrides_the_shared_key_by_key() {
+        let shared = parse_root_file(
+            "---\nlicense: MIT\nbuild:\n  harnesses: [claude]\n  \
+             namespace: sw\n  launcher_path: bin/ws\n---\n",
         )
         .unwrap();
         let mut member = parse_root_file("---\nbuild:\n  namespace: acme\n---\n").unwrap();
-        member.inherit(&workspace);
+        member.inherit(&shared);
 
         // What the member sets wins.
         assert_eq!(member.build.namespace.as_deref(), Some("acme"));
@@ -959,14 +715,12 @@ mod tests {
         assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
         assert_eq!(member.build.launcher_path.as_deref(), Some("bin/ws"));
         assert_eq!(member.marketplace.identity.license.as_deref(), Some("MIT"));
-        // The output is each member's own.
-        assert_eq!(member.build.out, None);
     }
 
     #[test]
-    fn the_config_a_text_describes_takes_the_folder_s_name_by_default() {
-        let config = root_file_config("---\nlicense: MIT\n---\n", "My House").unwrap();
-        assert_eq!(config.name.as_deref(), Some("my-house"));
+    fn the_config_a_root_file_describes_has_no_name() {
+        let config = root_file_config("---\nname: ws\nlicense: MIT\n---\n").unwrap();
+        assert_eq!(config.name, None);
         assert_eq!(config.identity.license.as_deref(), Some("MIT"));
     }
 
@@ -978,7 +732,6 @@ mod tests {
              owner: { name: Ada }\n\
              license: MIT\n\
              build:\n  \
-               out: dist\n  \
                harnesses: [claude]\n  \
                launcher_path: bin/tool\n\
              ---\n\
@@ -986,13 +739,11 @@ mod tests {
         )
         .unwrap();
         assert!(root.warnings.is_empty(), "{:?}", root.warnings);
-        assert_eq!(root.build.out.as_deref(), Some("dist"));
-        let config = root.to_config("folder");
-        assert_eq!(config.name.as_deref(), Some("osdlc"));
-        assert_eq!(
-            config.identity.owner,
-            Some(serde_json::json!({"name": "Ada"}))
-        );
+        assert_eq!(root.marketplace.name.as_deref(), Some("osdlc"));
+        let config = root.to_config();
+        assert_eq!(config.name, None);
+        // `owner` is each marketplace's own; `license` is a shared default.
+        assert_eq!(config.identity.owner, None);
         assert_eq!(config.identity.license.as_deref(), Some("MIT"));
         assert_eq!(config.launcher_path.as_deref(), Some("bin/tool"));
         assert_eq!(root.harness_set(), BTreeSet::from(["claude".to_owned()]));
@@ -1002,8 +753,8 @@ mod tests {
     fn a_file_with_no_frontmatter_takes_every_default() {
         let root = parse_root_file("# Just a README\n").unwrap();
         assert_eq!(root, RootFile::default());
-        let config = root.to_config("My Tools");
-        assert_eq!(config.name.as_deref(), Some("my-tools"));
+        let config = root.to_config();
+        assert_eq!(config.name, None);
         assert_eq!(config.launcher_path, None);
     }
 
@@ -1022,18 +773,30 @@ mod tests {
             "{:?}",
             root.warnings
         );
-        assert_eq!(root.build.out, None);
     }
 
     #[test]
-    fn destinations_and_scan_locations_are_refused_by_name() {
+    fn each_removed_build_key_is_refused_by_name() {
         for (key, value) in [
             ("destinations", "\n    - {root: d, target: claude}"),
             ("scan_locations", " [shared]"),
+            ("out", " dist"),
+            ("patterns", "\n    skills: notes/*"),
+            ("exclude", " '**/*.draft.md'"),
         ] {
             let err = parse_root_file(&format!("---\nbuild:\n  {key}:{value}\n---\n")).unwrap_err();
             assert_eq!(err.key, format!("build.{key}"), "{err}");
         }
+    }
+
+    #[test]
+    fn every_refused_build_key_is_named_in_one_error() {
+        let text =
+            "---\nbuild:\n  out: dist\n  patterns: {skills: a/*}\n  harnesses: [claude]\n---\n";
+        let err = parse_root_file(text).unwrap_err();
+        assert_eq!(err.key, "build.out`, `build.patterns", "{err}");
+        assert_eq!(refused_build_keys(text), ["build.out", "build.patterns"]);
+        assert!(refused_build_keys("---\nbuild:\n  harnesses: [claude]\n---\n").is_empty());
     }
 
     #[test]
@@ -1061,12 +824,10 @@ mod tests {
     }
 
     #[test]
-    fn a_marketplace_inherits_build_bump_from_its_workspace() {
-        let workspace =
-            parse_root_file("---\nworkspace: true\nbuild:\n  bump:\n    patch: timestamp\n---\n")
-                .unwrap();
+    fn build_bump_is_inherited() {
+        let shared = parse_root_file("---\nbuild:\n  bump:\n    patch: timestamp\n---\n").unwrap();
         let mut member = parse_root_file("---\nname: one\n---\n").unwrap();
-        member.inherit(&workspace);
+        member.inherit(&shared);
         assert_eq!(member.build.bump.unwrap().patch, PatchScheme::Timestamp);
     }
 
@@ -1075,20 +836,15 @@ mod tests {
         let err = parse_root_file("---\nbuild:\n  harnesses: claude\n---\n").unwrap_err();
         assert_eq!(err.key, "build.harnesses");
         assert!(err.detail.contains("sequence"), "{err}");
-        let err = parse_root_file("---\nworkspace: maybe\n---\n").unwrap_err();
-        assert_eq!(err.key, "workspace");
     }
 
     #[test]
-    fn a_marketplace_inherits_shared_defaults_from_its_workspace() {
-        let workspace = parse_root_file(
-            "---\nworkspace: true\nlicense: MIT\nauthor: Ada\n\
-             build:\n  harnesses: [claude]\n  out: shared\n---\n",
-        )
-        .unwrap();
-        assert!(workspace.workspace);
+    fn shared_defaults_are_inherited() {
+        let shared =
+            parse_root_file("---\nlicense: MIT\nauthor: Ada\nbuild:\n  harnesses: [claude]\n---\n")
+                .unwrap();
         let mut member = parse_root_file("---\nname: one\nlicense: Apache-2.0\n---\n").unwrap();
-        member.inherit(&workspace);
+        member.inherit(&shared);
         assert_eq!(
             member.marketplace.identity.license.as_deref(),
             Some("Apache-2.0")
@@ -1098,44 +854,27 @@ mod tests {
             Some(serde_json::json!("Ada"))
         );
         assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
-        // The output is the member's own.
-        assert_eq!(member.build.out, None);
     }
 
     #[test]
-    fn a_marketplace_inherits_patterns_key_by_key_and_keeps_its_own_exclusions() {
-        let workspace = parse_root_file(
-            "---\nworkspace: true\nbuild:\n  exclude: '**/*.draft.md'\n  patterns:\n    \
-             skills: notes/*\n    plugins: packs/*\n---\n",
-        )
-        .unwrap();
-        let mut member =
-            parse_root_file("---\nbuild:\n  patterns:\n    skills: mine/*\n---\n").unwrap();
-        member.inherit(&workspace);
-        assert!(member.build.exclude.is_empty());
-        assert_eq!(member.build.patterns.skills, ["mine/*"]);
-        assert_eq!(member.build.patterns.plugins, ["packs/*"]);
-    }
-
-    #[test]
-    fn a_marketplace_inherits_its_build_lists_key_by_key() {
-        let workspace = parse_root_file(
-            "---\nworkspace: true\nbuild:\n  assets:\n    - {from: a, to: b}\n  hooks:\n    \
+    fn build_lists_are_inherited_key_by_key() {
+        let shared = parse_root_file(
+            "---\nbuild:\n  assets:\n    - {from: a, to: b}\n  hooks:\n    \
              - {from: h.json}\n---\n",
         )
         .unwrap();
         let mut member =
             parse_root_file("---\nbuild:\n  assets:\n    - {from: m, to: n}\n---\n").unwrap();
-        member.inherit(&workspace);
+        member.inherit(&shared);
         assert_eq!(member.build.assets[0].from, "m");
-        assert_eq!(member.build.hooks, workspace.build.hooks);
+        assert_eq!(member.build.hooks, shared.build.hooks);
     }
 
     #[test]
     fn an_unterminated_root_file_is_refused_and_a_readme_is_not() {
         for text in [
-            "---\nbuild:\n  exclude: a\n",
-            "\u{feff}---\nbuild:\n  exclude: a\n",
+            "---\nbuild:\n  harnesses: [a]\n",
+            "\u{feff}---\nbuild:\n  harnesses: [a]\n",
             "---\r\nname: m\r\n",
         ] {
             let err = parse_root_file(text).unwrap_err();
@@ -1173,13 +912,12 @@ mod tests {
     }
 
     #[test]
-    fn a_member_takes_exactly_the_inheritable_fields_from_its_workspace() {
-        let workspace =
-            parse_root_file(&format!("---\nworkspace: true\n{EVERY_KEY}---\n")).unwrap();
-        assert!(workspace.warnings.is_empty(), "{:?}", workspace.warnings);
+    fn a_file_takes_exactly_the_inheritable_fields() {
+        let shared = parse_root_file(&format!("---\n{EVERY_KEY}---\n")).unwrap();
+        assert!(shared.warnings.is_empty(), "{:?}", shared.warnings);
 
         let mut member = parse_root_file("---\n---\n").unwrap();
-        member.inherit(&workspace);
+        member.inherit(&shared);
         let took = set_keys(&member.marketplace);
         let keys: BTreeSet<&str> = took.keys().map(String::as_str).collect();
         assert_eq!(
@@ -1193,14 +931,13 @@ mod tests {
                 "blocks"
             ])
         );
-        let shared = set_keys(&workspace.marketplace);
+        let given = set_keys(&shared.marketplace);
         for key in &keys {
-            assert_eq!(took[*key], shared[*key], "{key}");
+            assert_eq!(took[*key], given[*key], "{key}");
         }
 
-        // A member that sets each key keeps its own, and a block key it sets
-        // keeps its value while the workspace's other keys in that block come
-        // down.
+        // A file that sets each key keeps its own, and a block key it sets
+        // keeps its value while the other keys in that block come down.
         let mut own = parse_root_file(
             "---\nname: own\ndescription: Mine.\nowner: Me\nauthor: Bo\n\
              display_name: Own\nlicense: ISC\nversion: '1.0.0'\ntargets: [pi]\n\
@@ -1209,7 +946,7 @@ mod tests {
         )
         .unwrap();
         let before = set_keys(&own.marketplace);
-        own.inherit(&workspace);
+        own.inherit(&shared);
         let after = set_keys(&own.marketplace);
         for (key, value) in &before {
             if key != "blocks" {
@@ -1226,18 +963,16 @@ mod tests {
     }
 
     #[test]
-    fn to_config_carries_every_marketplace_field() {
+    fn to_config_carries_only_the_inheritable_fields() {
         let root = parse_root_file(&format!("---\n{EVERY_KEY}---\n")).unwrap();
-        let config = set_keys(&root.to_config("Folder Name"));
-        let fields = set_keys(&root.marketplace);
+        let config = set_keys(&root.to_config());
+        let mut inherited = parse_root_file("---\n---\n").unwrap();
+        inherited.inherit(&root);
+        let fields = set_keys(&inherited.marketplace);
         for key in marketplace_keys().chain(["blocks"]) {
             assert_eq!(config.get(key), fields.get(key), "{key}");
         }
-        assert_eq!(config["name"], "ws");
-
-        let unnamed = parse_root_file("---\nlicense: MIT\n---\n").unwrap();
-        let config = unnamed.to_config("Folder Name");
-        assert_eq!(config.name.as_deref(), Some("folder-name"));
+        assert!(config.get("name").is_none());
     }
 
     #[test]

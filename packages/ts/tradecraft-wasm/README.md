@@ -33,10 +33,11 @@ import { createNodeVfs, exportSkills } from '@osdlc/tradecraft-wasm'
 
 const vfs = createNodeVfs()
 const report = exportSkills(vfs, {
-  vault_root: '/work/vault', // absolute
-  out_root: '/work/project', // absolute
+  vault_root: '/work/vault', // absolute: holds skillwright.md and marketplaces/
+  marketplace: 'house', // marketplaces/house/
+  out_root: '/work/vault/dist/house', // absolute
   mode: 'build', // 'check' reports drift and writes nothing
-  config: { name: 'house' },
+  config: {},
 })
 console.log(report.changed)
 ```
@@ -48,8 +49,8 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 
 | Export                        | Does                                                                            |
 | ----------------------------- | ------------------------------------------------------------------------------- |
-| `discoverComponents(vfs, request)` | Scans a vault for publishable notes, and reports the notes it could not read. With `out_root`, it leaves out what a build owns there. |
-| `loadMarketplace(vfs, request)` | Loads the vault as a marketplace model and writes nothing. With `out_root`, it leaves out what a build owns there. |
+| `discoverComponents(vfs, request)` | Scans a vault's `marketplaces/` for publishable notes, and reports the notes it could not read. |
+| `loadMarketplace(vfs, request)` | Loads one marketplace of the vault as a model and writes nothing. |
 | `exportSkills(vfs, request)`  | Renders the vault into one marketplace tree per agent. `mode: 'check'` reports drift and writes nothing. |
 | `knownTargets()`              | The target names the core accepts.                                              |
 | `canonicalTarget(name)`       | The one destination a target name folds onto, or `null`.                        |
