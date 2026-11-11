@@ -94,9 +94,9 @@ pub use discover::{
 pub use error::*;
 pub use export::{
     AssetSpec, ExportMode, ExportReport, ExportRequest, ExportUnit, HookFileSpec,
-    MarketplaceConfig, PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_skills,
-    marketplace_manifest_path, owned_paths, packs_path, plugin_manifest_path, published_skill_name,
-    rendered_skill_call,
+    MarketplaceConfig, PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_in,
+    export_skills, marketplace_manifest_path, owned_paths, packs_path, plugin_manifest_path,
+    published_skill_name, rendered_skill_call,
 };
 pub use field_edit::{read_version, set_version};
 pub use frontmatter::{
@@ -106,8 +106,8 @@ pub use frontmatter::{
 pub use harness::manifest::{check_packs, packs_of};
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, Shape};
 pub use layout::{
-    KIND_DIRS, Layout, MARKETPLACES_DIR, Position, RESERVED_NAMES, check_vault_root, classify,
-    find_vault_root, is_vault_root, name_problem, read_layout,
+    KIND_DIRS, Layout, LayoutFile, MARKETPLACES_DIR, Place, Position, RESERVED_NAMES, SharedDir,
+    check_vault_root, find_vault_root, is_vault_root, name_problem, read_layout,
 };
 /// The vault's file index, for [`CompileSource::links`]: re-exported so a
 /// consumer needs no `markdown-link` dependency of its own.

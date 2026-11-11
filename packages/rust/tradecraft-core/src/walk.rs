@@ -1,13 +1,13 @@
 //! Directory walks: plain file walks through `vfs-walk`, and vault walks
 //! through `markdown-vault-fs`, the one vault walk the osdlc tools share.
 //!
-//! A plain walk (assets, scripts, a skill bundle, a
-//! test's output tree) knows nothing about vaults. A vault walk (the skills
-//! source, the vault-wide link index, a component's folder) goes through the
-//! vault layer.
+//! A plain walk (a `build.assets` folder, an output tree) knows nothing about
+//! vaults. A vault walk (the link index of a compile given none) goes
+//! through the vault layer. What a build ships comes from neither: the
+//! layout walk ([`crate::layout::read_layout`]) decides it.
 //!
-//! Both keep every name, dot-prefixed ones included, because a skill bundle
-//! may ship one and a link may name one. They skip `.DS_Store` (Finder drops
+//! Both keep every name, dot-prefixed ones included, because a link may name
+//! one. They skip `.DS_Store` (Finder drops
 //! it everywhere and it is never content) and `.git`, and never enter a
 //! folder named in `prune`. Entries come in name order within each folder,
 //! depth first, so everything keyed off a walk is the same on every host. A
@@ -59,16 +59,6 @@ pub fn built_paths() -> Vec<String> {
         paths.extend(format.marketplace_manifest.map(str::to_owned));
     }
     paths
-}
-
-/// Whether vault-relative `rel` sits under a plugin folder's `assets/`.
-/// Those files are copied as they are, and are not notes. A vault walk has no
-/// hook for a folder found by shape, so each one filters its entries by this.
-pub(crate) fn in_plugin_assets(rel: &str) -> bool {
-    let parts: Vec<&str> = rel.split('/').collect();
-    parts[..parts.len() - 1]
-        .windows(3)
-        .any(|part| part[0] == "plugins" && part[2] == crate::model::load::ASSETS_DIR)
 }
 
 /// A vault walk's options. `Everything` keeps dot-prefixed names (it drops
@@ -151,30 +141,6 @@ pub(crate) fn vault_walk_errors(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> V
     .map_or_else(|_| Vec::new(), |outcome| outcome.errors)
 }
 
-/// The paths of a walk of `root`'s `entries`, plugin assets left out. Each
-/// entry is matched by its path relative to `vault_root`, wherever the walk
-/// started.
-fn notes_and_resources(vault_root: &Path, root: &Path, entries: Vec<vault::Entry>) -> Vec<PathBuf> {
-    // The walk root's own path from the vault root, once: empty for a walk of
-    // the vault itself, the usual case, where an entry's path is already
-    // vault-relative.
-    let prefix = root
-        .strip_prefix(vault_root)
-        .map(crate::skill::forward_slashed)
-        .unwrap_or_default();
-    entries
-        .into_iter()
-        .filter(|entry| {
-            if prefix.is_empty() {
-                !in_plugin_assets(&entry.rel)
-            } else {
-                !in_plugin_assets(&format!("{prefix}/{}", entry.rel))
-            }
-        })
-        .map(|entry| entry.abs)
-        .collect()
-}
-
 /// Every file under the vault folder `root`. A symlinked file is listed like
 /// any other.
 pub(crate) fn vault_files(
@@ -183,12 +149,12 @@ pub(crate) fn vault_files(
     prune: &[&str],
 ) -> Result<Vec<PathBuf>, CoreError> {
     vault::walk(vfs, root, &vault_walk(prune))
-        .map(|entries| notes_and_resources(root, root, entries))
+        .map(|entries| entries.into_iter().map(|entry| entry.abs).collect())
         .map_err(|err| core_error(err, not_refused))
 }
 
-/// Every file under `root` a vault walk meets, vault-relative, plugin assets
-/// included, without failing. What a glob can name.
+/// Every file under `root` a vault walk meets, vault-relative, without
+/// failing. What a glob can name.
 pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
     vault::walk(vfs, root, &vault_options(&[], false, false))
         .unwrap_or_default()

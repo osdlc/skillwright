@@ -23,7 +23,7 @@ A vault is a folder of markdown notes. Where a note sits decides what it is:
 | `skills/<name>/SKILL.md` | the same, named by its folder |
 | `plugins/<p>/` | a plugin, named after the folder; its skills go in `plugins/<p>/skills/` |
 | `plugins/<p>/<p>.md` | the plugin's optional note, for its fields |
-| `plugins/<p>/assets/` | copied as it is to the plugin's root |
+| `plugins/<p>/assets/` | ships as `assets/` at the pack root |
 | `plugins/<p>/CHANGELOG.md` | rendered into each pack |
 | `skillwright.md` | the marketplace: its fields, and tool settings under `build:` |
 | `marketplaces/<m>/skillwright.md` | one marketplace of several; its plugins go in `marketplaces/<m>/plugins/` |

@@ -71,9 +71,6 @@ pub const KIND_DIRS: [(&str, EntityKind); 3] = [
     ("commands", EntityKind::Command),
 ];
 
-/// The folders a plugin and a skill share out: each ships under its own name.
-pub const SHARED_DIRS: [&str; 3] = ["references", "scripts", "assets"];
-
 /// The never-ship folders, with whether a skill or plugin (true) or any
 /// component folder (false) may hold each.
 const NEVER_SHIP_DIRS: [(&str, bool); 4] = [
@@ -247,78 +244,143 @@ impl Position {
     }
 }
 
-/// What the root-relative, `/`-separated `rel` is, or `None` for a file that
-/// is not a note: a resource, a hooks file, a changelog.
-pub fn classify(rel: &str) -> Option<Position> {
-    let parts: Vec<&str> = rel.split('/').collect();
-    let note = |name: &str, file: &str| file.strip_suffix(".md") == Some(name);
-    match parts.as_slice() {
-        [MARKETPLACES_DIR, m, file] if note(m, file) => Some(Position::Marketplace {
-            marketplace: (*m).to_owned(),
-        }),
-        [MARKETPLACES_DIR, m, PLUGINS_DIR, p, file] if note(p, file) => Some(Position::Plugin {
-            marketplace: (*m).to_owned(),
-            plugin: (*p).to_owned(),
-        }),
-        [MARKETPLACES_DIR, m, PLUGINS_DIR, p, kind, c, file] if note(c, file) => {
-            Some(Position::Component {
-                marketplace: (*m).to_owned(),
-                plugin: (*p).to_owned(),
-                kind: kind_dir(kind)?,
-                name: (*c).to_owned(),
-            })
+/// One of the folders a plugin and a skill share out, each shipping under
+/// its own name (spec section 3 rules 12 and 14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SharedDir {
+    /// `references/`: docs the agent reads. Its Markdown is compiled.
+    References,
+    /// `scripts/`: code the agent runs.
+    Scripts,
+    /// `assets/`: files used in output.
+    Assets,
+}
+
+impl SharedDir {
+    /// The shared folder named `name`.
+    pub fn named(name: &str) -> Option<Self> {
+        match name {
+            "references" => Some(Self::References),
+            "scripts" => Some(Self::Scripts),
+            "assets" => Some(Self::Assets),
+            _ => None,
         }
-        _ => None,
     }
 }
 
-/// Whether the root-relative `rel` sits in a never-ship folder: `docs/`,
-/// `tests/`, `fixtures/` or `src/` directly in a plugin or component folder.
-pub fn never_ships(rel: &str) -> bool {
-    never_ship_depth(rel).is_some()
+/// What a file under `marketplaces/` is, by its place in the layout. The
+/// walk decides it once; every copy set is built from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Place {
+    /// `marketplaces/<m>/<m>.md`.
+    MarketplaceNote,
+    /// `plugins/<p>/<p>.md`.
+    PluginNote,
+    /// `plugins/<p>/CHANGELOG.md`.
+    Changelog,
+    /// `plugins/<p>/hooks/hooks.json`.
+    HooksFile,
+    /// `plugins/<p>/<kind>/<c>/<c>.md`.
+    ComponentNote {
+        /// The component's kind, from its kind folder.
+        kind: EntityKind,
+        /// The component folder.
+        name: String,
+    },
+    /// A file in a plugin's or a skill's `references/`, `scripts/` or
+    /// `assets/`, at any depth.
+    Shared {
+        /// The skill folder holding it, `None` for the plugin's own.
+        skill: Option<String>,
+        /// Which shared folder.
+        dir: SharedDir,
+        /// The path from the plugin or skill folder, such as
+        /// `scripts/src/main.js`: where it lands in the pack or the skill.
+        path: String,
+    },
+    /// A file in a never-ship folder: `src/`, `docs/`, `tests/` or
+    /// `fixtures/` directly in a plugin or component folder.
+    NeverShip {
+        /// That folder, root-relative.
+        folder: String,
+    },
 }
 
-/// How many segments of `rel` reach the never-ship folder holding it.
-fn never_ship_depth(rel: &str) -> Option<usize> {
-    let parts: Vec<&str> = rel.split('/').collect();
-    let never = |at: usize| {
-        parts.len() > at + 1 && NEVER_SHIP_DIRS.iter().any(|(dir, _)| *dir == parts[at])
-    };
-    if parts.len() < 5 || parts[0] != MARKETPLACES_DIR || parts[2] != PLUGINS_DIR {
-        return None;
-    }
-    if never(4) {
-        return Some(5);
-    }
-    if kind_dir(parts[4]).is_some() && never(6) {
-        return Some(7);
-    }
-    None
+/// One file under `marketplaces/` and its place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct LayoutFile {
+    /// The file, absolute. A symlink keeps its own path; reading it reads
+    /// the target, so it ships as a copy.
+    pub path: PathBuf,
+    /// The path from the root, `/`-separated.
+    pub rel: String,
+    /// The marketplace folder it sits in.
+    pub marketplace: String,
+    /// The plugin folder it sits in, `None` for a marketplace's note.
+    pub plugin: Option<String>,
+    /// What it is.
+    pub place: Place,
 }
 
-/// Whether a link from the root-relative file `from` to `to` goes into a
-/// never-ship folder. A file inside that folder links within it freely.
-pub fn links_into_never_ship(from: &str, to: &str) -> bool {
-    let Some(depth) = never_ship_depth(to) else {
-        return false;
-    };
-    let folder: Vec<&str> = to.split('/').take(depth).collect();
-    let from: Vec<&str> = from.split('/').collect();
-    !(from.len() > depth && from[..depth] == folder[..])
+impl LayoutFile {
+    /// The note's position, or `None` for a file that is not a note.
+    pub fn position(&self) -> Option<Position> {
+        let marketplace = self.marketplace.clone();
+        let plugin = self.plugin.clone();
+        match &self.place {
+            Place::MarketplaceNote => Some(Position::Marketplace { marketplace }),
+            Place::PluginNote => Some(Position::Plugin {
+                marketplace,
+                plugin: plugin?,
+            }),
+            Place::ComponentNote { kind, name } => Some(Position::Component {
+                marketplace,
+                plugin: plugin?,
+                kind: *kind,
+                name: name.clone(),
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// The vault's layout: every file under `marketplaces/` a build reads, in
-/// walk order, and the marketplaces by folder.
+/// walk order, each with its place, and the marketplaces by folder.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct Layout {
     /// The vault root.
     pub root: PathBuf,
-    /// Every file under `marketplaces/`, absolute, in walk order. Dot-named
-    /// entries and `node_modules/` are left out.
-    pub files: Vec<PathBuf>,
+    /// Every file under `marketplaces/`, in walk order. Dot-named entries
+    /// and `node_modules/` are left out.
+    pub files: Vec<LayoutFile>,
     /// The marketplace folders, sorted.
     pub marketplaces: Vec<String>,
+}
+
+impl Layout {
+    /// The files of marketplace `marketplace`, in walk order.
+    pub fn files_of<'a>(&'a self, marketplace: &'a str) -> impl Iterator<Item = &'a LayoutFile> {
+        self.files
+            .iter()
+            .filter(move |file| file.marketplace == marketplace)
+    }
+
+    /// The file at the absolute `path`, if the walk read it.
+    pub fn file(&self, path: &Path) -> Option<&LayoutFile> {
+        self.files.iter().find(|file| file.path == path)
+    }
+
+    /// Whether a link from the file `from` to the file `to` goes into a
+    /// never-ship folder. A file inside that folder links within it freely.
+    pub fn links_into_never_ship(&self, from: &Path, to: &Path) -> bool {
+        let folder = |path: &Path| match self.file(path).map(|file| &file.place) {
+            Some(Place::NeverShip { folder }) => Some(folder.as_str()),
+            _ => None,
+        };
+        folder(to).is_some_and(|target| folder(from) != Some(target))
+    }
 }
 
 /// One kind of layout problem, in the order a report lists them.
@@ -407,22 +469,28 @@ fn layout_error(message: String) -> CoreError {
 
 /// Reads the layout of the vault at `root` and checks it: the root's direct
 /// children, every folder under `marketplaces/` against its row of the table
-/// in spec section 3, and the keys the root file refuses.
+/// in spec section 3, and the keys the root file refuses. Each file is given
+/// its [`Place`].
 ///
 /// # Errors
 ///
 /// * `refused: layout` — the root is not a vault root, or the vault breaks the
 ///   layout. Every problem is in the one message, each case once with every
 ///   path it applies to.
-/// * `refused: unsafe-path` — a symlink under `marketplaces/`.
+/// * `refused: unsafe-path` — a symlink whose real target lies outside its
+///   marketplace folder, a symlink to a folder that holds it, or a symlink
+///   outside `marketplaces/<m>/` (spec section 4, containment rule 2).
 /// * [`CoreError::Io`] — a folder that cannot be listed.
 pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
+    let root = &crate::vfs::normalize(root);
     check_vault_root(vfs, root)?;
     let mut walk = Walk {
         vfs,
         root,
         files: Vec::new(),
         problems: Problems::default(),
+        marketplace: None,
+        plugin: None,
     };
     for entry in walk.list(root)? {
         if entry.is_dir && (entry.name == PLUGINS_DIR || kind_or_hooks(&entry.name)) {
@@ -473,23 +541,40 @@ fn kind_or_hooks(name: &str) -> bool {
     name == HOOKS_DIR || kind_dir(name).is_some()
 }
 
-/// One folder entry as the walk sees it.
+/// One folder entry as the walk sees it. A symlink to a folder in scope is
+/// a folder.
 struct Entry {
     name: String,
     is_dir: bool,
 }
 
-/// The walk's state: the files read and the problems found.
+/// What a folder of free layout holds: shared files, or never-ship ones.
+enum Free {
+    /// A `references/`, `scripts/` or `assets/` folder of the plugin or of
+    /// `skill`, which sits at `base`.
+    Shared {
+        skill: Option<String>,
+        dir: SharedDir,
+        base: String,
+    },
+    /// The never-ship folder itself, root-relative.
+    NeverShip(String),
+}
+
+/// The walk's state: the files read, the problems found, and the
+/// marketplace and plugin being walked.
 struct Walk<'a> {
     vfs: &'a dyn Vfs,
     root: &'a Path,
-    files: Vec<PathBuf>,
+    files: Vec<LayoutFile>,
     problems: Problems,
+    marketplace: Option<String>,
+    plugin: Option<String>,
 }
 
 impl Walk<'_> {
     /// The entries of `dir`, sorted, less dot-named ones and `node_modules`.
-    /// A symlink is refused.
+    /// A symlink is checked by [`Self::linked`].
     fn list(&self, dir: &Path) -> Result<Vec<Entry>, CoreError> {
         let mut entries = self.vfs.read_dir(dir)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
@@ -499,22 +584,71 @@ impl Walk<'_> {
                 continue;
             }
             let path = dir.join(&entry.name);
-            if self.vfs.is_symlink(&path) {
-                return Err(CoreError::refused(
-                    "unsafe-path",
-                    format!(
-                        "{}: a symlink in a vault. It reads as inside the tree and resolves \
-                         outside it; replace it with the real file or folder",
-                        path.display()
-                    ),
-                ));
-            }
+            let is_dir = if self.vfs.is_symlink(&path) {
+                self.linked(&path)?
+            } else {
+                entry.is_dir
+            };
             out.push(Entry {
                 name: entry.name,
-                is_dir: entry.is_dir,
+                is_dir,
             });
         }
         Ok(out)
+    }
+
+    /// Accepts the symlink at `path` when its real target lies inside the
+    /// marketplace folder being walked (spec section 4, containment rule 2),
+    /// and says whether that target is a folder. A pack holds no symlinks:
+    /// reading the link reads its target, so it ships as a copy.
+    fn linked(&self, path: &Path) -> Result<bool, CoreError> {
+        let refuse = |why: String| {
+            CoreError::refused(
+                "unsafe-path",
+                format!(
+                    "{}: a symlink {why}. Point it inside its marketplace folder, or replace it \
+                     with the real file or folder",
+                    path.display()
+                ),
+            )
+        };
+        let Some(market) = &self.marketplace else {
+            return Err(refuse(format!(
+                "outside a marketplace folder (`{MARKETPLACES_DIR}/<m>/`)"
+            )));
+        };
+        let scope = self
+            .vfs
+            .canonicalize(&self.root.join(MARKETPLACES_DIR).join(market))?;
+        let Ok(target) = self.vfs.canonicalize(path) else {
+            return Err(refuse("whose real target cannot be read".to_owned()));
+        };
+        if !target.starts_with(&scope) {
+            return Err(refuse(format!(
+                "whose target {} lies outside `{MARKETPLACES_DIR}/{market}/`",
+                target.display()
+            )));
+        }
+        let is_dir = self.vfs.metadata(&target)?.is_dir;
+        let holder = path
+            .parent()
+            .map(|parent| self.vfs.canonicalize(parent))
+            .transpose()?;
+        if is_dir && holder.is_some_and(|holder| holder.starts_with(&target)) {
+            return Err(refuse("to a folder that holds it".to_owned()));
+        }
+        Ok(is_dir)
+    }
+
+    /// Records the file `rel` at `place`.
+    fn push(&mut self, rel: String, place: Place) {
+        self.files.push(LayoutFile {
+            path: self.root.join(&rel),
+            rel,
+            marketplace: self.marketplace.clone().unwrap_or_default(),
+            plugin: self.plugin.clone(),
+            place,
+        });
     }
 
     /// Whether the folder `rel` may take the name `name`; a problem is added
@@ -530,11 +664,21 @@ impl Walk<'_> {
     /// Reports a structure folder met where none belongs, or descends into an
     /// ordinary one. Used inside shared and never-ship folders, where any
     /// layout of plain folders is allowed.
-    fn free(&mut self, rel: &str) -> Result<(), CoreError> {
+    fn free(&mut self, rel: &str, what: &Free) -> Result<(), CoreError> {
         for entry in self.list(&self.root.join(rel))? {
             let child = format!("{rel}/{}", entry.name);
             if !entry.is_dir {
-                self.files.push(self.root.join(&child));
+                let place = match what {
+                    Free::Shared { skill, dir, base } => Place::Shared {
+                        skill: skill.clone(),
+                        dir: *dir,
+                        path: child[base.len() + 1..].to_owned(),
+                    },
+                    Free::NeverShip(folder) => Place::NeverShip {
+                        folder: folder.clone(),
+                    },
+                };
+                self.push(child, place);
             } else if entry.name == MARKETPLACES_DIR {
                 self.problems
                     .add(Case::NestedMarketplaces, format!("{child}/"));
@@ -542,7 +686,7 @@ impl Walk<'_> {
                 self.problems
                     .add(Case::KindFolderOutOfPlace, format!("{child}/"));
             } else {
-                self.free(&child)?;
+                self.free(&child, what)?;
             }
         }
         Ok(())
@@ -569,6 +713,8 @@ impl Walk<'_> {
 
     /// `marketplaces/<m>/`.
     fn marketplace(&mut self, rel: &str, name: &str) -> Result<(), CoreError> {
+        self.marketplace = Some(name.to_owned());
+        self.plugin = None;
         let note = format!("{name}.md");
         let allowed = format!("`{note}` and `{PLUGINS_DIR}/`");
         let mut has_note = false;
@@ -577,7 +723,7 @@ impl Walk<'_> {
             let child = format!("{rel}/{}", entry.name);
             if !entry.is_dir && entry.name == note {
                 has_note = true;
-                self.files.push(self.root.join(&child));
+                self.push(child, Place::MarketplaceNote);
             } else if entry.is_dir && entry.name == PLUGINS_DIR {
                 self.plugins(&child)?;
             } else if !entry.is_dir && entry.name == ROOT_FILE {
@@ -600,6 +746,7 @@ impl Walk<'_> {
                 format!("{rel}/{ROOT_FILE} (the marketplace note is `{note}`)"),
             );
         }
+        self.marketplace = None;
         Ok(())
     }
 
@@ -613,7 +760,9 @@ impl Walk<'_> {
                     format!("{child} (`{PLUGINS_DIR}/` holds plugin folders only)"),
                 );
             } else if self.named(&child, &entry.name) {
+                self.plugin = Some(entry.name.clone());
                 self.plugin(&child, &entry.name)?;
+                self.plugin = None;
             }
         }
         Ok(())
@@ -634,14 +783,21 @@ impl Walk<'_> {
         for entry in self.list(&dir)? {
             let child = format!("{rel}/{}", entry.name);
             let name_is = |n: &str| entry.name == n;
-            if !entry.is_dir && (name_is(&note) || name_is(CHANGELOG_FILE)) {
-                has_note |= name_is(&note);
-                self.files.push(self.root.join(&child));
-            } else if entry.is_dir
-                && (SHARED_DIRS.contains(&entry.name.as_str())
-                    || NEVER_SHIP_DIRS.iter().any(|(dir, _)| name_is(dir)))
-            {
-                self.free(&child)?;
+            let shared = SharedDir::named(&entry.name).filter(|_| entry.is_dir);
+            if !entry.is_dir && name_is(&note) {
+                has_note = true;
+                self.push(child, Place::PluginNote);
+            } else if !entry.is_dir && name_is(CHANGELOG_FILE) {
+                self.push(child, Place::Changelog);
+            } else if let Some(dir) = shared {
+                let what = Free::Shared {
+                    skill: None,
+                    dir,
+                    base: rel.to_owned(),
+                };
+                self.free(&child, &what)?;
+            } else if entry.is_dir && NEVER_SHIP_DIRS.iter().any(|(dir, _)| name_is(dir)) {
+                self.free(&child, &Free::NeverShip(child.clone()))?;
             } else if entry.is_dir && kind_dir(&entry.name).is_some() {
                 self.kind_folder(&child)?;
             } else if entry.is_dir && name_is(HOOKS_DIR) {
@@ -662,7 +818,7 @@ impl Walk<'_> {
         for entry in self.list(&self.root.join(rel))? {
             let child = format!("{rel}/{}", entry.name);
             if !entry.is_dir && entry.name == HOOKS_FILE {
-                self.files.push(self.root.join(&child));
+                self.push(child, Place::HooksFile);
             } else {
                 self.unlisted(&child, &entry, &format!("`{HOOKS_FILE}` only"));
             }
@@ -672,7 +828,9 @@ impl Walk<'_> {
 
     /// `skills/`, `agents/` or `commands/`.
     fn kind_folder(&mut self, rel: &str) -> Result<(), CoreError> {
-        let kind = rel.rsplit('/').next().and_then(kind_dir);
+        let Some(kind) = rel.rsplit('/').next().and_then(kind_dir) else {
+            return Ok(());
+        };
         for entry in self.list(&self.root.join(rel))? {
             let child = format!("{rel}/{}", entry.name);
             if !entry.is_dir {
@@ -692,14 +850,15 @@ impl Walk<'_> {
                     );
                 }
             } else if self.named(&child, &entry.name) {
-                self.component(&child, &entry.name, kind == Some(EntityKind::Skill))?;
+                self.component(&child, &entry.name, kind)?;
             }
         }
         Ok(())
     }
 
     /// `skills/<s>/`, `agents/<a>/` or `commands/<c>/`.
-    fn component(&mut self, rel: &str, name: &str, skill: bool) -> Result<(), CoreError> {
+    fn component(&mut self, rel: &str, name: &str, kind: EntityKind) -> Result<(), CoreError> {
+        let skill = kind == EntityKind::Skill;
         let note = format!("{name}.md");
         let allowed = if skill {
             format!(
@@ -713,21 +872,32 @@ impl Walk<'_> {
         let mut skill_md = false;
         for entry in self.list(&self.root.join(rel))? {
             let child = format!("{rel}/{}", entry.name);
-            let shared = skill && SHARED_DIRS.contains(&entry.name.as_str());
+            let shared = SharedDir::named(&entry.name).filter(|_| skill && entry.is_dir);
             let never = NEVER_SHIP_DIRS
                 .iter()
                 .any(|(dir, skill_only)| entry.name == *dir && (skill || !skill_only));
             if !entry.is_dir && entry.name == note {
                 has_note = true;
-                self.files.push(self.root.join(&child));
+                let place = Place::ComponentNote {
+                    kind,
+                    name: name.to_owned(),
+                };
+                self.push(child, place);
             } else if !entry.is_dir && entry.name.eq_ignore_ascii_case("SKILL.md") {
                 skill_md = true;
                 self.problems.add(
                     Case::NotNamedEntry,
                     format!("{child} (write `{name}/{note}`)"),
                 );
-            } else if entry.is_dir && (shared || never) {
-                self.free(&child)?;
+            } else if let Some(dir) = shared {
+                let what = Free::Shared {
+                    skill: Some(name.to_owned()),
+                    dir,
+                    base: rel.to_owned(),
+                };
+                self.free(&child, &what)?;
+            } else if entry.is_dir && never {
+                self.free(&child, &Free::NeverShip(child.clone()))?;
             } else {
                 self.unlisted(&child, &entry, &allowed);
             }
@@ -764,72 +934,139 @@ mod tests {
         assert!(name_problem("", "plugin name").is_some());
     }
 
-    #[test]
-    fn classify_reads_the_position_alone() {
-        assert_eq!(
-            classify("marketplaces/acme/acme.md"),
-            Some(Position::Marketplace {
-                marketplace: "acme".to_owned()
-            })
-        );
-        assert_eq!(
-            classify("marketplaces/acme/plugins/tools/tools.md"),
-            Some(Position::Plugin {
-                marketplace: "acme".to_owned(),
-                plugin: "tools".to_owned()
-            })
-        );
-        let skill = classify("marketplaces/acme/plugins/tools/agents/triage/triage.md").unwrap();
-        assert_eq!(skill.kind(), EntityKind::Agent);
-        assert_eq!(skill.name(), "triage");
-        assert_eq!(skill.plugin(), Some("tools"));
-        assert_eq!(skill.marketplace(), "acme");
-        for rel in [
-            "marketplaces/acme/plugins/tools/skills/review/references/x.md",
-            "marketplaces/acme/plugins/tools/skills/review/other.md",
-            "marketplaces/acme/plugins/tools/skills/review.md",
-            "marketplaces/acme/plugins/tools/hooks/hooks/hooks.md",
-            "marketplaces/acme/other.md",
-            "notes/marketplaces/acme/acme.md",
-        ] {
-            assert_eq!(classify(rel), None, "{rel}");
+    /// A vault at `/v` holding `files` under plugin `tools` of `acme`.
+    fn vault(files: &[&str]) -> crate::vfs::MemVfs {
+        let vfs = crate::vfs::MemVfs::new();
+        let plugin = "/v/marketplaces/acme/plugins/tools";
+        let mut all = vec![
+            "/v/skillwright.md".to_owned(),
+            "/v/marketplaces/acme/acme.md".to_owned(),
+            format!("{plugin}/tools.md"),
+        ];
+        all.extend(files.iter().map(|f| format!("{plugin}/{f}")));
+        for path in all {
+            let path = Path::new(&path);
+            vfs.create_dir_all(path.parent().unwrap()).unwrap();
+            vfs.write_file(path, b"---\n---\n").unwrap();
         }
+        vfs
+    }
+
+    /// Each file's place, by its path from the plugin folder.
+    fn places(files: &[&str]) -> BTreeMap<String, Place> {
+        let layout = read_layout(&vault(files), Path::new("/v")).unwrap();
+        layout
+            .files
+            .into_iter()
+            .map(|file| {
+                let rel = file
+                    .rel
+                    .strip_prefix("marketplaces/acme/plugins/tools/")
+                    .unwrap_or(&file.rel)
+                    .to_owned();
+                (rel, file.place)
+            })
+            .collect()
     }
 
     #[test]
-    fn never_ship_folders_sit_directly_in_a_plugin_or_component() {
-        for rel in [
-            "marketplaces/m/plugins/p/docs/x.md",
-            "marketplaces/m/plugins/p/src/lib.rs",
-            "marketplaces/m/plugins/p/skills/s/tests/t.md",
-            "marketplaces/m/plugins/p/commands/c/fixtures/f.json",
-        ] {
-            assert!(never_ships(rel), "{rel}");
-        }
-        for rel in [
-            "marketplaces/m/plugins/p/skills/s/references/docs/x.md",
-            "marketplaces/m/plugins/p/assets/tests/t.json",
-            "marketplaces/m/docs/x.md",
-            "marketplaces/m/plugins/p/docs",
-        ] {
-            assert!(!never_ships(rel), "{rel}");
-        }
+    fn each_file_is_given_its_place_once() {
+        let got = places(&[
+            "CHANGELOG.md",
+            "assets/logo.png",
+            "scripts/src/main.js",
+            "src/cli.ts",
+            "hooks/hooks.json",
+            "skills/review/review.md",
+            "skills/review/references/docs/x.md",
+            "skills/review/docs/x.md",
+            "agents/triage/triage.md",
+            "agents/triage/tests/t.md",
+        ]);
+        let shared = |skill: Option<&str>, dir, path: &str| Place::Shared {
+            skill: skill.map(str::to_owned),
+            dir,
+            path: path.to_owned(),
+        };
+        let never = |folder: &str| Place::NeverShip {
+            folder: format!("marketplaces/acme/plugins/tools/{folder}"),
+        };
+        let want: BTreeMap<String, Place> = [
+            ("marketplaces/acme/acme.md", Place::MarketplaceNote),
+            ("tools.md", Place::PluginNote),
+            ("CHANGELOG.md", Place::Changelog),
+            (
+                "assets/logo.png",
+                shared(None, SharedDir::Assets, "assets/logo.png"),
+            ),
+            (
+                "scripts/src/main.js",
+                shared(None, SharedDir::Scripts, "scripts/src/main.js"),
+            ),
+            ("src/cli.ts", never("src")),
+            ("hooks/hooks.json", Place::HooksFile),
+            (
+                "skills/review/review.md",
+                Place::ComponentNote {
+                    kind: EntityKind::Skill,
+                    name: "review".to_owned(),
+                },
+            ),
+            (
+                "skills/review/references/docs/x.md",
+                shared(
+                    Some("review"),
+                    SharedDir::References,
+                    "references/docs/x.md",
+                ),
+            ),
+            ("skills/review/docs/x.md", never("skills/review/docs")),
+            (
+                "agents/triage/triage.md",
+                Place::ComponentNote {
+                    kind: EntityKind::Agent,
+                    name: "triage".to_owned(),
+                },
+            ),
+            ("agents/triage/tests/t.md", never("agents/triage/tests")),
+        ]
+        .into_iter()
+        .map(|(rel, place)| (rel.to_owned(), place))
+        .collect();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn a_note_position_comes_from_its_place() {
+        let layout = read_layout(&vault(&["agents/triage/triage.md"]), Path::new("/v")).unwrap();
+        let agent = layout
+            .files
+            .iter()
+            .find_map(|file| file.position().filter(|p| p.name() == "triage"))
+            .unwrap();
+        assert_eq!(agent.kind(), EntityKind::Agent);
+        assert_eq!(agent.plugin(), Some("tools"));
+        assert_eq!(agent.marketplace(), "acme");
     }
 
     #[test]
     fn a_link_into_a_never_ship_folder_is_caught_unless_it_starts_there() {
-        let to = "marketplaces/m/plugins/p/skills/s/docs/x.md";
-        assert!(links_into_never_ship(
-            "marketplaces/m/plugins/p/skills/s/s.md",
-            to
-        ));
-        assert!(!links_into_never_ship(
-            "marketplaces/m/plugins/p/skills/s/docs/y.md",
-            to
-        ));
-        assert!(!links_into_never_ship(
-            "marketplaces/m/plugins/p/skills/s/s.md",
-            "marketplaces/m/plugins/p/skills/s/references/x.md"
-        ));
+        let layout = read_layout(
+            &vault(&[
+                "skills/s/s.md",
+                "skills/s/docs/x.md",
+                "skills/s/docs/y.md",
+                "skills/s/references/x.md",
+            ]),
+            Path::new("/v"),
+        )
+        .unwrap();
+        let at = |rel: &str| Path::new("/v/marketplaces/acme/plugins/tools").join(rel);
+        let to = at("skills/s/docs/x.md");
+        assert!(layout.links_into_never_ship(&at("skills/s/s.md"), &to));
+        assert!(!layout.links_into_never_ship(&at("skills/s/docs/y.md"), &to));
+        assert!(
+            !layout.links_into_never_ship(&at("skills/s/s.md"), &at("skills/s/references/x.md"))
+        );
     }
 }

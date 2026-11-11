@@ -114,8 +114,9 @@ use crate::harness::manifest::{first_not_a_pack, is_os_file, overrides_for, pack
 use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
 use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
-use crate::model::load::{LoadRequest, kind_carried, selected_harnesses, targets_admit};
-use crate::model::{Component, Marketplace, load};
+use crate::layout::Layout;
+use crate::model::load::{LoadRequest, kind_carried, load_in, selected_harnesses, targets_admit};
+use crate::model::{Component, Marketplace};
 use crate::skill::forward_slashed;
 use crate::source_view::check_pack_location;
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
@@ -225,17 +226,15 @@ impl HookFileSpec {
 /// One file, or one directory tree, an export copies verbatim into a built
 /// plugin's own root, rather than rendering it from a vault note.
 ///
-/// Bundle resources ([`crate::compile::CompileSource::bundle_root`]) already
-/// cover a skill's own peers; this is for what a *plugin* carries once, no
-/// matter which skill happens to shell out to it. A launcher script is the
-/// motivating file case, and shared reference docs the skills read
-/// (`conventions/`) the motivating directory case.
+/// A `build.assets` entry. A skill's own folders and the plugin's
+/// `references/`, `scripts/` and `assets/` ship from the layout; this is for
+/// a file from elsewhere, such as a launcher script.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct AssetSpec {
     /// Absolute host path to the source file or directory. A directory
-    /// lands as its whole tree, under the same fixed `tests`/`fixtures`
-    /// exclude a skill's bundle sweep applies, and minus `*.test.*` files.
+    /// lands as its whole tree, less `tests/` and `fixtures/` folders and
+    /// `*.test.*` files.
     pub source: PathBuf,
     /// Destination, relative to the built plugin's own root
     /// (`<packs>/<plugin>/`), forward-slashed. For a directory source, the
@@ -830,8 +829,30 @@ fn stale_output_warnings(
 ///
 /// A note's block for a harness is applied in that harness's
 /// tree, as a publish to it applies it.
+///
+/// # Errors
+///
+/// What [`crate::layout::read_layout`] and [`export_in`] refuse.
 pub fn export_skills(vfs: &dyn Vfs, request: &ExportRequest) -> Result<ExportReport, CoreError> {
     let vault_root = normalize(&request.vault_root);
+    let layout = crate::layout::read_layout(vfs, &vault_root)
+        .map_err(|err| with_stale_output_cause(vfs, &vault_root, err))?;
+    export_in(vfs, &layout, request)
+}
+
+/// [`export_skills`] over a layout already read, so a build of several
+/// marketplaces walks the vault once.
+///
+/// # Errors
+///
+/// Everything [`crate::model::load::load_in`] refuses, and what checking or
+/// writing the output refuses.
+pub fn export_in(
+    vfs: &dyn Vfs,
+    layout: &Layout,
+    request: &ExportRequest,
+) -> Result<ExportReport, CoreError> {
+    let vault_root = layout.root.clone();
     let out_root = normalize(&request.out_root);
     check_config_identity(&request.config)?;
 
@@ -842,7 +863,7 @@ pub fn export_skills(vfs: &dyn Vfs, request: &ExportRequest) -> Result<ExportRep
     // Load once, for every harness this build renders: the vault read, the
     // marketplace chosen and validated, every body resolved. Everything a
     // build refuses before it renders, it refuses here.
-    let market = load(vfs, &request.load_request())
+    let market = load_in(vfs, layout, &request.load_request())
         .map_err(|err| with_stale_output_cause(vfs, &vault_root, err))?;
     // The load picked the marketplace itself, and the swap uses what it says.
     check_output(vfs, request, &roots, &market.config)?;
@@ -2004,21 +2025,24 @@ mod tests {
 
         let paths = paths_under(&vfs, Path::new("/market"));
         for path in [
-            ".claude-plugin/packs/tools/bin/tool",
+            ".claude-plugin/packs/tools/assets/bin/tool",
             ".claude-plugin/packs/tools/CHANGELOG.md",
             ".pi/packs/tools/CHANGELOG.md",
         ] {
             assert!(paths.contains(&path.to_owned()), "{path}: {paths:?}");
         }
-        // The folder itself never ships under its own name.
-        assert!(!paths.iter().any(|p| p.contains("/assets/")), "{paths:?}");
+        // Nothing is flattened onto the pack root.
+        assert!(
+            !paths.iter().any(|p| p.ends_with("tools/bin/tool")),
+            "{paths:?}"
+        );
         // 1.0.0 has no heading in the changelog.
         let warned: Vec<&str> = report.warnings.iter().map(|w| w.reason.as_str()).collect();
         assert!(warned.contains(&"changelog-missing-version"), "{warned:?}");
     }
 
-    /// `assets/` is copied as it is: not read as notes, and with nothing left
-    /// out, whatever the folders are called.
+    /// `assets/` ships as `assets/`: not read as notes, and with nothing left
+    /// out, whatever the folders inside it are called.
     #[test]
     fn a_plugin_folder_s_assets_land_whole_and_are_not_notes() {
         let vfs = example_vault();
@@ -2035,9 +2059,9 @@ mod tests {
         assert_eq!(report.checked, 3, "the asset is not a fourth note");
         let paths = paths_under(&vfs, Path::new("/market"));
         for path in [
-            ".claude-plugin/packs/tools/notes/helper.md",
-            ".claude-plugin/packs/tools/docs/guide.txt",
-            ".claude-plugin/packs/tools/tests/case.test.txt",
+            ".claude-plugin/packs/tools/assets/notes/helper.md",
+            ".claude-plugin/packs/tools/assets/docs/guide.txt",
+            ".claude-plugin/packs/tools/assets/tests/case.test.txt",
         ] {
             assert!(paths.contains(&path.to_owned()), "{path}: {paths:?}");
         }
@@ -2646,6 +2670,7 @@ mod tests {
                 "packs/other/skills/other-c/SKILL.md",
                 "packs/tools/bin/tool",
                 "packs/tools/package.json",
+                "packs/tools/references/plain.md",
                 "packs/tools/skills/tools-a/SKILL.md",
                 "packs/tools/skills/tools-b/SKILL.md",
             ]

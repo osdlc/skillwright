@@ -8,7 +8,7 @@
 //!
 //! [`crate::layout::read_layout`] checks the folders first, and refuses a
 //! vault not in the layout before any note is read. Then each note is what
-//! its position says ([`crate::layout::classify`]):
+//! its position says ([`crate::layout::Place`]):
 //!
 //! | Path | Read as |
 //! |---|---|
@@ -27,7 +27,8 @@
 //!
 //! The Agent Skills name rule for every folder name (checked by the layout),
 //! the 1024-character description cap, the 500-character compatibility cap,
-//! names unique within a plugin across all kinds, symlinks refused.
+//! names unique within a plugin across all kinds, and a symlink that leaves
+//! its marketplace folder refused.
 //!
 //! # Deterministic, like every report in this crate
 //!
@@ -434,7 +435,7 @@ impl SkippedNote {
 /// # Errors
 ///
 /// * `refused: layout` — the vault is not in the layout (spec section 11).
-/// * `refused: unsafe-path` — a symlink under `marketplaces/`.
+/// * `refused: unsafe-path` — a symlink that leaves its marketplace folder.
 /// * [`CoreError::Io`] — a folder that cannot be listed.
 /// * `refused: path-collision` — two components of one name in one plugin.
 pub fn discover_components(vfs: &dyn Vfs, vault_root: &Path) -> Result<DiscoveryReport, CoreError> {
@@ -475,13 +476,12 @@ fn discover_with(
     roster: bool,
 ) -> Result<DiscoveryReport, CoreError> {
     let vault_root = layout.root.as_path();
-    let files = &layout.files;
-    let placed: BTreeMap<PathBuf, crate::layout::Position> = files
+    let files: Vec<PathBuf> = layout.files.iter().map(|file| file.path.clone()).collect();
+    let files = &files;
+    let placed: BTreeMap<PathBuf, crate::layout::Position> = layout
+        .files
         .iter()
-        .filter_map(|path| {
-            let rel = forward_slashed(path.strip_prefix(vault_root).ok()?);
-            Some((path.clone(), crate::layout::classify(&rel)?))
-        })
+        .filter_map(|file| Some((file.path.clone(), file.position()?)))
         .collect();
 
     let mut discovered = Vec::new();

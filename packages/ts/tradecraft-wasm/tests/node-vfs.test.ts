@@ -166,7 +166,7 @@ describe('a host whose link answers fail', () => {
     )
   })
 
-  test('isSymlink that throws counts as a link, so discovery refuses the note', () => {
+  test('isSymlink that throws counts as a link, checked by its real path', () => {
     const { vault } = repoWithVault('unsure')
     const base = createNodeVfs()
     const unsure: Vfs = {
@@ -176,7 +176,17 @@ describe('a host whose link answers fail', () => {
         return base.isSymlink(p)
       },
     }
-    expect(discoverComponents(base, { vault_root: vault }).components.length).toBeGreaterThan(0)
-    expect(() => discoverComponents(unsure, { vault_root: vault })).toThrow(/a symlink in a vault/)
+    // Its real path stays in the marketplace, so the note is read.
+    expect(discoverComponents(unsure, { vault_root: vault }).components.length).toBeGreaterThan(0)
+    const unresolved: Vfs = {
+      ...unsure,
+      realpath: (p: string) => {
+        if (p.endsWith('review.md')) throw failure('EIO')
+        return base.realpath(p)
+      },
+    }
+    expect(() => discoverComponents(unresolved, { vault_root: vault })).toThrow(
+      /a symlink whose real target cannot be read/,
+    )
   })
 })

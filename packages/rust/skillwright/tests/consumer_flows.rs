@@ -456,7 +456,7 @@ fn a_link_into_a_plugin_s_assets_ships() {
     assert_eq!(built.code, 0, "{}", built.text);
     assert!(
         dir.dist()
-            .join(".claude-plugin/packs/p/docs/guide.md")
+            .join(".claude-plugin/packs/p/assets/docs/guide.md")
             .is_file()
     );
 }

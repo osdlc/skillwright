@@ -1025,7 +1025,8 @@ fn a_vault_flag_naming_a_folder_the_ref_lacks_is_blocked_and_cleans_up() {
 #[cfg(unix)]
 #[test]
 fn a_symlink_in_the_vault_reads_its_target_at_the_ref() {
-    // The current tree refuses a symlinked note, so only the ref holds one.
+    // The current tree refuses a note linked from outside its marketplace,
+    // so only the ref holds one.
     let skill = "vault/marketplaces/acme/plugins/widget/skills/widget-skill/widget-skill.md";
     let note = "---\ndescription: Use widget.\n---\n\nLinked.\n";
     let (_dir, repo) = repo_with_vault("", |repo| {
@@ -1071,9 +1072,7 @@ fn assert_symlink_refused(result: &Run, rel: &str) {
         result.stderr
     );
     assert!(
-        result
-            .stderr
-            .contains(&format!("{rel}: a symlink in a vault")),
+        result.stderr.contains(&format!("{rel}: a symlink ")),
         "{}",
         result.stderr
     );

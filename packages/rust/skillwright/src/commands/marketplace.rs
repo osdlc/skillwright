@@ -22,7 +22,7 @@
 //! the CI verb: the same render, the same report, and exit 1 on any drift.
 
 use tradecraft_core::{
-    ExportMode, ExportRequest, ExportUnit, VaultMarketplace, export_skills, owned_paths,
+    ExportMode, ExportRequest, ExportUnit, Layout, VaultMarketplace, export_in, owned_paths,
 };
 
 use crate::ctx::CommandContext;
@@ -125,7 +125,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
             let _ = writeln!(ctx.err, "marketplace {}:", market.name);
         }
         let advise = name_market.then(|| market.name.clone());
-        let code = export_one(verb, flags, request, advise, ctx);
+        let code = export_one(verb, flags, &run.loaded.layout, request, advise, ctx);
         if exit == EXIT_OK {
             exit = code;
         }
@@ -182,12 +182,13 @@ fn confirm_build(
 fn export_one(
     verb: ExportVerb,
     flags: &ExportFlags,
+    layout: &Layout,
     request: &ExportRequest,
     advise: Option<String>,
     ctx: &mut CommandContext<'_>,
 ) -> i32 {
     // --- run ----------------------------------------------------------------
-    let report = match export_skills(&tradecraft_core::NativeVfs, request) {
+    let report = match export_in(&tradecraft_core::NativeVfs, layout, request) {
         Ok(report) => report,
         // An export has no partial report: its rails fire before anything is
         // staged, and a failed swap rolls back. So a failure means nothing

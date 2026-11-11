@@ -45,14 +45,15 @@
 //! and it is refused `path-collision` naming the skill, because any winner
 //! would silently drop the loser.
 //!
-//! # The bundle root is a parameter, deliberately
+//! # What a skill carries comes from the layout
 //!
-//! [`CompileSource::bundle_root`] takes the value instead of computing it:
-//! `Some` seeds every file under it as a resource at its bundle-relative path,
-//! `None` collects only what the body reaches through links. A caller whose
-//! peers live in the vault-canonical sibling folder passes that folder here —
-//! the resource set is *recomputed* from this source, not merged with one
-//! computed elsewhere, so a peer folder not named here does not travel.
+//! With a [`CompileSource::layout`], a skill's `references/`, `scripts/` and
+//! `assets/` are seeded as resources at their paths in the skill's folder,
+//! as the layout walk classified them ([`crate::layout::Place::Shared`]).
+//! Markdown under `references/` is compiled; every other file ships byte for
+//! byte (spec section 9 rule 8). Never-ship folders are not seeded, and a
+//! link into one is refused. Without a layout only what the body reaches
+//! through links is collected.
 //!
 //! # What comes from the shared crates, and what stays here
 //!
@@ -84,13 +85,15 @@ use sha2::{Digest, Sha256};
 use crate::content::SkillProjection;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
+use crate::frontmatter::EntityKind;
 use crate::guard::within;
+use crate::layout::{Layout, Place, SharedDir};
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vfs::{Vfs, normalize};
 
 /// Where a compile reads from: the vault that resolves its links, the note
-/// being compiled, and (for a bundle-shaped source) the folder whose files
-/// ship with the skill. Paths are absolute; `entry_path` and `bundle_root`
+/// being compiled, its folder, and the layout that says what the skill
+/// carries. Paths are absolute; `entry_path` and `bundle_root`
 /// must lie under `vault_root`.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -100,8 +103,7 @@ pub struct CompileSource<'a> {
     pub vault_root: &'a Path,
     /// The note whose body is being compiled. Its own output is `SKILL.md`.
     pub entry_path: &'a Path,
-    /// The folder seeded wholesale as bundle-relative resources, when the
-    /// source has one. See the module doc for why this is a parameter.
+    /// The entry's own folder: a file under it lands at its path from here.
     pub bundle_root: Option<&'a Path>,
     /// The skill's name, used only to say *which* skill a refusal is about.
     pub skill_name: &'a str,
@@ -116,6 +118,9 @@ pub struct CompileSource<'a> {
     /// `None` walks `vault_root` for them, leaving out tooling folders
     /// (`.obsidian`, `.trash`, `node_modules`).
     pub links: Option<&'a LinkIndex>,
+    /// The vault's layout, when the caller read one: it says which files a
+    /// skill carries and which never ship. See the module doc.
+    pub layout: Option<&'a Layout>,
 }
 
 impl<'a> CompileSource<'a> {
@@ -129,6 +134,7 @@ impl<'a> CompileSource<'a> {
             skill_name,
             calls: None,
             links: None,
+            layout: None,
         }
     }
 }
@@ -576,10 +582,9 @@ pub fn compile_note(
     // carried untransformed, so the emitted files are scanned once more.
     let shown = &renderer.shown_notation;
     validate_no_obsidian_syntax(&compiled_body, 0, "SKILL.md", source.skill_name, shown)?;
-    for (output_path, (bytes, _)) in &outputs {
-        if !output_path.to_lowercase().ends_with(".md") {
-            continue;
-        }
+    // Only the compiled Markdown: a copied file ships as written.
+    for output_path in renderer.markdown_resources.values() {
+        let (bytes, _) = &outputs[output_path];
         // Emitted markdown is always this pass's own composition, so it is
         // UTF-8 by construction; the fallback only guards the invariant.
         let text = std::str::from_utf8(bytes)
@@ -674,8 +679,8 @@ pub struct RelatedSplit {
     pub calls: Vec<String>,
     /// Link targets that resolved to nothing, as written.
     pub unresolved: Vec<String>,
-    /// Files seeded from the bundle root, whether or not the body mentions
-    /// them. Empty for a flat note, which has no bundle root.
+    /// The skill's own files the layout seeds, whether or not the body
+    /// mentions them. Empty without a [`CompileSource::layout`].
     pub resources: Vec<String>,
 }
 
@@ -769,11 +774,7 @@ pub fn related_of(
 /// skill.
 ///
 /// The resource set is **recomputed** from `source`, not merged: what ships is
-/// what the bundle root holds plus what the body reaches, which is the
-/// contract. A caller holding peers in a sibling folder passes that
-/// folder as [`CompileSource::bundle_root`] or loses them — stated here
-/// because the silent version of that mistake is the under-publish this
-/// crate exists to prevent.
+/// what the layout seeds plus what the body reaches.
 pub fn compile_projection(
     vfs: &dyn Vfs,
     source: &CompileSource<'_>,
@@ -805,47 +806,6 @@ const REFERENCE_EXTENSIONS: &[&str] = &[
 /// notes.
 pub(crate) const EXCLUDED_VAULT_DIRECTORIES: &[&str] =
     &[".git", ".obsidian", ".trash", "node_modules"];
-
-/// Directories a skill's own bundle sweep never ships, at any depth under the
-/// bundle root — dev-only fixtures and vendored/tooling trees, never the
-/// skill's published content. Also used by `crate::model::load`'s asset reader
-/// for a directory `assets:` entry, so a shared tree copied wholesale (a
-/// docs directory, a reference bundle) gets the same pruning a skill bundle
-/// gets — a vendored `node_modules` under such a tree is exactly as
-/// unwanted as one under a skill bundle.
-///
-/// `docs`/`tests`/`fixtures` are a fixed convention rather than a root-file
-/// setting: every skill gets this for free, with nothing to declare and
-/// nothing to forget to declare. Fixture markdown is often literal
-/// `[[decision-note]]`-shaped test data, not real Obsidian links; swept as an
-/// ordinary bundle resource, it reads as a broken link and fails
-/// `unresolved-syntax` on a vault that has nothing wrong with it. A `docs`
-/// folder holds writing about the skill for its authors, not for the agent
-/// that loads it. The rest
-/// mirror [`EXCLUDED_VAULT_DIRECTORIES`] above: no
-/// bundle or asset tree should ship a `.git`, `.obsidian`, `.trash` or
-/// vendored `node_modules` either.
-pub(crate) const EXCLUDED_BUNDLE_DIRECTORIES: &[&str] = &[
-    "docs",
-    "tests",
-    "fixtures",
-    ".git",
-    ".obsidian",
-    ".trash",
-    "node_modules",
-];
-
-/// [`EXCLUDED_BUNDLE_DIRECTORIES`] for a `build.assets` directory, without
-/// `docs`: a shared tree of reference docs is what such an asset is for. The
-/// folder convention's `assets/` excludes nothing.
-pub(crate) const EXCLUDED_ASSET_DIRECTORIES: &[&str] = &[
-    "tests",
-    "fixtures",
-    ".git",
-    ".obsidian",
-    ".trash",
-    "node_modules",
-];
 
 /// The walk compile indexes a vault with, for a caller that must see the
 /// same files: every file, dot-named ones too, except under `.git`,
@@ -894,6 +854,7 @@ struct Renderer<'a> {
     entry_path: PathBuf,
     bundle_root: Option<PathBuf>,
     skill_name: &'a str,
+    layout: Option<&'a Layout>,
     /// Every file in the vault, by vault-relative path, for link
     /// resolution. Built once per compile — the vault is the resolution
     /// universe, and walking it lazily would make "not found" depend on what
@@ -966,6 +927,7 @@ impl<'a> Renderer<'a> {
             entry_path,
             bundle_root,
             skill_name: source.skill_name,
+            layout: source.layout,
             index,
             contributing: BTreeMap::new(),
             unresolved: BTreeMap::new(),
@@ -982,40 +944,45 @@ impl<'a> Renderer<'a> {
         })
     }
 
-    /// Every file under the bundle root ships at its bundle-relative path,
-    /// linked or not — the copy set comes from the walk, never from a model
-    /// of what the body mentions — except a directory named
-    /// [`EXCLUDED_BUNDLE_DIRECTORIES`], which never ships at all.
+    /// Seeds the skill's `references/`, `scripts/` and `assets/` from the
+    /// layout, linked or not, each at its path in the skill's folder.
+    /// Markdown under `references/` is compiled; everything else is copied.
     fn seed_bundle_resources(&mut self) -> Result<(), CoreError> {
-        let Some(bundle_root) = self.bundle_root.clone() else {
+        let Some(layout) = self.layout else {
             return Ok(());
         };
-        for source_path in crate::walk::files(self.vfs, &bundle_root, EXCLUDED_BUNDLE_DIRECTORIES)?
-        {
-            if source_path == self.entry_path {
+        let Some(entry) = layout.file(&self.entry_path) else {
+            return Ok(());
+        };
+        let Place::ComponentNote {
+            kind: EntityKind::Skill,
+            name,
+        } = &entry.place
+        else {
+            return Ok(());
+        };
+        let carried = layout
+            .files_of(&entry.marketplace)
+            .filter(|file| file.plugin == entry.plugin);
+        for file in carried {
+            let Place::Shared {
+                skill: Some(skill),
+                dir,
+                path,
+            } = &file.place
+            else {
+                continue;
+            };
+            if skill != name {
                 continue;
             }
-            let relative = source_path
-                .strip_prefix(&bundle_root)
-                .map_err(|_| CoreError::PathEscapesRoot(source_path.clone()))?;
-            let output_path = forward_slashed(relative);
-            if output_path == "SKILL.md" {
-                // A bundle file literally named SKILL.md would be overwritten
-                // by the rendered entry — the quiet loss `path-collision`
-                // exists to make loud.
-                return Err(CoreError::refused(
-                    "path-collision",
-                    format!(
-                        "reserved resource path in {}: SKILL.md is the rendered entry's output",
-                        self.skill_name
-                    ),
-                ));
-            }
-            self.claim_destination(&output_path, &source_path)?;
-            if extension_of_path(&source_path).as_deref() == Some(".md") {
-                self.markdown_resources.insert(source_path, output_path);
+            self.claim_destination(path, &file.path)?;
+            if *dir == SharedDir::References && path.to_lowercase().ends_with(".md") {
+                self.markdown_resources
+                    .insert(file.path.clone(), path.clone());
             } else {
-                self.binary_resources.insert(source_path, output_path);
+                self.binary_resources
+                    .insert(file.path.clone(), path.clone());
             }
         }
         Ok(())
@@ -1073,7 +1040,11 @@ impl<'a> Renderer<'a> {
         if source_path == self.entry_path {
             return Ok("SKILL.md".to_owned());
         }
-        if let Some(existing) = self.markdown_resources.get(source_path) {
+        if let Some(existing) = self
+            .markdown_resources
+            .get(source_path)
+            .or_else(|| self.binary_resources.get(source_path))
+        {
             return Ok(existing.clone());
         }
         let output_path = self.output_path_for(source_path)?;
@@ -1705,18 +1676,17 @@ impl<'a> Renderer<'a> {
 
     /// Refuses a link from `from_file` to a file that never ships, however
     /// the link is spelled: it is in a never-ship folder and the linking note
-    /// is not ([`crate::layout::never_ships`]).
+    /// is not ([`Layout::links_into_never_ship`]).
     fn refuse_never_shipped(
         &self,
         from_file: &Path,
         path: &Path,
         destination: &str,
     ) -> Result<(), CoreError> {
-        let into_never_ship = match (self.vault_relative(from_file), self.vault_relative(path)) {
-            (Ok(from), Ok(to)) => crate::layout::links_into_never_ship(&from, &to),
-            _ => false,
-        };
-        if into_never_ship {
+        if self
+            .layout
+            .is_some_and(|layout| layout.links_into_never_ship(from_file, path))
+        {
             return Err(CoreError::refused(
                 "excluded-link",
                 format!(
@@ -2578,6 +2548,55 @@ mod tests {
         vfs.write_file(path, content).unwrap();
     }
 
+    /// The layout a v2 walk gives the skill at `entry` whose folder is
+    /// `bundle`: its shared folders carried, its never-ship folders marked.
+    fn bundle_layout(vfs: &dyn Vfs, entry: &Path, bundle: &Path) -> &'static Layout {
+        let name = bundle.file_name().unwrap().to_string_lossy().into_owned();
+        let file = |path: PathBuf, place| crate::layout::LayoutFile {
+            rel: path.display().to_string(),
+            path,
+            marketplace: "m".to_owned(),
+            plugin: Some("p".to_owned()),
+            place,
+        };
+        let mut files = vec![file(
+            normalize(entry),
+            Place::ComponentNote {
+                kind: EntityKind::Skill,
+                name: name.clone(),
+            },
+        )];
+        for found in crate::walk::readable_files(vfs, bundle, &[]) {
+            let first = found.rel.split('/').next().unwrap_or_default();
+            let place = if let Some(dir) = SharedDir::named(first) {
+                Place::Shared {
+                    skill: Some(name.clone()),
+                    dir,
+                    path: found.rel.clone(),
+                }
+            } else if ["docs", "tests", "fixtures", "src"].contains(&first) {
+                Place::NeverShip {
+                    folder: bundle.join(first).display().to_string(),
+                }
+            } else {
+                continue;
+            };
+            files.push(file(normalize(&found.abs), place));
+        }
+        Box::leak(Box::new(Layout {
+            root: PathBuf::from("/vault"),
+            files,
+            marketplaces: vec!["m".to_owned()],
+        }))
+    }
+
+    /// [`source`] for the skill whose folder is `bundle`, with its layout.
+    fn bundled<'a>(vfs: &dyn Vfs, bundle: &'a Path) -> CompileSource<'a> {
+        let mut value = source(Some(bundle));
+        value.layout = Some(bundle_layout(vfs, value.entry_path, bundle));
+        value
+    }
+
     fn source<'a>(bundle_root: Option<&'a Path>) -> CompileSource<'a> {
         {
             let mut value = CompileSource::new(
@@ -2672,7 +2691,7 @@ mod tests {
         let bundle = Path::new("/vault/plugins/demo");
         let compiled = compile_note(
             &vfs,
-            &source(Some(bundle)),
+            &bundled(&vfs, bundle),
             "# Demo\n\nRead [[references/local|Local reference]].\n",
         )
         .unwrap();
@@ -2719,7 +2738,7 @@ mod tests {
     fn every_emitted_file_has_a_closure_holding_at_least_its_own_owner() {
         let vfs = demo_vault();
         let bundle = Path::new("/vault/plugins/demo");
-        let compiled = compile_note(&vfs, &source(Some(bundle)), DEMO_BODY).unwrap();
+        let compiled = compile_note(&vfs, &bundled(&vfs, bundle), DEMO_BODY).unwrap();
 
         for (path, _, _) in &compiled.resources {
             let closure = compiled
@@ -2751,7 +2770,7 @@ mod tests {
 
         let compiled = compile_note(
             &vfs,
-            &source(Some(bundle)),
+            &bundled(&vfs, bundle),
             "# Demo\n\nSee [[Missing]]. Read [[references/local]].\n",
         )
         .unwrap();
@@ -2772,7 +2791,7 @@ mod tests {
         let bundle = Path::new("/vault/plugins/demo");
         let related = related_of(
             &vfs,
-            &source(Some(bundle)),
+            &bundled(&vfs, bundle),
             "# Demo\n\n![[Shared]]\n\nRead [[references/local]] and [[Sections]], then [[Missing]].\n",
         )
         .unwrap();
@@ -2811,7 +2830,7 @@ mod tests {
     fn related_lists_bundle_peers_as_resources_and_never_as_links() {
         let vfs = demo_vault();
         let bundle = Path::new("/vault/plugins/demo");
-        let related = related_of(&vfs, &source(Some(bundle)), "# Demo\n").unwrap();
+        let related = related_of(&vfs, &bundled(&vfs, bundle), "# Demo\n").unwrap();
 
         assert_eq!(
             related.resources,
@@ -2829,7 +2848,7 @@ mod tests {
     fn a_demo_skill_compiles_end_to_end() {
         let vfs = demo_vault();
         let bundle = Path::new("/vault/plugins/demo");
-        let compiled = compile_note(&vfs, &source(Some(bundle)), DEMO_BODY).unwrap();
+        let compiled = compile_note(&vfs, &bundled(&vfs, bundle), DEMO_BODY).unwrap();
 
         // A whole-note embed pulls the body, never the frontmatter.
         assert!(compiled.body.contains("## Shared instructions"));
@@ -2889,12 +2908,14 @@ mod tests {
         );
         let bundle = root.join("marketplaces/house/plugins/tools/skills/workflow-checklist");
         let vfs = crate::vfs::NativeVfs;
+        let layout = crate::layout::read_layout(&vfs, &root).unwrap();
 
         let raw = read_utf8(&vfs, &entry).unwrap();
         let (_, body) = split_frontmatter(&raw);
         let compile_source = {
             let mut value = CompileSource::new(&root, &entry, "workflow-checklist");
             value.bundle_root = Some(&bundle);
+            value.layout = Some(&layout);
             value
         };
         let compiled = compile_note(&vfs, &compile_source, body).unwrap();
@@ -3271,23 +3292,11 @@ mod tests {
         write(&vfs, "/vault/X.md", b"vault-wide\n");
 
         let bundle = Path::new("/vault/plugins/demo");
-        let err = compile_note(&vfs, &source(Some(bundle)), "See [[X]].\n").unwrap_err();
+        let err = compile_note(&vfs, &bundled(&vfs, bundle), "See [[X]].\n").unwrap_err();
         let message = err.to_string();
         assert!(message.contains("path-collision"), "{message}");
         assert!(message.contains("demo"), "{message}");
         assert!(message.contains("references/vault/X.md"), "{message}");
-    }
-
-    #[test]
-    fn a_bundle_file_named_skill_md_is_refused() {
-        let vfs = demo_vault();
-        write(&vfs, "/vault/plugins/demo/SKILL.md", b"impostor\n");
-
-        let bundle = Path::new("/vault/plugins/demo");
-        let err = compile_note(&vfs, &source(Some(bundle)), "# Demo\n").unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("path-collision"), "{message}");
-        assert!(message.contains("SKILL.md"), "{message}");
     }
 
     #[test]
@@ -3315,7 +3324,7 @@ mod tests {
         );
 
         let bundle = Path::new("/vault/plugins/demo");
-        let compiled = compile_note(&vfs, &source(Some(bundle)), "# Demo\n").unwrap();
+        let compiled = compile_note(&vfs, &bundled(&vfs, bundle), "# Demo\n").unwrap();
         for (path, _, _) in &compiled.resources {
             assert!(!path.starts_with("tests/"), "{path} shipped from tests/");
             assert!(
@@ -3356,6 +3365,11 @@ mod tests {
             );
             // The vault-canonical peer folder is this note's bundle root.
             value.bundle_root = Some(Path::new("/vault/skills/demo"));
+            value.layout = Some(bundle_layout(
+                &vfs,
+                Path::new("/vault/skills/demo.md"),
+                Path::new("/vault/skills/demo"),
+            ));
             value
         };
         compile_projection(&vfs, &compile_source, &mut note.projection).unwrap();
@@ -3382,8 +3396,8 @@ mod tests {
     fn compiling_twice_yields_identical_output() {
         let vfs = demo_vault();
         let bundle = Path::new("/vault/plugins/demo");
-        let first = compile_note(&vfs, &source(Some(bundle)), DEMO_BODY).unwrap();
-        let second = compile_note(&vfs, &source(Some(bundle)), DEMO_BODY).unwrap();
+        let first = compile_note(&vfs, &bundled(&vfs, bundle), DEMO_BODY).unwrap();
+        let second = compile_note(&vfs, &bundled(&vfs, bundle), DEMO_BODY).unwrap();
         assert_eq!(first, second);
     }
 
@@ -3502,7 +3516,7 @@ mod tests {
         let compiled = compile_source_with_calls(
             &vfs,
             &call_index("called"),
-            source(Some(Path::new("/vault/plugins/demo"))),
+            bundled(&vfs, Path::new("/vault/plugins/demo")),
             "# Demo\n",
         )
         .unwrap();
@@ -4161,7 +4175,7 @@ mod tests {
         let bundle = Path::new("/vault/plugins/demo");
         let compile = |skill: IndexedSkill| {
             let skills = SkillIndex::new([skill]);
-            compile_source_with_calls(&vfs, &skills, source(Some(bundle)), "Back to [[demo]].\n")
+            compile_source_with_calls(&vfs, &skills, bundled(&vfs, bundle), "Back to [[demo]].\n")
                 .unwrap()
         };
         let hash = |compiled: &CompiledNote, path: &str| {
@@ -4197,7 +4211,7 @@ mod tests {
         let compiled = compile_source_with_calls(
             &vfs,
             &call_index("called"),
-            source(Some(Path::new("/vault/plugins/demo"))),
+            bundled(&vfs, Path::new("/vault/plugins/demo")),
             "# Demo\n",
         )
         .unwrap();
@@ -4227,6 +4241,7 @@ mod tests {
             let skills = SkillIndex::new([indexed(entry, "s")]);
             let mut base = CompileSource::new(Path::new("/vault"), Path::new(entry), "s");
             base.bundle_root = Some(Path::new(bundle));
+            base.layout = Some(bundle_layout(&vfs, Path::new(entry), Path::new(bundle)));
             let compiled = compile_source_with_calls(&vfs, &skills, base, &link).unwrap();
             assert_eq!(compiled.body, "Part of `tools:s`.\n", "{entry}");
             assert_eq!(
@@ -4288,7 +4303,7 @@ mod tests {
         let compiled = compile_source_with_calls(
             &vfs,
             &call_index("called"),
-            source(Some(Path::new("/vault/plugins/demo"))),
+            bundled(&vfs, Path::new("/vault/plugins/demo")),
             "See [[demo#Steps]].\n",
         )
         .unwrap();
@@ -4321,6 +4336,11 @@ mod tests {
         let skills = SkillIndex::new([indexed(entry, "s")]);
         let mut base = CompileSource::new(Path::new("/vault"), Path::new(entry), "s");
         base.bundle_root = Some(Path::new("/vault/skills/s"));
+        base.layout = Some(bundle_layout(
+            &vfs,
+            Path::new(entry),
+            Path::new("/vault/skills/s"),
+        ));
         let compiled =
             compile_source_with_calls(&vfs, &skills, base, "See [[s#Steps]].\n").unwrap();
         assert_eq!(compiled.body, "See [SKILL.md](SKILL.md#Steps).\n");
@@ -4349,7 +4369,7 @@ mod tests {
         let compiled = compile_source_with_calls(
             &vfs,
             &call_index("called"),
-            source(Some(Path::new("/vault/plugins/demo"))),
+            bundled(&vfs, Path::new("/vault/plugins/demo")),
             "See [[called]].\n",
         )
         .unwrap();

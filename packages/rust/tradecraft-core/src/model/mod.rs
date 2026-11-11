@@ -11,9 +11,8 @@
 //! [`load()`] reads each note once and resolves before translating (D-EPSA),
 //! today in two passes:
 //!
-//! 1. **Read** every note into a node — [`load::read_notes`]. This is the
-//!    only pass that walks the vault, and the seam a shared vault reader
-//!    replaces.
+//! 1. **Read** every note into a node — [`load::read_notes`], over the
+//!    layout [`crate::layout::read_layout`] walked once.
 //! 2. **Resolve** every body: embeds expanded, every `[[link]]` and
 //!    `/[[call]]` checked and pointed at the node it names. A body becomes
 //!    [`Segment`]s, so a translator writes a call or a link without
@@ -56,7 +55,7 @@ use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 
 pub use cascade::Cascade;
-pub use load::{LoadRequest, load, read_notes, resolve_body};
+pub use load::{LoadRequest, load, load_in, read_notes, resolve_body};
 
 /// A vault, loaded as the one marketplace a build renders.
 #[derive(Debug, Clone, Serialize)]

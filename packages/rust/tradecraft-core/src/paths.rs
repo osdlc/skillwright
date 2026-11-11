@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::CoreError;
 use crate::export::{AssetSpec, ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig};
-use crate::layout::{DIST_DIR, MARKETPLACES_DIR, read_layout};
+use crate::layout::{DIST_DIR, Layout, MARKETPLACES_DIR, read_layout};
 use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
 
@@ -162,6 +162,9 @@ pub struct LoadedVault {
     /// The marketplaces the load was asked for, by folder name: every one, or
     /// the one named.
     pub marketplaces: Vec<VaultMarketplace>,
+    /// The vault's layout, read once: pass it to [`crate::export_in`] for
+    /// each marketplace.
+    pub layout: Layout,
 }
 
 impl LoadedVault {
@@ -263,6 +266,7 @@ pub fn load_vault(
         settings,
         inputs,
         marketplaces,
+        layout,
     })
 }
 

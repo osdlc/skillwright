@@ -270,11 +270,7 @@ fn an_mcp_json_is_an_error_and_a_dot_file_in_assets_is_skipped() {
         ],
     );
     let layout = read_layout(&vault_of(&files), Path::new("/v")).unwrap();
-    let names: Vec<String> = layout
-        .files
-        .iter()
-        .map(|f| f.display().to_string())
-        .collect();
+    let names: Vec<String> = layout.files.iter().map(|f| f.rel.clone()).collect();
     assert!(
         names.iter().any(|f| f.ends_with("assets/logo.png")),
         "{names:?}"
@@ -308,7 +304,7 @@ fn docs_under_references_is_accepted() {
         layout
             .files
             .iter()
-            .any(|f| f.ends_with("skills/review/references/docs/x.md"))
+            .any(|f| f.rel.ends_with("skills/review/references/docs/x.md"))
     );
 }
 
@@ -588,23 +584,52 @@ fn two_flat_notes_are_one_case_listing_both() {
     assert!(said.contains("skills/b.md"), "{said}");
 }
 
+#[cfg(unix)]
 #[test]
-fn a_symlink_under_marketplaces_is_refused() {
+fn a_symlink_is_read_when_its_target_stays_in_the_marketplace() {
     let tmp = std::env::temp_dir().join(format!("tc-layout-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     let tools = tmp.join("marketplaces/acme/plugins/tools");
     std::fs::create_dir_all(tools.join("skills/review")).unwrap();
+    std::fs::create_dir_all(tools.join("references")).unwrap();
     std::fs::write(tmp.join("skillwright.md"), ROOT).unwrap();
     std::fs::write(tmp.join("marketplaces/acme/acme.md"), NOTE).unwrap();
     std::fs::write(tools.join("tools.md"), NOTE).unwrap();
     std::fs::write(tools.join("skills/review/review.md"), SKILL).unwrap();
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(tools.join("skills/review"), tools.join("skills/linked"))
-            .unwrap();
-        let err = read_layout(&tradecraft_core::NativeVfs, &tmp).unwrap_err();
-        assert!(matches!(err, CoreError::Refused(_)), "{err}");
-        assert!(err.to_string().contains("unsafe-path"), "{err}");
-    }
+    std::fs::write(tools.join("references/x.md"), "x").unwrap();
+    std::os::unix::fs::symlink(
+        tools.join("references"),
+        tools.join("skills/review/references"),
+    )
+    .unwrap();
+    let vfs = tradecraft_core::NativeVfs;
+    let layout = read_layout(&vfs, &tmp).unwrap();
+    let place = layout
+        .files
+        .iter()
+        .find(|f| f.rel.ends_with("skills/review/references/x.md"))
+        .map(|f| f.place.clone());
+    assert_eq!(
+        place,
+        Some(tradecraft_core::Place::Shared {
+            skill: Some("review".to_owned()),
+            dir: tradecraft_core::SharedDir::References,
+            path: "references/x.md".to_owned(),
+        })
+    );
+
+    // A folder link that holds itself would never end.
+    std::os::unix::fs::symlink(&tools, tools.join("references/loop")).unwrap();
+    let err = read_layout(&vfs, &tmp).unwrap_err();
+    assert!(matches!(err, CoreError::Refused(_)), "{err}");
+    assert!(err.to_string().contains("a folder that holds it"), "{err}");
+    std::fs::remove_file(tools.join("references/loop")).unwrap();
+
+    // A target outside the marketplace folder is refused.
+    std::fs::write(tmp.join("outside.md"), "x").unwrap();
+    std::os::unix::fs::symlink(tmp.join("outside.md"), tools.join("references/out.md")).unwrap();
+    let err = read_layout(&vfs, &tmp).unwrap_err();
+    assert!(err.to_string().contains("unsafe-path"), "{err}");
+    assert!(err.to_string().contains("marketplaces/acme/"), "{err}");
     std::fs::remove_dir_all(&tmp).unwrap();
 }

@@ -18,8 +18,7 @@ use super::{
     ResourceContent, Segment, pack_kind, segments,
 };
 use crate::compile::{
-    CallContext, CompileSource, EXCLUDED_ASSET_DIRECTORIES, IndexedSkill, Recorded, SkillIndex,
-    SkillSource, compile_projection,
+    CallContext, CompileSource, IndexedSkill, Recorded, SkillIndex, SkillSource, compile_projection,
 };
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
@@ -36,6 +35,7 @@ use crate::publish::{PLUGIN_HOOKS_PATH, canonical_target, refuse_carried_peers};
 use crate::vault::{VaultNote, read_vault_note};
 
 pub use crate::layout::CHANGELOG_FILE;
+use crate::layout::{Layout, Place, SharedDir};
 use crate::vfs::{Vfs, normalize};
 
 /// What a marketplace load reads: this vault, this marketplace of it, for
@@ -80,33 +80,37 @@ impl LoadRequest {
     }
 }
 
-/// Pass 1: every note in the vault, read into a node — its frontmatter, kind,
-/// plugin, marketplace and files.
+/// Pass 1: every note of the layout, read into a node — its frontmatter,
+/// kind, plugin, marketplace and files.
 ///
-/// The one function here that walks the vault. Beside the report it returns
-/// the vault's link index, built from the same walk, so pass 2 resolves every
-/// link without walking again.
+/// Beside the report it returns the vault's link index, built from the
+/// layout's files, so pass 2 resolves every link without walking again. A
+/// plugin's own `assets/` is left out of the index.
 ///
 /// # Errors
 ///
 /// What [`crate::discover::discover_components`] refuses.
 pub fn read_notes(
     vfs: &dyn Vfs,
-    vault_root: &Path,
+    layout: &Layout,
 ) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
-    let layout = crate::layout::read_layout(vfs, vault_root)?;
-    let report = discover_in(vfs, &layout)?;
+    let report = discover_in(vfs, layout)?;
     let files: Vec<PathBuf> = layout
         .files
         .iter()
-        .filter(|path| {
-            path.strip_prefix(vault_root).is_ok_and(|rel| {
-                !crate::walk::in_plugin_assets(&crate::skill::forward_slashed(rel))
-            })
+        .filter(|file| {
+            !matches!(
+                file.place,
+                Place::Shared {
+                    skill: None,
+                    dir: SharedDir::Assets,
+                    ..
+                }
+            )
         })
-        .cloned()
+        .map(|file| file.path.clone())
         .collect();
-    let links = crate::compile::link_index(vault_root, &files)?;
+    let links = crate::compile::link_index(&layout.root, &files)?;
     Ok((report, links))
 }
 
@@ -166,12 +170,28 @@ pub(crate) fn selected_harnesses(
 /// * `refused: malformed` — a container block key holding the wrong
 ///   kind of value.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
+/// * What [`crate::layout::read_layout`] refuses.
 pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreError> {
-    let vault_root = normalize(&request.vault_root);
+    let layout = crate::layout::read_layout(vfs, &normalize(&request.vault_root))?;
+    load_in(vfs, &layout, request)
+}
+
+/// [`load`] over a layout already read, so a build of several marketplaces
+/// walks the vault once.
+///
+/// # Errors
+///
+/// As [`load`], less the layout's own.
+pub fn load_in(
+    vfs: &dyn Vfs,
+    layout: &Layout,
+    request: &LoadRequest,
+) -> Result<Marketplace, CoreError> {
+    let vault_root = layout.root.clone();
     let roots = selected_harnesses(&request.harnesses)?;
 
     // Pass 1.
-    let (scan, links) = read_notes(vfs, &vault_root)?;
+    let (scan, links) = read_notes(vfs, layout)?;
     // The root file's own entry is configuration, not a note, and
     // `check_block_values` below refuses it naming the marketplace. A note in
     // another marketplace does not stop a build of this one.
@@ -285,16 +305,9 @@ pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreErr
     let mut plugins = group_by_plugin(&plugin_notes, &skills, &commands)?;
     let config = &cascade.config;
     warnings.extend(missing_versions(&discovered, &market, &plugins, config));
-    let folder_assets = folder_assets(vfs, &vault_root, &market, &plugins);
-    warnings.extend(changelog_warnings(vfs, &vault_root, &folder_assets, config));
-    load_assets(
-        vfs,
-        &folder_assets,
-        &request.assets,
-        &roots,
-        &mut plugins,
-        config,
-    )?;
+    pack_files(vfs, layout, &market, &mut plugins)?;
+    warnings.extend(changelog_warnings(vfs, layout, &market, config));
+    load_assets(vfs, &request.assets, &roots, &mut plugins, config)?;
     load_hook_files(vfs, &request.hooks, &mut plugins)?;
 
     // Pass 2. One index for every call, over every skill in the marketplace
@@ -339,7 +352,7 @@ pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreErr
                 kind => {
                     let (resolved, content) = resolve_body(
                         vfs,
-                        &vault_root,
+                        layout,
                         &component.discovered,
                         &note,
                         kind,
@@ -389,7 +402,7 @@ pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreErr
 #[allow(clippy::too_many_arguments)]
 pub fn resolve_body(
     vfs: &dyn Vfs,
-    vault_root: &Path,
+    layout: &Layout,
     component: &DiscoveredComponent,
     note: &VaultNote,
     kind: EntityKind,
@@ -402,7 +415,7 @@ pub fn resolve_body(
         .expect("a load compiles through a recording context");
     let (mut resolved, content) = resolve_compiled(
         vfs,
-        vault_root,
+        layout,
         component,
         note,
         kind,
@@ -475,7 +488,7 @@ fn no_render(_: &IndexedSkill, _: bool) -> Result<String, CoreError> {
 #[allow(clippy::too_many_arguments)]
 fn resolve_compiled(
     vfs: &dyn Vfs,
-    vault_root: &Path,
+    layout: &Layout,
     component: &DiscoveredComponent,
     note: &VaultNote,
     kind: EntityKind,
@@ -496,12 +509,13 @@ fn resolve_compiled(
     let closures = compile_projection(
         vfs,
         &CompileSource {
-            vault_root,
+            vault_root: &layout.root,
             entry_path: &component.entry_path,
             bundle_root: component.bundle_root.as_deref(),
             skill_name: &component.name,
             calls: Some(calls),
             links,
+            layout: Some(layout),
         },
         &mut projection,
     )?;
@@ -873,32 +887,26 @@ fn plugin_list(plugins: &BTreeMap<String, Plugin>) -> String {
         .join(", ")
 }
 
-/// Every asset, checked and read into the plugin it lands in.
+/// Every `build.assets` entry, checked and read into the plugin it lands in.
 ///
 /// A plugin an asset names but the vault never produces is refused up front,
 /// the same way an unknown `--marketplace` is: writing nothing rather than
 /// silently dropping bytes an author declared.
 ///
-/// A `configured` directory source lands file by file, with
-/// [`EXCLUDED_ASSET_DIRECTORIES`] pruned at every depth and every `*.test.*`
-/// file skipped, so a shared tree of reference docs does not carry its own
-/// test suite into the build. A `folder` asset, from the convention, lands
-/// whole. An asset is never compiled: its whole point is to ship exactly the
-/// bytes on disk.
+/// A directory source lands file by file, with [`EXCLUDED_ASSET_DIRECTORIES`]
+/// pruned at every depth and every `*.test.*` file skipped, so a shared tree
+/// of reference docs does not carry its own test suite into the build. An
+/// asset is never compiled: its whole point is to ship exactly the bytes on
+/// disk.
 fn load_assets(
     vfs: &dyn Vfs,
-    folder: &[AssetSpec],
     configured: &[AssetSpec],
     roots: &[&HarnessProfile],
     plugins: &mut BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Result<(), CoreError> {
-    let mut checked: Vec<(&AssetSpec, String, bool)> = Vec::new();
-    let assets = folder
-        .iter()
-        .map(|asset| (asset, true))
-        .chain(configured.iter().map(|asset| (asset, false)));
-    for (asset, whole) in assets {
+    let mut checked: Vec<(&AssetSpec, String)> = Vec::new();
+    for asset in configured {
         if !asset_dest_is_relative(&asset.dest) {
             return Err(CoreError::refused(
                 "unsafe-asset-dest",
@@ -939,10 +947,10 @@ fn load_assets(
                 ),
             ));
         }
-        checked.push((asset, plugin.to_owned(), whole));
+        checked.push((asset, plugin.to_owned()));
     }
-    for (asset, plugin, whole) in checked {
-        let files = read_asset(vfs, asset, whole)?;
+    for (asset, plugin) in checked {
+        let files = read_asset(vfs, asset)?;
         let plugin = plugins
             .get_mut(&plugin)
             .expect("the plugin was checked above");
@@ -959,71 +967,57 @@ fn load_assets(
     Ok(())
 }
 
-/// The folder inside a plugin folder whose contents land at the plugin's
-/// root in every pack.
-pub const ASSETS_DIR: &str = "assets";
-
-/// The assets each plugin folder supplies: its `assets/`, copied to the
-/// plugin root, and its `CHANGELOG.md`, copied beside the manifest.
-fn folder_assets(
+/// What a plugin ships at its pack root, read from the layout: its
+/// `CHANGELOG.md`, and its `references/`, `scripts/` and `assets/` under
+/// their own names (spec section 9). Each is copied byte for byte.
+fn pack_files(
     vfs: &dyn Vfs,
-    vault_root: &Path,
+    layout: &Layout,
     market: &str,
-    plugins: &BTreeMap<String, Plugin>,
-) -> Vec<AssetSpec> {
-    let mut specs = Vec::new();
-    for name in plugins.keys() {
-        let folder = vault_root
-            .join(crate::layout::MARKETPLACES_DIR)
-            .join(market)
-            .join(crate::layout::PLUGINS_DIR)
-            .join(name);
-        let assets = folder.join(ASSETS_DIR);
-        if is_directory(vfs, &assets) {
-            specs.push(AssetSpec {
-                source: assets,
-                dest: String::new(),
-                plugin: Some(name.clone()),
-            });
-        }
-        let changelog = folder.join(CHANGELOG_FILE);
-        if vfs.exists(&changelog) && !is_directory(vfs, &changelog) {
-            specs.push(AssetSpec {
-                source: changelog,
-                dest: CHANGELOG_FILE.to_owned(),
-                plugin: Some(name.clone()),
-            });
-        }
+    plugins: &mut BTreeMap<String, Plugin>,
+) -> Result<(), CoreError> {
+    for file in layout.files_of(market) {
+        let dest = match &file.place {
+            Place::Changelog => CHANGELOG_FILE,
+            Place::Shared {
+                skill: None, path, ..
+            } => path.as_str(),
+            _ => continue,
+        };
+        let Some(plugin) = file.plugin.as_ref().and_then(|p| plugins.get_mut(p)) else {
+            continue;
+        };
+        plugin.assets.push(Asset {
+            dest: dest.to_owned(),
+            bytes: vfs.read_file(&file.path)?,
+            executable: vfs.is_executable(&file.path),
+        });
     }
-    specs
+    Ok(())
 }
 
 /// A warning for each plugin whose `CHANGELOG.md` has no heading naming the
 /// version the plugin ships, so a release does not go out undescribed.
 fn changelog_warnings(
     vfs: &dyn Vfs,
-    vault_root: &Path,
-    assets: &[AssetSpec],
+    layout: &Layout,
+    market: &str,
     config: &MarketplaceConfig,
 ) -> Vec<DiscoveryWarning> {
     let mut warnings = Vec::new();
-    for asset in assets.iter().filter(|a| a.dest == CHANGELOG_FILE) {
-        let Some(plugin) = asset.plugin.as_deref() else {
+    for file in layout.files_of(market) {
+        let (Place::Changelog, Some(plugin)) = (&file.place, file.plugin.as_deref()) else {
             continue;
         };
         let version = plugin_version(config, plugin);
-        let Ok(bytes) = vfs.read_file(&asset.source) else {
+        let Ok(bytes) = vfs.read_file(&file.path) else {
             continue;
         };
         let text = String::from_utf8_lossy(&bytes);
         let named = text.lines().any(|line| heading_names(line, &version));
         if !named {
             warnings.push(DiscoveryWarning {
-                path: asset
-                    .source
-                    .strip_prefix(vault_root)
-                    .map(crate::skill::forward_slashed)
-                    .unwrap_or_else(|_| asset.source.display().to_string()),
+                path: file.rel.clone(),
                 reason: "changelog-missing-version".to_owned(),
                 detail: format!(
                     "plugin `{plugin}` ships version `{version}`, and its `{CHANGELOG_FILE}` has \
@@ -1045,9 +1039,18 @@ fn heading_names(line: &str, version: &str) -> bool {
             .any(|token| token.strip_prefix('v').unwrap_or(token) == version)
 }
 
-/// One asset's files, read verbatim. A directory asset is filtered unless
-/// `whole`.
-fn read_asset(vfs: &dyn Vfs, asset: &AssetSpec, whole: bool) -> Result<Vec<Asset>, CoreError> {
+/// Folders a directory `build.assets` entry never copies, at any depth.
+const EXCLUDED_ASSET_DIRECTORIES: &[&str] = &[
+    "tests",
+    "fixtures",
+    ".git",
+    ".obsidian",
+    ".trash",
+    "node_modules",
+];
+
+/// One asset's files, read verbatim. A directory asset is filtered.
+fn read_asset(vfs: &dyn Vfs, asset: &AssetSpec) -> Result<Vec<Asset>, CoreError> {
     let copy = |source: &Path, dest: String| -> Result<Asset, CoreError> {
         Ok(Asset {
             dest,
@@ -1059,13 +1062,8 @@ fn read_asset(vfs: &dyn Vfs, asset: &AssetSpec, whole: bool) -> Result<Vec<Asset
         return Ok(vec![copy(&asset.source, asset.dest.clone())?]);
     }
     let mut files = Vec::new();
-    let excluded = if whole {
-        &[]
-    } else {
-        EXCLUDED_ASSET_DIRECTORIES
-    };
-    for source in crate::walk::files(vfs, &asset.source, excluded)? {
-        if !whole && is_test_file(&source) {
+    for source in crate::walk::files(vfs, &asset.source, EXCLUDED_ASSET_DIRECTORIES)? {
+        if is_test_file(&source) {
             continue;
         }
         let relative = source.strip_prefix(&asset.source).map_err(|_| {
@@ -1229,7 +1227,8 @@ mod tests {
     #[test]
     fn pass_one_indexes_what_it_read_and_nothing_outside_marketplaces() {
         let vfs = vault();
-        let (report, links) = read_notes(&vfs, Path::new("/vault")).unwrap();
+        let layout = crate::layout::read_layout(&vfs, Path::new("/vault")).unwrap();
+        let (report, links) = read_notes(&vfs, &layout).unwrap();
         assert_eq!(report.components.len(), 3);
         assert_eq!(
             links.resolve("guide"),

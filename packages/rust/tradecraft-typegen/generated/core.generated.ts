@@ -658,17 +658,15 @@ export interface PluginOverrides {
  * One file, or one directory tree, an export copies verbatim into a built
  * plugin's own root, rather than rendering it from a vault note.
  *
- * Bundle resources ([`crate::compile::CompileSource::bundle_root`]) already
- * cover a skill's own peers; this is for what a *plugin* carries once, no
- * matter which skill happens to shell out to it. A launcher script is the
- * motivating file case, and shared reference docs the skills read
- * (`conventions/`) the motivating directory case.
+ * A `build.assets` entry. A skill's own folders and the plugin's
+ * `references/`, `scripts/` and `assets/` ship from the layout; this is for
+ * a file from elsewhere, such as a launcher script.
  */
 export interface AssetSpec {
   /**
    * Absolute host path to the source file or directory. A directory
-   * lands as its whole tree, under the same fixed `tests`/`fixtures`
-   * exclude a skill's bundle sweep applies, and minus `*.test.*` files.
+   * lands as its whole tree, less `tests/` and `fixtures/` folders and
+   * `*.test.*` files.
    */
   source: string;
 
