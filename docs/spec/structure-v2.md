@@ -836,10 +836,11 @@ flowchart LR
       frontmatter;
    4. a generated value.
 
-   An example. The plugin note sets `author: Ada` and `claude: {author: Bob}`,
-   and the skill sets neither. The skill's Claude Code `author` is `Bob`, and
-   its Codex `author` is `Ada`. A key that is not inherited, such as
-   `description`, comes only from the note itself.
+   An example. The plugin note sets `author: Ada` and `claude: {author: Bob}`.
+   The plugin's Claude Code manifest names `Bob` as its author, and its Codex
+   manifest names `Ada`. A skill takes no `author`: it is a plugin key (rule
+   4). A key that is not inherited, such as `description`, comes only from the
+   note itself.
 6. Versions:
    - A plugin's `version` is its note's. Without one it is `0.1.0`, with a
      warning.
