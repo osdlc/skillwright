@@ -431,22 +431,21 @@ fn contains(bytes: &[u8], marker: &str) -> bool {
 /// this is never one of them.
 pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 
-/// Which harnesses this request renders, read with the vault's root file,
+/// Which harnesses this request renders under the vault's root file `root`,
 /// each with every path it owns in the marketplace directory.
 ///
-/// So a caller can say what a build is about to replace without owning a
-/// second copy of the roots table or of the harness selection.
+/// So a caller can say what a build is about to replace, before it plans,
+/// without owning a second copy of the roots table or of the harness
+/// selection.
 ///
 /// # Errors
 ///
-/// What [`read_root_file`] refuses, `refused: unknown-harness` and
-/// `refused: harness-not-built`.
+/// `refused: unknown-harness` and `refused: harness-not-built`.
 pub fn owned_paths(
-    vfs: &dyn Vfs,
+    root: &RootFile,
     request: &ExportRequest,
 ) -> Result<Vec<(&'static str, &'static str)>, CoreError> {
-    let root = read_root_file(vfs, &normalize(&request.vault_root))?;
-    Ok(paths_of(&built_harnesses(&root, &request.harnesses)?))
+    Ok(paths_of(&built_harnesses(root, &request.harnesses)?))
 }
 
 /// Each of `roots` with every path it owns.

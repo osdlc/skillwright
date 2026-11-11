@@ -20,12 +20,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use tradecraft_core::discover::discover_in;
 use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
     BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit, NativeVfs,
-    PatchScheme, ROOT_FILE, UnitStatus, Vfs, discover_components, dist_dir, export_skills,
-    is_vault_root, next_version, owned_paths, packs_path, parse_semver, plugin_manifest_path,
-    read_version, set_version,
+    PatchScheme, ROOT_FILE, UnitStatus, Vfs, dist_dir, is_vault_root, next_version, owned_paths,
+    packs_path, parse_semver, plan_in, plugin_manifest_path, read_version, set_version,
 };
 
 use crate::ctx::CommandContext;
@@ -208,7 +208,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
-    let scan = match discover_components(&NativeVfs, &run.vault) {
+    let scan = match discover_in(&NativeVfs, &run.loaded.layout) {
         Ok(scan) => scan,
         Err(err) => {
             return blocked(
@@ -486,7 +486,7 @@ fn run_changed(
     let mut rows: Vec<Row> = Vec::new();
     for (market, mut request) in requests {
         request.compare_with = Some(baseline.root(market));
-        let mut roots: Vec<&str> = match owned_paths(&NativeVfs, &request) {
+        let mut roots: Vec<&str> = match owned_paths(&run.loaded.settings, &request) {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
             Err(err) => return blocked(ctx.err, normalize_thrown_reason(&err.to_string())),
         };
@@ -513,7 +513,9 @@ fn run_changed(
                 ),
             );
         }
-        let report = match export_skills(&NativeVfs, &request) {
+        let report = match plan_in(&NativeVfs, &run.loaded.layout, &request)
+            .and_then(|plan| plan.write(&NativeVfs))
+        {
             Ok(report) => report,
             Err(err) => {
                 return blocked(
@@ -970,7 +972,9 @@ impl BuiltRef {
             let request = base_run
                 .loaded
                 .export_request(base_market, ExportMode::Build);
-            if let Err(err) = export_skills(&NativeVfs, &request) {
+            let result = plan_in(&NativeVfs, &base_run.loaded.layout, &request)
+                .and_then(|plan| plan.write(&NativeVfs));
+            if let Err(err) = result {
                 return fail(
                     ctx,
                     format!(
