@@ -361,6 +361,40 @@ fn a_name_inside_another_component_is_a_link_to_nothing() {
 }
 
 #[test]
+fn a_name_matching_a_shared_file_and_a_component_is_an_error_naming_both() {
+    let vfs = vault(&[
+        (AUTHOR, &skill("See [[x]].")),
+        ("references/x.md", "Shared.\n"),
+        ("skills/x/x.md", &skill("X.")),
+    ]);
+    let err = refusal(&vfs);
+    names(&err, AUTHOR, "[[x]]", "section 4 rule 3");
+    assert!(err.contains(&format!("{PLUGIN}/references/x.md")), "{err}");
+    assert!(err.contains(&format!("{PLUGIN}/skills/x/x.md")), "{err}");
+}
+
+#[test]
+fn a_name_only_another_plugin_holds_is_a_link_to_nothing() {
+    let vfs = vault(&[(AUTHOR, &skill("See [[x]]."))]);
+    put(
+        &vfs,
+        "marketplaces/acme/plugins/other/other.md",
+        "---\nversion: 1.0.0\n---\n",
+    );
+    put(
+        &vfs,
+        "marketplaces/acme/plugins/other/skills/x/x.md",
+        &skill("X."),
+    );
+    put(
+        &vfs,
+        "marketplaces/acme/plugins/other/references/x.md",
+        "X.\n",
+    );
+    names(&refusal(&vfs), AUTHOR, "[[x]]", "section 4 rule 11");
+}
+
+#[test]
 fn a_path_into_another_component_works() {
     let vfs = vault(&[
         (
@@ -396,17 +430,17 @@ fn a_link_into_another_plugin_is_refused() {
         &err,
         AUTHOR,
         "[[../../../other/references/x.md]]",
-        "another plugin",
+        "section 4, scope of a link",
     );
+    assert!(err.contains("another plugin"), "{err}");
 }
 
 #[test]
 fn a_link_into_docs_is_refused_with_one_error_in_every_form() {
-    // A Markdown link is quoted by its destination.
     let mut errors = Vec::new();
     for (link, written) in [
         ("[[docs/x]]", "[[docs/x]]"),
-        ("[t](docs/x.md)", "docs/x.md"),
+        ("[t](docs/x.md)", "[t](docs/x.md)"),
         ("![[docs/x]]", "![[docs/x]]"),
     ] {
         let vfs = vault(&[
@@ -429,7 +463,7 @@ fn a_link_out_of_the_marketplace_is_refused() {
     names(
         &refusal(&vfs),
         AUTHOR,
-        "../../../../../../x.md",
+        "`[t](../../../../../../x.md)`",
         "containment rule 1",
     );
 }
@@ -460,14 +494,24 @@ fn a_relative_markdown_link_is_checked_and_rewritten() {
 #[test]
 fn a_markdown_link_to_a_missing_file_is_an_error_naming_it() {
     let vfs = vault(&[(AUTHOR, &skill("Read [x](references/missing.md)."))]);
-    names(&refusal(&vfs), AUTHOR, "references/missing.md", "rule 11");
+    names(
+        &refusal(&vfs),
+        AUTHOR,
+        "`[x](references/missing.md)`",
+        "section 4 rule 11",
+    );
 }
 
 #[test]
 fn an_absolute_or_file_markdown_link_is_refused() {
     for link in ["/abs/x.md", "file:x.md"] {
         let vfs = vault(&[(AUTHOR, &skill(&format!("Read [x]({link}).")))]);
-        names(&refusal(&vfs), AUTHOR, link, "section 4");
+        names(
+            &refusal(&vfs),
+            AUTHOR,
+            &format!("`[x]({link})`"),
+            "section 4",
+        );
     }
 }
 
@@ -970,8 +1014,7 @@ fn a_leftover_in_prose_is_refused() {
     let vfs = with_setup("See [[ this.");
     let err = refusal(&vfs);
     assert!(err.contains("unresolved-syntax"), "{err}");
-    assert!(err.contains(AUTHOR), "{err}");
-    assert!(err.contains("[[ this."), "{err}");
+    names(&err, AUTHOR, "[[ this.", "section 4 rule 13");
 }
 
 #[test]
@@ -1149,6 +1192,124 @@ fn an_image_embed_is_an_image_link() {
     ships(&vfs, "![logo.png](assets/logo.png)");
 }
 
+#[test]
+fn an_embed_into_another_plugin_is_refused_as_a_link_is() {
+    let vfs = vault(&[(AUTHOR, &skill("![[../../../other/references/x.md]]"))]);
+    put(
+        &vfs,
+        "marketplaces/acme/plugins/other/other.md",
+        "---\nversion: 1.0.0\n---\n",
+    );
+    put(
+        &vfs,
+        "marketplaces/acme/plugins/other/references/x.md",
+        "X.\n",
+    );
+    let err = refusal(&vfs);
+    names(
+        &err,
+        AUTHOR,
+        "![[../../../other/references/x.md]]",
+        "section 4, scope of a link",
+    );
+    assert!(err.contains("link-out-of-scope"), "{err}");
+    assert!(err.contains("another plugin"), "{err}");
+}
+
+#[test]
+fn an_embed_out_of_the_marketplace_is_refused_as_a_link_is() {
+    let vfs = vault(&[(AUTHOR, &skill("![[../../../../../../x.md]]"))]);
+    put(&vfs, "x.md", "Outside.\n");
+    let err = refusal(&vfs);
+    names(
+        &err,
+        AUTHOR,
+        "![[../../../../../../x.md]]",
+        "section 4 containment rule 1",
+    );
+    assert!(err.contains("link-out-of-scope"), "{err}");
+}
+
+#[test]
+fn a_name_in_text_embedded_from_another_component_resolves_in_that_component() {
+    let vfs = with_files(
+        "![[../setup/references/part]]",
+        &[
+            ("skills/setup/references/part.md", "See [[notes]].\n"),
+            ("skills/setup/references/notes.md", "Notes.\n"),
+        ],
+    );
+    ships(&vfs, "See [notes](../setup/references/notes.md).");
+    let cursor = author_in(&vfs, CURSOR, "tools-author");
+    assert!(
+        cursor.contains("See [notes](../tools-setup/references/notes.md)."),
+        "{cursor}"
+    );
+}
+
+#[test]
+fn one_note_embedded_into_two_files_links_from_each() {
+    let vfs = with_files(
+        "![[snippet]]",
+        &[
+            ("references/snippet.md", "See [[style]].\n"),
+            ("references/style.md", "Style.\n"),
+            (GUIDE, "![[snippet]]\n"),
+        ],
+    );
+    ships(&vfs, "See [style](../../references/style.md).");
+    let guide = read(&vfs, &format!("{CLAUDE}/{GUIDE}"));
+    assert!(
+        guide.contains("See [style](../../../references/style.md)."),
+        "{guide}"
+    );
+}
+
+#[test]
+fn a_heading_path_names_the_heading_under_its_parents() {
+    let vfs = with_files(
+        "![[guide#Two#Usage]]",
+        &[(
+            GUIDE,
+            "## One\n\n### Usage\n\nFirst.\n\n## Two\n\n### Usage\n\nSecond.\n",
+        )],
+    );
+    ships(&vfs, "### Usage\n\nSecond.");
+    assert!(!author(&vfs).contains("First."), "{}", author(&vfs));
+}
+
+#[test]
+fn a_selector_holding_a_hash_names_a_heading_holding_one() {
+    let vfs = with_files(
+        "![[guide#C# notes]]",
+        &[(GUIDE, "## C\n\nNot this.\n\n## C# notes\n\nThis.\n")],
+    );
+    ships(&vfs, "## C# notes\n\nThis.");
+    assert!(!author(&vfs).contains("Not this."), "{}", author(&vfs));
+}
+
+#[test]
+fn the_first_heading_that_matches_wins() {
+    let vfs = with_files(
+        "![[guide#Usage]]",
+        &[(GUIDE, "## Usage\n\nFirst.\n\n## Usage\n\nSecond.\n")],
+    );
+    ships(&vfs, "## Usage\n\nFirst.");
+    assert!(!author(&vfs).contains("Second."), "{}", author(&vfs));
+}
+
+#[test]
+fn a_block_marker_alone_on_its_line_labels_the_block_above() {
+    let vfs = with_files(
+        "Before.\n\n![[guide#^steps]]\n\nAfter.",
+        &[(GUIDE, "Intro.\n\n- one\n- two\n\n^steps\n\nOutro.\n")],
+    );
+    ships(&vfs, "Before.\n\n- one\n- two\n\nAfter.");
+    let text = author(&vfs);
+    assert!(!text.contains("^steps"), "{text}");
+    assert!(!text.contains("Intro."), "{text}");
+}
+
 // --- Files inlined as fenced blocks (D8) ------------------------------------
 
 const RUN: &str = "skills/author/scripts/run.sh";
@@ -1163,6 +1324,15 @@ fn a_script_ships_as_a_fenced_block_named_by_its_extension() {
         ],
     );
     ships(&vfs, "```bash\necho hi\n```\n\n```\nraw\n```");
+}
+
+#[test]
+fn a_python_file_is_fenced_as_python() {
+    let vfs = with_files(
+        "![[run.py]]",
+        &[("skills/author/scripts/run.py", "print(1)\n")],
+    );
+    ships(&vfs, "```python\nprint(1)\n```");
 }
 
 #[test]

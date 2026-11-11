@@ -79,6 +79,17 @@ fn refusal_for(vfs: &dyn Vfs, harnesses: &[&str]) -> String {
     }
 }
 
+/// Rule 14: an error names the file holding the reference, the reference as
+/// written and the rule.
+fn names(message: &str, file: &str, written: &str, rule: &str) {
+    assert!(message.contains(file), "no file `{file}`: {message}");
+    assert!(
+        message.contains(&format!("`{written}`")),
+        "no reference `{written}`: {message}"
+    );
+    assert!(message.contains(rule), "no rule `{rule}`: {message}");
+}
+
 fn read(vfs: &dyn Vfs, rel: &str) -> String {
     String::from_utf8(vfs.read_file(&Path::new("/v").join(rel)).unwrap()).unwrap()
 }
@@ -178,6 +189,20 @@ fn a_full_stop_after_a_path_is_kept_as_punctuation() {
 }
 
 #[test]
+fn an_underscore_and_a_hyphen_continue_a_path_and_another_character_ends_it() {
+    let vfs = with_author(
+        "Run ${PLUGIN_ROOT}/scripts/my_tool-x, then ${PLUGIN_ROOT}/scripts/tool:x.",
+        &[("scripts/my_tool-x", "#!/bin/sh\n")],
+    );
+    build(&vfs);
+    holds(
+        &in_author(&vfs, "SKILL.md"),
+        "Run ${CLAUDE_PLUGIN_ROOT}/scripts/my_tool-x, then ${CLAUDE_PLUGIN_ROOT}/scripts/tool:x.",
+        "Run ../../scripts/my_tool-x, then ../../scripts/tool:x.",
+    );
+}
+
+#[test]
 fn a_path_to_a_command_is_written_for_claude_code_and_fails_elsewhere() {
     let vfs = with_author(
         "See ${PLUGIN_ROOT}/commands/deploy.md.",
@@ -192,10 +217,11 @@ fn a_path_to_a_command_is_written_for_claude_code_and_fails_elsewhere() {
     for harness in ["codex", "cursor", "pi"] {
         let err = refusal_for(&vfs, &[harness]);
         assert!(err.contains("plugin-root-not-shipped"), "{harness}: {err}");
-        assert!(err.contains(AUTHOR), "{harness}: {err}");
-        assert!(
-            err.contains("${PLUGIN_ROOT}/commands/deploy.md"),
-            "{harness}: {err}"
+        names(
+            &err,
+            AUTHOR,
+            "${PLUGIN_ROOT}/commands/deploy.md",
+            "section 4 rules 17 and 20",
         );
     }
 }
@@ -236,11 +262,67 @@ fn a_path_into_another_skill_follows_its_folder() {
 }
 
 #[test]
+fn a_path_into_a_skill_a_harness_leaves_out_fails_for_that_harness() {
+    let files = [
+        (
+            "skills/deploy/deploy.md",
+            "---\ndescription: Use it.\ntargets: [claude]\n---\n\nDeploy.\n",
+        ),
+        ("skills/deploy/scripts/run.sh", "echo\n"),
+    ];
+    let vfs = with_author("Run ${PLUGIN_ROOT}/skills/deploy/scripts/run.sh.", &files);
+    build_for(&vfs, &["claude"]).unwrap();
+    for harness in ["codex", "cursor", "pi"] {
+        let vfs = with_author("Run ${PLUGIN_ROOT}/skills/deploy/scripts/run.sh.", &files);
+        let err = refusal_for(&vfs, &[harness]);
+        names(
+            &err,
+            AUTHOR,
+            "${PLUGIN_ROOT}/skills/deploy/scripts/run.sh",
+            "section 4 rules 17 and 20",
+        );
+    }
+}
+
+#[test]
+fn a_path_into_another_skill_under_bare_naming_follows_its_folder() {
+    let vfs = with_author(
+        "Run ${PLUGIN_ROOT}/skills/setup/scripts/run.sh.",
+        &[
+            ("skills/setup/setup.md", &skill("Set up.")),
+            ("skills/setup/scripts/run.sh", "echo\n"),
+        ],
+    );
+    put(
+        &vfs,
+        &format!("{PLUGIN}/tools.md"),
+        "---\nversion: 1.0.0\ncursor:\n  naming: bare\npi:\n  naming: bare\n---\n",
+    );
+    build(&vfs);
+    for (harness, pack) in [("cursor", PACKS[2].1), ("pi", PACKS[3].1)] {
+        let text = read(&vfs, &format!("{pack}/skills/author/SKILL.md"));
+        assert!(
+            text.contains("Run ../setup/scripts/run.sh."),
+            "{harness}: {text}"
+        );
+        assert!(
+            read(&vfs, &format!("{pack}/skills/setup/scripts/run.sh")) == "echo\n",
+            "{harness}"
+        );
+    }
+}
+
+#[test]
 fn an_extension_is_part_of_the_path() {
     let vfs = with_author("Run `${PLUGIN_ROOT}/scripts/tool.js --check`.", &[]);
     let err = refusal_for(&vfs, &[]);
     assert!(err.contains("plugin-root-not-shipped"), "{err}");
-    assert!(err.contains("scripts/tool.js"), "{err}");
+    names(
+        &err,
+        AUTHOR,
+        "${PLUGIN_ROOT}/scripts/tool.js",
+        "section 4 rules 17 and 20",
+    );
 }
 
 #[test]
@@ -248,8 +330,12 @@ fn a_path_naming_nothing_shipped_fails_naming_the_file_and_the_reference() {
     let vfs = with_author("Run ${PLUGIN_ROOT}/scripts/missing now.", &[]);
     let err = refusal_for(&vfs, &[]);
     assert!(err.contains("plugin-root-not-shipped"), "{err}");
-    assert!(err.contains(AUTHOR), "{err}");
-    assert!(err.contains("`${PLUGIN_ROOT}/scripts/missing`"), "{err}");
+    names(
+        &err,
+        AUTHOR,
+        "${PLUGIN_ROOT}/scripts/missing",
+        "section 4 rules 17 and 20",
+    );
 }
 
 #[test]
@@ -257,7 +343,7 @@ fn a_lone_plugin_root_in_markdown_is_an_error() {
     let vfs = with_author("Run from ${PLUGIN_ROOT} now.", &[]);
     let err = refusal_for(&vfs, &[]);
     assert!(err.contains("plugin-root-no-path"), "{err}");
-    assert!(err.contains(AUTHOR), "{err}");
+    names(&err, AUTHOR, "${PLUGIN_ROOT}", "section 4 rule 21");
 }
 
 #[test]
@@ -269,18 +355,39 @@ fn claude_code_s_variable_in_a_note_or_a_code_span_is_an_error() {
         let vfs = with_author(body, &[]);
         let err = refusal_for(&vfs, &[]);
         assert!(err.contains("claude-plugin-root"), "{err}");
-        assert!(err.contains(AUTHOR), "{err}");
+        names(&err, AUTHOR, "${CLAUDE_PLUGIN_ROOT}", "section 4 rule 22");
         assert!(err.contains("write `${PLUGIN_ROOT}`"), "{err}");
     }
 }
 
 #[test]
-fn claude_code_s_variable_in_docs_or_a_plugin_note_s_body_is_not_checked() {
+fn claude_code_s_variable_in_a_reference_or_inlined_note_is_an_error() {
+    let text = "Run `${CLAUDE_PLUGIN_ROOT}/scripts/tool`.\n";
+    for (body, file) in [
+        ("See [[guide]].", "skills/author/references/guide.md"),
+        ("Use it.", "references/style.md"),
+        // An `assets/` note ships byte for byte, so only the inlined text
+        // is checked.
+        ("![[snippet]]", "skills/author/assets/snippet.md"),
+    ] {
+        let vfs = with_author(body, &[(file, text)]);
+        let err = refusal_for(&vfs, &[]);
+        assert!(err.contains("claude-plugin-root"), "{file}: {err}");
+        names(&err, file, "${CLAUDE_PLUGIN_ROOT}", "section 4 rule 22");
+    }
+}
+
+#[test]
+fn claude_code_s_variable_in_docs_an_asset_or_a_plugin_note_s_body_is_not_checked() {
     let vfs = with_author(
         "Use it.",
         &[
             (
                 "docs/notes.md",
+                "Run ${CLAUDE_PLUGIN_ROOT}/x and ${PLUGIN_ROOT}.\n",
+            ),
+            (
+                "skills/author/assets/notes.md",
                 "Run ${CLAUDE_PLUGIN_ROOT}/x and ${PLUGIN_ROOT}.\n",
             ),
             (
@@ -358,8 +465,12 @@ fn a_hook_path_naming_nothing_shipped_fails_the_build() {
     );
     let err = refusal_for(&vfs, &[]);
     assert!(err.contains("plugin-root-not-shipped"), "{err}");
-    assert!(err.contains("hooks/hooks.json"), "{err}");
-    assert!(err.contains("${PLUGIN_ROOT}/scripts/missing.sh"), "{err}");
+    names(
+        &err,
+        "hooks/hooks.json",
+        "${PLUGIN_ROOT}/scripts/missing.sh",
+        "section 4 rules 17 and 20",
+    );
 }
 
 #[test]

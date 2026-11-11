@@ -1072,7 +1072,12 @@ impl<'a> Renderer<'a> {
                 return self.replace_call(token, source_path, output_path);
             }
             TokenKind::MarkdownLink => {
-                return self.replace_markdown_link(raw, source_path, output_path);
+                return self.replace_markdown_link(
+                    raw,
+                    token.destination,
+                    source_path,
+                    output_path,
+                );
             }
             TokenKind::PluginRoot | TokenKind::ClaudeRoot => {
                 return self.replace_plugin_root(token, raw, source_path, output_path);
@@ -1293,26 +1298,29 @@ impl<'a> Renderer<'a> {
         Cow::Owned(out)
     }
 
-    /// A Markdown link's destination, `written`: a relative path is resolved
-    /// like a wikilink with a path and rewritten to where its file lands; a
-    /// URL with a scheme and a `#fragment` ship as written; an absolute path
-    /// and a `file:` URL are refused.
+    /// A Markdown link's `destination`: a relative path is resolved like a
+    /// wikilink with a path and rewritten to where its file lands; a URL with
+    /// a scheme and a `#fragment` ship as written; an absolute path and a
+    /// `file:` URL are refused. `written` is the whole link, which an error
+    /// quotes.
     fn replace_markdown_link(
         &mut self,
+        destination: &str,
         written: &str,
         source_path: &Path,
         output_path: &str,
     ) -> Result<String, CoreError> {
-        let (path, suffix) = written.split_at(written.find(['#', '?']).unwrap_or(written.len()));
+        let (path, suffix) =
+            destination.split_at(destination.find(['#', '?']).unwrap_or(destination.len()));
         if path.is_empty() {
-            return Ok(written.to_owned());
+            return Ok(destination.to_owned());
         }
         let scheme = path
             .split_once(':')
             .filter(|(before, _)| !before.contains('/'))
             .map(|(before, _)| before);
         if scheme.is_some_and(|scheme| !scheme.eq_ignore_ascii_case("file")) {
-            return Ok(written.to_owned());
+            return Ok(destination.to_owned());
         }
         if scheme.is_some() || path.starts_with('/') {
             return Err(self.link_error(
@@ -2166,19 +2174,21 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
     (tokens, leftovers)
 }
 
-/// A token for the destination of each live Markdown link in `markdown`.
+/// A token for the destination of each live Markdown link in `markdown`. Its
+/// `destination` is the whole link, which a refusal quotes, and its `target`
+/// the destination it replaces.
 fn markdown_link_tokens(markdown: &str) -> Vec<WikiToken<'_>> {
     markdown_destinations(markdown)
         .into_iter()
-        .map(|destination| {
+        .map(|(destination, link)| {
             // Each destination is a slice of `markdown`.
             let start = destination.as_ptr() as usize - markdown.as_ptr() as usize;
             WikiToken {
                 start,
                 end: start + destination.len(),
                 kind: TokenKind::MarkdownLink,
-                destination,
-                target: String::new(),
+                destination: link,
+                target: destination.to_owned(),
                 fragment: None,
                 alias: None,
             }
@@ -2211,8 +2221,9 @@ fn plugin_root_tokens(markdown: &str) -> Vec<WikiToken<'_>> {
 }
 
 /// The destination of each inline Markdown link and reference definition in
-/// `markdown` that is live: not in code, not in an HTML comment.
-fn markdown_destinations(markdown: &str) -> Vec<&str> {
+/// `markdown` that is live: not in code, not in an HTML comment. Each comes
+/// with the whole link as written, such as `[t](x.md)` or `[t]: x.md`.
+fn markdown_destinations(markdown: &str) -> Vec<(&str, &str)> {
     let code = code_regions(markdown);
     let live = |at: usize| {
         !code.iter().any(|(from, to)| (*from..*to).contains(&at))
@@ -2220,8 +2231,8 @@ fn markdown_destinations(markdown: &str) -> Vec<&str> {
     };
     let inline = markdown
         .match_indices("](")
-        .map(|(at, _)| (at, at + 2))
-        .filter(|(at, _)| !markdown[..*at].ends_with('\\'));
+        .map(|(at, _)| (at, at + 2, link_open(markdown, at)))
+        .filter(|(at, _, _)| !markdown[..*at].ends_with('\\'));
     let mut offset = 0;
     let mut definitions = Vec::new();
     for line in markdown.split_inclusive('\n') {
@@ -2229,25 +2240,64 @@ fn markdown_destinations(markdown: &str) -> Vec<&str> {
         if trimmed.starts_with('[')
             && let Some(close) = trimmed.find("]:")
         {
-            let at = offset + (line.len() - trimmed.len()) + close;
-            definitions.push((at, at + 2));
+            let open = offset + (line.len() - trimmed.len());
+            let at = open + close;
+            definitions.push((at, at + 2, Some(open)));
         }
         offset += line.len();
     }
     inline
         .chain(definitions)
-        .filter(|(at, _)| live(*at))
-        .filter_map(|(_, from)| {
+        .filter(|(at, _, _)| live(*at))
+        .filter_map(|(at, from, open)| {
             let rest = markdown[from..].trim_start_matches([' ', '\t']);
-            match rest.strip_prefix('<') {
+            let url = match rest.strip_prefix('<') {
                 Some(angled) => angled.split_once('>').map(|(url, _)| url),
                 None => rest
                     .split([' ', '\t', '\r', '\n', ')'])
                     .next()
                     .filter(|url| !url.is_empty()),
-            }
+            }?;
+            let url_end = url.as_ptr() as usize - markdown.as_ptr() as usize + url.len();
+            // An inline link runs to its `)`; a definition ends with its URL.
+            let end = if markdown[at..].starts_with("](") {
+                markdown[url_end..]
+                    .find([')', '\n'])
+                    .filter(|found| markdown[url_end + found..].starts_with(')'))
+                    .map_or(url_end, |found| url_end + found + 1)
+            } else {
+                url_end + usize::from(markdown[url_end..].starts_with('>'))
+            };
+            let link = open.map_or(url, |open| &markdown[open..end]);
+            Some((url, link))
         })
         .collect()
+}
+
+/// The `[` that the `]` at byte `close` closes, through nested brackets, with
+/// a `!` before it for an image. `None` when it is not on that line.
+fn link_open(markdown: &str, close: usize) -> Option<usize> {
+    let bytes = markdown.as_bytes();
+    let mut depth = 0usize;
+    for at in (0..=close).rev() {
+        let escaped = at > 0 && bytes[at - 1] == b'\\';
+        match bytes[at] {
+            b'\n' => return None,
+            b']' if !escaped => depth += 1,
+            b'[' if !escaped => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(if at > 0 && bytes[at - 1] == b'!' {
+                        at - 1
+                    } else {
+                        at
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Whether the `[` at byte `at` opens a Markdown link: its brackets balance
