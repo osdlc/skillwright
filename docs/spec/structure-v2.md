@@ -162,9 +162,9 @@ ignored.
 |---|---|
 | The root | `skillwright.md`, `marketplaces/`, `dist/`. Anything else is left alone, not read. |
 | `marketplaces/<m>/` | `<m>.md`, `plugins/`. |
-| `plugins/<p>/` | `<p>.md`, `CHANGELOG.md`, `references/`, `scripts/`, `assets/`, the four kind folders. |
-| `skills/<s>/` | `<s>.md`, `references/`, `scripts/`, `assets/`. |
-| `agents/<a>/`, `commands/<c>/`, `hooks/<h>/` | Their note only. |
+| `plugins/<p>/` | `<p>.md`, `CHANGELOG.md`, `references/`, `scripts/`, `assets/`, the four kind folders, and the never-ship folders `src/`, `docs/`, `tests/`, `fixtures/` (rule 14). |
+| `skills/<s>/` | `<s>.md`, `references/`, `scripts/`, `assets/`, and the never-ship folders `src/`, `docs/`, `tests/`, `fixtures/`. |
+| `agents/<a>/`, `commands/<c>/`, `hooks/<h>/` | Their note, and the never-ship folders `docs/`, `tests/`, `fixtures/`. |
 | `hooks/` | `hooks.json` and hook folders. |
 
 11. In a skill, `references/` holds docs the agent reads into context when it
@@ -187,10 +187,29 @@ ignored.
         ├── review.md            ships as <pack>/skills/review/SKILL.md
         └── scripts/lint.sh      the skill's own: ships inside its folder
     ```
-14. `docs/`, `tests/` and `fixtures/` may sit in any plugin or component folder.
-    They never ship, and nothing may link into them. `.git`, `.obsidian`,
-    `.trash` and `node_modules` are skipped wherever they are.
-15. Files inside `references/`, `scripts/` and `assets/` may be laid out in any
+14. `docs/`, `tests/` and `fixtures/` may sit in any plugin or component
+    folder. `src/` may sit in a plugin or skill folder. These four never ship,
+    and nothing may link or embed into them. `.git`, `.obsidian`, `.trash` and
+    `node_modules` are skipped wherever they are.
+15. skillwright does not run builds. It only copies what is already in
+    `scripts/`, `references/` and `assets/`. A script or asset that is built
+    keeps its source in `src/` or outside the vault. The author's own build
+    step, such as `bun build` or a moon task, writes the output into the
+    plugin's or skill's `scripts/`, `references/` or `assets/` before
+    `skillwright build` runs.
+
+    ```text
+    plugins/tools/
+    ├── src/cli.ts           source: never ships
+    ├── scripts/tool.js      written by `bun build src/cli.ts`, before skillwright build
+    └── skills/review/
+        └── review.md        calls ${PLUGIN_ROOT}/scripts/tool.js
+    ```
+
+    `scripts/tool.js` ships as `<pack>/scripts/tool.js`. The skill's
+    `${PLUGIN_ROOT}/scripts/tool.js` is written for each harness by section 4
+    rules 15 to 26.
+16. Files inside `references/`, `scripts/` and `assets/` may be laid out in any
     folders below them. `scripts/` keeps each file's exec bit.
 
 ## 4. Links, embeds and containment
@@ -569,7 +588,7 @@ pack folder from the table above.
 7. Every Markdown file in a shipped `references/` folder is compiled the same
    way. Files in `scripts/` and `assets/`, and every other file, are copied byte
    for byte, so a template keeps any `[[` it holds.
-8. `docs/`, `tests/` and `fixtures/` never ship from any folder.
+8. `src/`, `docs/`, `tests/` and `fixtures/` never ship from any folder.
 9. A file keeps its exec bit. A file in `scripts/` that is meant to run must be
    executable in the source; the build does not set the bit.
 10. A pack holds no symlinks. Every shipped file is a copy.
@@ -803,8 +822,16 @@ path checks, and `plugin: tools` would need a marketplace prefix to be
 unambiguous. The cost is that a file shared by several plugins is copied into
 each.
 
-**Existing vaults.** Move each file into its plugin. The repo's `plugin/` uses
-neither.
+A file built from source outside the plugin no longer needs a copy rule. The
+author's build step writes it into the plugin's `scripts/`, `references/` or
+`assets/`, and skillwright copies it from there (section 3 rule 15). A real
+consumer, the `sdlc` plugin, ships about 25 `assets:` entries from outside its
+vault to arbitrary pack paths. It moves to this pattern (see the consumer note
+in [v2-impact.md](v2-impact.md)).
+
+**Existing vaults.** Move each file into its plugin. A built file is written
+there by the author's build step, with its source in `src/` or outside the
+vault. The repo's `plugin/` uses neither list.
 
 ### D5. `build.exclude`
 
@@ -999,6 +1026,9 @@ a skills folder, `harness install`, `update`, `uninstall`, `link` and
 `unlink`, `adopt`, `new`, `rename`, `move`, `build --watch`, and the other
 current commands (`list`, `status`, `delete`, `convert`, `author`,
 `unpublish`).
+
+Build steps declared in `skillwright.md`, such as `build.before:`, may come
+later. `build` would run them; `check` never would.
 
 ## Appendix A: Edge cases
 

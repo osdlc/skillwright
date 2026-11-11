@@ -243,6 +243,24 @@ amendment too: its patterns layer is gone.
 - Install from `osdlc/marketplace` is unchanged. `plugin/` itself is no longer
   installable from its own root. Nothing documents that route today.
 
+## Consumer migration: the sdlc plugin
+
+The `sdlc` plugin in the owner's dev repo builds with
+`solutions/ontological/agent-pants.yaml`. It ships about 25 `assets:` entries
+from outside the vault to arbitrary pack paths, such as `cli/sdlc`,
+`cli/sdlc.js`, `dashboard-spa/dist`, `conventions/`, `lib/model/entities` and
+`lib/services/docs/*.eta`. v2 drops `build.assets` (D4), so it moves to the
+`src/` and external-build pattern (structure-v2 section 3 rule 15):
+
+- Its own build step, such as a moon task, writes each file into the plugin's
+  `scripts/`, `references/` or `assets/` before `skillwright build`.
+- Its pack paths move under those three folders, for example `cli/sdlc.js` to
+  `scripts/sdlc.js` and `conventions/` to `references/conventions/`.
+- Its runtime path lookups, and its skills' `${PLUGIN_ROOT}/...` paths, change
+  to the new pack paths.
+
+This is work in the dev repo, not in skillwright.
+
 ## Open PRs
 
 | PR | Verdict | Reason |
