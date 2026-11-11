@@ -155,8 +155,10 @@ and `assets/` folders, and relative paths resolve from the skill's folder
 ### What a folder may hold
 
 Below the root, each folder holds a fixed set of entries. Anything else is an
-error that names the file and lists what the folder may hold. OS files such as `.DS_Store` are
-ignored.
+error that names the file and lists what the folder may hold. A file or folder
+whose name starts with `.`, such as `.DS_Store`, `.git` or `.obsidian`, and
+any `node_modules/` are skipped everywhere: never read, never shipped, and
+never an error.
 
 | Folder | May hold |
 |---|---|
@@ -189,8 +191,8 @@ ignored.
     ```
 14. `docs/`, `tests/` and `fixtures/` may sit in any plugin or component
     folder. `src/` may sit in a plugin or skill folder. These four never ship,
-    and nothing may link or embed into them. `.git`, `.obsidian`, `.trash` and
-    `node_modules` are skipped wherever they are.
+    and nothing may link or embed into them. Dot-named entries and
+    `node_modules/` are skipped everywhere (see above).
 15. skillwright does not run builds. It only copies what is already in
     `scripts/`, `references/` and `assets/`. A script or asset that is built
     keeps its source in `src/` or outside the vault. The author's own build
@@ -1046,3 +1048,8 @@ later. `build` would run them; `check` never would.
        └── skills/skillwright/
            └── skillwright.md              a skill's note: no marketplaces/ beside it
    ```
+
+2. **A dot-named file a pack needs.** Every name that starts with `.` is
+   skipped, so a template such as `assets/.eslintrc.json` does not ship. v2
+   has no way to ship one. Name it without the dot, and have the script or
+   skill that uses it copy it to the dotted name.
