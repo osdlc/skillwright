@@ -8,6 +8,11 @@ v2 has one goal: stable marketplace publishing, with transclusion and good
 bundling. Its commands are `init`, `build`, `check` and `bump`.
 
 This spec defines how skillwright reads a vault. A vault has one fixed layout.
+
+Two words have a fixed meaning here. skillwright **reads** a file when it
+loads it as source. It **interprets** text when it acts on a link, call, embed
+or plugin-root path in it. Text that is not interpreted ships exactly as
+written.
 It covers the folders, the root file, the notes, links, the frontmatter rules
 and the output. The frontmatter keys themselves are in the
 [field reference](../reference/fields.md), which is part of this spec.
@@ -352,7 +357,7 @@ elsewhere, has it. A name two plugins share is an error that names both.
 10. A link into a never-ship folder is refused with the same error in every
     link form.
 11. A link to a missing file is an error that names the link.
-12. Code is fully literal. Nothing inside a code span or fenced block is read:
+12. Code is fully literal. Nothing inside a code span or fenced block is interpreted:
     no call, link or embed. Plugin-root paths are the one exception (rule
     15). A call written in code ships as written, so write calls in prose,
     where they render in backticks.
@@ -369,9 +374,9 @@ A component names a file of its plugin as `${PLUGIN_ROOT}/<path>`, such as
 harness's own form (decision D9).
 
 15. Every `${PLUGIN_ROOT}/<path>` in a Markdown file a component ships is
-    read: its note, the Markdown files in its `references/`, the plugin's
+    interpreted: its note, the Markdown files in its `references/`, the plugin's
     shared Markdown files, and text an embed inlines. Prose and code alike,
-    because this is a path, not link syntax. Only the braced form is read:
+    because this is a path, not link syntax. Only the braced form is interpreted:
     `$PLUGIN_ROOT` is text.
 16. The path runs to the first character that cannot continue a path: a
     letter, digit, `.`, `_`, `-` or `/` continues it. So
@@ -414,7 +419,7 @@ harness's own form (decision D9).
     `scripts/`, ship byte for byte and are never rewritten. A script should
     find its own files relative to itself, such as `$(dirname "$0")/lib.sh`,
     not through a harness variable.
-25. A code example that shows a shell `${PLUGIN_ROOT}` is read as a
+25. A code example that shows a shell `${PLUGIN_ROOT}` is interpreted as a
     plugin-root path, and rewritten or refused. To show the shell variable,
     write it unbraced, `$PLUGIN_ROOT/x`, which the shell reads the same way
     and the build leaves alone. There is no escape form.
@@ -440,7 +445,7 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
    link to the file's installed path. Any other text file is inlined as a
    fenced code block (rules 9 to 14, decision D8).
 3. An embed whose target does not exist is an error that names the embed. An
-   embed inside a code span or fenced block is not read (section 4 rule 12).
+   embed inside a code span or fenced block is not interpreted (section 4 rule 12).
 
 ### Inlining a note
 
@@ -465,7 +470,7 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
 ### Inlining another text file
 
 9. `![[run.sh]]` inlines the file as a fenced code block. The content is never
-   escaped or changed, and nothing in it is read as a link, call or embed.
+   escaped or changed, and nothing in it is interpreted as a link, call or embed.
 10. The fence's info string comes from the file's extension through a fixed
     table, such as `.sh` to `bash` and `.py` to `python`. An extension the
     table does not list gives no info string.
@@ -490,7 +495,7 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
 ### Links inside embedded text
 
 17. A link or embed inside embedded text resolves from the embedded file: its
-    own folder and its own component's scope, as if it were read in place.
+    own folder and its own component's scope, as if it were interpreted in place.
 18. It is then written relative to where the text lands, the file that holds
     the outermost embed. The same note embedded into two files links
     differently in each.
@@ -506,7 +511,7 @@ Embeds are resolved before links are rewritten, so the output holds no `![[`.
     it (section 4 rule 11).
 22. v1 turned an embed of a file that is neither a note nor an image into a
     plain link. v2 inlines a text file as a fenced code block (rules 9 to 14).
-23. v1 read calls inside code spans and fenced blocks. v2 reads nothing there
+23. v1 interpreted calls inside code spans and fenced blocks. v2 interprets nothing there
     (section 4 rule 12).
 
 ## 6. Frontmatter
@@ -814,7 +819,7 @@ of the same vault. That call is now refused.
 it renders as the skill's name, `skillwright:setup`, and runs nothing. A
 skill's link to its own note ships as a file link, `[setup](SKILL.md)`
 ([#53](https://github.com/osdlc/skillwright/issues/53) asked for the name).
-v1 also read calls inside code spans and fenced blocks.
+v1 also interpreted calls inside code spans and fenced blocks.
 
 **Decided.** The syntax decides, not the target. v2 keeps the call and makes a
 plain link a real link (section 4 rules 6 to 8).
@@ -828,7 +833,7 @@ plain link a real link (section 4 rules 6 to 8).
 - A plain link to another skill's or command's note warns
   `Did you mean to call /[[setup]]?`. A self-link does not warn.
 - There is no mention form. Nothing renders a bare skill name.
-- Code is fully literal, so a call in a code span is not read.
+- Code is fully literal, so a call in a code span is not interpreted.
 
 **Why `/` and not `@`.**
 
@@ -849,7 +854,7 @@ warns; write `/[[name]]` if a call was meant, or keep the link. A call inside a
 code span or fenced block now ships as written; move it into prose. The repo's
 `plugin/` has 10 calls, all `/[[...]]`. The three heading self-calls, such as
 `# /[[author]]`, are in prose and need no change. The other seven sit in code
-spans, such as `` `/[[setup]]` ``, and v1 read them as calls. They move into
+spans, such as `` `/[[setup]]` ``, and v1 interpreted them as calls. They move into
 prose, keeping the `/`: `/[[setup]]` without the backticks. A call renders in
 backticks, so the output is the same. The `author` skill's text on links and
 calls (`plugins/skillwright/skills/author/author.md`, lines 59 to 73) is
@@ -1060,7 +1065,7 @@ harness to fill in.
   placeholders, and a source file using it is not runnable as written.
 
 **The cost.** A code example that shows a shell `${PLUGIN_ROOT}`, such as
-documentation of a Codex hook, is read as a plugin-root path. It is rewritten,
+documentation of a Codex hook, is interpreted as a plugin-root path. It is rewritten,
 or refused when it names no shipped file. The simplest fix needs no new
 syntax: write the variable unbraced, `$PLUGIN_ROOT`, which the shell reads the
 same way and the build leaves alone. So v2 has no escape form for it.
