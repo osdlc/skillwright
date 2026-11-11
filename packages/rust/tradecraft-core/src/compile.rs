@@ -2260,6 +2260,7 @@ fn markdown_destinations(markdown: &str) -> Vec<(&str, &str)> {
         let trimmed = line.trim_start();
         if trimmed.starts_with('[')
             && let Some(close) = trimmed.find("]:")
+            && is_definition(&trimmed[1..close], &trimmed[close + 2..])
         {
             let open = offset + (line.len() - trimmed.len());
             let at = open + close;
@@ -2293,6 +2294,30 @@ fn markdown_destinations(markdown: &str) -> Vec<(&str, &str)> {
             Some((url, link))
         })
         .collect()
+}
+
+/// Whether `[label]: rest` is a link reference definition: a label with no
+/// brackets in it, then a URL, then nothing or a title in `"…"`, `'…'` or
+/// `(…)`.
+fn is_definition(label: &str, rest: &str) -> bool {
+    if label.trim().is_empty() || label.contains(['[', ']']) {
+        return false;
+    }
+    let rest = rest.trim();
+    let after = match rest.strip_prefix('<') {
+        Some(angled) => match angled.split_once('>') {
+            Some((_, after)) => after,
+            None => return false,
+        },
+        None => rest.split_once([' ', '\t']).map_or("", |(_, after)| after),
+    };
+    let title = after.trim();
+    title.is_empty()
+        || [('"', '"'), ('\'', '\''), ('(', ')')]
+            .iter()
+            .any(|(open, close)| {
+                title.len() >= 2 && title.starts_with(*open) && title.ends_with(*close)
+            })
 }
 
 /// The `[` that the `]` at byte `close` closes, through nested brackets, with
@@ -2569,6 +2594,18 @@ fn select_fragment(
 mod tests {
     use super::*;
     use crate::vfs::MemVfs;
+
+    #[test]
+    fn a_reference_definition_needs_a_plain_label_and_nothing_after_its_url() {
+        let found = |text| markdown_destinations(text);
+        assert_eq!(found("[a]: x.md\n"), [("x.md", "[a]: x.md")]);
+        assert_eq!(found("[a]: x.md \"T\"\n"), [("x.md", "[a]: x.md")]);
+        assert_eq!(found("[a]: <x.md> 'T'\n"), [("x.md", "[a]: <x.md>")]);
+        assert_eq!(found("[a]: x.md (T)"), [("x.md", "[a]: x.md")]);
+        assert!(found("[[guide]]: read this first.\n").is_empty());
+        assert!(found("[Note]: keep this short.\n").is_empty());
+        assert!(found("[a]: x.md \"open\n").is_empty());
+    }
 
     /// Writes one file, creating its directories, and the root, marketplace
     /// and plugin notes a v2 vault needs.
