@@ -266,10 +266,10 @@ pub struct CallSite {
     pub caller: String,
 }
 
-/// Opens and closes a recording compile's mark. Private-use code points, so
-/// no vault text and no rendered syntax holds one.
-pub(crate) const MARK_OPEN: char = '\u{E000}';
-pub(crate) const MARK_CLOSE: char = '\u{E001}';
+/// Opens and closes a recording compile's mark. Unicode noncharacters, which
+/// are for internal use; [`refuse_marks`] refuses a source that holds one.
+pub(crate) const MARK_OPEN: char = '\u{FDD0}';
+pub(crate) const MARK_CLOSE: char = '\u{FDD1}';
 
 /// The mark for the `index`th call (`kind` `c`), link (`l`), literal (`v`)
 /// or plugin-root path (`p`).
@@ -361,6 +361,8 @@ pub struct Closure {
 /// * `refused: excluded-link` — a link reached a file that never ships.
 /// * `refused: unsafe-path` — an absolute link target.
 /// * `refused: path-collision` — two sources claim one output path.
+/// * `refused: noncharacter` — a source holds a code point the build uses
+///   as its own mark (U+FDD0 to U+FDD2).
 /// * `refused: unresolved-syntax` — the validation pass found Obsidian syntax
 ///   in an emitted markdown file's body, or a link in a string of a
 ///   resource's frontmatter.
@@ -1011,6 +1013,7 @@ impl<'a> Renderer<'a> {
         output_path: &str,
         stack: &mut Vec<TransclusionHop>,
     ) -> Result<String, CoreError> {
+        refuse_marks(body, &self.relative_or_verbatim(source_path))?;
         let mut tokens = scan_wiki_tokens(body, true);
         tokens.extend(markdown_link_tokens(body));
         if self.record().is_some() {
@@ -1219,6 +1222,7 @@ impl<'a> Renderer<'a> {
             ));
         };
         let label = self.vault_relative(file)?;
+        refuse_marks(&content, &label)?;
         self.contributing
             .entry(output_path.to_owned())
             .or_default()
@@ -1864,8 +1868,28 @@ fn validate_no_obsidian_syntax(
 }
 
 /// Stands in for the `[[` of an escape, `\[[`, `\![[` or `\/[[`, until the
-/// built text is validated. Private use, so no vault text holds it.
-const ESCAPED: char = '\u{E002}';
+/// built text is validated. A noncharacter, as [`MARK_OPEN`] is.
+const ESCAPED: char = '\u{FDD2}';
+
+/// Refuses `text`, read from `file`, when it holds [`MARK_OPEN`],
+/// [`MARK_CLOSE`] or [`ESCAPED`]: the build would read one as its own mark
+/// (spec section 4 rule 13).
+fn refuse_marks(text: &str, file: &str) -> Result<(), CoreError> {
+    match text
+        .chars()
+        .find(|c| [MARK_OPEN, MARK_CLOSE, ESCAPED].contains(c))
+    {
+        None => Ok(()),
+        Some(c) => Err(CoreError::refused(
+            "noncharacter",
+            format!(
+                "{file} holds U+{:04X}, a Unicode noncharacter the build uses internally \
+                 (section 4 rule 13)",
+                u32::from(c)
+            ),
+        )),
+    }
+}
 
 /// `text` with each [`ESCAPED`] written back as `[[`.
 fn unescape(text: &str) -> Cow<'_, str> {

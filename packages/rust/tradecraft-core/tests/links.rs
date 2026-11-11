@@ -1018,6 +1018,25 @@ fn an_escaped_embed_ships_as_the_notation() {
 }
 
 #[test]
+fn private_use_characters_ship_unchanged() {
+    // Icon fonts, such as Nerd Fonts, put glyphs here.
+    let body = "Icons \u{e000} \u{e001} \u{e002} and \\[[x]].";
+    ships(
+        &with_setup(body),
+        "Icons \u{e000} \u{e001} \u{e002} and [[x]].",
+    );
+}
+
+#[test]
+fn a_noncharacter_in_a_note_is_refused() {
+    let vfs = with_setup("Odd \u{fdd0} text.");
+    let err = refusal(&vfs);
+    assert!(err.contains("noncharacter"), "{err}");
+    assert!(err.contains(AUTHOR), "{err}");
+    assert!(err.contains("U+FDD0"), "{err}");
+}
+
+#[test]
 fn a_leftover_in_prose_is_refused() {
     let vfs = with_setup("See [[ this.");
     let err = refusal(&vfs);
