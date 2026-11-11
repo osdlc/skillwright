@@ -216,15 +216,22 @@ never an error.
 
 ## 4. Links, embeds and containment
 
-The syntax decides what a token is, not its target. `/[[x]]` is a call (rule
-8). `![[x]]` is an embed (section 5). Any other `[[x]]`, and a relative
-Markdown link, is an ordinary link. An embed resolves by the same rules as a
-link: what it names must be in scope. The rules apply to links from a
-component's note and from any Markdown file it ships. Code is fully literal:
-nothing inside a code span or fenced block is read, so a call, link or embed
-written there ships exactly as written (rule 12). A plugin-root path,
-`${PLUGIN_ROOT}/<path>`, is not link syntax and is read in prose and
-code alike (rules 15 to 26).
+The syntax decides what a token is, not its target:
+
+| You write | It is | What the build does |
+|---|---|---|
+| `/[[x]]` | A call (rule 8) | Writes the harness's call string |
+| `![[x]]` | An embed (section 5) | Inlines the note, section or file |
+| `[[x]]`, `[text](relative/path.md)` | A link | Checks the target is in scope, rewrites the path |
+| `[text](https://…)`, `<https://…>`, `mailto:` and any other URL with a scheme | An external link | Ships as written, not checked |
+| `[text](#heading)` | A link within the same file | Ships as written, not checked |
+| `[text](/abs/path)` or `[text](file:…)` | A path outside the vault | Refused |
+| `${PLUGIN_ROOT}/<path>` | A plugin-root path (rules 15 to 26) | Checks the file ships, rewrites per harness |
+| Anything in a code span or fenced block | Literal (rule 12) | Ships as written, except `${PLUGIN_ROOT}` |
+
+An external link is never fetched or checked, so a dead URL is not an error.
+An embed resolves by the same scope rules as a link. The rules apply to a
+component's note and to every Markdown file it ships.
 
 ### Containment
 
