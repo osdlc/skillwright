@@ -532,3 +532,56 @@ fn a_marketplace_with_no_version_writes_none_and_does_not_warn() {
         .collect();
     assert!(!written.is_empty());
 }
+
+/// Section 7 rule 3: inheritance reaches a command. The plugin's `claude:`
+/// keys reach Claude Code's `commands/<c>.md`. `author` does not: a command
+/// has no such key, and a plugin block's `author` stays with the plugin
+/// (rule 4).
+#[test]
+fn a_plugin_s_block_keys_reach_its_commands() {
+    let vfs = vault(&[(
+        PLUGIN,
+        "author: Ada\nclaude: {author: Bob, model: m1, context: fork}",
+    )]);
+    let path = Path::new("/v/marketplaces/acme/plugins/tools/commands/deploy/deploy.md");
+    vfs.create_dir_all(path.parent().unwrap()).unwrap();
+    vfs.write_file(path, b"---\ndescription: Deploy.\n---\n\nBody.\n")
+        .unwrap();
+    build(&vfs);
+    let text = read(&vfs, ".claude-plugin/packs/tools/commands/deploy.md").unwrap();
+    let front: Value = serde_yaml::from_str(
+        text.strip_prefix("---\n")
+            .and_then(|rest| rest.split_once("\n---\n"))
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    assert_eq!(str_at(&front, "/model"), "m1", "{text}");
+    assert_eq!(str_at(&front, "/context"), "fork", "{text}");
+    assert!(front.get("author").is_none(), "{text}");
+    assert_eq!(
+        str_at(&json(&vfs, plugin_manifest("claude")), "/author/name"),
+        "Bob"
+    );
+}
+
+/// Section 8 rule 3: a block's `metadata` merges with the note's own. Both
+/// keys appear, and the block wins a clash, on its harness only.
+#[test]
+fn a_block_s_metadata_merges_with_the_note_s_own() {
+    let vfs = vault(&[(
+        SKILL,
+        "metadata: {a: note, c: note}\nclaude: {metadata: {b: block, c: block}}",
+    )]);
+    build(&vfs);
+    let claude = skill_front(&vfs, "claude");
+    assert_eq!(
+        claude["metadata"],
+        serde_json::json!({"a": "note", "b": "block", "c": "block"})
+    );
+    let codex = skill_front(&vfs, "codex");
+    assert_eq!(
+        codex["metadata"],
+        serde_json::json!({"a": "note", "c": "note"})
+    );
+}

@@ -567,15 +567,20 @@ fn a_skills_link_to_its_own_note_does_not_warn() {
 }
 
 #[test]
-fn a_link_to_a_command_is_a_file_link_on_claude_and_fails_elsewhere() {
+fn a_link_to_a_command_is_a_file_link_with_a_warning_on_claude_and_fails_elsewhere() {
     let files = [
         (AUTHOR, skill("See [[deploy]].")),
         ("commands/deploy/deploy.md", skill("Deploy.")),
     ];
     let files: Vec<(&str, &str)> = files.iter().map(|(p, t)| (*p, t.as_str())).collect();
     let vfs = vault(&files);
-    build_for(&vfs, &["claude"]).unwrap();
+    let warnings = build_for(&vfs, &["claude"]).unwrap();
     assert!(author(&vfs).contains("[deploy](../../commands/deploy.md)"));
+    let warning = warnings
+        .iter()
+        .find(|w| w.detail.contains("Did you mean to call /[[deploy]]?"))
+        .unwrap_or_else(|| panic!("no warning: {warnings:?}"));
+    assert!(warning.path.ends_with(AUTHOR), "{warning:?}");
     for harness in ["codex", "cursor", "pi"] {
         let vfs = vault(&files);
         names(
