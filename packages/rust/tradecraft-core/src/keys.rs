@@ -599,6 +599,7 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
 - On a skill, agent or command, a key takes the same type it takes written bare.
 - On a plugin or marketplace, a key takes the type that harness's manifest and marketplace docs give. A key with no documented type is not checked. A key the plugin passes down to its skills, such as `model`, takes the type it has on a skill.
 - A key with no value is dropped. It does not clear a value the note inherits.
+- The "kept" lines list the keys that stay with a plugin's or marketplace's block: the member below never takes them (spec section 7 rule 4).
 "#,
     );
     let list = |keys: &std::collections::BTreeSet<String>| {
@@ -619,9 +620,16 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
                 .block_keys(kind)
                 .expect("a plugin row checks these kinds' blocks");
             out.push_str(&format!("- {label}: {}\n", list(keys)));
-            if kind == Skill {
-                out.push_str("- Agent: not checked.\n");
-            }
+            let (member, passed) = match kind {
+                Skill => {
+                    out.push_str("- Agent: not checked.\n");
+                    continue;
+                }
+                Plugin => ("skills and commands", profile.member_block_keys(Skill)),
+                _ => ("plugins", profile.passed_down_keys()),
+            };
+            let kept = keys.difference(passed).cloned().collect();
+            out.push_str(&format!("- {label}, kept from {member}: {}\n", list(&kept)));
         }
     }
     out

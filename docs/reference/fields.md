@@ -141,31 +141,40 @@ A block such as `claude:` holds fields that only that harness reads. The lists b
 - On a skill, agent or command, a key takes the same type it takes written bare.
 - On a plugin or marketplace, a key takes the type that harness's manifest and marketplace docs give. A key with no documented type is not checked. A key the plugin passes down to its skills, such as `model`, takes the type it has on a skill.
 - A key with no value is dropped. It does not clear a value the note inherits.
+- The "kept" lines list the keys that stay with a plugin's or marketplace's block: the member below never takes them (spec section 7 rule 4).
 
 ### `claude:`
 
 - Skill and command: `allowed-tools`, `argument-hint`, `arguments`, `compatibility`, `context`, `description`, `disable-model-invocation`, `license`, `metadata`, `model`, `permissionMode`, `user-invocable`
 - Agent: not checked.
 - Plugin: `$schema`, `agents`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `displayName`, `documentationUrl`, `experimental`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `outputStyles`, `privacyPolicyUrl`, `relevance`, `repository`, `settings`, `skills`, `source`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
+- Plugin, kept from skills and commands: `$schema`, `agents`, `author`, `category`, `channels`, `commands`, `defaultEnabled`, `dependencies`, `description`, `displayName`, `documentationUrl`, `experimental`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `monitors`, `outputStyles`, `privacyPolicyUrl`, `relevance`, `repository`, `settings`, `skills`, `source`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `userConfig`, `version`, `workflows`
 - Marketplace: `$schema`, `agents`, `allowCrossMarketplaceDependenciesOn`, `allowed-tools`, `argument-hint`, `arguments`, `author`, `category`, `channels`, `commands`, `compatibility`, `context`, `defaultEnabled`, `dependencies`, `description`, `disable-model-invocation`, `documentationUrl`, `experimental`, `forceRemoveDeletedPlugins`, `headers`, `headersHelper`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `lspServers`, `mcpServers`, `metadata`, `model`, `monitors`, `outputStyles`, `owner`, `plugins`, `privacyPolicyUrl`, `relevance`, `renames`, `repository`, `settings`, `skills`, `strict`, `supportUrl`, `tags`, `termsOfServiceUrl`, `themes`, `types`, `user-invocable`, `userConfig`, `version`, `workflows`
+- Marketplace, kept from plugins: `$schema`, `allowCrossMarketplaceDependenciesOn`, `description`, `forceRemoveDeletedPlugins`, `metadata`, `owner`, `plugins`, `renames`, `version`
 
 ### `codex:`
 
 - Skill and command: `allowed-tools`, `compatibility`, `description`, `license`, `metadata`
 - Agent: not checked.
 - Plugin: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `description`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `policy`, `repository`, `skills`, `source`, `version`
+- Plugin, kept from skills and commands: `apps`, `author`, `category`, `commands`, `description`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `policy`, `repository`, `skills`, `source`, `version`
 - Marketplace: `allowed-tools`, `apps`, `author`, `category`, `commands`, `compatibility`, `extensions`, `homepage`, `hooks`, `interface`, `keywords`, `license`, `mcpServers`, `metadata`, `plugins`, `policy`, `repository`, `skills`
+- Marketplace, kept from plugins: `interface`, `plugins`
 
 ### `cursor:`
 
 - Skill and command: `allowed-tools`, `color`, `compatibility`, `description`, `disable-model-invocation`, `globs`, `icon`, `license`, `metadata`, `paths`
 - Agent: not checked.
 - Plugin: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `description`, `disable-model-invocation`, `displayName`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `naming`, `paths`, `publisher`, `repository`, `rules`, `skills`, `source`, `tags`, `variables`, `version`
+- Plugin, kept from skills and commands: `agents`, `author`, `category`, `commands`, `description`, `displayName`, `homepage`, `hooks`, `keywords`, `license`, `logo`, `mcpServers`, `minClientVersions`, `naming`, `publisher`, `repository`, `rules`, `skills`, `source`, `tags`, `variables`, `version`
 - Marketplace: `agents`, `allowed-tools`, `author`, `category`, `color`, `commands`, `compatibility`, `disable-model-invocation`, `globs`, `homepage`, `hooks`, `icon`, `keywords`, `license`, `logo`, `mcpServers`, `metadata`, `minClientVersions`, `naming`, `owner`, `paths`, `plugins`, `publisher`, `repository`, `rules`, `skills`, `tags`, `variables`
+- Marketplace, kept from plugins: `metadata`, `owner`, `plugins`
 
 ### `pi:`
 
 - Skill and command: `allowed-tools`, `compatibility`, `description`, `disable-model-invocation`, `license`, `metadata`
 - Agent: not checked.
 - Plugin: `allowed-tools`, `author`, `compatibility`, `dependencies`, `description`, `disable-model-invocation`, `homepage`, `keywords`, `license`, `metadata`, `naming`, `peerDependencies`, `pi`, `repository`, `version`
+- Plugin, kept from skills and commands: `author`, `dependencies`, `description`, `homepage`, `keywords`, `license`, `naming`, `peerDependencies`, `pi`, `repository`, `version`
 - Marketplace: `allowed-tools`, `author`, `compatibility`, `dependencies`, `disable-model-invocation`, `homepage`, `keywords`, `license`, `metadata`, `naming`, `peerDependencies`, `pi`, `repository`
+- Marketplace, kept from plugins: none
