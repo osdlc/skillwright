@@ -288,10 +288,13 @@ pub fn load_vault(
     })
 }
 
+/// The reason a root file, or the workspace file above it, cannot be read.
+const MALFORMED_ROOT_FILE_REASON: &str = "malformed-root-file";
+
 /// The refusal for a root file at `file` that cannot be read.
 fn malformed_root(file: &Path, detail: &str) -> CoreError {
     CoreError::refused(
-        crate::publish::ReasonToken::MalformedRootFile.as_str(),
+        MALFORMED_ROOT_FILE_REASON,
         format!("{}: {detail}. Nothing was written", file.display()),
     )
 }

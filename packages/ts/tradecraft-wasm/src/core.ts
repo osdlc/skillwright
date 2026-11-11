@@ -125,10 +125,8 @@ export type Target =
 export type CoreErrorName =
   | 'RootNotFound'
   | 'PathEscapesRoot'
-  | 'SkillNotFound'
   | 'Io'
   | 'Refused'
-  | 'Conflict'
   | 'Projection'
   /**
    * The marketplace commit failed part-way through its root swaps and rolled
@@ -140,10 +138,8 @@ export type CoreErrorName =
 const CORE_ERROR_NAMES: ReadonlySet<string> = new Set<CoreErrorName>([
   'RootNotFound',
   'PathEscapesRoot',
-  'SkillNotFound',
   'Io',
   'Refused',
-  'Conflict',
   'Projection',
   'SwapFailed',
 ])

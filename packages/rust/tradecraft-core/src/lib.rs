@@ -34,7 +34,7 @@
 //!
 //! | Name | Rule set | Where |
 //! |---|---|---|
-//! | publish spec | The closed set of refusal tokens, `targets` exclusion, output overlap | [`publish`], [`export`], [`guard`] |
+//! | refusal tokens | The reason word a refusal leads with, `targets` exclusion, output overlap | [`publish`], [`export`], [`guard`] |
 //! | vault spec | A skill is a note plus a sibling folder of peers; building is five steps (embeds, links, references, peers, target dialect) | [`vault`], [`export`] |
 //! | compile spec | Embeds are expanded and links rewritten; an unresolved link is not a blocker | [`compile`] |
 //! | marketplace layout spec | How one marketplace tree per harness is laid out and checked | [`export`] |
@@ -129,7 +129,7 @@ pub use paths::{
     LoadedVault, MarketplaceInputs, VaultMarketplace, dist_dir, load_vault, marketplace_inputs,
     resolve_path,
 };
-pub use publish::{KNOWN_TARGETS, ReasonToken, canonical_target};
+pub use publish::{KNOWN_TARGETS, canonical_target};
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
     AssetSetting, BuildSettings, BumpSettings, HookSetting, MarketplaceFields, PatchScheme,

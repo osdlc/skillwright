@@ -9,8 +9,8 @@ use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
     AssetSpec, BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode,
     ExportRequest, ExportUnit, FieldEdit, FieldValue, HookFileSpec, LinkIndex, MarketplaceConfig,
-    MarketplaceFields, MemVfs, Namespace, PluginOverrides, ReasonToken, RootFile, StaleKind,
-    UnitStatus, Vfs, apply_field_edits, discover_components, export_skills,
+    MarketplaceFields, MemVfs, Namespace, PluginOverrides, RootFile, StaleKind, UnitStatus, Vfs,
+    apply_field_edits, discover_components, export_skills,
 };
 
 const PLUGIN: &str = "/vault/marketplaces/house/plugins/tools";
@@ -77,15 +77,6 @@ fn a_compile_source_takes_its_inputs() {
         "/vault/marketplaces/house/plugins/tools/skills/a",
     ));
     assert_eq!(source.skill_name, "a");
-}
-
-#[test]
-fn a_match_on_a_reason_token_needs_a_wildcard_arm() {
-    let label = match ReasonToken::Conflict {
-        ReasonToken::Conflict => "conflict",
-        _ => "other",
-    };
-    assert_eq!(label, "conflict");
 }
 
 #[test]
@@ -180,22 +171,6 @@ fn a_core_error_names_its_variant_and_matches_with_a_wildcard() {
         _ => "",
     };
     assert_eq!(refused, "no");
-}
-
-#[test]
-fn a_core_error_names_its_fallback_reason_token() {
-    assert_eq!(
-        CoreError::Projection("x".to_owned()).reason_token(),
-        ReasonToken::NoRenderer
-    );
-    assert_eq!(
-        CoreError::Conflict("x".to_owned()).reason_token(),
-        ReasonToken::Conflict
-    );
-    assert_eq!(
-        CoreError::Refused("x".to_owned()).reason_token(),
-        ReasonToken::Io
-    );
 }
 
 #[test]

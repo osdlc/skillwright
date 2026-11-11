@@ -1,7 +1,7 @@
 //! Directory walks: plain file walks through `vfs-walk`, and vault walks
 //! through `markdown-vault-fs`, the one vault walk the osdlc tools share.
 //!
-//! A plain walk (assets, scripts, a skill bundle, an adoption source, a
+//! A plain walk (assets, scripts, a skill bundle, a
 //! test's output tree) knows nothing about vaults. A vault walk (the skills
 //! source, the vault-wide link index, a component's folder) goes through the
 //! vault layer.

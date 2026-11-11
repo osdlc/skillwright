@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 /// The content plane shared by drafts and version snapshots. Fields are the
 /// skill's modeled set plus `annotations` (frontmatter keys
-/// outside the modeled set, preserved verbatim so adoption is not lossy).
+/// outside the modeled set, preserved verbatim).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SkillContent {
     /// The skill's name.

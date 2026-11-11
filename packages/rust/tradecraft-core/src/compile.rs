@@ -515,9 +515,8 @@ impl Closure {
 ///   `literal_skill_calls`), which is right for one harness only. Every
 ///   such call is listed in one refusal.
 ///
-/// Every token above except `cycle`, `unsafe-path` and `path-collision` (the
-/// publish spec's) is this pass's own; they follow the closed set's morphology
-/// so they can join it unchanged.
+/// Every token above except `cycle`, `unsafe-path` and `path-collision` is
+/// this pass's own.
 pub fn compile_note(
     vfs: &dyn Vfs,
     source: &CompileSource<'_>,
@@ -1687,11 +1686,10 @@ impl<'a> Renderer<'a> {
                 self.refuse_never_shipped(from_file, &path, destination)?;
                 Ok(Some((path, fragment)))
             }
-            // Not a refusal. The compile spec and the publish spec
-            // both rule that an unresolved link is reported and the rest of
-            // the skill publishes; the name is recorded in the manifest's
-            // `unresolved` list so a note appearing there later counts as a
-            // change. Refusing here would also make the manifest's own field
+            // Not a refusal. The compile spec rules that an unresolved link
+            // is reported and the rest of the skill builds; the name is
+            // recorded in the manifest's `unresolved` list so a note
+            // appearing there later counts as a change. Refusing here would also make the manifest's own field
             // unreachable — nothing could ever be written into it.
             Err(ResolveError::NotFound) => Ok(None),
             Err(ResolveError::Ambiguous(candidates)) => Err(CoreError::refused(
@@ -1759,9 +1757,8 @@ impl<'a> Renderer<'a> {
 /// The one of `candidates` under the folder of `from`, the linking file's
 /// vault-relative path, compared without case. So a bare link from a skill's
 /// entry resolves to the match in its own bundle. With exactly one match under
-/// that folder, this agrees with `markdown-link`'s `prefer_in_folder`, which the
-/// rename relinker reads links by. None there, or several, is
-/// [`ResolveError::Ambiguous`]: several names only those. In those cases
+/// that folder, this agrees with `markdown-link`'s `prefer_in_folder`. None
+/// there, or several, is [`ResolveError::Ambiguous`]: several names only those. In those cases
 /// `prefer_in_folder` still picks one: the first match under the folder, or
 /// with none there, the shortest match overall.
 fn own_folder_candidate(candidates: Vec<String>, from: &str) -> Result<String, ResolveError> {
@@ -1893,8 +1890,6 @@ fn validate_frontmatter_links(
 /// `None` when the basename has no dot or only a leading one. This decides
 /// whether a target is addressed as a file or as a note.
 ///
-/// `pub(crate)` for [`crate::adopt`], whose reverse rewrite applies the same
-/// convention deciding which wikilink targets keep their extension.
 pub(crate) fn extension_of_target(target: &str) -> Option<String> {
     let base = basename(target);
     match base.rfind('.') {
@@ -3114,7 +3109,7 @@ mod tests {
     }
 
     /// A bare name several folders match resolves to the one match under
-    /// the linking note's folder, as a rename reads it.
+    /// the linking note's folder.
     #[test]
     fn an_ambiguous_name_takes_the_one_match_under_the_linking_note() {
         let vfs = demo_vault();

@@ -438,8 +438,8 @@ export interface SkippedNote {
   /**
    * The plugin folder holding this note.
    *
-   * A pack publish checks its own members against this: the publish spec
-   * forbids installing a subset silently. `None` where no plugin folder
+   * A pack build checks its own members against this: a pack never ships
+   * a subset silently. `None` where no plugin folder
    * holds it: the note joins no pack, and no pack is blocked.
    */
   plugin: string | null;
@@ -1070,7 +1070,7 @@ export interface Extensions {
 /**
  * The content plane shared by drafts and version snapshots. Fields are the
  * skill's modeled set plus `annotations` (frontmatter keys
- * outside the modeled set, preserved verbatim so adoption is not lossy).
+ * outside the modeled set, preserved verbatim).
  */
 export interface SkillContent {
   /** The skill's name. */

@@ -43,10 +43,9 @@
 //!   A namespace crosses as a `String` stem, because the core gives
 //!   `Namespace` no `Deserialize`: every stem goes through [`Namespace::new`].
 //! - **A `CoreError` becomes a thrown JS `Error`** whose `.name` is the variant,
-//!   mirroring what `yaml-splice-wasm` does for `EditError`. `Refused` and
-//!   `Conflict` in particular are the safety rails working, and a caller that
-//!   wants to tell them from a genuine I/O failure reads `.name` rather than
-//!   pattern-matching on a message.
+//!   mirroring what `yaml-splice-wasm` does for `EditError`. `Refused` is
+//!   a guard working, and a caller that wants to tell it from a genuine I/O
+//!   failure reads `.name` rather than pattern-matching on a message.
 //!
 //! An export has no per-unit refusal: its rails fire before anything is
 //! staged, so every refusal it can produce is a throw.

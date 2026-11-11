@@ -1206,8 +1206,8 @@ impl<'v> DestTree<'v> {
     /// hand-written marketplace puts its `marketplace.json` at exactly the
     /// path this build renders one to. Asking "is any rendered path present"
     /// therefore answers *yes* for the case that most needs a *no*: a
-    /// repository that already is a marketplace, pointed at by `out: "."`,
-    /// which is the adoption this feature invites.
+    /// repository that already is a marketplace, used as the output
+    /// root, which is a case this guard must allow.
     ///
     /// [`GENERATED_MARKER`] is the one thing here that only this crate
     /// writes. Every emitted skill body opens with it, so packs this vault

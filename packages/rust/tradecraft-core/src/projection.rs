@@ -13,8 +13,7 @@
 //! out of a note's frontmatter before a [`crate::SkillContent`] exists, which is what
 //! makes the strip structural for anything read from a vault. But
 //! `SkillContent` is a public type with a public `annotations` map, so a
-//! caller can assemble one by any route it likes — from a store, a test, a
-//! future adopter — and `annotations` is emitted verbatim by
+//! caller can assemble one by any route it likes — from a store or a test — and `annotations` is emitted verbatim by
 //! `agent-adapt`'s renderer.
 //!
 //! So `to_adapt_skill` applies the same predicate at the emit seam every

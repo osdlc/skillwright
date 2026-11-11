@@ -391,6 +391,9 @@ pub const MISSING_DESCRIPTION_REASON: &str = "missing-description";
 /// [`DiscoveryReport::warnings`].
 pub const INVALID_NAME_REASON: &str = "invalid-name";
 
+/// The reason naming two notes that resolve onto one path.
+pub const PATH_COLLISION_REASON: &str = "path-collision";
+
 /// One note the scan admitted, and what is wrong with it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -423,15 +426,12 @@ impl DiscoveryWarning {
     /// member with no description or an invalid derived name, or a path
     /// collision.
     pub fn is_error(&self) -> bool {
-        use crate::publish::ReasonToken;
-        matches!(
-            ReasonToken::parse(&self.reason),
-            Some(
-                ReasonToken::MissingDescription
-                    | ReasonToken::InvalidName
-                    | ReasonToken::PathCollision
-            )
-        )
+        [
+            MISSING_DESCRIPTION_REASON,
+            INVALID_NAME_REASON,
+            PATH_COLLISION_REASON,
+        ]
+        .contains(&self.reason.as_str())
     }
 }
 
@@ -452,8 +452,8 @@ pub struct SkippedNote {
     pub detail: String,
     /// The plugin folder holding this note.
     ///
-    /// A pack publish checks its own members against this: the publish spec
-    /// forbids installing a subset silently. `None` where no plugin folder
+    /// A pack build checks its own members against this: a pack never ships
+    /// a subset silently. `None` where no plugin folder
     /// holds it: the note joins no pack, and no pack is blocked.
     pub plugin: Option<String>,
 }
@@ -628,7 +628,7 @@ fn discover_with(
             paths.join(", ")
         );
         if !roster {
-            return Err(CoreError::refused("path-collision", detail));
+            return Err(CoreError::refused(PATH_COLLISION_REASON, detail));
         }
         for component in group {
             warnings.push(collision_warning(&component.vault_relative_path, &detail));
@@ -732,7 +732,7 @@ pub fn refuse_invalid_names<'a>(
 fn collision_warning(path: &str, detail: &str) -> DiscoveryWarning {
     DiscoveryWarning {
         path: path.to_owned(),
-        reason: "path-collision".to_owned(),
+        reason: PATH_COLLISION_REASON.to_owned(),
         detail: detail.to_owned(),
     }
 }
@@ -897,15 +897,12 @@ pub const COMPATIBILITY_MAX_LEN: usize = 500;
 /// Why a name with nothing sluggable in it is refused, stated once. `what` is
 /// the level being named — a component name, a plugin name, a note name — so
 /// the refusal says which one had nothing to slug.
-pub fn nameless(what: &str) -> String {
+fn nameless(what: &str) -> String {
     format!("a {what} needs at least one letter or digit, so a filename can be slugged from it")
 }
 
 /// Why `slug` cannot be a `what`: nothing sluggable in the name it came from,
 /// or a slug the skills-spec grammar refuses. `None` means it is usable.
-///
-/// A rename composes no note, so the cap is checked here too — otherwise an
-/// over-long name refuses the vault's next scan instead of the rename.
 pub fn slug_refusal(slug: &str, what: &str) -> Option<String> {
     if slug.is_empty() {
         return Some(nameless(what));

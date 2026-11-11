@@ -970,8 +970,7 @@ fn listed(keys: &[String]) -> String {
     format!("{noun} {}", quoted.join(", "))
 }
 
-/// A refusal carrying one of the publish spec's closed-set reason
-/// tokens, the note it is about, and the prose that says what to do.
+/// A refusal carrying a reason token, the note it is about, and the prose that says what to do.
 fn refuse(token: &str, path: &Path, message: impl fmt::Display) -> CoreError {
     CoreError::refused(token, format!("{}: {message}", path.display()))
 }
