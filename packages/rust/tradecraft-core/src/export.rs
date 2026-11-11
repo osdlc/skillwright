@@ -117,6 +117,7 @@ use crate::vfs::{PreviewWrite, Vfs, normalize};
 /// One marketplace export: this vault, built into its `dist/<m>/` or checked
 /// against it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct ExportRequest {
     /// Absolute path to the vault root. Discovery, compilation, the output
@@ -4234,8 +4235,7 @@ mod tests {
         );
         // And a request with no mode means build — the write, as with
         // `PublishMode`.
-        let request: ExportRequest =
-            serde_json::from_str(r#"{"vault_root":"/v","config":{"name":"m"}}"#).unwrap();
+        let request: ExportRequest = serde_json::from_str(r#"{"vault_root":"/v"}"#).unwrap();
         assert_eq!(request.mode, ExportMode::Build);
     }
 

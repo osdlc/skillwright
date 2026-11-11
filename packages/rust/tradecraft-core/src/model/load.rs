@@ -40,6 +40,7 @@ use crate::vfs::{Vfs, normalize};
 /// What a marketplace load reads: this vault, this marketplace of it, for
 /// these harnesses, under the root file's shared defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct LoadRequest {
     /// Absolute path to the vault.

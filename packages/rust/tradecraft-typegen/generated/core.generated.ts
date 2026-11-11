@@ -76,11 +76,8 @@ export type PatchScheme = "increment" | "timestamp";
 /**
  * What crosses as `request_json` for [`discover_components`].
  *
- * The one wire shape in this crate that does not `flatten` a core struct,
- * because there is no core struct to flatten: `discover_components` takes its
- * vault root as a loose parameter. So this is not a second copy of anything —
- * it is the parameter list, spelled once, in the only place it has to cross a
- * wire.
+ * The one wire shape this crate owns: `discover_components` takes its vault
+ * root as a loose parameter, so there is no core struct to read.
  */
 export interface DiscoverRequest {
   /**
@@ -359,8 +356,8 @@ export interface DiscoveryWarning {
 }
 
 /**
- * What crosses as `request_json` for [`export_skills`]: the core's
- * [`ExportRequest`], flattened.
+ * One marketplace export: this vault, built into its `dist/<m>/` or checked
+ * against it.
  */
 export interface ExportRequest {
   /**
@@ -544,8 +541,8 @@ export interface VersionBumpSuggestion {
 export type StaleKind = "plugin" | "file" | "empty-dir";
 
 /**
- * What crosses as `request_json` for [`load_marketplace`]: the core's
- * [`LoadRequest`], flattened.
+ * What a marketplace load reads: this vault, this marketplace of it, for
+ * these harnesses, under the root file's shared defaults.
  */
 export interface LoadRequest {
   /** Absolute path to the vault. */

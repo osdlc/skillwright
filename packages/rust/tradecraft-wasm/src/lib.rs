@@ -28,12 +28,11 @@
 //!   call into JS and what happens when the host throws.
 //! - **The request and report cross as JSON strings**, deserialized and
 //!   serialized by the same `serde_json` the core is compiled against, through
-//!   the core's own derives. The wrappers this crate owns — `WireExportRequest`
-//!   and `WireLoadRequest` — `flatten` the core's own request rather than
-//!   re-declaring its fields, so there is no second copy of a request shape
-//!   here to drift from the core's. `WireDiscoverRequest` is the one exception
-//!   and it re-declares nothing either: `discover_components` takes loose
-//!   parameters rather than a struct, so there is no core shape to flatten.
+//!   the core's own derives. `exportSkills` and `loadMarketplace` read the
+//!   core's `ExportRequest` and `LoadRequest` directly. `WireDiscoverRequest`
+//!   is the one shape this crate owns, because `discover_components` takes
+//!   loose parameters rather than a struct. Every request refuses an unknown
+//!   key.
 //! - **The vault is read in the v2 layout** (`skillwright.md`, `marketplaces/`):
 //!   discovery and the load read only `marketplaces/`, so nothing a build
 //!   writes to `dist/` is ever read back.
@@ -97,12 +96,10 @@ pub fn parse_root_file(text: &str) -> Result<String, JsValue> {
 
 /// What crosses as `request_json` for [`discover_components`].
 ///
-/// The one wire shape in this crate that does not `flatten` a core struct,
-/// because there is no core struct to flatten: `discover_components` takes its
-/// vault root as a loose parameter. So this is not a second copy of anything —
-/// it is the parameter list, spelled once, in the only place it has to cross a
-/// wire.
+/// The one wire shape this crate owns: `discover_components` takes its vault
+/// root as a loose parameter, so there is no core struct to read.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct WireDiscoverRequest {
     /// Absolute path to the vault root, the folder holding `skillwright.md`
     /// and `marketplaces/`.
@@ -141,16 +138,6 @@ pub fn discover_components(vfs: JsValue, request_json: &str) -> Result<String, J
 
 // --- the marketplace ---------------------------------------------------------
 
-/// What crosses as `request_json` for [`export_skills`]: the core's
-/// [`ExportRequest`], flattened.
-#[derive(Deserialize)]
-struct WireExportRequest {
-    /// Flattened, not re-declared: every field the core's own derive reads
-    /// arrives here untouched, so a field added there needs no change here.
-    #[serde(flatten)]
-    request: ExportRequest,
-}
-
 /// Render one marketplace of the vault into one tree per harness under
 /// `<vault_root>/dist/<m>/`, written through `vfs`, and, per the request's
 /// `mode`, either swap the drifted roots into place or report the drift and
@@ -186,20 +173,11 @@ struct WireExportRequest {
 #[wasm_bindgen(js_name = exportSkills)]
 pub fn export_skills(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
-    let wire: WireExportRequest = serde_json::from_str(request_json)
+    let request: ExportRequest = serde_json::from_str(request_json)
         .map_err(|e| throwable(&format!("request is not a valid ExportRequest: {e}")))?;
-    let report = core_export_skills(&vfs, &wire.request).map_err(|e| core_error_to_js(&e))?;
+    let report = core_export_skills(&vfs, &request).map_err(|e| core_error_to_js(&e))?;
 
     report_json("export report", &report)
-}
-
-/// What crosses as `request_json` for [`load_marketplace`]: the core's
-/// [`LoadRequest`], flattened.
-#[derive(Deserialize)]
-struct WireLoadRequest {
-    /// Flattened, not re-declared, as on [`WireExportRequest`].
-    #[serde(flatten)]
-    request: LoadRequest,
 }
 
 /// Load one marketplace of the vault into the model — every plugin and its
@@ -222,9 +200,9 @@ struct WireLoadRequest {
 #[wasm_bindgen(js_name = loadMarketplace)]
 pub fn load_marketplace(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
     let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
-    let wire: WireLoadRequest = serde_json::from_str(request_json)
+    let request: LoadRequest = serde_json::from_str(request_json)
         .map_err(|e| throwable(&format!("request is not a valid LoadRequest: {e}")))?;
-    let market = core_load(&vfs, &wire.request).map_err(|e| core_error_to_js(&e))?;
+    let market = core_load(&vfs, &request).map_err(|e| core_error_to_js(&e))?;
 
     report_json("marketplace model", &market)
 }
@@ -256,10 +234,10 @@ fn throwable(message: &str) -> JsValue {
 
 /// The wire, and only the wire.
 ///
-/// What these pin is the half of the boundary that fails silently: a
-/// `#[serde(flatten)]` envelope whose optional key is spelled wrong parses
-/// fine and drops the value, so a `mode: "check"` that never reached the core
-/// would write a marketplace a caller asked it not to. The exports themselves
+/// What these pin is the half of the boundary that fails silently: an
+/// optional key spelled wrong would, without `deny_unknown_fields`, parse fine
+/// and drop the value, so a `mode: "check"` that never reached the core would
+/// write a marketplace a caller asked it not to. The exports themselves
 /// need a JS engine, so they are tested end to end against the artifact
 /// `build.sh` produces, not here.
 #[cfg(test)]
@@ -271,8 +249,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_export_request_flattens_and_its_absences_are_the_core_defaults() {
-        let wire: WireExportRequest = serde_json::from_str(
+    fn an_export_request_s_absences_are_the_core_defaults() {
+        let request: ExportRequest = serde_json::from_str(
             r#"{
                 "vault_root": "/vault",
                 "defaults": { "license": "MIT" }
@@ -280,23 +258,19 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(wire.request.vault_root, PathBuf::from("/vault"));
-        assert_eq!(wire.request.defaults.license.as_deref(), Some("MIT"));
+        assert_eq!(request.vault_root, PathBuf::from("/vault"));
+        assert_eq!(request.defaults.license.as_deref(), Some("MIT"));
         // Every absence, at its documented default.
-        let wire: WireExportRequest =
-            serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
-        assert_eq!(wire.request.mode, ExportMode::Build);
-        assert_eq!(wire.request.marketplace, None);
-        assert_eq!(wire.request.compare_with, None);
-        assert_eq!(
-            wire.request.defaults,
-            tradecraft_core::SharedDefaults::default()
-        );
+        let request: ExportRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
+        assert_eq!(request.mode, ExportMode::Build);
+        assert_eq!(request.marketplace, None);
+        assert_eq!(request.compare_with, None);
+        assert_eq!(request.defaults, tradecraft_core::SharedDefaults::default());
     }
 
     #[test]
-    fn check_mode_crosses_in_the_flattened_request() {
-        let wire: WireExportRequest = serde_json::from_str(
+    fn check_mode_crosses_in_the_request() {
+        let request: ExportRequest = serde_json::from_str(
             r#"{
                 "vault_root": "/vault",
                 "marketplace": "house",
@@ -305,8 +279,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(wire.request.mode, ExportMode::Check);
-        assert_eq!(wire.request.marketplace.as_deref(), Some("house"));
+        assert_eq!(request.mode, ExportMode::Check);
+        assert_eq!(request.marketplace.as_deref(), Some("house"));
     }
 
     #[test]
@@ -317,6 +291,19 @@ mod tests {
 
         let err = serde_json::from_str::<WireDiscoverRequest>(r#"{}"#).unwrap_err();
         assert!(err.to_string().contains("vault_root"), "{err}");
+    }
+
+    /// An unknown key is refused, not dropped: a v1 `config` key, or a typo
+    /// of an optional key, would otherwise parse and be lost.
+    #[test]
+    fn every_request_refuses_an_unknown_key() {
+        let json = r#"{ "vault_root": "/vault", "config": {} }"#;
+        let export = serde_json::from_str::<ExportRequest>(json).unwrap_err();
+        assert!(export.to_string().contains("config"), "{export}");
+        let load = serde_json::from_str::<LoadRequest>(json).unwrap_err();
+        assert!(load.to_string().contains("config"), "{load}");
+        let discover = serde_json::from_str::<WireDiscoverRequest>(json).unwrap_err();
+        assert!(discover.to_string().contains("config"), "{discover}");
     }
 
     /// A v2 vault: one marketplace `m`, one plugin `rev`, one skill `a`, and
@@ -365,8 +352,8 @@ mod tests {
         assert!(found.contains("plugins/rev/skills/a/a.md"), "{found}");
         assert!(!found.contains("stale"), "{found}");
 
-        let wire: WireLoadRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
-        let market = core_load(&vfs, &wire.request).unwrap();
+        let request: LoadRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
+        let market = core_load(&vfs, &request).unwrap();
         let loaded = serde_json::to_string(&market).unwrap();
         assert!(loaded.contains("rev"), "{loaded}");
         assert!(!loaded.contains("stale"), "{loaded}");
