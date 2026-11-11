@@ -7,6 +7,52 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+API:
+
+- `Shape` gains `Words`, `AgentTools`, `Hint` and `Flag`, the types the check already took for `allowed-tools`, `tools`, `argument-hint`, `user-invocable` and `disable-model-invocation`. `Shape` is an exhaustive public enum, so a match on it needs the new arms.
+- `Shape::StringMap` is renamed `Shape::Mapping`, and accepts any mapping, as `metadata` always did.
+- `tools` is two `KEYS` rows: `Words` on a skill and a command, `AgentTools` on an agent.
+- `settings::MARKETPLACE_KEYS` is removed. `settings::marketplace_keys()` yields the key table's marketplace rows, less the harness blocks, in table order.
+- `PluginPolicy` gains `naming_choice` and `agent_only_overrides`. `PluginFormat` gains the same two fields and a private one, so neither can be built with a struct literal outside the crate.
+- `model::Plugin` and `model::Call` gain `prefixed_on`. The serialized model and the generated TS types are unchanged for a vault that sets no `naming`: the field is skipped when empty.
+- The identity fields of `MarketplaceFields`, `MarketplaceConfig` and `PluginOverrides` (`owner`, `author`, `display_name`, `license`, `keywords`, `category`, `version`, `repository`, `homepage`) move under `.identity: ContainerIdentity`, flattened on the wire, so the JSON stays flat. Write `config.identity.license`, not `config.license`. `ContainerIdentity` gains `fill_unset_from` and `overlay`, and every inheritance step goes through them and the key table. `keys::identity_keys` is added: the key table's rows a container's identity holds. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- An unset identity field is left out of the JSON instead of written as `null`. This holds for every component's `identity` in a `DiscoveryReport`, so a skill's is `{}`, and for `MarketplaceConfig`, `PluginOverrides` and `MarketplaceFields`. In the generated TS, `ContainerIdentity`'s fields become optional (`display_name?: string`, not `display_name: string | null`), `MarketplaceConfig` and `MarketplaceFields` list `keywords?` and `category?`, and `PluginOverrides` lists `owner?`, because they share the struct; these keys are refused, not read (see below), the identity fields take `ContainerIdentity`'s doc comments, and their order follows the Rust declaration. ([#75](https://github.com/osdlc/skillwright/issues/75))
+
+### Added
+
+- `cursor: {naming: bare | prefixed}` on a marketplace or a plugin. `prefixed` publishes that plugin's Cursor skills as `<plugin>-<skill>`, in their folders, their frontmatter `name` and every call and mention of them. The plugin's value overrides the marketplace's. The default stays bare.
+- A Cursor catalog entry in `.cursor-plugin/marketplace.json` carries the plugin's `displayName`, right after `name`: its `cursor.displayName`, else its `display_name`. It is absent when neither is set.
+- `HarnessProfile::block_keys(kind)`: the keys a harness's block accepts on a note of `kind`. The check, the field reference, the cascade and the manifest merge all read it.
+- `keys::check_shape` and `keys::ShapeRefusal`: one shape check for a key of ours, shared by a note's read and the root file's.
+
+### Changed
+
+- The field reference states the types the check accepts. Its harness block lists drop the keys the check warns on, such as `permissionMode` on a `claude:` plugin or marketplace and `description` and `version` on a `codex:`, `cursor:` or `pi:` marketplace. Its component line reads "Skill and command", followed by "Agent: not checked.".
+- A cross-plugin name collision on Cursor or Pi names both notes, the published name, the harness and the `<harness>.naming` setting that prefixed the name. The token stays `path-collision`.
+- The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: it is a number". Some refusals named `marketplace fields` before.
+- A marketplace block passes down to each plugin only the keys a plugin block reads. Other keys were never merged, so no output changes.
+
+## [0.49.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.0...tradecraft-core/v0.49.1) - 2026-11-10
+
+### Added
+
+- `workspace_file(dir)` is public and re-exported: where the workspace file above a marketplace folder would be, without reading it.
+- The `\[[` escape. A `[[` or `![[` right after an odd run of `\` is neither a link nor a leftover: `compile_note` ships it as written, backslash included, which CommonMark renders as `[[`. Every `unresolved-syntax` refusal of a `[[` that is not a link now ends `; write \[[ to keep the brackets as text`. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
+### Changed
+
+- `\[[note]]` is no longer a link. It compiled to `\[note.md](…)`, which is broken Markdown; it now ships as written. ([#47](https://github.com/osdlc/skillwright/issues/47))
+- Under a namespace, a prefixed or nested identity key that the note's kind does not read, such as `sw-owner` on a plugin or `sw-keywords` on a marketplace, now warns as unknown. It was read and then ignored (a `null` or blank value was refused). A bare spelling already warned. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- Deserializing a `MarketplaceConfig` or `MarketplaceFields` with `keywords` or `category`, or a `PluginOverrides` with `owner`, is an error naming the key and the level. `export_skills` refuses the same keys on a config built in code, as `refused: unknown-override-key`. These keys were never read. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- `RootFile::inherit` asks the key table whether `targets` and each harness block inherit, as it does for the identity fields. Today every one does, so no output changes. ([#75](https://github.com/osdlc/skillwright/issues/75))
+
+### Fixed
+
+- A plain `[[s]]` to the skill being compiled names the skill, as a link to any other skill does, in its entry, in a note embedded into it, in a file in its bundle and in a vault note it links in. It compiled to a link to `SKILL.md`, and for a `<s>/SKILL.md` skill to the bare text `s`, recorded unresolved. With an implicit `CallContext` it now goes through the `render` closure with `mention: true`; in a recording compile it is a `CallSite` and so a `Segment::Call`. Its id is in that file's `Closure::calls`, so renaming the skill or its plugin changes the hash; `related_of` does not list it in `calls`. A self-link with a `#fragment` stays a link to the heading in `SKILL.md`, and for a `<s>/SKILL.md` skill `[[s#Steps]]` now resolves to it. Output changes for every skill with a self-link. ([#53](https://github.com/osdlc/skillwright/issues/53))
+- `compile_note` reads a resource's frontmatter as YAML when it checks for links. A string key or value holding a live link or embed, such as `related: "[[other]]"`, is refused `unresolved-syntax` with a message saying that frontmatter ships as written and to move the link into the body. YAML structure such as `tags: [[a]]` passes; it was refused, while `matrix: [[1, 2], [3]]` passed. Frontmatter that does not parse as YAML is not checked. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
 ## [0.49.0](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.48.0...tradecraft-core/v0.49.0) - 2026-11-10
 
 ### Added

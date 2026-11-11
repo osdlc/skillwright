@@ -11,10 +11,14 @@
 //!    file's own body is compiled the same way, and *its* references collected.
 //!    A `/[[call]]` instead becomes the target harness's invocation of the
 //!    named skill, and copies nothing — see [`CallContext`]. A plain link to
-//!    another skill in a skill or command body is read as a call too.
+//!    a skill from a skill or command, or from a file it ships, names that
+//!    skill instead, the skill being compiled included.
 //! 3. The output is validated: any Obsidian syntax remaining in an emitted
 //!    markdown file is a refusal, because a destination has no resolver to
-//!    give it meaning.
+//!    give it meaning. A `[[` after an odd run of `\` is escaped: it is neither a
+//!    link nor a leftover, and ships as written, backslash included. A
+//!    resource's frontmatter ships as written too; it is read as YAML, and a
+//!    string in it that holds a link is refused.
 //!
 //! [`crate::vault::read_vault_skill`] still reads the body verbatim — the
 //! vault's bytes are canonical and a read must not rewrite them. Compilation
@@ -62,8 +66,8 @@
 //!
 //! What stays here is skillwright's own: `/[[call]]` calls and `\/[[x]]`
 //! escapes, read as a layer over `markdown-link`'s links and found in code
-//! too; hand-written calls; where resources land; and the validation that no
-//! Obsidian syntax survives.
+//! too; the `\[[` escape; hand-written calls; where resources land; and the
+//! validation that no Obsidian syntax survives.
 
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
@@ -498,7 +502,8 @@ impl Closure {
 /// * `refused: unsafe-path` — an absolute or `..`-carrying link target.
 /// * `refused: path-collision` — two sources claim one output path.
 /// * `refused: unresolved-syntax` — the validation pass found Obsidian syntax
-///   in an emitted markdown file.
+///   in an emitted markdown file's body, or a link in a string of a
+///   resource's frontmatter.
 /// * `refused: skill-call-not-skill` / `skill-call-unresolved` /
 ///   `skill-call-ambiguous` / `skill-call-not-shipped` — with a
 ///   [`CallContext`], a call named a note that is not a skill, nothing,
@@ -580,13 +585,17 @@ pub fn compile_note(
         // UTF-8 by construction; the fallback only guards the invariant.
         let text = std::str::from_utf8(bytes)
             .map_err(|e| CoreError::malformed(Path::new(output_path), format!("not UTF-8: {e}")))?;
+        let split = frontmatter_lossless::split(text);
         validate_no_obsidian_syntax(
             text,
-            body_start(text),
+            text.len() - split.body.len(),
             output_path,
             source.skill_name,
             shown,
         )?;
+        if let Some(yaml) = split.yaml {
+            validate_frontmatter_links(yaml, output_path, source.skill_name)?;
+        }
     }
 
     // Every emitted file's closure contains the file that owns it, so a
@@ -656,7 +665,8 @@ pub struct RelatedSplit {
     pub embeds: Vec<String>,
     /// Files a surviving `[[link]]` resolved to — notes and attachments both,
     /// since a non-markdown embed is rewritten as a link too. Never the entry
-    /// itself, which a self-reference resolves to.
+    /// itself: a self-link without a fragment names the skill, and one with
+    /// a fragment, or `[[#Heading]]`, is left out here.
     pub links: Vec<String>,
     /// Notes this note calls or names. With a [`CallContext`] these are skills; without
     /// one, whatever note each `/[[…]]` resolved to by path. A call copies
@@ -1062,8 +1072,8 @@ impl<'a> Renderer<'a> {
     }
 
     fn ensure_markdown_resource(&mut self, source_path: &Path) -> Result<String, CoreError> {
-        // The entry never becomes a resource of itself: a link back to it is a
-        // link to SKILL.md.
+        // The entry never becomes a resource of itself; a link that reaches it
+        // (see `skill_mention`) is a link to SKILL.md.
         if source_path == self.entry_path {
             return Ok("SKILL.md".to_owned());
         }
@@ -1194,7 +1204,13 @@ impl<'a> Renderer<'a> {
             return Ok(call);
         }
         let embed = token.kind == TokenKind::Embed;
-        let Some((resolved, fragment)) = self.resolve(token, source_path)? else {
+        // A bundle skill's entry is `x/SKILL.md`, which `[[x#Steps]]` names
+        // but does not resolve to.
+        let resolved = self.resolve(token, source_path)?.or_else(|| {
+            (!embed && self.names_the_entry(&token.target))
+                .then(|| (self.entry_path.clone(), token.fragment.clone()))
+        });
+        let Some((resolved, fragment)) = resolved else {
             // The name is kept so status can see a note appearing at it later,
             // and the reader is left the words rather than a dangling
             // `[[…]]`, which step 3 would refuse as surviving Obsidian syntax.
@@ -1371,18 +1387,21 @@ impl<'a> Renderer<'a> {
         };
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
-        self.record_call(skill, output_path);
+        self.record_call(skill, output_path, true);
         render_or_mark(context, skill, token.destination, caller, false)
     }
 
-    /// A plain `[[x]]` in a skill or command body that names another skill
-    /// is written as that skill's published name: copying one skill into
-    /// another is never what was meant, and `/[[x]]` is the call. `None`
-    /// leaves the token to the link path, as does a name several skills
-    /// share, or an index that cannot be built: the reading is a heuristic,
-    /// so a fault elsewhere in the vault must not block a link. An author's
-    /// `|alias` stays as the words and the name follows in parentheses; a
-    /// `#fragment` is checked and then ignored.
+    /// A plain `[[x]]` in a skill or command body, or in a file it ships,
+    /// that names a skill is written as that skill's published name: copying
+    /// one skill into another is never what was meant, and `/[[x]]` is the
+    /// call. That holds for the skill being compiled too. `None` leaves the
+    /// token to the link path, as does a name several skills share, or an
+    /// index that cannot be built: the reading is a heuristic, so a fault
+    /// elsewhere in the vault must not block a link. An author's `|alias`
+    /// stays as the words and the name follows in parentheses; a `#fragment`
+    /// is checked and then ignored. The exception is a fragment on a link to
+    /// the skill being compiled: its heading ships in `SKILL.md`, so that
+    /// link stays a link.
     fn skill_mention(
         &mut self,
         token: &WikiToken<'_>,
@@ -1404,20 +1423,39 @@ impl<'a> Renderer<'a> {
                 NameMatch::None | NameMatch::Many(_) => (None, None),
             },
         };
-        // A link back to the entry is a link to its own SKILL.md.
-        let Some(skill) = skill.filter(|skill| skill.entry_path != self.entry_path) else {
+        let Some(skill) = skill else {
             return Ok(None);
         };
+        let self_link = skill.entry_path == self.entry_path;
+        if self_link && fragment.is_some() {
+            return Ok(None);
+        }
         let caller = self.relative_or_verbatim(source_path);
         self.check_call_shipped(context, skill, &caller, token.destination)?;
         self.check_call_fragment(skill, fragment.as_deref())?;
-        self.record_call(skill, output_path);
+        self.record_call(skill, output_path, !self_link);
         let name = render_or_mark(context, skill, token.destination, caller, true)?;
         let name = format_call(&name, false);
         Ok(Some(match text_alias(token.alias.as_deref()) {
             Some(alias) => format!("{alias} ({name})"),
             None => name,
         }))
+    }
+
+    /// Whether `target`, which resolved to no file, is the name of the skill
+    /// being compiled. Only with an implicit context, as for a mention.
+    fn names_the_entry(&self, target: &str) -> bool {
+        let Some(skills) = self
+            .call_context
+            .filter(|context| context.implicit)
+            .and_then(|context| context.skills.get_or_none())
+        else {
+            return false;
+        };
+        matches!(
+            skills.by_name(basename(target)),
+            NameMatch::One(skill) if skill.entry_path == self.entry_path
+        )
     }
 
     /// A call to a skill the destination does not carry would name a command
@@ -1462,12 +1500,17 @@ impl<'a> Renderer<'a> {
         Ok(())
     }
 
-    fn record_call(&mut self, skill: &IndexedSkill, output_path: &str) {
+    /// Records `skill` in `output_path`'s calls, which the closure hash mixes
+    /// in. `related` also lists it in [`RelatedSplit::calls`]; a skill naming
+    /// itself is not related to itself.
+    fn record_call(&mut self, skill: &IndexedSkill, output_path: &str, related: bool) {
         self.calls
             .entry(output_path.to_owned())
             .or_default()
             .insert(skill.call_id());
-        self.called_notes.insert(skill.entry_path.clone());
+        if related {
+            self.called_notes.insert(skill.entry_path.clone());
+        }
     }
 
     /// Finds the hand-written calls to known skills in `body`. Each unescaped
@@ -1757,9 +1800,10 @@ type TransclusionHop = (PathBuf, Option<String>);
 /// author would only find after installing.
 ///
 /// That includes a `[[` that is not a link (see [`scan_wiki`]): it would ship
-/// as literal brackets. Only one at or after `body_start` counts, so stray
-/// brackets in a resource's frontmatter, carried as written, are not refused.
-/// A link there still is, as before.
+/// as literal brackets, so its refusal says to write `\[[` for that. An
+/// escaped `\[[` is neither a link nor a leftover. Only links and leftovers
+/// at or after `body_start` count: a resource's frontmatter is YAML, carried
+/// as written, and [`validate_frontmatter_links`] reads it as YAML instead.
 ///
 /// The one exception is `shown`: the `/[[x]]` texts an escape wrote out on
 /// purpose. Only that exact text, `/` included, passes.
@@ -1775,6 +1819,7 @@ fn validate_no_obsidian_syntax(
     let (links, leftovers) = scan_wiki(text, false);
     let link = links
         .iter()
+        .filter(|token| token.start >= body_start)
         .find(|token| {
             let notation = token
                 .start
@@ -1796,7 +1841,9 @@ fn validate_no_obsidian_syntax(
     // An unclosed `[[` runs to the end of the text; its line is enough.
     let written = &text[start..end];
     let written = written.split('\n').next().unwrap_or(written);
-    let why = why.map_or_else(String::new, |why| format!(" (not a link: {why})"));
+    let why = why.map_or_else(String::new, |why| {
+        format!(" (not a link: {why}); write \\[[ to keep the brackets as text")
+    });
     Err(CoreError::refused(
         "unresolved-syntax",
         format!(
@@ -1806,10 +1853,47 @@ fn validate_no_obsidian_syntax(
     ))
 }
 
-/// Where a composed file's body starts: past its frontmatter, as the strict
-/// split that carried it finds it.
-fn body_start(text: &str) -> usize {
-    text.len() - frontmatter_lossless::split(text).body.len()
+/// A resource's frontmatter is YAML and ships as written, so a link in one of
+/// its strings would ship unresolved. Every string key and value is read for
+/// a live `[[link]]` or `![[embed]]`. YAML structure such as `tags: [[a]]` is
+/// a nested list, not a link, and a `[[` in a string that is not a link is
+/// text. Frontmatter that does not parse is not this pass's to check.
+fn validate_frontmatter_links(
+    yaml: &str,
+    output_path: &str,
+    skill_name: &str,
+) -> Result<(), CoreError> {
+    fn first_link(value: &serde_yaml::Value) -> Option<&str> {
+        match value {
+            serde_yaml::Value::String(text) => scan_wiki(text, false)
+                .0
+                .first()
+                .map(|token| &text[token.start..token.end]),
+            serde_yaml::Value::Sequence(items) => items.iter().find_map(first_link),
+            serde_yaml::Value::Mapping(map) => map
+                .iter()
+                .find_map(|(key, value)| first_link(key).or_else(|| first_link(value))),
+            serde_yaml::Value::Tagged(tagged) => first_link(&tagged.value),
+            _ => None,
+        }
+    }
+    if !yaml.contains("[[") {
+        return Ok(());
+    }
+    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(yaml) else {
+        return Ok(());
+    };
+    match first_link(&value) {
+        None => Ok(()),
+        Some(written) => Err(CoreError::refused(
+            "unresolved-syntax",
+            format!(
+                "compiled skill {skill_name} has a link in the frontmatter of {output_path}: \
+                 {written}; frontmatter ships as written, so the link is not resolved; \
+                 move it into the body"
+            ),
+        )),
+    }
 }
 
 // --- Destinations, extensions, labels ---------------------------------------
@@ -1932,7 +2016,7 @@ const SCAN: ScanOptions = ScanOptions {
 
 /// Every wiki token in `markdown` that is *live* — not inside a fenced code
 /// block, an inline code span, or an HTML comment, where the same characters
-/// are content rather than references.
+/// are content rather than references, and not escaped as `\[[`.
 ///
 /// The links and embeds are `markdown-link`'s, read under [`SCAN`]. Calls are
 /// this crate's layer over them: with `calls`, a link whose `[[` follows a
@@ -1949,6 +2033,7 @@ fn scan_wiki_tokens(markdown: &str, calls: bool) -> Vec<WikiToken<'_>> {
 }
 
 /// A `[[` in a body that is not a link, so would ship as literal brackets.
+/// An escaped one, `\[[`, is not a leftover: it ships as written on purpose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Leftover {
     /// Byte offset of the `[[`, or of the `!` before it.
@@ -1961,13 +2046,15 @@ struct Leftover {
 
 /// [`scan_wiki_tokens`], and each `[[` that is not a token: one
 /// `markdown-link` gave up on, and a link with code in its target, which
-/// this pass leaves as written.
+/// this pass leaves as written. A `[[` or `![[` after an odd run of `\`
+/// (see [`escaped_at`]) is in neither list: it ships as written.
 fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>) {
     let bytes = markdown.as_bytes();
     let scan = scan_body_with(markdown, &SCAN);
     let mut leftovers: Vec<Leftover> = scan
         .abandoned
         .iter()
+        .filter(|abandoned| !escaped_at(bytes, abandoned.byte_start))
         // `[[WIP] Fix](url)` and `[[Note](Note.md)]` are Markdown links with
         // a `[` beside them, not wikilinks gone wrong.
         .filter(|abandoned| {
@@ -1996,6 +2083,9 @@ fn scan_wiki(markdown: &str, calls: bool) -> (Vec<WikiToken<'_>>, Vec<Leftover>)
                 BodyLinkKind::Markdown => return None,
             };
             let at = link.byte_start;
+            if escaped_at(bytes, at) {
+                return None;
+            }
             let (kind, start) = match kind {
                 TokenKind::Link
                     if calls
@@ -2246,6 +2336,17 @@ fn scan_code_calls<'a>(markdown: &'a str, from: usize, to: usize, tokens: &mut V
             None => offset += 1,
         }
     }
+}
+
+/// Whether the byte at `offset` follows an odd run of `\`: `\[[x]]` and
+/// `\![[x]]` are escaped, `\\[[x]]` is an escaped backslash before a link.
+fn escaped_at(bytes: &[u8], offset: usize) -> bool {
+    let run = bytes[..offset]
+        .iter()
+        .rev()
+        .take_while(|&&byte| byte == b'\\')
+        .count();
+    run % 2 == 1
 }
 
 /// A `/[[` or `\/[[` at `offset`, where the `/` (or `\`) starts a line or
@@ -3239,25 +3340,6 @@ mod tests {
     }
 
     #[test]
-    fn a_wikilink_in_resource_frontmatter_fails_validation() {
-        // The transform never touches frontmatter, so a wikilink there rides
-        // into the emitted file — where the validation pass, which scans the
-        // whole emitted text, refuses it.
-        let vfs = demo_vault();
-        write(
-            &vfs,
-            "/vault/Fm.md",
-            b"---\nrelated: \"[[Blocks]]\"\n---\nBody.\n",
-        );
-
-        let err = compile_note(&vfs, &source(None), "See [[Fm]].\n").unwrap_err();
-        let message = err.to_string();
-        assert!(message.contains("unresolved-syntax"), "{message}");
-        assert!(message.contains("demo"), "{message}");
-        assert!(message.contains("references/vault/Fm.md"), "{message}");
-    }
-
-    #[test]
     fn compile_projection_feeds_project_skill_with_compiled_output() {
         // The wiring: vault read → compile → projection. What lands at the
         // destination is the flattened body, the collected references, and
@@ -3379,12 +3461,111 @@ mod tests {
             let err = compile_note(&vfs, &source(None), body)
                 .unwrap_err()
                 .to_string();
-            assert!(err.contains("unresolved-syntax"), "{body:?}: {err}");
-            assert!(
-                err.contains(&format!("in SKILL.md: {written} (not a link: {why})")),
-                "{body:?}: {err}"
+            assert_eq!(
+                err,
+                format!("{LEFTOVER}: {written} (not a link: {why}){HINT}"),
+                "{body:?}"
             );
         }
+    }
+
+    // --- The `\[[` escape ----------------------------------------------------
+
+    const LEFTOVER: &str = "refused: unresolved-syntax: compiled skill demo still contains Obsidian syntax in SKILL.md";
+    const HINT: &str = r"; write \[[ to keep the brackets as text";
+
+    #[test]
+    fn an_escaped_double_bracket_ships_as_written() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/note.md", b"# Note\n");
+        write(&vfs, "/vault/photo.png", b"PNG");
+        for body in [
+            "See \\[[TODO later.\n",
+            "See \\![[TODO later.\n",
+            "Write \\[[note]] for a link.\n",
+            "\\![[photo.png]]\n",
+            "!\\[[x]]\n",
+            "A \\[[x]y]] B\n",
+            "A \\[[`x` y]] B\n",
+            "Back to \\[[demo]].\n",
+        ] {
+            let compiled = compile_with_calls(&vfs, &call_index("called"), body);
+            assert_eq!(compiled.body, body);
+            assert!(
+                compiled.resources.is_empty(),
+                "{body:?}: {:?}",
+                paths(&compiled)
+            );
+            let closure = &compiled.closures["SKILL.md"];
+            assert!(closure.unresolved.is_empty(), "{body:?}: {closure:?}");
+            assert!(closure.calls.is_empty(), "{body:?}: {closure:?}");
+        }
+
+        // markdown-link gives up on the first `[[` at the `[` after it and
+        // reads `[[a]]` from there: that `[[` is not escaped, so it is a link.
+        let compiled = compile_with_calls(&vfs, &call_index("called"), "A \\[[[Shared]] B\n");
+        assert_eq!(
+            compiled.body,
+            "A \\[[Shared.md](references/vault/Shared.md) B\n"
+        );
+
+        // In a bundle resource's body as well.
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"See \\[[TODO and \\[[note]].\n",
+        );
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(Some(Path::new("/vault/plugins/demo"))),
+            "# Demo\n",
+        )
+        .unwrap();
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "See \\[[TODO and \\[[note]].\n"
+        );
+        assert!(compiled.closures["references/x.md"].unresolved.is_empty());
+    }
+
+    #[test]
+    fn an_escaped_backslash_before_double_brackets_does_not_escape_them() {
+        let vfs = demo_vault();
+        let compiled = compile_note(&vfs, &source(None), "A \\\\[[Shared]] B\n").unwrap();
+        assert_eq!(
+            compiled.body,
+            "A \\\\[Shared.md](references/vault/Shared.md) B\n"
+        );
+        let err = compile_note(&vfs, &source(None), "A \\\\[[TODO\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unresolved-syntax"), "{err}");
+    }
+
+    #[test]
+    fn a_call_escape_over_a_leftover_is_refused_with_the_hint() {
+        let vfs = demo_vault();
+        let err = try_compile_with(
+            &vfs,
+            SkillSource::ready(&call_index("called")),
+            "See \\/[[TODO later.\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            err,
+            format!("{LEFTOVER}: [[TODO later. (not a link: it has no closing `]]`){HINT}")
+        );
+    }
+
+    #[test]
+    fn a_surviving_link_is_refused_without_the_escape_hint() {
+        let err =
+            validate_no_obsidian_syntax("See [[x]].", 0, "SKILL.md", "demo", &BTreeSet::new())
+                .unwrap_err()
+                .to_string();
+        assert_eq!(err, format!("{LEFTOVER}: [[x]]"));
     }
 
     #[test]
@@ -3429,45 +3610,112 @@ mod tests {
             let err = compile_note(&vfs, &source(None), body)
                 .unwrap_err()
                 .to_string();
-            assert!(
-                err.contains(&format!(
-                    "in SKILL.md: {written} (not a link: its target has code in it)"
-                )),
-                "{body:?}: {err}"
+            assert_eq!(
+                err,
+                format!("{LEFTOVER}: {written} (not a link: its target has code in it){HINT}"),
+                "{body:?}"
             );
         }
     }
 
     #[test]
-    fn a_leftover_bracket_in_code_or_a_comment_or_a_resources_frontmatter_passes() {
-        // Code and HTML comments are content, and a resource's frontmatter
-        // travels as written: none of them is read as markdown links.
+    fn a_leftover_bracket_in_code_or_a_comment_passes() {
+        // Code and HTML comments are content, not markdown links.
+        let vfs = demo_vault();
+        let body = "`a[[0` and\n\n```\n[[TODO\n```\n<!-- [[draft -->\n";
+        let compiled = compile_note(&vfs, &source(None), body).unwrap();
+        assert_eq!(compiled.body, body);
+    }
+
+    /// A linked note `Fm.md` with `frontmatter` and `Body.`, compiled.
+    fn compile_with_frontmatter(frontmatter: &str) -> Result<(String, CompiledNote), CoreError> {
+        compile_resource(frontmatter, "Body.\n")
+    }
+
+    /// A compile of a skill linking `Fm.md`, which has `frontmatter` and `body`.
+    fn compile_resource(
+        frontmatter: &str,
+        body: &str,
+    ) -> Result<(String, CompiledNote), CoreError> {
+        let vfs = demo_vault();
+        let note = format!("---\n{frontmatter}\n---\n{body}");
+        write(&vfs, "/vault/Fm.md", note.as_bytes());
+        compile_note(&vfs, &source(None), "See [[Fm]].\n").map(|compiled| (note, compiled))
+    }
+
+    const FM_LINK: &str = "refused: unresolved-syntax: compiled skill demo has a link in the \
+                           frontmatter of references/vault/Fm.md";
+    const FM_WHY: &str = "; frontmatter ships as written, so the link is not resolved; \
+                          move it into the body";
+
+    #[test]
+    fn yaml_structure_in_a_resources_frontmatter_passes() {
+        for frontmatter in ["tags: [[a]]", "matrix: [[1, 2], [3]]"] {
+            let (note, compiled) = compile_with_frontmatter(frontmatter).unwrap();
+            assert_eq!(
+                resource(&compiled, "references/vault/Fm.md").1,
+                note.as_bytes(),
+                "{frontmatter}"
+            );
+        }
+        // The body is still checked.
+        let err = compile_resource("tags: [[a]]", "See [[TODO\n")
+            .unwrap_err()
+            .to_string();
         assert!(
-            validate_no_obsidian_syntax(
-                "`a[[0` and\n\n```\n[[TODO\n```\n<!-- [[draft -->\n",
-                0,
-                "SKILL.md",
-                "demo",
-                &BTreeSet::new(),
-            )
-            .is_ok()
+            err.contains("in references/vault/Fm.md: [[TODO (not a link"),
+            "{err}"
         );
-        let resource = "---\nmatrix: [[1, 2], [3]]\n---\nBody.\n";
-        assert!(
-            validate_no_obsidian_syntax(
-                resource,
-                body_start(resource),
-                "references/x.md",
-                "demo",
-                &BTreeSet::new()
-            )
-            .is_ok()
-        );
-        let err =
-            validate_no_obsidian_syntax(resource, 0, "references/x.md", "demo", &BTreeSet::new())
+    }
+
+    #[test]
+    fn a_wikilink_in_resource_frontmatter_fails_validation() {
+        // The transform never touches frontmatter, so a link there would ship
+        // unresolved.
+        let err = compile_with_frontmatter("related: \"[[Blocks]]\"")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, format!("{FM_LINK}: [[Blocks]]{FM_WHY}"));
+    }
+
+    #[test]
+    fn a_link_in_a_nested_frontmatter_string_is_refused() {
+        for (frontmatter, written) in [
+            ("related: [\"[[a]]\", \"[[b]]\"]", "[[a]]"),
+            ("x: {y: \"see [[a]]\"}", "[[a]]"),
+            ("\"[[a]]\": 1", "[[a]]"),
+            ("x:\n  - y: ['![[pic.png]]']", "![[pic.png]]"),
+        ] {
+            let err = compile_with_frontmatter(frontmatter)
                 .unwrap_err()
                 .to_string();
-        assert!(err.contains("unresolved-syntax"), "{err}");
+            assert_eq!(
+                err,
+                format!("{FM_LINK}: {written}{FM_WHY}"),
+                "{frontmatter}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_frontmatter_string_without_a_live_link_passes() {
+        for frontmatter in ["title: \"[[WIP] draft\"", "note: '\\[[x]]'"] {
+            let compiled = compile_with_frontmatter(frontmatter);
+            assert!(compiled.is_ok(), "{frontmatter}: {:?}", compiled.err());
+        }
+    }
+
+    #[test]
+    fn unparsable_resource_frontmatter_is_not_checked() {
+        // `\[` is not a double-quoted YAML escape, so this does not parse.
+        for frontmatter in ["note: \"\\[[x]]\"", "related: [[Blocks]] ]"] {
+            let (note, compiled) = compile_with_frontmatter(frontmatter).unwrap();
+            assert_eq!(
+                resource(&compiled, "references/vault/Fm.md").1,
+                note.as_bytes(),
+                "{frontmatter}"
+            );
+        }
     }
 
     #[test]
@@ -3711,18 +3959,7 @@ mod tests {
         skills: SkillSource<'_>,
         body: &str,
     ) -> Result<(CompiledNote, Vec<DiscoveryWarning>), CoreError> {
-        let render = |skill: &IndexedSkill, mention: bool| {
-            let sigil = if mention { "" } else { "/" };
-            Ok(format!("{sigil}{}", skill.call_id()))
-        };
-        let calls = CallContext {
-            skills,
-            render: &render,
-            target: "test",
-            implicit: true,
-            warnings: RefCell::new(Vec::new()),
-            record: None,
-        };
+        let calls = test_calls(skills, true);
         let source = CompileSource {
             calls: Some(&calls),
             ..source(None)
@@ -3871,11 +4108,291 @@ mod tests {
         );
     }
 
+    /// The test call context: a call renders as `/<call id>`, a mention as
+    /// `<call id>`.
+    fn test_calls(skills: SkillSource<'_>, implicit: bool) -> CallContext<'_> {
+        CallContext {
+            skills,
+            render: &render_call_id,
+            target: "test",
+            implicit,
+            warnings: RefCell::new(Vec::new()),
+            record: None,
+        }
+    }
+
+    fn render_call_id(skill: &IndexedSkill, mention: bool) -> Result<String, CoreError> {
+        let sigil = if mention { "" } else { "/" };
+        Ok(format!("{sigil}{}", skill.call_id()))
+    }
+
+    /// A compile of `source` with the test call context over `skills`.
+    fn compile_source_with_calls(
+        vfs: &MemVfs,
+        skills: &SkillIndex,
+        source: CompileSource<'_>,
+        body: &str,
+    ) -> Result<CompiledNote, CoreError> {
+        let calls = test_calls(SkillSource::ready(skills), true);
+        let source = CompileSource {
+            calls: Some(&calls),
+            ..source
+        };
+        compile_note(vfs, &source, body)
+    }
+
+    fn compiled_text<'a>(compiled: &'a CompiledNote, path: &str) -> &'a str {
+        std::str::from_utf8(&resource(compiled, path).1).unwrap()
+    }
+
     #[test]
-    fn a_link_to_the_entry_itself_stays_a_link() {
+    fn a_link_to_the_entry_itself_names_the_skill() {
         let vfs = demo_vault();
         write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
-        let compiled = compile_with_calls(&vfs, &call_index("called"), "Back to [[demo]].\n");
+        let body = "Back to [[demo]].\n";
+        let compiled = compile_with_calls(&vfs, &call_index("called"), body);
+        assert_eq!(compiled.body, "Back to `tools:demo`.\n");
+        assert!(!compiled.body.contains("SKILL.md"), "{}", compiled.body);
+        assert_eq!(compiled.closures["SKILL.md"].calls, vec!["tools:demo"]);
+
+        let skills = call_index("called");
+        let calls = test_calls(SkillSource::ready(&skills), true);
+        let source = CompileSource {
+            calls: Some(&calls),
+            ..source(None)
+        };
+        let related = related_of(&vfs, &source, body).unwrap();
+        assert!(related.calls.is_empty(), "{:?}", related.calls);
+        assert!(related.links.is_empty(), "{:?}", related.links);
+    }
+
+    #[test]
+    fn renaming_a_skill_changes_the_hash_of_its_self_links() {
+        let vfs = demo_vault();
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"Part of [[demo]].\n",
+        );
+        let bundle = Path::new("/vault/plugins/demo");
+        let compile = |skill: IndexedSkill| {
+            let skills = SkillIndex::new([skill]);
+            compile_source_with_calls(&vfs, &skills, source(Some(bundle)), "Back to [[demo]].\n")
+                .unwrap()
+        };
+        let hash = |compiled: &CompiledNote, path: &str| {
+            compiled.closures[path]
+                .hash(&vfs, Path::new("/vault"))
+                .unwrap()
+        };
+        let before = compile(indexed("/vault/plugins/demo/demo.md", "demo"));
+        let renamed = compile(indexed("/vault/plugins/demo/demo.md", "renamed"));
+        let moved = compile(IndexedSkill {
+            plugin: Some("other".to_owned()),
+            ..indexed("/vault/plugins/demo/demo.md", "demo")
+        });
+        assert_eq!(
+            compiled_text(&before, "references/x.md"),
+            "Part of `tools:demo`.\n"
+        );
+        for path in ["SKILL.md", "references/x.md"] {
+            assert_eq!(before.closures[path].calls, vec!["tools:demo"], "{path}");
+            assert_ne!(hash(&before, path), hash(&renamed, path), "{path}");
+            assert_ne!(hash(&before, path), hash(&moved, path), "{path}");
+        }
+    }
+
+    #[test]
+    fn a_bundle_files_link_to_its_own_skill_names_the_skill() {
+        let vfs = demo_vault();
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"Part of [[demo]].\n",
+        );
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(Some(Path::new("/vault/plugins/demo"))),
+            "# Demo\n",
+        )
+        .unwrap();
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "Part of `tools:demo`.\n"
+        );
+        assert_eq!(
+            compiled.closures["references/x.md"].calls,
+            vec!["tools:demo"]
+        );
+    }
+
+    #[test]
+    fn a_self_link_names_the_skill_in_every_skill_shape() {
+        // (entry, bundle root, the link's target)
+        let shapes = [
+            ("/vault/skills/s.md", "/vault/skills/s", "s"),
+            ("/vault/skills/s/s.md", "/vault/skills/s", "s"),
+            ("/vault/skills/s/SKILL.md", "/vault/skills/s", "s"),
+        ];
+        for (entry, bundle, target) in shapes {
+            let vfs = MemVfs::new();
+            write(&vfs, entry, b"---\nname: s\ndescription: d\n---\n\n# S\n");
+            let link = format!("Part of [[{target}]].\n");
+            write(&vfs, &format!("{bundle}/references/x.md"), link.as_bytes());
+            let skills = SkillIndex::new([indexed(entry, "s")]);
+            let mut base = CompileSource::new(Path::new("/vault"), Path::new(entry), "s");
+            base.bundle_root = Some(Path::new(bundle));
+            let compiled = compile_source_with_calls(&vfs, &skills, base, &link).unwrap();
+            assert_eq!(compiled.body, "Part of `tools:s`.\n", "{entry}");
+            assert_eq!(
+                compiled_text(&compiled, "references/x.md"),
+                "Part of `tools:s`.\n",
+                "{entry}"
+            );
+            for path in ["SKILL.md", "references/x.md"] {
+                assert!(
+                    compiled.closures[path].unresolved.is_empty(),
+                    "{entry} {path}: {:?}",
+                    compiled.closures[path].unresolved
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_embedded_notes_link_to_the_embedding_skill_names_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/snippet.md", b"Part of [[demo]].\n");
+        let compiled = compile_with_calls(&vfs, &call_index("called"), "![[snippet]]\n");
+        assert_eq!(compiled.body, "Part of `tools:demo`.\n");
+    }
+
+    #[test]
+    fn a_linked_vault_notes_link_back_to_the_skill_names_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/Foo.md", b"Part of [[demo]].\n");
+        let compiled = compile_with_calls(&vfs, &call_index("called"), "See [[Foo]].\n");
+        assert_eq!(compiled.body, "See [Foo.md](references/vault/Foo.md).\n");
+        assert_eq!(
+            compiled_text(&compiled, "references/vault/Foo.md"),
+            "Part of `tools:demo`.\n"
+        );
+    }
+
+    #[test]
+    fn a_self_link_keeps_its_alias() {
+        let vfs = demo_vault();
+        let compiled =
+            compile_with_calls(&vfs, &call_index("called"), "Use [[demo|this skill]].\n");
+        assert_eq!(compiled.body, "Use this skill (`tools:demo`).\n");
+    }
+
+    #[test]
+    fn a_self_link_with_a_fragment_stays_a_link() {
+        let vfs = demo_vault();
+        write(
+            &vfs,
+            "/vault/plugins/demo/demo.md",
+            b"---\nname: demo\ndescription: d\n---\n\n## Steps\n",
+        );
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"See [[demo#Steps]].\n",
+        );
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(Some(Path::new("/vault/plugins/demo"))),
+            "See [[demo#Steps]].\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "See [demo.md](SKILL.md#Steps).\n");
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "See [demo.md](../SKILL.md#Steps).\n"
+        );
+
+        // The link path's rules, not a call's: a link's fragment is not
+        // checked, so a missing heading is not a `skill-call-*` refusal.
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(None),
+            "See [[demo#Missing]].\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "See [demo.md](SKILL.md#Missing).\n");
+
+        // A bundle skill's entry, which `[[s]]` names but does not resolve to.
+        let vfs = MemVfs::new();
+        let entry = "/vault/skills/s/SKILL.md";
+        write(
+            &vfs,
+            entry,
+            b"---\nname: s\ndescription: d\n---\n\n## Steps\n",
+        );
+        write(
+            &vfs,
+            "/vault/skills/s/references/x.md",
+            b"See [[s#Steps]].\n",
+        );
+        let skills = SkillIndex::new([indexed(entry, "s")]);
+        let mut base = CompileSource::new(Path::new("/vault"), Path::new(entry), "s");
+        base.bundle_root = Some(Path::new("/vault/skills/s"));
+        let compiled =
+            compile_source_with_calls(&vfs, &skills, base, "See [[s#Steps]].\n").unwrap();
+        assert_eq!(compiled.body, "See [SKILL.md](SKILL.md#Steps).\n");
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "See [SKILL.md](../SKILL.md#Steps).\n"
+        );
+    }
+
+    #[test]
+    fn a_self_call_still_renders_the_call() {
+        let vfs = demo_vault();
+        let compiled = compile_with_calls(&vfs, &call_index("called"), "Run /[[demo]].\n");
+        assert_eq!(compiled.body, "Run `/tools:demo`.\n");
+    }
+
+    #[test]
+    fn a_bundle_files_link_to_another_skill_names_it() {
+        let vfs = demo_vault();
+        write(&vfs, "/vault/plugins/demo/called.md", b"# called\n");
+        write(
+            &vfs,
+            "/vault/plugins/demo/references/x.md",
+            b"See [[called]].\n",
+        );
+        let compiled = compile_source_with_calls(
+            &vfs,
+            &call_index("called"),
+            source(Some(Path::new("/vault/plugins/demo"))),
+            "See [[called]].\n",
+        )
+        .unwrap();
+        assert_eq!(compiled.body, "See `tools:called`.\n");
+        assert_eq!(
+            compiled_text(&compiled, "references/x.md"),
+            "See `tools:called`.\n"
+        );
+    }
+
+    #[test]
+    fn a_self_link_without_an_implicit_context_stays_a_link() {
+        let vfs = demo_vault();
+        let compiled = compile_note(&vfs, &source(None), "Back to [[demo]].\n").unwrap();
+        assert_eq!(compiled.body, "Back to [demo.md](SKILL.md).\n");
+
+        let skills = call_index("called");
+        let calls = test_calls(SkillSource::ready(&skills), false);
+        let source = CompileSource {
+            calls: Some(&calls),
+            ..source(None)
+        };
+        let compiled = compile_note(&vfs, &source, "Back to [[demo]].\n").unwrap();
         assert_eq!(compiled.body, "Back to [demo.md](SKILL.md).\n");
         assert!(compiled.closures["SKILL.md"].calls.is_empty());
     }

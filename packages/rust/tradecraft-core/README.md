@@ -100,8 +100,9 @@ assert!(report.changed);
 ```
 
 The steps inside are public if a host needs them apart: `find_root_file`,
-`workspace_above`, `RootFile::inherit`, `marketplace_inputs` and
-`resolve_path` for any other path read from the file.
+`workspace_above` (and `workspace_file`, the path it reads),
+`RootFile::inherit`, `marketplace_inputs` and `resolve_path` for any other
+path read from the file.
 
 To rename or delete a marketplace folder, plan it with
 `plan_rename_marketplace` or `plan_delete_container(…, EntityKind::Marketplace)`,

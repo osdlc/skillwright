@@ -59,7 +59,6 @@ use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 
-pub(crate) use cascade::member_block_keys;
 pub use cascade::{Cascade, inherit_targets, marketplaces_in};
 pub use load::{
     ComponentRequest, LoadRequest, load, load_component, load_plugin, read_notes, resolve_body,
@@ -121,10 +120,16 @@ pub struct Plugin {
     /// at [`crate::export::MarketplaceConfig::launcher_path`]: the
     /// `${CLAUDE_PLUGIN_ROOT}/<launcher>` its skills call.
     pub launcher: Option<String>,
-    /// The harnesses that name this plugin's skills bare, whatever their
-    /// profile says: `pi: {naming: bare}`.
+    /// The harnesses that name this plugin's skills bare against their
+    /// profile's default: `<harness>: {naming: bare}` where the default
+    /// prefixes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bare_on: Vec<String>,
+    /// The harnesses that name this plugin's skills `<plugin>-<skill>`
+    /// against their profile's default: `<harness>: {naming: prefixed}` where
+    /// the default is bare.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prefixed_on: Vec<String>,
 }
 
 impl Plugin {
@@ -286,9 +291,14 @@ pub struct Call {
     pub skill: SkillId,
     /// That skill's `targets`, which decide whether a harness ships it.
     pub targets: Option<Vec<String>>,
-    /// The harnesses that name the skill bare, whatever their profile says.
+    /// The harnesses that name the skill bare against their profile's
+    /// default, as its plugin's [`Plugin::bare_on`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bare_on: Vec<String>,
+    /// The harnesses that prefix the skill with its plugin against their
+    /// profile's default, as its plugin's [`Plugin::prefixed_on`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prefixed_on: Vec<String>,
     /// The call as written, for a refusal.
     pub destination: String,
     /// A plain `[[skill]]`: written as the skill's published name, with no
@@ -432,6 +442,7 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
         },
         targets: None,
         bare_on: Vec::new(),
+        prefixed_on: Vec::new(),
         destination: site.destination.clone(),
         mention: site.mention,
         caller: site.caller.clone(),
@@ -535,6 +546,33 @@ mod tests {
         assert!(
             matches!(&body.segments[3], Segment::Link { target } if target.markdown() == "[x](references/x.md)")
         );
+    }
+
+    #[test]
+    fn a_self_link_is_a_mention_segment() {
+        use crate::vfs::{MemVfs, Vfs};
+        use std::path::Path;
+        let vfs = MemVfs::new();
+        let path = Path::new("/vault/marketplaces/house/plugins/tools/skills/a.md");
+        vfs.create_dir_all(path.parent().unwrap()).unwrap();
+        vfs.write_file(
+            path,
+            b"---\nname: a\ndescription: A.\n---\n\nPart of [[a]].\n",
+        )
+        .unwrap();
+        let request = LoadRequest::new("/vault", MarketplaceConfig::default());
+        let marketplace = load(&vfs, &request, &crate::Namespace::sw()).unwrap();
+        let skill = &marketplace.plugins["tools"].skills[0];
+        let body = &skill.resolved.as_ref().unwrap().body;
+        let calls: Vec<(String, bool)> = body
+            .segments
+            .iter()
+            .filter_map(|segment| match segment {
+                Segment::Call { call } => Some((call.skill.call_id(), call.mention)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(calls, vec![("tools:a".to_owned(), true)]);
     }
 
     #[test]

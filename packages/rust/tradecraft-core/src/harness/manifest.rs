@@ -16,8 +16,8 @@ use serde::Serialize;
 
 use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, PluginOverrides, STAGE_DIR};
-use crate::frontmatter::EntityKind;
-use crate::harness::{HarnessProfile, PluginDialect};
+use crate::frontmatter::{ContainerIdentity, EntityKind};
+use crate::harness::{HarnessProfile, PluginDialect, SkillNaming};
 use unicode_normalization::UnicodeNormalization;
 
 /// Two-space indentation, stable key order, one trailing newline — the byte
@@ -34,14 +34,12 @@ pub(crate) fn stable_json<T: Serialize>(value: &T) -> String {
     out
 }
 
-/// The harness a dialect belongs to, as its profile and its block name it.
-fn harness_of(dialect: PluginDialect) -> &'static str {
-    match dialect {
-        PluginDialect::Claude => "claude",
-        PluginDialect::Codex => "codex",
-        PluginDialect::Cursor => "cursor",
-        PluginDialect::Pi => "pi",
-    }
+/// The harness whose manifests take `dialect`. A test holds each dialect to
+/// exactly one.
+fn profile_of(dialect: PluginDialect) -> &'static HarnessProfile {
+    crate::harness::with_plugin_format()
+        .find(|profile| profile.format().dialect == dialect)
+        .expect("every dialect has a profile")
 }
 
 /// The harness's plugin format, for its manifest key lists.
@@ -57,7 +55,8 @@ type Block = serde_json::Map<String, serde_json::Value>;
 /// marketplace only.
 pub const PACKS_KEY: &str = "packs";
 
-/// The harness-block key choosing how Pi names a published skill.
+/// The harness-block key choosing how a harness whose profile allows it
+/// ([`crate::harness::PluginFormat::naming_choice`]) names a published skill.
 pub const NAMING_KEY: &str = "naming";
 
 /// Where `profile`'s packs land: the marketplace block's `packs`, or the
@@ -195,7 +194,8 @@ pub(crate) fn check_container_blocks(
     let unknown = crate::discover::unknown_container_block_keys(blocks, kind);
     for (harness, block) in blocks {
         for (key, value) in block.as_object().into_iter().flatten() {
-            if let Some(ty) = crate::harness::field_types::container_type(harness, key)
+            if let Some(ty) = crate::harness::profile_named(harness)
+                .and_then(|profile| crate::harness::field_types::container_type(profile, key))
                 && !unknown.contains(&format!("{harness}.{key}"))
                 && !ty.accepts(value)
             {
@@ -310,21 +310,33 @@ pub(crate) fn check_packs_against_sources(
     Ok(())
 }
 
-/// How `plugin`'s skills are named on Pi: whether its `naming` says bare.
+/// How `plugin`'s skills are named on `profile`: its block's `naming`, or the
+/// profile default. A profile without
+/// [`naming_choice`](crate::harness::PluginFormat::naming_choice) returns its
+/// default and never reads the key.
 ///
 /// # Errors
 ///
 /// `refused: unknown-naming` for a value other than `bare` and `prefixed`.
-pub(crate) fn bare_on_pi(config: &MarketplaceConfig, plugin: &str) -> Result<bool, CoreError> {
-    match plugin_block(config, plugin, "pi").get(NAMING_KEY) {
-        None => Ok(false),
+pub(crate) fn naming_of(
+    config: &MarketplaceConfig,
+    plugin: &str,
+    profile: &HarnessProfile,
+) -> Result<SkillNaming, CoreError> {
+    let format = profile.format();
+    if !format.naming_choice {
+        return Ok(format.naming);
+    }
+    match plugin_block(config, plugin, profile.name).get(NAMING_KEY) {
+        None => Ok(format.naming),
         Some(value) => match value.as_str() {
-            Some("bare") => Ok(true),
-            Some("prefixed") => Ok(false),
+            Some("bare") => Ok(SkillNaming::Bare),
+            Some("prefixed") => Ok(SkillNaming::PluginPrefixed),
             _ => Err(CoreError::refused(
                 "unknown-naming",
                 format!(
-                    "`pi.{NAMING_KEY}` of plugin `{plugin}` must be `bare` or `prefixed`, not {value}"
+                    "`{}.{NAMING_KEY}` of plugin `{plugin}` must be `bare` or `prefixed`, not {value}",
+                    profile.name
                 ),
             )),
         },
@@ -332,21 +344,18 @@ pub(crate) fn bare_on_pi(config: &MarketplaceConfig, plugin: &str) -> Result<boo
 }
 
 /// One plugin's harness block for `harness`: the marketplace's block, less
-/// the keys that belong to the marketplace manifest's own top level and the
-/// keys that say which plugin this is, overlaid by the plugin note's block key
-/// by key.
+/// every key it does not pass down
+/// ([`HarnessProfile::passed_down_keys`]), overlaid by the plugin note's
+/// block key by key.
 pub(crate) fn plugin_block(config: &MarketplaceConfig, plugin: &str, harness: &str) -> Block {
-    let top = format_of(harness).marketplace_fields;
+    let passed = crate::harness::profile_named(harness).map(HarnessProfile::passed_down_keys);
     let mut block: Block = config
         .blocks
         .get(harness)
         .into_iter()
         .flatten()
         .filter(|_| crate::keys::inherits(EntityKind::Plugin, harness))
-        .filter(|(key, _)| {
-            !top.contains(&key.as_str())
-                && !crate::keys::BLOCK_IDENTITY_KEYS.contains(&key.as_str())
-        })
+        .filter(|(key, _)| passed.is_some_and(|passed| passed.contains(key.as_str())))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     if let Some(own) = overrides_for(config, plugin).and_then(|o| o.blocks.get(harness)) {
@@ -410,27 +419,10 @@ fn insert_after(map: &mut Block, after: &str, key: &str, value: serde_json::Valu
 /// added after `license` when the dialect's manifest has the field.
 fn add_links(map: &mut Block, config: &MarketplaceConfig, plugin: &str, harness: &str) {
     let fields = format_of(harness).manifest_fields;
+    let identity = plugin_identity(config, plugin);
     let links = [
-        (
-            "repository",
-            inherited(
-                config,
-                plugin,
-                "repository",
-                |own| &own.repository,
-                |market| &market.repository,
-            ),
-        ),
-        (
-            "homepage",
-            inherited(
-                config,
-                plugin,
-                "homepage",
-                |own| &own.homepage,
-                |market| &market.homepage,
-            ),
-        ),
+        ("repository", identity.repository),
+        ("homepage", identity.homepage),
     ];
     let mut after = "license".to_owned();
     for (key, value) in links {
@@ -499,20 +491,26 @@ pub(crate) fn overrides_for<'a>(
     config.plugins.get(plugin)
 }
 
-/// `plugin`'s value for `key`: its own, then the marketplace's where the key
-/// table says the key inherits. The one reading of a plugin's inherited field.
-pub(crate) fn inherited<T: Clone>(
-    config: &MarketplaceConfig,
-    plugin: &str,
-    key: &str,
-    own: impl Fn(&PluginOverrides) -> &Option<T>,
-    market: impl Fn(&MarketplaceConfig) -> &Option<T>,
-) -> Option<T> {
+/// `plugin`'s identity: its own fields, then the marketplace's where the key
+/// table says a plugin inherits them. The one reading of a plugin's inherited
+/// identity.
+pub(crate) fn plugin_identity(config: &MarketplaceConfig, plugin: &str) -> ContainerIdentity {
+    let mut identity = overrides_for(config, plugin)
+        .map(|overrides| overrides.identity.clone())
+        .unwrap_or_default();
+    identity.fill_unset_from(&config.identity, EntityKind::Plugin);
+    identity
+}
+
+/// `plugin`'s `targets`: its own, else the marketplace's where the key table
+/// says a plugin inherits them. It is not part of [`plugin_identity`]: see
+/// [`crate::keys::identity_keys`].
+pub(crate) fn plugin_targets(config: &MarketplaceConfig, plugin: &str) -> Option<Vec<String>> {
     overrides_for(config, plugin)
-        .and_then(|overrides| own(overrides).clone())
+        .and_then(|overrides| overrides.targets.clone())
         .or_else(|| {
-            crate::keys::inherits(EntityKind::Plugin, key)
-                .then(|| market(config).clone())
+            crate::keys::inherits(EntityKind::Plugin, "targets")
+                .then(|| config.targets.clone())
                 .flatten()
         })
 }
@@ -524,7 +522,7 @@ pub(crate) const DEFAULT_PLUGIN_VERSION: &str = "0.1.0";
 /// marketplace's, so this is the one answer for every plugin.
 pub(crate) fn plugin_version(config: &MarketplaceConfig, plugin: &str) -> String {
     overrides_for(config, plugin)
-        .and_then(|o| o.version.clone())
+        .and_then(|o| o.identity.version.clone())
         .unwrap_or_else(|| DEFAULT_PLUGIN_VERSION.to_owned())
 }
 
@@ -549,43 +547,31 @@ struct EntryListing {
 
 fn entry_listing(config: &MarketplaceConfig, plugin: &str) -> EntryListing {
     EntryListing {
-        category: overrides_for(config, plugin).and_then(|o| o.category.clone()),
+        category: overrides_for(config, plugin).and_then(|o| o.identity.category.clone()),
         tags: plugin_keywords(config, plugin),
     }
 }
 
 fn plugin_keywords(config: &MarketplaceConfig, plugin: &str) -> Vec<String> {
     overrides_for(config, plugin)
-        .and_then(|o| o.keywords.clone())
+        .and_then(|o| o.identity.keywords.clone())
         .unwrap_or_default()
 }
 
 fn plugin_category(config: &MarketplaceConfig, plugin: &str) -> String {
     overrides_for(config, plugin)
-        .and_then(|o| o.category.clone())
+        .and_then(|o| o.identity.category.clone())
         .unwrap_or_else(|| "Productivity".to_owned())
 }
 
 fn plugin_license(config: &MarketplaceConfig, plugin: &str) -> String {
-    inherited(
-        config,
-        plugin,
-        "license",
-        |own| &own.license,
-        |market| &market.license,
-    )
-    .unwrap_or_else(|| "UNLICENSED".to_owned())
+    plugin_identity(config, plugin)
+        .license
+        .unwrap_or_else(|| "UNLICENSED".to_owned())
 }
 
 fn plugin_author(config: &MarketplaceConfig, plugin: &str) -> Option<serde_json::Value> {
-    inherited(
-        config,
-        plugin,
-        "author",
-        |own| &own.author,
-        |market| &market.author,
-    )
-    .map(normalize_author)
+    plugin_identity(config, plugin).author.map(normalize_author)
 }
 
 /// Claude's plugin schema requires `author` as `{ name, email? }`, but a
@@ -607,6 +593,18 @@ fn without_url(mut person: serde_json::Value) -> serde_json::Value {
         fields.remove("url");
     }
     person
+}
+
+/// A plugin's Cursor display name: its own note's `cursor.displayName` when
+/// that is a string, else its `display_name`. A marketplace's
+/// `cursor.displayName` never applies, because it names the marketplace
+/// ([`crate::keys::BLOCK_IDENTITY_KEYS`]).
+fn cursor_display_name(config: &MarketplaceConfig, plugin: &str) -> Option<String> {
+    plugin_block(config, plugin, "cursor")
+        .get("displayName")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| overrides_for(config, plugin)?.identity.display_name.clone())
 }
 
 /// One plugin's pack manifest, `members` its skills' names.
@@ -650,14 +648,16 @@ pub fn render_plugin_manifest(
         #[serde(skip_serializing_if = "Option::is_none")]
         interface: Option<Interface>,
     }
-    let display_name = overrides_for(config, plugin).and_then(|o| o.display_name.clone());
+    let display_name = overrides_for(config, plugin).and_then(|o| o.identity.display_name.clone());
     let interface = (dialect == PluginDialect::Codex).then(|| Interface {
         display_name: display_name.clone().unwrap_or_else(|| plugin.to_owned()),
         category: plugin_category(config, plugin),
     });
     let manifest = Manifest {
         name: plugin.to_owned(),
-        display_name: display_name.filter(|_| dialect == PluginDialect::Cursor),
+        display_name: (dialect == PluginDialect::Cursor)
+            .then(|| cursor_display_name(config, plugin))
+            .flatten(),
         version: plugin_version(config, plugin),
         description: plugin_description(config, plugin, members),
         author: plugin_author(config, plugin).map(|author| match dialect {
@@ -670,7 +670,7 @@ pub fn render_plugin_manifest(
         hooks,
         interface,
     };
-    finish_plugin(&manifest, config, plugin, harness_of(dialect))
+    finish_plugin(&manifest, config, plugin, profile_of(dialect).name)
 }
 
 /// The keyword the pi.dev gallery lists an npm package by.
@@ -761,6 +761,7 @@ pub fn codex_marketplace_manifest(
             name: name.to_owned(),
             interface: Interface {
                 display_name: config
+                    .identity
                     .display_name
                     .clone()
                     .unwrap_or_else(|| name.to_owned()),
@@ -830,12 +831,13 @@ pub fn claude_marketplace_manifest(
         let manifest = Manifest {
             name: name.to_owned(),
             owner: config
+                .identity
                 .owner
                 .clone()
                 .map(normalize_author)
                 .unwrap_or_else(|| serde_json::json!({ "name": name })),
             description: config.description.clone(),
-            version: config.version.clone(),
+            version: config.identity.version.clone(),
             plugins: listed
                 .iter()
                 .map(|(plugin, members)| Entry {
@@ -871,6 +873,10 @@ pub fn cursor_marketplace_manifest(
     #[derive(Serialize)]
     struct Entry {
         name: String,
+        /// Ours, not a documented entry field (#123): the plugin's own
+        /// `displayName`, so the catalog and `plugin.json` agree.
+        #[serde(rename = "displayName", skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
         source: String,
         description: String,
         version: String,
@@ -897,19 +903,23 @@ pub fn cursor_marketplace_manifest(
     let manifest = Manifest {
         name: name.to_owned(),
         owner: config
+            .identity
             .owner
             .clone()
             .map(normalize_author)
             .map(without_url)
             .unwrap_or_else(|| serde_json::json!({ "name": name })),
-        metadata: (config.description.is_some() || config.version.is_some()).then(|| Metadata {
-            description: config.description.clone(),
-            version: config.version.clone(),
+        metadata: (config.description.is_some() || config.identity.version.is_some()).then(|| {
+            Metadata {
+                description: config.description.clone(),
+                version: config.identity.version.clone(),
+            }
         }),
         plugins: listed
             .iter()
             .map(|(plugin, members)| Entry {
                 name: (*plugin).to_owned(),
+                display_name: cursor_display_name(config, plugin),
                 source: format!("{packs}/{plugin}"),
                 description: plugin_description(config, plugin, members),
                 version: plugin_version(config, plugin),
@@ -918,4 +928,135 @@ pub fn cursor_marketplace_manifest(
             .collect(),
     };
     finish_marketplace(&manifest, config, "cursor")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_dialect_has_one_profile() {
+        for dialect in [
+            PluginDialect::Claude,
+            PluginDialect::Codex,
+            PluginDialect::Cursor,
+            PluginDialect::Pi,
+        ] {
+            let rows = crate::harness::with_plugin_format()
+                .filter(|p| p.format().dialect == dialect)
+                .count();
+            assert_eq!(rows, 1, "{dialect:?}");
+            assert_eq!(profile_of(dialect).format().dialect, dialect);
+        }
+    }
+
+    /// The match in `facts_for` has no wildcard, so a new dialect does not
+    /// compile until it has a table. Each table holds the keys its manifests
+    /// carry.
+    #[test]
+    fn facts_for_covers_every_dialect() {
+        for profile in crate::harness::with_plugin_format() {
+            let facts = crate::harness::field_types::facts_for(profile.format().dialect);
+            assert!(
+                facts.iter().any(|(key, _)| *key == "name"),
+                "{}",
+                profile.name
+            );
+        }
+    }
+
+    #[test]
+    fn a_marketplace_block_passes_down_only_its_passed_down_keys() {
+        let mut config = MarketplaceConfig::default();
+        let block = serde_json::json!({
+            "naming": "prefixed",
+            "logo": "logo.png",
+            "owner": {"name": "o"},
+            "name": "m",
+            "zz-unknown": 1,
+        });
+        config
+            .blocks
+            .insert("cursor".to_owned(), block.as_object().unwrap().clone());
+        let block = plugin_block(&config, "p", "cursor");
+        assert_eq!(block.get("naming"), Some(&serde_json::json!("prefixed")));
+        assert_eq!(block.get("logo"), Some(&serde_json::json!("logo.png")));
+        for key in ["owner", "name", "zz-unknown"] {
+            assert!(!block.contains_key(key), "{key}");
+        }
+    }
+
+    /// A config whose plugin `t` has `display_name` and a `cursor` block of
+    /// `cursor`.
+    fn display_config(display_name: Option<&str>, cursor: serde_json::Value) -> MarketplaceConfig {
+        let mut config = MarketplaceConfig::default();
+        let mut overrides = PluginOverrides::default();
+        overrides.identity.display_name = display_name.map(str::to_owned);
+        if let serde_json::Value::Object(block) = cursor {
+            overrides.blocks.insert("cursor".to_owned(), block);
+        }
+        config.plugins.insert("t".to_owned(), overrides);
+        config
+    }
+
+    fn cursor_entry(config: &MarketplaceConfig) -> serde_json::Map<String, serde_json::Value> {
+        let catalog: serde_json::Value = serde_json::from_str(&cursor_marketplace_manifest(
+            &[("t", vec![])],
+            ".cursor-plugin/packs",
+            "m",
+            config,
+        ))
+        .unwrap();
+        catalog["plugins"][0].as_object().unwrap().clone()
+    }
+
+    fn cursor_plugin(config: &MarketplaceConfig) -> serde_json::Value {
+        serde_json::from_str(&render_plugin_manifest(
+            PluginDialect::Cursor,
+            "t",
+            &[],
+            config,
+            None,
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_cursor_catalog_entry_carries_the_plugin_s_display_name() {
+        let config = display_config(Some("Ticket workflow"), serde_json::Value::Null);
+        let entry = cursor_entry(&config);
+        let keys: Vec<&str> = entry.keys().map(String::as_str).collect();
+        assert_eq!(keys[..2], ["name", "displayName"], "{entry:?}");
+        assert_eq!(entry["displayName"], "Ticket workflow");
+
+        let config = display_config(
+            Some("Ticket workflow"),
+            serde_json::json!({"displayName": "Ticket workflow (t)"}),
+        );
+        assert_eq!(cursor_entry(&config)["displayName"], "Ticket workflow (t)");
+        assert_eq!(cursor_plugin(&config)["displayName"], "Ticket workflow (t)");
+
+        let config = display_config(None, serde_json::Value::Null);
+        assert!(!cursor_entry(&config).contains_key("displayName"));
+    }
+
+    #[test]
+    fn a_marketplace_cursor_display_name_never_reaches_a_plugin() {
+        let mut config = display_config(None, serde_json::Value::Null);
+        config.blocks.insert(
+            "cursor".to_owned(),
+            serde_json::json!({"displayName": "Market"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        assert!(!cursor_entry(&config).contains_key("displayName"));
+        assert!(cursor_plugin(&config).get("displayName").is_none());
+    }
+
+    #[test]
+    fn cursor_source_has_no_dot_slash() {
+        let entry = cursor_entry(&display_config(None, serde_json::Value::Null));
+        assert_eq!(entry["source"], ".cursor-plugin/packs/t");
+    }
 }

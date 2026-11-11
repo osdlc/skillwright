@@ -329,14 +329,19 @@ fn ts_type(model: &Model, ty: &syn::Type) -> Result<String, Error> {
 
 /// The TypeScript name of a Rust type.
 ///
-/// A wire wrapper is named for the struct it flattens — `WireExportRequest`
-/// splices `ExportRequest` and one extra key, and the wire it describes IS an
-/// export request. A wrapper that flattens nothing loses a leading `Wire`.
-/// Both rules are mechanical, so a new export needs no entry anywhere.
+/// A wire wrapper (`Wire…`) is named for the struct it flattens —
+/// `WireExportRequest` splices `ExportRequest` and one extra key, and the wire
+/// it describes IS an export request. A wrapper that flattens nothing loses
+/// its leading `Wire`. Both rules are mechanical, so a new export needs no
+/// entry anywhere. Any other struct keeps its own name, whatever it flattens:
+/// `MarketplaceConfig` splices `ContainerIdentity` and is still a config.
 fn ts_name(model: &Model, rust_name: &str) -> Result<String, Error> {
     let Some(TypeDef::Struct(s)) = model.types.get(rust_name) else {
         return Ok(rust_name.to_string());
     };
+    if !rust_name.starts_with("Wire") {
+        return Ok(rust_name.to_string());
+    }
     let bare = || {
         rust_name
             .strip_prefix("Wire")

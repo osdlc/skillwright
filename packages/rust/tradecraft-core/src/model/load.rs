@@ -37,7 +37,7 @@ use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
 use crate::frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
 use crate::harness::manifest::plugin_version;
-use crate::harness::{HarnessProfile, with_plugin_format};
+use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
 use crate::namespace::Namespace;
 use crate::paths::WORKSPACE_DIR;
 use crate::projection::parse_runtime_target;
@@ -327,10 +327,10 @@ pub fn load(
     // marketplace's and it ships the marketplace's version.
     if plugins.contains_key(&name)
         && !has_folder(&discovered, market.as_deref(), &name)
-        && let Some(version) = cascade.config.version.clone()
+        && let Some(version) = cascade.config.identity.version.clone()
     {
         let own = cascade.config.plugins.entry(name.clone()).or_default();
-        own.version.get_or_insert(version);
+        own.identity.version.get_or_insert(version);
     }
     let config = &cascade.config;
     warnings.extend(missing_versions(
@@ -938,24 +938,38 @@ fn bodies_of(resolved: &mut Resolved) -> impl Iterator<Item = &mut Body> {
     ))
 }
 
-/// Marks each plugin `pi: {naming: bare}` covers, and every call to one of
-/// its skills, wherever the call sits.
+/// Marks each plugin whose `<harness>: {naming: …}` names its skills against
+/// that harness's default, and every call to one of its skills, wherever the
+/// call sits. Only a harness whose profile allows the choice is read.
 fn apply_naming(
     plugins: &mut BTreeMap<String, Plugin>,
     config: &MarketplaceConfig,
 ) -> Result<(), CoreError> {
-    let mut bare = BTreeSet::new();
-    for name in plugins.keys() {
-        if crate::harness::manifest::bare_on_pi(config, name)? {
-            bare.insert(name.clone());
+    // Per plugin, the harnesses that name it bare and those that prefix it,
+    // each against that harness's default.
+    let mut chosen: BTreeMap<String, (Vec<String>, Vec<String>)> = BTreeMap::new();
+    for profile in crate::harness::with_plugin_format().filter(|p| p.format().naming_choice) {
+        let default = profile.format().naming;
+        for name in plugins.keys() {
+            let naming = crate::harness::manifest::naming_of(config, name, profile)?;
+            if naming == default {
+                continue;
+            }
+            let (bare, prefixed) = chosen.entry(name.clone()).or_default();
+            match naming {
+                SkillNaming::Bare => bare.push(profile.name.to_owned()),
+                SkillNaming::PluginPrefixed => prefixed.push(profile.name.to_owned()),
+                SkillNaming::HostNamespaced => {}
+            }
         }
     }
-    if bare.is_empty() {
+    if chosen.is_empty() {
         return Ok(());
     }
     for plugin in plugins.values_mut() {
-        if bare.contains(&plugin.name) {
-            plugin.bare_on = vec!["pi".to_owned()];
+        if let Some((bare, prefixed)) = chosen.get(&plugin.name) {
+            plugin.bare_on.clone_from(bare);
+            plugin.prefixed_on.clone_from(prefixed);
         }
         let members = plugin
             .skills
@@ -966,9 +980,11 @@ fn apply_naming(
             for body in bodies_of(resolved) {
                 for segment in &mut body.segments {
                     if let Segment::Call { call } = segment
-                        && call.skill.plugin.as_ref().is_some_and(|p| bare.contains(p))
+                        && let Some((bare, prefixed)) =
+                            call.skill.plugin.as_ref().and_then(|p| chosen.get(p))
                     {
-                        call.bare_on = vec!["pi".to_owned()];
+                        call.bare_on.clone_from(bare);
+                        call.prefixed_on.clone_from(prefixed);
                     }
                 }
             }
@@ -1150,7 +1166,7 @@ fn missing_versions(
             config
                 .plugins
                 .get(*name)
-                .and_then(|o| o.version.as_ref())
+                .and_then(|o| o.identity.version.as_ref())
                 .is_none()
         })
         .map(|name| {
@@ -1186,7 +1202,7 @@ fn missing_versions(
             config
                 .plugins
                 .get(c.folder())
-                .and_then(|o| o.version.as_ref())
+                .and_then(|o| o.identity.version.as_ref())
                 .is_none()
         })
         .map(|c| DiscoveryWarning {

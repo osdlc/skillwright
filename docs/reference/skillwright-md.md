@@ -337,5 +337,16 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
     `packs: alt` moves, `build` and `check` stop on `dist/alt`, and the message says
     an earlier build wrote the file.
   - A folder outside the vault gets no warning.
-- `pi: {naming: bare}` on the marketplace or a plugin publishes Pi skills under
-  their bare names. `prefixed` is the default.
+- `<harness>: {naming: bare | prefixed}` on the marketplace or a plugin chooses
+  how Cursor and Pi name that plugin's skills. `prefixed` names a skill
+  `<plugin>-<skill>`, in its folder, its frontmatter `name` and every call and
+  mention of it. A plugin's value overrides the marketplace's. Claude and Codex
+  name skills by plugin already, so `claude.naming` and `codex.naming` warn.
+  - `pi: {naming: bare}` publishes Pi skills under their bare names. `prefixed`
+    is Pi's default.
+  - `cursor: {naming: prefixed}` publishes Cursor skills as `<plugin>-<skill>`.
+    `bare` is Cursor's default.
+  - A prefixed name must be unique on its harness. A skill of another plugin
+    that publishes under the same name stops the build with `path-collision`.
+    On Pi, where names are prefixed by default, two bare skills of one name stop
+    it too. On Cursor, two bare skills of one name still build.

@@ -12,7 +12,11 @@
 //!    ([`crate::settings::RootFile::inherit`]).
 //!
 //! Which keys come down is the key table's answer ([`crate::keys::inherits`]).
-//! Names, descriptions and versions never do.
+//! Names, descriptions and versions never do. A container's identity comes
+//! down through [`crate::frontmatter::ContainerIdentity::fill_unset_from`], and
+//! a note over the request through
+//! [`crate::frontmatter::ContainerIdentity::overlay`], so neither lists the
+//! fields it moves.
 //!
 //! A container is known by its folder, as its members are. A marketplace
 //! note's `name` is only what it publishes under.
@@ -41,7 +45,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
@@ -50,10 +53,9 @@ use crate::discover::{DiscoveredComponent, DiscoveryReport, read_container};
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
-use crate::harness::manifest::{inherited, plugin_block};
+use crate::harness::manifest::{plugin_block, plugin_identity, plugin_targets};
 use crate::keys;
 use crate::namespace::Namespace;
-use crate::publish::accepted_keys;
 use crate::vault::VaultNote;
 
 /// The containers above some notes, folded into one config.
@@ -90,14 +92,9 @@ impl Cascade {
             config.name = Some(note.name.clone());
             // A marketplace describes itself where a skill describes itself.
             take_description(&mut config.description, note);
-            take(&mut config.display_name, note.identity.display_name.clone());
-            take(&mut config.owner, note.identity.owner.clone());
-            take(&mut config.author, note.identity.author.clone());
-            take(&mut config.license, note.identity.license.clone());
-            take(&mut config.version, note.identity.version.clone());
+            config.identity.overlay(&note.identity);
+            // `targets` is not identity data: see `keys::identity_keys`.
             take(&mut config.targets, note.targets.clone());
-            take(&mut config.repository, note.identity.repository.clone());
-            take(&mut config.homepage, note.identity.homepage.clone());
             merge_blocks(&mut config.blocks, &note.blocks);
         }
         // Failing a note, the marketplace's own name is what it is called: the
@@ -107,9 +104,10 @@ impl Cascade {
             config.name = market.map(str::to_owned);
         }
         // `version` is not inherited: a marketplace folder's version is its
-        // own note's, never the root file's above it.
+        // own note's, never the root file's above it, which the overlay above
+        // would keep.
         if market.is_some_and(|m| marketplaces_in(containers).contains(m)) {
-            config.version = note.and_then(|n| n.identity.version.clone());
+            config.identity.version = note.and_then(|n| n.identity.version.clone());
         }
 
         // Each plugin note fills its own override block. A block the request
@@ -125,18 +123,8 @@ impl Cascade {
             // A plugin note describes its pack in the same place a skill note
             // describes itself.
             take_description(&mut overrides.description, note);
-            take(&mut overrides.version, note.identity.version.clone());
-            take(&mut overrides.author, note.identity.author.clone());
-            take(&mut overrides.license, note.identity.license.clone());
-            take(&mut overrides.keywords, note.identity.keywords.clone());
-            take(&mut overrides.category, note.identity.category.clone());
-            take(
-                &mut overrides.display_name,
-                note.identity.display_name.clone(),
-            );
+            overrides.identity.overlay(&note.identity);
             take(&mut overrides.targets, note.targets.clone());
-            take(&mut overrides.repository, note.identity.repository.clone());
-            take(&mut overrides.homepage, note.identity.homepage.clone());
             merge_blocks(&mut overrides.blocks, &note.blocks);
         }
 
@@ -251,13 +239,7 @@ impl Cascade {
     ) {
         let plugin = plugin.unwrap_or_default();
         if note.frontmatter.targets.is_none() {
-            note.frontmatter.targets = inherited(
-                &self.config,
-                plugin,
-                "targets",
-                |own| &own.targets,
-                |market| &market.targets,
-            );
+            note.frontmatter.targets = plugin_targets(&self.config, plugin);
         }
         // A container's own `license` and blocks are the manifest's, read from
         // the config.
@@ -265,20 +247,17 @@ impl Cascade {
             return;
         }
         if note.projection.content.license.is_none() && keys::inherits(kind, "license") {
-            note.projection.content.license = inherited(
-                &self.config,
-                plugin,
-                "license",
-                |own| &own.license,
-                |market| &market.license,
-            );
+            note.projection.content.license = plugin_identity(&self.config, plugin).license;
         }
         let own_metadata = crate::projection::skill_metadata(&note.projection.content, ns);
         for harness in keys::HARNESS_BLOCKS
             .iter()
             .filter(|harness| keys::inherits(kind, harness))
         {
-            let reaching = member_block_keys(kind, harness);
+            let Some(profile) = crate::harness::profile_named(harness) else {
+                continue;
+            };
+            let reaching = profile.member_block_keys(kind);
             for (key, value) in plugin_block(&self.config, plugin, harness) {
                 let merges = key == "metadata" && value.is_object();
                 if !reaching.contains(&key) || (!merges && note.frontmatter.own_keys.contains(&key))
@@ -325,50 +304,6 @@ fn merge_metadata(block: &mut Map<String, Value>, inherited: Value, own: &Map<St
             }
         }
     }
-}
-
-/// The keys of `harness`'s block a note of `kind` takes from a container: the
-/// keys its kind accepts, less those a container's own manifests read and
-/// those the harness reads on a subagent alone.
-///
-/// Read from a table built once for every kind and every harness with a
-/// plugin format; any other name takes no key.
-pub(crate) fn member_block_keys(kind: EntityKind, harness: &str) -> &'static BTreeSet<String> {
-    static TABLE: OnceLock<BTreeMap<&'static str, BTreeMap<EntityKind, BTreeSet<String>>>> =
-        OnceLock::new();
-    static NONE: BTreeSet<String> = BTreeSet::new();
-    let table = TABLE.get_or_init(|| {
-        crate::harness::with_plugin_format()
-            .map(|profile| {
-                let by_kind = EntityKind::ALL
-                    .into_iter()
-                    .map(|kind| (kind, compute_member_block_keys(kind, profile)))
-                    .collect();
-                (profile.name, by_kind)
-            })
-            .collect()
-    });
-    table
-        .get(harness)
-        .and_then(|by_kind| by_kind.get(&kind))
-        .unwrap_or(&NONE)
-}
-
-/// [`member_block_keys`] worked out for one harness with a plugin format,
-/// for the table.
-fn compute_member_block_keys(
-    kind: EntityKind,
-    profile: &crate::harness::HarnessProfile,
-) -> BTreeSet<String> {
-    let format = profile.format();
-    let agent_only = profile.agent_override_keys();
-    let mut keys = accepted_keys(kind, profile.name);
-    keys.retain(|key| {
-        !agent_only.contains(key)
-            && !format.manifest_fields.contains(&key.as_str())
-            && !format.entry_fields.contains(&key.as_str())
-    });
-    keys
 }
 
 /// The path of the note of the marketplace in `folder`.
@@ -491,21 +426,24 @@ mod tests {
     /// from, so it gives a member none, whatever its kind.
     #[test]
     fn a_harness_with_no_plugin_format_gives_a_member_no_block_keys() {
-        let without: Vec<&str> = crate::harness::PROFILES
+        let without: Vec<&crate::harness::HarnessProfile> = crate::harness::PROFILES
             .iter()
             .filter(|profile| profile.plugin.is_none())
-            .map(|profile| profile.name)
             .collect();
         assert!(!without.is_empty());
-        for harness in without {
+        for profile in without {
             for kind in EntityKind::ALL {
                 assert!(
-                    member_block_keys(kind, harness).is_empty(),
-                    "{harness} {kind:?}"
+                    profile.member_block_keys(kind).is_empty(),
+                    "{} {kind:?}",
+                    profile.name
                 );
             }
         }
-        assert!(member_block_keys(EntityKind::Skill, "no-such-harness").is_empty());
-        assert!(!member_block_keys(EntityKind::Skill, "claude").is_empty());
+        assert!(
+            !crate::harness::profile::CLAUDE
+                .member_block_keys(EntityKind::Skill)
+                .is_empty()
+        );
     }
 }

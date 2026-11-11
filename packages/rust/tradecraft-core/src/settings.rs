@@ -19,6 +19,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::export::MarketplaceConfig;
+use crate::frontmatter::ContainerIdentity;
 use crate::skill::split_frontmatter;
 
 /// The root file's name.
@@ -34,33 +35,16 @@ pub struct MarketplaceFields {
     /// One line on what the marketplace holds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Codex's `interface.displayName`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-    /// Claude's and Cursor's marketplace `owner`; a string or
-    /// `{name, email, url}`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner: Option<serde_json::Value>,
-    /// Default plugin author, inherited by every plugin. `owner` is not.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub author: Option<serde_json::Value>,
-    /// Default plugin license, as an SPDX identifier. Inherited by every
-    /// plugin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub license: Option<String>,
-    /// The marketplace's own version.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
+    /// The marketplace's manifest fields, flattened: `owner`, `author`,
+    /// `display_name`, `license`, `version`, `repository` and `homepage` sit
+    /// at the top level, as the root file writes them. Deserializing refuses
+    /// `keywords` and `category`, which a marketplace does not read.
+    #[serde(flatten, deserialize_with = "crate::export::marketplace_identity")]
+    pub identity: ContainerIdentity,
     /// Which harnesses get what the marketplace holds. Inherited by every
     /// plugin and member with none of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub targets: Option<Vec<String>>,
-    /// The source repository URL. Inherited by every plugin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repository: Option<String>,
-    /// The documentation URL. Inherited by every plugin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub homepage: Option<String>,
     /// The harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`), keyed by
     /// harness. Inherited by every plugin, key by key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -300,19 +284,18 @@ pub struct SettingsError {
     pub detail: String,
 }
 
-/// The marketplace fields the root file reads.
-pub const MARKETPLACE_KEYS: &[&str] = &[
-    "name",
-    "description",
-    "display_name",
-    "owner",
-    "author",
-    "license",
-    "version",
-    "targets",
-    "repository",
-    "homepage",
-];
+/// The marketplace fields the root file reads: the key table's marketplace
+/// keys, less the harness blocks, in table order.
+pub fn marketplace_keys() -> impl Iterator<Item = &'static str> {
+    crate::keys::KEYS
+        .iter()
+        .filter(|spec| {
+            spec.kinds
+                .contains(&crate::frontmatter::EntityKind::Marketplace)
+                && spec.shape != crate::keys::Shape::HarnessBlock
+        })
+        .map(|spec| spec.key)
+}
 
 /// The keys of the `build:` block.
 pub const BUILD_KEYS: &[&str] = &[
@@ -349,25 +332,6 @@ pub fn compose_root_file(name: &str, out: &str) -> String {
     map.insert(string("build"), Value::Mapping(build));
     let yaml = serde_yaml::to_string(&map).expect("a mapping of strings serializes");
     format!("---\n{yaml}---\n")
-}
-
-/// Refuses an `owner` or `author` that the key table's
-/// [`crate::keys::Shape::Person`] does not accept. Their fields are untyped,
-/// so nothing else would catch `author: 5` before it reached a manifest.
-fn check_person(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsError> {
-    let person = crate::keys::lookup(crate::frontmatter::EntityKind::Marketplace, key)
-        .is_some_and(|spec| spec.shape == crate::keys::Shape::Person);
-    if !person {
-        return Ok(());
-    }
-    match serde_json::to_value(value) {
-        Ok(json) if crate::keys::Shape::Person.accepts(&json) => Ok(()),
-        _ => Err(SettingsError {
-            key: key.to_owned(),
-            what: "a name or a `{name, email, url}` mapping",
-            detail: format!("{value:?}"),
-        }),
-    }
 }
 
 /// Whether a file split into `frontmatter` and `body` opened frontmatter it
@@ -459,8 +423,8 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
         match key.as_str() {
             "workspace" => root.workspace = field(&key, &value, "true or false")?,
             "build" => root.build = build(&value, &mut root.warnings)?,
-            known if MARKETPLACE_KEYS.contains(&known) => {
-                check_person(known, &value)?;
+            known if marketplace_keys().any(|key| key == known) => {
+                check_shape(known, &value)?;
                 marketplace.insert(serde_yaml::Value::String(key), value);
             }
             harness if crate::keys::HARNESS_BLOCKS.contains(&harness) => {
@@ -509,21 +473,40 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             detail: format!("`{unknown}`"),
         });
     }
-    for (key, value) in [
-        ("repository", &root.marketplace.repository),
-        ("homepage", &root.marketplace.homepage),
-    ] {
-        if let Some(url) = value
-            && !crate::keys::is_url(url)
-        {
-            return Err(SettingsError {
-                key: key.to_owned(),
-                what: "an http or https URL",
-                detail: format!("`{url}`"),
-            });
-        }
-    }
     Ok(root)
+}
+
+/// Refuses a marketplace key whose value is not the shape the key table
+/// gives it, as a marketplace note's read does, or that has no JSON form to
+/// check, such as a mapping with a list for a key. A key set to nothing is
+/// unset, as [`field`] reads it.
+fn check_shape(key: &str, value: &serde_yaml::Value) -> Result<(), SettingsError> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let json = serde_json::to_value(value).map_err(|err| SettingsError {
+        key: key.to_owned(),
+        what: "a value with a JSON form",
+        detail: err.to_string(),
+    })?;
+    crate::keys::check_shape(crate::frontmatter::EntityKind::Marketplace, key, &json).map_err(
+        |refusal| SettingsError {
+            key: key.to_owned(),
+            what: refusal.what,
+            detail: settings_detail(&refusal.detail),
+        },
+    )
+}
+
+/// A [`crate::keys::ShapeRefusal`]'s detail as it reads after `is not <what>:`:
+/// `, not a string` becomes `it is a string`.
+fn settings_detail(detail: &str) -> String {
+    let detail = detail.trim_start_matches([',', ';', ' ']);
+    let detail = detail.strip_prefix("but ").unwrap_or(detail);
+    match detail.strip_prefix("not ") {
+        Some(found) => format!("it is {found}"),
+        None => detail.to_owned(),
+    }
 }
 
 /// One value read as `T`, its error naming `key`. Null reads as `T`'s default
@@ -719,45 +702,34 @@ pub fn root_file_config(text: &str, folder_name: &str) -> Result<MarketplaceConf
 impl RootFile {
     /// Fill what this file leaves unset from the workspace file above it.
     ///
-    /// The marketplace fields every plugin inherits (`author`, `license`,
-    /// `targets`, `repository`, `homepage` and the harness blocks, key by key)
-    /// inherit from the workspace too. So do `harnesses`, `namespace`,
-    /// `launcher_path`, `bump`, `destinations`, `scan_locations`, `assets`,
-    /// `hooks` and each key of `patterns`. Their
-    /// paths and globs read from each marketplace's own folder. `out` is each
-    /// marketplace's own. `exclude` is not inherited: a workspace's globs add
-    /// to a member's, read from the workspace folder
+    /// The marketplace fields come down where the key table says a
+    /// marketplace inherits them ([`crate::keys::inherits`]): the identity
+    /// fields it marks, `targets`, and the harness blocks key by key.
+    ///
+    /// So do `harnesses`, `namespace`, `launcher_path`, `bump`,
+    /// `destinations`, `scan_locations`, `assets`, `hooks` and each key of
+    /// `patterns`. Their paths and globs read from each marketplace's own
+    /// folder. `out` is each marketplace's own. `exclude` is not inherited: a
+    /// workspace's globs add to a member's, read from the workspace folder
     /// ([`crate::patterns::Patterns::load`]).
     ///
     /// Key by key: a value this file sets wins, and every other key still
-    /// comes from the workspace. The workspace root holds shared defaults and
-    /// the `build:` settings for its members. The decided list of inherited
-    /// fields is about frontmatter moving down notes, not this block.
+    /// comes from the workspace. The `build:` keys are not in the key table,
+    /// so their list is this function's.
     pub fn inherit(&mut self, workspace: &RootFile) {
+        use crate::frontmatter::EntityKind::Marketplace;
         let fields = &mut self.marketplace;
-        if fields.author.is_none() {
-            fields.author.clone_from(&workspace.marketplace.author);
+        let shared = &workspace.marketplace;
+        fields
+            .identity
+            .fill_unset_from(&shared.identity, Marketplace);
+        // `targets` is not identity data: see `keys::identity_keys`.
+        if fields.targets.is_none() && crate::keys::inherits(Marketplace, "targets") {
+            fields.targets.clone_from(&shared.targets);
         }
-        if fields.license.is_none() {
-            fields.license.clone_from(&workspace.marketplace.license);
-        }
-        if fields.targets.is_none() {
-            fields.targets.clone_from(&workspace.marketplace.targets);
-        }
-        if fields.repository.is_none() {
-            fields
-                .repository
-                .clone_from(&workspace.marketplace.repository);
-        }
-        if fields.homepage.is_none() {
-            fields.homepage.clone_from(&workspace.marketplace.homepage);
-        }
-        for (harness, shared) in &workspace.marketplace.blocks {
-            let block = fields.blocks.entry(harness.clone()).or_default();
-            for (key, value) in shared {
-                block.entry(key.clone()).or_insert_with(|| value.clone());
-            }
-        }
+        inherit_blocks_by(&mut fields.blocks, &shared.blocks, |harness| {
+            crate::keys::inherits(Marketplace, harness)
+        });
         let build = &mut self.build;
         let shared = &workspace.build;
         if build.harnesses.is_none() {
@@ -798,15 +770,9 @@ impl RootFile {
                     .clone()
                     .unwrap_or_else(|| crate::discover::slugify(folder_name)),
             ),
-            display_name: fields.display_name.clone(),
-            owner: fields.owner.clone(),
             description: fields.description.clone(),
-            author: fields.author.clone(),
-            license: fields.license.clone(),
-            version: fields.version.clone(),
+            identity: fields.identity.clone(),
             targets: fields.targets.clone(),
-            repository: fields.repository.clone(),
-            homepage: fields.homepage.clone(),
             blocks: fields.blocks.clone(),
             plugins: BTreeMap::new(),
             launcher_path: self.build.launcher_path.clone(),
@@ -819,9 +785,125 @@ impl RootFile {
     }
 }
 
+/// Fills `own`'s harness blocks from `shared`, key by key, for each harness
+/// `inherits` allows. A key `own` already sets keeps its value.
+pub(crate) fn inherit_blocks_by(
+    own: &mut BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
+    shared: &BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
+    inherits: impl Fn(&str) -> bool,
+) {
+    for (harness, shared) in shared.iter().filter(|(harness, _)| inherits(harness)) {
+        let block = own.entry(harness.clone()).or_default();
+        for (key, value) in shared {
+            block.entry(key.clone()).or_insert_with(|| value.clone());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn root_file_refusals_say_what_the_value_is() {
+        for (line, said) in [
+            (
+                "owner: {email: x}",
+                "`owner` is not a name or a `{name, email, url}` mapping: it has no string `name`",
+            ),
+            (
+                "targets: \"claude\"",
+                "`targets` is not a list: it is a string.",
+            ),
+            (
+                "repository: ftp://x",
+                "`repository` is not an http or https URL: it is `ftp://x`",
+            ),
+            (
+                "targets: [1]",
+                "`targets` is not a list of strings: one entry is a number",
+            ),
+        ] {
+            let err = parse_root_file(&format!("---\n{line}\n---\n")).unwrap_err();
+            assert!(err.to_string().starts_with(said), "{line}: {err}");
+        }
+    }
+
+    /// A value with no JSON form, such as a mapping with a list for a key,
+    /// cannot be checked, so it is refused rather than passed.
+    #[test]
+    fn a_value_with_no_json_form_is_refused() {
+        let err = parse_root_file("---\nowner: {[a]: b}\n---\n").unwrap_err();
+        assert_eq!(err.key, "owner", "{err}");
+    }
+
+    #[test]
+    fn marketplace_keys_are_the_table_s_marketplace_rows() {
+        let keys: Vec<&str> = marketplace_keys().collect();
+        assert_eq!(
+            keys,
+            [
+                "name",
+                "description",
+                "version",
+                "author",
+                "owner",
+                "license",
+                "repository",
+                "homepage",
+                "display_name",
+                "targets",
+            ]
+        );
+    }
+
+    /// The root file and a workspace's marketplace note read one value of
+    /// ours alike, and a refusal names the key. The spec keys, `name` and
+    /// `description`, are left out: the root file reads them into strings and
+    /// refuses `name: 5`, while a note does not check their shape. So is a key
+    /// set to nothing, which the root file reads as unset and a note refuses.
+    #[test]
+    fn root_file_and_marketplace_note_refuse_the_same_values() {
+        use crate::frontmatter::{EntityKind, VaultFrontmatter};
+        let cases = [
+            ("author", "5"),
+            ("author", "Ada"),
+            ("owner", "{email: x}"),
+            ("owner", "{name: x}"),
+            ("repository", "ftp://x"),
+            ("repository", "https://x"),
+            ("homepage", "5"),
+            ("version", "1"),
+            ("version", "'1'"),
+            ("license", "[a]"),
+            ("license", "MIT"),
+            ("targets", "\"claude\""),
+            ("targets", "[claude]"),
+            ("display_name", "5"),
+            ("display_name", "Acme"),
+        ];
+        for (key, value) in cases {
+            let line = format!("{key}: {value}");
+            let root = parse_root_file(&format!("---\n{line}\n---\n"));
+            let yaml: serde_yaml::Value = serde_yaml::from_str(&line).unwrap();
+            let mut fields = match serde_json::to_value(yaml).unwrap() {
+                serde_json::Value::Object(map) => map,
+                other => panic!("{other}"),
+            };
+            let note = VaultFrontmatter::take_from(
+                &mut fields,
+                std::path::Path::new("/vault/marketplaces/m/skillwright.md"),
+                &crate::namespace::Namespace::bare(),
+                EntityKind::Marketplace,
+            );
+            assert_eq!(root.is_ok(), note.is_ok(), "{line}");
+            if let (Err(root), Err(note)) = (root, note) {
+                let named = format!("`{key}`");
+                assert!(root.to_string().contains(&named), "{line}: {root}");
+                assert!(note.to_string().contains(&named), "{line}: {note}");
+            }
+        }
+    }
 
     #[test]
     fn a_block_key_the_harness_does_not_read_warns() {
@@ -895,7 +977,7 @@ mod tests {
         // Every other key still comes down.
         assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
         assert_eq!(member.build.launcher_path.as_deref(), Some("bin/ws"));
-        assert_eq!(member.marketplace.license.as_deref(), Some("MIT"));
+        assert_eq!(member.marketplace.identity.license.as_deref(), Some("MIT"));
         // The output is each member's own.
         assert_eq!(member.build.out, None);
     }
@@ -904,7 +986,7 @@ mod tests {
     fn the_config_a_text_describes_takes_the_folder_s_name_by_default() {
         let config = root_file_config("---\nlicense: MIT\n---\n", "My House").unwrap();
         assert_eq!(config.name.as_deref(), Some("my-house"));
-        assert_eq!(config.license.as_deref(), Some("MIT"));
+        assert_eq!(config.identity.license.as_deref(), Some("MIT"));
     }
 
     #[test]
@@ -926,8 +1008,11 @@ mod tests {
         assert_eq!(root.build.out.as_deref(), Some("dist"));
         let config = root.to_config("folder");
         assert_eq!(config.name.as_deref(), Some("osdlc"));
-        assert_eq!(config.owner, Some(serde_json::json!({"name": "Ada"})));
-        assert_eq!(config.license.as_deref(), Some("MIT"));
+        assert_eq!(
+            config.identity.owner,
+            Some(serde_json::json!({"name": "Ada"}))
+        );
+        assert_eq!(config.identity.license.as_deref(), Some("MIT"));
         assert_eq!(config.launcher_path.as_deref(), Some("bin/tool"));
         assert_eq!(root.harness_set(), BTreeSet::from(["claude".to_owned()]));
     }
@@ -1012,8 +1097,14 @@ mod tests {
         assert!(workspace.workspace);
         let mut member = parse_root_file("---\nname: one\nlicense: Apache-2.0\n---\n").unwrap();
         member.inherit(&workspace);
-        assert_eq!(member.marketplace.license.as_deref(), Some("Apache-2.0"));
-        assert_eq!(member.marketplace.author, Some(serde_json::json!("Ada")));
+        assert_eq!(
+            member.marketplace.identity.license.as_deref(),
+            Some("Apache-2.0")
+        );
+        assert_eq!(
+            member.marketplace.identity.author,
+            Some(serde_json::json!("Ada"))
+        );
         assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
         // The output is the member's own.
         assert_eq!(member.build.out, None);
@@ -1062,6 +1153,136 @@ mod tests {
         }
         for text in ["", "# Notes\n", "# Notes\n\n---\n\nmore\n"] {
             parse_root_file(text).unwrap();
+        }
+    }
+
+    /// A root file setting every marketplace key and a block of each harness.
+    const EVERY_KEY: &str = "name: ws\n\
+         description: The workspace.\n\
+         owner: Org\n\
+         author: Ada\n\
+         display_name: Workspace\n\
+         license: MIT\n\
+         version: '9.9.9'\n\
+         targets: [claude, codex]\n\
+         repository: https://ws.example/repo\n\
+         homepage: https://ws.example\n\
+         claude:\n  metadata: {from: ws}\n  strict: true\n\
+         codex:\n  interface: {from: ws}\n\
+         cursor:\n  logo: ws.png\n\
+         pi:\n  keywords: [ws]\n";
+
+    /// The keys `value` sets to something other than `null`.
+    fn set_keys(value: &impl Serialize) -> serde_json::Map<String, serde_json::Value> {
+        match serde_json::to_value(value).unwrap() {
+            serde_json::Value::Object(map) => {
+                map.into_iter().filter(|(_, v)| !v.is_null()).collect()
+            }
+            other => panic!("not a mapping: {other}"),
+        }
+    }
+
+    #[test]
+    fn a_member_takes_exactly_the_inheritable_fields_from_its_workspace() {
+        let workspace =
+            parse_root_file(&format!("---\nworkspace: true\n{EVERY_KEY}---\n")).unwrap();
+        assert!(workspace.warnings.is_empty(), "{:?}", workspace.warnings);
+
+        let mut member = parse_root_file("---\n---\n").unwrap();
+        member.inherit(&workspace);
+        let took = set_keys(&member.marketplace);
+        let keys: BTreeSet<&str> = took.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from([
+                "author",
+                "license",
+                "repository",
+                "homepage",
+                "targets",
+                "blocks"
+            ])
+        );
+        let shared = set_keys(&workspace.marketplace);
+        for key in &keys {
+            assert_eq!(took[*key], shared[*key], "{key}");
+        }
+
+        // A member that sets each key keeps its own, and a block key it sets
+        // keeps its value while the workspace's other keys in that block come
+        // down.
+        let mut own = parse_root_file(
+            "---\nname: own\ndescription: Mine.\nowner: Me\nauthor: Bo\n\
+             display_name: Own\nlicense: ISC\nversion: '1.0.0'\ntargets: [pi]\n\
+             repository: https://own.example/repo\nhomepage: https://own.example\n\
+             claude:\n  strict: false\n---\n",
+        )
+        .unwrap();
+        let before = set_keys(&own.marketplace);
+        own.inherit(&workspace);
+        let after = set_keys(&own.marketplace);
+        for (key, value) in &before {
+            if key != "blocks" {
+                assert_eq!(&after[key], value, "{key}");
+            }
+        }
+        let claude = &own.marketplace.blocks["claude"];
+        assert_eq!(claude["strict"], serde_json::json!(false));
+        assert_eq!(claude["metadata"], serde_json::json!({"from": "ws"}));
+        assert_eq!(
+            own.marketplace.blocks.keys().collect::<Vec<_>>(),
+            ["claude", "codex", "cursor", "pi"]
+        );
+    }
+
+    #[test]
+    fn to_config_carries_every_marketplace_field() {
+        let root = parse_root_file(&format!("---\n{EVERY_KEY}---\n")).unwrap();
+        let config = set_keys(&root.to_config("Folder Name"));
+        let fields = set_keys(&root.marketplace);
+        for key in marketplace_keys().chain(["blocks"]) {
+            assert_eq!(config.get(key), fields.get(key), "{key}");
+        }
+        assert_eq!(config["name"], "ws");
+
+        let unnamed = parse_root_file("---\nlicense: MIT\n---\n").unwrap();
+        let config = unnamed.to_config("Folder Name");
+        assert_eq!(config.name.as_deref(), Some("folder-name"));
+    }
+
+    #[test]
+    fn a_root_file_serializes_flat() {
+        let root = parse_root_file("---\nlicense: MIT\nauthor: Ada\n---\n").unwrap();
+        assert_eq!(root.marketplace.identity.license.as_deref(), Some("MIT"));
+        let written = serde_json::to_value(&root).unwrap();
+        let fields = &written["marketplace"];
+        assert!(fields.get("identity").is_none(), "{written}");
+        assert_eq!(fields["license"], "MIT");
+        assert_eq!(fields["author"], "Ada");
+        let read: RootFile = serde_json::from_value(written).unwrap();
+        assert_eq!(read, root);
+
+        // Unset identity fields are absent, not `null`.
+        let empty = serde_json::to_value(MarketplaceFields::default()).unwrap();
+        assert_eq!(empty, serde_json::json!({}));
+    }
+
+    #[test]
+    fn inherit_blocks_by_copies_only_the_harnesses_allowed() {
+        let block =
+            |from: &str| serde_json::Map::from_iter([("k".to_owned(), serde_json::json!(from))]);
+        let shared: BTreeMap<_, _> = crate::keys::HARNESS_BLOCKS
+            .iter()
+            .map(|harness| ((*harness).to_owned(), block(harness)))
+            .collect();
+        for harness in crate::keys::HARNESS_BLOCKS {
+            let mut own = BTreeMap::new();
+            inherit_blocks_by(&mut own, &shared, |key| key == *harness);
+            assert_eq!(
+                own,
+                BTreeMap::from([((*harness).to_owned(), block(harness))]),
+                "{harness}"
+            );
         }
     }
 }
