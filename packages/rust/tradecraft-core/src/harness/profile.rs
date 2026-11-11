@@ -1,9 +1,8 @@
 //! Every harness this crate knows, as one row of data each.
 //!
 //! A harness differs from another in the values of its row (D-FDLQ), and
-//! what cannot be said as a value is code in its
-//! `HarnessTranslator`. The rows are Claude Code, Codex,
-//! Cursor and Pi, each with a [`PluginPolicy`].
+//! what cannot be said as a value is code in its `HarnessTranslator`. Each
+//! row in [`PROFILES`] has a [`PluginPolicy`].
 //!
 //! # Facts from the knowledge file, policy in code
 //!
@@ -761,7 +760,7 @@ pub const PROFILES: [HarnessProfile; 4] = [CLAUDE, CODEX, CURSOR, PI];
 pub const KNOWN_TARGETS: &[&str] = &["claude", "codex", "cursor", "pi"];
 
 /// What a refusal of the names in `unknown` says after naming the key:
-/// which names are not harnesses, and the four that are.
+/// which names are not harnesses, and the ones that are.
 pub(crate) fn unknown_targets_detail(unknown: &[&str]) -> String {
     let names: Vec<String> = unknown.iter().map(|name| format!("`{name}`")).collect();
     let known: Vec<String> = KNOWN_TARGETS

@@ -196,10 +196,6 @@ export interface DiscoveredComponent {
 /**
  * Which kind of unit a note is: what the folder it sits in names.
  *
- * default is for **absence only**. An unrecognised value is a typo, and
- * defaulting it would build a `SKILL.md` for every harness for something
- * that is not a skill — silently, and as a write.
- *
  * `mcp-server` is named by the decision as a later kind and is deliberately
  * not a variant yet.
  *
@@ -207,7 +203,6 @@ export interface DiscoveredComponent {
  *
  * Entering the vocabulary makes a note *discoverable*: a scan can list it and
  * say what it is. A build ships only the kinds a pack has a place for.
- * Outside the vocabulary a note is `unknown-kind`: a typo.
  */
 export type EntityKind = "skill" | "plugin" | "command" | "agent" | "marketplace";
 
@@ -302,9 +297,9 @@ export interface SkippedNote {
 
   /**
    * A closed-set reason token. The refusals that already carry one keep it
-   * (`unknown-target`, `unknown-kind`); everything else — frontmatter that
-   * will not parse, a name the Agent Skills spec does not admit, an unreadable file —
-   * is `unreadable-note`, the vocabulary's entry for "this note does not
+   * (`unknown-target`); everything else — frontmatter that will not parse,
+   * a name the Agent Skills spec does not admit, an unreadable file — is
+   * `unreadable-note`, the vocabulary's entry for "this note does not
    * parse".
    */
   reason: string;

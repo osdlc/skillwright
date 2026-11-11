@@ -28,9 +28,9 @@ pub struct SkillContent {
     /// [`crate::frontmatter::VaultFrontmatter::arguments`] for why that is
     /// not the contradiction it looks like. `Vec::new()` by construction
     /// whenever this `SkillContent` comes from
-    /// [`crate::vault::read_vault_skill`]; only [`SkillContent::apply_arguments`]
-    /// fills it in, called by `export` after the read, before
-    /// the projection.
+    /// [`crate::vault::read_vault_skill`]; only
+    /// [`SkillContent::apply_arguments`] fills it in, called by
+    /// [`mod@crate::model::load`] after the read, before the projection.
     pub arguments: Vec<Argument>,
     /// The markdown body, without frontmatter.
     pub body: String,
@@ -75,15 +75,16 @@ pub struct SkillContent {
 }
 
 impl SkillContent {
-    /// Carries `arguments` onto this content, and
-    /// derives [`SkillContent::argument_hint`] and
+    /// Carries `arguments` onto this content, and derives
+    /// [`SkillContent::argument_hint`] and
     /// [`SkillContent::argument_names`] from it when the note wrote neither
     /// of its own.
     ///
     /// A hand-written hint or name list always wins — this never overwrites
-    /// a `Some`. Never called by [`crate::vault::read_vault_skill`]; `export`
-    /// calls it itself, once, between reading a note and projecting it, so
-    /// every harness sees the same derived hint, name list, and argument list.
+    /// a `Some`. Never called by [`crate::vault::read_vault_skill`];
+    /// [`mod@crate::model::load`] calls it once, between reading a note and
+    /// projecting it, so every harness sees the same derived hint, name list,
+    /// and argument list.
     pub fn apply_arguments(&mut self, arguments: &[Argument]) {
         if self.argument_hint.is_none() {
             self.argument_hint = agent_adapt::render::derive_argument_hint(arguments);
@@ -98,8 +99,7 @@ impl SkillContent {
     ///
     /// Keyed by the canonical harness name, which is what
     /// [`crate::projection::project_skill`] looks one up by. Called by a
-    /// harness translator between the model and the projection, on the same
-    /// seam as [`SkillContent::apply_arguments`] — never by
+    /// harness translator between the model and the projection — never by
     /// [`crate::vault::read_vault_skill`], which has no harness roster.
     pub fn apply_overrides(
         &mut self,

@@ -213,10 +213,9 @@ const CONTAINERS: &[EntityKind] = &[Marketplace, Plugin];
 const COMPONENTS: &[EntityKind] = &[Skill, Agent, Command];
 const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command];
 
-/// The harnesses that take a block of their own keys: `claude:`, `codex:`,
-/// `cursor:` and `pi:`, every harness row. A test holds this list
-/// to [`crate::harness::with_plugin_format`] and to the [`Shape::HarnessBlock`]
-/// rows of [`KEYS`].
+/// The harnesses that take a block of their own keys: every harness row. A
+/// test holds this list to [`crate::harness::with_plugin_format`] and to the
+/// [`Shape::HarnessBlock`] rows of [`KEYS`].
 pub const HARNESS_BLOCKS: &[&str] = &[CLAUDE.name, CODEX.name, CURSOR.name, PI.name];
 
 /// The key no note sets, at the top level or in a harness block: the folder
@@ -226,8 +225,8 @@ pub const NAME_KEY: &str = "name";
 /// Why a [`Shape::Refused`] key is refused: what a refusal of `name` says.
 pub const NAME_REFUSAL: &str = "the folder's name is the note's name; delete it";
 
-/// Harness block keys v2 removed. A block holding one is refused wherever it
-/// is: each harness's packs folder is fixed.
+/// Removed harness block keys. A block holding one is refused wherever it is:
+/// each harness's packs folder is fixed.
 pub const REFUSED_BLOCK_KEYS: &[&str] = &["packs"];
 
 /// `<harness>.name` for each harness block in `fields` that sets `name`.

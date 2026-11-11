@@ -1,12 +1,12 @@
 //! Reading a skill *as the vault stores it* — a note, not a folder.
 //!
 //! The vault keeps a skill in a note named for it,
-//! `skills/code-review/code-review.md`. The name is on the note either way, because Obsidian keys
-//! its quick-switcher, graph, and backlinks on note names: a vault where forty
-//! notes are all called `SKILL` breaks every one of those, and `[[SKILL]]`
-//! cannot address anything. The standard's folder layout (`SKILL.md` inside a
-//! directory named for the skill) is what a build writes, never what the vault
-//! holds.
+//! `skills/code-review/code-review.md`. The name is on the note either way,
+//! because Obsidian keys its quick-switcher, graph, and backlinks on note
+//! names: a vault where forty notes are all called `SKILL` breaks every one
+//! of those, and `[[SKILL]]` cannot address anything. The standard's folder
+//! layout (`SKILL.md` inside a directory named for the skill) is what a build
+//! writes, never what the vault holds.
 //!
 //! # What is modeled, and what is merely carried
 //!
@@ -15,8 +15,8 @@
 //! never reaches [`SkillContent`] *through this function* — it is
 //! configuration about *this vault* and a harness has no business reading
 //! it. `arguments` is the one exception, and it is not this function's:
-//! `SkillContent::arguments` stays empty here, and `export` is
-//! the one that carries it over, once, after this read — see
+//! `SkillContent::arguments` stays empty here, and [`mod@crate::model::load`]
+//! carries it over, once, after this read — see
 //! [`SkillContent::apply_arguments`].
 //!
 //! Of what is left, [`SkillContent`] has a field for a key only when
@@ -147,7 +147,7 @@ pub fn read_vault_note(
             (!names.is_empty()).then_some(names)
         },
         // Never our own `arguments` here — see the module doc's three classes.
-        // `export` calls `SkillContent::apply_arguments` after
+        // `model::load` calls `SkillContent::apply_arguments` after
         // this read, with `ours.arguments`, once the kind is resolved.
         arguments: Vec::new(),
         // Nor harness blocks, and for the same reason twice over: the block's

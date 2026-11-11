@@ -184,8 +184,9 @@ pub struct CallContext<'a> {
     pub warnings: RefCell<Vec<DiscoveryWarning>>,
     /// A compile done once for every harness: each call, link, inlined file
     /// and plugin-root path is written as a mark and its site recorded here,
-    /// for a translator to spell later. `render` is not called and nothing is refused for not
-    /// being shipped — which harness ships what is the translator's question.
+    /// for a translator to spell later. `render` is not called and nothing is
+    /// refused for not being shipped — which harness ships what is the
+    /// translator's question.
     /// See [`crate::model`].
     pub record: Option<&'a RefCell<Recorded>>,
 }
@@ -259,8 +260,9 @@ pub struct CompiledNote {
     /// The entry note's body with embeds expanded and links rewritten.
     pub body: String,
     /// `(relative_path, bytes, executable)`, in path order — the shape
-    /// [`crate::content::SkillProjection::resources`] already has, so the two connect without
-    /// an adapter. Markdown resources are compiled; binaries are verbatim.
+    /// [`crate::content::SkillProjection::resources`] already has, so the two
+    /// connect without an adapter. Markdown resources are compiled; binaries
+    /// are verbatim.
     pub resources: Vec<(String, Vec<u8>, bool)>,
     /// Per emitted file, what fed it. Keyed by the same relative path the
     /// resources use, with the entry's own output under `SKILL.md`.
@@ -632,8 +634,6 @@ fn fenced_block(content: &str, extension: Option<&str>, line: Line<'_>) -> Strin
     }
     out
 }
-
-// --- The renderer -----------------------------------------------------------
 
 /// Where a component's note lands in a pack laid out as Claude Code's.
 fn component_note_path(kind: EntityKind, name: &str) -> String {
@@ -2413,7 +2413,7 @@ mod tests {
     }
 
     /// Writes one file, creating its directories, and the root, marketplace
-    /// and plugin notes a v2 vault needs.
+    /// and plugin notes a vault needs.
     fn write(vfs: &MemVfs, path: &str, content: &[u8]) {
         for (note, text) in [
             ("/vault/skillwright.md", "---\n---\n"),

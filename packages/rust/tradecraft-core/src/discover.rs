@@ -367,9 +367,9 @@ pub struct SkippedNote {
     /// spelling every other report prints.
     pub path: String,
     /// A closed-set reason token. The refusals that already carry one keep it
-    /// (`unknown-target`, `unknown-kind`); everything else — frontmatter that
-    /// will not parse, a name the Agent Skills spec does not admit, an unreadable file —
-    /// is `unreadable-note`, the vocabulary's entry for "this note does not
+    /// (`unknown-target`); everything else — frontmatter that will not parse,
+    /// a name the Agent Skills spec does not admit, an unreadable file — is
+    /// `unreadable-note`, the vocabulary's entry for "this note does not
     /// parse".
     pub reason: String,
     /// The sentence naming what is wrong, after the reason token.

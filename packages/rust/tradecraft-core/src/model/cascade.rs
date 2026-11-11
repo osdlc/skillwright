@@ -6,7 +6,7 @@
 //! 1. the note's own frontmatter;
 //! 2. its plugin note;
 //! 3. its marketplace note, `marketplaces/<m>/<m>.md`;
-//! 4. the root file's shared defaults, which the request carries.
+//! 4. the root file's shared defaults, read from `skillwright.md`.
 //!
 //! Which keys come down is the key table's answer ([`crate::keys::inherits`]).
 //! Names, descriptions and versions never do. A container's identity comes
@@ -333,8 +333,8 @@ pub fn fold_harness_blocks(
 ) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
     let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
     for (harness, block) in &note.blocks {
-        // `VaultFrontmatter::take_from` keeps only the four harness blocks,
-        // each a mapping.
+        // `VaultFrontmatter::take_from` keeps only the harness blocks
+        // ([`crate::keys::HARNESS_BLOCKS`]), each a mapping.
         debug_assert!(crate::harness::KNOWN_TARGETS.contains(&harness.as_str()));
         let block = block.as_object().cloned().unwrap_or_default();
         folded.insert(harness.clone(), block);

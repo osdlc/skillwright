@@ -175,8 +175,7 @@ fn refusal(target: &str, error: agent_adapt::Error) -> CoreError {
     }
 }
 
-/// Maps a harness's runtime name to agent-adapt's id. Only the four
-/// harnesses skillwright builds: Claude Code, Codex, Cursor and Pi.
+/// Maps a harness's runtime name to agent-adapt's id.
 pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError> {
     match target {
         "claude-code" => Ok(RuntimeId::ClaudeCode),
@@ -334,8 +333,9 @@ fn to_adapt_command(
 
 /// What a note sets that a command has no field for:
 /// the spec's optional keys, `context`, `user-invocable: false`,
-/// `disable-model-invocation: true`, and every foreign key. Carried verbatim, as the skill path carries its annotations,
-/// because a key the author wrote for publication must not vanish at it.
+/// `disable-model-invocation: true`, and every foreign key. Carried
+/// verbatim, as the skill path carries its annotations, because a key the
+/// author wrote for publication must not vanish at it.
 fn unplaced_keys(
     content: &crate::content::SkillContent,
 ) -> serde_json::Map<String, serde_json::Value> {
@@ -417,7 +417,8 @@ fn to_adapt_skill(
             },
         )
         .collect();
-    // An invariant, not an oversight: nothing an override says for one harness is visible to the render of another.
+    // An invariant, not an oversight: nothing an override says for one
+    // harness is visible to the render of another.
     skill.overrides = overrides_target
         .and_then(|dest| content.overrides.get(dest))
         .cloned()

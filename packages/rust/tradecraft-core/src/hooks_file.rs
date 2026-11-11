@@ -13,10 +13,9 @@
 //! pack's copy names its harness's own variable instead ([`localize`]),
 //! because a hook runs in the session's working directory, not the
 //! plugin's. The same scanner, `plugin_root_refs`, reads plugin-root paths
-//! in Markdown. Two
-//! placeholders are filled per pack: `{{harness}}`, the root's name, and
-//! `{{event}}`, the event the hook is registered under, spelled as in the
-//! file. Any other `{{…}}`, or an unclosed `{{`, is refused when the file is
+//! in Markdown. Two placeholders are filled per pack: `{{harness}}`, the
+//! harness's name, and `{{event}}`, the event the hook is registered under,
+//! spelled as in the file. Any other `{{…}}`, or an unclosed `{{`, is refused when the file is
 //! parsed. Only `command` is rewritten; other fields are written as they are.
 
 use agent_adapt::capabilities;

@@ -692,7 +692,8 @@ fn mark_generated(projection: &mut SkillProjection, path: &str) {
 }
 
 /// [`HarnessTranslator::hooks`]'s shared body: the hooks from the plugin's
-/// `hooks/hooks.json` this harness carries, each localized ([`crate::hooks_file::localize`]), written as the single
+/// `hooks/hooks.json` this harness carries, each localized
+/// ([`crate::hooks_file::localize`]), written as the single
 /// `hooks/hooks.json` the plugin format defines.
 fn default_hooks(
     profile: &HarnessProfile,

@@ -703,9 +703,8 @@ pub(crate) fn targets_name(targets: Option<&[String]>, canonical: &str) -> bool 
     }
 }
 
-/// A warning for each plugin of `market` whose note states no version and
-/// the config sets none. It ships as
-/// [`crate::harness::manifest::DEFAULT_PLUGIN_VERSION`], and a harness
+/// A warning for each plugin of `market` whose note states no `version`. It
+/// ships as [`crate::harness::manifest::DEFAULT_PLUGIN_VERSION`], and a harness
 /// compares versions to decide whether an installed pack is out of date, so a
 /// pack that never states one never looks updated.
 fn missing_versions(

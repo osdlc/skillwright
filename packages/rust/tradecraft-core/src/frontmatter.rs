@@ -39,10 +39,6 @@ use crate::error::CoreError;
 
 /// Which kind of unit a note is: what the folder it sits in names.
 ///
-/// default is for **absence only**. An unrecognised value is a typo, and
-/// defaulting it would build a `SKILL.md` for every harness for something
-/// that is not a skill — silently, and as a write.
-///
 /// `mcp-server` is named by the decision as a later kind and is deliberately
 /// not a variant yet.
 ///
@@ -50,7 +46,6 @@ use crate::error::CoreError;
 ///
 /// Entering the vocabulary makes a note *discoverable*: a scan can list it and
 /// say what it is. A build ships only the kinds a pack has a place for.
-/// Outside the vocabulary a note is `unknown-kind`: a typo.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EntityKind {
@@ -453,9 +448,9 @@ fn is_claude_arguments(value: &Value) -> bool {
 }
 
 /// Refuses a key no note may set: a [`crate::keys::Shape::Refused`] row
-/// (`name`, also in a harness block), `build`, which only the root file reads, `packs` in a harness
-/// block, and `naming` in a component's harness block (spec section 8
-/// rule 6).
+/// (`name`, also in a harness block), `build`, which only the root file
+/// reads, `packs` in a harness block, and `naming` in a component's harness
+/// block (spec section 8 rule 6).
 fn refuse_keys(
     fields: &Map<String, Value>,
     ours: &Map<String, Value>,

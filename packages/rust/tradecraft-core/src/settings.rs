@@ -12,8 +12,8 @@
 //!
 //! An unknown key warns and is ignored. `workspace`, `name`, a key the table
 //! lists but does not mark as inherited, a removed `build:` key and `packs`
-//! in a harness block are refused. A known key with a value of the wrong shape is refused, naming
-//! the key.
+//! in a harness block are refused. A known key with a value of the wrong
+//! shape is refused, naming the key.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -128,7 +128,8 @@ pub fn shared_default_keys() -> impl Iterator<Item = &'static str> {
 /// The keys of the `build:` block.
 pub const BUILD_KEYS: &[&str] = &["harnesses", "bump"];
 
-/// The `build:` keys v2 refuses, naming the key, rather than warns about.
+/// The removed `build:` keys: refused, naming the key, rather than warned
+/// about.
 pub const REFUSED_BUILD_KEYS: &[&str] = &[
     "destinations",
     "scan_locations",
@@ -141,8 +142,8 @@ pub const REFUSED_BUILD_KEYS: &[&str] = &[
     "hooks",
 ];
 
-/// The top-level keys v2 refuses in the root file besides the key table's
-/// rows that are not inherited.
+/// The top-level keys the root file refuses besides the key table's rows
+/// that are not inherited.
 pub const REFUSED_ROOT_KEYS: &[&str] = &["workspace"];
 
 /// A YAML value read as `T` through its JSON equivalent, so free-shaped
@@ -200,9 +201,12 @@ fn frontmatter_map(text: &str) -> Result<serde_yaml::Mapping, SettingsError> {
 ///
 /// # Errors
 ///
-/// Frontmatter that is not a YAML mapping, a key the root file refuses
-/// (`workspace`, `name`, also in a harness block, and a key the table lists
-/// but does not mark as inherited), and a known key whose value has the wrong shape.
+/// Frontmatter that is not a YAML mapping or never closes; a key the root
+/// file refuses (`workspace`, `name` at the top level or in a harness block,
+/// a key the table lists but does not mark as inherited, a removed `build:`
+/// key, `packs` in a harness block); a known key whose value has the wrong
+/// shape; an unknown harness in `targets` or `build.harnesses`; and an empty
+/// `build.harnesses`.
 pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
     let map = frontmatter_map(text)?;
     if let Some((key, detail)) = refused_in_root(&map).into_iter().next() {
@@ -292,7 +296,7 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
     Ok(root)
 }
 
-/// Refuses a name in `names` that is not one of the four harnesses.
+/// Refuses a name in `names` that is not in [`crate::harness::KNOWN_TARGETS`].
 fn check_harness_names(key: &str, names: Option<&[String]>) -> Result<(), SettingsError> {
     let unknown: Vec<&str> = names
         .into_iter()
@@ -387,7 +391,6 @@ pub(crate) fn refused_root_file_keys(text: &str) -> (Vec<(String, String)>, Vec<
 /// What a refusal of `packs` in a harness block says.
 pub(crate) const PACKS_REFUSAL: &str = "each harness's packs folder is fixed; delete it";
 
-/// The removed keys in a root file's harness blocks, as `<harness>.<key>`.
 /// `<harness>.name` for each harness block in `map` that sets `name`.
 fn named_blocks_in(map: &serde_yaml::Mapping) -> Vec<String> {
     crate::keys::HARNESS_BLOCKS
@@ -401,6 +404,7 @@ fn named_blocks_in(map: &serde_yaml::Mapping) -> Vec<String> {
         .collect()
 }
 
+/// The removed keys in a root file's harness blocks, as `<harness>.<key>`.
 fn refused_blocks_in(map: &serde_yaml::Mapping) -> Vec<String> {
     let blocks = crate::keys::HARNESS_BLOCKS
         .iter()

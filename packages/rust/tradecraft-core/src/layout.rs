@@ -503,26 +503,27 @@ fn check_real_paths(vfs: &dyn Vfs, layout: &Layout) -> Result<(), CoreError> {
     Ok(())
 }
 
-/// One kind of layout problem, in the order a report lists them.
+/// One kind of layout problem, in the order a report lists them. Each
+/// variant names the rule in `docs/spec/structure-v2.md` it reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Case {
-    /// Case 2.
+    /// Section 11 case 2.
     RefusedRootKey,
     /// Section 11 case 3, and section 3 rule 3 for a plugin.
     MissingNote,
-    /// Case 4.
+    /// Section 11 case 4.
     KindFolderOutOfPlace,
-    /// Case 5.
+    /// Section 11 case 5.
     NestedMarketplaces,
-    /// Case 6.
+    /// Section 11 case 6.
     NotNamedEntry,
-    /// Case 7.
+    /// Section 11 case 7.
     RefusedBuildKey,
-    /// Case 8.
+    /// Section 11 case 8.
     UnlistedEntry,
     /// Section 3 rule 5.
     BadName,
-    /// Decision D7.
+    /// Spec decision D7.
     McpJson,
 }
 
@@ -620,9 +621,9 @@ pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
         marketplace: None,
         plugin: None,
     };
-    // Root entries other than the three the vault uses are left alone and not
-    // read (spec section 3), so a symlink among them is not checked: only its
-    // name and kind matter.
+    // Root entries the vault does not use are left alone and not read (spec
+    // section 3), so a symlink among them is not checked: only its name and
+    // kind matter.
     for entry in vfs.read_dir(root)? {
         let path = root.join(&entry.name);
         let is_dir = if !vfs.is_symlink(&path) {

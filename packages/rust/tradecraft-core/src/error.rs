@@ -122,8 +122,8 @@ impl CoreError {
         })
     }
 
-    /// A refusal prefixed with a reason token — `unknown-kind`, `mixed-frontmatter-shape`,
-    /// and the rest.
+    /// A refusal prefixed with a reason token, such as `unknown-target` or
+    /// `path-collision`.
     ///
     /// The token leads the message so a report, a test, or a later UI can find
     /// it without a second field on the variant; the prose after it names the

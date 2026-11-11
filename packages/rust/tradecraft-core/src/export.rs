@@ -22,11 +22,11 @@
 //! harness.
 //!
 //! A plugin's commands render alongside its skills, at
-//! `<packs>/<plugin>/commands/<name>.<ext>`, on the one harness whose plugin
-//! format has a place for one ([`crate::harness::PluginFormat::carries_commands`]).
-//! A command
-//! narrowed out this way has no file and no manifest mention there, and the
-//! report names it as [`ExportUnit::NotCarried`] for that root. One narrowed
+//! `<packs>/<plugin>/commands/<name>.<ext>`, on each harness whose plugin
+//! format has a place for them
+//! ([`crate::harness::PluginFormat::carries_commands`]). A command narrowed
+//! out this way has no file and no manifest mention there, and the report
+//! names it as [`ExportUnit::NotCarried`] for that harness. One narrowed
 //! out by `targets` is absent with no report line: the author asked.
 //!
 //! Which harnesses a build renders is the root file's `build.harnesses`
@@ -46,10 +46,11 @@
 //!
 //! `check` is not a second reading of `build`'s rules. Both modes translate
 //! the whole marketplace once, into a [`crate::harness::FileTree`] per
-//! harness, and diff those bytes against the destination. `check` returns that diff, having written nothing under any
-//! outcome. `build` acts on it: an up-to-date destination is reported
-//! unchanged and nothing is written or renamed; a drifted root is staged from
-//! the very bytes the diff compared and swapped in. The two verdicts cannot
+//! harness, and diff those bytes against the destination. `check` returns
+//! that diff, having written nothing under any outcome. `build` acts on it:
+//! an up-to-date destination is reported unchanged and nothing is written or
+//! renamed; a drifted harness is staged from the very bytes the diff compared
+//! and swapped in. The two verdicts cannot
 //! disagree, because there is only one render and one comparison.
 //!
 //! # The commit is stage-then-swap, one path at a time, with backup
@@ -57,8 +58,8 @@
 //! A changed harness is written under `<out>/.skillwright-stage/new/`, each
 //! path it owns is renamed aside to `…/backup/<path>`, and the staged path is
 //! renamed into place — the temp-and-rename [`crate::vfs::Vfs::rename`] and
-//! [`crate::vfs::Vfs::remove`] exist for. The stage lives under the output folder
-//! itself, because a rename is only atomic within one filesystem and the one
+//! [`crate::vfs::Vfs::remove`] exist for. The stage lives under the output
+//! folder itself, because a rename is only atomic within one filesystem and the one
 //! directory guaranteed to share a filesystem with the thing being replaced
 //! is its own parent. A failure mid-swap rolls back every path already
 //! swapped, restores the failing path's own backup, and surfaces as
@@ -556,8 +557,6 @@ fn built(mut report: ExportReport) -> ExportReport {
     report.mode = ExportMode::Build;
     report
 }
-
-// --- Every marketplace -------------------------------------------------------
 
 /// A build or check of every marketplace in a vault, or of the one named.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2639,9 +2638,9 @@ mod tests {
         );
     }
 
-    // `read_vault_skill` never fills `SkillContent::arguments` — the translator
-    // has to call `apply_arguments` itself, or a
-    // marketplace-published skill would carry no hint and no section at all.
+    // `read_vault_skill` never fills `SkillContent::arguments` — the load has
+    // to call `apply_arguments`, or a marketplace-published skill would carry
+    // no hint and no section at all.
     #[test]
     fn a_marketplace_skill_derives_its_hint_and_renders_the_section() {
         let vfs = MemVfs::new();
@@ -3317,8 +3316,6 @@ mod tests {
         )));
     }
 
-    // --- a vault at a repository root, built into dist/house/ -----------
-
     /// A vault at a repository root, with a `.git` and a file of its own.
     fn repo_vault(vfs: &MemVfs) -> ExportRequest {
         write(
@@ -3483,8 +3480,8 @@ mod tests {
         assert!(!vfs.exists(Path::new("/repo/dist/house/.claude-plugin")));
     }
 
-    /// The regression that shaped the swap: output at a repository's root
-    /// shares `.agents/` and `.pi/` with skills and config people author.
+    /// A file someone adds beside the packs in `dist/<m>/` survives a rebuild:
+    /// a build replaces only the paths it owns.
     #[test]
     fn a_hand_added_file_beside_the_packs_survives_a_rebuild() {
         let vfs = MemVfs::new();

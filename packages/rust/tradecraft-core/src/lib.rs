@@ -1,7 +1,7 @@
-//! The Tradecraft core: read a source root, model what is in it, and project
-//! a skill onto a target's format.
+//! The Tradecraft core: read a vault, model what is in it, and project a
+//! skill onto a target's format.
 //!
-//! The markdown tree under the source root is the system of record and git is
+//! The markdown tree under the vault root is the system of record and git is
 //! its history. There is no store, and no file here is a projection of
 //! one.
 //!
@@ -20,24 +20,27 @@
 //! | [`harness`] | Each harness as a profile row (data) and a translator (code), and the target names |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
 //! | [`paths`] | Load a vault: its root file and its marketplaces ([`load_vault`]) |
-//! | [`field_edit`] | Frontmatter field edits that keep every other byte |
+//! | [`field_edit`] | Read and set a note's `version`, keeping every other byte |
 //! | [`status`] | The version-bump rule a build and `bump` share |
 //! | [`guard`] | Containment resolved through links |
 //! | [`vfs`] | The filesystem seam every I/O-touching function takes |
+//! | [`model`] | The marketplace model: a vault loaded once, every body resolved |
+//! | [`hooks_file`] | A plugin's `hooks/hooks.json`, parsed and localized per harness |
+//! | [`error`] | The crate's error type and its refusal tokens |
+//! | [`semver`] | The semver-bump arithmetic |
 //!
 //! # Specs named in comments
+//!
+//! `spec section N` and `decision Dn` are sections of
+//! `docs/spec/structure-v2.md`.
 //!
 //! Comments cite a few rule sets by short name. Each is the behavior the
 //! listed module implements and tests; those module docs are the reference.
 //!
 //! | Name | Rule set | Where |
 //! |---|---|---|
-//! | refusal tokens | The reason word a refusal leads with, `targets` exclusion, output overlap | [`export`], [`guard`] |
-//! | vault spec | A skill is a folder `<s>/` holding its note `<s>.md` and the files it ships; building is five steps (embeds, links, references, peers, target dialect) | [`vault`], [`export`] |
-//! | compile spec | Embeds are expanded and links rewritten; a link to nothing is an error | [`compile`] |
+//! | vault spec | A skill is a folder `<s>/` holding its note `<s>.md` and the files it ships | [`vault`], [`export`] |
 //! | marketplace layout spec | How one marketplace tree per harness is laid out and checked | [`export`] |
-//! | key table spec | The keys the key table lists as skillwright's belong to this tool and are stripped on build | [`keys`], [`frontmatter`] |
-//! | write-guard spec | A build never writes into `marketplaces/` | [`export`] |
 //! | CLI spec | Exit codes, stdout versus stderr, `--dry-run`, confirmation before writes | the `skillwright` crate |
 //! | Agent Skills spec | The public Agent Skills standard: `SKILL.md` frontmatter fields, name rules, and length caps on `description` and `compatibility` | [`skill`], [`discover`] |
 //!
