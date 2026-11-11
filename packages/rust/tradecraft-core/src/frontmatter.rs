@@ -241,42 +241,6 @@ pub fn resolve_kind(hints: KindHints) -> ResolvedKind {
     }
 }
 
-/// Where adoption read a note from: the `adopted` block, written by adoption
-/// and by nothing else.
-///
-/// Every field is optional and a note carrying none of them is hand-authored
-/// ([`Provenance::is_hand_authored`]). It is data in the user's file rather
-/// than a lock: a hand-edited value is authoritative, and a wrong one produces
-/// a refusal rather than a clobber.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Provenance {
-    /// `adopted.source` — the path adoption read the skill from.
-    pub source: Option<String>,
-    /// `adopted.format` — the runtime layout it was read in (`claude`,
-    /// `codex`, `agents`, …), or `none`.
-    pub format: Option<String>,
-    /// `adopted.source_hash` — hash over the source folder as read. Answers
-    /// "has the source moved on".
-    pub source_hash: Option<String>,
-    /// `adopted.hash` — hash over what adoption wrote. Answers "has the note
-    /// been edited since".
-    pub adopted_hash: Option<String>,
-    /// `adopted.at` — when adoption wrote it.
-    pub adopted_at: Option<String>,
-    /// `adopted.also_at` — other paths the same content was found at.
-    pub also_at: Option<Vec<String>>,
-}
-
-impl Provenance {
-    /// True when adoption never touched this note.
-    pub fn is_hand_authored(&self) -> bool {
-        self == &Self::default()
-    }
-}
-
-/// The fields of the `adopted` block, in the order adoption writes them.
-pub const ADOPTED_FIELDS: &[&str] = &["source", "format", "hash", "source_hash", "at", "also_at"];
-
 /// What a container note says about the thing it names: the manifest fields
 /// a marketplace or a plugin publishes under. Its fields are the key table's
 /// identity rows ([`crate::keys::identity_keys`]).
@@ -432,8 +396,6 @@ pub struct VaultFrontmatter {
     /// [`crate::content::SkillContent::apply_arguments`] carries it onto the
     /// published content; the raw key never reaches a destination.
     pub arguments: Vec<Argument>,
-    /// The `adopted` block.
-    pub provenance: Provenance,
     /// The manifest fields a container note publishes under. Empty on any
     /// other note.
     pub identity: ContainerIdentity,
@@ -514,11 +476,6 @@ impl VaultFrontmatter {
             }
         }
         let mut unknown: Vec<String> = Vec::new();
-        let provenance = if reads("adopted") {
-            take_adopted(&mut ours, &ns.key("adopted"), path, &mut unknown)?
-        } else {
-            Provenance::default()
-        };
 
         let identity = if kind.holds_components() {
             take_identity(&mut ours, path, ns, kind)?
@@ -539,7 +496,6 @@ impl VaultFrontmatter {
         Ok(Self {
             targets,
             arguments,
-            provenance,
             identity,
             blocks: overrides,
             unknown,
@@ -699,59 +655,6 @@ fn take_harness_block(ours: &mut Map<String, Value>, key: &str) -> Option<Map<St
     match ours.remove(key) {
         Some(Value::Object(block)) => Some(block),
         _ => None,
-    }
-}
-
-/// Removes the `adopted` block and reads it. A field the block does not
-/// define is added to `unknown` as `adopted.<field>`.
-fn take_adopted(
-    ours: &mut Map<String, Value>,
-    key: &str,
-    path: &Path,
-    unknown: &mut Vec<String>,
-) -> Result<Provenance, CoreError> {
-    let Some(Value::Object(mut block)) = ours.remove(key) else {
-        return Ok(Provenance::default());
-    };
-    let field = |name: &str| format!("{key}.{name}");
-    let provenance = Provenance {
-        source: take_string(&mut block, "source", path)
-            .map_err(|_| shape(path, &field("source")))?,
-        format: take_string(&mut block, "format", path)
-            .map_err(|_| shape(path, &field("format")))?,
-        adopted_hash: take_string(&mut block, "hash", path)
-            .map_err(|_| shape(path, &field("hash")))?,
-        source_hash: take_string(&mut block, "source_hash", path)
-            .map_err(|_| shape(path, &field("source_hash")))?,
-        adopted_at: take_string(&mut block, "at", path).map_err(|_| shape(path, &field("at")))?,
-        also_at: take_string_list(&mut block, "also_at", path)?,
-    };
-    unknown.extend(block.keys().map(|name| field(name)));
-    Ok(provenance)
-}
-
-/// The wrong-shape error for one string field of the `adopted` block.
-fn shape(path: &Path, key: &str) -> CoreError {
-    CoreError::wrong_kind(path, format!("`{key}` must be a string"))
-}
-
-/// Removes `key` and returns it as a string, refusing any other shape.
-fn take_string(
-    ours: &mut Map<String, Value>,
-    key: &str,
-    path: &Path,
-) -> Result<Option<String>, CoreError> {
-    match ours.remove(key) {
-        None => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value)),
-        Some(other) => Err(CoreError::wrong_kind(
-            path,
-            format!(
-                "`{key}` must be a string, not {}{}",
-                type_name(&other),
-                quoting_hint(&other)
-            ),
-        )),
     }
 }
 
@@ -916,8 +819,8 @@ fn take_arguments(
     Ok(out)
 }
 
-/// `take_string`, scoped to one field of one `arguments` entry, so every
-/// entry-level string error names the argument it is about.
+/// Removes one string field of one `arguments` entry, so every entry-level
+/// string error names the argument it is about.
 fn take_entry_string(
     entry: &mut Map<String, Value>,
     key: &str,
@@ -1212,37 +1115,6 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(err.contains("`targets`"), "{err}");
-    }
-
-    #[test]
-    fn the_adopted_block_round_trips_into_provenance() {
-        let (ours, _) = bare(
-            EntityKind::Skill,
-            json!({"adopted": {
-                "source": "/a", "format": "claude", "hash": "h1",
-                "source_hash": "h2", "at": "2026-11-06", "also_at": ["/b"],
-            }}),
-        );
-        let provenance = ours.provenance;
-        assert_eq!(provenance.source.as_deref(), Some("/a"));
-        assert_eq!(provenance.format.as_deref(), Some("claude"));
-        assert_eq!(provenance.adopted_hash.as_deref(), Some("h1"));
-        assert_eq!(provenance.source_hash.as_deref(), Some("h2"));
-        assert_eq!(provenance.adopted_at.as_deref(), Some("2026-11-06"));
-        assert_eq!(provenance.also_at, Some(vec!["/b".to_owned()]));
-        assert!(!provenance.is_hand_authored());
-    }
-
-    #[test]
-    fn an_unknown_field_in_the_adopted_block_is_reported() {
-        let (ours, _) = bare(EntityKind::Skill, json!({"adopted": {"odd": "x"}}));
-        assert_eq!(ours.unknown, vec!["adopted.odd".to_owned()]);
-    }
-
-    #[test]
-    fn a_note_with_no_provenance_is_hand_authored() {
-        let (ours, _) = bare(EntityKind::Skill, json!({"description": "d"}));
-        assert!(ours.provenance.is_hand_authored());
     }
 
     #[test]

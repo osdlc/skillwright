@@ -143,8 +143,7 @@ pub struct PluginFormat {
     /// and so where a pack published to a destination lands.
     pub skills_dir: &'static str,
     /// The folder under the home directory the harness loads a user's own
-    /// skills from. `publish` writes there and `adopt` reads from there when
-    /// no destination or source is named. Each row's `PluginPolicy::user_skills_dir`
+    /// skills from. Each row's `PluginPolicy::user_skills_dir`
     /// says where its value comes from and which folder it keeps when the
     /// harness reads several.
     pub user_skills_dir: &'static str,

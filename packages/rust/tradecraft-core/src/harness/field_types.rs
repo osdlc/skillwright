@@ -310,7 +310,7 @@ impl Shape {
             Self::Number => NUMBER,
             Self::Mapping => OBJECT,
             Self::Arguments => STRING_OR_LIST,
-            Self::Url | Self::Person | Self::HarnessBlock | Self::Adopted => return None,
+            Self::Url | Self::Person | Self::HarnessBlock => return None,
         })
     }
 }

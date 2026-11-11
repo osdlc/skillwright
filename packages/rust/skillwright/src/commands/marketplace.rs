@@ -73,16 +73,16 @@ pub struct ExportFlags {
     pub common: CommonFlags,
     /// `--json`: print the report as one JSON document.
     pub json: bool,
-    /// `--dry-run`: classify and report; write nothing.
+    /// `--dry-run`: classify and report; write nothing. `build` only.
     pub dry_run: bool,
-    /// `--yes`: accept the plan without prompting.
+    /// `--yes`: accept the plan without prompting. `build` only.
     pub yes: bool,
     /// `--quiet`: drop progress and the tally from stderr.
     pub quiet: bool,
 }
 
 /// [`tradecraft_core::marketplace_inputs`] for a resolved run, shared by
-/// `build`, `check` and `list --model`.
+/// `build`, `check` and `bump`.
 pub(crate) fn marketplace_inputs(run: &ResolvedRun) -> MarketplaceInputs {
     tradecraft_core::marketplace_inputs(
         &run.config,
@@ -312,20 +312,10 @@ fn export_one(
         }
     }
 
-    // The flag is answered on both verbs, and answered differently. On
-    // `build` it marks the run as a plan; on `check` it is redundant, and
-    // saying so is the difference between a flag that does nothing and a flag
-    // that was never read — the second is indistinguishable from a bug.
     if flags.dry_run {
         let _ = writeln!(
             ctx.err,
-            "{}",
-            match verb {
-                ExportVerb::Check =>
-                    "check writes nothing under any outcome — --dry-run changes nothing about this run",
-                ExportVerb::Build =>
-                    "dry run — reporting the drift a build would act on; nothing will be written",
-            }
+            "dry run — reporting the drift a build would act on; nothing will be written"
         );
     }
 

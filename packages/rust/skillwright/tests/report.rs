@@ -1,6 +1,6 @@
 //! The report's format gate. A format change in `src/report.rs` that is not also made here must fail.
 
-use skillwright::report::{render_export_tally, render_unit_line, render_unmatched_overwrite};
+use skillwright::report::{render_export_tally, render_unit_line};
 use tradecraft_core::{ExportMode, ExportUnit, StaleKind, UnitStatus};
 
 fn plugin(status: UnitStatus) -> ExportUnit {
@@ -169,29 +169,6 @@ mod render_export_tally_tests {
     }
 }
 
-mod render_unmatched_overwrite_tests {
-    use super::*;
-
-    #[test]
-    fn the_path_is_named_and_so_is_the_spelling_that_would_have_matched() {
-        let line = render_unmatched_overwrite(".claude/skills/review/SKILL.md");
-        assert!(line.contains(".claude/skills/review/SKILL.md"));
-        assert!(line.contains("destination-relative"));
-    }
-
-    #[test]
-    fn an_absolute_path_is_told_that_it_is_absolute() {
-        assert!(
-            render_unmatched_overwrite("/dest/.claude/skills/review/SKILL.md").contains("absolute")
-        );
-    }
-
-    #[test]
-    fn a_relative_path_is_not_told_that_it_is_absolute() {
-        assert!(!render_unmatched_overwrite(".claude/skills/review/SKILL.md").contains("absolute"));
-    }
-}
-
 mod normalize_thrown_reason_tests {
     use skillwright::report::normalize_thrown_reason;
 
@@ -211,96 +188,5 @@ mod normalize_thrown_reason_tests {
             normalize_thrown_reason("reading /tmp/x: permission denied"),
             "reading /tmp/x: permission denied"
         );
-    }
-}
-
-mod roster_row_tests {
-    use skillwright::report::roster_row;
-    use tradecraft_core::DiscoveredComponent;
-    use tradecraft_core::frontmatter::ContainerIdentity;
-
-    /// A row built by hand: the type is `#[non_exhaustive]`, so a consumer
-    /// outside the crate reads one from its JSON.
-    fn component() -> DiscoveredComponent {
-        serde_json::from_value(serde_json::json!({
-            "name": "code-review",
-            "description": "reviews code",
-            "kind": "skill",
-            "kind_source": "directory",
-            "folder_kind": "command",
-            "targets": ["claude-code"],
-            "plugin": "tools",
-            "marketplace": null,
-            "entry_path": "/vault/commands/code-review/code-review.md",
-            "bundle_root": null,
-            "resources": [],
-            "vault_relative_path": "commands/code-review/code-review.md",
-            "hook": null,
-            "identity": serde_json::to_value(ContainerIdentity::default()).unwrap(),
-        }))
-        .unwrap()
-    }
-
-    #[test]
-    fn the_json_row_carries_the_seven_fields_the_table_shows() {
-        let json = serde_json::to_value(roster_row(&component())).unwrap();
-        assert_eq!(json["path"], "commands/code-review/code-review.md");
-        assert_eq!(json["kind"], "skill");
-        assert_eq!(json["folder_kind"], "command");
-        assert_eq!(json["name"], "code-review");
-        assert_eq!(json["description"], "reviews code");
-        assert_eq!(json["plugin"], "tools");
-        assert_eq!(json["targets"], serde_json::json!(["claude-code"]));
-        assert_eq!(json.as_object().unwrap().len(), 7);
-    }
-
-    #[test]
-    fn an_absent_targets_key_stays_null_rather_than_becoming_an_empty_list() {
-        // Absent is "every destination"; empty is "nowhere". Collapsing them
-        // would make the row say the opposite of what the note does.
-        let mut component = component();
-        component.targets = None;
-        let json = serde_json::to_value(roster_row(&component)).unwrap();
-        assert!(json["targets"].is_null());
-    }
-}
-
-mod drift_tests {
-    use skillwright::report::{AttributedState, Attribution, RowState, has_drift};
-    use tradecraft_core::status::PublishState;
-
-    fn row(state: Option<RowState>) -> AttributedState {
-        AttributedState {
-            attribution: Attribution {
-                skill: "skills/code-review/code-review.md".to_string(),
-                destination: "/dest".to_string(),
-                target: "claude".to_string(),
-            },
-            state,
-            reason: None,
-            published_at: None,
-            files: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn the_three_states_check_fails_on() {
-        for state in [
-            PublishState::Stale,
-            PublishState::Conflict,
-            PublishState::Unknown,
-        ] {
-            assert!(has_drift(&[row(Some(RowState::State(state)))]), "{state:?}");
-        }
-    }
-
-    #[test]
-    fn never_published_current_not_applicable_and_an_excluded_destination_are_not_drift() {
-        assert!(!has_drift(&[
-            row(Some(RowState::State(PublishState::NeverPublished))),
-            row(Some(RowState::State(PublishState::Current))),
-            row(Some(RowState::NotApplicable)),
-            row(None),
-        ]));
     }
 }

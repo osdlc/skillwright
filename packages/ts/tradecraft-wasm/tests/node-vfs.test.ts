@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { discoverComponents, exportSkills, publishSkill } from '../src/core.ts'
+import { discoverComponents, exportSkills } from '../src/core.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
 let tmp: string
@@ -153,14 +153,9 @@ describe('a host whose link answers fail', () => {
         return base.realpath(p)
       },
     }
-    const result = publishSkill(denied, {
-      skill_path: path.join(vault, 'marketplaces/house/plugins/tools/skills/review/review.md'),
-      destination_root: path.join(repo, 'locked'),
-      target: 'claude',
-      skills_root: vault,
-    })
-    expect(result.files.map((f) => f.status)).toEqual(['refused'])
-    expect(result.files[0]?.reason?.detail).toMatch(/cannot tell where this path leads/)
+    expect(() => build(denied, path.join(repo, 'locked'), vault)).toThrow(
+      /cannot tell where this path leads/,
+    )
   })
 
   test('a realpath answer that is not absolute refuses the check', () => {
@@ -174,14 +169,9 @@ describe('a host whose link answers fail', () => {
         return p.includes('elsewhere') ? path.relative('/', answer) : answer
       },
     }
-    const result = publishSkill(relative, {
-      skill_path: path.join(vault, 'marketplaces/house/plugins/tools/skills/review/review.md'),
-      destination_root: path.join(repo, 'elsewhere'),
-      target: 'claude',
-      skills_root: vault,
-    })
-    expect(result.files.map((f) => f.status)).toEqual(['refused'])
-    expect(result.files[0]?.reason?.detail).toMatch(/realpath must return an absolute path/)
+    expect(() => build(relative, path.join(repo, 'elsewhere'), vault)).toThrow(
+      /realpath must return an absolute path/,
+    )
   })
 
   test('isSymlink that throws counts as a link, so discovery refuses the note', () => {

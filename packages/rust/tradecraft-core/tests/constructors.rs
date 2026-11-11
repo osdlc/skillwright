@@ -3,42 +3,15 @@
 //! value; a config from `Default`; an output read by field; an enum matched
 //! with a `_` arm.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tradecraft_core::model::{ComponentRequest, LoadRequest};
 use tradecraft_core::{
-    AdoptMode, AdoptRequest, AdoptStatus, AssetSpec, AuthoringOp, BuildSettings, CompileSource,
-    CoreError, DiscoveryWarning, EntityKind, ExportMode, ExportRequest, ExportUnit, FieldEdit,
-    FieldValue, HookFileSpec, LinkIndex, MarketplaceConfig, MarketplaceFields, MemVfs, Namespace,
-    NewNote, Placement, PluginOverrides, PublishMode, PublishOutcome, PublishRequest, PublishState,
-    PublishStatus, PublishedFile, ReasonToken, RootFile, StaleKind, StatusRequest, UnitStatus,
-    VaultScope, Vfs, discover_components, export_skills, plan_create_note, publish_skill,
+    AssetSpec, BuildSettings, CompileSource, CoreError, DiscoveryWarning, EntityKind, ExportMode,
+    ExportRequest, ExportUnit, FieldEdit, FieldValue, HookFileSpec, LinkIndex, MarketplaceConfig,
+    MarketplaceFields, MemVfs, Namespace, PluginOverrides, ReasonToken, RootFile, StaleKind,
+    UnitStatus, VaultScope, Vfs, apply_field_edits, discover_components, export_skills,
 };
-
-#[test]
-fn a_publish_request_takes_its_three_inputs_and_starts_empty() {
-    let vfs = MemVfs::new();
-    vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
-    vfs.write_file(
-        Path::new("/vault/skills/review.md"),
-        b"---\ndescription: Review.\n---\nReview.\n",
-    )
-    .unwrap();
-    let mut request = PublishRequest::new("/vault/skills/review.md", "/project", "claude-code");
-    assert_eq!(request.mode, PublishMode::Write);
-    assert!(request.config.is_none() && request.overwrite.is_empty() && !request.user_folders);
-    request.skills_root = Some(PathBuf::from("/vault"));
-    let report = publish_skill(&vfs, &request, &Namespace::default()).unwrap();
-    assert_eq!(report.files.len(), 2);
-}
-
-#[test]
-fn a_status_request_takes_its_three_inputs() {
-    let mut request = StatusRequest::new("/vault/skills/review.md", "/project", "claude-code");
-    request.user_folders = true;
-    assert_eq!(request.target, "claude-code");
-    assert!(request.skills_root.is_none() && request.config.is_none());
-}
 
 #[test]
 fn an_export_request_builds_from_a_default_config() {
@@ -76,16 +49,10 @@ fn the_small_specs_default_to_the_marketplaces_own_plugin() {
 }
 
 #[test]
-fn a_load_request_and_an_adopt_request_take_their_inputs() {
+fn a_load_request_takes_its_inputs() {
     let mut load = LoadRequest::new("/vault", MarketplaceConfig::default());
     load.marketplace = Some("house".to_owned());
     assert!(load.harnesses.is_empty());
-
-    let mut adopt = AdoptRequest::new("/src/skill", "/vault", "2026-01-01T00:00:00Z");
-    assert_eq!(adopt.mode, AdoptMode::Write);
-    adopt.mode = AdoptMode::DryRun;
-    adopt.plugin = Some("tools".to_owned());
-    assert!(adopt.also_scan.is_empty() && adopt.targets.is_none());
 }
 
 #[test]
@@ -109,11 +76,6 @@ fn the_borrowed_requests_take_their_inputs() {
     assert!(source.calls.is_none() && source.links.is_none());
     source.bundle_root = Some(Path::new("/vault/skills/a"));
     assert_eq!(source.skill_name, "a");
-
-    let mut note = NewNote::new("lint");
-    note.body = "\n# Lint\n";
-    note.bundled = true;
-    assert!(note.placement.is_none());
 }
 
 #[test]
@@ -127,8 +89,6 @@ fn a_match_on_a_reason_token_needs_a_wildcard_arm() {
 
 #[test]
 fn the_settings_types_build_from_default() {
-    let mut placement = Placement::default();
-    placement.kind = Some("skill".to_owned());
     let mut fields = MarketplaceFields::default();
     fields.name = Some("house".to_owned());
     let mut build = BuildSettings::default();
@@ -141,26 +101,13 @@ fn the_settings_types_build_from_default() {
 }
 
 #[test]
-fn a_new_note_needs_only_a_name_and_takes_reexported_field_values() {
-    let vfs = MemVfs::new();
-    vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
-    vfs.write_file(
-        Path::new("/vault/skillwright.md"),
-        b"---\nname: house\n---\n",
-    )
-    .unwrap();
+fn a_field_edit_takes_a_reexported_field_value() {
     let edits = [FieldEdit::set(
         "description",
         FieldValue::Str("Lint.".to_owned()),
     )];
-    let mut note = NewNote::new("lint");
-    note.fields = &edits;
-    let op = plan_create_note(&vfs, Path::new("/vault"), &Namespace::bare(), &note).unwrap();
-    let path = match op {
-        AuthoringOp::Create { path, .. } => path,
-        _ => panic!("expected a create"),
-    };
-    assert_eq!(path, "skills/lint.md");
+    let note = apply_field_edits("---\nname: lint\n---\nBody.\n", &edits).unwrap();
+    assert_eq!(note, "---\nname: lint\ndescription: Lint.\n---\nBody.\n");
 }
 
 #[test]
@@ -186,21 +133,6 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
     assert_eq!(component.name, "review");
     let warning = DiscoveryWarning::new("skills/review.md", "missing-version", "detail");
     assert_eq!(warning.reason, "missing-version");
-
-    let request = PublishRequest::new("/vault/skills/review.md", "/project", "claude-code");
-    let report = publish_skill(&vfs, &request, &Namespace::bare()).unwrap();
-    for file in &report.files {
-        let word = match file.status {
-            PublishStatus::Written => "written",
-            _ => file.status.as_str(),
-        };
-        assert_eq!(word, "written");
-        let outcome = match file.outcome {
-            PublishOutcome::FirstWrite => "first-write",
-            _ => file.outcome.as_str(),
-        };
-        assert!(!outcome.is_empty());
-    }
 
     let mut config = MarketplaceConfig::default();
     config.name = Some("house".to_owned());
@@ -229,26 +161,6 @@ fn each_as_str_is_the_serialized_word() {
             .unwrap()
             .to_owned()
     }
-    for status in [
-        PublishStatus::Written,
-        PublishStatus::Unchanged,
-        PublishStatus::Refused,
-    ] {
-        assert_eq!(status.as_str(), wire(status));
-    }
-    for outcome in [
-        PublishOutcome::FirstWrite,
-        PublishOutcome::Rewrite,
-        PublishOutcome::Claimed,
-        PublishOutcome::Overwritten,
-        PublishOutcome::Unchanged,
-        PublishOutcome::Conflict,
-        PublishOutcome::Foreign,
-        PublishOutcome::Blocked,
-        PublishOutcome::Manifest,
-    ] {
-        assert_eq!(outcome.as_str(), wire(outcome));
-    }
     for kind in [StaleKind::Plugin, StaleKind::File, StaleKind::EmptyDir] {
         assert_eq!(kind.as_str(), wire(kind));
     }
@@ -260,19 +172,6 @@ fn each_as_str_is_the_serialized_word() {
     ] {
         assert_eq!(status.as_str(), wire(status));
     }
-    for status in [
-        AdoptStatus::Adopted,
-        AdoptStatus::Updated,
-        AdoptStatus::Unchanged,
-        AdoptStatus::Refused,
-    ] {
-        assert_eq!(status.as_str(), wire(status));
-    }
-    let state = match PublishState::Current {
-        PublishState::Current => "current",
-        _ => "other",
-    };
-    assert_eq!(state, PublishState::Current.as_str());
 }
 
 #[test]
@@ -303,12 +202,7 @@ fn a_core_error_names_its_fallback_reason_token() {
 }
 
 #[test]
-fn a_published_file_line_builds_from_new_and_a_skipped_note_reads_by_field() {
-    let mut file = PublishedFile::new("a", PublishStatus::Refused, PublishOutcome::Blocked);
-    assert!(file.reason.is_none());
-    file.path = "skills/a".to_owned();
-    assert_eq!(file.status.as_str(), "refused");
-
+fn a_skipped_note_reads_by_field() {
     let vfs = MemVfs::new();
     vfs.create_dir_all(Path::new("/vault/skills")).unwrap();
     vfs.write_file(

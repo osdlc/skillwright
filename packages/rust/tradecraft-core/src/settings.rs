@@ -51,18 +51,6 @@ pub struct MarketplaceFields {
     pub blocks: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
 }
 
-/// Where `publish` writes when `--to` is not given.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct DestinationSetting {
-    /// The destination root directory, relative to the root file.
-    pub root: String,
-    /// The target rendered into the root.
-    pub target: String,
-    /// `project` or `user`. Informational: nothing reads it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scope: Option<String>,
-}
-
 /// One `build.assets` entry: a file or folder copied into a plugin's root.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct AssetSetting {
@@ -107,14 +95,6 @@ pub struct BuildSettings {
     /// How `bump` writes a version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bump: Option<BumpSettings>,
-    /// Where `publish` writes when `--to` is not given. Empty means each
-    /// harness's user skill folder.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub destinations: Vec<DestinationSetting>,
-    /// Folders a bare `adopt` reads from. Empty means each harness's user
-    /// skill folder.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub scan_locations: Vec<String>,
     /// Files copied into a plugin's root besides each plugin's `assets/`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<AssetSetting>,
@@ -304,13 +284,14 @@ pub const BUILD_KEYS: &[&str] = &[
     "namespace",
     "launcher_path",
     "bump",
-    "destinations",
-    "scan_locations",
     "assets",
     "hooks",
     "exclude",
     "patterns",
 ];
+
+/// The `build:` keys v2 refuses, naming the key, rather than warns about.
+pub const REFUSED_BUILD_KEYS: &[&str] = &["destinations", "scan_locations"];
 
 /// A YAML value read as `T` through its JSON equivalent, so free-shaped
 /// fields come out as the JSON a manifest carries.
@@ -541,6 +522,13 @@ fn build(
         match key.as_str() {
             Some("exclude") => exclude = globs("build.exclude", value)?,
             Some("patterns") => patterns = folder_patterns(value, warnings)?,
+            Some(name) if REFUSED_BUILD_KEYS.contains(&name) => {
+                return Err(SettingsError {
+                    key: format!("build.{name}"),
+                    what: "a key skillwright reads",
+                    detail: "delete it".to_owned(),
+                });
+            }
             Some(name) if BUILD_KEYS.contains(&name) => {
                 warn_nested(name, value, warnings);
                 kept.insert(key.clone(), value.clone());
@@ -671,7 +659,6 @@ fn warn_nested(list: &str, value: &serde_yaml::Value, warnings: &mut Vec<String>
         return;
     }
     let known: &[&str] = match list {
-        "destinations" => &["root", "target", "scope"],
         "assets" => &["from", "to", "plugin"],
         "hooks" => &["from", "plugin"],
         _ => return,
@@ -706,8 +693,8 @@ impl RootFile {
     /// marketplace inherits them ([`crate::keys::inherits`]): the identity
     /// fields it marks, `targets`, and the harness blocks key by key.
     ///
-    /// So do `harnesses`, `namespace`, `launcher_path`, `bump`,
-    /// `destinations`, `scan_locations`, `assets`, `hooks` and each key of
+    /// So do `harnesses`, `namespace`, `launcher_path`, `bump`, `assets`,
+    /// `hooks` and each key of
     /// `patterns`. Their paths and globs read from each marketplace's own
     /// folder. `out` is each marketplace's own. `exclude` is not inherited: a
     /// workspace's globs add to a member's, read from the workspace folder
@@ -743,12 +730,6 @@ impl RootFile {
         }
         if build.bump.is_none() {
             build.bump.clone_from(&shared.bump);
-        }
-        if build.destinations.is_empty() {
-            build.destinations.clone_from(&shared.destinations);
-        }
-        if build.scan_locations.is_empty() {
-            build.scan_locations.clone_from(&shared.scan_locations);
         }
         if build.assets.is_empty() {
             build.assets.clone_from(&shared.assets);
@@ -1045,6 +1026,17 @@ mod tests {
     }
 
     #[test]
+    fn destinations_and_scan_locations_are_refused_by_name() {
+        for (key, value) in [
+            ("destinations", "\n    - {root: d, target: claude}"),
+            ("scan_locations", " [shared]"),
+        ] {
+            let err = parse_root_file(&format!("---\nbuild:\n  {key}:{value}\n---\n")).unwrap_err();
+            assert_eq!(err.key, format!("build.{key}"), "{err}");
+        }
+    }
+
+    #[test]
     fn build_bump_picks_the_patch_scheme() {
         let root = parse_root_file("---\nbuild:\n  bump:\n    patch: timestamp\n---\n").unwrap();
         assert_eq!(root.build.bump.unwrap().patch, PatchScheme::Timestamp);
@@ -1128,16 +1120,14 @@ mod tests {
     #[test]
     fn a_marketplace_inherits_its_build_lists_key_by_key() {
         let workspace = parse_root_file(
-            "---\nworkspace: true\nbuild:\n  destinations:\n    - {root: d, target: claude}\n  \
-             scan_locations: [shared]\n  assets:\n    - {from: a, to: b}\n  hooks:\n    \
+            "---\nworkspace: true\nbuild:\n  assets:\n    - {from: a, to: b}\n  hooks:\n    \
              - {from: h.json}\n---\n",
         )
         .unwrap();
-        let mut member = parse_root_file("---\nbuild:\n  scan_locations: [mine]\n---\n").unwrap();
+        let mut member =
+            parse_root_file("---\nbuild:\n  assets:\n    - {from: m, to: n}\n---\n").unwrap();
         member.inherit(&workspace);
-        assert_eq!(member.build.destinations, workspace.build.destinations);
-        assert_eq!(member.build.scan_locations, ["mine"]);
-        assert_eq!(member.build.assets, workspace.build.assets);
+        assert_eq!(member.build.assets[0].from, "m");
         assert_eq!(member.build.hooks, workspace.build.hooks);
     }
 

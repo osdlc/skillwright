@@ -8,10 +8,9 @@
 //! # Direction decides optionality
 //!
 //! A request is DESERIALIZED, so a field serde can default is one the caller
-//! may omit — `mode?: PublishMode`. A response is SERIALIZED, so an
+//! may omit — `mode?: ExportMode`. A response is SERIALIZED, so an
 //! `Option<T>` is on the wire as `null` unless the field carries
-//! `skip_serializing_if` — `reason: string | null`, but `not_published?:
-//! string`. A type reached in both directions would need two spellings, so it
+//! `skip_serializing_if`, which makes it optional. A type reached in both directions would need two spellings, so it
 //! is refused rather than emitted under one of them.
 
 use std::collections::BTreeMap;

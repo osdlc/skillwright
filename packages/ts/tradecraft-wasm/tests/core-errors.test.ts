@@ -7,15 +7,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import {
-  adoptSkills,
-  CoreError,
-  discoverComponents,
-  exportSkills,
-  InvalidNamespaceError,
-  publishSkill,
-  statusOf,
-} from '../src/core.ts'
+import { CoreError, discoverComponents, exportSkills, InvalidNamespaceError } from '../src/core.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
 let tmp: string
@@ -63,16 +55,6 @@ describe('a host filesystem that throws a value with no message', () => {
 describe('a bad namespace on a JSON export', () => {
   const namespace = 'Bad Stem!'
   const calls: Array<[string, (vfs: Vfs) => unknown]> = [
-    [
-      'publishSkill',
-      (vfs) =>
-        publishSkill(vfs, {
-          skill_path: path.join(tmp, 'note.md'),
-          destination_root: path.join(tmp, 'out'),
-          target: 'claude',
-          namespace,
-        }),
-    ],
     ['discoverComponents', (vfs) => discoverComponents(vfs, { vault_root: tmp, namespace })],
     [
       'exportSkills',
@@ -82,26 +64,6 @@ describe('a bad namespace on a JSON export', () => {
           out_root: path.join(tmp, 'out'),
           mode: 'check',
           config: { name: 'core' },
-          namespace,
-        }),
-    ],
-    [
-      'adoptSkills',
-      (vfs) =>
-        adoptSkills(vfs, {
-          source: path.join(tmp, 'in'),
-          vault_root: tmp,
-          adopted_at: '2026-01-01T00:00:00Z',
-          namespace,
-        }),
-    ],
-    [
-      'statusOf',
-      (vfs) =>
-        statusOf(vfs, {
-          skill_path: path.join(tmp, 'note.md'),
-          destination_root: path.join(tmp, 'out'),
-          target: 'claude',
           namespace,
         }),
     ],

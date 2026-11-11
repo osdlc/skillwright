@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { fakeWindowsFs, mount, onDisk } from './fake-windows-fs.ts'
-import { exportSkills, publishSkill } from '../src/core.ts'
+import { exportSkills } from '../src/core.ts'
 import { toCorePath, UNSUPPORTED_PATH } from '../src/host-path.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
@@ -51,17 +51,8 @@ function vaultAt(vault: string, disk: (p: string) => string = (p) => onDisk(root
   return `${vault}\\marketplaces\\house\\plugins\\tools\\skills\\review\\review.md`
 }
 
-function publish(note: string, vault: string, destination: string) {
-  return publishSkill(vfs, {
-    skill_path: core(note),
-    destination_root: core(destination),
-    target: 'claude',
-    skills_root: core(vault),
-  })
-}
-
-function build(vault: string, out: string) {
-  return exportSkills(vfs, {
+function build(vault: string, out: string, host: Vfs = vfs) {
+  return exportSkills(host, {
     vault_root: core(vault),
     out_root: core(out),
     mode: 'build',
@@ -70,18 +61,6 @@ function build(vault: string, out: string) {
 }
 
 describe('a Windows host', () => {
-  test('publishes, and publishes again over its own files', () => {
-    const note = vaultAt('C:\\Users\\me\\vault')
-    const first = publish(note, 'C:\\Users\\me\\vault', 'D:\\dest')
-    expect(
-      first.files.some((f) => f.path.endsWith('review/SKILL.md') && f.status === 'written'),
-    ).toBe(true)
-    expect(existsSync(onDisk(root, 'D:\\dest\\.claude\\skills\\review\\SKILL.md'))).toBe(true)
-
-    const again = publish(note, 'C:\\Users\\me\\vault', 'D:\\dest')
-    expect(again.files.every((f) => f.status !== 'refused')).toBe(true)
-  })
-
   test('builds at the repository root that holds the vault', () => {
     vaultAt('C:\\repo\\src')
     expect(build('C:\\repo\\src', 'C:\\repo').changed).toBe(true)
@@ -103,23 +82,18 @@ describe('a Windows host', () => {
 
   test('works on a UNC share, and on a mapped drive that resolves to one', () => {
     const shareDisk = (p: string) => path.join(root, 'UNC', ...p.slice(2).split('\\'))
-    const note = vaultAt('\\\\server\\share\\vault', shareDisk)
-    expect(
-      publish(note, '\\\\server\\share\\vault', '\\\\server\\share\\dest').files.length,
-    ).toBeGreaterThan(0)
+    vaultAt('\\\\server\\share\\vault', shareDisk)
+    expect(build('\\\\server\\share\\vault', '\\\\server\\share\\dest').changed).toBe(true)
 
     // Drive Z: is mapped to \\nas\team; realpath answers with the share.
-    const mapped = vaultAt('Z:\\vault')
-    publish(mapped, 'Z:\\vault', 'Z:\\dest')
-    expect(existsSync(onDisk(root, 'Z:\\dest\\.claude\\skills\\review\\SKILL.md'))).toBe(true)
+    vaultAt('Z:\\vault')
+    build('Z:\\vault', 'Z:\\dest')
+    expect(existsSync(onDisk(root, 'Z:\\dest\\.claude-plugin\\marketplace.json'))).toBe(true)
   })
 
   test('refuses a server name as a root: it is not a directory', () => {
-    const note = vaultAt('C:\\vault')
+    vaultAt('C:\\vault')
     for (const server of ['\\\\server', '\\\\server\\']) {
-      expect(() => publish(note, 'C:\\vault', server)).toThrow(
-        expect.objectContaining({ code: UNSUPPORTED_PATH }),
-      )
       expect(() => build('C:\\vault', server)).toThrow(
         expect.objectContaining({ code: UNSUPPORTED_PATH }),
       )
@@ -156,15 +130,8 @@ describe('a Windows host', () => {
       platform: 'win32',
       fs: { ...fake, realpathSync: Object.assign(volume, { native: volume }) } as typeof fake,
     })
-    const note = vaultAt('C:\\vault')
-    const result = publishSkill(odd, {
-      skill_path: core(note),
-      destination_root: core('D:\\dest'),
-      target: 'claude',
-      skills_root: core('C:\\vault'),
-    })
-    expect(result.files.map((f) => f.status)).toEqual(['refused'])
-    expect(result.files[0]?.reason?.detail).toMatch(/cannot tell where this path leads/)
-    expect(result.files[0]?.reason?.detail).toMatch(why)
+    vaultAt('C:\\vault')
+    expect(() => build('C:\\vault', 'D:\\dest', odd)).toThrow(/cannot tell where this path leads/)
+    expect(() => build('C:\\vault', 'D:\\dest', odd)).toThrow(why)
   })
 })

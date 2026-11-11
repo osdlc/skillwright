@@ -436,8 +436,8 @@ fn meta_str(meta: &syn::meta::ParseNestedMeta<'_>) -> Option<String> {
 /// Local names in the wrapper that stand for a public function or constant of
 /// the core.
 ///
-/// `use tradecraft_core::publish::{PublishRequest, publish_skill as
-/// core_publish_skill}` gives `core_publish_skill -> publish_skill`. Imported
+/// `use tradecraft_core::export::{ExportRequest, export_skills as
+/// core_export_skills}` gives `core_export_skills -> export_skills`. Imported
 /// types are skipped: only names that resolve to a core function or a core
 /// constant are aliases this module can follow to a response type — a
 /// function's is its return type, a constant's is the constant's own type

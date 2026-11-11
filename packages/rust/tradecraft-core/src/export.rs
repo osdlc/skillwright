@@ -4,9 +4,7 @@
 //! The engine behind the `build` and `check` verbs.
 //! Skills group by the plugin folder they sit in, each group
 //! becomes a pack directory with a manifest, and the groups assemble into a
-//! marketplace. This is the standalone rendering; a per-destination plugin
-//! publish is [`crate::publish::publish_skill`]'s `EntityKind::Plugin` arm,
-//! which writes the pack manifest at the destination.
+//! marketplace.
 //!
 //! # One directory, one tree per harness
 //!
@@ -50,8 +48,7 @@
 //! The vault is loaded once into the marketplace model ([`crate::model`]) —
 //! every note read, every body resolved — and each harness's translator
 //! ([`crate::harness::HarnessTranslator`]) writes that model as its tree.
-//! These are the same translators `publish` writes a pack and a note through,
-//! so a note renders the same bytes on both paths, harness blocks included.
+//! What a note means is decided once, harness blocks included.
 //!
 //! # One render, two verbs
 //!
@@ -106,7 +103,7 @@
 //! land inside the vault. On any other host, such as the wasm bridge over a host object without
 //! link methods, [`crate::guard::assert_destination_allowed`] also refuses every ancestor of
 //! the vault, because a link the host cannot see is what the narrowed check
-//! would miss. `publish` takes the same two rails on the same condition.
+//! would miss.
 //! A destination inside the vault but outside its kind folders, the vault root
 //! itself included, is accepted: the vault walk leaves out what a
 //! build writes there.
@@ -168,9 +165,7 @@ pub struct ExportRequest {
     /// less than was asked for is the failure this crate is built around.
     #[serde(default)]
     pub harnesses: BTreeSet<String>,
-    /// Build, or check. Absent on the wire means [`ExportMode::Build`] — the
-    /// same default-to-the-write choice [`crate::publish::PublishMode`] makes,
-    /// for the same reason.
+    /// Build, or check. Absent on the wire means [`ExportMode::Build`].
     #[serde(default)]
     pub mode: ExportMode,
     /// The marketplace's own identity and per-plugin overrides.
@@ -495,9 +490,7 @@ pub enum ExportUnit {
     /// [`crate::publish::plugin_format_carries_commands`] is `true`, and for
     /// hooks on a root whose [`crate::publish::plugin_format_carries_hooks`]
     /// is. Everything else is named here rather than dropped; what a build
-    /// must not do is leave silently. This is the same fact
-    /// [`crate::publish::PublishReport::not_carried`] reports on the other
-    /// path, in this report's own vocabulary.
+    /// must not do is leave silently.
     ///
     /// `root` is the root that cannot carry it — a command on Codex, say.
     /// `None` when no root can, as for an agent: the reason is the layout's,
@@ -646,7 +639,7 @@ pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 /// reports the drift and writes nothing.
 ///
 /// `ns` is the vault's frontmatter namespace, handed to every read and every
-/// emit below — the single-namespace rule [`crate::publish::publish_skill`] states.
+/// emit below, so the read and the emit strip the same keys.
 ///
 /// # Errors
 ///
@@ -773,10 +766,9 @@ fn check_output(
     // ancestor rule would refuse exactly what the feature is for. What
     // matters is what the swap touches — would any path this build replaces
     // be, sit inside, or contain the vault? Same refusal token, same symlink
-    // resolution, and the first two are the rail `publish` already runs
-    // against a destination's own relative paths.
+    // resolution.
     //
-    // Narrowed only where the host can see links, as `publish` does. Anywhere
+    // Narrowed only where the host can see links. Anywhere
     // else an ancestor of the vault stays refused, because a link under it
     // into the vault is exactly what the narrowed check cannot see.
     //
@@ -1552,8 +1544,7 @@ fn describe_root(
 /// among its members actually changed — the pack manifest can drift on its
 /// own (a description, an author) without a member having moved, and that is
 /// not this rule. The tail of the rule, the one that reads the installed
-/// manifest back, is [`crate::status::version_bump_if_unmoved`], shared with
-/// `status_of`.
+/// manifest back, is [`crate::status::version_bump_if_unmoved`].
 fn plugin_version_bump(
     dest: &DestTree<'_>,
     spec: &HarnessProfile,
@@ -3400,7 +3391,7 @@ mod tests {
     }
 
     // `read_vault_skill` never fills `SkillContent::arguments` — the translator
-    // has to call `apply_arguments` itself, the same seam `publish` uses, or a
+    // has to call `apply_arguments` itself, or a
     // marketplace-published skill would carry no hint and no section at all.
     #[test]
     fn a_marketplace_skill_derives_its_hint_and_renders_the_section() {

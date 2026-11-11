@@ -204,13 +204,12 @@ mod tests {
             err.to_string(),
             "refused: malformed: /vault/a.md: `model` must be a string, not a list"
         );
+        let message = err.to_string();
+        let (token, _) = CoreError::split_refusal(message.strip_prefix("refused: ").unwrap())
+            .expect("a token leads the refusal");
         assert_eq!(
-            crate::publish::PublishReason::from_refusal(
-                err.to_string().strip_prefix("refused: ").unwrap(),
-                crate::publish::ReasonToken::Io,
-            )
-            .token,
-            crate::publish::ReasonToken::Malformed
+            crate::publish::ReasonToken::parse(token),
+            Some(crate::publish::ReasonToken::Malformed)
         );
     }
 

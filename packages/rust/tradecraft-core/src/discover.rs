@@ -1,18 +1,13 @@
 //! Discovery — every publishable note under a skills root, found and vetted.
 //!
 //! The scan every marketplace verb stands on:
-//! `build` renders what this returns, `check` compares it, `status` lists it.
+//! `build` renders what this returns and `check` compares it.
 //! The rules here are the definition of *publishable*, so a note this module
 //! refuses is refused everywhere at once rather than differently per verb.
 //!
-//! # This is not [`crate::scan`]
-//!
-//! The corpus scan walks arbitrary registered roots looking for **published**
-//! `SKILL.md` files, never fails, and lists broken skills so a user can find
-//! them. This walks one curated tree of **vault notes**, and it refuses:
-//! a skills root feeds a publish, and a scan that shrugged past a duplicate
-//! name or a symlink would surface the problem as a wrong marketplace instead
-//! of a sentence naming the note.
+//! It refuses rather than shrugs: a scan that passed a duplicate name or a
+//! symlink would surface the problem as a wrong marketplace instead of a
+//! sentence naming the note.
 //!
 //! # The shapes
 //!
@@ -265,7 +260,7 @@ impl DiscoveredComponent {
 }
 
 /// What happens to one unknown key, as a warning says it. A key the namespace
-/// claims and a field of the `adopted` block are consumed on the read.
+/// claims is consumed on the read.
 fn unknown_key_fate(kind: EntityKind, key: &str, ns: &Namespace) -> &'static str {
     let in_a_block = key
         .split_once('.')
@@ -273,7 +268,7 @@ fn unknown_key_fate(kind: EntityKind, key: &str, ns: &Namespace) -> &'static str
     match kind {
         EntityKind::Plugin | EntityKind::Marketplace | EntityKind::Hook => "ignored",
         _ if in_a_block => "ignored",
-        _ if ns.is_ours(key) || key.starts_with(&format!("{}.", ns.key("adopted"))) => "dropped",
+        _ if ns.is_ours(key) => "dropped",
         EntityKind::Skill => "published under `metadata:`",
         EntityKind::Command => "carried as written",
         EntityKind::Agent => "carried as written when the agent publishes on its own",
@@ -314,7 +309,7 @@ pub(crate) fn unknown_key_warning(
             .iter()
             .filter_map(|key| {
                 let field = ns.field(key).replace('-', "_");
-                let bare = key == "adopted" || crate::harness::profile_named(key).is_some();
+                let bare = crate::harness::profile_named(key).is_some();
                 let hyphen = field != ns.field(key)
                     && EntityKind::ALL
                         .iter()
@@ -881,9 +876,7 @@ fn discover_with(
                     warnings.push(DiscoveryWarning::new(
                         component.vault_relative_path.clone(),
                         INVALID_NAME_REASON,
-                        format!(
-                            "{why}; build and publish refuse it. Set `name:` in its frontmatter"
-                        ),
+                        format!("{why}; a build refuses it. Set `name:` in its frontmatter"),
                     ));
                 }
                 if let Some(warning) = unknown_key_warning(
@@ -1027,7 +1020,7 @@ fn missing_description(component: &DiscoveredComponent) -> DiscoveryWarning {
         path: component.vault_relative_path.clone(),
         reason: MISSING_DESCRIPTION_REASON.to_owned(),
         detail: format!(
-            "`{}` has a `name` and no `description`; build and publish refuse it",
+            "`{}` has a `name` and no `description`; a build refuses it",
             component.name
         ),
     }
@@ -1631,8 +1624,8 @@ fn read_source(
         (Some(name), None) => (name, String::new()),
     };
 
-    // The value checks a build makes on this note, so the scan, and `list`,
-    // refuse what a build refuses.
+    // The value checks a build makes on this note, so the scan refuses
+    // what a build refuses.
     check_values(
         &mut fields,
         &ours,
@@ -1875,6 +1868,25 @@ pub const DESCRIPTION_MAX_LEN: usize = 1024;
 /// Maximum length of a `compatibility` note, per the Agent Skills spec.
 pub const COMPATIBILITY_MAX_LEN: usize = 500;
 
+/// Why a name with nothing sluggable in it is refused, stated once. `what` is
+/// the level being named — a component name, a plugin name, a note name — so
+/// the refusal says which one had nothing to slug.
+pub fn nameless(what: &str) -> String {
+    format!("a {what} needs at least one letter or digit, so a filename can be slugged from it")
+}
+
+/// Why `slug` cannot be a `what`: nothing sluggable in the name it came from,
+/// or a slug the skills-spec grammar refuses. `None` means it is usable.
+///
+/// A rename composes no note, so the cap is checked here too — otherwise an
+/// over-long name refuses the vault's next scan instead of the rename.
+pub fn slug_refusal(slug: &str, what: &str) -> Option<String> {
+    if slug.is_empty() {
+        return Some(nameless(what));
+    }
+    name_refusal(slug, what)
+}
+
 /// Why `value` is not a `what` the Agent Skills spec admits — the name rule
 /// `^[a-z0-9]+(-[a-z0-9]+)*$`, at most [`NAME_MAX_LEN`] characters, spelled
 /// as segment checks rather than a regex dependency — or `None` when it is.
@@ -1921,8 +1933,6 @@ pub fn compatibility_refusal(value: &str) -> Option<String> {
 /// [`name_refusal`] as the scan's own error, against the note carrying the
 /// name.
 ///
-/// `pub(crate)` for [`crate::adopt`]: what adoption writes must satisfy this
-/// scan, so it validates with the same rule rather than a copy that drifts.
 pub(crate) fn validate_name(value: &str, what: &str, path: &Path) -> Result<(), CoreError> {
     match name_refusal(value, what) {
         Some(message) => Err(CoreError::malformed(path, message)),
@@ -1934,8 +1944,8 @@ pub(crate) fn validate_name(value: &str, what: &str, path: &Path) -> Result<(), 
 /// filename, slugified — or for a `SKILL.md`, its folder's name.
 ///
 /// One derivation for both readers. [`crate::vault::read_vault_skill`] calls
-/// it for a single-note publish and `read_source` calls it for a scan, so
-/// the two cannot answer differently about the same file. Slugified rather
+/// it for one note and `read_source` calls it for a scan, so the two cannot
+/// answer differently about the same file. Slugified rather
 /// than raw, because `validate_name` runs on the result: a stem with a
 /// capital or a space would otherwise default straight into a refusal.
 pub fn default_name(path: &Path) -> String {
@@ -1953,11 +1963,10 @@ pub fn default_name(path: &Path) -> String {
 /// `-`, trimmed. `Workflow Checklist` → `workflow-checklist`. See the module
 /// doc for the deliberate NFKD divergence.
 ///
-/// Public because deriving a name is not only adoption's problem. Any caller
-/// that *authors* a note — [`crate::adopt`], an editor composing a new one —
-/// has to produce the name and the filename this scan will later check
-/// against each other, and the only way that check cannot drift is for one
-/// function to answer it for everybody.
+/// Public because any caller that authors a note, such as `init`, has to
+/// produce the name and the filename this scan will later check against each
+/// other, and the only way that check cannot drift is for one function to
+/// answer it for everybody.
 pub fn slugify(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut pending_separator = false;

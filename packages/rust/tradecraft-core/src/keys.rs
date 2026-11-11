@@ -78,13 +78,11 @@ pub enum Shape {
     Arguments,
     /// A mapping of one harness's own keys.
     HarnessBlock,
-    /// The `{source, format, source_hash, hash, at, also_at}` block adoption writes.
-    Adopted,
 }
 
 impl Shape {
     /// Whether `value` has this shape. `null` passes only where the reader
-    /// takes it as absent: a person, a harness block and the `adopted` block.
+    /// takes it as absent: a person and a harness block.
     /// A shape that the bare spec-key check and a harness block also read
     /// accepts what they accept, except [`Self::Arguments`].
     pub fn accepts(self, value: &Value) -> bool {
@@ -96,7 +94,7 @@ impl Shape {
                     || value.get("name").is_some_and(Value::is_string)
             }
             Self::Arguments => value.is_array(),
-            Self::HarnessBlock | Self::Adopted => value.is_object() || value.is_null(),
+            Self::HarnessBlock => value.is_object() || value.is_null(),
             _ => self.field_type().is_some_and(|ty| ty.accepts(value)),
         }
     }
@@ -122,7 +120,7 @@ impl ShapeRefusal {
 impl Shape {
     /// Why `value` is not this shape.
     fn refusal(self, value: &Value) -> ShapeRefusal {
-        use crate::frontmatter::{ADOPTED_FIELDS, quoting_hint, type_name};
+        use crate::frontmatter::{quoting_hint, type_name};
         let found = type_name(value);
         let not = format!(", not {found}");
         let (what, detail) = match self {
@@ -168,10 +166,6 @@ impl Shape {
             Self::Mapping => ("a mapping", not),
             Self::Arguments => ("a list of argument objects", not),
             Self::HarnessBlock => ("a mapping of that harness's own keys", not),
-            Self::Adopted => (
-                "a mapping",
-                format!(" of {}{not}", ADOPTED_FIELDS.join(", ")),
-            ),
         };
         ShapeRefusal { what, detail }
     }
@@ -225,7 +219,6 @@ const CONTAINERS: &[EntityKind] = &[Marketplace, Plugin];
 const COMPONENTS: &[EntityKind] = &[Skill, Agent, Command];
 const ALL_BUT_HOOK: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command];
 const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command, Hook];
-const ADOPTABLE: &[EntityKind] = &[Skill, Agent, Command, Hook];
 
 /// The harnesses that take a block of their own keys: `claude:`, `codex:`,
 /// `cursor:` and `pi:`, the rows with a plugin format. A test holds this list
@@ -254,7 +247,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: false,
-        summary: "What it does. A skill, command or agent with a `name` and no description is an error: `list` and `check` report it, and `build` and `publish` refuse it. A plugin or marketplace need not have one. A note with neither is not published.",
+        summary: "What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published.",
     },
     KeySpec {
         key: "version",
@@ -342,7 +335,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::StringList,
         inherits: true,
-        summary: "Which harnesses get it: `claude`, `codex`, `cursor`, `pi`, or `amp`, `antigravity`, `opencode` and `portable` for `publish`. `claude-code` and `codex-cli` also work. `copilot` and `github-copilot` are accepted, but no skill renders for them: `publish --target copilot` refuses each one `no-renderer`. Absent means all; `[]` means none. Another name is refused.",
+        summary: "Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused.",
     },
     KeySpec {
         key: "arguments",
@@ -552,14 +545,6 @@ pub const KEYS: &[KeySpec] = &[
         inherits: true,
         summary: "Fields only Pi reads, in its own key names.",
     },
-    KeySpec {
-        key: "adopted",
-        kinds: ADOPTABLE,
-        owner: Owner::Skillwright,
-        shape: Shape::Adopted,
-        inherits: false,
-        summary: "Where adoption read the note from: `{source, format, source_hash, hash, at, also_at}`. Written by `adopt`.",
-    },
 ];
 
 /// The heading and order of each kind in the field reference.
@@ -591,7 +576,6 @@ impl Shape {
                 "list of arguments; with no namespace, a string or a list of strings is Claude's own key"
             }
             Self::HarnessBlock => "harness block",
-            Self::Adopted => "adopted block",
         }
     }
 }
@@ -854,7 +838,6 @@ mod tests {
             Shape::Mapping,
             Shape::Arguments,
             Shape::HarnessBlock,
-            Shape::Adopted,
         ];
         for shape in shapes {
             let Some(ty) = shape.field_type() else {

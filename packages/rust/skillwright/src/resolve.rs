@@ -19,7 +19,7 @@ use tradecraft_core::{
 
 use crate::config::{
     ROOT_FILE, RootFile, RootLoad, WORKSPACE_DIR, is_convention_vault, print_warnings,
-    read_root_file, resolve_against_cwd, user_skills_dir, workspace_above, workspace_members,
+    read_root_file, resolve_against_cwd, workspace_above, workspace_members,
 };
 use crate::exit::{blocked, no_config};
 
@@ -130,27 +130,6 @@ impl ResolvedRun {
         )
     }
 
-    /// The build config of each marketplace `marketplace` allows, every one
-    /// when it names none, for a verb that does not build one.
-    pub fn effective_configs(&self, marketplace: Option<&str>) -> Vec<MarketplaceConfig> {
-        tradecraft_core::effective_configs(
-            &self.config_vfs(),
-            self.scope(None, marketplace),
-            &self.root_config(),
-            self.core_namespace(),
-        )
-    }
-
-    /// The folder of the marketplace published as `name`.
-    pub fn marketplace_folder(&self, name: &str) -> Option<String> {
-        tradecraft_core::marketplace_folder(
-            &self.config_vfs(),
-            self.scope(None, None),
-            name,
-            self.core_namespace(),
-        )
-    }
-
     /// Whether this run's root file is a workspace's.
     pub fn is_workspace(&self) -> bool {
         self.config.workspace
@@ -167,48 +146,6 @@ impl ResolvedRun {
             .unwrap_or_default()
     }
 
-    /// Where `publish` and `status` look when no `--to` is given:
-    /// `build.destinations`, else each harness's user folders, for the
-    /// harnesses this vault builds for.
-    pub fn destinations(&self) -> Vec<RunDestination> {
-        if !self.config.build.destinations.is_empty() {
-            return self
-                .config
-                .build
-                .destinations
-                .iter()
-                .map(|d| RunDestination {
-                    root: self.configured_path(&d.root),
-                    target: d.target.clone(),
-                    user_folders: false,
-                })
-                .collect();
-        }
-        self.user_skill_folders()
-            .into_iter()
-            .map(|(_, name)| RunDestination {
-                root: user_skills_dir(""),
-                target: name.to_owned(),
-                user_folders: true,
-            })
-            .collect()
-    }
-
-    /// Each harness's user skill folder, for the harnesses this vault builds
-    /// for (every one when `build.harnesses` is absent).
-    pub fn user_skill_folders(&self) -> Vec<(PathBuf, &'static str)> {
-        let wanted = self.config.harness_set();
-        tradecraft_core::harness::with_plugin_format()
-            .filter(|profile| wanted.is_empty() || wanted.contains(profile.name))
-            .map(|profile| {
-                (
-                    user_skills_dir(profile.format().user_skills_dir),
-                    profile.name,
-                )
-            })
-            .collect()
-    }
-
     /// The marketplace's name: the root file's `name`, else the folder's.
     pub fn marketplace_name(&self) -> String {
         self.root_config().name.unwrap_or_default()
@@ -218,17 +155,6 @@ impl ResolvedRun {
     pub fn root_config(&self) -> tradecraft_core::MarketplaceConfig {
         self.config.to_config(&self.folder_name())
     }
-}
-
-/// One place `publish` and `status` write to or read from.
-#[derive(Debug, Clone)]
-pub struct RunDestination {
-    /// The destination root.
-    pub root: PathBuf,
-    /// The harness.
-    pub target: String,
-    /// The root is the home directory, and the harness's user folders apply.
-    pub user_folders: bool,
 }
 
 /// Load the root file, validate the namespace, and resolve the vault —

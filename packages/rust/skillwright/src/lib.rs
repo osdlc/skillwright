@@ -7,17 +7,10 @@
 //!
 //! # Stability
 //!
-//! [`apply`] is the supported library API: it applies an authoring op that
-//! `tradecraft-core` plans, relinking the vault. Every other module is the
-//! CLI's own and may change in any release; they are public only so the
-//! binary and this crate's tests can reach them, and are hidden from these
-//! docs.
-//!
-//! Its types are `#[non_exhaustive]`: build an [`apply::Vault`] with
-//! `Vault::new`, read an [`apply::Outcome`] and its [`apply::AppliedEntry`] by field, and give a `match` on
-//! [`apply::Applied`] or [`apply::ApplyError`] a `_` arm.
+//! This crate has no supported library API. Its modules are the CLI's own
+//! and may change in any release; they are public only so the binary and
+//! this crate's tests can reach them, and are hidden from these docs.
 
-pub mod apply;
 #[doc(hidden)]
 pub mod cli;
 #[doc(hidden)]
@@ -27,11 +20,7 @@ pub mod config;
 #[doc(hidden)]
 pub mod ctx;
 #[doc(hidden)]
-pub mod dirs;
-#[doc(hidden)]
 pub mod exit;
-#[doc(hidden)]
-pub mod git_source;
 #[doc(hidden)]
 pub mod prompt;
 #[doc(hidden)]

@@ -1,11 +1,7 @@
 //! The marketplace model — a vault loaded once, harness-neutral, for every
 //! verb to translate (D-COMG).
 //!
-//! `build` and `publish` used to be two pipelines that each read and
-//! compiled a note: `build` once per harness, `publish` once per
-//! destination. They drifted — `build` ignored harness blocks, and `publish`
-//! wrote packs for two harnesses of four. Here the vault is read into one
-//! object graph, marketplace → plugins → skills, commands, hooks and assets,
+//! The vault is read into one object graph, marketplace → plugins → skills, commands, hooks and assets,
 //! and each harness's [`crate::harness::HarnessTranslator`] writes that graph
 //! out. What a note means is decided once; how a harness spells it is the
 //! translator's.

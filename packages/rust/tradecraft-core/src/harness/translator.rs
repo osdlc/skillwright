@@ -14,8 +14,7 @@
 //! execute bits and the notes each file came from. It reads no file and
 //! writes none — the load read everything it needs, and what happens to the
 //! tree is the emitting verb's: `build` diffs it against a marketplace
-//! directory and swaps it in, `publish` classifies it against a destination's
-//! manifest.
+//! directory and swaps it in.
 //!
 //! # Two layouts
 //!

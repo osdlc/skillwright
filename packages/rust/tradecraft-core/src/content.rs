@@ -32,7 +32,7 @@ pub struct SkillContent {
     /// not the contradiction it looks like. `Vec::new()` by construction
     /// whenever this `SkillContent` comes from
     /// [`crate::vault::read_vault_skill`]; only [`SkillContent::apply_arguments`]
-    /// fills it in, called by `publish` and `export` after the read, before
+    /// fills it in, called by `export` after the read, before
     /// the projection.
     #[serde(default)]
     pub arguments: Vec<Argument>,
@@ -90,10 +90,9 @@ impl SkillContent {
     /// of its own.
     ///
     /// A hand-written hint or name list always wins — this never overwrites
-    /// a `Some`. Never called by [`crate::vault::read_vault_skill`]; `publish`
-    /// and `export` call it themselves, once, between reading a note and
-    /// projecting it, so every destination that either produces sees the same
-    /// derived hint, name list, and argument list.
+    /// a `Some`. Never called by [`crate::vault::read_vault_skill`]; `export`
+    /// calls it itself, once, between reading a note and projecting it, so
+    /// every harness sees the same derived hint, name list, and argument list.
     pub fn apply_arguments(&mut self, arguments: &[Argument]) {
         if self.argument_hint.is_none() {
             self.argument_hint = agent_adapt::render::derive_argument_hint(arguments);

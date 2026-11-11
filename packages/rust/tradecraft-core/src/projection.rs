@@ -30,7 +30,6 @@
 //! the strip failing in both directions at once.
 
 use agent_adapt::RuntimeId;
-use sha2::{Digest, Sha256};
 
 use crate::content::SkillProjection;
 use crate::error::CoreError;
@@ -170,27 +169,6 @@ pub fn redundant_override_keys(
         None => Ok(Vec::new()),
         Some(report) => report.map_err(|e| refusal(target, e)),
     }
-}
-
-/// The aggregate content hash over a projected (or manifested) file set:
-/// SHA-256 over `path`, an exec marker, and `content`, in sorted path order.
-///
-/// The hash covers exec bits and does not depend on emission order.
-pub fn content_hash(files: &[ProjectedFile]) -> String {
-    let mut sorted: Vec<&ProjectedFile> = files.iter().collect();
-    sorted.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    let mut hasher = Sha256::new();
-    for f in sorted {
-        hasher.update(f.relative_path.as_bytes());
-        hasher.update(if f.executable { b"x" } else { b"-" });
-        hasher.update(&f.content);
-    }
-    format!("{:x}", hasher.finalize())
-}
-
-/// Hash of one file's bytes — what the manifest records per file.
-pub fn file_hash(content: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(content))
 }
 
 /// A render failure, as the variant that says what actually happened.
@@ -1347,31 +1325,6 @@ mod tests {
         let snap = snapshot("alpha", vec![]);
         let err = project_skill(&snap, &["windsurf".to_owned()], &sw()).unwrap_err();
         assert!(matches!(err, CoreError::Projection(_)));
-    }
-
-    #[test]
-    fn hash_is_order_independent_and_exec_sensitive() {
-        let a = ProjectedFile {
-            relative_path: "a".into(),
-            content: b"1".to_vec(),
-            executable: false,
-        };
-        let b = ProjectedFile {
-            relative_path: "b".into(),
-            content: b"2".to_vec(),
-            executable: false,
-        };
-        assert_eq!(
-            content_hash(&[a.clone(), b.clone()]),
-            content_hash(&[b.clone(), a.clone()])
-        );
-        let mut b_exec = b.clone();
-        b_exec.executable = true;
-        assert_ne!(
-            content_hash(&[a.clone(), b]),
-            content_hash(&[a, b_exec]),
-            "exec bit must be hash-visible"
-        );
     }
 
     #[test]

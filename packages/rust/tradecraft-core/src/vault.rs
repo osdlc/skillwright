@@ -5,10 +5,9 @@
 //! it carries files. The name is on the note either way, because Obsidian keys
 //! its quick-switcher, graph, and backlinks on note names: a vault where forty
 //! notes are all called `SKILL` breaks every one of those, and `[[SKILL]]`
-//! cannot address anything. The standard's folder layout is what we *publish*,
-//! never what we store: [`crate::skill::read_detail`] opens a `SKILL.md` inside
-//! a directory named for the skill — the shape on the far side of a publish,
-//! not a shape any vault holds.
+//! cannot address anything. The standard's folder layout (`SKILL.md` inside a
+//! directory named for the skill) is what a build writes, never what the vault
+//! holds.
 //!
 //! # What is modeled, and what is merely carried
 //!
@@ -17,8 +16,8 @@
 //! never reaches [`SkillContent`] *through this function* — it is
 //! configuration about *this vault* and a destination has no business reading
 //! it. `arguments` is the one exception, and it is not this function's:
-//! `SkillContent::arguments` stays empty here, and `publish` and `export` are
-//! the ones that carry it over, once, after this read — see
+//! `SkillContent::arguments` stays empty here, and `export` is
+//! the one that carries it over, once, after this read — see
 //! [`SkillContent::apply_arguments`].
 //!
 //! Of what is left, [`SkillContent`] has a field for a key only when
@@ -89,7 +88,7 @@ pub struct VaultNote {
     /// The content and peers, ready to project. Carries no key of ours by
     /// construction.
     pub projection: SkillProjection,
-    /// What skillwright's own keys declared: the targets, provenance, and any
+    /// What skillwright's own keys declared: the targets and any
     /// key inside the prefix this build does not model.
     pub frontmatter: VaultFrontmatter,
 }
@@ -99,9 +98,7 @@ pub struct VaultNote {
 /// `ns` is the vault's frontmatter namespace; [`Namespace::default`] is
 /// bare. Whatever is passed here must also be passed to the emit
 /// side ([`crate::projection::project_skill`]), because these two are the
-/// halves of one strip: a key this read did not claim is a key that publishes.
-/// [`crate::publish::publish_skill`] takes one namespace and hands the same
-/// value to both.
+/// halves of one strip: a key this read did not claim is a key that ships.
 ///
 /// Order matters. Our namespace is claimed **first**, so a note that mixes the
 /// two frontmatter shapes, or names a kind we do not know, is refused as that
@@ -174,7 +171,7 @@ pub fn read_vault_note(
             (!names.is_empty()).then_some(names)
         },
         // Never our own `arguments` here — see the module doc's three classes.
-        // `publish` and `export` call `SkillContent::apply_arguments` after
+        // `export` calls `SkillContent::apply_arguments` after
         // this read, with `ours.arguments`, once the kind is resolved.
         arguments: Vec::new(),
         // Nor harness blocks, and for the same reason twice over: the block's
@@ -564,7 +561,6 @@ mod tests {
 
         // A note that declares nothing of ours reads as the ordinary vault.
         assert_eq!(note.frontmatter.targets, None);
-        assert!(note.frontmatter.provenance.is_hand_authored());
     }
 
     #[test]
@@ -720,15 +716,6 @@ mod tests {
             note.frontmatter.targets,
             Some(vec!["claude-code".to_owned()])
         );
-        assert_eq!(
-            note.frontmatter.provenance.source.as_deref(),
-            Some("/src/review")
-        );
-        assert_eq!(
-            note.frontmatter.provenance.adopted_at.as_deref(),
-            Some("2026-08-11"),
-            "an unquoted date stays a string through the YAML/JSON hop"
-        );
         assert!(
             note.frontmatter
                 .unknown
@@ -761,10 +748,6 @@ mod tests {
              ---\nb\n",
         );
         let note = read_vault_skill(&vfs, &path, &Namespace::new("x").unwrap()).unwrap();
-        assert_eq!(
-            note.frontmatter.provenance.source.as_deref(),
-            Some("/src/review")
-        );
         assert!(
             note.frontmatter
                 .unknown
@@ -792,7 +775,6 @@ mod tests {
             note.frontmatter.targets,
             Some(vec!["claude-code".to_owned()])
         );
-        assert_eq!(note.frontmatter.provenance.source.as_deref(), Some("/src"));
         assert!(note.projection.content.annotations.is_empty());
     }
 
@@ -1035,8 +1017,7 @@ b
     }
 
     /// Outside a kind folder there is no placement to follow, so the folder
-    /// named for the note still travels with it: `publish` accepts any note
-    /// path, and with no `skills_root` a project's `my-skill/SKILL.md` is one.
+    /// named for the note still travels with it: with no `skills_root` a project's `my-skill/SKILL.md` is one.
     #[test]
     fn a_named_folder_outside_a_kind_folder_still_owns_its_files() {
         assert_eq!(

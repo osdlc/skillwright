@@ -7,10 +7,8 @@
 //!
 //! | Module | Does |
 //! |---|---|
-//! | [`corpus`] | What a source root is, and how one is described |
-//! | [`scan`] | Walk a root and find the skills in it |
 //! | [`discover`] | Walk a vault's skills root and vet every publishable note |
-//! | [`skill`] | The on-disk skill: frontmatter framing, refs, detail reads |
+//! | [`skill`] | The frontmatter split and the small readers every note path shares |
 //! | [`keys`] | The closed key table: every frontmatter key, per kind |
 //! | [`namespace`] | Which prefix skillwright's keys carry — none by default |
 //! | [`frontmatter`] | skillwright's keys read out of a note, typed |
@@ -18,14 +16,14 @@
 //! | [`content`] | The skill shape projection renders, and its peer resources |
 //! | [`compile`] | Embeds expanded, links rewritten, references collected |
 //! | [`projection`] | One skill to one target's files, via `agent-adapt` |
-//! | [`publish`] | A vault note written onto a destination, idempotently |
+//! | [`publish`] | The target names, reason tokens and harness-block fold a build shares |
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
 //! | [`harness`] | Each harness as a profile row (data) and a translator (code) |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |
 //! | [`paths`] | Load the root file with its workspace folded in ([`load_marketplace`]), or its pieces |
-//! | [`adopt`] | Published SKILL.md bundles imported as vault notes |
-//! | [`authoring`] | Where a note goes, what it collides with, what it says |
-//! | [`guard`] | The rails that keep a publish out of a source root |
+//! | [`field_edit`] | Frontmatter field edits that keep every other byte |
+//! | [`status`] | The version-bump rule a build and `bump` share |
+//! | [`guard`] | The rails that keep a build out of a source root |
 //! | [`vfs`] | The filesystem seam every I/O-touching function takes |
 //!
 //! # Specs named in comments
@@ -35,24 +33,14 @@
 //!
 //! | Name | Rule set | Where |
 //! |---|---|---|
-//! | publish spec | What a publish may write: per-file statuses, the closed set of refusal tokens, `targets` exclusion, destination overlap | [`publish`], [`export`], [`guard`], [`manifest`] |
-//! | vault spec | A skill is a note plus a sibling folder of peers; publishing is five steps (embeds, links, references, peers, target dialect) | [`vault`], [`publish`] |
+//! | publish spec | The closed set of refusal tokens, `targets` exclusion, output overlap | [`publish`], [`export`], [`guard`] |
+//! | vault spec | A skill is a note plus a sibling folder of peers; building is five steps (embeds, links, references, peers, target dialect) | [`vault`], [`export`] |
 //! | compile spec | Embeds are expanded and links rewritten; an unresolved link is not a blocker | [`compile`] |
 //! | marketplace layout spec | How one marketplace tree per harness is laid out and checked | [`export`] |
-//! | namespace spec | The keys the key table lists as skillwright's belong to this tool and are stripped on publish; a configured prefix moves them under it | [`keys`], [`namespace`], [`frontmatter`] |
-//! | write-guard spec | A publish never writes into the source root or the vault | [`guard`] |
-//! | status spec | The per-file states a status report uses, including `unknown` | [`status`] |
+//! | namespace spec | The keys the key table lists as skillwright's belong to this tool and are stripped on build; a configured prefix moves them under it | [`keys`], [`namespace`], [`frontmatter`] |
+//! | write-guard spec | A build never writes into the source root or the vault | [`guard`] |
 //! | CLI spec | Exit codes, stdout versus stderr, `--dry-run`, confirmation before writes | the `skillwright` crate |
-//! | Agent Skills spec | The public Agent Skills standard: `SKILL.md` frontmatter fields, name rules, and length caps on `description` and `compatibility` | [`skill`], [`discover`], [`adopt`] |
-//!
-//! # Two skill layouts, deliberately
-//!
-//! [`skill`] reads the *published* shape — `SKILL.md` inside a directory named
-//! for the skill. [`vault`] reads the *canonical* shape — `code-review.md`
-//! with peers in a sibling `code-review/`. They are not two spellings of one
-//! reader: the vault spec keeps the vault on note names
-//! because Obsidian's quick-switcher, graph, and backlinks are keyed on them,
-//! and the standard's folder layout is what a publish produces at the far end.
+//! | Agent Skills spec | The public Agent Skills standard: `SKILL.md` frontmatter fields, name rules, and length caps on `description` and `compatibility` | [`skill`], [`discover`] |
 //!
 //! # No `std::fs` above [`vfs`]
 //!
@@ -74,27 +62,23 @@
 #[doc = include_str!("../README.md")]
 pub struct ReadmeDoctests;
 
-pub mod adopt;
-pub mod authoring;
 pub mod compile;
 pub mod content;
-pub mod corpus;
 pub mod discover;
 pub mod error;
 pub mod export;
+pub mod field_edit;
 pub mod frontmatter;
 pub mod guard;
 pub mod harness;
 pub mod hooks_file;
 pub mod keys;
-pub mod manifest;
 pub mod model;
 pub mod namespace;
 pub mod paths;
 pub mod patterns;
 pub mod projection;
 pub mod publish;
-pub mod scan;
 pub mod semver;
 pub mod settings;
 pub mod skill;
@@ -105,23 +89,12 @@ pub mod vault;
 pub mod vfs;
 mod walk;
 
-pub use adopt::{
-    AdoptMode, AdoptReport, AdoptRequest, AdoptStatus, AdoptedSkill, DEFAULT_ADOPTED_PLUGIN,
-    adopt_skills, rewrite_to_wikilinks,
-};
 pub use agent_adapt::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticScope, Severity};
-pub use authoring::{
-    AuthoringOp, FieldEdit, NewNote, Placement, apply_field_edits, compose_note, ns_field_edits,
-    ns_field_label, plan_convert_kind, plan_create_note, plan_delete_component,
-    plan_delete_container, plan_move_component, plan_rename_component, plan_rename_marketplace,
-    plan_rename_plugin, read_field, read_ns_field,
-};
 pub use compile::{
     CallContext, CompileSource, CompiledNote, IndexedSkill, RelatedSplit, SkillIndex, SkillSource,
     compile_note, compile_projection, related_of,
 };
 pub use content::{SkillContent, SkillProjection};
-pub use corpus::*;
 pub use discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, INVALID_NAME_REASON, KIND_DIRS,
     MISSING_DESCRIPTION_REASON, SKILL_ENTRY, SkippedNote, UNKNOWN_KEY_REASON, default_name,
@@ -135,9 +108,12 @@ pub use export::{
     marketplace_manifest_path, owned_paths, packs_path, plugin_manifest_path, published_skill_name,
     rendered_skill_call,
 };
+pub use field_edit::{
+    FieldEdit, apply_field_edits, compose_note, ns_field_edits, ns_field_label, read_ns_field,
+};
 pub use frontmatter::{
-    ADOPTED_FIELDS, ContainerIdentity, EntityKind, KindHints, KindSource, Provenance, ResolvedKind,
-    VaultFrontmatter, resolve_kind,
+    ContainerIdentity, EntityKind, KindHints, KindSource, ResolvedKind, VaultFrontmatter,
+    resolve_kind,
 };
 pub use harness::manifest::{check_packs, packs_of};
 pub use keys::{HARNESS_BLOCKS, KEYS, KeySpec, Owner, Shape};
@@ -150,21 +126,16 @@ pub use paths::{
     LoadedMarketplace, MarketplaceInputs, WORKSPACE_DIR, find_root_file, is_marketplace_entry,
     load_marketplace, marketplace_inputs, resolve_path, workspace_above, workspace_file,
 };
-pub use publish::{
-    KNOWN_TARGETS, PublishMode, PublishOutcome, PublishReason, PublishReport, PublishRequest,
-    PublishStatus, PublishedFile, ReasonToken, canonical_target, canonical_targets, publish_skill,
-    publishes_to,
-};
+pub use publish::{KNOWN_TARGETS, ReasonToken, canonical_target};
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
-    AssetSetting, BuildSettings, BumpSettings, DestinationSetting, HookSetting, MarketplaceFields,
-    PatchScheme, ROOT_FILE, RootFile, SettingsError, compose_root_file, parse_root_file,
+    AssetSetting, BuildSettings, BumpSettings, HookSetting, MarketplaceFields, PatchScheme,
+    ROOT_FILE, RootFile, SettingsError, compose_root_file, parse_root_file,
 };
 pub use source_view::{
     SourceView, VaultScope, effective_config, effective_configs, marketplace_folder, source_view,
     vault_config,
 };
-pub use status::{PublishState, PublishUnitStatus, StatusRequest, status_of};
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};
 pub use walk::{built_paths, built_paths_for};

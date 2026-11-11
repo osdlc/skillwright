@@ -134,22 +134,6 @@ pub(crate) fn files(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Result<Vec<Pa
     .map_err(|err| core_error(err, not_refused))
 }
 
-/// Every file under `root`, a plain walk, refusing a symlink anywhere in it
-/// with the error `refuse` makes from its path.
-pub(crate) fn files_refusing_symlinks(
-    vfs: &dyn Vfs,
-    root: &Path,
-    prune: &[&str],
-    refuse: impl Fn(&Path) -> CoreError,
-) -> Result<Vec<vfs_walk::Entry>, CoreError> {
-    vfs_walk::walk(
-        vfs,
-        root,
-        &plain_options(prune, Symlinks::Refuse, Errors::Propagate),
-    )
-    .map_err(|err| core_error(err, refuse))
-}
-
 /// Every file under `root` this walk can read, without failing, a plain walk:
 /// a folder that cannot be listed is skipped, and so is each of `prune`.
 pub(crate) fn readable_files(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Vec<vfs_walk::Entry> {
@@ -245,17 +229,6 @@ pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
         .into_iter()
         .map(|entry| entry.rel)
         .collect()
-}
-
-/// Every file under the folder `root` of the vault at `vault_root` this walk
-/// can read, without failing: a folder that cannot be listed is skipped.
-/// Plugin assets are left out, matched by their path from the vault root.
-pub(crate) fn readable_vault_files(vfs: &dyn Vfs, root: &Path, vault_root: &Path) -> Vec<PathBuf> {
-    let entries = vault::walk(vfs, root, &vault_options(&[], false, false)).unwrap_or_default();
-    // Without failing, as promised: a root file that cannot be read keeps
-    // every entry, which lists more than it should rather than less.
-    let patterns = crate::patterns::Patterns::load(vfs, vault_root).unwrap_or_default();
-    notes_and_resources(&patterns, vault_root, root, entries)
 }
 
 /// The vault's excluded files (Obsidian's `userIgnoreFilters`, read from

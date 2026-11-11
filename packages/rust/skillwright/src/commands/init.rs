@@ -8,8 +8,7 @@ use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
 use std::path::Path;
 
-use tradecraft_core::authoring::slug_refusal;
-use tradecraft_core::discover::slugify;
+use tradecraft_core::discover::{slug_refusal, slugify};
 use tradecraft_core::{ROOT_FILE, compose_root_file};
 
 use crate::ctx::CommandContext;

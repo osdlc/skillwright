@@ -1,40 +1,8 @@
-//! The safety rails — what keeps self-hosting from eating its own sources.
+//! The safety rails: what keeps a build from writing over its own sources.
 //!
-//! This repo's live skill trees (a plugin's `skills/`, the repo-root
-//! `.claude/skills/`) are load-bearing: the plugin manifest serves them,
-//! commit hooks and quality gates read them by hardcoded path, and their
-//! `tests/` directories import project code by relative path. Publishing
-//! into one would destroy files the projection universe cannot regenerate
-//! (in one real plugin tree, most files were test scaffolding that the
-//! model deliberately excludes).
-//!
-//! Three rules. The first two are enforced here and re-checked at publish
-//! time — a guard that only runs at registration can be raced by a later
-//! adoption. The third is a promise, not yet built:
-//!
-//! 1. A destination may not be, contain, or be contained by a protected
-//!    source tree.
-//! 2. A destination whose computed runtime skill dirs already hold content
-//!    must be explicitly acknowledged as partially managed.
-//! 3. The publish writer never deletes outside its manifest.
-//!    [`crate::publish`] deletes nothing at all; the orphan sweep that will
-//!    enforce this is not built yet.
-//!
-//! And one more, about a single file rather than a whole destination:
-//! [`resolve_write_path`] refuses a path that would land outside the
-//! destination root. It is the only sanctioned way to turn a projected file's
-//! relative path into somewhere to write.
-//!
-//! # Why that check lives here rather than in the renderer
-//!
-//! `agent_adapt::paths::join_within` states the lexical rule, and this module
-//! applies it — but a lexical check walks straight past a symlinked alias.
-//! `dest/.claude` is inside `dest/` by every rule a string can state, and
-//! outside it on disk the moment it is a link. The renderer cannot see that: it
-//! is pure, and emits paths relative to an anchor supplied later, so there is
-//! nothing on disk for it to resolve. This layer holds a real destination root,
-//! so it can canonicalise both sides and believe the filesystem instead of the
-//! strings.
+//! The rule: a build's output may not be, contain, or be contained by a
+//! protected source tree. Every containment check is resolved through the
+//! filesystem, so a symlinked alias cannot walk past it.
 
 use std::cell::RefCell;
 use std::io;
@@ -46,7 +14,7 @@ use crate::error::CoreError;
 use crate::vfs::Vfs;
 
 /// A [`Vfs`] as `path-guard`'s [`Resolver`], so every containment check reads
-/// the filesystem the publish writes to.
+/// the filesystem the build writes to.
 ///
 /// A host on the lexical [`Vfs::canonicalize`] default resolves every path,
 /// existing or not, so its checks reduce to the lexical rule.
@@ -198,7 +166,7 @@ pub fn assert_destination_allowed(
 /// answer it: the vault itself and anything inside it stay refused, and an
 /// ancestor — `~`, a project directory the vault lives under — is refused
 /// only when one of the writes it implies would actually land inside the
-/// vault. That is what lets a vault at `~/notes` publish to `~`: the writes
+/// vault. That is what lets a vault at `~/notes` build into `~`: the writes
 /// land under `~/.claude/skills/`, disjoint from the vault.
 ///
 /// Every comparison here is **physical**, not lexical: both roots and every
@@ -206,9 +174,7 @@ pub fn assert_destination_allowed(
 /// path is the one that must not be trusted as spelled — `~/.claude` may be
 /// a link into the vault, and on a case-insensitive filesystem `.claude`
 /// and a vault spelled `.Claude` are one directory — and this is the only
-/// rail positioned to see that: [`resolve_write_path`]'s canonical re-check
-/// bounds each write to the *destination*, and when the destination is an
-/// ancestor of the vault, the vault is inside that boundary. Callers must
+/// rail positioned to see that. Callers must
 /// only take this narrowed rail on a host whose [`Vfs::sees_links`] is
 /// honest about resolution — anywhere else the wider ancestor refusal is
 /// the answer, because a link the host cannot see is exactly what this
@@ -245,142 +211,6 @@ pub fn assert_destination_allowed_for_vault<'a>(
         }
     }
     Ok(())
-}
-
-/// Turns one projected file's destination-root-relative path into the path a
-/// publish may write, or refuses it.
-///
-/// Two checks, and the second is the one no other layer can perform:
-///
-/// 1. **The lexical rule**, delegated to `agent_adapt::paths::join_within` —
-///    non-empty, not absolute or rooted, no drive or UNC prefix on any
-///    platform, no `.`, `..`, or empty segment, and it must extend the root by
-///    at least one component. Shared with the renderer rather than restated,
-///    so the two layers cannot drift into disagreeing about what is safe.
-/// 2. **The canonical rule.** The root and the target are both resolved by
-///    `within`, and the target has to be strictly inside the root
-///    afterwards. This is what catches a parent that is a symlink out of the
-///    tree.
-///
-/// The path returned is the lexical join, not the resolved form: a link that
-/// stays inside the root is an alias the user set up on purpose, and writing
-/// through it is what they asked for. The resolution decides *whether* to
-/// write, not *where*.
-///
-/// # What resolution cannot see
-///
-/// A dangling symlink is checked by where its target would land, through
-/// [`Vfs::read_link`]. A host that cannot resolve links at all (the wasm
-/// bridge over a host object without link methods) gets check 1 and a
-/// lexical check 2 — weaker than a native publish.
-/// That is a property of the filesystem underneath, not of this function.
-///
-/// # Errors
-///
-/// `refused: unsafe-path`, naming the path exactly as it was supplied and the
-/// root it would have escaped. [`CoreError::Refused`] rather than
-/// [`CoreError::Projection`] on purpose: hosts classify a refusal as denied and
-/// a projection failure as an error, so a path escape reported as the latter is
-/// one nobody ever notices.
-pub fn resolve_write_path(
-    vfs: &dyn Vfs,
-    destination_root: &Path,
-    relative: &str,
-) -> Result<PathBuf, CoreError> {
-    let joined = agent_adapt::paths::join_within(destination_root, relative).map_err(|e| {
-        let why = match &e {
-            agent_adapt::Error::UnsafePath { reason, .. } => (*reason).to_owned(),
-            other => other.to_string(),
-        };
-        unsafe_path(destination_root, relative, &why)
-    })?;
-
-    if !within(vfs, destination_root, &joined)? || within(vfs, &joined, destination_root)? {
-        return Err(unsafe_path(
-            destination_root,
-            relative,
-            "it resolves outside the root once symlinks are followed",
-        ));
-    }
-    Ok(joined)
-}
-
-/// The refusal, in the one shape both halves of the check produce.
-fn unsafe_path(destination_root: &Path, relative: &str, why: &str) -> CoreError {
-    CoreError::refused(
-        "unsafe-path",
-        format!(
-            "{}: `{relative}` — {why}. Nothing was written",
-            destination_root.display()
-        ),
-    )
-}
-
-/// The would-be skill directories under `destination_root` for each target,
-/// via agent-adapt's path conventions — the same source of truth projection
-/// renders through, so the probe and the writer can never disagree.
-///
-/// Target names are runtime names (after `runtime_target_for` in `publish.rs` has folded
-/// the short spellings); they go through `crate::projection::parse_runtime_target`, and a
-/// target whose runtime renders no skills is refused with the message
-/// projection gives for it, rather than probing a directory nothing writes to.
-pub fn computed_skill_dirs(
-    destination_root: &Path,
-    targets: &[String],
-) -> Result<Vec<PathBuf>, CoreError> {
-    use agent_adapt::runtime::Scope;
-    let mut dirs = Vec::new();
-    for target in targets {
-        let id = crate::projection::parse_runtime_target(target)?;
-        if agent_adapt::runtimes::skill_renderer_for(id).is_none() {
-            return Err(CoreError::Projection(format!(
-                "{target}: runtime renders no skills"
-            )));
-        }
-        let runtime = agent_adapt::runtimes::for_id(id)
-            .ok_or_else(|| CoreError::Projection(format!("no runtime for target {target}")))?;
-        dirs.push(
-            runtime
-                .paths()
-                .skills_dir_for(destination_root, Scope::Project),
-        );
-    }
-    dirs.sort();
-    dirs.dedup();
-    Ok(dirs)
-}
-
-/// The coverage probe: which computed skill dirs under `destination_root`
-/// already contain entries.
-///
-/// Non-empty means the directory has history this store did not write — a
-/// hand-installed skill set, another tool's exports, or a source tree that
-/// was never adopted. Registration refuses unless the operator acknowledges
-/// partial management. Granularity is directory-nonempty by design: at
-/// registration no skills are linked yet, so per-file regenerability has
-/// nothing to compare against.
-///
-/// **Early, not dead.** No caller in this workspace reaches it yet. The caller
-/// it waits on is destination registration, which waits on `init` — the verb
-/// that writes configuration and exits `not implemented`. The publish spec names promotion as exactly the case this
-/// exists for, because promoting a scan location to a destination creates a
-/// destination that already has content.
-pub fn probe_existing_content(
-    vfs: &dyn Vfs,
-    destination_root: &Path,
-    targets: &[String],
-) -> Result<Vec<PathBuf>, CoreError> {
-    let mut occupied = Vec::new();
-    for dir in computed_skill_dirs(destination_root, targets)? {
-        // A directory that cannot be listed is not occupied: an absent
-        // destination is the ordinary case, and refusing registration over an
-        // unreadable one would refuse the common path.
-        let has_entries = vfs.read_dir(&dir).map(|e| !e.is_empty()).unwrap_or(false);
-        if has_entries {
-            occupied.push(dir);
-        }
-    }
-    Ok(occupied)
 }
 
 #[cfg(test)]
@@ -627,7 +457,6 @@ mod tests {
     fn a_host_error_that_is_not_a_missing_path_refuses_every_rail() {
         let vfs = DeniedVfs(crate::vfs::MemVfs::new());
         let refusals = [
-            resolve_write_path(&vfs, Path::new("/locked/dest"), "x/SKILL.md").unwrap_err(),
             assert_destination_allowed_for_vault(
                 &vfs,
                 Path::new("/locked"),
@@ -667,232 +496,5 @@ mod tests {
             ["x/SKILL.md"],
         )
         .unwrap();
-    }
-
-    // --- the write path ----------------------------------------------------
-
-    fn refusal(vfs: &dyn Vfs, root: &str, relative: &str) -> String {
-        resolve_write_path(vfs, Path::new(root), relative)
-            .expect_err(&format!("{relative:?} must be refused"))
-            .to_string()
-    }
-
-    #[test]
-    fn an_ordinary_projected_path_resolves_under_the_root() {
-        let vfs = crate::vfs::MemVfs::new();
-        assert_eq!(
-            resolve_write_path(&vfs, Path::new("/dest"), ".claude/skills/x/SKILL.md").unwrap(),
-            PathBuf::from("/dest/.claude/skills/x/SKILL.md")
-        );
-        // A destination root that does not exist yet is the ordinary first
-        // publish, not a refusal.
-        assert_eq!(
-            resolve_write_path(&vfs, Path::new("/nowhere-yet"), ".claude/skills/x/SKILL.md")
-                .unwrap(),
-            PathBuf::from("/nowhere-yet/.claude/skills/x/SKILL.md")
-        );
-    }
-
-    #[test]
-    fn the_lexical_rule_is_the_renderers_and_the_refusal_names_the_path() {
-        let vfs = crate::vfs::MemVfs::new();
-        for relative in [
-            "../../../../etc/evil.sh",
-            "/absolute/evil.md",
-            "a/../b.md",
-            "./evil.md",
-            "a//b.md",
-            "sub/",
-            "C:\\Windows\\evil.md",
-            "\\\\server\\share\\evil.md",
-            "",
-        ] {
-            let message = refusal(&vfs, "/dest", relative);
-            assert!(
-                message.starts_with("refused: unsafe-path: "),
-                "{relative:?}: {message}"
-            );
-            assert!(message.contains("/dest"), "{relative:?}: {message}");
-            assert!(
-                message.contains(&format!("`{relative}`")),
-                "{relative:?}: {message}"
-            );
-            assert!(message.contains("Nothing was written"), "{message}");
-        }
-    }
-
-    #[test]
-    fn the_refusal_is_refused_and_not_a_projection_failure() {
-        // Load-bearing: a host classifies `Refused` as denied and `Projection`
-        // as an error, and a path escape logged as an error is one nobody sees.
-        let vfs = crate::vfs::MemVfs::new();
-        let err = resolve_write_path(&vfs, Path::new("/dest"), "../evil.md").unwrap_err();
-        assert!(matches!(err, CoreError::Refused(_)), "{err}");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_symlinked_parent_pointing_outside_the_root_is_refused() {
-        // The part the renderer provably cannot do. Everything here is
-        // lexically inside `dest/`; only the filesystem knows it is not.
-        let tmp = tempfile::tempdir().unwrap();
-        let dest = tmp.path().join("dest");
-        let outside = tmp.path().join("outside");
-        std::fs::create_dir_all(&dest).unwrap();
-        std::fs::create_dir_all(&outside).unwrap();
-        std::os::unix::fs::symlink(&outside, dest.join(".claude")).unwrap();
-
-        let vfs = crate::vfs::NativeVfs;
-        let err = resolve_write_path(&vfs, &dest, ".claude/skills/x/SKILL.md").unwrap_err();
-        let message = err.to_string();
-
-        assert!(matches!(err, CoreError::Refused(_)), "{message}");
-        assert!(message.contains("unsafe-path"), "{message}");
-        assert!(message.contains(".claude/skills/x/SKILL.md"), "{message}");
-        assert!(message.contains("resolves outside the root"), "{message}");
-
-        // A link that stays inside the root is an alias the user made on
-        // purpose, and it publishes.
-        std::fs::create_dir_all(dest.join("real")).unwrap();
-        std::os::unix::fs::symlink(dest.join("real"), dest.join(".agents")).unwrap();
-        assert_eq!(
-            resolve_write_path(&vfs, &dest, ".agents/skills/x/SKILL.md").unwrap(),
-            dest.join(".agents/skills/x/SKILL.md")
-        );
-
-        // And the same tree with a real directory in place of the escaping
-        // link is not refused — the check is not just refusing everything.
-        let plain = tmp.path().join("plain");
-        std::fs::create_dir_all(plain.join(".claude")).unwrap();
-        assert!(resolve_write_path(&vfs, &plain, ".claude/skills/x/SKILL.md").is_ok());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_symlinked_root_is_compared_against_where_it_leads() {
-        // Both sides are canonicalised, so a destination reached through a link
-        // publishes normally rather than being refused for not matching itself.
-        let tmp = tempfile::tempdir().unwrap();
-        let real = tmp.path().join("real-dest");
-        std::fs::create_dir_all(&real).unwrap();
-        let alias = tmp.path().join("alias");
-        std::os::unix::fs::symlink(&real, &alias).unwrap();
-
-        let vfs = crate::vfs::NativeVfs;
-        assert_eq!(
-            resolve_write_path(&vfs, &alias, ".claude/skills/x/SKILL.md").unwrap(),
-            alias.join(".claude/skills/x/SKILL.md")
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_published_file_that_is_a_link_out_of_the_tree_is_refused() {
-        // The leaf case: nothing above it is a link, the file itself is.
-        let tmp = tempfile::tempdir().unwrap();
-        let dest = tmp.path().join("dest");
-        let outside = tmp.path().join("outside");
-        std::fs::create_dir_all(dest.join(".claude/skills/x")).unwrap();
-        std::fs::create_dir_all(&outside).unwrap();
-        std::fs::write(outside.join("theirs.md"), b"theirs\n").unwrap();
-        std::os::unix::fs::symlink(
-            outside.join("theirs.md"),
-            dest.join(".claude/skills/x/SKILL.md"),
-        )
-        .unwrap();
-
-        let err = resolve_write_path(&crate::vfs::NativeVfs, &dest, ".claude/skills/x/SKILL.md")
-            .unwrap_err();
-        assert!(matches!(err, CoreError::Refused(_)), "{err}");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_published_file_that_is_a_dangling_link_out_of_the_tree_is_refused() {
-        // The link's target does not exist yet, so a write through it would
-        // create the file outside the root.
-        let tmp = tempfile::tempdir().unwrap();
-        let dest = tmp.path().join("dest");
-        std::fs::create_dir_all(dest.join(".claude/skills/x")).unwrap();
-        std::os::unix::fs::symlink(
-            tmp.path().join("outside/theirs.md"),
-            dest.join(".claude/skills/x/SKILL.md"),
-        )
-        .unwrap();
-
-        let err = resolve_write_path(&crate::vfs::NativeVfs, &dest, ".claude/skills/x/SKILL.md")
-            .unwrap_err();
-        assert!(matches!(err, CoreError::Refused(_)), "{err}");
-    }
-
-    #[test]
-    fn computed_dirs_follow_agent_adapt_conventions() {
-        let dirs = computed_skill_dirs(
-            Path::new("/dest"),
-            &[
-                "claude-code".to_owned(),
-                "codex-cli".to_owned(),
-                "amp".to_owned(),
-            ],
-        )
-        .unwrap();
-        // codex-cli and amp share .agents/skills — deduped.
-        assert_eq!(
-            dirs,
-            vec![
-                PathBuf::from("/dest/.agents/skills"),
-                PathBuf::from("/dest/.claude/skills"),
-            ]
-        );
-    }
-
-    #[test]
-    fn computed_dirs_cover_every_skill_target_projection_accepts() {
-        let dirs = computed_skill_dirs(Path::new("/dest"), &["cursor".to_owned(), "pi".to_owned()])
-            .unwrap();
-        assert_eq!(
-            dirs,
-            vec![
-                PathBuf::from("/dest/.cursor/skills"),
-                PathBuf::from("/dest/.pi/skills"),
-            ]
-        );
-    }
-
-    #[test]
-    fn computed_dirs_refuse_unknown_and_skill_less_targets() {
-        let unknown = computed_skill_dirs(Path::new("/dest"), &["vim".to_owned()]).unwrap_err();
-        assert!(
-            unknown
-                .to_string()
-                .contains("unsupported runtime target: vim"),
-            "{unknown}"
-        );
-        // github-copilot has a commands layout only; projection refuses it
-        // for skills, and so does the probe.
-        let copilot =
-            computed_skill_dirs(Path::new("/dest"), &["github-copilot".to_owned()]).unwrap_err();
-        assert!(
-            copilot.to_string().contains("runtime renders no skills"),
-            "{copilot}"
-        );
-    }
-
-    #[test]
-    fn probe_reports_occupied_dirs_only() {
-        let dest = tempfile::tempdir().unwrap();
-        let claude = dest.path().join(".claude/skills/existing");
-        std::fs::create_dir_all(&claude).unwrap();
-        std::fs::write(claude.join("SKILL.md"), "x").unwrap();
-        // .agents/skills exists but is empty — not occupied.
-        std::fs::create_dir_all(dest.path().join(".agents/skills")).unwrap();
-
-        let occupied = probe_existing_content(
-            &crate::vfs::NativeVfs,
-            dest.path(),
-            &["claude-code".to_owned(), "antigravity".to_owned()],
-        )
-        .unwrap();
-        assert_eq!(occupied, vec![dest.path().join(".claude/skills")]);
     }
 }

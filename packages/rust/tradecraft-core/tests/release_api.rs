@@ -4,9 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    ExportReport, ExportRequest, MarketplaceConfig, MemVfs, Namespace, PublishReport,
-    PublishRequest, UNKNOWN_KEY_REASON, Vfs, discover_components, export_skills, inherit_targets,
-    parse_root_file, publish_skill,
+    ExportReport, ExportRequest, MarketplaceConfig, MemVfs, Namespace, UNKNOWN_KEY_REASON, Vfs,
+    discover_components, export_skills, inherit_targets, parse_root_file,
 };
 
 const MARKET: &str = "/vault/marketplaces/house/skillwright.md";
@@ -289,44 +288,10 @@ fn under_a_namespace_the_prefixed_forms_are_ours_and_the_bare_ones_are_not() {
 const COMMAND: &str = "/vault/marketplaces/house/plugins/tools/commands/ship.md";
 const AGENT: &str = "/vault/marketplaces/house/plugins/tools/agents/helper.md";
 
-fn publish_as(
-    vfs: &dyn Vfs,
-    path: &str,
-    target: &str,
-    config: Option<MarketplaceConfig>,
-    ns: &Namespace,
-) -> PublishReport {
-    publish_skill(
-        vfs,
-        &{
-            let mut value = PublishRequest::new(path, "/dest", target);
-            value.skills_root = Some(PathBuf::from("/vault"));
-            value.config = config;
-            value
-        },
-        ns,
-    )
-    .unwrap()
-}
-
-fn publish(vfs: &dyn Vfs, path: &str, target: &str) -> PublishReport {
-    publish_as(vfs, path, target, None, &Namespace::default())
-}
-
 fn root_config(frontmatter: &str) -> MarketplaceConfig {
     parse_root_file(&format!("---\n{frontmatter}---\n"))
         .unwrap()
         .to_config("house")
-}
-
-/// The one file a report wrote whose path ends with `suffix`, under `/dest`.
-fn published(vfs: &dyn Vfs, report: &PublishReport, suffix: &str) -> String {
-    let file = report
-        .files
-        .iter()
-        .find(|file| file.path.ends_with(suffix))
-        .unwrap_or_else(|| panic!("no {suffix} in {:?}", report.files));
-    text_at(vfs, &format!("/dest/{}", file.path))
 }
 
 #[test]
@@ -385,90 +350,6 @@ fn a_marketplace_block_never_sets_a_plugins_identity() {
     assert_eq!(codex["version"], "1.0.0");
 }
 
-#[test]
-fn an_inherited_block_does_not_refuse_an_agent() {
-    let vfs = vault("", "claude:\n  model: opus\n", "");
-    write(&vfs, AGENT, &note("helper", ""));
-    let report = publish(&vfs, AGENT, "claude");
-    let agent = published(&vfs, &report, "helper.md");
-    assert!(agent.contains("name: helper"), "{agent}");
-    assert!(!agent.contains("opus"), "{agent}");
-}
-
-#[test]
-fn a_notes_own_key_beats_an_inherited_block_and_its_own_block_beats_both() {
-    let own = "team: mine\nsecret: 1\nmetadata:\n  owner: me\n";
-
-    // Inherited from the plugin, on Codex, whose manifests read no `metadata`.
-    let vfs = vault(
-        "",
-        "codex:\n  metadata:\n    team: core\n    squad: blue\n",
-        own,
-    );
-    let report = publish(&vfs, REVIEW, "codex");
-    let skill = published(&vfs, &report, "SKILL.md");
-    assert!(skill.contains("owner: me"), "{skill}");
-    assert!(skill.contains("secret: 1"), "{skill}");
-    assert!(skill.contains("team: mine"), "{skill}");
-    assert!(skill.contains("squad: blue"), "{skill}");
-    assert!(!skill.contains("team: core"), "{skill}");
-
-    // The note's own block, on Claude.
-    let vfs = vault(
-        "",
-        "",
-        &format!("{own}claude:\n  metadata:\n    team: core\n"),
-    );
-    let report = publish(&vfs, REVIEW, "claude");
-    let skill = published(&vfs, &report, "SKILL.md");
-    assert!(skill.contains("owner: me"), "{skill}");
-    assert!(skill.contains("secret: 1"), "{skill}");
-    assert!(skill.contains("team: core"), "{skill}");
-
-    // Both blocks, on Codex: the note's own block keeps the inherited keys it
-    // does not set.
-    let vfs = vault(
-        "",
-        "codex:\n  metadata:\n    team: core\n    squad: blue\n",
-        "codex:\n  metadata:\n    team: mine\n",
-    );
-    let report = publish(&vfs, REVIEW, "codex");
-    let skill = published(&vfs, &report, "SKILL.md");
-    assert!(skill.contains("team: mine"), "{skill}");
-    assert!(skill.contains("squad: blue"), "{skill}");
-}
-
-#[test]
-fn an_inherited_block_never_overrules_a_key_the_note_sets() {
-    let block = "claude:\n  model: opus\n  allowed-tools: Read\n  \
-                 disable-model-invocation: true\n";
-    let own = "model: haiku\nallowed-tools:\n  - Grep\ndisable-model-invocation: false\n";
-    let vfs = vault("", block, own);
-    let report = publish(&vfs, REVIEW, "claude");
-    let skill = published(&vfs, &report, "SKILL.md");
-    assert!(skill.contains("model: haiku"), "{skill}");
-    assert!(skill.contains("Grep"), "{skill}");
-    assert!(!skill.contains("opus"), "{skill}");
-    assert!(!skill.contains("Read"), "{skill}");
-    assert!(!skill.contains("disable-model-invocation: true"), "{skill}");
-
-    // The same on a build, and on a command.
-    build(&vfs);
-    let built = text_at(&vfs, CLAUDE_REVIEW);
-    assert!(built.contains("model: haiku"), "{built}");
-    write(&vfs, COMMAND, &note("ship", "model: haiku\n"));
-    let report = publish(&vfs, COMMAND, "claude");
-    let command = published(&vfs, &report, "ship.md");
-    assert!(command.contains("model: haiku"), "{command}");
-
-    // A note that says nothing takes the block, and a blank key says nothing.
-    let vfs = vault("", block, "model:\n");
-    let report = publish(&vfs, REVIEW, "claude");
-    let skill = published(&vfs, &report, "SKILL.md");
-    assert!(skill.contains("model: opus"), "{skill}");
-    assert!(skill.contains("disable-model-invocation: true"), "{skill}");
-}
-
 /// A marketplace beside vault-level members, as `build` reads them.
 fn beside_a_marketplace() -> MemVfs {
     let vfs = MemVfs::new();
@@ -483,105 +364,6 @@ fn beside_a_marketplace() -> MemVfs {
     write(&vfs, "/vault/plugins/top/skills/t.md", &note("t", ""));
     write(&vfs, "/vault/skills/loose.md", &note("loose", ""));
     vfs
-}
-
-#[test]
-fn a_vault_level_note_takes_the_one_marketplace_on_publish() {
-    let vfs = beside_a_marketplace();
-    for path in ["/vault/plugins/top/skills/t.md", "/vault/skills/loose.md"] {
-        let report = publish(&vfs, path, "claude");
-        let skill = published(&vfs, &report, "SKILL.md");
-        assert!(skill.contains("license: ISC"), "{skill}");
-        assert!(skill.contains("model: opus"), "{skill}");
-        assert!(publish(&vfs, path, "codex").files.is_empty(), "{path}");
-    }
-}
-
-#[test]
-fn a_vault_level_pack_takes_the_one_marketplace_on_publish() {
-    let vfs = beside_a_marketplace();
-    write(&vfs, "/vault/plugins/top/top.md", &note("top", ""));
-    let report = publish(&vfs, "/vault/plugins/top/top.md", "claude");
-    let manifest = published(&vfs, &report, "plugin.json");
-    assert!(manifest.contains("\"license\": \"ISC\""), "{manifest}");
-    assert!(
-        publish(&vfs, "/vault/plugins/top/top.md", "codex")
-            .files
-            .is_empty()
-    );
-}
-
-/// `publish` of a vault-level note agrees with what `build` counts: the first
-/// two cases hold one marketplace, the last two hold two.
-#[test]
-fn a_note_counts_the_marketplaces_a_build_counts() {
-    fn targets_codex(vfs: &MemVfs) -> bool {
-        !publish(vfs, "/vault/skills/loose.md", "codex")
-            .files
-            .is_empty()
-    }
-    let empty = beside_a_marketplace();
-    write(
-        &empty,
-        "/vault/marketplaces/ghost/skills/empty.md",
-        "Plain.\n",
-    );
-    assert!(!targets_codex(&empty), "a note with no frontmatter");
-
-    let excluded = beside_a_marketplace();
-    write(
-        &excluded,
-        "/vault/skillwright.md",
-        "---\nname: v\nbuild:\n  exclude: marketplaces/ghost\n---\n",
-    );
-    write(
-        &excluded,
-        "/vault/marketplaces/ghost/skills/x.md",
-        &note("x", ""),
-    );
-    assert!(!targets_codex(&excluded), "an excluded folder");
-
-    let upper = beside_a_marketplace();
-    write(
-        &upper,
-        "/vault/marketplaces/ghost/skills/UP.MD",
-        &note("up", ""),
-    );
-    assert!(targets_codex(&upper), "a note with an upper-case extension");
-
-    let hidden = beside_a_marketplace();
-    write(
-        &hidden,
-        "/vault/marketplaces/.hidden/skills/h.md",
-        &note("h", ""),
-    );
-    assert!(targets_codex(&hidden), "a dot folder");
-}
-
-#[test]
-fn a_folder_with_no_component_is_not_a_second_marketplace_on_publish() {
-    let vfs = beside_a_marketplace();
-    write(&vfs, "/vault/marketplaces/n/README.md", "Plain text.\n");
-    write(&vfs, "/vault/marketplaces/n/notes/idea.md", "Plain text.\n");
-    let report = publish(&vfs, "/vault/skills/loose.md", "claude");
-    let skill = published(&vfs, &report, "SKILL.md");
-    assert!(skill.contains("license: ISC"), "{skill}");
-}
-
-#[test]
-fn a_vault_level_note_stays_on_the_root_file_beside_several_marketplaces() {
-    let vfs = beside_a_marketplace();
-    write(&vfs, "/vault/marketplaces/n/skillwright.md", &note("n", ""));
-    let report = publish_as(
-        &vfs,
-        "/vault/skills/loose.md",
-        "claude",
-        Some(root_config("license: MIT\n")),
-        &Namespace::default(),
-    );
-    let skill = published(&vfs, &report, "SKILL.md");
-    assert!(skill.contains("license: MIT"), "{skill}");
-    assert!(!skill.contains("opus"), "{skill}");
 }
 
 #[test]
@@ -801,124 +583,6 @@ fn allowed_tools_reads_the_specs_string_and_claude_s_comma_form() {
 }
 
 #[test]
-fn a_single_note_publish_honours_inherited_targets() {
-    let vfs = vault("", "targets: [claude]\n", "");
-    let report = publish(&vfs, REVIEW, "codex");
-    assert!(report.files.is_empty(), "{:?}", report.files);
-    assert!(report.not_published.is_some());
-    assert!(!publish(&vfs, REVIEW, "claude").files.is_empty());
-
-    // The root file is the last rung.
-    let vfs = vault("", "", "");
-    let config = root_config("targets: [claude]\n");
-    let report = publish_as(&vfs, REVIEW, "codex", Some(config), &Namespace::default());
-    assert!(report.not_published.is_some());
-}
-
-/// A note's published text without the generated-by line, which only a build
-/// writes.
-fn without_marker(text: &str) -> String {
-    text.lines()
-        .filter(|line| !line.starts_with("<!-- Generated by skillwright"))
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-#[test]
-fn one_note_gives_the_same_frontmatter_on_every_path() {
-    let vfs = vault(
-        "license: MIT\n",
-        "license: Apache-2.0\nclaude:\n  model: opus\n",
-        "",
-    );
-    build(&vfs);
-    let built = without_marker(&text_at(&vfs, CLAUDE_REVIEW));
-    assert!(built.contains("license: Apache-2.0"), "{built}");
-
-    let single = publish(&vfs, REVIEW, "claude");
-    let text = published(&vfs, &single, "review/SKILL.md");
-    assert_eq!(without_marker(&text), built);
-
-    let vfs = vault(
-        "license: MIT\n",
-        "license: Apache-2.0\nclaude:\n  model: opus\n",
-        "",
-    );
-    let pack = publish(&vfs, TOOLS, "claude");
-    let text = published(&vfs, &pack, "review/SKILL.md");
-    assert_eq!(without_marker(&text), built);
-}
-
-#[test]
-fn a_pack_manifest_carries_what_a_built_one_does() {
-    let vfs = vault(
-        "repository: https://example.com/house\n",
-        "claude:\n  icon: ./i.png\n",
-        "",
-    );
-    build(&vfs);
-    let built = json_at(
-        &vfs,
-        "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
-    );
-    let pack = publish(&vfs, TOOLS, "claude");
-    let manifest: serde_json::Value =
-        serde_json::from_str(&published(&vfs, &pack, ".claude-plugin/plugin.json")).unwrap();
-    assert_eq!(manifest["repository"], "https://example.com/house");
-    assert_eq!(manifest["icon"], "./i.png");
-    assert_eq!(manifest, built);
-}
-
-#[test]
-fn a_pack_honours_targets_its_members_inherit() {
-    let vfs = vault("", "", "");
-    let config = root_config("targets: [claude]\n");
-    let report = publish_as(&vfs, TOOLS, "codex", Some(config), &Namespace::default());
-    assert!(report.not_published.is_some(), "{:?}", report.files);
-}
-
-#[test]
-fn a_plugin_note_with_neither_name_nor_description_is_still_read() {
-    let vfs = vault("license: MIT\n", "", "");
-    write(
-        &vfs,
-        OTHER,
-        "---\ntargets: []\nversion: 5.0.0\nlicense: GPL-3.0\n---\n",
-    );
-    write(
-        &vfs,
-        TOOLS,
-        "---\nversion: 5.0.0\nlicense: GPL-3.0\nhomepage: https://example.com\n---\n",
-    );
-    let report = build(&vfs);
-    assert!(
-        !report
-            .warnings
-            .iter()
-            .any(|w| w.path.ends_with("tools/tools.md")),
-        "{:?}",
-        report.warnings
-    );
-    let manifest = json_at(
-        &vfs,
-        "/market/.claude-plugin/packs/tools/.claude-plugin/plugin.json",
-    );
-    assert_eq!(manifest["version"], "5.0.0");
-    assert_eq!(manifest["license"], "GPL-3.0");
-    assert_eq!(manifest["homepage"], "https://example.com");
-    // It describes itself as a plugin with no note would.
-    assert_eq!(manifest["description"], "Skills: review.");
-    // `targets: []` means nowhere.
-    assert!(!vfs.exists(Path::new("/market/.claude-plugin/packs/other")));
-
-    let pack = publish(&vfs, TOOLS, "claude");
-    let published: serde_json::Value =
-        serde_json::from_str(&published(&vfs, &pack, ".claude-plugin/plugin.json")).unwrap();
-    assert_eq!(published, manifest);
-}
-
-#[test]
 fn a_marketplace_note_outranks_the_root_file_for_every_identity_key() {
     // `vault` gives the note `owner: acme`.
     let vfs = vault(
@@ -954,46 +618,6 @@ fn a_marketplace_note_outranks_the_root_file_for_every_identity_key() {
     let cursor_index = json_at(&vfs, "/market/.cursor-plugin/marketplace.json");
     assert_eq!(cursor_index["owner"], serde_json::json!({"name": "acme"}));
     assert_eq!(cursor_index["metadata"]["version"], "2.0.0");
-}
-
-#[test]
-fn under_a_namespace_a_bare_key_of_ours_is_warned_about() {
-    let vfs = MemVfs::new();
-    write(
-        &vfs,
-        REVIEW,
-        &note(
-            "review",
-            "targets: [nowhere]\nclaude:\n  model: opus\nsw-custom: 1\n",
-        ),
-    );
-    let report = publish_as(&vfs, REVIEW, "claude", None, &Namespace::sw());
-    let [warning] = report.warnings.as_slice() else {
-        panic!("{:?}", report.warnings);
-    };
-    assert!(warning.detail.contains("`targets`"), "{warning:?}");
-    assert!(warning.detail.contains("`claude`"), "{warning:?}");
-    assert!(
-        warning.detail.contains("`sw-custom` dropped"),
-        "{warning:?}"
-    );
-}
-
-#[test]
-fn a_publish_reports_unknown_keys_and_a_pack_its_members_too() {
-    let vfs = vault("", "", "team: core\n");
-    let report = publish(&vfs, REVIEW, "claude");
-    assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
-    assert_eq!(report.warnings[0].reason, UNKNOWN_KEY_REASON);
-    assert!(
-        report.warnings[0]
-            .detail
-            .contains("`team` is not a key skillwright reads on a skill"),
-        "{:?}",
-        report.warnings
-    );
-    let report = publish(&vfs, TOOLS, "claude");
-    assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
 }
 
 #[test]
@@ -1042,23 +666,6 @@ fn a_bare_arguments_string_is_claudes_names() {
     assert!(skill.contains("arguments:"), "{skill}");
     assert!(skill.contains("file"), "{skill}");
     assert!(skill.contains("mode"), "{skill}");
-}
-
-#[test]
-fn an_empty_plugin_names_targets_in_the_vaults_spelling() {
-    let vfs = vault("", "targets: [claude]\n", "");
-    vfs.remove(Path::new(REVIEW)).unwrap();
-    let err = publish_skill(
-        &vfs,
-        &{
-            let mut value = PublishRequest::new(TOOLS, "/dest", "claude");
-            value.skills_root = Some(PathBuf::from("/vault"));
-            value
-        },
-        &Namespace::default(),
-    )
-    .unwrap_err();
-    assert!(err.to_string().contains("by `targets`"), "{err}");
 }
 
 #[test]
@@ -1993,46 +1600,6 @@ fn a_malformed_root_file_refuses_a_build_rather_than_lose_its_exclusions() {
     assert!(err.contains("malformed-root-file"), "{err}");
 }
 
-#[test]
-fn naming_an_excluded_note_does_not_publish_it() {
-    let root = "---\nname: m\nbuild:\n  exclude: '**/*.draft.md'\n---\n";
-    let note = "---\ndescription: Use it.\n---\n\nbody\n";
-    let vfs = root_vault(root, &[("plugins/p/skills/hid.draft.md", note)]);
-    let err = publish_skill(
-        &vfs,
-        &{
-            let mut value =
-                PublishRequest::new("/vault/plugins/p/skills/hid.draft.md", "/dest", "claude");
-            value.skills_root = Some(PathBuf::from("/vault"));
-            value
-        },
-        &Namespace::bare(),
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(err.contains("excluded-note"), "{err}");
-    assert!(!vfs.exists(Path::new("/dest")));
-}
-
-#[test]
-fn a_single_note_publish_finds_a_plugin_note_a_pattern_moved() {
-    let root = "---\nname: m\nbuild:\n  patterns:\n    plugins: packs/*\n---\n";
-    let vfs = root_vault(
-        root,
-        &[
-            (
-                "packs/rev/rev.md",
-                &note("rev", "license: MIT\nclaude:\n  model: opus\n"),
-            ),
-            ("packs/rev/skills/a.md", &note("a", "")),
-        ],
-    );
-    let report = publish(&vfs, "/vault/packs/rev/skills/a.md", "claude");
-    let text = published(&vfs, &report, "SKILL.md");
-    assert!(text.contains("license: MIT"), "{text}");
-    assert!(text.contains("model: opus"), "{text}");
-}
-
 const USE_IT: &str = "---\ndescription: Use it.\n---\n\nbody\n";
 
 #[test]
@@ -2281,47 +1848,6 @@ fn a_members_exclusion_does_not_reach_a_sibling() {
     )));
 }
 
-/// Publish, list and a link agree with a build on what a workspace excludes.
-#[test]
-fn every_verb_honours_a_workspace_exclusion_from_the_workspace_folder() {
-    let shared = "---\nworkspace: true\nbuild:\n  exclude: 'marketplaces/*/plugins/rev/skills/h.draft.md'\n---\n";
-    let (vfs, build) = workspace(shared, "---\nname: a\n---\n");
-    let member = Path::new("/ws/marketplaces/a");
-    let listed = discover_components(&vfs, member, None, &Namespace::bare()).unwrap();
-    let paths: Vec<&str> = listed
-        .components
-        .iter()
-        .map(|c| c.vault_relative_path.as_str())
-        .collect();
-    assert!(paths.contains(&"plugins/rev/skills/keep.md"), "{paths:?}");
-    assert!(!paths.iter().any(|p| p.contains("draft")), "{paths:?}");
-
-    let mut request = PublishRequest::new(
-        "/ws/marketplaces/a/plugins/rev/skills/h.draft.md",
-        "/dest",
-        "claude",
-    );
-    request.skills_root = Some(member.to_path_buf());
-    let err = publish_skill(&vfs, &request, &Namespace::bare())
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("excluded-note"), "{err}");
-    assert!(
-        err.contains("`build.exclude` in ../../skillwright.md"),
-        "{err}"
-    );
-
-    write(
-        &vfs,
-        "/ws/marketplaces/a/plugins/rev/skills/keep.md",
-        "---\ndescription: Use it.\n---\n\nSee [[h.draft]].\n",
-    );
-    let err = export_skills(&vfs, &build, &Namespace::bare())
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("excluded-link"), "{err}");
-}
-
 #[test]
 fn a_malformed_workspace_file_refuses_a_member_build() {
     let (vfs, build) = workspace("---\nworkspace: [\n---\n", "---\nname: a\n---\n");
@@ -2361,28 +1887,6 @@ fn a_pattern_under_a_marketplace_ships_only_from_that_marketplace() {
     // The marketplace note's `targets` reach the plugin.
     let codex = "/market-a/.agents/plugins/marketplace.json";
     assert!(!vfs.exists(Path::new(codex)) || !text_at(&vfs, codex).contains("rev"));
-}
-
-#[test]
-fn a_named_publish_of_a_note_in_a_never_ship_folder_is_refused() {
-    let vfs = root_vault(
-        "---\nname: m\n---\n",
-        &[
-            ("docs/y.md", USE_IT),
-            ("plugins/rev/docs/x.md", USE_IT),
-            ("plugins/docs/skills/g.md", USE_IT),
-        ],
-    );
-    for note in ["/vault/docs/y.md", "/vault/plugins/rev/docs/x.md"] {
-        let request = {
-            let mut value = PublishRequest::new(note, "/dest", "claude-code");
-            value.skills_root = Some(PathBuf::from("/vault"));
-            value
-        };
-        let err = publish_skill(&vfs, &request, &Namespace::default()).unwrap_err();
-        assert!(err.to_string().contains("excluded-note"), "{note}: {err}");
-    }
-    publish(&vfs, "/vault/plugins/docs/skills/g.md", "claude-code");
 }
 
 #[test]
@@ -2515,118 +2019,6 @@ fn a_malformed_root_file_is_refused_with_one_token_everywhere() {
     }
 }
 
-/// A root file with a YAML error cannot say what it excludes, so a publish of
-/// one note and a scan of the vault refuse rather than ship or list a note
-/// the file may exclude.
-#[test]
-fn a_malformed_root_file_refuses_a_publish_and_a_scan() {
-    let root = "---\nbuild:\n  exclude: '**/*.draft.md'\n  oops: [\n---\n";
-    let vfs = root_vault(root, &[("plugins/p/skills/hid.draft.md", USE_IT)]);
-    let request = {
-        let mut value =
-            PublishRequest::new("/vault/plugins/p/skills/hid.draft.md", "/dest", "claude");
-        value.skills_root = Some(PathBuf::from("/vault"));
-        value
-    };
-    let err = publish_skill(&vfs, &request, &Namespace::bare())
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("malformed-root-file"), "{err}");
-    assert!(!vfs.exists(Path::new("/dest")));
-
-    let err = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare())
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("malformed-root-file"), "{err}");
-}
-
-#[test]
-fn a_malformed_workspace_file_refuses_a_member_publish() {
-    let (vfs, _) = workspace("---\nworkspace: [\n---\n", "---\nname: a\n---\n");
-    let request = {
-        let mut value = PublishRequest::new(
-            "/ws/marketplaces/a/plugins/rev/skills/h.draft.md",
-            "/dest",
-            "claude",
-        );
-        value.skills_root = Some(PathBuf::from("/ws/marketplaces/a"));
-        value
-    };
-    let err = publish_skill(&vfs, &request, &Namespace::bare())
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("malformed-root-file"), "{err}");
-    assert!(!vfs.exists(Path::new("/dest")));
-}
-
-/// Counting the marketplaces for a vault-level note does not refuse on a
-/// problem inside one of them: a duplicate name in `n` is that marketplace's
-/// build's news, not this publish's.
-#[test]
-fn a_problem_in_another_marketplace_does_not_refuse_a_publish() {
-    let vfs = beside_a_marketplace();
-    write(&vfs, "/vault/marketplaces/n/skills/a.md", &note("a", ""));
-    write(&vfs, "/vault/marketplaces/n/skills/b.md", &note("a", ""));
-    let request = {
-        let mut value = PublishRequest::new("/vault/skills/loose.md", "/dest", "claude");
-        value.skills_root = Some(PathBuf::from("/vault"));
-        value
-    };
-    let report = publish_skill(&vfs, &request, &Namespace::default()).unwrap();
-    // Two marketplaces, so the note stays on the root file.
-    let skill = published(&vfs, &report, "SKILL.md");
-    assert!(!skill.contains("license: ISC"), "{skill}");
-}
-
-/// A root file whose exclusions read fine is not refused by a scan or a
-/// publish for a value elsewhere in it: the verbs that read that value, such
-/// as a build, say what is wrong with it.
-#[test]
-fn a_bad_value_outside_the_exclusions_does_not_refuse_a_scan_or_publish() {
-    for bad in [
-        "repository: example\n",
-        "targets: [nowhere]\n",
-        "author: [1, 2]\n",
-        "claude: 5\n",
-    ] {
-        let root = format!("---\n{bad}build:\n  exclude: '**/*.draft.md'\n---\n");
-        let vfs = root_vault(
-            &root,
-            &[
-                ("plugins/p/skills/keep.md", USE_IT),
-                ("plugins/p/skills/hid.draft.md", USE_IT),
-            ],
-        );
-        let scan = discover_components(&vfs, Path::new("/vault"), None, &Namespace::bare())
-            .unwrap_or_else(|err| panic!("{bad}: {err}"));
-        let paths: Vec<&str> = scan
-            .components
-            .iter()
-            .map(|c| c.vault_relative_path.as_str())
-            .collect();
-        assert!(
-            paths.contains(&"plugins/p/skills/keep.md"),
-            "{bad}: {paths:?}"
-        );
-        assert!(
-            !paths.iter().any(|p| p.contains("draft")),
-            "{bad}: {paths:?}"
-        );
-
-        let publish = |note: &str| {
-            let mut value = PublishRequest::new(note, "/dest", "claude");
-            value.skills_root = Some(PathBuf::from("/vault"));
-            publish_skill(&vfs, &value, &Namespace::bare())
-        };
-        publish("/vault/plugins/p/skills/keep.md").unwrap_or_else(|err| panic!("{bad}: {err}"));
-        let err = publish("/vault/plugins/p/skills/hid.draft.md").unwrap_err();
-        assert!(err.to_string().contains("excluded-note"), "{bad}: {err}");
-
-        tradecraft_core::vault_config(&vfs, Path::new("/vault"))
-            .unwrap_or_else(|err| panic!("{bad}: {err}"));
-    }
-}
-
 /// What a scan cannot do without, it refuses: exclusions or patterns of the
 /// wrong shape.
 #[test]
@@ -2671,70 +2063,6 @@ fn a_skills_root_is_walked_with_the_vaults_patterns() {
     );
 }
 
-/// A marketplaces folder a build refuses to read refuses a publish of a
-/// vault-level note too: without it, the note could ship to a harness the
-/// one marketplace's `targets` leaves out.
-#[cfg(unix)]
-#[test]
-fn a_marketplaces_folder_a_build_refuses_refuses_the_publish() {
-    use std::os::unix::fs::PermissionsExt;
-    for case in ["symlink", "unlistable"] {
-        let dir = tempfile::tempdir().unwrap();
-        let vault = dir.path().join("vault");
-        let put = |rel: &str, text: &str| {
-            let path = vault.join(rel);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, text).unwrap();
-        };
-        put("skillwright.md", "---\nname: v\n---\n");
-        put("skills/a.md", "---\ndescription: A.\n---\n");
-        put(
-            "marketplaces/m1/skillwright.md",
-            "---\nname: m1\ndescription: M.\ntargets: [codex-cli]\n---\n",
-        );
-        put("marketplaces/m1/skills/x.md", "---\ndescription: X.\n---\n");
-        let locked = vault.join("marketplaces/n");
-        match case {
-            "symlink" => {
-                std::os::unix::fs::symlink(dir.path(), vault.join("marketplaces/m1/link")).unwrap();
-            }
-            _ => {
-                put("marketplaces/n/skills/y.md", "---\ndescription: Y.\n---\n");
-                std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
-                if std::fs::read_dir(&locked).is_ok() {
-                    // Running as root: nothing is unlistable.
-                    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
-                        .unwrap();
-                    continue;
-                }
-            }
-        }
-        let vfs = tradecraft_core::NativeVfs;
-        let mut request = PublishRequest::new(
-            vault.join("skills/a.md"),
-            dir.path().join("dest"),
-            "claude-code",
-        );
-        request.skills_root = Some(vault.clone());
-        let published = publish_skill(&vfs, &request, &Namespace::default());
-        // The cascade alone, apart from the vault-wide link walk a publish
-        // also makes.
-        let cascade = tradecraft_core::model::Cascade::above(
-            &vfs,
-            Some(&vault),
-            &vault.join("skills/a.md"),
-            &MarketplaceConfig::default(),
-            &Namespace::default(),
-        );
-        if case == "unlistable" {
-            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        assert!(published.is_err(), "{case}: {published:?}");
-        assert!(!dir.path().join("dest/.claude").exists(), "{case}");
-        assert!(cascade.is_err(), "{case}");
-    }
-}
-
 /// A pattern that matches every file at the vault root does not make the
 /// vault's own root file a note: it is configuration, whatever the patterns
 /// say.
@@ -2754,25 +2082,6 @@ fn a_pattern_never_places_the_vaults_root_file() {
         "{:?}",
         scan.warnings
     );
-}
-
-/// A member with a `name` and no `description` is refused on every publish
-/// path: on its own, and inside its pack.
-#[test]
-fn a_publish_refuses_a_member_with_no_description() {
-    let vfs = vault("", "", "");
-    let quiet = "/vault/marketplaces/house/plugins/tools/skills/quiet.md";
-    write(&vfs, quiet, "---\nname: quiet\n---\n\n# Quiet\n");
-    write(&vfs, AGENT, "---\nname: helper\n---\n\n# Helper\n");
-    for path in [quiet, AGENT, TOOLS] {
-        let mut request = PublishRequest::new(path, "/dest", "claude");
-        request.skills_root = Some(PathBuf::from("/vault"));
-        let err = publish_skill(&vfs, &request, &Namespace::default())
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("missing-description"), "{path}: {err}");
-    }
-    assert!(!vfs.exists(Path::new("/dest")));
 }
 
 /// Each harness's manifest of `plugin`, by harness.

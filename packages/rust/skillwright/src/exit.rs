@@ -2,14 +2,13 @@
 //!
 //! | Code | Means |
 //! |---|---|
-//! | 0 | The run completed and every outcome was written/unchanged/adopted/updated |
-//! | 1 | The run completed and something was refused: a file, a skill, a whole source a rail stopped — or, for `check`, a drifted root |
+//! | 0 | The run completed and every outcome was written or unchanged |
+//! | 1 | The run completed and something was refused, or `check` found drift |
 //! | 2 | A run-level blocker. Nothing was attempted |
 //! | 3 | Usage error |
 //! | 4 | No configuration, and none supplied |
-//! | 130 | Interrupted |
 //!
-//! The four helpers below each write their message to the caller's error
+//! The helpers below each write their message to the caller's error
 //! sink — never stdout — and return the matching code, so a command's
 //! `return blocked(err, ...)` is both the message and the exit in one
 //! expression.
@@ -26,8 +25,6 @@ pub const EXIT_BLOCKED: i32 = 2;
 pub const EXIT_USAGE: i32 = 3;
 /// No configuration, and none supplied.
 pub const EXIT_NO_CONFIG: i32 = 4;
-/// The run was interrupted.
-pub const EXIT_INTERRUPTED: i32 = 130;
 
 /// A run-level blocker: nothing was attempted, the report is empty.
 pub fn blocked(err: &mut dyn Write, message: &str) -> i32 {
@@ -45,14 +42,6 @@ pub fn usage_error(err: &mut dyn Write, message: &str) -> i32 {
 pub fn no_config(err: &mut dyn Write, message: &str) -> i32 {
     let _ = writeln!(err, "{message}");
     EXIT_NO_CONFIG
-}
-
-/// A verb (or a flag on a verb) whose capability the core doesn't carry yet.
-/// Exits 2 — a run-level blocker — never a silent no-op and never a
-/// fabricated report.
-pub fn not_implemented(err: &mut dyn Write, what: &str, waits_on: &str) -> i32 {
-    let _ = writeln!(err, "not implemented: {what}\n{waits_on}");
-    EXIT_BLOCKED
 }
 
 #[cfg(test)]
@@ -84,12 +73,5 @@ mod tests {
         let (code, out) = written(|w| no_config(w, "no vault"));
         assert_eq!(code, EXIT_NO_CONFIG);
         assert_eq!(out, "no vault\n");
-    }
-
-    #[test]
-    fn not_implemented_writes_both_lines_and_returns_2() {
-        let (code, out) = written(|w| not_implemented(w, "adopt --dry-run", "waits on D-1"));
-        assert_eq!(code, EXIT_BLOCKED);
-        assert_eq!(out, "not implemented: adopt --dry-run\nwaits on D-1\n");
     }
 }
