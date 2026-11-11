@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { expect, test } from 'vitest'
+import { expect, expectTypeOf, test } from 'vitest'
 
-import { CoreError, loadMarketplace, parseRootFile } from '../src/core.ts'
+import { CoreError, loadMarketplace, parseRootFile, type SkillId } from '../src/core.ts'
 import { createNodeVfs } from '../src/node-vfs.ts'
 
 // The marketplace crosses as the generated `Marketplace` shape: plugins by
@@ -34,6 +34,8 @@ test('loadMarketplace returns the model with calls resolved', () => {
     expect(tools?.skills.map((s) => s.name)).toEqual(['lint', 'review'])
     const review = tools?.skills.find((s) => s.name === 'review')
     expect(review?.calls).toEqual([{ plugin: 'tools', name: 'lint', kind: 'skill' }])
+    // Every component sits in a plugin.
+    expectTypeOf<SkillId['plugin']>().toEqualTypeOf<string>()
     expect(review?.description).toBe('Reviews a diff.')
     expect(review?.targets).toEqual(['claude', 'pi'])
 

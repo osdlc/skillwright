@@ -368,7 +368,7 @@ impl Call {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SkillId {
     /// The plugin it ships in.
-    pub plugin: Option<String>,
+    pub plugin: String,
     /// Its source name.
     pub name: String,
     /// A skill or a command.
@@ -379,12 +379,9 @@ pub struct SkillId {
 }
 
 impl SkillId {
-    /// `plugin:name`, or `name` — the closure's spelling.
+    /// `plugin:name`, the closure's spelling.
     pub fn call_id(&self) -> String {
-        match &self.plugin {
-            Some(plugin) => format!("{plugin}:{}", self.name),
-            None => self.name.clone(),
-        }
+        format!("{}:{}", self.plugin, self.name)
     }
 }
 
@@ -520,7 +517,7 @@ mod tests {
             calls: vec![CallSite {
                 skill: IndexedSkill {
                     entry_path: PathBuf::from("/v/a.md"),
-                    plugin: Some("p".into()),
+                    plugin: "p".into(),
                     name: "a".into(),
                     kind: EntityKind::Skill,
                     shipped: true,

@@ -554,12 +554,7 @@ fn render_call(
     naming: SkillNaming,
 ) -> Result<String, CoreError> {
     call.check_shipped(shipped, label)?;
-    match &call.skill.plugin {
-        Some(plugin) => {
-            crate::export::rendered_skill_call(runtime, naming, plugin, &call.skill.name)
-        }
-        None => crate::export::checked_skill_call(runtime, None, &call.skill.name),
-    }
+    crate::export::rendered_skill_call(runtime, naming, &call.skill.plugin, &call.skill.name)
 }
 
 /// How a harness names a published skill of a plugin that is bare on the

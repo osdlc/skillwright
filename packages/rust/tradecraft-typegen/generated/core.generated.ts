@@ -671,7 +671,7 @@ export type Target = "claude" | "codex" | "cursor" | "pi";
 /** A skill or command as a call names it. */
 export interface SkillId {
   /** The plugin it ships in. */
-  plugin: string | null;
+  plugin: string;
 
   /** Its source name. */
   name: string;

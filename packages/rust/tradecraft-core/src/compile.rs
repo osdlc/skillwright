@@ -123,7 +123,7 @@ pub struct IndexedSkill {
     /// Absolute path of the component's entry note.
     pub entry_path: PathBuf,
     /// The plugin that ships it.
-    pub plugin: Option<String>,
+    pub plugin: String,
     /// The source `name`, never prefixed.
     pub name: String,
     /// A skill, a command or an agent. A call to an agent is refused: no
@@ -135,12 +135,9 @@ pub struct IndexedSkill {
 }
 
 impl IndexedSkill {
-    /// The closure's spelling of this component: `plugin:name`, or `name`.
+    /// The closure's spelling of this component: `plugin:name`.
     fn call_id(&self) -> String {
-        match &self.plugin {
-            Some(plugin) => format!("{plugin}:{}", self.name),
-            None => self.name.clone(),
-        }
+        format!("{}:{}", self.plugin, self.name)
     }
 }
 
@@ -334,7 +331,7 @@ pub struct Closure {
     /// only where calls are not refused. A skill appearing at one of these
     /// names later changes the output without changing `contributing_notes`.
     pub unresolved: Vec<String>,
-    /// Skills this file calls, as `plugin:name` (or `name`), sorted. Nothing
+    /// Skills this file calls, as `plugin:name`, sorted. Nothing
     /// of a called skill is copied, so its identity is what can go stale.
     pub calls: Vec<String>,
 }
@@ -1480,7 +1477,7 @@ impl<'a> Renderer<'a> {
                             "{} `{}` of plugin `{}`",
                             skill.kind.as_str(),
                             skill.name,
-                            skill.plugin.as_deref().unwrap_or_default()
+                            skill.plugin
                         )
                     })
                     .collect();
@@ -3746,7 +3743,7 @@ mod tests {
     fn indexed(path: &str, name: &str) -> IndexedSkill {
         IndexedSkill {
             entry_path: PathBuf::from(path),
-            plugin: Some("tools".to_owned()),
+            plugin: "tools".to_owned(),
             name: name.to_owned(),
             kind: EntityKind::Skill,
             shipped: true,
@@ -3829,9 +3826,9 @@ mod tests {
     #[test]
     fn a_name_several_plugins_share_is_refused_naming_each() {
         let mut a = indexed("/vault/marketplaces/m/plugins/a/skills/rev/rev.md", "rev");
-        a.plugin = Some("a".to_owned());
+        a.plugin = "a".to_owned();
         let mut b = indexed("/vault/marketplaces/m/plugins/b/skills/rev/rev.md", "rev");
-        b.plugin = Some("b".to_owned());
+        b.plugin = "b".to_owned();
         let err = call_refusal(&SkillIndex::new([a, b]), "Run /[[rev]].\n");
         assert!(err.contains("skill-call-ambiguous"), "{err}");
         assert!(err.contains("plugin `a`"), "{err}");

@@ -339,7 +339,7 @@ pub(crate) fn load_for(
             .values()
             .flat_map(|plugin| plugin.components())
             .chain(&uncarried)
-            .map(|c| (&c.discovered, c.discovered.plugin.as_deref())),
+            .map(|c| &c.discovered),
     );
     let hand_written = hand_written_forms(&plugins, roots, config)?;
     let record = RefCell::new(Recorded::default());
@@ -421,23 +421,23 @@ pub struct Index {
     targets: BTreeMap<PathBuf, Option<Vec<String>>>,
 }
 
-fn skill_index<'a>(
-    skills: impl Iterator<Item = (&'a DiscoveredComponent, Option<&'a str>)>,
-) -> Index {
+fn skill_index<'a>(skills: impl Iterator<Item = &'a DiscoveredComponent>) -> Index {
     let mut targets = BTreeMap::new();
     let skills = SkillIndex::new(
         skills
-            .filter(|(c, _)| {
+            .filter(|c| {
                 matches!(
                     c.kind,
                     EntityKind::Skill | EntityKind::Command | EntityKind::Agent
                 )
             })
+            // Every component sits in a plugin (spec section 3).
+            .filter_map(|c| Some((c, c.plugin.clone()?)))
             .map(|(c, plugin)| {
                 targets.insert(normalize(&c.entry_path), c.targets.clone());
                 IndexedSkill {
                     entry_path: c.entry_path.clone(),
-                    plugin: plugin.map(str::to_owned),
+                    plugin,
                     name: c.name.clone(),
                     kind: c.kind,
                     shipped: true,
@@ -628,7 +628,7 @@ fn apply_naming(
             for body in bodies_of(resolved) {
                 for segment in &mut body.segments {
                     if let Segment::Call { call } = segment
-                        && let Some(bare) = call.skill.plugin.as_ref().and_then(|p| bare_on.get(p))
+                        && let Some(bare) = bare_on.get(&call.skill.plugin)
                     {
                         call.bare_on.clone_from(bare);
                     }

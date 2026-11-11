@@ -404,7 +404,7 @@ pub fn rendered_skill_call(
 }
 
 /// `RuntimeId::skill_call`, with its error as a `skill-call-invalid` refusal.
-pub(crate) fn checked_skill_call(
+fn checked_skill_call(
     runtime: RuntimeId,
     namespace: Option<&str>,
     name: &str,
