@@ -188,7 +188,7 @@ fn the_marketplace_model_emits_without_its_skipped_fields() {
 #[test]
 fn a_flattened_identity_is_spliced_into_a_type_that_keeps_its_name() {
     let ts = tradecraft_typegen::generate(&crates()).expect("generating");
-    for name in ["MarketplaceConfig", "PluginOverrides", "MarketplaceFields"] {
+    for name in ["MarketplaceConfig", "PluginOverrides"] {
         let start = ts
             .find(&format!("export interface {name} {{"))
             .unwrap_or_else(|| panic!("`{name}` is emitted"));

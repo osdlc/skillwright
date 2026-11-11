@@ -1,5 +1,4 @@
 ---
-name: author
 description: "Author coding-agent skills, plugins and marketplaces as markdown notes in a skillwright vault: the folder layout, the frontmatter (`description`, `name`, `version`, `targets` and the harness blocks), and the verbs that create and reorganise notes (`new`, `rename`, `move`, `delete`, `convert`, `bump`, `adopt`, `list`). Use when asked to write a new skill, add a plugin or marketplace, rename or move a skill, bump a plugin version, or bring existing SKILL.md files into a vault."
 ---
 

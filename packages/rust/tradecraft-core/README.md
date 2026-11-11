@@ -121,8 +121,7 @@ assert!(vfs.exists(Path::new("/vault/dist/house/.claude-plugin/marketplace.json"
 ```
 
 The steps inside are public if a host needs them apart: `read_layout`,
-`classify`, `parse_root_file`, `parse_marketplace_note`,
-`marketplace_inputs`, `dist_dir` and `resolve_path` for any other path read
+`classify`, `parse_root_file`, `marketplace_inputs`, `dist_dir` and `resolve_path` for any other path read
 from the root file.
 
 ## What it covers
@@ -194,7 +193,7 @@ breaking change:
   its `new` constructor, which takes the required inputs, and set the other
   fields on the value.
 - The config and settings types (`MarketplaceConfig`, `PluginOverrides`,
-  `RootFile`, `BuildSettings`, `MarketplaceFields`). Build one with
+  `RootFile`, `SharedDefaults`, `BuildSettings`). Build one with
   `Default::default()` and set its fields.
 - The output types (`ExportReport`, `DiscoveryReport`,
   `DiscoveredComponent`, `DiscoveryWarning`, `SkippedNote`, `LoadedVault`,

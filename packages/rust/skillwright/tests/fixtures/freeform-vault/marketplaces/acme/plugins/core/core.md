@@ -1,5 +1,4 @@
 ---
-name: core
 description: A plugin with a note.
 keywords:
   - review

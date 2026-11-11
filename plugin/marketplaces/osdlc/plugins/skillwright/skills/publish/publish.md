@@ -1,5 +1,4 @@
 ---
-name: publish
 description: "Publish and build a skillwright vault into the formats of Claude Code, Codex, Cursor and Pi: `publish` notes into a project or home directory, `build` plugin marketplaces, `check` and `status` for drift, and `harness install`, `update` and `uninstall` to register a built marketplace with a harness, and `harness link` to symlink built skills into a harness for a fast edit loop. Use when asked to publish or ship skills, build the marketplace, find out why a published skill differs from its note, fix a drift failure, or install the plugins into Claude Code, Codex, Cursor or Pi."
 ---
 

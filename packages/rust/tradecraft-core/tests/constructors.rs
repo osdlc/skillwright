@@ -8,9 +8,8 @@ use std::path::Path;
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
     AssetSpec, BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode,
-    ExportRequest, ExportUnit, HookFileSpec, LinkIndex, MarketplaceConfig, MarketplaceFields,
-    MemVfs, PluginOverrides, RootFile, StaleKind, UnitStatus, Vfs, discover_components,
-    export_skills,
+    ExportRequest, ExportUnit, HookFileSpec, LinkIndex, MarketplaceConfig, MemVfs, PluginOverrides,
+    RootFile, SharedDefaults, StaleKind, UnitStatus, Vfs, discover_components, export_skills,
 };
 
 const PLUGIN: &str = "/vault/marketplaces/house/plugins/tools";
@@ -81,12 +80,12 @@ fn a_compile_source_takes_its_inputs() {
 
 #[test]
 fn the_settings_types_build_from_default() {
-    let mut fields = MarketplaceFields::default();
+    let mut fields = SharedDefaults::default();
     fields.targets = Some(vec!["claude".to_owned()]);
     let mut build = BuildSettings::default();
     build.harnesses = Some(vec!["claude".to_owned()]);
     let mut root = RootFile::default();
-    root.marketplace = fields;
+    root.defaults = fields;
     root.build = build;
     let config = root.to_config();
     assert_eq!(config.name, None);

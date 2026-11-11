@@ -69,6 +69,8 @@ pub enum Shape {
     Arguments,
     /// A mapping of one harness's own keys.
     HarnessBlock,
+    /// No value: the key is refused wherever it is set.
+    Refused,
 }
 
 impl Shape {
@@ -86,6 +88,7 @@ impl Shape {
             }
             Self::Arguments => value.is_array(),
             Self::HarnessBlock => value.is_object() || value.is_null(),
+            Self::Refused => false,
             _ => self.field_type().is_some_and(|ty| ty.accepts(value)),
         }
     }
@@ -157,6 +160,7 @@ impl Shape {
             Self::Mapping => ("a mapping", not),
             Self::Arguments => ("a list of argument objects", not),
             Self::HarnessBlock => ("a mapping of that harness's own keys", not),
+            Self::Refused => ("unset", format!("; {NAME_REFUSAL}")),
         };
         ShapeRefusal { what, detail }
     }
@@ -215,6 +219,9 @@ const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command];
 /// rows of [`KEYS`].
 pub const HARNESS_BLOCKS: &[&str] = &[CLAUDE.name, CODEX.name, CURSOR.name, PI.name];
 
+/// Why a [`Shape::Refused`] key is refused: what a refusal of `name` says.
+pub const NAME_REFUSAL: &str = "the folder's name is the note's name; delete it";
+
 /// Harness block keys that say which thing a manifest describes. A plugin
 /// never takes one from the marketplace's block: each plugin has its own.
 pub const BLOCK_IDENTITY_KEYS: &[&str] =
@@ -224,11 +231,11 @@ pub const BLOCK_IDENTITY_KEYS: &[&str] =
 pub const KEYS: &[KeySpec] = &[
     KeySpec {
         key: "name",
-        kinds: &[Marketplace, Plugin, Skill, Agent, Command],
-        owner: Owner::Spec,
-        shape: Shape::String,
+        kinds: PUBLISHED,
+        owner: Owner::Skillwright,
+        shape: Shape::Refused,
         inherits: false,
-        summary: "The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder.",
+        summary: "Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads.",
     },
     KeySpec {
         key: "description",
@@ -236,7 +243,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: false,
-        summary: "What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published.",
+        summary: "What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one.",
     },
     KeySpec {
         key: "version",
@@ -324,7 +331,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Skillwright,
         shape: Shape::StringList,
         inherits: true,
-        summary: "Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused.",
+        summary: "Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused.",
     },
     KeySpec {
         key: "arguments",
@@ -484,6 +491,7 @@ impl Shape {
                 "list of arguments; a string or a list of strings is Claude's own key"
             }
             Self::HarnessBlock => "harness block",
+            Self::Refused => "refused",
         }
     }
 }
@@ -505,11 +513,12 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 - **Owner** says who the key belongs to:
   - `skillwright`: skillwright reads the key and removes it when it publishes.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written.
-- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`.
+- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`. Only these keys may be set in `skillwright.md`.
 
 ## What is checked
 
 - A key the table does not list for that kind gets a warning.
+- `name` is refused on every note. `build:` is refused on every note: only `skillwright.md` reads it.
 - A listed key with the wrong kind of value is refused, and the message names the key. This applies to every `skillwright` key, and to every `spec` key on a skill, agent or command.
 - A `spec` key with no value, such as `model:`, is dropped. It does not clear a value the note inherits.
 
@@ -602,7 +611,8 @@ pub fn inherits(kind: EntityKind, key: &str) -> bool {
 
 /// The keys a container's identity holds: the key table's rows for a
 /// marketplace or a plugin that skillwright owns, less the harness blocks
-/// and `targets`, which other kinds read too. In table order, deduplicated.
+/// and `targets`, which other kinds read too, and the refused `name`. In
+/// table order, deduplicated.
 ///
 /// Any later skillwright-owned key a marketplace or plugin reads joins the
 /// identity by this rule, and a test fails until
@@ -614,7 +624,9 @@ pub fn identity_keys() -> impl Iterator<Item = &'static str> {
     KEYS.iter()
         .filter(|spec| spec.kinds.iter().any(|kind| CONTAINERS.contains(kind)))
         .filter(|spec| spec.owner == Owner::Skillwright)
-        .filter(|spec| spec.shape != Shape::HarnessBlock && spec.key != "targets")
+        .filter(|spec| {
+            !matches!(spec.shape, Shape::HarnessBlock | Shape::Refused) && spec.key != "targets"
+        })
         .map(|spec| spec.key)
         .filter(move |key| {
             let first = !seen.contains(key);
@@ -735,6 +747,7 @@ mod tests {
             Shape::Mapping,
             Shape::Arguments,
             Shape::HarnessBlock,
+            Shape::Refused,
         ];
         for shape in shapes {
             let Some(ty) = shape.field_type() else {

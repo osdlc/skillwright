@@ -83,6 +83,7 @@ export type {
   Segment,
   PluginOverrides,
   RootFile,
+  SharedDefaults,
   BuildSettings,
   SkippedNote,
   UnitStatus,
@@ -93,27 +94,15 @@ export type {
 } from './core.generated.ts'
 
 /**
- * The target names the core accepts, for completion. Mirrors `KNOWN_TARGETS`
- * in `tradecraft_core::publish`; hand-maintained, so update both together.
+ * The four harness names the core accepts, for completion. Mirrors
+ * `KNOWN_TARGETS` in `tradecraft_core::publish`; hand-maintained, so update
+ * both together.
  *
  * The core types a target as a plain `String`, so a generated declaration
  * is `string`. The `(string & {})` tail keeps the union
  * open so an editor still completes the known names; the core rejects a name it does not know.
  */
-export type Target =
-  | 'amp'
-  | 'antigravity'
-  | 'claude'
-  | 'claude-code'
-  | 'codex'
-  | 'codex-cli'
-  | 'copilot'
-  | 'cursor'
-  | 'github-copilot'
-  | 'opencode'
-  | 'pi'
-  | 'portable'
-  | (string & {})
+export type Target = 'claude' | 'codex' | 'cursor' | 'pi' | (string & {})
 
 /**
  * The `CoreError` variant names, exhaustively — see
@@ -181,16 +170,9 @@ export function knownTargets(): string[] {
 }
 
 /**
- * The one destination a target name folds onto — `claude` and `claude-code`
- * both answer `claude` — or `null` for a name outside {@link knownTargets}.
- *
- * One name out of a compile-time vocabulary, so it crosses as a value rather
- * than as a JSON document — there is no structure to serialize and no error to
- * carry. `tradecraft_core::publish::canonical_target`, asked rather than
- * reproduced:
- * which spellings name the same destination is not derivable from the flat
- * target list, and a copy of the fold table here would drift from the one the
- * core publishes against.
+ * `name` when it is one of {@link knownTargets}, or `null`. There are no
+ * aliases. `tradecraft_core::publish::canonical_target`, asked rather than
+ * reproduced.
  */
 export function canonicalTarget(name: string): string | null {
   return canonicalTargetWasm(name) ?? null

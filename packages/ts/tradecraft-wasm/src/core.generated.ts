@@ -18,11 +18,8 @@
 
 /** A parsed root file. */
 export interface RootFile {
-  /**
-   * The top-level keys. Only the shared defaults among them are read
-   * ([`RootFile::to_config`]).
-   */
-  marketplace: MarketplaceFields;
+  /** The shared defaults. */
+  defaults: SharedDefaults;
 
   /** The `build:` block. */
   build: BuildSettings;
@@ -32,84 +29,28 @@ export interface RootFile {
 }
 
 /**
- * A marketplace's own fields, as its note `<m>.md` writes them, or the
- * top-level keys of the root file.
+ * The root file's shared defaults: the keys the key table marks as
+ * inherited. Every marketplace and plugin takes each one it does not set.
  */
-export interface MarketplaceFields {
-  /** The marketplace's name. Absent means its folder's name. */
-  name?: string;
-
-  /** One line on what the marketplace holds. */
-  description?: string;
-
-  /**
-   * `owner`, a marketplace's only: a name or `{name, email, url}`. A string
-   * is normalised to `{name: …}` in a manifest, because Claude and Cursor
-   * require an object. Absent, the marketplace's name stands in.
-   */
-  owner?: unknown;
-
-  /**
-   * `author`: a name or `{name, email, url}`. A string is normalised to
-   * `{name: …}`; Cursor drops `url`. A marketplace's is the default for
-   * each plugin.
-   */
+export interface SharedDefaults {
+  /** `author`: a name or `{name, email, url}`. */
   author?: unknown;
 
-  /**
-   * `display_name`: Codex's `interface.displayName`, the name when absent.
-   * On a plugin, also Cursor's `displayName` on its manifest and its
-   * catalog entry, absent by default; `cursor.displayName` overrides it.
-   * Never inherited.
-   */
-  display_name?: string;
-
-  /**
-   * `license`, an SPDX expression, passed through. A plugin's defaults to
-   * the marketplace's, then `UNLICENSED`.
-   */
+  /** `license`, an SPDX expression. */
   license?: string;
 
-  /**
-   * `keywords`, a plugin's only. Default empty. Also the Claude and Cursor
-   * marketplace entry's `tags`; Pi's `package.json` adds `pi-package`.
-   */
-  keywords?: string[];
-
-  /**
-   * `category`, a plugin's only. Codex always writes it, default
-   * `Productivity`; Claude and Cursor write it on the marketplace entry
-   * only when it is set.
-   */
-  category?: string;
-
-  /**
-   * `version`, the container's own. A plugin's defaults to `0.1.0`, with a
-   * warning.
-   */
-  version?: string;
-
-  /**
-   * `repository`, the source repository URL, written into every manifest
-   * that has the field. A marketplace's is the default for each plugin.
-   */
+  /** `repository`, the source repository URL. */
   repository?: string;
 
-  /**
-   * `homepage`, the documentation URL, written into every manifest that
-   * has the field. A marketplace's is the default for each plugin.
-   */
+  /** `homepage`, the documentation URL. */
   homepage?: string;
 
-  /**
-   * Which harnesses get what the marketplace holds. Inherited by every
-   * plugin and member with none of its own.
-   */
+  /** `targets`: which harnesses get each component. Absent means all. */
   targets?: string[];
 
   /**
    * The harness blocks (`claude:`, `codex:`, `cursor:`, `pi:`), keyed by
-   * harness. Inherited by every plugin, key by key.
+   * harness. Inherited key by key.
    */
   blocks?: Record<string, Record<string, unknown>>;
 }
@@ -212,7 +153,7 @@ export interface DiscoveryReport {
  * "every destination" means today is the one that decides it.
  */
 export interface DiscoveredComponent {
-  /** The frontmatter `name`, already validated against the Agent Skills spec. */
+  /** The folder's name, which the layout has checked against the name rule. */
   name: string;
 
   /**

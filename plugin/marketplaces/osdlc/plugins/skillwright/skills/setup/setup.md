@@ -1,5 +1,4 @@
 ---
-name: setup
 description: "Install the skillwright CLI and set up a project for it: check `skillwright --version`, install with brew, npm, cargo or install.sh (or from source when the release is not out), and write a `skillwright.md` root file with `skillwright init`. Use when `skillwright` is not on PATH, when a repository has no `skillwright.md`, or when asked to install skillwright, configure it, or start a skill vault. The other skillwright skills send you here when the binary is missing."
 ---
 

@@ -1702,7 +1702,7 @@ mod tests {
     /// body — for a test that needs to control what a skill's rendered text
     /// actually says (e.g. whether it calls the CLI at all).
     fn note_with_body(name: &str, targets: &[&str], body: &str) -> String {
-        let mut out = format!("---\nname: {name}\ndescription: Use {name}.\n");
+        let mut out = format!("---\ndescription: Use {name}.\n");
         if !targets.is_empty() {
             out.push_str("targets:\n");
             for target in targets {
@@ -1729,12 +1729,10 @@ mod tests {
             "/vault/marketplaces/house/plugins/git-tools/skills/commit-helper/commit-helper.md",
             &note("commit-helper", &[]),
         );
-        // The runtime spelling on purpose: `claude-code` must narrow the
-        // `claude` root, the same folding a publish grants.
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/skills/rebase-guide/rebase-guide.md",
-            &note("rebase-guide", &["claude-code"]),
+            &note("rebase-guide", &["claude"]),
         );
         write(
             &vfs,
@@ -1925,7 +1923,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/draft/draft.md",
-            "---\nname: Not A Legal Name\ndescription: A draft.\n---\n\nHalf written.\n",
+            "---\ndescription: [half written\n---\n\nHalf written.\n",
         );
 
         for mode in [ExportMode::Build, ExportMode::Check] {
@@ -2000,7 +1998,7 @@ mod tests {
         write(
             &vfs,
             &format!("{folder}/tools.md"),
-            "---\nname: tools\ndescription: Tools.\nversion: 1.0.0\n---\n",
+            "---\ndescription: Tools.\nversion: 1.0.0\n---\n",
         );
         let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
 
@@ -2059,7 +2057,7 @@ mod tests {
 
     #[test]
     fn a_changelog_heading_names_a_version_only_as_a_whole_token() {
-        let plugin = "---\nname: tools\ndescription: Tools.\nversion: 1.0.0\n---\n";
+        let plugin = "---\ndescription: Tools.\nversion: 1.0.0\n---\n";
         let warned = |changelog: &str| {
             changelog_reasons(changelog, Some(plugin))
                 .contains(&"changelog-missing-version".to_owned())
@@ -2481,7 +2479,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/tools.md",
-            "---\nname: tools\ndescription: Tools.\npi:\n  naming: bare\n\
+            "---\ndescription: Tools.\npi:\n  naming: bare\n\
              cursor:\n  naming: prefixed\n---\n",
         );
         build(&vfs);
@@ -2558,7 +2556,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/b/b.md",
-            &note_with_body("b", &["claude-code"], "# b\n"),
+            &note_with_body("b", &["claude"], "# b\n"),
         );
         let err = export_refusal(&vfs);
         assert!(err.contains("skill-call-not-shipped"), "{err}");
@@ -2714,7 +2712,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            "---\nname: review-guide\ndescription: Use review-guide.\nclaude:\n  \
+            "---\ndescription: Use review-guide.\nclaude:\n  \
              permissionMode: plan\n---\n\n# review-guide\n",
         );
         build(&vfs);
@@ -2731,7 +2729,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            "---\nname: review-guide\ndescription: Use review-guide.\ncodex:\n  \
+            "---\ndescription: Use review-guide.\ncodex:\n  \
              argument-hint: x\n---\n\n# review-guide\n",
         );
         let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
@@ -2975,7 +2973,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            "---\nname: review-guide\ndescription: Reviews things.\n---\n\n\
+            "---\ndescription: Reviews things.\n---\n\n\
              # Review Guide\n\n![[steps]]\n\nSee [[style-guide]].\n",
         );
         write(
@@ -3031,12 +3029,12 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/tools.md",
-            "---\nname: tools\n---\n",
+            "---\n---\n",
         );
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/said/said.md",
-            "---\nname: said\ndescription: d\n---\n",
+            "---\ndescription: d\n---\n",
         );
         vfs
     }
@@ -3047,7 +3045,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/quiet/quiet.md",
-            "---\nname: quiet\n---\n\n# Quiet\n",
+            "---\n---\n\n# Quiet\n",
         );
         for mode in [ExportMode::Check, ExportMode::Build] {
             let message = export_skills(&vfs, &request(mode)).unwrap_err().to_string();
@@ -3066,7 +3064,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/agents/helper/helper.md",
-            "---\nname: helper\n---\n",
+            "---\n---\n",
         );
         let message = export_skills(&vfs, &request(ExportMode::Check))
             .unwrap_err()
@@ -3080,11 +3078,7 @@ mod tests {
     #[test]
     fn a_silent_container_note_has_no_warning() {
         let vfs = silent_plugin_vault();
-        write(
-            &vfs,
-            "/vault/marketplaces/house/house.md",
-            "---\nname: house\n---\n",
-        );
+        write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
         let report = build(&vfs);
         assert!(
             report
@@ -3134,11 +3128,7 @@ mod tests {
     #[test]
     fn a_configured_marketplace_description_outranks_a_silent_marketplace_note() {
         let vfs = silent_plugin_vault();
-        write(
-            &vfs,
-            "/vault/marketplaces/house/house.md",
-            "---\nname: house\n---\n",
-        );
+        write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
         let mut config = config();
         config.description = Some("Configured market description".to_owned());
         build_with(&vfs, config);
@@ -3155,12 +3145,12 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/tools.md",
-            "---\nname: tools\ndescription: Tools.\n---\n",
+            "---\ndescription: Tools.\n---\n",
         );
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/said/said.md",
-            "---\nname: said\ndescription: d\n---\n",
+            "---\ndescription: d\n---\n",
         );
         let mut request = request(ExportMode::Check);
         let report = export_skills(&vfs, &request).unwrap();
@@ -3183,7 +3173,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/tools.md",
-            "---\nname: tools\ndescription: Tools.\nversion: 2.0.0\n---\n",
+            "---\ndescription: Tools.\nversion: 2.0.0\n---\n",
         );
         request.config.plugins.clear();
         let report = export_skills(&vfs, &request).unwrap();
@@ -3196,17 +3186,13 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/said/said.md",
-            "---\nname: said\ndescription: d\n---\n",
+            "---\ndescription: d\n---\n",
         );
-        write(
-            &vfs,
-            "/vault/marketplaces/other/other.md",
-            "---\nname: other\n---\n",
-        );
+        write(&vfs, "/vault/marketplaces/other/other.md", "---\n---\n");
         write(
             &vfs,
             "/vault/marketplaces/other/plugins/kit/skills/quiet/quiet.md",
-            "---\nname: quiet\n---\n",
+            "---\n---\n",
         );
         let mut request = request(ExportMode::Build);
         request.marketplace = Some("house".to_owned());
@@ -3228,7 +3214,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/flow/flow.md",
-            &format!("---\nname: flow\ndescription: \"{description}\"\n---\n\n# Flow\n"),
+            &format!("---\ndescription: \"{description}\"\n---\n\n# Flow\n"),
         );
         build(&vfs);
         let text = text_at(
@@ -3258,7 +3244,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            "---\nname: review-guide\ndescription: Reviews things.\n\
+            "---\ndescription: Reviews things.\n\
              arguments:\n  - name: pr-number\n    required: true\n    description: The PR.\n\
              ---\n\n# Review Guide\n",
         );
@@ -3517,12 +3503,12 @@ mod tests {
         write(
             &vfs,
             &format!("{base}/git-tools.md"),
-            "---\nname: git-tools\ndescription: Git helpers.\nversion: 2.1.0\n---\n\nThe pack.\n",
+            "---\ndescription: Git helpers.\nversion: 2.1.0\n---\n\nThe pack.\n",
         );
         write(
             &vfs,
             &format!("{base}/skills/commit-helper/commit-helper.md"),
-            "---\nname: commit-helper\ndescription: Writes commits.\n---\n\nCommit well.\n",
+            "---\ndescription: Writes commits.\n---\n\nCommit well.\n",
         );
         vfs
     }
@@ -3537,7 +3523,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/skills/commit-helper/commit-helper.md",
-            "---\nname: commit-helper\ndescription: Writes better commits.\n---\n\nCommit well.\n",
+            "---\ndescription: Writes better commits.\n---\n\nCommit well.\n",
         );
 
         let report = check(&vfs);
@@ -3564,12 +3550,12 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/skills/commit-helper/commit-helper.md",
-            "---\nname: commit-helper\ndescription: Writes better commits.\n---\n\nCommit well.\n",
+            "---\ndescription: Writes better commits.\n---\n\nCommit well.\n",
         );
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/git-tools.md",
-            "---\nname: git-tools\ndescription: Git helpers.\nversion: 2.2.0\n---\n\nThe pack.\n",
+            "---\ndescription: Git helpers.\nversion: 2.2.0\n---\n\nThe pack.\n",
         );
 
         let report = check(&vfs);
@@ -3605,7 +3591,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/skills/commit-helper/commit-helper.md",
-            "---\nname: commit-helper\ndescription: Use commit-helper, but better.\n---\n\n# commit-helper\n",
+            "---\ndescription: Use commit-helper, but better.\n---\n\n# commit-helper\n",
         );
 
         let report = check(&vfs);
@@ -3866,7 +3852,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/skills/commit-helper/commit-helper.md",
-            "---\nname: commit-helper\ndescription: Use commit-helper.\n---\n\nRevised body.\n",
+            "---\ndescription: Use commit-helper.\n---\n\nRevised body.\n",
         );
         let before = files_under(&vfs, Path::new("/market"));
 
@@ -3902,7 +3888,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/skills/commit-helper/commit-helper.md",
-            "---\nname: commit-helper\ndescription: Use commit-helper.\n---\n\nRevised body.\n",
+            "---\ndescription: Use commit-helper.\n---\n\nRevised body.\n",
         );
 
         // Two failures on the same path: the swap-in, then the restore.
@@ -4318,7 +4304,7 @@ mod tests {
         write(
             &vfs,
             "/repo/src/marketplaces/house/plugins/gear/commands/run/run.md",
-            "---\nname: run\ndescription: Run.\n---\n\nBody.\n",
+            "---\ndescription: Run.\n---\n\nBody.\n",
         );
         request.harnesses = BTreeSet::from(["pi".to_owned()]);
 
@@ -4465,14 +4451,14 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/demo-market/demo-market.md",
-            "---\nname: demo-market\ndescription: The house marketplace.\n\
+            "---\ndescription: The house marketplace.\n\
              owner:\n  name: kelly/house\nauthor: house-team\n\
              display_name: The House\n---\n\nProse.\n",
         );
         write(
             &vfs,
             "/vault/marketplaces/demo-market/plugins/tools/tools.md",
-            "---\nname: tools\ndescription: Everyday tools.\nversion: 2.1.0\nlicense: MIT\nkeywords:\n  - editing\n\
+            "---\ndescription: Everyday tools.\nversion: 2.1.0\nlicense: MIT\nkeywords:\n  - editing\n\
              category: Writing\n---\n",
         );
         write(
@@ -4511,7 +4497,7 @@ mod tests {
             &vfs,
             "/vault/marketplaces/demo-market/demo-market.md",
             &format!(
-                "---\nname: demo-market\ndescription: The house marketplace.\n\
+                "---\ndescription: The house marketplace.\n\
                  {line}---\n"
             ),
         );
@@ -4523,7 +4509,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/demo-market/plugins/vendor/vendor.md",
-            "---\nname: vendor\ndescription: Vendored work.\nlicense: Apache-2.0\n---\n",
+            "---\ndescription: Vendored work.\nlicense: Apache-2.0\n---\n",
         );
         write(
             &vfs,
@@ -4651,7 +4637,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/demo-market/demo-market.md",
-            "---\nname: demo-market\ndescription: The house marketplace.\n\
+            "---\ndescription: The house marketplace.\n\
              owner: kelly\n---\n",
         );
         write(
@@ -4943,7 +4929,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/beta/plugins/core/commands/ship/ship.md",
-            "---\nname: ship\ndescription: Cuts a release.\n---\n\n             Cut it.\n\n![[team-logo.png]]\n",
+            "---\ndescription: Cuts a release.\n---\n\n             Cut it.\n\n![[team-logo.png]]\n",
         );
         let references = Path::new("/vault/marketplaces/beta/plugins/core/references");
         vfs.create_dir_all(references).unwrap();
@@ -5183,12 +5169,12 @@ mod tests {
         write(
             &vfs,
             &format!("{base}/skills/review/review.md"),
-            "---\nname: review\ndescription: Reviews.\n---\n\nRead it.\n",
+            "---\ndescription: Reviews.\n---\n\nRead it.\n",
         );
         write(
             &vfs,
             &format!("{base}/agents/triage/triage.md"),
-            "---\nname: triage\ndescription: Triages.\n---\n\nSort it.\n",
+            "---\ndescription: Triages.\n---\n\nSort it.\n",
         );
 
         let report = check(&vfs);

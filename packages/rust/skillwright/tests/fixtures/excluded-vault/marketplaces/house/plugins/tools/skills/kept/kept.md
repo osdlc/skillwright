@@ -1,5 +1,4 @@
 ---
-name: kept
 description: A fixture skill the vault does not exclude.
 ---
 

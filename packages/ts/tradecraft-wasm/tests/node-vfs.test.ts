@@ -83,7 +83,7 @@ function repoWithVault(name: string): { repo: string; vault: string } {
   writeFileSync(path.join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
   writeFileSync(
     path.join(skill, 'review.md'),
-    '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n',
+    '---\ndescription: Reviews a diff.\n---\n\n# Review\n',
   )
   return { repo, vault }
 }

@@ -40,7 +40,7 @@ fn vault(hooks: &str) -> MemVfs {
     write(
         &vfs,
         &format!("{plugin}/skills/review/review.md"),
-        "---\nname: review\ndescription: Use review.\n---\n\n# review\n",
+        "---\ndescription: Use review.\n---\n\n# review\n",
     );
     write(&vfs, "/project/plugin/hooks.json", hooks);
     vfs

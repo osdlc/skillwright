@@ -64,8 +64,8 @@ use wasm_bindgen::prelude::*;
 
 pub use js_vfs::{HostVfs, JsVfs};
 
-/// Every target name a note's targets key may name,
-/// sorted — `tradecraft_core::publish::KNOWN_TARGETS`, verbatim.
+/// Every name `targets` and `build.harnesses` accept, sorted:
+/// `tradecraft_core::publish::KNOWN_TARGETS`, verbatim.
 ///
 /// Exported so a host validating a name off a command line checks the same
 /// list the core checks a note's frontmatter against. Without it a host has to
@@ -80,13 +80,9 @@ pub fn known_targets() -> Result<String, JsValue> {
     report_json("known targets", &KNOWN_TARGETS)
 }
 
-/// The one harness a target name folds onto, or `undefined` for a name
-/// outside [`KNOWN_TARGETS`] — `tradecraft_core::publish::canonical_target`,
-/// verbatim.
-///
-/// Exported because the fold is not derivable from [`known_targets`] alone:
-/// that list carries both spellings of a harness (`claude` and
-/// `claude-code`) and says nothing about which pairs name the same one.
+/// `name` when it is one of [`KNOWN_TARGETS`], or `undefined`:
+/// `tradecraft_core::publish::canonical_target`, verbatim. There are no
+/// aliases.
 ///
 /// # Why this one does not cross as JSON
 ///
@@ -108,8 +104,8 @@ pub fn canonical_target(name: &str) -> Option<String> {
 /// # Errors
 ///
 /// An `Error` carrying the core's message: frontmatter that is not a YAML
-/// mapping, or a known key of the wrong shape. An unknown key is a warning on
-/// the `RootFile`.
+/// mapping, a key the root file refuses, or a known key of the wrong shape.
+/// An unknown key is a warning on the `RootFile`.
 #[wasm_bindgen(js_name = parseRootFile)]
 pub fn parse_root_file(text: &str) -> Result<String, JsValue> {
     let root = core_parse_root_file(text).map_err(|e| throwable(&e.to_string()))?;

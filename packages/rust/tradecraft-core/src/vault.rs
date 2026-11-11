@@ -33,7 +33,7 @@
 //!   `tags` field. `agent-adapt`'s skill renderer emits no `tags:` key, so
 //!   lifting it out of the frontmatter would delete it from every published
 //!   `SKILL.md`. Left in `annotations` it survives the round trip.
-//! * **A spec key holding the wrong kind of value is refused.** `name: [a]` or
+//! * **A spec key holding the wrong kind of value is refused.** `model: [a]` or
 //!   `user-invocable: yes-please` stops the read, naming the key, by the same
 //!   check a harness block applies to that key. A value of the right kind the
 //!   model still cannot type stays put and travels on. `metadata:` holding a
@@ -96,15 +96,10 @@ pub struct VaultNote {
 /// ours is refused as that rather than misdiagnosed a line later as a note
 /// with no `description`.
 ///
-/// A `description` or a `name` is then required — either makes a note
-/// publish — and a note with neither is an error naming the path, so a caller
-/// holding several is told which one was not. A container's note is the
-/// exception: it reads with an empty description. A `name` alone reads with
-/// an empty description too, which a build and a publish refuse for a skill,
-/// command or agent. `name`
-/// defaults to the filename slugified — via [`crate::discover::default_name`],
-/// the one derivation the scan uses too — so the ordinary note needs no
-/// frontmatter beyond a `description`.
+/// A `description` is then required, and a note without one is an error
+/// naming the path. A container's note is the exception: it reads with an
+/// empty description. The name is the file name slugified, via
+/// [`crate::discover::default_name`], the one derivation the scan uses too.
 ///
 /// Reads the note as a skill. [`read_vault_note`] reads one of another kind.
 pub fn read_vault_skill(vfs: &dyn Vfs, skill_path: &Path) -> Result<VaultNote, CoreError> {
@@ -128,14 +123,10 @@ pub fn read_vault_note(
     let ours = VaultFrontmatter::take_from(&mut fields, skill_path, kind)?;
     check_spec_kinds(&mut fields, skill_path, kind)?;
 
-    let name = take_string(&mut fields, "name").filter(|n| !n.trim().is_empty());
-    // A `name` alone opts in, as it does for the scan, and reads with an
-    // empty description, which a build and a publish refuse. A container's
-    // note is optional and may hold any of its keys, so it need not describe
-    // itself.
+    // A container's note need not describe itself.
     let description = take_string(&mut fields, "description")
         .filter(|d| !d.trim().is_empty())
-        .or_else(|| (name.is_some() || kind.holds_components()).then(String::new))
+        .or_else(|| kind.holds_components().then(String::new))
         .ok_or_else(|| {
             CoreError::malformed(
                 skill_path,
@@ -144,7 +135,7 @@ pub fn read_vault_note(
         })?;
 
     let content = SkillContent {
-        name: name.unwrap_or_else(|| crate::discover::default_name(skill_path)),
+        name: crate::discover::default_name(skill_path),
         description,
         argument_hint: take_hint(&mut fields),
         // Claude Code's own key, hand-written. Empty and absent both read as
@@ -520,26 +511,14 @@ mod tests {
     }
 
     #[test]
-    fn frontmatter_name_wins_over_the_stem() {
+    fn a_name_key_is_refused() {
         let (vfs, path) = vault(
             "code-review",
-            "---\nname: reviewer\ndescription: d\n---\nb\n",
+            "---\nname: code-review\ndescription: d\n---\nb\n",
         );
-        assert_eq!(
-            read_vault_skill(&vfs, &path)
-                .unwrap()
-                .projection
-                .content
-                .name,
-            "reviewer"
-        );
-    }
-
-    #[test]
-    fn a_name_alone_reads_with_an_empty_description() {
-        let (vfs, path) = vault("nameless", "---\nname: nameless\n---\nBody.\n");
-        let note = read_vault_skill(&vfs, &path).unwrap();
-        assert_eq!(note.projection.content.description, "");
+        let err = read_vault_skill(&vfs, &path).unwrap_err().to_string();
+        assert!(err.contains("`name` is refused"), "{err}");
+        assert!(err.contains("delete it"), "{err}");
     }
 
     #[test]
@@ -649,15 +628,12 @@ mod tests {
             "---\n\
              description: d\n\
              owner: kelly\n\
-             targets:\n  - claude-code\n\
+             targets:\n  - claude\n\
              sw-targets: keep me\n\
              ---\nb\n",
         );
         let note = read_vault_skill(&vfs, &path).unwrap();
-        assert_eq!(
-            note.frontmatter.targets,
-            Some(vec!["claude-code".to_owned()])
-        );
+        assert_eq!(note.frontmatter.targets, Some(vec!["claude".to_owned()]));
         assert!(note.frontmatter.unknown.contains(&"sw-targets".to_owned()));
 
         let annotations = note.projection.content.annotations;
@@ -728,8 +704,8 @@ b
                 "`user-invocable` must be a boolean, not a string; write `true` or `false`",
             ),
             (
-                "name: 2048",
-                "`name` must be a string, not a number — quote it",
+                "compatibility: 2048",
+                "`compatibility` must be a string, not a number — quote it",
             ),
             ("model: [1]", "`model` must be a string, not a list"),
             (

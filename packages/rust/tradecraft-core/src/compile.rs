@@ -2596,7 +2596,7 @@ mod tests {
         write(
             &vfs,
             "/vault/plugins/demo/demo.md",
-            b"---\nname: demo\ndescription: d\n---\n\n# Demo\n",
+            b"---\ndescription: d\n---\n\n# Demo\n",
         );
         write(
             &vfs,
@@ -4221,7 +4221,7 @@ mod tests {
         ];
         for (entry, bundle, target) in shapes {
             let vfs = MemVfs::new();
-            write(&vfs, entry, b"---\nname: s\ndescription: d\n---\n\n# S\n");
+            write(&vfs, entry, b"---\ndescription: d\n---\n\n# S\n");
             let link = format!("Part of [[{target}]].\n");
             write(&vfs, &format!("{bundle}/references/x.md"), link.as_bytes());
             let skills = SkillIndex::new([indexed(entry, "s")]);
@@ -4278,7 +4278,7 @@ mod tests {
         write(
             &vfs,
             "/vault/plugins/demo/demo.md",
-            b"---\nname: demo\ndescription: d\n---\n\n## Steps\n",
+            b"---\ndescription: d\n---\n\n## Steps\n",
         );
         write(
             &vfs,
@@ -4312,11 +4312,7 @@ mod tests {
         // A bundle skill's entry, which `[[s]]` names but does not resolve to.
         let vfs = MemVfs::new();
         let entry = "/vault/skills/s/SKILL.md";
-        write(
-            &vfs,
-            entry,
-            b"---\nname: s\ndescription: d\n---\n\n## Steps\n",
-        );
+        write(&vfs, entry, b"---\ndescription: d\n---\n\n## Steps\n");
         write(
             &vfs,
             "/vault/skills/s/references/x.md",

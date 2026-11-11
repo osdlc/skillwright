@@ -1,5 +1,4 @@
 ---
-name: scout
 description: A subagent definition.
 ---
 

@@ -48,7 +48,7 @@ function vaultAt(vault: string, disk: (p: string) => string = (p) => onDisk(root
   writeFileSync(path.join(disk(vault), 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
   writeFileSync(
     path.join(skill, 'review.md'),
-    '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n',
+    '---\ndescription: Reviews a diff.\n---\n\n# Review\n',
   )
   return `${vault}\\marketplaces\\house\\plugins\\tools\\skills\\review\\review.md`
 }

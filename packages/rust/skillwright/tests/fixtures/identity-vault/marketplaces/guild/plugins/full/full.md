@@ -1,5 +1,4 @@
 ---
-name: full
 description: A plugin that sets every identity key.
 author: Full Author
 display_name: Full Pack

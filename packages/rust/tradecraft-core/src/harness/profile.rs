@@ -51,8 +51,8 @@ pub struct HarnessProfile {
     pub name: &'static str,
     /// The harness's product name, for messages.
     pub label: &'static str,
-    /// Every name `targets`, harness blocks and a publish's target accept
-    /// for this harness, the canonical one first.
+    /// Every name [`profile_for`] finds this row by, the canonical one first.
+    /// `targets` takes only [`crate::publish::KNOWN_TARGETS`].
     pub spellings: &'static [&'static str],
     /// The `agent-adapt` runtime a note renders through for this destination.
     pub runtime: &'static str,
@@ -1118,7 +1118,7 @@ mod tests {
     }
 
     #[test]
-    fn every_known_target_spelling_has_exactly_one_row() {
+    fn every_spelling_has_exactly_one_row() {
         let mut spellings: Vec<&str> = PROFILES
             .iter()
             .flat_map(|p| p.spellings.iter().copied())
@@ -1127,7 +1127,6 @@ mod tests {
         let before = spellings.len();
         spellings.dedup();
         assert_eq!(before, spellings.len(), "a spelling names two rows");
-        assert_eq!(spellings, crate::publish::KNOWN_TARGETS);
     }
 
     #[test]

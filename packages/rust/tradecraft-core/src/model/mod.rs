@@ -563,11 +563,8 @@ mod tests {
         ] {
             vfs.write_file(Path::new(note), b"---\n---\n").unwrap();
         }
-        vfs.write_file(
-            path,
-            b"---\nname: a\ndescription: A.\n---\n\nPart of [[a]].\n",
-        )
-        .unwrap();
+        vfs.write_file(path, b"---\ndescription: A.\n---\n\nPart of [[a]].\n")
+            .unwrap();
         let request = LoadRequest::new("/vault", MarketplaceConfig::default());
         let marketplace = load(&vfs, &request).unwrap();
         let skill = &marketplace.plugins["tools"].skills[0];

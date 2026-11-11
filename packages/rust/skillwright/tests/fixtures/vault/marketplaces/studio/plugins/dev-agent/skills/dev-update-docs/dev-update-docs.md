@@ -1,5 +1,4 @@
 ---
-name: dev-update-docs
 description: |-
   Refresh a project's documentation site against its source. Regenerates the
   generated pages, checks the hand-written pages for statements the source

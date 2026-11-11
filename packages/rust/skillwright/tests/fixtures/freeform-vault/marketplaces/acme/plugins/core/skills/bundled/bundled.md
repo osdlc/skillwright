@@ -1,5 +1,4 @@
 ---
-name: bundled
 description: Owns a directory.
 ---
 

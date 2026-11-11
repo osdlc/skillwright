@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::content::SkillProjection;
 use crate::error::CoreError;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
-use crate::harness::{profile_for, profile_named};
+use crate::harness::profile_named;
 
 /// Whether a note of this kind renders on its own into a target's layout.
 ///
@@ -172,27 +172,30 @@ fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<String>
         .unwrap_or_default()
 }
 
-/// Every name `targets` accepts, sorted: the list a refusal prints so the
-/// fix is on screen. The harness names plus their runtime spellings.
-pub const KNOWN_TARGETS: &[&str] = &[
-    "amp",
-    "antigravity",
-    "claude",
-    "claude-code",
-    "codex",
-    "codex-cli",
-    "copilot",
-    "cursor",
-    "github-copilot",
-    "opencode",
-    "pi",
-    "portable",
-];
+/// Every name `targets` and `build.harnesses` accept, sorted: the list a
+/// refusal prints so the fix is on screen. There are no aliases.
+pub const KNOWN_TARGETS: &[&str] = &["claude", "codex", "cursor", "pi"];
 
-/// One name per harness, folding its spellings together. `None` is
-/// `unknown-target`.
+/// `name` when it is one of [`KNOWN_TARGETS`]. `None` is `unknown-target`.
 pub fn canonical_target(name: &str) -> Option<&'static str> {
-    profile_for(name).map(|p| p.name)
+    KNOWN_TARGETS.iter().copied().find(|known| *known == name)
+}
+
+/// What a refusal of the names in `unknown` says after naming the key:
+/// which names are not harnesses, and the four that are.
+pub(crate) fn unknown_targets_detail(unknown: &[&str]) -> String {
+    let names: Vec<String> = unknown.iter().map(|name| format!("`{name}`")).collect();
+    let known: Vec<String> = KNOWN_TARGETS
+        .iter()
+        .map(|name| format!("`{name}`"))
+        .collect();
+    let (last, rest) = known.split_last().expect("four names");
+    format!(
+        "names {}, which {} not a harness. The harnesses are {} and {last}",
+        names.join(", "),
+        if unknown.len() == 1 { "is" } else { "are" },
+        rest.join(", ")
+    )
 }
 
 #[cfg(test)]
@@ -200,11 +203,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_known_target_folds_onto_a_harness() {
+    fn the_known_targets_are_the_four_harnesses_with_no_aliases() {
         for name in KNOWN_TARGETS {
-            assert!(canonical_target(name).is_some(), "{name}");
+            assert_eq!(canonical_target(name), Some(*name));
         }
-        assert_eq!(canonical_target("claude-code"), Some("claude"));
+        let built: Vec<&str> = crate::harness::with_plugin_format()
+            .map(|profile| profile.name)
+            .collect();
+        assert_eq!(KNOWN_TARGETS, built);
+        assert_eq!(canonical_target("claude-code"), None);
         assert_eq!(canonical_target("nope"), None);
     }
 }

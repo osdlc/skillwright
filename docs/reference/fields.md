@@ -10,11 +10,12 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 - **Owner** says who the key belongs to:
   - `skillwright`: skillwright reads the key and removes it when it publishes.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written.
-- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`.
+- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`. Only these keys may be set in `skillwright.md`.
 
 ## What is checked
 
 - A key the table does not list for that kind gets a warning.
+- `name` is refused on every note. `build:` is refused on every note: only `skillwright.md` reads it.
 - A listed key with the wrong kind of value is refused, and the message names the key. This applies to every `skillwright` key, and to every `spec` key on a skill, agent or command.
 - A `spec` key with no value, such as `model:`, is dropped. It does not clear a value the note inherits.
 
@@ -28,8 +29,8 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
 | `owner` | string or `{name, email, url}` | skillwright | no | The marketplace owner, a name or `{name, email, url}`. |
@@ -37,7 +38,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `repository` | URL | skillwright | yes | The source repository URL, written into every manifest that has the field. |
 | `homepage` | URL | skillwright | yes | The documentation URL, written into every manifest that has the field. |
 | `display_name` | string | skillwright | no | The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -47,8 +48,8 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
 | `version` | string | skillwright | no | The pack or marketplace version. `bump` edits it. Defaults to 0.1.0, with a warning. |
 | `author` | string or `{name, email, url}` | skillwright | yes | The author, a name or `{name, email, url}`. |
 | `license` | string | skillwright | yes | The pack license, an SPDX expression. Defaults to UNLICENSED. |
@@ -57,7 +58,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `keywords` | list of strings | skillwright | no | Plugin keywords; also the Claude and Cursor marketplace entry's `tags`. Pi's `package.json` adds `pi-package`, the keyword its gallery lists a package by. |
 | `category` | string | skillwright | no | The plugin's category in a marketplace entry. Codex defaults it to Productivity. |
 | `display_name` | string | skillwright | no | The human-facing name: Codex's `interface.displayName`, and the `displayName` of a Cursor plugin and of its Cursor catalog entry. A `cursor.displayName` overrides it for Cursor. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `claude` | harness block | skillwright | yes | Fields only Claude Code reads, in its own key names, merged over what skillwright generates. |
 | `codex` | harness block | skillwright | yes | Fields only Codex reads, such as a plugin's `interface` or a marketplace's `policy`. |
 | `cursor` | harness block | skillwright | yes | Fields only Cursor reads, in its own key names. |
@@ -67,10 +68,10 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
 | `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin or marketplace. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
@@ -90,9 +91,9 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
@@ -113,9 +114,9 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 | Key | Value | Owner | Inherited | Meaning |
 |---|---|---|---|---|
-| `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
-| `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published. |
-| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused. |
+| `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
+| `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
+| `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |

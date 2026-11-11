@@ -1,5 +1,4 @@
 ---
-name: tone
 description: A shared reference. Not a component.
 ---
 

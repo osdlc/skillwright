@@ -9,9 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::error::CoreError;
 use crate::export::{AssetSpec, ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig};
 use crate::layout::{DIST_DIR, MARKETPLACES_DIR, read_layout};
-use crate::settings::{
-    MarketplaceFields, ROOT_FILE, RootFile, parse_marketplace_note, parse_root_file,
-};
+use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
 
 /// Join `rel` onto `base` and lexically collapse `.` and `..`, without
@@ -145,8 +143,6 @@ pub struct VaultMarketplace {
     pub dir: PathBuf,
     /// `<root>/marketplaces/<m>/<m>.md`.
     pub note: PathBuf,
-    /// The fields its note sets.
-    pub fields: MarketplaceFields,
     /// Where a build writes it: `<root>/dist/<m>/`.
     pub out_root: PathBuf,
 }
@@ -200,8 +196,9 @@ pub fn dist_dir(root: &Path, name: &str) -> PathBuf {
     root.join(DIST_DIR).join(name)
 }
 
-/// Load the vault at `root`: check its layout, read its root file, and read
-/// the note of every marketplace, or only of `marketplace` when one is named.
+/// Load the vault at `root`: check its layout, read its root file, and list
+/// every marketplace, or only `marketplace` when one is named. A build reads
+/// each marketplace's note.
 /// Find `root` first with [`crate::layout::find_vault_root`], or check a
 /// given one with [`crate::layout::check_vault_root`].
 ///
@@ -211,7 +208,6 @@ pub fn dist_dir(root: &Path, name: &str) -> PathBuf {
 ///   layout (spec section 11).
 /// * `refused: malformed-root-file` — the root file cannot be read or parsed.
 /// * `refused: unknown-marketplace` — `marketplace` names no marketplace.
-/// * `refused: malformed` — a marketplace note whose fields cannot be read.
 pub fn load_vault(
     vfs: &dyn Vfs,
     root: &Path,
@@ -253,14 +249,10 @@ pub fn load_vault(
     {
         let dir = root.join(MARKETPLACES_DIR).join(name);
         let note = dir.join(format!("{name}.md"));
-        let text = crate::skill::read_utf8(vfs, &note)?;
-        let fields = parse_marketplace_note(&text)
-            .map_err(|err| CoreError::malformed(&note, err.to_string()))?;
         marketplaces.push(VaultMarketplace {
             name: name.clone(),
             dir,
             note,
-            fields,
             out_root: dist_dir(root, name),
         });
     }
@@ -318,7 +310,7 @@ mod tests {
             .collect();
         assert_eq!(names, ["house", "shop"]);
         let house = loaded.marketplace("house").unwrap();
-        assert_eq!(house.fields.description.as_deref(), Some("The house."));
+        assert_eq!(house.note, Path::new("/v/marketplaces/house/house.md"));
         assert_eq!(house.out_root, Path::new("/v/dist/house"));
         let request = loaded.export_request(house, ExportMode::Build);
         assert_eq!(request.out_root, Path::new("/v/dist/house"));
@@ -335,17 +327,5 @@ mod tests {
         let said = err.to_string();
         assert!(said.contains("unknown-marketplace"), "{said}");
         assert!(said.contains("`house`, `shop`"), "{said}");
-    }
-
-    #[test]
-    fn a_bad_marketplace_note_names_its_path() {
-        let vfs = vault();
-        vfs.write_file(
-            Path::new("/v/marketplaces/shop/shop.md"),
-            b"---\ntargets: claude\n---\n",
-        )
-        .unwrap();
-        let err = load_vault(&vfs, Path::new("/v"), None, Path::new("/home")).unwrap_err();
-        assert!(err.to_string().contains("shop/shop.md"), "{err}");
     }
 }

@@ -1,5 +1,4 @@
 ---
-name: ship
 description: Cuts a release.
 ---
 

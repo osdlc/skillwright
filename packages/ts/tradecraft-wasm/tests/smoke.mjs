@@ -28,10 +28,7 @@ try {
     '---\ndescription: The house marketplace.\nowner: acme\n---\n',
   )
   writeFileSync(join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
-  writeFileSync(
-    join(folder, 'review.md'),
-    '---\nname: review\ndescription: Reviews a diff.\n---\n\n# Review\n',
-  )
+  writeFileSync(join(folder, 'review.md'), '---\ndescription: Reviews a diff.\n---\n\n# Review\n')
   const out = join(root, 'project')
   mkdirSync(out)
 

@@ -24,7 +24,7 @@ use crate::compile::{
 use crate::content::{SkillContent, SkillProjection};
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, SkippedNote, discover_in,
-    refuse_invalid_names, refuse_undescribed,
+    refuse_undescribed,
 };
 use crate::error::CoreError;
 use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
@@ -155,8 +155,7 @@ pub(crate) fn selected_harnesses(
 ///   note that was deleted.
 /// * `refused: ambiguous-marketplace` / `unknown-marketplace` — which
 ///   marketplace.
-/// * `refused: missing-description` — a member with a `name` and no
-///   `description`.
+/// * `refused: missing-description` — a component with no `description`.
 /// * `refused: empty-marketplace` — the marketplace holds no plugin.
 /// * `refused: path-collision` — two components of one name in one plugin.
 /// * `refused: unsafe-asset-dest` / `asset-over-manifest` /
@@ -251,7 +250,6 @@ pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreErr
             .filter(|c| c.lacks_description())
             .map(|c| c.vault_relative_path.as_str()),
     )?;
-    refuse_invalid_names(belonging.iter().copied())?;
     let plugin_notes: Vec<&str> = belonging
         .iter()
         .filter(|c| c.kind == EntityKind::Plugin)
@@ -692,8 +690,7 @@ pub(crate) fn kind_carried(component: &DiscoveredComponent, spec: &HarnessProfil
 }
 
 /// Gate 2 of [`admits`]: whether the member's `targets` names this
-/// destination. Absent is every destination, empty is none — matched on the
-/// destination a name resolves to, so `claude-code` admits `claude`.
+/// destination. Absent is every destination, empty is none.
 pub(crate) fn targets_admit(component: &DiscoveredComponent, canonical: &str) -> bool {
     targets_name(component.targets.as_deref(), canonical)
 }

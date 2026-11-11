@@ -62,7 +62,7 @@ use crate::vfs::Vfs;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct DiscoveredComponent {
-    /// The frontmatter `name`, already validated against the Agent Skills spec.
+    /// The folder's name, which the layout has checked against the name rule.
     pub name: String,
     /// The frontmatter `description`, ≤1024 characters. Empty when the note
     /// wrote none. A build refuses a skill, command or agent with none
@@ -118,36 +118,12 @@ pub struct DiscoveredComponent {
 }
 
 impl DiscoveredComponent {
-    /// A member with a `name` and no `description`, which a build and a
-    /// publish refuse.
+    /// A component with no `description`, which a build refuses.
     pub fn lacks_description(&self) -> bool {
         self.description.is_empty() && needs_description(self.kind)
     }
 
-    /// Why a member's name, taken from its file name because it states none,
-    /// is not one the Agent Skills spec admits, or `None` when it is. The
-    /// scan refuses a stated name that breaks the rule, so only a derived one
-    /// reaches here.
-    pub fn invalid_name(&self) -> Option<String> {
-        if !needs_description(self.kind) || name_refusal(&self.name, "name").is_none() {
-            return None;
-        }
-        // The slug holds only `a-z`, `0-9` and single inner hyphens, so it
-        // breaks the rule only by being empty or too long.
-        Some(if self.name.is_empty() {
-            "its file name has no ASCII letter or digit, so the name it gives is empty".to_owned()
-        } else {
-            format!(
-                "the name its file name gives, `{}`, is {} characters, over the {NAME_MAX_LEN} \
-                 the Agent Skills spec allows",
-                self.name,
-                self.name.len()
-            )
-        })
-    }
-
-    /// The folder this note is named for. A marketplace note's `name` is only
-    /// what it publishes under.
+    /// The folder this note is named for.
     pub fn folder(&self) -> &str {
         self.entry_path
             .file_stem()
@@ -271,11 +247,7 @@ fn check_values(
             crate::publish::overrides_for(ours, path, kind)?;
         }
         EntityKind::Plugin | EntityKind::Marketplace => {
-            let name = match kind {
-                EntityKind::Plugin => Some(folder),
-                _ => fields.get("name").and_then(Value::as_str),
-            };
-            let owner = crate::harness::manifest::container_owner(kind, name);
+            let owner = crate::harness::manifest::container_owner(kind, Some(folder));
             crate::harness::manifest::check_container_blocks(&owner, kind, &ours.blocks)?;
         }
         EntityKind::Agent | EntityKind::Hook => {}
@@ -349,16 +321,10 @@ pub struct DiscoveryReport {
     pub warnings: Vec<DiscoveryWarning>,
 }
 
-/// The reason naming a member note with a `name` and no `description`. A
+/// The reason naming a component note with no `description`. A
 /// build and a publish refuse such a note; a scan lists it with this entry in
 /// [`DiscoveryReport::warnings`].
 pub const MISSING_DESCRIPTION_REASON: &str = "missing-description";
-
-/// The reason naming a member note that states no `name` and whose file name
-/// gives one the Agent Skills spec does not admit: empty, or too long. A
-/// build and a publish refuse such a note; a scan lists it with this entry in
-/// [`DiscoveryReport::warnings`].
-pub const INVALID_NAME_REASON: &str = "invalid-name";
 
 /// The reason naming two notes that resolve onto one path.
 pub const PATH_COLLISION_REASON: &str = "path-collision";
@@ -392,15 +358,9 @@ impl DiscoveryWarning {
     }
 
     /// Whether a build refuses the note this names, rather than ships it: a
-    /// member with no description or an invalid derived name, or a path
-    /// collision.
+    /// member with no description, or a path collision.
     pub fn is_error(&self) -> bool {
-        [
-            MISSING_DESCRIPTION_REASON,
-            INVALID_NAME_REASON,
-            PATH_COLLISION_REASON,
-        ]
-        .contains(&self.reason.as_str())
+        [MISSING_DESCRIPTION_REASON, PATH_COLLISION_REASON].contains(&self.reason.as_str())
     }
 }
 
@@ -559,10 +519,7 @@ fn discover_with(
     // 7). A two-note diagnosis, so it runs after collection and names both.
     type PublishKey<'a> = (Option<&'a str>, Option<&'a str>, &'a str);
     let mut by_key: BTreeMap<PublishKey, Vec<&DiscoveredComponent>> = BTreeMap::new();
-    for component in discovered
-        .iter()
-        .filter(|c| !c.kind.holds_components() && c.invalid_name().is_none())
-    {
+    for component in discovered.iter().filter(|c| !c.kind.holds_components()) {
         let key = (
             component.marketplace.as_deref(),
             component.plugin.as_deref(),
@@ -614,14 +571,13 @@ pub(crate) fn needs_description(kind: EntityKind) -> bool {
     !kind.holds_components() && kind != EntityKind::Hook
 }
 
-/// The entry a scan carries for a member note with a `name` and no
-/// `description`.
+/// The entry a scan carries for a component note with no `description`.
 fn missing_description(component: &DiscoveredComponent) -> DiscoveryWarning {
     DiscoveryWarning {
         path: component.vault_relative_path.clone(),
         reason: MISSING_DESCRIPTION_REASON.to_owned(),
         detail: format!(
-            "`{}` has a `name` and no `description`; a build refuses it",
+            "`{}` has no `description`; a build refuses it",
             component.name
         ),
     }
@@ -642,43 +598,10 @@ pub fn refuse_undescribed<'a>(paths: impl IntoIterator<Item = &'a str>) -> Resul
     Err(CoreError::refused(
         MISSING_DESCRIPTION_REASON,
         format!(
-            "{} note(s) have a `name` and no `description`: {}. A harness reads the \
+            "{} note(s) have no `description`: {}. A harness reads the \
              description to decide when to load a component. Nothing was written",
             paths.len(),
             paths.join(", ")
-        ),
-    ))
-}
-
-/// Refuses with [`INVALID_NAME_REASON`] when `components` holds a member
-/// whose derived name is not one the Agent Skills spec admits
-/// ([`DiscoveredComponent::invalid_name`]). The name is not shortened or
-/// transliterated: the author sets `name:`.
-///
-/// # Errors
-///
-/// `refused: invalid-name`, naming every note and why.
-pub fn refuse_invalid_names<'a>(
-    components: impl IntoIterator<Item = &'a DiscoveredComponent>,
-) -> Result<(), CoreError> {
-    let notes: Vec<String> = components
-        .into_iter()
-        .filter_map(|c| {
-            c.invalid_name()
-                .map(|why| format!("{} ({why})", c.vault_relative_path))
-        })
-        .collect();
-    if notes.is_empty() {
-        return Ok(());
-    }
-    Err(CoreError::refused(
-        INVALID_NAME_REASON,
-        format!(
-            "{} note(s) state no `name`, and the name their file name gives is not one the \
-             Agent Skills spec admits: {}. Set `name:` in each note's frontmatter. Nothing was \
-             written",
-            notes.len(),
-            notes.join("; ")
         ),
     ))
 }
@@ -712,30 +635,12 @@ fn read_source(
     let ours = VaultFrontmatter::take_from(&mut fields, entry_path, kind)?;
     let unknown_keys = unknown_keys(&ours, kind);
     crate::vault::check_spec_kinds(&mut fields, entry_path, kind)?;
-    let declared = trimmed_string(&fields, "name");
-    let name = declared
-        .clone()
-        .unwrap_or_else(|| position.name().to_owned());
+    let name = position.name().to_owned();
     let description = trimmed_string(&fields, "description").unwrap_or_default();
 
     // The value checks a build makes on this note, so the scan refuses what a
     // build refuses.
     check_values(&mut fields, &ours, entry_path, kind, position.name())?;
-    if declared.is_some() && needs_description(kind) {
-        validate_name(&name, "component name", entry_path)?;
-    }
-    // A plugin is known by its folder in every manifest and every call, so a
-    // `name` that differs could not take effect.
-    if kind == EntityKind::Plugin && declared.as_deref().is_some_and(|d| d != position.name()) {
-        return Err(CoreError::malformed(
-            entry_path,
-            format!(
-                "`name: {name}` differs from its folder `{}`. A plugin publishes under its \
-                 folder: remove `name`, or rename the folder",
-                position.name()
-            ),
-        ));
-    }
     if let Some(refusal) = description_refusal(&description) {
         return Err(CoreError::malformed(entry_path, refusal));
     }
@@ -754,10 +659,9 @@ fn read_source(
             return Err(CoreError::refused(
                 "unknown-target",
                 format!(
-                    "{}: `targets` names {}, which this build does not know (known: {})",
+                    "{}: `targets` {}",
                     entry_path.display(),
-                    quoted(&unknown),
-                    KNOWN_TARGETS.join(", ")
+                    crate::publish::unknown_targets_detail(&unknown)
                 ),
             ));
         }
@@ -859,11 +763,6 @@ pub fn slug_refusal(slug: &str, what: &str) -> Option<String> {
 /// Why `value` is not a `what` the Agent Skills spec admits — the name rule
 /// `^[a-z0-9]+(-[a-z0-9]+)*$`, at most [`NAME_MAX_LEN`] characters, spelled
 /// as segment checks rather than a regex dependency — or `None` when it is.
-///
-/// Separate from `validate_name` and public, because a caller composing a
-/// note that does not exist yet has no path to name in a [`CoreError`]: it
-/// wants the prose to put beside a field. The scan wants the error. Both
-/// read the rule from here, so the two cannot drift.
 pub fn name_refusal(value: &str, what: &str) -> Option<String> {
     let legal = !value.is_empty()
         && value.len() <= NAME_MAX_LEN
@@ -899,18 +798,8 @@ pub fn compatibility_refusal(value: &str) -> Option<String> {
     })
 }
 
-/// [`name_refusal`] as the scan's own error, against the note carrying the
-/// name.
-///
-pub(crate) fn validate_name(value: &str, what: &str, path: &Path) -> Result<(), CoreError> {
-    match name_refusal(value, what) {
-        Some(message) => Err(CoreError::malformed(path, message)),
-        None => Ok(()),
-    }
-}
-
-/// The name a note publishes under when its frontmatter declares none: the
-/// file name, slugified. A note is `<name>/<name>.md`, so this is its folder.
+/// The name a note publishes under: its file name, slugified. A note is
+/// `<name>/<name>.md`, so this is its folder.
 pub fn default_name(path: &Path) -> String {
     slugify(
         path.file_stem()
@@ -1182,14 +1071,14 @@ mod tests {
     }
 
     #[test]
-    fn a_plugin_note_naming_another_folder_is_refused() {
+    fn a_plugin_note_setting_name_is_refused() {
         let vfs = vault(&[(
             "marketplaces/acme/plugins/tools/tools.md",
-            "---\nname: other\n---\n",
+            "---\nname: tools\n---\n",
         )]);
         let report = scan(&vfs).unwrap();
         assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
-        assert!(report.skipped[0].detail.contains("differs from its folder"));
+        assert!(report.skipped[0].detail.contains("delete it"));
     }
 
     #[test]

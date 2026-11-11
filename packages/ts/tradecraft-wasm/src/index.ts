@@ -34,6 +34,7 @@ export type {
   MarketplaceConfig,
   PluginOverrides,
   RootFile,
+  SharedDefaults,
   BuildSettings,
   SkippedNote,
   Target,

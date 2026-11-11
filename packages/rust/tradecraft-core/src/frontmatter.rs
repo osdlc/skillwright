@@ -423,7 +423,7 @@ impl VaultFrontmatter {
     /// # Errors
     ///
     /// A content error naming the key and the path when one of skillwright's
-    /// keys is the wrong shape.
+    /// keys is the wrong shape, or the note sets `name` or `build`.
     pub fn take_from(
         fields: &mut Map<String, Value>,
         path: &Path,
@@ -437,6 +437,7 @@ impl VaultFrontmatter {
             .map(|(key, _)| key.clone())
             .collect();
 
+        refuse_keys(fields, &ours, path, kind)?;
         check_shapes(&ours, path, kind)?;
 
         let targets = take_string_list(&mut ours, "targets", path)?;
@@ -559,6 +560,34 @@ fn is_claude_arguments(value: &Value) -> bool {
         Value::Array(items) => items.iter().all(Value::is_string),
         _ => false,
     }
+}
+
+/// Refuses a key no note may set: a [`crate::keys::Shape::Refused`] row
+/// (`name`), and `build`, which only the root file reads.
+fn refuse_keys(
+    fields: &Map<String, Value>,
+    ours: &Map<String, Value>,
+    path: &Path,
+    kind: EntityKind,
+) -> Result<(), CoreError> {
+    if let Some(key) = ours.keys().find(|key| {
+        crate::keys::lookup(kind, key).is_some_and(|spec| spec.shape == crate::keys::Shape::Refused)
+    }) {
+        return Err(CoreError::wrong_kind(
+            path,
+            format!("`{key}` is refused: {}", crate::keys::NAME_REFUSAL),
+        ));
+    }
+    if fields.contains_key("build") {
+        return Err(CoreError::wrong_kind(
+            path,
+            format!(
+                "`build` is read only in {}; delete it here",
+                crate::settings::ROOT_FILE
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Refuses a key of ours whose value is not the [`crate::keys::Shape`] the
@@ -1302,28 +1331,27 @@ mod tests {
         }
     }
 
-    /// The accept and refuse answers for the root file's marketplace keys.
+    /// The accept and refuse answers for the root file's keys. Only the
+    /// shared defaults are read; the other keys the table lists are refused.
     #[test]
     fn root_file_values_keep_their_verdicts() {
         let cases: &[(&str, bool)] = &[
             ("author: 5", false),
             ("author: Ada", true),
             ("author:", true),
-            ("owner: {email: x}", false),
-            ("owner: {name: x}", true),
+            ("owner: {name: x}", false),
             ("repository: ftp://x", false),
             ("repository: https://x", true),
             ("homepage: 5", false),
-            ("version: 1", false),
-            ("version: '1'", true),
-            ("version:", true),
+            ("version: '1'", false),
             ("license: [a]", false),
+            ("license: MIT", true),
             ("targets: \"claude\"", false),
             ("targets: [claude]", true),
             ("targets: [nowhere]", false),
-            ("display_name: 5", false),
-            ("name: 5", false),
-            ("description: [a]", false),
+            ("display_name: Acme", false),
+            ("name: m", false),
+            ("description: d", false),
         ];
         for (line, accepted) in cases {
             let text = format!("---\n{line}\n---\n");

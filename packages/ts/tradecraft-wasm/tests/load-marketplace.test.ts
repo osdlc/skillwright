@@ -24,12 +24,9 @@ test('loadMarketplace returns the model with calls resolved', () => {
     writeFileSync(path.join(vault, 'marketplaces/house/plugins/tools/tools.md'), '---\n---\n')
     writeFileSync(
       path.join(skills, 'review/review.md'),
-      '---\nname: review\ndescription: Reviews a diff.\n---\n\nRun [[lint]] first.\n',
+      '---\ndescription: Reviews a diff.\n---\n\nRun [[lint]] first.\n',
     )
-    writeFileSync(
-      path.join(skills, 'lint/lint.md'),
-      '---\nname: lint\ndescription: Lints.\n---\n\nLint it.\n',
-    )
+    writeFileSync(path.join(skills, 'lint/lint.md'), '---\ndescription: Lints.\n---\n\nLint it.\n')
 
     const market = loadMarketplace(createNodeVfs(), {
       vault_root: vault,
@@ -52,15 +49,20 @@ test('parseRootFile reads a root file with the core reader', () => {
   const root = parseRootFile(
     '---\nlicense: MIT\nbuild:\n  harnesses: [claude]\nodd: 1\n---\n\nThe README.\n',
   )
-  expect(root.marketplace.license).toBe('MIT')
+  expect(root.defaults.license).toBe('MIT')
   expect(root.build.harnesses).toEqual(['claude'])
   expect(root.warnings).toHaveLength(1)
   expect(() => parseRootFile('---\nbuild: 1\n---\n')).toThrow(CoreError)
   expect(() => parseRootFile('---\nbuild:\n  out: dist\n---\n')).toThrow(/build\.out/)
+  expect(() => parseRootFile('---\nowner: acme\n---\n')).toThrow(/<m>\.md/)
+  expect(() => parseRootFile('---\nname: house\n---\n')).toThrow(/delete it/)
+  expect(() => parseRootFile('---\ntargets: [opencode]\n---\n')).toThrow(
+    /`claude`, `codex`, `cursor` and `pi`/,
+  )
 })
 
 test('rootFileConfig gives the shared defaults and no name', () => {
-  const config = rootFileConfig('---\nname: house\nlicense: MIT\n---\n')
+  const config = rootFileConfig('---\nlicense: MIT\n---\n')
   expect(config.name ?? null).toBeNull()
   expect(config.license).toBe('MIT')
   expect(() => rootFileConfig('---\nbuild: 1\n---\n')).toThrow(CoreError)

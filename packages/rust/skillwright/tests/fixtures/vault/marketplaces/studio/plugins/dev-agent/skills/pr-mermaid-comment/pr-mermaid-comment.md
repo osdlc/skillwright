@@ -1,5 +1,4 @@
 ---
-name: pr-mermaid-comment
 description: |-
   Post or update a GitHub pull request comment (or PR body) that carries
   Mermaid diagrams, and prove the diagrams render before it goes up. Drafts

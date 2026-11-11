@@ -312,6 +312,8 @@ pub struct Layout {
 /// One kind of layout problem, in the order a report lists them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Case {
+    /// Case 2.
+    RefusedRootKey,
     /// Section 11 case 3, and section 3 rule 3 for a plugin.
     MissingNote,
     /// Case 4.
@@ -333,6 +335,9 @@ enum Case {
 impl Case {
     fn heading(self) -> &'static str {
         match self {
+            Self::RefusedRootKey => {
+                "the root file has `workspace`, `name`, or a key that is not a shared default"
+            }
             Self::MissingNote => "a marketplace or plugin folder has no note named for it",
             Self::KindFolderOutOfPlace => {
                 "a `skills/`, `agents/`, `commands/`, `hooks/` or `plugins/` folder is out of place"
@@ -390,7 +395,7 @@ fn layout_error(message: String) -> CoreError {
 
 /// Reads the layout of the vault at `root` and checks it: the root's direct
 /// children, every folder under `marketplaces/` against its row of the table
-/// in spec section 3, and the root file's removed `build:` keys.
+/// in spec section 3, and the keys the root file refuses.
 ///
 /// # Errors
 ///
@@ -415,7 +420,14 @@ pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
     }
     if let Ok(bytes) = vfs.read_file(&root.join(ROOT_FILE)) {
         let text = String::from_utf8_lossy(&bytes);
-        for key in crate::settings::refused_build_keys(&text) {
+        let (keys, build) = crate::settings::refused_root_file_keys(&text);
+        for (key, why) in keys {
+            walk.problems.add(
+                Case::RefusedRootKey,
+                format!("`{key}` in {ROOT_FILE}: {why}"),
+            );
+        }
+        for key in build {
             walk.problems
                 .add(Case::RefusedBuildKey, format!("`{key}` in {ROOT_FILE}"));
         }

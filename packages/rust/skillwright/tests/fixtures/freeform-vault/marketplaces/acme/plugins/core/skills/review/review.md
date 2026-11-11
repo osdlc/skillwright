@@ -1,5 +1,4 @@
 ---
-name: review
 description: Reviews a diff.
 targets: [claude]
 license: MIT

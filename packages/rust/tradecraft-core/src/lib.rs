@@ -34,8 +34,8 @@
 //! | Name | Rule set | Where |
 //! |---|---|---|
 //! | refusal tokens | The reason word a refusal leads with, `targets` exclusion, output overlap | [`publish`], [`export`], [`guard`] |
-//! | vault spec | A skill is a note plus a sibling folder of peers; building is five steps (embeds, links, references, peers, target dialect) | [`vault`], [`export`] |
-//! | compile spec | Embeds are expanded and links rewritten; an unresolved link is not a blocker | [`compile`] |
+//! | vault spec | A skill is a folder `<s>/` holding its note `<s>.md` and the files it ships; building is five steps (embeds, links, references, peers, target dialect) | [`vault`], [`export`] |
+//! | compile spec | Embeds are expanded and links rewritten; a link to nothing is an error | [`compile`] |
 //! | marketplace layout spec | How one marketplace tree per harness is laid out and checked | [`export`] |
 //! | key table spec | The keys the key table lists as skillwright's belong to this tool and are stripped on build | [`keys`], [`frontmatter`] |
 //! | write-guard spec | A build never writes into `marketplaces/` | [`export`] |
@@ -87,9 +87,9 @@ pub use compile::{
 };
 pub use content::{SkillContent, SkillProjection};
 pub use discover::{
-    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, INVALID_NAME_REASON,
-    MISSING_DESCRIPTION_REASON, SkippedNote, UNKNOWN_KEY_REASON, default_name, discover_components,
-    discover_roster, refuse_invalid_names, refuse_undescribed,
+    DiscoveredComponent, DiscoveryReport, DiscoveryWarning, MISSING_DESCRIPTION_REASON,
+    SkippedNote, UNKNOWN_KEY_REASON, default_name, discover_components, discover_roster,
+    refuse_undescribed,
 };
 pub use error::*;
 pub use export::{
@@ -119,8 +119,8 @@ pub use paths::{
 pub use publish::{KNOWN_TARGETS, canonical_target};
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
-    AssetSetting, BuildSettings, BumpSettings, HookSetting, MarketplaceFields, PatchScheme,
-    ROOT_FILE, RootFile, SettingsError, compose_root_file, parse_marketplace_note, parse_root_file,
+    AssetSetting, BuildSettings, BumpSettings, HookSetting, PatchScheme, ROOT_FILE, RootFile,
+    SettingsError, SharedDefaults, compose_root_file, parse_root_file,
 };
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};

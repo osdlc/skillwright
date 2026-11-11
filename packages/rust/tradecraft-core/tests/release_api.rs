@@ -31,7 +31,7 @@ fn json_at(vfs: &dyn Vfs, path: &str) -> serde_json::Value {
 }
 
 fn note(name: &str, extra: &str) -> String {
-    format!("---\nname: {name}\ndescription: Use {name}.\n{extra}---\n\n# {name}\n")
+    format!("---\ndescription: Use {name}.\n{extra}---\n\n# {name}\n")
 }
 
 /// A marketplace of two plugins, one skill each, with `market`, `tools` and
@@ -334,7 +334,7 @@ fn a_marketplace_block_never_sets_a_plugins_identity() {
 }
 
 #[test]
-fn a_marketplace_is_matched_by_folder_and_published_under_its_name() {
+fn a_marketplace_is_matched_and_published_by_its_folder() {
     let vfs = vault("", "", "");
     write(
         &vfs,
@@ -346,7 +346,7 @@ fn a_marketplace_is_matched_by_folder_and_published_under_its_name() {
     );
     build(&vfs);
     let market = json_at(&vfs, "/market/.claude-plugin/marketplace.json");
-    assert_eq!(market["name"], "acme-house");
+    assert_eq!(market["name"], "house");
     assert!(text_at(&vfs, CLAUDE_REVIEW).contains("license: ISC"));
     assert!(!vfs.exists(Path::new(
         "/market/.agents/packs/tools/skills/review/SKILL.md"
@@ -354,11 +354,11 @@ fn a_marketplace_is_matched_by_folder_and_published_under_its_name() {
 }
 
 #[test]
-fn a_plugin_name_that_differs_from_its_folder_is_refused() {
+fn a_plugin_note_setting_name_is_refused() {
     let vfs = vault("", "", "");
-    write(&vfs, TOOLS, &note("renamed", "version: 1.0.0\n"));
+    write(&vfs, TOOLS, "---\nname: tools\ndescription: Tools.\n---\n");
     let err = export_skills(&vfs, &request()).unwrap_err();
-    assert!(err.to_string().contains("differs from its folder"), "{err}");
+    assert!(err.to_string().contains("delete it"), "{err}");
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn a_blank_author_is_unset_in_a_note_as_in_the_root_file() {
     );
     // Unset everywhere, and `owner` is not inherited, so there is none.
     assert!(manifest.get("author").is_none(), "{manifest}");
-    assert!(parse_root_file("---\nowner:\nauthor:\n---\n").is_ok());
+    assert!(parse_root_file("---\nauthor:\n---\n").is_ok());
 }
 
 #[test]
@@ -510,9 +510,8 @@ fn a_marketplace_note_outranks_the_root_file_for_every_identity_key() {
     );
     let mut request = request();
     request.config = root_config(
-        "owner: Root Org\nauthor: Root Author\ndisplay_name: Root House\nlicense: MIT\n\
-         version: '1.0.0'\ntargets: [claude]\nrepository: https://root.example/repo\n\
-         homepage: https://root.example\n",
+        "author: Root Author\nlicense: MIT\ntargets: [claude]\n\
+         repository: https://root.example/repo\nhomepage: https://root.example\n",
     );
     request.config.name = None;
     export_skills(&vfs, &request).unwrap();
@@ -636,7 +635,7 @@ fn build_root(vfs: &dyn Vfs, config: MarketplaceConfig) -> Result<ExportReport, 
 
 #[test]
 fn a_body_link_into_a_bundles_docs_is_refused() {
-    let body = "---\nname: review\ndescription: Use review.\n---\n\nSee [[docs/plan]].\n";
+    let body = "---\ndescription: Use review.\n---\n\nSee [[docs/plan]].\n";
     let vfs = root_vault(
         "---\n---\n",
         &[
@@ -651,8 +650,7 @@ fn a_body_link_into_a_bundles_docs_is_refused() {
 /// Two plugins, each with a `review`-calling or `review` skill. The call
 /// names its path, so a second `review` does not make it ambiguous.
 fn pi_vault() -> MemVfs {
-    let caller =
-        "---\nname: lead\ndescription: Use lead.\n---\n\nRun /[[tools/skills/review/review]].\n";
+    let caller = "---\ndescription: Use lead.\n---\n\nRun /[[tools/skills/review/review]].\n";
     root_vault(
         "---\n---\n",
         &[
@@ -727,7 +725,7 @@ fn a_bare_pi_collision_names_the_bare_setting() {
 /// Plugins `p1` and `p2`, each holding `hello`. `p2` also holds `lead`, which
 /// calls and mentions its own `hello` and calls `p1`'s, each by path.
 fn cursor_vault() -> MemVfs {
-    let lead = "---\nname: lead\ndescription: Use lead.\n---\n\n\
+    let lead = "---\ndescription: Use lead.\n---\n\n\
                 Run /[[p2/skills/hello/hello]]. See [[p2/skills/hello/hello]]. \
                 Then /[[p1/skills/hello/hello]].\n";
     root_vault(

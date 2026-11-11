@@ -53,7 +53,7 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 | `loadMarketplace(vfs, request)` | Loads one marketplace of the vault as a model and writes nothing. |
 | `exportSkills(vfs, request)`  | Renders the vault into one marketplace tree per agent. `mode: 'check'` reports drift and writes nothing. |
 | `knownTargets()`              | The target names the core accepts.                                              |
-| `canonicalTarget(name)`       | The one destination a target name folds onto, or `null`.                        |
+| `canonicalTarget(name)`       | The name when it is one of the four harnesses, or `null`.                       |
 | `createNodeVfs(options?)`     | The `Vfs` over `node:fs`.                                                       |
 | `toCorePath`, `toHostPath`    | Convert a host path to the core's `/` form and back. They matter on Windows.    |
 

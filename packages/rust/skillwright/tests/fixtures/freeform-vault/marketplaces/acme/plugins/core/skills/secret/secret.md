@@ -1,5 +1,4 @@
 ---
-name: secret
 description: Publishes nowhere, on purpose.
 targets: []
 ---
