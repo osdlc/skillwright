@@ -1,5 +1,4 @@
-//! A plugin's hooks from its `hooks/hooks.json`, and the gap report that
-//! says what each harness does with them (spec section 4 rule 23).
+//! A plugin's hooks from its `hooks/hooks.json` (spec section 4 rule 23).
 //!
 //! The file has Claude Code's shape —
 //! `{"hooks": {"<Event>": [{"matcher": "…", "hooks": [{"type": "command",
@@ -7,7 +6,7 @@
 //! [`agent_adapt::Hook`]s.
 //!
 //! A hook a harness cannot carry does not stop the build: it is left out of
-//! that harness's file and listed in the gap report's `left_out`.
+//! that harness's file.
 //!
 //! A command names the plugin's own files as `${PLUGIN_ROOT}/…`. Each pack's
 //! copy names its harness's own variable instead ([`localize`]), because a
@@ -17,40 +16,17 @@
 //! file. Any other `{{…}}`, or an unclosed `{{`, is refused when the file is
 //! parsed. Only `command` is rewritten; other fields are written as they are.
 
-use std::collections::{BTreeMap, BTreeSet};
-
-use agent_adapt::capabilities::{self, Claim, STOP_CONTINUE};
+use agent_adapt::capabilities;
 use agent_adapt::{Hook, HookType, RuntimeId};
-use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::error::CoreError;
 
-/// Where every pack carries its copy of the gap report.
-pub const GAP_REPORT_PATH: &str = "hooks/gap-report.json";
-
-/// One harness as the gap report sees it.
-#[derive(Debug, Clone, Copy)]
-pub struct GapHarness {
-    /// The harness's root name (`claude`, `codex`, …).
-    pub name: &'static str,
-    /// The runtime whose claims answer for it.
-    pub runtime: RuntimeId,
-    /// Where its pack carries this file's hooks, or `None` when it carries
-    /// none of them.
-    pub file: Option<&'static str>,
-    /// See [`PluginRootVar`]. `None` when its pack carries no hooks file.
-    pub plugin_root_var: Option<PluginRootVar>,
-}
-
 /// The variable a hook command names a plugin's installed root by on one
-/// harness, and the page it was read from. Serializes, without `name`, as the
-/// gap report's `plugin_root_evidence`; fields stay alphabetical, since field
-/// order is key order there.
-#[derive(Debug, Clone, Copy, Serialize)]
+/// harness, and the page it was read from.
+#[derive(Debug, Clone, Copy)]
 pub struct PluginRootVar {
     /// The variable's name, without `$` or braces.
-    #[serde(skip)]
     pub name: &'static str,
     /// What else the source says, including what it leaves open.
     pub note: Option<&'static str>,
@@ -264,114 +240,13 @@ pub fn localize(mut hook: Hook, harness: &str, plugin_root_var: Option<&str>) ->
     hook
 }
 
-/// The hooks `runtime` carries, in file order. The others are left out and
-/// listed in the gap report; see the module doc.
+/// The hooks `runtime` carries, in file order. The others are left out.
 pub fn carried_hooks(hooks: &[Hook], runtime: RuntimeId) -> Vec<Hook> {
     hooks
         .iter()
         .filter(|hook| agent_adapt::render::hook_refusal(hook, runtime).is_none())
         .cloned()
         .collect()
-}
-
-// Field order is key order: `stable_json` keeps it, so the fields of these
-// structs stay alphabetical.
-#[derive(Serialize)]
-struct GapReport<'a> {
-    harnesses: BTreeMap<&'static str, HarnessGap>,
-    source: &'a str,
-    version: u32,
-}
-
-#[derive(Serialize)]
-struct HarnessGap {
-    behaviours: BTreeMap<String, ClaimEntry>,
-    delivery: &'static str,
-    events: BTreeMap<String, ClaimEntry>,
-    file: Option<&'static str>,
-    left_out: Vec<LeftOut>,
-    plugin_root_evidence: Option<PluginRootVar>,
-    plugin_root_var: Option<&'static str>,
-}
-
-#[derive(Serialize)]
-struct LeftOut {
-    hook: String,
-    reason: String,
-}
-
-#[derive(Serialize)]
-struct ClaimEntry {
-    note: Option<&'static str>,
-    spelling: Option<String>,
-    support: &'static str,
-}
-
-impl From<&Claim> for ClaimEntry {
-    fn from(claim: &Claim) -> Self {
-        Self {
-            note: claim.note,
-            spelling: claim.harness_spelling.clone(),
-            support: claim.support.as_str(),
-        }
-    }
-}
-
-/// The gap report for one hooks file: per harness, whether its pack carries
-/// a hooks file, each event the file uses with that harness's claim, every
-/// hook left out of its file and why, its `stop-continue` behaviour, and the
-/// variable its hook commands name the plugin root by, with its source.
-///
-/// Sorted keys, two-space indent, one trailing newline and nothing
-/// time-dependent, so two builds give identical bytes.
-pub fn render_gap_report(from: &str, hooks: &[Hook], harnesses: &[GapHarness]) -> String {
-    let events: BTreeSet<&str> = hooks.iter().map(|hook| hook.event.as_str()).collect();
-    let report = GapReport {
-        harnesses: harnesses
-            .iter()
-            .map(|harness| {
-                let declaration = agent_adapt::runtimes::declaration_for(harness.runtime);
-                let gap = HarnessGap {
-                    behaviours: [STOP_CONTINUE]
-                        .into_iter()
-                        .filter_map(|key| {
-                            let claim = declaration.behaviours.get(key)?;
-                            Some((key.to_owned(), ClaimEntry::from(claim)))
-                        })
-                        .collect(),
-                    delivery: if harness.file.is_some() {
-                        "plugin"
-                    } else {
-                        "none"
-                    },
-                    events: events
-                        .iter()
-                        .filter_map(|event| {
-                            let claim = declaration.hook_events.get(*event)?;
-                            Some(((*event).to_owned(), ClaimEntry::from(claim)))
-                        })
-                        .collect(),
-                    file: harness.file,
-                    left_out: hooks
-                        .iter()
-                        .filter_map(|hook| {
-                            let reason = agent_adapt::render::hook_refusal(hook, harness.runtime)?;
-                            Some(LeftOut {
-                                hook: hook.slug.clone(),
-                                reason,
-                            })
-                        })
-                        .collect(),
-                    plugin_root_evidence: harness.plugin_root_var,
-                    plugin_root_var: harness.plugin_root_var.map(|var| var.name),
-                };
-                (harness.name, gap)
-            })
-            .collect(),
-        source: from,
-        version: 1,
-    };
-    crate::harness::manifest::stable_json(&report)
 }
 
 #[cfg(test)]
@@ -447,54 +322,6 @@ mod tests {
         assert_eq!(cursor.len(), 1);
         assert_eq!(cursor[0].event, "Stop");
         assert_eq!(carried_hooks(&hooks, RuntimeId::ClaudeCode).len(), 2);
-    }
-
-    #[test]
-    fn the_gap_report_is_sorted_and_ends_in_one_newline() {
-        let hooks = parse_hooks_file(FILE, "hooks.json").unwrap();
-        let harnesses = [
-            GapHarness {
-                name: "pi",
-                runtime: RuntimeId::Pi,
-                file: None,
-                plugin_root_var: None,
-            },
-            GapHarness {
-                name: "cursor",
-                runtime: RuntimeId::Cursor,
-                file: Some("hooks/hooks.json"),
-                plugin_root_var: Some(PluginRootVar {
-                    name: "CURSOR_PLUGIN_ROOT",
-                    note: None,
-                    observed_on: "2026-10-05",
-                    url: "https://example.test/plugins",
-                }),
-            },
-        ];
-        let text = render_gap_report("hooks.json", &hooks, &harnesses);
-        assert!(text.ends_with("}\n") && !text.ends_with("\n\n"));
-        assert!(text.find("\"cursor\"").unwrap() < text.find("\"pi\"").unwrap());
-        let value: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(value["version"], 1);
-        assert_eq!(value["harnesses"]["pi"]["delivery"], "none");
-        assert_eq!(value["harnesses"]["cursor"]["delivery"], "plugin");
-        assert_eq!(
-            value["harnesses"]["cursor"]["events"]["Stop"]["spelling"],
-            "stop"
-        );
-        assert_eq!(
-            value["harnesses"]["cursor"]["behaviours"]["stop-continue"]["support"],
-            "translated"
-        );
-        assert_eq!(
-            value["harnesses"]["cursor"]["plugin_root_var"],
-            "CURSOR_PLUGIN_ROOT"
-        );
-        assert_eq!(
-            value["harnesses"]["cursor"]["plugin_root_evidence"]["observed_on"],
-            "2026-10-05"
-        );
-        assert_eq!(value["harnesses"]["pi"]["plugin_root_var"], Value::Null);
     }
 
     fn command(text: &str) -> Hook {

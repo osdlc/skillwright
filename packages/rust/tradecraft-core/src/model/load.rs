@@ -31,7 +31,6 @@ use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
-use crate::projection::parse_runtime_target;
 use crate::vault::{VaultNote, read_vault_note};
 
 pub use crate::layout::CHANGELOG_FILE;
@@ -935,12 +934,6 @@ fn heading_names(line: &str, version: &str) -> bool {
 /// warning for each one whose Cursor pack this build writes, since that pack
 /// ships no hooks (spec section 4 rule 23).
 ///
-/// The gap report covers every harness with a plugin format, not only the
-/// requested ones, so it is the same bytes whatever a build selects. A
-/// harness's `file` is set only when its pack carries some of the file's
-/// hooks: the format carries hooks, the harness admits the plugin, and at
-/// least one hook is carried.
-///
 /// # Errors
 ///
 /// What [`crate::hooks_file::parse_hooks_file`] refuses, and a read failure.
@@ -963,22 +956,7 @@ fn load_hooks_files(
             CoreError::refused("malformed-hooks-file", format!("{}: not UTF-8", file.rel))
         })?;
         let hooks = crate::hooks_file::parse_hooks_file(&text, &file.rel)?;
-        let harnesses = with_plugin_format()
-            .map(|root| {
-                let runtime = parse_runtime_target(root.runtime)?;
-                let carries = root.format().carries_hooks
-                    && group.carried_by(root.name, |c| admits(&c.discovered, root))
-                    && !crate::hooks_file::carried_hooks(&hooks, runtime).is_empty();
-                Ok(crate::hooks_file::GapHarness {
-                    name: root.name,
-                    runtime,
-                    plugin_root_var: root.format().plugin_root_var,
-                    file: carries.then_some(PLUGIN_HOOKS_PATH),
-                })
-            })
-            .collect::<Result<Vec<_>, CoreError>>()?;
-        let gap_report = crate::hooks_file::render_gap_report(&file.rel, &hooks, &harnesses);
-        group.hooks_file = Some(HooksFile { hooks, gap_report });
+        group.hooks_file = Some(HooksFile { hooks });
         let cursor_built = roots.iter().any(|root| {
             root.name == "cursor" && group.carried_by(root.name, |c| admits(&c.discovered, root))
         });

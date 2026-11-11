@@ -1,6 +1,6 @@
-//! A plugin's `hooks/hooks.json`, built into every pack: the per-harness
-//! hooks files and the gap report against fixtures under
-//! `tests/fixtures/hooks-file/` (spec section 4 rule 23).
+//! A plugin's `hooks/hooks.json`, built into the packs whose harness carries
+//! hooks, against fixtures under `tests/fixtures/hooks-file/` (spec section 4
+//! rule 23).
 //!
 //! `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --test hooks_file`
 //! rewrites the expected files from the current output.
@@ -249,118 +249,54 @@ fn an_unknown_placeholder_fails_the_build() {
     assert!(!vfs.exists(Path::new("/vault/dist/house/.claude-plugin")));
 }
 
+/// No pack ships a gap report: spec section 9 "What a pack holds" lists
+/// none. Cursor ships no hooks file and Pi no `hooks/` folder at all.
 #[test]
-fn the_cursor_and_pi_packs_have_no_hooks_file() {
+fn no_pack_ships_a_gap_report_and_pi_has_no_hooks_folder() {
     let vfs = built();
-    for (_, pack) in &PACKS[2..] {
-        assert!(!vfs.exists(Path::new(&format!("{pack}/hooks/hooks.json"))));
-        assert!(vfs.exists(Path::new(&format!("{pack}/hooks/gap-report.json"))));
-    }
-}
-
-/// The gap report is identical in every pack and across builds.
-#[test]
-fn every_pack_carries_the_same_gap_report() {
-    let first = built();
-    let second = built();
-    let reports: Vec<String> = PACKS
-        .iter()
-        .map(|(_, pack)| text_at(&first, &format!("{pack}/hooks/gap-report.json")))
-        .collect();
-    for report in &reports {
-        assert_eq!(report, &reports[0], "every pack's report is the same bytes");
-    }
-    assert_eq!(
-        reports[0],
-        text_at(&second, &format!("{}/hooks/gap-report.json", PACKS[0].1)),
-        "two builds give the same bytes"
-    );
-    assert_fixture("gap-report.json", &reports[0]);
-
-    let report: serde_json::Value = serde_json::from_str(&reports[0]).unwrap();
-    assert_eq!(report["source"], HOOKS_REL);
-    let harnesses = &report["harnesses"];
-    for harness in ["claude", "codex"] {
-        assert_eq!(harnesses[harness]["delivery"], "plugin", "{harness}");
-        assert_eq!(harnesses[harness]["file"], "hooks/hooks.json", "{harness}");
-    }
-    for harness in ["cursor", "pi"] {
-        assert_eq!(harnesses[harness]["delivery"], "none", "{harness}");
-        assert_eq!(harnesses[harness]["file"], serde_json::Value::Null);
-        assert_eq!(
-            harnesses[harness]["plugin_root_var"],
-            serde_json::Value::Null
-        );
-    }
-    assert_eq!(harnesses["claude"]["plugin_root_var"], "CLAUDE_PLUGIN_ROOT");
-    assert_eq!(harnesses["codex"]["plugin_root_var"], "PLUGIN_ROOT");
-    for event in [
-        "SessionStart",
-        "UserPromptSubmit",
-        "Stop",
-        "Notification",
-        "SessionEnd",
-    ] {
-        assert_eq!(
-            harnesses["pi"]["events"][event]["support"], "rejected",
-            "{event}"
-        );
-    }
-}
-
-/// An event a harness does not carry is left out of its file and named in
-/// the report, and the build goes on.
-#[test]
-fn an_uncarried_event_is_left_out_and_reported() {
-    let vfs = built();
-    let report: serde_json::Value = serde_json::from_str(&text_at(
-        &vfs,
-        &format!("{}/hooks/gap-report.json", PACKS[0].1),
-    ))
-    .unwrap();
-    for (harness, pack) in &PACKS[..2] {
-        let left_out: Vec<&str> = report["harnesses"][harness]["left_out"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|entry| entry["hook"].as_str().unwrap())
-            .collect();
-        let hooks = text_at(&vfs, &format!("{pack}/hooks/hooks.json"));
-        let carried = !left_out.contains(&"hooks.Notification[0].hooks[0]");
-        assert_eq!(hooks.contains("session notify"), carried, "{harness}");
-    }
-    assert_eq!(
-        report["harnesses"]["claude"]["left_out"],
-        serde_json::json!([]),
-        "claude carries every event in the fixture"
-    );
-}
-
-/// A hook on an event only Codex documents gives every other harness `none`.
-#[test]
-fn an_event_only_codex_carries_means_no_delivery_elsewhere() {
-    let vfs = vault(r#"{"hooks": {"Interrupt": [{"hooks": [{"command": "x"}]}]}}"#);
-    export_skills(&vfs, &request(ExportMode::Build)).unwrap();
-    let report: serde_json::Value = serde_json::from_str(&text_at(
-        &vfs,
-        &format!("{}/hooks/gap-report.json", PACKS[0].1),
-    ))
-    .unwrap();
-    for (harness, pack) in PACKS.iter().filter(|(harness, _)| *harness != "codex") {
-        assert_eq!(
-            report["harnesses"][harness]["delivery"], "none",
+    for (harness, pack) in &PACKS {
+        assert!(
+            !vfs.exists(Path::new(&format!("{pack}/hooks/gap-report.json"))),
             "{harness}"
         );
-        assert!(!vfs.exists(Path::new(&format!("{pack}/hooks/hooks.json"))));
     }
-    assert_ne!(report["harnesses"]["codex"]["delivery"], "none");
+    let cursor = PACKS[2].1;
+    assert!(!vfs.exists(Path::new(&format!("{cursor}/hooks/hooks.json"))));
+    let pi = PACKS[3].1;
+    assert!(!vfs.exists(Path::new(&format!("{pi}/hooks"))));
+}
+
+/// An event a harness does not carry is left out of its file, and the build
+/// goes on: Claude Code carries `Notification`, Codex does not.
+#[test]
+fn an_uncarried_event_is_left_out() {
+    let vfs = built();
+    let claude = text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[0].1));
+    let codex = text_at(&vfs, &format!("{}/hooks/hooks.json", PACKS[1].1));
+    assert!(claude.contains("session notify"), "{claude}");
+    assert!(!codex.contains("session notify"), "{codex}");
+}
+
+/// A hook on an event only Codex documents gives no other pack a hooks file.
+#[test]
+fn an_event_only_codex_carries_gives_only_codex_a_hooks_file() {
+    let vfs = vault(r#"{"hooks": {"Interrupt": [{"hooks": [{"command": "x"}]}]}}"#);
+    export_skills(&vfs, &request(ExportMode::Build)).unwrap();
+    for (harness, pack) in &PACKS {
+        let path = format!("{pack}/hooks/hooks.json");
+        assert_eq!(
+            vfs.exists(Path::new(&path)),
+            *harness == "codex",
+            "{harness}"
+        );
+    }
 }
 
 #[test]
-fn a_hand_edited_gap_report_is_drift() {
+fn a_hand_edited_hooks_file_is_drift() {
     let vfs = built();
-    let path = format!("{}/hooks/gap-report.json", PACKS[1].1);
-    let edited = text_at(&vfs, &path).replace("\"plugin\"", "\"none\"");
+    let path = format!("{}/hooks/hooks.json", PACKS[1].1);
+    let edited = text_at(&vfs, &path).replace("session stop", "session halt");
     write(&vfs, &path, &edited);
     let report = export_skills(&vfs, &request(ExportMode::Check)).unwrap();
     assert!(report.changed, "the edit is reported as drift");

@@ -433,11 +433,6 @@ uses its harness's own variable instead: `CLAUDE_PLUGIN_ROOT` for Claude Code,
 filled per pack: `{{harness}}` (the harness name) and `{{event}}` (the event
 the hook is under, as the file spells it). Any other `{{…}}` fails the build.
 
-Every pack of the plugin also gets `hooks/gap-report.json`. Per harness, it
-lists how the hooks are delivered, each event's support, each hook left out
-and why, and the plugin-root variable with its source. `check` reports a stale
-or hand-edited report as drift.
-
 ### Launcher
 
 `build.launcher_path` names a launcher script the plugin ships as an

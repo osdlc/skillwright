@@ -185,11 +185,10 @@ pub trait HarnessTranslator: Sync {
         write_body(body, |call| self.render_call(call))
     }
 
-    /// The plugin's hooks file and its gap report, written into `tree` under
-    /// `base`. Returns whether a hooks file was written.
+    /// The plugin's hooks file, written into `tree` under `base`. Returns
+    /// whether a hooks file was written.
     ///
-    /// A hook this harness cannot carry is not a refusal; the gap report says
-    /// where each went.
+    /// A hook this harness cannot carry is left out, not refused.
     ///
     /// # Errors
     ///
@@ -723,9 +722,8 @@ pub(crate) fn rewrite_sibling_paths(body: &str, plugin: &str, siblings: &BTreeSe
     out
 }
 
-/// [`HarnessTranslator::hooks`]'s shared body: the gap report, and the
-/// hooks from the plugin's `hooks/hooks.json` this harness carries, each
-/// localized ([`crate::hooks_file::localize`]), written as the single
+/// [`HarnessTranslator::hooks`]'s shared body: the hooks from the plugin's
+/// `hooks/hooks.json` this harness carries, each localized ([`crate::hooks_file::localize`]), written as the single
 /// `hooks/hooks.json` the plugin format defines.
 fn default_hooks(
     profile: &HarnessProfile,
@@ -736,11 +734,6 @@ fn default_hooks(
     let Some(file) = &plugin.hooks_file else {
         return Ok(false);
     };
-    tree.insert(
-        &format!("{base}/{}", crate::hooks_file::GAP_REPORT_PATH),
-        file.gap_report.clone().into_bytes(),
-        false,
-    );
     if !profile.format().carries_hooks {
         return Ok(false);
     }

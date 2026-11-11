@@ -370,14 +370,11 @@ pub struct Asset {
     pub executable: bool,
 }
 
-/// A plugin's `hooks/hooks.json`, parsed, and the gap report each of its
-/// packs carries. See [`crate::hooks_file`].
+/// A plugin's `hooks/hooks.json`, parsed. See [`crate::hooks_file`].
 #[derive(Debug, Clone)]
 pub struct HooksFile {
     /// The hooks it declares.
     pub hooks: Vec<agent_adapt::Hook>,
-    /// The report every pack carries, the same bytes on every harness.
-    pub gap_report: String,
 }
 
 /// Splits a recording compile's output into segments.
