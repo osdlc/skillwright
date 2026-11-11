@@ -4617,4 +4617,36 @@ mod tests {
             json!({})
         );
     }
+
+    #[test]
+    fn an_undescribed_command_is_refused_by_name() {
+        let vfs = silent_plugin_vault();
+        write(
+            &vfs,
+            "/vault/marketplaces/house/plugins/tools/commands/ship/ship.md",
+            "---\n---\n",
+        );
+        for mode in [ExportMode::Check, ExportMode::Build] {
+            let message = export_skills(&vfs, &request(mode)).unwrap_err().to_string();
+            assert!(message.contains("missing-description"), "{message}");
+            assert!(message.contains("commands/ship/ship.md"), "{message}");
+        }
+        assert!(!vfs.exists(Path::new("/vault/dist/house")));
+    }
+
+    #[test]
+    fn check_warns_when_the_changelog_lacks_the_version() {
+        let vfs = example_vault();
+        let folder = "/vault/marketplaces/house/plugins/tools";
+        write(&vfs, &format!("{folder}/CHANGELOG.md"), "## 0.9.0\n");
+        write(
+            &vfs,
+            &format!("{folder}/tools.md"),
+            "---\ndescription: Tools.\nversion: 1.0.0\n---\n",
+        );
+        export_skills(&vfs, &request(ExportMode::Build)).unwrap();
+        let report = export_skills(&vfs, &request(ExportMode::Check)).unwrap();
+        let warned: Vec<&str> = report.warnings.iter().map(|w| w.reason.as_str()).collect();
+        assert!(warned.contains(&"changelog-missing-version"), "{warned:?}");
+    }
 }

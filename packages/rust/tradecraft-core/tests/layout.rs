@@ -892,3 +892,85 @@ fn a_symlinked_folder_in_a_skill_builds() {
     result.unwrap();
     assert!(exists, "no {}", shipped.display());
 }
+
+#[test]
+fn a_stray_file_in_plugins_is_refused() {
+    let mut files = plugin("acme", "tools", &[("skills/review/review.md", SKILL)]);
+    files.push((
+        "marketplaces/acme/plugins/README.md".to_owned(),
+        "# x\n".to_owned(),
+    ));
+    let said = refusal(&vault_of(&files));
+    assert!(
+        said.contains("marketplaces/acme/plugins/README.md"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_stray_file_in_a_marketplace_folder_is_refused() {
+    let mut files = plugin("acme", "tools", &[("skills/review/review.md", SKILL)]);
+    files.push(("marketplaces/acme/notes.md".to_owned(), "# x\n".to_owned()));
+    let said = refusal(&vault_of(&files));
+    assert!(said.contains("marketplaces/acme/notes.md"), "{said}");
+}
+
+#[test]
+fn case_6_a_flat_agent_or_command_note() {
+    let files = plugin(
+        "acme",
+        "tools",
+        &[
+            ("skills/review/review.md", SKILL),
+            ("agents/a.md", SKILL),
+            ("commands/c.md", SKILL),
+        ],
+    );
+    let said = refusal(&vault_of(&files));
+    assert!(said.contains("no flat notes"), "{said}");
+    for path in ["agents/a.md", "commands/c.md"] {
+        assert!(
+            said.contains(&format!("marketplaces/acme/plugins/tools/{path}")),
+            "{path}: {said}"
+        );
+    }
+}
+
+#[test]
+fn shared_folders_are_refused_in_a_command_or_agent_folder() {
+    for kind in ["commands", "agents"] {
+        let ok = plugin(
+            "acme",
+            "tools",
+            &[
+                (&format!("{kind}/ship/ship.md"), SKILL),
+                (&format!("{kind}/ship/docs/x.md"), "x"),
+                (&format!("{kind}/ship/tests/x.md"), "x"),
+                (&format!("{kind}/ship/fixtures/x.md"), "x"),
+            ],
+        );
+        assert!(
+            read_layout(&vault_of(&ok), Path::new("/v")).is_ok(),
+            "{kind}"
+        );
+        let files = plugin(
+            "acme",
+            "tools",
+            &[
+                (&format!("{kind}/ship/ship.md"), SKILL),
+                (&format!("{kind}/ship/references/x.md"), "x"),
+                (&format!("{kind}/ship/scripts/x.sh"), "x"),
+                (&format!("{kind}/ship/assets/x.png"), "x"),
+            ],
+        );
+        let said = refusal(&vault_of(&files));
+        for folder in ["references", "scripts", "assets"] {
+            assert!(
+                said.contains(&format!(
+                    "marketplaces/acme/plugins/tools/{kind}/ship/{folder}"
+                )),
+                "{kind}/{folder}: {said}"
+            );
+        }
+    }
+}

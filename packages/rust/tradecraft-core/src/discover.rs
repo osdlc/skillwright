@@ -1032,4 +1032,21 @@ mod tests {
         assert!(name_refusal(&"a".repeat(64), "name").is_none());
         assert!(name_refusal(&"a".repeat(65), "name").is_some());
     }
+
+    #[test]
+    fn frontmatter_never_decides_kind_or_place() {
+        let vfs = vault(&[(
+            "marketplaces/acme/plugins/tools/skills/review/review.md",
+            "---\nkind: agent\nplugin: other\nmarketplace: other\ndescription: Use it.\n---\nBody.\n",
+        )]);
+        let report = scan(&vfs).unwrap();
+        let review = report
+            .components
+            .iter()
+            .find(|c| c.name == "review")
+            .unwrap();
+        assert_eq!(review.kind, EntityKind::Skill);
+        assert_eq!(review.plugin.as_deref(), Some("tools"));
+        assert_eq!(review.marketplace.as_deref(), Some("acme"));
+    }
 }
