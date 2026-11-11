@@ -7,8 +7,8 @@ fixed vault layout and has four commands: `init`, `build`, `check` and
 `bump`. It writes each marketplace to `dist/<m>/` for Claude Code, Codex,
 Cursor and Pi, with scoped links, calls, embeds and plugin-root paths. The
 plan fixes what must hold and in what order: the commit order, the tests each
-commit must have, the probes and the gates. How to write the code is the
-implementor's choice.
+commit must have and the gates. How to write the code is the implementor's
+choice.
 
 ## Read first
 
@@ -21,28 +21,29 @@ implementor's choice.
 
 ## Settled and open
 
-The whole spec is settled, with no open questions. Two decisions change
-today's behaviour in ways the commits must cover:
+The whole spec is settled. There are no open questions and no blocking
+probes.
 
-| Decision | Where | Commit |
+These decisions change today's behaviour, or fix a detail the spec leaves to
+the build. The commits must cover them:
+
+| Decision | Where written | Commit |
 |---|---|---|
-| `\[[x]]` ships as `[[x]]`, with the backslash removed. Today's code keeps it. | Spec section 4 rule 13 | Commit 5 |
-| Hooks come only from `hooks/hooks.json`. Hook notes are removed; richer hook authoring is [#152](https://github.com/osdlc/skillwright/issues/152). | Spec section 3 | Commits 2 and 4 |
-
-One item is still open and blocks a commit:
-
-| Item | Where | Blocks |
-|---|---|---|
-| Cursor's hook variable | Probes, below | Commit 5 (hook tests) |
+| A removed command is clap's own unknown-command error: a usage error, exit 3 (`EXIT_USAGE`), with no "removed in v2" hint. | Spec section 10 | 1 |
+| The flags are `--vault`, `--marketplace`, `--json`, `--quiet`, `--dry-run` and `--yes`, plus `bump`'s own. `--config` and `--namespace` go. | Spec section 10 rule 5 | 1 to 3 |
+| `--yes` stays. On `origin/main`, `build` and `bump` both ask before writing (`confirm_write` in `commands/marketplace.rs` and `commands/bump.rs`), and off a terminal without `--yes` they exit 3. So the `plugin` workflow keeps `build --yes` and only drops `--config`. | Spec section 10 rule 6 | 2 |
+| The wasm exports of removed features go: `publishSkill`, `adoptSkills`, `statusOf`, `publishableKinds` and `validateNamespace`. | This plan | 1 and 3 |
+| Hooks come only from `hooks/hooks.json`. Hook notes are removed; richer hook authoring is [#152](https://github.com/osdlc/skillwright/issues/152). | Spec section 3 | 2 and 4 |
+| The Cursor pack ships no hooks, with a warning, until a probe confirms Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands. That probe is tracked in [#152](https://github.com/osdlc/skillwright/issues/152) and is not part of v2. | Spec section 4 rule 23 | 4 |
+| Cursor's default naming becomes prefixed through a constant in its profile row, as Pi's is, not through an edit to harness knowledge. Knowledge records what Cursor allows (plain names); the default is skillwright's choice. | This plan | 4 |
+| `\[[x]]` ships as `[[x]]`, with the backslash removed. Today's code keeps it. | Spec section 4 rule 13 | 5 |
+| A hand-written call is detected in the four forms that name the plugin: `/p:s`, `$p:s`, `/p-s` and `/skill:p-s`, for a skill or command of the marketplace. A bare `/s` or `/skill:s` is not detected. There is no escape form; code ships as written. | Spec section 4 rule 8 | 5 |
 
 ## Probes
 
-harness-reference does not record these answers.
-
 | Probe | Question | Role |
 |---|---|---|
-| `plugin-layout` ([#148](https://github.com/osdlc/skillwright/issues/148)) | Do models on Codex, Cursor and Pi resolve relative paths in skill text from the file they are written in, for references and scripts, both skill-local (`scripts/x`) and plugin-shared (`../../scripts/x`)? | Evidence for section 4 rule 19. It does not block a commit. Method and fixture: [plugin-layout](../../harness-reference/corpus/methods/plugin-layout/plugin-layout.md). Record each run as a study result linked to it. |
-| Cursor hooks | Does Cursor set `${CURSOR_PLUGIN_ROOT}` for hook commands? | Run before commit 5. If not, Cursor hooks need another way to reach the pack. |
+| `plugin-layout` ([#148](https://github.com/osdlc/skillwright/issues/148)) | Do models on Codex, Cursor and Pi resolve relative paths in skill text from the file they are written in, for references and scripts, both skill-local (`scripts/x`) and plugin-shared (`../../scripts/x`)? | Evidence for section 4 rule 19 only. It blocks no commit and is not in the definition of done. Method and fixture: [plugin-layout](../../harness-reference/corpus/methods/plugin-layout/plugin-layout.md). Record each run as a study result linked to it. If models fail, rule 19 is revisited in a follow-up; v2 ships as specified. |
 
 ## Build order
 
@@ -51,53 +52,151 @@ v2 is one PR, built as six ordered commits. Each commit is written test-first:
 1. Write its tests.
 2. See them fail for the right reason.
 3. Make the change.
-4. Run the gates: `cargo fmt --all --check`,
-   `cargo clippy --workspace --all-targets -- -D warnings` and
-   `cargo test --workspace`.
+4. Run the gates.
 
-Each commit passes the gates alone, so the branch can be bisected and reviewed
-commit by commit.
+### The gates
 
-Each commit's blockers are listed under "Settled and open" above.
+Each commit passes every gate alone, so the branch can be bisected and
+reviewed commit by commit.
+
+Rust, from `packages/rust` (the `rust` workflow):
+
+- `cargo fmt --all --check`
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`. This
+  builds the examples too.
+- `cargo test --workspace --locked`
+- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked`
+- `cargo run --locked -q -p tradecraft-typegen -- --check`, and
+  `packages/ts/tradecraft-wasm/src/core.generated.ts` equals
+  `tradecraft-typegen/generated/core.generated.ts`.
+
+TypeScript, from the repository root (the `ts` workflow):
+
+- `pnpm install --frozen-lockfile`
+- `pnpm run format:check`. Prettier checks these docs too.
+- `pnpm run typecheck:scripts` and `pnpm run test:scripts`
+- `pnpm run build:wasm` in `packages/ts/tradecraft-wasm`, then
+  `pnpm run build`, `pnpm run typecheck`, `pnpm run lint` and
+  `pnpm run test` from the root.
+
+The repo's plugin (the `plugin` workflow): the build of `plugin/` matches
+what is committed, and `check` passes.
+
+### What each commit migrates
+
+So that each commit passes alone, each one migrates what it breaks, in the
+same commit:
+
+- the fixture vaults it breaks, under `skillwright/tests/fixtures/` and
+  `tradecraft-core/tests/fixtures/`;
+- the goldens under `skillwright/tests/fixtures/golden/`, re-blessed with
+  `TRADECRAFT_BLESS=1 cargo test -p skillwright --test build_golden`;
+- `docs/reference/fields.md`, when the key table changes, regenerated with
+  `TRADECRAFT_BLESS=1 cargo test -p tradecraft-core --test field_reference`;
+- `core.generated.ts`, when a wasm export or its types change: run
+  `cargo run -p tradecraft-typegen` and copy the file into
+  `packages/ts/tradecraft-wasm/src/`;
+- the TypeScript wrappers and tests in `packages/ts/tradecraft-wasm`;
+- the repo's `plugin/`: its source, its rebuilt output, its two workflows,
+  `scripts/plugin-marketplace.ts` and `plugin/README.md`'s build commands.
 
 ### 1. Cut to four commands
 
 Delete every command but `init`, `build`, `check` and `bump`, with their core
-code and tests ("The removed commands" in the code inventory). Do it first, so no later commit
-ports a command v2 drops.
+code, tests, examples and wasm exports ("The removed commands" in the code
+inventory). Do it first, so no later commit ports a command v2 drops.
 
 Tests first:
 
-- Each removed command is an unknown command with exit code 2.
+- Each removed command, such as `publish` or `harness install`, is clap's
+  unknown-command error with exit 3. The message has no "removed" hint.
+- `build --watch` is an unknown flag, exit 3.
+- `build.destinations` and `build.scan_locations` in the root file are
+  refused (section 11 case 7).
 - The existing `build`, `check` and `bump` tests still pass unchanged.
 
-### 2. Layout reader
+### 2. Layout reader, `init` and `bump`
 
-Root discovery, the fixed-position `classify`, the one loader, the folder
-rules of section 3, and the refusals of section 11. Delete the
-nearest-`skillwright.md` walk-up, reserved notes, workspaces, patterns,
-`SKILL.md` and flat entries.
+Root discovery, the fixed-position `classify`, the one loader, the
+marketplace note `<m>.md`, required plugin notes (D6), the folder rules of
+section 3, and `init` and `bump` on the new layout. Delete the
+nearest-`skillwright.md` walk-up, `--config`, `--skills-root`, reserved notes,
+workspaces, patterns and `build.exclude` (D5), `SKILL.md` and flat entries,
+and hook notes.
 
-Tests first:
+The root file's marketplace fields stop being read here; commit 3 refuses
+them.
+
+Tests first, layout:
 
 - A v2 fixture vault lists every component with its marketplace and plugin.
-- One test per case in section 11: the error names the path and prints the
-  expected layout.
+- A root holding `README.md` and `notes/` beside `skillwright.md` and
+  `marketplaces/` loads; neither is read (section 1 rule 3).
+- `--vault` on a folder with `skillwright.md` but no `marketplaces/` is
+  refused.
+- A `skillwright` skill's note is not taken for a root (Appendix A1). A
+  component named `skills` is refused.
 - A loose file in a skill folder is refused, naming the allowed entries. A
   `README.md` in `marketplaces/` is refused.
-- A `skillwright` skill's note is not taken for a root. A component named
-  `skills` is refused.
+- `src/` in a command or agent folder is refused; in a skill or plugin folder
+  it is accepted.
 - A `.mcp.json` in a plugin is an error. `assets/.eslintrc.json` is skipped.
-- `references/docs/x.md` ships; `skills/review/docs/x.md` does not.
+- `references/docs/x.md` is accepted; `skills/review/docs/x.md` is a
+  never-ship folder (commit 4 tests what ships).
 - A name with digits, `v2-tools`, is accepted; `a--b` is refused.
+- A skill and a command named `deploy` in one plugin are refused, naming
+  both. The same name in two plugins is accepted (section 3 rule 7).
 - `hooks/hooks.json` is accepted. A folder such as `hooks/lint/`, or any
   other file in `hooks/`, is an error.
 
-### 3. Root file and cascade
+Section 11, one test per case, each error naming the path and printing the
+expected layout:
 
-The root file's key set, `<m>.md` as the marketplace note, the
-root-marketplace-plugin-component cascade, required plugin notes, and
-name-equals-folder.
+| Case | Test |
+|---|---|
+| 1 | No root at or above the working directory; the error names a `skillwright.md` passed over. |
+| 3 | A marketplace folder with no `<m>.md`; with a `skillwright.md` in it, the error says the note is now `<m>.md`. Also a plugin folder with no `<p>.md` (section 3 rule 3). |
+| 4 | `skills/` at the root, and directly in a marketplace. |
+| 5 | `marketplaces/` below the top. |
+| 6 | `skills/x.md` and `skills/x/SKILL.md`. |
+| 7 | `build.patterns` and `build.exclude`. |
+| 8 | A plugin's `bin/`, and a `notes.md` beside a skill's entry. |
+| all | Two flat notes are reported once, listing both paths. |
+
+Tests first, `init` and `bump`:
+
+- `init acme tools` in an empty folder writes the three notes, and a `build`
+  of it succeeds.
+- `init` refuses a folder with `skillwright.md`, and a name such as `Tools`.
+- `bump tools` writes `tools.md`. `bump --marketplace acme` writes `acme.md`.
+  With plugin `osdlc` in marketplace `osdlc`, `bump osdlc` bumps the plugin.
+- `bump` with a plugin name two marketplaces share asks for
+  `--marketplace`.
+- `build.bump.patch: timestamp` sets the patch to the UTC time. A patch
+  already larger than that time becomes one more than itself (section 10
+  rule 4).
+- `bump --changed-since` bumps only a changed plugin.
+
+The repo's `plugin/`:
+
+- Its marketplace fields move from `plugin/skillwright.md` to
+  `plugin/marketplaces/osdlc/osdlc.md`. `build.out` stays until commit 4.
+- `plugin/plugins/skillwright/` moves to
+  `plugin/marketplaces/osdlc/plugins/skillwright/`. Its skills are already
+  `skills/<s>/<s>.md`; only the parent folders move.
+- Both workflows run `--vault ../../plugin` in place of
+  `--config ../../plugin/skillwright.md`. `build` keeps `--yes`.
+- `scripts/plugin-marketplace.ts` reads the plugin's version from
+  `marketplaces/osdlc/plugins/skillwright/skillwright.md`. Today it reads
+  `vault/plugins/skillwright/skillwright.md`, which does not exist, so the
+  release's version step is already broken. Its test changes with it.
+
+### 3. Root file, keys and cascade
+
+The root file's key set, the closed key table, the
+root-marketplace-plugin-component cascade, and the `name` key. Delete
+`build.namespace`, `--namespace`, prefixed keys and the `validateNamespace`
+export.
 
 Tests first:
 
@@ -106,19 +205,45 @@ Tests first:
   Code only (section 7 rule 5).
 - A key that is not inherited is refused in the root file, and the error
   names the note kinds that accept it: `owner` names `<m>.md`, `keywords`
-  names `<p>.md`, `version` names both. An unknown root key warns.
-  `workspace` in the root file and `packs` in a harness block are refused.
-  `build:` outside the root is refused.
+  names `<p>.md`, `version` names both.
+- An unknown root key warns. An unknown `build:` key warns.
+- `build:` outside the root file is refused.
+- A `name` key on any note is refused, and the error says to delete it.
+- `sw-version` on a skill is an unknown key: it warns and is emitted under
+  `metadata:`. An unknown key on a container warns and is ignored.
+- A skill with malformed frontmatter is an error naming the note.
 - A skill with no `description` is an error even when its plugin note has
   one (section 7 rule 5 covers inherited keys only).
+- A plugin's `claude: {description: x}` does not set its skills'
+  `description` (section 7 rule 4).
+- A key in a plugin's block that a skill's kind does not accept stays with the
+  plugin (section 7 rule 6).
+- An unknown key in a harness block warns and is left out of that harness's
+  output. A known key with a wrong value is refused (section 8 rule 2).
 - A plugin with no `version` builds as `0.1.0` with a warning. A marketplace
   with no `version` writes none, with no warning.
 
+Section 11:
+
+| Case | Test |
+|---|---|
+| 2 | `workspace: true` in the root file is refused. So is `owner`. |
+| 7 | `build.namespace` is refused. |
+
+The repo's `plugin/`: its notes lose their `name` keys.
+
 ### 4. Bundling and output
 
-Fixed `dist/<m>/`, default packs folders, `check` against `dist/`, and the
-pack contents of section 9. Delete `build.out`, `--out`, the `packs`
-override, the overlap checks, `stale-output` and the flat `assets/` copy.
+Fixed `dist/<m>/`, default packs folders, `check` against `dist/`, the pack
+contents of section 9, Cursor's naming default, and hooks. Delete
+`build.out`, `--out`, the `packs` override, the overlap checks,
+`stale-output`, `build.assets` and `build.hooks` (D4), and the flat `assets/`
+copy.
+
+This commit owns hooks translation. Its hook fixtures write `${PLUGIN_ROOT}`,
+the source form from here on, and `${CLAUDE_PLUGIN_ROOT}` in a hooks file is
+refused here. Commit 5 adds the check that a hook's path names a shipped
+file.
 
 Tests first, one test per row of the "What a pack holds" table:
 
@@ -126,17 +251,32 @@ Tests first, one test per row of the "What a pack holds" table:
 - A skill's `scripts/run.sh` keeps its exec bit.
 - A Markdown file in `references/` is compiled. `CHANGELOG.md` is copied
   byte for byte.
+- `references/docs/x.md` ships; `skills/review/docs/x.md` does not.
 - An agent ships nowhere.
-- `hooks/hooks.json` becomes each harness's hooks file on Claude Code, Codex
-  and Cursor, and nothing on Pi. No other source adds hooks.
+- The Pi pack always holds `package.json`.
+- An in-scope symlink in a skill's `scripts/` ships as a copy (section 9 rule
+  11).
 - Two sources on one path are refused, naming both.
+
+Hooks:
+
+| Harness | `hooks/hooks.json` with `${PLUGIN_ROOT}/scripts/hook.sh` |
+|---|---|
+| Claude Code | its hooks file, with `${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh` |
+| Codex | its hooks file, with `${PLUGIN_ROOT}/scripts/hook.sh` |
+| Cursor | no hooks file and no manifest hooks entry; one warning naming `hooks/hooks.json` |
+| Pi | nothing |
+
+Also: no source but `hooks/hooks.json` adds hooks. `${CLAUDE_PLUGIN_ROOT}` in
+a hooks file is an error that says to write `${PLUGIN_ROOT}`.
 
 Output tests:
 
 - A two-marketplace build writes two trees under `dist/`. `--marketplace`
   builds one.
+- A file in `dist/acme/` beside the packs folders survives a build (section
+  9 rule 4). A `README.md` at the root is untouched.
 - `check` reports drift after a hand edit there, and when `dist/` is missing.
-- A `packs` key is refused.
 - A skill with `targets: [claude]` is only in the Claude Code pack.
 
 Naming tests, for the `tools` plugin's `review` skill:
@@ -154,13 +294,30 @@ Also: a prefixed name over 64 characters is refused. With `bare`, a `review`
 skill in two plugins fails the build for that harness, naming both plugins.
 Plugin `a-b`'s skill `c` and plugin `a`'s skill `b-c` fail for Cursor and Pi.
 
-### 5. Links and transclusion
+Section 11:
+
+| Case | Test |
+|---|---|
+| 7 | `build.out`, `build.assets` and `build.hooks` are refused, and so is `packs` in a harness block. |
+
+The repo's `plugin/`:
+
+- `plugin/skillwright.md` drops `build:`. It keeps `author` and `license`.
+- The built trees move from `plugin/.claude-plugin/`, `plugin/.agents/`,
+  `plugin/.cursor-plugin/` and `plugin/.pi/` to `plugin/dist/osdlc/`.
+- The rebuild renames the Cursor pack's skills to `skills/skillwright-author/`
+  and so on, with matching `name` fields and call strings. Nothing is renamed
+  by hand. The Pi pack already uses these names.
+- The `plugin` workflow's drift check covers `plugin/dist/osdlc/`.
+- `scripts/plugin-marketplace.ts` copies from `plugin/dist/osdlc/`. Its
+  `HARNESSES` roots and its test change with it.
+
+### 5. Links, transclusion and plugin-root paths
 
 Scoped resolution, the link table, the real-path check, missing targets as
-errors, calls and plain links (D2, D3), literal code, the leftover check, and
-the embed rules of section 5.
-
-Run the Cursor hooks probe first (see "Probes").
+errors, calls and plain links (D2, D3), hand-written calls, literal code, the
+leftover check, the embed rules of section 5, and plugin-root paths (D9).
+Delete `build.launcher_path`.
 
 Tests first, through `build`, one test per rule in sections 4 and 5. All use
 plugin `tools`.
@@ -172,14 +329,28 @@ Scope:
   from a skill.
 - `[[guide]]` from `author` prefers its own `references/guide.md` over the
   shared one.
-- A link from the plugin's `references/style.md` starts at step 2.
-- `[[guide]]` in the shared `references/style.md` finds the shared
-  `references/guide.md`, not `skills/author/references/guide.md`.
+- `[[guide]]` in the shared `references/style.md` starts at step 2, finds the
+  shared `references/guide.md`, not `skills/author/references/guide.md`, and
+  ships as `[guide](guide.md)` (Appendix A3).
+- `[[layout]]` matches `references/design/layout.md` at any depth. With
+  `references/old/layout.md` too, it is an error naming both (Appendix A4).
 - `[[notes]]` naming a file inside another component is a link to nothing;
   `[[../setup/references/notes.md]]` works.
 - `/[[setup]]` is tokenized as a call: it never becomes a link and never
   fires the "Did you mean to call" warning.
 - A link to a file in another plugin is refused.
+- A link into `docs/` is refused with the same error as `[[docs/x]]`,
+  `[t](docs/x.md)` and `![[docs/x]]` (section 4 rule 10).
+
+Markdown links (the table at the top of section 4):
+
+| Source | Result |
+|---|---|
+| `[t](references/x.md)` | checked, and rewritten to its installed path |
+| `[t](references/missing.md)` | an error naming the link |
+| `[t](/abs/x.md)`, `[t](file:x.md)` | refused |
+| `[t](https://x.io)`, `<https://x.io>`, `[t](mailto:a@b)` | shipped as written, not checked |
+| `[t](#usage)` | shipped as written, not checked |
 
 Plain links:
 
@@ -189,7 +360,7 @@ Plain links:
 - `[[setup#Usage]]` keeps its fragment.
 - A skill's link to its own note is `[author](SKILL.md)`, with no warning.
 - A link to a command is a file link on Claude Code and fails the build for
-  Codex. A link to an agent fails the build.
+  Codex, Cursor and Pi. A link to an agent fails the build.
 
 Calls:
 
@@ -199,13 +370,32 @@ Calls:
 | `/[[setup]]`, `naming: bare` | same | same | `` `/setup` `` | `` `/skill:setup` `` |
 | `/[[setup\|words]]` | ``words (`/tools:setup`)`` | ``words (`$tools:setup`)`` | ``words (`/tools-setup`)`` | ``words (`/skill:tools-setup`)`` |
 | `/[[deploy]]`, a command | `` `/tools:deploy` `` | error | error | error |
+| `/[[helper]]`, an agent | error | error | error | error |
+| `/[[deploy]]`, `deploy` with `targets: [claude]` (Appendix A5) | `` `/tools:deploy` `` | error naming the file and the call | the same | the same |
 
-Also: `/[[setup#Usage]]` is an error. `/[[review]]` finds a skill in another
-plugin; a name two plugins share is an error naming both plugins.
-`dir/[[x]]` is a link, not a call. `` `/[[x]]` `` in a code span ships as
-written. `\/[[x]]` ships as `/[[x]]` and passes the leftover check.
-`/tools:setup` written in prose is an error; in a code span it ships as
-written.
+Also:
+
+- `/[[setup#Usage]]` is an error.
+- `/[[review]]` finds a skill in another plugin; a name two plugins share is
+  an error naming both plugins. A name found only in another marketplace is
+  an error.
+- A `/` that starts a line, or follows whitespace or one of
+  `( " ' * > _ | [ =`, starts a call: one test per character.
+- `dir/[[x]]` is a link, not a call. In `[[A]]/[[B]]`, `[[B]]` is a link.
+- `` `/[[x]]` `` in a code span ships as written. `\/[[x]]` ships as
+  `/[[x]]` and passes the leftover check.
+- A call in a container note's body does nothing (Appendix A12).
+
+Hand-written calls (section 4 rule 8):
+
+| In prose | Result |
+|---|---|
+| `/tools:setup`, `$tools:setup`, `/tools-setup`, `/skill:tools-setup` | an error that says to write `/[[setup]]`, one test per form |
+| `/tools:deploy`, a command | the same error |
+| `/setup`, `/skill:setup` | shipped as written |
+| any of the four forms in a code span or fenced block | shipped as written |
+| `\/tools:setup` | not an escape; the same error |
+| `a/tools:setup`, `x$tools:setup` | not a call: the sigil continues a word or path |
 
 Code and leftovers:
 
@@ -222,7 +412,10 @@ Embeds:
 - A block embed inlines the block without its marker.
 - A missing heading is `fragment-unresolved`.
 - A nested embed's link is written relative to the outer file.
-- A cycle prints its loop.
+- A cycle prints its loop. A note that embeds itself is a cycle. Two embeds
+  of different sections of one note are not.
+- A call inside embedded text renders as it would in place (section 5 rule
+  19).
 - An embedded note's frontmatter is dropped. Malformed frontmatter is an error
   naming both notes.
 - An image embed is an image link.
@@ -254,53 +447,47 @@ Also:
 - `${PLUGIN_ROOT}/scripts/tool.js` is not `scripts/tool`.
 - A path naming nothing shipped fails, naming the file and the reference.
 - A lone `${PLUGIN_ROOT}` in Markdown is an error. `${CLAUDE_PLUGIN_ROOT}` in
-  a note, a code span or a hooks file is an error that says to write
-  `${PLUGIN_ROOT}`.
+  a note or a code span is an error that says to write `${PLUGIN_ROOT}`.
 - A plain `scripts/x.py` in a `SKILL.md` ships as written and is not checked.
 - An embedded reference is written from the embedding file.
 - A script in `scripts/` holding the variable ships byte for byte.
 - `![[run.sh]]`, where `run.sh` holds `${PLUGIN_ROOT}/scripts/tool`, a lone
   `${PLUGIN_ROOT}` and a `${CLAUDE_PLUGIN_ROOT}`, inlines the file unchanged
   with no error.
-- A hook command's `${PLUGIN_ROOT}` becomes `${CLAUDE_PLUGIN_ROOT}` on Claude
-  Code, stays on Codex, and becomes `${CURSOR_PLUGIN_ROOT}` on Cursor. Its
-  path is checked.
+- A hook command's `${PLUGIN_ROOT}/scripts/missing.sh` fails the build. A
+  lone `${PLUGIN_ROOT}` in a hook is allowed.
 
-### 6. `init`, `bump`, docs and the repo's plugin
+Section 11:
+
+| Case | Test |
+|---|---|
+| 7 | `build.launcher_path` is refused. |
+
+The repo's `plugin/`: code is now literal, so the six `/[[...]]` calls in
+code spans in the skill notes move into prose, keeping the `/`
+(`` `/[[setup]]` `` becomes `/[[setup]]`). The output is the same. The three
+heading self-calls, such as `# /[[author]]`, stay. The plugin note's
+`` `/[[setup]]` `` stays too: a container note's body is not read.
+
+### 6. Docs and the repo's plugin skills
 
 Changes:
 
-1. `init <m> <p>` writes the skeleton.
-2. `bump <p>`, `bump --marketplace <m>` and `--changed-since` on the new
-   layout.
-3. The reference docs and README.
-4. `plugin/` moved, and its two workflows updated.
-5. The Cursor pack's skills renamed from `skills/author/`, `skills/publish/`
-   and `skills/setup/` to `skills/skillwright-author/` and so on, with
-   matching `name` fields and call strings. The Pi pack already uses these
-   names.
-6. The six `/[[...]]` calls in code spans in skill notes moved into prose,
-   keeping the `/` (`` `/[[setup]]` `` becomes `/[[setup]]`). The output is the
-   same. The three heading self-calls, such as `# /[[author]]`, and the
-   plugin note's call stay as they are.
-7. The `publish`, `setup` and `author` skills rewritten for v2 (the table in
+1. The reference docs: `docs/reference/skillwright-md.md` is rewritten; its
+   Patterns, Several marketplaces and Publishing one note by path sections
+   go. `docs/reference/fields.md` is already current from the commits that
+   changed the key table.
+2. The CLI README's verb and option tables shrink to the four commands. Its
+   Configuration section is rewritten.
+3. `packages/ts/tradecraft-wasm/README.md` lists the remaining exports.
+4. `plugin/README.md` describes the v2 layout, `plugin/dist/osdlc/` and the
+   v2 build commands.
+5. The `publish`, `setup` and `author` skills rewritten for v2 (the table in
    "The repo's own `plugin/`"). The `author` skill's syntax examples stay in
    code, where they ship as written.
 
-`plugin/` cannot build from commit 2 until this commit, which is fine inside
-one PR.
-
 Tests first:
 
-- `init acme tools` in an empty folder writes the three notes, and a `build`
-  of it succeeds.
-- `init` refuses a folder with `skillwright.md`, and a name such as `Tools`.
-- `bump tools` writes `tools.md`. `bump --marketplace acme` writes `acme.md`.
-  With plugin `osdlc` in marketplace `osdlc`, `bump osdlc` bumps the plugin.
-- `bump` with a plugin name two marketplaces share asks for
-  `--marketplace`.
-- `build.bump.patch: timestamp` sets the patch to the UTC time.
-- `bump --changed-since` bumps only a changed plugin.
 - The `plugin` workflow's drift check passes on the rebuilt
   `plugin/dist/osdlc/`.
 
@@ -308,27 +495,26 @@ Tests first:
 
 The PR is done when all of these hold:
 
-- [ ] The gates pass on every commit: `cargo fmt --all --check`,
-      `cargo clippy --workspace --all-targets -- -D warnings` and
-      `cargo test --workspace`.
+- [ ] Every gate under "The gates" passes on every commit.
 - [ ] Every numbered rule in the spec, and every case in its Appendix A, is
       covered by at least one test.
-- [ ] Both probes have run, and the spec's "not verified" notes are updated.
-- [ ] `plugin/` is moved to the v2 layout and rebuilt to
-      `plugin/dist/osdlc/`, and the `plugin` workflow's drift check passes.
-- [ ] `docs/reference/skillwright-md.md`, `docs/reference/fields.md` and the
-      CLI README describe v2.
+- [ ] `plugin/` is in the v2 layout and builds to `plugin/dist/osdlc/`, and
+      the `plugin` workflow's drift check passes.
+- [ ] `docs/reference/skillwright-md.md`, `docs/reference/fields.md`, the CLI
+      README and the wasm package README describe v2.
 
 ## Code inventory
 
 This inventory is a starting map of where v2 touches the code, read at
-`c9b3321b`, with paths under `packages/rust/`. It is not a set of
+`2d11033c` (`origin/main` after
+[#143](https://github.com/osdlc/skillwright/pull/143)), with paths under
+`packages/rust/` unless they start at the repository root. It is not a set of
 instructions: the implementor decides how, as long as the commit order, the
-tests and the gates above hold.
+tests and the gates above hold. The number in brackets is the commit.
 
 ### tradecraft-core
 
-- `paths.rs`:
+- `paths.rs` [2]:
   - Go: `find_root_file`, `is_component_note`, `is_reserved_note`,
     `is_vault_root_file`, `is_marketplace_entry`, `is_flat_root_file_name`,
     `workspace_above`, `RootRead`, `read_workspace_above`, `workspace_file`,
@@ -337,7 +523,7 @@ tests and the gates above hold.
     and `marketplaces/`.
   - `marketplace_inputs` and `load_marketplace` become one loader, in steps:
     read the root file, list `marketplaces/*/`, read each `<m>.md`.
-- `patterns.rs`: almost all of it goes.
+- `patterns.rs` [2]: almost all of it goes.
   - Go: `Patterns::canonical`, `plugin_folder`, `assets_folder`,
     `sibling_files`, `source_folders`, `warnings`, `warnings_with`,
     `keep_conventional`, `workspace_exclude_warnings`, and with D5 the exclude
@@ -345,16 +531,30 @@ tests and the gates above hold.
   - Stays: the never-ship rule, which can move into `discover.rs`. It now
     applies only directly in a plugin or component folder.
 - `settings.rs`:
-  - Go: `FolderPatterns`, `folder_patterns`, `globs`, `warn_nested`, the
-    `patterns`, `out`, `namespace` and `launcher_path` keys (now refused),
-    `AssetSetting` and `HookSetting` (D4), `DestinationSetting` and the
-    `destinations` and `scan_locations` keys.
-  - Change: `RootFile::inherit` becomes the root-defaults step of the cascade.
-    `MarketplaceFields` is read from `<m>.md`, not the root file.
-    `compose_root_file` writes a root with no marketplace fields.
-    `root_file_config` and `RootFile::to_config` shrink.
-  - Change: an unknown root-file key warns. A key that is not inherited, and `workspace`, are refused.
-- `discover.rs`:
+  - Go: `FolderPatterns`, `folder_patterns`, `globs`, `warn_nested` [2];
+    `DestinationSetting` and the `destinations` and `scan_locations` keys
+    [1]; the `patterns` key [2]; `namespace` [3]; `out` [4], `AssetSetting`
+    and `HookSetting` (D4) [4]; `launcher_path` [5]. Each removed key joins
+    the refused list in its commit.
+  - Change [3]: `RootFile::inherit` becomes the root-defaults step of the
+    cascade. `compose_root_file` writes a root with no marketplace fields.
+    `root_file_config` and `RootFile::to_config` shrink. An unknown root-file
+    key warns. A key that is not inherited, and `workspace`, are refused.
+  - Change [2]: `MarketplaceFields` is read from `<m>.md`, not the root file.
+- `namespace.rs` [3]: the prefixed stem goes, with `InvalidStem` and
+  `StemProblem`. Either delete `Namespace` and its parameter everywhere, or
+  keep only `Namespace::bare()`. It is threaded through `discover.rs`,
+  `export.rs`, `frontmatter.rs`, `keys.rs`, `paths.rs`, `source_view.rs`,
+  `vault.rs`, `model/`, `harness/translator.rs` and `lib.rs`'s re-exports.
+- `frontmatter.rs` [3]: the prefixed-namespace reading goes: the flat and
+  nested shapes and the `mixed-frontmatter-shape` refusal. A `name` key is
+  refused with "delete it".
+- `keys.rs`: the `Hook` rows, which describe hook-note frontmatter, go [2].
+  The `name` row becomes a refusal [3]. `ADOPTABLE` goes [1].
+- `projection.rs`: stays; `harness/translator.rs` renders through it. Parts
+  only removed commands use go [1]: `content_hash` (adopt) and `file_hash`
+  (publish).
+- `discover.rs` [2]:
   - `classify` becomes a fixed-depth match.
   - Go: `conventional`, `folder_placement_with`, `RESERVED_NAME_REASON`,
     `SKILL_ENTRY`, `is_skill_entry`, the `SKILL.md` branch of `is_entry`, and
@@ -366,26 +566,31 @@ tests and the gates above hold.
   - New: the six reserved names, the per-folder entry table, and the
     `.mcp.json` error.
 - `model/cascade.rs`:
-  - Go: `only_marketplace`, `sole_marketplace`, `marketplaces_in`, and the
-    "a note under no marketplace takes the one marketplace" rule.
-  - `marketplace_note` reads `<m>.md`. `belongs_to` becomes a path prefix
-    test.
-  - New: a marketplace with no `version` writes no version and no warning.
+  - Go [2]: `only_marketplace`, `sole_marketplace`, `marketplaces_in`, and
+    the "a note under no marketplace takes the one marketplace" rule.
+  - [2]: `marketplace_note` reads `<m>.md`. `belongs_to` becomes a path
+    prefix test.
+  - New [3]: a marketplace with no `version` writes no version and no
+    warning.
 - `model/load.rs`:
-  - Go or shrink: `standalone` (publish of one note), `members_folder`,
+  - Go or shrink [2]: `standalone` (publish of one note), `members_folder`,
     `has_folder`, the marketplace's-own-plugin branch of `missing_versions`,
-    `load_assets`, `load_hook_files` (D4), the loading of hook notes
-    (`hooks/<h>/<h>.md`), `folder_assets` (the flat copy;
-    replaced by copying the three shared folders under their own names),
-    `asset_covers` (its last use was the launcher check), `plugin_folder`, and
-    the `plugin.launcher` set from `build.launcher_path`.
-  - `marketplace_name` and `resolve_marketplace` read the folder.
-  - Container note bodies are no longer read.
-- `source_view.rs`: `output_overlaps_vault`, `output_in`, `output_paths`,
-  `check_pack_location`, and the workspace folding in `effective_config`,
-  `effective_configs`, `marketplace_folder` and `marketplace_notes` go. Output
-  cannot overlap source when only `marketplaces/` is read.
-- `compile.rs`:
+    the loading of hook notes (`hooks/<h>/<h>.md`), and `plugin_folder`.
+  - Go [4]: `load_assets`, `load_hook_files` (D4), `folder_assets` (the flat
+    copy; replaced by copying the three shared folders under their own
+    names), `asset_covers` (its last use was the launcher check).
+  - Go [5]: the `plugin.launcher` set from `build.launcher_path`.
+  - [2]: `marketplace_name` and `resolve_marketplace` read the folder.
+    Container note bodies are no longer read.
+  - `apply_naming` already fills `bare_on` and `prefixed_on` from the
+    `cursor` and `pi` blocks; it needs no change. New [4]: a `naming` key on
+    a component is refused, saying to set it on the plugin.
+- `source_view.rs` [2, 4]: the workspace folding in `effective_config`,
+  `effective_configs`, `marketplace_folder` and `marketplace_notes` goes [2].
+  `output_overlaps_vault`, `output_in`, `output_paths` and
+  `check_pack_location` go [4]. Output cannot overlap source when only
+  `marketplaces/` is read.
+- `compile.rs` [5]:
   - Resolution: `CompileSource::resolve` changes from vault-wide to the two
     steps of section 4 rule 3. A file with no component starts at step 2. A
     shared file lands at the pack root, and its link is written relative to
@@ -407,8 +612,10 @@ tests and the gates above hold.
   - Leftovers: `validate_no_obsidian_syntax` skips code spans, fenced blocks,
     `\[[`-escaped text and text a `\/[[` escape produced.
   - Hand-written calls: `literal_skill_calls` and `literal-skill-call` stay,
-    but skip code spans and fenced blocks. The error says to write
-    `/[[name]]`.
+    with three changes. They skip code spans and fenced blocks. The
+    `LiteralForm::Bare` form (`/skill`, for the note's own plugin) goes, and a
+    `/p-s` form for Cursor is added. The `\/` and `\$` escape goes. The
+    error says to write `/[[name]]`.
   - Missing targets: in `replace_token`, an embed or link to nothing becomes
     an error instead of an entry in `unresolved`.
   - Embeds: a non-note, non-image embed is inlined as a fenced block (D8).
@@ -416,26 +623,27 @@ tests and the gates above hold.
     up to three spaces), list indentation and the UTF-8 check. Malformed
     frontmatter in an embedded note becomes an error. Embed expansion,
     `select_fragment` and the cycle check stay.
-- `harness/profile.rs`:
+- `harness/profile.rs` [4]:
   - `PluginFormat::packs` stays a fixed value. `owned_paths_at` and the config
     override path go.
+  - The Cursor row: `naming` changes from `Source::Knowledge` to
+    `Source::Constant(SkillNaming::PluginPrefixed)`, as the Pi row's is, with
+    a comment saying why (see "Settled and open"). `naming_choice` is already
+    `true`. The test that checks each row's naming against harness knowledge
+    (`skills/plugin-namespace`) then treats Cursor like Pi.
+  - The Cursor row: `carries_hooks` becomes `false` and
+    `hooks_manifest_entry` becomes `None`. The build warns once per plugin
+    with a `hooks/hooks.json`.
   - `CliInvocation` stays as the per-harness switch, now for every
-    plugin-root path (D9).
-  - Cursor's naming default becomes prefixed, as Pi's is. Today it comes
-    from harness knowledge (`skills/plugin-namespace`) as bare.
-- `harness/manifest.rs` and `model/load.rs`:
-  - `bare_on_pi` becomes one check for `cursor` and `pi` blocks, filling
-    `bare_on` with each harness that sets `naming: bare`. A `naming` key on a
-    component is refused.
-  - `refuse_prefixed_collisions` and the 64-character check then cover
-    Cursor too.
-  - Inheritance needs no change: `plugin_block` already starts from the
-    marketplace's block, which holds the root file's defaults, and overlays
-    the plugin's.
-  - New code: a collision check for `bare`. Today two bare skills of one name
-    across plugins on Pi are not refused. v2 refuses them per harness, naming
-    both plugins.
-- `model/mod.rs` and `harness/translator.rs` (D9):
+    plugin-root path (D9) [5].
+- `harness/translator.rs` and `harness/manifest.rs`:
+  - `naming_of` and `plugin_block` need no change: the block already starts
+    from the marketplace's, which holds the root file's defaults, and
+    overlays the plugin's.
+  - `refuse_prefixed_collisions` already refuses every duplicate, bare ones
+    too, where the profile's default prefixes. With Cursor's default changed,
+    it covers Cursor with no new code. Its 64-character check does too.
+- `model/mod.rs` and `harness/translator.rs` (D9) [5]:
   - `Segment::LauncherCall` and `push_text`'s one-path split become a
     plugin-root path segment that holds any path after `${PLUGIN_ROOT}/`,
     checked against the files the pack ships. A trailing `.` is not part of
@@ -449,14 +657,15 @@ tests and the gates above hold.
   - `rewrite_sibling_paths` goes: Pi's `skills/<p>-<s>/` folder is where the
     rewrite lands. `rewrite_launcher_calls` goes with its test.
     `relative_path` stays.
-  - `hooks_file::localize`, the variable swap for hooks, stays. Its source
-    variable becomes `${PLUGIN_ROOT}`, and it gains the path check.
-- `export.rs`: the `stale-output` warning and moved-packs handling go.
-  `MarketplaceConfig::launcher_path` and the launcher tests go. Their cases
-  move to commit 5's plugin-root path tests.
-- `vault.rs`: `bundle_root` keeps only the `<name>/<name>.md` shape.
+- `hooks_file.rs` [4, 5]: `localize`, the variable swap, stays. Its
+  `CANONICAL_ROOT` becomes `${PLUGIN_ROOT}`, and a source
+  `${CLAUDE_PLUGIN_ROOT}` is refused [4]. It gains the path check [5].
+- `export.rs` [4, 5]: the `stale-output` warning and moved-packs handling go
+  [4]. `MarketplaceConfig::launcher_path` and the launcher tests go [5]; their
+  cases move to commit 5's plugin-root path tests.
+- `vault.rs` [2]: `bundle_root` keeps only the `<name>/<name>.md` shape.
 
-### The removed commands
+### The removed commands [1]
 
 - `tradecraft-core/src/publish.rs`:
   - Go: everything that writes to a destination: `publish_skill`'s
@@ -481,76 +690,137 @@ tests and the gates above hold.
   `dirs.rs` (the `--from-git` cache), and the `author.editor` machine setting
   in `config.rs`.
 - `skillwright/src/cli.rs`: every command but `init`, `build`, `check` and
-  `bump`, with its flags, and `--watch`.
+  `bump`, with its flags, `--watch`, the `unpublish` stub and `WAITS_ON_CORE`.
+- `skillwright/Cargo.toml` and `Cargo.lock`: dependencies only the removed
+  commands use, such as `notify` (the watcher), `tiered-dirs` (the
+  `--from-git` cache), `markdown-relink` and `markdown-corpus` (the authoring
+  writer). Check each against what stays before removing it.
 - `tradecraft-wasm/src/lib.rs`: `publishSkill`, `adoptSkills`, `statusOf`
   and `publishableKinds` go. `exportSkills`, `discoverComponents`,
-  `loadMarketplace`, `parseRootFile`, `rootFileConfig`,
-  `validateNamespace`, `knownTargets` and `canonicalTarget` stay.
-- Their tests: `skillwright/tests/authoring.rs`, `author.rs`, `harness.rs`,
-  and the publish, status, list and adopt cases in `cli.rs` and
-  `consumer_flows.rs`.
+  `loadMarketplace`, `parseRootFile`, `rootFileConfig`, `knownTargets` and
+  `canonicalTarget` stay. `validateNamespace` goes in commit 3.
+- `packages/ts/tradecraft-wasm` (repository root): the wrappers in
+  `src/core.ts` and the re-exports in `src/index.ts` for those exports,
+  `tests/status-of.test.ts` and `examples/publish-a-skill.test.ts`.
+  `InvalidNamespaceError` and `validateNamespace` go in commit 3.
+- Examples: `tradecraft-core/examples/publish.rs` and
+  `skillwright/examples/list.rs`. `cargo clippy --all-targets` builds them,
+  so they go with their commands.
+- Tests, deleted:
+  - `skillwright/tests/`: `authoring.rs`, `author.rs`, `harness.rs`,
+    `apply_api.rs`, `git_source.rs` and `user_folders.rs` (publish to the
+    user's skill folders).
+  - The publish, status, list, adopt and authoring cases in
+    `skillwright/tests/cli.rs` and `consumer_flows.rs`.
+  - The publish, adopt and status cases in
+    `tradecraft-core/tests/release_api.rs`, and the constructors of removed
+    types in `tradecraft-core/tests/constructors.rs`.
 
 ### skillwright (CLI)
 
-- `resolve.rs`:
+- `resolve.rs` [2]:
   - `resolve_run` keeps a walk-up, but one that stops at a folder holding both
-    `skillwright.md` and `marketplaces/`. It loses `--config` and the
-    workspace fold.
+    `skillwright.md` and `marketplaces/`. It loses `--config`,
+    `--skills-root` and the workspace fold.
   - `workspace_runs`, `refuse_workspace`, `workspace_warnings`,
     `member_workspace_warnings`, `is_workspace`, `configured_out` and
     `resolve_skills_root` go or shrink to "every marketplace, or the one
     `--marketplace` names". The working directory no longer picks one.
-- `config.rs`: `workspace_above` and `workspace_members` go.
-- `commands/init.rs`: takes `<m> <p>` and writes the v2 skeleton.
-- `commands/marketplace.rs` (`build` and `check`): loses `--out` and the
-  workspace runs. `check` treats a missing `dist/<m>/` as drift.
-- `commands/bump.rs`: the marketplace's-own-plugin version rule goes.
+- `cli.rs`: `ReadOnlyGlobals` loses `config` [2] and `namespace` [3]. The
+  root help's `GLOBAL_OPTIONS` list shrinks with them. `--marketplace`
+  stays on `build`, `check` and `bump`. Unknown commands keep going through
+  `report_parse_error`, which maps clap's errors to `EXIT_USAGE`.
+- `config.rs` [2]: `workspace_above` and `workspace_members` go.
+- `commands/init.rs` [2]: takes `<m> <p>` and writes the v2 skeleton. Its
+  `--out` and `--name` go.
+- `commands/marketplace.rs` (`build` and `check`): loses the workspace runs
+  [2] and `--out` [4]. `check` treats a missing `dist/<m>/` as drift [4]. The
+  `confirm_write` prompt and `--yes` stay.
+- `commands/bump.rs` [2]: the marketplace's-own-plugin version rule goes.
   `bump <p>` names a plugin, and `bump --marketplace <m>` with no name bumps
   the marketplace. `BuiltRef::build` checks out `skillwright.md` and
   `marketplaces/` only.
+- `resolve.rs` and `commands/bump.rs` [3]: `ResolvedRun::namespace`,
+  `core_namespace` and `bump`'s `namespace` field go with `Namespace`.
+  `report.rs` and `skillwright/tests/report.rs` hold no namespace and need no
+  change.
 
 ### tradecraft-wasm
 
-- `lib.rs`: the `out_root` argument and the pattern and workspace options of
-  `discovery_view` and `load_view` go.
+- `lib.rs`: the pattern and workspace options of `discovery_view` and
+  `load_view` go [2]. `rootFileConfig` reads no marketplace fields [2, 3].
+  The `out_root` argument of `exportSkills` goes [4].
 
-### Tests and docs
+### tradecraft-typegen
 
-- Tests for every removed feature are deleted, not ported: the `patterns.rs`
-  and `settings.rs` workspace tests, the reserved-name tests in `paths.rs`,
-  and the workspace cases in `tests/cli.rs`, `tests/consumer_flows.rs` and
-  `tests/release_api.rs`.
-- `docs/reference/skillwright-md.md` is rewritten. Its Patterns, Several
+- `generated/core.generated.ts` is regenerated in each commit that changes a
+  wasm export or an exported type, and copied to
+  `packages/ts/tradecraft-wasm/src/core.generated.ts`.
+  `tests/every_export_is_covered.rs` checks both.
+
+### Tests and fixtures still in use
+
+- `skillwright/tests/fixtures/`: `vault`, `identity-vault`,
+  `agent-skills-vault` and `freeform-vault` move to the v2 layout [2].
+  `freeform-vault` holds flat notes (`skills/review.md`), so keep only what
+  is still valid. `excluded-vault` tests `build.exclude` (D5) and goes [2].
+  `golden/` is re-blessed in each commit that changes output.
+- `tradecraft-core/tests/fixtures/agent-skills-vault` moves to the v2
+  layout [2].
+- `tradecraft-core/tests/fixtures/hooks-file/` [4]: `hooks.json` writes
+  `${PLUGIN_ROOT}`, and `expected/cursor-hooks.json` goes.
+- `skillwright/tests/bump.rs` and the `init` cases in `tests/cli.rs` move to
+  the new layout [2].
+- `skillwright/tests/marketplace_parity.rs`: its fixture moves [2] and its
+  output root becomes `dist/<m>/` [4].
+- `skillwright/tests/build_golden.rs`: unchanged, re-blessed.
+- `tradecraft-core/tests/release_api.rs`: workspace cases go [2], namespace
+  cases go [3].
+- `tradecraft-core/tests/field_reference.rs`: re-blessed whenever the key
+  table changes.
+- `packages/ts/tradecraft-wasm/tests/load-marketplace.test.ts` and the
+  other TypeScript tests read v1 vaults (`marketplaces/house/skillwright.md`,
+  `build.out`); they move with commits 2 to 4.
+- Tests for every other removed feature are deleted, not ported: the
+  `patterns.rs` and `settings.rs` workspace tests, the reserved-name tests in
+  `paths.rs`, and the workspace cases in `tests/cli.rs` and
+  `tests/consumer_flows.rs`.
+
+### Docs
+
+- `docs/reference/skillwright-md.md` is rewritten [6]. Its Patterns, Several
   marketplaces and Publishing one note by path sections go.
 - The CLI README's verb and option tables shrink to the four commands. Its
-  Configuration section is rewritten.
-- `docs/reference/fields.md` is regenerated after the key table changes.
+  Configuration section is rewritten [6].
+- `docs/reference/fields.md` is regenerated in each commit that changes the
+  key table.
 
 ### The repo's own `plugin/`
 
-1. `plugin/skillwright.md` keeps only `author`, `license` and `build:`.
-2. Its marketplace fields move to `plugin/marketplaces/osdlc/osdlc.md`.
-3. `plugin/plugins/skillwright/` moves to
-   `plugin/marketplaces/osdlc/plugins/skillwright/`, with each skill as
-   `skills/<s>/<s>.md`.
-4. The built trees move from `plugin/.claude-plugin/`, `plugin/.agents/`,
-   `plugin/.cursor-plugin/` and `plugin/.pi/` to `plugin/dist/osdlc/`.
-5. The `plugin` workflow keeps its drift check: it builds and fails on any
-   difference under `plugin/dist/osdlc/`, and runs `check`. It drops
-   `--config`.
-6. The `plugin-release` workflow copies the pack and manifest entry from
-   `plugin/dist/osdlc/` into `osdlc/marketplace`. It already copies; only the
-   source path changes.
-7. Install from `osdlc/marketplace` is unchanged. `plugin/` itself is no
-   longer installable from its own root. Nothing documents that route today.
+Files, all from the repository root:
 
-Its skills teach v1 commands and need rewriting for v2:
+| File | Change | Commit |
+|---|---|---|
+| `plugin/skillwright.md` | Marketplace fields (`name`, `owner`) move out; `build.out` goes. It keeps `author` and `license`. | 2, 4 |
+| `plugin/marketplaces/osdlc/osdlc.md` | New: the marketplace note. | 2 |
+| `plugin/plugins/skillwright/` | Moves to `plugin/marketplaces/osdlc/plugins/skillwright/`. Its skills are already `skills/<s>/<s>.md`. | 2 |
+| `plugin/.claude-plugin/`, `plugin/.agents/`, `plugin/.cursor-plugin/`, `plugin/.pi/` | Move to `plugin/dist/osdlc/`, rebuilt. | 4 |
+| `.github/workflows/plugin.yml` | `build --yes --vault ../../plugin` and `check --vault ../../plugin`, in place of `--config ../../plugin/skillwright.md`. The drift check covers `plugin/dist/osdlc/`. | 2, 4 |
+| `.github/workflows/plugin-release.yml` | The same build command. It copies the pack and manifest entry from `plugin/dist/osdlc/` into `osdlc/marketplace`. | 2, 4 |
+| `scripts/plugin-marketplace.ts` and `scripts/plugin-marketplace.test.ts` | The version path (broken on `origin/main`) [2]; the `HARNESSES` roots under `plugin/dist/osdlc/` [4]. | 2, 4 |
+| `plugin/README.md` | The build commands [2]; the layout and output [4]; the text [6]. The `plugin` workflow's error points here. | 2, 4, 6 |
+| The skill notes | Code-span calls move into prose [5]; the skills are rewritten for v2 [6]. | 5, 6 |
+
+Install from `osdlc/marketplace` is unchanged. `plugin/` itself is no longer
+installable from its own root. Nothing documents that route today.
+
+Its skills teach v1 commands and need rewriting for v2 [6]:
 
 | Skill | Teaches today | v2 |
 |---|---|---|
 | `publish` | `publish`, `status --check`, `harness install`, `update`, `uninstall`, `link`, `unlink` | Rewrite around `build`, `check` and `bump`, or drop the skill and fold `build` and `check` into `author`. |
 | `setup` | `init --out`, "the nearest `skillwright.md`", `build.destinations`, `skillwright list` | `init <m> <p>`, the two-file root test, no destinations, `check` to verify. |
-| `author` | `skillwright list` in its steps, `build.namespace`, v1 links and mentions | `check` in its steps, no namespace, the v2 link, call and embed rules (D3). |
+| `author` | `skillwright list` in its steps, `build.namespace`, v1 links and mentions, "the backslash ships too" for `\[[` | `check` in its steps, no namespace, the v2 link, call and embed rules (D3). |
 
 ## Tracking
 
@@ -587,6 +857,8 @@ leaves out. It stays open.
 
 | Issue | Verdict | Reason |
 |---|---|---|
+| [#152](https://github.com/osdlc/skillwright/issues/152) richer hook authoring | Later | Hook notes, and Cursor's hook variable. v2 reads only `hooks/hooks.json` and ships no Cursor hooks. |
+| [#148](https://github.com/osdlc/skillwright/issues/148) plugin-layout probe | Evidence | Not in the definition of done. A failure reopens section 4 rule 19 in a follow-up. |
 | [#144](https://github.com/osdlc/skillwright/issues/144) published links: labels, shared-note paths, missing files | Changed, in v2 | The flattening part is moot: shared notes outside a plugin are gone. Missing-file links become build errors (section 4). The `.md` label part stays. |
 | [#141](https://github.com/osdlc/skillwright/issues/141) bump: scan once, in-memory baseline | Keep | `bump` stays. The reads it lists get simpler. |
 | [#77](https://github.com/osdlc/skillwright/issues/77) `resolve_run` should call `load_marketplace` | Changed | Still one loader, written fresh in v2. Close when it lands. |

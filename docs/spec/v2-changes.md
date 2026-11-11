@@ -20,6 +20,24 @@ and may return in a later milestone:
 | `build --watch` | |
 | `list`, `status`, `author` | |
 
+A removed command is now an unknown command: a usage error, exit 3, with no
+hint that it was removed.
+
+These flags go too:
+
+| Flag | Why |
+|---|---|
+| `--config` | `--vault` names the root. |
+| `--namespace` | `build.namespace` is gone. |
+| `--out` | Output is fixed at `dist/<m>/` (D1). |
+| `--skills-root` | Only `marketplaces/` is read. |
+| `--watch` | `build --watch` is out of v2. |
+| `init --out`, `init --name` | `init` takes `<m> <p>` (section 10 rule 1). |
+
+`--vault`, `--marketplace`, `--json`, `--quiet`, `--dry-run` and `--yes` stay
+(section 10 rule 5). `build` and `bump` still ask before writing, so `--yes`
+is still needed off a terminal.
+
 ## Features removed or changed
 
 ### The root and the root file
@@ -73,6 +91,9 @@ and may return in a later milestone:
   `<p>-<s>`, folder and `name`, as Pi already does. `cursor: {naming: bare}`
   keeps today's plain names (section 8 rule 6). A call to a Cursor skill
   renders `/<p>-<s>`, not `/<s>`.
+- Hooks in the Cursor pack. The build now leaves them out and warns, until a
+  probe confirms that Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands
+  (section 4 rule 23, [#152](https://github.com/osdlc/skillwright/issues/152)).
 - New: `check` with no `dist/<m>/` reports drift (exit 1).
 - New: `build` with no `--marketplace` builds every marketplace. The working
   directory no longer picks one.
@@ -89,7 +110,7 @@ and may return in a later milestone:
 | Calls inside code spans and fenced blocks were interpreted. | Code is literal (section 4 rule 12). |
 | A fragment on a call or a mention was checked and then dropped. | On a call, `/[[setup#Usage]]`, an error. On a plain link it is kept. |
 | A note with malformed frontmatter embedded its body. | An error that names both notes (section 5 rule 4). |
-| A hand-written call string was refused in prose and code. | Refused in prose only. In code it ships as written. |
+| A hand-written call string was refused in prose and code, including a bare `/setup` for a skill of the note's own plugin. `\/tools:setup` kept it as text. | Refused in prose only, in the four forms that name the plugin (section 4 rule 8). A bare `/setup` is not checked. In code it ships as written, and there is no escape form. |
 | `\[[x]]` shipped with its backslash, as `\[[x]]`. | It ships as `[[x]]`: the backslash is removed (section 4 rule 13). |
 | Two skills sharing a called name: `skill-call-ambiguous`, with the path of the one meant as the fix. | An error that names both plugins. There is no path form of a call; rename one. |
 
@@ -267,7 +288,8 @@ v1, in steps:
 7. A Markdown file in a skill's `references/` is rewritten relative to the
    skill's folder, not its own, so its `../..` is one level short.
 8. Hooks write `${CLAUDE_PLUGIN_ROOT}`, swapped for each harness's own
-   variable. v2 keeps the swap, with `${PLUGIN_ROOT}` as the source.
+   variable. v2 keeps the swap, with `${PLUGIN_ROOT}` as the source. The
+   Cursor pack gets no hooks for now (section 4 rule 23).
 
 Existing vaults:
 

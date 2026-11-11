@@ -451,10 +451,22 @@ marketplace (rule 8, decision D2).
      | a skill the pack does not contain (`targets`) | an error for that harness | an error for that harness |
      | a command | `` `/tools:deploy` `` | an error: their packs contain no commands |
      | an agent | an error: no pack contains agents | an error |
-   - A call string written by hand in prose, such as `/tools:setup` or
-     `$tools:setup` for a skill of the marketplace, is an error that says to
-     write `/[[setup]]`. One harness's form is wrong for the others. In code it
-     ships as written (rule 12).
+   - A call string written by hand in prose is an error that says to write
+     `/[[setup]]`. One harness's form is wrong for the others. A string counts
+     when it is one harness's call form for a skill or command of this
+     marketplace, and its sigil does not continue a word or path. For the
+     `setup` skill of plugin `tools`:
+
+     | Written in prose | Checked? |
+     |---|---|
+     | `/tools:setup` (Claude Code) | Yes: an error |
+     | `$tools:setup` (Codex) | Yes: an error |
+     | `/tools-setup` (Cursor) | Yes: an error |
+     | `/skill:tools-setup` (Pi) | Yes: an error |
+     | `/setup` or `/skill:setup` (a bare name) | No. A bare name is too often other text, such as a path. |
+     | any of these in a code span or fenced block | No. It ships as written (rule 12). |
+
+     There is no escape form. To show a call string, put it in code.
 9. `\/[[x]]` ships as the text `/[[x]]`. The leftover check of rule
    13 skips text an escape produced.
 10. A link into a never-ship folder is refused with the same error in every
@@ -567,11 +579,15 @@ harness's own form (decision D9).
     |---|---|---|
     | Claude Code | Yes | `${CLAUDE_PLUGIN_ROOT}` |
     | Codex | Yes | `${PLUGIN_ROOT}`, unchanged |
-    | Cursor | Yes | `${CURSOR_PLUGIN_ROOT}`. Not verified for hooks: harness-reference records Cursor's variable only in `mcp.json` (`Cursor Plugin root variable`). See [the plan](v2-plan.md). |
+    | Cursor | No, for now. The build leaves hooks out of the Cursor pack and warns, naming `hooks/hooks.json`. | nothing |
     | Pi | No: Pi has no shell hooks | nothing |
 
     - A hook runs as a shell command from the project folder, where a
       pack-relative path would not resolve. So hooks keep a variable.
+    - Cursor documents `${CURSOR_PLUGIN_ROOT}` only in `mcp.json`, not for
+      hook commands (harness-reference: `Cursor Plugin root variable`). A hook
+      that relied on it could fail at run time with no sign at build time. So
+      the Cursor pack ships no hooks until that is confirmed (see "Later").
     - A lone `${PLUGIN_ROOT}` is allowed in a hook, since the variable is
       kept. A path after it is checked by rule 17.
 24. A file that is neither Markdown nor a hooks file, such as a script in
@@ -887,7 +903,7 @@ pack folder from the table above.
 | `skills/<s>/<s>.md` | `<pack>/skills/<s>/SKILL.md`, compiled | All. Cursor and Pi name the folder `<p>-<s>` unless `naming: bare` is set for them (section 8 rule 6). |
 | `skills/<s>/references/`, `scripts/`, `assets/` | The same names inside the skill's folder | All |
 | `commands/<c>/<c>.md` | `<pack>/commands/<c>.md`, compiled | Claude Code only |
-| `hooks/hooks.json` | The harness's hooks file in `<pack>` | Claude Code, Codex, Cursor |
+| `hooks/hooks.json` | The harness's hooks file in `<pack>` | Claude Code, Codex. Not Cursor, for now (section 4 rule 23). |
 | `agents/<a>/<a>.md` | Nothing. No pack contains an agent. | None |
 
 7. Compiled means these steps, in order:
@@ -949,7 +965,9 @@ pack folder from the table above.
 
 ## 10. Commands
 
-v2 has four commands. Every other command is out of v2 (see "Later").
+v2 has four commands. Every other command is out of v2 (see "Later"). An
+unknown command, such as `publish`, is a usage error and exits 3. The error
+does not say the command was removed.
 
 1. `init <m> <p>` writes the skeleton in the working directory:
 
@@ -978,6 +996,23 @@ v2 has four commands. Every other command is out of v2 (see "Later").
      default) adds one: `1.2.3` becomes `1.2.4`. `timestamp` sets it to the
      UTC time as `YYYYMMDDHHMMSS`, or to one more than the current patch when
      that is larger: `1.2.3` becomes `1.2.20261110153000`.
+5. The flags:
+
+   | Flag | Taken by | Does |
+   |---|---|---|
+   | `--vault <path>` | `build`, `check`, `bump` | Names the root (section 1 rule 2). |
+   | `--marketplace <m>` | `build`, `check`, `bump` | Picks one marketplace (rules 2 to 4). |
+   | `--json` | `build`, `check`, `bump` | Writes the report to stdout as one JSON document. |
+   | `--quiet` | `build`, `check`, `bump` | Drops progress and the tally from stderr. |
+   | `--dry-run` | `build`, `bump` | Reports what would be written, and writes nothing. |
+   | `--yes` | `build`, `bump` | Writes without asking (rule 6). |
+   | `--changed-since <ref\|dir>` | `bump` | Rule 4. |
+   | `--major`, `--minor`, `--patch` | `bump` | Which part of the version rises. `--patch` is the default. |
+
+   `init` takes only its two names. There is no other flag.
+6. `build` and `bump` print what they will write and ask before they write.
+   `--yes` skips the question. Without a terminal and without `--yes`, they
+   stop with a usage error, exit 3, and write nothing.
 
 ## 11. A vault not in this layout
 
@@ -1219,7 +1254,7 @@ a launcher script, so that the path works on every harness.
 | Where | Source | Claude Code | Codex, Cursor, Pi |
 |---|---|---|---|
 | A skill's `SKILL.md`, prose or code | `${PLUGIN_ROOT}/scripts/tool` | `${CLAUDE_PLUGIN_ROOT}/scripts/tool` | `../../scripts/tool` |
-| `hooks/hooks.json` | `${PLUGIN_ROOT}/scripts/hook.sh` | `${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh` | Codex `${PLUGIN_ROOT}/…`, Cursor `${CURSOR_PLUGIN_ROOT}/…`, Pi no hooks |
+| `hooks/hooks.json` | `${PLUGIN_ROOT}/scripts/hook.sh` | `${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh` | Codex `${PLUGIN_ROOT}/…`; Cursor and Pi no hooks (section 4 rule 23) |
 
 - Every path is checked to name a file the pack ships.
 - A path to a file in `scripts/`, `references/` or `assets/` is rewritten the
@@ -1230,8 +1265,8 @@ a launcher script, so that the path works on every harness.
 - A target the harness's pack does not contain is an error for that harness, as a link
   to it is. A dead path breaks the skill at run time with no sign at build
   time.
-- Hooks get each harness's own variable, and their paths are checked. A hook runs from the project folder, so a relative path would not
-  resolve.
+- Hooks get each harness's own variable, and their paths are checked. A
+  hook runs from the project folder, so a relative path would not resolve.
 - `${CLAUDE_PLUGIN_ROOT}` in source is an error that says to write
   `${PLUGIN_ROOT}`. One syntax means one thing to search for and check.
 - Scripts ship byte for byte. A script finds its own files relative to itself.
@@ -1243,7 +1278,7 @@ harness to fill in.
 | Harness | Expands a plugin-root variable in skill text? | Source |
 |---|---|---|
 | Claude Code | Yes, `${CLAUDE_PLUGIN_ROOT}` | `Claude Code Plugin root variable` |
-| Cursor | No. Its variables expand only in `mcp.json`, and `${PLUGIN_ROOT}` is not one of them. Whether it sets `${CURSOR_PLUGIN_ROOT}` for hooks is not recorded either (section 4 rule 23). | `Cursor Plugin root variable` |
+| Cursor | No. Its variables expand only in `mcp.json`, and `${PLUGIN_ROOT}` is not one of them. Whether it sets `${CURSOR_PLUGIN_ROOT}` for hooks is not recorded either, so its pack ships no hooks (section 4 rule 23). | `Cursor Plugin root variable` |
 | Codex | No. `PLUGIN_ROOT` is documented only for hooks. | |
 | Pi | No | |
 
@@ -1297,7 +1332,9 @@ later. `build` would run them; `check` never would.
 
 Richer hook authoring (hook notes) may come later; see
 [#152](https://github.com/osdlc/skillwright/issues/152). v2 reads hooks only
-from `hooks/hooks.json`.
+from `hooks/hooks.json`. Hooks in the Cursor pack return when a probe confirms
+that Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands, tracked in the same
+issue.
 
 ## Appendix A: Edge cases
 
