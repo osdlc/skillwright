@@ -262,7 +262,10 @@ component's note and to every Markdown file it ships.
 | Anything outside `marketplaces/<m>/` | Refused. |
 
 A call, `/[[name]]`, is not a link and copies nothing. Its scope is the whole
-marketplace (rule 8, decision D2).
+marketplace (rule 8, decision D2): it may name a skill or command in any plugin
+of the same marketplace. A name found in no plugin of the marketplace is an
+error, even if another marketplace in the vault, or a plugin installed
+elsewhere, has it. A name two plugins share is an error that names both.
 
 3. A bare `[[name]]` resolves in the linking file's component folder first.
    With no match there, it resolves among the plugin's shared folders and its
