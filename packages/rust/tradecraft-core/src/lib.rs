@@ -91,9 +91,10 @@ pub use discover::{
 };
 pub use error::*;
 pub use export::{
-    ExportMode, ExportPlan, ExportReport, ExportRequest, ExportUnit, SkillNaming, StaleKind,
-    UnitStatus, export_in, export_skills, marketplace_manifest_path, owned_paths, packs_path,
-    plan_in, plugin_manifest_path, published_skill_name, rendered_skill_call,
+    ExportMode, ExportPlan, ExportReport, ExportRequest, ExportUnit, MarketplaceReport,
+    SkillNaming, StaleKind, UnitStatus, VaultPlan, VaultReport, VaultRequest, build_vault,
+    export_in, export_skills, marketplace_manifest_path, owned_paths, packs_path, plan_in,
+    plan_vault, plugin_manifest_path, published_skill_name, rendered_skill_call,
 };
 pub use field_edit::{read_version, set_version};
 pub use frontmatter::{ContainerIdentity, EntityKind, VaultFrontmatter};
@@ -104,8 +105,7 @@ pub use layout::{
     check_vault_root, find_vault_root, is_vault_root, name_problem, read_layout,
 };
 pub use paths::{
-    LoadedVault, MarketplaceInputs, VaultMarketplace, dist_dir, load_vault, marketplace_inputs,
-    resolve_path,
+    LoadedVault, VaultMarketplace, dist_dir, load_vault, read_root_file, resolve_path,
 };
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{

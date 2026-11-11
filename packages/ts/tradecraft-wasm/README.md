@@ -40,10 +40,14 @@ console.log(report.changed)
 ```
 
 `marketplace` may be left out when the vault holds one marketplace. With
-several and none named, the call throws, naming them. `harnesses` narrows the
-build to some of `'claude'`, `'codex'`, `'cursor'` and `'pi'`. `defaults` takes
-the root file's shared defaults: pass `parseRootFile(text).defaults`, with the
-text of `skillwright.md`. Everything else comes from the vault's notes.
+several and none named, the call throws, naming them. The core reads the
+shared defaults and `build.harnesses` from `skillwright.md` itself, and
+everything else from the vault's notes; a request carries no configuration.
+`harnesses` narrows the root file's list to some of `'claude'`, `'codex'`,
+`'cursor'` and `'pi'`. A harness the root file does not build is refused.
+
+`buildVault(vfs, { vault_root })` builds every marketplace, and writes all of
+them or none.
 
 ## API
 
@@ -54,7 +58,8 @@ core reads and writes through. `createNodeVfs()` gives one over `node:fs`.
 | ----------------------------- | ------------------------------------------------------------------------------- |
 | `discoverComponents(vfs, request)` | Scans a vault's `marketplaces/` for publishable notes, and reports the notes it could not read. |
 | `loadMarketplace(vfs, request)` | Loads one marketplace of the vault as a model and writes nothing. |
-| `exportSkills(vfs, request)`  | Renders a marketplace into `<vault_root>/dist/<m>/`, one tree per agent. `mode: 'check'` reports drift and writes nothing. |
+| `buildVault(vfs, request)`    | Renders every marketplace into its `<vault_root>/dist/<m>/`, and writes all of them or none. `mode: 'check'` reports drift and writes nothing. |
+| `exportSkills(vfs, request)`  | Renders one marketplace into `<vault_root>/dist/<m>/`, one tree per agent. `mode: 'check'` reports drift and writes nothing. |
 | `parseRootFile(text)`         | Reads the text of `skillwright.md`: its shared defaults, its `build` settings and a warning per unknown key. |
 | `knownTargets()`              | The target names the core accepts: the `Target` type's four names.              |
 | `createNodeVfs(options?)`     | The `Vfs` over `node:fs`.                                                       |

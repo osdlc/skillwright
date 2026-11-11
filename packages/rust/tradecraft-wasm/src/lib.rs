@@ -11,7 +11,8 @@
 //! | Export | Core entry point | The verbs over it |
 //! |---|---|---|
 //! | `discoverComponents` | `discover::discover_components` | the vault scan every other verb needs |
-//! | `exportSkills` | `export::export_skills` | `build`, and `check` through `mode` |
+//! | `buildVault` | `export::build_vault` | `build` and `check` of every marketplace, through `mode` |
+//! | `exportSkills` | `export::export_skills` | `build`, and `check` through `mode`, of one marketplace |
 //! | `loadMarketplace` | `model::load::load` | any host that wants the model rather than files |
 //! | `knownTargets` | `harness::KNOWN_TARGETS` | every verb that takes a target name |
 //! | `parseRootFile` | `settings::parse_root_file` | a host reading `skillwright.md` |
@@ -19,6 +20,10 @@
 //! `build` and `check` share an export, because a mode is a key on the
 //! request rather than an export of its own. There is deliberately no
 //! `checkSkills` beside `exportSkills`.
+//!
+//! No request carries configuration. The core reads the root file's shared
+//! defaults and `build.harnesses` from `skillwright.md` through the host's
+//! vfs; a request's `harnesses` only narrows that list.
 //!
 //! # Boundary choices
 //!
@@ -28,8 +33,9 @@
 //!   call into JS and what happens when the host throws.
 //! - **The request and report cross as JSON strings**, deserialized and
 //!   serialized by the same `serde_json` the core is compiled against, through
-//!   the core's own derives. `exportSkills` and `loadMarketplace` read the
-//!   core's `ExportRequest` and `LoadRequest` directly. `WireDiscoverRequest`
+//!   the core's own derives. `buildVault`, `exportSkills` and
+//!   `loadMarketplace` read the core's `VaultRequest`, `ExportRequest` and
+//!   `LoadRequest` directly. `WireDiscoverRequest`
 //!   is the one shape this crate owns, because `discover_components` takes
 //!   loose parameters rather than a struct. Every request refuses an unknown
 //!   key.
@@ -51,7 +57,10 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tradecraft_core::CoreError;
 use tradecraft_core::discover::discover_components as core_discover_components;
-use tradecraft_core::export::{ExportRequest, export_skills as core_export_skills};
+use tradecraft_core::export::{
+    ExportRequest, VaultRequest, build_vault as core_build_vault,
+    export_skills as core_export_skills,
+};
 use tradecraft_core::harness::KNOWN_TARGETS;
 use tradecraft_core::model::load::{LoadRequest, load as core_load};
 use tradecraft_core::settings::parse_root_file as core_parse_root_file;
@@ -78,8 +87,8 @@ pub fn known_targets() -> Result<String, JsValue> {
 // --- the root file -----------------------------------------------------------
 
 /// Read a `skillwright.md`'s text into a serialized `RootFile`, the reader the
-/// CLI uses. It takes text and no vfs: finding the file is the host's. Its
-/// `defaults` are what an `exportSkills` or `loadMarketplace` request takes.
+/// CLI uses. It takes text and no vfs: finding the file is the host's. A
+/// build reads the file itself; this is for a host that shows it.
 ///
 /// # Errors
 ///
@@ -180,6 +189,31 @@ pub fn export_skills(vfs: JsValue, request_json: &str) -> Result<String, JsValue
     report_json("export report", &report)
 }
 
+/// Build or check every marketplace of the vault, or the one the request's
+/// `marketplace` names, each into its `<vault_root>/dist/<m>/`.
+///
+/// `vfs` is the host's filesystem object; `request_json` is a serialized
+/// `VaultRequest`. Returns a serialized `VaultReport`: one `ExportReport` per
+/// marketplace.
+///
+/// Every marketplace is planned before any is written, and a build writes
+/// all of them or none: a failed swap rolls back every marketplace already
+/// swapped.
+///
+/// # Errors
+///
+/// As `exportSkills`: the first marketplace's refusal, with nothing written,
+/// or `SwapFailed`.
+#[wasm_bindgen(js_name = buildVault)]
+pub fn build_vault(vfs: JsValue, request_json: &str) -> Result<String, JsValue> {
+    let vfs = JsVfs::adopt(vfs).map_err(|e| core_error_to_js(&e))?;
+    let request: VaultRequest = serde_json::from_str(request_json)
+        .map_err(|e| throwable(&format!("request is not a valid VaultRequest: {e}")))?;
+    let report = core_build_vault(&vfs, &request).map_err(|e| core_error_to_js(&e))?;
+
+    report_json("vault report", &report)
+}
+
 /// Load one marketplace of the vault into the model — every plugin and its
 /// members, with each body's links and calls resolved — and write nothing.
 /// The request's `marketplace` names it, and is required when the vault holds
@@ -250,22 +284,15 @@ mod tests {
 
     #[test]
     fn an_export_request_s_absences_are_the_core_defaults() {
-        let request: ExportRequest = serde_json::from_str(
-            r#"{
-                "vault_root": "/vault",
-                "defaults": { "license": "MIT" }
-            }"#,
-        )
-        .unwrap();
-
-        assert_eq!(request.vault_root, PathBuf::from("/vault"));
-        assert_eq!(request.defaults.license.as_deref(), Some("MIT"));
-        // Every absence, at its documented default.
         let request: ExportRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
+        assert_eq!(request.vault_root, PathBuf::from("/vault"));
         assert_eq!(request.mode, ExportMode::Build);
         assert_eq!(request.marketplace, None);
         assert_eq!(request.compare_with, None);
-        assert_eq!(request.defaults, tradecraft_core::SharedDefaults::default());
+        assert!(request.harnesses.is_empty());
+        let request: VaultRequest = serde_json::from_str(r#"{ "vault_root": "/vault" }"#).unwrap();
+        assert_eq!(request.mode, ExportMode::Build);
+        assert_eq!(request.marketplace, None);
     }
 
     #[test]
@@ -293,17 +320,22 @@ mod tests {
         assert!(err.to_string().contains("vault_root"), "{err}");
     }
 
-    /// An unknown key is refused, not dropped: a v1 `config` key, or a typo
-    /// of an optional key, would otherwise parse and be lost.
+    /// An unknown key is refused, not dropped: a v1 `config` key, the
+    /// removed `defaults` key, or a typo of an optional key, would otherwise
+    /// parse and be lost.
     #[test]
     fn every_request_refuses_an_unknown_key() {
-        let json = r#"{ "vault_root": "/vault", "config": {} }"#;
-        let export = serde_json::from_str::<ExportRequest>(json).unwrap_err();
-        assert!(export.to_string().contains("config"), "{export}");
-        let load = serde_json::from_str::<LoadRequest>(json).unwrap_err();
-        assert!(load.to_string().contains("config"), "{load}");
-        let discover = serde_json::from_str::<WireDiscoverRequest>(json).unwrap_err();
-        assert!(discover.to_string().contains("config"), "{discover}");
+        for key in ["config", "defaults"] {
+            let json = format!(r#"{{ "vault_root": "/vault", "{key}": {{}} }}"#);
+            let export = serde_json::from_str::<ExportRequest>(&json).unwrap_err();
+            assert!(export.to_string().contains(key), "{export}");
+            let vault = serde_json::from_str::<VaultRequest>(&json).unwrap_err();
+            assert!(vault.to_string().contains(key), "{vault}");
+            let load = serde_json::from_str::<LoadRequest>(&json).unwrap_err();
+            assert!(load.to_string().contains(key), "{load}");
+            let discover = serde_json::from_str::<WireDiscoverRequest>(&json).unwrap_err();
+            assert!(discover.to_string().contains(key), "{discover}");
+        }
     }
 
     /// A v2 vault: one marketplace `m`, one plugin `rev`, one skill `a`, and

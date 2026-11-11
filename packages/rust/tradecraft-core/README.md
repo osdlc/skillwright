@@ -38,9 +38,7 @@ marketplace, plugin and component is a folder with a note of the same name:
 
 ```rust
 use std::path::Path;
-use tradecraft_core::{
-    ExportRequest, MemVfs, SharedDefaults, Vfs, export_skills,
-};
+use tradecraft_core::{ExportRequest, MemVfs, Vfs, export_skills};
 
 let vfs = MemVfs::new();
 let plugin = "/vault/marketplaces/house/plugins/tools";
@@ -58,10 +56,11 @@ for (path, text) in [
     vfs.write_file(path, text.as_bytes())?;
 }
 
-// The vault and the root file's shared defaults are required. The other
-// fields start empty; set any of them on the value. A build writes
-// `dist/<m>/`. Everything else comes from the vault's notes.
-let mut request = ExportRequest::new("/vault", SharedDefaults::default());
+// Only the vault is required. The other fields start empty; set any of them
+// on the value. `harnesses` narrows the root file's `build.harnesses`. A
+// build writes `dist/<m>/`. Everything else comes from `skillwright.md` and
+// the vault's notes.
+let mut request = ExportRequest::new("/vault");
 request.harnesses.insert("claude".to_owned());
 let report = export_skills(&vfs, &request)?;
 assert!(report.changed);
@@ -81,19 +80,19 @@ The CLI does the same steps.
 2. `load_vault(&vfs, root, marketplace)` checks the layout, parses the
    root file, and reads each marketplace's note.
    `Some(name)` loads one marketplace. It returns a `LoadedVault`: the root
-   file as `settings`, `inputs` (the shared defaults and harnesses) and one
-   `VaultMarketplace` per marketplace.
-3. `loaded.export_request(&marketplace, mode)` is the build or check of one
-   marketplace into `<root>/dist/<m>/`. Pass it to
-   `export_skills(&vfs, &request)`. To build several marketplaces with
-   nothing written unless all succeed, call `plan_in` for each, then
-   `ExportPlan::write` for each.
+   file as `settings` and one `VaultMarketplace` per marketplace.
+3. `build_vault(&vfs, &VaultRequest::new(root))` builds every marketplace
+   into its `<root>/dist/<m>/`, or checks them with `mode` set to
+   `ExportMode::Check`. It plans every marketplace before it writes any, and
+   writes all of them or none: a failed swap rolls back every marketplace
+   already swapped. `plan_vault` returns the plan without writing, so a host
+   can show it and ask first.
+4. `loaded.export_request(&marketplace, mode)` is the build or check of one
+   marketplace. Pass it to `export_skills(&vfs, &request)`.
 
 ```rust
 use std::path::Path;
-use tradecraft_core::{
-    CoreError, ExportMode, MemVfs, Vfs, export_skills, find_vault_root, load_vault,
-};
+use tradecraft_core::{CoreError, MemVfs, VaultRequest, Vfs, build_vault, find_vault_root};
 
 let vfs = MemVfs::new();
 let plugin = "/vault/marketplaces/house/plugins/tools";
@@ -112,18 +111,14 @@ for (path, text) in [
 }
 
 let root = find_vault_root(&vfs, Path::new(plugin))?;
-let loaded = load_vault(&vfs, &root, None)?;
-for marketplace in &loaded.marketplaces {
-    let request = loaded.export_request(marketplace, ExportMode::Build);
-    let report = export_skills(&vfs, &request)?;
-    assert!(report.changed);
-}
+let report = build_vault(&vfs, &VaultRequest::new(root))?;
+assert!(report.marketplaces.iter().all(|m| m.report.changed));
 assert!(vfs.exists(Path::new("/vault/dist/house/.claude-plugin/marketplace.json")));
 # Ok::<(), CoreError>(())
 ```
 
 The steps inside are public if a host needs them apart: `read_layout`,
-`classify`, `parse_root_file`, `marketplace_inputs`, `dist_dir` and `resolve_path` for any other path read
+`classify`, `read_root_file`, `parse_root_file`, `dist_dir` and `resolve_path` for any other path read
 from the root file.
 
 ## What it covers
@@ -178,14 +173,15 @@ in the [CHANGELOG](CHANGELOG.md).
 Most public types are `#[non_exhaustive]`, so a new field or variant is not a
 breaking change:
 
-- The request types (`ExportRequest`, `LoadRequest`, `CompileSource`).
+- The request types (`ExportRequest`, `VaultRequest`, `LoadRequest`,
+  `CompileSource`).
   Build one with
   its `new` constructor, which takes the required inputs, and set the other
   fields on the value.
 - The settings types (`RootFile`, `SharedDefaults`, `BuildSettings`).
   Build one with
   `Default::default()` and set its fields.
-- The output types (`ExportReport`, `DiscoveryReport`,
+- The output types (`ExportReport`, `VaultReport`, `DiscoveryReport`,
   `DiscoveredComponent`, `DiscoveryWarning`, `SkippedNote`, `LoadedVault`,
   `VaultMarketplace`, `Layout`). Read them by
   field. `DiscoveryWarning::new` builds a line for a host's own report.

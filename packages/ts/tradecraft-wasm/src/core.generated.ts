@@ -355,12 +355,12 @@ export interface ExportRequest {
   marketplace?: string;
 
   /**
-   * Which harnesses to render, by name. Empty means every harness this
-   * build supports.
+   * Narrows the root file's `build.harnesses`, by name. Empty means every
+   * harness the root file builds.
    *
-   * A name no harness answers to is refused rather than ignored: it is a
-   * typo or a harness this build cannot produce, and silently publishing
-   * less than was asked for is the failure this crate is built around.
+   * A name no harness answers to, or one the root file does not build, is
+   * refused rather than ignored: silently publishing other than was asked
+   * for is the failure this crate is built around.
    */
   harnesses?: string[];
 
@@ -373,12 +373,6 @@ export interface ExportRequest {
    * this way. A build refuses it: a build always writes `dist/<m>/`.
    */
   compare_with?: string;
-
-  /**
-   * The root file's shared defaults, which every marketplace and plugin
-   * takes where its note is silent. Absent on the wire means none.
-   */
-  defaults?: SharedDefaults;
 }
 
 /** Whether an export writes the marketplace, or only reports its drift. */
@@ -522,9 +516,43 @@ export interface VersionBumpSuggestion {
  */
 export type StaleKind = "plugin" | "file" | "empty-dir";
 
+/** A build or check of every marketplace in a vault, or of the one named. */
+export interface VaultRequest {
+  /** Absolute path to the vault root. */
+  vault_root: string;
+
+  /** Which marketplace to build, by folder. `None` builds every one. */
+  marketplace?: string;
+
+  /**
+   * Narrows the root file's `build.harnesses`, as
+   * [`ExportRequest::harnesses`] does.
+   */
+  harnesses?: string[];
+
+  /** Build, or check. Absent on the wire means [`ExportMode::Build`]. */
+  mode?: ExportMode;
+}
+
+/** What [`build_vault`] did, or would do, per marketplace. */
+export interface VaultReport {
+  /** One report per marketplace, in folder order. */
+  marketplaces: MarketplaceReport[];
+}
+
+/** One marketplace's report in a [`VaultReport`]. */
+export interface MarketplaceReport {
+  /** The marketplace's folder name. */
+  marketplace: string;
+
+  /** Its export report. */
+  report: ExportReport;
+}
+
 /**
  * What a marketplace load reads: this vault, this marketplace of it, for
- * these harnesses, under the root file's shared defaults.
+ * these harnesses. The root file's shared defaults and `build.harnesses` are
+ * read from the vault, never passed.
  */
 export interface LoadRequest {
   /** Absolute path to the vault. */
@@ -537,17 +565,11 @@ export interface LoadRequest {
   marketplace?: string;
 
   /**
-   * Which harnesses the model is for, by canonical name. Empty means every
-   * harness. A body no harness here admits is read
-   * but not resolved.
+   * Narrows the root file's `build.harnesses`, by canonical name. Empty
+   * means every harness the root file builds. A body no harness here
+   * admits is read but not resolved.
    */
   harnesses?: string[];
-
-  /**
-   * The root file's shared defaults, under what the vault's own notes say.
-   * Absent on the wire means none.
-   */
-  defaults?: SharedDefaults;
 }
 
 /** A vault, loaded as the one marketplace a build renders. */
@@ -956,6 +978,7 @@ export interface Asset {
 export interface WasmRequests {
   discoverComponents: DiscoverRequest;
   exportSkills: ExportRequest;
+  buildVault: VaultRequest;
   loadMarketplace: LoadRequest;
 }
 
@@ -967,6 +990,7 @@ export interface WasmResponses {
   parseRootFile: RootFile;
   discoverComponents: DiscoveryReport;
   exportSkills: ExportReport;
+  buildVault: VaultReport;
   loadMarketplace: Marketplace;
 }
 

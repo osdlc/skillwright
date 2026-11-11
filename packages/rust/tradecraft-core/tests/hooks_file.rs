@@ -8,9 +8,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use tradecraft_core::{
-    ExportMode, ExportReport, ExportRequest, MemVfs, SharedDefaults, Vfs, export_skills,
-};
+use tradecraft_core::{ExportMode, ExportReport, ExportRequest, MemVfs, Vfs, export_skills};
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/hooks-file");
 
@@ -59,7 +57,7 @@ fn without_hooks() -> MemVfs {
 }
 
 fn request(mode: ExportMode) -> ExportRequest {
-    let mut request = ExportRequest::new("/vault", SharedDefaults::default());
+    let mut request = ExportRequest::new("/vault");
     request.mode = mode;
     request
 }

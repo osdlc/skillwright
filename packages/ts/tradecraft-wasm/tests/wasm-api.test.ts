@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { afterEach, beforeEach, expect, expectTypeOf, test } from 'vitest'
 
 import {
+  buildVault,
   CoreError,
   exportSkills,
   knownTargets,
@@ -12,6 +13,7 @@ import {
   type ExportRequest,
   type LoadRequest,
   type Target,
+  type VaultRequest,
 } from '../src/core.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
@@ -72,6 +74,44 @@ test("exportSkills writes the vault's dist/<m>/ through the host's vfs", () => {
   }
 })
 
+test('buildVault builds every marketplace', () => {
+  marketplace('acme')
+  marketplace('labs')
+  const report = buildVault(createNodeVfs(), { vault_root: vault })
+  expect(report.marketplaces.map((m) => m.marketplace)).toEqual(['acme', 'labs'])
+  for (const name of ['acme', 'labs']) {
+    expect(existsSync(path.join(vault, `dist/${name}/.claude-plugin/marketplace.json`))).toBe(true)
+  }
+  const check = buildVault(createNodeVfs(), { vault_root: vault, mode: 'check' })
+  expect(check.marketplaces.every((m) => !m.report.changed)).toBe(true)
+})
+
+test("the core reads the root file's defaults and harnesses", () => {
+  writeFile('skillwright.md', '---\nlicense: MIT\nbuild:\n  harnesses: [claude]\n---\n')
+  marketplace('acme')
+  exportSkills(createNodeVfs(), { vault_root: vault })
+  expect(existsSync(path.join(vault, 'dist/acme/.agents'))).toBe(false)
+  const manifest = path.join(
+    vault,
+    'dist/acme/.claude-plugin/packs/tools/.claude-plugin/plugin.json',
+  )
+  expect(JSON.parse(readFileSync(manifest, 'utf8')).license).toBe('MIT')
+
+  let error: unknown
+  try {
+    exportSkills(createNodeVfs(), { vault_root: vault, harnesses: ['codex'] })
+  } catch (raw) {
+    error = raw
+  }
+  expect((error as CoreError).message).toContain('harness-not-built')
+})
+
+test('a request that carries defaults is refused', () => {
+  marketplace('acme')
+  const request = { vault_root: vault, defaults: { license: 'MIT' } } as unknown as ExportRequest
+  expect(() => exportSkills(createNodeVfs(), request)).toThrow(/defaults/)
+})
+
 test('loadMarketplace loads the marketplace it names', () => {
   marketplace('acme')
   marketplace('labs')
@@ -105,4 +145,5 @@ test('Target is the four names knownTargets() returns', () => {
   expectTypeOf(knownTargets()).toEqualTypeOf<Target[]>()
   expectTypeOf<NonNullable<ExportRequest['harnesses']>>().toEqualTypeOf<Target[]>()
   expectTypeOf<NonNullable<LoadRequest['harnesses']>>().toEqualTypeOf<Target[]>()
+  expectTypeOf<NonNullable<VaultRequest['harnesses']>>().toEqualTypeOf<Target[]>()
 })

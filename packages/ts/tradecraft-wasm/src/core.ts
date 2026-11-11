@@ -11,12 +11,13 @@
  * `CoreError` into a typed one, exactly mirroring what
  * `@osdlc/yaml-splice`'s `index.ts` does for `yaml-splice-wasm`.
  *
- * The binding exports five functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
+ * The binding exports six functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
  *
  * | Export | Reaches | Serves |
  * |---|---|---|
  * | `discoverComponents` | the vault scan | `build`, `check`, and whatever needs a roster |
- * | `exportSkills` | the marketplace renderer | `build`, and `check` through `mode` |
+ * | `buildVault` | every marketplace, planned then written all or none | `build`, and `check` through `mode` |
+ * | `exportSkills` | the marketplace renderer, one marketplace | `build`, and `check` through `mode` |
  * | `loadMarketplace` | the marketplace model, loaded and resolved | a host that wants structure rather than files |
  * | `knownTargets` | the target vocabulary | every verb that takes a target name |
  * | `parseRootFile` | the `skillwright.md` reader | a host reading the root file |
@@ -25,9 +26,13 @@
  * `exportSkills` with `mode: "check"`. This file never predicts what it would
  * do: the core runs the identical path over a capturing overlay and hands back
  * the report the write would have produced.
+ *
+ * No request carries configuration: the core reads `skillwright.md` through
+ * the vfs, and a request's `harnesses` only narrows its `build.harnesses`.
  */
 
 import {
+  buildVault as buildVaultWasm,
   discoverComponents as discoverComponentsWasm,
   exportSkills as exportSkillsWasm,
   loadMarketplace as loadMarketplaceWasm,
@@ -45,6 +50,8 @@ import type {
   LoadRequest as GeneratedLoadRequest,
   Marketplace,
   RootFile,
+  VaultReport,
+  VaultRequest as GeneratedVaultRequest,
 } from './core.generated.ts'
 
 /**
@@ -53,7 +60,7 @@ import type {
  * one door to the core.
  *
  * Re-exported, never re-declared, except for `Target` and the `harnesses` of
- * the two requests, below. Everything else here is exactly what
+ * the three requests, below. Everything else here is exactly what
  * `tradecraft-typegen` read off the Rust source.
  * Regenerate with `cargo run -p tradecraft-typegen`; `cargo test -p tradecraft-typegen`
  * fails when the committed file is behind the Rust source, and a test in this
@@ -69,6 +76,7 @@ export type {
   ExportReport,
   ExportUnit,
   Marketplace,
+  MarketplaceReport,
   Plugin,
   Component,
   Segment,
@@ -77,6 +85,7 @@ export type {
   BuildSettings,
   SkippedNote,
   UnitStatus,
+  VaultReport,
   VersionBumpSuggestion,
   WasmExportsWithoutJson,
   WasmRequests,
@@ -92,6 +101,11 @@ export type Target = 'claude' | 'codex' | 'cursor' | 'pi'
 
 /** The generated `ExportRequest`, with `harnesses` typed as {@link Target}s. */
 export type ExportRequest = Omit<GeneratedExportRequest, 'harnesses'> & {
+  harnesses?: Target[]
+}
+
+/** The generated `VaultRequest`, with `harnesses` typed as {@link Target}s. */
+export type VaultRequest = Omit<GeneratedVaultRequest, 'harnesses'> & {
   harnesses?: Target[]
 }
 
@@ -200,6 +214,19 @@ export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
 }
 
 /**
+ * Build or check every marketplace of the vault, or the one `marketplace`
+ * names, each into its `<vault_root>/dist/<m>/`. Every marketplace is planned
+ * before any is written, and a build writes all of them or none: a failed
+ * swap rolls back every marketplace already swapped.
+ *
+ * Throws {@link CoreError} for the first marketplace's refusal, with nothing
+ * written, and for a failed swap.
+ */
+export function buildVault(vfs: Vfs, request: VaultRequest): VaultReport {
+  return callCore<VaultReport>(() => buildVaultWasm(vfs, JSON.stringify(request)))
+}
+
+/**
  * Load one marketplace of the vault into the model and write nothing: every
  * plugin and its members, each body as segments with its links and calls
  * resolved. `marketplace` names it, and is required when the vault holds
@@ -220,8 +247,8 @@ export function loadMarketplace(vfs: Vfs, request: LoadRequest): Marketplace {
 
 /**
  * Read a `skillwright.md`'s text, with the reader the CLI uses. Finding the
- * file is the caller's; an unknown key comes back in `warnings`. Its
- * `defaults` are what an {@link ExportRequest} or {@link LoadRequest} takes.
+ * file is the caller's; an unknown key comes back in `warnings`. A build
+ * reads the file itself; this is for a host that shows it.
  *
  * @throws {CoreError} on frontmatter that is not a mapping, or a known key of
  * the wrong shape.

@@ -31,11 +31,9 @@ fn vault() -> MemVfs {
 }
 
 #[test]
-fn an_export_request_builds_from_default_shared_defaults() {
+fn an_export_request_takes_its_vault_root() {
     let vfs = vault();
-    let mut defaults = SharedDefaults::default();
-    defaults.license = Some("MIT".to_owned());
-    let mut request = ExportRequest::new("/vault", defaults);
+    let mut request = ExportRequest::new("/vault");
     assert_eq!(request.mode, ExportMode::Build);
     request.harnesses.insert("claude".to_owned());
     let report = export_skills(&vfs, &request).unwrap();
@@ -47,7 +45,7 @@ fn an_export_request_builds_from_default_shared_defaults() {
 
 #[test]
 fn a_load_request_takes_its_inputs() {
-    let mut load = LoadRequest::new("/vault", SharedDefaults::default());
+    let mut load = LoadRequest::new("/vault");
     load.marketplace = Some("house".to_owned());
     assert!(load.harnesses.is_empty());
 }
@@ -83,7 +81,7 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
     let warning = DiscoveryWarning::new("review.md", "missing-version", "detail");
     assert_eq!(warning.reason, "missing-version");
 
-    let request = ExportRequest::new("/vault", SharedDefaults::default());
+    let request = ExportRequest::new("/vault");
     let report = export_skills(&vfs, &request).unwrap();
     assert_eq!(report.mode, ExportMode::Build);
     for unit in &report.units {

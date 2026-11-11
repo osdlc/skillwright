@@ -30,7 +30,7 @@ use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
-use crate::settings::SharedDefaults;
+use crate::settings::{RootFile, SharedDefaults};
 use crate::vault::{VaultNote, read_vault_note};
 
 pub use crate::layout::CHANGELOG_FILE;
@@ -38,7 +38,8 @@ use crate::layout::{Layout, Place, SharedDir};
 use crate::vfs::{Vfs, normalize};
 
 /// What a marketplace load reads: this vault, this marketplace of it, for
-/// these harnesses, under the root file's shared defaults.
+/// these harnesses. The root file's shared defaults and `build.harnesses` are
+/// read from the vault, never passed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
@@ -49,26 +50,21 @@ pub struct LoadRequest {
     /// one.
     #[serde(default)]
     pub marketplace: Option<String>,
-    /// Which harnesses the model is for, by canonical name. Empty means every
-    /// harness. A body no harness here admits is read
-    /// but not resolved.
+    /// Narrows the root file's `build.harnesses`, by canonical name. Empty
+    /// means every harness the root file builds. A body no harness here
+    /// admits is read but not resolved.
     #[serde(default)]
     pub harnesses: BTreeSet<String>,
-    /// The root file's shared defaults, under what the vault's own notes say.
-    /// Absent on the wire means none.
-    #[serde(default)]
-    pub defaults: SharedDefaults,
 }
 
 impl LoadRequest {
-    /// A load of the vault at `vault_root` under the root file's `defaults`.
-    /// Every other field starts empty; set it after.
-    pub fn new(vault_root: impl Into<PathBuf>, defaults: SharedDefaults) -> Self {
+    /// A load of the vault at `vault_root`. Every other field starts empty;
+    /// set it after.
+    pub fn new(vault_root: impl Into<PathBuf>) -> Self {
         Self {
             vault_root: vault_root.into(),
             marketplace: None,
             harnesses: BTreeSet::new(),
-            defaults,
         }
     }
 }
@@ -120,6 +116,46 @@ pub(crate) fn selected_harnesses(
         .collect())
 }
 
+/// The harnesses a build renders: the root file's `build.harnesses` (every
+/// harness when absent), narrowed by `filter` when it names any.
+///
+/// # Errors
+///
+/// * `refused: unknown-harness` — a name no harness answers to.
+/// * `refused: harness-not-built` — `filter` names a harness the root file's
+///   `build.harnesses` leaves out. A filter narrows; it never widens.
+pub(crate) fn built_harnesses(
+    root: &RootFile,
+    filter: &BTreeSet<String>,
+) -> Result<Vec<&'static HarnessProfile>, CoreError> {
+    let listed = selected_harnesses(&root.harness_set())?;
+    if filter.is_empty() {
+        return Ok(listed);
+    }
+    let asked = selected_harnesses(filter)?;
+    let unlisted: Vec<String> = asked
+        .iter()
+        .filter(|spec| !listed.iter().any(|l| l.name == spec.name))
+        .map(|spec| format!("`{}`", spec.name))
+        .collect();
+    if !unlisted.is_empty() {
+        return Err(CoreError::refused(
+            "harness-not-built",
+            format!(
+                "the root file's `build.harnesses` builds {}, and the request asks for {} too: \
+                 a request narrows that list, it never widens it. Nothing was written",
+                listed
+                    .iter()
+                    .map(|spec| format!("`{}`", spec.name))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                unlisted.join(", ")
+            ),
+        ));
+    }
+    Ok(asked)
+}
+
 /// Loads the marketplace a build renders.
 ///
 /// # Errors
@@ -155,18 +191,34 @@ pub fn load_in(
     layout: &Layout,
     request: &LoadRequest,
 ) -> Result<Marketplace, CoreError> {
+    let root = crate::paths::read_root_file(vfs, &layout.root)?;
+    let roots = built_harnesses(&root, &request.harnesses)?;
+    load_for(
+        vfs,
+        layout,
+        request.marketplace.as_deref(),
+        &roots,
+        &root.defaults,
+    )
+}
+
+/// [`load_in`] with the root file already read: `roots` are the harnesses
+/// the model is for, and `defaults` the root file's shared defaults.
+pub(crate) fn load_for(
+    vfs: &dyn Vfs,
+    layout: &Layout,
+    marketplace: Option<&str>,
+    roots: &[&'static HarnessProfile],
+    defaults: &SharedDefaults,
+) -> Result<Marketplace, CoreError> {
     let vault_root = layout.root.clone();
-    let roots = selected_harnesses(&request.harnesses)?;
 
     // Pass 1.
     let scan = read_notes(vfs, layout)?;
     // The root file's own entry is configuration, not a note, and
     // `check_block_values` below refuses it naming the marketplace. A note in
     // another marketplace does not stop a build of this one.
-    let market_prefix = request
-        .marketplace
-        .as_deref()
-        .map(|m| format!("{}/{m}/", crate::layout::MARKETPLACES_DIR));
+    let market_prefix = marketplace.map(|m| format!("{}/{m}/", crate::layout::MARKETPLACES_DIR));
     let skipped: Vec<&SkippedNote> = scan
         .skipped
         .iter()
@@ -205,8 +257,8 @@ pub fn load_in(
     // Which marketplaces the vault holds is read from every kind, not from the
     // skills alone: one holding only commands still exists, and naming it must
     // say it holds nothing publishable rather than that it is not there.
-    let market = resolve_marketplace(&discovered, request.marketplace.as_deref())?;
-    let cascade = Cascade::over(&discovered, Some(&market), &request.defaults);
+    let market = resolve_marketplace(&discovered, marketplace)?;
+    let cascade = Cascade::over(&discovered, Some(&market), defaults);
     // Before members inherit a block, so a wrong value names its container.
     crate::harness::manifest::check_block_values(&cascade.config)?;
     cascade.resolve_targets(&mut discovered);
@@ -275,13 +327,7 @@ pub fn load_in(
     warnings.extend(missing_versions(&discovered, &market, &plugins, config));
     pack_files(vfs, layout, &market, &mut plugins)?;
     warnings.extend(changelog_warnings(vfs, layout, &market, config));
-    warnings.extend(load_hooks_files(
-        vfs,
-        layout,
-        &market,
-        &roots,
-        &mut plugins,
-    )?);
+    warnings.extend(load_hooks_files(vfs, layout, &market, roots, &mut plugins)?);
 
     // Pass 2. One index for every call, over every skill, command and agent
     // in the marketplace under the plugin it ships in, whether or not a given
@@ -295,7 +341,7 @@ pub fn load_in(
             .chain(&uncarried)
             .map(|c| (&c.discovered, c.discovered.plugin.as_deref())),
     );
-    let hand_written = hand_written_forms(&plugins, &roots, config)?;
+    let hand_written = hand_written_forms(&plugins, roots, config)?;
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), hand_written, &record);
     for plugin in plugins.values_mut() {
@@ -1065,7 +1111,7 @@ mod tests {
             b"[[guide]]",
         )
         .unwrap();
-        let request = LoadRequest::new("/vault", crate::settings::SharedDefaults::default());
+        let request = LoadRequest::new("/vault");
         let market = load(&vfs, &request).unwrap();
         let plugin = &market.plugins["p"];
         let paths: Vec<&str> = plugin.references.iter().map(|r| r.path.as_str()).collect();

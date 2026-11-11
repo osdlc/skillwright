@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    ExportMode, ExportReport, ExportRequest, MemVfs, SharedDefaults, UNKNOWN_KEY_REASON, Vfs,
-    export_skills, parse_root_file,
+    ExportMode, ExportReport, ExportRequest, MemVfs, UNKNOWN_KEY_REASON, Vfs, export_skills,
+    parse_root_file,
 };
 
 const ROOT: &str = "/vault/skillwright.md";
@@ -52,7 +52,7 @@ fn vault(market: &str, tools: &str, review: &str) -> MemVfs {
 }
 
 fn request() -> ExportRequest {
-    let mut request = ExportRequest::new("/vault", SharedDefaults::default());
+    let mut request = ExportRequest::new("/vault");
     request.marketplace = Some("house".to_owned());
     request
 }
@@ -200,9 +200,8 @@ fn targets_inherit_and_a_nearer_list_replaces_them() {
 #[test]
 fn the_root_files_targets_reach_a_plugin_that_sets_none() {
     let vfs = vault("", "targets:\n  - codex\n", "");
-    let mut narrowed = request();
-    narrowed.defaults.targets = Some(vec!["claude".to_owned()]);
-    export_skills(&vfs, &narrowed).unwrap();
+    write(&vfs, ROOT, "---\ntargets: [claude]\n---\n");
+    build(&vfs);
     assert!(vfs.exists(Path::new(
         "/vault/dist/house/.agents/packs/tools/skills/review/SKILL.md"
     )));
@@ -212,14 +211,18 @@ fn the_root_files_targets_reach_a_plugin_that_sets_none() {
 }
 
 /// The root file is the one channel besides the notes (spec section 2 rule
-/// 1). A request carries its shared defaults and nothing else, so a host
-/// cannot set a plugin's `version` or the marketplace's `owner`; the
-/// defaults reach every manifest that reads them.
+/// 1). A request carries no configuration, so a host cannot set a plugin's
+/// `version` or the marketplace's `owner`; the root file's defaults reach
+/// every manifest that reads them.
 #[test]
-fn a_request_carries_the_root_files_defaults_and_nothing_else() {
+fn a_request_carries_no_configuration() {
     let vfs = vault("", "", "");
-    let mut request = request();
-    request.defaults = root_defaults("license: MIT\nhomepage: https://root.example\n");
+    write(
+        &vfs,
+        ROOT,
+        "---\nlicense: MIT\nhomepage: https://root.example\n---\n",
+    );
+    let request = request();
     let wire = serde_json::to_value(&request).unwrap();
     let mut keys: Vec<&str> = wire
         .as_object()
@@ -232,7 +235,6 @@ fn a_request_carries_the_root_files_defaults_and_nothing_else() {
         keys,
         [
             "compare_with",
-            "defaults",
             "harnesses",
             "marketplace",
             "mode",
@@ -319,12 +321,6 @@ fn a_block_key_a_harness_does_not_read_on_a_container_warns() {
 
 const COMMAND: &str = "/vault/marketplaces/house/plugins/tools/commands/ship/ship.md";
 const AGENT: &str = "/vault/marketplaces/house/plugins/tools/agents/helper/helper.md";
-
-fn root_defaults(frontmatter: &str) -> SharedDefaults {
-    parse_root_file(&format!("---\n{frontmatter}---\n"))
-        .unwrap()
-        .defaults
-}
 
 #[test]
 fn a_container_block_never_sets_a_members_description() {
@@ -559,12 +555,13 @@ fn a_marketplace_note_outranks_the_root_file_for_every_identity_key() {
         "",
         "",
     );
-    let mut request = request();
-    request.defaults = root_defaults(
-        "author: Root Author\nlicense: MIT\ntargets: [claude]\n\
-         repository: https://root.example/repo\nhomepage: https://root.example\n",
+    write(
+        &vfs,
+        ROOT,
+        "---\nauthor: Root Author\nlicense: MIT\ntargets: [claude]\n\
+         repository: https://root.example/repo\nhomepage: https://root.example\n---\n",
     );
-    export_skills(&vfs, &request).unwrap();
+    build(&vfs);
     assert!(!vfs.exists(Path::new(CLAUDE_REVIEW)));
     let codex = json_at(
         &vfs,
@@ -673,11 +670,14 @@ fn root_vault(root_file: &str, files: &[(&str, &str)]) -> MemVfs {
     vfs
 }
 
-/// A build of the vault's one marketplace, `house`, under `defaults`.
-fn build_root(vfs: &dyn Vfs, defaults: SharedDefaults) -> Result<ExportReport, String> {
+/// A build of the vault's one marketplace, `house`, with `frontmatter`
+/// written to the root file when it is not empty.
+fn build_root(vfs: &MemVfs, frontmatter: &str) -> Result<ExportReport, String> {
+    if !frontmatter.is_empty() {
+        write(vfs, ROOT, &format!("---\n{frontmatter}---\n"));
+    }
     let mut named = request();
     named.marketplace = None;
-    named.defaults = defaults;
     export_skills(vfs, &named).map_err(|err| err.to_string())
 }
 
@@ -691,7 +691,7 @@ fn a_body_link_into_a_bundles_docs_is_refused() {
             ("plugins/tools/skills/review/docs/plan.md", "# Plan\n"),
         ],
     );
-    let err = build_root(&vfs, SharedDefaults::default()).unwrap_err();
+    let err = build_root(&vfs, "").unwrap_err();
     assert!(err.contains("excluded-link"), "{err}");
 }
 
@@ -709,23 +709,20 @@ fn pi_vault() -> MemVfs {
     )
 }
 
-fn pi_block(key: &str, value: &str) -> SharedDefaults {
-    let mut defaults = SharedDefaults::default();
-    let block = serde_json::Map::from_iter([(key.to_owned(), serde_json::json!(value))]);
-    defaults.blocks.insert("pi".to_owned(), block);
-    defaults
+fn pi_block(key: &str, value: &str) -> String {
+    format!("pi:\n  {key}: {value}\n")
 }
 
 #[test]
 fn pi_prefixes_a_skill_with_its_plugin_unless_told_bare() {
     let vfs = pi_vault();
-    build_root(&vfs, SharedDefaults::default()).unwrap();
+    build_root(&vfs, "").unwrap();
     assert!(vfs.exists(Path::new(
         "/vault/dist/house/.pi/packs/tools/skills/tools-review/SKILL.md"
     )));
 
     let vfs = pi_vault();
-    build_root(&vfs, pi_block("naming", "bare")).unwrap();
+    build_root(&vfs, &pi_block("naming", "bare")).unwrap();
     let pack = "/vault/dist/house/.pi/packs/tools/skills";
     assert!(vfs.exists(Path::new(&format!("{pack}/review/SKILL.md"))));
     let lead = text_at(&vfs, &format!("{pack}/lead/SKILL.md"));
@@ -738,13 +735,13 @@ fn pi_prefixes_a_skill_with_its_plugin_unless_told_bare() {
 fn a_plugin_can_ask_for_bare_names_alone_and_a_bad_value_is_refused() {
     let vfs = pi_vault();
     plugin_note(&vfs, "tools", "pi:\n  naming: bare\n");
-    build_root(&vfs, SharedDefaults::default()).unwrap();
+    build_root(&vfs, "").unwrap();
     assert!(vfs.exists(Path::new(
         "/vault/dist/house/.pi/packs/tools/skills/review/SKILL.md"
     )));
 
     let vfs = pi_vault();
-    let err = build_root(&vfs, pi_block("naming", "short")).unwrap_err();
+    let err = build_root(&vfs, &pi_block("naming", "short")).unwrap_err();
     assert!(err.contains("unknown-naming"), "{err}");
 }
 
@@ -756,7 +753,7 @@ fn bare_names_that_collide_across_plugins_are_refused() {
         "plugins/other/skills/review/review.md",
         &note("review", ""),
     );
-    let err = build_root(&vfs, pi_block("naming", "bare")).unwrap_err();
+    let err = build_root(&vfs, &pi_block("naming", "bare")).unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
 }
 
@@ -768,7 +765,7 @@ fn a_bare_pi_collision_names_the_bare_setting() {
         "plugins/other/skills/review/review.md",
         &note("review", ""),
     );
-    let err = build_root(&vfs, pi_block("naming", "bare")).unwrap_err();
+    let err = build_root(&vfs, &pi_block("naming", "bare")).unwrap_err();
     assert!(err.contains("`pi.naming: bare`"), "{err}");
     assert!(!err.contains("by default"), "{err}");
 }
@@ -794,11 +791,8 @@ fn cursor_vault_with(body: &str) -> MemVfs {
     )
 }
 
-fn cursor_block(key: &str, value: &str) -> SharedDefaults {
-    let mut defaults = SharedDefaults::default();
-    let block = serde_json::Map::from_iter([(key.to_owned(), serde_json::json!(value))]);
-    defaults.blocks.insert("cursor".to_owned(), block);
-    defaults
+fn cursor_block(key: &str, value: &str) -> String {
+    format!("cursor:\n  {key}: {value}\n")
 }
 
 /// `plugin`'s note in a [`root_vault`], with `extra` in its frontmatter.
@@ -820,7 +814,7 @@ fn cursor_skill(vfs: &dyn Vfs, plugin: &str, folder: &str) -> Option<String> {
 #[test]
 fn cursor_names_are_prefixed_by_default() {
     let vfs = cursor_vault();
-    build_root(&vfs, SharedDefaults::default()).unwrap();
+    build_root(&vfs, "").unwrap();
     for plugin in ["p1", "p2"] {
         let hello = cursor_skill(&vfs, plugin, &format!("{plugin}-hello")).expect(plugin);
         assert!(
@@ -834,7 +828,7 @@ fn cursor_names_are_prefixed_by_default() {
 #[test]
 fn a_marketplace_s_bare_cursor_naming_refuses_duplicates() {
     let vfs = cursor_vault();
-    let err = build_root(&vfs, cursor_block("naming", "bare")).unwrap_err();
+    let err = build_root(&vfs, &cursor_block("naming", "bare")).unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
     for part in ["plugin `p1`", "plugin `p2`", "`cursor.naming: bare`"] {
         assert!(err.contains(part), "{part}: {err}");
@@ -845,13 +839,13 @@ fn a_marketplace_s_bare_cursor_naming_refuses_duplicates() {
 fn a_plugin_s_cursor_naming_overrides_the_marketplace_s() {
     let vfs = cursor_vault();
     plugin_note(&vfs, "p1", "cursor:\n  naming: bare\n");
-    build_root(&vfs, cursor_block("naming", "prefixed")).unwrap();
+    build_root(&vfs, &cursor_block("naming", "prefixed")).unwrap();
     assert!(cursor_skill(&vfs, "p1", "hello").is_some());
     assert!(cursor_skill(&vfs, "p2", "p2-hello").is_some());
 
     let vfs = cursor_vault();
     plugin_note(&vfs, "p2", "cursor:\n  naming: prefixed\n");
-    build_root(&vfs, cursor_block("naming", "bare")).unwrap();
+    build_root(&vfs, &cursor_block("naming", "bare")).unwrap();
     assert!(cursor_skill(&vfs, "p1", "hello").is_some());
     assert!(cursor_skill(&vfs, "p2", "p2-hello").is_some());
 }
@@ -860,7 +854,7 @@ fn a_plugin_s_cursor_naming_overrides_the_marketplace_s() {
 fn a_body_names_the_prefixed_cursor_skill() {
     let vfs = cursor_vault();
     plugin_note(&vfs, "p2", "cursor:\n  naming: prefixed\n");
-    build_root(&vfs, SharedDefaults::default()).unwrap();
+    build_root(&vfs, "").unwrap();
     let lead = cursor_skill(&vfs, "p2", "p2-lead").unwrap();
     assert!(
         lead.contains("Run `/p2-lead`. See [hello](../p2-hello/SKILL.md). Then `/p1-greet`."),
@@ -882,7 +876,7 @@ fn a_body_names_the_prefixed_cursor_skill() {
 #[test]
 fn a_call_to_a_name_two_plugins_share_is_refused_naming_both() {
     let vfs = cursor_vault_with("Run /[[hello]].");
-    let err = build_root(&vfs, SharedDefaults::default()).unwrap_err();
+    let err = build_root(&vfs, "").unwrap_err();
     assert!(err.contains("skill-call-ambiguous"), "{err}");
     for part in ["plugin `p1`", "plugin `p2`", "`/[[hello]]`", "lead.md"] {
         assert!(err.contains(part), "{part}: {err}");
@@ -893,7 +887,7 @@ fn a_call_to_a_name_two_plugins_share_is_refused_naming_both() {
 fn a_bad_cursor_naming_is_refused() {
     let vfs = cursor_vault();
     plugin_note(&vfs, "p1", "cursor:\n  naming: short\n");
-    let err = build_root(&vfs, SharedDefaults::default()).unwrap_err();
+    let err = build_root(&vfs, "").unwrap_err();
     assert!(err.contains("unknown-naming"), "{err}");
     assert!(err.contains("`cursor.naming` of plugin `p1`"), "{err}");
 }
@@ -932,7 +926,7 @@ fn cursor_naming_is_not_an_unknown_key() {
 fn cursor_naming_never_reaches_a_manifest() {
     let vfs = cursor_vault();
     plugin_note(&vfs, "p2", "cursor:\n  naming: prefixed\n");
-    build_root(&vfs, cursor_block("naming", "prefixed")).unwrap();
+    build_root(&vfs, &cursor_block("naming", "prefixed")).unwrap();
     let manifest = json_at(
         &vfs,
         &format!("{CURSOR_PACKS}/p2/.cursor-plugin/plugin.json"),
@@ -953,7 +947,7 @@ fn a_prefixed_cursor_name_that_meets_a_bare_one_is_refused() {
         ],
     );
     plugin_note(&vfs, "x", "cursor:\n  naming: bare\n");
-    let err = build_root(&vfs, SharedDefaults::default()).unwrap_err();
+    let err = build_root(&vfs, "").unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
     for part in [
         "plugins/p/skills/hello/hello.md",
@@ -981,7 +975,7 @@ fn two_prefixed_cursor_names_that_meet_are_refused() {
             ),
         ],
     );
-    let err = build_root(&vfs, SharedDefaults::default()).unwrap_err();
+    let err = build_root(&vfs, "").unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
     for part in ["Cursor skill `a-b-c`", "plugin `a`", "plugin `a-b`"] {
         assert!(err.contains(part), "{part}: {err}");
@@ -1006,7 +1000,7 @@ fn a_prefixed_cursor_name_after_a_bare_one_is_refused() {
         ],
     );
     plugin_note(&vfs, "a", "cursor:\n  naming: bare\n");
-    let err = build_root(&vfs, SharedDefaults::default()).unwrap_err();
+    let err = build_root(&vfs, "").unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
     assert!(err.contains("Cursor skill `z-hello`"), "{err}");
 }
@@ -1018,7 +1012,7 @@ fn bare_cursor_duplicates_are_refused() {
     for plugin in ["p1", "p3"] {
         plugin_note(&vfs, plugin, "cursor:\n  naming: bare\n");
     }
-    let err = build_root(&vfs, SharedDefaults::default()).unwrap_err();
+    let err = build_root(&vfs, "").unwrap_err();
     assert!(err.contains("path-collision"), "{err}");
     for part in ["plugin `p1`", "plugin `p3`", "`cursor.naming: bare`"] {
         assert!(err.contains(part), "{part}: {err}");
@@ -1037,7 +1031,7 @@ fn a_prefixed_cursor_name_over_the_limit_refuses_the_build() {
         )],
     );
     plugin_note(&vfs, &plugin, "cursor:\n  naming: prefixed\n");
-    let err = build_root(&vfs, SharedDefaults::default()).unwrap_err();
+    let err = build_root(&vfs, "").unwrap_err();
     assert!(err.contains("published-name-invalid"), "{err}");
 }
 
@@ -1049,11 +1043,9 @@ fn an_explicit_default_naming_records_nothing() {
         "p1",
         "pi:\n  naming: prefixed\ncursor:\n  naming: prefixed\n",
     );
-    let market = tradecraft_core::model::load(
-        &vfs,
-        &tradecraft_core::model::LoadRequest::new("/vault", SharedDefaults::default()),
-    )
-    .unwrap();
+    let market =
+        tradecraft_core::model::load(&vfs, &tradecraft_core::model::LoadRequest::new("/vault"))
+            .unwrap();
     for plugin in market.plugins.values() {
         assert!(plugin.bare_on.is_empty(), "{}", plugin.name);
     }
@@ -1061,11 +1053,11 @@ fn an_explicit_default_naming_records_nothing() {
 
 // --- pack location, once resolved ------------------------------------------
 
-/// A build of the vault's one marketplace, configured by `root_file`.
-fn build_with(vfs: &dyn Vfs, root_file: &str) -> Result<ExportReport, String> {
+/// A build of the vault's one marketplace, with `root_file` as its root file.
+fn build_with(vfs: &MemVfs, root_file: &str) -> Result<ExportReport, String> {
+    write(vfs, ROOT, root_file);
     let mut request = request();
     request.marketplace = None;
-    request.defaults = parse_root_file(root_file).unwrap().defaults;
     export_skills(vfs, &request).map_err(|err| err.to_string())
 }
 

@@ -552,7 +552,7 @@ mod tests {
         }
         vfs.write_file(path, b"---\ndescription: A.\n---\n\nPart of [[a]].\n")
             .unwrap();
-        let request = LoadRequest::new("/vault", crate::settings::SharedDefaults::default());
+        let request = LoadRequest::new("/vault");
         let marketplace = load(&vfs, &request).unwrap();
         let skill = &marketplace.plugins["tools"].skills[0];
         let body = &skill.resolved.as_ref().unwrap().body;

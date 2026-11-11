@@ -4,8 +4,8 @@
 use std::path::Path;
 
 use tradecraft_core::{
-    CoreError, EntityKind, ExportMode, ExportRequest, MemVfs, SharedDefaults, Vfs,
-    check_vault_root, discover_components, export_skills, find_vault_root, load_vault, read_layout,
+    CoreError, EntityKind, ExportMode, ExportRequest, MemVfs, Vfs, check_vault_root,
+    discover_components, export_skills, find_vault_root, load_vault, read_layout,
 };
 
 const ROOT: &str = "---\n---\n";
@@ -574,7 +574,7 @@ fn case_7_packs_in_a_marketplace_or_plugin_block_is_refused() {
         let text = format!("---\n{at}:\n  packs: elsewhere\n---\n");
         files.retain(|(path, _)| path != note);
         files.push((note.to_owned(), text));
-        let mut request = ExportRequest::new("/v", SharedDefaults::default());
+        let mut request = ExportRequest::new("/v");
         request.mode = ExportMode::Check;
         let err = export_skills(&vault_of(&files), &request).unwrap_err();
         let said = err.to_string();

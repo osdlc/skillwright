@@ -5,6 +5,7 @@
  */
 
 export {
+  buildVault,
   CoreError,
   discoverComponents,
   exportSkills,
@@ -21,6 +22,7 @@ export type {
   Component,
   LoadRequest,
   Marketplace,
+  MarketplaceReport,
   Plugin,
   Segment,
   ExportMode,
@@ -34,6 +36,8 @@ export type {
   SkippedNote,
   Target,
   UnitStatus,
+  VaultReport,
+  VaultRequest,
   VersionBumpSuggestion,
 } from './core.ts'
 

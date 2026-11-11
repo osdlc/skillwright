@@ -11,7 +11,8 @@
 //! publishable, how they group into plugins, what each manifest says, which
 //! root a skill's `targets` admits it to, what counts as stale, and
 //! whether the swap is safe all live in [`tradecraft_core::export`]. This
-//! file calls it once per marketplace and renders.
+//! file plans every marketplace there once, asks, writes the plan, and
+//! renders.
 //!
 //! # `--dry-run` on `build` is not `check`
 //!
@@ -22,8 +23,7 @@
 //! the CI verb: the same render, the same report, and exit 1 on any drift.
 
 use tradecraft_core::{
-    CoreError, ExportMode, ExportPlan, ExportRequest, ExportUnit, NativeVfs, VaultMarketplace,
-    owned_paths, plan_in,
+    CoreError, ExportMode, ExportReport, ExportUnit, NativeVfs, VaultPlan, VaultRequest, plan_vault,
 };
 
 use crate::ctx::CommandContext;
@@ -74,9 +74,9 @@ pub struct ExportFlags {
 /// identical.
 ///
 /// Each marketplace is built into its own `dist/<m>/`, or only the one
-/// `--marketplace` names. A build asks once, for every marketplace, then
-/// renders and checks every one before it writes any: a refusal in one
-/// writes none. The run exits with the first failure's code.
+/// `--marketplace` names. The core plans every marketplace first; a build
+/// then asks once, and writes every one or none. The run exits with the
+/// first failure's code.
 pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContext<'_>) -> i32 {
     let run = match resolve_run(
         &flags.common,
@@ -93,19 +93,45 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
     // module doc). So the only run that reaches `ExportMode::Build` is a
     // plain `build`.
     let writes = verb == ExportVerb::Build && !flags.dry_run;
-    let mode = if writes {
+    let mut request = VaultRequest::new(run.vault.clone());
+    request.marketplace.clone_from(&flags.marketplace);
+    request.mode = if writes {
         ExportMode::Build
     } else {
         ExportMode::Check
     };
-    let requests: Vec<(&VaultMarketplace, ExportRequest)> = run
-        .marketplaces()
-        .iter()
-        .map(|market| (market, run.loaded.export_request(market, mode)))
-        .collect();
+    let plan = match plan_vault(&NativeVfs, &request) {
+        Ok(plan) => plan,
+        Err(err) => return failed_run(verb, &err, ctx),
+    };
+    let several = plan.marketplaces.len() > 1;
+    // `bump` needs `--marketplace` only when the vault holds several, but
+    // naming it always runs.
+    let name_market = flags.marketplace.is_some() || several;
+    let header = |name: &str, ctx: &mut CommandContext<'_>| {
+        if several && !flags.quiet {
+            let _ = writeln!(ctx.err, "marketplace {name}:");
+        }
+    };
+
+    // A build writes nothing when any marketplace failed.
+    if writes && plan.failed() {
+        let mut exit = EXIT_OK;
+        for (market, planned) in &plan.marketplaces {
+            if let Err(err) = planned {
+                header(&market.name, ctx);
+                let code = failed_run(verb, err, ctx);
+                if exit == EXIT_OK {
+                    exit = code;
+                }
+            }
+        }
+        let _ = writeln!(ctx.err, "Nothing was written.");
+        return exit;
+    }
 
     if writes && !flags.yes {
-        let gate = confirm_build(&run, &requests, ctx);
+        let gate = confirm_build(&run, &plan, ctx);
         if gate != EXIT_OK {
             return gate;
         }
@@ -117,38 +143,40 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
         );
     }
 
-    // Every marketplace is planned before any is written.
-    let plans: Vec<(&VaultMarketplace, Result<ExportPlan, CoreError>)> = requests
-        .iter()
-        .map(|(market, request)| (*market, plan_in(&NativeVfs, &run.loaded.layout, request)))
-        .collect();
-    let failed = plans.iter().any(|(_, plan)| plan.is_err());
+    let reports: Vec<(String, Result<ExportReport, CoreError>)> = if writes {
+        match plan.write(&NativeVfs) {
+            Ok(report) => report
+                .marketplaces
+                .into_iter()
+                .map(|m| (m.marketplace, Ok(m.report)))
+                .collect(),
+            Err(err) => return failed_run(verb, &err, ctx),
+        }
+    } else {
+        plan.marketplaces
+            .into_iter()
+            .map(|(market, planned)| {
+                (
+                    market.name,
+                    planned.and_then(|planned| planned.write(&NativeVfs)),
+                )
+            })
+            .collect()
+    };
 
-    // `bump` needs `--marketplace` only when the vault holds several, but
-    // naming it always runs.
-    let name_market = flags.marketplace.is_some() || requests.len() > 1;
     let mut exit = EXIT_OK;
-    for (market, plan) in plans {
-        // A build writes nothing when any marketplace failed.
-        if writes && failed && plan.is_ok() {
-            continue;
-        }
-        if requests.len() > 1 && !flags.quiet {
-            let _ = writeln!(ctx.err, "marketplace {}:", market.name);
-        }
-        let code = match plan {
+    for (name, report) in reports {
+        header(&name, ctx);
+        let code = match report {
             Err(err) => failed_run(verb, &err, ctx),
-            Ok(plan) => {
-                let advise = name_market.then(|| market.name.clone());
-                export_one(verb, flags, plan, advise, ctx)
+            Ok(report) => {
+                let advise = name_market.then(|| name.clone());
+                export_one(verb, flags, &report, advise, ctx)
             }
         };
         if exit == EXIT_OK {
             exit = code;
         }
-    }
-    if writes && failed {
-        let _ = writeln!(ctx.err, "Nothing was written.");
     }
     exit
 }
@@ -167,32 +195,20 @@ fn failed_run(verb: ExportVerb, err: &CoreError, ctx: &mut CommandContext<'_>) -
 }
 
 /// Ask before a build replaces what it owns in each `dist/<m>/`.
-fn confirm_build(
-    run: &ResolvedRun,
-    requests: &[(&VaultMarketplace, ExportRequest)],
-    ctx: &mut CommandContext<'_>,
-) -> i32 {
-    let mut plan = vec!["build the marketplace".to_string(), String::new()];
-    for (market, request) in requests {
+fn confirm_build(run: &ResolvedRun, plan: &VaultPlan, ctx: &mut CommandContext<'_>) -> i32 {
+    let mut lines = vec!["build the marketplace".to_string(), String::new()];
+    for (market, planned) in &plan.marketplaces {
         // The harnesses are named, and the paths each one replaces with them.
-        // The list comes from `owned_paths`, not from a copy of the table here.
-        let owned = match owned_paths(request) {
-            Ok(owned) => owned,
-            Err(err) => {
-                return blocked(
-                    ctx.err,
-                    &format!(
-                        "build failed: {}",
-                        normalize_thrown_reason(&err.to_string())
-                    ),
-                );
-            }
-        };
+        // The list comes from the plan, not from a copy of the table here.
+        let owned = planned
+            .as_ref()
+            .map(|planned| planned.owned_paths())
+            .unwrap_or_default();
         // The paths are padded to each other so the harness names line up
         // after them, the way `plan_flow` lines the labels up against each
         // other.
         let width = owned.iter().map(|(_, path)| path.len()).max().unwrap_or(0);
-        plan.extend(plan_flow(&[
+        lines.extend(plan_flow(&[
             ("from vault", vec![run.vault.display().to_string()]),
             ("into", vec![market.dist.display().to_string()]),
             (
@@ -203,29 +219,24 @@ fn confirm_build(
                     .collect(),
             ),
         ]));
-        plan.push(String::new());
+        lines.push(String::new());
     }
-    plan.push("Each of those is replaced whole, and what the vault no longer".to_string());
-    plan.push("produces is removed. Nothing else in that directory is touched.".to_string());
-    confirm_write("build", &plan, ctx.err)
+    lines.push("Each of those is replaced whole, and what the vault no longer".to_string());
+    lines.push("produces is removed. Nothing else in that directory is touched.".to_string());
+    confirm_write("build", &lines, ctx.err)
 }
 
-/// Write one planned marketplace, or report its check, and print the report.
-/// `advise` is the `--marketplace` a `bump` advised by `check` names.
+/// Print one marketplace's report. `advise` is the `--marketplace` a `bump`
+/// advised by `check` names.
 fn export_one(
     verb: ExportVerb,
     flags: &ExportFlags,
-    plan: ExportPlan,
+    report: &ExportReport,
     advise: Option<String>,
     ctx: &mut CommandContext<'_>,
 ) -> i32 {
-    let report = match plan.write(&NativeVfs) {
-        Ok(report) => report,
-        Err(err) => return failed_run(verb, &err, ctx),
-    };
-
     if flags.json {
-        match serde_json::to_string_pretty(&report) {
+        match serde_json::to_string_pretty(report) {
             Ok(document) => {
                 let _ = writeln!(ctx.out, "{document}");
             }

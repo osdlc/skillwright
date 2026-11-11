@@ -484,7 +484,7 @@ fn run_changed(
     let mut rows: Vec<Row> = Vec::new();
     for (market, mut request) in requests {
         request.compare_with = Some(baseline.root(market));
-        let mut roots: Vec<&str> = match owned_paths(&request) {
+        let mut roots: Vec<&str> = match owned_paths(&NativeVfs, &request) {
             Ok(owned) => owned.into_iter().map(|(root, _)| root).collect(),
             Err(err) => return blocked(ctx.err, normalize_thrown_reason(&err.to_string())),
         };

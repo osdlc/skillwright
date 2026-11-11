@@ -3,13 +3,12 @@
 //!
 //! Nothing here reads the environment. A host passes the home directory.
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::error::CoreError;
 use crate::export::{ExportMode, ExportRequest};
 use crate::layout::{DIST_DIR, Layout, MARKETPLACES_DIR, read_layout};
-use crate::settings::{ROOT_FILE, RootFile, SharedDefaults, parse_root_file};
+use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
 
 /// Join `rel` onto `base` and lexically collapse `.` and `..`, without
@@ -74,26 +73,6 @@ pub fn resolve_path(path: &str, base: &Path, home: &Path) -> PathBuf {
     }
 }
 
-/// What a build reads from the root file besides the vault: the shared
-/// defaults and the harnesses.
-#[non_exhaustive]
-#[derive(Debug, Clone)]
-pub struct MarketplaceInputs {
-    /// The root file's shared defaults.
-    pub defaults: SharedDefaults,
-    /// The harnesses to build for. Empty is every one the export supports.
-    pub harnesses: BTreeSet<String>,
-}
-
-/// The root file as the inputs of an [`crate::ExportRequest`]: shared
-/// defaults and harnesses.
-pub fn marketplace_inputs(root: &RootFile) -> MarketplaceInputs {
-    MarketplaceInputs {
-        defaults: root.defaults.clone(),
-        harnesses: root.harness_set(),
-    }
-}
-
 /// One marketplace of a loaded vault.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -118,8 +97,6 @@ pub struct LoadedVault {
     pub root_file: PathBuf,
     /// The root file, parsed.
     pub settings: RootFile,
-    /// Shared defaults and harnesses for each [`ExportRequest`].
-    pub inputs: MarketplaceInputs,
     /// The marketplaces the load was asked for, by folder name: every one, or
     /// the one named.
     pub marketplaces: Vec<VaultMarketplace>,
@@ -135,15 +112,15 @@ impl LoadedVault {
     }
 
     /// The build or check of `marketplace`, against its `dist/<m>/` folder.
+    /// The core reads the root file's defaults and harnesses itself.
     pub fn export_request(
         &self,
         marketplace: &VaultMarketplace,
         mode: ExportMode,
     ) -> ExportRequest {
-        let mut request = ExportRequest::new(self.root.clone(), self.inputs.defaults.clone());
+        let mut request = ExportRequest::new(self.root.clone());
         request.marketplace = Some(marketplace.name.clone());
         request.mode = mode;
-        request.harnesses.clone_from(&self.inputs.harnesses);
         request
     }
 }
@@ -173,10 +150,7 @@ pub fn load_vault(
 ) -> Result<LoadedVault, CoreError> {
     let layout = read_layout(vfs, root)?;
     let root_file = root.join(ROOT_FILE);
-    let text = String::from_utf8(vfs.read_file(&root_file)?)
-        .map_err(|_| malformed_root(&root_file, "it is not UTF-8"))?;
-    let settings =
-        parse_root_file(&text).map_err(|err| malformed_root(&root_file, &err.to_string()))?;
+    let settings = read_root_file(vfs, root)?;
     if let Some(name) = marketplace
         && !layout.marketplaces.iter().any(|m| m == name)
     {
@@ -213,15 +187,26 @@ pub fn load_vault(
             dist: dist_dir(root, name),
         });
     }
-    let inputs = marketplace_inputs(&settings);
     Ok(LoadedVault {
         root: root.to_path_buf(),
         root_file,
         settings,
-        inputs,
         marketplaces,
         layout,
     })
+}
+
+/// Read and parse the root file of the vault at `root`.
+///
+/// # Errors
+///
+/// The read's I/O error, or `refused: malformed-root-file` — the file is
+/// not UTF-8 or cannot be parsed.
+pub fn read_root_file(vfs: &dyn Vfs, root: &Path) -> Result<RootFile, CoreError> {
+    let file = root.join(ROOT_FILE);
+    let text = String::from_utf8(vfs.read_file(&file)?)
+        .map_err(|_| malformed_root(&file, "it is not UTF-8"))?;
+    parse_root_file(&text).map_err(|err| malformed_root(&file, &err.to_string()))
 }
 
 /// The reason a root file cannot be read.

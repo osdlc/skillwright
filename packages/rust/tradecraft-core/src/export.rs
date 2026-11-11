@@ -29,10 +29,11 @@
 //! report names it as [`ExportUnit::NotCarried`] for that root. One narrowed
 //! out by `targets` is absent with no report line: the author asked.
 //!
-//! Which harnesses a build renders is [`ExportRequest::harnesses`]; empty
-//! means all of them. A name no harness answers to is refused rather than
-//! ignored — publishing less than was asked for, quietly, is the failure this
-//! crate is built around.
+//! Which harnesses a build renders is the root file's `build.harnesses`
+//! (all of them when absent), narrowed by [`ExportRequest::harnesses`]. A
+//! name no harness answers to, or one the root file does not build, is
+//! refused rather than ignored — publishing other than was asked for, quietly,
+//! is the failure this crate is built around.
 //!
 //! # One model, one tree per harness
 //!
@@ -61,7 +62,9 @@
 //! directory guaranteed to share a filesystem with the thing being replaced
 //! is its own parent. A failure mid-swap rolls back every path already
 //! swapped, restores the failing path's own backup, and surfaces as
-//! [`CoreError::SwapFailed`] saying so.
+//! [`CoreError::SwapFailed`] saying so. [`build_vault`] stages every
+//! marketplace before it swaps any, and a failure rolls back every
+//! marketplace already swapped.
 //!
 //! # A build replaces only what it owns
 //!
@@ -81,17 +84,15 @@
 //! Stable key order (serde struct order), plugins and skills sorted by name,
 //! two-space indentation, one trailing newline — so `check` can compare
 //! bytes, and two builds of one vault are identical. The root file's shared
-//! defaults enter through [`ExportRequest::defaults`], typed and
-//! serializable, because everything here crosses the wasm boundary and an
-//! ambient config file is a thing a wasm host does not have. Everything else
-//! comes from the vault's notes.
+//! defaults are read from the vault's `skillwright.md` through the [`Vfs`],
+//! like every note; a request cannot carry them.
 //!
 //! # One render, then the write
 //!
 //! [`plan_in`] loads, renders and compares, and writes nothing.
-//! [`ExportPlan::write`] then swaps in what drifted. A host building several
-//! marketplaces plans every one before it writes any, so a refusal in one
-//! leaves all of them unwritten.
+//! [`ExportPlan::write`] then swaps in what drifted. [`build_vault`] plans
+//! every marketplace before it writes any, so a refusal in one leaves all of
+//! them unwritten.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -107,9 +108,9 @@ use crate::harness::translator::GENERATED_MARKER;
 pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
 use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
 use crate::layout::Layout;
-use crate::model::load::{LoadRequest, kind_carried, load_in, selected_harnesses, targets_admit};
+use crate::model::load::{LoadRequest, built_harnesses, kind_carried, load_for, targets_admit};
 use crate::model::{Component, Marketplace};
-use crate::settings::SharedDefaults;
+use crate::paths::{VaultMarketplace, load_vault, read_root_file};
 use crate::skill::forward_slashed;
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
 use crate::vfs::{PreviewWrite, Vfs, normalize};
@@ -127,12 +128,12 @@ pub struct ExportRequest {
     /// vault's only one; a vault holding more than one is refused.
     #[serde(default)]
     pub marketplace: Option<String>,
-    /// Which harnesses to render, by name. Empty means every harness this
-    /// build supports.
+    /// Narrows the root file's `build.harnesses`, by name. Empty means every
+    /// harness the root file builds.
     ///
-    /// A name no harness answers to is refused rather than ignored: it is a
-    /// typo or a harness this build cannot produce, and silently publishing
-    /// less than was asked for is the failure this crate is built around.
+    /// A name no harness answers to, or one the root file does not build, is
+    /// refused rather than ignored: silently publishing other than was asked
+    /// for is the failure this crate is built around.
     #[serde(default)]
     pub harnesses: BTreeSet<String>,
     /// Build, or check. Absent on the wire means [`ExportMode::Build`].
@@ -143,24 +144,18 @@ pub struct ExportRequest {
     /// this way. A build refuses it: a build always writes `dist/<m>/`.
     #[serde(default)]
     pub compare_with: Option<PathBuf>,
-    /// The root file's shared defaults, which every marketplace and plugin
-    /// takes where its note is silent. Absent on the wire means none.
-    #[serde(default)]
-    pub defaults: SharedDefaults,
 }
 
 impl ExportRequest {
-    /// A build of the vault at `vault_root` under the root file's `defaults`.
-    /// Every other field starts empty, and the mode is a build; set them
-    /// after.
-    pub fn new(vault_root: impl Into<PathBuf>, defaults: SharedDefaults) -> Self {
+    /// A build of the vault at `vault_root`. Every other field starts empty,
+    /// and the mode is a build; set them after.
+    pub fn new(vault_root: impl Into<PathBuf>) -> Self {
         Self {
             vault_root: vault_root.into(),
             marketplace: None,
             harnesses: BTreeSet::new(),
             mode: ExportMode::default(),
             compare_with: None,
-            defaults,
         }
     }
 }
@@ -435,23 +430,30 @@ fn contains(bytes: &[u8], marker: &str) -> bool {
 /// this is never one of them.
 pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 
-/// The harnesses `request` renders. A name no harness answers to is refused.
-fn selected_roots(request: &ExportRequest) -> Result<Vec<&'static HarnessProfile>, CoreError> {
-    selected_harnesses(&request.harnesses)
-}
-
-/// Which harnesses this request renders, each with every path it owns in the
-/// marketplace directory.
+/// Which harnesses this request renders, read with the vault's root file,
+/// each with every path it owns in the marketplace directory.
 ///
 /// So a caller can say what a build is about to replace without owning a
 /// second copy of the roots table or of the harness selection.
+///
+/// # Errors
+///
+/// What [`read_root_file`] refuses, `refused: unknown-harness` and
+/// `refused: harness-not-built`.
 pub fn owned_paths(
+    vfs: &dyn Vfs,
     request: &ExportRequest,
 ) -> Result<Vec<(&'static str, &'static str)>, CoreError> {
-    Ok(selected_roots(request)?
-        .into_iter()
+    let root = read_root_file(vfs, &normalize(&request.vault_root))?;
+    Ok(paths_of(&built_harnesses(&root, &request.harnesses)?))
+}
+
+/// Each of `roots` with every path it owns.
+fn paths_of(roots: &[&'static HarnessProfile]) -> Vec<(&'static str, &'static str)> {
+    roots
+        .iter()
         .flat_map(|spec| spec.owned_paths().into_iter().map(|path| (spec.name, path)))
-        .collect())
+        .collect()
 }
 
 /// Where `root`'s `marketplace.json` sits under a built marketplace, read
@@ -510,6 +512,7 @@ pub struct ExportPlan {
     mode: ExportMode,
     out: PathBuf,
     report: ExportReport,
+    roots: Vec<&'static HarnessProfile>,
     swapping: Vec<(&'static HarnessProfile, BTreeMap<String, PreviewWrite>)>,
 }
 
@@ -525,6 +528,12 @@ impl ExportPlan {
         &self.report
     }
 
+    /// The harnesses this plan renders, each with every path a build of it
+    /// replaces under [`Self::out`].
+    pub fn owned_paths(&self) -> Vec<(&'static str, &'static str)> {
+        paths_of(&self.roots)
+    }
+
     /// A check returns its report and writes nothing. A build swaps in each
     /// harness tree that drifted, and reports it written.
     ///
@@ -533,36 +542,172 @@ impl ExportPlan {
     /// [`CoreError::SwapFailed`] and the I/O errors of the swap; a failed swap
     /// rolls back.
     pub fn write(self, vfs: &dyn Vfs) -> Result<ExportReport, CoreError> {
-        let mut report = self.report;
         if self.mode == ExportMode::Check {
-            return Ok(report);
+            return Ok(self.report);
         }
-        if !self.swapping.is_empty() {
-            let swapping: Vec<(&HarnessProfile, &BTreeMap<String, PreviewWrite>)> = self
-                .swapping
-                .iter()
-                .map(|(spec, files)| (*spec, files))
-                .collect();
-            commit(vfs, &self.out, &swapping)?;
-        }
-        // The build report is the check's comparison under the write verbs:
-        // what matched is unchanged, what differed was (just) written.
-        for unit in &mut report.units {
-            match unit {
-                ExportUnit::Plugin { status, .. } | ExportUnit::Manifest { status, .. } => {
-                    *status = match status {
-                        UnitStatus::Ok | UnitStatus::Unchanged => UnitStatus::Unchanged,
-                        UnitStatus::Drift | UnitStatus::Written => UnitStatus::Written,
-                    };
-                }
-                // Neither has a status: one is what a swap removes, the other
-                // is what no layout could take.
-                ExportUnit::Stale { .. } | ExportUnit::NotCarried { .. } => {}
-            }
-        }
-        report.mode = ExportMode::Build;
-        Ok(report)
+        commit(vfs, &[&self])?;
+        Ok(built(self.report))
     }
+}
+
+/// A check's report under the write verbs: what matched is unchanged, what
+/// differed was (just) written.
+fn built(mut report: ExportReport) -> ExportReport {
+    for unit in &mut report.units {
+        match unit {
+            ExportUnit::Plugin { status, .. } | ExportUnit::Manifest { status, .. } => {
+                *status = match status {
+                    UnitStatus::Ok | UnitStatus::Unchanged => UnitStatus::Unchanged,
+                    UnitStatus::Drift | UnitStatus::Written => UnitStatus::Written,
+                };
+            }
+            // Neither has a status: one is what a swap removes, the other is
+            // what no layout could take.
+            ExportUnit::Stale { .. } | ExportUnit::NotCarried { .. } => {}
+        }
+    }
+    report.mode = ExportMode::Build;
+    report
+}
+
+// --- Every marketplace -------------------------------------------------------
+
+/// A build or check of every marketplace in a vault, or of the one named.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[non_exhaustive]
+pub struct VaultRequest {
+    /// Absolute path to the vault root.
+    pub vault_root: PathBuf,
+    /// Which marketplace to build, by folder. `None` builds every one.
+    #[serde(default)]
+    pub marketplace: Option<String>,
+    /// Narrows the root file's `build.harnesses`, as
+    /// [`ExportRequest::harnesses`] does.
+    #[serde(default)]
+    pub harnesses: BTreeSet<String>,
+    /// Build, or check. Absent on the wire means [`ExportMode::Build`].
+    #[serde(default)]
+    pub mode: ExportMode,
+}
+
+impl VaultRequest {
+    /// A build of every marketplace of the vault at `vault_root`. Set the
+    /// other fields after.
+    pub fn new(vault_root: impl Into<PathBuf>) -> Self {
+        Self {
+            vault_root: vault_root.into(),
+            marketplace: None,
+            harnesses: BTreeSet::new(),
+            mode: ExportMode::default(),
+        }
+    }
+}
+
+/// What [`build_vault`] did, or would do, per marketplace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct VaultReport {
+    /// One report per marketplace, in folder order.
+    pub marketplaces: Vec<MarketplaceReport>,
+}
+
+/// One marketplace's report in a [`VaultReport`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct MarketplaceReport {
+    /// The marketplace's folder name.
+    pub marketplace: String,
+    /// Its export report.
+    pub report: ExportReport,
+}
+
+/// Every marketplace of a [`VaultRequest`] planned, with nothing written.
+#[non_exhaustive]
+pub struct VaultPlan {
+    /// The request's mode.
+    pub mode: ExportMode,
+    /// Each marketplace with its plan, or what refused it, in folder order.
+    pub marketplaces: Vec<(VaultMarketplace, Result<ExportPlan, CoreError>)>,
+}
+
+impl VaultPlan {
+    /// Whether any marketplace failed to plan. A build of this plan writes
+    /// nothing.
+    pub fn failed(&self) -> bool {
+        self.marketplaces.iter().any(|(_, plan)| plan.is_err())
+    }
+
+    /// A check returns every report and writes nothing. A build stages every
+    /// marketplace, then swaps them all in; a failed swap rolls back every
+    /// marketplace already swapped.
+    ///
+    /// # Errors
+    ///
+    /// The first marketplace's refusal, with nothing written. Then
+    /// [`CoreError::SwapFailed`] and the I/O errors of the swap.
+    pub fn write(self, vfs: &dyn Vfs) -> Result<VaultReport, CoreError> {
+        let mut planned = Vec::with_capacity(self.marketplaces.len());
+        for (market, plan) in self.marketplaces {
+            planned.push((market.name, plan?));
+        }
+        if self.mode == ExportMode::Build {
+            let plans: Vec<&ExportPlan> = planned.iter().map(|(_, plan)| plan).collect();
+            commit(vfs, &plans)?;
+        }
+        let mode = self.mode;
+        Ok(VaultReport {
+            marketplaces: planned
+                .into_iter()
+                .map(|(marketplace, plan)| MarketplaceReport {
+                    marketplace,
+                    report: match mode {
+                        ExportMode::Build => built(plan.report),
+                        ExportMode::Check => plan.report,
+                    },
+                })
+                .collect(),
+        })
+    }
+}
+
+/// Plans every marketplace of the vault, or the one the request names, and
+/// writes nothing. A marketplace that refuses does not stop the others'
+/// plans: a check reports every one.
+///
+/// # Errors
+///
+/// What [`load_vault`] refuses: the layout, the root file, an unknown
+/// marketplace. Each marketplace's own refusal is in its entry.
+pub fn plan_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultPlan, CoreError> {
+    let loaded = load_vault(
+        vfs,
+        &normalize(&request.vault_root),
+        request.marketplace.as_deref(),
+    )?;
+    let marketplaces = loaded
+        .marketplaces
+        .iter()
+        .map(|market| {
+            let mut export = loaded.export_request(market, request.mode);
+            export.harnesses.clone_from(&request.harnesses);
+            (market.clone(), plan_in(vfs, &loaded.layout, &export))
+        })
+        .collect();
+    Ok(VaultPlan {
+        mode: request.mode,
+        marketplaces,
+    })
+}
+
+/// Builds or checks every marketplace of the vault: [`plan_vault`], then
+/// [`VaultPlan::write`]. A build writes every marketplace or none.
+///
+/// # Errors
+///
+/// What [`plan_vault`] and [`VaultPlan::write`] refuse.
+pub fn build_vault(vfs: &dyn Vfs, request: &VaultRequest) -> Result<VaultReport, CoreError> {
+    plan_vault(vfs, request)?.write(vfs)
 }
 
 /// Loads, renders and compares one marketplace, and writes nothing.
@@ -590,13 +735,20 @@ pub fn plan_in(
         ));
     }
 
-    // Which harnesses this build renders, before anything reads.
-    let roots = selected_roots(request)?;
+    // Which harnesses this build renders, before the notes are read.
+    let root = read_root_file(vfs, &layout.root)?;
+    let roots = built_harnesses(&root, &request.harnesses)?;
 
     // Load once, for every harness this build renders: the vault read, the
     // marketplace chosen and validated, every body resolved. Everything a
     // build refuses before it renders, it refuses here.
-    let market = load_in(vfs, layout, &request.load_request())?;
+    let market = load_for(
+        vfs,
+        layout,
+        request.marketplace.as_deref(),
+        &roots,
+        &root.defaults,
+    )?;
     let warnings = market.warnings.clone();
     let out = match &request.compare_with {
         Some(path) => normalize(path),
@@ -696,6 +848,7 @@ pub fn plan_in(
     Ok(ExportPlan {
         mode: request.mode,
         out,
+        roots,
         report: ExportReport {
             mode: ExportMode::Check,
             checked: market.checked,
@@ -708,15 +861,13 @@ pub fn plan_in(
 }
 
 impl ExportRequest {
-    /// What this build loads: its vault, its marketplace, its harnesses and
-    /// the root file's shared defaults.
+    /// What this build loads: its vault, its marketplace and its harness
+    /// filter.
     pub fn load_request(&self) -> LoadRequest {
-        LoadRequest {
-            vault_root: self.vault_root.clone(),
-            marketplace: self.marketplace.clone(),
-            harnesses: self.harnesses.clone(),
-            defaults: self.defaults.clone(),
-        }
+        let mut load = LoadRequest::new(self.vault_root.clone());
+        load.marketplace.clone_from(&self.marketplace);
+        load.harnesses.clone_from(&self.harnesses);
+        load
     }
 }
 
@@ -1159,22 +1310,115 @@ fn diff_root(
     })
 }
 
-fn commit(
-    vfs: &dyn Vfs,
-    out: &Path,
-    swapping: &[(&HarnessProfile, &BTreeMap<String, PreviewWrite>)],
-) -> Result<(), CoreError> {
-    let stage = out.join(STAGE_DIR);
+/// Stages every plan's drifted trees, then swaps them all into place. A plan
+/// with nothing drifted is skipped. A failed swap rolls back every path
+/// already swapped, in every plan's folder.
+fn commit(vfs: &dyn Vfs, plans: &[&ExportPlan]) -> Result<(), CoreError> {
+    let plans: Vec<&ExportPlan> = plans
+        .iter()
+        .copied()
+        .filter(|plan| !plan.swapping.is_empty())
+        .collect();
+    let stages: Vec<PathBuf> = plans.iter().map(|plan| plan.out.join(STAGE_DIR)).collect();
+    for (plan, stage) in plans.iter().zip(&stages) {
+        if let Err(error) = stage_plan(vfs, plan, stage) {
+            for stage in &stages {
+                let _ = vfs.remove(stage);
+            }
+            return Err(error);
+        }
+    }
+
+    // Every completed swap, by plan: its destination and its backup.
+    let mut swapped: Vec<(usize, PathBuf, PathBuf)> = Vec::new();
+    for (index, (plan, stage)) in plans.iter().zip(&stages).enumerate() {
+        let entries = plan
+            .swapping
+            .iter()
+            .flat_map(|(spec, _)| spec.owned_paths());
+        for entry in entries {
+            let dest = plan.out.join(entry);
+            let staged = stage.join("new").join(entry);
+            let saved = stage.join("backup").join(entry);
+            let staged = vfs.exists(&staged).then_some(staged);
+            // Nothing here and nothing to put here: a root that renders nothing.
+            if staged.is_none() && !vfs.exists(&dest) {
+                continue;
+            }
+            for path in [&saved, &dest] {
+                if let Some(parent) = path.parent() {
+                    vfs.create_dir_all(parent)?;
+                }
+            }
+            if let Err(error) = swap_one(vfs, &dest, &saved, staged.as_deref()) {
+                // Everything the rollback could not put back, the failing path
+                // included: `swap_one` restores its own backup best-effort, and
+                // this is the check on whether it managed.
+                let mut unrestored: Vec<PathBuf> = Vec::new();
+                if !vfs.exists(&dest) && vfs.exists(&saved) {
+                    unrestored.push(dest.clone());
+                }
+                if let Err(failed) = roll_back(vfs, &swapped) {
+                    unrestored.push(failed);
+                }
+                let mut message = format!(
+                    "swapping `{entry}` into {}: {error}; everything already swapped was rolled \
+                     back and the destination is as it was",
+                    plan.out.display()
+                );
+                if unrestored.is_empty() {
+                    for stage in &stages {
+                        let _ = vfs.remove(stage);
+                    }
+                } else {
+                    // The one state this function cannot leave clean: name what
+                    // was not restored and keep its backup instead of deleting it.
+                    let names: Vec<String> =
+                        unrestored.iter().map(|p| p.display().to_string()).collect();
+                    let backups: Vec<String> = stages
+                        .iter()
+                        .map(|stage| stage.join("backup"))
+                        .filter(|backup| {
+                            unrestored.iter().any(|p| {
+                                backup
+                                    .parent()
+                                    .and_then(Path::parent)
+                                    .is_some_and(|out| p.starts_with(out))
+                            })
+                        })
+                        .map(|backup| backup.display().to_string())
+                        .collect();
+                    message.push_str(&format!(
+                        " — except {}, whose rollback failed; the backup survives under {}",
+                        names.join(", "),
+                        backups.join(", ")
+                    ));
+                }
+                return Err(CoreError::SwapFailed(message));
+            }
+            swapped.push((index, dest, saved));
+        }
+    }
+    for (index, dest, _) in &swapped {
+        remove_emptied_folders(vfs, &plans[*index].out, dest)?;
+    }
+    for stage in &stages {
+        vfs.remove(stage)?;
+    }
+    Ok(())
+}
+
+/// Writes `plan`'s drifted trees under `<stage>/new/`.
+fn stage_plan(vfs: &dyn Vfs, plan: &ExportPlan, stage: &Path) -> Result<(), CoreError> {
     // A stage left by a crashed run is dead weight; a fresh build owns the
     // path.
-    if vfs.exists(&stage) {
-        vfs.remove(&stage)?;
+    if vfs.exists(stage) {
+        vfs.remove(stage)?;
     }
     vfs.create_dir_all(&stage.join("backup"))?;
-    vfs.create_dir_all(out)?;
-
-    for (_, rendered) in swapping {
-        for (relative, write) in *rendered {
+    vfs.create_dir_all(&plan.out)?;
+    for (_, rendered) in &plan.swapping {
+        for (relative, write) in rendered {
             let path = stage.join("new").join(Path::new(relative));
             if let Some(parent) = path.parent() {
                 vfs.create_dir_all(parent)?;
@@ -1185,60 +1429,6 @@ fn commit(
             }
         }
     }
-
-    let entries = swapping.iter().flat_map(|(spec, _)| spec.owned_paths());
-    let mut swapped: Vec<(PathBuf, PathBuf)> = Vec::new();
-    for entry in entries {
-        let dest = out.join(entry);
-        let staged = stage.join("new").join(entry);
-        let saved = stage.join("backup").join(entry);
-        let staged = vfs.exists(&staged).then_some(staged);
-        // Nothing here and nothing to put here: a root that renders nothing.
-        if staged.is_none() && !vfs.exists(&dest) {
-            continue;
-        }
-        for path in [&saved, &dest] {
-            if let Some(parent) = path.parent() {
-                vfs.create_dir_all(parent)?;
-            }
-        }
-        if let Err(error) = swap_one(vfs, &dest, &saved, staged.as_deref()) {
-            // Everything the rollback could not put back, the failing path
-            // included: `swap_one` restores its own backup best-effort, and
-            // this is the check on whether it managed.
-            let mut unrestored: Vec<PathBuf> = Vec::new();
-            if !vfs.exists(&dest) && vfs.exists(&saved) {
-                unrestored.push(dest.clone());
-            }
-            if let Err(failed) = roll_back(vfs, &swapped) {
-                unrestored.push(failed);
-            }
-            let mut message = format!(
-                "swapping `{entry}` into {}: {error}; everything already swapped was rolled back \
-                 and the destination is as it was",
-                out.display()
-            );
-            if unrestored.is_empty() {
-                let _ = vfs.remove(&stage);
-            } else {
-                // The one state this function cannot leave clean: name what
-                // was not restored and keep its backup instead of deleting it.
-                let names: Vec<String> =
-                    unrestored.iter().map(|p| p.display().to_string()).collect();
-                message.push_str(&format!(
-                    " — except {}, whose rollback failed; the backup survives under {}",
-                    names.join(", "),
-                    stage.join("backup").display()
-                ));
-            }
-            return Err(CoreError::SwapFailed(message));
-        }
-        swapped.push((dest, saved));
-    }
-    for (dest, _) in &swapped {
-        remove_emptied_folders(vfs, out, dest)?;
-    }
-    vfs.remove(&stage)?;
     Ok(())
 }
 
@@ -1286,8 +1476,8 @@ fn swap_one(
 
 /// Unwinds completed swaps, newest first. `Err` names the first destination
 /// whose restore failed; its backup is deliberately left in place.
-fn roll_back(vfs: &dyn Vfs, swapped: &[(PathBuf, PathBuf)]) -> Result<(), PathBuf> {
-    for (dest, saved) in swapped.iter().rev() {
+fn roll_back(vfs: &dyn Vfs, swapped: &[(usize, PathBuf, PathBuf)]) -> Result<(), PathBuf> {
+    for (_, dest, saved) in swapped.iter().rev() {
         if vfs.exists(dest) && vfs.remove(dest).is_err() {
             return Err(dest.clone());
         }
@@ -1384,7 +1574,7 @@ mod tests {
     }
 
     fn request(mode: ExportMode) -> ExportRequest {
-        let mut value = ExportRequest::new("/vault", SharedDefaults::default());
+        let mut value = ExportRequest::new("/vault");
         value.mode = mode;
         value
     }
@@ -1393,11 +1583,14 @@ mod tests {
         export_skills(vfs, &request(ExportMode::Build)).unwrap()
     }
 
-    /// A build whose root file says something.
-    fn build_with(vfs: &dyn Vfs, defaults: SharedDefaults) -> ExportReport {
-        let mut request = request(ExportMode::Build);
-        request.defaults = defaults;
-        export_skills(vfs, &request).unwrap()
+    /// A build whose root file holds `frontmatter`.
+    fn build_with(vfs: &dyn Vfs, frontmatter: &str) -> ExportReport {
+        vfs.write_file(
+            Path::new("/vault/skillwright.md"),
+            format!("---\n{frontmatter}\n---\n").as_bytes(),
+        )
+        .unwrap();
+        build(vfs)
     }
 
     fn check(vfs: &dyn Vfs) -> ExportReport {
@@ -3629,13 +3822,7 @@ mod tests {
     #[test]
     fn the_project_file_licenses_a_marketplace_no_note_licenses() {
         let vfs = vault_with_licenses(None);
-        build_with(
-            &vfs,
-            SharedDefaults {
-                license: Some("MIT".to_owned()),
-                ..SharedDefaults::default()
-            },
-        );
+        build_with(&vfs, "license: MIT");
         assert_eq!(license_of(&vfs, "tools"), "MIT");
     }
 
@@ -3644,13 +3831,7 @@ mod tests {
     #[test]
     fn the_marketplace_note_beats_the_root_file() {
         let vfs = vault_with_licenses(Some("MIT"));
-        build_with(
-            &vfs,
-            SharedDefaults {
-                license: Some("GPL-3.0-only".to_owned()),
-                ..SharedDefaults::default()
-            },
-        );
+        build_with(&vfs, "license: GPL-3.0-only");
         assert_eq!(license_of(&vfs, "tools"), "MIT");
     }
 
@@ -4348,7 +4529,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let vault = dir.path().join("vault");
         copy_tree(&fixture, &vault);
-        let request = ExportRequest::new(vault, SharedDefaults::default());
+        let request = ExportRequest::new(vault);
 
         let report = export_skills(&NativeVfs, &request).unwrap();
         assert_eq!(report.checked, 1);
