@@ -41,7 +41,7 @@ harness-reference does not record these answers.
 
 | Probe | Question | Role |
 |---|---|---|
-| `plugin-layout` ([#148](https://github.com/osdlc/skillwright/issues/148)) | Do models on Codex, Cursor and Pi resolve relative paths in skill text from the file they are written in, for references and scripts, both skill-local (`scripts/x`) and plugin-shared (`../../scripts/x`)? | Evidence for section 4 rule 19. It does not block a commit. Record the result in harness-reference. |
+| `plugin-layout` ([#148](https://github.com/osdlc/skillwright/issues/148)) | Do models on Codex, Cursor and Pi resolve relative paths in skill text from the file they are written in, for references and scripts, both skill-local (`scripts/x`) and plugin-shared (`../../scripts/x`)? | Evidence for section 4 rule 19. It does not block a commit. Method and fixture: [plugin-layout](../../harness-reference/corpus/methods/plugin-layout/plugin-layout.md). Record each run as a study result linked to it. |
 | Cursor hooks | Does Cursor set `${CURSOR_PLUGIN_ROOT}` for hook commands? | Run before commit 5. If not, Cursor hooks need another way to reach the pack. |
 
 ## Build order
