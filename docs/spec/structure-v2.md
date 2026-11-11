@@ -1,8 +1,4 @@
-# skillwright vault structure, version 2 (draft)
-
-Status: draft, ready for final review. A vault in any other layout is
-refused (section 11). What changes from today's tool is in
-[v2-impact.md](v2-impact.md).
+# skillwright vault structure, version 2
 
 v2 has one goal: stable marketplace publishing, with transclusion and good
 bundling. Its commands are `init`, `build`, `check` and `bump`.
@@ -12,10 +8,10 @@ The spec covers the folders, the root file, the notes, links, the frontmatter
 rules and the output. The frontmatter keys themselves are in the
 [field reference](../reference/fields.md), which is part of this spec.
 
-The decisions behind this spec are recorded in section 12. The effect on
-the code, the open PRs and issues, and the build order are in
-[v2-impact.md](v2-impact.md). Edge cases are in Appendix A. The questions
-still open for the owner are in "Open questions".
+The decisions behind this spec are in section 12. Edge cases are in
+Appendix A. The questions not yet decided are in "Open questions". What v2
+changes for a vault built with today's tool is in
+[v2-changes.md](v2-changes.md).
 
 ## Words used here
 
@@ -542,7 +538,7 @@ harness's own form (decision D9).
     |---|---|---|
     | Claude Code | Yes | `${CLAUDE_PLUGIN_ROOT}` |
     | Codex | Yes | `${PLUGIN_ROOT}`, unchanged |
-    | Cursor | Yes | `${CURSOR_PLUGIN_ROOT}`. Not verified for hooks: harness-reference records Cursor's variable only in `mcp.json` (`Cursor Plugin root variable`). The Codex probe in the build order checks it too. |
+    | Cursor | Yes | `${CURSOR_PLUGIN_ROOT}`. Not verified for hooks: harness-reference records Cursor's variable only in `mcp.json` (`Cursor Plugin root variable`). See [the plan](v2-plan.md). |
     | Pi | No: Pi has no shell hooks | nothing |
 
     - A hook runs as a shell command from the project folder, where a
@@ -566,7 +562,7 @@ harness's own form (decision D9).
     | The Agent Skills standard | the skill's folder (`Agent Skills Relative paths in SKILL.md`) |
     | Cursor, Pi | the skill's folder (section 9 rule 14) |
     | Claude Code | not recorded for plain paths; `${CLAUDE_SKILL_DIR}` names the skill's folder |
-    | Codex | not recorded; the Codex probe in the build order covers it |
+    | Codex | not recorded; not verified (see [the plan](v2-plan.md)) |
 
     Use `${PLUGIN_ROOT}/<path>` for a file the build should check, and for any
     file outside the skill's folder.
@@ -1005,9 +1001,9 @@ Each case is reported once, with every path it applies to.
 
 ## 12. Decisions
 
-Every decision below is settled. Each one can be read on its own: what it
-covers, the rule, and why. What each one changes for existing vaults is in
-[v2-impact.md](v2-impact.md).
+Each decision below can be read on its own: what it covers, the rule, and
+why. What each one changes for an existing vault is in
+[v2-changes.md](v2-changes.md).
 
 ### D1. `build.out` and `--out`
 
@@ -1053,8 +1049,7 @@ plain link a real link (section 4 rules 6 to 8).
   section 4 rules 8 and 9. A call with words keeps them. A fragment on a call is an error.
 - `[[setup]]` is a file link to the skill's installed `SKILL.md`, under the
   normal link scope (same plugin). `[[setup#Usage]]` links to that section.
-- A skill's link to its own note is a file link to its own file. That settles
-  [#53](https://github.com/osdlc/skillwright/issues/53) in that form.
+- A skill's link to its own note is a file link to its own file.
 - A plain link to another skill's or command's note warns
   `Did you mean to call /[[setup]]?`. A self-link does not warn.
 - There is no mention form. Nothing renders a skill's name on its own.
@@ -1065,7 +1060,7 @@ plain link a real link (section 4 rules 6 to 8).
 - `/` matches how Claude Code runs a skill or command, `/name`, so the source
   reads like its output.
 - Vaults written today already use it, so nothing has to be rewritten (see
-  [v2-impact.md](v2-impact.md)).
+  [v2-changes.md](v2-changes.md)).
 - Its cost is the clash with paths, such as `dir/[[x]]`. The call-position
   rule handles that: a `/` inside a word or path is text.
 - `@` was considered and rejected.
@@ -1101,8 +1096,8 @@ plugin's pack.
   `references/` or `assets/`, and skillwright copies it from there (section 3
   rule 16).
 - A real consumer, the `sdlc` plugin, ships about 25 `assets:` entries from
-  outside its vault to arbitrary pack paths. It moves to this pattern (see the
-  consumer note in [v2-impact.md](v2-impact.md)).
+  outside its vault to arbitrary pack paths. It fits this pattern (see the
+  consumer note in [v2-changes.md](v2-changes.md)).
 
 ### D5. `build.exclude`
 
@@ -1250,7 +1245,7 @@ the same way, and the build leaves it alone. So v2 has no escape form for it.
 
 ## Open questions
 
-These need the owner's answer before the build order reaches them.
+These are not yet decided. Each gives the options and a recommendation.
 
 1. **Open question (owner): a shell command that runs a plugin-shared
    script.** On Codex, Cursor and Pi, `${PLUGIN_ROOT}/scripts/tool.js` becomes
@@ -1267,9 +1262,8 @@ These need the owner's answer before the build order reaches them.
 
    Recommendation: option 3.
 2. **Open question (owner): the `\[[` escape.** This spec says `\[[x]]` ships
-   as `[[x]]`, with the backslash removed (section 4 rule 13). The code merged
-   in [#136](https://github.com/osdlc/skillwright/pull/136) keeps the
-   backslash. Recommendation: remove it, as this spec says.
+   as `[[x]]`, with the backslash removed (section 4 rule 13). Today's tool keeps
+   the backslash ([#136](https://github.com/osdlc/skillwright/pull/136)). Recommendation: remove it, as this spec says.
 3. **Open question (owner): hook notes.** The layout has hook notes,
    `hooks/<h>/<h>.md`, but their format and how they become a hooks file are
    not defined here. Options: define them, or keep only `hooks/hooks.json` in
