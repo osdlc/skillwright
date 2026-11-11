@@ -222,6 +222,27 @@ pub const HARNESS_BLOCKS: &[&str] = &[CLAUDE.name, CODEX.name, CURSOR.name, PI.n
 /// Why a [`Shape::Refused`] key is refused: what a refusal of `name` says.
 pub const NAME_REFUSAL: &str = "the folder's name is the note's name; delete it";
 
+/// Harness block keys v2 removed. A block holding one is refused wherever it
+/// is: each harness's packs folder is fixed.
+pub const REFUSED_BLOCK_KEYS: &[&str] = &["packs"];
+
+/// The removed keys in a note's harness blocks, as `<harness>.<key>`.
+/// `fields` is the note's frontmatter; keys other than the harness blocks
+/// are passed over.
+pub(crate) fn refused_block_keys(
+    fields: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<String> {
+    fields
+        .iter()
+        .filter(|(harness, _)| HARNESS_BLOCKS.contains(&harness.as_str()))
+        .flat_map(|(harness, block)| {
+            let keys = block.as_object().into_iter().flat_map(|block| block.keys());
+            keys.filter(|key| REFUSED_BLOCK_KEYS.contains(&key.as_str()))
+                .map(move |key| format!("{harness}.{key}"))
+        })
+        .collect()
+}
+
 /// Harness block keys that say which thing a manifest describes. A plugin
 /// never takes one from the marketplace's block: each plugin has its own.
 pub const BLOCK_IDENTITY_KEYS: &[&str] =

@@ -420,7 +420,10 @@ impl Case {
             Self::NotNamedEntry => {
                 "a component's note is not `<name>/<name>.md` (no flat notes, no `SKILL.md`)"
             }
-            Self::RefusedBuildKey => "the root file has a removed `build:` key; delete it",
+            Self::RefusedBuildKey => {
+                "the root file has a removed key, a `build:` key or `packs` in a harness block; \
+                 delete it"
+            }
             Self::UnlistedEntry => "a folder holds an entry its place does not allow",
             Self::BadName => {
                 "a name breaks the name rule: 1 to 64 characters of `a-z`, `0-9` and `-`, \

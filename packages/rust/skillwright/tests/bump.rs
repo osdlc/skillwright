@@ -667,20 +667,6 @@ fn a_plugin_and_changed_since_together_are_a_usage_error() {
 }
 
 #[test]
-fn changed_since_a_built_folder_reads_moved_packs() {
-    let dir = project("claude: {packs: moved}\nbuild:\n  harnesses: [claude]\n");
-    let root = dir.path();
-    assert_eq!(run(&["build", "--yes"], root).code, 0);
-    assert!(root.join("dist/acme/moved/widget").is_dir());
-    write_skill(root, "widget", "Second draft.");
-
-    let result = run(&["bump", "--changed-since", BUILT, "--yes"], root);
-    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
-    assert!(plugin_note(root, "widget").contains("version: 0.2.2"));
-    assert!(plugin_note(root, "gadget").contains("version: 1.0.0"));
-}
-
-#[test]
 fn changed_since_works_on_one_of_several_marketplaces() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -809,7 +795,7 @@ fn changed_since_a_name_that_is_neither_a_folder_nor_a_ref_is_blocked() {
 }
 
 #[test]
-fn a_ref_from_before_a_packs_move_still_finds_the_change() {
+fn changed_since_a_ref_refuses_packs_in_a_block_as_build_does() {
     let dir = project("build:\n  harnesses: [claude]\n");
     let root = dir.path();
     git(root, &["init", "--quiet", "--initial-branch", "main"]);
@@ -818,44 +804,13 @@ fn a_ref_from_before_a_packs_move_still_finds_the_change() {
         &root.join("skillwright.md"),
         "---\nclaude: {packs: moved}\nbuild:\n  harnesses: [claude]\n---\n",
     );
-    write_skill(root, "widget", "Second draft.");
-
-    let result = run(&["bump", "--changed-since", "HEAD", "--yes"], root);
-    assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
-    assert!(
-        plugin_note(root, "widget").contains("version: 0.2.2"),
-        "{}",
-        result.stdout
-    );
-    assert!(
-        plugin_note(root, "gadget").contains("version: 1.0.0"),
-        "{}",
-        result.stdout
-    );
-}
-
-#[test]
-fn changed_since_a_ref_refuses_packs_on_a_harness_path_as_build_does() {
-    let dir = project("build:\n  harnesses: [claude]\n");
-    let root = dir.path();
-    git(root, &["init", "--quiet", "--initial-branch", "main"]);
-    commit_all(root, "one");
-    write(
-        &root.join("skillwright.md"),
-        "---\nclaude: {packs: .claude-plugin}\nbuild:\n  harnesses: [claude]\n---\n",
-    );
 
     let build = run(&["build", "--yes"], root);
-    assert!(build.stderr.contains("path-collision"), "{}", build.stderr);
+    assert!(build.stderr.contains("`claude.packs`"), "{}", build.stderr);
     let result = run(&["bump", "--changed-since", "HEAD", "--yes"], root);
     assert_eq!(result.code, build.code, "{}", result.stderr);
     assert!(
-        result.stderr.contains("path-collision"),
-        "{}",
-        result.stderr
-    );
-    assert!(
-        !result.stderr.contains("moving its packs"),
+        result.stderr.contains("`claude.packs`"),
         "{}",
         result.stderr
     );
@@ -911,36 +866,6 @@ fn rows(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
         .collect()
 }
 
-const WIDGET_ASSET: &str =
-    "build:\n  assets:\n    - {from: ../tools/run.sh, to: bin/run.sh, plugin: widget}\n";
-
-#[test]
-fn an_asset_outside_the_vault_changed_since_the_ref_bumps_its_plugin() {
-    let (_dir, repo) = repo_with_vault(WIDGET_ASSET, |repo| {
-        write(&repo.join("tools/run.sh"), "echo one\n");
-    });
-    write(&repo.join("tools/run.sh"), "echo two\n");
-
-    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
-    assert_eq!(
-        statuses(&result),
-        rows(&[("widget", "dry-run"), ("gadget", "unchanged")])
-    );
-}
-
-#[test]
-fn an_unchanged_asset_outside_the_vault_bumps_nothing() {
-    let (_dir, repo) = repo_with_vault(WIDGET_ASSET, |repo| {
-        write(&repo.join("tools/run.sh"), "echo one\n");
-    });
-
-    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
-    assert_eq!(
-        statuses(&result),
-        rows(&[("widget", "unchanged"), ("gadget", "unchanged")])
-    );
-}
-
 fn hooks_json(command: &str) -> String {
     format!(
         "{{\"hooks\": {{\"SessionStart\": [{{\"hooks\": [{{\"type\": \"command\", \"command\": \"{command}\"}}]}}]}}}}\n"
@@ -960,43 +885,6 @@ fn a_hooks_file_outside_the_vault_changed_since_the_ref_bumps_its_plugin() {
         statuses(&result),
         rows(&[("widget", "dry-run"), ("gadget", "unchanged")])
     );
-}
-
-#[test]
-fn an_asset_outside_the_repository_is_read_from_disk() {
-    let outside = tempfile::tempdir().unwrap();
-    let asset = outside.path().canonicalize().unwrap().join("run.sh");
-    write(&asset, "echo one\n");
-    let config = format!(
-        "build:\n  assets:\n    - {{from: {}, to: bin/run.sh, plugin: widget}}\n",
-        asset.display()
-    );
-    let (_dir, repo) = repo_with_vault(&config, |_| {});
-
-    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
-    assert_eq!(
-        statuses(&result),
-        rows(&[("widget", "unchanged"), ("gadget", "unchanged")])
-    );
-}
-
-#[test]
-fn an_asset_added_since_the_ref_reads_as_it_did() {
-    let (_dir, repo) = repo_with_vault(WIDGET_ASSET, |_| {});
-    write(&repo.join("tools/run.sh"), "echo one\n");
-
-    // The ref's build cannot find the asset, as a full checkout of the ref
-    // could not.
-    let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
-    assert_eq!(result.code, 2, "{}", result.stderr);
-    assert!(
-        result
-            .stderr
-            .contains("--changed-since `HEAD`: building it failed: missing-asset"),
-        "{}",
-        result.stderr
-    );
-    assert!(result.stdout.is_empty(), "{}", result.stdout);
 }
 
 #[test]

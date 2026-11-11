@@ -11,8 +11,8 @@
 //! touches a filesystem.
 //!
 //! An unknown key warns and is ignored. `workspace`, `name`, a key the table
-//! lists but does not mark as inherited, and a removed `build:` key are
-//! refused. A known key with a value of the wrong shape is refused, naming
+//! lists but does not mark as inherited, a removed `build:` key and `packs`
+//! in a harness block are refused. A known key with a value of the wrong shape is refused, naming
 //! the key.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -54,18 +54,6 @@ pub struct SharedDefaults {
     pub blocks: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
 }
 
-/// One `build.assets` entry: a file or folder copied into a plugin's root.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct AssetSetting {
-    /// The source file or folder, relative to the root file.
-    pub from: String,
-    /// Where it lands, relative to the built plugin's own root.
-    pub to: String,
-    /// Which plugin it lands in. A build refuses an entry without one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plugin: Option<String>,
-}
-
 /// One `build.hooks` entry: a Claude Code `hooks.json` rendered per harness.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct HookSetting {
@@ -83,16 +71,9 @@ pub struct BuildSettings {
     /// Which harnesses to build. Absent means all of them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harnesses: Option<Vec<String>>,
-    /// The plugin's launcher, relative to the plugin's root. See
-    /// [`MarketplaceConfig::launcher_path`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub launcher_path: Option<String>,
     /// How `bump` writes a version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bump: Option<BumpSettings>,
-    /// Files copied into a plugin's root besides each plugin's `assets/`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub assets: Vec<AssetSetting>,
     /// Canonical hooks files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<HookSetting>,
@@ -159,7 +140,7 @@ pub fn shared_default_keys() -> impl Iterator<Item = &'static str> {
 }
 
 /// The keys of the `build:` block.
-pub const BUILD_KEYS: &[&str] = &["harnesses", "launcher_path", "bump", "assets", "hooks"];
+pub const BUILD_KEYS: &[&str] = &["harnesses", "bump", "hooks"];
 
 /// The `build:` keys v2 refuses, naming the key, rather than warns about.
 pub const REFUSED_BUILD_KEYS: &[&str] = &[
@@ -169,6 +150,8 @@ pub const REFUSED_BUILD_KEYS: &[&str] = &[
     "patterns",
     "exclude",
     "namespace",
+    "assets",
+    "launcher_path",
 ];
 
 /// The top-level keys v2 refuses in the root file besides the key table's
@@ -240,6 +223,14 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             key,
             what: "a key of the root file",
             detail,
+        });
+    }
+    let blocks = refused_blocks_in(&map);
+    if !blocks.is_empty() {
+        return Err(SettingsError {
+            key: blocks.join("`, `"),
+            what: "a key skillwright reads",
+            detail: PACKS_REFUSAL.to_owned(),
         });
     }
     let mut root = RootFile::default();
@@ -368,19 +359,40 @@ fn refused_in_root(map: &serde_yaml::Mapping) -> Vec<(String, String)> {
 }
 
 /// The keys a root file's text refuses, for the layout report: each top-level
-/// key it refuses with why (spec section 11 case 2), then each removed
-/// `build:` key as `build.<key>` (case 7). Empty when the text cannot be read:
-/// [`parse_root_file`] says what is wrong with it.
+/// key it refuses with why (spec section 11 case 2), then each removed key
+/// (case 7): a `build:` key as `build.<key>`, then `packs` in a harness block
+/// as `<harness>.packs`. Empty when the text cannot be read: [`parse_root_file`]
+/// says what is wrong with it.
 pub(crate) fn refused_root_file_keys(text: &str) -> (Vec<(String, String)>, Vec<String>) {
     let Ok(map) = frontmatter_map(text) else {
         return (Vec::new(), Vec::new());
     };
-    let build = map
+    let mut removed = map
         .get("build")
         .and_then(serde_yaml::Value::as_mapping)
         .map(refused_in)
         .unwrap_or_default();
-    (refused_in_root(&map), build)
+    removed.extend(refused_blocks_in(&map));
+    (refused_in_root(&map), removed)
+}
+
+/// What a refusal of `packs` in a harness block says.
+pub(crate) const PACKS_REFUSAL: &str = "each harness's packs folder is fixed; delete it";
+
+/// The removed keys in a root file's harness blocks, as `<harness>.<key>`.
+fn refused_blocks_in(map: &serde_yaml::Mapping) -> Vec<String> {
+    let blocks = crate::keys::HARNESS_BLOCKS
+        .iter()
+        .filter_map(|harness| Some((*harness, map.get(*harness)?.as_mapping()?)));
+    blocks
+        .flat_map(|(harness, block)| {
+            block
+                .keys()
+                .filter_map(serde_yaml::Value::as_str)
+                .filter(|key| crate::keys::REFUSED_BLOCK_KEYS.contains(key))
+                .map(move |key| format!("{harness}.{key}"))
+        })
+        .collect()
 }
 
 /// Refuses a shared default whose value is not the shape the key table gives
@@ -505,7 +517,6 @@ fn warn_nested(list: &str, value: &serde_yaml::Value, warnings: &mut Vec<String>
         return;
     }
     let known: &[&str] = match list {
-        "assets" => &["from", "to", "plugin"],
         "hooks" => &["from", "plugin"],
         _ => return,
     };
@@ -551,7 +562,6 @@ impl RootFile {
             targets: defaults.targets.clone(),
             blocks: defaults.blocks.clone(),
             plugins: BTreeMap::new(),
-            launcher_path: self.build.launcher_path.clone(),
         }
     }
 
@@ -731,8 +741,7 @@ mod tests {
              license: MIT\n\
              targets: [claude]\n\
              build:\n  \
-               harnesses: [claude]\n  \
-               launcher_path: bin/tool\n\
+               harnesses: [claude]\n\
              ---\n\
              # osdlc\n\nThe body is not read.\n",
         )
@@ -744,7 +753,6 @@ mod tests {
         assert_eq!(config.identity.author, Some(serde_json::json!("Ada")));
         assert_eq!(config.identity.license.as_deref(), Some("MIT"));
         assert_eq!(config.targets, Some(vec!["claude".to_owned()]));
-        assert_eq!(config.launcher_path.as_deref(), Some("bin/tool"));
         assert_eq!(root.harness_set(), BTreeSet::from(["claude".to_owned()]));
     }
 
@@ -752,9 +760,7 @@ mod tests {
     fn a_file_with_no_frontmatter_takes_every_default() {
         let root = parse_root_file("# Just a README\n").unwrap();
         assert_eq!(root, RootFile::default());
-        let config = root.to_config();
-        assert_eq!(config.name, None);
-        assert_eq!(config.launcher_path, None);
+        assert_eq!(root.to_config().name, None);
     }
 
     #[test]
@@ -782,10 +788,21 @@ mod tests {
             ("patterns", "\n    skills: notes/*"),
             ("exclude", " '**/*.draft.md'"),
             ("namespace", " sw"),
+            ("assets", "\n    - {from: bin, to: bin, plugin: tools}"),
+            ("launcher_path", " bin/tool"),
         ] {
             let err = parse_root_file(&format!("---\nbuild:\n  {key}:{value}\n---\n")).unwrap_err();
             assert_eq!(err.key, format!("build.{key}"), "{err}");
         }
+    }
+
+    #[test]
+    fn packs_in_a_harness_block_is_refused_by_name() {
+        let text = "---\nclaude:\n  packs: out\npi:\n  packs: x\n---\n";
+        let err = parse_root_file(text).unwrap_err();
+        assert_eq!(err.key, "claude.packs`, `pi.packs", "{err}");
+        assert!(err.detail.contains("fixed"), "{err}");
+        assert_eq!(refused_root_file_keys(text).1, ["claude.packs", "pi.packs"]);
     }
 
     #[test]

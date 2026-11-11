@@ -29,12 +29,11 @@ use std::path::Path;
 
 use agent_adapt::RuntimeId;
 
-use super::manifest::packs_of;
 use super::manifest::{
     NAMING_KEY, claude_marketplace_manifest, codex_marketplace_manifest,
     cursor_marketplace_manifest, pi_package_manifest, render_plugin_manifest,
 };
-use super::profile::{CliInvocation, HarnessProfile, PluginFormat, SkillNaming};
+use super::profile::{HarnessProfile, PluginFormat, SkillNaming};
 use crate::compile::Closure;
 use crate::content::SkillProjection;
 use crate::error::CoreError;
@@ -177,24 +176,13 @@ pub trait HarnessTranslator: Sync {
         )
     }
 
-    /// A resolved body as this harness reads it. `skill_dir` is the folder,
-    /// relative to the pack root, of the skill the body belongs to: on a
-    /// [`CliInvocation::SkillRelativePath`] harness a launcher call is
-    /// written as the launcher's path from there. `None` (a command) leaves
-    /// every launcher call as the vault wrote it.
+    /// A resolved body as this harness reads it.
     ///
     /// # Errors
     ///
     /// What [`Self::render_call`] refuses.
-    fn render_body(&self, body: &Body, skill_dir: Option<&str>) -> Result<String, CoreError> {
-        let relative = self
-            .profile()
-            .plugin
-            .as_ref()
-            .is_some_and(|f| f.cli_invocation == CliInvocation::SkillRelativePath);
-        write_body(body, skill_dir.filter(|_| relative), |call| {
-            self.render_call(call)
-        })
+    fn render_body(&self, body: &Body) -> Result<String, CoreError> {
+        write_body(body, |call| self.render_call(call))
     }
 
     /// The plugin's hooks file and its gap report, written into `tree` under
@@ -259,7 +247,7 @@ pub trait HarnessTranslator: Sync {
             let Some(skills) = self.write_pack(
                 plugin,
                 &market.config,
-                &format!("{}/{name}", packs_of(&market.config, self.profile())),
+                &format!("{}/{name}", self.format().packs),
                 Layout::Marketplace,
                 &mut tree,
             )?
@@ -361,8 +349,7 @@ pub trait HarnessTranslator: Sync {
         let profile = self.profile();
         let format = self.format();
         let published = self.published_name(plugin, &skill.name)?;
-        let skill_dir = format!("skills/{published}");
-        let mut projection = projection_of(skill, |body| self.render_body(body, Some(&skill_dir)))?;
+        let mut projection = projection_of(skill, |body| self.render_body(body))?;
         projection.content.name = published.clone();
         if naming(profile, &plugin.bare_on, &plugin.prefixed_on) == SkillNaming::PluginPrefixed {
             projection.content.body =
@@ -423,7 +410,7 @@ pub trait HarnessTranslator: Sync {
         tree: &mut FileTree,
     ) -> Result<(), CoreError> {
         let profile = self.profile();
-        let mut projection = projection_of(command, |body| self.render_body(body, None))?;
+        let mut projection = projection_of(command, |body| self.render_body(body))?;
         if layout == Layout::Marketplace {
             mark_generated(&mut projection, &command.path);
         }
@@ -487,7 +474,7 @@ pub fn write_component(
     let projection = projection_of(component, |body| {
         // A skill published on its own has no plugin, so a call to another
         // skill is the runtime's form without a namespace.
-        write_body(body, None, |call| {
+        write_body(body, |call| {
             render_call(
                 call,
                 destination.canonical,
@@ -568,11 +555,9 @@ fn naming<S: AsRef<str>>(
 }
 
 /// A body's segments as text: each call through `call`, each link as its
-/// markdown, and each launcher call as the launcher's path from `skill_dir`,
-/// or as the vault wrote it when `skill_dir` is `None`.
+/// markdown.
 fn write_body(
     body: &Body,
-    skill_dir: Option<&str>,
     call: impl Fn(&Call) -> Result<String, CoreError>,
 ) -> Result<String, CoreError> {
     let mut out = String::new();
@@ -581,32 +566,9 @@ fn write_body(
             Segment::Text { text } => out.push_str(text),
             Segment::Link { target } => out.push_str(&target.markdown()),
             Segment::Call { call: site } => out.push_str(&call(site)?),
-            Segment::LauncherCall { launcher } => match skill_dir {
-                Some(dir) => out.push_str(&relative_path(dir, launcher)),
-                None => {
-                    out.push_str("${CLAUDE_PLUGIN_ROOT}/");
-                    out.push_str(launcher);
-                }
-            },
         }
     }
     Ok(out)
-}
-
-/// `to` as a path relative to the directory `from`. Both are relative to one
-/// root and forward-slashed; empty and `.` segments are ignored.
-pub(crate) fn relative_path(from: &str, to: &str) -> String {
-    let segments = |path: &str| -> Vec<String> {
-        path.split('/')
-            .filter(|s| !s.is_empty() && *s != ".")
-            .map(str::to_owned)
-            .collect()
-    };
-    let (from, to) = (segments(from), segments(to));
-    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
-    let mut out = vec!["..".to_owned(); from.len() - common];
-    out.extend_from_slice(&to[common..]);
-    out.join("/")
 }
 
 /// Refuses two skills that publish under one name on a harness with no plugin
@@ -771,15 +733,6 @@ pub(crate) fn rewrite_sibling_paths(body: &str, plugin: &str, siblings: &BTreeSe
     out
 }
 
-/// A body's `${CLAUDE_PLUGIN_ROOT}/<launcher>` calls written as the
-/// launcher's path from `skill_dir` — the load's split and a
-/// [`CliInvocation::SkillRelativePath`] harness's writing, end to end.
-#[cfg(test)]
-pub(crate) fn rewrite_launcher_calls(body: &str, launcher: &str, skill_dir: &str) -> String {
-    let body = crate::model::segments(body, &Default::default(), Some(launcher));
-    write_body(&body, Some(skill_dir), |_| unreachable!()).expect("a body with no calls writes")
-}
-
 /// [`HarnessTranslator::hooks`]'s shared body: every hook note projected,
 /// plus the hooks from the plugin's canonical file this harness carries,
 /// each localized ([`crate::hooks_file::localize`]; notes are not), written
@@ -873,7 +826,7 @@ impl HarnessTranslator for Claude {
     ) -> Option<String> {
         Some(claude_marketplace_manifest(
             listed,
-            packs_of(config, self.profile()),
+            self.format().packs,
             name,
             config,
         ))
@@ -897,7 +850,7 @@ impl HarnessTranslator for Codex {
     ) -> Option<String> {
         Some(codex_marketplace_manifest(
             listed,
-            packs_of(config, self.profile()),
+            self.format().packs,
             name,
             config,
         ))
@@ -921,7 +874,7 @@ impl HarnessTranslator for Cursor {
     ) -> Option<String> {
         Some(cursor_marketplace_manifest(
             listed,
-            packs_of(config, self.profile()),
+            self.format().packs,
             name,
             config,
         ))

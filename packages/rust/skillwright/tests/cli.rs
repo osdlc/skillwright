@@ -532,6 +532,8 @@ fn each_removed_build_key_is_refused() {
         "patterns: {}",
         "exclude: ['*.draft.md']",
         "namespace: sw",
+        "assets: [{from: bin, to: bin, plugin: tools}]",
+        "launcher_path: bin/tool",
     ] {
         let (_dir, vault) = fixture_with(&format!("---\nbuild:\n  {key}\n---\n"));
         let ran = run(&["check"], &vault);

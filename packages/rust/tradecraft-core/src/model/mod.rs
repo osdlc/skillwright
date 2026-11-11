@@ -108,10 +108,6 @@ pub struct Plugin {
     /// The plugin's canonical hooks file, parsed.
     #[serde(skip)]
     pub hooks_file: Option<HooksFile>,
-    /// The launcher's path inside the pack, when the plugin ships an asset
-    /// at [`crate::export::MarketplaceConfig::launcher_path`]: the
-    /// `${CLAUDE_PLUGIN_ROOT}/<launcher>` its skills call.
-    pub launcher: Option<String>,
     /// The harnesses that name this plugin's skills bare against their
     /// profile's default: `<harness>: {naming: bare}` where the default
     /// prefixes.
@@ -246,12 +242,6 @@ pub enum Segment {
     Call {
         /// The call.
         call: Call,
-    },
-    /// A call to the plugin's launcher, which the vault writes as
-    /// `${CLAUDE_PLUGIN_ROOT}/<launcher>`.
-    LauncherCall {
-        /// The launcher's path inside the plugin.
-        launcher: String,
     },
 }
 
@@ -401,7 +391,7 @@ pub struct HooksFile {
 /// A mark that does not parse, or names a site the record does not hold, is
 /// left as text: the record is this module's own and a stray mark is a bug,
 /// but writing it out beats losing the bytes around it.
-pub(crate) fn segments(text: &str, record: &Recorded, launcher: Option<&str>) -> Body {
+pub(crate) fn segments(text: &str, record: &Recorded) -> Body {
     let mut out: Vec<Segment> = Vec::new();
     let mut rest = text;
     while let Some(open) = rest.find(MARK_OPEN) {
@@ -424,18 +414,18 @@ pub(crate) fn segments(text: &str, record: &Recorded, launcher: Option<&str>) ->
         });
         match parsed {
             Some((segment, consumed)) => {
-                push_text(&mut out, &rest[..open], launcher);
+                append_text(&mut out, &rest[..open]);
                 out.push(segment);
                 rest = &after[consumed..];
             }
             None => {
                 let end = open + MARK_OPEN.len_utf8();
-                push_text(&mut out, &rest[..end], launcher);
+                append_text(&mut out, &rest[..end]);
                 rest = &rest[end..];
             }
         }
     }
-    push_text(&mut out, rest, launcher);
+    append_text(&mut out, rest);
     Body { segments: out }
 }
 
@@ -455,40 +445,7 @@ fn call_of(site: &crate::compile::CallSite) -> Call {
     }
 }
 
-/// Appends `text`, merged into a preceding text segment, with each
-/// `${CLAUDE_PLUGIN_ROOT}/<launcher>` call site split out.
-///
-/// A site only counts when the character after it cannot continue the same
-/// path — so `${CLAUDE_PLUGIN_ROOT}/bin/tool.js` stays text.
-fn push_text(out: &mut Vec<Segment>, text: &str, launcher: Option<&str>) {
-    if text.is_empty() {
-        return;
-    }
-    let Some(launcher) = launcher else {
-        append_text(out, text);
-        return;
-    };
-    let needle = format!("${{CLAUDE_PLUGIN_ROOT}}/{launcher}");
-    let mut rest = text;
-    while let Some(offset) = rest.find(&needle) {
-        let after = &rest[offset + needle.len()..];
-        let continues = after
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'));
-        if continues {
-            append_text(out, &rest[..offset + needle.len()]);
-        } else {
-            append_text(out, &rest[..offset]);
-            out.push(Segment::LauncherCall {
-                launcher: launcher.to_owned(),
-            });
-        }
-        rest = after;
-    }
-    append_text(out, rest);
-}
-
+/// Appends `text`, merged into a preceding text segment.
 fn append_text(out: &mut Vec<Segment>, text: &str) {
     if text.is_empty() {
         return;
@@ -544,7 +501,7 @@ mod tests {
     #[test]
     fn marks_split_into_calls_and_links_and_text_merges() {
         let text = format!("run `{MARK_OPEN}c0{MARK_CLOSE}` then see {MARK_OPEN}l0{MARK_CLOSE}.");
-        let body = segments(&text, &record(), None);
+        let body = segments(&text, &record());
         assert_eq!(body.segments.len(), 5);
         assert!(
             matches!(&body.segments[1], Segment::Call { call } if call.skill.call_id() == "p:a")
@@ -588,28 +545,7 @@ mod tests {
     #[test]
     fn a_mark_naming_nothing_stays_text() {
         let text = format!("a{MARK_OPEN}c9{MARK_CLOSE}b");
-        let body = segments(&text, &record(), None);
+        let body = segments(&text, &record());
         assert_eq!(body.segments, vec![Segment::Text { text: text.clone() }]);
-    }
-
-    #[test]
-    fn a_launcher_call_splits_unless_the_path_continues() {
-        let body = segments(
-            "x ${CLAUDE_PLUGIN_ROOT}/bin/tool y ${CLAUDE_PLUGIN_ROOT}/bin/tool.js",
-            &Recorded::default(),
-            Some("bin/tool"),
-        );
-        assert_eq!(
-            body.segments,
-            vec![
-                Segment::Text { text: "x ".into() },
-                Segment::LauncherCall {
-                    launcher: "bin/tool".into()
-                },
-                Segment::Text {
-                    text: " y ${CLAUDE_PLUGIN_ROOT}/bin/tool.js".into()
-                },
-            ]
-        );
     }
 }

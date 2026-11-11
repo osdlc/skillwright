@@ -10,15 +10,12 @@
 //! The functions here are the shapes; which harness writes which is its
 //! translator's choice ([`crate::harness::HarnessTranslator`]).
 
-use std::collections::{BTreeMap, BTreeSet};
-
 use serde::Serialize;
 
 use crate::error::CoreError;
-use crate::export::{MarketplaceConfig, PluginOverrides, STAGE_DIR};
+use crate::export::{MarketplaceConfig, PluginOverrides};
 use crate::frontmatter::{ContainerIdentity, EntityKind};
 use crate::harness::{HarnessProfile, PluginDialect, SkillNaming};
-use unicode_normalization::UnicodeNormalization;
 
 /// Two-space indentation, stable key order, one trailing newline — the byte
 /// form both manifests share, and the reason `check` can compare bytes.
@@ -51,35 +48,9 @@ fn format_of(harness: &str) -> &'static crate::harness::PluginFormat {
 
 type Block = serde_json::Map<String, serde_json::Value>;
 
-/// The harness-block key moving a harness's packs folder. Read on the
-/// marketplace only.
-pub const PACKS_KEY: &str = "packs";
-
 /// The harness-block key choosing how a harness whose profile allows it
 /// ([`crate::harness::PluginFormat::naming_choice`]) names a published skill.
 pub const NAMING_KEY: &str = "naming";
-
-/// Where `profile`'s packs land: the marketplace block's `packs`, or the
-/// profile's own folder.
-pub fn packs_of<'c>(config: &'c MarketplaceConfig, profile: &HarnessProfile) -> &'c str {
-    config
-        .blocks
-        .get(profile.name)
-        .and_then(|block| block.get(PACKS_KEY))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or(profile.format().packs)
-}
-
-/// Whether a folder at `a` and one at `b` are one, or one holds the other.
-/// Compared as APFS and NTFS may: Unicode case and normalization are ignored.
-pub(crate) fn paths_overlap(a: &str, b: &str) -> bool {
-    let fold = |path: &str| -> String {
-        let lower: String = path.nfc().flat_map(char::to_lowercase).collect();
-        lower.nfc().collect()
-    };
-    let (a, b) = (fold(a), fold(b));
-    a.split('/').zip(b.split('/')).all(|(a, b)| a == b)
-}
 
 /// Files an operating system leaves in any folder a person opens.
 const OS_FILES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
@@ -87,57 +58,6 @@ const OS_FILES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 /// Whether `relative` is one of [`OS_FILES`]: not anyone's work.
 pub(crate) fn is_os_file(relative: &str) -> bool {
     OS_FILES.contains(&relative.rsplit('/').next().unwrap_or(relative))
-}
-
-/// The first of `files` that shows the packs folder `packs` is not all packs:
-/// outside any pack, or in a pack with no `plugin_manifest` or that `built`
-/// does not accept. `files` are spelled from the folder holding `packs`.
-/// `rendered` names files a build produces, wherever they sit.
-pub(crate) fn first_not_a_pack<'f>(
-    packs: &str,
-    plugin_manifest: &str,
-    files: impl Iterator<Item = &'f str>,
-    rendered: impl Fn(&str) -> bool,
-    built: impl Fn(&[&str]) -> bool,
-) -> Option<&'f str> {
-    let mut by_pack: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for relative in files.filter(|file| !is_os_file(file)) {
-        match HarnessProfile::split_pack(packs, relative) {
-            Some((name, tail)) if !tail.is_empty() => {
-                by_pack.entry(name).or_default().push(relative);
-            }
-            _ if rendered(relative) => {}
-            _ => return Some(relative),
-        }
-    }
-    by_pack.iter().find_map(|(name, files)| {
-        let manifest = format!("{packs}/{name}/{plugin_manifest}");
-        let ok = files.contains(&manifest.as_str()) && built(files);
-        (!ok).then(|| files[0])
-    })
-}
-
-/// Every harness's manifest paths, the top folders the profiles name, and the
-/// stage a build swaps from.
-fn harness_paths() -> BTreeSet<&'static str> {
-    let mut paths = BTreeSet::from([STAGE_DIR]);
-    for profile in crate::harness::with_plugin_format() {
-        let format = profile.format();
-        paths.extend(format.marketplace_manifest);
-        let declared = [
-            Some(format.packs),
-            format.marketplace_manifest,
-            Some(format.user_skills_dir),
-            Some(format.plugin_manifest),
-        ];
-        paths.extend(
-            declared
-                .into_iter()
-                .flatten()
-                .filter_map(|path| path.split_once('/').map(|(top, _)| top)),
-        );
-    }
-    paths
 }
 
 /// Refuses a key in a container's block whose value is not the kind that
@@ -204,107 +124,6 @@ pub(crate) fn check_container_blocks(
                     format!("`{harness}.{key}` of {owner} {}", ty.refusal(value)),
                 ));
             }
-        }
-    }
-    Ok(())
-}
-
-/// Refuses a `packs` value a build could not own: one that leaves the output,
-/// that lands on a harness's manifests or folders, or that another harness's
-/// `packs` overlaps. A harness's own default is always its own.
-///
-/// # Errors
-///
-/// `refused: unsafe-path` and `refused: path-collision`.
-pub fn check_packs(config: &MarketplaceConfig) -> Result<(), CoreError> {
-    let mut seen: Vec<(&str, &str)> = Vec::new();
-    for profile in crate::harness::with_plugin_format() {
-        let value = config
-            .blocks
-            .get(profile.name)
-            .and_then(|block| block.get(PACKS_KEY));
-        if value.is_some_and(|value| !value.is_string()) {
-            return Err(CoreError::refused(
-                "unsafe-path",
-                format!("`{}.{PACKS_KEY}` must be a folder path", profile.name),
-            ));
-        }
-        let packs = packs_of(config, profile);
-        // `:` is a Windows drive (`C:/x`), which every other test here passes.
-        let unsafe_path = packs.is_empty()
-            || packs.starts_with('/')
-            || packs.contains(['\\', ':'])
-            || packs.split('/').any(|part| matches!(part, "" | "." | ".."));
-        if unsafe_path {
-            return Err(CoreError::refused(
-                "unsafe-path",
-                format!(
-                    "`{}.{PACKS_KEY}` must be a relative path inside the output: `{packs}`",
-                    profile.name
-                ),
-            ));
-        }
-        if packs != profile.format().packs
-            && let Some(taken) = harness_paths()
-                .into_iter()
-                .find(|path| paths_overlap(packs, path))
-        {
-            return Err(CoreError::refused(
-                "path-collision",
-                format!(
-                    "`{}.{PACKS_KEY}` is `{packs}`, which overlaps `{taken}`: a build replaces its \
-                     packs folder whole, and that path belongs to a harness. Nothing was written",
-                    profile.name
-                ),
-            ));
-        }
-        for (other, taken) in &seen {
-            if paths_overlap(packs, taken) {
-                return Err(CoreError::refused(
-                    "path-collision",
-                    format!(
-                        "`{}` and `{other}` would both write under `{packs}`: each harness needs \
-                         a packs folder of its own",
-                        profile.name
-                    ),
-                ));
-            }
-        }
-        seen.push((profile.name, packs));
-    }
-    Ok(())
-}
-
-/// [`check_packs`]'s second half, for an output that overlaps the vault:
-/// refuses a moved `packs` that lands on a folder the vault reads notes from.
-/// `sources` are those folders; `located` spells `packs` from the vault's
-/// root, `None` when it lands outside the vault.
-///
-/// # Errors
-///
-/// `refused: path-collision`.
-pub(crate) fn check_packs_against_sources(
-    config: &MarketplaceConfig,
-    sources: &BTreeSet<String>,
-    located: impl Fn(&str) -> Option<String>,
-) -> Result<(), CoreError> {
-    for profile in crate::harness::with_plugin_format() {
-        let packs = packs_of(config, profile);
-        if packs == profile.format().packs {
-            continue;
-        }
-        let Some(at_vault) = located(packs) else {
-            continue;
-        };
-        if let Some(source) = sources.iter().find(|s| paths_overlap(&at_vault, s)) {
-            return Err(CoreError::refused(
-                "path-collision",
-                format!(
-                    "`{}.{PACKS_KEY}` is `{packs}`, which lands on the source folder `{source}`: \
-                     generated files must not mix with notes. Nothing was written",
-                    profile.name
-                ),
-            ));
         }
     }
     Ok(())

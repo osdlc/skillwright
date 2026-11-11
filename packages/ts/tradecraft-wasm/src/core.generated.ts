@@ -60,17 +60,8 @@ export interface BuildSettings {
   /** Which harnesses to build. Absent means all of them. */
   harnesses?: string[];
 
-  /**
-   * The plugin's launcher, relative to the plugin's root. See
-   * [`MarketplaceConfig::launcher_path`].
-   */
-  launcher_path?: string;
-
   /** How `bump` writes a version. */
   bump?: BumpSettings;
-
-  /** Files copied into a plugin's root besides each plugin's `assets/`. */
-  assets?: AssetSetting[];
 
   /** Canonical hooks files. */
   hooks?: HookSetting[];
@@ -84,18 +75,6 @@ export interface BumpSettings {
 
 /** How `bump` writes the patch number of the version it sets. */
 export type PatchScheme = "increment" | "timestamp";
-
-/** One `build.assets` entry: a file or folder copied into a plugin's root. */
-export interface AssetSetting {
-  /** The source file or folder, relative to the root file. */
-  from: string;
-
-  /** Where it lands, relative to the built plugin's own root. */
-  to: string;
-
-  /** Which plugin it lands in. A build refuses an entry without one. */
-  plugin?: string;
-}
 
 /** One `build.hooks` entry: a Claude Code `hooks.json` rendered per harness. */
 export interface HookSetting {
@@ -438,18 +417,6 @@ export interface ExportRequest {
   /** The marketplace's own identity and per-plugin overrides. */
   config: MarketplaceConfig;
 
-  /**
-   * Files copied verbatim into a built plugin's own root — a CLI, a wasm
-   * artifact, a launcher: authored on disk, never as a vault note.
-   *
-   * Paths are absolute, resolved by the caller: this core never reads an
-   * ambient root file, so it has nothing to resolve a relative asset
-   * path against (see the crate doc's wasm-boundary note on
-   * [`MarketplaceConfig`]). The Rust helper `marketplace_inputs` resolves
-   * `build.assets` entries against the root file's own directory.
-   */
-  assets?: AssetSpec[];
-
   /** Canonical hooks files; see [`HookFileSpec`]. */
   hooks?: HookFileSpec[];
 }
@@ -561,16 +528,6 @@ export interface MarketplaceConfig {
 
   /** Per-plugin manifest overrides, keyed by plugin name. */
   plugins?: Record<string, PluginOverrides>;
-
-  /**
-   * The plugin's launcher, relative to the plugin's root (`bin/tool`).
-   * Skill bodies call it as `${CLAUDE_PLUGIN_ROOT}/<launcher_path>`. On a
-   * root whose harness does not expand that variable, the build rewrites
-   * each call to the launcher's path relative to the skill's own folder,
-   * when the plugin ships an asset at this path. Absent turns the rewrite
-   * off. The root file declares it as `build.launcher_path`.
-   */
-  launcher_path?: string;
 }
 
 /**
@@ -655,41 +612,15 @@ export interface PluginOverrides {
 }
 
 /**
- * One file, or one directory tree, an export copies verbatim into a built
- * plugin's own root, rather than rendering it from a vault note.
- *
- * A `build.assets` entry. A skill's own folders and the plugin's
- * `references/`, `scripts/` and `assets/` ship from the layout; this is for
- * a file from elsewhere, such as a launcher script.
- */
-export interface AssetSpec {
-  /**
-   * Absolute host path to the source file or directory. A directory
-   * lands as its whole tree, less `tests/` and `fixtures/` folders and
-   * `*.test.*` files.
-   */
-  source: string;
-
-  /**
-   * Destination, relative to the built plugin's own root
-   * (`<packs>/<plugin>/`), forward-slashed. For a directory source, the
-   * directory its tree lands under.
-   */
-  dest: string;
-
-  /** Which plugin's root this asset lands in. A build refuses `None`. */
-  plugin?: string;
-}
-
-/**
  * One canonical hooks file a build renders into a plugin's packs. At most
  * one per plugin; its gap report goes in every pack. See
  * [`crate::hooks_file`].
  */
 export interface HookFileSpec {
   /**
-   * Absolute host path to the file, resolved by the caller the way an
-   * [`AssetSpec::source`] is.
+   * Absolute host path to the file, resolved by the caller: this core
+   * reads no root file, so it has nothing to resolve a relative path
+   * against.
    */
   source: string;
 
@@ -870,9 +801,6 @@ export interface LoadRequest {
    */
   config: MarketplaceConfig;
 
-  /** Files copied verbatim into a plugin's pack. */
-  assets?: AssetSpec[];
-
   /** Canonical hooks files. */
   hooks?: HookFileSpec[];
 }
@@ -917,13 +845,6 @@ export interface Plugin {
 
   /** Files copied verbatim into the built pack. */
   assets: Asset[];
-
-  /**
-   * The launcher's path inside the pack, when the plugin ships an asset
-   * at [`crate::export::MarketplaceConfig::launcher_path`]: the
-   * `${CLAUDE_PLUGIN_ROOT}/<launcher>` its skills call.
-   */
-  launcher: string | null;
 
   /**
    * The harnesses that name this plugin's skills bare against their
@@ -1166,15 +1087,6 @@ export type Segment =
       type: "call";
       /** The call. */
       call: Call;
-    }
-  /**
-   * A call to the plugin's launcher, which the vault writes as
-   * `${CLAUDE_PLUGIN_ROOT}/<launcher>`.
-   */
-  | {
-      type: "launcher-call";
-      /** The launcher's path inside the plugin. */
-      launcher: string;
     };
 
 /** A resolved link: the file it reaches and the markdown it renders as. */

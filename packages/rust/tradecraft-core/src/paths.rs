@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::error::CoreError;
-use crate::export::{AssetSpec, ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig};
+use crate::export::{ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig};
 use crate::layout::{DIST_DIR, Layout, MARKETPLACES_DIR, read_layout};
 use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
@@ -75,7 +75,7 @@ pub fn resolve_path(path: &str, base: &Path, home: &Path) -> PathBuf {
 }
 
 /// What a build reads from the root file besides the vault: the shared
-/// defaults, the harnesses, the assets and the hooks files.
+/// defaults, the harnesses and the hooks files.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct MarketplaceInputs {
@@ -83,30 +83,18 @@ pub struct MarketplaceInputs {
     pub config: MarketplaceConfig,
     /// The harnesses to build for. Empty is every one the export supports.
     pub harnesses: BTreeSet<String>,
-    /// The `build.assets` entries, `from` resolved against the root file's
+    /// The `build.hooks` entries, `from` resolved against the root file's
     /// folder.
-    pub assets: Vec<AssetSpec>,
-    /// The `build.hooks` entries, `from` resolved the same way.
     pub hooks: Vec<HookFileSpec>,
 }
 
 /// The root file as the inputs of an [`crate::ExportRequest`]: config,
-/// harnesses, assets and hooks. Pass the result's fields to the request, or a
-/// build gets no assets and no hooks.
+/// harnesses and hooks. Pass the result's fields to the request, or a build
+/// gets no hooks.
 ///
 /// `config_dir` is the root file's folder: each `from` resolves against it,
 /// because the core reads no ambient config. `home` expands a leading `~`.
 pub fn marketplace_inputs(root: &RootFile, config_dir: &Path, home: &Path) -> MarketplaceInputs {
-    let assets = root
-        .build
-        .assets
-        .iter()
-        .map(|entry| AssetSpec {
-            source: resolve_path(&entry.from, config_dir, home),
-            dest: entry.to.clone(),
-            plugin: entry.plugin.clone(),
-        })
-        .collect();
     let hooks = root
         .build
         .hooks
@@ -128,7 +116,6 @@ pub fn marketplace_inputs(root: &RootFile, config_dir: &Path, home: &Path) -> Ma
     MarketplaceInputs {
         config: root.to_config(),
         harnesses: root.harness_set(),
-        assets,
         hooks,
     }
 }
@@ -187,7 +174,6 @@ impl LoadedVault {
         request.marketplace = Some(marketplace.name.clone());
         request.mode = mode;
         request.harnesses.clone_from(&self.inputs.harnesses);
-        request.assets.clone_from(&self.inputs.assets);
         request.hooks.clone_from(&self.inputs.hooks);
         request
     }

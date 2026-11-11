@@ -4,8 +4,8 @@
 use std::path::Path;
 
 use tradecraft_core::{
-    CoreError, EntityKind, ExportMode, MemVfs, Vfs, check_vault_root, discover_components,
-    export_skills, find_vault_root, load_vault, read_layout,
+    CoreError, EntityKind, ExportMode, ExportRequest, MarketplaceConfig, MemVfs, Vfs,
+    check_vault_root, discover_components, export_skills, find_vault_root, load_vault, read_layout,
 };
 
 const ROOT: &str = "---\n---\n";
@@ -534,6 +534,54 @@ fn case_7_build_namespace_is_refused() {
     let vfs = vault_of(&files);
     let err = load_vault(&vfs, Path::new("/v"), None, Path::new("/home")).unwrap_err();
     assert_eq!(err.to_string(), said);
+}
+
+#[test]
+fn case_7_build_assets_and_build_launcher_path_are_refused() {
+    let mut files = plugin("acme", "tools", &[("skills/review/review.md", SKILL)]);
+    files.push((
+        "skillwright.md".to_owned(),
+        "---\nbuild:\n  assets: [{from: bin, to: bin, plugin: tools}]\n  launcher_path: \
+         bin/tool\n---\n"
+            .to_owned(),
+    ));
+    let said = refusal(&vault_of(&files));
+    assert!(said.contains("removed"), "{said}");
+    for key in ["build.assets", "build.launcher_path"] {
+        assert!(said.contains(&format!("`{key}`")), "{key}: {said}");
+    }
+}
+
+#[test]
+fn case_7_packs_in_a_root_file_block_is_refused() {
+    let mut files = plugin("acme", "tools", &[("skills/review/review.md", SKILL)]);
+    files.push((
+        "skillwright.md".to_owned(),
+        "---\nclaude:\n  packs: out/claude\n---\n".to_owned(),
+    ));
+    let said = refusal(&vault_of(&files));
+    assert!(said.contains("removed"), "{said}");
+    assert!(said.contains("`claude.packs`"), "{said}");
+}
+
+#[test]
+fn case_7_packs_in_a_marketplace_or_plugin_block_is_refused() {
+    for (note, at) in [
+        ("marketplaces/acme/acme.md", "codex"),
+        ("marketplaces/acme/plugins/tools/tools.md", "pi"),
+    ] {
+        let mut files = plugin("acme", "tools", &[("skills/review/review.md", SKILL)]);
+        let text = format!("---\n{at}:\n  packs: elsewhere\n---\n");
+        files.retain(|(path, _)| path != note);
+        files.push((note.to_owned(), text));
+        let mut request = ExportRequest::new("/v", "/v/dist/acme", MarketplaceConfig::default());
+        request.mode = ExportMode::Check;
+        let err = export_skills(&vault_of(&files), &request).unwrap_err();
+        let said = err.to_string();
+        assert!(said.contains(&format!("`{at}.packs`")), "{note}: {said}");
+        assert!(said.contains("removed"), "{note}: {said}");
+        assert!(said.contains(note), "{note}: {said}");
+    }
 }
 
 #[test]

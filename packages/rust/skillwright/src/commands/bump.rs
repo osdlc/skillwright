@@ -21,13 +21,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tradecraft_core::harness::with_plugin_format;
 use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
-    BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit,
-    MarketplaceConfig, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs, check_packs,
-    discover_components, export_skills, is_vault_root, next_version, owned_paths, packs_path,
-    parse_semver, plugin_manifest_path, read_version, set_version,
+    BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit, NativeVfs,
+    PatchScheme, ROOT_FILE, UnitStatus, Vfs, discover_components, export_skills, is_vault_root,
+    next_version, owned_paths, packs_path, parse_semver, plugin_manifest_path, read_version,
+    set_version,
 };
 
 use crate::ctx::CommandContext;
@@ -418,17 +417,10 @@ impl Skip {
 
     /// Read the baseline's own manifests of `plugin` in `roots` to tell the
     /// three causes apart.
-    fn of(
-        baseline: &Path,
-        config: &MarketplaceConfig,
-        roots: &[&str],
-        plugin: &str,
-        current: &str,
-    ) -> Skip {
+    fn of(baseline: &Path, roots: &[&str], plugin: &str, current: &str) -> Skip {
         let mut held = false;
         for root in roots {
-            let (Some(packs), Some(manifest)) =
-                (packs_path(config, root), plugin_manifest_path(root))
+            let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root))
             else {
                 continue;
             };
@@ -452,10 +444,9 @@ impl Skip {
 }
 
 /// Whether `dir` holds a plugin manifest for any of `roots`.
-fn holds_a_plugin_manifest(dir: &Path, config: &MarketplaceConfig, roots: &[&str]) -> bool {
+fn holds_a_plugin_manifest(dir: &Path, roots: &[&str]) -> bool {
     roots.iter().any(|root| {
-        let (Some(packs), Some(manifest)) = (packs_path(config, root), plugin_manifest_path(root))
-        else {
+        let (Some(packs), Some(manifest)) = (packs_path(root), plugin_manifest_path(root)) else {
             return false;
         };
         std::fs::read_dir(dir.join(packs)).is_ok_and(|entries| {
@@ -485,20 +476,7 @@ fn run_changed(
             )
         })
         .collect();
-    // Every request reads the root file's config.
-    let current = run.loaded.inputs.config.clone();
-    // The build's own `packs` check, before a ref is built and its packs are
-    // moved to where this config keeps them.
-    if let Err(err) = check_packs(&current) {
-        return blocked(
-            ctx.err,
-            &format!(
-                "--changed-since `{since}`: {}",
-                normalize_thrown_reason(&err.to_string())
-            ),
-        );
-    }
-    let baseline = match Baseline::resolve(since, run, &current, ctx) {
+    let baseline = match Baseline::resolve(since, run, ctx) {
         Ok(baseline) => baseline,
         Err(code) => return code,
     };
@@ -513,14 +491,14 @@ fn run_changed(
         };
         roots.dedup();
         if let Baseline::Dir(dir) = &baseline
-            && !holds_a_plugin_manifest(dir, &request.config, &roots)
+            && !holds_a_plugin_manifest(dir, &roots)
         {
             let expected: Vec<String> = roots
                 .iter()
                 .filter_map(|root| {
                     Some(format!(
                         "{}/<plugin>/{}",
-                        packs_path(&request.config, root)?,
+                        packs_path(root)?,
                         plugin_manifest_path(root)?
                     ))
                 })
@@ -588,13 +566,7 @@ fn run_changed(
             let row = if !verdict.drift {
                 Row::plain(name, &planned, "unchanged", None)
             } else if !changed {
-                let skip = Skip::of(
-                    &request.out_root,
-                    &request.config,
-                    &verdict.roots,
-                    name,
-                    &planned.current,
-                );
+                let skip = Skip::of(&request.out_root, &verdict.roots, name, &planned.current);
                 let mut row = Row::plain(name, &planned, "skipped", Some(skip.token().to_owned()));
                 row.explain = Some(skip.text());
                 row
@@ -832,14 +804,12 @@ impl Baseline {
     }
 
     /// A directory that exists is a built baseline; anything else is a git
-    /// ref, built from the ref's own root file and `marketplaces/`. `current`
-    /// is this run's config, where a built ref's packs are moved to.
+    /// ref, built from the ref's own root file and `marketplaces/`.
     ///
     /// A directory holds one marketplace, so a run over several is refused.
     fn resolve(
         since: &str,
         run: &ResolvedRun,
-        current: &MarketplaceConfig,
         ctx: &mut CommandContext<'_>,
     ) -> Result<Baseline, i32> {
         let as_dir = crate::config::resolve_against_cwd(since, &ctx.cwd);
@@ -854,7 +824,7 @@ impl Baseline {
             }
             return Ok(Baseline::Dir(as_dir));
         }
-        BuiltRef::build(since, run, current, ctx).map(Baseline::Built)
+        BuiltRef::build(since, run, ctx).map(Baseline::Built)
     }
 }
 
@@ -884,7 +854,6 @@ impl BuiltRef {
     fn build(
         since: &str,
         run: &ResolvedRun,
-        current: &MarketplaceConfig,
         ctx: &mut CommandContext<'_>,
     ) -> Result<BuiltRef, i32> {
         let fail = |ctx: &mut CommandContext<'_>, why: String| {
@@ -1014,9 +983,6 @@ impl BuiltRef {
                     ),
                 );
             }
-            if let Err(err) = align_packs(&out, &request.config, current) {
-                return fail(ctx, format!("moving its packs failed: {err}"));
-            }
         }
         Ok(built)
     }
@@ -1053,16 +1019,15 @@ fn vault_candidates(repo: &Path, root: &Path) -> Vec<String> {
 }
 
 /// What the ref's build reads outside its vault, relative to `checkout`: each
-/// `build.assets` and `build.hooks` source. The sources come from the loaded
+/// `build.hooks` source. The sources come from the loaded
 /// root file, as the build's own request does. A source outside the checkout
 /// is read from disk and is left out.
 fn build_input_candidates(checkout: &Path, run: &ResolvedRun) -> Vec<String> {
     let inputs = &run.loaded.inputs;
     inputs
-        .assets
+        .hooks
         .iter()
-        .map(|asset| &asset.source)
-        .chain(inputs.hooks.iter().map(|hook| &hook.source))
+        .map(|hook| &hook.source)
         .filter_map(|path| relative_to(checkout, path))
         .collect()
 }
@@ -1227,40 +1192,6 @@ fn check_out_paths(
         cmd.arg(path);
     }
     cmd.run().map(drop).map_err(|err| err.to_string())
-}
-
-/// Moves each harness's packs in a baseline built under `base` to where
-/// `current` keeps them, so a `packs` setting that changed since the ref
-/// still compares each plugin with itself.
-fn align_packs(
-    out: &Path,
-    base: &MarketplaceConfig,
-    current: &MarketplaceConfig,
-) -> std::io::Result<()> {
-    let side = out.join(".moving");
-    let moved: Vec<(&str, &str, PathBuf)> = with_plugin_format()
-        .filter_map(|spec| {
-            let from = packs_path(base, spec.name)?;
-            let to = packs_path(current, spec.name)?;
-            (from != to && out.join(from).is_dir()).then(|| (from, to, side.join(spec.name)))
-        })
-        .collect();
-    // Through a side folder: one harness's new folder can be another's old one.
-    for (from, _, aside) in &moved {
-        std::fs::create_dir_all(&side)?;
-        std::fs::rename(out.join(from), aside)?;
-    }
-    for (_, to, aside) in &moved {
-        let target = out.join(to);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::rename(aside, target)?;
-    }
-    if !moved.is_empty() {
-        std::fs::remove_dir(&side)?;
-    }
-    Ok(())
 }
 
 /// Claims a baseline under `baselines`: an `<id>.lock`, created and locked.
@@ -1655,22 +1586,18 @@ mod tests {
     }
 
     #[test]
-    fn the_baseline_path_set_names_the_vault_assets_and_hooks() {
+    fn the_baseline_path_set_names_the_vault_and_hooks() {
         let outside = tempfile::tempdir().unwrap();
         let elsewhere = outside.path().canonicalize().unwrap().join("ELSEWHERE");
         write(&elsewhere, "x\n");
         let root_file = format!(
-            "---\nbuild:\n  assets:\n    \
-             - {{from: NOTICE, to: NOTICE, plugin: p}}\n    \
-             - {{from: ../tools/run.sh, to: run.sh, plugin: p}}\n    \
-             - {{from: {}, to: ELSEWHERE, plugin: p}}\n  hooks:\n    \
-             - {{from: ../hooks/hooks.json, plugin: p}}\n---\n",
+            "---\nbuild:\n  hooks:\n    \
+             - {{from: ../hooks/hooks.json, plugin: p}}\n    \
+             - {{from: {}, plugin: q}}\n---\n",
             elsewhere.display()
         );
         let mut files = vault_files("vault/", &root_file);
         for (path, text) in [
-            ("vault/NOTICE", "n\n"),
-            ("tools/run.sh", "echo\n"),
             ("hooks/hooks.json", "{\"hooks\": {}}\n"),
             ("unread/file", "u\n"),
         ] {
@@ -1687,8 +1614,6 @@ mod tests {
             set,
             [
                 "hooks/hooks.json",
-                "tools/run.sh",
-                "vault/NOTICE",
                 "vault/marketplaces",
                 "vault/skillwright.md",
             ]
@@ -1708,16 +1633,16 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_symlink_inside_an_asset_folder_gives_the_whole_tree() {
+    fn a_symlinked_hooks_file_gives_the_whole_tree() {
         let mut files = vault_files(
             "vault/",
-            "---\nbuild:\n  assets:\n    - {from: ../tools, to: tools, plugin: p}\n---\n",
+            "---\nbuild:\n  hooks:\n    - {from: ../tools/hooks.json, plugin: p}\n---\n",
         );
         files.push(("tools/run.sh".to_owned(), "echo\n".to_owned()));
-        files.push(("elsewhere/f".to_owned(), "f\n".to_owned()));
+        files.push(("elsewhere/f".to_owned(), "{}\n".to_owned()));
         let (_dir, repo, _) = repo_of(&borrowed(&files));
-        std::os::unix::fs::symlink("../elsewhere/f", repo.join("tools/link")).unwrap();
-        git(&repo, &["add", "tools/link"]);
+        std::os::unix::fs::symlink("../elsewhere/f", repo.join("tools/hooks.json")).unwrap();
+        git(&repo, &["add", "tools/hooks.json"]);
         git(&repo, &["commit", "--quiet", "-m", "link"]);
         let sha = git(&repo, &["rev-parse", "HEAD"]);
         let run = run_at(&repo.join("vault"));

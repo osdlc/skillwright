@@ -350,7 +350,7 @@ mod tests {
     use serde_json::json;
 
     /// Container keys a harness reads that no fact gives a type for, by harness.
-    /// They are not checked. `packs` and `naming` have their own checks.
+    /// They are not checked. `naming` has its own check.
     const UNTYPED: &[(&str, &[&str])] = &[(
         "pi",
         &["description", "author", "license", "repository", "homepage"],

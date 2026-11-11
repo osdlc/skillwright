@@ -1,7 +1,7 @@
 //! Directory walks: plain file walks through `vfs-walk`, and vault walks
 //! through `markdown-vault-fs`, the one vault walk the osdlc tools share.
 //!
-//! A plain walk (a `build.assets` folder, an output tree) knows nothing about
+//! A plain walk (an output tree) knows nothing about
 //! vaults. A vault walk (the link index of a compile given none) goes
 //! through the vault layer. What a build ships comes from neither: the
 //! layout walk ([`crate::layout::read_layout`]) decides it.
@@ -99,18 +99,6 @@ fn not_refused(path: &Path) -> CoreError {
     CoreError::PathEscapesRoot(path.to_path_buf())
 }
 
-/// Every file under `root`, a plain walk. A symlinked file is listed like any
-/// other.
-pub(crate) fn files(vfs: &dyn Vfs, root: &Path, prune: &[&str]) -> Result<Vec<PathBuf>, CoreError> {
-    vfs_walk::walk(
-        vfs,
-        root,
-        &plain_options(prune, Symlinks::List, Errors::Propagate),
-    )
-    .map(|entries| entries.into_iter().map(|entry| entry.abs).collect())
-    .map_err(|err| core_error(err, not_refused))
-}
-
 /// Every file under `root` this walk can read, without failing, a plain walk:
 /// a folder that cannot be listed is skipped, and so is each of `prune`.
 #[cfg(test)]
@@ -151,14 +139,4 @@ pub(crate) fn vault_files(
     vault::walk(vfs, root, &vault_walk(prune))
         .map(|entries| entries.into_iter().map(|entry| entry.abs).collect())
         .map_err(|err| core_error(err, not_refused))
-}
-
-/// Every file under `root` a vault walk meets, vault-relative, without
-/// failing. What a glob can name.
-pub(crate) fn glob_files(vfs: &dyn Vfs, root: &Path) -> Vec<String> {
-    vault::walk(vfs, root, &vault_options(&[], false, false))
-        .unwrap_or_default()
-        .into_iter()
-        .map(|entry| entry.rel)
-        .collect()
 }

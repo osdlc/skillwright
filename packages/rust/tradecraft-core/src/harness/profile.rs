@@ -112,7 +112,7 @@ pub struct PluginPolicy {
     pub packs: &'static str,
     /// Which shape the manifests take.
     pub dialect: PluginDialect,
-    /// How a rendered skill's body calls the launcher.
+    /// How a rendered skill's body names a file in its plugin's root.
     pub cli_invocation: CliInvocation,
     /// The plugin-root variable; `None` when the pack carries no hooks file.
     pub plugin_root: Option<PluginRootPolicy>,
@@ -161,7 +161,7 @@ pub struct PluginFormat {
     pub packs: &'static str,
     /// Which shape the manifests take.
     pub dialect: PluginDialect,
-    /// How a rendered skill's body should call the plugin's launcher.
+    /// How a rendered skill's body names a file in its plugin's root.
     pub cli_invocation: CliInvocation,
     /// The variable this harness's hook commands name the plugin root by.
     /// `None` when its pack carries no hooks file (Pi).
@@ -253,7 +253,6 @@ impl BlockKeys {
             .collect();
         let mut marketplace = passed_down.clone();
         marketplace.extend(owned(policy.marketplace_fields));
-        marketplace.insert(crate::harness::manifest::PACKS_KEY.to_owned());
         Self {
             component,
             member,
@@ -490,38 +489,19 @@ pub enum SkillNaming {
     PluginPrefixed,
 }
 
-/// How a rendered skill body calls the plugin's launcher.
-///
-/// Every skill in the vault writes the call site the same way, as
-/// `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` — the vault's own text is written
-/// for Claude, since that is the harness every skill author develops against.
-/// This decides what each *other* harness does with that same text at render
-/// time.
+/// How a rendered skill body names a file in its plugin's root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CliInvocation {
-    /// Leave the vault's `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` text exactly
-    /// as written. Claude Code substitutes the token itself, inline, when it
-    /// loads skill markdown — see the plugin manifest reference's
-    /// "Environment variables" section
+    /// As `${CLAUDE_PLUGIN_ROOT}/<path>`. Claude Code expands the token in
+    /// skill, command and agent text
     /// (<https://code.claude.com/docs/en/plugins-reference>, retrieved
-    /// 2026-09-26): `${CLAUDE_PLUGIN_ROOT}` resolves in "Skill, command, and
-    /// agent content" bodies specifically, a Claude Code plugin mechanism
-    /// with no counterpart in another harness.
+    /// 2026-09-26).
     PluginRootToken,
-    /// Rewrite every `${CLAUDE_PLUGIN_ROOT}/<launcher_path>` call site in a
-    /// skill's rendered body to the launcher's path relative to the skill's
-    /// own folder (`../../bin/tool`), the way a skill names its own files.
-    /// Neither Codex CLI nor Cursor substitutes
-    /// `${CLAUDE_PLUGIN_ROOT}` — Codex's own skills documentation
-    /// (<https://developers.openai.com/codex/skills>) never mentions the
-    /// token, and Cursor's skills documentation
-    /// (<https://cursor.com/docs/skills>, retrieved 2026-09-26) instructs
-    /// authors to "reference scripts in your SKILL.md using relative paths
-    /// from the skill root" instead — so a literal, un-rewritten
-    /// `${CLAUDE_PLUGIN_ROOT}/...` call site is dead text for either
-    /// harness, expanding to `/<launcher_path>` with an empty prefix. Pi does
-    /// not substitute it either, and tells the model a skill's base
-    /// directory so its relative paths resolve.
+    /// As the file's path from the folder the text lands in
+    /// (`../../scripts/tool`). Codex, Cursor and Pi expand no variable in
+    /// skill text: Cursor's skills documentation
+    /// (<https://cursor.com/docs/skills>, retrieved 2026-09-26) says to use
+    /// paths relative to the skill root.
     SkillRelativePath,
 }
 
@@ -985,12 +965,7 @@ impl HarnessProfile {
     /// repository root: the folders around them, such as `.agents/skills/`,
     /// hold what people author.
     pub fn owned_paths(&self) -> Vec<&'static str> {
-        self.owned_paths_at(self.format().packs)
-    }
-
-    /// [`Self::owned_paths`] for a build whose packs folder is `packs`.
-    pub fn owned_paths_at<'p>(&self, packs: &'p str) -> Vec<&'p str> {
-        std::iter::once(packs)
+        std::iter::once(self.format().packs)
             .chain(self.format().marketplace_manifest)
             .collect()
     }
@@ -1342,11 +1317,7 @@ mod tests {
             let format = profile.format();
             let policy = profile.plugin.as_ref().unwrap();
             let market = profile.block_keys(Marketplace).unwrap();
-            for key in format
-                .marketplace_fields
-                .iter()
-                .chain([&crate::harness::manifest::PACKS_KEY])
-            {
+            for key in format.marketplace_fields {
                 assert!(market.contains(*key), "{} {key}", profile.name);
             }
             for key in crate::keys::BLOCK_IDENTITY_KEYS {

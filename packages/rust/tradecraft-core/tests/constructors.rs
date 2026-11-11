@@ -7,9 +7,9 @@ use std::path::Path;
 
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
-    AssetSpec, BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode,
-    ExportRequest, ExportUnit, HookFileSpec, LinkIndex, MarketplaceConfig, MemVfs, PluginOverrides,
-    RootFile, SharedDefaults, StaleKind, UnitStatus, Vfs, discover_components, export_skills,
+    BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportRequest,
+    ExportUnit, HookFileSpec, LinkIndex, MarketplaceConfig, MemVfs, PluginOverrides, RootFile,
+    SharedDefaults, StaleKind, UnitStatus, Vfs, discover_components, export_skills,
 };
 
 const PLUGIN: &str = "/vault/marketplaces/house/plugins/tools";
@@ -41,20 +41,13 @@ fn an_export_request_builds_from_a_default_config() {
     let mut request = ExportRequest::new("/vault", "/market", config);
     assert_eq!(request.mode, ExportMode::Build);
     request.harnesses.insert("claude".to_owned());
-    request
-        .assets
-        .push(AssetSpec::new("/vault/bin/tool", "bin/tool"));
-    request.assets.clear();
     let report = export_skills(&vfs, &request).unwrap();
     assert!(report.changed);
     assert!(vfs.exists(Path::new("/market/.claude-plugin/marketplace.json")));
 }
 
 #[test]
-fn the_small_specs_start_with_no_plugin() {
-    let mut asset = AssetSpec::new("/vault/bin/tool", "bin/tool");
-    assert!(asset.plugin.is_none());
-    asset.plugin = Some("tools".to_owned());
+fn a_hook_file_spec_starts_with_no_plugin() {
     let hooks = HookFileSpec::new("/vault/hooks.json", "hooks.json");
     assert!(hooks.plugin.is_none());
 }

@@ -7,7 +7,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use markdown_link::LinkIndex;
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,7 @@ use crate::discover::{
     refuse_undescribed,
 };
 use crate::error::CoreError;
-use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
+use crate::export::{HookFileSpec, MarketplaceConfig};
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
@@ -57,9 +57,6 @@ pub struct LoadRequest {
     /// The marketplace's identity and per-plugin overrides, under what the
     /// vault's own notes say.
     pub config: MarketplaceConfig,
-    /// Files copied verbatim into a plugin's pack.
-    #[serde(default)]
-    pub assets: Vec<AssetSpec>,
     /// Canonical hooks files.
     #[serde(default)]
     pub hooks: Vec<HookFileSpec>,
@@ -74,7 +71,6 @@ impl LoadRequest {
             marketplace: None,
             harnesses: BTreeSet::new(),
             config,
-            assets: Vec::new(),
             hooks: Vec::new(),
         }
     }
@@ -307,7 +303,6 @@ pub fn load_in(
     warnings.extend(missing_versions(&discovered, &market, &plugins, config));
     pack_files(vfs, layout, &market, &mut plugins)?;
     warnings.extend(changelog_warnings(vfs, layout, &market, config));
-    load_assets(vfs, &request.assets, &roots, &mut plugins, config)?;
     load_hook_files(vfs, &request.hooks, &mut plugins)?;
 
     // Pass 2. One index for every call, over every skill in the marketplace
@@ -326,7 +321,6 @@ pub fn load_in(
     let record = RefCell::new(Recorded::default());
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for plugin in plugins.values_mut() {
-        let launcher = plugin.launcher.clone();
         let plugin_name = plugin.name.clone();
         for component in plugin
             .skills
@@ -358,7 +352,6 @@ pub fn load_in(
                         kind,
                         &calls,
                         &index,
-                        launcher.as_deref(),
                     )?;
                     (Some(resolved), content)
                 }
@@ -375,7 +368,6 @@ pub fn load_in(
     }
     warnings.sort_by(|a, b| a.path.cmp(&b.path));
     apply_naming(&mut plugins, config)?;
-    crate::harness::manifest::check_packs(config)?;
 
     Ok(Marketplace {
         name,
@@ -399,7 +391,6 @@ pub fn load_in(
 /// `skill-call-not-shipped`, which depends on the harness and is asked when
 /// the call is written. `refused: no-renderer` for a command carrying peers:
 /// a command projects to one file, with nowhere for a peer to travel.
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_body(
     vfs: &dyn Vfs,
     layout: &Layout,
@@ -408,7 +399,6 @@ pub fn resolve_body(
     kind: EntityKind,
     calls: &CallContext<'_>,
     index: &Index,
-    launcher: Option<&str>,
 ) -> Result<(Resolved, SkillContent), CoreError> {
     let record = calls
         .record
@@ -421,7 +411,6 @@ pub fn resolve_body(
         kind,
         calls,
         record,
-        launcher,
         index.links.as_ref(),
     )?;
     fill_targets(&mut resolved, &index.targets);
@@ -494,7 +483,6 @@ fn resolve_compiled(
     kind: EntityKind,
     calls: &CallContext<'_>,
     record: &RefCell<Recorded>,
-    launcher: Option<&str>,
     links: Option<&LinkIndex>,
 ) -> Result<(Resolved, SkillContent), CoreError> {
     let mut projection: SkillProjection = note.projection.clone();
@@ -528,7 +516,7 @@ fn resolve_compiled(
         _ => {}
     }
     let record = record.borrow();
-    let body = segments(&projection.content.body, &record, launcher);
+    let body = segments(&projection.content.body, &record);
     let mut content = projection.content;
     content.body = note.projection.content.body.clone();
     let resources = projection
@@ -537,7 +525,7 @@ fn resolve_compiled(
         .map(|(path, bytes, executable)| {
             let content = match String::from_utf8(bytes) {
                 Ok(text) if path.to_lowercase().ends_with(".md") => ResourceContent::Body {
-                    body: segments(&text, &record, None),
+                    body: segments(&text, &record),
                 },
                 Ok(text) => ResourceContent::Bytes {
                     bytes: text.into_bytes(),
@@ -887,86 +875,6 @@ fn plugin_list(plugins: &BTreeMap<String, Plugin>) -> String {
         .join(", ")
 }
 
-/// Every `build.assets` entry, checked and read into the plugin it lands in.
-///
-/// A plugin an asset names but the vault never produces is refused up front,
-/// the same way an unknown `--marketplace` is: writing nothing rather than
-/// silently dropping bytes an author declared.
-///
-/// A directory source lands file by file, with [`EXCLUDED_ASSET_DIRECTORIES`]
-/// pruned at every depth and every `*.test.*` file skipped, so a shared tree
-/// of reference docs does not carry its own test suite into the build. An
-/// asset is never compiled: its whole point is to ship exactly the bytes on
-/// disk.
-fn load_assets(
-    vfs: &dyn Vfs,
-    configured: &[AssetSpec],
-    roots: &[&HarnessProfile],
-    plugins: &mut BTreeMap<String, Plugin>,
-    config: &MarketplaceConfig,
-) -> Result<(), CoreError> {
-    let mut checked: Vec<(&AssetSpec, String)> = Vec::new();
-    for asset in configured {
-        if !asset_dest_is_relative(&asset.dest) {
-            return Err(CoreError::refused(
-                "unsafe-asset-dest",
-                format!(
-                    "`{}`'s `dest` (`{}`) is not a plain relative path — `AssetSpec::dest` must \
-                     stay under the plugin root it is joined onto, so an absolute path or a `..` \
-                     component is refused rather than silently writing outside \
-                     `<packs>/<plugin>/`. Nothing was written",
-                    asset.source.display(),
-                    asset.dest,
-                ),
-            ));
-        }
-        if let Some(spec) = roots
-            .iter()
-            .find(|spec| asset_covers(vfs, asset, spec.format().plugin_manifest))
-        {
-            return Err(CoreError::refused(
-                "asset-over-manifest",
-                format!(
-                    "`{}` lands at `{}`, the {} root's pack manifest, which the build writes \
-                     itself. Move the asset's `dest`. Nothing was written",
-                    asset.source.display(),
-                    spec.format().plugin_manifest,
-                    spec.name,
-                ),
-            ));
-        }
-        let plugin = asset.plugin.as_deref().unwrap_or_default();
-        if !plugins.contains_key(plugin) {
-            return Err(CoreError::refused(
-                "unknown-asset-plugin",
-                format!(
-                    "`{}` names plugin `{plugin}`, which this build holds no skill, command or \
-                     hook for — this vault publishes {}. Nothing was written",
-                    asset.source.display(),
-                    plugin_list(plugins),
-                ),
-            ));
-        }
-        checked.push((asset, plugin.to_owned()));
-    }
-    for (asset, plugin) in checked {
-        let files = read_asset(vfs, asset)?;
-        let plugin = plugins
-            .get_mut(&plugin)
-            .expect("the plugin was checked above");
-        // Launcher calls are rewritten only for a plugin that ships the
-        // launcher, by `asset_covers`'s rule: a `./`-spelled dest or a
-        // directory asset holding it counts.
-        if let Some(launcher) = &config.launcher_path
-            && asset_covers(vfs, asset, launcher)
-        {
-            plugin.launcher = Some(launcher.clone());
-        }
-        plugin.assets.extend(files);
-    }
-    Ok(())
-}
-
 /// What a plugin ships at its pack root, read from the layout: its
 /// `CHANGELOG.md`, and its `references/`, `scripts/` and `assets/` under
 /// their own names (spec section 9). Each is copied byte for byte.
@@ -1037,94 +945,6 @@ fn heading_names(line: &str, version: &str) -> bool {
         && line
             .split(|c: char| !(c.is_alphanumeric() || "+-._".contains(c)))
             .any(|token| token.strip_prefix('v').unwrap_or(token) == version)
-}
-
-/// Folders a directory `build.assets` entry never copies, at any depth.
-const EXCLUDED_ASSET_DIRECTORIES: &[&str] = &[
-    "tests",
-    "fixtures",
-    ".git",
-    ".obsidian",
-    ".trash",
-    "node_modules",
-];
-
-/// One asset's files, read verbatim. A directory asset is filtered.
-fn read_asset(vfs: &dyn Vfs, asset: &AssetSpec) -> Result<Vec<Asset>, CoreError> {
-    let copy = |source: &Path, dest: String| -> Result<Asset, CoreError> {
-        Ok(Asset {
-            dest,
-            bytes: vfs.read_file(source)?,
-            executable: vfs.is_executable(source),
-        })
-    };
-    if !is_directory(vfs, &asset.source) {
-        return Ok(vec![copy(&asset.source, asset.dest.clone())?]);
-    }
-    let mut files = Vec::new();
-    for source in crate::walk::files(vfs, &asset.source, EXCLUDED_ASSET_DIRECTORIES)? {
-        if is_test_file(&source) {
-            continue;
-        }
-        let relative = source.strip_prefix(&asset.source).map_err(|_| {
-            CoreError::Projection(format!(
-                "asset walk under `{}` yielded `{}`, outside it",
-                asset.source.display(),
-                source.display()
-            ))
-        })?;
-        let dest = Path::new(&asset.dest).join(relative);
-        files.push(copy(&source, crate::skill::forward_slashed(&dest))?);
-    }
-    Ok(files)
-}
-
-/// Would `asset` write the file at `manifest` (relative to the pack root)?
-/// A file asset does when its `dest` is that path; a directory asset does
-/// when its tree holds the file at the matching place.
-fn asset_covers(vfs: &dyn Vfs, asset: &AssetSpec, manifest: &str) -> bool {
-    let dest: PathBuf = Path::new(&asset.dest)
-        .components()
-        .filter(|c| !matches!(c, std::path::Component::CurDir))
-        .collect();
-    let Ok(rest) = Path::new(manifest).strip_prefix(&dest) else {
-        return false;
-    };
-    if rest.as_os_str().is_empty() {
-        return true;
-    }
-    is_directory(vfs, &asset.source) && vfs.exists(&asset.source.join(rest))
-}
-
-/// Is `dest` a plain relative path with no `..` component and no root/prefix
-/// (an absolute Unix path, or a Windows drive/UNC prefix)? `PathBuf::join`
-/// silently honors both an absolute replacement and a lexical `..` escape, so
-/// an unsafe `dest` refuses the whole build before anything is written.
-fn asset_dest_is_relative(dest: &str) -> bool {
-    use std::path::Component;
-    Path::new(dest)
-        .components()
-        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
-}
-
-/// Is this a co-located test file (`<name>.test.<ext>`)? The file-level half
-/// of a directory asset's dev-only exclude.
-fn is_test_file(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|name| name.to_string_lossy().contains(".test."))
-}
-
-/// Is `path` a directory? Asked of its parent's listing, the one directory
-/// signal every [`Vfs`] reports the same way — a symlinked directory reads as
-/// a non-directory there, so it is copied as a file (and fails loudly on
-/// read) rather than walked out of the tree it appears to sit in.
-fn is_directory(vfs: &dyn Vfs, path: &Path) -> bool {
-    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
-        return false;
-    };
-    let name = name.to_string_lossy();
-    vfs.read_dir(parent)
-        .is_ok_and(|entries| entries.iter().any(|e| e.is_dir && e.name == name))
 }
 
 /// Every [`HookFileSpec`], read and parsed into the plugin it belongs to.
@@ -1198,6 +1018,7 @@ fn load_hook_files(
 mod tests {
     use super::*;
     use crate::vfs::MemVfs;
+    use std::path::Path;
 
     fn vault() -> MemVfs {
         let vfs = MemVfs::new();
