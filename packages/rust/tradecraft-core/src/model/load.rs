@@ -17,9 +17,9 @@ use super::{
     ResourceContent, Segment, pack_kind, segments,
 };
 use crate::compile::{
-    CallContext, CompileSource, IndexedSkill, Recorded, SkillIndex, SkillSource, compile_projection,
+    CallContext, CompileSource, IndexedSkill, Recorded, SkillIndex, SkillSource, compile_note,
 };
-use crate::content::{SkillContent, SkillProjection};
+use crate::content::SkillContent;
 use crate::discover::{
     DiscoveredComponent, DiscoveryReport, DiscoveryWarning, SkippedNote, discover_in,
     refuse_undescribed,
@@ -359,7 +359,7 @@ pub(crate) fn load_for(
                 vfs,
                 layout,
                 &component.discovered,
-                &note,
+                note,
                 component.kind,
                 &calls,
                 &index,
@@ -402,7 +402,7 @@ pub fn resolve_body(
     vfs: &dyn Vfs,
     layout: &Layout,
     component: &DiscoveredComponent,
-    note: &VaultNote,
+    note: VaultNote,
     kind: EntityKind,
     calls: &CallContext<'_>,
     index: &Index,
@@ -410,8 +410,56 @@ pub fn resolve_body(
     let record = calls
         .record
         .expect("a load compiles through a recording context");
-    let (mut resolved, content) =
-        resolve_compiled(vfs, layout, component, note, kind, calls, record)?;
+    let VaultNote {
+        mut content,
+        frontmatter,
+    } = note;
+    // Only the two kinds an invocation actually takes arguments at.
+    if matches!(kind, EntityKind::Skill | EntityKind::Command) {
+        content.apply_arguments(&frontmatter.arguments);
+    }
+    // Each body starts the record afresh, so its marks count from zero.
+    *record.borrow_mut() = Recorded::default();
+    let compiled = compile_note(
+        vfs,
+        &CompileSource {
+            vault_root: &layout.root,
+            entry_path: &component.entry_path,
+            skill_name: &component.name,
+            calls: Some(calls),
+            layout: Some(layout),
+        },
+        &content.body,
+    )?;
+    let record = record.borrow();
+    let body = segments(&compiled.body, &record);
+    let resources = compiled
+        .resources
+        .into_iter()
+        .map(|(path, bytes, executable)| {
+            let content = match String::from_utf8(bytes) {
+                Ok(text) if path.to_lowercase().ends_with(".md") => ResourceContent::Body {
+                    body: segments(&text, &record),
+                },
+                Ok(text) => ResourceContent::Bytes {
+                    bytes: text.into_bytes(),
+                },
+                Err(err) => ResourceContent::Bytes {
+                    bytes: err.into_bytes(),
+                },
+            };
+            Resource {
+                path,
+                content,
+                executable,
+            }
+        })
+        .collect();
+    let mut resolved = Resolved {
+        body,
+        resources,
+        closures: compiled.closures,
+    };
     fill_targets(&mut resolved, &index.targets);
     Ok((resolved, content))
 }
@@ -511,72 +559,6 @@ fn recording_context<'a>(
 /// The renderer a recording compile never calls.
 fn no_render(_: &IndexedSkill) -> Result<String, CoreError> {
     Ok(String::new())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn resolve_compiled(
-    vfs: &dyn Vfs,
-    layout: &Layout,
-    component: &DiscoveredComponent,
-    note: &VaultNote,
-    kind: EntityKind,
-    calls: &CallContext<'_>,
-    record: &RefCell<Recorded>,
-) -> Result<(Resolved, SkillContent), CoreError> {
-    let mut projection: SkillProjection = note.projection.clone();
-    // Only the two kinds an invocation actually takes arguments at.
-    if matches!(kind, EntityKind::Skill | EntityKind::Command) {
-        projection
-            .content
-            .apply_arguments(&note.frontmatter.arguments);
-    }
-    // Each body starts the record afresh, so its marks count from zero.
-    *record.borrow_mut() = Recorded::default();
-    let closures = compile_projection(
-        vfs,
-        &CompileSource {
-            vault_root: &layout.root,
-            entry_path: &component.entry_path,
-            skill_name: &component.name,
-            calls: Some(calls),
-            layout: Some(layout),
-        },
-        &mut projection,
-    )?;
-    let record = record.borrow();
-    let body = segments(&projection.content.body, &record);
-    let mut content = projection.content;
-    content.body = note.projection.content.body.clone();
-    let resources = projection
-        .resources
-        .into_iter()
-        .map(|(path, bytes, executable)| {
-            let content = match String::from_utf8(bytes) {
-                Ok(text) if path.to_lowercase().ends_with(".md") => ResourceContent::Body {
-                    body: segments(&text, &record),
-                },
-                Ok(text) => ResourceContent::Bytes {
-                    bytes: text.into_bytes(),
-                },
-                Err(err) => ResourceContent::Bytes {
-                    bytes: err.into_bytes(),
-                },
-            };
-            Resource {
-                path,
-                content,
-                executable,
-            }
-        })
-        .collect();
-    Ok((
-        Resolved {
-            body,
-            resources,
-            closures,
-        },
-        content,
-    ))
 }
 
 /// Gives every call the `targets` of the skill it names.
@@ -955,7 +937,7 @@ fn shared_references(
             calls: Some(calls),
             layout: Some(layout),
         };
-        let compiled = crate::compile::compile_note(vfs, &source, split.body)?;
+        let compiled = compile_note(vfs, &source, split.body)?;
         let text = frontmatter_lossless::compose(split.yaml, &compiled.body, split.shape);
         out.push(Resource {
             path: path.clone(),

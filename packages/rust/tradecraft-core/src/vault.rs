@@ -58,38 +58,37 @@
 //! [`crate::compile`]'s pass, applied *between* this read and the
 //! projection. **The body here passes through verbatim** — the vault's bytes
 //! are canonical, and a read must not rewrite them. A caller that wants the
-//! flattened form runs [`crate::compile::compile_projection`] over what this
+//! flattened form runs [`crate::compile::compile_note`] over the body this
 //! read returns.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use crate::content::{SkillContent, SkillProjection};
+use crate::content::SkillContent;
 use crate::error::CoreError;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
-use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
+use crate::skill::{read_utf8, split_frontmatter};
 use crate::vfs::Vfs;
 
 /// One vault note, read: what a build renders, and what our own keys
 /// said about it.
 ///
 /// The two halves are separate types rather than one flat struct because the
-/// separation is the strip. [`SkillProjection`] is everything that may reach a
-/// harness, and it has nowhere to put a key of ours —
-/// [`crate::projection::project_skill`] takes only that half, so our fields
-/// cannot travel by accident. [`VaultNote::frontmatter`] is everything that
-/// must not travel.
+/// separation is the strip. [`SkillContent`] is everything that may reach a
+/// harness, and it has nowhere to put a key of ours. [`VaultNote::frontmatter`]
+/// is everything that must not travel.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VaultNote {
-    /// The content and peers, ready to project. Carries no key of ours by
+    /// The content, ready to compile and project. Carries no key of ours by
     /// construction.
-    pub projection: SkillProjection,
+    pub content: SkillContent,
     /// What skillwright's own keys declared, and the note's unknown keys.
     pub frontmatter: VaultFrontmatter,
 }
 
-/// Reads the note at `skill_path` and its peer resources.
+/// Reads the note at `skill_path`. The files beside it are the compile
+/// pass's to read.
 ///
 /// Order matters. Our keys are claimed **first**, so a wrong-shaped key of
 /// ours is refused as that rather than misdiagnosed a line later as a note
@@ -174,91 +173,9 @@ pub fn read_vault_note(
     };
 
     Ok(VaultNote {
-        projection: SkillProjection {
-            content,
-            resources: read_resources(vfs, bundle_root(skill_path), skill_path)?,
-        },
+        content,
         frontmatter: ours,
     })
-}
-
-/// The folder whose files travel with this note: the one named for it and
-/// holding it. `skills/release/release.md` owns `skills/release/`. A note in a
-/// folder of another name owns nothing.
-pub fn bundle_root(skill_path: &Path) -> Option<&Path> {
-    let parent = skill_path.parent()?;
-    let owns = skill_path.file_stem()? == parent.file_name()?;
-    owns.then_some(parent)
-}
-
-/// Every file under the bundle root except the entry note itself, recursively,
-/// with its execute bit.
-///
-/// The note is excluded because it is *inside* what it owns: the renderer
-/// writes it as `SKILL.md`, and carrying it a second time under its vault name
-/// would ship the same content twice, once with the frontmatter this crate
-/// exists to strip.
-///
-/// Unlike [`crate::skill`]'s supporting-file listing — an aid to a view, which
-/// skips what it cannot read — this feeds a build, so an unreadable peer is
-/// raised rather than dropped: shipping less, silently, is what the
-/// verbatim-carry rule exists to prevent.
-///
-/// The walk is unbounded in depth on purpose: any depth bound would silently
-/// drop the peers below it. A symlinked folder is followed, unless its target
-/// is a folder the walk is already inside, which would never end.
-fn read_resources(
-    vfs: &dyn Vfs,
-    dir: Option<&Path>,
-    entry: &Path,
-) -> Result<Vec<(String, Vec<u8>, bool)>, CoreError> {
-    let Some(dir) = dir else {
-        return Ok(Vec::new());
-    };
-    if !vfs.exists(dir) {
-        return Ok(Vec::new());
-    }
-
-    fn collect(
-        vfs: &dyn Vfs,
-        base: &Path,
-        entry: &Path,
-        dir: &Path,
-        inside: &mut Vec<PathBuf>,
-        out: &mut Vec<(String, Vec<u8>, bool)>,
-    ) -> Result<(), CoreError> {
-        inside.push(vfs.canonicalize(dir)?);
-        for child in vfs.read_dir(dir)? {
-            let path = dir.join(&child.name);
-            let target = (!child.is_dir && vfs.is_symlink(&path))
-                .then(|| vfs.canonicalize(&path).ok())
-                .flatten()
-                .filter(|target| vfs.metadata(target).is_ok_and(|m| m.is_dir));
-            if target.as_ref().is_some_and(|t| inside.contains(t)) {
-                continue;
-            }
-            let linked_dir = target.is_some();
-            if child.is_dir || linked_dir {
-                collect(vfs, base, entry, &path, inside, out)?;
-                continue;
-            }
-            if path == entry {
-                continue;
-            }
-            let relative = path
-                .strip_prefix(base)
-                .map_err(|_| CoreError::PathEscapesRoot(path.clone()))?;
-            let bytes = vfs.read_file(&path)?;
-            out.push((forward_slashed(relative), bytes, vfs.is_executable(&path)));
-        }
-        inside.pop();
-        Ok(())
-    }
-
-    let mut out = Vec::new();
-    collect(vfs, dir, entry, dir, &mut Vec::new(), &mut out)?;
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(out)
 }
 
 /// The frontmatter as a JSON object — the form `annotations` is already in,
@@ -506,7 +423,7 @@ mod tests {
             "---\ndescription: reviews code\nallowed-tools:\n  - Read\n  - Grep\n---\nBody prose.\n",
         );
         let note = read_vault_skill(&vfs, &path).unwrap();
-        let content = &note.projection.content;
+        let content = &note.content;
 
         // The stem names the skill; the note carries no `name`.
         assert_eq!(content.name, "code-review");
@@ -514,7 +431,6 @@ mod tests {
         assert_eq!(content.allowed_tools, vec!["Read", "Grep"]);
         assert_eq!(content.body, "Body prose.\n");
         assert!(content.user_invocable);
-        assert!(note.projection.resources.is_empty());
 
         // A note that declares nothing of ours reads as the ordinary vault.
         assert_eq!(note.frontmatter.targets, None);
@@ -555,11 +471,7 @@ mod tests {
             "carrier",
             "---\ndescription: d\nowner: kelly\ntags:\n  - review\n---\nb\n",
         );
-        let annotations = read_vault_skill(&vfs, &path)
-            .unwrap()
-            .projection
-            .content
-            .annotations;
+        let annotations = read_vault_skill(&vfs, &path).unwrap().content.annotations;
 
         assert_eq!(annotations["owner"], serde_json::json!("kelly"));
         // `tags` rides in annotations because agent-adapt renders no `tags:`
@@ -576,7 +488,7 @@ mod tests {
             "---\ndescription: d\nlicense: MIT\ncompatibility: Requires bash\n\
              metadata:\n  author: kelly\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
+        let content = read_vault_skill(&vfs, &path).unwrap().content;
 
         assert_eq!(content.license.as_deref(), Some("MIT"));
         assert_eq!(content.compatibility.as_deref(), Some("Requires bash"));
@@ -598,7 +510,14 @@ mod tests {
         let note = read_vault_skill(&vfs, &path).unwrap();
         // A dialect that omits every Claude Code extension key, so what is
         // left is the Agent Skills spec's six and nothing else.
-        let files = crate::projection::project_skill(&note.projection, &["pi".to_owned()]).unwrap();
+        let files = crate::projection::project_skill(
+            &crate::content::SkillProjection {
+                content: note.content,
+                resources: Vec::new(),
+            },
+            &["pi".to_owned()],
+        )
+        .unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         assert_eq!(text.matches("license:").count(), 1, "{text}");
@@ -619,7 +538,7 @@ mod tests {
             "nested",
             "---\ndescription: d\nmetadata:\n  outer:\n    inner: v\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
+        let content = read_vault_skill(&vfs, &path).unwrap().content;
 
         assert!(content.metadata.is_empty());
         assert_eq!(
@@ -645,7 +564,7 @@ mod tests {
         assert_eq!(note.frontmatter.targets, Some(vec!["claude".to_owned()]));
         assert!(note.frontmatter.unknown.contains(&"sw-targets".to_owned()));
 
-        let annotations = note.projection.content.annotations;
+        let annotations = note.content.annotations;
         assert_eq!(annotations["owner"], serde_json::json!("kelly"));
         assert_eq!(annotations["sw-targets"], serde_json::json!("keep me"));
         assert_eq!(annotations.len(), 2, "{annotations:?}");
@@ -657,7 +576,7 @@ mod tests {
             "odd",
             "---\ndescription: d\nmetadata: {team: {lead: Ada}}\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
+        let content = read_vault_skill(&vfs, &path).unwrap().content;
 
         assert!(content.metadata.is_empty());
         assert_eq!(
@@ -673,7 +592,7 @@ mod tests {
             "---\ndescription: d\nallowed-tools: Read, Grep Bash(git log, x)\n\
              user-invocable: NO\ndisable-model-invocation: 1\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
+        let content = read_vault_skill(&vfs, &path).unwrap().content;
         assert_eq!(content.allowed_tools, ["Read", "Grep", "Bash(git log, x)"]);
         assert!(!content.user_invocable);
         assert!(content.disable_model_invocation);
@@ -692,7 +611,7 @@ disable-model-invocation: '1'
 b
 ",
         );
-        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
+        let content = read_vault_skill(&vfs, &path).unwrap().content;
         assert!(!content.user_invocable);
         assert!(content.disable_model_invocation);
     }
@@ -700,7 +619,7 @@ b
     #[test]
     fn a_spec_key_set_to_nothing_is_dropped() {
         let (vfs, path) = vault("odd", "---\ndescription: d\nmodel:\nlicense:\n---\nb\n");
-        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
+        let content = read_vault_skill(&vfs, &path).unwrap().content;
         assert!(content.model_override.is_none());
         assert!(content.annotations.is_empty(), "{:?}", content.annotations);
     }
@@ -734,89 +653,9 @@ b
             "odd",
             "---\ndescription: d\nargument-hint: [issue-number]\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
+        let content = read_vault_skill(&vfs, &path).unwrap().content;
         assert_eq!(content.argument_hint.as_deref(), Some("[issue-number]"));
         assert!(!content.annotations.contains_key("argument-hint"));
-    }
-
-    /// The folder a note owns is the one holding it, and the note itself is
-    /// not one of its own resources.
-    #[test]
-    fn peers_come_from_the_folder_holding_the_note_with_their_exec_bits() {
-        let vfs = MemVfs::new();
-        let bundle = Path::new("/vault/skills/code-review");
-        let path = bundle.join("code-review.md");
-        vfs.create_dir_all(&bundle.join("scripts")).unwrap();
-        vfs.create_dir_all(&bundle.join("references")).unwrap();
-        vfs.write_file(&path, b"---\ndescription: d\n---\nb\n")
-            .unwrap();
-        vfs.write_file(&bundle.join("scripts/check.py"), b"print()\n")
-            .unwrap();
-        vfs.set_executable(&bundle.join("scripts/check.py"), true)
-            .unwrap();
-        vfs.write_file(&bundle.join("references/style.md"), b"# Style\n")
-            .unwrap();
-
-        let resources = read_vault_skill(&vfs, &path).unwrap().projection.resources;
-        assert_eq!(
-            resources,
-            vec![
-                (
-                    "references/style.md".to_owned(),
-                    b"# Style\n".to_vec(),
-                    false
-                ),
-                ("scripts/check.py".to_owned(), b"print()\n".to_vec(), true),
-            ],
-            "the entry note is inside the bundle and is not carried twice"
-        );
-    }
-
-    #[test]
-    fn a_note_that_owns_no_folder_has_no_resources_rather_than_an_error() {
-        let (vfs, path) = vault("lonely", "---\ndescription: d\n---\nb\n");
-        assert!(
-            read_vault_skill(&vfs, &path)
-                .unwrap()
-                .projection
-                .resources
-                .is_empty()
-        );
-    }
-
-    /// Guards the divergence [`bundle_root`]'s doc warns against: a sibling
-    /// folder named after the note is not its bundle, only a folder the note
-    /// itself sits atop is.
-    #[test]
-    fn a_sibling_folder_named_after_the_note_is_not_the_note_s_bundle() {
-        let (vfs, path) = vault("code-review", "---\ndescription: d\n---\nb\n");
-        let sibling = Path::new("/vault/skills/code-review");
-        vfs.create_dir_all(sibling).unwrap();
-        vfs.write_file(&sibling.join("style.md"), b"# Style\n")
-            .unwrap();
-
-        assert!(
-            read_vault_skill(&vfs, &path)
-                .unwrap()
-                .projection
-                .resources
-                .is_empty()
-        );
-    }
-
-    /// A note owns its folder only when the folder bears its name.
-    #[test]
-    fn a_note_owns_the_folder_named_for_it() {
-        assert_eq!(
-            bundle_root(Path::new("/vault/skills/foo/foo.md")),
-            Some(Path::new("/vault/skills/foo"))
-        );
-        assert_eq!(
-            bundle_root(Path::new("/vault/plugins/skills/skills.md")),
-            Some(Path::new("/vault/plugins/skills"))
-        );
-        assert_eq!(bundle_root(Path::new("/vault/skills/foo/SKILL.md")), None);
-        assert_eq!(bundle_root(Path::new("/vault/skills/foo/other.md")), None);
     }
 
     #[test]
@@ -836,11 +675,7 @@ b
             "---\ndescription: d\n---\nSee ![[house-style]] and [[glossary]].\n",
         );
         assert_eq!(
-            read_vault_skill(&vfs, &path)
-                .unwrap()
-                .projection
-                .content
-                .body,
+            read_vault_skill(&vfs, &path).unwrap().content.body,
             "See ![[house-style]] and [[glossary]].\n"
         );
     }

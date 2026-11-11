@@ -23,9 +23,8 @@
 //! [`crate::vault::read_vault_skill`] still reads the body verbatim — the
 //! vault's bytes are canonical and a read must not rewrite them. Compilation
 //! is a separate pass between the read and the projection:
-//! [`compile_projection`] takes the projection the read produced and replaces
-//! its body and resources with the compiled forms, so what
-//! [`crate::projection::project_skill`] renders is the flattened skill.
+//! [`compile_note`] takes the body the read produced and returns it compiled,
+//! with the resources that ship beside it.
 //!
 //! # Where a link resolves
 //!
@@ -67,7 +66,6 @@ use std::path::{Path, PathBuf};
 use markdown_link::code::{CodeRules, FenceLine, Fences, Spans};
 use markdown_link::{AbandonReason, BodyLinkKind, ScanOptions, scan_body_with};
 
-use crate::content::SkillProjection;
 use crate::discover::DiscoveryWarning;
 use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
@@ -303,7 +301,7 @@ pub struct CompiledNote {
     /// The entry note's body with embeds expanded and links rewritten.
     pub body: String,
     /// `(relative_path, bytes, executable)`, in path order — the shape
-    /// [`SkillProjection::resources`] already has, so the two connect without
+    /// [`crate::content::SkillProjection::resources`] already has, so the two connect without
     /// an adapter. Markdown resources are compiled; binaries are verbatim.
     pub resources: Vec<(String, Vec<u8>, bool)>,
     /// Per emitted file, what fed it. Keyed by the same relative path the
@@ -617,24 +615,6 @@ pub fn related_of(
             .collect(),
         resources,
     })
-}
-
-/// Wires the compile pass into the projection path: the projection's body and
-/// resources are replaced with their compiled forms, so a
-/// [`crate::projection::project_skill`] over the result emits the flattened
-/// skill.
-///
-/// The resource set is **recomputed** from `source`, not merged: what ships is
-/// what the layout seeds plus what the body reaches.
-pub fn compile_projection(
-    vfs: &dyn Vfs,
-    source: &CompileSource<'_>,
-    projection: &mut SkillProjection,
-) -> Result<BTreeMap<String, Closure>, CoreError> {
-    let compiled = compile_note(vfs, source, &projection.content.body)?;
-    projection.content.body = compiled.body;
-    projection.resources = compiled.resources;
-    Ok(compiled.closures)
 }
 
 // --- Extension vocabularies -------------------------------------------------

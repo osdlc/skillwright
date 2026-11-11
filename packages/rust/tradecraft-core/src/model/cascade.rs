@@ -174,10 +174,10 @@ impl Cascade {
         if kind.holds_components() {
             return;
         }
-        if note.projection.content.license.is_none() && keys::inherits(kind, "license") {
-            note.projection.content.license = plugin_identity(&self.config, plugin).license;
+        if note.content.license.is_none() && keys::inherits(kind, "license") {
+            note.content.license = plugin_identity(&self.config, plugin).license;
         }
-        let own_metadata = crate::projection::skill_metadata(&note.projection.content);
+        let own_metadata = crate::projection::skill_metadata(&note.content);
         for harness in keys::HARNESS_BLOCKS
             .iter()
             .filter(|harness| keys::inherits(kind, harness))
