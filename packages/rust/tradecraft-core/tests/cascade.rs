@@ -585,3 +585,19 @@ fn a_block_s_metadata_merges_with_the_note_s_own() {
         serde_json::json!({"a": "note", "c": "note"})
     );
 }
+
+/// Section 7 rule 5, steps 1 over 2: a skill's own block beats its own
+/// plain key, for that harness only.
+#[test]
+fn a_skills_own_block_beats_its_own_frontmatter() {
+    let vfs = vault(&[(SKILL, "license: A\nclaude: {license: B}")]);
+    build(&vfs);
+    assert_eq!(str_at(&skill_front(&vfs, "claude"), "/license"), "B");
+    for harness in ["codex", "cursor", "pi"] {
+        assert_eq!(
+            str_at(&skill_front(&vfs, harness), "/license"),
+            "A",
+            "{harness}"
+        );
+    }
+}

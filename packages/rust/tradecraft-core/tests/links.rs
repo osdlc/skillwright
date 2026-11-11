@@ -1463,3 +1463,27 @@ fn a_plain_link_to_a_file_stays_a_link() {
     let vfs = with_files("See [[run.sh]].", &[(RUN, "echo hi\n")]);
     ships(&vfs, "See [run.sh](scripts/run.sh).");
 }
+
+/// Section 9 rule 3: a plain link to a skill a harness leaves out.
+#[test]
+fn a_link_to_a_skill_a_harness_leaves_out_fails_for_that_harness() {
+    let files = [
+        ("skills/review/review.md", skill("See [[deploy]].")),
+        (
+            "skills/deploy/deploy.md",
+            "---\ndescription: Use it.\ntargets: [claude]\n---\n\nDeploy.\n".to_owned(),
+        ),
+    ];
+    let files: Vec<(&str, &str)> = files.iter().map(|(p, t)| (*p, t.as_str())).collect();
+    let vfs = vault(&files);
+    build_for(&vfs, &["claude"]).unwrap();
+    for harness in ["codex", "cursor", "pi"] {
+        let vfs = vault(&files);
+        names(
+            &refusal_for(&vfs, &[harness]),
+            "skills/review/review.md",
+            "[[deploy]]",
+            "link-not-shipped",
+        );
+    }
+}

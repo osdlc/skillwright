@@ -203,3 +203,12 @@ fn prefixed_names_that_meet_fail_cursor_and_pi() {
     }
     build_for(&vfs, &["claude", "codex"]).unwrap();
 }
+
+#[test]
+fn bare_in_the_root_file_reaches_every_plugin() {
+    let vfs = tools("", "");
+    put(&vfs, "skillwright.md", "---\npi: {naming: bare}\n---\n");
+    build(&vfs).unwrap();
+    assert_skill(&vfs, "pi", "tools", "review");
+    assert_skill(&vfs, "cursor", "tools", "tools-review");
+}
