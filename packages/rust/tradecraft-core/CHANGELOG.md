@@ -24,7 +24,6 @@ API:
 - A Cursor catalog entry in `.cursor-plugin/marketplace.json` carries the plugin's `displayName`, right after `name`: its `cursor.displayName`, else its `display_name`. It is absent when neither is set.
 - `HarnessProfile::block_keys(kind)`: the keys a harness's block accepts on a note of `kind`. The check, the field reference, the cascade and the manifest merge all read it.
 - `keys::check_shape` and `keys::ShapeRefusal`: one shape check for a key of ours, shared by a note's read and the root file's.
-- The `\[[` escape. A `[[` or `![[` right after an odd run of `\` is neither a link nor a leftover: `compile_note` ships it as written, backslash included, which CommonMark renders as `[[`. Every `unresolved-syntax` refusal of a `[[` that is not a link now ends `; write \[[ to keep the brackets as text`. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ### Changed
 
@@ -32,6 +31,16 @@ API:
 - A cross-plugin name collision on Cursor or Pi names both notes, the published name, the harness and the `<harness>.naming` setting that prefixed the name. The token stays `path-collision`.
 - The root file refuses a value of the wrong shape with the note's words, naming the key, such as "`version` is not a string: it is a number". Some refusals named `marketplace fields` before.
 - A marketplace block passes down to each plugin only the keys a plugin block reads. Other keys were never merged, so no output changes.
+
+## [0.49.1](https://github.com/osdlc/skillwright/compare/tradecraft-core/v0.49.0...tradecraft-core/v0.49.1) - 2026-11-10
+
+### Added
+
+- `workspace_file(dir)` is public and re-exported: where the workspace file above a marketplace folder would be, without reading it.
+- The `\[[` escape. A `[[` or `![[` right after an odd run of `\` is neither a link nor a leftover: `compile_note` ships it as written, backslash included, which CommonMark renders as `[[`. Every `unresolved-syntax` refusal of a `[[` that is not a link now ends `; write \[[ to keep the brackets as text`. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
+### Changed
+
 - `\[[note]]` is no longer a link. It compiled to `\[note.md](…)`, which is broken Markdown; it now ships as written. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ### Fixed
