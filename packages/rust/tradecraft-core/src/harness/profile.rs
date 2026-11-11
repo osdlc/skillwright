@@ -195,8 +195,10 @@ struct BlockKeys {
 }
 
 impl BlockKeys {
+    /// `name` is in no set: a block refuses it (spec section 3 rule 4).
     fn of(profile: &HarnessProfile, policy: &PluginPolicy) -> Self {
-        let component = profile.accepted_override_keys();
+        let mut component = profile.accepted_override_keys();
+        component.remove(crate::keys::NAME_KEY);
         let member: BTreeMap<EntityKind, BTreeSet<String>> = EntityKind::ALL
             .into_iter()
             .map(|kind| {
@@ -221,6 +223,7 @@ impl BlockKeys {
         if policy.naming_choice {
             plugin.insert(crate::harness::manifest::NAMING_KEY.to_owned());
         }
+        plugin.remove(crate::keys::NAME_KEY);
         let passed_down: BTreeSet<String> = plugin
             .iter()
             .filter(|key| {
@@ -231,6 +234,7 @@ impl BlockKeys {
             .collect();
         let mut marketplace = passed_down.clone();
         marketplace.extend(owned(policy.marketplace_fields));
+        marketplace.remove(crate::keys::NAME_KEY);
         Self {
             component,
             member,
@@ -1125,7 +1129,8 @@ mod tests {
             let policy = &profile.plugin;
             let market = profile.block_keys(Marketplace).unwrap();
             for key in format.marketplace_fields {
-                assert!(market.contains(*key), "{} {key}", profile.name);
+                let held = *key != crate::keys::NAME_KEY;
+                assert_eq!(market.contains(*key), held, "{} {key}", profile.name);
             }
             for key in crate::keys::BLOCK_IDENTITY_KEYS {
                 assert!(

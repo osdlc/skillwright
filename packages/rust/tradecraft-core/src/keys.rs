@@ -219,12 +219,30 @@ const PUBLISHED: &[EntityKind] = &[Marketplace, Plugin, Skill, Agent, Command];
 /// rows of [`KEYS`].
 pub const HARNESS_BLOCKS: &[&str] = &[CLAUDE.name, CODEX.name, CURSOR.name, PI.name];
 
+/// The key no note sets, at the top level or in a harness block: the folder
+/// gives the name.
+pub const NAME_KEY: &str = "name";
+
 /// Why a [`Shape::Refused`] key is refused: what a refusal of `name` says.
 pub const NAME_REFUSAL: &str = "the folder's name is the note's name; delete it";
 
 /// Harness block keys v2 removed. A block holding one is refused wherever it
 /// is: each harness's packs folder is fixed.
 pub const REFUSED_BLOCK_KEYS: &[&str] = &["packs"];
+
+/// `<harness>.name` for each harness block in `fields` that sets `name`.
+pub(crate) fn named_blocks(fields: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+    HARNESS_BLOCKS
+        .iter()
+        .filter(|harness| {
+            fields
+                .get(**harness)
+                .and_then(serde_json::Value::as_object)
+                .is_some_and(|block| block.contains_key(NAME_KEY))
+        })
+        .map(|harness| format!("{harness}.{NAME_KEY}"))
+        .collect()
+}
 
 /// The removed keys in a note's harness blocks, as `<harness>.<key>`.
 /// `fields` is the note's frontmatter; keys other than the harness blocks

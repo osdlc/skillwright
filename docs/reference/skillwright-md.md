@@ -309,8 +309,8 @@ for that harness. The accepted keys are [in the field reference](fields.md#harne
   marketplace. A key the block does not read still warns `unknown-key`.
 - `metadata` in a block merges with the note's `metadata` rather than replacing
   it.
-- A block a component inherits cannot set that component's `name` or
-  `description`. A block on the note itself can.
+- A block a component inherits cannot set that component's `description`. A
+  block on the note itself can. `name` is refused in every block.
 - `<harness>: {packs: <path>}` on the marketplace moves that harness's packs
   folder inside the output. `.DS_Store` and similar OS files in a moved folder are
   ignored. Root catalogs stay where they are. The value that

@@ -29,9 +29,9 @@
 //!
 //! * A key the member's kind does not accept stays with the container.
 //! * A key the container's own manifests read stays with the container.
-//!   `description`, `name`, `license` and Claude's `metadata` sit on both
-//!   lists; on a container they describe the pack. A note's own block can
-//!   still set them.
+//!   `description`, `license` and Claude's `metadata` sit on both lists; on
+//!   a container they describe the pack. A note's own block can still set
+//!   them. `name` is refused in every block.
 //! * A plugin takes neither the marketplace manifest's top-level keys nor
 //!   [`crate::keys::BLOCK_IDENTITY_KEYS`] from a marketplace block.
 //!

@@ -201,8 +201,8 @@ fn frontmatter_map(text: &str) -> Result<serde_yaml::Mapping, SettingsError> {
 /// # Errors
 ///
 /// Frontmatter that is not a YAML mapping, a key the root file refuses
-/// (`workspace`, `name`, and a key the table lists but does not mark as
-/// inherited), and a known key whose value has the wrong shape.
+/// (`workspace`, `name`, also in a harness block, and a key the table lists
+/// but does not mark as inherited), and a known key whose value has the wrong shape.
 pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
     let map = frontmatter_map(text)?;
     if let Some((key, detail)) = refused_in_root(&map).into_iter().next() {
@@ -210,6 +210,14 @@ pub fn parse_root_file(text: &str) -> Result<RootFile, SettingsError> {
             key,
             what: "a key of the root file",
             detail,
+        });
+    }
+    let named = named_blocks_in(&map);
+    if !named.is_empty() {
+        return Err(SettingsError {
+            key: named.join("`, `"),
+            what: "a key of the root file",
+            detail: crate::keys::NAME_REFUSAL.to_owned(),
         });
     }
     let blocks = refused_blocks_in(&map);
@@ -370,6 +378,19 @@ pub(crate) fn refused_root_file_keys(text: &str) -> (Vec<(String, String)>, Vec<
 pub(crate) const PACKS_REFUSAL: &str = "each harness's packs folder is fixed; delete it";
 
 /// The removed keys in a root file's harness blocks, as `<harness>.<key>`.
+/// `<harness>.name` for each harness block in `map` that sets `name`.
+fn named_blocks_in(map: &serde_yaml::Mapping) -> Vec<String> {
+    crate::keys::HARNESS_BLOCKS
+        .iter()
+        .filter(|harness| {
+            map.get(**harness)
+                .and_then(serde_yaml::Value::as_mapping)
+                .is_some_and(|block| block.contains_key(crate::keys::NAME_KEY))
+        })
+        .map(|harness| format!("{harness}.{}", crate::keys::NAME_KEY))
+        .collect()
+}
+
 fn refused_blocks_in(map: &serde_yaml::Mapping) -> Vec<String> {
     let blocks = crate::keys::HARNESS_BLOCKS
         .iter()

@@ -461,7 +461,7 @@ fn is_claude_arguments(value: &Value) -> bool {
 }
 
 /// Refuses a key no note may set: a [`crate::keys::Shape::Refused`] row
-/// (`name`), `build`, which only the root file reads, `packs` in a harness
+/// (`name`, also in a harness block), `build`, which only the root file reads, `packs` in a harness
 /// block, and `naming` in a component's harness block (spec section 8
 /// rule 6).
 fn refuse_keys(
@@ -476,6 +476,18 @@ fn refuse_keys(
         return Err(CoreError::wrong_kind(
             path,
             format!("`{key}` is refused: {}", crate::keys::NAME_REFUSAL),
+        ));
+    }
+    let mut named = crate::keys::named_blocks(ours);
+    named.extend(crate::keys::named_blocks(fields));
+    if !named.is_empty() {
+        return Err(CoreError::wrong_kind(
+            path,
+            format!(
+                "`{}` is refused: {}",
+                named.join("`, `"),
+                crate::keys::NAME_REFUSAL
+            ),
         ));
     }
     let mut removed = crate::keys::refused_block_keys(ours);

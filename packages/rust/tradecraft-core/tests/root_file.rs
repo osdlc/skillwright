@@ -176,6 +176,30 @@ fn a_name_key_is_refused_on_every_note_saying_to_delete_it() {
     }
 }
 
+/// Spec section 3 rule 4: `name` is refused in a harness block too, on every
+/// note and in the root file.
+#[test]
+fn a_name_key_in_a_harness_block_is_refused_saying_to_delete_it() {
+    let err = parse_root_file("---\nclaude:\n  name: acme\n---\n").unwrap_err();
+    assert!(err.to_string().contains("claude.name"), "{err}");
+    assert!(err.to_string().contains("delete it"), "{err}");
+
+    for note in [
+        "marketplaces/acme/acme.md",
+        "marketplaces/acme/plugins/tools/tools.md",
+        "marketplaces/acme/plugins/tools/skills/review/review.md",
+    ] {
+        let vfs = vault(&[(
+            note,
+            "---\ndescription: Use it.\ncodex:\n  name: other\n---\n",
+        )]);
+        let said = build_error(&vfs);
+        assert!(said.contains(note), "{note}: {said}");
+        assert!(said.contains("`codex.name`"), "{note}: {said}");
+        assert!(said.contains("delete it"), "{note}: {said}");
+    }
+}
+
 #[test]
 fn a_skill_with_malformed_frontmatter_is_an_error_naming_it() {
     let note = "marketplaces/acme/plugins/tools/skills/review/review.md";

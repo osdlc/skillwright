@@ -327,10 +327,10 @@ fn root_defaults(frontmatter: &str) -> SharedDefaults {
 }
 
 #[test]
-fn a_container_block_never_sets_a_members_name_or_description() {
+fn a_container_block_never_sets_a_members_description() {
     let vfs = vault(
         "",
-        "claude:\n  name: renamed\n  description: Claude's plugin blurb.\n  model: opus\n",
+        "claude:\n  description: Claude's plugin blurb.\n  model: opus\n",
         "",
     );
     write(&vfs, COMMAND, &note("ship", ""));
@@ -345,7 +345,6 @@ fn a_container_block_never_sets_a_members_name_or_description() {
         "/vault/dist/house/.claude-plugin/packs/tools/commands/ship.md",
     );
     assert!(!command.contains("Claude's plugin blurb"), "{command}");
-    assert!(!command.contains("renamed"), "{command}");
 
     // The manifest it was written for still takes it, and a key only a member
     // reads still travels.
@@ -358,7 +357,7 @@ fn a_container_block_never_sets_a_members_name_or_description() {
 }
 
 #[test]
-fn a_notes_own_block_can_still_set_its_name_and_description() {
+fn a_notes_own_block_can_still_set_its_description() {
     let vfs = vault("", "", "claude:\n  description: Only for Claude.\n");
     build(&vfs);
     let skill = text_at(&vfs, CLAUDE_REVIEW);
