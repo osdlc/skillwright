@@ -100,10 +100,16 @@ build:
      inherited (section 7 rule 1);
    - `build:`, the tool settings.
 3. A key the key table does not list warns and is ignored, as
-   [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) says.
-4. A key the table lists only for a marketplace is refused. These are
-   `description`, `owner`, `version`, `display_name`, `keywords` and
-   `category`. The error names the marketplace note the key belongs in.
+   [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) says. There is one
+   exception: `workspace` is a removed key and is refused (section 11).
+4. A key the table lists but does not mark as inherited is refused here. The
+   error names the note kinds that accept it:
+
+   | Key | Belongs in |
+   |---|---|
+   | `owner` | a marketplace note, `<m>.md` |
+   | `keywords`, `category` | a plugin note, `<p>.md` |
+   | `description`, `version`, `display_name` | a marketplace or plugin note |
 5. These `build:` keys are refused (section 11): `out`, `patterns`,
    `exclude`, `assets`, `hooks`, `destinations`, `scan_locations`,
    `launcher_path` and `namespace`. Any other unknown `build:` key warns.
@@ -341,7 +347,15 @@ marketplace (rule 8, decision D2).
    ```
 
    - It never resolves outside the plugin.
-   - A name matches a file at any depth below the folders searched.
+   - What each step matches:
+
+     | Step | Matches |
+     |---|---|
+     | 1 | a file at any depth in the linking file's component folder |
+     | 2 | a file at any depth in the plugin's shared `references/`, `scripts/` and `assets/`, and another component by its name only |
+
+   - A file inside another component's folder is never found by name. Link it
+     with a path (rule 4), such as `[[../setup/references/notes.md]]`.
    - `[[guide]]` matches `guide.md`. A name with an extension,
      `[[run.sh]]`, matches that exact file name.
    - `[[setup]]` matches the component `setup` in step 2.
@@ -477,7 +491,8 @@ harness's own form (decision D9).
     - the component's note;
     - the Markdown files in its `references/`;
     - the Markdown files in the plugin's shared `references/`;
-    - text an embed inlines.
+    - text a note embed inlines. An embedded non-note file, such as
+      `![[run.sh]]`, is not interpreted (section 5 rule 9).
 
     Only the braced form is interpreted. `$PLUGIN_ROOT` is text.
 16. The path runs to the first character that cannot continue a path. A
@@ -670,8 +685,8 @@ fenced block whose info string comes from its extension (rule 10).
 ### Inlining another text file
 
 9. `![[run.sh]]` inlines the file as a fenced code block. The content is never
-   escaped or changed, and nothing in it is interpreted as a link, call or
-   embed.
+   escaped or changed. Nothing in it is interpreted: no link, call, embed or
+   `${PLUGIN_ROOT}`, and a `${CLAUDE_PLUGIN_ROOT}` in it is not an error.
 10. The fence's info string comes from the file's extension through a fixed
     table, such as `.sh` to `bash` and `.py` to `python`. An extension the
     table does not list gives no info string.
@@ -737,8 +752,8 @@ flowchart LR
    then root. Each container is matched by folder.
 3. Inheritance applies to every component a build reads.
 4. A block a component inherits cannot set the component's `description`.
-5. For one key that a harness reads on a component, the build takes the first
-   value in this order:
+5. For an inherited key (rule 1) that a harness reads on a component, the
+   build takes the first value in this order:
    1. the note's own harness block;
    2. the note's frontmatter;
    3. for each container, nearest first: its harness block, then its own
@@ -747,7 +762,8 @@ flowchart LR
 
    An example. The plugin note sets `author: Ada` and `claude: {author: Bob}`,
    and the skill sets neither. The skill's Claude Code `author` is `Bob`, and
-   its Codex `author` is `Ada`.
+   its Codex `author` is `Ada`. A key that is not inherited, such as
+   `description`, comes only from the note itself.
 6. A key in an inherited block must be one the member's kind accepts. If it is
    not, it stays with the container.
 7. Versions:
@@ -761,11 +777,12 @@ flowchart LR
 1. `claude:`, `codex:`, `cursor:` and `pi:` hold fields only that harness reads.
 2. A block is checked against the keys that harness accepts. An unknown key
    warns and is left out of what that harness gets, on a component and on a
-   container. A known key with a wrong value is refused.
+   container. There is one exception: `packs` is a removed key and is refused
+   (rule 5, section 11). A known key with a wrong value is refused.
 3. A block is merged over what skillwright generates, and `metadata` merges with
    the note's own.
 4. A block is emitted only for its harness.
-5. `packs` is not a block key. Each harness's packs folder is fixed (section 9).
+5. `packs` is refused in a block. Each harness's packs folder is fixed (section 9).
 6. Skill names on Cursor and Pi. Neither has a plugin namespace, so two
    plugins' skills of one name would collide there (harness-reference:
    `corpus/notes/skill-naming-across-harnesses.md`). So:
@@ -857,11 +874,13 @@ pack folder from the table above.
 | `agents/<a>/<a>.md` | Nothing. No pack contains an agent. | None |
 
 7. Compiled means these steps, in order:
-   1. embeds are inlined (section 5);
-   2. links are rewritten (section 4);
-   3. calls are rendered;
-   4. plugin-root paths are rewritten;
-   5. the frontmatter is reduced to what that harness reads.
+   1. calls, links, embeds and plugin-root paths are tokenized in one pass,
+      before any of them is rewritten. So `/[[setup]]` is a call, never a
+      link with a `/` before it;
+   2. embeds are inlined (section 5), and a note embed's text is tokenized
+      the same way;
+   3. calls are rendered, links rewritten and plugin-root paths rewritten;
+   4. the frontmatter is reduced to what that harness reads.
 
    For example, a plugin's source and its Claude Code pack:
 
@@ -964,8 +983,8 @@ It is refused when:
 1. No folder at or above the working directory holds both `skillwright.md` and
    `marketplaces/`, and no `--vault` is given. If a `skillwright.md` was passed
    over on the walk, the error names it.
-2. The root file has `workspace: true`, or a marketplace-only key (section 2
-   rule 4).
+2. The root file has `workspace`, or a key the table does not mark as
+   inherited (section 2 rule 4).
 3. A marketplace folder has no `<m>.md`. If it holds a `skillwright.md`, the
    error says the marketplace note is now `<m>.md`.
 4. A kind folder (`skills/`, `agents/`, `commands/`, `hooks/`) or a `plugins/`
@@ -1318,7 +1337,9 @@ Each case gives an input and the result.
    - Input: `plugins/tools/references/style.md` contains `[[guide]]`, and the
      plugin has `references/guide.md`.
    - Result: step 1 is skipped, since the file belongs to no component. Step
-     2 finds `references/guide.md`. It ships as `[guide](guide.md)`.
+     2 searches the shared folders and component names. It finds
+     `references/guide.md` and not `skills/author/references/guide.md`, which
+     sits inside a component. It ships as `[guide](guide.md)`.
 4. **A name that matches deep in a folder.**
    - Input: `[[layout]]`, with `references/design/layout.md` in the skill.
    - Result: it matches, at any depth. If `references/old/layout.md` also

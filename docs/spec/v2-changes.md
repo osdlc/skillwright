@@ -104,7 +104,7 @@ and may return in a later milestone:
 | Decision | Amendment |
 |---|---|
 | [D-WNTQ](../decisions/D-WNTQ-harness-profile-values-from-config.md) | `pi: {naming}` stays settable, `cursor: {naming}` is added, and `packs` is not settable. |
-| [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) | `build.namespace` and prefixed keys are gone. An unknown key still warns and is never refused. A key the table lists is refused where it does not belong: a marketplace-only key in the root file, `name` on any note, `build:` outside the root file, and the removed `build:` keys. |
+| [D-KVMB](../decisions/D-KVMB-bare-keys-by-default.md) | `build.namespace` and prefixed keys are gone. An unknown key still warns, with two exceptions: the removed keys `workspace` (root file) and `packs` (harness block) are refused. A key the table lists is refused where it does not belong: a key that is not inherited in the root file, `name` on any note, `build:` outside the root file, and the removed `build:` keys. |
 | [D-GPYR](../decisions/D-GPYR-convention-first.md) | Its patterns layer is gone. |
 
 ## What each decision changes

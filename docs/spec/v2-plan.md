@@ -99,8 +99,13 @@ Tests first:
 - One table test per inherited key across the four levels.
 - A plugin's `claude: {author: Bob}` beats its plain `author: Ada` for Claude
   Code only (section 7 rule 5).
-- A marketplace-only key in the root file is refused, naming `<m>.md`. An
-  unknown root key warns. `build:` outside the root is refused.
+- A key that is not inherited is refused in the root file, and the error
+  names the note kinds that accept it: `owner` names `<m>.md`, `keywords`
+  names `<p>.md`, `version` names both. An unknown root key warns.
+  `workspace` in the root file and `packs` in a harness block are refused.
+  `build:` outside the root is refused.
+- A skill with no `description` is an error even when its plugin note has
+  one (section 7 rule 5 covers inherited keys only).
 - A plugin with no `version` builds as `0.1.0` with a warning. A marketplace
   with no `version` writes none, with no warning.
 
@@ -161,6 +166,12 @@ Scope:
 - `[[guide]]` from `author` prefers its own `references/guide.md` over the
   shared one.
 - A link from the plugin's `references/style.md` starts at step 2.
+- `[[guide]]` in the shared `references/style.md` finds the shared
+  `references/guide.md`, not `skills/author/references/guide.md`.
+- `[[notes]]` naming a file inside another component is a link to nothing;
+  `[[../setup/references/notes.md]]` works.
+- `/[[setup]]` is tokenized as a call: it never becomes a link and never
+  fires the "Did you mean to call" warning.
 - A link to a file in another plugin is refused.
 
 Plain links:
@@ -240,6 +251,9 @@ Also:
 - A plain `scripts/x.py` in a `SKILL.md` ships as written and is not checked.
 - An embedded reference is written from the embedding file.
 - A script in `scripts/` holding the variable ships byte for byte.
+- `![[run.sh]]`, where `run.sh` holds `${PLUGIN_ROOT}/scripts/tool`, a lone
+  `${PLUGIN_ROOT}` and a `${CLAUDE_PLUGIN_ROOT}`, inlines the file unchanged
+  with no error.
 - A hook command's `${PLUGIN_ROOT}` becomes `${CLAUDE_PLUGIN_ROOT}` on Claude
   Code, stays on Codex, and becomes `${CURSOR_PLUGIN_ROOT}` on Cursor. Its
   path is checked.
@@ -332,7 +346,7 @@ tests and the gates above hold.
     `MarketplaceFields` is read from `<m>.md`, not the root file.
     `compose_root_file` writes a root with no marketplace fields.
     `root_file_config` and `RootFile::to_config` shrink.
-  - Change: an unknown root-file key warns. A marketplace-only key is refused.
+  - Change: an unknown root-file key warns. A key that is not inherited, and `workspace`, are refused.
 - `discover.rs`:
   - `classify` becomes a fixed-depth match.
   - Go: `conventional`, `folder_placement_with`, `RESERVED_NAME_REASON`,
