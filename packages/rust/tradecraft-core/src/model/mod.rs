@@ -155,7 +155,7 @@ pub struct Component {
     /// Its harness-only fields, by harness.
     pub extensions: Extensions,
     /// Its content: name, description, the modeled fields and the
-    /// annotations every harness receives, with `sw-arguments` applied for a
+    /// annotations every harness receives, with `arguments` applied for a
     /// skill or a command. The body is the note's own; the resolved one is
     /// [`Self::resolved`]. `None` until the note is read in full, which a load
     /// does only for what some requested harness admits.
@@ -569,7 +569,7 @@ mod tests {
         )
         .unwrap();
         let request = LoadRequest::new("/vault", MarketplaceConfig::default());
-        let marketplace = load(&vfs, &request, &crate::Namespace::sw()).unwrap();
+        let marketplace = load(&vfs, &request).unwrap();
         let skill = &marketplace.plugins["tools"].skills[0];
         let body = &skill.resolved.as_ref().unwrap().body;
         let calls: Vec<(String, bool)> = body

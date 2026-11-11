@@ -81,22 +81,6 @@ fn every_wasm_export_is_resolved() {
     }
 }
 
-/// `validateNamespace` has no JSON on either side.
-///
-/// Recorded as a fact rather than a gap: its signature is
-/// `validateNamespace(stem: string): void`, so there is no request or response
-/// shape for the gate to compare and none for it to invent.
-#[test]
-fn validate_namespace_has_no_json_boundary() {
-    let model = tradecraft_typegen::read(&crates()).expect("reading the crates");
-    let export = model
-        .exports
-        .iter()
-        .find(|e| e.js_name == "validateNamespace")
-        .expect("the wrapper exports validateNamespace");
-    assert!(export.request.is_none() && export.response.is_none());
-}
-
 /// The generated file on disk is what the current Rust source produces.
 ///
 /// `cargo test -p tradecraft-typegen` fails when the committed file is stale.

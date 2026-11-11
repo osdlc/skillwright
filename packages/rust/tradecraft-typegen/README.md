@@ -46,14 +46,13 @@ registered anywhere:
 | What does it hand back? | the return type of the core function its body calls — or, for an export with no function to call, the type of the core constant it hands back (`knownTargets` -> `KNOWN_TARGETS: &[&str]`) |
 | What do those types look like? | the public structs and enums of `tradecraft-core` |
 
-A sixth export is covered the day it is written. `tests/every_export_is_covered.rs`
+A new export is covered the day it is written. `tests/every_export_is_covered.rs`
 asserts that the exports the wrapper declares and the exports the generator
 resolved are the same set, so an export whose shape the generator cannot follow
 fails rather than being skipped.
 
-`validateNamespace` is the one export with no JSON on either side — its
-signature is `validateNamespace(stem: string): void`. That is recorded as a
-fact (`WasmExportsWithoutJson`), not treated as a gap.
+An export with no JSON on either side is recorded as a fact
+(`WasmExportsWithoutJson`), not treated as a gap.
 
 ## Why source, not derives
 
@@ -91,7 +90,7 @@ makes it optional instead. A type reached in both directions is refused rather
 than emitted under one spelling.
 
 A wire wrapper is named for the type it flattens: `WireExportRequest` splices
-`ExportRequest` and one extra key, and the wire it describes is an export
+`ExportRequest`, and the wire it describes is an export
 request. A wrapper that flattens nothing loses a leading `Wire`, which is how
 `WireDiscoverRequest` becomes `DiscoverRequest`. Any other struct keeps its own name,
 whatever it flattens: `MarketplaceConfig` splices `ContainerIdentity` and is

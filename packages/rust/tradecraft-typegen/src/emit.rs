@@ -329,7 +329,7 @@ fn ts_type(model: &Model, ty: &syn::Type) -> Result<String, Error> {
 /// The TypeScript name of a Rust type.
 ///
 /// A wire wrapper (`Wire…`) is named for the struct it flattens —
-/// `WireExportRequest` splices `ExportRequest` and one extra key, and the wire
+/// `WireExportRequest` splices `ExportRequest`, and the wire
 /// it describes IS an export request. A wrapper that flattens nothing loses
 /// its leading `Wire`. Both rules are mechanical, so a new export needs no
 /// entry anywhere. Any other struct keeps its own name, whatever it flattens:
@@ -663,8 +663,7 @@ fn emit_enrolment(model: &Model) -> Result<String, Error> {
         .map(|e| format!("\"{}\"", e.js_name))
         .collect();
     out.push_str(
-        "/**\n * Exports with no JSON on either side, so nothing here can drift for them.\n \
-         * `validateNamespace(stem: string): void` is the whole signature.\n */\n",
+        "/**\n * Exports with no JSON on either side, so nothing here can drift for them.\n */\n",
     );
     out.push_str(&format!(
         "export type WasmExportsWithoutJson = {};\n",

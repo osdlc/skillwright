@@ -52,7 +52,7 @@ plugin note, then `skillwright.md`, so set them once. An inherited block cannot 
 skillwright's own keys are stripped on publish. Spec keys such as `allowed-tools` pass through to
 the harness. An unknown key gets a warning: on a skill it travels under `metadata:`, and on a
 plugin note or `skillwright.md` it is ignored. There is no `kind` or `plugin` key; move the note.
-A vault that sets `build.namespace: sw` writes the prefixed forms instead (`sw-version`).
+There is no key prefix: `sw-version` is an unknown key.
 
 ## Links
 

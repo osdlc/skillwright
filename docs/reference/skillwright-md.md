@@ -9,8 +9,7 @@ file, and `--vault` names the folder.
 - `build:` holds settings for how skillwright runs.
 - The body is ignored, so it can serve as the marketplace's README.
 - After `init` creates this file, skillwright writes only its `version`, with
-  `bump <marketplace>`. Its keys are never prefixed, so that key is `version`
-  under any `build.namespace`. The authoring verbs edit notes, not settings.
+  `bump <marketplace>`. The authoring verbs edit notes, not settings.
 - An unknown key gets a warning and is never refused.
 
 ```markdown
@@ -40,8 +39,7 @@ Anything here is the marketplace's own README.
 ## Marketplace fields
 
 The top-level keys are listed under
-[Marketplace in the field reference](fields.md#marketplace). Top-level keys are
-always bare, even when `build.namespace` is set.
+[Marketplace in the field reference](fields.md#marketplace).
 
 `author`, `license`, `repository`, `homepage`, `targets` and the harness blocks
 are also defaults for every plugin and component below. See
@@ -53,7 +51,6 @@ are also defaults for every plugin and component below. See
 |---|---|---|
 | `out` | path | Where harness trees are written. Required here or as `--out`. There is no default. `.` builds beside this file. |
 | `harnesses` | list | Which harnesses to build: `claude`, `codex`, `cursor`, `pi`. Absent means all of them. The long spellings `targets` takes, `claude-code` and `codex-cli`, are refused here. |
-| `namespace` | stem | Restores prefixed keys: `sw` reads `sw-version` or a `sw:` block. Absent means bare keys. |
 | `launcher_path` | path | The plugin's launcher, relative to the plugin's root. |
 | `bump` | `{patch}` | How `bump` writes a version. `patch` is `increment`, the default, or `timestamp`, which sets the patch to the UTC time as `YYYYMMDDHHMMSS`, or to one more than the current patch when that is larger. An unknown key under it gets a warning; a wrong `patch` value and a top-level `bump:` are refused. |
 | `destinations` | list of `{root, target, scope}` | Where `publish` writes when `--to` is not given. Empty means each harness's user skill folder, such as `~/.claude/skills`. `scope` is `project` or `user`, and is informational. |
@@ -174,7 +171,7 @@ folder.
 A workspace builds only its marketplaces. `build`, `check` and `list` warn about
 components at its root, about a `build.out` on the workspace file, which is
 not read, and about a workspace `build.exclude` glob that matches nothing. `list` at the root reads each marketplace with its own `exclude`,
-`patterns` and namespace. A workspace file that cannot be read stops every verb
+and `patterns`. A workspace file that cannot be read stops every verb
 in its marketplaces.
 
 An inherited glob that matches nothing in one marketplace warns only if it matches

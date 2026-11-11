@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use tradecraft_core::{
-    ExportMode, ExportReport, ExportRequest, MarketplaceConfig, MemVfs, Namespace,
-    UNKNOWN_KEY_REASON, Vfs, export_skills, parse_root_file,
+    ExportMode, ExportReport, ExportRequest, MarketplaceConfig, MemVfs, UNKNOWN_KEY_REASON, Vfs,
+    export_skills, parse_root_file,
 };
 
 const ROOT: &str = "/vault/skillwright.md";
@@ -58,7 +58,7 @@ fn request() -> ExportRequest {
 }
 
 fn build(vfs: &dyn Vfs) -> ExportReport {
-    export_skills(vfs, &request(), &Namespace::bare()).unwrap()
+    export_skills(vfs, &request()).unwrap()
 }
 
 fn entry<'a>(manifest: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
@@ -202,7 +202,7 @@ fn the_root_files_targets_reach_a_plugin_that_sets_none() {
     let vfs = vault("", "targets:\n  - codex\n", "");
     let mut narrowed = request();
     narrowed.config.targets = Some(vec!["claude".to_owned()]);
-    export_skills(&vfs, &narrowed, &Namespace::bare()).unwrap();
+    export_skills(&vfs, &narrowed).unwrap();
     assert!(vfs.exists(Path::new(
         "/market/.agents/packs/tools/skills/review/SKILL.md"
     )));
@@ -266,27 +266,6 @@ fn a_block_key_a_harness_does_not_read_on_a_container_warns() {
         "{:?}",
         report.warnings
     );
-}
-
-#[test]
-fn under_a_namespace_the_prefixed_forms_are_ours_and_the_bare_ones_are_not() {
-    let vfs = MemVfs::new();
-    write(&vfs, ROOT, "---\n---\n");
-    write(&vfs, MARKET, &note("house", "sw-owner: acme\n"));
-    write(&vfs, TOOLS, &note("tools", "sw-license: MIT\n"));
-    write(
-        &vfs,
-        REVIEW,
-        &note(
-            "review",
-            "sw-claude:\n  permissionMode: plan\nclaude: theirs\n",
-        ),
-    );
-    export_skills(&vfs, &request(), &Namespace::sw()).unwrap();
-    let skill = text_at(&vfs, CLAUDE_REVIEW);
-    assert!(skill.contains("permissionMode: plan"), "{skill}");
-    assert!(skill.contains("claude: theirs"), "{skill}");
-    assert!(!skill.contains("sw-claude"), "{skill}");
 }
 
 const COMMAND: &str = "/vault/marketplaces/house/plugins/tools/commands/ship/ship.md";
@@ -378,7 +357,7 @@ fn a_marketplace_is_matched_by_folder_and_published_under_its_name() {
 fn a_plugin_name_that_differs_from_its_folder_is_refused() {
     let vfs = vault("", "", "");
     write(&vfs, TOOLS, &note("renamed", "version: 1.0.0\n"));
-    let err = export_skills(&vfs, &request(), &Namespace::default()).unwrap_err();
+    let err = export_skills(&vfs, &request()).unwrap_err();
     assert!(err.to_string().contains("differs from its folder"), "{err}");
 }
 
@@ -463,22 +442,6 @@ fn a_blank_author_is_unset_in_a_note_as_in_the_root_file() {
 }
 
 #[test]
-fn claudes_arguments_are_not_an_unknown_key_under_a_namespace() {
-    for names in ["arguments: file mode\n", "arguments:\n  - file\n"] {
-        let vfs = vault("", "", names);
-        let report = export_skills(&vfs, &request(), &Namespace::sw()).unwrap();
-        assert!(
-            !report
-                .warnings
-                .iter()
-                .any(|w| w.detail.contains("arguments")),
-            "{:?}",
-            report.warnings
-        );
-    }
-}
-
-#[test]
 fn a_dotted_key_of_the_authors_is_published_and_said_to_be() {
     let vfs = vault("", "", "my.key: 1\n");
     let report = build(&vfs);
@@ -498,7 +461,7 @@ fn a_dotted_key_of_the_authors_is_published_and_said_to_be() {
 #[test]
 fn block_metadata_that_is_not_a_mapping_is_refused() {
     let vfs = vault("", "", "foo: 1\nclaude:\n  metadata: x\n");
-    let err = export_skills(&vfs, &request(), &Namespace::default()).unwrap_err();
+    let err = export_skills(&vfs, &request()).unwrap_err();
     assert!(err.to_string().contains("must be a mapping"), "{err}");
 }
 
@@ -552,7 +515,7 @@ fn a_marketplace_note_outranks_the_root_file_for_every_identity_key() {
          homepage: https://root.example\n",
     );
     request.config.name = None;
-    export_skills(&vfs, &request, &Namespace::default()).unwrap();
+    export_skills(&vfs, &request).unwrap();
     assert!(!vfs.exists(Path::new(CLAUDE_REVIEW)));
     let codex = json_at(
         &vfs,
@@ -598,7 +561,7 @@ fn the_warning_says_what_happens_to_each_kind() {
 #[test]
 fn an_author_of_the_wrong_shape_is_refused() {
     let vfs = vault("", "author: 5\n", "");
-    let err = export_skills(&vfs, &request(), &Namespace::default()).unwrap_err();
+    let err = export_skills(&vfs, &request()).unwrap_err();
     assert!(err.to_string().contains("`author`"), "{err}");
 
     let err = parse_root_file("---\nowner: 5\n---\n").unwrap_err();
@@ -668,7 +631,7 @@ fn build_root(vfs: &dyn Vfs, config: MarketplaceConfig) -> Result<ExportReport, 
     named.config = config;
     named.config.name = Some("house".to_owned());
     named.config.identity.owner = Some(serde_json::json!("acme"));
-    export_skills(vfs, &named, &Namespace::bare()).map_err(|err| err.to_string())
+    export_skills(vfs, &named).map_err(|err| err.to_string())
 }
 
 #[test]
@@ -1027,7 +990,6 @@ fn an_explicit_default_naming_records_nothing() {
     let market = tradecraft_core::model::load(
         &vfs,
         &tradecraft_core::model::LoadRequest::new("/vault", config),
-        &Namespace::bare(),
     )
     .unwrap();
     for plugin in market.plugins.values() {
@@ -1074,7 +1036,7 @@ fn build_to(vfs: &dyn Vfs, out: &str, root_file: &str) -> Result<ExportReport, S
     request.marketplace = None;
     request.out_root = PathBuf::from(out);
     request.config = tradecraft_core::settings::root_file_config(root_file).unwrap();
-    export_skills(vfs, &request, &Namespace::bare()).map_err(|err| err.to_string())
+    export_skills(vfs, &request).map_err(|err| err.to_string())
 }
 
 const TOOL_SKILL: (&str, &str) = (
@@ -1221,9 +1183,7 @@ fn a_marketplace_notes_packs_meets_every_rail() {
     let mut asked = request();
     asked.vault_root = PathBuf::from("/top/v");
     asked.out_root = PathBuf::from("/top");
-    let err = export_skills(&vfs, &asked, &Namespace::bare())
-        .unwrap_err()
-        .to_string();
+    let err = export_skills(&vfs, &asked).unwrap_err().to_string();
     assert!(err.contains("unsafe-root"), "{err}");
     assert!(vfs.exists(Path::new("/top/v/skillwright.md")));
 
@@ -1469,7 +1429,7 @@ fn a_build_of_one_marketplace_ships_only_that_marketplace() {
     }
     let mut build = request();
     build.marketplace = Some("b".to_owned());
-    export_skills(&vfs, &build, &Namespace::bare()).unwrap();
+    export_skills(&vfs, &build).unwrap();
     assert!(vfs.exists(Path::new(
         "/market/.claude-plugin/packs/own/.claude-plugin/plugin.json"
     )));
@@ -1477,7 +1437,7 @@ fn a_build_of_one_marketplace_ships_only_that_marketplace() {
 
     build.marketplace = Some("a".to_owned());
     build.out_root = PathBuf::from("/market-a");
-    export_skills(&vfs, &build, &Namespace::bare()).unwrap();
+    export_skills(&vfs, &build).unwrap();
     let manifest = "/market-a/.claude-plugin/packs/rev/.claude-plugin/plugin.json";
     assert!(vfs.exists(Path::new(manifest)));
     // The marketplace note's `targets` reach the plugin.
@@ -1513,7 +1473,7 @@ fn a_marketplace_named_skillwright_loads_and_builds() {
     assert_eq!(found.dir, PathBuf::from(market));
     assert_eq!(found.out_root, PathBuf::from("/w/dist/skillwright"));
     let request = loaded.export_request(found, ExportMode::Build);
-    export_skills(&vfs, &request, &loaded.namespace).unwrap();
+    export_skills(&vfs, &request).unwrap();
     assert!(vfs.exists(Path::new(
         "/w/dist/skillwright/.claude-plugin/marketplace.json"
     )));

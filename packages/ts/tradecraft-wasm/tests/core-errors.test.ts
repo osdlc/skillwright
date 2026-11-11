@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { CoreError, discoverComponents, exportSkills, InvalidNamespaceError } from '../src/core.ts'
+import { CoreError, discoverComponents } from '../src/core.ts'
 import { createNodeVfs, type Vfs } from '../src/node-vfs.ts'
 
 let tmp: string
@@ -51,33 +51,6 @@ describe('a host filesystem that throws a value with no message', () => {
       expect(raw).toBeInstanceOf(CoreError)
       expect((raw as CoreError).coreName).toBe('Io')
       expect((raw as CoreError).message).toContain(tmp)
-    })
-  }
-})
-
-describe('a bad namespace on a JSON export', () => {
-  const namespace = 'Bad Stem!'
-  const calls: Array<[string, (vfs: Vfs) => unknown]> = [
-    ['discoverComponents', (vfs) => discoverComponents(vfs, { vault_root: tmp, namespace })],
-    [
-      'exportSkills',
-      (vfs) =>
-        exportSkills(vfs, {
-          vault_root: tmp,
-          out_root: path.join(tmp, 'out'),
-          mode: 'check',
-          config: { name: 'core' },
-          namespace,
-        }),
-    ],
-  ]
-
-  for (const [name, call] of calls) {
-    test(`${name} throws InvalidNamespaceError`, () => {
-      const raw = thrownBy(() => call(createNodeVfs()))
-
-      expect(raw).toBeInstanceOf(InvalidNamespaceError)
-      expect((raw as Error).message).toContain(namespace)
     })
   }
 })

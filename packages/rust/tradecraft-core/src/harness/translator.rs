@@ -42,7 +42,6 @@ use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 use crate::model::load::{admits, targets_name};
 use crate::model::{Body, Call, Component, Marketplace, Plugin, ResourceContent, Segment};
-use crate::namespace::Namespace;
 use crate::projection::{
     ProjectedFile, RedundantOverride, parse_runtime_target, project_agent, project_command,
     project_plugin_hooks, project_skill_reporting, to_adapt_hook,
@@ -251,7 +250,7 @@ pub trait HarnessTranslator: Sync {
     /// # Errors
     ///
     /// What writing any member refuses.
-    fn translate(&self, market: &Marketplace, ns: &Namespace) -> Result<FileTree, CoreError> {
+    fn translate(&self, market: &Marketplace) -> Result<FileTree, CoreError> {
         let format = self.format();
         refuse_prefixed_collisions(self, market)?;
         let mut tree = FileTree::default();
@@ -262,7 +261,6 @@ pub trait HarnessTranslator: Sync {
                 &market.config,
                 &format!("{}/{name}", packs_of(&market.config, self.profile())),
                 Layout::Marketplace,
-                ns,
                 &mut tree,
             )?
             else {
@@ -283,11 +281,7 @@ pub trait HarnessTranslator: Sync {
     /// # Errors
     ///
     /// What the runtime's renderer refuses.
-    fn translate_component(
-        &self,
-        component: &Component,
-        ns: &Namespace,
-    ) -> Result<FileTree, CoreError> {
+    fn translate_component(&self, component: &Component) -> Result<FileTree, CoreError> {
         let profile = self.profile();
         write_component(
             component,
@@ -296,7 +290,6 @@ pub trait HarnessTranslator: Sync {
                 runtime: profile.runtime,
                 calls: Some(profile.declaration),
             },
-            ns,
         )
     }
 
@@ -316,7 +309,6 @@ pub trait HarnessTranslator: Sync {
         config: &MarketplaceConfig,
         base: &str,
         layout: Layout,
-        ns: &Namespace,
         tree: &mut FileTree,
     ) -> Result<Option<Vec<&'p str>>, CoreError> {
         let skills: Vec<&Component> = plugin.skills.iter().filter(|c| self.admits(c)).collect();
@@ -327,10 +319,10 @@ pub trait HarnessTranslator: Sync {
         }
         let siblings: BTreeSet<&str> = plugin.skills.iter().map(|s| s.name.as_str()).collect();
         for skill in &skills {
-            self.write_pack_skill(plugin, skill, &siblings, base, layout, ns, tree)?;
+            self.write_pack_skill(plugin, skill, &siblings, base, layout, tree)?;
         }
         for command in &commands {
-            self.write_pack_command(command, base, layout, ns, tree)?;
+            self.write_pack_command(command, base, layout, tree)?;
         }
         let wrote_hooks = self.hooks(plugin, &hooks, base, tree)?;
         for asset in &plugin.assets {
@@ -363,7 +355,6 @@ pub trait HarnessTranslator: Sync {
         siblings: &BTreeSet<&str>,
         base: &str,
         layout: Layout,
-        ns: &Namespace,
         tree: &mut FileTree,
     ) -> Result<(), CoreError> {
         let profile = self.profile();
@@ -382,7 +373,6 @@ pub trait HarnessTranslator: Sync {
         let (files, redundant) = project_skill_reporting(
             &projection,
             &[profile.runtime.to_owned()],
-            ns,
             Some(profile.name),
         )?;
         tree.redundant_overrides.extend(redundant);
@@ -429,7 +419,6 @@ pub trait HarnessTranslator: Sync {
         command: &Component,
         base: &str,
         layout: Layout,
-        ns: &Namespace,
         tree: &mut FileTree,
     ) -> Result<(), CoreError> {
         let profile = self.profile();
@@ -442,7 +431,6 @@ pub trait HarnessTranslator: Sync {
         let files = project_command(
             &projection,
             &[profile.runtime.to_owned()],
-            ns,
             Some(profile.name),
         )?;
         let closures = &command
@@ -494,7 +482,6 @@ pub struct Destination<'a> {
 pub fn write_component(
     component: &Component,
     destination: &Destination<'_>,
-    ns: &Namespace,
 ) -> Result<FileTree, CoreError> {
     let projection = projection_of(component, |body| {
         // A skill published on its own has no plugin, so a call to another
@@ -511,13 +498,11 @@ pub fn write_component(
     let runtime = [destination.runtime.to_owned()];
     let mut tree = FileTree::default();
     let files = match component.kind {
-        EntityKind::Command => {
-            project_command(&projection, &runtime, ns, Some(destination.canonical))?
-        }
-        EntityKind::Agent => project_agent(&projection, &runtime, ns)?,
+        EntityKind::Command => project_command(&projection, &runtime, Some(destination.canonical))?,
+        EntityKind::Agent => project_agent(&projection, &runtime)?,
         _ => {
             let (files, redundant) =
-                project_skill_reporting(&projection, &runtime, ns, Some(destination.canonical))?;
+                project_skill_reporting(&projection, &runtime, Some(destination.canonical))?;
             tree.redundant_overrides = redundant;
             files
         }

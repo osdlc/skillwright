@@ -9,12 +9,10 @@ export {
   CoreError,
   discoverComponents,
   exportSkills,
-  InvalidNamespaceError,
   knownTargets,
   loadMarketplace,
   parseRootFile,
   rootFileConfig,
-  validateNamespace,
 } from './core.ts'
 export type {
   CoreErrorName,

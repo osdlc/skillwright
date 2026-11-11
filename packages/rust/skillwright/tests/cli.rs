@@ -244,14 +244,7 @@ fn the_root_help_names_every_global_flag_and_the_three_nouns() {
     let dir = tempfile::tempdir().unwrap();
     let run = run(&["--help"], dir.path());
     assert_eq!(run.code, 0);
-    for flag in [
-        "--vault",
-        "--namespace",
-        "--json",
-        "--dry-run",
-        "--yes",
-        "--quiet",
-    ] {
+    for flag in ["--vault", "--json", "--dry-run", "--yes", "--quiet"] {
         assert!(run.stdout.contains(flag), "{flag} missing");
     }
     assert!(!run.stdout.contains("--config"), "{}", run.stdout);
@@ -270,7 +263,7 @@ fn the_root_help_names_every_global_flag_and_the_three_nouns() {
 // --- the per-verb global sets ------------------------------------------------
 
 #[test]
-fn a_verb_that_writes_declares_all_six() {
+fn a_verb_that_writes_declares_all_five() {
     let (dir, vault) = fixture();
     // `--dry-run` and `--yes` parse, and the dry run writes nothing — not
     // clap's "unexpected argument".
@@ -279,8 +272,6 @@ fn a_verb_that_writes_declares_all_six() {
             "build",
             "--vault",
             &vault_str(&vault),
-            "--namespace",
-            "sw",
             "--dry-run",
             "--yes",
             "--quiet",
@@ -308,6 +299,8 @@ fn removed_flags_are_unknown() {
         &["check", "--config", "skillwright.md"],
         &["init", "acme", "tools", "--out", "dist"],
         &["init", "acme", "tools", "--name", "acme"],
+        &["check", "--vault", &vault, "--namespace", "sw"],
+        &["build", "--vault", &vault, "--namespace", "sw", "--yes"],
     ] {
         let ran = run(argv, dir.path());
         assert_eq!(ran.code, 3, "{argv:?}: {}", ran.stderr);
@@ -534,7 +527,12 @@ fn a_layout_error_is_exit_2_with_the_section_11_report() {
 
 #[test]
 fn each_removed_build_key_is_refused() {
-    for key in ["out: dist", "patterns: {}", "exclude: ['*.draft.md']"] {
+    for key in [
+        "out: dist",
+        "patterns: {}",
+        "exclude: ['*.draft.md']",
+        "namespace: sw",
+    ] {
         let (_dir, vault) = fixture_with(&format!("---\nbuild:\n  {key}\n---\n"));
         let ran = run(&["check"], &vault);
         assert_eq!(ran.code, 2, "{key}: {}", ran.stderr);
@@ -972,6 +970,58 @@ fn an_unknown_key_in_a_skills_harness_block_warns() {
     .unwrap();
     let wrong = run(&["build", "--yes"], &vault);
     assert_ne!(wrong.code, 0, "{}", wrong.stderr);
+}
+
+/// A prefixed key is an unknown key (section 6 rule 1): on a skill it warns
+/// and ships under `metadata:`.
+#[test]
+fn a_prefixed_key_on_a_skill_warns_and_ships_under_metadata() {
+    let (_dir, vault) = fixture();
+    fs::write(
+        vault.join("marketplaces/acme/plugins/tools/skills/review/review.md"),
+        "---\ndescription: d\nsw-version: 2.0.0\n---\n\nX.\n",
+    )
+    .unwrap();
+    let build = run(&["build", "--yes"], &vault);
+    assert_eq!(build.code, 0, "{}", build.stderr);
+    assert!(
+        build.stderr.contains("unknown-key: `sw-version`"),
+        "{}",
+        build.stderr
+    );
+    let text = fs::read_to_string(
+        vault.join("dist/acme/.claude-plugin/packs/tools/skills/review/SKILL.md"),
+    )
+    .unwrap();
+    let metadata = text
+        .split("metadata:")
+        .nth(1)
+        .unwrap_or_else(|| panic!("{text}"));
+    assert!(metadata.contains("sw-version: 2.0.0"), "{text}");
+}
+
+/// On a container a prefixed key, here an `sw:` block, warns and is ignored.
+#[test]
+fn an_sw_block_on_a_plugin_warns_and_is_ignored() {
+    let (_dir, vault) = fixture();
+    fs::write(
+        vault.join("marketplaces/acme/plugins/tools/tools.md"),
+        "---\ndescription: A plugin.\nversion: 1.0.0\nsw:\n  version: 9.9.9\n---\n",
+    )
+    .unwrap();
+    let build = run(&["build", "--yes"], &vault);
+    assert_eq!(build.code, 0, "{}", build.stderr);
+    assert!(
+        build.stderr.contains("unknown-key: `sw`"),
+        "{}",
+        build.stderr
+    );
+    let manifest = fs::read_to_string(
+        vault.join("dist/acme/.claude-plugin/packs/tools/.claude-plugin/plugin.json"),
+    )
+    .unwrap();
+    assert!(manifest.contains("\"1.0.0\""), "{manifest}");
+    assert!(!manifest.contains("9.9.9"), "{manifest}");
 }
 
 /// `owner` is not inherited: a plugin with no `author` never gets the

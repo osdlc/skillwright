@@ -264,38 +264,6 @@ fn no_yes_off_a_tty_is_a_usage_error_and_writes_nothing() {
     assert_eq!(before, after, "a declined/unconfirmable run must not write");
 }
 
-#[test]
-fn a_version_in_a_nested_block_is_bumped_in_place() {
-    let (dir, vault) = fixture(Some("sw:\n  version: 2.3.0"));
-    let path = note_path(&vault);
-
-    let result = run(
-        &[
-            "bump",
-            "widget",
-            "--patch",
-            "--yes",
-            "--namespace",
-            "sw",
-            "--vault",
-            &vault_str(&vault),
-        ],
-        dir.path(),
-    );
-
-    assert_eq!(result.code, 0, "{}", result.stderr);
-    assert_eq!(
-        result.stdout,
-        format!("{REL}  written · sw.version 2.3.0 -> 2.3.1\n")
-    );
-    let after = read(&path);
-    assert!(after.contains("sw:\n  version: 2.3.1\n"), "{after}");
-    assert!(
-        !after.contains("sw-version"),
-        "a flat key beside the block is a mixed shape: {after}"
-    );
-}
-
 // --- Which note a bump writes -----------------------------------------------
 
 #[test]
@@ -369,38 +337,6 @@ fn a_plugin_named_after_its_marketplace_is_just_a_plugin() {
         read(&market_path(root, "osdlc")),
         "---\nversion: 3.0.0\n---\n"
     );
-}
-
-#[test]
-fn bump_of_a_plugin_note_under_a_namespace_edits_the_key_it_reads() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    vault(root, "build:\n  namespace: sw\n", &[("m", &[("p", None)])]);
-    let note = plugin_path(root, "m", "p");
-    write(&note, "---\nsw-description: P.\nsw-version: 2.0.0\n---\n");
-
-    let result = run(&["bump", "p", "--yes"], root);
-    assert_eq!(result.code, 0, "{}", result.stderr);
-    let text = read(&note);
-    assert!(text.contains("sw-version: 2.0.1"), "{text}");
-}
-
-#[test]
-fn bump_of_a_marketplace_under_a_namespace_edits_the_bare_version() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    vault(
-        root,
-        "build:\n  namespace: sw\n",
-        &[("solo", &[("p", None)])],
-    );
-    write(&market_path(root, "solo"), "---\nversion: 1.0.0\n---\n");
-
-    let result = run(&["bump", "--marketplace", "solo", "--yes"], root);
-    assert_eq!(result.code, 0, "{}", result.stderr);
-    let text = read(&market_path(root, "solo"));
-    assert!(text.contains("\nversion: 1.0.1\n"), "{text}");
-    assert!(!text.contains("sw-version"), "{text}");
 }
 
 // --- A plugin name two marketplaces share -----------------------------------

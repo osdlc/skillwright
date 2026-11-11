@@ -4,8 +4,8 @@
 use std::path::Path;
 
 use tradecraft_core::{
-    CoreError, EntityKind, ExportMode, MemVfs, Namespace, Vfs, check_vault_root,
-    discover_components, export_skills, find_vault_root, load_vault, read_layout,
+    CoreError, EntityKind, ExportMode, MemVfs, Vfs, check_vault_root, discover_components,
+    export_skills, find_vault_root, load_vault, read_layout,
 };
 
 const ROOT: &str = "---\n---\n";
@@ -73,7 +73,7 @@ fn assert_expected_layout(said: &str) {
 
 /// Each component as `marketplace/plugin/kind/name`.
 fn listed(vfs: &MemVfs) -> Vec<String> {
-    let report = discover_components(vfs, Path::new("/v"), &Namespace::bare()).unwrap();
+    let report = discover_components(vfs, Path::new("/v")).unwrap();
     let mut out: Vec<String> = report
         .components
         .iter()
@@ -146,7 +146,7 @@ fn files_beside_the_root_file_are_not_read_and_a_build_leaves_them() {
         .collect();
     let loaded = load_vault(&vfs, Path::new("/v"), None, Path::new("/home")).unwrap();
     let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
-    export_skills(&vfs, &request, &loaded.namespace).unwrap();
+    export_skills(&vfs, &request).unwrap();
     assert!(vfs.exists(Path::new("/v/dist/acme")));
     let after: Vec<Vec<u8>> = ["README.md", "notes/plain.md", "notes/marketplaces/x/x.md"]
         .iter()
@@ -358,7 +358,7 @@ fn a_skill_and_a_command_of_one_name_in_one_plugin_are_refused() {
         ],
     );
     let vfs = vault_of(&files);
-    let said = discover_components(&vfs, Path::new("/v"), &Namespace::bare())
+    let said = discover_components(&vfs, Path::new("/v"))
         .unwrap_err()
         .to_string();
     assert!(said.contains("skills/deploy/deploy.md"), "{said}");
@@ -521,6 +521,20 @@ fn case_7_removed_build_keys_are_reported_together() {
         assert!(said.contains(&format!("`{key}`")), "{key}: {said}");
     }
     // `load_vault` stops on the same report.
+    let vfs = vault_of(&files);
+    let err = load_vault(&vfs, Path::new("/v"), None, Path::new("/home")).unwrap_err();
+    assert_eq!(err.to_string(), said);
+}
+
+#[test]
+fn case_7_build_namespace_is_refused() {
+    let mut files = plugin("acme", "tools", &[("skills/review/review.md", SKILL)]);
+    files.push((
+        "skillwright.md".to_owned(),
+        "---\nbuild:\n  namespace: sw\n---\n".to_owned(),
+    ));
+    let said = refusal(&vault_of(&files));
+    assert!(said.contains("`build.namespace`"), "{said}");
     let vfs = vault_of(&files);
     let err = load_vault(&vfs, Path::new("/v"), None, Path::new("/home")).unwrap_err();
     assert_eq!(err.to_string(), said);

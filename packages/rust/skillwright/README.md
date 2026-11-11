@@ -112,7 +112,6 @@ Every verb but `init` accepts these after the verb name, for example
 |---|---|
 | `--vault <path>` | The vault root: the folder holding `skillwright.md` |
 | `--config <path>` | Read this root file instead of the nearest `skillwright.md` at or above the working directory |
-| `--namespace <stem>` | The frontmatter namespace stem, the `sw` of `sw-version`. Bare keys are the default |
 | `--json` | Print the report on stdout as one JSON document |
 | `--quiet` | Drop progress and the tally from stderr |
 | `--dry-run` | Show the plan; write nothing (verbs that write) |
@@ -319,7 +318,7 @@ build:
 ---
 ```
 
-The `build:` keys are `out`, `harnesses`, `namespace`, `launcher_path`, `bump`,
+The `build:` keys are `out`, `harnesses`, `launcher_path`, `bump`,
 `destinations`, `scan_locations`, `assets`, `hooks`, `exclude` and `patterns`.
 An unknown key is a warning, not an error. See the
 [`skillwright.md` reference](../../../docs/reference/skillwright-md.md), and the
@@ -340,7 +339,7 @@ The marketplace's name defaults to the vault folder's name. A folder holding
 A root file with `workspace: true` holds shared defaults (`author`,
 `license` and every `build:` key but `out`) for every
 `marketplaces/<m>/skillwright.md` below it. A marketplace's own value wins,
-key by key: set `build.namespace` in a marketplace and the rest of the
+key by key: set `build.harnesses` in a marketplace and the rest of the
 workspace's `build:` keys still apply. `build.out` is a path, so each
 marketplace sets its own. `build` and `check` there run over each marketplace;
 `--marketplace <name>` picks one.

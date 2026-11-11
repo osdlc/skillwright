@@ -84,9 +84,6 @@ pub struct BuildSettings {
     /// Which harnesses to build. Absent means all of them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harnesses: Option<Vec<String>>,
-    /// The frontmatter namespace stem.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub namespace: Option<String>,
     /// The plugin's launcher, relative to the plugin's root. See
     /// [`MarketplaceConfig::launcher_path`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -164,14 +161,7 @@ pub fn marketplace_keys() -> impl Iterator<Item = &'static str> {
 }
 
 /// The keys of the `build:` block.
-pub const BUILD_KEYS: &[&str] = &[
-    "harnesses",
-    "namespace",
-    "launcher_path",
-    "bump",
-    "assets",
-    "hooks",
-];
+pub const BUILD_KEYS: &[&str] = &["harnesses", "launcher_path", "bump", "assets", "hooks"];
 
 /// The `build:` keys v2 refuses, naming the key, rather than warns about.
 pub const REFUSED_BUILD_KEYS: &[&str] = &[
@@ -180,6 +170,7 @@ pub const REFUSED_BUILD_KEYS: &[&str] = &[
     "out",
     "patterns",
     "exclude",
+    "namespace",
 ];
 
 /// A YAML value read as `T` through its JSON equivalent, so free-shaped
@@ -490,8 +481,7 @@ impl RootFile {
     /// The top-level fields come down where the key table says a marketplace
     /// inherits them ([`crate::keys::inherits`]): the identity fields it
     /// marks, `targets`, and the harness blocks key by key. So do
-    /// `harnesses`, `namespace`, `launcher_path`, `bump`, `assets` and
-    /// `hooks`.
+    /// `harnesses`, `launcher_path`, `bump`, `assets` and `hooks`.
     ///
     /// Key by key: a value this file sets wins. The `build:` keys are not in
     /// the key table, so their list is this function's.
@@ -513,9 +503,6 @@ impl RootFile {
         let shared = &from.build;
         if build.harnesses.is_none() {
             build.harnesses.clone_from(&shared.harnesses);
-        }
-        if build.namespace.is_none() {
-            build.namespace.clone_from(&shared.namespace);
         }
         if build.launcher_path.is_none() {
             build.launcher_path.clone_from(&shared.launcher_path);
@@ -666,7 +653,6 @@ mod tests {
             let note = VaultFrontmatter::take_from(
                 &mut fields,
                 std::path::Path::new("/vault/marketplaces/m/skillwright.md"),
-                &crate::namespace::Namespace::bare(),
                 EntityKind::Marketplace,
             );
             assert_eq!(root.is_ok(), note.is_ok(), "{line}");
@@ -703,17 +689,16 @@ mod tests {
     fn a_set_build_value_overrides_the_shared_key_by_key() {
         let shared = parse_root_file(
             "---\nlicense: MIT\nbuild:\n  harnesses: [claude]\n  \
-             namespace: sw\n  launcher_path: bin/ws\n---\n",
+             launcher_path: bin/ws\n---\n",
         )
         .unwrap();
-        let mut member = parse_root_file("---\nbuild:\n  namespace: acme\n---\n").unwrap();
+        let mut member = parse_root_file("---\nbuild:\n  launcher_path: bin/m\n---\n").unwrap();
         member.inherit(&shared);
 
         // What the member sets wins.
-        assert_eq!(member.build.namespace.as_deref(), Some("acme"));
+        assert_eq!(member.build.launcher_path.as_deref(), Some("bin/m"));
         // Every other key still comes down.
         assert_eq!(member.build.harnesses, Some(vec!["claude".to_owned()]));
-        assert_eq!(member.build.launcher_path.as_deref(), Some("bin/ws"));
         assert_eq!(member.marketplace.identity.license.as_deref(), Some("MIT"));
     }
 
@@ -783,6 +768,7 @@ mod tests {
             ("out", " dist"),
             ("patterns", "\n    skills: notes/*"),
             ("exclude", " '**/*.draft.md'"),
+            ("namespace", " sw"),
         ] {
             let err = parse_root_file(&format!("---\nbuild:\n  {key}:{value}\n---\n")).unwrap_err();
             assert_eq!(err.key, format!("build.{key}"), "{err}");

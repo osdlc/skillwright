@@ -13,18 +13,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-  CoreError,
-  InvalidNamespaceError,
-  createNodeVfs,
-  exportSkills,
-  knownTargets,
-  validateNamespace,
-} from '@osdlc/tradecraft-wasm'
+import { CoreError, createNodeVfs, exportSkills, knownTargets } from '@osdlc/tradecraft-wasm'
 
 assert.ok(knownTargets().includes('claude'))
-validateNamespace('sw')
-assert.throws(() => validateNamespace('my-vault'), InvalidNamespaceError)
 
 const root = mkdtempSync(join(tmpdir(), 'tradecraft-smoke-'))
 try {

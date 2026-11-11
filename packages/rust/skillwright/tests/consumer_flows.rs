@@ -90,7 +90,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn a_prefixed_key_on_a_bare_vault_is_an_unknown_key() {
+fn a_prefixed_key_is_an_unknown_key() {
     for key in ["sw-version: 1.0.0", "tc-license: MIT"] {
         let note = format!("---\ndescription: D.\n{key}\n---\nBody.\n");
         let dir = vault(ROOT, &[("p/p.md", PLUGIN), ("p/skills/s/s.md", &note)]);
@@ -98,22 +98,6 @@ fn a_prefixed_key_on_a_bare_vault_is_an_unknown_key() {
         assert_eq!(built.code, 0, "{}", built.text);
         assert!(built.text.contains("unknown-key"), "{}", built.text);
     }
-}
-
-#[test]
-fn a_namespace_keeps_the_prefix_and_names_the_right_spelling() {
-    let root = "---\nbuild:\n  namespace: sw\n---\n";
-    let plugin = "---\ndescription: P.\nsw-version: 2.0.0\nsw-display-name: X\n---\n";
-    let dir = vault(root, &[("p/p.md", plugin), ("p/skills/s/s.md", SKILL)]);
-    let built = sw(&dir.path(), &["build", "--yes"]);
-    assert_eq!(built.code, 0, "{}", built.text);
-    assert!(
-        built
-            .text
-            .contains("`sw-display-name` is `sw-display_name`"),
-        "{}",
-        built.text
-    );
 }
 
 #[test]

@@ -7,7 +7,6 @@ use crate::content::SkillProjection;
 use crate::error::CoreError;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::{profile_for, profile_named};
-use crate::namespace::Namespace;
 
 /// Whether a note of this kind renders on its own into a target's layout.
 ///
@@ -102,7 +101,6 @@ pub fn overrides_for(
     note: &VaultFrontmatter,
     note_path: &Path,
     kind: EntityKind,
-    ns: &Namespace,
 ) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
     let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
     for (declared, block) in &note.blocks {
@@ -155,7 +153,7 @@ pub fn overrides_for(
             {
                 return Err(CoreError::wrong_kind(
                     note_path,
-                    format!("`{}.{key}` {}", ns.key(canonical), ty.refusal(value)),
+                    format!("`{canonical}.{key}` {}", ty.refusal(value)),
                 ));
             }
         }

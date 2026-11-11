@@ -31,7 +31,6 @@ use crate::export::{AssetSpec, HookFileSpec, MarketplaceConfig};
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::manifest::plugin_version;
 use crate::harness::{HarnessProfile, SkillNaming, with_plugin_format};
-use crate::namespace::Namespace;
 use crate::projection::parse_runtime_target;
 use crate::publish::{PLUGIN_HOOKS_PATH, canonical_target, refuse_carried_peers};
 use crate::vault::{VaultNote, read_vault_note};
@@ -94,10 +93,9 @@ impl LoadRequest {
 pub fn read_notes(
     vfs: &dyn Vfs,
     vault_root: &Path,
-    ns: &Namespace,
 ) -> Result<(DiscoveryReport, LinkIndex), CoreError> {
     let layout = crate::layout::read_layout(vfs, vault_root)?;
-    let report = discover_in(vfs, &layout, ns)?;
+    let report = discover_in(vfs, &layout)?;
     let files: Vec<PathBuf> = layout
         .files
         .iter()
@@ -169,16 +167,12 @@ pub(crate) fn selected_harnesses(
 /// * `refused: malformed` — a container block key holding the wrong
 ///   kind of value.
 /// * Everything the resolve pass refuses; see [`resolve_body`].
-pub fn load(
-    vfs: &dyn Vfs,
-    request: &LoadRequest,
-    ns: &Namespace,
-) -> Result<Marketplace, CoreError> {
+pub fn load(vfs: &dyn Vfs, request: &LoadRequest) -> Result<Marketplace, CoreError> {
     let vault_root = normalize(&request.vault_root);
     let roots = selected_harnesses(&request.harnesses)?;
 
     // Pass 1.
-    let (scan, links) = read_notes(vfs, &vault_root, ns)?;
+    let (scan, links) = read_notes(vfs, &vault_root)?;
     // The root file's own entry is configuration, not a note, and
     // `check_block_values` below refuses it naming the marketplace.
     let skipped: Vec<&SkippedNote> = scan
@@ -322,10 +316,9 @@ pub fn load(
             if !roots.iter().any(|root| admits(&component.discovered, root)) {
                 continue;
             }
-            let mut note =
-                read_vault_note(vfs, &component.discovered.entry_path, ns, component.kind)?;
-            cascade.apply(&mut note, component.kind, Some(&plugin_name), ns);
-            component.extensions = extensions(&note.frontmatter, &component.discovered, ns)?;
+            let mut note = read_vault_note(vfs, &component.discovered.entry_path, component.kind)?;
+            cascade.apply(&mut note, component.kind, Some(&plugin_name));
+            component.extensions = extensions(&note.frontmatter, &component.discovered)?;
             let (resolved, content) = match component.kind {
                 // A hook's body is a script or a prompt inside a JSON string:
                 // an embed expanded into it would rewrite what runs, so it is
@@ -675,10 +668,8 @@ fn skipped_wording<'a>(
 fn extensions(
     frontmatter: &VaultFrontmatter,
     component: &DiscoveredComponent,
-    ns: &Namespace,
 ) -> Result<Extensions, CoreError> {
-    let blocks =
-        crate::publish::overrides_for(frontmatter, &component.entry_path, component.kind, ns)?;
+    let blocks = crate::publish::overrides_for(frontmatter, &component.entry_path, component.kind)?;
     Ok(Extensions { blocks })
 }
 
@@ -1228,7 +1219,7 @@ mod tests {
     #[test]
     fn pass_one_indexes_what_it_read_and_nothing_outside_marketplaces() {
         let vfs = vault();
-        let (report, links) = read_notes(&vfs, Path::new("/vault"), &Namespace::sw()).unwrap();
+        let (report, links) = read_notes(&vfs, Path::new("/vault")).unwrap();
         assert_eq!(report.components.len(), 3);
         assert_eq!(
             links.resolve("guide"),

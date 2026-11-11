@@ -778,7 +778,6 @@ dependencies = [
  "tempfile",
  "tradecraft-core",
  "typed-git",
- "yaml-splice",
 ]
 
 [[package]]

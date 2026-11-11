@@ -45,7 +45,6 @@ use crate::error::CoreError;
 use crate::frontmatter::{
     ContainerIdentity, EntityKind, KindHints, KindSource, VaultFrontmatter, resolve_kind,
 };
-use crate::namespace::Namespace;
 use crate::publish::KNOWN_TARGETS;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vault::frontmatter_map;
@@ -157,16 +156,14 @@ impl DiscoveredComponent {
     }
 }
 
-/// What happens to one unknown key, as a warning says it. A key the namespace
-/// claims is consumed on the read.
-fn unknown_key_fate(kind: EntityKind, key: &str, ns: &Namespace) -> &'static str {
+/// What happens to one unknown key, as a warning says it.
+fn unknown_key_fate(kind: EntityKind, key: &str) -> &'static str {
     let in_a_block = key
         .split_once('.')
         .is_some_and(|(block, _)| crate::publish::canonical_target(block).is_some());
     match kind {
         EntityKind::Plugin | EntityKind::Marketplace | EntityKind::Hook => "ignored",
         _ if in_a_block => "ignored",
-        _ if ns.is_ours(key) => "dropped",
         EntityKind::Skill => "published under `metadata:`",
         EntityKind::Command => "carried as written",
         EntityKind::Agent => "carried as written when the agent publishes on its own",
@@ -178,7 +175,6 @@ pub(crate) fn unknown_key_warning(
     path: &str,
     kind: EntityKind,
     unknown: &[String],
-    ns: &Namespace,
 ) -> Option<DiscoveryWarning> {
     if unknown.is_empty() {
         return None;
@@ -187,7 +183,7 @@ pub(crate) fn unknown_key_warning(
     let mut fates: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for key in unknown {
         fates
-            .entry(unknown_key_fate(kind, key, ns))
+            .entry(unknown_key_fate(kind, key))
             .or_default()
             .push(key);
     }
@@ -200,32 +196,6 @@ pub(crate) fn unknown_key_warning(
             .collect::<Vec<_>>()
             .join("; ")
     };
-    let hint = if ns.is_bare() {
-        String::new()
-    } else {
-        let respelled: Vec<String> = unknown
-            .iter()
-            .filter_map(|key| {
-                let field = ns.field(key).replace('-', "_");
-                let bare = crate::harness::profile_named(key).is_some();
-                let hyphen = field != ns.field(key)
-                    && EntityKind::ALL
-                        .iter()
-                        .any(|kind| crate::keys::is_owned(*kind, &field));
-                (bare || hyphen).then(|| format!("`{key}` is `{}`", ns.key(&field)))
-            })
-            .collect();
-        let examples = if respelled.is_empty() {
-            String::new()
-        } else {
-            format!(": {}", respelled.join(", "))
-        };
-        format!(
-            ". Under namespace `{}`, skillwright's keys are spelled `{}`{examples}",
-            ns.stem(),
-            ns.key("<key>")
-        )
-    };
     let subject = if unknown.len() == 1 {
         "is not a key"
     } else {
@@ -236,7 +206,7 @@ pub(crate) fn unknown_key_warning(
         path: path.to_owned(),
         reason: UNKNOWN_KEY_REASON.to_owned(),
         detail: format!(
-            "{keys} {subject} skillwright reads on {article} {}; {fate}{hint}",
+            "{keys} {subject} skillwright reads on {article} {}; {fate}",
             kind.as_str()
         ),
     })
@@ -294,12 +264,11 @@ fn check_values(
     path: &Path,
     kind: EntityKind,
     folder: &str,
-    ns: &Namespace,
 ) -> Result<(), CoreError> {
     crate::vault::check_spec_kinds(fields, path, kind)?;
     match kind {
         EntityKind::Skill | EntityKind::Command => {
-            crate::publish::overrides_for(ours, path, kind, ns)?;
+            crate::publish::overrides_for(ours, path, kind)?;
         }
         EntityKind::Plugin | EntityKind::Marketplace => {
             let name = match kind {
@@ -494,9 +463,6 @@ impl SkippedNote {
 
 /// Every note of the vault at `vault_root`, sorted by name.
 ///
-/// `ns` is the vault's frontmatter namespace, the same value every other
-/// reader takes.
-///
 /// # A bad note stops itself, not the scan
 ///
 /// Everything wrong with *one* note (an over-long description, a `targets`
@@ -511,13 +477,9 @@ impl SkippedNote {
 /// * `refused: unsafe-path` — a symlink under `marketplaces/`.
 /// * [`CoreError::Io`] — a folder that cannot be listed.
 /// * `refused: path-collision` — two components of one name in one plugin.
-pub fn discover_components(
-    vfs: &dyn Vfs,
-    vault_root: &Path,
-    ns: &Namespace,
-) -> Result<DiscoveryReport, CoreError> {
+pub fn discover_components(vfs: &dyn Vfs, vault_root: &Path) -> Result<DiscoveryReport, CoreError> {
     let layout = crate::layout::read_layout(vfs, vault_root)?;
-    discover_in(vfs, &layout, ns)
+    discover_in(vfs, &layout)
 }
 
 /// [`discover_components`] for a roster: a duplicate name is not an error.
@@ -528,13 +490,9 @@ pub fn discover_components(
 /// # Errors
 ///
 /// As [`discover_components`], less `path-collision`.
-pub fn discover_roster(
-    vfs: &dyn Vfs,
-    vault_root: &Path,
-    ns: &Namespace,
-) -> Result<DiscoveryReport, CoreError> {
+pub fn discover_roster(vfs: &dyn Vfs, vault_root: &Path) -> Result<DiscoveryReport, CoreError> {
     let layout = crate::layout::read_layout(vfs, vault_root)?;
-    discover_with(vfs, &layout, ns, true)
+    discover_with(vfs, &layout, true)
 }
 
 /// [`discover_components`] over a layout already read.
@@ -545,9 +503,8 @@ pub fn discover_roster(
 pub(crate) fn discover_in(
     vfs: &dyn Vfs,
     layout: &crate::layout::Layout,
-    ns: &Namespace,
 ) -> Result<DiscoveryReport, CoreError> {
-    discover_with(vfs, layout, ns, false)
+    discover_with(vfs, layout, false)
 }
 
 /// [`discover_in`], with `roster` turning each path collision into warnings
@@ -555,7 +512,6 @@ pub(crate) fn discover_in(
 fn discover_with(
     vfs: &dyn Vfs,
     layout: &crate::layout::Layout,
-    ns: &Namespace,
     roster: bool,
 ) -> Result<DiscoveryReport, CoreError> {
     let vault_root = layout.root.as_path();
@@ -578,7 +534,7 @@ fn discover_with(
         skipped.push(SkippedNote::new(vault_root, &root_file, None, &err));
     }
     for (entry_path, position) in &placed {
-        match read_source(vfs, vault_root, entry_path, position, &placed, files, ns) {
+        match read_source(vfs, vault_root, entry_path, position, &placed, files) {
             Ok(component) => {
                 if component.lacks_description() {
                     warnings.push(missing_description(&component));
@@ -587,7 +543,6 @@ fn discover_with(
                     &component.vault_relative_path,
                     component.kind,
                     &component.unknown_keys,
-                    ns,
                 ) {
                     warnings.push(warning);
                 }
@@ -745,7 +700,6 @@ fn read_source(
     position: &crate::layout::Position,
     placed: &BTreeMap<PathBuf, crate::layout::Position>,
     files: &[PathBuf],
-    ns: &Namespace,
 ) -> Result<DiscoveredComponent, CoreError> {
     let source = read_utf8(vfs, entry_path)?;
     let (frontmatter, _body) = split_frontmatter(&source);
@@ -755,14 +709,7 @@ fn read_source(
         requested: None,
         folder: Some(kind),
     });
-    // A marketplace's note takes bare keys, as the root file does.
-    let bare = Namespace::bare();
-    let ns = if kind == EntityKind::Marketplace {
-        &bare
-    } else {
-        ns
-    };
-    let ours = VaultFrontmatter::take_from(&mut fields, entry_path, ns, kind)?;
+    let ours = VaultFrontmatter::take_from(&mut fields, entry_path, kind)?;
     let unknown_keys = unknown_keys(&ours, kind);
     crate::vault::check_spec_kinds(&mut fields, entry_path, kind)?;
     let declared = trimmed_string(&fields, "name");
@@ -773,7 +720,7 @@ fn read_source(
 
     // The value checks a build makes on this note, so the scan refuses what a
     // build refuses.
-    check_values(&mut fields, &ours, entry_path, kind, position.name(), ns)?;
+    check_values(&mut fields, &ours, entry_path, kind, position.name())?;
     if declared.is_some() && needs_description(kind) {
         validate_name(&name, "component name", entry_path)?;
     }
@@ -807,9 +754,8 @@ fn read_source(
             return Err(CoreError::refused(
                 "unknown-target",
                 format!(
-                    "{}: `{}` names {}, which this build does not know (known: {})",
+                    "{}: `targets` names {}, which this build does not know (known: {})",
                     entry_path.display(),
-                    ns.key("targets"),
                     quoted(&unknown),
                     KNOWN_TARGETS.join(", ")
                 ),
@@ -1043,7 +989,7 @@ mod tests {
     }
 
     fn scan(vfs: &MemVfs) -> Result<DiscoveryReport, CoreError> {
-        discover_components(vfs, Path::new("/v"), &Namespace::bare())
+        discover_components(vfs, Path::new("/v"))
     }
 
     #[test]

@@ -8,8 +8,8 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 - **Value** is the kind of value the key takes. [Other accepted forms](#other-accepted-forms) notes what the column cannot say.
 - **Owner** says who the key belongs to:
-  - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace: sw`, the key is written `sw-version`, or inside an `sw:` block. Keys in `skillwright.md` always stay bare.
-  - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written and never prefixed.
+  - `skillwright`: skillwright reads the key and removes it when it publishes.
+  - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written.
 - **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`.
 
 ## What is checked
@@ -71,7 +71,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin or marketplace. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused. |
-| `arguments` | list of arguments; with no namespace, a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
 | `metadata` | mapping | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
@@ -93,7 +93,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused. |
-| `arguments` | list of arguments; with no namespace, a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
 | `metadata` | mapping | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |
@@ -116,7 +116,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 | `name` | string | spec | no | The name. Defaults to the file or folder name, made lowercase with `-` between words. A skill, command or agent whose default is empty or over 64 characters is an error, `invalid-name`: set `name`. A plugin's must match its folder. |
 | `description` | string | spec | no | What it does. A skill, command or agent with a `name` and no description is an error: `check` reports it and `build` refuses it. A plugin or marketplace need not have one. A note with neither is not published. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. `claude-code` and `codex-cli` also work. `amp`, `antigravity`, `opencode`, `portable`, `copilot` and `github-copilot` are accepted, but a build writes nothing for them. Absent means all; `[]` means none. Another name is refused. |
-| `arguments` | list of arguments; with no namespace, a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
+| `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |
 | `compatibility` | string | spec | no | What the skill needs to run, the Agent Skills field. |
 | `metadata` | mapping | spec | no | Free-form fields, the Agent Skills field. Unknown keys are published here. |

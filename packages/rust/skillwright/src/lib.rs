@@ -1,5 +1,5 @@
 //! The Skillwright CLI: exit codes, root-file configuration, per-run
-//! vault/namespace resolution, report rendering, and the verbs themselves.
+//! vault resolution, report rendering, and the verbs themselves.
 //!
 //! `cli::run` is the seam the binary in `main.rs` and every test in this
 //! crate drive; `cli::run_with` is the same entry with the

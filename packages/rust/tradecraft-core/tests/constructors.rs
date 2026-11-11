@@ -8,9 +8,9 @@ use std::path::Path;
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
     AssetSpec, BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode,
-    ExportRequest, ExportUnit, FieldEdit, FieldValue, HookFileSpec, LinkIndex, MarketplaceConfig,
-    MarketplaceFields, MemVfs, Namespace, PluginOverrides, RootFile, StaleKind, UnitStatus, Vfs,
-    apply_field_edits, discover_components, export_skills,
+    ExportRequest, ExportUnit, HookFileSpec, LinkIndex, MarketplaceConfig, MarketplaceFields,
+    MemVfs, PluginOverrides, RootFile, StaleKind, UnitStatus, Vfs, discover_components,
+    export_skills,
 };
 
 const PLUGIN: &str = "/vault/marketplaces/house/plugins/tools";
@@ -46,7 +46,7 @@ fn an_export_request_builds_from_a_default_config() {
         .assets
         .push(AssetSpec::new("/vault/bin/tool", "bin/tool"));
     request.assets.clear();
-    let report = export_skills(&vfs, &request, &Namespace::bare()).unwrap();
+    let report = export_skills(&vfs, &request).unwrap();
     assert!(report.changed);
     assert!(vfs.exists(Path::new("/market/.claude-plugin/marketplace.json")));
 }
@@ -94,16 +94,6 @@ fn the_settings_types_build_from_default() {
 }
 
 #[test]
-fn a_field_edit_takes_a_reexported_field_value() {
-    let edits = [FieldEdit::set(
-        "description",
-        FieldValue::Str("Lint.".to_owned()),
-    )];
-    let note = apply_field_edits("---\nname: lint\n---\nBody.\n", &edits).unwrap();
-    assert_eq!(note, "---\nname: lint\ndescription: Lint.\n---\nBody.\n");
-}
-
-#[test]
 fn a_compile_source_takes_a_reexported_link_index() {
     let note = "marketplaces/house/plugins/tools/skills/a/a.md";
     let index = LinkIndex::build(&[note.to_owned()]);
@@ -116,7 +106,7 @@ fn a_compile_source_takes_a_reexported_link_index() {
 #[test]
 fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
     let vfs = vault();
-    let scan = discover_components(&vfs, Path::new("/vault"), &Namespace::bare()).unwrap();
+    let scan = discover_components(&vfs, Path::new("/vault")).unwrap();
     let component = scan.components.iter().find(|c| c.name == "review").unwrap();
     assert_eq!(component.plugin.as_deref(), Some("tools"));
     let warning = DiscoveryWarning::new("review.md", "missing-version", "detail");
@@ -125,7 +115,7 @@ fn the_output_types_read_by_field_and_their_enums_match_with_a_wildcard() {
     let mut config = MarketplaceConfig::default();
     config.name = Some("house".to_owned());
     let request = ExportRequest::new("/vault", "/market", config);
-    let report = export_skills(&vfs, &request, &Namespace::bare()).unwrap();
+    let report = export_skills(&vfs, &request).unwrap();
     assert_eq!(report.mode, ExportMode::Build);
     for unit in &report.units {
         let status = match unit {
@@ -181,7 +171,7 @@ fn a_skipped_note_reads_by_field() {
         "---\ndescription: [\n---\n",
     )
     .unwrap();
-    let scan = discover_components(&vfs, Path::new("/vault"), &Namespace::bare()).unwrap();
+    let scan = discover_components(&vfs, Path::new("/vault")).unwrap();
     assert!(scan.components.iter().all(|c| c.name != "review"));
     assert_eq!(
         scan.skipped[0].path,

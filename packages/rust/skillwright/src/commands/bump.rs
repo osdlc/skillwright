@@ -25,10 +25,9 @@ use tradecraft_core::harness::with_plugin_format;
 use tradecraft_core::layout::MARKETPLACES_DIR;
 use tradecraft_core::{
     BumpLevel, DiscoveredComponent, EntityKind, ExportMode, ExportRequest, ExportUnit,
-    MarketplaceConfig, Namespace, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs,
-    apply_field_edits, check_packs, discover_components, export_skills, is_vault_root,
-    next_version, ns_field_edits, ns_field_label, owned_paths, packs_path, parse_semver,
-    plugin_manifest_path, read_ns_field,
+    MarketplaceConfig, NativeVfs, PatchScheme, ROOT_FILE, UnitStatus, Vfs, check_packs,
+    discover_components, export_skills, is_vault_root, next_version, owned_paths, packs_path,
+    parse_semver, plugin_manifest_path, read_version, set_version,
 };
 
 use crate::ctx::CommandContext;
@@ -49,7 +48,7 @@ pub struct BumpFlags {
     pub marketplace: Option<String>,
     /// How much of the version to bump.
     pub level: BumpLevel,
-    /// The global `--vault` and `--namespace` flags.
+    /// The global `--vault` flag.
     pub common: CommonFlags,
     /// `--json`: print the report as one JSON document.
     pub json: bool,
@@ -155,22 +154,17 @@ struct Planned {
     rel: String,
     entry_path: PathBuf,
     source: String,
-    /// The version key as the note spells it.
-    key: String,
     current: String,
     /// Whether the note carries a version key at all.
     versioned: bool,
     /// `None`: the current version is not plain semver.
     new: Option<String>,
-    /// How this note spells its keys.
-    namespace: Namespace,
 }
 
 /// A note that holds a plugin's version.
 struct VersionNote {
     path: PathBuf,
     rel: String,
-    namespace: Namespace,
 }
 
 fn plan_bump(
@@ -179,17 +173,10 @@ fn plan_bump(
     scheme: PatchScheme,
     now: u64,
 ) -> Result<Planned, String> {
-    let VersionNote {
-        path,
-        rel,
-        namespace,
-    } = note;
+    let VersionNote { path, rel } = note;
     let bytes = NativeVfs.read_file(&path).map_err(|e| e.to_string())?;
     let source = String::from_utf8(bytes).map_err(|e| format!("{rel} is not valid UTF-8: {e}"))?;
-    // Either shape the note writes it in: flat `version`, or `version`
-    // inside a nested `sw:` block. Messages name the key as the note spells it.
-    let key = ns_field_label(&source, &namespace, "version").map_err(|e| e.to_string())?;
-    let found = read_ns_field(&source, &namespace, "version").map_err(|e| e.to_string())?;
+    let found = read_version(&source).map_err(|e| e.to_string())?;
     let versioned = found.is_some();
     // No version key in either shape is not a refusal — the core's stated
     // default is what a bump starts from.
@@ -199,22 +186,14 @@ fn plan_bump(
         rel,
         entry_path: path,
         source,
-        key,
         current,
         versioned,
         new,
-        namespace,
     })
 }
 
 fn write_bump(planned: &Planned, new: &str) -> Result<(), String> {
-    let edited = ns_field_edits(
-        &planned.source,
-        &planned.namespace,
-        &[("version", Some(yaml_splice::Value::Str(new.to_owned())))],
-    )
-    .and_then(|edits| apply_field_edits(&planned.source, &edits))
-    .map_err(|e| e.to_string())?;
+    let edited = set_version(&planned.source, new).map_err(|e| e.to_string())?;
     NativeVfs
         .write_file(&planned.entry_path, edited.as_bytes())
         .map_err(|e| e.to_string())
@@ -231,7 +210,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         Ok(run) => run,
         Err(code) => return code,
     };
-    let scan = match discover_components(&NativeVfs, &run.vault, run.core_namespace()) {
+    let scan = match discover_components(&NativeVfs, &run.vault) {
         Ok(scan) => scan,
         Err(err) => {
             return blocked(
@@ -264,7 +243,7 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
         .unwrap_or_default();
 
     match (&flags.plugin, &flags.changed_since) {
-        (Some(plugin), None) => match plugin_note(&plugins, plugin, &run) {
+        (Some(plugin), None) => match plugin_note(&plugins, plugin) {
             Ok(note) => run_one(flags, ctx, plugin, note, scheme),
             Err(message) => usage_error(ctx.err, &message),
         },
@@ -273,8 +252,6 @@ pub fn run_bump(flags: &BumpFlags, ctx: &mut CommandContext<'_>) -> i32 {
                 let note = VersionNote {
                     path: market.note.clone(),
                     rel: vault_relative(&run.vault, &market.note),
-                    // A marketplace note's keys are bare.
-                    namespace: Namespace::bare(),
                 };
                 run_one(flags, ctx, &market.name, note, scheme)
             }
@@ -299,11 +276,7 @@ fn vault_relative(root: &Path, path: &Path) -> String {
 }
 
 /// The note of the plugin `name`, or why there is none to bump.
-fn plugin_note(
-    plugins: &[&DiscoveredComponent],
-    name: &str,
-    run: &ResolvedRun,
-) -> Result<VersionNote, String> {
+fn plugin_note(plugins: &[&DiscoveredComponent], name: &str) -> Result<VersionNote, String> {
     let matches: Vec<&&DiscoveredComponent> = plugins.iter().filter(|c| c.name == name).collect();
     match matches.as_slice() {
         [] => {
@@ -319,7 +292,7 @@ fn plugin_note(
             };
             Err(format!("no plugin `{name}` in this vault: it holds {held}"))
         }
-        [one] => Ok(plugin_version_note(one, run)),
+        [one] => Ok(plugin_version_note(one)),
         many => {
             let paths: Vec<&str> = many
                 .iter()
@@ -334,11 +307,10 @@ fn plugin_note(
 }
 
 /// The version note of the plugin note `component`.
-fn plugin_version_note(component: &DiscoveredComponent, run: &ResolvedRun) -> VersionNote {
+fn plugin_version_note(component: &DiscoveredComponent) -> VersionNote {
     VersionNote {
         path: component.entry_path.clone(),
         rel: component.vault_relative_path.clone(),
-        namespace: run.core_namespace().clone(),
     }
 }
 
@@ -357,7 +329,7 @@ fn run_one(
         Err(err) => return bump_failed(ctx.err, err),
     };
     let Some(new) = planned.new.clone() else {
-        let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
+        let reason = format!("non-semver: `version` reads `{}`", planned.current);
         let row = Row::refused(plugin, &planned.rel, &planned.current, reason).single();
         if let Err(code) = write_row(ctx, flags.json, &row) {
             return code;
@@ -381,8 +353,8 @@ fn run_one(
 
     if !flags.yes {
         let plan = vec![format!(
-            "{}  {} {} -> {new}",
-            planned.rel, planned.key, planned.current
+            "{}  version {} -> {new}",
+            planned.rel, planned.current
         )];
         let gate = confirm_write("bump", &plan, ctx.err);
         if gate != EXIT_OK {
@@ -526,7 +498,7 @@ fn run_changed(
             ),
         );
     }
-    let baseline = match Baseline::resolve(since, flags, run, &current, ctx) {
+    let baseline = match Baseline::resolve(since, run, &current, ctx) {
         Ok(baseline) => baseline,
         Err(code) => return code,
     };
@@ -562,7 +534,7 @@ fn run_changed(
                 ),
             );
         }
-        let report = match export_skills(&NativeVfs, &request, run.core_namespace()) {
+        let report = match export_skills(&NativeVfs, &request) {
             Ok(report) => report,
             Err(err) => {
                 return blocked(
@@ -606,8 +578,7 @@ fn run_changed(
                 rows.push(row);
                 continue;
             };
-            let planned = match plan_bump(plugin_version_note(note, run), flags.level, scheme, now)
-            {
+            let planned = match plan_bump(plugin_version_note(note), flags.level, scheme, now) {
                 Ok(planned) => planned,
                 Err(err) => return bump_failed(ctx.err, err),
             };
@@ -628,7 +599,7 @@ fn run_changed(
                 row.explain = Some(skip.text());
                 row
             } else if planned.new.is_none() {
-                let reason = format!("non-semver: `{}` reads `{}`", planned.key, planned.current);
+                let reason = format!("non-semver: `version` reads `{}`", planned.current);
                 Row::refused(name, &planned.rel, &planned.current, reason)
             } else {
                 Row::bump(name, planned)
@@ -645,9 +616,8 @@ fn run_changed(
             .filter_map(|r| {
                 let p = r.planned.as_ref()?;
                 Some(format!(
-                    "{}  {} {} -> {}",
+                    "{}  version {} -> {}",
                     p.rel,
-                    p.key,
                     p.current,
                     p.new.as_deref()?
                 ))
@@ -813,8 +783,7 @@ impl Row {
         };
         match (self.status, &self.new, &self.reason) {
             ("written", Some(new), _) => {
-                let key = self.planned.as_ref().map_or("version", |p| p.key.as_str());
-                format!("{label}  written · {key} {} -> {new}", self.current)
+                format!("{label}  written · version {} -> {new}", self.current)
             }
             ("dry-run", Some(new), _) => format!("{label}  {} \u{2192} {new}", self.current),
             (status, _, Some(reason)) => match self.explain {
@@ -869,7 +838,6 @@ impl Baseline {
     /// A directory holds one marketplace, so a run over several is refused.
     fn resolve(
         since: &str,
-        flags: &BumpFlags,
         run: &ResolvedRun,
         current: &MarketplaceConfig,
         ctx: &mut CommandContext<'_>,
@@ -886,7 +854,7 @@ impl Baseline {
             }
             return Ok(Baseline::Dir(as_dir));
         }
-        BuiltRef::build(since, flags, run, current, ctx).map(Baseline::Built)
+        BuiltRef::build(since, run, current, ctx).map(Baseline::Built)
     }
 }
 
@@ -915,7 +883,6 @@ struct BuiltRef {
 impl BuiltRef {
     fn build(
         since: &str,
-        flags: &BumpFlags,
         run: &ResolvedRun,
         current: &MarketplaceConfig,
         ctx: &mut CommandContext<'_>,
@@ -1010,14 +977,10 @@ impl BuiltRef {
                 ),
             );
         }
-        let common = CommonFlags {
-            vault: None,
-            namespace: flags.common.namespace.clone(),
-        };
         // The ref's refusal names the temporary checkout, so it is said as
         // this flag's failure.
         let mut said: Vec<u8> = Vec::new();
-        let base_run = match resolve_at(&base_root, &common, None, &mut said) {
+        let base_run = match resolve_at(&base_root, None, &mut said) {
             Ok(base_run) => base_run,
             Err(_) => {
                 let said = String::from_utf8_lossy(&said);
@@ -1042,7 +1005,7 @@ impl BuiltRef {
                 .loaded
                 .export_request(base_market, ExportMode::Build);
             request.out_root = out.clone();
-            if let Err(err) = export_skills(&NativeVfs, &request, base_run.core_namespace()) {
+            if let Err(err) = export_skills(&NativeVfs, &request) {
                 return fail(
                     ctx,
                     format!(

@@ -39,9 +39,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tradecraft-core = { workspace = true }
 typed-git = { workspace = true }
-# `bump` sets `version` with `FieldEdit::set`, whose value is a
-# `yaml_splice::Value`.
-yaml-splice = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

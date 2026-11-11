@@ -8,31 +8,16 @@
 //!
 //! # The strip, again
 //!
-//! The namespace spec put the strip in two places, and
-//! this is the second. [`crate::vault::read_vault_skill`] lifts our namespace
-//! out of a note's frontmatter before a [`crate::SkillContent`] exists, which is what
-//! makes the strip structural for anything read from a vault. But
-//! `SkillContent` is a public type with a public `annotations` map, so a
-//! caller can assemble one by any route it likes — from a store or a test — and `annotations` is emitted verbatim by
-//! `agent-adapt`'s renderer.
-//!
-//! So `to_adapt_skill` applies the same predicate at the emit seam every
-//! projection passes through. It is one `retain` over a map that is normally
-//! empty of our keys, against a class of bug that writes files: our
-//! configuration, published into somebody else's skill directory, where the
-//! reference validator rejects it as an unknown top-level key.
-//!
-//! **The same predicate means the same [`crate::Namespace`]**, which is why
-//! [`project_skill`] takes one rather than assuming a prefix. A vault
-//! configured to `x-` and emitted under `sw-` would publish every `x-` key its
-//! author wrote, and strip an `sw-` annotation that was never ours to touch —
-//! the strip failing in both directions at once.
+//! [`crate::vault::read_vault_skill`] lifts skillwright's keys out of a
+//! note's frontmatter before a [`crate::SkillContent`] exists. But
+//! `SkillContent` is a public type with a public `annotations` map, and
+//! `agent-adapt` emits `annotations` verbatim, so `skill_metadata` drops
+//! skillwright's keys again at the emit seam.
 
 use agent_adapt::RuntimeId;
 
 use crate::content::SkillProjection;
 use crate::error::CoreError;
-use crate::namespace::Namespace;
 
 /// One file projection wants on disk, relative to a destination root.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,18 +37,14 @@ pub struct ProjectedFile {
 /// destination pointing at a target this build cannot render is a
 /// configuration error, and skipping would under-publish silently.
 ///
-/// `ns` is the namespace stripped from `annotations` on the way out, and it
-/// must be the one the snapshot was read under. See the module documentation.
-///
 /// Carries no per-target override block: the callers that hold one publish
 /// through [`project_skill_reporting`], which takes the destination to look
 /// one up by.
 pub fn project_skill(
     snapshot: &SkillProjection,
     targets: &[String],
-    ns: &Namespace,
 ) -> Result<Vec<ProjectedFile>, CoreError> {
-    project_skill_reporting(snapshot, targets, ns, None).map(|(files, _)| files)
+    project_skill_reporting(snapshot, targets, None).map(|(files, _)| files)
 }
 
 /// One harness block key that changed nothing at the destination it was
@@ -106,14 +87,13 @@ impl std::fmt::Display for RedundantOverride {
 pub fn project_skill_reporting(
     snapshot: &SkillProjection,
     targets: &[String],
-    ns: &Namespace,
     overrides_target: Option<&str>,
 ) -> Result<(Vec<ProjectedFile>, Vec<RedundantOverride>), CoreError> {
     let mut out = Vec::new();
     let mut redundant = Vec::new();
     for target in targets {
         let id = parse_runtime_target(target)?;
-        let skill = to_adapt_skill(snapshot, ns, overrides_target);
+        let skill = to_adapt_skill(snapshot, overrides_target);
         let runtime = agent_adapt::runtimes::skill_renderer_for(id)
             .ok_or_else(|| CoreError::Projection(format!("{target}: runtime renders no skills")))?;
         let files = runtime
@@ -122,7 +102,7 @@ pub fn project_skill_reporting(
         // The renderer applies the block; this asks the same render what it
         // changed. `render_skill_md` and its reporting sibling produce the
         // same bytes, so the report cannot describe a different file.
-        let keys = redundant_override_keys(snapshot, target, ns, overrides_target)?;
+        let keys = redundant_override_keys(snapshot, target, overrides_target)?;
         redundant.extend(keys.into_iter().map(|key| RedundantOverride {
             target: overrides_target.unwrap_or(target).to_owned(),
             key,
@@ -156,11 +136,10 @@ pub fn project_skill_reporting(
 pub fn redundant_override_keys(
     snapshot: &SkillProjection,
     target: &str,
-    ns: &Namespace,
     overrides_target: Option<&str>,
 ) -> Result<Vec<String>, CoreError> {
     let id = parse_runtime_target(target)?;
-    let skill = to_adapt_skill(snapshot, ns, overrides_target);
+    let skill = to_adapt_skill(snapshot, overrides_target);
     if skill.overrides.is_empty() {
         return Ok(Vec::new());
     }
@@ -241,11 +220,6 @@ pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError>
 /// skill path does. For Claude Code the tool list is written as `tools: A, B`,
 /// the key its agent format reads.
 ///
-/// A key the namespace claims is dropped like every key of ours. A stem may
-/// not claim a key in [`Namespace::PUBLISHED_KEYS`], but it may still equal a
-/// foreign key such as `color` or `permissionMode`, and then that key is
-/// dropped too.
-///
 /// # Errors
 ///
 /// [`CoreError::Refused`] · `no-renderer` for a target with no agent layout,
@@ -256,13 +230,12 @@ pub(crate) fn parse_runtime_target(target: &str) -> Result<RuntimeId, CoreError>
 pub fn project_agent(
     snapshot: &SkillProjection,
     targets: &[String],
-    ns: &Namespace,
 ) -> Result<Vec<ProjectedFile>, CoreError> {
     let ids = targets
         .iter()
         .map(|target| parse_runtime_target(target))
         .collect::<Result<Vec<_>, _>>()?;
-    let (agent, carried) = to_adapt_agent(snapshot, ns)?;
+    let (agent, carried) = to_adapt_agent(snapshot)?;
     let mut out = Vec::new();
     for (target, id) in targets.iter().zip(ids) {
         let runtime = agent_adapt::runtimes::agent_renderer_for(id).ok_or_else(|| {
@@ -325,13 +298,12 @@ pub fn project_agent(
 pub fn project_command(
     snapshot: &SkillProjection,
     targets: &[String],
-    ns: &Namespace,
     overrides_target: Option<&str>,
 ) -> Result<Vec<ProjectedFile>, CoreError> {
     let mut out = Vec::new();
     for target in targets {
         let id = parse_runtime_target(target)?;
-        let command = to_adapt_command(snapshot, ns, id, overrides_target)?;
+        let command = to_adapt_command(snapshot, id, overrides_target)?;
         let runtime = agent_adapt::runtimes::command_renderer_for(id).ok_or_else(|| {
             CoreError::refused(
                 "no-renderer",
@@ -604,7 +576,6 @@ fn hook_int(
 /// reason: the renderer joins a slug into a filename without slugifying it.
 fn to_adapt_command(
     snapshot: &SkillProjection,
-    ns: &Namespace,
     id: RuntimeId,
     overrides_target: Option<&str>,
 ) -> Result<agent_adapt::Command, CoreError> {
@@ -623,7 +594,7 @@ fn to_adapt_command(
     command.tools = content.allowed_tools.clone();
     command.model = content.model_override.clone();
     command.body = content.body.clone();
-    command.overrides = unplaced_keys(content, ns)
+    command.overrides = unplaced_keys(content)
         .into_iter()
         .filter(|(key, _)| !omitted_by(id, key))
         .collect();
@@ -664,7 +635,6 @@ fn to_adapt_command(
 /// "no restriction", so publishing it would let the agent use every tool.
 fn to_adapt_agent(
     snapshot: &SkillProjection,
-    ns: &Namespace,
 ) -> Result<
     (
         agent_adapt::Agent,
@@ -673,7 +643,7 @@ fn to_adapt_agent(
     CoreError,
 > {
     let content = &snapshot.content;
-    let mut carried = unplaced_keys(content, ns);
+    let mut carried = unplaced_keys(content);
     // Modeled on a command, not on an agent.
     if let Some(hint) = &content.argument_hint {
         carried.insert("argument-hint".into(), hint.clone().into());
@@ -740,12 +710,10 @@ fn to_adapt_agent(
 
 /// What a note sets that neither a command nor an agent has a field for:
 /// the spec's optional keys, `context`, `user-invocable: false`,
-/// `disable-model-invocation: true`, and every foreign key except our
-/// namespace. Carried verbatim, as the skill path carries its annotations,
+/// `disable-model-invocation: true`, and every foreign key. Carried verbatim, as the skill path carries its annotations,
 /// because a key the author wrote for publication must not vanish at it.
 fn unplaced_keys(
     content: &crate::content::SkillContent,
-    ns: &Namespace,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut keys = serde_json::Map::new();
     if let Some(license) = &content.license {
@@ -775,7 +743,6 @@ fn unplaced_keys(
         content
             .annotations
             .iter()
-            .filter(|(key, _)| !ns.is_ours(key))
             .map(|(k, v)| (k.clone(), v.clone())),
     );
     keys
@@ -903,7 +870,6 @@ fn to_splice_value(value: &serde_json::Value) -> yaml_splice::Value {
 
 fn to_adapt_skill(
     snapshot: &SkillProjection,
-    ns: &Namespace,
     overrides_target: Option<&str>,
 ) -> agent_adapt::Skill {
     let content = &snapshot.content;
@@ -942,7 +908,7 @@ fn to_adapt_skill(
     // Through the override, not `Skill::annotations`: the renderer writes
     // annotations as JSON strings, and a nested value must stay YAML. A
     // harness block's `metadata` merges over the note's own, key by key.
-    let mut metadata = skill_metadata(content, ns);
+    let mut metadata = skill_metadata(content);
     if let Some(serde_json::Value::Object(block)) = skill.overrides.get("metadata") {
         metadata.extend(block.clone());
     }
@@ -959,12 +925,8 @@ fn to_adapt_skill(
 /// route they arrived by.
 pub(crate) fn skill_metadata(
     content: &crate::content::SkillContent,
-    ns: &Namespace,
 ) -> serde_json::Map<String, serde_json::Value> {
-    let ours = |key: &str| {
-        ns.is_ours(key)
-            || (ns.is_bare() && crate::keys::is_owned(crate::frontmatter::EntityKind::Skill, key))
-    };
+    let ours = |key: &str| crate::keys::is_owned(crate::frontmatter::EntityKind::Skill, key);
     let mut metadata = serde_json::Map::new();
     for (key, value) in content.annotations.iter().filter(|(key, _)| !ours(key)) {
         // A nested `metadata:` map is carried as an annotation of that name.
@@ -994,12 +956,6 @@ fn forward_slashed(path: &std::path::Path) -> String {
 mod tests {
     use super::*;
     use crate::content::SkillContent;
-
-    /// The default namespace — the strip every test below emits under, except
-    /// the one that configures a different one.
-    fn sw() -> Namespace {
-        Namespace::sw()
-    }
 
     fn content(name: &str) -> SkillContent {
         SkillContent {
@@ -1146,7 +1102,7 @@ mod tests {
             ("amp", ".agents/skills/alpha/SKILL.md"),
         ];
         for (target, expected) in cases {
-            let files = project_skill(&snap, &[target.to_owned()], &sw()).unwrap();
+            let files = project_skill(&snap, &[target.to_owned()]).unwrap();
             assert_eq!(files.len(), 1, "{target}");
             assert_eq!(files[0].relative_path, expected, "{target}");
         }
@@ -1161,7 +1117,7 @@ mod tests {
                 ("helper.ts".to_owned(), b"export {}\n".to_vec(), false),
             ],
         );
-        let files = project_skill(&snap, &["claude-code".to_owned()], &sw()).unwrap();
+        let files = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
         let paths: Vec<_> = files.iter().map(|f| f.relative_path.as_str()).collect();
         assert_eq!(
             paths,
@@ -1189,7 +1145,7 @@ mod tests {
             content: c,
             resources: vec![],
         };
-        let files = project_skill(&snap, &["claude-code".to_owned()], &sw()).unwrap();
+        let files = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         let close = text.find("\n---\n").expect("closing fence");
@@ -1215,50 +1171,17 @@ mod tests {
             "sorted key order"
         );
         // Rendering twice with the same input is byte-stable.
-        let again = project_skill(&snap, &["claude-code".to_owned()], &sw()).unwrap();
+        let again = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
         assert_eq!(files[0].content, again[0].content);
     }
 
     #[test]
-    fn our_namespace_is_stripped_at_emit_whatever_route_it_arrived_by() {
-        // The second layer of the strip. `read_vault_skill` never puts an
-        // `sw-` key in `annotations`, but `SkillContent` is public and a
-        // caller can build one from anywhere — so the emit seam checks too.
+    fn our_keys_are_stripped_at_emit_whatever_route_they_arrived_by() {
+        // `read_vault_skill` never puts one of our keys in `annotations`, but
+        // `SkillContent` is public and a caller can build one from anywhere,
+        // so the emit seam checks too. A prefixed key is not ours.
         let mut c = content("alpha");
-        for key in [
-            "sw-kind",
-            "sw-targets",
-            "sw-source-hash",
-            "sw-invented-last-week",
-            "sw",
-        ] {
-            c.annotations
-                .insert(key.into(), serde_json::Value::from("ours"));
-        }
-        c.annotations
-            .insert("apex".into(), serde_json::Value::from("theirs"));
-        let snap = SkillProjection {
-            content: c,
-            resources: vec![],
-        };
-
-        let files = project_skill(&snap, &["claude-code".to_owned()], &sw()).unwrap();
-        let text = String::from_utf8(files[0].content.clone()).unwrap();
-
-        assert!(!text.contains("ours"), "{text}");
-        // A near-miss outside the namespace is still the user's key.
-        assert!(text.contains("apex: theirs"), "{text}");
-    }
-
-    #[test]
-    fn the_strip_follows_the_configured_namespace_in_both_directions() {
-        // A vault that configured `x`: its own keys go, and `sw-` is a key
-        // some other tool owns — carried, exactly like `apex` is under the
-        // default. Both halves matter. Stripping `sw-` here would delete a
-        // key this vault never claimed; keeping `x-` would publish the
-        // author's configuration into somebody else's skill directory.
-        let mut c = content("alpha");
-        for key in ["x-kind", "x-source-hash", "x-invented-last-week", "x"] {
+        for key in ["targets", "arguments", "claude"] {
             c.annotations
                 .insert(key.into(), serde_json::Value::from("ours"));
         }
@@ -1269,17 +1192,11 @@ mod tests {
             resources: vec![],
         };
 
-        let files = project_skill(
-            &snap,
-            &["claude-code".to_owned()],
-            &Namespace::new("x").unwrap(),
-        )
-        .unwrap();
+        let files = project_skill(&snap, &["claude-code".to_owned()]).unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         assert!(!text.contains("ours"), "{text}");
-        assert!(text.contains("sw-kind"), "{text}");
-        assert!(text.contains("theirs"), "{text}");
+        assert!(text.contains("sw-kind: theirs"), "{text}");
     }
 
     #[test]
@@ -1296,7 +1213,7 @@ mod tests {
             "C:\\Windows\\evil.md",
         ] {
             let snap = snapshot("alpha", vec![(escape.to_owned(), b"x".to_vec(), true)]);
-            let err = project_skill(&snap, &["claude-code".to_owned()], &sw()).unwrap_err();
+            let err = project_skill(&snap, &["claude-code".to_owned()]).unwrap_err();
             let message = err.to_string();
 
             assert!(matches!(err, CoreError::Refused(_)), "{escape}: {message}");
@@ -1315,26 +1232,22 @@ mod tests {
         // A name with no legal slug is refused by the renderer too, and it is
         // not a path escape — so the `unsafe-path` mapping must not swallow it.
         let snap = snapshot("!!!", vec![]);
-        let err = project_skill(&snap, &["claude-code".to_owned()], &sw()).unwrap_err();
+        let err = project_skill(&snap, &["claude-code".to_owned()]).unwrap_err();
         assert!(matches!(err, CoreError::Projection(_)), "{err}");
     }
 
     #[test]
     fn unknown_target_is_refused_not_skipped() {
         let snap = snapshot("alpha", vec![]);
-        let err = project_skill(&snap, &["windsurf".to_owned()], &sw()).unwrap_err();
+        let err = project_skill(&snap, &["windsurf".to_owned()]).unwrap_err();
         assert!(matches!(err, CoreError::Projection(_)));
     }
 
     #[test]
     fn multi_target_projection_renders_every_target_once() {
         let snap = snapshot("alpha", vec![("h.ts".to_owned(), b"x".to_vec(), false)]);
-        let files = project_skill(
-            &snap,
-            &["claude-code".to_owned(), "antigravity".to_owned()],
-            &sw(),
-        )
-        .unwrap();
+        let files =
+            project_skill(&snap, &["claude-code".to_owned(), "antigravity".to_owned()]).unwrap();
         assert_eq!(files.len(), 4);
         assert!(
             files
@@ -1355,7 +1268,7 @@ mod tests {
             ("github-copilot", ".github/prompts/ship.prompt.md"),
         ];
         for (target, expected) in cases {
-            let files = project_command(&snap, &[target.to_owned()], &sw(), None).unwrap();
+            let files = project_command(&snap, &[target.to_owned()], None).unwrap();
             assert_eq!(files.len(), 1, "{target}");
             assert_eq!(files[0].relative_path, expected, "{target}");
         }
@@ -1365,7 +1278,7 @@ mod tests {
     fn a_command_has_no_renderer_for_amp_or_antigravity() {
         let snap = snapshot("ship", vec![]);
         for target in ["amp", "antigravity"] {
-            let err = project_command(&snap, &[target.to_owned()], &sw(), None).unwrap_err();
+            let err = project_command(&snap, &[target.to_owned()], None).unwrap_err();
             assert!(matches!(err, CoreError::Refused(_)), "{target}: {err}");
             assert!(err.to_string().contains("no-renderer"), "{target}: {err}");
         }
@@ -1374,9 +1287,9 @@ mod tests {
     #[test]
     fn github_copilot_renders_no_skills_or_agents_yet() {
         let snap = snapshot("ship", vec![]);
-        let skill_err = project_skill(&snap, &["github-copilot".to_owned()], &sw()).unwrap_err();
+        let skill_err = project_skill(&snap, &["github-copilot".to_owned()]).unwrap_err();
         assert!(matches!(skill_err, CoreError::Projection(_)), "{skill_err}");
-        let agent_err = project_agent(&snap, &["github-copilot".to_owned()], &sw()).unwrap_err();
+        let agent_err = project_agent(&snap, &["github-copilot".to_owned()]).unwrap_err();
         assert!(matches!(agent_err, CoreError::Refused(_)), "{agent_err}");
     }
 
@@ -1403,7 +1316,7 @@ mod tests {
     #[test]
     fn a_claude_code_agent_lists_its_tools_under_the_key_claude_code_reads() {
         let snap = snapshot("reviewer", vec![]);
-        let text = only_file(&project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap());
+        let text = only_file(&project_agent(&snap, &["claude-code".to_owned()]).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(fm.get("tools"), Some(&serde_json::json!("Read")), "{text}");
         assert!(!fm.contains_key("allowed-tools"), "{text}");
@@ -1418,10 +1331,9 @@ mod tests {
         snap.content.annotations = keys(serde_json::json!({
             "tools": "Read, Grep",
             "temperature": 0.2,
-            "sw-kind": "agent",
         }));
 
-        let text = only_file(&project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap());
+        let text = only_file(&project_agent(&snap, &["claude-code".to_owned()]).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(
             fm.get("tools"),
@@ -1434,7 +1346,6 @@ mod tests {
             "{text}"
         );
         assert!(!fm.contains_key("allowed-tools"), "{text}");
-        assert!(!fm.contains_key("sw-kind"), "{text}");
     }
 
     /// Two tool lists for one agent: neither is silently the one that wins.
@@ -1444,7 +1355,7 @@ mod tests {
         snap.content
             .annotations
             .insert("tools".into(), serde_json::json!("Grep"));
-        let err = project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap_err();
+        let err = project_agent(&snap, &["claude-code".to_owned()]).unwrap_err();
         assert!(matches!(err, CoreError::Refused(_)), "{err}");
         assert!(err.to_string().contains("reviewer"), "{err}");
     }
@@ -1457,7 +1368,7 @@ mod tests {
         for odd in [serde_json::json!({"write": false}), serde_json::json!(3)] {
             let mut snap = snapshot("reviewer", vec![]);
             snap.content.annotations.insert("tools".into(), odd.clone());
-            let err = project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap_err();
+            let err = project_agent(&snap, &["claude-code".to_owned()]).unwrap_err();
             assert!(err.to_string().contains("conflicting-keys"), "{odd}: {err}");
         }
     }
@@ -1479,7 +1390,7 @@ mod tests {
             snap.content
                 .annotations
                 .insert("tools".into(), empty.clone());
-            let err = project_agent(&snap, &["claude-code".to_owned()], &sw()).unwrap_err();
+            let err = project_agent(&snap, &["claude-code".to_owned()]).unwrap_err();
             assert!(matches!(err, CoreError::Refused(_)), "{empty}: {err}");
             assert!(
                 err.to_string().contains("malformed-tools"),
@@ -1496,7 +1407,7 @@ mod tests {
         snap.content.allowed_tools = Vec::new();
         let map = serde_json::json!({"write": false});
         snap.content.annotations.insert("tools".into(), map.clone());
-        let text = only_file(&project_agent(&snap, &["opencode".to_owned()], &sw()).unwrap());
+        let text = only_file(&project_agent(&snap, &["opencode".to_owned()]).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(fm.get("tools"), Some(&map), "{text}");
         assert!(!fm.contains_key("allowed-tools"), "{text}");
@@ -1514,12 +1425,8 @@ mod tests {
             let mut snap = snapshot("reviewer", vec![]);
             snap.content.allowed_tools = Vec::new();
             snap.content.annotations.insert("tools".into(), odd.clone());
-            let err = project_agent(
-                &snap,
-                &["opencode".to_owned(), "claude-code".to_owned()],
-                &sw(),
-            )
-            .unwrap_err();
+            let err = project_agent(&snap, &["opencode".to_owned(), "claude-code".to_owned()])
+                .unwrap_err();
             assert!(err.to_string().contains("malformed-tools"), "{odd}: {err}");
         }
     }
@@ -1533,7 +1440,7 @@ mod tests {
         snap.content
             .annotations
             .insert("tools".into(), serde_json::json!("Read, Grep"));
-        let text = only_file(&project_agent(&snap, &["opencode".to_owned()], &sw()).unwrap());
+        let text = only_file(&project_agent(&snap, &["opencode".to_owned()]).unwrap());
         let fm = frontmatter(&text);
         assert!(!fm.contains_key("tools"), "{text}");
         assert!(fm.contains_key("allowed-tools"), "{text}");
@@ -1547,12 +1454,8 @@ mod tests {
         snap.content
             .annotations
             .insert("tools".into(), serde_json::json!("Grep"));
-        let err = project_agent(
-            &snap,
-            &["claude-code".to_owned(), "nowhere".to_owned()],
-            &sw(),
-        )
-        .unwrap_err();
+        let err =
+            project_agent(&snap, &["claude-code".to_owned(), "nowhere".to_owned()]).unwrap_err();
         assert!(matches!(err, CoreError::Projection(_)), "{err}");
         assert!(err.to_string().contains("nowhere"), "{err}");
     }
@@ -1567,8 +1470,7 @@ mod tests {
         snap.content.user_invocable = false;
         snap.content.context_mode = Some("fork".into());
         snap.content.annotations = keys(serde_json::json!({"foo": "bar"}));
-        let text =
-            only_file(&project_command(&snap, &["codex-cli".to_owned()], &sw(), None).unwrap());
+        let text = only_file(&project_command(&snap, &["codex-cli".to_owned()], None).unwrap());
         let fm = frontmatter(&text);
         assert_eq!(fm.get("foo"), Some(&serde_json::json!("bar")), "{text}");
         for key in ["disable-model-invocation", "user-invocable", "context"] {
@@ -1587,7 +1489,6 @@ mod tests {
             "color": "blue",
             "permissionMode": "plan",
             "tags": ["review"],
-            "sw-kind": "agent",
         }));
         snap.content.context_mode = Some("fork".into());
         snap.content.disable_model_invocation = true;
@@ -1604,7 +1505,7 @@ mod tests {
             ("argument-hint", serde_json::json!("<pr>")),
         ];
         for target in ["claude-code", "opencode"] {
-            let text = only_file(&project_agent(&snap, &[target.to_owned()], &sw()).unwrap());
+            let text = only_file(&project_agent(&snap, &[target.to_owned()]).unwrap());
             let fm = frontmatter(&text);
             for (key, value) in &foreign {
                 assert_eq!(fm.get(*key), Some(value), "{target} {key}: {text}");
@@ -1616,7 +1517,6 @@ mod tests {
                     assert!(!fm.contains_key(*key), "{target} {key}: {text}");
                 }
             }
-            assert!(!fm.contains_key("sw-kind"), "{target}: {text}");
             assert!(
                 text.contains("---\n\n# reviewer\n\nInstructions.\n"),
                 "{target}: {text}"
@@ -1632,10 +1532,9 @@ mod tests {
         snap.content.disable_model_invocation = true;
         snap.content.user_invocable = false;
         snap.content.context_mode = Some("fork".into());
-        snap.content.annotations = keys(serde_json::json!({"foo": "bar", "sw-kind": "command"}));
+        snap.content.annotations = keys(serde_json::json!({"foo": "bar"}));
 
-        let text =
-            only_file(&project_command(&snap, &["claude-code".to_owned()], &sw(), None).unwrap());
+        let text = only_file(&project_command(&snap, &["claude-code".to_owned()], None).unwrap());
         let fm = frontmatter(&text);
         for (key, value) in [
             ("disable-model-invocation", serde_json::json!(true)),
@@ -1645,7 +1544,6 @@ mod tests {
         ] {
             assert_eq!(fm.get(key), Some(&value), "{key}: {text}");
         }
-        assert!(!fm.contains_key("sw-kind"), "{text}");
 
         // The author's own override for this destination still has the last
         // word over a carried key.
@@ -1654,13 +1552,7 @@ mod tests {
             keys(serde_json::json!({"foo": "baz"})),
         );
         let text = only_file(
-            &project_command(
-                &snap,
-                &["claude-code".to_owned()],
-                &sw(),
-                Some("claude-code"),
-            )
-            .unwrap(),
+            &project_command(&snap, &["claude-code".to_owned()], Some("claude-code")).unwrap(),
         );
         assert_eq!(
             frontmatter(&text).get("foo"),

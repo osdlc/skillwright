@@ -29,10 +29,10 @@ const DESCRIPTION: &str = "Build a vault of markdown skill notes into plugin mar
 /// The verbs the usage line for a bare `skillwright` prints, in order.
 const VERBS: [&str; 4] = ["init", "build", "check", "bump"];
 
-/// The four globals that mean something to a verb writing nothing.
+/// The three globals that mean something to a verb writing nothing.
 ///
 /// A verb that writes has no separate copy: [`Globals`] flattens this one and
-/// adds the two below it, so the four cannot drift between the two surfaces.
+/// adds the two below it, so the three cannot drift between the two surfaces.
 ///
 /// Each help string is spelled out rather than taken from a doc comment,
 /// because clap strips a doc comment's trailing period and [`root_help`]
@@ -45,12 +45,6 @@ struct ReadOnlyGlobals {
         help = "Vault root: the folder holding `skillwright.md` and `marketplaces/`. Overrides the walk up from the working directory for this run."
     )]
     vault: Option<String>,
-    #[arg(
-        long,
-        value_name = "stem",
-        help = "Frontmatter namespace stem, such as `sw` for `sw-version`. Overrides `build.namespace` for this run."
-    )]
-    namespace: Option<String>,
     #[arg(long, help = "Emit the report on stdout as one JSON document.")]
     json: bool,
     #[arg(long, help = "Drop progress and the tally from stderr.")]
@@ -61,12 +55,11 @@ impl ReadOnlyGlobals {
     fn common(&self) -> CommonFlags {
         CommonFlags {
             vault: self.vault.clone(),
-            namespace: self.namespace.clone(),
         }
     }
 }
 
-/// The six globals a verb that writes declares.
+/// The five globals a verb that writes declares.
 ///
 /// `--dry-run` and `--yes` are here and not in [`ReadOnlyGlobals`] because a
 /// verb that writes nothing has no plan to preview and nothing to accept, so
@@ -82,12 +75,12 @@ struct Globals {
 }
 
 /// The globals in the order the root `--help` lists them.
-const GLOBAL_OPTIONS: [&str; 6] = ["vault", "namespace", "json", "dry-run", "yes", "quiet"];
+const GLOBAL_OPTIONS: [&str; 5] = ["vault", "json", "dry-run", "yes", "quiet"];
 
 /// The globals a verb that never writes does not declare.
 const WRITE_ONLY_GLOBALS: [&str; 2] = ["dry-run", "yes"];
 
-/// What the root `--help` adds under the verb list: the six globals, and
+/// What the root `--help` adds under the verb list: the five globals, and
 /// the three nouns the verbs use.
 ///
 /// The globals are declared per verb, not on the root — see the module note —

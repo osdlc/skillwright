@@ -39,7 +39,7 @@ marketplace, plugin and component is a folder with a note of the same name:
 ```rust
 use std::path::Path;
 use tradecraft_core::{
-    ExportRequest, MarketplaceConfig, MemVfs, Namespace, Vfs, export_skills,
+    ExportRequest, MarketplaceConfig, MemVfs, Vfs, export_skills,
 };
 
 let vfs = MemVfs::new();
@@ -62,7 +62,7 @@ for (path, text) in [
 // The other fields start empty; set any of them on the value.
 let mut request = ExportRequest::new("/vault", "/market", MarketplaceConfig::default());
 request.harnesses.insert("claude".to_owned());
-let report = export_skills(&vfs, &request, &Namespace::default())?;
+let report = export_skills(&vfs, &request)?;
 assert!(report.changed);
 assert!(vfs.exists(Path::new(
     "/market/.claude-plugin/packs/tools/skills/code-review/SKILL.md"
@@ -78,14 +78,14 @@ The CLI does the same steps.
    that holds both `skillwright.md` and `marketplaces/`. For a root the user
    names, `check_vault_root(&vfs, dir)` checks it instead.
 2. `load_vault(&vfs, root, marketplace, home)` checks the layout, parses the
-   root file and checks `build.namespace`, and reads each marketplace's note.
+   root file, and reads each marketplace's note.
    `Some(name)` loads one marketplace. It returns a `LoadedVault`: the root
-   file as `settings`, the `namespace`, `inputs` (the config, harnesses,
+   file as `settings`, `inputs` (the config, harnesses,
    assets and hooks) and one `VaultMarketplace` per marketplace. `home` is the
    home directory; the library reads no environment.
 3. `loaded.export_request(&marketplace, mode)` is the build or check of one
    marketplace into `<root>/dist/<m>/`. Pass it to
-   `export_skills(&vfs, &request, &loaded.namespace)`.
+   `export_skills(&vfs, &request)`.
 
 ```rust
 use std::path::Path;
@@ -113,7 +113,7 @@ let root = find_vault_root(&vfs, Path::new(plugin))?;
 let loaded = load_vault(&vfs, &root, None, Path::new("/home"))?;
 for marketplace in &loaded.marketplaces {
     let request = loaded.export_request(marketplace, ExportMode::Build);
-    let report = export_skills(&vfs, &request, &loaded.namespace)?;
+    let report = export_skills(&vfs, &request)?;
     assert!(report.changed);
 }
 assert!(vfs.exists(Path::new("/vault/dist/house/.claude-plugin/marketplace.json")));
@@ -142,8 +142,7 @@ from the root file.
 
 The `keys` module lists the frontmatter keys this library owns, per kind.
 They are stripped on build, and an unknown key on a skill travels under
-`metadata:`. Keys are bare by default. `Namespace::new("sw")` restores the
-prefixed forms, flat (`sw-version`) or nested (`sw:`).
+`metadata:`. There is no key prefix: `sw-version` is an unknown key.
 
 ## Runtime names
 

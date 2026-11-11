@@ -3331,7 +3331,6 @@ mod tests {
         // destination is the flattened body, the collected references, and
         // the bundle files with their bits — through the same project_skill
         // every publish already uses.
-        use crate::namespace::Namespace;
         use crate::projection::project_skill;
         use crate::vault::read_vault_skill;
 
@@ -3347,8 +3346,7 @@ mod tests {
         vfs.set_executable(Path::new("/vault/skills/demo/scripts/run.sh"), true)
             .unwrap();
 
-        let ns = Namespace::sw();
-        let mut note = read_vault_skill(&vfs, Path::new("/vault/skills/demo.md"), &ns).unwrap();
+        let mut note = read_vault_skill(&vfs, Path::new("/vault/skills/demo.md")).unwrap();
         let name = note.projection.content.name.clone();
         let compile_source = {
             let mut value = CompileSource::new(
@@ -3362,7 +3360,7 @@ mod tests {
         };
         compile_projection(&vfs, &compile_source, &mut note.projection).unwrap();
 
-        let files = project_skill(&note.projection, &["claude-code".to_owned()], &ns).unwrap();
+        let files = project_skill(&note.projection, &["claude-code".to_owned()]).unwrap();
         let by_path: std::collections::BTreeMap<&str, &crate::projection::ProjectedFile> = files
             .iter()
             .map(|f| (f.relative_path.as_str(), f))

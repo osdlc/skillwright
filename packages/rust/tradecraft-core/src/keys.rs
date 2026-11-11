@@ -17,27 +17,20 @@
 //!   for `targets` and the harness blocks.
 //! * **The field reference** the docs publish, generated from [`KEYS`].
 //!
-//! Keys are bare by default. Under a namespace (`build.namespace: sw`), every
-//! [`Owner::Skillwright`] key takes the prefix (`sw-version`), or sits in the
-//! nested block (`sw: {version: …}`). [`Owner::Spec`] keys are never
-//! prefixed.
-//!
 //! The kind comes from the folder a note sits in, never from the note.
 
 use serde_json::Value;
 
 use crate::frontmatter::EntityKind;
 use crate::harness::profile::{CLAUDE, CODEX, CURSOR, PI};
-use crate::namespace::Namespace;
 
 /// Who a key belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Owner {
-    /// The Agent Skills spec's, or a harness's own: never prefixed, and
-    /// published as the harness reads it.
+    /// The Agent Skills spec's, or a harness's own: published as the
+    /// harness reads it.
     Spec,
-    /// skillwright's: prefixed under a namespace, read into the model, and
-    /// stripped at publish.
+    /// skillwright's: read into the model and stripped at publish.
     Skillwright,
 }
 
@@ -72,8 +65,7 @@ pub enum Shape {
     /// Any mapping. Its values are not checked.
     Mapping,
     /// A list of `{name, description, required, values, default}` mappings.
-    /// With no namespace, a string or a list of strings is Claude's own
-    /// `arguments` key, which the field type takes and this shape does not.
+    /// A string or a list of strings is Claude's own `arguments` key, which the field type takes and this shape does not.
     Arguments,
     /// A mapping of one harness's own keys.
     HarnessBlock,
@@ -489,7 +481,7 @@ impl Shape {
             Self::Person => "string or `{name, email, url}`",
             Self::Mapping => "mapping",
             Self::Arguments => {
-                "list of arguments; with no namespace, a string or a list of strings is Claude's own key"
+                "list of arguments; a string or a list of strings is Claude's own key"
             }
             Self::HarnessBlock => "harness block",
         }
@@ -511,8 +503,8 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 
 - **Value** is the kind of value the key takes. [Other accepted forms](#other-accepted-forms) notes what the column cannot say.
 - **Owner** says who the key belongs to:
-  - `skillwright`: skillwright reads the key and removes it when it publishes. With `build.namespace: sw`, the key is written `sw-version`, or inside an `sw:` block. Keys in `skillwright.md` always stay bare.
-  - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written and never prefixed.
+  - `skillwright`: skillwright reads the key and removes it when it publishes.
+  - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written.
 - **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`.
 
 ## What is checked
@@ -598,10 +590,9 @@ pub fn is_owned(kind: EntityKind, key: &str) -> bool {
     lookup(kind, key).is_some_and(|spec| spec.owner == Owner::Skillwright)
 }
 
-/// Whether a note of `kind` reads the bare spelling `key` under `ns`. Under a
-/// namespace nothing reads a bare key of ours: only its prefixed form counts.
-pub fn is_known(kind: EntityKind, key: &str, ns: &Namespace) -> bool {
-    lookup(kind, key).is_some_and(|spec| ns.is_bare() || spec.owner == Owner::Spec)
+/// Whether a note of `kind` reads `key`.
+pub fn is_known(kind: EntityKind, key: &str) -> bool {
+    lookup(kind, key).is_some()
 }
 
 /// Whether a note of `kind` takes `key` from its containers.
@@ -641,17 +632,8 @@ mod tests {
         assert!(is_owned(Plugin, "license"));
         assert!(is_owned(Marketplace, "license"));
         assert!(!is_owned(Skill, "license"));
-        let bare = Namespace::default();
-        assert!(is_known(Skill, "license", &bare));
-        assert!(!is_known(Agent, "license", &bare));
-    }
-
-    #[test]
-    fn under_a_namespace_only_spec_keys_are_known_bare() {
-        let sw = Namespace::sw();
-        assert!(is_known(Skill, "license", &sw));
-        assert!(!is_known(Skill, "targets", &sw));
-        assert!(!is_known(Plugin, "license", &sw));
+        assert!(is_known(Skill, "license"));
+        assert!(!is_known(Agent, "license"));
     }
 
     /// `targets` inherits on every published kind, which the cascade relies
@@ -769,8 +751,7 @@ mod tests {
                 );
             }
         }
-        // Ours is a list of argument objects; with no namespace, Claude's own
-        // `arguments` is a string or a list of strings.
+        // Ours is a list of argument objects; Claude's own `arguments` is a string or a list of strings.
         let ty = Shape::Arguments.field_type().unwrap();
         let words = serde_json::json!("a b");
         assert!(ty.accepts(&words));

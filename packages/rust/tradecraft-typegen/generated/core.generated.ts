@@ -119,9 +119,6 @@ export interface BuildSettings {
   /** Which harnesses to build. Absent means all of them. */
   harnesses?: string[];
 
-  /** The frontmatter namespace stem. */
-  namespace?: string;
-
   /**
    * The plugin's launcher, relative to the plugin's root. See
    * [`MarketplaceConfig::launcher_path`].
@@ -183,12 +180,6 @@ export interface DiscoverRequest {
    * and `marketplaces/`.
    */
   vault_root: string;
-
-  /**
-   * The vault's frontmatter namespace, as a stem. Absent means
-   * [`Namespace::default`].
-   */
-  namespace?: string;
 }
 
 /**
@@ -462,7 +453,7 @@ export interface DiscoveryWarning {
 
 /**
  * What crosses as `request_json` for [`export_skills`]: the core's
- * [`ExportRequest`], flattened, plus the namespace stem this layer adds.
+ * [`ExportRequest`], flattened.
  */
 export interface ExportRequest {
   /**
@@ -520,12 +511,6 @@ export interface ExportRequest {
 
   /** Canonical hooks files; see [`HookFileSpec`]. */
   hooks?: HookFileSpec[];
-
-  /**
-   * The vault's frontmatter namespace, as a stem. Absent means
-   * [`Namespace::default`].
-   */
-  namespace?: string;
 }
 
 /** Whether an export writes the marketplace, or only reports its drift. */
@@ -921,7 +906,7 @@ export type StaleKind = "plugin" | "file" | "empty-dir";
 
 /**
  * What crosses as `request_json` for [`load_marketplace`]: the core's
- * [`LoadRequest`], flattened, plus the namespace stem this layer adds.
+ * [`LoadRequest`], flattened.
  */
 export interface LoadRequest {
   /** Absolute path to the vault. */
@@ -951,12 +936,6 @@ export interface LoadRequest {
 
   /** Canonical hooks files. */
   hooks?: HookFileSpec[];
-
-  /**
-   * The vault's frontmatter namespace, as a stem. Absent means
-   * [`Namespace::default`].
-   */
-  namespace?: string;
 }
 
 /** A vault, loaded as the one marketplace a build renders. */
@@ -1044,7 +1023,7 @@ export interface Component {
 
   /**
    * Its content: name, description, the modeled fields and the
-   * annotations every harness receives, with `sw-arguments` applied for a
+   * annotations every harness receives, with `arguments` applied for a
    * skill or a command. The body is the note's own; the resolved one is
    * [`Self::resolved`]. `None` until the note is read in full, which a load
    * does only for what some requested harness admits.
@@ -1372,6 +1351,5 @@ export interface WasmResponses {
 
 /**
  * Exports with no JSON on either side, so nothing here can drift for them.
- * `validateNamespace(stem: string): void` is the whole signature.
  */
-export type WasmExportsWithoutJson = "validateNamespace" | "canonicalTarget" | "rootFileConfig";
+export type WasmExportsWithoutJson = "canonicalTarget" | "rootFileConfig";

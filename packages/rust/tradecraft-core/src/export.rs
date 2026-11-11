@@ -116,7 +116,6 @@ pub use crate::harness::{CliInvocation, PluginDialect, SkillNaming};
 use crate::harness::{HarnessProfile, HarnessTranslator, translator_for, with_plugin_format};
 use crate::model::load::{LoadRequest, kind_carried, selected_harnesses, targets_admit};
 use crate::model::{Component, Marketplace, load};
-use crate::namespace::Namespace;
 use crate::skill::forward_slashed;
 use crate::source_view::check_pack_location;
 use crate::status::{VersionBumpSuggestion, version_bump_if_unmoved};
@@ -616,9 +615,6 @@ pub(crate) const STAGE_DIR: &str = ".skillwright-stage";
 /// [`ExportRequest::mode`], either swaps the drifted roots into place or
 /// reports the drift and writes nothing.
 ///
-/// `ns` is the vault's frontmatter namespace, handed to every read and every
-/// emit below, so the read and the emit strip the same keys.
-///
 /// # Errors
 ///
 /// * [`CoreError::Refused`] — the rail: an output root that is, contains, or
@@ -834,11 +830,7 @@ fn stale_output_warnings(
 ///
 /// A note's block for a harness is applied in that harness's
 /// tree, as a publish to it applies it.
-pub fn export_skills(
-    vfs: &dyn Vfs,
-    request: &ExportRequest,
-    ns: &Namespace,
-) -> Result<ExportReport, CoreError> {
+pub fn export_skills(vfs: &dyn Vfs, request: &ExportRequest) -> Result<ExportReport, CoreError> {
     let vault_root = normalize(&request.vault_root);
     let out_root = normalize(&request.out_root);
     check_config_identity(&request.config)?;
@@ -850,7 +842,7 @@ pub fn export_skills(
     // Load once, for every harness this build renders: the vault read, the
     // marketplace chosen and validated, every body resolved. Everything a
     // build refuses before it renders, it refuses here.
-    let market = load(vfs, &request.load_request(), ns)
+    let market = load(vfs, &request.load_request())
         .map_err(|err| with_stale_output_cause(vfs, &vault_root, err))?;
     // The load picked the marketplace itself, and the swap uses what it says.
     check_output(vfs, request, &roots, &market.config)?;
@@ -870,7 +862,7 @@ pub fn export_skills(
     for spec in &roots {
         let translator =
             translator_for(spec.name).expect("every harness with a plugin format translates");
-        let tree = translator.translate(&market, ns)?;
+        let tree = translator.translate(&market)?;
         rendered.push(
             tree.files
                 .into_iter()
@@ -1676,10 +1668,6 @@ mod tests {
     use crate::discover::MISSING_DESCRIPTION_REASON;
     use crate::vfs::{MemVfs, NativeVfs};
 
-    fn sw() -> Namespace {
-        Namespace::sw()
-    }
-
     /// Writes `content` at `path`. For a path under a `marketplaces/` folder it
     /// first adds, when missing, the root file beside that folder and the note
     /// of each marketplace and plugin folder the path passes through, so a
@@ -1716,7 +1704,7 @@ mod tests {
     fn note_with_body(name: &str, targets: &[&str], body: &str) -> String {
         let mut out = format!("---\nname: {name}\ndescription: Use {name}.\n");
         if !targets.is_empty() {
-            out.push_str("sw-targets:\n");
+            out.push_str("targets:\n");
             for target in targets {
                 out.push_str(&format!("  - {target}\n"));
             }
@@ -1783,7 +1771,7 @@ mod tests {
         let mut request = request(ExportMode::Build);
         request.config.launcher_path = Some(LAUNCHER.to_owned());
         request.assets = assets;
-        export_skills(vfs, &request, &sw()).unwrap();
+        export_skills(vfs, &request).unwrap();
     }
 
     fn launcher_asset() -> AssetSpec {
@@ -1815,7 +1803,7 @@ mod tests {
     }
 
     fn build(vfs: &dyn Vfs) -> ExportReport {
-        export_skills(vfs, &request(ExportMode::Build), &sw()).unwrap()
+        export_skills(vfs, &request(ExportMode::Build)).unwrap()
     }
 
     /// A build whose root file says something, for the configuration rungs
@@ -1823,11 +1811,11 @@ mod tests {
     fn build_with(vfs: &dyn Vfs, config: MarketplaceConfig) -> ExportReport {
         let mut request = request(ExportMode::Build);
         request.config = config;
-        export_skills(vfs, &request, &sw()).unwrap()
+        export_skills(vfs, &request).unwrap()
     }
 
     fn check(vfs: &dyn Vfs) -> ExportReport {
-        export_skills(vfs, &request(ExportMode::Check), &sw()).unwrap()
+        export_skills(vfs, &request(ExportMode::Check)).unwrap()
     }
 
     /// Every file under `root`: relative path, bytes, execute bit — sorted.
@@ -1941,7 +1929,7 @@ mod tests {
         );
 
         for mode in [ExportMode::Build, ExportMode::Check] {
-            let err = export_skills(&vfs, &request(mode), &sw()).unwrap_err();
+            let err = export_skills(&vfs, &request(mode)).unwrap_err();
             let message = err.to_string();
             assert!(message.contains("unreadable-note"), "{message}");
             assert!(message.contains("skills/draft/draft.md"), "{message}");
@@ -2012,9 +2000,9 @@ mod tests {
         write(
             &vfs,
             &format!("{folder}/tools.md"),
-            "---\nname: tools\ndescription: Tools.\nsw-version: 1.0.0\n---\n",
+            "---\nname: tools\ndescription: Tools.\nversion: 1.0.0\n---\n",
         );
-        let report = export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+        let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
 
         let paths = paths_under(&vfs, Path::new("/market"));
         for path in [
@@ -2044,7 +2032,7 @@ mod tests {
         );
         write(&vfs, &format!("{assets}/docs/guide.txt"), "Guide.\n");
         write(&vfs, &format!("{assets}/tests/case.test.txt"), "Case.\n");
-        let report = export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+        let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
 
         assert_eq!(report.checked, 3, "the asset is not a fourth note");
         let paths = paths_under(&vfs, Path::new("/market"));
@@ -2065,13 +2053,13 @@ mod tests {
         if let Some(plugin_note) = plugin_note {
             write(&vfs, &format!("{folder}/tools.md"), plugin_note);
         }
-        let report = export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+        let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
         report.warnings.into_iter().map(|w| w.reason).collect()
     }
 
     #[test]
     fn a_changelog_heading_names_a_version_only_as_a_whole_token() {
-        let plugin = "---\nname: tools\ndescription: Tools.\nsw-version: 1.0.0\n---\n";
+        let plugin = "---\nname: tools\ndescription: Tools.\nversion: 1.0.0\n---\n";
         let warned = |changelog: &str| {
             changelog_reasons(changelog, Some(plugin))
                 .contains(&"changelog-missing-version".to_owned())
@@ -2103,14 +2091,13 @@ mod tests {
             out_root: crate::paths::dist_dir(Path::new("/vault"), "house"),
             ..request(ExportMode::Build)
         };
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
         let again = export_skills(
             &vfs,
             &ExportRequest {
                 mode: ExportMode::Check,
                 ..request.clone()
             },
-            &sw(),
         )
         .unwrap();
         assert!(!again.changed, "{:?}", again.units);
@@ -2125,7 +2112,7 @@ mod tests {
             .unwrap();
         let mut request = request(ExportMode::Build);
         request.assets = vec![launcher_asset()];
-        assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
+        assert!(export_skills(&vfs, &request).unwrap().changed);
 
         let asset_at = Path::new("/market/.claude-plugin/packs/tools/bin/tool");
         assert_eq!(
@@ -2176,7 +2163,7 @@ mod tests {
         write(&vfs, "/host/bin/tool", "#!/bin/sh\n");
         let mut request = request(ExportMode::Build);
         request.assets = vec![launcher_asset()];
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         let body = text_at(
             &vfs,
@@ -2246,7 +2233,7 @@ mod tests {
             "/vault/marketplaces/house/plugins/a-b/skills/c/c.md",
             &note("c", &[]),
         );
-        let message = export_skills(&vfs, &request(ExportMode::Build), &sw())
+        let message = export_skills(&vfs, &request(ExportMode::Build))
             .unwrap_err()
             .to_string();
         assert!(message.contains("path-collision"), "{message}");
@@ -2286,14 +2273,14 @@ mod tests {
             write(&vfs, "/src2/docs/x.md", "a directory\n");
             let mut request = request(ExportMode::Build);
             request.assets = vec![first];
-            assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
+            assert!(export_skills(&vfs, &request).unwrap().changed);
 
             request.assets = vec![second];
             request.mode = ExportMode::Check;
-            let report = export_skills(&vfs, &request, &sw()).unwrap();
+            let report = export_skills(&vfs, &request).unwrap();
             assert!(report.changed, "{report:?}");
             request.mode = ExportMode::Build;
-            assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
+            assert!(export_skills(&vfs, &request).unwrap().changed);
 
             let path = Path::new("/market/.claude-plugin/packs/tools").join(landed);
             assert_eq!(vfs.read_file(&path).unwrap(), bytes);
@@ -2336,7 +2323,7 @@ mod tests {
     }
 
     fn export_refusal(vfs: &dyn Vfs) -> String {
-        export_skills(vfs, &request(ExportMode::Build), &sw())
+        export_skills(vfs, &request(ExportMode::Build))
             .unwrap_err()
             .to_string()
     }
@@ -2494,8 +2481,8 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/tools.md",
-            "---\nname: tools\ndescription: Tools.\nsw-pi:\n  naming: bare\n\
-             sw-cursor:\n  naming: prefixed\n---\n",
+            "---\nname: tools\ndescription: Tools.\npi:\n  naming: bare\n\
+             cursor:\n  naming: prefixed\n---\n",
         );
         build(&vfs);
         check(&vfs, ".cursor-plugin", "tools-a", "tools-a");
@@ -2652,7 +2639,7 @@ mod tests {
             plugin: Some("tools".to_owned()),
             ..launcher_asset()
         }];
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
 
         assert_eq!(
             paths_under(&vfs, Path::new("/market/.pi")),
@@ -2699,7 +2686,7 @@ mod tests {
         )));
         // A rebuild finds the tree its own, and unchanged.
         request.mode = ExportMode::Check;
-        assert!(!export_skills(&vfs, &request, &sw()).unwrap().changed);
+        assert!(!export_skills(&vfs, &request).unwrap().changed);
     }
 
     #[test]
@@ -2727,7 +2714,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            "---\nname: review-guide\ndescription: Use review-guide.\nsw-claude:\n  \
+            "---\nname: review-guide\ndescription: Use review-guide.\nclaude:\n  \
              permissionMode: plan\n---\n\n# review-guide\n",
         );
         build(&vfs);
@@ -2744,10 +2731,10 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
-            "---\nname: review-guide\ndescription: Use review-guide.\nsw-codex:\n  \
+            "---\nname: review-guide\ndescription: Use review-guide.\ncodex:\n  \
              argument-hint: x\n---\n\n# review-guide\n",
         );
-        let report = export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+        let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
         assert!(
             report
                 .warnings
@@ -2831,7 +2818,7 @@ mod tests {
             value.plugin = Some("tools".to_owned());
             value
         }];
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         let root = Path::new("/market/.claude-plugin/packs/tools/conventions");
         assert_eq!(
@@ -2851,9 +2838,9 @@ mod tests {
         // edited single-file asset.
         let mut check_request = request.clone();
         check_request.mode = ExportMode::Check;
-        assert!(!export_skills(&vfs, &check_request, &sw()).unwrap().changed);
+        assert!(!export_skills(&vfs, &check_request).unwrap().changed);
         write(&vfs, "/host/conventions/new.md", "new\n");
-        assert!(export_skills(&vfs, &check_request, &sw()).unwrap().changed);
+        assert!(export_skills(&vfs, &check_request).unwrap().changed);
     }
 
     #[test]
@@ -2867,9 +2854,7 @@ mod tests {
             value.plugin = Some("tools".to_owned());
             value
         }];
-        let err = export_skills(&vfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
+        let err = export_skills(&vfs, &request).unwrap_err().to_string();
         assert!(err.contains("unsafe-asset-dest"), "{err}");
         assert!(!vfs.exists(Path::new("/escaped")));
     }
@@ -2885,9 +2870,7 @@ mod tests {
             value.plugin = Some("tools".to_owned());
             value
         }];
-        let err = export_skills(&vfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
+        let err = export_skills(&vfs, &request).unwrap_err().to_string();
         assert!(err.contains("unsafe-asset-dest"), "{err}");
         assert!(!vfs.exists(Path::new("/etc/escaped")));
     }
@@ -2908,9 +2891,7 @@ mod tests {
                 value.plugin = Some("tools".to_owned());
                 value
             }];
-            let err = export_skills(&vfs, &request, &sw())
-                .unwrap_err()
-                .to_string();
+            let err = export_skills(&vfs, &request).unwrap_err().to_string();
             assert!(err.contains("asset-over-manifest"), "{dest}: {err}");
             assert!(err.contains("pi root"), "{dest}: {err}");
         }
@@ -2928,9 +2909,7 @@ mod tests {
             value.plugin = Some("nonexistent".to_owned());
             value
         }];
-        let err = export_skills(&vfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
+        let err = export_skills(&vfs, &request).unwrap_err().to_string();
         assert!(err.contains("unknown-asset-plugin"), "{err}");
         assert!(err.contains("nonexistent"), "{err}");
     }
@@ -2945,18 +2924,18 @@ mod tests {
             value.plugin = Some("tools".to_owned());
             value
         }];
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         // Unchanged: `check` agrees with what was just built.
         let mut check_request = request.clone();
         check_request.mode = ExportMode::Check;
-        assert!(!export_skills(&vfs, &check_request, &sw()).unwrap().changed);
+        assert!(!export_skills(&vfs, &check_request).unwrap().changed);
 
         // The source moves, out from under the build; `check` catches it the
         // same way it catches a rendered skill drifting.
         vfs.write_file(Path::new("/host/bin/tool"), b"v2\n")
             .unwrap();
-        assert!(export_skills(&vfs, &check_request, &sw()).unwrap().changed);
+        assert!(export_skills(&vfs, &check_request).unwrap().changed);
     }
 
     #[test]
@@ -3026,11 +3005,10 @@ mod tests {
             "{text}"
         );
         // Compiled: the embed inlined, the link rewritten, nothing left to
-        // resolve, and nothing of our namespace.
+        // resolve.
         assert!(text.contains("Step prose to inline."), "{text}");
         assert!(text.contains("(references/style-guide.md)"), "{text}");
         assert!(!text.contains("[["), "{text}");
-        assert!(!text.contains("sw-"), "{text}");
         // The linked file travelled as a resource, in the claude and codex roots.
         for packs in [".claude-plugin/packs", ".agents/packs"] {
             assert_eq!(
@@ -3072,9 +3050,7 @@ mod tests {
             "---\nname: quiet\n---\n\n# Quiet\n",
         );
         for mode in [ExportMode::Check, ExportMode::Build] {
-            let message = export_skills(&vfs, &request(mode), &sw())
-                .unwrap_err()
-                .to_string();
+            let message = export_skills(&vfs, &request(mode)).unwrap_err().to_string();
             assert!(message.contains("missing-description"), "{message}");
             assert!(message.contains("skills/quiet/quiet.md"), "{message}");
             assert!(!message.contains("tools/tools.md"), "{message}");
@@ -3092,7 +3068,7 @@ mod tests {
             "/vault/marketplaces/house/plugins/tools/agents/helper/helper.md",
             "---\nname: helper\n---\n",
         );
-        let message = export_skills(&vfs, &request(ExportMode::Check), &sw())
+        let message = export_skills(&vfs, &request(ExportMode::Check))
             .unwrap_err()
             .to_string();
         assert!(message.contains("missing-description"), "{message}");
@@ -3187,7 +3163,7 @@ mod tests {
             "---\nname: said\ndescription: d\n---\n",
         );
         let mut request = request(ExportMode::Check);
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         let reasons: Vec<&str> = report.warnings.iter().map(|w| w.reason.as_str()).collect();
         assert_eq!(reasons, ["missing-version"]);
 
@@ -3201,16 +3177,16 @@ mod tests {
                 ..PluginOverrides::default()
             },
         );
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
 
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/tools/tools.md",
-            "---\nname: tools\ndescription: Tools.\nsw-version: 2.0.0\n---\n",
+            "---\nname: tools\ndescription: Tools.\nversion: 2.0.0\n---\n",
         );
         request.config.plugins.clear();
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     }
 
@@ -3234,7 +3210,7 @@ mod tests {
         );
         let mut request = request(ExportMode::Build);
         request.marketplace = Some("house".to_owned());
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert!(
             report
                 .warnings
@@ -3283,7 +3259,7 @@ mod tests {
             &vfs,
             "/vault/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
             "---\nname: review-guide\ndescription: Reviews things.\n\
-             sw-arguments:\n  - name: pr-number\n    required: true\n    description: The PR.\n\
+             arguments:\n  - name: pr-number\n    required: true\n    description: The PR.\n\
              ---\n\n# Review Guide\n",
         );
         build(&vfs);
@@ -3461,7 +3437,7 @@ mod tests {
                 ..PluginOverrides::default()
             },
         );
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         let plugin = text_at(
             &vfs,
@@ -3541,7 +3517,7 @@ mod tests {
         write(
             &vfs,
             &format!("{base}/git-tools.md"),
-            "---\nname: git-tools\ndescription: Git helpers.\nsw-version: 2.1.0\n---\n\nThe pack.\n",
+            "---\nname: git-tools\ndescription: Git helpers.\nversion: 2.1.0\n---\n\nThe pack.\n",
         );
         write(
             &vfs,
@@ -3593,7 +3569,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/house/plugins/git-tools/git-tools.md",
-            "---\nname: git-tools\ndescription: Git helpers.\nsw-version: 2.2.0\n---\n\nThe pack.\n",
+            "---\nname: git-tools\ndescription: Git helpers.\nversion: 2.2.0\n---\n\nThe pack.\n",
         );
 
         let report = check(&vfs);
@@ -3900,7 +3876,7 @@ mod tests {
             to: PathBuf::from("/market/.agents/packs"),
             remaining: Cell::new(1),
         };
-        let err = export_skills(&failing, &request(ExportMode::Build), &sw()).unwrap_err();
+        let err = export_skills(&failing, &request(ExportMode::Build)).unwrap_err();
         let message = err.to_string();
 
         assert!(matches!(err, CoreError::SwapFailed(_)), "{message}");
@@ -3935,7 +3911,7 @@ mod tests {
             to: PathBuf::from("/market/.agents/packs"),
             remaining: Cell::new(2),
         };
-        let err = export_skills(&failing, &request(ExportMode::Build), &sw()).unwrap_err();
+        let err = export_skills(&failing, &request(ExportMode::Build)).unwrap_err();
         let message = err.to_string();
 
         assert!(matches!(err, CoreError::SwapFailed(_)), "{message}");
@@ -3990,7 +3966,7 @@ mod tests {
         request.out_root = repo.clone();
 
         let vfs = crate::vfs::NativeVfs;
-        assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
+        assert!(export_skills(&vfs, &request).unwrap().changed);
         assert!(repo.join(".claude-plugin/marketplace.json").exists());
 
         // The same layout, with one swapped tree a link into `marketplaces/`.
@@ -4007,9 +3983,7 @@ mod tests {
         std::os::unix::fs::symlink(&references, linked.join(".claude-plugin")).unwrap();
         request.vault_root = linked.join("src");
         request.out_root = linked.clone();
-        let message = export_skills(&vfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
+        let message = export_skills(&vfs, &request).unwrap_err().to_string();
         assert!(message.contains("unsafe-root"), "{message}");
         assert_eq!(
             std::fs::read_dir(&references).unwrap().count(),
@@ -4023,7 +3997,7 @@ mod tests {
         // The whole point: every harness's manifest at the path its harness
         // reads, so a bare repository URL registers with all of them.
         let vfs = MemVfs::new();
-        let report = export_skills(&vfs, &repo_vault(&vfs), &sw()).unwrap();
+        let report = export_skills(&vfs, &repo_vault(&vfs)).unwrap();
         assert!(report.changed);
 
         assert!(vfs.exists(Path::new("/repo/.claude-plugin/marketplace.json")));
@@ -4042,7 +4016,7 @@ mod tests {
         // the swap can never name `.git`, the vault, or a file of the
         // repository's own — the render produces no path beginning with one.
         let vfs = MemVfs::new();
-        export_skills(&vfs, &repo_vault(&vfs), &sw()).unwrap();
+        export_skills(&vfs, &repo_vault(&vfs)).unwrap();
 
         assert_eq!(
             vfs.read_file(Path::new("/repo/README.md")).unwrap(),
@@ -4060,7 +4034,7 @@ mod tests {
         // two harnesses spell a skill's tool names differently. Separate
         // trees is what makes one directory possible at all.
         let vfs = MemVfs::new();
-        export_skills(&vfs, &repo_vault(&vfs), &sw()).unwrap();
+        export_skills(&vfs, &repo_vault(&vfs)).unwrap();
         let claude = "/repo/.claude-plugin/packs/tools/skills/review-guide/SKILL.md";
         let codex = "/repo/.agents/packs/tools/skills/review-guide/SKILL.md";
         assert_ne!(claude, codex);
@@ -4079,11 +4053,11 @@ mod tests {
     fn a_repository_marketplace_is_clean_on_the_check_that_follows() {
         let vfs = MemVfs::new();
         let request = repo_vault(&vfs);
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         let mut checking = request.clone();
         checking.mode = ExportMode::Check;
-        let report = export_skills(&vfs, &checking, &sw()).unwrap();
+        let report = export_skills(&vfs, &checking).unwrap();
         assert!(!report.changed, "{:?}", report.units);
         // The repository around it is not drift, and never reported.
         assert!(
@@ -4105,12 +4079,12 @@ mod tests {
             "/repo/src/marketplaces/house/plugins/extra/skills/spare/spare.md",
             &note("spare", &[]),
         );
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
         assert!(vfs.exists(Path::new("/repo/.claude-plugin/packs/extra")));
 
         vfs.remove(Path::new("/repo/src/marketplaces/house/plugins/extra"))
             .unwrap();
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert!(!vfs.exists(Path::new("/repo/.claude-plugin/packs/extra")));
         assert!(!vfs.exists(Path::new("/repo/.agents/packs/extra")));
         assert!(!vfs.exists(Path::new("/repo/.cursor-plugin/packs/extra")));
@@ -4141,7 +4115,7 @@ mod tests {
         let mut request = repo_vault(&vfs);
         request.harnesses.insert("claude".to_owned());
 
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
         assert!(vfs.exists(Path::new("/repo/.claude-plugin/marketplace.json")));
         assert!(!vfs.exists(Path::new("/repo/.agents")));
     }
@@ -4154,7 +4128,7 @@ mod tests {
         let mut request = repo_vault(&vfs);
         request.harnesses.insert("windsurf".to_owned());
 
-        let err = export_skills(&vfs, &request, &sw()).unwrap_err();
+        let err = export_skills(&vfs, &request).unwrap_err();
         let message = err.to_string();
         assert!(matches!(err, CoreError::Refused(_)), "{message}");
         assert!(message.contains("unknown-harness"), "{message}");
@@ -4166,7 +4140,7 @@ mod tests {
     fn a_marketplace_directory_containing_the_vault_is_allowed() {
         // A repository root contains its own vault and still publishes itself.
         let vfs = MemVfs::new();
-        let report = export_skills(&vfs, &repo_vault(&vfs), &sw()).unwrap();
+        let report = export_skills(&vfs, &repo_vault(&vfs)).unwrap();
         assert!(report.changed);
     }
 
@@ -4182,7 +4156,7 @@ mod tests {
         ] {
             let mem = MemVfs::new();
             let mut request = repo_vault(&mem);
-            assert!(export_skills(&mem, &request, &sw()).unwrap().changed);
+            assert!(export_skills(&mem, &request).unwrap().changed);
 
             write(
                 &mem,
@@ -4198,7 +4172,7 @@ mod tests {
             } else {
                 Box::new(crate::vfs::LinkBlindVfs(mem))
             };
-            let message = export_skills(vfs.as_ref(), &request, &sw())
+            let message = export_skills(vfs.as_ref(), &request)
                 .unwrap_err()
                 .to_string();
             assert!(message.contains("unsafe-root"), "{vault}: {message}");
@@ -4213,7 +4187,7 @@ mod tests {
     fn an_asset_source_inside_a_swapped_tree_is_refused() {
         let vfs = MemVfs::new();
         let mut request = repo_vault(&vfs);
-        assert!(export_skills(&vfs, &request, &sw()).unwrap().changed);
+        assert!(export_skills(&vfs, &request).unwrap().changed);
 
         let source = "/repo/.claude-plugin/packs/launcher";
         write(&vfs, source, "#!/bin/sh\n");
@@ -4222,9 +4196,7 @@ mod tests {
             value.plugin = Some("tools".to_owned());
             value
         }];
-        let message = export_skills(&vfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
+        let message = export_skills(&vfs, &request).unwrap_err().to_string();
         assert!(message.contains("unsafe-root"), "{message}");
         assert!(message.contains(source), "{message}");
         assert!(vfs.exists(Path::new(source)));
@@ -4236,24 +4208,20 @@ mod tests {
     fn a_hand_added_file_beside_the_packs_survives_a_rebuild() {
         let vfs = MemVfs::new();
         let request = repo_vault(&vfs);
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
         let mine = "/repo/.agents/skills/mine/SKILL.md";
         write(&vfs, mine, "---\nname: mine\n---\n\nBy hand.\n");
         write(&vfs, "/repo/.pi/settings.json", "{}\n");
         write(&vfs, "/repo/.claude-plugin/notes.txt", "mine\n");
 
         // Nothing reports them, and a rebuild that changes the trees keeps them.
-        assert!(
-            !export_skills(&vfs, &check_of(&request), &sw())
-                .unwrap()
-                .changed
-        );
+        assert!(!export_skills(&vfs, &check_of(&request)).unwrap().changed);
         write(
             &vfs,
             "/repo/src/marketplaces/house/plugins/tools/skills/review-guide/review-guide.md",
             &note_with_body("review-guide", &[], "Revised.\n"),
         );
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
 
         assert!(report.changed);
         assert!(stale_set(&report).is_empty(), "{:?}", stale_set(&report));
@@ -4277,7 +4245,7 @@ mod tests {
         let hand = "/repo/.claude-plugin/packs/hand/plugin.json";
         write(&vfs, hand, "{}\n");
 
-        let err = export_skills(&vfs, &request, &sw()).unwrap_err();
+        let err = export_skills(&vfs, &request).unwrap_err();
         let message = err.to_string();
         assert!(matches!(err, CoreError::Refused(_)), "{message}");
         assert!(message.contains("foreign-tree"), "{message}");
@@ -4303,7 +4271,7 @@ mod tests {
             "---\nname: by-hand\n---\n\nWritten by a person.\n",
         );
 
-        let err = export_skills(&vfs, &request, &sw()).unwrap_err();
+        let err = export_skills(&vfs, &request).unwrap_err();
         let message = err.to_string();
         assert!(matches!(err, CoreError::Refused(_)), "{message}");
         assert!(message.contains("foreign-tree"), "{message}");
@@ -4335,7 +4303,7 @@ mod tests {
         );
 
         // No refusal: the one file present is a path this render produces.
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert!(report.changed);
     }
 
@@ -4343,7 +4311,7 @@ mod tests {
     fn a_harness_that_renders_nothing_loses_only_its_packs() {
         let vfs = MemVfs::new();
         let mut request = repo_vault(&vfs);
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
         write(&vfs, "/repo/.pi/settings.json", "{}\n");
         vfs.remove(Path::new("/repo/src/marketplaces/house/plugins/tools"))
             .unwrap();
@@ -4354,7 +4322,7 @@ mod tests {
         );
         request.harnesses = BTreeSet::from(["pi".to_owned()]);
 
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
         assert!(!vfs.exists(Path::new("/repo/.pi/packs")));
         assert!(vfs.exists(Path::new("/repo/.pi/settings.json")));
     }
@@ -4376,9 +4344,7 @@ mod tests {
         let mut request = request(ExportMode::Build);
         request.vault_root = root.join("vault");
         request.out_root = out;
-        let message = export_skills(&NativeVfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
+        let message = export_skills(&NativeVfs, &request).unwrap_err().to_string();
 
         assert!(message.contains("foreign-tree"), "{message}");
         assert!(std::fs::read_dir(&elsewhere).unwrap().next().is_none());
@@ -4391,7 +4357,7 @@ mod tests {
         // this render names — even after every pack has been renamed.
         let vfs = MemVfs::new();
         let request = repo_vault(&vfs);
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         vfs.remove(Path::new("/repo/src/marketplaces/house/plugins/tools"))
             .unwrap();
@@ -4401,7 +4367,7 @@ mod tests {
             &note("review-guide", &[]),
         );
 
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert!(report.changed);
         assert!(vfs.exists(Path::new(
             "/repo/.claude-plugin/packs/gear/.claude-plugin/plugin.json"
@@ -4412,7 +4378,7 @@ mod tests {
     /// Build `/repo`, then rewrite the generated-file marker in every built
     /// file to the one an earlier release of the tool wrote.
     fn built_tree_with_an_earlier_marker(vfs: &MemVfs, request: &ExportRequest) {
-        export_skills(vfs, request, &sw()).unwrap();
+        export_skills(vfs, request).unwrap();
         for (relative, bytes, _) in files_under(vfs, Path::new("/repo")) {
             if relative.starts_with("src/") {
                 continue;
@@ -4431,7 +4397,7 @@ mod tests {
         let request = repo_vault(&vfs);
         built_tree_with_an_earlier_marker(&vfs, &request);
 
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert!(report.changed);
     }
 
@@ -4443,7 +4409,7 @@ mod tests {
         let stray = "/repo/.claude-plugin/packs/tools/stray.txt";
         write(&vfs, stray, "left over\n");
 
-        let err = export_skills(&vfs, &request, &sw()).unwrap_err();
+        let err = export_skills(&vfs, &request).unwrap_err();
         let message = err.to_string();
         assert!(matches!(err, CoreError::Refused(_)), "{message}");
         assert!(message.contains("foreign-tree"), "{message}");
@@ -4462,7 +4428,7 @@ mod tests {
             let vfs = example_vault();
             let mut request = request(ExportMode::Build);
             request.out_root = PathBuf::from(out);
-            let err = export_skills(&vfs, &request, &sw()).unwrap_err();
+            let err = export_skills(&vfs, &request).unwrap_err();
             let message = err.to_string();
 
             assert!(matches!(err, CoreError::Refused(_)), "{out}: {message}");
@@ -4506,8 +4472,8 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/demo-market/plugins/tools/tools.md",
-            "---\nname: tools\ndescription: Everyday tools.\nsw-version: 2.1.0\nsw-license: MIT\nsw-keywords:\n  - editing\n\
-             sw-category: Writing\n---\n",
+            "---\nname: tools\ndescription: Everyday tools.\nversion: 2.1.0\nlicense: MIT\nkeywords:\n  - editing\n\
+             category: Writing\n---\n",
         );
         write(
             &vfs,
@@ -4557,7 +4523,7 @@ mod tests {
         write(
             &vfs,
             "/vault/marketplaces/demo-market/plugins/vendor/vendor.md",
-            "---\nname: vendor\ndescription: Vendored work.\nsw-license: Apache-2.0\n---\n",
+            "---\nname: vendor\ndescription: Vendored work.\nlicense: Apache-2.0\n---\n",
         );
         write(
             &vfs,
@@ -4756,7 +4722,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         let plugin = text_at(
             &vfs,
@@ -4783,7 +4749,7 @@ mod tests {
                 ..PluginOverrides::default()
             },
         );
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         let manifest = text_at(
             &vfs,
@@ -4808,7 +4774,7 @@ mod tests {
         let mut request = request(ExportMode::Build);
         request.config.name = Some("something-else".to_owned());
 
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         let manifest = text_at(&vfs, "/market/.claude-plugin/marketplace.json");
         assert!(manifest.contains(r#""name": "demo-market""#), "{manifest}");
@@ -4829,7 +4795,7 @@ mod tests {
         let mut request = request(ExportMode::Build);
         request.config.name = None;
 
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
         let manifest = text_at(&vfs, "/market/.claude-plugin/marketplace.json");
         assert!(manifest.contains(r#""name": "house""#), "{manifest}");
     }
@@ -4844,9 +4810,7 @@ mod tests {
             marketplace: Some("gamma".to_owned()),
             ..request(ExportMode::Build)
         };
-        let err = export_skills(&vfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
+        let err = export_skills(&vfs, &request).unwrap_err().to_string();
         assert!(err.contains("unknown-marketplace"), "{err}");
         assert!(err.contains("`acme`") && err.contains("`beta`"), "{err}");
     }
@@ -4854,7 +4818,7 @@ mod tests {
     #[test]
     fn two_marketplaces_are_refused_rather_than_flattened_onto_one_tree() {
         let vfs = two_marketplaces();
-        let err = export_skills(&vfs, &request(ExportMode::Build), &sw())
+        let err = export_skills(&vfs, &request(ExportMode::Build))
             .unwrap_err()
             .to_string();
         assert!(err.contains("ambiguous-marketplace"), "{err}");
@@ -4871,7 +4835,7 @@ mod tests {
             marketplace: Some("acme".to_owned()),
             ..request(ExportMode::Build)
         };
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert_eq!(report.checked, 1);
         assert!(
             text_at(
@@ -4889,9 +4853,7 @@ mod tests {
             marketplace: Some("gamma".to_owned()),
             ..request(ExportMode::Build)
         };
-        let err = export_skills(&vfs, &request, &sw())
-            .unwrap_err()
-            .to_string();
+        let err = export_skills(&vfs, &request).unwrap_err().to_string();
         assert!(err.contains("unknown-marketplace"), "{err}");
         assert!(err.contains("it holds `acme` and `beta`"), "{err}");
     }
@@ -4917,7 +4879,7 @@ mod tests {
             marketplace: Some("beta".to_owned()),
             ..request(ExportMode::Build)
         };
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert!(vfs.exists(Path::new(
             "/market/.claude-plugin/packs/core/.claude-plugin/plugin.json"
         )));
@@ -4945,7 +4907,7 @@ mod tests {
             marketplace: Some("beta".to_owned()),
             ..request(ExportMode::Build)
         };
-        let report = export_skills(&vfs, &request, &sw()).unwrap();
+        let report = export_skills(&vfs, &request).unwrap();
         assert_eq!(report.mode, ExportMode::Build);
         assert!(
             vfs.exists(Path::new(
@@ -4992,7 +4954,7 @@ mod tests {
             marketplace: Some("beta".to_owned()),
             ..request(ExportMode::Build)
         };
-        let err = export_skills(&vfs, &request, &sw()).unwrap_err();
+        let err = export_skills(&vfs, &request).unwrap_err();
 
         let message = err.to_string();
         assert!(message.contains("no-renderer"), "{message}");
@@ -5021,7 +4983,7 @@ mod tests {
             marketplace: Some("beta".to_owned()),
             ..request(ExportMode::Build)
         };
-        let report = export_skills(&vfs, &build, &sw()).unwrap();
+        let report = export_skills(&vfs, &build).unwrap();
         assert!(
             report.units.iter().any(|unit| matches!(
                 unit,
@@ -5037,7 +4999,6 @@ mod tests {
                 marketplace: Some("beta".to_owned()),
                 ..request(ExportMode::Check)
             },
-            &sw(),
         )
         .unwrap();
         assert!(!checked.changed, "{:?}", checked.units);
@@ -5072,9 +5033,7 @@ mod tests {
                 marketplace: Some("beta".to_owned()),
                 ..request(mode)
             };
-            let message = export_skills(&vfs, &request, &sw())
-                .unwrap_err()
-                .to_string();
+            let message = export_skills(&vfs, &request).unwrap_err().to_string();
             assert!(message.contains("refused: layout"), "{message}");
             assert!(message.contains("hooks/lint-on-write.md"), "{message}");
         }
@@ -5103,7 +5062,7 @@ mod tests {
             marketplace: Some("beta".to_owned()),
             ..request(ExportMode::Build)
         };
-        export_skills(&vfs, &request, &sw()).unwrap();
+        export_skills(&vfs, &request).unwrap();
 
         assert!(vfs.exists(Path::new(
             "/market/.claude-plugin/packs/core/skills/review/SKILL.md"
@@ -5133,7 +5092,7 @@ mod tests {
             "---\n---\n",
         );
 
-        let report = export_skills(&vfs, &request(ExportMode::Build), &sw()).unwrap();
+        let report = export_skills(&vfs, &request(ExportMode::Build)).unwrap();
         assert!(report.changed);
         for (index, pack) in [
             (
@@ -5168,7 +5127,7 @@ mod tests {
         let vfs = MemVfs::new();
         write(&vfs, "/vault/marketplaces/house/house.md", "---\n---\n");
 
-        let message = export_skills(&vfs, &request(ExportMode::Build), &sw())
+        let message = export_skills(&vfs, &request(ExportMode::Build))
             .unwrap_err()
             .to_string();
         assert!(message.contains("empty-marketplace"), "{message}");
@@ -5320,7 +5279,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let request = ExportRequest::new(fixture, dir.path().join("market"), config());
 
-        let report = export_skills(&NativeVfs, &request, &sw()).unwrap();
+        let report = export_skills(&NativeVfs, &request).unwrap();
         assert_eq!(report.checked, 1);
         assert!(report.changed);
 
@@ -5350,7 +5309,7 @@ mod tests {
             mode: ExportMode::Check,
             ..request
         };
-        let report = export_skills(&NativeVfs, &check, &sw()).unwrap();
+        let report = export_skills(&NativeVfs, &check).unwrap();
         assert!(!report.changed, "{report:?}");
     }
 
@@ -5433,7 +5392,7 @@ mod tests {
         config.identity.category = Some("c".to_owned());
         let mut request = request(ExportMode::Build);
         request.config = config;
-        let err = export_skills(&example_vault(), &request, &sw()).unwrap_err();
+        let err = export_skills(&example_vault(), &request).unwrap_err();
         assert!(
             err.to_string().contains("unknown-override-key")
                 && err
@@ -5448,7 +5407,7 @@ mod tests {
         config.plugins.insert("p".to_owned(), plugin);
         let mut request = self::request(ExportMode::Build);
         request.config = config;
-        let err = export_skills(&example_vault(), &request, &sw()).unwrap_err();
+        let err = export_skills(&example_vault(), &request).unwrap_err();
         assert!(
             err.to_string().contains("`owner` at the plugin level"),
             "{err}"

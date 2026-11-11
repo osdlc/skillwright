@@ -11,11 +11,10 @@
  * `CoreError` into a typed one, exactly mirroring what
  * `@osdlc/yaml-splice`'s `index.ts` does for `yaml-splice-wasm`.
  *
- * The binding exports eight functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
+ * The binding exports seven functions (`packages/rust/tradecraft-wasm/src/lib.rs`):
  *
  * | Export | Reaches | Serves |
  * |---|---|---|
- * | `validateNamespace` | the frontmatter-stem rule | every verb, once, at config load |
  * | `discoverComponents` | the vault scan | `build`, `check`, and whatever needs a roster |
  * | `exportSkills` | the marketplace renderer | `build`, and `check` through `mode` |
  * | `loadMarketplace` | the marketplace model, loaded and resolved | a host that wants structure rather than files |
@@ -38,7 +37,6 @@ import {
   knownTargets as knownTargetsWasm,
   parseRootFile as parseRootFileWasm,
   rootFileConfig as rootFileConfigWasm,
-  validateNamespace as validateNamespaceWasm,
 } from '#wasm'
 
 import type { Vfs } from './node-vfs.ts'
@@ -160,28 +158,6 @@ export class CoreError extends Error {
   }
 }
 
-/**
- * A configured frontmatter stem the core will not accept, thrown by
- * {@link validateNamespace} and by any export whose request carries such a
- * `namespace`.
- *
- * Deliberately NOT a {@link CoreError}: `tradecraft_core::InvalidStem` is not
- * a `CoreError` variant, and it is not one for a reason the caller cares about
- * — nothing was read and no note is involved. It is
- * a fault in the configuration, so a caller reports it as a configuration
- * error rather than a per-file refusal.
- *
- * `message` is the core's own, verbatim: it already names the offending stem
- * and why it was rejected, and re-wording it here would give the user a second
- * vocabulary for one rule.
- */
-export class InvalidNamespaceError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'InvalidNamespaceError'
-  }
-}
-
 function toCoreError(raw: unknown): CoreError {
   if (raw instanceof Error) {
     const coreName: CoreErrorName | 'Unknown' = CORE_ERROR_NAMES.has(raw.name)
@@ -230,8 +206,7 @@ export function canonicalTarget(name: string): string | null {
  * vault must not block everybody else's publish. What still throws is what is
  * not a fact about one note — a vault outside the layout (every problem in
  * one message), a duplicate name, a symlink. A caller that ignores `skipped` is claiming the vault holds
- * nothing but what it listed, so every one of them reports it. A `namespace`
- * the core rejects throws {@link InvalidNamespaceError}.
+ * nothing but what it listed, so every one of them reports it.
  */
 export function discoverComponents(vfs: Vfs, request: DiscoverRequest): DiscoveryReport {
   return callCore<DiscoveryReport>(() => discoverComponentsWasm(vfs, JSON.stringify(request)))
@@ -251,7 +226,6 @@ export function discoverComponents(vfs: Vfs, request: DiscoverRequest): Discover
  * Throws {@link CoreError} for everything an export refuses — the rail, an
  * empty marketplace, a failed swap. There is no per-unit refusal to look for
  * inside the report: an export's rails all fire before anything is staged.
- * A `namespace` the core rejects throws {@link InvalidNamespaceError}.
  */
 export function exportSkills(vfs: Vfs, request: ExportRequest): ExportReport {
   return callCore<ExportReport>(() => exportSkillsWasm(vfs, JSON.stringify(request)))
@@ -296,14 +270,13 @@ export function rootFileConfig(text: string): MarketplaceConfig {
   try {
     return rootFileConfigWasm(text) as MarketplaceConfig
   } catch (raw) {
-    throw toThrown(raw)
+    throw toCoreError(raw)
   }
 }
 
 /**
  * One call into the binding: run it, parse the report it hands back, and turn
- * whatever it threw into an {@link InvalidNamespaceError} (a request's
- * `namespace` the core rejects) or a {@link CoreError}.
+ * whatever it threw into a {@link CoreError}.
  *
  * The shape every export above shares, said once. Nothing decided here — the
  * generic is the report's type, and the only judgement in the function is that
@@ -314,38 +287,7 @@ function callCore<T>(call: () => string): T {
   try {
     resultJson = call()
   } catch (raw) {
-    throw toThrown(raw)
+    throw toCoreError(raw)
   }
   return JSON.parse(resultJson) as T
-}
-
-/**
- * A thrown `InvalidStem` as an {@link InvalidNamespaceError}, anything else as
- * a {@link CoreError}: a boundary failure must not read as a bad stem.
- */
-function toThrown(raw: unknown): Error {
-  if (raw instanceof Error && raw.name === 'InvalidStem') {
-    return new InvalidNamespaceError(raw.message)
-  }
-  return toCoreError(raw)
-}
-
-/**
- * Ask the core whether `stem` can be this vault's frontmatter namespace.
- *
- * Returns nothing on success and throws {@link InvalidNamespaceError} on
- * refusal. It is a round trip into Rust for what looks like a string check
- * precisely because it is not one: the rules decide which of the author's
- * frontmatter keys get **deleted** at publish, and a copy of them in TypeScript
- * that drifted by a single case would accept a stem the core then reads
- * differently. There is one implementation of that rule, and this reaches it.
- *
- * Callers ask once, where the value was configured — not once per note.
- */
-export function validateNamespace(stem: string): void {
-  try {
-    validateNamespaceWasm(stem)
-  } catch (raw) {
-    throw toThrown(raw)
-  }
 }

@@ -18,7 +18,6 @@ The words used for skillwright's parts. One file per term. A term marked *planne
 | [Target](target.md) | current | A harness's name as written in `targets` or `--target` |
 | [Destination](destination.md) | current | A directory `publish` writes a note into for one [target](target.md), such as a project root |
 | [Destination manifest](destination-manifest.md) | current | `.skillwright/manifest.json` at a destination: which files skillwright wrote there, from which notes, with two hashes (source and emitted) |
-| [Namespace](namespace.md) | current | An optional frontmatter prefix for skillwright's keys, set by `build.namespace` |
 | [Drift](drift.md) | current | A difference between what `build` would write and what is on disk |
 | [Rail](rail.md) | current | A guard that refuses a write before any byte is written, most importantly any write into the vault |
 | [Adopt](adopt.md) | current, changing | Importing published skills from disk or git into the vault as notes; the reverse of publishing |

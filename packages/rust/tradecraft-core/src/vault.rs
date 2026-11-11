@@ -11,7 +11,7 @@
 //! # What is modeled, and what is merely carried
 //!
 //! Three classes of key, not two. **Ours** — what [`crate::keys`] lists for the
-//! note's kind, or anything a namespace prefixes — is lifted into [`VaultNote::frontmatter`] by [`crate::frontmatter`] and
+//! note's kind — is lifted into [`VaultNote::frontmatter`] by [`crate::frontmatter`] and
 //! never reaches [`SkillContent`] *through this function* — it is
 //! configuration about *this vault* and a destination has no business reading
 //! it. `arguments` is the one exception, and it is not this function's:
@@ -69,11 +69,10 @@ use serde_json::{Map, Value};
 use crate::content::{SkillContent, SkillProjection};
 use crate::error::CoreError;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
-use crate::namespace::Namespace;
 use crate::skill::{forward_slashed, read_utf8, split_frontmatter};
 use crate::vfs::Vfs;
 
-/// One vault note, read: what publishing renders, and what our own namespace
+/// One vault note, read: what publishing renders, and what our own keys
 /// said about it.
 ///
 /// The two halves are separate types rather than one flat struct because the
@@ -87,21 +86,15 @@ pub struct VaultNote {
     /// The content and peers, ready to project. Carries no key of ours by
     /// construction.
     pub projection: SkillProjection,
-    /// What skillwright's own keys declared: the targets and any
-    /// key inside the prefix this build does not model.
+    /// What skillwright's own keys declared, and the note's unknown keys.
     pub frontmatter: VaultFrontmatter,
 }
 
 /// Reads the note at `skill_path` and its peer resources.
 ///
-/// `ns` is the vault's frontmatter namespace; [`Namespace::default`] is
-/// bare. Whatever is passed here must also be passed to the emit
-/// side ([`crate::projection::project_skill`]), because these two are the
-/// halves of one strip: a key this read did not claim is a key that ships.
-///
-/// Order matters. Our namespace is claimed **first**, so a note that mixes the
-/// two frontmatter shapes, or names a kind we do not know, is refused as that
-/// rather than misdiagnosed a line later as a note with no `description`.
+/// Order matters. Our keys are claimed **first**, so a wrong-shaped key of
+/// ours is refused as that rather than misdiagnosed a line later as a note
+/// with no `description`.
 ///
 /// A `description` or a `name` is then required — either makes a note
 /// publish — and a note with neither is an error naming the path, so a caller
@@ -114,12 +107,8 @@ pub struct VaultNote {
 /// frontmatter beyond a `description`.
 ///
 /// Reads the note as a skill. [`read_vault_note`] reads one of another kind.
-pub fn read_vault_skill(
-    vfs: &dyn Vfs,
-    skill_path: &Path,
-    ns: &Namespace,
-) -> Result<VaultNote, CoreError> {
-    read_vault_note(vfs, skill_path, ns, EntityKind::Skill)
+pub fn read_vault_skill(vfs: &dyn Vfs, skill_path: &Path) -> Result<VaultNote, CoreError> {
+    read_vault_note(vfs, skill_path, EntityKind::Skill)
 }
 
 /// [`read_vault_skill`] for a note whose kind the caller has resolved from
@@ -128,7 +117,6 @@ pub fn read_vault_skill(
 pub fn read_vault_note(
     vfs: &dyn Vfs,
     skill_path: &Path,
-    ns: &Namespace,
     kind: EntityKind,
 ) -> Result<VaultNote, CoreError> {
     let source = read_utf8(vfs, skill_path)?;
@@ -137,7 +125,7 @@ pub fn read_vault_note(
 
     // Ours, out of the map before anything else looks at it. What survives
     // this line is the note's own frontmatter and nothing of ours.
-    let ours = VaultFrontmatter::take_from(&mut fields, skill_path, ns, kind)?;
+    let ours = VaultFrontmatter::take_from(&mut fields, skill_path, kind)?;
     check_spec_kinds(&mut fields, skill_path, kind)?;
 
     let name = take_string(&mut fields, "name").filter(|n| !n.trim().is_empty());
@@ -501,12 +489,6 @@ mod tests {
     use crate::vfs::MemVfs;
     use std::path::PathBuf;
 
-    /// The default namespace — every test but the configured one reads a vault
-    /// that declared no stem.
-    fn sw() -> Namespace {
-        Namespace::sw()
-    }
-
     /// A vault with one note at `skills/<name>.md`.
     fn vault(name: &str, source: &str) -> (MemVfs, PathBuf) {
         let vfs = MemVfs::new();
@@ -522,7 +504,7 @@ mod tests {
             "code-review",
             "---\ndescription: reviews code\nallowed-tools:\n  - Read\n  - Grep\n---\nBody prose.\n",
         );
-        let note = read_vault_skill(&vfs, &path, &sw()).unwrap();
+        let note = read_vault_skill(&vfs, &path).unwrap();
         let content = &note.projection.content;
 
         // The stem names the skill; the note carries no `name`.
@@ -544,7 +526,7 @@ mod tests {
             "---\nname: reviewer\ndescription: d\n---\nb\n",
         );
         assert_eq!(
-            read_vault_skill(&vfs, &path, &sw())
+            read_vault_skill(&vfs, &path)
                 .unwrap()
                 .projection
                 .content
@@ -556,14 +538,14 @@ mod tests {
     #[test]
     fn a_name_alone_reads_with_an_empty_description() {
         let (vfs, path) = vault("nameless", "---\nname: nameless\n---\nBody.\n");
-        let note = read_vault_skill(&vfs, &path, &sw()).unwrap();
+        let note = read_vault_skill(&vfs, &path).unwrap();
         assert_eq!(note.projection.content.description, "");
     }
 
     #[test]
     fn a_missing_description_names_the_path() {
         let (vfs, path) = vault("nameless", "---\ntags:\n  - x\n---\nBody.\n");
-        let err = read_vault_skill(&vfs, &path, &sw()).unwrap_err();
+        let err = read_vault_skill(&vfs, &path).unwrap_err();
         let message = err.to_string();
         assert!(message.contains("/vault/skills/nameless.md"), "{message}");
         assert!(message.contains("description"), "{message}");
@@ -571,7 +553,7 @@ mod tests {
         // A note with no frontmatter at all fails the same way.
         let (vfs, path) = vault("bare", "Just prose.\n");
         assert!(
-            read_vault_skill(&vfs, &path, &sw())
+            read_vault_skill(&vfs, &path)
                 .unwrap_err()
                 .to_string()
                 .contains("/vault/skills/bare.md")
@@ -584,7 +566,7 @@ mod tests {
             "carrier",
             "---\ndescription: d\nowner: kelly\ntags:\n  - review\n---\nb\n",
         );
-        let annotations = read_vault_skill(&vfs, &path, &sw())
+        let annotations = read_vault_skill(&vfs, &path)
             .unwrap()
             .projection
             .content
@@ -605,10 +587,7 @@ mod tests {
             "---\ndescription: d\nlicense: MIT\ncompatibility: Requires bash\n\
              metadata:\n  author: kelly\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path, &sw())
-            .unwrap()
-            .projection
-            .content;
+        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
 
         assert_eq!(content.license.as_deref(), Some("MIT"));
         assert_eq!(content.compatibility.as_deref(), Some("Requires bash"));
@@ -627,12 +606,11 @@ mod tests {
             "---\ndescription: d\nlicense: MIT\ncompatibility: Requires bash\n\
              metadata:\n  author: kelly\nowner: kelly\n---\nb\n",
         );
-        let note = read_vault_skill(&vfs, &path, &sw()).unwrap();
+        let note = read_vault_skill(&vfs, &path).unwrap();
         // A dialect that omits every Claude Code extension key, so what is
         // left is the Agent Skills spec's six and nothing else.
-        let files =
-            crate::projection::project_skill(&note.projection, &["antigravity".to_owned()], &sw())
-                .unwrap();
+        let files = crate::projection::project_skill(&note.projection, &["antigravity".to_owned()])
+            .unwrap();
         let text = String::from_utf8(files[0].content.clone()).unwrap();
 
         assert_eq!(text.matches("license:").count(), 1, "{text}");
@@ -653,10 +631,7 @@ mod tests {
             "nested",
             "---\ndescription: d\nmetadata:\n  outer:\n    inner: v\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path, &sw())
-            .unwrap()
-            .projection
-            .content;
+        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
 
         assert!(content.metadata.is_empty());
         assert_eq!(
@@ -666,105 +641,29 @@ mod tests {
     }
 
     #[test]
-    fn our_namespace_is_typed_and_never_lands_in_annotations() {
-        // `targets` is ours and typed — annotations holds genuinely
-        // foreign keys only.
+    fn our_keys_are_typed_and_never_land_in_annotations() {
+        // `targets` is ours and typed; annotations holds foreign keys only,
+        // and a prefixed key is foreign.
         let (vfs, path) = vault(
             "adopted",
             "---\n\
              description: d\n\
              owner: kelly\n\
-             sw-targets:\n  - claude-code\n\
-             sw-adopted:\n  \
-               source: /src/review\n  \
-               format: claude\n  \
-               source_hash: \"3f9a\"\n  \
-               hash: \"b17c\"\n  \
-               at: 2026-08-11\n  \
-               also_at:\n    - /elsewhere/review\n\
-             sw-not-modeled-yet: keep me\n\
+             targets:\n  - claude-code\n\
+             sw-targets: keep me\n\
              ---\nb\n",
         );
-        let note = read_vault_skill(&vfs, &path, &sw()).unwrap();
+        let note = read_vault_skill(&vfs, &path).unwrap();
         assert_eq!(
             note.frontmatter.targets,
             Some(vec!["claude-code".to_owned()])
         );
-        assert!(
-            note.frontmatter
-                .unknown
-                .contains(&"sw-not-modeled-yet".to_owned())
-        );
+        assert!(note.frontmatter.unknown.contains(&"sw-targets".to_owned()));
 
-        // The whole point: annotations is foreign keys only.
         let annotations = note.projection.content.annotations;
         assert_eq!(annotations["owner"], serde_json::json!("kelly"));
-        assert!(
-            annotations.keys().all(|k| !k.starts_with("sw")),
-            "our namespace leaked into annotations: {annotations:?}"
-        );
-        assert_eq!(annotations.len(), 1);
-    }
-
-    #[test]
-    fn a_configured_vault_types_its_own_prefix_and_carries_the_default_one() {
-        // The structural strip under a configured stem: `x-` is lifted off the
-        // note before a `SkillContent` exists, and `sw-kind`, which this
-        // vault never claimed, lands in `annotations` with every other key
-        // that is the author's own.
-        let (vfs, path) = vault(
-            "configured",
-            "---\n\
-             description: d\n\
-             sw-kind: somebody-elses-key\n\
-             x-adopted:\n  source: /src/review\n\
-             x-not-modeled-yet: keep me\n\
-             ---\nb\n",
-        );
-        let note = read_vault_skill(&vfs, &path, &Namespace::new("x").unwrap()).unwrap();
-        assert!(
-            note.frontmatter
-                .unknown
-                .contains(&"x-not-modeled-yet".to_owned())
-        );
-
-        let annotations = note.projection.content.annotations;
-        assert_eq!(
-            annotations["sw-kind"],
-            serde_json::json!("somebody-elses-key")
-        );
-        assert_eq!(annotations.len(), 1, "{annotations:?}");
-    }
-
-    #[test]
-    fn the_nested_shape_reads_the_same_as_the_flat_one() {
-        // The plugin writes this shape, and the CLI must read it, because
-        // both surfaces edit one vault.
-        let (vfs, path) = vault(
-            "nested",
-            "---\ndescription: d\nsw:\n  targets:\n    - claude-code\n  adopted:\n    source: /src\n---\nb\n",
-        );
-        let note = read_vault_skill(&vfs, &path, &sw()).unwrap();
-        assert_eq!(
-            note.frontmatter.targets,
-            Some(vec!["claude-code".to_owned()])
-        );
-        assert!(note.projection.content.annotations.is_empty());
-    }
-
-    #[test]
-    fn a_note_carrying_both_shapes_is_refused() {
-        let (vfs, path) = vault(
-            "mixed",
-            "---\ndescription: d\nsw:\n  license: MIT\nsw-targets:\n  - claude-code\n---\nb\n",
-        );
-        let message = read_vault_skill(&vfs, &path, &sw())
-            .unwrap_err()
-            .to_string();
-
-        assert!(message.contains("mixed-frontmatter-shape"), "{message}");
-        assert!(message.contains("/vault/skills/mixed.md"), "{message}");
-        assert!(message.contains("`sw-targets`"), "{message}");
+        assert_eq!(annotations["sw-targets"], serde_json::json!("keep me"));
+        assert_eq!(annotations.len(), 2, "{annotations:?}");
     }
 
     #[test]
@@ -773,10 +672,7 @@ mod tests {
             "odd",
             "---\ndescription: d\nmetadata: {team: {lead: Ada}}\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path, &sw())
-            .unwrap()
-            .projection
-            .content;
+        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
 
         assert!(content.metadata.is_empty());
         assert_eq!(
@@ -792,10 +688,7 @@ mod tests {
             "---\ndescription: d\nallowed-tools: Read, Grep Bash(git log, x)\n\
              user-invocable: NO\ndisable-model-invocation: 1\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path, &sw())
-            .unwrap()
-            .projection
-            .content;
+        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
         assert_eq!(content.allowed_tools, ["Read", "Grep", "Bash(git log, x)"]);
         assert!(!content.user_invocable);
         assert!(content.disable_model_invocation);
@@ -814,10 +707,7 @@ disable-model-invocation: '1'
 b
 ",
         );
-        let content = read_vault_skill(&vfs, &path, &sw())
-            .unwrap()
-            .projection
-            .content;
+        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
         assert!(!content.user_invocable);
         assert!(content.disable_model_invocation);
     }
@@ -825,10 +715,7 @@ b
     #[test]
     fn a_spec_key_set_to_nothing_is_dropped() {
         let (vfs, path) = vault("odd", "---\ndescription: d\nmodel:\nlicense:\n---\nb\n");
-        let content = read_vault_skill(&vfs, &path, &sw())
-            .unwrap()
-            .projection
-            .content;
+        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
         assert!(content.model_override.is_none());
         assert!(content.annotations.is_empty(), "{:?}", content.annotations);
     }
@@ -851,9 +738,7 @@ b
             ),
         ] {
             let (vfs, path) = vault("odd", &format!("---\ndescription: d\n{line}\n---\nb\n"));
-            let err = read_vault_skill(&vfs, &path, &sw())
-                .unwrap_err()
-                .to_string();
+            let err = read_vault_skill(&vfs, &path).unwrap_err().to_string();
             assert!(err.contains(said), "{line}: {err}");
         }
     }
@@ -864,10 +749,7 @@ b
             "odd",
             "---\ndescription: d\nargument-hint: [issue-number]\n---\nb\n",
         );
-        let content = read_vault_skill(&vfs, &path, &sw())
-            .unwrap()
-            .projection
-            .content;
+        let content = read_vault_skill(&vfs, &path).unwrap().projection.content;
         assert_eq!(content.argument_hint.as_deref(), Some("[issue-number]"));
         assert!(!content.annotations.contains_key("argument-hint"));
     }
@@ -890,10 +772,7 @@ b
         vfs.write_file(&bundle.join("references/style.md"), b"# Style\n")
             .unwrap();
 
-        let resources = read_vault_skill(&vfs, &path, &sw())
-            .unwrap()
-            .projection
-            .resources;
+        let resources = read_vault_skill(&vfs, &path).unwrap().projection.resources;
         assert_eq!(
             resources,
             vec![
@@ -912,7 +791,7 @@ b
     fn a_note_that_owns_no_folder_has_no_resources_rather_than_an_error() {
         let (vfs, path) = vault("lonely", "---\ndescription: d\n---\nb\n");
         assert!(
-            read_vault_skill(&vfs, &path, &sw())
+            read_vault_skill(&vfs, &path)
                 .unwrap()
                 .projection
                 .resources
@@ -932,7 +811,7 @@ b
             .unwrap();
 
         assert!(
-            read_vault_skill(&vfs, &path, &sw())
+            read_vault_skill(&vfs, &path)
                 .unwrap()
                 .projection
                 .resources
@@ -958,9 +837,7 @@ b
     #[test]
     fn malformed_frontmatter_names_the_path() {
         let (vfs, path) = vault("broken", "---\ndescription: [unclosed\n---\nb\n");
-        let message = read_vault_skill(&vfs, &path, &sw())
-            .unwrap_err()
-            .to_string();
+        let message = read_vault_skill(&vfs, &path).unwrap_err().to_string();
         assert!(message.contains("/vault/skills/broken.md"), "{message}");
         assert!(message.contains("invalid frontmatter"), "{message}");
     }
@@ -974,7 +851,7 @@ b
             "---\ndescription: d\n---\nSee ![[house-style]] and [[glossary]].\n",
         );
         assert_eq!(
-            read_vault_skill(&vfs, &path, &sw())
+            read_vault_skill(&vfs, &path)
                 .unwrap()
                 .projection
                 .content

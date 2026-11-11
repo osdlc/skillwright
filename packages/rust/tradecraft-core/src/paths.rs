@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use crate::error::CoreError;
 use crate::export::{AssetSpec, ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig};
 use crate::layout::{DIST_DIR, MARKETPLACES_DIR, read_layout};
-use crate::namespace::Namespace;
 use crate::settings::{
     MarketplaceFields, ROOT_FILE, RootFile, parse_marketplace_note, parse_root_file,
 };
@@ -162,8 +161,6 @@ pub struct LoadedVault {
     pub root_file: PathBuf,
     /// The root file, parsed.
     pub settings: RootFile,
-    /// `build.namespace`, or the default bare namespace.
-    pub namespace: Namespace,
     /// Config, harnesses, assets and hooks for each [`ExportRequest`].
     pub inputs: MarketplaceInputs,
     /// The marketplaces the load was asked for, by folder name: every one, or
@@ -213,7 +210,6 @@ pub fn dist_dir(root: &Path, name: &str) -> PathBuf {
 /// * `refused: layout` — `root` is not a vault root, or the vault breaks the
 ///   layout (spec section 11).
 /// * `refused: malformed-root-file` — the root file cannot be read or parsed.
-/// * `refused: namespace` — `build.namespace` is not a valid stem.
 /// * `refused: unknown-marketplace` — `marketplace` names no marketplace.
 /// * `refused: malformed` — a marketplace note whose fields cannot be read.
 pub fn load_vault(
@@ -228,15 +224,6 @@ pub fn load_vault(
         .map_err(|_| malformed_root(&root_file, "it is not UTF-8"))?;
     let settings =
         parse_root_file(&text).map_err(|err| malformed_root(&root_file, &err.to_string()))?;
-    let namespace = match &settings.build.namespace {
-        Some(stem) => Namespace::new(stem).map_err(|invalid| {
-            CoreError::refused(
-                "namespace",
-                format!("{invalid} (`build.namespace` in {})", root_file.display()),
-            )
-        })?,
-        None => Namespace::default(),
-    };
     if let Some(name) = marketplace
         && !layout.marketplaces.iter().any(|m| m == name)
     {
@@ -282,7 +269,6 @@ pub fn load_vault(
         root: root.to_path_buf(),
         root_file,
         settings,
-        namespace,
         inputs,
         marketplaces,
     })
@@ -307,10 +293,7 @@ mod tests {
     fn vault() -> MemVfs {
         let vfs = MemVfs::new();
         for (path, text) in [
-            (
-                "/v/skillwright.md",
-                "---\nlicense: MIT\nbuild:\n  namespace: acme\n---\n",
-            ),
+            ("/v/skillwright.md", "---\nlicense: MIT\n---\n"),
             (
                 "/v/marketplaces/house/house.md",
                 "---\ndescription: The house.\n---\n",
@@ -337,7 +320,6 @@ mod tests {
         let house = loaded.marketplace("house").unwrap();
         assert_eq!(house.fields.description.as_deref(), Some("The house."));
         assert_eq!(house.out_root, Path::new("/v/dist/house"));
-        assert_eq!(loaded.namespace.stem(), "acme");
         let request = loaded.export_request(house, ExportMode::Build);
         assert_eq!(request.out_root, Path::new("/v/dist/house"));
         assert_eq!(request.vault_root, Path::new("/v"));

@@ -46,7 +46,6 @@ use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
 use crate::harness::manifest::{plugin_block, plugin_identity, plugin_targets};
 use crate::keys;
-use crate::namespace::Namespace;
 use crate::vault::VaultNote;
 
 /// The containers above some notes, folded into one config.
@@ -168,13 +167,7 @@ impl Cascade {
 
     /// Gives one read note what it leaves out: `targets`, a skill's `license`,
     /// and each harness block key by key. `plugin` is the plugin holding it.
-    pub fn apply(
-        &self,
-        note: &mut VaultNote,
-        kind: EntityKind,
-        plugin: Option<&str>,
-        ns: &Namespace,
-    ) {
+    pub fn apply(&self, note: &mut VaultNote, kind: EntityKind, plugin: Option<&str>) {
         let plugin = plugin.unwrap_or_default();
         if note.frontmatter.targets.is_none() {
             note.frontmatter.targets = plugin_targets(&self.config, plugin);
@@ -187,7 +180,7 @@ impl Cascade {
         if note.projection.content.license.is_none() && keys::inherits(kind, "license") {
             note.projection.content.license = plugin_identity(&self.config, plugin).license;
         }
-        let own_metadata = crate::projection::skill_metadata(&note.projection.content, ns);
+        let own_metadata = crate::projection::skill_metadata(&note.projection.content);
         for harness in keys::HARNESS_BLOCKS
             .iter()
             .filter(|harness| keys::inherits(kind, harness))

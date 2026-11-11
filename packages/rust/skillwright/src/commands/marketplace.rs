@@ -56,7 +56,7 @@ impl ExportVerb {
 pub struct ExportFlags {
     /// Which marketplace to build. Absent means every one.
     pub marketplace: Option<String>,
-    /// The global `--vault` and `--namespace` flags.
+    /// The global `--vault` flag.
     pub common: CommonFlags,
     /// `--json`: print the report as one JSON document.
     pub json: bool,
@@ -125,7 +125,7 @@ pub fn run_export(verb: ExportVerb, flags: &ExportFlags, ctx: &mut CommandContex
             let _ = writeln!(ctx.err, "marketplace {}:", market.name);
         }
         let advise = name_market.then(|| market.name.clone());
-        let code = export_one(verb, flags, &run, request, advise, ctx);
+        let code = export_one(verb, flags, request, advise, ctx);
         if exit == EXIT_OK {
             exit = code;
         }
@@ -182,13 +182,12 @@ fn confirm_build(
 fn export_one(
     verb: ExportVerb,
     flags: &ExportFlags,
-    run: &ResolvedRun,
     request: &ExportRequest,
     advise: Option<String>,
     ctx: &mut CommandContext<'_>,
 ) -> i32 {
     // --- run ----------------------------------------------------------------
-    let report = match export_skills(&tradecraft_core::NativeVfs, request, run.core_namespace()) {
+    let report = match export_skills(&tradecraft_core::NativeVfs, request) {
         Ok(report) => report,
         // An export has no partial report: its rails fire before anything is
         // staged, and a failed swap rolls back. So a failure means nothing

@@ -8,16 +8,12 @@
 //! | The spec's and the harness's fields | [`crate::SkillContent`]'s modeled fields | emitted |
 //! | Anything else | `SkillContent::annotations`, with a warning | under `metadata:` on a skill |
 //!
-//! # Bare or prefixed
+//! # Which keys are ours
 //!
-//! Keys are bare by default, and the key table says which bare keys are
-//! skillwright's for each kind, so `license` is the pack's on a plugin note
-//! and the spec's on a skill. Under a namespace ([`Namespace`]), every key
-//! the prefix claims is skillwright's, in the flat shape (`sw-version`) or
-//! the nested one (`sw: {version: …}`); a note carrying both is refused ·
-//! `mixed-frontmatter-shape`. A prefixed key this build does not model is
-//! consumed, so it cannot reach a destination, and listed in
-//! [`VaultFrontmatter::unknown`].
+//! There is no key prefix. The key table says which keys are skillwright's
+//! for each kind, so `license` is the pack's on a plugin note and the spec's
+//! on a skill. A prefixed key such as `sw-version`, or an `sw:` block, is an
+//! unknown key like any other.
 //!
 //! # A wrong-shaped value of ours is refused
 //!
@@ -40,7 +36,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::CoreError;
-use crate::namespace::Namespace;
 
 /// Which publishable unit a note is: what the folder it sits in names.
 ///
@@ -423,43 +418,39 @@ impl VaultFrontmatter {
     /// the note's own keys.
     ///
     /// `fields` is the note's frontmatter as a JSON object, untouched yet.
-    /// `ns` is the vault's namespace, and must be the one the emit side uses.
     /// `path` names the note in a refusal.
     ///
     /// # Errors
     ///
-    /// * `refused: mixed-frontmatter-shape` — under a prefixed namespace, the
-    ///   note carries the nested block *and* at least one flat key.
-    /// * A content error naming the key and the path when one of
-    ///   skillwright's keys is the wrong shape.
+    /// A content error naming the key and the path when one of skillwright's
+    /// keys is the wrong shape.
     pub fn take_from(
         fields: &mut Map<String, Value>,
         path: &Path,
-        ns: &Namespace,
         kind: EntityKind,
     ) -> Result<Self, CoreError> {
-        let mut ours = claim(fields, path, ns, kind)?;
+        let mut ours = claim(fields, kind);
         let own_keys = fields
             .iter()
             .chain(ours.iter())
             .filter(|(_, value)| !value.is_null())
-            .map(|(key, _)| ns.field(key).to_owned())
+            .map(|(key, _)| key.clone())
             .collect();
 
-        check_shapes(&ours, path, ns, kind)?;
+        check_shapes(&ours, path, kind)?;
 
-        let targets = take_string_list(&mut ours, &ns.key("targets"), path)?;
+        let targets = take_string_list(&mut ours, "targets", path)?;
         // A key the table does not list for this kind stays in `ours`, to be
         // reported as unknown.
         let reads = |key: &str| crate::keys::is_owned(kind, key);
         let arguments = if reads("arguments") {
-            take_arguments(&mut ours, &ns.key("arguments"), path)?
+            take_arguments(&mut ours, "arguments", path)?
         } else {
             Vec::new()
         };
         let mut overrides = Map::new();
         for harness in crate::keys::HARNESS_BLOCKS.iter().filter(|h| reads(h)) {
-            if let Some(block) = take_harness_block(&mut ours, &ns.key(harness)) {
+            if let Some(block) = take_harness_block(&mut ours, harness) {
                 overrides.insert((*harness).to_owned(), Value::Object(block));
             }
         }
@@ -478,7 +469,7 @@ impl VaultFrontmatter {
         let mut unknown: Vec<String> = Vec::new();
 
         let identity = if kind.holds_components() {
-            take_identity(&mut ours, path, ns, kind)?
+            take_identity(&mut ours, path, kind)?
         } else {
             ContainerIdentity::default()
         };
@@ -487,7 +478,7 @@ impl VaultFrontmatter {
         unknown.extend(
             fields
                 .iter()
-                .filter(|(key, value)| !reads_as_written(kind, key, value, ns))
+                .filter(|(key, value)| !reads_as_written(kind, key, value))
                 .map(|(key, _)| key.clone()),
         );
         unknown.sort();
@@ -513,20 +504,18 @@ impl VaultFrontmatter {
 fn take_identity(
     ours: &mut Map<String, Value>,
     path: &Path,
-    ns: &Namespace,
     kind: EntityKind,
 ) -> Result<ContainerIdentity, CoreError> {
     let mut read = Map::new();
     for key in crate::keys::identity_keys().filter(|key| crate::keys::is_owned(kind, key)) {
-        let spelled = ns.key(key);
-        let Some(value) = ours.remove(&spelled).filter(|value| !value.is_null()) else {
+        let Some(value) = ours.remove(key).filter(|value| !value.is_null()) else {
             continue;
         };
         let one = Map::from_iter([(key.to_owned(), value.clone())]);
         if let Err(err) = serde_json::from_value::<ContainerIdentity>(Value::Object(one)) {
             return Err(CoreError::wrong_kind(
                 path,
-                format!("`{spelled}` cannot be read: {err}"),
+                format!("`{key}` cannot be read: {err}"),
             ));
         }
         read.insert(key.to_owned(), value);
@@ -534,92 +523,31 @@ fn take_identity(
     Ok(ContainerIdentity::from_fields(read))
 }
 
-/// Splits skillwright's keys off `fields` and normalises them onto the flat
-/// spelling.
-///
-/// Under a prefixed namespace, every key the prefix claims moves, and a
-/// nested `sw: {version: 1.0.0}` comes back as `{"sw-version": "1.0.0"}`.
-/// Bare, the key table decides: the keys it lists as skillwright's for `kind`
-/// move. `arguments` holding names stays: that is Claude's own key.
-fn claim(
-    fields: &mut Map<String, Value>,
-    path: &Path,
-    ns: &Namespace,
-    kind: EntityKind,
-) -> Result<Map<String, Value>, CoreError> {
-    if ns.is_bare() {
-        let owned: Vec<String> = fields
-            .keys()
-            .filter(|key| crate::keys::is_owned(kind, key))
-            .filter(|key| {
-                key.as_str() != "arguments" || !is_claude_arguments(&fields[key.as_str()])
-            })
-            .cloned()
-            .collect();
-        let mut ours = Map::new();
-        for key in owned {
-            if let Some(value) = fields.remove(&key) {
-                ours.insert(key, value);
-            }
-        }
-        return Ok(ours);
-    }
-
-    let block_key = ns.block_key();
-    let flat: Vec<String> = fields
+/// Splits skillwright's keys off `fields`: the keys the key table lists as
+/// skillwright's for `kind`. `arguments` holding names stays: that is
+/// Claude's own key.
+fn claim(fields: &mut Map<String, Value>, kind: EntityKind) -> Map<String, Value> {
+    let owned: Vec<String> = fields
         .keys()
-        .filter(|k| ns.is_ours(k) && k.as_str() != block_key)
+        .filter(|key| crate::keys::is_owned(kind, key))
+        .filter(|key| key.as_str() != "arguments" || !is_claude_arguments(&fields[key.as_str()]))
         .cloned()
         .collect();
-    let nested = fields.contains_key(block_key);
-
-    // The shape check comes first and is not a reconciliation: it refuses
-    // whether or not the two shapes carry the same fields.
-    if nested && !flat.is_empty() {
-        return Err(refuse(
-            "mixed-frontmatter-shape",
-            path,
-            format!(
-                "the note carries a nested `{block_key}:` block and {}. \
-                 Move the flat keys into the block, or remove the block",
-                listed(&flat)
-            ),
-        ));
-    }
-
-    if !nested {
-        let mut ours = Map::new();
-        for key in flat {
-            if let Some(value) = fields.remove(&key) {
-                ours.insert(key, value);
-            }
+    let mut ours = Map::new();
+    for key in owned {
+        if let Some(value) = fields.remove(&key) {
+            ours.insert(key, value);
         }
-        return Ok(ours);
     }
-
-    match fields.remove(block_key).unwrap_or(Value::Null) {
-        // `sw:` with nothing under it is an empty block, not a broken one.
-        Value::Null => Ok(Map::new()),
-        Value::Object(map) => Ok(map
-            .into_iter()
-            .map(|(key, value)| (ns.key(&key), value))
-            .collect()),
-        other => Err(CoreError::wrong_kind(
-            path,
-            format!(
-                "`{block_key}:` must be a mapping of our fields, not {}",
-                type_name(&other)
-            ),
-        )),
-    }
+    ours
 }
 
 /// Whether a key left in the note's own fields is one the read takes as
-/// written. `arguments` holding names is Claude's key under any namespace.
-fn reads_as_written(kind: EntityKind, key: &str, value: &Value, ns: &Namespace) -> bool {
+/// written. `arguments` holding names is Claude's key.
+fn reads_as_written(kind: EntityKind, key: &str, value: &Value) -> bool {
     match key {
         "arguments" if is_claude_arguments(value) => crate::keys::lookup(kind, key).is_some(),
-        _ => crate::keys::is_known(kind, key, ns),
+        _ => crate::keys::is_known(kind, key),
     }
 }
 
@@ -634,16 +562,10 @@ fn is_claude_arguments(value: &Value) -> bool {
 }
 
 /// Refuses a key of ours whose value is not the [`crate::keys::Shape`] the
-/// table lists for `kind`. `ours` holds flat spellings, so a prefixed key the
-/// table does not list is left to be reported in [`VaultFrontmatter::unknown`].
-fn check_shapes(
-    ours: &Map<String, Value>,
-    path: &Path,
-    ns: &Namespace,
-    kind: EntityKind,
-) -> Result<(), CoreError> {
+/// table lists for `kind`.
+fn check_shapes(ours: &Map<String, Value>, path: &Path, kind: EntityKind) -> Result<(), CoreError> {
     for (key, value) in ours {
-        if let Err(refusal) = crate::keys::check_shape(kind, ns.field(key), value) {
+        if let Err(refusal) = crate::keys::check_shape(kind, key, value) {
             return Err(CoreError::wrong_kind(path, refusal.sentence(key)));
         }
     }
@@ -958,18 +880,6 @@ pub(crate) fn type_name(value: &Value) -> &'static str {
     }
 }
 
-/// "flat key `sw-license`" / "flat keys `sw-license`, `sw-targets`" — a refusal has
-/// to name every offending key, because the fix is to move each one.
-fn listed(keys: &[String]) -> String {
-    let quoted: Vec<String> = keys.iter().map(|k| format!("`{k}`")).collect();
-    let noun = if keys.len() == 1 {
-        "flat key"
-    } else {
-        "flat keys"
-    };
-    format!("{noun} {}", quoted.join(", "))
-}
-
 /// A refusal carrying a reason token, the note it is about, and the prose that says what to do.
 fn refuse(token: &str, path: &Path, message: impl fmt::Display) -> CoreError {
     CoreError::refused(token, format!("{}: {message}", path.display()))
@@ -1012,36 +922,22 @@ mod tests {
         }
     }
 
-    /// The `sw` namespace.
+    /// A skill note read.
     fn read(value: Value) -> Result<(VaultFrontmatter, Map<String, Value>), CoreError> {
-        read_as(&Namespace::sw(), value)
-    }
-
-    fn read_as(
-        ns: &Namespace,
-        value: Value,
-    ) -> Result<(VaultFrontmatter, Map<String, Value>), CoreError> {
-        let mut map = fields(value);
-        let ours = VaultFrontmatter::take_from(&mut map, Path::new(NOTE), ns, EntityKind::Skill)?;
-        Ok((ours, map))
+        read_kind(EntityKind::Skill, value)
     }
 
     fn read_kind(
-        ns: &Namespace,
         kind: EntityKind,
         value: Value,
     ) -> Result<(VaultFrontmatter, Map<String, Value>), CoreError> {
         let mut map = fields(value);
-        let ours = VaultFrontmatter::take_from(&mut map, Path::new(NOTE), ns, kind)?;
+        let ours = VaultFrontmatter::take_from(&mut map, Path::new(NOTE), kind)?;
         Ok((ours, map))
     }
 
     fn bare(kind: EntityKind, value: Value) -> (VaultFrontmatter, Map<String, Value>) {
-        read_kind(&Namespace::bare(), kind, value).unwrap()
-    }
-
-    fn x() -> Namespace {
-        Namespace::new("x").unwrap()
+        read_kind(kind, value).unwrap()
     }
 
     #[test]
@@ -1057,7 +953,7 @@ mod tests {
 
     #[test]
     fn a_wrong_shaped_harness_block_is_refused_naming_the_key() {
-        let err = read_kind(&Namespace::bare(), EntityKind::Skill, json!({"codex": "x"}))
+        let err = read_kind(EntityKind::Skill, json!({"codex": "x"}))
             .unwrap_err()
             .to_string();
         assert!(err.contains("`codex`"), "{err}");
@@ -1083,17 +979,6 @@ mod tests {
     }
 
     #[test]
-    fn under_a_namespace_a_bare_unprefixed_key_stays_among_the_notes_own_keys() {
-        let (_, rest) = read_kind(
-            &Namespace::sw(),
-            EntityKind::Skill,
-            json!({"description": "d", "flavour": "mint"}),
-        )
-        .unwrap();
-        assert_eq!(rest["flavour"], "mint");
-    }
-
-    #[test]
     fn targets_absent_empty_and_populated_are_three_outcomes() {
         let target = |value: Value| bare(EntityKind::Skill, value).0.targets;
         assert_eq!(target(json!({"description": "d"})), None);
@@ -1106,13 +991,9 @@ mod tests {
 
     #[test]
     fn a_scalar_targets_is_refused_not_read_as_everywhere() {
-        let err = read_kind(
-            &Namespace::bare(),
-            EntityKind::Skill,
-            json!({"targets": "claude"}),
-        )
-        .unwrap_err()
-        .to_string();
+        let err = read_kind(EntityKind::Skill, json!({"targets": "claude"}))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("`targets`"), "{err}");
     }
 
@@ -1141,13 +1022,9 @@ mod tests {
             ours.identity.homepage.as_deref(),
             Some("http://example.com")
         );
-        let err = read_kind(
-            &Namespace::bare(),
-            EntityKind::Plugin,
-            json!({"repository": "not a url"}),
-        )
-        .unwrap_err()
-        .to_string();
+        let err = read_kind(EntityKind::Plugin, json!({"repository": "not a url"}))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("`repository`"), "{err}");
     }
 
@@ -1176,60 +1053,20 @@ mod tests {
         assert_eq!(ours.unknown, vec!["model".to_owned()]);
     }
 
+    /// There is no key prefix: `sw-version` and an `sw:` block are unknown
+    /// keys, left in place.
     #[test]
-    fn a_prefixed_namespace_reads_flat_and_nested_alike() {
-        let flat = read_kind(
-            &Namespace::sw(),
+    fn a_prefixed_key_is_an_unknown_key() {
+        let (ours, rest) = bare(EntityKind::Skill, json!({"sw-version": "1.0.0"}));
+        assert_eq!(ours.unknown, vec!["sw-version".to_owned()]);
+        assert_eq!(rest["sw-version"], "1.0.0");
+        let (ours, _) = bare(
             EntityKind::Plugin,
-            json!({"sw-version": "1.0.0", "sw-codex": {"interface": {}}}),
-        )
-        .unwrap()
-        .0;
-        let nested = read_kind(
-            &Namespace::sw(),
-            EntityKind::Plugin,
-            json!({"sw": {"version": "1.0.0", "codex": {"interface": {}}}}),
-        )
-        .unwrap()
-        .0;
-        assert_eq!(flat, nested);
-        assert_eq!(flat.identity.version.as_deref(), Some("1.0.0"));
-    }
-
-    #[test]
-    fn an_empty_nested_block_reads_as_the_defaults() {
-        let (ours, _) = read(json!({"sw": null})).unwrap();
-        assert_eq!(ours, VaultFrontmatter::default());
-    }
-
-    #[test]
-    fn a_nested_block_that_is_not_a_mapping_is_refused() {
-        let err = read(json!({"sw": "x"})).unwrap_err().to_string();
-        assert!(err.contains("`sw:`"), "{err}");
-    }
-
-    #[test]
-    fn both_shapes_on_one_note_is_refused_only_under_a_namespace() {
-        let err = read(json!({"sw": {"targets": []}, "sw-targets": []}))
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("mixed-frontmatter-shape"), "{err}");
-        assert!(err.contains("sw-targets"), "{err}");
-    }
-
-    #[test]
-    fn an_unmodeled_prefixed_key_is_consumed_and_reported() {
-        let (ours, rest) = read(json!({"sw-invented": 1})).unwrap();
-        assert!(!rest.contains_key("sw-invented"));
-        assert_eq!(ours.unknown, vec!["sw-invented".to_owned()]);
-    }
-
-    #[test]
-    fn a_configured_stem_leaves_other_prefixes_foreign() {
-        let (ours, rest) =
-            read_as(&x(), json!({"x-targets": [], "sw-targets": ["claude"]})).unwrap();
-        assert_eq!(ours.targets, Some(vec![]));
-        assert!(rest.contains_key("sw-targets"));
+            json!({"version": "1.0.0", "sw": {"version": "2.0.0"}, "sw-targets": []}),
+        );
+        assert_eq!(ours.unknown, vec!["sw".to_owned(), "sw-targets".to_owned()]);
+        assert_eq!(ours.identity.version.as_deref(), Some("1.0.0"));
+        assert_eq!(ours.targets, None);
     }
 
     #[test]
@@ -1242,7 +1079,7 @@ mod tests {
     fn a_minimal_argument_round_trips() {
         let (ours, foreign) = read(json!({
             "description": "d",
-            "sw-arguments": [{"name": "pr-number"}],
+            "arguments": [{"name": "pr-number"}],
         }))
         .unwrap();
         assert_eq!(
@@ -1256,7 +1093,7 @@ mod tests {
             }]
         );
         assert!(
-            !foreign.contains_key("sw-arguments"),
+            !foreign.contains_key("arguments"),
             "consumed like every key of ours"
         );
     }
@@ -1265,7 +1102,7 @@ mod tests {
     fn every_field_on_an_argument_round_trips() {
         let (ours, _) = read(json!({
             "description": "d",
-            "sw-arguments": [{
+            "arguments": [{
                 "name": "format",
                 "description": "Output format",
                 "required": true,
@@ -1290,7 +1127,7 @@ mod tests {
     fn several_arguments_keep_declaration_order() {
         let (ours, _) = read(json!({
             "description": "d",
-            "sw-arguments": [{"name": "first"}, {"name": "second"}, {"name": "third"}],
+            "arguments": [{"name": "first"}, {"name": "second"}, {"name": "third"}],
         }))
         .unwrap();
         let names: Vec<&str> = ours.arguments.iter().map(|a| a.name.as_str()).collect();
@@ -1299,8 +1136,9 @@ mod tests {
 
     #[test]
     fn arguments_not_a_list_is_malformed() {
-        let err = read(json!({"description": "d", "sw-arguments": "pr-number"})).unwrap_err();
-        assert!(err.to_string().contains("sw-arguments"), "{err}");
+        let err =
+            read(json!({"description": "d", "arguments": {"name": "pr-number"}})).unwrap_err();
+        assert!(err.to_string().contains("arguments"), "{err}");
         assert!(
             err.to_string().contains("list of argument objects"),
             "{err}"
@@ -1309,14 +1147,14 @@ mod tests {
 
     #[test]
     fn an_entry_not_a_mapping_is_malformed() {
-        let err = read(json!({"description": "d", "sw-arguments": ["pr-number"]})).unwrap_err();
+        let err = read(json!({"description": "d", "arguments": [{"name": "a"}, "b"]})).unwrap_err();
         assert!(err.to_string().contains("mappings"), "{err}");
     }
 
     #[test]
     fn an_entry_missing_name_is_malformed() {
         let err =
-            read(json!({"description": "d", "sw-arguments": [{"description": "d"}]})).unwrap_err();
+            read(json!({"description": "d", "arguments": [{"description": "d"}]})).unwrap_err();
         assert!(err.to_string().contains("missing `name`"), "{err}");
     }
 
@@ -1324,7 +1162,7 @@ mod tests {
     fn an_unrecognised_key_on_an_entry_is_malformed() {
         let err = read(json!({
             "description": "d",
-            "sw-arguments": [{"name": "a", "descripton": "typo"}],
+            "arguments": [{"name": "a", "descripton": "typo"}],
         }))
         .unwrap_err();
         assert!(err.to_string().contains("descripton"), "{err}");
@@ -1342,7 +1180,7 @@ mod tests {
         ] {
             let err = read(json!({
                 "description": "d",
-                "sw-arguments": [{"name": bad}],
+                "arguments": [{"name": bad}],
             }))
             .unwrap_err();
             let message = err.to_string();
@@ -1355,7 +1193,7 @@ mod tests {
     fn an_empty_values_list_is_refused() {
         let err = read(json!({
             "description": "d",
-            "sw-arguments": [{"name": "format", "values": []}],
+            "arguments": [{"name": "format", "values": []}],
         }))
         .unwrap_err();
         let message = err.to_string();
@@ -1367,7 +1205,7 @@ mod tests {
     fn a_default_outside_values_is_refused() {
         let err = read(json!({
             "description": "d",
-            "sw-arguments": [{
+            "arguments": [{
                 "name": "format",
                 "values": ["markdown", "json"],
                 "default": "yaml",
@@ -1384,7 +1222,7 @@ mod tests {
     fn a_default_matching_one_of_values_is_accepted() {
         let (ours, _) = read(json!({
             "description": "d",
-            "sw-arguments": [{
+            "arguments": [{
                 "name": "format",
                 "values": ["markdown", "json"],
                 "default": "json",
@@ -1398,7 +1236,7 @@ mod tests {
     fn a_duplicate_name_is_refused() {
         let err = read(json!({
             "description": "d",
-            "sw-arguments": [{"name": "format"}, {"name": "format"}],
+            "arguments": [{"name": "format"}, {"name": "format"}],
         }))
         .unwrap_err();
         let message = err.to_string();
@@ -1406,28 +1244,12 @@ mod tests {
         assert!(message.contains("more than once"), "{message}");
     }
 
-    #[test]
-    fn arguments_follow_the_configured_stem_like_every_key_of_ours() {
-        let (ours, foreign) = read_as(
-            &x(),
-            json!({"description": "d", "x-arguments": [{"name": "pr-number"}]}),
-        )
-        .unwrap();
-        assert_eq!(ours.arguments.len(), 1);
-        assert!(!foreign.contains_key("x-arguments"));
-
-        // And under the default stem, `x-arguments` is somebody else's key.
-        let (ours, foreign) = read(json!({"x-arguments": [{"name": "pr-number"}]})).unwrap();
-        assert!(ours.arguments.is_empty());
-        assert!(foreign.contains_key("x-arguments"));
-    }
-
     /// Whether a note of `kind` with `value` at `key` reads, as the vault
     /// reader takes it: our keys through [`VaultFrontmatter::take_from`],
     /// then the spec keys left behind through [`crate::vault::check_spec_kinds`].
-    fn note_accepts(ns: &Namespace, kind: EntityKind, key: &str, value: Value) -> bool {
+    fn note_accepts(kind: EntityKind, key: &str, value: Value) -> bool {
         let mut map = fields(json!({ "description": "d", key: value }));
-        VaultFrontmatter::take_from(&mut map, Path::new(NOTE), ns, kind).is_ok()
+        VaultFrontmatter::take_from(&mut map, Path::new(NOTE), kind).is_ok()
             && crate::vault::check_spec_kinds(&mut map, Path::new(NOTE), kind).is_ok()
     }
 
@@ -1436,54 +1258,44 @@ mod tests {
     #[test]
     fn component_key_values_keep_their_verdicts() {
         use EntityKind::{Agent, Command, Plugin, Skill};
-        let bare = Namespace::bare();
-        let sw = Namespace::sw();
-        let cases: &[(&Namespace, EntityKind, &str, Value, bool)] = &[
-            (&bare, Skill, "allowed-tools", json!("Read Grep"), true),
-            (&bare, Skill, "allowed-tools", json!(["Read", "Grep"]), true),
-            (&bare, Skill, "allowed-tools", json!({"Read": true}), false),
-            (&bare, Skill, "allowed-tools", json!(5), false),
-            (&bare, Skill, "tools", json!("Read, Grep"), true),
-            (&bare, Skill, "tools", json!(["Read"]), true),
-            (&bare, Skill, "tools", json!({"read": true}), false),
-            (&bare, Command, "tools", json!("Read, Grep"), true),
-            (&bare, Command, "tools", json!({"read": true}), false),
-            (&bare, Agent, "tools", json!("Read, Grep"), true),
-            (&bare, Agent, "tools", json!(["Read"]), true),
-            (&bare, Agent, "tools", json!({"read": true}), true),
-            (&bare, Agent, "tools", json!(5), false),
-            (&bare, Skill, "argument-hint", json!("[pr]"), true),
-            (&bare, Skill, "argument-hint", json!(["pr"]), true),
-            (&bare, Skill, "argument-hint", json!(5), false),
-            (&bare, Skill, "arguments", json!("a b"), true),
-            (&bare, Skill, "arguments", json!(["a"]), true),
-            (&bare, Skill, "arguments", json!([{"name": "a"}]), true),
-            (&bare, Skill, "arguments", json!(5), false),
-            (&sw, Skill, "sw-arguments", json!("a b"), false),
-            (&sw, Skill, "sw-arguments", json!([{"name": "a"}]), true),
-            (&bare, Skill, "metadata", json!({"a": 1}), true),
-            (&bare, Skill, "metadata", json!("a"), false),
-            (&bare, Skill, "user-invocable", json!("yes"), true),
-            (&bare, Skill, "user-invocable", json!(true), true),
-            (&bare, Skill, "user-invocable", json!(2), false),
-            (&bare, Skill, "disable-model-invocation", json!("off"), true),
-            (
-                &bare,
-                Skill,
-                "disable-model-invocation",
-                json!("maybe"),
-                false,
-            ),
-            (&bare, Plugin, "version", json!(1), false),
-            (&bare, Plugin, "version", Value::Null, false),
-            (&bare, Plugin, "author", json!(5), false),
-            (&bare, Plugin, "author", Value::Null, true),
-            (&bare, Plugin, "repository", json!("ftp://x"), false),
-            (&bare, Plugin, "keywords", json!("a"), false),
+        let cases: &[(EntityKind, &str, Value, bool)] = &[
+            (Skill, "allowed-tools", json!("Read Grep"), true),
+            (Skill, "allowed-tools", json!(["Read", "Grep"]), true),
+            (Skill, "allowed-tools", json!({"Read": true}), false),
+            (Skill, "allowed-tools", json!(5), false),
+            (Skill, "tools", json!("Read, Grep"), true),
+            (Skill, "tools", json!(["Read"]), true),
+            (Skill, "tools", json!({"read": true}), false),
+            (Command, "tools", json!("Read, Grep"), true),
+            (Command, "tools", json!({"read": true}), false),
+            (Agent, "tools", json!("Read, Grep"), true),
+            (Agent, "tools", json!(["Read"]), true),
+            (Agent, "tools", json!({"read": true}), true),
+            (Agent, "tools", json!(5), false),
+            (Skill, "argument-hint", json!("[pr]"), true),
+            (Skill, "argument-hint", json!(["pr"]), true),
+            (Skill, "argument-hint", json!(5), false),
+            (Skill, "arguments", json!("a b"), true),
+            (Skill, "arguments", json!(["a"]), true),
+            (Skill, "arguments", json!([{"name": "a"}]), true),
+            (Skill, "arguments", json!(5), false),
+            (Skill, "metadata", json!({"a": 1}), true),
+            (Skill, "metadata", json!("a"), false),
+            (Skill, "user-invocable", json!("yes"), true),
+            (Skill, "user-invocable", json!(true), true),
+            (Skill, "user-invocable", json!(2), false),
+            (Skill, "disable-model-invocation", json!("off"), true),
+            (Skill, "disable-model-invocation", json!("maybe"), false),
+            (Plugin, "version", json!(1), false),
+            (Plugin, "version", Value::Null, false),
+            (Plugin, "author", json!(5), false),
+            (Plugin, "author", Value::Null, true),
+            (Plugin, "repository", json!("ftp://x"), false),
+            (Plugin, "keywords", json!("a"), false),
         ];
-        for (ns, kind, key, value, accepted) in cases {
+        for (kind, key, value, accepted) in cases {
             assert_eq!(
-                note_accepts(ns, *kind, key, value.clone()),
+                note_accepts(*kind, key, value.clone()),
                 *accepted,
                 "{kind:?} {key}: {value}"
             );
@@ -1536,23 +1348,11 @@ mod tests {
         Refused,
     }
 
-    /// How a key is spelled on the note.
-    #[derive(Debug, Clone, Copy)]
-    enum Spelling {
-        /// `owner`.
-        Bare,
-        /// `sw-owner`.
-        Prefixed,
-        /// `sw: {owner: …}`.
-        Nested,
-    }
-
     /// One identity key's verdicts for a valid value, `null` and a blank
-    /// string, by namespace, kind and spelling.
+    /// string, by kind.
     #[test]
     fn container_identity_reads_keep_their_verdicts() {
         use EntityKind::{Marketplace, Plugin};
-        use Spelling::{Bare, Nested, Prefixed};
         use Verdict::{Read, Refused, Unknown, Unset};
         // Every key a container's identity holds, with each spelling's
         // verdicts in the same order: valid, `null`, blank.
@@ -1579,37 +1379,19 @@ mod tests {
             ("repository", [Read, Refused, Refused]),
             ("homepage", [Read, Refused, Refused]),
         ];
-        let bare = Namespace::bare();
-        let sw = Namespace::sw();
-        let cases: &[(&Namespace, EntityKind, Spelling, &[Row])] = &[
-            (&bare, Marketplace, Bare, market),
-            (&bare, Plugin, Bare, plugin),
-            // Under a namespace every prefixed or nested key is claimed, and
-            // one the kind does not read warns, as a bare one does.
-            (&sw, Marketplace, Prefixed, market),
-            (&sw, Marketplace, Nested, market),
-            (&sw, Plugin, Prefixed, plugin),
-            (&sw, Plugin, Nested, plugin),
-        ];
+        let cases: &[(EntityKind, &[Row])] = &[(Marketplace, market), (Plugin, plugin)];
         let valid = |key: &str| match key {
             "keywords" => json!(["k"]),
             "repository" | "homepage" => json!("https://x.example"),
             _ => json!("v"),
         };
-        for (ns, kind, spelling, rows) in cases {
+        for (kind, rows) in cases {
             for (key, verdicts) in *rows {
                 let values = [valid(key), Value::Null, json!("")];
                 for (value, verdict) in values.into_iter().zip(verdicts) {
-                    let spelled = match spelling {
-                        Bare => (*key).to_owned(),
-                        Prefixed | Nested => ns.key(key),
-                    };
-                    let note = match spelling {
-                        Bare | Prefixed => json!({ spelled.clone(): value.clone() }),
-                        Nested => json!({ ns.block_key(): { *key: value.clone() } }),
-                    };
-                    let case = format!("{ns:?} {kind:?} {spelling:?} {key}: {value}");
-                    let Ok((read, _)) = read_kind(ns, *kind, note) else {
+                    let note = json!({ *key: value.clone() });
+                    let case = format!("{kind:?} {key}: {value}");
+                    let Ok((read, _)) = read_kind(*kind, note) else {
                         assert_eq!(*verdict, Refused, "{case}");
                         continue;
                     };
@@ -1617,7 +1399,7 @@ mod tests {
                     let (expected, unknown) = match verdict {
                         Read => (Map::from_iter([((*key).to_owned(), value)]), vec![]),
                         Unset => (Map::new(), vec![]),
-                        Unknown => (Map::new(), vec![spelled]),
+                        Unknown => (Map::new(), vec![(*key).to_owned()]),
                         Refused => panic!("{case}: read, not refused"),
                     };
                     assert_eq!(set, expected, "{case}");
