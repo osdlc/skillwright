@@ -77,12 +77,11 @@ The CLI does the same steps.
 1. `find_vault_root(&vfs, start)` walks up from `start` to the first folder
    that holds both `skillwright.md` and `marketplaces/`. For a root the user
    names, `check_vault_root(&vfs, dir)` checks it instead.
-2. `load_vault(&vfs, root, marketplace, home)` checks the layout, parses the
+2. `load_vault(&vfs, root, marketplace)` checks the layout, parses the
    root file, and reads each marketplace's note.
    `Some(name)` loads one marketplace. It returns a `LoadedVault`: the root
-   file as `settings`, `inputs` (the config, harnesses,
-   assets and hooks) and one `VaultMarketplace` per marketplace. `home` is the
-   home directory; the library reads no environment.
+   file as `settings`, `inputs` (the config and harnesses) and one
+   `VaultMarketplace` per marketplace.
 3. `loaded.export_request(&marketplace, mode)` is the build or check of one
    marketplace into `<root>/dist/<m>/`. Pass it to
    `export_skills(&vfs, &request)`. To build several marketplaces with
@@ -112,7 +111,7 @@ for (path, text) in [
 }
 
 let root = find_vault_root(&vfs, Path::new(plugin))?;
-let loaded = load_vault(&vfs, &root, None, Path::new("/home"))?;
+let loaded = load_vault(&vfs, &root, None)?;
 for marketplace in &loaded.marketplaces {
     let request = loaded.export_request(marketplace, ExportMode::Build);
     let report = export_skills(&vfs, &request)?;
@@ -178,8 +177,8 @@ in the [CHANGELOG](CHANGELOG.md).
 Most public types are `#[non_exhaustive]`, so a new field or variant is not a
 breaking change:
 
-- The request types (`ExportRequest`, `LoadRequest`, `AssetSpec`,
-  `HookFileSpec`, `CompileSource`). Build one with
+- The request types (`ExportRequest`, `LoadRequest`, `CompileSource`).
+  Build one with
   its `new` constructor, which takes the required inputs, and set the other
   fields on the value.
 - The config and settings types (`MarketplaceConfig`, `PluginOverrides`,

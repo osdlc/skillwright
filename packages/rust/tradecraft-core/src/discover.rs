@@ -139,7 +139,7 @@ fn unknown_key_fate(kind: EntityKind, key: &str) -> &'static str {
         .split_once('.')
         .is_some_and(|(block, _)| KNOWN_TARGETS.contains(&block));
     match kind {
-        EntityKind::Plugin | EntityKind::Marketplace | EntityKind::Hook => "ignored",
+        EntityKind::Plugin | EntityKind::Marketplace => "ignored",
         _ if in_a_block => "ignored",
         EntityKind::Skill => "published under `metadata:`",
         EntityKind::Command => "carried as written",
@@ -198,8 +198,7 @@ pub(crate) fn unknown_keys(frontmatter: &VaultFrontmatter, kind: EntityKind) -> 
 }
 
 /// The keys in a note's harness blocks that no harness file reads, as
-/// `<harness>.<key>`. None on an agent or a hook, whose blocks are refused or
-/// ignored whole.
+/// `<harness>.<key>`. None on an agent, whose blocks are ignored whole.
 pub(crate) fn unknown_block_keys(blocks: &Map<String, Value>, kind: EntityKind) -> Vec<String> {
     if kind.holds_components() {
         unknown_container_block_keys(blocks, kind)
@@ -251,7 +250,7 @@ fn check_values(
             let owner = crate::harness::manifest::container_owner(kind, Some(folder));
             crate::harness::manifest::check_container_blocks(&owner, kind, &ours.blocks)?;
         }
-        EntityKind::Agent | EntityKind::Hook => {}
+        EntityKind::Agent => {}
     }
     Ok(())
 }
@@ -568,7 +567,7 @@ fn discover_with(
 /// Whether a note of `kind` must describe itself to publish. A container
 /// need not.
 pub(crate) fn needs_description(kind: EntityKind) -> bool {
-    !kind.holds_components() && kind != EntityKind::Hook
+    !kind.holds_components()
 }
 
 /// The entry a scan carries for a component note with no `description`.

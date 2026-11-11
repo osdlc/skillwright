@@ -873,12 +873,10 @@ fn hooks_json(command: &str) -> String {
 }
 
 #[test]
-fn a_hooks_file_outside_the_vault_changed_since_the_ref_bumps_its_plugin() {
-    let (_dir, repo) = repo_with_vault(
-        "build:\n  hooks:\n    - {from: ../hooks/hooks.json, plugin: widget}\n",
-        |repo| write(&repo.join("hooks/hooks.json"), &hooks_json("echo one")),
-    );
-    write(&repo.join("hooks/hooks.json"), &hooks_json("echo two"));
+fn a_plugins_hooks_file_changed_since_the_ref_bumps_its_plugin() {
+    let hooks = |repo: &Path| repo.join("vault/marketplaces/acme/plugins/widget/hooks/hooks.json");
+    let (_dir, repo) = repo_with_vault("", |repo| write(&hooks(repo), &hooks_json("echo one")));
+    write(&hooks(&repo), &hooks_json("echo two"));
 
     let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
     assert_eq!(

@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::error::CoreError;
-use crate::export::{ExportMode, ExportRequest, HookFileSpec, MarketplaceConfig};
+use crate::export::{ExportMode, ExportRequest, MarketplaceConfig};
 use crate::layout::{DIST_DIR, Layout, MARKETPLACES_DIR, read_layout};
 use crate::settings::{ROOT_FILE, RootFile, parse_root_file};
 use crate::vfs::Vfs;
@@ -75,7 +75,7 @@ pub fn resolve_path(path: &str, base: &Path, home: &Path) -> PathBuf {
 }
 
 /// What a build reads from the root file besides the vault: the shared
-/// defaults, the harnesses and the hooks files.
+/// defaults and the harnesses.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct MarketplaceInputs {
@@ -83,40 +83,14 @@ pub struct MarketplaceInputs {
     pub config: MarketplaceConfig,
     /// The harnesses to build for. Empty is every one the export supports.
     pub harnesses: BTreeSet<String>,
-    /// The `build.hooks` entries, `from` resolved against the root file's
-    /// folder.
-    pub hooks: Vec<HookFileSpec>,
 }
 
-/// The root file as the inputs of an [`crate::ExportRequest`]: config,
-/// harnesses and hooks. Pass the result's fields to the request, or a build
-/// gets no hooks.
-///
-/// `config_dir` is the root file's folder: each `from` resolves against it,
-/// because the core reads no ambient config. `home` expands a leading `~`.
-pub fn marketplace_inputs(root: &RootFile, config_dir: &Path, home: &Path) -> MarketplaceInputs {
-    let hooks = root
-        .build
-        .hooks
-        .iter()
-        .map(|entry| {
-            let source = resolve_path(&entry.from, config_dir, home);
-            // Root-relative when the file is under the root folder; a file
-            // outside it is named by its `..` path.
-            let from = relative_path(config_dir, &source)
-                .to_string_lossy()
-                .replace('\\', "/");
-            HookFileSpec {
-                source,
-                from,
-                plugin: entry.plugin.clone(),
-            }
-        })
-        .collect();
+/// The root file as the inputs of an [`crate::ExportRequest`]: config and
+/// harnesses.
+pub fn marketplace_inputs(root: &RootFile) -> MarketplaceInputs {
     MarketplaceInputs {
         config: root.to_config(),
         harnesses: root.harness_set(),
-        hooks,
     }
 }
 
@@ -144,7 +118,7 @@ pub struct LoadedVault {
     pub root_file: PathBuf,
     /// The root file, parsed.
     pub settings: RootFile,
-    /// Config, harnesses, assets and hooks for each [`ExportRequest`].
+    /// Config and harnesses for each [`ExportRequest`].
     pub inputs: MarketplaceInputs,
     /// The marketplaces the load was asked for, by folder name: every one, or
     /// the one named.
@@ -170,7 +144,6 @@ impl LoadedVault {
         request.marketplace = Some(marketplace.name.clone());
         request.mode = mode;
         request.harnesses.clone_from(&self.inputs.harnesses);
-        request.hooks.clone_from(&self.inputs.hooks);
         request
     }
 }
@@ -197,7 +170,6 @@ pub fn load_vault(
     vfs: &dyn Vfs,
     root: &Path,
     marketplace: Option<&str>,
-    home: &Path,
 ) -> Result<LoadedVault, CoreError> {
     let layout = read_layout(vfs, root)?;
     let root_file = root.join(ROOT_FILE);
@@ -241,7 +213,7 @@ pub fn load_vault(
             dist: dist_dir(root, name),
         });
     }
-    let inputs = marketplace_inputs(&settings, root, home);
+    let inputs = marketplace_inputs(&settings);
     Ok(LoadedVault {
         root: root.to_path_buf(),
         root_file,
@@ -288,7 +260,7 @@ mod tests {
     #[test]
     fn a_vault_lists_each_marketplace_with_its_note_and_output() {
         let vfs = vault();
-        let loaded = load_vault(&vfs, Path::new("/v"), None, Path::new("/home")).unwrap();
+        let loaded = load_vault(&vfs, Path::new("/v"), None).unwrap();
         let names: Vec<&str> = loaded
             .marketplaces
             .iter()
@@ -306,10 +278,10 @@ mod tests {
     #[test]
     fn one_marketplace_can_be_picked_and_an_unknown_one_is_refused() {
         let vfs = vault();
-        let loaded = load_vault(&vfs, Path::new("/v"), Some("shop"), Path::new("/home")).unwrap();
+        let loaded = load_vault(&vfs, Path::new("/v"), Some("shop")).unwrap();
         assert_eq!(loaded.marketplaces.len(), 1);
         assert_eq!(loaded.marketplaces[0].name, "shop");
-        let err = load_vault(&vfs, Path::new("/v"), Some("mall"), Path::new("/home")).unwrap_err();
+        let err = load_vault(&vfs, Path::new("/v"), Some("mall")).unwrap_err();
         let said = err.to_string();
         assert!(said.contains("unknown-marketplace"), "{said}");
         assert!(said.contains("`house`, `shop`"), "{said}");

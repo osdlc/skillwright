@@ -1,26 +1,21 @@
-//! A plugin's hooks from one file on disk, and the gap report that says what
-//! each harness does with them.
+//! A plugin's hooks from its `hooks/hooks.json`, and the gap report that
+//! says what each harness does with them (spec section 4 rule 23).
 //!
-//! The file is a Claude Code `hooks.json` —
+//! The file has Claude Code's shape —
 //! `{"hooks": {"<Event>": [{"matcher": "…", "hooks": [{"type": "command",
-//! "command": "…", "timeout": 5}]}]}}` — and parses into the same
-//! [`agent_adapt::Hook`] a vault hook note does, so both render through one
-//! path.
+//! "command": "…", "timeout": 5}]}]}}` — and parses into
+//! [`agent_adapt::Hook`]s.
 //!
-//! Unlike a hook note, a hook a harness cannot carry — its event, or for
-//! Cursor its shape (see `agent_adapt::render::hook_refusal`) — does not stop
-//! the build: it is left out of that harness's file and listed in the gap
-//! report's `left_out`.
+//! A hook a harness cannot carry does not stop the build: it is left out of
+//! that harness's file and listed in the gap report's `left_out`.
 //!
-//! A command names the plugin's own files as `${CLAUDE_PLUGIN_ROOT}/…`. Each
-//! pack's copy names its harness's own variable instead ([`localize`]),
-//! because a hook runs in the session's working directory, not the plugin's
-//! (sources: `agent_adapt::runtimes::{codex_cli, cursor}`). Two
+//! A command names the plugin's own files as `${PLUGIN_ROOT}/…`. Each pack's
+//! copy names its harness's own variable instead ([`localize`]), because a
+//! hook runs in the session's working directory, not the plugin's. Two
 //! placeholders are filled per pack: `{{harness}}`, the root's name, and
 //! `{{event}}`, the event the hook is registered under, spelled as in the
 //! file. Any other `{{…}}`, or an unclosed `{{`, is refused when the file is
-//! parsed. Only `command` is rewritten; other fields, and hook notes from the
-//! vault, are written as they are.
+//! parsed. Only `command` is rewritten; other fields are written as they are.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -44,7 +39,7 @@ pub struct GapHarness {
     /// Where its pack carries this file's hooks, or `None` when it carries
     /// none of them.
     pub file: Option<&'static str>,
-    /// See [`PluginRootVar`]. `None` leaves `${CLAUDE_PLUGIN_ROOT}` as written.
+    /// See [`PluginRootVar`]. `None` when its pack carries no hooks file.
     pub plugin_root_var: Option<PluginRootVar>,
 }
 
@@ -66,7 +61,10 @@ pub struct PluginRootVar {
 }
 
 /// The token a hooks file names the plugin root by.
-const CANONICAL_ROOT: &str = "${CLAUDE_PLUGIN_ROOT}";
+const CANONICAL_ROOT: &str = "${PLUGIN_ROOT}";
+
+/// Claude Code's own variable, which a hooks file must not write.
+const CLAUDE_ROOT: &str = "${CLAUDE_PLUGIN_ROOT}";
 
 /// The placeholders a hook command may carry; [`localize`] pairs them with
 /// their values by position.
@@ -81,7 +79,15 @@ const PLACEHOLDERS: [&str; 2] = ["harness", "event"];
 /// * `refused: unknown-hook-event` — an event no harness documents.
 /// * `refused: unknown-hook-placeholder` — a command carries a `{{…}}` other
 ///   than `{{harness}}` and `{{event}}`.
+/// * `refused: claude-plugin-root` — the file writes `${CLAUDE_PLUGIN_ROOT}`
+///   (spec section 4 rule 22).
 pub fn parse_hooks_file(text: &str, from: &str) -> Result<Vec<Hook>, CoreError> {
+    if text.contains(CLAUDE_ROOT) {
+        return Err(CoreError::refused(
+            "claude-plugin-root",
+            format!("{from}: `{CLAUDE_ROOT}` is Claude Code's own; write `{CANONICAL_ROOT}`"),
+        ));
+    }
     let malformed =
         |what: String| CoreError::refused("malformed-hooks-file", format!("{from}: {what}"));
     let root: Value = serde_json::from_str(text).map_err(|e| malformed(e.to_string()))?;
@@ -237,9 +243,9 @@ fn unknown_placeholder(command: &str) -> Option<&str> {
     None
 }
 
-/// `hook` as the pack for root `harness` carries it: `${CLAUDE_PLUGIN_ROOT}`
-/// in its command becomes `${<plugin_root_var>}` (left as is when `None`, or
-/// when a name character follows it), and the placeholders are filled.
+/// `hook` as the pack for root `harness` carries it: `${PLUGIN_ROOT}` in its
+/// command becomes `${<plugin_root_var>}` (left as is when `None`), and the
+/// placeholders are filled.
 pub fn localize(mut hook: Hook, harness: &str, plugin_root_var: Option<&str>) -> Hook {
     let Some(mut command) = hook.command.take() else {
         return hook;
@@ -498,24 +504,29 @@ mod tests {
     #[test]
     fn localize_names_the_harness_variable() {
         let hook = localize(
-            command("${CLAUDE_PLUGIN_ROOT}/bin/tool x"),
-            "codex",
-            Some("PLUGIN_ROOT"),
-        );
-        assert_eq!(hook.command.as_deref(), Some("${PLUGIN_ROOT}/bin/tool x"));
-    }
-
-    #[test]
-    fn localize_leaves_a_longer_token_alone() {
-        let hook = localize(
-            command("${CLAUDE_PLUGIN_ROOT}x ${CLAUDE_PLUGIN_ROOT}_Y ${CLAUDE_PLUGIN_ROOT}"),
-            "cursor",
-            Some("CURSOR_PLUGIN_ROOT"),
+            command("${PLUGIN_ROOT}/scripts/tool x ${PLUGIN_ROOT}"),
+            "claude",
+            Some("CLAUDE_PLUGIN_ROOT"),
         );
         assert_eq!(
             hook.command.as_deref(),
-            Some("${CLAUDE_PLUGIN_ROOT}x ${CLAUDE_PLUGIN_ROOT}_Y ${CURSOR_PLUGIN_ROOT}")
+            Some("${CLAUDE_PLUGIN_ROOT}/scripts/tool x ${CLAUDE_PLUGIN_ROOT}")
         );
+        let hook = localize(command("${PLUGIN_ROOT}/x"), "codex", Some("PLUGIN_ROOT"));
+        assert_eq!(hook.command.as_deref(), Some("${PLUGIN_ROOT}/x"));
+    }
+
+    #[test]
+    fn claude_plugin_root_is_refused_naming_the_source_form() {
+        let err = parse_hooks_file(
+            r#"{"hooks": {"Stop": [{"hooks": [{"command": "${CLAUDE_PLUGIN_ROOT}/x"}]}]}}"#,
+            "hooks/hooks.json",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("claude-plugin-root"), "{err}");
+        assert!(err.contains("hooks/hooks.json"), "{err}");
+        assert!(err.contains("write `${PLUGIN_ROOT}`"), "{err}");
     }
 
     #[test]

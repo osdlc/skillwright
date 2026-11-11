@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 pub use tradecraft_core::paths::{normalize_join, relative_path};
-pub use tradecraft_core::{BuildSettings, HookSetting, ROOT_FILE, RootFile, resolve_path};
+pub use tradecraft_core::{BuildSettings, ROOT_FILE, RootFile, resolve_path};
 
 /// Resolve a flag's path as the shell would: absolute as given, `~` or a
 /// `~/` prefix against the home directory, anything else relative to

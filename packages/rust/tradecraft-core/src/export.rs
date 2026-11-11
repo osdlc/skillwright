@@ -142,9 +142,6 @@ pub struct ExportRequest {
     pub compare_with: Option<PathBuf>,
     /// The marketplace's own identity and per-plugin overrides.
     pub config: MarketplaceConfig,
-    /// Canonical hooks files; see [`HookFileSpec`].
-    #[serde(default)]
-    pub hooks: Vec<HookFileSpec>,
 }
 
 impl ExportRequest {
@@ -158,38 +155,6 @@ impl ExportRequest {
             mode: ExportMode::default(),
             compare_with: None,
             config,
-            hooks: Vec::new(),
-        }
-    }
-}
-
-/// One canonical hooks file a build renders into a plugin's packs. At most
-/// one per plugin; its gap report goes in every pack. See
-/// [`crate::hooks_file`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct HookFileSpec {
-    /// Absolute host path to the file, resolved by the caller: this core
-    /// reads no root file, so it has nothing to resolve a relative path
-    /// against.
-    pub source: PathBuf,
-    /// The path relative to the root file.
-    /// Refusals and the gap report's `source` name the file by this, so the
-    /// report holds no host path.
-    pub from: String,
-    /// Which plugin's packs carry it. A build refuses `None`.
-    #[serde(default)]
-    pub plugin: Option<String>,
-}
-
-impl HookFileSpec {
-    /// The hooks file at `source`, named `from` in reports. Set `plugin`
-    /// after.
-    pub fn new(source: impl Into<PathBuf>, from: impl Into<String>) -> Self {
-        Self {
-            source: source.into(),
-            from: from.into(),
-            plugin: None,
         }
     }
 }
@@ -392,11 +357,10 @@ pub enum ExportUnit {
     /// A component the marketplace layout has no place for, named rather than
     /// dropped.
     ///
-    /// A pack has a place for skills, for commands on a root whose
-    /// [`crate::harness::PluginFormat::carries_commands`] is `true`, and for
-    /// hooks on a root whose [`crate::harness::PluginFormat::carries_hooks`]
-    /// is. Everything else is named here rather than dropped; what a build
-    /// must not do is leave silently.
+    /// A pack has a place for skills, and for commands on a root whose
+    /// [`crate::harness::PluginFormat::carries_commands`] is `true`.
+    /// Everything else is named here rather than dropped; what a build must
+    /// not do is leave silently.
     ///
     /// `root` is the root that cannot carry it — a command on Codex, say.
     /// `None` when no root can, as for an agent: the reason is the layout's,
@@ -776,7 +740,7 @@ pub fn plan_in(
         let mut uncarried: Vec<&Component> = market
             .plugins
             .values()
-            .flat_map(|plugin| plugin.commands.iter().chain(&plugin.hooks))
+            .flat_map(|plugin| &plugin.commands)
             .filter(|c| {
                 !kind_carried(&c.discovered, spec) && targets_admit(&c.discovered, spec.name)
             })
@@ -823,7 +787,6 @@ impl ExportRequest {
             marketplace: self.marketplace.clone(),
             harnesses: self.harnesses.clone(),
             config: self.config.clone(),
-            hooks: self.hooks.clone(),
         }
     }
 }

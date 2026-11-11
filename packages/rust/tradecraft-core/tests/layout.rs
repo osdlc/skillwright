@@ -144,7 +144,7 @@ fn files_beside_the_root_file_are_not_read_and_a_build_leaves_them() {
         .iter()
         .map(|rel| vfs.read_file(&Path::new("/v").join(rel)).unwrap())
         .collect();
-    let loaded = load_vault(&vfs, Path::new("/v"), None, Path::new("/home")).unwrap();
+    let loaded = load_vault(&vfs, Path::new("/v"), None).unwrap();
     let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
     export_skills(&vfs, &request).unwrap();
     assert!(vfs.exists(Path::new("/v/dist/acme")));
@@ -518,7 +518,7 @@ fn case_7_removed_build_keys_are_reported_together() {
     }
     // `load_vault` stops on the same report.
     let vfs = vault_of(&files);
-    let err = load_vault(&vfs, Path::new("/v"), None, Path::new("/home")).unwrap_err();
+    let err = load_vault(&vfs, Path::new("/v"), None).unwrap_err();
     assert_eq!(err.to_string(), said);
 }
 
@@ -532,7 +532,7 @@ fn case_7_build_namespace_is_refused() {
     let said = refusal(&vault_of(&files));
     assert!(said.contains("`build.namespace`"), "{said}");
     let vfs = vault_of(&files);
-    let err = load_vault(&vfs, Path::new("/v"), None, Path::new("/home")).unwrap_err();
+    let err = load_vault(&vfs, Path::new("/v"), None).unwrap_err();
     assert_eq!(err.to_string(), said);
 }
 

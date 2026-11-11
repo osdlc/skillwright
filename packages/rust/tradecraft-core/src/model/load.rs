@@ -26,7 +26,7 @@ use crate::discover::{
     refuse_undescribed,
 };
 use crate::error::CoreError;
-use crate::export::{HookFileSpec, MarketplaceConfig};
+use crate::export::MarketplaceConfig;
 use crate::frontmatter::{EntityKind, VaultFrontmatter};
 use crate::harness::PLUGIN_HOOKS_PATH;
 use crate::harness::manifest::plugin_version;
@@ -57,9 +57,6 @@ pub struct LoadRequest {
     /// The marketplace's identity and per-plugin overrides, under what the
     /// vault's own notes say.
     pub config: MarketplaceConfig,
-    /// Canonical hooks files.
-    #[serde(default)]
-    pub hooks: Vec<HookFileSpec>,
 }
 
 impl LoadRequest {
@@ -71,7 +68,6 @@ impl LoadRequest {
             marketplace: None,
             harnesses: BTreeSet::new(),
             config,
-            hooks: Vec::new(),
         }
     }
 }
@@ -158,10 +154,8 @@ pub(crate) fn selected_harnesses(
 /// * `refused: missing-description` — a component with no `description`.
 /// * `refused: empty-marketplace` — the marketplace holds no plugin.
 /// * `refused: path-collision` — two components of one name in one plugin.
-/// * `refused: unsafe-asset-dest` / `asset-over-manifest` /
-///   `unknown-asset-plugin` — an asset that cannot land where it says.
-/// * `refused: unknown-hooks-plugin` / `duplicate-hooks-file` and what
-///   [`crate::hooks_file::parse_hooks_file`] refuses.
+/// * What [`crate::hooks_file::parse_hooks_file`] refuses in a plugin's
+///   `hooks/hooks.json`.
 /// * `refused: unknown-target` — a harness block named for no known harness.
 /// * `refused: malformed` — a container block key holding the wrong
 ///   kind of value.
@@ -303,7 +297,13 @@ pub fn load_in(
     warnings.extend(missing_versions(&discovered, &market, &plugins, config));
     pack_files(vfs, layout, &market, &mut plugins)?;
     warnings.extend(changelog_warnings(vfs, layout, &market, config));
-    load_hook_files(vfs, &request.hooks, &mut plugins)?;
+    warnings.extend(load_hooks_files(
+        vfs,
+        layout,
+        &market,
+        &roots,
+        &mut plugins,
+    )?);
 
     // Pass 2. One index for every call, over every skill in the marketplace
     // under the plugin it ships in, whether or not a given harness ships it:
@@ -322,43 +322,24 @@ pub fn load_in(
     let calls = recording_context(SkillSource::ready(&index.skills), true, &record);
     for plugin in plugins.values_mut() {
         let plugin_name = plugin.name.clone();
-        for component in plugin
-            .skills
-            .iter_mut()
-            .chain(plugin.commands.iter_mut())
-            .chain(plugin.hooks.iter_mut())
-        {
+        for component in plugin.skills.iter_mut().chain(plugin.commands.iter_mut()) {
             if !roots.iter().any(|root| admits(&component.discovered, root)) {
                 continue;
             }
             let mut note = read_vault_note(vfs, &component.discovered.entry_path, component.kind)?;
             cascade.apply(&mut note, component.kind, Some(&plugin_name));
             component.extensions = extensions(&note.frontmatter, &component.discovered)?;
-            let (resolved, content) = match component.kind {
-                // A hook's body is a script or a prompt inside a JSON string:
-                // an embed expanded into it would rewrite what runs, so it is
-                // taken verbatim. The hooks document is one file, with nowhere
-                // for a peer to travel.
-                EntityKind::Hook => {
-                    refuse_carried_peers(&note.projection, "hook")?;
-                    (None, note.projection.content.clone())
-                }
-                kind => {
-                    let (resolved, content) = resolve_body(
-                        vfs,
-                        layout,
-                        &component.discovered,
-                        &note,
-                        kind,
-                        &calls,
-                        &index,
-                    )?;
-                    (Some(resolved), content)
-                }
-            };
+            let (resolved, content) = resolve_body(
+                vfs,
+                layout,
+                &component.discovered,
+                &note,
+                component.kind,
+                &calls,
+                &index,
+            )?;
             component.content = Some(content);
-            component.source = Some(note.projection.resources);
-            component.resolved = resolved;
+            component.resolved = Some(resolved);
         }
     }
     for warning in calls.warnings.into_inner() {
@@ -624,11 +605,7 @@ fn apply_naming(
             plugin.bare_on.clone_from(bare);
             plugin.prefixed_on.clone_from(prefixed);
         }
-        let members = plugin
-            .skills
-            .iter_mut()
-            .chain(&mut plugin.commands)
-            .chain(&mut plugin.hooks);
+        let members = plugin.skills.iter_mut().chain(&mut plugin.commands);
         for resolved in members.filter_map(|member| member.resolved.as_mut()) {
             for body in bodies_of(resolved) {
                 for segment in &mut body.segments {
@@ -666,7 +643,6 @@ fn unread(component: &DiscoveredComponent) -> Component {
         targets: component.targets.clone(),
         extensions: Extensions::default(),
         content: None,
-        source: None,
         resolved: None,
         discovered: component.clone(),
     }
@@ -720,7 +696,6 @@ pub(crate) fn admits(component: &DiscoveredComponent, spec: &HarnessProfile) -> 
 pub(crate) fn kind_carried(component: &DiscoveredComponent, spec: &HarnessProfile) -> bool {
     match component.kind {
         EntityKind::Command => spec.format().carries_commands,
-        EntityKind::Hook => spec.format().carries_hooks,
         _ => true,
     }
 }
@@ -884,18 +859,6 @@ fn group_by_plugin(
     Ok(plugins)
 }
 
-/// The plugins a build holds, for a refusal that names a missing one.
-fn plugin_list(plugins: &BTreeMap<String, Plugin>) -> String {
-    if plugins.is_empty() {
-        return "no plugins".to_owned();
-    }
-    plugins
-        .keys()
-        .map(|k| format!("`{k}`"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 /// What a plugin ships at its pack root, read from the layout: its
 /// `CHANGELOG.md`, and its `references/`, `scripts/` and `assets/` under
 /// their own names (spec section 9). Each is copied byte for byte.
@@ -968,7 +931,9 @@ fn heading_names(line: &str, version: &str) -> bool {
             .any(|token| token.strip_prefix('v').unwrap_or(token) == version)
 }
 
-/// Every [`HookFileSpec`], read and parsed into the plugin it belongs to.
+/// Each plugin's `hooks/hooks.json`, read and parsed into the plugin, and a
+/// warning for each one whose Cursor pack this build writes, since that pack
+/// ships no hooks (spec section 4 rule 23).
 ///
 /// The gap report covers every harness with a plugin format, not only the
 /// requested ones, so it is the same bytes whatever a build selects. A
@@ -978,43 +943,26 @@ fn heading_names(line: &str, version: &str) -> bool {
 ///
 /// # Errors
 ///
-/// * `refused: unknown-hooks-plugin` — the plugin holds no skill or command,
-///   so there is no pack to carry the file.
-/// * `refused: duplicate-hooks-file` — two files for one plugin.
-/// * What [`crate::hooks_file::parse_hooks_file`] refuses, and a read failure.
-fn load_hook_files(
+/// What [`crate::hooks_file::parse_hooks_file`] refuses, and a read failure.
+fn load_hooks_files(
     vfs: &dyn Vfs,
-    specs: &[HookFileSpec],
+    layout: &Layout,
+    market: &str,
+    roots: &[&'static HarnessProfile],
     plugins: &mut BTreeMap<String, Plugin>,
-) -> Result<(), CoreError> {
-    for spec in specs {
-        let plugin = spec.plugin.as_deref().unwrap_or_default();
-        let list = plugin_list(plugins);
-        let Some(group) = plugins.get_mut(plugin) else {
-            return Err(CoreError::refused(
-                "unknown-hooks-plugin",
-                format!(
-                    "hooks file `{}` names plugin `{plugin}`, which this build holds no skill, \
-                     command or hook for — this vault publishes {list}. Nothing was written",
-                    spec.from,
-                ),
-            ));
+) -> Result<Vec<DiscoveryWarning>, CoreError> {
+    let mut warnings = Vec::new();
+    for file in layout.files_of(market) {
+        let (Place::HooksFile, Some(plugin)) = (&file.place, file.plugin.as_deref()) else {
+            continue;
         };
-        if group.hooks_file.is_some() {
-            return Err(CoreError::refused(
-                "duplicate-hooks-file",
-                format!(
-                    "plugin `{plugin}` has more than one hooks file; `{}` is the second. Merge \
-                     them into one. Nothing was written",
-                    spec.from
-                ),
-            ));
-        }
-        let bytes = vfs.read_file(&spec.source)?;
-        let text = String::from_utf8(bytes).map_err(|_| {
-            CoreError::refused("malformed-hooks-file", format!("{}: not UTF-8", spec.from))
+        let Some(group) = plugins.get_mut(plugin) else {
+            continue;
+        };
+        let text = String::from_utf8(vfs.read_file(&file.path)?).map_err(|_| {
+            CoreError::refused("malformed-hooks-file", format!("{}: not UTF-8", file.rel))
         })?;
-        let hooks = crate::hooks_file::parse_hooks_file(&text, &spec.from)?;
+        let hooks = crate::hooks_file::parse_hooks_file(&text, &file.rel)?;
         let harnesses = with_plugin_format()
             .map(|root| {
                 let runtime = parse_runtime_target(root.runtime)?;
@@ -1029,10 +977,23 @@ fn load_hook_files(
                 })
             })
             .collect::<Result<Vec<_>, CoreError>>()?;
-        let gap_report = crate::hooks_file::render_gap_report(&spec.from, &hooks, &harnesses);
+        let gap_report = crate::hooks_file::render_gap_report(&file.rel, &hooks, &harnesses);
         group.hooks_file = Some(HooksFile { hooks, gap_report });
+        let cursor_built = roots.iter().any(|root| {
+            root.name == "cursor" && group.carried_by(root.name, |c| admits(&c.discovered, root))
+        });
+        if cursor_built {
+            warnings.push(DiscoveryWarning {
+                path: file.rel.clone(),
+                reason: "cursor-hooks-left-out".to_owned(),
+                detail: format!(
+                    "plugin `{plugin}`'s Cursor pack ships no hooks from `{PLUGIN_HOOKS_PATH}`: \
+                     Cursor does not document its plugin-root variable for hook commands"
+                ),
+            });
+        }
     }
-    Ok(())
+    Ok(warnings)
 }
 
 #[cfg(test)]

@@ -1171,8 +1171,7 @@ fn a_marketplace_named_skillwright_loads_and_builds() {
         &format!("{market}/plugins/p/skills/a/a.md"),
         "---\ndescription: A.\n---\n\nX.\n",
     );
-    let loaded =
-        tradecraft_core::load_vault(&vfs, Path::new("/w"), None, Path::new("/home")).unwrap();
+    let loaded = tradecraft_core::load_vault(&vfs, Path::new("/w"), None).unwrap();
     let found = loaded.marketplace("skillwright").unwrap();
     assert_eq!(found.dir, PathBuf::from(market));
     assert_eq!(found.dist, PathBuf::from("/w/dist/skillwright"));
@@ -1192,7 +1191,7 @@ fn a_malformed_root_file_is_refused_with_one_token() {
         "---\nbuild:\n  harnesses: [claude]\n",
     ] {
         let vfs = root_vault(root, &[TOOL_SKILL]);
-        let err = tradecraft_core::load_vault(&vfs, Path::new("/vault"), None, Path::new("/home"))
+        let err = tradecraft_core::load_vault(&vfs, Path::new("/vault"), None)
             .unwrap_err()
             .to_string();
         assert!(err.contains("malformed-root-file: "), "{root}: {err}");

@@ -1,9 +1,9 @@
 //! The marketplace model — a vault loaded once, harness-neutral, for every
 //! verb to translate (D-COMG).
 //!
-//! The vault is read into one object graph, marketplace → plugins → skills, commands, hooks and assets,
-//! and each harness's [`crate::harness::HarnessTranslator`] writes that graph
-//! out. What a note means is decided once; how a harness spells it is the
+//! The vault is read into one object graph, marketplace → plugins → skills,
+//! commands, the hooks file and assets, and each harness's
+//! [`crate::harness::HarnessTranslator`] writes that graph out. What a note means is decided once; how a harness spells it is the
 //! translator's.
 //!
 //! # Two passes, then validation
@@ -101,11 +101,9 @@ pub struct Plugin {
     pub skills: Vec<Component>,
     /// Its commands.
     pub commands: Vec<Component>,
-    /// Its hook notes.
-    pub hooks: Vec<Component>,
     /// Files copied verbatim into the built pack.
     pub assets: Vec<Asset>,
-    /// The plugin's canonical hooks file, parsed.
+    /// The plugin's `hooks/hooks.json`, parsed.
     #[serde(skip)]
     pub hooks_file: Option<HooksFile>,
     /// The harnesses that name this plugin's skills bare against their
@@ -126,7 +124,7 @@ pub struct Plugin {
 impl Plugin {
     /// Every component of every kind, skills first.
     pub fn components(&self) -> impl Iterator<Item = &Component> {
-        self.skills.iter().chain(&self.commands).chain(&self.hooks)
+        self.skills.iter().chain(&self.commands)
     }
 
     /// Whether `harness`, admitting what `admits` admits, carries this
@@ -141,7 +139,7 @@ impl Plugin {
     }
 }
 
-/// A skill, a command, a hook, an agent or a container note, read and — when
+/// A skill, a command, an agent or a container note, read and — when
 /// a requested harness admits it — resolved.
 #[derive(Debug, Clone, Serialize)]
 pub struct Component {
@@ -161,12 +159,8 @@ pub struct Component {
     /// [`Self::resolved`]. `None` until the note is read in full, which a load
     /// does only for what some requested harness admits.
     pub content: Option<SkillContent>,
-    /// The note's own files as read, before resolution — what a hook, whose
-    /// body is taken verbatim, renders from.
-    #[serde(skip)]
-    pub source: Option<Vec<(String, Vec<u8>, bool)>>,
     /// The body and its files, resolved. `None` when no harness this load is
-    /// for admits the component, or for a kind whose body is taken verbatim.
+    /// for admits the component.
     pub resolved: Option<Resolved>,
     /// What the scan found.
     #[serde(skip)]
@@ -376,7 +370,7 @@ pub struct Asset {
     pub executable: bool,
 }
 
-/// A plugin's canonical hooks file, parsed, and the gap report each of its
+/// A plugin's `hooks/hooks.json`, parsed, and the gap report each of its
 /// packs carries. See [`crate::hooks_file`].
 #[derive(Debug, Clone)]
 pub struct HooksFile {
@@ -463,11 +457,7 @@ fn append_text(out: &mut Vec<Segment>, text: &str) {
 pub(crate) fn pack_kind(kind: EntityKind) -> bool {
     matches!(
         kind,
-        EntityKind::Skill
-            | EntityKind::Command
-            | EntityKind::Hook
-            | EntityKind::Plugin
-            | EntityKind::Marketplace
+        EntityKind::Skill | EntityKind::Command | EntityKind::Plugin | EntityKind::Marketplace
     )
 }
 

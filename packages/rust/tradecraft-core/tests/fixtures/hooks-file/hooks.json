@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session start",
+            "command": "${PLUGIN_ROOT}/scripts/tool session start",
             "timeout": 5
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session received",
+            "command": "${PLUGIN_ROOT}/scripts/tool session received",
             "timeout": 5
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session stop --harness {{harness}} --event {{event}}",
+            "command": "${PLUGIN_ROOT}/scripts/tool session stop --harness {{harness}} --event {{event}}",
             "timeout": 10
           }
         ]
@@ -35,11 +35,11 @@
     ],
     "Notification": [
       {
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session notify" }]
+        "hooks": [{ "type": "command", "command": "${PLUGIN_ROOT}/scripts/tool session notify" }]
       }
     ],
     "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/tool session end" }] }
+      { "hooks": [{ "type": "command", "command": "${PLUGIN_ROOT}/scripts/tool session end" }] }
     ]
   }
 }

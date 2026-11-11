@@ -90,10 +90,10 @@ pub use discover::{
 };
 pub use error::*;
 pub use export::{
-    ExportMode, ExportPlan, ExportReport, ExportRequest, ExportUnit, HookFileSpec,
-    MarketplaceConfig, PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_in,
-    export_skills, marketplace_manifest_path, owned_paths, packs_path, plan_in,
-    plugin_manifest_path, published_skill_name, rendered_skill_call,
+    ExportMode, ExportPlan, ExportReport, ExportRequest, ExportUnit, MarketplaceConfig,
+    PluginOverrides, SkillNaming, StaleKind, UnitStatus, export_in, export_skills,
+    marketplace_manifest_path, owned_paths, packs_path, plan_in, plugin_manifest_path,
+    published_skill_name, rendered_skill_call,
 };
 pub use field_edit::{read_version, set_version};
 pub use frontmatter::{
@@ -115,8 +115,8 @@ pub use paths::{
 };
 pub use semver::{BumpLevel, next_version, parse_semver};
 pub use settings::{
-    BuildSettings, BumpSettings, HookSetting, PatchScheme, ROOT_FILE, RootFile, SettingsError,
-    SharedDefaults, compose_root_file, parse_root_file,
+    BuildSettings, BumpSettings, PatchScheme, ROOT_FILE, RootFile, SettingsError, SharedDefaults,
+    compose_root_file, parse_root_file,
 };
 pub use vault::{VaultNote, bundle_root, read_vault_note, read_vault_skill};
 pub use vfs::{DirEntry, MemVfs, NativeVfs, PlannedOp, PreviewVfs, PreviewWrite, Vfs};

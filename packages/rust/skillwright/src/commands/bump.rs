@@ -926,16 +926,11 @@ impl BuiltRef {
             );
         }
         let index = built.temp.join("index");
-        let check_out = |candidates| {
-            let set = path_set(&repo, &sha, candidates)?;
-            check_out_paths(&repo, &sha, &index, &built.checkout, &set).map(|()| set)
-        };
-        // The vault first: the other files the build reads are known only
-        // once the ref's root file is read.
-        let vault = match check_out(vault_candidates(&repo, &root)) {
-            Ok(set) => set,
-            Err(err) => return fail(ctx, format!("checking it out failed: {err}")),
-        };
+        let checked_out = path_set(&repo, &sha, vault_candidates(&repo, &root))
+            .and_then(|set| check_out_paths(&repo, &sha, &index, &built.checkout, &set));
+        if let Err(err) = checked_out {
+            return fail(ctx, format!("checking it out failed: {err}"));
+        }
 
         let base_root = &built.base_root;
         if !is_vault_root(&NativeVfs, base_root) {
@@ -962,11 +957,6 @@ impl BuiltRef {
                 return fail(ctx, format!("building it failed: {}", said.trim_end()));
             }
         };
-        if vault != [WHOLE_TREE]
-            && let Err(err) = check_out(build_input_candidates(&built.checkout, &base_run))
-        {
-            return fail(ctx, format!("checking it out failed: {err}"));
-        }
         for market in run.marketplaces() {
             let out = dist_dir(base_root, &market.name);
             // A marketplace the ref does not hold has an empty baseline.
@@ -1020,20 +1010,6 @@ fn vault_candidates(repo: &Path, root: &Path) -> Vec<String> {
     [root.join(ROOT_FILE), root.join(MARKETPLACES_DIR)]
         .iter()
         .filter_map(|path| relative_to(repo, path))
-        .collect()
-}
-
-/// What the ref's build reads outside its vault, relative to `checkout`: each
-/// `build.hooks` source. The sources come from the loaded
-/// root file, as the build's own request does. A source outside the checkout
-/// is read from disk and is left out.
-fn build_input_candidates(checkout: &Path, run: &ResolvedRun) -> Vec<String> {
-    let inputs = &run.loaded.inputs;
-    inputs
-        .hooks
-        .iter()
-        .map(|hook| &hook.source)
-        .filter_map(|path| relative_to(checkout, path))
         .collect()
 }
 
@@ -1371,13 +1347,6 @@ mod tests {
         paths.iter().map(|p| (*p).to_owned()).collect()
     }
 
-    /// The run `cwd` resolves to, as `bump` resolves it.
-    fn run_at(cwd: &Path) -> ResolvedRun {
-        let mut err = Vec::new();
-        resolve_run(&CommonFlags::default(), None, cwd, &mut err)
-            .unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&err)))
-    }
-
     /// A fresh `checkout` folder under a new temp folder, and the private
     /// index path beside it.
     fn dest() -> (tempfile::TempDir, PathBuf, PathBuf) {
@@ -1591,41 +1560,6 @@ mod tests {
     }
 
     #[test]
-    fn the_baseline_path_set_names_the_vault_and_hooks() {
-        let outside = tempfile::tempdir().unwrap();
-        let elsewhere = outside.path().canonicalize().unwrap().join("ELSEWHERE");
-        write(&elsewhere, "x\n");
-        let root_file = format!(
-            "---\nbuild:\n  hooks:\n    \
-             - {{from: ../hooks/hooks.json, plugin: p}}\n    \
-             - {{from: {}, plugin: q}}\n---\n",
-            elsewhere.display()
-        );
-        let mut files = vault_files("vault/", &root_file);
-        for (path, text) in [
-            ("hooks/hooks.json", "{\"hooks\": {}}\n"),
-            ("unread/file", "u\n"),
-        ] {
-            files.push((path.to_owned(), text.to_owned()));
-        }
-        let (_dir, repo, sha) = repo_of(&borrowed(&files));
-        let root = repo.join("vault");
-        let run = run_at(&root);
-
-        let mut set = path_set(&repo, &sha, vault_candidates(&repo, &root)).unwrap();
-        set.extend(path_set(&repo, &sha, build_input_candidates(&repo, &run)).unwrap());
-        set.sort();
-        assert_eq!(
-            set,
-            [
-                "hooks/hooks.json",
-                "vault/marketplaces",
-                "vault/skillwright.md",
-            ]
-        );
-    }
-
-    #[test]
     fn a_path_with_glob_characters_is_checked_out_literally() {
         // As a glob, `v[1]` also matches the file `v1`.
         let (_dir, repo, sha) = repo_of(&[("v[1]/f", "f\n"), ("v1", "1\n")]);
@@ -1634,26 +1568,6 @@ mod tests {
         check_out_paths(&repo, &sha, &index, &dest, &strings(&["v[1]"])).unwrap();
 
         assert_eq!(files_under(&dest), ["v[1]/f"]);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_symlinked_hooks_file_gives_the_whole_tree() {
-        let mut files = vault_files(
-            "vault/",
-            "---\nbuild:\n  hooks:\n    - {from: ../tools/hooks.json, plugin: p}\n---\n",
-        );
-        files.push(("tools/run.sh".to_owned(), "echo\n".to_owned()));
-        files.push(("elsewhere/f".to_owned(), "{}\n".to_owned()));
-        let (_dir, repo, _) = repo_of(&borrowed(&files));
-        std::os::unix::fs::symlink("../elsewhere/f", repo.join("tools/hooks.json")).unwrap();
-        git(&repo, &["add", "tools/hooks.json"]);
-        git(&repo, &["commit", "--quiet", "-m", "link"]);
-        let sha = git(&repo, &["rev-parse", "HEAD"]);
-        let run = run_at(&repo.join("vault"));
-
-        let set = path_set(&repo, &sha, build_input_candidates(&repo, &run)).unwrap();
-        assert_eq!(set, ["."]);
     }
 
     const NOW: u64 = 20_261_105_143_000;

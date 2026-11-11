@@ -41,7 +41,7 @@ fn put(vfs: &MemVfs, rel: &str, text: &str) {
 
 /// Builds the vault at `root`.
 fn build(vfs: &dyn Vfs, root: &Path) -> Result<(), tradecraft_core::CoreError> {
-    let loaded = load_vault(vfs, root, None, Path::new("/home"))?;
+    let loaded = load_vault(vfs, root, None)?;
     let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
     export_skills(vfs, &request).map(|_| ())
 }

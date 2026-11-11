@@ -54,16 +54,6 @@ pub struct SharedDefaults {
     pub blocks: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
 }
 
-/// One `build.hooks` entry: a Claude Code `hooks.json` rendered per harness.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct HookSetting {
-    /// The file, relative to the root file.
-    pub from: String,
-    /// Which plugin's packs carry it. A build refuses an entry without one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plugin: Option<String>,
-}
-
 /// The `build:` block: how skillwright runs, never what lands in a manifest.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -74,9 +64,6 @@ pub struct BuildSettings {
     /// How `bump` writes a version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bump: Option<BumpSettings>,
-    /// Canonical hooks files.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub hooks: Vec<HookSetting>,
 }
 
 /// `build.bump`: how `bump` writes a version.
@@ -140,7 +127,7 @@ pub fn shared_default_keys() -> impl Iterator<Item = &'static str> {
 }
 
 /// The keys of the `build:` block.
-pub const BUILD_KEYS: &[&str] = &["harnesses", "bump", "hooks"];
+pub const BUILD_KEYS: &[&str] = &["harnesses", "bump"];
 
 /// The `build:` keys v2 refuses, naming the key, rather than warns about.
 pub const REFUSED_BUILD_KEYS: &[&str] = &[
@@ -152,6 +139,7 @@ pub const REFUSED_BUILD_KEYS: &[&str] = &[
     "namespace",
     "assets",
     "launcher_path",
+    "hooks",
 ];
 
 /// The top-level keys v2 refuses in the root file besides the key table's
@@ -465,7 +453,9 @@ fn build(
     for (key, value) in map {
         match key.as_str() {
             Some(name) if BUILD_KEYS.contains(&name) => {
-                warn_nested(name, value, warnings);
+                if name == "bump" {
+                    warn_bump_keys(value, warnings);
+                }
                 kept.insert(key.clone(), value.clone());
             }
             Some(name) => warnings.push(format!(
@@ -505,34 +495,16 @@ fn build_map(value: &serde_yaml::Value) -> Result<Option<&serde_yaml::Mapping>, 
     }
 }
 
-/// Warn about each unknown key in an entry of a `build:` list. Each entry's
-/// struct ignores them when it is read.
-fn warn_nested(list: &str, value: &serde_yaml::Value, warnings: &mut Vec<String>) {
-    if list == "bump" {
-        let keys = value.as_mapping().into_iter().flat_map(|map| map.keys());
-        for key in keys.filter_map(serde_yaml::Value::as_str) {
-            if key != "patch" {
-                warnings.push(format!(
-                    "`build.bump.{key}` is not a key skillwright reads; it is ignored"
-                ));
-            }
+/// Warn about each unknown key under `build.bump`, which its struct ignores
+/// when it is read.
+fn warn_bump_keys(value: &serde_yaml::Value, warnings: &mut Vec<String>) {
+    let keys = value.as_mapping().into_iter().flat_map(|map| map.keys());
+    for key in keys.filter_map(serde_yaml::Value::as_str) {
+        if key != "patch" {
+            warnings.push(format!(
+                "`build.bump.{key}` is not a key skillwright reads; it is ignored"
+            ));
         }
-        return;
-    }
-    let known: &[&str] = match list {
-        "hooks" => &["from", "plugin"],
-        _ => return,
-    };
-    let entries = value.as_sequence().map_or(&[][..], Vec::as_slice);
-    let keys = entries
-        .iter()
-        .filter_map(serde_yaml::Value::as_mapping)
-        .flat_map(|entry| entry.keys())
-        .filter_map(serde_yaml::Value::as_str);
-    for key in keys.filter(|key| !known.contains(key)) {
-        warnings.push(format!(
-            "`build.{list}[].{key}` is not a key skillwright reads; it is ignored"
-        ));
     }
 }
 
@@ -793,6 +765,7 @@ mod tests {
             ("namespace", " sw"),
             ("assets", "\n    - {from: bin, to: bin, plugin: tools}"),
             ("launcher_path", " bin/tool"),
+            ("hooks", "\n    - {from: hooks.json, plugin: tools}"),
         ] {
             let err = parse_root_file(&format!("---\nbuild:\n  {key}:{value}\n---\n")).unwrap_err();
             assert_eq!(err.key, format!("build.{key}"), "{err}");

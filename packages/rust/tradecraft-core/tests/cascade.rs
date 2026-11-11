@@ -44,7 +44,7 @@ fn vault(extra: &[(&str, &str)]) -> MemVfs {
 
 /// Builds every marketplace in `vfs` into `/v/dist`, its warnings.
 fn build(vfs: &MemVfs) -> Vec<DiscoveryWarning> {
-    let loaded = load_vault(vfs, Path::new("/v"), None, Path::new("/home")).unwrap();
+    let loaded = load_vault(vfs, Path::new("/v"), None).unwrap();
     let mut warnings = Vec::new();
     for marketplace in &loaded.marketplaces {
         let request = loaded.export_request(marketplace, ExportMode::Build);
@@ -56,7 +56,7 @@ fn build(vfs: &MemVfs) -> Vec<DiscoveryWarning> {
 
 /// The build's error for `vfs`, as text.
 fn build_error(vfs: &MemVfs) -> String {
-    let loaded = match load_vault(vfs, Path::new("/v"), None, Path::new("/home")) {
+    let loaded = match load_vault(vfs, Path::new("/v"), None) {
         Ok(loaded) => loaded,
         Err(err) => return err.to_string(),
     };

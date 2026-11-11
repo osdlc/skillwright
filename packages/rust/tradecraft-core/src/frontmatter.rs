@@ -63,12 +63,6 @@ pub enum EntityKind {
     Command,
     /// A subagent definition, published into the target's agents layout.
     Agent,
-    /// One automation hook: typed frontmatter naming the event and the
-    /// matcher, and a body that is the script or the prompt.
-    ///
-    /// A hook reaches a harness through its plugin's `hooks/hooks.json`
-    /// rather than through a file of its own.
-    Hook,
     /// A distribution: the plugins beneath it, built into one marketplace.
     ///
     /// The level above [`Self::Plugin`], and the only kind with no
@@ -79,18 +73,17 @@ pub enum EntityKind {
 
 impl EntityKind {
     /// Every kind, in declaration order.
-    pub const ALL: [EntityKind; 6] = [
+    pub const ALL: [EntityKind; 5] = [
         Self::Skill,
         Self::Plugin,
         Self::Command,
         Self::Agent,
-        Self::Hook,
         Self::Marketplace,
     ];
     /// Every spelling [`EntityKind::from_str`] accepts, in the order a refusal
     /// lists them.
     pub const KNOWN: &'static [&'static str] =
-        &["agent", "command", "hook", "marketplace", "plugin", "skill"];
+        &["agent", "command", "marketplace", "plugin", "skill"];
 
     /// Does this kind hold other components in the folders beneath it?
     ///
@@ -111,7 +104,6 @@ impl EntityKind {
             Self::Plugin => "plugin",
             Self::Command => "command",
             Self::Agent => "agent",
-            Self::Hook => "hook",
             Self::Marketplace => "marketplace",
         }
     }
@@ -152,7 +144,6 @@ impl FromStr for EntityKind {
             "plugin" => Ok(Self::Plugin),
             "command" => Ok(Self::Command),
             "agent" => Ok(Self::Agent),
-            "hook" => Ok(Self::Hook),
             "marketplace" => Ok(Self::Marketplace),
             other => Err(UnknownKind {
                 value: other.to_owned(),
@@ -942,8 +933,7 @@ mod tests {
                 EntityKind::Plugin => 1,
                 EntityKind::Command => 2,
                 EntityKind::Agent => 3,
-                EntityKind::Hook => 4,
-                EntityKind::Marketplace => 5,
+                EntityKind::Marketplace => 4,
             }
         }
         for (at, kind) in EntityKind::ALL.iter().enumerate() {

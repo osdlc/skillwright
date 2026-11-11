@@ -583,19 +583,14 @@ pub const CURSOR: HarnessProfile = HarnessProfile {
         packs: ".cursor-plugin/packs",
         dialect: PluginDialect::Cursor,
         cli_invocation: CliInvocation::SkillRelativePath,
-        plugin_root: Some(PluginRootPolicy {
-            name: Source::Knowledge,
-            url: "https://cursor.com/docs/reference/plugins",
-            observed_on: HOOKS_OBSERVED,
-            note: Some(
-                "documented as expanded, beside `CLAUDE_PLUGIN_ROOT`, in a plugin's MCP \
-                 server fields; not documented for hook commands",
-            ),
-        }),
+        // Cursor documents `CURSOR_PLUGIN_ROOT` only in `mcp.json`, not for
+        // hook commands, so the pack ships no hooks until a probe confirms it
+        // (spec section 4 rule 23; issue #152).
+        plugin_root: None,
         naming: Source::Knowledge,
-        hooks_manifest_entry: Some("./hooks/hooks.json"),
+        hooks_manifest_entry: None,
         carries_commands: false,
-        carries_hooks: true,
+        carries_hooks: false,
         manifest_fields: CURSOR_MANIFEST_FIELDS,
         marketplace_fields: CURSOR_MARKETPLACE_FIELDS,
         entry_fields: CURSOR_ENTRY_FIELDS,
@@ -940,7 +935,7 @@ impl HarnessProfile {
 
     /// The keys this harness's block accepts on a note of `kind`.
     ///
-    /// `None` for an agent or a hook, whose blocks are not checked, and for a
+    /// `None` for an agent, whose blocks are not checked, and for a
     /// row with no plugin format, which no note can carry a block for
     /// ([`crate::keys::HARNESS_BLOCKS`] lists only plugin rows).
     pub fn block_keys(&self, kind: EntityKind) -> Option<&'static BTreeSet<String>> {
@@ -949,7 +944,7 @@ impl HarnessProfile {
             EntityKind::Skill | EntityKind::Command => Some(&keys.component),
             EntityKind::Plugin => Some(&keys.plugin),
             EntityKind::Marketplace => Some(&keys.marketplace),
-            EntityKind::Agent | EntityKind::Hook => None,
+            EntityKind::Agent => None,
         }
     }
 
@@ -1100,7 +1095,7 @@ mod tests {
                 ".cursor/skills",
                 ".cursor-plugin/plugin.json",
                 Some(".cursor-plugin/marketplace.json"),
-                Some("CURSOR_PLUGIN_ROOT"),
+                None,
                 SkillNaming::Bare,
             ),
             "pi" => (
@@ -1217,7 +1212,7 @@ mod tests {
 
     #[test]
     fn block_keys_follow_their_definitions() {
-        use crate::frontmatter::EntityKind::{Agent, Hook, Marketplace, Plugin};
+        use crate::frontmatter::EntityKind::{Agent, Marketplace, Plugin};
         for profile in with_plugin_format() {
             let format = profile.format();
             let policy = profile.plugin.as_ref().unwrap();
@@ -1243,7 +1238,6 @@ mod tests {
                 profile.name
             );
             assert_eq!(profile.block_keys(Agent), None, "{}", profile.name);
-            assert_eq!(profile.block_keys(Hook), None, "{}", profile.name);
         }
     }
 

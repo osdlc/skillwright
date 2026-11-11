@@ -8,8 +8,8 @@ use std::path::Path;
 use tradecraft_core::model::LoadRequest;
 use tradecraft_core::{
     BuildSettings, CompileSource, CoreError, DiscoveryWarning, ExportMode, ExportRequest,
-    ExportUnit, HookFileSpec, LinkIndex, MarketplaceConfig, MemVfs, PluginOverrides, RootFile,
-    SharedDefaults, StaleKind, UnitStatus, Vfs, discover_components, export_skills,
+    ExportUnit, LinkIndex, MarketplaceConfig, MemVfs, PluginOverrides, RootFile, SharedDefaults,
+    StaleKind, UnitStatus, Vfs, discover_components, export_skills,
 };
 
 const PLUGIN: &str = "/vault/marketplaces/house/plugins/tools";
@@ -46,12 +46,6 @@ fn an_export_request_builds_from_a_default_config() {
     assert!(vfs.exists(Path::new(
         "/vault/dist/house/.claude-plugin/marketplace.json"
     )));
-}
-
-#[test]
-fn a_hook_file_spec_starts_with_no_plugin() {
-    let hooks = HookFileSpec::new("/vault/hooks.json", "hooks.json");
-    assert!(hooks.plugin.is_none());
 }
 
 #[test]

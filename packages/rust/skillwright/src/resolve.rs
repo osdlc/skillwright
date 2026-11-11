@@ -14,7 +14,7 @@ use tradecraft_core::{
     LoadedVault, NativeVfs, VaultMarketplace, check_vault_root, find_vault_root, load_vault,
 };
 
-use crate::config::{home_dir, print_warnings, resolve_against_cwd};
+use crate::config::{print_warnings, resolve_against_cwd};
 use crate::exit::{blocked, no_config};
 
 /// The globals every verb but `init` declares, as far as this module cares.
@@ -80,7 +80,7 @@ pub fn resolve_at(
     marketplace: Option<&str>,
     err: &mut dyn Write,
 ) -> Result<ResolvedRun, i32> {
-    let loaded = load_vault(&NativeVfs, vault, marketplace, &home_dir())
+    let loaded = load_vault(&NativeVfs, vault, marketplace)
         .map_err(|refused| blocked(err, &refused.to_string()))?;
     print_warnings(&loaded.settings, &loaded.root_file, err);
     Ok(ResolvedRun {

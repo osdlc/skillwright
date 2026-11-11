@@ -44,7 +44,7 @@ use crate::model::load::{admits, targets_name};
 use crate::model::{Body, Call, Component, Marketplace, Plugin, ResourceContent, Segment};
 use crate::projection::{
     ProjectedFile, RedundantOverride, parse_runtime_target, project_agent, project_command,
-    project_plugin_hooks, project_skill_reporting, to_adapt_hook,
+    project_plugin_hooks, project_skill_reporting,
 };
 
 /// The provenance marker every `SKILL.md` and command a built marketplace
@@ -188,23 +188,14 @@ pub trait HarnessTranslator: Sync {
     /// The plugin's hooks file and its gap report, written into `tree` under
     /// `base`. Returns whether a hooks file was written.
     ///
-    /// A hook note this harness cannot carry stops the build, rather than
-    /// writing a partial hooks file — unless the note has no `targets` and
-    /// another harness carries it, when it is left off here the way
-    /// `targets` would narrow it. A canonical file's uncarried hooks are
-    /// not a refusal; the gap report says where each went.
+    /// A hook this harness cannot carry is not a refusal; the gap report says
+    /// where each went.
     ///
     /// # Errors
     ///
-    /// Everything [`to_adapt_hook`] and [`project_plugin_hooks`] refuse.
-    fn hooks(
-        &self,
-        plugin: &Plugin,
-        hooks: &[&Component],
-        base: &str,
-        tree: &mut FileTree,
-    ) -> Result<bool, CoreError> {
-        default_hooks(self.profile(), plugin, hooks, base, tree)
+    /// What [`project_plugin_hooks`] refuses.
+    fn hooks(&self, plugin: &Plugin, base: &str, tree: &mut FileTree) -> Result<bool, CoreError> {
+        default_hooks(self.profile(), plugin, base, tree)
     }
 
     /// The pack manifest, `skills` the names of the skills this harness
@@ -302,7 +293,6 @@ pub trait HarnessTranslator: Sync {
     ) -> Result<Option<Vec<&'p str>>, CoreError> {
         let skills: Vec<&Component> = plugin.skills.iter().filter(|c| self.admits(c)).collect();
         let commands: Vec<&Component> = plugin.commands.iter().filter(|c| self.admits(c)).collect();
-        let hooks: Vec<&Component> = plugin.hooks.iter().filter(|c| self.admits(c)).collect();
         if !plugin.carried_by(self.profile().name, |c| self.admits(c)) {
             return Ok(None);
         }
@@ -313,7 +303,7 @@ pub trait HarnessTranslator: Sync {
         for command in &commands {
             self.write_pack_command(command, base, layout, tree)?;
         }
-        let wrote_hooks = self.hooks(plugin, &hooks, base, tree)?;
+        let wrote_hooks = self.hooks(plugin, base, tree)?;
         for asset in &plugin.assets {
             tree.insert(
                 &format!("{base}/{}", asset.dest),
@@ -733,78 +723,38 @@ pub(crate) fn rewrite_sibling_paths(body: &str, plugin: &str, siblings: &BTreeSe
     out
 }
 
-/// [`HarnessTranslator::hooks`]'s shared body: every hook note projected,
-/// plus the hooks from the plugin's canonical file this harness carries,
-/// each localized ([`crate::hooks_file::localize`]; notes are not), written
-/// as the single `hooks/hooks.json` the plugin format defines.
-///
-/// A hook is not a file: a harness reads one hooks document per plugin, so
-/// the members render together or the second one overwrites the first. No
-/// provenance marker, and no transclusion — the body is a script or a prompt
-/// inside a JSON string, and a comment or an embed would change what runs.
+/// [`HarnessTranslator::hooks`]'s shared body: the gap report, and the
+/// hooks from the plugin's `hooks/hooks.json` this harness carries, each
+/// localized ([`crate::hooks_file::localize`]), written as the single
+/// `hooks/hooks.json` the plugin format defines.
 fn default_hooks(
     profile: &HarnessProfile,
     plugin: &Plugin,
-    hooks: &[&Component],
     base: &str,
     tree: &mut FileTree,
 ) -> Result<bool, CoreError> {
+    let Some(file) = &plugin.hooks_file else {
+        return Ok(false);
+    };
+    tree.insert(
+        &format!("{base}/{}", crate::hooks_file::GAP_REPORT_PATH),
+        file.gap_report.clone().into_bytes(),
+        false,
+    );
+    if !profile.format().carries_hooks {
+        return Ok(false);
+    }
     let runtime = parse_runtime_target(profile.runtime)?;
-    let mut rendered = Vec::with_capacity(hooks.len());
-    for hook in hooks {
-        let projection = SkillProjection {
-            content: hook.content.clone().expect("an admitted hook was read"),
-            resources: hook.source.clone().unwrap_or_default(),
-        };
-        let adapted = to_adapt_hook(&projection, Some(profile.name))?;
-        if hook.targets.is_none()
-            && agent_adapt::render::hook_refusal(&adapted, runtime).is_some()
-            && carried_elsewhere(&projection, profile)?
-        {
-            continue;
-        }
-        rendered.push(adapted);
-    }
-    if let Some(file) = &plugin.hooks_file {
-        tree.insert(
-            &format!("{base}/{}", crate::hooks_file::GAP_REPORT_PATH),
-            file.gap_report.clone().into_bytes(),
-            false,
-        );
-        if profile.format().carries_hooks {
-            let var = profile.format().plugin_root_var.map(|var| var.name);
-            rendered.extend(
-                crate::hooks_file::carried_hooks(&file.hooks, runtime)
-                    .into_iter()
-                    .map(|hook| crate::hooks_file::localize(hook, profile.name, var)),
-            );
-        }
-    }
+    let var = profile.format().plugin_root_var.map(|var| var.name);
+    let rendered: Vec<_> = crate::hooks_file::carried_hooks(&file.hooks, runtime)
+        .into_iter()
+        .map(|hook| crate::hooks_file::localize(hook, profile.name, var))
+        .collect();
     let Some(bytes) = project_plugin_hooks(&rendered, profile.runtime)? else {
         return Ok(false);
     };
     tree.insert(&format!("{base}/{PLUGIN_HOOKS_PATH}"), bytes, false);
     Ok(true)
-}
-
-/// Does some hooks-carrying harness other than `profile` carry this hook
-/// note? Every harness counts, selected or not, so the answer does not depend
-/// on what a build selects.
-fn carried_elsewhere(
-    projection: &SkillProjection,
-    profile: &HarnessProfile,
-) -> Result<bool, CoreError> {
-    for other in super::with_plugin_format() {
-        if other.name == profile.name || !other.format().carries_hooks {
-            continue;
-        }
-        let hook = to_adapt_hook(projection, Some(other.name))?;
-        let runtime = parse_runtime_target(other.runtime)?;
-        if agent_adapt::render::hook_refusal(&hook, runtime).is_none() {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 // --- The harnesses -----------------------------------------------------------

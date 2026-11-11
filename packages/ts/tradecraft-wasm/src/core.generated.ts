@@ -62,9 +62,6 @@ export interface BuildSettings {
 
   /** How `bump` writes a version. */
   bump?: BumpSettings;
-
-  /** Canonical hooks files. */
-  hooks?: HookSetting[];
 }
 
 /** `build.bump`: how `bump` writes a version. */
@@ -75,15 +72,6 @@ export interface BumpSettings {
 
 /** How `bump` writes the patch number of the version it sets. */
 export type PatchScheme = "increment" | "timestamp";
-
-/** One `build.hooks` entry: a Claude Code `hooks.json` rendered per harness. */
-export interface HookSetting {
-  /** The file, relative to the root file. */
-  from: string;
-
-  /** Which plugin's packs carry it. A build refuses an entry without one. */
-  plugin?: string;
-}
 
 /**
  * What crosses as `request_json` for [`discover_components`].
@@ -233,7 +221,7 @@ export interface DiscoveredComponent {
  * say what it is. A build ships only the kinds a pack has a place for.
  * Outside the vocabulary a note is `unknown-kind`: a typo.
  */
-export type EntityKind = "skill" | "plugin" | "command" | "agent" | "hook" | "marketplace";
+export type EntityKind = "skill" | "plugin" | "command" | "agent" | "marketplace";
 
 /**
  * Which layer decided a note's kind.
@@ -409,9 +397,6 @@ export interface ExportRequest {
 
   /** The marketplace's own identity and per-plugin overrides. */
   config: MarketplaceConfig;
-
-  /** Canonical hooks files; see [`HookFileSpec`]. */
-  hooks?: HookFileSpec[];
 }
 
 /** Whether an export writes the marketplace, or only reports its drift. */
@@ -604,30 +589,6 @@ export interface PluginOverrides {
   blocks?: Record<string, Record<string, unknown>>;
 }
 
-/**
- * One canonical hooks file a build renders into a plugin's packs. At most
- * one per plugin; its gap report goes in every pack. See
- * [`crate::hooks_file`].
- */
-export interface HookFileSpec {
-  /**
-   * Absolute host path to the file, resolved by the caller: this core
-   * reads no root file, so it has nothing to resolve a relative path
-   * against.
-   */
-  source: string;
-
-  /**
-   * The path relative to the root file.
-   * Refusals and the gap report's `source` name the file by this, so the
-   * report holds no host path.
-   */
-  from: string;
-
-  /** Which plugin's packs carry it. A build refuses `None`. */
-  plugin?: string;
-}
-
 /** What one export did, or would do — per plugin, per root. */
 export interface ExportReport {
   /**
@@ -709,11 +670,10 @@ export type ExportUnit =
    * A component the marketplace layout has no place for, named rather than
    * dropped.
    *
-   * A pack has a place for skills, for commands on a root whose
-   * [`crate::harness::PluginFormat::carries_commands`] is `true`, and for
-   * hooks on a root whose [`crate::harness::PluginFormat::carries_hooks`]
-   * is. Everything else is named here rather than dropped; what a build
-   * must not do is leave silently.
+   * A pack has a place for skills, and for commands on a root whose
+   * [`crate::harness::PluginFormat::carries_commands`] is `true`.
+   * Everything else is named here rather than dropped; what a build must
+   * not do is leave silently.
    *
    * `root` is the root that cannot carry it — a command on Codex, say.
    * `None` when no root can, as for an agent: the reason is the layout's,
@@ -793,9 +753,6 @@ export interface LoadRequest {
    * vault's own notes say.
    */
   config: MarketplaceConfig;
-
-  /** Canonical hooks files. */
-  hooks?: HookFileSpec[];
 }
 
 /** A vault, loaded as the one marketplace a build renders. */
@@ -833,9 +790,6 @@ export interface Plugin {
   /** Its commands. */
   commands: Component[];
 
-  /** Its hook notes. */
-  hooks: Component[];
-
   /** Files copied verbatim into the built pack. */
   assets: Asset[];
 
@@ -855,7 +809,7 @@ export interface Plugin {
 }
 
 /**
- * A skill, a command, a hook, an agent or a container note, read and — when
+ * A skill, a command, an agent or a container note, read and — when
  * a requested harness admits it — resolved.
  */
 export interface Component {
@@ -885,7 +839,7 @@ export interface Component {
 
   /**
    * The body and its files, resolved. `None` when no harness this load is
-   * for admits the component, or for a kind whose body is taken verbatim.
+   * for admits the component.
    */
   resolved: Resolved | null;
 }

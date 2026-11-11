@@ -103,7 +103,7 @@
           "support": "translated"
         }
       },
-      "delivery": "plugin",
+      "delivery": "none",
       "events": {
         "Notification": {
           "note": "Cursor documents no hook at this point in the loop",
@@ -131,19 +131,15 @@
           "support": "translated"
         }
       },
-      "file": "hooks/hooks.json",
+      "file": null,
       "left_out": [
         {
           "hook": "hooks.Notification[0].hooks[0]",
           "reason": "cursor does not carry the `Notification` hook event: Cursor documents no hook at this point in the loop"
         }
       ],
-      "plugin_root_evidence": {
-        "note": "documented as expanded, beside `CLAUDE_PLUGIN_ROOT`, in a plugin's MCP server fields; not documented for hook commands",
-        "observed_on": "2026-10-05",
-        "url": "https://cursor.com/docs/reference/plugins"
-      },
-      "plugin_root_var": "CURSOR_PLUGIN_ROOT"
+      "plugin_root_evidence": null,
+      "plugin_root_var": null
     },
     "pi": {
       "behaviours": {
@@ -208,6 +204,6 @@
       "plugin_root_var": null
     }
   },
-  "source": "plugin/hooks.json",
+  "source": "marketplaces/house/plugins/core/hooks/hooks.json",
   "version": 1
 }
