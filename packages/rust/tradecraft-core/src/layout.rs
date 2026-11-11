@@ -481,7 +481,7 @@ fn layout_error(message: String) -> CoreError {
 ///   layout. Every problem is in the one message, each case once with every
 ///   path it applies to.
 /// * `refused: unsafe-path` — a symlink whose real target lies outside its
-///   marketplace folder, a symlink to a folder that holds it, or a symlink
+///   marketplace folder, a symlink to a folder the walk is inside, or a symlink
 ///   outside `marketplaces/<m>/` (spec section 4, containment rule 2).
 /// * [`CoreError::Io`] — a folder that cannot be listed.
 pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
@@ -620,9 +620,8 @@ impl Walk<'_> {
                 "outside a marketplace folder (`{MARKETPLACES_DIR}/<m>/`)"
             )));
         };
-        let scope = self
-            .vfs
-            .canonicalize(&self.root.join(MARKETPLACES_DIR).join(market))?;
+        let market_dir = self.root.join(MARKETPLACES_DIR).join(market);
+        let scope = self.vfs.canonicalize(&market_dir)?;
         let Ok(target) = self.vfs.canonicalize(path) else {
             return Err(refuse("whose real target cannot be read".to_owned()));
         };
@@ -633,14 +632,24 @@ impl Walk<'_> {
             )));
         }
         let is_dir = self.vfs.metadata(&target)?.is_dir;
-        let holder = path
-            .parent()
-            .map(|parent| self.vfs.canonicalize(parent))
-            .transpose()?;
-        if is_dir && holder.is_some_and(|holder| holder.starts_with(&target)) {
-            return Err(refuse("to a folder that holds it".to_owned()));
+        if !is_dir {
+            return Ok(false);
         }
-        Ok(is_dir)
+        // Every folder the walk is inside, from the link's holder up to the
+        // marketplace folder. A target that holds any of them leads back into
+        // the descent, and the walk would never end.
+        for folder in path
+            .ancestors()
+            .skip(1)
+            .take_while(|folder| folder.starts_with(&market_dir))
+        {
+            if self.vfs.canonicalize(folder)?.starts_with(&target) {
+                return Err(refuse(
+                    "to a folder the walk is inside, so it would never end".to_owned(),
+                ));
+            }
+        }
+        Ok(true)
     }
 
     /// Records the file `rel` at `place`.

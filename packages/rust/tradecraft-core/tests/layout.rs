@@ -670,7 +670,10 @@ fn a_symlink_is_read_when_its_target_stays_in_the_marketplace() {
     std::os::unix::fs::symlink(&tools, tools.join("references/loop")).unwrap();
     let err = read_layout(&vfs, &tmp).unwrap_err();
     assert!(matches!(err, CoreError::Refused(_)), "{err}");
-    assert!(err.to_string().contains("a folder that holds it"), "{err}");
+    assert!(
+        err.to_string().contains("a folder the walk is inside"),
+        "{err}"
+    );
     std::fs::remove_file(tools.join("references/loop")).unwrap();
 
     // A target outside the marketplace folder is refused.
@@ -680,4 +683,33 @@ fn a_symlink_is_read_when_its_target_stays_in_the_marketplace() {
     assert!(err.to_string().contains("unsafe-path"), "{err}");
     assert!(err.to_string().contains("marketplaces/acme/"), "{err}");
     std::fs::remove_dir_all(&tmp).unwrap();
+}
+
+/// Two sibling folder links that point at each other: `a/x -> b` and
+/// `b/y -> a`. Neither target holds its own link, but `a/x/y` is `a` again,
+/// so the walk would never end.
+#[cfg(unix)]
+#[test]
+fn sibling_folder_links_that_lead_back_are_refused() {
+    let tmp = std::env::temp_dir().join(format!("tc-layout-siblings-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let tools = tmp.join("marketplaces/acme/plugins/tools");
+    let refs = tools.join("references");
+    std::fs::create_dir_all(refs.join("a")).unwrap();
+    std::fs::create_dir_all(refs.join("b")).unwrap();
+    std::fs::write(tmp.join("skillwright.md"), ROOT).unwrap();
+    std::fs::write(tmp.join("marketplaces/acme/acme.md"), NOTE).unwrap();
+    std::fs::write(tools.join("tools.md"), NOTE).unwrap();
+    std::fs::write(refs.join("a/one.md"), "x").unwrap();
+    std::fs::write(refs.join("b/two.md"), "x").unwrap();
+    std::os::unix::fs::symlink(refs.join("b"), refs.join("a/x")).unwrap();
+    std::os::unix::fs::symlink(refs.join("a"), refs.join("b/y")).unwrap();
+
+    let err = read_layout(&tradecraft_core::NativeVfs, &tmp).unwrap_err();
+    std::fs::remove_dir_all(&tmp).unwrap();
+    assert!(matches!(err, CoreError::Refused(_)), "{err}");
+    assert!(
+        err.to_string().contains("a folder the walk is inside"),
+        "{err}"
+    );
 }
