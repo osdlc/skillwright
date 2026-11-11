@@ -361,9 +361,10 @@ elsewhere, has it. A name two plugins share is an error that names both.
     no call, link or embed. Plugin-root paths are the one exception (rule
     15). A call written in code ships as written, so write calls in prose,
     where they render in backticks.
-13. After the build, no `[[` may remain in prose. A leftover is an error that
-    names the file and the text. The check skips code spans, fenced blocks and
-    `\[[`-escaped text. In prose, `\[[x]]` ships as `[[x]]`.
+13. After the build, no unescaped `[[` may remain in prose. Write `\[[` to keep
+    the brackets as text: `\[[x]]` is not interpreted and ships as `[[x]]`. A
+    leftover `[[` is an error that names the file and the text. Code spans and
+    fenced blocks are not checked.
 14. Every error in this section names the linking file, the link as written and
     the rule it broke.
 
