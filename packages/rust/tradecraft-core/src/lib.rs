@@ -16,7 +16,7 @@
 //! | [`content`] | The skill shape projection renders, and its peer resources |
 //! | [`compile`] | Embeds expanded, links rewritten, references collected |
 //! | [`projection`] | One skill to one target's files, via `agent-adapt` |
-//! | [`publish`] | The target names, reason tokens and harness-block fold a build shares |
+//! | [`publish`] | The target names and per-harness plugin facts a build shares |
 //! | [`export`] | The vault built into one marketplace tree per harness, and checked |
 //! | [`harness`] | Each harness as a profile row (data) and a translator (code) |
 //! | [`settings`] | `skillwright.md`, the root file, as a build config |

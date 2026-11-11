@@ -345,10 +345,14 @@ pub(crate) fn naming_of(
 
 /// One plugin's harness block for `harness`: the marketplace's block, less
 /// every key it does not pass down
-/// ([`HarnessProfile::passed_down_keys`]), overlaid by the plugin note's
-/// block key by key.
+/// ([`HarnessProfile::passed_down_keys`]) and every key the plugin note sets
+/// as plain frontmatter, overlaid by the plugin note's block key by key.
 pub(crate) fn plugin_block(config: &MarketplaceConfig, plugin: &str, harness: &str) -> Block {
     let passed = crate::harness::profile_named(harness).map(HarnessProfile::passed_down_keys);
+    let own = overrides_for(config, plugin);
+    let plain = own
+        .map(|o| crate::model::cascade::plain_inherited(&o.identity, EntityKind::Plugin))
+        .unwrap_or_default();
     let mut block: Block = config
         .blocks
         .get(harness)
@@ -356,9 +360,10 @@ pub(crate) fn plugin_block(config: &MarketplaceConfig, plugin: &str, harness: &s
         .flatten()
         .filter(|_| crate::keys::inherits(EntityKind::Plugin, harness))
         .filter(|(key, _)| passed.is_some_and(|passed| passed.contains(key.as_str())))
+        .filter(|(key, _)| !plain.contains(key.as_str()))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
-    if let Some(own) = overrides_for(config, plugin).and_then(|o| o.blocks.get(harness)) {
+    if let Some(own) = own.and_then(|o| o.blocks.get(harness)) {
         for (key, value) in own {
             block.insert(key.clone(), value.clone());
         }

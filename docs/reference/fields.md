@@ -10,7 +10,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 - **Owner** says who the key belongs to:
   - `skillwright`: skillwright reads the key and removes it when it publishes.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written.
-- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`. Only these keys may be set in `skillwright.md`.
+- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, the marketplace note, then `skillwright.md`. Only these keys may be set in `skillwright.md`.
 
 ## What is checked
 
@@ -70,7 +70,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 |---|---|---|---|---|
 | `name` | refused | skillwright | no | Refused on every note and in `skillwright.md`: the folder's name is the note's name. The build writes it as the `name` each harness reads. |
 | `description` | string | spec | no | What it does. A skill, command or agent with no description is an error: `check` reports it and `build` refuses it. It is never inherited. A plugin or marketplace need not have one. |
-| `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin or marketplace. |
+| `license` | string | spec | yes | The skill's license, the Agent Skills field. Inherited from the plugin, the marketplace or `skillwright.md`. |
 | `targets` | list of strings | skillwright | yes | Which harnesses get it: `claude`, `codex`, `cursor` or `pi`. Absent means all; `[]` means none. Another name is refused. |
 | `arguments` | list of arguments; a string or a list of strings is Claude's own key | skillwright | no | A typed argument list. Derives `argument-hint`. A list of plain strings, or one space-separated string, is Claude's own `arguments` key. |
 | `allowed-tools` | list of strings, or one string separated by spaces or commas | spec | no | Tools the skill may use without asking: a list, or one string separated by spaces or commas. |

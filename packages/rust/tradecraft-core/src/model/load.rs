@@ -662,12 +662,13 @@ fn skipped_wording<'a>(
 ///
 /// # Errors
 ///
-/// What [`crate::publish::overrides_for`] refuses.
+/// What [`super::cascade::fold_harness_blocks`] refuses.
 fn extensions(
     frontmatter: &VaultFrontmatter,
     component: &DiscoveredComponent,
 ) -> Result<Extensions, CoreError> {
-    let blocks = crate::publish::overrides_for(frontmatter, &component.entry_path, component.kind)?;
+    let blocks =
+        super::cascade::fold_harness_blocks(frontmatter, &component.entry_path, component.kind)?;
     Ok(Extensions { blocks })
 }
 

@@ -201,7 +201,7 @@ pub struct KeySpec {
     /// What its value must be.
     pub shape: Shape,
     /// Whether a note leaving it out takes it from the nearest container that
-    /// sets it: the plugin note, then `skillwright.md`.
+    /// sets it: the plugin note, the marketplace note, then `skillwright.md`.
     pub inherits: bool,
     /// One line for the field reference.
     pub summary: &'static str,
@@ -283,7 +283,7 @@ pub const KEYS: &[KeySpec] = &[
         owner: Owner::Spec,
         shape: Shape::String,
         inherits: true,
-        summary: "The skill's license, the Agent Skills field. Inherited from the plugin or marketplace.",
+        summary: "The skill's license, the Agent Skills field. Inherited from the plugin, the marketplace or `skillwright.md`.",
     },
     KeySpec {
         key: "repository",
@@ -513,7 +513,7 @@ Each table below lists the frontmatter keys that one kind of note reads. A note'
 - **Owner** says who the key belongs to:
   - `skillwright`: skillwright reads the key and removes it when it publishes.
   - `spec`: the key belongs to the Agent Skills spec or a harness. It is published as written.
-- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, then `skillwright.md`. Only these keys may be set in `skillwright.md`.
+- **Inherited**: `yes` means a note without the key takes it from the nearest container that sets it: the plugin note, the marketplace note, then `skillwright.md`. Only these keys may be set in `skillwright.md`.
 
 ## What is checked
 

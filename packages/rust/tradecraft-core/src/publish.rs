@@ -1,11 +1,8 @@
-//! The target names, the harness-block fold and the per-harness plugin facts.
-
-use std::collections::BTreeMap;
-use std::path::Path;
+//! The target names and the per-harness plugin facts.
 
 use crate::content::SkillProjection;
 use crate::error::CoreError;
-use crate::frontmatter::{EntityKind, VaultFrontmatter};
+use crate::frontmatter::EntityKind;
 use crate::harness::profile_named;
 
 /// Whether a note of this kind renders on its own into a target's layout.
@@ -77,99 +74,6 @@ pub(crate) fn refuse_carried_peers(
             carried.join(", ")
         ),
     ))
-}
-
-/// A note's harness blocks, folded onto canonical destination names and
-/// checked against the harness that will receive each block. Every block is
-/// folded and checked, whichever harnesses are being built. A container's
-/// blocks follow the same rule.
-///
-/// **Each block keeps only the keys its harness reads.** The rest are
-/// dropped; discovery warns about them, and they are never refused. A target
-/// the matrix has no declaration for keeps no keys, so an unmapped harness
-/// never receives unchecked ones. A kept key with the wrong kind of value is
-/// refused.
-///
-/// # Errors
-///
-/// * `refused: unknown-target` — a block is keyed by a name outside
-///   [`canonical_target`].
-/// * `refused: malformed` — a key a block's harness reads holds the wrong
-///   kind of value, such as `metadata` that is not a mapping. Not when
-///   `kind` is an agent: an agent's blocks never ship.
-pub fn overrides_for(
-    note: &VaultFrontmatter,
-    note_path: &Path,
-    kind: EntityKind,
-) -> Result<BTreeMap<String, serde_json::Map<String, serde_json::Value>>, CoreError> {
-    let mut folded: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
-    for (declared, block) in &note.blocks {
-        let Some(canonical) = canonical_target(declared) else {
-            return Err(CoreError::refused(
-                "unknown-target",
-                format!(
-                    "{}: a harness block names `{declared}`, which this build does not know \
-                     (known: {}). An unrecognised name is never read as \"every destination\"",
-                    note_path.display(),
-                    KNOWN_TARGETS.join(", ")
-                ),
-            ));
-        };
-        // `VaultFrontmatter::take_from` refused anything else, so this cannot
-        // lose a block the author wrote.
-        let block = block.as_object().cloned().unwrap_or_default();
-        // Two spellings of one destination merge rather than one winning
-        // silently.
-        folded
-            .entry(canonical.to_owned())
-            .or_default()
-            .extend(block);
-    }
-
-    // A key a harness does not read warns at discovery and is dropped here,
-    // never refused. A key it reads takes the form every harness reads: a
-    // flag such as `yes` becomes a real boolean, a list hint its text.
-    for (canonical, block) in &mut folded {
-        let accepted = accepted_override_keys(canonical);
-        // Not `Map::retain`: the serde_json floor predates it.
-        *block = std::mem::take(block)
-            .into_iter()
-            .filter(|(key, _)| accepted.contains(key))
-            .map(|(key, value)| {
-                let value = crate::harness::field_types::normalized(EntityKind::Skill, &key, value);
-                (key, value)
-            })
-            .collect();
-    }
-    // A key a harness reads with the wrong kind of value is refused, in
-    // every block that can ship.
-    if kind == EntityKind::Agent {
-        return Ok(folded);
-    }
-    for (canonical, block) in &folded {
-        for (key, value) in block {
-            if let Some(ty) = crate::harness::field_types::component_type(EntityKind::Skill, key)
-                && !ty.accepts(value)
-            {
-                return Err(CoreError::wrong_kind(
-                    note_path,
-                    format!("`{canonical}.{key}` {}", ty.refusal(value)),
-                ));
-            }
-        }
-    }
-    Ok(folded)
-}
-
-/// Every key one destination reads in an override block, from that runtime's
-/// own capability declaration.
-///
-/// Empty for a name this build maps to no runtime, which is what makes every
-/// key under such a target a refusal rather than an unchecked write.
-fn accepted_override_keys(canonical: &str) -> std::collections::BTreeSet<String> {
-    profile_named(canonical)
-        .map(|p| p.accepted_override_keys())
-        .unwrap_or_default()
 }
 
 /// Every name `targets` and `build.harnesses` accept, sorted: the list a

@@ -197,29 +197,24 @@ Links inside the folder move with it. It rewrites nothing else:
 The first of these that has a value wins:
 
 1. A command-line flag, for that run only.
-2. The note's own frontmatter.
-3. The nearest container: the plugin note, then `skillwright.md`, then the
-   workspace. This applies only to inherited fields: `author`, `license`,
-   `repository`, `homepage`, `targets`, and the harness blocks key by key.
-4. Patterns in `skillwright.md`, for structure only.
-5. The folder convention: the name from the file or folder, the kind from the
+2. The note's own harness block, then its own frontmatter.
+3. For each container, nearest first: its harness block, then its own
+   frontmatter. The containers are the plugin note, the marketplace note,
+   then `skillwright.md`. This applies only to inherited fields: `author`,
+   `license`, `repository`, `homepage`, `targets`, and the harness blocks key
+   by key. So a plugin's `claude: {author: …}` beats its plain `author` for
+   Claude Code only, and its plain `author` beats a marketplace's
+   `claude: {author: …}`.
+4. The folder convention: the name from the file or folder, the kind from the
    kind folder, the plugin from `plugins/<p>/`.
-6. The environment. `publish` and `adopt` default to each harness's user skill
+5. The environment. `publish` and `adopt` default to each harness's user skill
    folder. Nothing here changes what a build emits.
-7. Built-in defaults: `version` 0.1.0 with a warning, `license` UNLICENSED,
-   every harness. Only the plugin of a root `skills/` folder takes `version`
-   from this file, so its warning asks for it here. A `plugins/<marketplace>/`
-   plugin takes its own note's `version`.
+6. Built-in defaults: a plugin's `version` 0.1.0 with a warning, `license`
+   UNLICENSED, every harness. A marketplace with no `version` writes none,
+   with no warning.
 
 Inheritance works the same on every path: `build`, `publish` of one note, and
 `publish` of a whole pack. Containers are matched by folder, never by `name`.
-
-For one key on a member, the first of these wins:
-
-1. The note's own harness block.
-2. The note's frontmatter.
-3. An inherited harness block, nearest container first.
-4. What skillwright generates.
 
 A key in an inherited block must be one the member's kind accepts. If it is not,
 it stays with the container.
@@ -228,7 +223,7 @@ A note under no marketplace folder takes the vault's one marketplace. With
 several, it stays on the root file. A folder under `marketplaces/` with no
 component in it does not count.
 
-A plugin note's `name` must match its folder, or it is refused.
+A `name` key on any note is refused: the folder's name is the note's name.
 
 A note under a kind folder with frontmatter but no `name` or `description` warns
 `no-component-keys`, so a `desciption:` typo does not make it vanish.

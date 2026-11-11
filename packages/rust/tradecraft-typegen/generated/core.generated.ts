@@ -1078,7 +1078,7 @@ export interface SkillContent {
    * `BTreeMap::new()` by construction from
    * [`crate::vault::read_vault_skill`]; only
    * [`SkillContent::apply_overrides`] fills it in, and only after
-   * [`crate::publish::overrides_for`] has folded the target names and
+   * [`crate::model::cascade::fold_harness_blocks`] has folded the target names and
    * checked every key against the harness that will receive it.
    *
    * The raw harness block key still reaches no destination — the strip

@@ -356,7 +356,7 @@ impl ContainerIdentity {
 
     /// The fields this sets, by key. A `null` is unset: `Some(Value::Null)`
     /// would otherwise block a fill and then read back as `None`.
-    fn set_fields(&self) -> Map<String, Value> {
+    pub(crate) fn set_fields(&self) -> Map<String, Value> {
         match serde_json::to_value(self).expect("an identity serializes infallibly") {
             Value::Object(fields) => fields.into_iter().filter(|(_, v)| !v.is_null()).collect(),
             _ => Map::new(),
@@ -399,7 +399,7 @@ pub struct VaultFrontmatter {
     /// has none.
     ///
     /// Read and shape-checked here; validated against the harness's key list
-    /// by [`crate::publish::overrides_for`] for a component, and by the
+    /// by [`crate::model::cascade::fold_harness_blocks`] for a component, and by the
     /// manifest writer for a container.
     pub blocks: Map<String, Value>,
     /// Every key on the note that the key table does not list for its kind,

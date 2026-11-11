@@ -244,7 +244,7 @@ fn check_values(
     crate::vault::check_spec_kinds(fields, path, kind)?;
     match kind {
         EntityKind::Skill | EntityKind::Command => {
-            crate::publish::overrides_for(ours, path, kind)?;
+            crate::model::cascade::fold_harness_blocks(ours, path, kind)?;
         }
         EntityKind::Plugin | EntityKind::Marketplace => {
             let owner = crate::harness::manifest::container_owner(kind, Some(folder));
