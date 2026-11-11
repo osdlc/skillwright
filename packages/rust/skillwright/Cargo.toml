@@ -1,6 +1,6 @@
 [package]
 name = "skillwright"
-version = "0.11.0"
+version = "0.11.1"
 edition.workspace = true
 rust-version.workspace = true
 description = "A command-line tool that publishes a vault of markdown skill notes into the formats of coding-agent tools (Claude Code, Codex, Cursor and Pi), checks them for drift, and authors and reorganises the vault."

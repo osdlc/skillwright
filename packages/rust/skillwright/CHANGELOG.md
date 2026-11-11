@@ -11,12 +11,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - `cursor: {naming: prefixed}` on `skillwright.md` or a plugin note publishes that plugin's Cursor skills as `<plugin>-<skill>`, and body calls and mentions name them so. A plugin's value overrides the marketplace's. The default stays bare. A prefixed name that another plugin's skill also publishes under stops the build with `path-collision`.
 - A plugin's Cursor display name reaches its entry in `.cursor-plugin/marketplace.json` as well as its `plugin.json`.
-- Write `\[[` to keep a `[[` as text, such as `\[[TODO`. The build ships it as written, backslash included, and Markdown viewers show `[[TODO`. The error for a `[[` that is not a link now says so. ([#47](https://github.com/osdlc/skillwright/issues/47))
 
 ### Changed
 
 - `docs/reference/fields.md` states the types `check` accepts, and lists only the harness block keys `check` accepts.
 - A root file value of the wrong shape is refused with the words a note gets, naming the key.
+
+## [0.11.1](https://github.com/osdlc/skillwright/compare/skillwright/v0.11.0...skillwright/v0.11.1) - 2026-11-10
+
+### Added
+
+- Write `\[[` to keep a `[[` as text, such as `\[[TODO`. The build ships it as written, backslash included, and Markdown viewers show `[[TODO`. The error for a `[[` that is not a link now says so. ([#47](https://github.com/osdlc/skillwright/issues/47))
+
+### Changed
+
+- `bump --changed-since <ref>` checks out only what the ref's build reads: the root file, the workspace file, the vault folder, the `build.assets` and `build.hooks` sources, and the `.gitattributes` above them. It wrote out the whole repository before, which in a monorepo cost as much as the repository. A symlink in or above those paths still checks out the whole tree. The checkout no longer registers a git worktree.
 - `\[[note]]` is no longer a link; it ships as written. It used to build to broken Markdown. ([#47](https://github.com/osdlc/skillwright/issues/47))
 - Under `build.namespace`, `check` warns about a prefixed or nested identity key the note's kind does not read, such as `sw-owner` on a plugin note or `sw-keywords` on a marketplace note. It was ignored without a word (a `null` or blank value was refused). ([#75](https://github.com/osdlc/skillwright/issues/75))
 
