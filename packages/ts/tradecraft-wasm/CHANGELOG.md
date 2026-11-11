@@ -1,5 +1,12 @@
 # @osdlc/tradecraft-wasm
 
+## Unreleased
+
+### Breaking
+
+- An unset identity field is absent instead of `null`: every component's `identity` in `discoverComponents`, so a skill's is `{}`, and the config `rootFileConfig` returns. `parseRootFile` already left unset fields out. Test for `undefined`, not `null`. ([#75](https://github.com/osdlc/skillwright/issues/75))
+- The generated types change to match. `ContainerIdentity`'s fields are optional (`display_name?: string`, not `display_name: string | null`). `MarketplaceConfig` and `MarketplaceFields` list `keywords?` and `category?`, and `PluginOverrides` lists `owner?`, because they share the struct. Setting one of these is refused with an error naming the key and the level; it was never read. Their identity fields take `ContainerIdentity`'s doc comments, in its field order. The JSON stays flat: no `identity` key appears. ([#75](https://github.com/osdlc/skillwright/issues/75))
+
 ## 0.2.0
 
 ### Minor Changes

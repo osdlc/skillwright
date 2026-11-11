@@ -221,3 +221,24 @@ fn the_marketplace_model_emits_without_its_skipped_fields() {
     assert!(!interface.contains("config"), "{interface}");
     assert!(!interface.contains("vault_root"), "{interface}");
 }
+
+/// A struct that flattens another keeps its own name and takes the other's
+/// fields: `MarketplaceConfig` splices `ContainerIdentity`. Only a `Wire…`
+/// wrapper is named for what it flattens.
+#[test]
+fn a_flattened_identity_is_spliced_into_a_type_that_keeps_its_name() {
+    let ts = tradecraft_typegen::generate(&crates()).expect("generating");
+    for name in ["MarketplaceConfig", "PluginOverrides", "MarketplaceFields"] {
+        let start = ts
+            .find(&format!("export interface {name} {{"))
+            .unwrap_or_else(|| panic!("`{name}` is emitted"));
+        let end = start + ts[start..].find("\n}").expect("the interface closes");
+        let interface = &ts[start..end];
+        assert!(interface.contains("license?: string;"), "{interface}");
+        assert!(!interface.contains("identity"), "{interface}");
+    }
+    assert_eq!(
+        ts.matches("export interface ContainerIdentity {").count(),
+        1
+    );
+}

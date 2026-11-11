@@ -119,6 +119,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::discover::{DiscoveryWarning, name_refusal};
 use crate::error::CoreError;
+use crate::frontmatter::{ContainerIdentity, EntityKind};
 use crate::guard::{assert_destination_allowed, assert_destination_allowed_for_vault, within};
 use crate::harness::manifest::{first_not_a_pack, is_os_file, overrides_for, packs_of};
 use crate::harness::translator::GENERATED_MARKER;
@@ -316,44 +317,24 @@ pub struct MarketplaceConfig {
     /// configuration fault, not a marketplace called `default`.
     #[serde(default)]
     pub name: Option<String>,
-    /// Codex's `interface.displayName`; the name when absent.
-    #[serde(default)]
-    pub display_name: Option<String>,
-    /// The marketplace `owner`. JSON rather than a string because an author
-    /// may spell it `{name, email, url}`, but a bare name is **not** a shape
-    /// any dialect accepts: Claude and Cursor both mark `owner` required and
-    /// both require an object. A string here is normalised to `{name: …}` on
-    /// the way into a manifest rather than refused, because the note's
-    /// spelling is a convenience and the manifest's shape is the dialect's.
-    #[serde(default)]
-    pub owner: Option<serde_json::Value>,
     /// The marketplace's own one-line description, from its note. Optional in
     /// every dialect, and placed differently by each — see
     /// `claude_marketplace_manifest` and `cursor_marketplace_manifest`.
     #[serde(default)]
     pub description: Option<String>,
-    /// Default plugin author, inherited by every plugin. `owner` is not.
-    #[serde(default)]
-    pub author: Option<serde_json::Value>,
-    /// Default plugin license, as an SPDX identifier. A distribution is
-    /// licensed as a whole, so the marketplace note states it once and every
-    /// plugin under it inherits; a plugin licensed differently says so on its
-    /// own note.
-    #[serde(default)]
-    pub license: Option<String>,
-    /// The marketplace's own version, where a dialect carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
+    /// The marketplace's manifest fields, flattened, so `owner`, `author`,
+    /// `license` and the rest sit at the top level on the wire. Each field
+    /// the key table says a plugin inherits is each plugin's default.
+    ///
+    /// The struct is shared with plugins, so it has `keywords` and `category`
+    /// too. A marketplace reads neither, and deserializing or building with
+    /// either set is refused.
+    #[serde(flatten, deserialize_with = "marketplace_identity")]
+    pub identity: ContainerIdentity,
     /// Which harnesses get what the marketplace holds. A plugin or member
     /// with no `targets` of its own inherits it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub targets: Option<Vec<String>>,
-    /// The source repository URL. Every plugin under it inherits it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repository: Option<String>,
-    /// The documentation URL. Every plugin under it inherits it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub homepage: Option<String>,
     /// The marketplace's harness blocks, keyed by harness (`codex`, …), each
     /// a map of that harness's own manifest keys. Merged over the generated
     /// marketplace manifest, and inherited by every plugin key by key.
@@ -378,38 +359,67 @@ pub struct MarketplaceConfig {
 #[serde(default)]
 #[non_exhaustive]
 pub struct PluginOverrides {
-    /// Default `0.1.0`.
-    pub version: Option<String>,
     /// Default `Skills: <names>.` over the root's own member list.
     pub description: Option<String>,
-    /// Default the marketplace `author`.
-    pub author: Option<serde_json::Value>,
-    /// Default the marketplace `license`, then `UNLICENSED`.
-    pub license: Option<String>,
-    /// Default empty. Also the Claude and Cursor marketplace entry's `tags`.
-    /// Pi's `package.json` adds `pi-package`.
-    pub keywords: Option<Vec<String>>,
-    /// Codex always writes it, default `Productivity`. Claude and Cursor
-    /// write it on the marketplace entry only when it is set.
-    pub category: Option<String>,
-    /// Codex's `interface.displayName`, default the plugin's name, and
-    /// Cursor's `displayName`, absent by default.
-    pub display_name: Option<String>,
+    /// The plugin's manifest fields, flattened, so `version`, `author`,
+    /// `license` and the rest sit at the top level on the wire. Each
+    /// [`crate::keys::inherits`] key it leaves unset is the marketplace's.
+    ///
+    /// The struct is shared with marketplaces, so it has `owner` too. A plugin
+    /// does not read it, and deserializing or building with it set is refused.
+    #[serde(flatten, deserialize_with = "plugin_identity")]
+    pub identity: ContainerIdentity,
     /// Which harnesses the plugin's members go to. Default the marketplace
     /// `targets`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub targets: Option<Vec<String>>,
-    /// Default the marketplace `repository`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub repository: Option<String>,
-    /// Default the marketplace `homepage`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub homepage: Option<String>,
     /// The plugin note's harness blocks, keyed by harness. Merged over the
     /// marketplace's blocks key by key, then over the plugin's manifest and
     /// its marketplace entry.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub blocks: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
+}
+
+/// Refuses a config whose identity holds a key its level does not read. The
+/// serde path refuses the same keys on the way in; this covers a config built
+/// in code.
+fn check_config_identity(config: &MarketplaceConfig) -> Result<(), CoreError> {
+    let refuse = |what: String| CoreError::refused("unknown-override-key", what);
+    config
+        .identity
+        .check_read_by(EntityKind::Marketplace)
+        .map_err(refuse)?;
+    for (name, overrides) in &config.plugins {
+        overrides
+            .identity
+            .check_read_by(EntityKind::Plugin)
+            .map_err(|why| refuse(format!("plugin `{name}`: {why}")))?;
+    }
+    Ok(())
+}
+
+/// Reads a [`ContainerIdentity`] and refuses a key `kind` does not read.
+fn identity_read_by<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+    kind: EntityKind,
+) -> Result<ContainerIdentity, D::Error> {
+    let identity = ContainerIdentity::deserialize(deserializer)?;
+    identity
+        .check_read_by(kind)
+        .map_err(serde::de::Error::custom)?;
+    Ok(identity)
+}
+
+pub(crate) fn marketplace_identity<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ContainerIdentity, D::Error> {
+    identity_read_by(deserializer, EntityKind::Marketplace)
+}
+
+fn plugin_identity<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ContainerIdentity, D::Error> {
+    identity_read_by(deserializer, EntityKind::Plugin)
 }
 
 /// What one export did, or would do — per plugin, per root.
@@ -893,6 +903,7 @@ pub fn export_skills(
 ) -> Result<ExportReport, CoreError> {
     let vault_root = normalize(&request.vault_root);
     let out_root = normalize(&request.out_root);
+    check_config_identity(&request.config)?;
 
     // Which harnesses this build renders, before anything reads or writes.
     let roots = selected_roots(request)?;
@@ -1551,7 +1562,7 @@ fn plugin_version_bump(
     slice: Option<&PluginSlice<'_>>,
     config: &MarketplaceConfig,
 ) -> Option<VersionBumpSuggestion> {
-    let current_version = overrides_for(config, plugin).and_then(|o| o.version.clone())?;
+    let current_version = overrides_for(config, plugin).and_then(|o| o.identity.version.clone())?;
     let manifest_key = format!(
         "{}/{plugin}/{}",
         packs_of(config, spec),
@@ -1851,15 +1862,9 @@ mod tests {
     fn config() -> MarketplaceConfig {
         MarketplaceConfig {
             name: Some("demo-market".to_owned()),
-            display_name: None,
-            owner: None,
             description: None,
-            author: None,
-            license: None,
-            version: None,
+            identity: ContainerIdentity::default(),
             targets: None,
-            repository: None,
-            homepage: None,
             blocks: BTreeMap::new(),
             plugins: BTreeMap::new(),
             launcher_path: None,
@@ -3286,7 +3291,10 @@ mod tests {
         request.config.plugins.insert(
             "tools".to_owned(),
             PluginOverrides {
-                version: Some("1.0.0".to_owned()),
+                identity: ContainerIdentity {
+                    version: Some("1.0.0".to_owned()),
+                    ..ContainerIdentity::default()
+                },
                 ..PluginOverrides::default()
             },
         );
@@ -3324,7 +3332,7 @@ mod tests {
         assert_eq!(warned, [("skillwright.md", "missing-version")]);
         assert!(report.warnings[0].detail.contains("Set `version` there"));
 
-        request.config.version = Some("2.3.4".to_owned());
+        request.config.identity.version = Some("2.3.4".to_owned());
         let report = export_skills(&vfs, &request, &sw()).unwrap();
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
         let plugin = text_at(
@@ -3564,18 +3572,20 @@ mod tests {
     fn config_overrides_reach_the_manifests_and_the_owner_is_not_an_author() {
         let vfs = example_vault();
         let mut request = request(ExportMode::Build);
-        request.config.owner = Some(json!({ "name": "Kelly" }));
-        request.config.display_name = Some("Demo Market".to_owned());
+        request.config.identity.owner = Some(json!({ "name": "Kelly" }));
+        request.config.identity.display_name = Some("Demo Market".to_owned());
         request.config.plugins.insert(
             "git-tools".to_owned(),
             PluginOverrides {
-                version: Some("2.0.0".to_owned()),
                 description: Some("Git helpers.".to_owned()),
-                license: Some("MIT".to_owned()),
-                keywords: Some(vec!["git".to_owned()]),
-                category: Some("Development".to_owned()),
-                display_name: Some("Git Tools".to_owned()),
-                author: None,
+                identity: ContainerIdentity {
+                    version: Some("2.0.0".to_owned()),
+                    license: Some("MIT".to_owned()),
+                    keywords: Some(vec!["git".to_owned()]),
+                    category: Some("Development".to_owned()),
+                    display_name: Some("Git Tools".to_owned()),
+                    ..ContainerIdentity::default()
+                },
                 ..PluginOverrides::default()
             },
         );
@@ -4755,10 +4765,8 @@ mod tests {
     #[test]
     fn the_project_file_licenses_a_marketplace_no_note_licenses() {
         let vfs = vault_with_licenses(None);
-        let config = MarketplaceConfig {
-            license: Some("MIT".to_owned()),
-            ..config()
-        };
+        let mut config = config();
+        config.identity.license = Some("MIT".to_owned());
         build_with(&vfs, config);
         assert_eq!(license_of(&vfs, "tools"), "MIT");
     }
@@ -4768,10 +4776,8 @@ mod tests {
     #[test]
     fn the_marketplace_note_beats_the_root_file() {
         let vfs = vault_with_licenses(Some("MIT"));
-        let config = MarketplaceConfig {
-            license: Some("GPL-3.0-only".to_owned()),
-            ..config()
-        };
+        let mut config = config();
+        config.identity.license = Some("GPL-3.0-only".to_owned());
         build_with(&vfs, config);
         assert_eq!(license_of(&vfs, "tools"), "MIT");
     }
@@ -4781,19 +4787,11 @@ mod tests {
     #[test]
     fn a_per_plugin_override_beats_the_marketplace_license() {
         let vfs = vault_with_licenses(Some("MIT"));
-        let config = MarketplaceConfig {
-            license: Some("MIT".to_owned()),
-            plugins: [(
-                "tools".to_owned(),
-                PluginOverrides {
-                    license: Some("BSD-3-Clause".to_owned()),
-                    ..PluginOverrides::default()
-                },
-            )]
-            .into_iter()
-            .collect(),
-            ..config()
-        };
+        let mut config = config();
+        config.identity.license = Some("MIT".to_owned());
+        let mut overrides = PluginOverrides::default();
+        overrides.identity.license = Some("BSD-3-Clause".to_owned());
+        config.plugins.insert("tools".to_owned(), overrides);
         build_with(&vfs, config);
         assert_eq!(license_of(&vfs, "tools"), "BSD-3-Clause");
     }
@@ -4901,7 +4899,10 @@ mod tests {
         request.config.plugins.insert(
             "git-tools".to_owned(),
             PluginOverrides {
-                author: Some(json!({ "name": "Ada", "email": "ada@example.com" })),
+                identity: ContainerIdentity {
+                    author: Some(json!({ "name": "Ada", "email": "ada@example.com" })),
+                    ..ContainerIdentity::default()
+                },
                 ..Default::default()
             },
         );
@@ -4925,7 +4926,10 @@ mod tests {
         request.config.plugins.insert(
             "tools".to_owned(),
             PluginOverrides {
-                keywords: Some(vec!["configured".to_owned()]),
+                identity: ContainerIdentity {
+                    keywords: Some(vec!["configured".to_owned()]),
+                    ..ContainerIdentity::default()
+                },
                 ..PluginOverrides::default()
             },
         );
@@ -5797,5 +5801,106 @@ mod tests {
         };
         let report = export_skills(&NativeVfs, &check, &sw()).unwrap();
         assert!(!report.changed, "{report:?}");
+    }
+
+    /// The identity keys at the top level of `value`'s JSON form.
+    fn identity_keys_in(value: &serde_json::Value) -> Vec<&str> {
+        crate::keys::identity_keys()
+            .filter(|key| value.get(key).is_some())
+            .collect()
+    }
+
+    #[test]
+    fn a_config_s_identity_reads_and_writes_flat() {
+        let config: MarketplaceConfig = serde_json::from_value(json!({
+            "name": "m",
+            "license": "MIT",
+            "plugins": {"p": {"author": "Ada", "keywords": ["k"]}}
+        }))
+        .unwrap();
+        assert_eq!(config.identity.license.as_deref(), Some("MIT"));
+        let plugin = &config.plugins["p"];
+        assert_eq!(plugin.identity.author, Some(json!("Ada")));
+        assert_eq!(plugin.identity.keywords, Some(vec!["k".to_owned()]));
+
+        let written = serde_json::to_value(&config).unwrap();
+        assert!(written.get("identity").is_none(), "{written}");
+        assert!(
+            written["plugins"]["p"].get("identity").is_none(),
+            "{written}"
+        );
+        assert_eq!(written["license"], "MIT");
+        assert_eq!(written["plugins"]["p"]["author"], "Ada");
+        assert_eq!(identity_keys_in(&written), ["license"]);
+        assert_eq!(
+            identity_keys_in(&written["plugins"]["p"]),
+            ["author", "keywords"]
+        );
+
+        // Unset identity fields are absent, not `null`.
+        assert_eq!(
+            serde_json::to_value(crate::frontmatter::ContainerIdentity::default()).unwrap(),
+            json!({})
+        );
+        let empty = serde_json::to_value(MarketplaceConfig::default()).unwrap();
+        assert!(identity_keys_in(&empty).is_empty(), "{empty}");
+        let empty = serde_json::to_value(PluginOverrides::default()).unwrap();
+        assert!(identity_keys_in(&empty).is_empty(), "{empty}");
+    }
+
+    #[test]
+    fn a_config_refuses_identity_keys_its_level_does_not_read() {
+        let read = |value: serde_json::Value| serde_json::from_value::<MarketplaceConfig>(value);
+        for (value, said) in [
+            (
+                json!({"keywords": ["k"]}),
+                "`keywords` at the marketplace level",
+            ),
+            (
+                json!({"category": "c"}),
+                "`category` at the marketplace level",
+            ),
+            (
+                json!({"plugins": {"p": {"owner": "Ada"}}}),
+                "`owner` at the plugin level",
+            ),
+        ] {
+            let err = read(value).unwrap_err().to_string();
+            assert!(err.contains(said), "{err}");
+        }
+        read(json!({
+            "owner": "Ada",
+            "license": "MIT",
+            "plugins": {"p": {"keywords": ["k"], "category": "c", "license": "MIT"}}
+        }))
+        .unwrap();
+    }
+
+    #[test]
+    fn a_build_refuses_identity_keys_set_where_they_are_not_read() {
+        let mut config = config();
+        config.identity.category = Some("c".to_owned());
+        let mut request = request(ExportMode::Build);
+        request.config = config;
+        let err = export_skills(&example_vault(), &request, &sw()).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown-override-key")
+                && err
+                    .to_string()
+                    .contains("`category` at the marketplace level"),
+            "{err}"
+        );
+
+        let mut config = self::config();
+        let mut plugin = PluginOverrides::default();
+        plugin.identity.owner = Some(json!("Ada"));
+        config.plugins.insert("p".to_owned(), plugin);
+        let mut request = self::request(ExportMode::Build);
+        request.config = config;
+        let err = export_skills(&example_vault(), &request, &sw()).unwrap_err();
+        assert!(
+            err.to_string().contains("`owner` at the plugin level"),
+            "{err}"
+        );
     }
 }

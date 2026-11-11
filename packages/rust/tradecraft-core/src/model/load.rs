@@ -327,10 +327,10 @@ pub fn load(
     // marketplace's and it ships the marketplace's version.
     if plugins.contains_key(&name)
         && !has_folder(&discovered, market.as_deref(), &name)
-        && let Some(version) = cascade.config.version.clone()
+        && let Some(version) = cascade.config.identity.version.clone()
     {
         let own = cascade.config.plugins.entry(name.clone()).or_default();
-        own.version.get_or_insert(version);
+        own.identity.version.get_or_insert(version);
     }
     let config = &cascade.config;
     warnings.extend(missing_versions(
@@ -1166,7 +1166,7 @@ fn missing_versions(
             config
                 .plugins
                 .get(*name)
-                .and_then(|o| o.version.as_ref())
+                .and_then(|o| o.identity.version.as_ref())
                 .is_none()
         })
         .map(|name| {
@@ -1202,7 +1202,7 @@ fn missing_versions(
             config
                 .plugins
                 .get(c.folder())
-                .and_then(|o| o.version.as_ref())
+                .and_then(|o| o.identity.version.as_ref())
                 .is_none()
         })
         .map(|c| DiscoveryWarning {

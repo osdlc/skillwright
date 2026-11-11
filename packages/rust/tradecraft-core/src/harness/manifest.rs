@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::error::CoreError;
 use crate::export::{MarketplaceConfig, PluginOverrides, STAGE_DIR};
-use crate::frontmatter::EntityKind;
+use crate::frontmatter::{ContainerIdentity, EntityKind};
 use crate::harness::{HarnessProfile, PluginDialect, SkillNaming};
 use unicode_normalization::UnicodeNormalization;
 
@@ -419,27 +419,10 @@ fn insert_after(map: &mut Block, after: &str, key: &str, value: serde_json::Valu
 /// added after `license` when the dialect's manifest has the field.
 fn add_links(map: &mut Block, config: &MarketplaceConfig, plugin: &str, harness: &str) {
     let fields = format_of(harness).manifest_fields;
+    let identity = plugin_identity(config, plugin);
     let links = [
-        (
-            "repository",
-            inherited(
-                config,
-                plugin,
-                "repository",
-                |own| &own.repository,
-                |market| &market.repository,
-            ),
-        ),
-        (
-            "homepage",
-            inherited(
-                config,
-                plugin,
-                "homepage",
-                |own| &own.homepage,
-                |market| &market.homepage,
-            ),
-        ),
+        ("repository", identity.repository),
+        ("homepage", identity.homepage),
     ];
     let mut after = "license".to_owned();
     for (key, value) in links {
@@ -508,20 +491,26 @@ pub(crate) fn overrides_for<'a>(
     config.plugins.get(plugin)
 }
 
-/// `plugin`'s value for `key`: its own, then the marketplace's where the key
-/// table says the key inherits. The one reading of a plugin's inherited field.
-pub(crate) fn inherited<T: Clone>(
-    config: &MarketplaceConfig,
-    plugin: &str,
-    key: &str,
-    own: impl Fn(&PluginOverrides) -> &Option<T>,
-    market: impl Fn(&MarketplaceConfig) -> &Option<T>,
-) -> Option<T> {
+/// `plugin`'s identity: its own fields, then the marketplace's where the key
+/// table says a plugin inherits them. The one reading of a plugin's inherited
+/// identity.
+pub(crate) fn plugin_identity(config: &MarketplaceConfig, plugin: &str) -> ContainerIdentity {
+    let mut identity = overrides_for(config, plugin)
+        .map(|overrides| overrides.identity.clone())
+        .unwrap_or_default();
+    identity.fill_unset_from(&config.identity, EntityKind::Plugin);
+    identity
+}
+
+/// `plugin`'s `targets`: its own, else the marketplace's where the key table
+/// says a plugin inherits them. It is not part of [`plugin_identity`]: see
+/// [`crate::keys::identity_keys`].
+pub(crate) fn plugin_targets(config: &MarketplaceConfig, plugin: &str) -> Option<Vec<String>> {
     overrides_for(config, plugin)
-        .and_then(|overrides| own(overrides).clone())
+        .and_then(|overrides| overrides.targets.clone())
         .or_else(|| {
-            crate::keys::inherits(EntityKind::Plugin, key)
-                .then(|| market(config).clone())
+            crate::keys::inherits(EntityKind::Plugin, "targets")
+                .then(|| config.targets.clone())
                 .flatten()
         })
 }
@@ -533,7 +522,7 @@ pub(crate) const DEFAULT_PLUGIN_VERSION: &str = "0.1.0";
 /// marketplace's, so this is the one answer for every plugin.
 pub(crate) fn plugin_version(config: &MarketplaceConfig, plugin: &str) -> String {
     overrides_for(config, plugin)
-        .and_then(|o| o.version.clone())
+        .and_then(|o| o.identity.version.clone())
         .unwrap_or_else(|| DEFAULT_PLUGIN_VERSION.to_owned())
 }
 
@@ -558,43 +547,31 @@ struct EntryListing {
 
 fn entry_listing(config: &MarketplaceConfig, plugin: &str) -> EntryListing {
     EntryListing {
-        category: overrides_for(config, plugin).and_then(|o| o.category.clone()),
+        category: overrides_for(config, plugin).and_then(|o| o.identity.category.clone()),
         tags: plugin_keywords(config, plugin),
     }
 }
 
 fn plugin_keywords(config: &MarketplaceConfig, plugin: &str) -> Vec<String> {
     overrides_for(config, plugin)
-        .and_then(|o| o.keywords.clone())
+        .and_then(|o| o.identity.keywords.clone())
         .unwrap_or_default()
 }
 
 fn plugin_category(config: &MarketplaceConfig, plugin: &str) -> String {
     overrides_for(config, plugin)
-        .and_then(|o| o.category.clone())
+        .and_then(|o| o.identity.category.clone())
         .unwrap_or_else(|| "Productivity".to_owned())
 }
 
 fn plugin_license(config: &MarketplaceConfig, plugin: &str) -> String {
-    inherited(
-        config,
-        plugin,
-        "license",
-        |own| &own.license,
-        |market| &market.license,
-    )
-    .unwrap_or_else(|| "UNLICENSED".to_owned())
+    plugin_identity(config, plugin)
+        .license
+        .unwrap_or_else(|| "UNLICENSED".to_owned())
 }
 
 fn plugin_author(config: &MarketplaceConfig, plugin: &str) -> Option<serde_json::Value> {
-    inherited(
-        config,
-        plugin,
-        "author",
-        |own| &own.author,
-        |market| &market.author,
-    )
-    .map(normalize_author)
+    plugin_identity(config, plugin).author.map(normalize_author)
 }
 
 /// Claude's plugin schema requires `author` as `{ name, email? }`, but a
@@ -627,7 +604,7 @@ fn cursor_display_name(config: &MarketplaceConfig, plugin: &str) -> Option<Strin
         .get("displayName")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
-        .or_else(|| overrides_for(config, plugin)?.display_name.clone())
+        .or_else(|| overrides_for(config, plugin)?.identity.display_name.clone())
 }
 
 /// One plugin's pack manifest, `members` its skills' names.
@@ -671,7 +648,7 @@ pub fn render_plugin_manifest(
         #[serde(skip_serializing_if = "Option::is_none")]
         interface: Option<Interface>,
     }
-    let display_name = overrides_for(config, plugin).and_then(|o| o.display_name.clone());
+    let display_name = overrides_for(config, plugin).and_then(|o| o.identity.display_name.clone());
     let interface = (dialect == PluginDialect::Codex).then(|| Interface {
         display_name: display_name.clone().unwrap_or_else(|| plugin.to_owned()),
         category: plugin_category(config, plugin),
@@ -784,6 +761,7 @@ pub fn codex_marketplace_manifest(
             name: name.to_owned(),
             interface: Interface {
                 display_name: config
+                    .identity
                     .display_name
                     .clone()
                     .unwrap_or_else(|| name.to_owned()),
@@ -853,12 +831,13 @@ pub fn claude_marketplace_manifest(
         let manifest = Manifest {
             name: name.to_owned(),
             owner: config
+                .identity
                 .owner
                 .clone()
                 .map(normalize_author)
                 .unwrap_or_else(|| serde_json::json!({ "name": name })),
             description: config.description.clone(),
-            version: config.version.clone(),
+            version: config.identity.version.clone(),
             plugins: listed
                 .iter()
                 .map(|(plugin, members)| Entry {
@@ -924,14 +903,17 @@ pub fn cursor_marketplace_manifest(
     let manifest = Manifest {
         name: name.to_owned(),
         owner: config
+            .identity
             .owner
             .clone()
             .map(normalize_author)
             .map(without_url)
             .unwrap_or_else(|| serde_json::json!({ "name": name })),
-        metadata: (config.description.is_some() || config.version.is_some()).then(|| Metadata {
-            description: config.description.clone(),
-            version: config.version.clone(),
+        metadata: (config.description.is_some() || config.identity.version.is_some()).then(|| {
+            Metadata {
+                description: config.description.clone(),
+                version: config.identity.version.clone(),
+            }
         }),
         plugins: listed
             .iter()
@@ -1008,10 +990,8 @@ mod tests {
     /// `cursor`.
     fn display_config(display_name: Option<&str>, cursor: serde_json::Value) -> MarketplaceConfig {
         let mut config = MarketplaceConfig::default();
-        let mut overrides = PluginOverrides {
-            display_name: display_name.map(str::to_owned),
-            ..PluginOverrides::default()
-        };
+        let mut overrides = PluginOverrides::default();
+        overrides.identity.display_name = display_name.map(str::to_owned);
         if let serde_json::Value::Object(block) = cursor {
             overrides.blocks.insert("cursor".to_owned(), block);
         }

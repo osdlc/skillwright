@@ -277,42 +277,67 @@ impl Provenance {
 /// The fields of the `adopted` block, in the order adoption writes them.
 pub const ADOPTED_FIELDS: &[&str] = &["source", "format", "hash", "source_hash", "at", "also_at"];
 
-/// What a container note says about the thing it names — the manifest fields
-/// a marketplace or a plugin publishes under.
+/// What a container note says about the thing it names: the manifest fields
+/// a marketplace or a plugin publishes under. Its fields are the key table's
+/// identity rows ([`crate::keys::identity_keys`]).
 ///
 /// Read only on a container: the same words on a skill are the skill's own
-/// (`license`) or unknown.
+/// (`license`) or unknown. A field a kind does not read stays unset.
 ///
 /// **Every field is optional and every absence has a default**, resolved by
 /// [`crate::export`] rather than here, because the defaults are a property of
-/// the manifest dialect being written and not of the note.
+/// the manifest dialect being written and not of the note. An unset field is
+/// left out of the JSON form, so absent and unset are the same thing.
 ///
 /// `owner` and `author` are [`Value`] rather than `String` because an author
 /// may spell either as `{name, email, url}`, and narrowing them here would
 /// refuse a shape the manifest accepts.
+///
+/// The root file, the build config and a plugin's overrides embed this struct,
+/// flattened, so its fields sit at their top level on the wire.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ContainerIdentity {
-    /// `owner` — the marketplace's owner, a name or a mapping.
+    /// `owner`, a marketplace's only: a name or `{name, email, url}`. A string
+    /// is normalised to `{name: …}` in a manifest, because Claude and Cursor
+    /// require an object. Absent, the marketplace's name stands in.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub owner: Option<Value>,
-    /// `author` — the author a plugin publishes under, a name or a mapping. On a
-    /// marketplace note it is the default for every plugin under it.
+    /// `author`: a name or `{name, email, url}`. A string is normalised to
+    /// `{name: …}`; Cursor drops `url`. A marketplace's is the default for
+    /// each plugin.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<Value>,
-    /// `display_name` — the human-facing name where a dialect carries one
-    /// separately from the slug.
+    /// `display_name`: Codex's `interface.displayName`, the name when absent.
+    /// On a plugin, also Cursor's `displayName` on its manifest and its
+    /// catalog entry, absent by default; `cursor.displayName` overrides it.
+    /// Never inherited.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
-    /// `license` — an SPDX identifier, unread and passed through.
+    /// `license`, an SPDX expression, passed through. A plugin's defaults to
+    /// the marketplace's, then `UNLICENSED`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
-    /// `keywords`.
+    /// `keywords`, a plugin's only. Default empty. Also the Claude and Cursor
+    /// marketplace entry's `tags`; Pi's `package.json` adds `pi-package`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub keywords: Option<Vec<String>>,
-    /// `category` — the plugin's marketplace category.
+    /// `category`, a plugin's only. Codex always writes it, default
+    /// `Productivity`; Claude and Cursor write it on the marketplace entry
+    /// only when it is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
-    /// `version` — the plugin's or marketplace's own version.
+    /// `version`, the container's own. A plugin's defaults to `0.1.0`, with a
+    /// warning; the marketplace's own plugin takes the marketplace's.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    /// `repository` — the source repository URL.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `repository`, the source repository URL, written into every manifest
+    /// that has the field. A marketplace's is the default for each plugin.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
-    /// `homepage` — the documentation URL.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `homepage`, the documentation URL, written into every manifest that
+    /// has the field. A marketplace's is the default for each plugin.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
 }
 
@@ -321,6 +346,69 @@ impl ContainerIdentity {
     /// field will come from a default or from configuration.
     pub fn is_silent(&self) -> bool {
         self == &Self::default()
+    }
+
+    /// Fills each field this leaves unset from `container`, where the key
+    /// table says a note of `kind` inherits that key.
+    pub fn fill_unset_from(&mut self, container: &Self, kind: EntityKind) {
+        self.fill_unset_by(container, |key| crate::keys::inherits(kind, key));
+    }
+
+    /// [`Self::fill_unset_from`] with the decision passed in, so a test can
+    /// show the decision is all that moves a field.
+    pub(crate) fn fill_unset_by(&mut self, container: &Self, inherits: impl Fn(&str) -> bool) {
+        let mut own = self.set_fields();
+        for (key, value) in container.set_fields() {
+            if !own.contains_key(&key) && inherits(&key) {
+                own.insert(key, value);
+            }
+        }
+        *self = Self::from_fields(own);
+    }
+
+    /// Lays `note` over this: every field `note` sets wins, and every other
+    /// field is left as it is. The cascade's "note over request".
+    pub fn overlay(&mut self, note: &Self) {
+        let mut own = self.set_fields();
+        own.extend(note.set_fields());
+        *self = Self::from_fields(own);
+    }
+
+    /// Refuses a field this sets that a container of `kind` does not read, by
+    /// the key table's rule: the same one that leaves such a key in a note's
+    /// frontmatter to be reported as unknown.
+    ///
+    /// # Errors
+    ///
+    /// The message names the key and the level.
+    pub fn check_read_by(&self, kind: EntityKind) -> Result<(), String> {
+        match self
+            .set_fields()
+            .keys()
+            .find(|key| !crate::keys::is_owned(kind, key))
+        {
+            Some(key) => Err(format!(
+                "`{key}` at the {} level is not read there. Remove it",
+                kind.as_str()
+            )),
+            None => Ok(()),
+        }
+    }
+
+    /// The fields this sets, by key. A `null` is unset: `Some(Value::Null)`
+    /// would otherwise block a fill and then read back as `None`.
+    fn set_fields(&self) -> Map<String, Value> {
+        match serde_json::to_value(self).expect("an identity serializes infallibly") {
+            Value::Object(fields) => fields.into_iter().filter(|(_, v)| !v.is_null()).collect(),
+            _ => Map::new(),
+        }
+    }
+
+    /// The identity `fields` describe. Each caller passes fields that read
+    /// back: from [`Self::set_fields`], or checked one by one in
+    /// [`take_identity`].
+    fn from_fields(fields: Map<String, Value>) -> Self {
+        serde_json::from_value(Value::Object(fields)).expect("an identity's own fields read back")
     }
 }
 
@@ -433,17 +521,7 @@ impl VaultFrontmatter {
         };
 
         let identity = if kind.holds_components() {
-            ContainerIdentity {
-                owner: ours.remove(&ns.key("owner")).filter(|v| !v.is_null()),
-                author: ours.remove(&ns.key("author")).filter(|v| !v.is_null()),
-                display_name: take_string(&mut ours, &ns.key("display_name"), path)?,
-                license: take_string(&mut ours, &ns.key("license"), path)?,
-                keywords: take_string_list(&mut ours, &ns.key("keywords"), path)?,
-                category: take_string(&mut ours, &ns.key("category"), path)?,
-                version: take_string(&mut ours, &ns.key("version"), path)?,
-                repository: take_string(&mut ours, &ns.key("repository"), path)?,
-                homepage: take_string(&mut ours, &ns.key("homepage"), path)?,
-            }
+            take_identity(&mut ours, path, ns, kind)?
         } else {
             ContainerIdentity::default()
         };
@@ -468,6 +546,36 @@ impl VaultFrontmatter {
             own_keys,
         })
     }
+}
+
+/// Removes the identity keys the key table lists for `kind` from `ours` and
+/// reads them. A key set to `null` is unset. A key the kind does not read
+/// stays in `ours`, to be reported as unknown.
+///
+/// [`check_shapes`] has already refused a value of the wrong shape, so a key
+/// fails to read here only when the table's shape and the Rust type disagree.
+fn take_identity(
+    ours: &mut Map<String, Value>,
+    path: &Path,
+    ns: &Namespace,
+    kind: EntityKind,
+) -> Result<ContainerIdentity, CoreError> {
+    let mut read = Map::new();
+    for key in crate::keys::identity_keys().filter(|key| crate::keys::is_owned(kind, key)) {
+        let spelled = ns.key(key);
+        let Some(value) = ours.remove(&spelled).filter(|value| !value.is_null()) else {
+            continue;
+        };
+        let one = Map::from_iter([(key.to_owned(), value.clone())]);
+        if let Err(err) = serde_json::from_value::<ContainerIdentity>(Value::Object(one)) {
+            return Err(CoreError::wrong_kind(
+                path,
+                format!("`{spelled}` cannot be read: {err}"),
+            ));
+        }
+        read.insert(key.to_owned(), value);
+    }
+    Ok(ContainerIdentity::from_fields(read))
 }
 
 /// Splits skillwright's keys off `fields` and normalises them onto the flat
@@ -1542,5 +1650,230 @@ mod tests {
                 "{line}"
             );
         }
+    }
+
+    /// What a container's identity read does with one key and value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    enum Verdict {
+        /// The identity holds the value as written, and nothing warns.
+        Read,
+        /// The identity is empty, and nothing warns.
+        Unset,
+        /// The identity is empty, and the key warns as unknown.
+        Unknown,
+        /// The note is refused.
+        Refused,
+    }
+
+    /// How a key is spelled on the note.
+    #[derive(Debug, Clone, Copy)]
+    enum Spelling {
+        /// `owner`.
+        Bare,
+        /// `sw-owner`.
+        Prefixed,
+        /// `sw: {owner: …}`.
+        Nested,
+    }
+
+    /// One identity key's verdicts for a valid value, `null` and a blank
+    /// string, by namespace, kind and spelling.
+    #[test]
+    fn container_identity_reads_keep_their_verdicts() {
+        use EntityKind::{Marketplace, Plugin};
+        use Spelling::{Bare, Nested, Prefixed};
+        use Verdict::{Read, Refused, Unknown, Unset};
+        // Every key a container's identity holds, with each spelling's
+        // verdicts in the same order: valid, `null`, blank.
+        type Row = (&'static str, [Verdict; 3]);
+        let market: &[Row] = &[
+            ("owner", [Read, Unset, Read]),
+            ("author", [Read, Unset, Read]),
+            ("display_name", [Read, Refused, Read]),
+            ("license", [Read, Refused, Read]),
+            ("keywords", [Unknown, Unknown, Unknown]),
+            ("category", [Unknown, Unknown, Unknown]),
+            ("version", [Read, Refused, Read]),
+            ("repository", [Read, Refused, Refused]),
+            ("homepage", [Read, Refused, Refused]),
+        ];
+        let plugin: &[Row] = &[
+            ("owner", [Unknown, Unknown, Unknown]),
+            ("author", [Read, Unset, Read]),
+            ("display_name", [Read, Refused, Read]),
+            ("license", [Read, Refused, Read]),
+            ("keywords", [Read, Refused, Refused]),
+            ("category", [Read, Refused, Read]),
+            ("version", [Read, Refused, Read]),
+            ("repository", [Read, Refused, Refused]),
+            ("homepage", [Read, Refused, Refused]),
+        ];
+        let bare = Namespace::bare();
+        let sw = Namespace::sw();
+        let cases: &[(&Namespace, EntityKind, Spelling, &[Row])] = &[
+            (&bare, Marketplace, Bare, market),
+            (&bare, Plugin, Bare, plugin),
+            // Under a namespace every prefixed or nested key is claimed, and
+            // one the kind does not read warns, as a bare one does.
+            (&sw, Marketplace, Prefixed, market),
+            (&sw, Marketplace, Nested, market),
+            (&sw, Plugin, Prefixed, plugin),
+            (&sw, Plugin, Nested, plugin),
+        ];
+        let valid = |key: &str| match key {
+            "keywords" => json!(["k"]),
+            "repository" | "homepage" => json!("https://x.example"),
+            _ => json!("v"),
+        };
+        for (ns, kind, spelling, rows) in cases {
+            for (key, verdicts) in *rows {
+                let values = [valid(key), Value::Null, json!("")];
+                for (value, verdict) in values.into_iter().zip(verdicts) {
+                    let spelled = match spelling {
+                        Bare => (*key).to_owned(),
+                        Prefixed | Nested => ns.key(key),
+                    };
+                    let note = match spelling {
+                        Bare | Prefixed => json!({ spelled.clone(): value.clone() }),
+                        Nested => json!({ ns.block_key(): { *key: value.clone() } }),
+                    };
+                    let case = format!("{ns:?} {kind:?} {spelling:?} {key}: {value}");
+                    let Ok((read, _)) = read_kind(ns, *kind, note) else {
+                        assert_eq!(*verdict, Refused, "{case}");
+                        continue;
+                    };
+                    let set = set_fields(&read.identity);
+                    let (expected, unknown) = match verdict {
+                        Read => (Map::from_iter([((*key).to_owned(), value)]), vec![]),
+                        Unset => (Map::new(), vec![]),
+                        Unknown => (Map::new(), vec![spelled]),
+                        Refused => panic!("{case}: read, not refused"),
+                    };
+                    assert_eq!(set, expected, "{case}");
+                    assert_eq!(read.unknown, unknown, "{case}");
+                }
+            }
+        }
+    }
+
+    /// An identity with every field set, each value told apart by `tag`.
+    fn every_field(tag: &str) -> ContainerIdentity {
+        ContainerIdentity {
+            owner: Some(json!(format!("{tag} owner"))),
+            author: Some(json!({"name": format!("{tag} author")})),
+            display_name: Some(format!("{tag} name")),
+            license: Some(format!("{tag}-license")),
+            keywords: Some(vec![format!("{tag}-keyword")]),
+            category: Some(format!("{tag} category")),
+            version: Some(format!("{tag}.0.0")),
+            repository: Some(format!("https://{tag}.example/repo")),
+            homepage: Some(format!("https://{tag}.example")),
+        }
+    }
+
+    /// The fields `identity` sets, by key.
+    fn set_fields(identity: &ContainerIdentity) -> Map<String, Value> {
+        match serde_json::to_value(identity).unwrap() {
+            Value::Object(map) => map.into_iter().filter(|(_, v)| !v.is_null()).collect(),
+            other => panic!("not a mapping: {other}"),
+        }
+    }
+
+    /// `identity` with only `key` kept from `from`.
+    fn only(from: &ContainerIdentity, key: &str) -> ContainerIdentity {
+        let mut one = ContainerIdentity::default();
+        one.fill_unset_by(from, |k| k == key);
+        one
+    }
+
+    #[test]
+    fn container_identity_fields_are_the_table_s_identity_rows() {
+        let fields: Vec<String> = set_fields(&every_field("a")).keys().cloned().collect();
+        let mut fields: Vec<&str> = fields.iter().map(String::as_str).collect();
+        let mut rows: Vec<&str> = crate::keys::identity_keys().collect();
+        fields.sort_unstable();
+        rows.sort_unstable();
+        assert_eq!(fields, rows);
+    }
+
+    #[test]
+    fn fill_unset_by_moves_exactly_what_the_decision_allows() {
+        let container = every_field("a");
+        for key in crate::keys::identity_keys() {
+            let filled = set_fields(&only(&container, key));
+            assert_eq!(filled.keys().collect::<Vec<_>>(), [key], "{key}");
+            assert_eq!(filled[key], set_fields(&container)[key], "{key}");
+        }
+    }
+
+    #[test]
+    fn fill_unset_from_takes_what_the_table_inherits() {
+        use EntityKind::{Marketplace, Plugin};
+        let container = every_field("a");
+        let given = set_fields(&container);
+        for kind in [Marketplace, Plugin] {
+            let mut empty = ContainerIdentity::default();
+            empty.fill_unset_from(&container, kind);
+            let filled = set_fields(&empty);
+            for key in crate::keys::identity_keys() {
+                let inherits = crate::keys::inherits(kind, key);
+                assert_eq!(
+                    filled.get(key),
+                    inherits.then(|| &given[key]),
+                    "{kind:?} {key}"
+                );
+            }
+
+            // A field the note sets is kept.
+            let mut own = every_field("b");
+            own.fill_unset_from(&container, kind);
+            assert_eq!(own, every_field("b"), "{kind:?}");
+
+            // A `null` on the note is unset, and is filled like one.
+            let mut nulls = ContainerIdentity {
+                owner: Some(Value::Null),
+                author: Some(Value::Null),
+                ..ContainerIdentity::default()
+            };
+            nulls.fill_unset_from(&container, kind);
+            assert_eq!(nulls, empty, "{kind:?}");
+
+            // A `null` on the container fills nothing.
+            let mut none = ContainerIdentity::default();
+            none.fill_unset_from(
+                &ContainerIdentity {
+                    owner: Some(Value::Null),
+                    author: Some(Value::Null),
+                    ..ContainerIdentity::default()
+                },
+                kind,
+            );
+            assert_eq!(none, ContainerIdentity::default(), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn overlay_takes_every_field_the_note_sets() {
+        let base = every_field("a");
+        let note = every_field("b");
+        for key in crate::keys::identity_keys() {
+            let mut laid = base.clone();
+            laid.overlay(&only(&note, key));
+            let mut expected = set_fields(&base);
+            expected.insert(key.to_owned(), set_fields(&note)[key].clone());
+            assert_eq!(set_fields(&laid), expected, "{key}");
+        }
+        let mut laid = base.clone();
+        laid.overlay(&ContainerIdentity::default());
+        assert_eq!(laid, base);
+        let mut laid = base.clone();
+        laid.overlay(&ContainerIdentity {
+            owner: Some(Value::Null),
+            ..ContainerIdentity::default()
+        });
+        assert_eq!(laid, base);
+        let mut laid = ContainerIdentity::default();
+        laid.overlay(&note);
+        assert_eq!(laid, note);
     }
 }

@@ -824,6 +824,24 @@ mod tests {
         assert!(err.to_string().contains("vault_root"), "{err}");
     }
 
+    /// `discoverComponents` leaves an unset identity field out, so a skill's
+    /// `identity` is `{}`.
+    #[test]
+    fn a_discovered_skill_s_identity_is_an_empty_object() {
+        let vfs = MemVfs::new();
+        let path = Path::new("/vault/skills/a.md");
+        vfs.create_dir_all(path.parent().unwrap()).unwrap();
+        vfs.write_file(path, b"---\ndescription: Use it.\n---\nBody.\n")
+            .unwrap();
+        let ns = Namespace::bare();
+        let report = core_discover_components(&vfs, Path::new("/vault"), None, &ns).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&report_json("discovery report", &report).unwrap()).unwrap();
+        let skill = &json["components"][0];
+        assert_eq!(skill["kind"], "skill", "{json}");
+        assert_eq!(skill["identity"], serde_json::json!({}), "{json}");
+    }
+
     /// A vault that moves its packs folder inside itself, with a note left in
     /// that folder.
     fn vault_with_moved_output() -> MemVfs {

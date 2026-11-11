@@ -52,7 +52,7 @@ fn an_export_request_builds_from_a_default_config() {
     let mut config = MarketplaceConfig::default();
     config.name = Some("house".to_owned());
     let mut overrides = PluginOverrides::default();
-    overrides.version = Some("1.0.0".to_owned());
+    overrides.identity.version = Some("1.0.0".to_owned());
     config.plugins.insert("house".to_owned(), overrides);
     let mut request = ExportRequest::new("/vault", "/market", config);
     assert_eq!(request.mode, ExportMode::Build);

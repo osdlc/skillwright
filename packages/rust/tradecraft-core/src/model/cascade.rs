@@ -12,7 +12,11 @@
 //!    ([`crate::settings::RootFile::inherit`]).
 //!
 //! Which keys come down is the key table's answer ([`crate::keys::inherits`]).
-//! Names, descriptions and versions never do.
+//! Names, descriptions and versions never do. A container's identity comes
+//! down through [`crate::frontmatter::ContainerIdentity::fill_unset_from`], and
+//! a note over the request through
+//! [`crate::frontmatter::ContainerIdentity::overlay`], so neither lists the
+//! fields it moves.
 //!
 //! A container is known by its folder, as its members are. A marketplace
 //! note's `name` is only what it publishes under.
@@ -49,7 +53,7 @@ use crate::discover::{DiscoveredComponent, DiscoveryReport, read_container};
 use crate::error::CoreError;
 use crate::export::MarketplaceConfig;
 use crate::frontmatter::EntityKind;
-use crate::harness::manifest::{inherited, plugin_block};
+use crate::harness::manifest::{plugin_block, plugin_identity, plugin_targets};
 use crate::keys;
 use crate::namespace::Namespace;
 use crate::vault::VaultNote;
@@ -88,14 +92,9 @@ impl Cascade {
             config.name = Some(note.name.clone());
             // A marketplace describes itself where a skill describes itself.
             take_description(&mut config.description, note);
-            take(&mut config.display_name, note.identity.display_name.clone());
-            take(&mut config.owner, note.identity.owner.clone());
-            take(&mut config.author, note.identity.author.clone());
-            take(&mut config.license, note.identity.license.clone());
-            take(&mut config.version, note.identity.version.clone());
+            config.identity.overlay(&note.identity);
+            // `targets` is not identity data: see `keys::identity_keys`.
             take(&mut config.targets, note.targets.clone());
-            take(&mut config.repository, note.identity.repository.clone());
-            take(&mut config.homepage, note.identity.homepage.clone());
             merge_blocks(&mut config.blocks, &note.blocks);
         }
         // Failing a note, the marketplace's own name is what it is called: the
@@ -105,9 +104,10 @@ impl Cascade {
             config.name = market.map(str::to_owned);
         }
         // `version` is not inherited: a marketplace folder's version is its
-        // own note's, never the root file's above it.
+        // own note's, never the root file's above it, which the overlay above
+        // would keep.
         if market.is_some_and(|m| marketplaces_in(containers).contains(m)) {
-            config.version = note.and_then(|n| n.identity.version.clone());
+            config.identity.version = note.and_then(|n| n.identity.version.clone());
         }
 
         // Each plugin note fills its own override block. A block the request
@@ -123,18 +123,8 @@ impl Cascade {
             // A plugin note describes its pack in the same place a skill note
             // describes itself.
             take_description(&mut overrides.description, note);
-            take(&mut overrides.version, note.identity.version.clone());
-            take(&mut overrides.author, note.identity.author.clone());
-            take(&mut overrides.license, note.identity.license.clone());
-            take(&mut overrides.keywords, note.identity.keywords.clone());
-            take(&mut overrides.category, note.identity.category.clone());
-            take(
-                &mut overrides.display_name,
-                note.identity.display_name.clone(),
-            );
+            overrides.identity.overlay(&note.identity);
             take(&mut overrides.targets, note.targets.clone());
-            take(&mut overrides.repository, note.identity.repository.clone());
-            take(&mut overrides.homepage, note.identity.homepage.clone());
             merge_blocks(&mut overrides.blocks, &note.blocks);
         }
 
@@ -249,13 +239,7 @@ impl Cascade {
     ) {
         let plugin = plugin.unwrap_or_default();
         if note.frontmatter.targets.is_none() {
-            note.frontmatter.targets = inherited(
-                &self.config,
-                plugin,
-                "targets",
-                |own| &own.targets,
-                |market| &market.targets,
-            );
+            note.frontmatter.targets = plugin_targets(&self.config, plugin);
         }
         // A container's own `license` and blocks are the manifest's, read from
         // the config.
@@ -263,13 +247,7 @@ impl Cascade {
             return;
         }
         if note.projection.content.license.is_none() && keys::inherits(kind, "license") {
-            note.projection.content.license = inherited(
-                &self.config,
-                plugin,
-                "license",
-                |own| &own.license,
-                |market| &market.license,
-            );
+            note.projection.content.license = plugin_identity(&self.config, plugin).license;
         }
         let own_metadata = crate::projection::skill_metadata(&note.projection.content, ns);
         for harness in keys::HARNESS_BLOCKS

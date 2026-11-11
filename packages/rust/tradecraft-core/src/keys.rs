@@ -11,7 +11,11 @@
 //!   the wrong kind, by the check a harness block applies to the same key. On
 //!   other kinds a spec key's shape is documentation.
 //! * **The cascade.** [`KeySpec::inherits`] decides which keys come down from
-//!   a container; [`crate::model::cascade`] reads it through [`inherits`].
+//!   a container, and every inheritance step asks it through [`inherits`]:
+//!   [`crate::frontmatter::ContainerIdentity::fill_unset_from`] for a
+//!   container's identity ([`identity_keys`]), and the workspace file
+//!   ([`crate::settings::RootFile::inherit`]) and [`crate::model::cascade`]
+//!   for `targets` and the harness blocks.
 //! * **The field reference** the docs publish, generated from [`KEYS`].
 //!
 //! Keys are bare by default. Under a namespace (`build.namespace: sw`), every
@@ -703,6 +707,29 @@ pub fn is_known(kind: EntityKind, key: &str, ns: &Namespace) -> bool {
 /// Whether a note of `kind` takes `key` from its containers.
 pub fn inherits(kind: EntityKind, key: &str) -> bool {
     lookup(kind, key).is_some_and(|spec| spec.inherits)
+}
+
+/// The keys a container's identity holds: the key table's rows for a
+/// marketplace or a plugin that skillwright owns, less the harness blocks
+/// and `targets`, which other kinds read too. In table order, deduplicated.
+///
+/// Any later skillwright-owned key a marketplace or plugin reads joins the
+/// identity by this rule, and a test fails until
+/// [`crate::frontmatter::ContainerIdentity`] has a field for it. A container
+/// key that is not identity data must be excluded here on purpose, with a
+/// reason.
+pub fn identity_keys() -> impl Iterator<Item = &'static str> {
+    let mut seen = Vec::new();
+    KEYS.iter()
+        .filter(|spec| spec.kinds.iter().any(|kind| CONTAINERS.contains(kind)))
+        .filter(|spec| spec.owner == Owner::Skillwright)
+        .filter(|spec| spec.shape != Shape::HarnessBlock && spec.key != "targets")
+        .map(|spec| spec.key)
+        .filter(move |key| {
+            let first = !seen.contains(key);
+            seen.push(*key);
+            first
+        })
 }
 
 #[cfg(test)]

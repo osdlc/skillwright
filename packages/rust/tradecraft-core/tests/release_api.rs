@@ -919,23 +919,41 @@ fn a_plugin_note_with_neither_name_nor_description_is_still_read() {
 }
 
 #[test]
-fn a_marketplace_note_outranks_the_root_file_for_every_inherited_key() {
+fn a_marketplace_note_outranks_the_root_file_for_every_identity_key() {
+    // `vault` gives the note `owner: acme`.
     let vfs = vault(
-        "license: ISC\ntargets: [codex]\nrepository: https://note.example\n",
+        "author: Note Author\ndisplay_name: Note House\nlicense: ISC\nversion: '2.0.0'\n\
+         targets: [codex, cursor]\nrepository: https://note.example/repo\n\
+         homepage: https://note.example\n",
         "",
         "",
     );
     let mut request = request();
-    request.config =
-        root_config("license: MIT\ntargets: [claude]\nrepository: https://root.example\n");
+    request.config = root_config(
+        "owner: Root Org\nauthor: Root Author\ndisplay_name: Root House\nlicense: MIT\n\
+         version: '1.0.0'\ntargets: [claude]\nrepository: https://root.example/repo\n\
+         homepage: https://root.example\n",
+    );
     request.config.name = None;
     export_skills(&vfs, &request, &Namespace::default()).unwrap();
     assert!(!vfs.exists(Path::new(CLAUDE_REVIEW)));
-    let manifest = json_at(
+    let codex = json_at(
         &vfs,
         "/market/.agents/packs/tools/.codex-plugin/plugin.json",
     );
-    assert_eq!(manifest["license"], "ISC");
+    assert_eq!(codex["license"], "ISC");
+    assert_eq!(codex["author"], serde_json::json!({"name": "Note Author"}));
+    let cursor = json_at(
+        &vfs,
+        "/market/.cursor-plugin/packs/tools/.cursor-plugin/plugin.json",
+    );
+    assert_eq!(cursor["repository"], "https://note.example/repo");
+    assert_eq!(cursor["homepage"], "https://note.example");
+    let codex_index = json_at(&vfs, "/market/.agents/plugins/marketplace.json");
+    assert_eq!(codex_index["interface"]["displayName"], "Note House");
+    let cursor_index = json_at(&vfs, "/market/.cursor-plugin/marketplace.json");
+    assert_eq!(cursor_index["owner"], serde_json::json!({"name": "acme"}));
+    assert_eq!(cursor_index["metadata"]["version"], "2.0.0");
 }
 
 #[test]
@@ -1078,7 +1096,7 @@ fn build_root(vfs: &dyn Vfs, config: MarketplaceConfig) -> Result<ExportReport, 
     named.marketplace = None;
     named.config = config;
     named.config.name = Some("house".to_owned());
-    named.config.owner = Some(serde_json::json!("acme"));
+    named.config.identity.owner = Some(serde_json::json!("acme"));
     export_skills(vfs, &named, &Namespace::bare()).map_err(|err| err.to_string())
 }
 
@@ -1518,7 +1536,7 @@ fn an_explicit_default_naming_records_nothing() {
     );
     let mut config = request().config;
     config.name = Some("house".to_owned());
-    config.owner = Some(serde_json::json!("acme"));
+    config.identity.owner = Some(serde_json::json!("acme"));
     let market = tradecraft_core::model::load(
         &vfs,
         &tradecraft_core::model::LoadRequest::new("/vault", config),
@@ -2755,4 +2773,104 @@ fn a_publish_refuses_a_member_with_no_description() {
         assert!(err.contains("missing-description"), "{path}: {err}");
     }
     assert!(!vfs.exists(Path::new("/dest")));
+}
+
+/// Each harness's manifest of `plugin`, by harness.
+fn plugin_manifests(vfs: &dyn Vfs, plugin: &str) -> [(&'static str, serde_json::Value); 4] {
+    [
+        (
+            "claude",
+            json_at(
+                vfs,
+                &format!("/market/.claude-plugin/packs/{plugin}/.claude-plugin/plugin.json"),
+            ),
+        ),
+        (
+            "codex",
+            json_at(
+                vfs,
+                &format!("/market/.agents/packs/{plugin}/.codex-plugin/plugin.json"),
+            ),
+        ),
+        (
+            "cursor",
+            json_at(
+                vfs,
+                &format!("/market/.cursor-plugin/packs/{plugin}/.cursor-plugin/plugin.json"),
+            ),
+        ),
+        (
+            "pi",
+            json_at(vfs, &format!("/market/.pi/packs/{plugin}/package.json")),
+        ),
+    ]
+}
+
+/// `tools` shows every default because it is not the marketplace's own plugin.
+/// Only that plugin takes the marketplace's `version`.
+#[test]
+fn a_plugin_takes_exactly_the_inheritable_fields_from_its_marketplace() {
+    // `vault` gives the note `owner: acme`.
+    let vfs = vault(
+        "author: Ada\ndisplay_name: House\nlicense: MIT\nversion: '3.0.0'\n\
+         repository: https://house.example/repo\nhomepage: https://house.example\n",
+        "",
+        "",
+    );
+    write(
+        &vfs,
+        OTHER,
+        &note(
+            "other",
+            "author: Bo\ndisplay_name: Other Pack\nlicense: ISC\nversion: '2.0.0'\n\
+             repository: https://other.example/repo\nhomepage: https://other.example\n\
+             keywords: [k]\ncategory: Testing\n",
+        ),
+    );
+    build(&vfs);
+    for (harness, manifest) in plugin_manifests(&vfs, "tools") {
+        assert_eq!(manifest["author"]["name"], "Ada", "{harness}");
+        assert_eq!(manifest["license"], "MIT", "{harness}");
+        assert_eq!(
+            manifest["repository"], "https://house.example/repo",
+            "{harness}"
+        );
+        assert_eq!(manifest["homepage"], "https://house.example", "{harness}");
+        assert_eq!(manifest["version"], "0.1.0", "{harness}");
+        assert!(manifest.get("displayName").is_none(), "{harness}");
+        let keywords = if harness == "pi" {
+            serde_json::json!(["pi-package"])
+        } else {
+            serde_json::json!([])
+        };
+        assert_eq!(manifest["keywords"], keywords, "{harness}");
+        if harness == "codex" {
+            assert_eq!(manifest["interface"]["displayName"], "tools");
+            assert_eq!(manifest["interface"]["category"], "Productivity");
+        }
+    }
+    for (harness, manifest) in plugin_manifests(&vfs, "other") {
+        assert_eq!(manifest["author"]["name"], "Bo", "{harness}");
+        assert_eq!(manifest["license"], "ISC", "{harness}");
+        assert_eq!(
+            manifest["repository"], "https://other.example/repo",
+            "{harness}"
+        );
+        assert_eq!(manifest["homepage"], "https://other.example", "{harness}");
+        assert_eq!(manifest["version"], "2.0.0", "{harness}");
+        let keywords = if harness == "pi" {
+            serde_json::json!(["k", "pi-package"])
+        } else {
+            serde_json::json!(["k"])
+        };
+        assert_eq!(manifest["keywords"], keywords, "{harness}");
+        match harness {
+            "codex" => {
+                assert_eq!(manifest["interface"]["displayName"], "Other Pack");
+                assert_eq!(manifest["interface"]["category"], "Testing");
+            }
+            "cursor" => assert_eq!(manifest["displayName"], "Other Pack"),
+            _ => {}
+        }
+    }
 }
