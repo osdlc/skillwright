@@ -226,8 +226,17 @@ The syntax decides what a token is, not its target:
 | `[text](https://…)`, `<https://…>`, `mailto:` and any other URL with a scheme | An external link | Ships as written, not checked |
 | `[text](#heading)` | A link within the same file | Ships as written, not checked |
 | `[text](/abs/path)` or `[text](file:…)` | A path outside the vault | Refused |
-| `${PLUGIN_ROOT}/<path>` | A plugin-root path (rules 15 to 26) | Checks the file ships, rewrites per harness |
-| Anything in a code span or fenced block | Literal (rule 12) | Ships as written, except `${PLUGIN_ROOT}` |
+| `${PLUGIN_ROOT}/<path>` | A plugin-root path (rules 15 to 26) | Checks the file ships, rewrites per harness. This happens everywhere, inside code too |
+| Anything in a code span or fenced block | Literal (rule 12) | Ships as written. The one exception is a plugin-root path, which is still rewritten |
+
+A plugin-root path is the one form rewritten inside code, because a command
+in a code block is where it is used:
+
+```text
+Run `${PLUGIN_ROOT}/scripts/tool.js --check`.
+  Claude Code pack:  Run `${CLAUDE_PLUGIN_ROOT}/scripts/tool.js --check`.
+  Codex pack:        Run `../../scripts/tool.js --check`.
+```
 
 An external link is never fetched or checked, so a dead URL is not an error.
 An embed resolves by the same scope rules as a link. The rules apply to a
