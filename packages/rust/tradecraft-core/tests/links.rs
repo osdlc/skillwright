@@ -97,24 +97,192 @@ const AUTHOR: &str = "skills/author/author.md";
 
 // --- Scope ------------------------------------------------------------------
 
+/// A vault on disk at `<tmp>/v`, as [`vault`] lays it out, for symlinks.
+#[cfg(unix)]
+fn disk(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    put_disk(&tmp, "skillwright.md", "---\n---\n");
+    put_disk(&tmp, "marketplaces/acme/acme.md", "---\n---\n");
+    put_disk(
+        &tmp,
+        &format!("{PLUGIN}/tools.md"),
+        "---\nversion: 1.0.0\n---\n",
+    );
+    for (path, text) in files {
+        put_disk(&tmp, &format!("{PLUGIN}/{path}"), text);
+    }
+    tmp
+}
+
+/// Makes `link`, a path in plugin `tools`, a symlink to `target`.
+#[cfg(unix)]
+fn symlink(tmp: &tempfile::TempDir, link: &str, target: &str) {
+    let link = tmp.path().join("v").join(PLUGIN).join(link);
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+
+/// Writes `text` at `rel` from the vault root on disk.
+#[cfg(unix)]
+fn put_disk(tmp: &tempfile::TempDir, rel: &str, text: &str) {
+    let path = tmp.path().join("v").join(rel);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, text).unwrap();
+}
+
+/// The refusal of a build of the vault on disk.
+#[cfg(unix)]
+fn disk_refusal(tmp: &tempfile::TempDir) -> String {
+    let vfs = tradecraft_core::NativeVfs;
+    let root = tmp.path().join("v");
+    let result = load_vault(&vfs, &root, None).and_then(|loaded| {
+        let request = loaded.export_request(&loaded.marketplaces[0], ExportMode::Build);
+        export_skills(&vfs, &request).map(|_| ())
+    });
+    match result {
+        Ok(()) => panic!("the build succeeded"),
+        Err(err) => err.to_string(),
+    }
+}
+
+/// What a refusal says after the link as written: the reason and the rule.
+fn after_link<'e>(err: &'e str, written: &str) -> &'e str {
+    let quoted = format!("`{written}`");
+    err.split_once(&quoted)
+        .unwrap_or_else(|| panic!("no {quoted}: {err}"))
+        .1
+}
+
+/// The reason token of a refusal.
+fn token(err: &str) -> &str {
+    err.split(':').nth(1).unwrap_or_default().trim()
+}
+
+/// Containment rule 2: a symlink whose real path leaves the scope fails as a
+/// link spelling that target does, naming the symlink and its target.
+#[cfg(unix)]
+fn refused_as_spelled(
+    files: &[(&str, &str)],
+    setup: impl Fn(&tempfile::TempDir),
+    link: &str,
+    target: &str,
+    spelled: &str,
+) -> String {
+    let tmp = disk(files);
+    setup(&tmp);
+    symlink(&tmp, link, target);
+    let by_symlink = disk_refusal(&tmp);
+    names(
+        &by_symlink,
+        &format!("{PLUGIN}/{link}"),
+        target,
+        "section 4",
+    );
+
+    let tmp = disk(&[(AUTHOR, &skill(&format!("See {spelled}.")))]);
+    setup(&tmp);
+    let by_link = disk_refusal(&tmp);
+    names(&by_link, AUTHOR, spelled, "section 4");
+    assert_eq!(
+        token(&by_symlink),
+        token(&by_link),
+        "{by_symlink}\n{by_link}"
+    );
+    assert_eq!(
+        after_link(&by_symlink, target),
+        after_link(&by_link, spelled),
+        "{by_symlink}\n{by_link}"
+    );
+    by_symlink
+}
+
 #[cfg(unix)]
 #[test]
-fn a_symlink_in_a_skill_folder_out_of_the_marketplace_is_refused() {
+fn a_symlink_out_of_the_marketplace_fails_as_a_link_spelling_its_target() {
     let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("v");
-    let plugin = root.join(PLUGIN);
-    std::fs::create_dir_all(plugin.join("skills/author/references")).unwrap();
-    std::fs::write(root.join("skillwright.md"), "---\n---\n").unwrap();
-    std::fs::write(root.join("marketplaces/acme/acme.md"), "---\n---\n").unwrap();
-    std::fs::write(plugin.join("tools.md"), "---\n---\n").unwrap();
-    std::fs::write(plugin.join(AUTHOR), skill("See [[secret]].")).unwrap();
-    std::fs::write(tmp.path().join("secret.md"), "Secret.\n").unwrap();
-    let link = plugin.join("skills/author/references/secret.md");
-    std::os::unix::fs::symlink(tmp.path().join("secret.md"), &link).unwrap();
-    let vfs = tradecraft_core::NativeVfs;
-    let err = load_vault(&vfs, &root, None).unwrap_err().to_string();
-    assert!(err.contains("unsafe-path"), "{err}");
-    assert!(err.contains("secret.md"), "{err}");
+    let outside = tmp.path().join("secret.md");
+    std::fs::write(&outside, "Secret.\n").unwrap();
+    let outside = outside.to_str().unwrap().to_owned();
+    let err = refused_as_spelled(
+        &[(AUTHOR, &skill("See [[secret]]."))],
+        |_| {},
+        "skills/author/references/secret.md",
+        &outside,
+        "[[../../../../../../../secret.md]]",
+    );
+    assert!(err.contains("link-out-of-scope"), "{err}");
+    assert!(err.contains("containment rule 1"), "{err}");
+}
+
+/// Plugin `other` with `references/x.md`, on disk.
+#[cfg(unix)]
+fn other_plugin_on_disk(tmp: &tempfile::TempDir) {
+    put_disk(
+        tmp,
+        "marketplaces/acme/plugins/other/other.md",
+        "---\n---\n",
+    );
+    put_disk(
+        tmp,
+        "marketplaces/acme/plugins/other/references/x.md",
+        "X.\n",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_into_another_plugin_fails_as_a_link_spelling_its_target() {
+    // Linked or only shipped, as a file or through a folder.
+    for (body, link, target) in [
+        (
+            "See [[x]].",
+            "skills/author/references/x.md",
+            "../../../../other/references/x.md",
+        ),
+        (
+            "Body.",
+            "skills/author/references/x.md",
+            "../../../../other/references/x.md",
+        ),
+        (
+            "Body.",
+            "skills/author/references/ext",
+            "../../../../other/references",
+        ),
+    ] {
+        let err = refused_as_spelled(
+            &[(AUTHOR, &skill(body))],
+            other_plugin_on_disk,
+            link,
+            target,
+            "[[../../../other/references/x.md]]",
+        );
+        assert!(err.contains("another plugin"), "{err}");
+        assert!(err.contains("scope of a link"), "{err}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_into_the_components_docs_fails_as_a_link_spelling_its_target() {
+    let err = refused_as_spelled(
+        &[
+            (AUTHOR, &skill("See [[references/x]].")),
+            ("skills/author/docs/x.md", "For authors.\n"),
+        ],
+        |tmp| {
+            put_disk(
+                tmp,
+                &format!("{PLUGIN}/skills/author/docs/x.md"),
+                "For authors.\n",
+            )
+        },
+        "skills/author/references/x.md",
+        "../docs/x.md",
+        "[[docs/x]]",
+    );
+    assert!(err.contains("excluded-link"), "{err}");
+    assert!(err.contains("rule 10"), "{err}");
 }
 
 #[test]

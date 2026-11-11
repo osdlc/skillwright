@@ -268,6 +268,6 @@ fn a_symlink_that_leaves_the_marketplace_is_refused() {
     )
     .unwrap();
     let said = build(&NativeVfs, &vault.0).unwrap_err().to_string();
-    assert!(said.contains("unsafe-path"), "{said}");
+    assert!(said.contains("link-out-of-scope"), "{said}");
     assert!(said.contains("skills/review/scripts/tool.sh"), "{said}");
 }

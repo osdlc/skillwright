@@ -383,6 +383,136 @@ impl Layout {
     }
 }
 
+/// Why a link may not reach a file: the reason token, what is wrong and the
+/// rule it breaks. A link and a symlink are refused with the same one
+/// (spec section 4, containment rule 2).
+pub(crate) struct Unreachable {
+    pub(crate) token: &'static str,
+    pub(crate) what: String,
+    pub(crate) rule: &'static str,
+}
+
+impl Unreachable {
+    /// A path that resolves outside marketplace `market` (containment rule 1).
+    pub(crate) fn outside(market: &str) -> Self {
+        Unreachable {
+            token: "link-out-of-scope",
+            what: format!("resolves outside `{MARKETPLACES_DIR}/{market}/`"),
+            rule: "section 4 containment rule 1",
+        }
+    }
+
+    /// A file no link may reach, such as a plugin's note.
+    pub(crate) fn no_link_may_reach(rel: &str) -> Self {
+        Unreachable {
+            token: "link-out-of-scope",
+            what: format!("names {rel}, which no link may reach"),
+            rule: "section 4, scope of a link",
+        }
+    }
+
+    /// The refusal naming `file`, the linking file or the symlink, and
+    /// `written`, the link as written or the symlink's target (section 4
+    /// rule 14).
+    pub(crate) fn refuse(self, file: &str, written: &str) -> CoreError {
+        link_refusal(self.token, file, written, self.what, self.rule)
+    }
+}
+
+/// A link error naming `file`, the link as `written`, what is wrong and the
+/// rule it broke (spec section 4 rule 14).
+pub(crate) fn link_refusal(
+    token: &str,
+    file: &str,
+    written: &str,
+    what: impl std::fmt::Display,
+    rule: &str,
+) -> CoreError {
+    CoreError::refused(token, format!("{file}: `{written}` {what} ({rule})"))
+}
+
+/// Why a link from plugin `plugin` of marketplace `market` may not reach
+/// `to`, or `None` when it may (spec section 4, scope of a link).
+pub(crate) fn reach(market: &str, plugin: Option<&str>, to: &LayoutFile) -> Option<Unreachable> {
+    if to.marketplace != market {
+        return Some(Unreachable::outside(market));
+    }
+    if to.plugin.as_deref() != plugin {
+        return Some(Unreachable {
+            token: "link-out-of-scope",
+            what: format!("names a file in another plugin, {}", to.rel),
+            rule: "section 4, scope of a link",
+        });
+    }
+    match &to.place {
+        Place::ComponentNote { .. } | Place::Shared { .. } => None,
+        Place::NeverShip { .. } => Some(Unreachable {
+            token: "excluded-link",
+            what: format!("links to {}, which never ships", to.rel),
+            rule: "section 4 rule 10",
+        }),
+        _ => Some(Unreachable::no_link_may_reach(&to.rel)),
+    }
+}
+
+/// Refuses a file whose real path, with symlinks resolved, is one a link from
+/// the file's own place may not reach (spec section 4, containment rule 2).
+/// The refusal names the symlink on the way and its target as written. A
+/// file in a never-ship folder is not checked: nothing ships it.
+fn check_real_paths(vfs: &dyn Vfs, layout: &Layout) -> Result<(), CoreError> {
+    let mut real_markets = BTreeMap::new();
+    for file in &layout.files {
+        if matches!(file.place, Place::NeverShip { .. }) {
+            continue;
+        }
+        let market_dir = layout.root.join(MARKETPLACES_DIR).join(&file.marketplace);
+        let real_market = match real_markets.get(&file.marketplace) {
+            Some(real) => real,
+            None => real_markets
+                .entry(file.marketplace.clone())
+                .or_insert(crate::guard::real_path(vfs, &market_dir)?),
+        };
+        let real = crate::guard::real_path(vfs, &file.path)?;
+        let Ok(inside) = file.path.strip_prefix(&market_dir) else {
+            continue;
+        };
+        if real == real_market.join(inside) {
+            continue;
+        }
+        let real_rel = real.strip_prefix(real_market).ok().map(|inside| {
+            format!(
+                "{MARKETPLACES_DIR}/{}/{}",
+                file.marketplace,
+                crate::skill::forward_slashed(inside)
+            )
+        });
+        let target = real_rel
+            .as_deref()
+            .and_then(|rel| layout.files.iter().find(|found| found.rel == rel));
+        let why = match target {
+            Some(target) => reach(&file.marketplace, file.plugin.as_deref(), target),
+            None => Some(Unreachable::no_link_may_reach(
+                &real_rel.unwrap_or_else(|| real.display().to_string()),
+            )),
+        };
+        if let Some(why) = why {
+            let link = file
+                .path
+                .ancestors()
+                .take_while(|path| path.starts_with(&market_dir))
+                .find(|path| vfs.is_symlink(path))
+                .unwrap_or(&file.path);
+            let written = vfs.read_link(link).map_or_else(
+                |_| real.display().to_string(),
+                |to| to.display().to_string(),
+            );
+            let rel = link.strip_prefix(&layout.root).unwrap_or(link);
+            return Err(why.refuse(&crate::skill::forward_slashed(rel), &written));
+        }
+    }
+    Ok(())
+}
+
 /// One kind of layout problem, in the order a report lists them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Case {
@@ -480,9 +610,14 @@ fn layout_error(message: String) -> CoreError {
 /// * `refused: layout` — the root is not a vault root, or the vault breaks the
 ///   layout. Every problem is in the one message, each case once with every
 ///   path it applies to.
-/// * `refused: unsafe-path` — a symlink whose real target lies outside its
-///   marketplace folder, a symlink to a folder the walk is inside, or a symlink
-///   outside `marketplaces/<m>/` (spec section 4, containment rule 2).
+/// * `refused: link-out-of-scope` or `excluded-link` — a file whose real
+///   path, with symlinks resolved, a link from its place may not reach:
+///   outside its marketplace folder, in another plugin, in a never-ship
+///   folder (spec section 4, containment rule 2). The refusal is the one a
+///   link spelling that target gets, naming the symlink and its target.
+/// * `refused: unsafe-path` — a symlink to a folder the walk is inside, one
+///   whose target cannot be read, or one outside `marketplaces/<m>/`; or a
+///   file whose real path the host cannot tell.
 /// * [`CoreError::Io`] — a folder that cannot be listed.
 pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
     let root = &crate::vfs::normalize(root);
@@ -532,11 +667,13 @@ pub fn read_layout(vfs: &dyn Vfs, root: &Path) -> Result<Layout, CoreError> {
     }
     walk.problems.into_result()?;
     marketplaces.sort();
-    Ok(Layout {
+    let layout = Layout {
         root: root.to_path_buf(),
         files: walk.files,
         marketplaces,
-    })
+    };
+    check_real_paths(vfs, &layout)?;
+    Ok(layout)
 }
 
 /// Whether `name` is a component kind folder or `hooks`.
@@ -602,7 +739,8 @@ impl Walk<'_> {
 
     /// Accepts the symlink at `path` when its real target lies inside the
     /// marketplace folder being walked (spec section 4, containment rule 2),
-    /// and says whether that target is a folder. A pack holds no symlinks:
+    /// and says whether that target is a folder. Where in the marketplace it
+    /// may lead is [`check_real_paths`]'s to check. A pack holds no symlinks:
     /// reading the link reads its target, so it ships as a copy.
     fn linked(&self, path: &Path) -> Result<bool, CoreError> {
         let refuse = |why: String| {
@@ -626,10 +764,13 @@ impl Walk<'_> {
             return Err(refuse("whose real target cannot be read".to_owned()));
         };
         if !target.starts_with(&scope) {
-            return Err(refuse(format!(
-                "whose target {} lies outside `{MARKETPLACES_DIR}/{market}/`",
-                target.display()
-            )));
+            // Refused as a link spelling the target is (containment rule 2).
+            let written = self.vfs.read_link(path).unwrap_or_else(|_| target.clone());
+            let rel = path.strip_prefix(self.root).unwrap_or(path);
+            return Err(Unreachable::outside(market).refuse(
+                &crate::skill::forward_slashed(rel),
+                &written.display().to_string(),
+            ));
         }
         let is_dir = self.vfs.metadata(&target)?.is_dir;
         if !is_dir {

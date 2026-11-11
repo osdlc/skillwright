@@ -680,7 +680,7 @@ fn a_symlink_is_read_when_its_target_stays_in_the_marketplace() {
     std::fs::write(tmp.join("outside.md"), "x").unwrap();
     std::os::unix::fs::symlink(tmp.join("outside.md"), tools.join("references/out.md")).unwrap();
     let err = read_layout(&vfs, &tmp).unwrap_err();
-    assert!(err.to_string().contains("unsafe-path"), "{err}");
+    assert!(err.to_string().contains("link-out-of-scope"), "{err}");
     assert!(err.to_string().contains("marketplaces/acme/"), "{err}");
     std::fs::remove_dir_all(&tmp).unwrap();
 }

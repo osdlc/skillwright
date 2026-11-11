@@ -926,7 +926,10 @@ fn a_symlink_in_the_vault_reads_its_target_at_the_ref() {
 
     // The ref's vault is refused for the link, as one on disk is.
     let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
-    assert_symlink_refused(&result, skill);
+    // Refused as a link spelling its target is (spec section 4, containment
+    // rule 2).
+    let in_vault = skill.strip_prefix("vault/").unwrap();
+    assert_symlink_refused(&result, "link-out-of-scope", &format!("{in_vault}: `"));
 }
 
 #[cfg(unix)]
@@ -946,22 +949,19 @@ fn a_root_file_that_is_a_symlink_at_the_ref_builds_as_it_did() {
     // The link resolves, so the ref's root file is found; its vault is
     // then refused for the link.
     let result = dry_bump(&repo.join("vault"), "HEAD", &[]);
-    assert_symlink_refused(&result, "vault/skillwright.md");
+    assert_symlink_refused(&result, "unsafe-path", "vault/skillwright.md: a symlink ");
 }
 
-/// The ref's vault was refused for the symlink at the repository path `rel`.
-fn assert_symlink_refused(result: &Run, rel: &str) {
+/// The ref's vault was refused with `token`, the message naming the symlink
+/// as `said` does.
+fn assert_symlink_refused(result: &Run, token: &str, said: &str) {
     assert_eq!(result.code, 2, "{}", result.stderr);
     assert!(
-        result.stderr.contains("refused: unsafe-path:"),
+        result.stderr.contains(&format!("refused: {token}: ")),
         "{}",
         result.stderr
     );
-    assert!(
-        result.stderr.contains(&format!("{rel}: a symlink ")),
-        "{}",
-        result.stderr
-    );
+    assert!(result.stderr.contains(said), "{}", result.stderr);
     assert!(result.stdout.is_empty(), "{}", result.stdout);
 }
 

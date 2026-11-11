@@ -73,7 +73,9 @@ use crate::error::CoreError;
 use crate::frontmatter::EntityKind;
 use crate::guard::within;
 use crate::hooks_file::{CANONICAL_ROOT, RootKind, plugin_root_refs};
-use crate::layout::{Layout, LayoutFile, MARKETPLACES_DIR, PLUGINS_DIR, Place, SharedDir};
+use crate::layout::{
+    Layout, LayoutFile, MARKETPLACES_DIR, PLUGINS_DIR, Place, SharedDir, Unreachable, reach,
+};
 use crate::model::{LinkForm, LinkedComponent, PluginRootPath, ResolvedRef};
 use crate::skill::{forward_slashed, read_utf8};
 use crate::vfs::{Vfs, normalize};
@@ -1624,13 +1626,8 @@ impl<'a> Renderer<'a> {
         let joined = normalize(&folder.join(relative));
         let market = self.vault_root.join(MARKETPLACES_DIR).join(&self.market);
         if !joined.starts_with(&market) {
-            return Err(self.link_error(
-                "link-out-of-scope",
-                from_file,
-                written,
-                format!("resolves outside `{MARKETPLACES_DIR}/{}/`", self.market),
-                "section 4 containment rule 1",
-            ));
+            return Err(Unreachable::outside(&self.market)
+                .refuse(&self.relative_or_verbatim(from_file), written));
         }
         let with_md = PathBuf::from(format!("{}.md", joined.display()));
         let mut candidates = vec![joined];
@@ -1739,23 +1736,9 @@ impl<'a> Renderer<'a> {
         let Some(file) = self.layout.file(to) else {
             return Err(self.missing(from_file, written));
         };
-        if file.marketplace != self.market {
-            return Err(self.link_error(
-                "link-out-of-scope",
-                from_file,
-                written,
-                format!("resolves outside `{MARKETPLACES_DIR}/{}/`", self.market),
-                "section 4 containment rule 1",
-            ));
-        }
-        if file.plugin != self.plugin {
-            return Err(self.link_error(
-                "link-out-of-scope",
-                from_file,
-                written,
-                format!("names a file in another plugin, {}", file.rel),
-                "section 4, scope of a link",
-            ));
+        // The layout has refused a symlink whose real path this would refuse.
+        if let Some(why) = reach(&self.market, self.plugin.as_deref(), file) {
+            return Err(why.refuse(&self.relative_or_verbatim(from_file), written));
         }
         let component = |kind: EntityKind, name: &str| {
             Some(LinkedComponent {
@@ -1783,20 +1766,8 @@ impl<'a> Renderer<'a> {
                 component: None,
                 note: false,
             }),
-            Place::NeverShip { .. } => Err(self.link_error(
-                "excluded-link",
-                from_file,
-                written,
-                format!("links to {}, which never ships", file.rel),
-                "section 4 rule 10",
-            )),
-            _ => Err(self.link_error(
-                "link-out-of-scope",
-                from_file,
-                written,
-                format!("names {}, which no link may reach", file.rel),
-                "section 4, scope of a link",
-            )),
+            _ => Err(Unreachable::no_link_may_reach(&file.rel)
+                .refuse(&self.relative_or_verbatim(from_file), written)),
         }
     }
 
@@ -1821,12 +1792,12 @@ impl<'a> Renderer<'a> {
         what: impl std::fmt::Display,
         rule: &str,
     ) -> CoreError {
-        CoreError::refused(
+        crate::layout::link_refusal(
             token,
-            format!(
-                "{}: `{written}` {what} ({rule})",
-                self.relative_or_verbatim(from_file)
-            ),
+            &self.relative_or_verbatim(from_file),
+            written,
+            what,
+            rule,
         )
     }
 

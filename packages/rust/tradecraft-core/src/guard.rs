@@ -34,17 +34,33 @@ impl VfsResolver<'_> {
             return io::Error::new(source.kind(), err.to_string());
         }
         let message = err.to_string();
-        self.failure.borrow_mut().get_or_insert_with(|| {
-            CoreError::refused(
-                "unsafe-path",
-                format!(
-                    "{}: cannot tell where this path leads — {message}. Nothing was written",
-                    p.display()
-                ),
-            )
-        });
+        self.failure
+            .borrow_mut()
+            .get_or_insert_with(|| unresolvable(p, &message));
         io::Error::other(message)
     }
+}
+
+/// The refusal for a path the host could not resolve, with its `message`.
+fn unresolvable(p: &Path, message: &str) -> CoreError {
+    CoreError::refused(
+        "unsafe-path",
+        format!(
+            "{}: cannot tell where this path leads — {message}. Nothing was written",
+            p.display()
+        ),
+    )
+}
+
+/// The real path of `p`, which exists, with every symlink resolved.
+///
+/// # Errors
+///
+/// `refused: unsafe-path` when the host cannot resolve it, as [`within`]
+/// refuses.
+pub(crate) fn real_path(vfs: &dyn Vfs, p: &Path) -> Result<PathBuf, CoreError> {
+    vfs.canonicalize(p)
+        .map_err(|err| unresolvable(p, &CoreError::from(err).to_string()))
 }
 
 impl Resolver for VfsResolver<'_> {

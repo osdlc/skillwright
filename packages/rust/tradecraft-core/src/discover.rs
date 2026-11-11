@@ -429,7 +429,9 @@ impl SkippedNote {
 /// # Errors
 ///
 /// * `refused: layout` — the vault is not in the layout (spec section 11).
-/// * `refused: unsafe-path` — a symlink that leaves its marketplace folder.
+/// * `refused: link-out-of-scope` or `excluded-link` — a file whose real path,
+///   with symlinks resolved, a link from its place may not reach.
+/// * `refused: unsafe-path` — a symlink the walk cannot follow.
 /// * [`CoreError::Io`] — a folder that cannot be listed.
 /// * `refused: path-collision` — two components of one name in one plugin.
 pub fn discover_components(vfs: &dyn Vfs, vault_root: &Path) -> Result<DiscoveryReport, CoreError> {
