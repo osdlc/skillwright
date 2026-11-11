@@ -65,7 +65,10 @@ changes for a vault built with today's tool is in
    Appendix A1).
 3. v2 does not support a vault inside a larger notes vault. At the root, only
    `skillwright.md` and `marketplaces/` are read, and `dist/` is written
-   (section 9). Anything else at the root is left alone.
+   (section 9). Only the root's direct children are checked. A `skills/`,
+   `agents/`, `commands/`, `hooks/` or `plugins/` folder there is refused
+   (section 11 case 4). Anything else at the root is left alone and not read,
+   at any depth, such as `notes/` or `notes/marketplaces/`.
 
 ## 2. The root file
 
@@ -208,7 +211,7 @@ Some entries are skipped everywhere, and one is an error:
 
 | Folder | May hold |
 |---|---|
-| The root | `skillwright.md`, `marketplaces/`, `dist/`. Anything else is left alone, not read. |
+| The root | `skillwright.md`, `marketplaces/`, `dist/`. Anything else is left alone and not read, except the refused names of section 11 case 4. |
 | `marketplaces/` | Marketplace folders only. |
 | `marketplaces/<m>/` | `<m>.md`, `plugins/`. |
 | `plugins/` | Plugin folders only. |
@@ -452,19 +455,28 @@ marketplace (rule 8, decision D2).
      | a command | `` `/tools:deploy` `` | an error: their packs contain no commands |
      | an agent | an error: no pack contains agents | an error |
    - A call string written by hand in prose is an error that says to write
-     `/[[setup]]`. One harness's form is wrong for the others. A string counts
-     when it is one harness's call form for a skill or command of this
-     marketplace, and its sigil does not continue a word or path. For the
-     `setup` skill of plugin `tools`:
+     `/[[setup]]`. One harness's form is wrong for the others. A string is
+     checked in these steps:
+     1. Take the call forms of every harness being built, with that
+        harness's naming in effect for the plugin. For a command, take only
+        the forms of harnesses whose packs contain commands.
+     2. Keep only the forms that name the plugin. For the `setup` skill of
+        plugin `tools`:
 
-     | Written in prose | Checked? |
-     |---|---|
-     | `/tools:setup` (Claude Code) | Yes: an error |
-     | `$tools:setup` (Codex) | Yes: an error |
-     | `/tools-setup` (Cursor) | Yes: an error |
-     | `/skill:tools-setup` (Pi) | Yes: an error |
-     | `/setup` or `/skill:setup` (a bare name) | No. A bare name is too often other text, such as a path. |
-     | any of these in a code span or fenced block | No. It ships as written (rule 12). |
+        | Form | Harness | Checked? |
+        |---|---|---|
+        | `/tools:setup` | Claude Code | Yes |
+        | `$tools:setup` | Codex | Yes |
+        | `/tools-setup` | Cursor, prefixed | Yes |
+        | `/skill:tools-setup` | Pi, prefixed | Yes |
+        | `/setup`, `/skill:setup` | Cursor or Pi with `naming: bare` | No. A bare name is too often other text, such as a path. |
+
+     3. A form matches in prose when its sigil does not continue a word or
+        path, and the character after it is not a letter `a` to `z`, a digit
+        or `-`. So `/tools:setup-x` is not `/tools:setup`, and
+        `/tools:setup.md` is.
+     4. A match is an error. A match in a code span or fenced block is not
+        checked and ships as written (rule 12).
 
      There is no escape form. To show a call string, put it in code.
 9. `\/[[x]]` ships as the text `/[[x]]`. The leftover check of rule
@@ -568,10 +580,13 @@ harness's own form (decision D9).
 21. `${PLUGIN_ROOT}` with no `/<path>` after it is an error in Markdown. It
     cannot be rewritten to a path for Codex, Cursor or Pi, and a vault writes
     one text for all harnesses.
-22. `${CLAUDE_PLUGIN_ROOT}` anywhere in source, Markdown or a hooks file, code
-    included, is an error that says to write `${PLUGIN_ROOT}`. There is one
-    syntax. To show Claude Code's variable in an example, write it unbraced,
-    `$CLAUDE_PLUGIN_ROOT`.
+22. `${CLAUDE_PLUGIN_ROOT}` in interpreted text, code included, is an error
+    that says to write `${PLUGIN_ROOT}`. Interpreted text is the files of rule
+    15 (a component's note, the Markdown in its own and the plugin's
+    `references/`, and text a note embed inlines) and `hooks/hooks.json`. A
+    file that ships byte for byte, a never-ship folder and a container note's
+    body are not checked. There is one syntax. To show Claude Code's variable
+    in an example, write it unbraced, `$CLAUDE_PLUGIN_ROOT`.
 23. A hooks file, `hooks/hooks.json`, also writes `${PLUGIN_ROOT}`. Each hook
     command's `${PLUGIN_ROOT}` becomes the harness's own variable:
 
@@ -579,7 +594,7 @@ harness's own form (decision D9).
     |---|---|---|
     | Claude Code | Yes | `${CLAUDE_PLUGIN_ROOT}` |
     | Codex | Yes | `${PLUGIN_ROOT}`, unchanged |
-    | Cursor | No, for now. The build leaves hooks out of the Cursor pack and warns, naming `hooks/hooks.json`. | nothing |
+    | Cursor | No, for now. The build leaves hooks out of the Cursor pack and warns, naming `hooks/hooks.json`. It warns only when it builds that plugin's Cursor pack: Cursor is in `build.harnesses` and in the plugin's `targets`. | nothing |
     | Pi | No: Pi has no shell hooks | nothing |
 
     - A hook runs as a shell command from the project folder, where a
@@ -938,8 +953,8 @@ pack folder from the table above.
 10. A file keeps its exec bit. A file in `scripts/` that is meant to run must
     be executable in the source; the build does not set the bit.
 11. A pack holds no symlinks. Every shipped file is a copy.
-12. Two sources that would land on one path in a pack are an error that names
-    both.
+12. `targets` and `build.harnesses` accept only `claude`, `codex`, `cursor`
+    and `pi`. Any other value is refused, and the error names the four.
 
 ### Install keeps a pack whole
 
@@ -1042,8 +1057,8 @@ It is refused when:
 3. A marketplace folder has no `<m>.md`. If it holds a `skillwright.md`, the
    error says the marketplace note is now `<m>.md`.
 4. A kind folder (`skills/`, `agents/`, `commands/`), a `hooks/` folder or a
-   `plugins/` folder is anywhere other than its place in section 3, such as at the root or
-   directly in a marketplace.
+   `plugins/` folder is directly in the root, or anywhere in `marketplaces/`
+   other than its place in section 3, such as directly in a marketplace.
 
    ```text
    <root>/
@@ -1052,7 +1067,7 @@ It is refused when:
        ├── skills/                  refused: directly in a marketplace
        └── plugins/tools/skills/    accepted
    ```
-5. A `marketplaces/` folder is anywhere below the top.
+5. A `marketplaces/` folder is anywhere inside `marketplaces/`.
 6. A component's note is not `<name>/<name>.md`, such as `skills/x.md` or
    `skills/x/SKILL.md`.
 
@@ -1357,9 +1372,10 @@ Each case gives an input and the result.
    named `marketplaces` cannot hold a `marketplaces/` folder.
 
    A whole vault copied inside another vault's tree is a different case. A
-   walk up that starts inside the inner vault stops at the inner root. A
-   build of the outer vault refuses the inner `marketplaces/` (section 11
-   rule 5). v2 does not support nested vaults (section 1 rule 3).
+   walk up that starts inside the inner vault stops at the inner root, so the
+   build reads the inner vault. A build started outside it reads only the
+   outer root's `skillwright.md` and `marketplaces/` (section 1 rule 3). v2
+   does not support nested vaults.
 2. **A dot-named file a pack needs.**
    - Input: `assets/.eslintrc.json`.
    - Result: skipped. It does not ship, and there is no warning.

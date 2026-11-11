@@ -91,6 +91,10 @@ is still needed off a terminal.
   `<p>-<s>`, folder and `name`, as Pi already does. `cursor: {naming: bare}`
   keeps today's plain names (section 8 rule 6). A call to a Cursor skill
   renders `/<p>-<s>`, not `/<s>`.
+- `targets` values other than `claude`, `codex`, `cursor` and `pi`. The
+  publish targets (`amp`, `antigravity`, `copilot`, `opencode`, `portable`)
+  and the aliases (`claude-code`, `codex-cli`, `github-copilot`) are now
+  refused (section 9 rule 12).
 - Hooks in the Cursor pack. The build now leaves them out and warns, until a
   probe confirms that Cursor sets `${CURSOR_PLUGIN_ROOT}` for hook commands
   (section 4 rule 23, [#152](https://github.com/osdlc/skillwright/issues/152)).
